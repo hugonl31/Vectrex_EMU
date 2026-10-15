@@ -96,16 +96,24 @@ jobs:
             linux-*.log
           if-no-files-found: warn
 
-  release:                         # the builds on the repository's "Latest build" release page
+  release:                         # the build replaces the release named in VERSION (marked Latest)
     needs: [mac, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
       - uses: actions/download-artifact@v4
       - name: replace the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VER=$(head -n 1 repo/VERSION | tr -d ' \r')
+          { awk -v v="## $VER" '$0 == v {on=1; next} on && /^## / {exit} on' repo/RELEASE_NOTES.md
+            echo; echo "Built from ${GITHUB_SHA::7}."; } > notes.md
           gh release delete latest-build --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
-          gh release create latest-build -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA"             --title "Latest build"             --notes "Built from ${GITHUB_SHA::7}. The Mac app (Intel + Apple Silicon) and the Linux program alone: put the Vectrex BIOS in a bios folder next to it (bios/bios.bin) and your ROMs in a roms folder. See README.md. The PNG and log files are the build's own checks."             mac/* linux/*
+          gh release delete "$VER" --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
+          gh release create "$VER" -R "$GITHUB_REPOSITORY" --latest --target "$GITHUB_SHA" \
+            --title "$VER" --notes-file notes.md mac/* linux/*

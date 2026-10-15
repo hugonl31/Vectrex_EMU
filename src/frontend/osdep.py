@@ -24,10 +24,15 @@ def app_root(exe):
     if IS_MAC:
         i = d.find('.app/Contents/')
         if i >= 0:
-            d = os.path.dirname(d[:i + 4])
-        if '/AppTranslocation/' in d:
-            d = _untranslocate(d) or d
+            app = d[:i + 4]
+            if '/AppTranslocation/' in app:             # (macOS answers for the app itself, not its folder)
+                app = _untranslocate(app) or app
+            d = os.path.dirname(app)
     return d
+
+def translocated(path):
+    """macOS runs this downloaded app from a hidden copy (it can not see the folders next to it)"""
+    return IS_MAC and '/AppTranslocation/' in path
 
 def _untranslocate(path):
     try:
@@ -37,9 +42,11 @@ def _untranslocate(path):
         f = sec.SecTranslocateCreateOriginalPathForURL
         f.restype = ctypes.c_void_p; f.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         url = NSURL.fileURLWithPath_(path)
-        p = f(objc.pyobjc_id(url), None)
+        p = f(ctypes.c_void_p(objc.pyobjc_id(url)), None)
         if p:
-            return objc.objc_object(c_void_p=p).path()
+            orig = objc.objc_object(c_void_p=p).path()
+            if orig and os.path.exists(orig):
+                return str(orig)
     except Exception:       # noqa
         pass
     return None

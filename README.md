@@ -22,7 +22,9 @@ as on Windows; if that folder can not be written to, the settings go to `~/Libra
 `Vectrex_EMU.app`, `bios` and `roms` together in one folder. The app is not signed by Apple, so the
 first start is blocked. Right-click (or Ctrl+click) the app > **Open** > **Open**. On macOS 15 or later:
 double-click it once, then **System Settings > Privacy & Security > Open Anyway**. After that it starts normally.
-Or in Terminal, once: `xattr -dr com.apple.quarantine Vectrex_EMU.app`. The right mouse button is
+Or in Terminal, once: `xattr -dr com.apple.quarantine Vectrex_EMU.app`. (Until then macOS may run a downloaded app from a hidden copy that can not see the `bios` and
+`roms` folders; the app finds its real folder by itself, and if it ever says the BIOS is missing: drag
+`Vectrex_EMU.app` out of its folder in Finder and back in.) The right mouse button is
 Ctrl+click on a one-button mouse or trackpad. On a Retina screen the picture is drawn at the screen's full resolution (its pixels, not
 macOS's points: twice as sharp), found by itself; it follows the window to another screen. Display > Screen at the full rate uses the monitor's rate
 (120 Hz ProMotion); the fixed 60 Hz is paced by the clock there.

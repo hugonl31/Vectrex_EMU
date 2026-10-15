@@ -2531,7 +2531,15 @@ def main():
         if not (os.path.exists(CORE) and os.path.exists(BIOS)):
             from tkinter import messagebox
             r = tk.Tk(); r.withdraw()
-            messagebox.showerror('Vectrex_EMU', 'Missing %s or %s' % (CORE, BIOS)); return
+            missing = [f for f in (CORE, BIOS) if not os.path.exists(f)]
+            msg = 'Missing:\n' + '\n'.join(missing)
+            if not IS_WIN and BIOS in missing:
+                msg += '\n\nThe Vectrex BIOS goes in a folder called bios next to the program: bios/bios.bin.'
+                if osdep.translocated(ROOT):
+                    msg += ('\n\nmacOS runs this downloaded app from a hidden copy, which can not see that folder. '
+                            'In Finder, drag Vectrex_EMU.app out of its folder and back in, then start it again '
+                            '(macOS then runs it where it is).')
+            messagebox.showerror('Vectrex_EMU', msg); return
         App(args).root.mainloop()
     finally:
         try:

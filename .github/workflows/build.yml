@@ -1,6 +1,5 @@
 # Builds Vectrex_EMU for macOS (universal2: Intel + Apple Silicon) and Linux (x86-64), and checks that
-# each one opens its window and draws with OpenGL (a snapshot of the picture; a stand-in BIOS: the real
-# one is not in this repository). The Windows exe is built locally (build_core.bat, build_exe.bat).
+# each one opens its window and draws with OpenGL (a snapshot of the picture: Mine Storm). The Windows exe is built locally (build_core.bat, build_exe.bat).
 name: build
 on:
   push:
@@ -28,10 +27,9 @@ jobs:
           lipo -info core/vectrex_core
           lipo -info dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU
           find dist-mac/Vectrex_EMU.app -name 'libSDL2*' -exec lipo -info {} \;
-      - name: stand-in BIOS (tests only)
+      - name: the BIOS next to the app (tests only; the zips carry it)
         run: |
-          mkdir -p bios dist-mac/bios
-          python3 -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
+          mkdir -p dist-mac/bios
           cp bios/bios.bin dist-mac/bios/
       - name: snapshot from the sources
         run: |
@@ -75,10 +73,9 @@ jobs:
           python -c "import tkinter, sdl2; print('Tk', tkinter.TkVersion)"
       - name: build
         run: PY=python sh build_linux.sh
-      - name: stand-in BIOS (tests only)
+      - name: the BIOS next to the program (tests only; the zips carry it)
         run: |
-          mkdir -p bios dist-linux/bios
-          python -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
+          mkdir -p dist-linux/bios
           cp bios/bios.bin dist-linux/bios/
       - name: snapshot from the sources
         run: xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5 2>&1 | tee linux-source.log

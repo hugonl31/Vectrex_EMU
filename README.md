@@ -41,6 +41,12 @@ on Windows; any other joystick (the Vectrex USB controller, flight sticks) by it
 its axes and buttons, mapped in Vectrex > Controls as on Windows. Settings files move between all three
 systems as they are.
 
+**Building on Windows:** download the project (GitHub: Code > Download ZIP), unzip, double-click
+`build_exe.bat`: it builds the core (`build_core.bat`, needs Visual Studio Build Tools with C++), installs
+PyInstaller if needed and makes `Vectrex_EMU.exe` (needs Python 3 from python.org). `run_from_source.bat`
+runs the emulator straight from the sources (after `build_core.bat`). The BIOS (`bios/bios.bin`, with Mine
+Storm) is in the project: Smith Engineering allows it to be copied freely for non-commercial use.
+
 **Building:** `build_mac.sh` (on a Mac, the python.org Python 3.12) and `build_linux.sh`; the GitHub
 workflow `.github/workflows/build.yml` builds both, and on each it checks the OpenGL picture with
 `tools/snapshot_test.py`. The platform side (OpenGL context, keys, controllers, sound) is

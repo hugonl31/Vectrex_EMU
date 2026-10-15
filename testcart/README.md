@@ -101,3 +101,11 @@ $50 the camera clips). The emulator's curve below intensity 63 now has that cuto
 beam_zdot) and shows the same 10 bars and 10 dots.
 
 Files: `bright_test.asm`, `bright_test.bin` (32 KB), `bright_test_64k.bin`, `roms\Brightness Test.bin`.
+
+## Wobble test (`wobble_50.bin`, `wobble_48.bin`, `wobble_25.bin`)
+
+A still picture (two boxes and two lines of text) at a fixed frame rate, for the README's demonstration of
+the mains hum wobble: the BIOS starts a frame every `Vec_Rfrsh` cycles, set here to 30,000 (50 fps, in
+step with 50 Hz mains), 31,250 (48 fps: a game slightly over its budget - the picture sways) or 60,000
+(25 fps: in step again). Built from `wobble_test.asm` with `-DREFRESH=n`, padded to 32 KB. (At 25 fps the
+emulator's frame counter shows 50: it splits frames longer than 33,000 cycles in two.)

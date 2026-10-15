@@ -128,8 +128,18 @@ Things no digital emulator has, because they are analog:
 
 * **Drift**: the integrators' zero point wanders, so a shape drawn as one loop doesn't quite close -
   calibrated against photos of test patterns on the real tube.
-* **Mains hum**: the beam wobbles with the 50 Hz mains (60 Hz in America); a game at exactly 50 fps
-  stands still, any other frame rate ripples - as on the real machine.
+* **Mains hum**: the power supply's 50 Hz hum pushes the beam a little. A game that finishes each frame
+  within the Vectrex's budget of 30,000 CPU cycles runs at 50 frames a second, in step with the hum:
+  every frame is pushed the same way and the picture stands still. But a busy scene - lots of vectors on
+  screen - can need more cycles than that. The frame takes longer, the game slows to, say, 48 fps, and
+  its frames slip against the hum: the picture starts to sway (a scene far over budget wobbles faster).
+  At 25 fps, exactly two hum waves per frame, it is in step again and stands still. Vectrex_EMU works out
+  the hum at the exact moment each line is drawn, so its games wobble exactly when a real Vectrex's do.
+
+  <p align="center"><img src="docs/images/wobble_sync.svg" width="760" alt="the game's frames against the 50 Hz mains hum at 50, 48 and 25 fps"></p>
+  <p align="center"><img src="docs/images/wobble.gif" width="640" alt="a still test picture at 50, 48 and 25 fps"><br>
+  <em>A still test picture (testcart/wobble_test.asm) at 50, 48 and 25 fps. For demonstration only: the
+  wobble is exaggerated about ten times and the animation runs at half speed, not in real time.</em></p>
 * **Brightness bending**: the high voltage sags with a busy screen; the picture breathes.
 * **The tube**: curved glass, glow around resting spots, a soft round spot - and switching off makes the
   picture shrink away with a last flash of the beam, as the real one does.

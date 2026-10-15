@@ -19,10 +19,31 @@ def png(fn, w, h, rgb):
         f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
                 + chunk(b'IDAT', zlib.compress(raw, 6)) + chunk(b'IEND', b''))
 
+def float_fbo_test(r):
+    """a 16-bit float framebuffer cleared to (0.25, 0.5, 0.75, 1) and read back"""
+    gl = r.gl
+    t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t)); gl.glBindTexture(0x0DE1, t.value)
+    gl.glTexImage2D(0x0DE1, 0, 0x881A, 4, 4, 0, 0x1908, 0x140B, None)
+    gl.glTexParameteri(0x0DE1, 0x2801, 0x2601); gl.glTexParameteri(0x0DE1, 0x2800, 0x2601)
+    f = ctypes.c_uint(); r.GenFB(1, ctypes.byref(f)); r.BindFB(0x8D40, f.value)
+    r.FBTex(0x8D40, 0x8CE0, 0x0DE1, t.value, 0)
+    st = r.FBStatus(0x8D40)
+    gl.glClearColor(0.25, 0.5, 0.75, 1.0); gl.glClear(0x4000)
+    px = (ctypes.c_float * 4)()
+    gl.glReadPixels.argtypes = [ctypes.c_int] * 4 + [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
+    gl.glReadPixels(1, 1, 1, 1, 0x1908, 0x1406, px)
+    r.BindFB(0x8D40, 0); gl.glClearColor(0, 0, 0, 1)
+    gl.glGetString.restype = ctypes.c_char_p
+    ext = gl.glGetString(0x1F03) or b''
+    print('float FBO status 0x%x, read back %s; extensions:' % (st, [round(v, 3) for v in px]),
+          [e for e in ext.decode().split() if 'float' in e.lower() or 'half' in e.lower() or 'framebuffer' in e.lower()], flush=True)
+
 orig = vecrender.GLRenderer._swap
 t0 = time.perf_counter(); st = dict(done=False, n=0)
 def swap(self):
     st['n'] += 1
+    if st['n'] == 1 and hasattr(self, 'GenFB'):
+        float_fbo_test(self)
     if not st['done'] and time.perf_counter() - t0 > secs:
         st['done'] = True
         w, h = self.size

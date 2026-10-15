@@ -33,6 +33,14 @@ jobs:
           mkdir -p bios dist-mac/bios
           python3 -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
           cp bios/bios.bin dist-mac/bios/
+      - name: what the app holds (SDL)
+        run: find dist-mac/Vectrex_EMU.app -iname '*sdl*' | head -40
+      - name: screenshot check with a plain Tk window (no OpenGL)
+        run: |
+          venv/bin/python -c "import tkinter as tk; r=tk.Tk(); r.geometry('400x300+100+100'); c=tk.Canvas(r,bg='black'); c.pack(fill='both',expand=1); c.create_rectangle(50,50,350,250,fill='red'); r.after(6000,r.destroy); r.mainloop()" &
+          sleep 4
+          screencapture -x mac-screen-tk.png || true
+          wait
       - name: snapshots from the sources (both macOS display ways)
         run: |
           for m in child subview; do
@@ -44,7 +52,7 @@ jobs:
           done
       - name: run the app
         run: |
-          dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 9 > mac-app.log 2>&1 &
+          VX_DEBUG=1 dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 9 > mac-app.log 2>&1 &
           sleep 6
           screencapture -x mac-app-screen.png || true
           wait $! ; echo "exit $?" >> mac-app.log

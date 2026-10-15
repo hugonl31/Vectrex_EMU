@@ -412,6 +412,8 @@ class Pads:
                 self.ok = None; return
         except Exception as e:  # noqa
             print('controllers unavailable (%s)' % e)
+            if os.environ.get('VX_DEBUG'):
+                import traceback; traceback.print_exc()
             self.ok = None; return
         opened = {}                                             # instance id -> (handle, is controller)
         last_scan = -9.0
@@ -516,6 +518,8 @@ class Audio:
             self._write(bytes(2 * rate * 40 // 1000))           # 40 ms head start: the queue never runs dry
         except Exception as e:  # noqa
             print('sound unavailable (%s)' % e)
+            if os.environ.get('VX_DEBUG'):
+                import traceback; traceback.print_exc()
     def queued_samples(self):
         return self.S.SDL_GetQueuedAudioSize(self.dev) // 2 if self.ok else 0
     def play(self, data):

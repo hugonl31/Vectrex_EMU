@@ -1,6 +1,6 @@
 # Vectrex_EMU
 
-A Vectrex emulator for Windows that tries to look and sound like a real Vectrex rather than a
+A Vectrex emulator for Windows, macOS and Linux that tries to look and sound like a real Vectrex rather than a
 perfect one. Built from the Robot Arena development emulator (2026-10-08).
 
 **Start:** double-click `Vectrex_EMU.exe` - it is all you need: the emulator core, the BIOS (with
@@ -9,6 +9,37 @@ Mine Storm) and the power-on/off sounds are inside it. Copy it anywhere; next to
 `Vectrex_EMU.exe GAME.bin` starts with a cartridge, Ctrl+O opens one; it starts again with the
 cartridge used last (if that file is gone: Mine Storm). No console window, the
 window is in focus right away.
+
+## Mac and Linux
+
+The same emulator runs on macOS and Linux (2026-10-15). Everything in this README applies; only the
+start differs. On both, the BIOS is not built into the program: it sits in the **`bios` folder next to
+it** (`bios/bios.bin`, in the zip). The `roms` folder and `Vectrex_EMU.conf` sit next to the program,
+as on Windows; if that folder can not be written to, the settings go to `~/Library/Application Support/Vectrex_EMU`
+(Mac) or `~/.config/Vectrex_EMU` (Linux).
+
+**Mac** (`Vectrex_EMU_mac.zip`; Intel and Apple Silicon, macOS 10.13 or later): unzip and keep
+`Vectrex_EMU.app`, `bios` and `roms` together in one folder. The app is not signed by Apple, so the
+first start is blocked. Right-click (or Ctrl+click) the app > **Open** > **Open**. On macOS 15 or later:
+double-click it once, then **System Settings > Privacy & Security > Open Anyway**. After that it starts normally.
+Or in Terminal, once: `xattr -dr com.apple.quarantine Vectrex_EMU.app`. The right mouse button is
+Ctrl+click on a one-button mouse or trackpad. Display > Screen at the full rate uses the monitor's rate
+(120 Hz ProMotion); the fixed 60 Hz is paced by the clock there.
+
+**Linux** (`Vectrex_EMU_linux.zip`; x86-64, glibc 2.35 or later: Ubuntu 22.04, Debian 12, Fedora 36
+and later...): unzip and start `./Vectrex_EMU` (or double-click it). It needs an X11 or Wayland desktop
+(through XWayland) with OpenGL (Mesa or a GPU driver) and PulseAudio or PipeWire for sound - every
+normal desktop has them. If the unzipping tool dropped the program's run permission: `chmod +x Vectrex_EMU`.
+
+Controllers work on both through SDL2: an Xbox, PlayStation or Switch pad shows up like the Xbox pad
+on Windows; any other joystick (the Vectrex USB controller, flight sticks) by its own name, with
+its axes and buttons, mapped in Vectrex > Controls as on Windows. Settings files move between all three
+systems as they are.
+
+**Building:** `build_mac.sh` (on a Mac, the python.org Python 3.12) and `build_linux.sh`; the GitHub
+workflow `.github/workflows/build.yml` builds both, and on each it checks the OpenGL picture with
+`tools/snapshot_test.py`. The platform side (OpenGL context, keys, controllers, sound) is
+`src/frontend/osdep.py`; on Windows the program uses the Windows APIs as before.
 
 ## Switching on
 

@@ -819,6 +819,8 @@ class App:
         self.root.configure(bg='black')
         if not IS_WIN:
             osdep.KEYS.attach(self.root)
+        if IS_MAC:                                              # (Ctrl+click: the right button, one-button mice)
+            self.root.bind_class('all', '<Control-Button-1>', lambda e: e.widget.event_generate('<Button-2>', x=e.x, y=e.y))
         # picture size: as tall as the screen allows (or --height-mm on this monitor); the window
         # size you leave it at is remembered in Vectrex_EMU.conf
         sh = self.root.winfo_screenheight()

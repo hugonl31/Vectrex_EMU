@@ -47,8 +47,10 @@ jobs:
           cat mac-app.log
       - name: pack the app
         run: |
-          rm -f dist-mac/Vectrex_EMU.conf
-          ditto -c -k --sequesterRsrc dist-mac Vectrex_EMU-mac-app.zip      # (the app and its bios folder)
+          mkdir -p pkg                                                      # (the app and its bios folder only)
+          ditto dist-mac/Vectrex_EMU.app pkg/Vectrex_EMU.app
+          ditto bios pkg/bios
+          ditto -c -k --sequesterRsrc pkg Vectrex_EMU-mac-app.zip
       - uses: actions/upload-artifact@v4
         with:
           name: mac

@@ -56,7 +56,7 @@ jobs:
       - name: snapshots from the sources (both macOS display ways)
         run: |
           for m in child subview; do
-            VX_STAGES=1 VX_MACGL=$m venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 > mac-source-$m.log 2>&1 &
+            VECTREX_HZ=4 VX_MACGL=$m venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 --scale 0.3 > mac-source-$m.log 2>&1 &
             sleep 6
             screencapture -x mac-screen-$m.png || true
             wait $! ; echo "exit $?" >> mac-source-$m.log
@@ -64,7 +64,7 @@ jobs:
           done
       - name: run the app
         run: |
-          VX_DEBUG=1 dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 9 > mac-app.log 2>&1 &
+          VECTREX_HZ=4 VX_DEBUG=1 dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 9 --scale 0.3 > mac-app.log 2>&1 &
           sleep 6
           screencapture -x mac-app-screen.png || true
           wait $! ; echo "exit $?" >> mac-app.log

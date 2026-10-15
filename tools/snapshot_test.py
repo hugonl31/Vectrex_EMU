@@ -31,6 +31,11 @@ def swap(self):
         self.gl.glPixelStorei(0x0D05, 1)                                    # GL_PACK_ALIGNMENT
         self.gl.glReadPixels(0, 0, w, h, 0x1907, 0x1401, buf)               # RGB, unsigned byte
         png(out, w, h, bytes(buf))
+        vp = (ctypes.c_int * 4)(); self.gl.glGetIntegerv(0x0BA2, vp)            # GL_VIEWPORT
+        self.gl.glGetString.restype = ctypes.c_char_p
+        print('OpenGL', self.gl.glGetString(0x1F01), self.gl.glGetString(0x1F02), 'viewport', list(vp), flush=True)
+        if hasattr(getattr(self, 'ctxo', None), 'diag'):
+            print(self.ctxo.diag(), flush=True)
         print('snapshot %dx%d after %d swaps, %d lit bytes' % (w, h, st['n'], sum(1 for b in bytes(buf) if b > 8)), flush=True)
     return orig(self)
 vecrender.GLRenderer._swap = swap

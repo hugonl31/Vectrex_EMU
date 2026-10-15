@@ -184,10 +184,12 @@ def _mac_view_class():
     return _MacView
 
 class MacGL:
-    """an NSOpenGLContext (legacy profile: OpenGL 2.1, the fixed pipeline the renderer uses) in an NSView
-    laid over the Tk frame in its window"""
+    """an NSOpenGLContext (legacy profile: OpenGL 2.1, the fixed pipeline the renderer uses) over the Tk
+    frame: in a borderless child window that moves with the Tk window and lets clicks through
+    (VX_MACGL=child, the default), or in an NSView added to the Tk window (VX_MACGL=subview)"""
     max_swap_interval = 1
     def __init__(self, widget):
+        self.mode = os.environ.get('VX_MACGL', 'child')
         import AppKit, objc     # noqa
         self.AppKit = AppKit
         self.widget = widget
@@ -196,10 +198,19 @@ class MacGL:
         self.nswin = self._find_window()
         if self.nswin is None:
             raise OSError('no NSWindow for the Tk window')
-        self.view = _mac_view_class().alloc().initWithFrame_(self._rect())
-        self.view.setWantsBestResolutionOpenGLSurface_(False)
-        self.nswin.contentView().addSubview_(self.view)
         A = AppKit
+        self.child = None
+        if self.mode == 'child':
+            self.child = A.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(self._screen_rect(), 0, 2, False)
+            self.child.setIgnoresMouseEvents_(True); self.child.setOpaque_(True); self.child.setHasShadow_(False)
+            self.child.setBackgroundColor_(A.NSColor.blackColor()); self.child.setReleasedWhenClosed_(False)
+            self.nswin.addChildWindow_ordered_(self.child, 1)          # NSWindowAbove
+            self.child.orderFront_(None)
+            self.view = self.child.contentView()
+        else:
+            self.view = _mac_view_class().alloc().initWithFrame_(self._rect())
+            self.nswin.contentView().addSubview_(self.view)
+        self.view.setWantsBestResolutionOpenGLSurface_(False)
         attrs = [A.NSOpenGLPFADoubleBuffer, A.NSOpenGLPFAColorSize, 24, A.NSOpenGLPFAAlphaSize, 8, 0]
         pf = A.NSOpenGLPixelFormat.alloc().initWithAttributes_(attrs)
         if pf is None:
@@ -208,6 +219,7 @@ class MacGL:
         if self.ctx is None:
             raise OSError('no OpenGL context')
         self.ctx.setView_(self.view)
+        self.ctx.update()
         self.ctx.makeCurrentContext()
         self.gl = ctypes.CDLL('/System/Library/Frameworks/OpenGL.framework/OpenGL')
     def _find_window(self):
@@ -256,6 +268,15 @@ class MacGL:
         if not cv.isFlipped():
             y = cv.frame().size.height - y - hh
         return NSMakeRect(x, y, ww, hh)
+    def _screen_rect(self):
+        cv = self.nswin.contentView()
+        return self.nswin.convertRectToScreen_(cv.convertRect_toView_(self._rect(), None))
+    def diag(self):
+        """(for tests) where the view is and what it is"""
+        cv = self.nswin.contentView()
+        return 'mode %s view %s flipped %s layer %s content %s %s' % (
+            self.mode, tuple(self.view.frame()), cv.isFlipped(), self.view.wantsLayer(), tuple(cv.frame()),
+            tuple(self.child.frame()) if self.child else '')
     def proc(self, name, res, *args):
         try:
             f = getattr(self.gl, name)
@@ -271,7 +292,10 @@ class MacGL:
             pass
         return True
     def reshape(self):
-        self.view.setFrame_(self._rect())
+        if self.child is not None:
+            self.child.setFrame_display_(self._screen_rect(), True)
+        else:
+            self.view.setFrame_(self._rect())
         self.ctx.update()
         self.ctx.makeCurrentContext()
     def refresh_rate(self):
@@ -283,7 +307,11 @@ class MacGL:
     def close(self):
         try:
             self.AppKit.NSOpenGLContext.clearCurrentContext()
-            self.ctx.clearDrawable(); self.view.removeFromSuperview()
+            self.ctx.clearDrawable()
+            if self.child is not None:
+                self.nswin.removeChildWindow_(self.child); self.child.orderOut_(None)
+            else:
+                self.view.removeFromSuperview()
         except Exception:       # noqa
             pass
 

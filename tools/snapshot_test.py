@@ -56,6 +56,25 @@ def stage_dump(r, base):
         png('%s-%s.png' % (base, name), w, h, rgb)
     r.BindFB(0x8D40, 0)
 
+_tex = os.environ.get('VX_TEX', '')                    # (tests: 'nearest' filtering, 'rgba8' textures)
+if _tex:
+    def _target(self, w, h):
+        gl = self.gl
+        t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t)); gl.glBindTexture(0x0DE1, t.value)
+        filt = 0x2600 if 'nearest' in _tex else 0x2601
+        for k, v in ((0x2801, filt), (0x2800, filt), (0x2802, 0x812F), (0x2803, 0x812F)):
+            gl.glTexParameteri(0x0DE1, k, v)
+        if 'rgba8' in _tex:
+            gl.glTexImage2D(0x0DE1, 0, 0x8058, w, h, 0, 0x1908, 0x1401, None)
+        else:
+            gl.glTexImage2D(0x0DE1, 0, 0x881A, w, h, 0, 0x1908, 0x140B, None)
+        f = ctypes.c_uint(); self.GenFB(1, ctypes.byref(f)); self.BindFB(0x8D40, f.value)
+        self.FBTex(0x8D40, 0x8CE0, 0x0DE1, t.value, 0)
+        gl.glClearColor(0, 0, 0, 0); gl.glClear(0x4000); self.BindFB(0x8D40, 0)
+        self.tex.append(t.value); self.fbs.append(f.value)
+        return t.value, f.value
+    vecrender.GLBloomRenderer._target = _target
+
 orig = vecrender.GLRenderer._swap
 t0 = time.perf_counter(); st = dict(done=False, n=0)
 def swap(self):

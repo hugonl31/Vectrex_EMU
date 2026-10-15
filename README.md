@@ -74,6 +74,12 @@ real tube leaves one smooth trail.
 <em>Mine Storm's mothership on the move: the trail of fading phosphor it leaves on a real Vectrex (left) and in Vectrex_EMU (right).</em>
 </p>
 
+A word about the photos: a CRT is very hard to photograph faithfully. The camera's exposure decides how
+much of the glow it catches, so the bloom and the brightness in a photo are never quite what the eye
+sees - the real tube's bloom looks different in person. The emulator was therefore tuned by eye too,
+over many rounds with the real Vectrex and the emulator on an IPS monitor side by side, until the two
+looked very much alike in real life.
+
 Even the brightness was measured: a test page of bars and dots at 16 intensities showed exactly where a
 dim beam disappears on the real tube (10 lines and 10 dots still visible).
 

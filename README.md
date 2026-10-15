@@ -68,6 +68,12 @@ along that measured curve, sixty times a second, whatever frame rate the game ru
 leaves a real trail, not a stack of copies - checked against Mine Storm's big mothership, which on the
 real tube leaves one smooth trail.
 
+<p align="center">
+<img src="docs/images/real_phosphor_decay.png" width="400" alt="the mothership's fading trail on a real Vectrex">
+<img src="docs/images/emu_phosphor_decay.png" width="400" alt="the mothership's fading trail in Vectrex_EMU"><br>
+<em>Mine Storm's mothership on the move: the trail of fading phosphor it leaves on a real Vectrex (left) and in Vectrex_EMU (right).</em>
+</p>
+
 Even the brightness was measured: a test page of bars and dots at 16 intensities showed exactly where a
 dim beam disappears on the real tube (10 lines and 10 dots still visible).
 

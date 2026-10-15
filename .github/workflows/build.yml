@@ -9,11 +9,7 @@ on:
 
 jobs:
   mac:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-14, macos-15]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - name: python.org Python 3.12 (universal2, with Tk)
@@ -37,58 +33,25 @@ jobs:
           mkdir -p bios dist-mac/bios
           python3 -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
           cp bios/bios.bin dist-mac/bios/
-      - name: what the app holds (SDL)
+      - name: snapshot from the sources
         run: |
-          find dist-mac/Vectrex_EMU.app -iname '*sdl*' > mac-bundle.log
-          venv/bin/pyi-archive_viewer -l -r dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU 2>&1 | grep -i sdl >> mac-bundle.log || true
-          grep -ri "sdl2" build/pyi-mac/Vectrex_EMU/warn-Vectrex_EMU.txt >> mac-bundle.log || true
-      - name: OpenGL over Tk, minimal (both display ways)
-        run: |
-          for m in child subview; do
-            VX_MACGL=$m venv/bin/python tools/macgl_test.py 6 > mac-gltest-$m.log 2>&1 &
-            sleep 4
-            screencapture -x mac-gltest-$m.png || true
-            wait
-            cat mac-gltest-$m.log
-          done
-      - name: screenshot check with a plain Tk window (no OpenGL)
-        run: |
-          venv/bin/python -c "import tkinter as tk; r=tk.Tk(); r.geometry('400x300+100+100'); c=tk.Canvas(r,bg='black'); c.pack(fill='both',expand=1); c.create_rectangle(50,50,350,250,fill='red'); r.after(6000,r.destroy); r.mainloop()" &
-          sleep 4
-          screencapture -x mac-screen-tk.png || true
-          wait
-      - name: snapshots from the sources (both macOS display ways)
-        run: |
-          for m in child nearest rgba8; do
-            VX_TEX=$( [ $m != child ] && echo $m ) VX_STAGES=1 VECTREX_HZ=4 VX_MACGL=child venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 --scale 0.3 > mac-source-$m.log 2>&1 &
-            sleep 6
-            screencapture -x mac-screen-$m.png || true
-            wait $! ; echo "exit $?" >> mac-source-$m.log
-            cat mac-source-$m.log
-          done
+          venv/bin/python tools/snapshot_test.py mac-source.png 5 --scale 0.4 > mac-source.log 2>&1 &
+          sleep 7
+          screencapture -x mac-screen.png || true
+          wait $! ; echo "exit $?" >> mac-source.log
+          cat mac-source.log
       - name: run the app
         run: |
-          VECTREX_HZ=4 VX_DEBUG=1 dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 9 --scale 0.3 > mac-app.log 2>&1 &
-          sleep 6
+          dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 9 --scale 0.4 > mac-app.log 2>&1 &
+          sleep 7
           screencapture -x mac-app-screen.png || true
           wait $! ; echo "exit $?" >> mac-app.log
           cat mac-app.log
-      - name: macOS 15 results under their own names
-        if: matrix.os == 'macos-15'
-        run: for f in mac-*.png mac-*.log; do mv "$f" "m15-$f"; done
-      - uses: actions/upload-artifact@v4
-        if: matrix.os == 'macos-15'
-        with:
-          name: mac15
-          path: |
-            m15-*.png
-            m15-*.log
       - name: pack the app
         run: |
           rm -rf dist-mac/bios
           ditto -c -k --sequesterRsrc --keepParent dist-mac/Vectrex_EMU.app Vectrex_EMU-mac-app.zip
       - uses: actions/upload-artifact@v4
-        if: matrix.os == 'macos-14'
         with:
           name: mac
           path: |
@@ -118,7 +81,7 @@ jobs:
           python -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
           cp bios/bios.bin dist-linux/bios/
       - name: snapshot from the sources
-        run: VX_STAGES=1 xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5 2>&1 | tee linux-source.log
+        run: xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5 2>&1 | tee linux-source.log
       - name: run the program
         run: |
           xvfb-run -a -s "-screen 0 1600x1200x24" dist-linux/Vectrex_EMU --demo 6 > linux-app.log 2>&1; echo "exit $?" >> linux-app.log
@@ -148,4 +111,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest-build --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
-          gh release create latest-build -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA"             --title "Latest build"             --notes "Built from ${GITHUB_SHA::7}. The Mac app (Intel + Apple Silicon) and the Linux program alone: put the Vectrex BIOS in a bios folder next to it (bios/bios.bin) and your ROMs in a roms folder. See README.md. The PNG and log files are the build's own checks."             mac/* mac15/* linux/*
+          gh release create latest-build -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA"             --title "Latest build"             --notes "Built from ${GITHUB_SHA::7}. The Mac app (Intel + Apple Silicon) and the Linux program alone: put the Vectrex BIOS in a bios folder next to it (bios/bios.bin) and your ROMs in a roms folder. See README.md. The PNG and log files are the build's own checks."             mac/* linux/*

@@ -34,7 +34,19 @@ jobs:
           python3 -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
           cp bios/bios.bin dist-mac/bios/
       - name: what the app holds (SDL)
-        run: find dist-mac/Vectrex_EMU.app -iname '*sdl*' | head -40
+        run: |
+          find dist-mac/Vectrex_EMU.app -iname '*sdl*' > mac-bundle.log
+          venv/bin/pyi-archive_viewer -l -r dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU 2>&1 | grep -i sdl >> mac-bundle.log || true
+          grep -ri "sdl2" build/pyi-mac/Vectrex_EMU/warn-Vectrex_EMU.txt >> mac-bundle.log || true
+      - name: OpenGL over Tk, minimal (both display ways)
+        run: |
+          for m in child subview; do
+            VX_MACGL=$m venv/bin/python tools/macgl_test.py 6 > mac-gltest-$m.log 2>&1 &
+            sleep 4
+            screencapture -x mac-gltest-$m.png || true
+            wait
+            cat mac-gltest-$m.log
+          done
       - name: screenshot check with a plain Tk window (no OpenGL)
         run: |
           venv/bin/python -c "import tkinter as tk; r=tk.Tk(); r.geometry('400x300+100+100'); c=tk.Canvas(r,bg='black'); c.pack(fill='both',expand=1); c.create_rectangle(50,50,350,250,fill='red'); r.after(6000,r.destroy); r.mainloop()" &

@@ -969,6 +969,12 @@ class App:
             self.root.bind(k, lambda e: self.turn_volume(-0.05))
         self.root.bind('<Escape>', self.escape)
         self.root.protocol('WM_DELETE_WINDOW', self.quit)
+        if IS_MAC:                                              # macOS: Command does what Ctrl does, Ctrl+Command+F
+            for seq in self.root.bind():                        #  is full screen, Command+Q quits (settings saved)
+                if seq.startswith('<Control-Key-') or seq.startswith('<Control-KP_'):
+                    self.root.bind(seq.replace('<Control-', '<Command-'), self.root.bind(seq))
+            self.root.bind('<Control-Command-Key-f>', self.toggle_full)
+            self.root.createcommand('tk::mac::Quit', self.quit)
         self.last_t = self.t_start = time.perf_counter(); self.last_f = 0; self.fps = 0; self.disp_fps = 0
         self.speed = 100.0
         self.title()
@@ -1056,11 +1062,19 @@ class App:
         R = lambda: self.ren
         C = lambda: self.run.crt
         self.menu_checks = []                                   # (variable, current state) to refresh
+        def mac_key(key):
+            """macOS: the menus show the Command shortcuts (as text: Tk's bindings do the work, so a key
+            never fires twice through a menu key equivalent)"""
+            if not IS_MAC or not key:
+                return key
+            return '⌃⌘F' if key == 'F11' else key.replace('Ctrl+', '⌘')
         def check(menu, label, key, get, cmd):
+            key = mac_key(key)
             v = tk.BooleanVar(value=False)
             menu.add_checkbutton(label=label, accelerator=key, variable=v, command=cmd)
             self.menu_checks.append((v, get))
         def item(menu, label, key, cmd):
+            key = mac_key(key)
             menu.add_command(label=label, accelerator=key, command=cmd)
         def refresh():
             for v, get in self.menu_checks:

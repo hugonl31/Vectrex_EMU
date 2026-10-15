@@ -38,6 +38,24 @@ def float_fbo_test(r):
     print('float FBO status 0x%x, read back %s; extensions:' % (st, [round(v, 3) for v in px]),
           [e for e in ext.decode().split() if 'float' in e.lower() or 'half' in e.lower() or 'framebuffer' in e.lower()], flush=True)
 
+def stage_dump(r, base):
+    """each phosphor stage's image: NaN / infinite counts, the largest value, a PNG (clamped)"""
+    import math
+    gl = r.gl
+    for name in ('P', 'P2', 'F', 'D', 'E', 'B1'):
+        tf = getattr(r, name, None)
+        if not tf: continue
+        w, h = (r.qw, r.qh) if name.startswith('B') else r.size
+        px = (ctypes.c_float * (w * h * 4))()
+        r.BindFB(0x8D40, tf[1]); gl.glReadPixels(0, 0, w, h, 0x1908, 0x1406, px)
+        vals = list(px)
+        nan = sum(1 for v in vals if v != v); inf = sum(1 for v in vals if v in (math.inf, -math.inf))
+        fin = [v for v in vals if v == v and abs(v) != math.inf]
+        print('stage %s %dx%d nan %d inf %d max %.3g min %.3g' % (name, w, h, nan, inf, max(fin or [0]), min(fin or [0])), flush=True)
+        rgb = bytes(0 if (v != v) else max(0, min(255, int(v * 255))) for i, v in enumerate(vals) if i % 4 != 3)
+        png('%s-%s.png' % (base, name), w, h, rgb)
+    r.BindFB(0x8D40, 0)
+
 orig = vecrender.GLRenderer._swap
 t0 = time.perf_counter(); st = dict(done=False, n=0)
 def swap(self):
@@ -55,6 +73,8 @@ def swap(self):
         vp = (ctypes.c_int * 4)(); self.gl.glGetIntegerv(0x0BA2, vp)            # GL_VIEWPORT
         self.gl.glGetString.restype = ctypes.c_char_p
         print('OpenGL', self.gl.glGetString(0x1F01), self.gl.glGetString(0x1F02), 'viewport', list(vp), flush=True)
+        if os.environ.get('VX_STAGES'):
+            stage_dump(self, os.path.splitext(out)[0])
         if hasattr(getattr(self, 'ctxo', None), 'diag'):
             print(self.ctxo.diag(), flush=True)
         print('snapshot %dx%d after %d swaps, %d lit bytes' % (w, h, st['n'], sum(1 for b in bytes(buf) if b > 8)), flush=True)

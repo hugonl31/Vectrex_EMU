@@ -379,7 +379,10 @@ _sdl_lock = threading.Lock()
 def sdl():
     global _sdl
     if _sdl is None:
-        import sdl2             # (the SDL2 library itself: the pysdl2-dll package)
+        lib = os.path.join(getattr(sys, '_MEIPASS', ''), 'sdllib')
+        if IS_MAC and getattr(sys, 'frozen', False) and os.path.isdir(lib):
+            os.environ['PYSDL2_DLL_PATH'] = lib     # (the app: its own copy; from the sources: the pysdl2-dll package)
+        import sdl2
         _sdl = sdl2
     return _sdl
 

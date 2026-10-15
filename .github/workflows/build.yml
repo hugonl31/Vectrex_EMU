@@ -56,7 +56,7 @@ jobs:
       - name: snapshots from the sources (both macOS display ways)
         run: |
           for m in child subview; do
-            VX_MACGL=$m venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 > mac-source-$m.log 2>&1 &
+            VX_STAGES=1 VX_MACGL=$m venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 > mac-source-$m.log 2>&1 &
             sleep 6
             screencapture -x mac-screen-$m.png || true
             wait $! ; echo "exit $?" >> mac-source-$m.log
@@ -103,7 +103,7 @@ jobs:
           python -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
           cp bios/bios.bin dist-linux/bios/
       - name: snapshot from the sources
-        run: xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5 2>&1 | tee linux-source.log
+        run: VX_STAGES=1 xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5 2>&1 | tee linux-source.log
       - name: run the program
         run: |
           xvfb-run -a -s "-screen 0 1600x1200x24" dist-linux/Vectrex_EMU --demo 6 > linux-app.log 2>&1; echo "exit $?" >> linux-app.log

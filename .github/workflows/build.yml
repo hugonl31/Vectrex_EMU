@@ -55,8 +55,8 @@ jobs:
           wait
       - name: snapshots from the sources (both macOS display ways)
         run: |
-          for m in child subview; do
-            VECTREX_HZ=4 VX_MACGL=$m venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 --scale 0.3 > mac-source-$m.log 2>&1 &
+          for m in child nocurve nobloom; do
+            VX_SET=$( [ $m = nocurve ] && echo curve_on=0 ; [ $m = nobloom ] && echo curve_on=0,bloom=0,phosphor=0 ) VX_STAGES=1 VECTREX_HZ=4 VX_MACGL=child venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 --scale 0.3 > mac-source-$m.log 2>&1 &
             sleep 6
             screencapture -x mac-screen-$m.png || true
             wait $! ; echo "exit $?" >> mac-source-$m.log

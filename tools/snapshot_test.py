@@ -60,6 +60,10 @@ orig = vecrender.GLRenderer._swap
 t0 = time.perf_counter(); st = dict(done=False, n=0)
 def swap(self):
     st['n'] += 1
+    if st['n'] == 1:
+        for k in os.environ.get('VX_SET', '').split(','):       # (tests: renderer settings, name=value)
+            if '=' in k:
+                n, v = k.split('='); setattr(self, n, type(getattr(self, n))(float(v)) if not isinstance(getattr(self, n), bool) else v == '1')
     if st['n'] == 1 and hasattr(self, 'GenFB'):
         float_fbo_test(self)
     if not st['done'] and time.perf_counter() - t0 > secs:

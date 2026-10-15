@@ -6,9 +6,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 ## v1.0.0
 
 The first release for Windows, macOS and Linux. Downloads: the Mac app (Intel + Apple Silicon) and the
-Linux program; Windows: build `Vectrex_EMU.exe` with `build_exe.bat` (see README.md). Put the Vectrex
-BIOS in a `bios` folder next to the program (`bios/bios.bin`, also in this project) and your ROMs in a
-`roms` folder. The PNG and log files are the build's own checks.
+Linux program, each with the Vectrex BIOS in its `bios` folder; Windows: build `Vectrex_EMU.exe` with
+`build_exe.bat` (see README.md). Put your ROMs in a `roms` folder next to the program. The PNG and log
+files are the build's own checks.
 
 - macOS: the picture at a Retina screen's full resolution; Command shortcuts (⌘O, ⌘E, ⌘R, ⌘P, ⌘+ / ⌘− /
   ⌘0, ⌃⌘F full screen, ⌘Q); runs from Gatekeeper's hidden copy of a downloaded app; 8-bit images on

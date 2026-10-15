@@ -47,8 +47,8 @@ jobs:
           cat mac-app.log
       - name: pack the app
         run: |
-          rm -rf dist-mac/bios
-          ditto -c -k --sequesterRsrc --keepParent dist-mac/Vectrex_EMU.app Vectrex_EMU-mac-app.zip
+          rm -f dist-mac/Vectrex_EMU.conf
+          ditto -c -k --sequesterRsrc dist-mac Vectrex_EMU-mac-app.zip      # (the app and its bios folder)
       - uses: actions/upload-artifact@v4
         with:
           name: mac
@@ -85,8 +85,8 @@ jobs:
           cat linux-app.log
       - name: pack the program
         run: |
-          rm -rf dist-linux/bios
-          cd dist-linux && zip -q ../Vectrex_EMU-linux-bin.zip Vectrex_EMU
+          rm -f dist-linux/Vectrex_EMU.conf
+          cd dist-linux && zip -q -r ../Vectrex_EMU-linux-bin.zip Vectrex_EMU bios      # (the program and its bios folder)
       - uses: actions/upload-artifact@v4
         with:
           name: linux

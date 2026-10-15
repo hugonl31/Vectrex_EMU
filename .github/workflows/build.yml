@@ -1,0 +1,96 @@
+# Builds Vectrex_EMU for macOS (universal2: Intel + Apple Silicon) and Linux (x86-64), and checks that
+# each one opens its window and draws with OpenGL (a snapshot of the picture; a stand-in BIOS: the real
+# one is not in this repository). The Windows exe is built locally (build_core.bat, build_exe.bat).
+name: build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: python.org Python 3.12 (universal2, with Tk)
+        run: |
+          curl -sSLo py.pkg https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg
+          sudo installer -pkg py.pkg -target /
+          PY=/Library/Frameworks/Python.framework/Versions/3.12/bin/python3
+          $PY -m venv venv
+          venv/bin/python -m pip install -q --upgrade pip
+          venv/bin/python -m pip install -q pyinstaller pyobjc-framework-Cocoa pysdl2 pysdl2-dll
+          venv/bin/python -c "import tkinter, sdl2; print('Tk', tkinter.TkVersion)"
+      - name: build
+        run: PY=venv/bin/python sh build_mac.sh
+      - name: check the binaries are universal
+        run: |
+          lipo -info core/vectrex_core
+          lipo -info dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU
+          find dist-mac/Vectrex_EMU.app -name 'libSDL2*' -exec lipo -info {} \;
+      - name: stand-in BIOS (tests only)
+        run: |
+          mkdir -p bios dist-mac/bios
+          python3 -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
+          cp bios/bios.bin dist-mac/bios/
+      - name: snapshot from the sources
+        run: venv/bin/python tools/snapshot_test.py mac-source.png 5
+      - name: run the app
+        run: |
+          dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 8 > app.log 2>&1 &
+          sleep 5
+          screencapture -x mac-screen.png || true
+          wait $! ; echo "exit $?" >> app.log
+          cat app.log
+      - name: pack the app
+        run: |
+          rm -rf dist-mac/bios
+          ditto -c -k --sequesterRsrc --keepParent dist-mac/Vectrex_EMU.app Vectrex_EMU-mac-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            Vectrex_EMU-mac-app.zip
+            mac-source.png
+            mac-screen.png
+            app.log
+          if-no-files-found: warn
+
+  linux:
+    runs-on: ubuntu-22.04          # (an older glibc: runs on most distributions)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb libgl1-mesa-dri libglx-mesa0 libxrandr2 x11-utils
+          python -m pip install -q pyinstaller pysdl2 pysdl2-dll
+          python -c "import tkinter, sdl2; print('Tk', tkinter.TkVersion)"
+      - name: build
+        run: PY=python sh build_linux.sh
+      - name: stand-in BIOS (tests only)
+        run: |
+          mkdir -p bios dist-linux/bios
+          python -c "open('bios/bios.bin','wb').write(bytes([0x12])*8190+bytes([0xF0,0x00]))"
+          cp bios/bios.bin dist-linux/bios/
+      - name: snapshot from the sources
+        run: xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5
+      - name: run the program
+        run: |
+          xvfb-run -a -s "-screen 0 1600x1200x24" dist-linux/Vectrex_EMU --demo 6 > app.log 2>&1; echo "exit $?" >> app.log
+          cat app.log
+      - name: pack the program
+        run: |
+          rm -rf dist-linux/bios
+          cd dist-linux && zip -q ../Vectrex_EMU-linux-bin.zip Vectrex_EMU
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            Vectrex_EMU-linux-bin.zip
+            linux-source.png
+            app.log
+          if-no-files-found: warn

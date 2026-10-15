@@ -1,0 +1,13 @@
+# not in the repository: ROMs and the BIOS (copyrighted), your settings, builds
+roms/
+games/
+bios/
+Vectrex_EMU.conf
+*.zip
+*.exe
+/core/
+/build/
+dist-*/
+__pycache__/
+*.pyc
+*.sav

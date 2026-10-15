@@ -1,0 +1,174 @@
+                      ( openbus_test.asm):00001         ; openbus_test.asm - Vectrex test cartridge: what the CPU reads where nothing answers (open bus).
+                      ( openbus_test.asm):00002         ; One static page: each line is a read of an address no chip drives ($8000-$BFFF, $C000-$C7FF), done
+                      ( openbus_test.asm):00003         ; with a different instruction, and the byte read in hex. On a real Vectrex the floating data bus
+                      ( openbus_test.asm):00004         ; decides it (the last byte on the bus? the BIOS $FFFF byte of an idle cycle? all ones?). Mine Storm's
+                      ( openbus_test.asm):00005         ; split-mine bug draws such bytes as a vector list (2026-10-14): the emulator needs the real rule.
+                      ( openbus_test.asm):00006         ; The last line reads $3408 inside this cartridge (the image is padded with $FF): it shows how the
+                      ( openbus_test.asm):00007         ; cartridge maps its image there.
+                      ( openbus_test.asm):00008         ; Build: lwasm --format=raw -o openbus_test_raw.bin openbus_test.asm, then pad to 32768 bytes with $FF.
+                      ( openbus_test.asm):00009         
+     F192             ( openbus_test.asm):00010         Wait_Recal      equ $F192
+     F2AB             ( openbus_test.asm):00011         Intensity_a     equ $F2AB
+     F354             ( openbus_test.asm):00012         Reset0Ref       equ $F354
+     F37A             ( openbus_test.asm):00013         Print_Str_d     equ $F37A
+     C82A             ( openbus_test.asm):00014         Vec_Text_HW     equ $C82A
+     D004             ( openbus_test.asm):00015         VIA_t1_cnt_lo   equ $D004
+                      ( openbus_test.asm):00016         
+     C880             ( openbus_test.asm):00017         Vals            equ $C880           ; the bytes read (NVAL)
+     C8A0             ( openbus_test.asm):00018         HexBuf          equ $C8A0           ; their hex strings, 3 bytes each (2 digits, $80)
+     C8E0             ( openbus_test.asm):00019         Idx             equ $C8E0
+     C8E1             ( openbus_test.asm):00020         PosY            equ $C8E1
+     000B             ( openbus_test.asm):00021         NVAL            equ 11
+                      ( openbus_test.asm):00022         
+                      ( openbus_test.asm):00023                 org     $0000
+0000 6720474345203230 ( openbus_test.asm):00024                 fcc     "g GCE 2026"
+     3236
+000A 80               ( openbus_test.asm):00025                 fcb     $80
+000B FD0D             ( openbus_test.asm):00026                 fdb     $FD0D               ; (a BIOS tune)
+000D F85020C0         ( openbus_test.asm):00027                 fcb     $F8,$50,$20,-$40
+0011 4F50454E20425553 ( openbus_test.asm):00028                 fcc     "OPEN BUS"
+0019 80               ( openbus_test.asm):00029                 fcb     $80
+001A 00               ( openbus_test.asm):00030                 fcb     0
+                      ( openbus_test.asm):00031         
+001B                  ( openbus_test.asm):00032         Start:
+001B                  ( openbus_test.asm):00033         Main:
+001B BDF192           ( openbus_test.asm):00034                 jsr     Wait_Recal
+001E BD0090           ( openbus_test.asm):00035                 jsr     DoReads
+0021 BD00D6           ( openbus_test.asm):00036                 jsr     MakeHex
+0024 CCF848           ( openbus_test.asm):00037                 ldd     #$F848              ; small text
+0027 FDC82A           ( openbus_test.asm):00038                 std     Vec_Text_HW
+002A 867F             ( openbus_test.asm):00039                 lda     #$7F
+002C BDF2AB           ( openbus_test.asm):00040                 jsr     Intensity_a
+002F BDF354           ( openbus_test.asm):00041                 jsr     Reset0Ref
+0032 867F             ( openbus_test.asm):00042                 lda     #$7F
+0034 B7D004           ( openbus_test.asm):00043                 sta     VIA_t1_cnt_lo
+0037 CE0101           ( openbus_test.asm):00044                 ldu     #Title
+003A CC7090           ( openbus_test.asm):00045                 ldd     #$7090
+003D BDF37A           ( openbus_test.asm):00046                 jsr     Print_Str_d
+0040 7FC8E0           ( openbus_test.asm):00047                 clr     Idx
+0043 8658             ( openbus_test.asm):00048                 lda     #$58
+0045 B7C8E1           ( openbus_test.asm):00049                 sta     PosY
+0048 BDF354           ( openbus_test.asm):00050         @lp     jsr     Reset0Ref           ; the label
+004B 867F             ( openbus_test.asm):00051                 lda     #$7F
+004D B7D004           ( openbus_test.asm):00052                 sta     VIA_t1_cnt_lo
+0050 8E0110           ( openbus_test.asm):00053                 ldx     #LabTab
+0053 F6C8E0           ( openbus_test.asm):00054                 ldb     Idx
+0056 58               ( openbus_test.asm):00055                 aslb
+0057 EE85             ( openbus_test.asm):00056                 ldu     b,x
+0059 B6C8E1           ( openbus_test.asm):00057                 lda     PosY
+005C C690             ( openbus_test.asm):00058                 ldb     #-$70
+005E BDF37A           ( openbus_test.asm):00059                 jsr     Print_Str_d
+0061 BDF354           ( openbus_test.asm):00060                 jsr     Reset0Ref           ; the byte read, in hex
+0064 867F             ( openbus_test.asm):00061                 lda     #$7F
+0066 B7D004           ( openbus_test.asm):00062                 sta     VIA_t1_cnt_lo
+0069 B6C8E0           ( openbus_test.asm):00063                 lda     Idx
+006C C603             ( openbus_test.asm):00064                 ldb     #3
+006E 3D               ( openbus_test.asm):00065                 mul
+006F CEC8A0           ( openbus_test.asm):00066                 ldu     #HexBuf
+0072 33CB             ( openbus_test.asm):00067                 leau    d,u
+0074 B6C8E1           ( openbus_test.asm):00068                 lda     PosY
+0077 C638             ( openbus_test.asm):00069                 ldb     #$38
+0079 BDF37A           ( openbus_test.asm):00070                 jsr     Print_Str_d
+007C B6C8E1           ( openbus_test.asm):00071                 lda     PosY
+007F 8010             ( openbus_test.asm):00072                 suba    #$10
+0081 B7C8E1           ( openbus_test.asm):00073                 sta     PosY
+0084 7CC8E0           ( openbus_test.asm):00074                 inc     Idx
+0087 B6C8E0           ( openbus_test.asm):00075                 lda     Idx
+008A 810B             ( openbus_test.asm):00076                 cmpa    #NVAL
+008C 25BA             ( openbus_test.asm):00077                 blo     @lp
+008E 208B             ( openbus_test.asm):00078                 bra     Main
+                      ( openbus_test.asm):00079         
+                      ( openbus_test.asm):00080         ; DoReads - the reads (the instructions as written: their bytes and cycles decide what a floating
+                      ( openbus_test.asm):00081         ; bus holds; Draw_VLp, the BIOS vector list routine, uses LDD 1,X / LDA ,X / LDB ,X+)
+0090                  ( openbus_test.asm):00082         DoReads:
+0090 B69000           ( openbus_test.asm):00083                 lda     $9000               ; extended: the last byte fetched before the read is $00
+0093 B7C880           ( openbus_test.asm):00084                 sta     Vals+0
+0096 B69055           ( openbus_test.asm):00085                 lda     $9055               ; ... $55
+0099 B7C881           ( openbus_test.asm):00086                 sta     Vals+1
+009C B690AA           ( openbus_test.asm):00087                 lda     $90AA               ; ... $AA
+009F B7C882           ( openbus_test.asm):00088                 sta     Vals+2
+00A2 B6C123           ( openbus_test.asm):00089                 lda     $C123               ; the $C000-$C7FF hole
+00A5 B7C883           ( openbus_test.asm):00090                 sta     Vals+3
+00A8 8E9000           ( openbus_test.asm):00091                 ldx     #$9000
+00AB A684             ( openbus_test.asm):00092                 lda     ,x                  ; indexed (an idle cycle at $FFFF before the read)
+00AD B7C884           ( openbus_test.asm):00093                 sta     Vals+4
+00B0 EC01             ( openbus_test.asm):00094                 ldd     1,x                 ; Draw_VLp's vector read
+00B2 FDC885           ( openbus_test.asm):00095                 std     Vals+5
+00B5 E680             ( openbus_test.asm):00096                 ldb     ,x+                 ; Draw_VLp_scale's scale read
+00B7 F7C887           ( openbus_test.asm):00097                 stb     Vals+7
+00BA 8EC2E8           ( openbus_test.asm):00098                 ldx     #$C2E8
+00BD A684             ( openbus_test.asm):00099                 lda     ,x                  ; where Mine Storm's stray list walked
+00BF B7C888           ( openbus_test.asm):00100                 sta     Vals+8
+00C2 8690             ( openbus_test.asm):00101                 lda     #$90
+00C4 1F8B             ( openbus_test.asm):00102                 tfr     a,dp
+00C6 9600             ( openbus_test.asm):00103                 lda     <$00                ; direct page: $9000
+00C8 B7C889           ( openbus_test.asm):00104                 sta     Vals+9
+00CB 86D0             ( openbus_test.asm):00105                 lda     #$D0
+00CD 1F8B             ( openbus_test.asm):00106                 tfr     a,dp
+00CF B63408           ( openbus_test.asm):00107                 lda     $3408               ; inside this cartridge (padding)
+00D2 B7C88A           ( openbus_test.asm):00108                 sta     Vals+10
+00D5 39               ( openbus_test.asm):00109                 rts
+                      ( openbus_test.asm):00110         
+                      ( openbus_test.asm):00111         ; MakeHex - Vals to HexBuf strings
+00D6                  ( openbus_test.asm):00112         MakeHex:
+00D6 8EC880           ( openbus_test.asm):00113                 ldx     #Vals
+00D9 CEC8A0           ( openbus_test.asm):00114                 ldu     #HexBuf
+00DC C60B             ( openbus_test.asm):00115                 ldb     #NVAL
+00DE A684             ( openbus_test.asm):00116         @m      lda     ,x
+00E0 44               ( openbus_test.asm):00117                 lsra
+00E1 44               ( openbus_test.asm):00118                 lsra
+00E2 44               ( openbus_test.asm):00119                 lsra
+00E3 44               ( openbus_test.asm):00120                 lsra
+00E4 8D12             ( openbus_test.asm):00121                 bsr     Nib
+00E6 A7C0             ( openbus_test.asm):00122                 sta     ,u+
+00E8 A680             ( openbus_test.asm):00123                 lda     ,x+
+00EA 840F             ( openbus_test.asm):00124                 anda    #$0F
+00EC 8D0A             ( openbus_test.asm):00125                 bsr     Nib
+00EE A7C0             ( openbus_test.asm):00126                 sta     ,u+
+00F0 8680             ( openbus_test.asm):00127                 lda     #$80
+00F2 A7C0             ( openbus_test.asm):00128                 sta     ,u+
+00F4 5A               ( openbus_test.asm):00129                 decb
+00F5 26E7             ( openbus_test.asm):00130                 bne     @m
+00F7 39               ( openbus_test.asm):00131                 rts
+                      ( openbus_test.asm):00132         
+00F8                  ( openbus_test.asm):00133         Nib:
+00F8 8B30             ( openbus_test.asm):00134                 adda    #$30
+00FA 8139             ( openbus_test.asm):00135                 cmpa    #$39
+00FC 2302             ( openbus_test.asm):00136                 bls     @n
+00FE 8B07             ( openbus_test.asm):00137                 adda    #7
+0100 39               ( openbus_test.asm):00138         @n      rts
+                      ( openbus_test.asm):00139         
+0101 4F50454E20425553 ( openbus_test.asm):00140         Title   fcc     "OPEN BUS READS"
+     205245414453
+010F 80               ( openbus_test.asm):00141                 fcb     $80
+0110 0126012F01380141 ( openbus_test.asm):00142         LabTab  fdb     L0,L1,L2,L3,L4,L5,L6,L7,L8,L9,L10
+     014A01560161016C
+     01740180018D
+0126 4C44412039303030 ( openbus_test.asm):00143         L0      fcc     "LDA 9000"
+012E 80               ( openbus_test.asm):00144                 fcb     $80
+012F 4C44412039303535 ( openbus_test.asm):00145         L1      fcc     "LDA 9055"
+0137 80               ( openbus_test.asm):00146                 fcb     $80
+0138 4C44412039304141 ( openbus_test.asm):00147         L2      fcc     "LDA 90AA"
+0140 80               ( openbus_test.asm):00148                 fcb     $80
+0141 4C44412043313233 ( openbus_test.asm):00149         L3      fcc     "LDA C123"
+0149 80               ( openbus_test.asm):00150                 fcb     $80
+014A 4C4441202C582039 ( openbus_test.asm):00151         L4      fcc     "LDA ,X 9000"
+     303030
+0155 80               ( openbus_test.asm):00152                 fcb     $80
+0156 4C444420312C5820 ( openbus_test.asm):00153         L5      fcc     "LDD 1,X HI"
+     4849
+0160 80               ( openbus_test.asm):00154                 fcb     $80
+0161 4C444420312C5820 ( openbus_test.asm):00155         L6      fcc     "LDD 1,X LO"
+     4C4F
+016B 80               ( openbus_test.asm):00156                 fcb     $80
+016C 4C4442202C582B   ( openbus_test.asm):00157         L7      fcc     "LDB ,X+"
+0173 80               ( openbus_test.asm):00158                 fcb     $80
+0174 4C4441202C582043 ( openbus_test.asm):00159         L8      fcc     "LDA ,X C2E8"
+     324538
+017F 80               ( openbus_test.asm):00160                 fcb     $80
+0180 4C4441203C303020 ( openbus_test.asm):00161         L9      fcc     "LDA <00 DP90"
+     44503930
+018C 80               ( openbus_test.asm):00162                 fcb     $80
+018D 4C44412033343038 ( openbus_test.asm):00163         L10     fcc     "LDA 3408 CART"
+     2043415254
+019A 80               ( openbus_test.asm):00164                 fcb     $80

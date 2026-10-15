@@ -1,0 +1,309 @@
+                      (  timing_test.asm):00001         ; timing_test.asm - Vectrex test cartridge for the emulator's analog timing (line ends, corners).
+                      (  timing_test.asm):00002         ; Static pages to photograph on a real Vectrex and compare with Vectrex_EMU. Button 4: next page.
+                      (  timing_test.asm):00003         ;   Page 1  SQUARES : 16 squares drawn with the BIOS line routine (Draw_VLp, as Mine Storm), at
+                      (  timing_test.asm):00004         ;                     scales (timer 1 lengths) 8..23, each labelled with its scale (hex).
+                      (  timing_test.asm):00005         ;   Page 2  LINES   : 16 horizontal lines at scales 8..23; after each, a dot is placed separately
+                      (  timing_test.asm):00006         ;                     (a beam move of the same vector at the same scale) where the line should end:
+                      (  timing_test.asm):00007         ;                     the gap between the lit end and the dot is the line's dark end.
+                      (  timing_test.asm):00008         ;   Page 3  BOWTIES : the Robot Arena flybot outline at scales 8..23 (one closed path).
+                      (  timing_test.asm):00009         ;   Page 4  SHIPS   : Mine Storm's ship (its vector list, as Mine Storm draws it) at scales $0A-$0D,
+                      (  timing_test.asm):00010         ;                     top row at Mine Storm's intensity $5F, bottom row at $7F.
+                      (  timing_test.asm):00011         ;   Page 5  BIG SHIPS: the same, every vector doubled (twice the speed: the same timing, gaps twice as
+                      (  timing_test.asm):00012         ;                     wide - easier to photograph).
+                      (  timing_test.asm):00013         ; Build: lwasm --format=raw -o timing_test.bin timing_test.asm  (then pad to 32 KB for the cart)
+                      (  timing_test.asm):00014         
+     F192             (  timing_test.asm):00015         Wait_Recal      equ $F192
+     F1BA             (  timing_test.asm):00016         Read_Btns       equ $F1BA
+     F2AB             (  timing_test.asm):00017         Intensity_a     equ $F2AB
+     F2C5             (  timing_test.asm):00018         Dot_here        equ $F2C5
+     F312             (  timing_test.asm):00019         Moveto_d        equ $F312
+     F354             (  timing_test.asm):00020         Reset0Ref       equ $F354
+     F37A             (  timing_test.asm):00021         Print_Str_d     equ $F37A
+     F410             (  timing_test.asm):00022         Draw_VLp        equ $F410
+     C811             (  timing_test.asm):00023         Vec_Buttons     equ $C811
+     C82A             (  timing_test.asm):00024         Vec_Text_HW     equ $C82A
+     D004             (  timing_test.asm):00025         VIA_t1_cnt_lo   equ $D004
+                      (  timing_test.asm):00026         
+     C880             (  timing_test.asm):00027         Page            equ $C880           ; 0..2
+     C881             (  timing_test.asm):00028         Idx             equ $C881           ; shape number 0..15
+     C882             (  timing_test.asm):00029         PosY            equ $C882
+     C883             (  timing_test.asm):00030         PosX            equ $C883
+                      (  timing_test.asm):00031         
+                      (  timing_test.asm):00032                 org     $0000
+0000 6720474345203230 (  timing_test.asm):00033                 fcc     "g GCE 2026"
+     3236
+000A 80               (  timing_test.asm):00034                 fcb     $80
+000B FD0D             (  timing_test.asm):00035                 fdb     $FD0D               ; (a BIOS tune)
+000D F85020C0         (  timing_test.asm):00036                 fcb     $F8,$50,$20,-$40
+0011 54494D494E472054 (  timing_test.asm):00037                 fcc     "TIMING TEST"
+     455354
+001C 80               (  timing_test.asm):00038                 fcb     $80
+001D 00               (  timing_test.asm):00039                 fcb     0
+                      (  timing_test.asm):00040         
+001E                  (  timing_test.asm):00041         Start:
+001E 7FC880           (  timing_test.asm):00042                 clr     Page
+0021                  (  timing_test.asm):00043         Main:
+0021 BDF192           (  timing_test.asm):00044                 jsr     Wait_Recal
+0024 BDF1BA           (  timing_test.asm):00045                 jsr     Read_Btns
+0027 B6C811           (  timing_test.asm):00046                 lda     Vec_Buttons
+002A 8508             (  timing_test.asm):00047                 bita    #$08
+002C 270C             (  timing_test.asm):00048                 beq     @np
+002E B6C880           (  timing_test.asm):00049                 lda     Page
+0031 4C               (  timing_test.asm):00050                 inca
+0032 8105             (  timing_test.asm):00051                 cmpa    #5
+0034 2501             (  timing_test.asm):00052                 blo     @sp
+0036 4F               (  timing_test.asm):00053                 clra
+0037 B7C880           (  timing_test.asm):00054         @sp     sta     Page
+003A CCF848           (  timing_test.asm):00055         @np     ldd     #$F848              ; small text
+003D FDC82A           (  timing_test.asm):00056                 std     Vec_Text_HW
+0040 867F             (  timing_test.asm):00057                 lda     #$7F
+0042 BDF2AB           (  timing_test.asm):00058                 jsr     Intensity_a
+0045 BDF354           (  timing_test.asm):00059                 jsr     Reset0Ref
+0048 867F             (  timing_test.asm):00060                 lda     #$7F
+004A B7D004           (  timing_test.asm):00061                 sta     VIA_t1_cnt_lo
+004D CE023B           (  timing_test.asm):00062                 ldu     #TitleTab           ; the page's name, top left
+0050 B6C880           (  timing_test.asm):00063                 lda     Page
+0053 48               (  timing_test.asm):00064                 asla
+0054 EEC6             (  timing_test.asm):00065                 ldu     a,u
+0056 CC7C90           (  timing_test.asm):00066                 ldd     #$7C90
+0059 BDF37A           (  timing_test.asm):00067                 jsr     Print_Str_d
+005C 7FC881           (  timing_test.asm):00068                 clr     Idx
+005F BD006E           (  timing_test.asm):00069         @lp     jsr     DrawOne
+0062 7CC881           (  timing_test.asm):00070                 inc     Idx
+0065 B6C881           (  timing_test.asm):00071                 lda     Idx
+0068 8110             (  timing_test.asm):00072                 cmpa    #16
+006A 25F3             (  timing_test.asm):00073                 blo     @lp
+006C 20B3             (  timing_test.asm):00074                 bra     Main
+                      (  timing_test.asm):00075         
+                      (  timing_test.asm):00076         ; DrawOne - shape Idx (scale Idx+8) on the current page, in a 4 x 4 grid (lines page: one column)
+006E                  (  timing_test.asm):00077         DrawOne:
+006E B6C880           (  timing_test.asm):00078                 lda     Page
+0071 8101             (  timing_test.asm):00079                 cmpa    #1
+0073 274A             (  timing_test.asm):00080                 beq     DrawLine
+0075 8103             (  timing_test.asm):00081                 cmpa    #3
+0077 102400AD         (  timing_test.asm):00082                 lbhs    DrawShip
+007B B6C881           (  timing_test.asm):00083                 lda     Idx                 ; grid cell: row = Idx / 4, column = Idx % 4
+007E 44               (  timing_test.asm):00084                 lsra
+007F 44               (  timing_test.asm):00085                 lsra
+0080 C6CC             (  timing_test.asm):00086                 ldb     #-52
+0082 3D               (  timing_test.asm):00087                 mul                         ; (B = -52 * row)
+0083 CB44             (  timing_test.asm):00088                 addb    #68
+0085 F7C882           (  timing_test.asm):00089                 stb     PosY
+0088 B6C881           (  timing_test.asm):00090                 lda     Idx
+008B 8403             (  timing_test.asm):00091                 anda    #3
+008D C63A             (  timing_test.asm):00092                 ldb     #58
+008F 3D               (  timing_test.asm):00093                 mul
+0090 C064             (  timing_test.asm):00094                 subb    #100
+0092 F7C883           (  timing_test.asm):00095                 stb     PosX
+0095 BDF354           (  timing_test.asm):00096                 jsr     Reset0Ref
+0098 867F             (  timing_test.asm):00097                 lda     #$7F
+009A B7D004           (  timing_test.asm):00098                 sta     VIA_t1_cnt_lo
+009D B6C882           (  timing_test.asm):00099                 lda     PosY
+00A0 F6C883           (  timing_test.asm):00100                 ldb     PosX
+00A3 BDF312           (  timing_test.asm):00101                 jsr     Moveto_d
+00A6 B6C881           (  timing_test.asm):00102                 lda     Idx
+00A9 8B08             (  timing_test.asm):00103                 adda    #8
+00AB B7D004           (  timing_test.asm):00104                 sta     VIA_t1_cnt_lo       ; the shape's scale
+00AE 8E01E8           (  timing_test.asm):00105                 ldx     #Square
+00B1 B6C880           (  timing_test.asm):00106                 lda     Page
+00B4 2703             (  timing_test.asm):00107                 beq     @d
+00B6 8E01F9           (  timing_test.asm):00108                 ldx     #Bowtie
+00B9 BDF410           (  timing_test.asm):00109         @d      jsr     Draw_VLp
+00BC 1600EA           (  timing_test.asm):00110                 lbra    Label
+                      (  timing_test.asm):00111         
+                      (  timing_test.asm):00112         ; DrawLine - line Idx: a horizontal line, then the dot where it should end
+00BF                  (  timing_test.asm):00113         DrawLine:
+00BF B6C881           (  timing_test.asm):00114                 lda     Idx
+00C2 C6F3             (  timing_test.asm):00115                 ldb     #-13
+00C4 3D               (  timing_test.asm):00116                 mul
+00C5 CB5F             (  timing_test.asm):00117                 addb    #95
+00C7 F7C882           (  timing_test.asm):00118                 stb     PosY
+00CA 86C4             (  timing_test.asm):00119                 lda     #-60
+00CC B7C883           (  timing_test.asm):00120                 sta     PosX
+00CF BDF354           (  timing_test.asm):00121                 jsr     Reset0Ref
+00D2 867F             (  timing_test.asm):00122                 lda     #$7F
+00D4 B7D004           (  timing_test.asm):00123                 sta     VIA_t1_cnt_lo
+00D7 B6C882           (  timing_test.asm):00124                 lda     PosY
+00DA F6C883           (  timing_test.asm):00125                 ldb     PosX
+00DD BDF312           (  timing_test.asm):00126                 jsr     Moveto_d
+00E0 B6C881           (  timing_test.asm):00127                 lda     Idx
+00E3 8B08             (  timing_test.asm):00128                 adda    #8
+00E5 B7D004           (  timing_test.asm):00129                 sta     VIA_t1_cnt_lo
+00E8 8E01F5           (  timing_test.asm):00130                 ldx     #HLine
+00EB BDF410           (  timing_test.asm):00131                 jsr     Draw_VLp
+00EE BDF354           (  timing_test.asm):00132                 jsr     Reset0Ref           ; the dot: the same start, a move of the same vector, then rest
+00F1 867F             (  timing_test.asm):00133                 lda     #$7F
+00F3 B7D004           (  timing_test.asm):00134                 sta     VIA_t1_cnt_lo
+00F6 B6C882           (  timing_test.asm):00135                 lda     PosY
+00F9 F6C883           (  timing_test.asm):00136                 ldb     PosX
+00FC BDF312           (  timing_test.asm):00137                 jsr     Moveto_d
+00FF B6C881           (  timing_test.asm):00138                 lda     Idx
+0102 8B08             (  timing_test.asm):00139                 adda    #8
+0104 B7D004           (  timing_test.asm):00140                 sta     VIA_t1_cnt_lo
+0107 CC007F           (  timing_test.asm):00141                 ldd     #$007F
+010A BDF312           (  timing_test.asm):00142                 jsr     Moveto_d
+010D 867F             (  timing_test.asm):00143                 lda     #$7F
+010F BDF2AB           (  timing_test.asm):00144                 jsr     Intensity_a
+0112 BDF2C5           (  timing_test.asm):00145                 jsr     Dot_here
+0115 B6C883           (  timing_test.asm):00146                 lda     PosX                ; the label left of the line
+0118 8026             (  timing_test.asm):00147                 suba    #38
+011A B7C883           (  timing_test.asm):00148                 sta     PosX
+011D B6C882           (  timing_test.asm):00149                 lda     PosY
+0120 8B03             (  timing_test.asm):00150                 adda    #3
+0122 B7C882           (  timing_test.asm):00151                 sta     PosY
+0125 160081           (  timing_test.asm):00152                 lbra    Label
+                      (  timing_test.asm):00153         
+                      (  timing_test.asm):00154         ; DrawShip - ship Idx (0-7): scale $0A + Idx % 4, intensity $5F (first row) or $7F (second row)
+0128                  (  timing_test.asm):00155         DrawShip:
+0128 B6C881           (  timing_test.asm):00156                 lda     Idx
+012B 8108             (  timing_test.asm):00157                 cmpa    #8
+012D 2479             (  timing_test.asm):00158                 bhs     @x
+012F 8403             (  timing_test.asm):00159                 anda    #3
+0131 C63A             (  timing_test.asm):00160                 ldb     #58
+0133 3D               (  timing_test.asm):00161                 mul
+0134 C05F             (  timing_test.asm):00162                 subb    #95
+0136 F7C883           (  timing_test.asm):00163                 stb     PosX
+0139 8632             (  timing_test.asm):00164                 lda     #50
+013B F6C881           (  timing_test.asm):00165                 ldb     Idx
+013E C104             (  timing_test.asm):00166                 cmpb    #4
+0140 2502             (  timing_test.asm):00167                 blo     @r
+0142 86D3             (  timing_test.asm):00168                 lda     #-45
+0144 B7C882           (  timing_test.asm):00169         @r      sta     PosY
+0147 BDF354           (  timing_test.asm):00170                 jsr     Reset0Ref
+014A 867F             (  timing_test.asm):00171                 lda     #$7F
+014C B7D004           (  timing_test.asm):00172                 sta     VIA_t1_cnt_lo
+014F B6C882           (  timing_test.asm):00173                 lda     PosY
+0152 F6C883           (  timing_test.asm):00174                 ldb     PosX
+0155 BDF312           (  timing_test.asm):00175                 jsr     Moveto_d
+0158 865F             (  timing_test.asm):00176                 lda     #$5F
+015A F6C881           (  timing_test.asm):00177                 ldb     Idx
+015D C104             (  timing_test.asm):00178                 cmpb    #4
+015F 2502             (  timing_test.asm):00179                 blo     @i
+0161 867F             (  timing_test.asm):00180                 lda     #$7F
+0163 BDF2AB           (  timing_test.asm):00181         @i      jsr     Intensity_a
+0166 B6C881           (  timing_test.asm):00182                 lda     Idx
+0169 8403             (  timing_test.asm):00183                 anda    #3
+016B 8B0A             (  timing_test.asm):00184                 adda    #$0A
+016D B7D004           (  timing_test.asm):00185                 sta     VIA_t1_cnt_lo
+0170 8E0209           (  timing_test.asm):00186                 ldx     #Ship
+0173 B6C880           (  timing_test.asm):00187                 lda     Page
+0176 8104             (  timing_test.asm):00188                 cmpa    #4
+0178 2603             (  timing_test.asm):00189                 bne     @s
+017A 8E0222           (  timing_test.asm):00190                 ldx     #Ship2
+017D BDF410           (  timing_test.asm):00191         @s      jsr     Draw_VLp
+0180 867F             (  timing_test.asm):00192                 lda     #$7F
+0182 BDF2AB           (  timing_test.asm):00193                 jsr     Intensity_a
+0185 BDF354           (  timing_test.asm):00194                 jsr     Reset0Ref
+0188 867F             (  timing_test.asm):00195                 lda     #$7F
+018A B7D004           (  timing_test.asm):00196                 sta     VIA_t1_cnt_lo
+018D B6C881           (  timing_test.asm):00197                 lda     Idx
+0190 8403             (  timing_test.asm):00198                 anda    #3
+0192 8B02             (  timing_test.asm):00199                 adda    #2
+0194 48               (  timing_test.asm):00200                 asla
+0195 48               (  timing_test.asm):00201                 asla
+0196 CE02A6           (  timing_test.asm):00202                 ldu     #Hex
+0199 33C6             (  timing_test.asm):00203                 leau    a,u
+019B B6C882           (  timing_test.asm):00204                 lda     PosY
+019E 800E             (  timing_test.asm):00205                 suba    #14
+01A0 F6C883           (  timing_test.asm):00206                 ldb     PosX
+01A3 C004             (  timing_test.asm):00207                 subb    #4
+01A5 7EF37A           (  timing_test.asm):00208                 jmp     Print_Str_d
+01A8 39               (  timing_test.asm):00209         @x      rts
+                      (  timing_test.asm):00210         
+                      (  timing_test.asm):00211         ; Label - the scale in hex next to the shape
+01A9                  (  timing_test.asm):00212         Label:
+01A9 BDF354           (  timing_test.asm):00213                 jsr     Reset0Ref
+01AC 867F             (  timing_test.asm):00214                 lda     #$7F
+01AE B7D004           (  timing_test.asm):00215                 sta     VIA_t1_cnt_lo
+01B1 B6C881           (  timing_test.asm):00216                 lda     Idx
+01B4 48               (  timing_test.asm):00217                 asla
+01B5 48               (  timing_test.asm):00218                 asla
+01B6 CE02A6           (  timing_test.asm):00219                 ldu     #Hex
+01B9 33C6             (  timing_test.asm):00220                 leau    a,u
+01BB B6C880           (  timing_test.asm):00221                 lda     Page
+01BE 8101             (  timing_test.asm):00222                 cmpa    #1
+01C0 271D             (  timing_test.asm):00223                 beq     @l
+01C2 B6C880           (  timing_test.asm):00224                 lda     Page
+01C5 260B             (  timing_test.asm):00225                 bne     @b
+01C7 B6C882           (  timing_test.asm):00226                 lda     PosY                ; squares: the label above (they hang down from PosY)
+01CA 8B0E             (  timing_test.asm):00227                 adda    #14
+01CC F6C883           (  timing_test.asm):00228                 ldb     PosX
+01CF 7EF37A           (  timing_test.asm):00229                 jmp     Print_Str_d
+01D2 B6C882           (  timing_test.asm):00230         @b      lda     PosY                ; bowties: below (they reach up and down from PosY)
+01D5 8012             (  timing_test.asm):00231                 suba    #18
+01D7 F6C883           (  timing_test.asm):00232                 ldb     PosX
+01DA C00C             (  timing_test.asm):00233                 subb    #12
+01DC 7EF37A           (  timing_test.asm):00234                 jmp     Print_Str_d
+01DF B6C882           (  timing_test.asm):00235         @l      lda     PosY
+01E2 F6C883           (  timing_test.asm):00236                 ldb     PosX
+01E5 7EF37A           (  timing_test.asm):00237                 jmp     Print_Str_d
+                      (  timing_test.asm):00238         
+                      (  timing_test.asm):00239         ; vector lists for Draw_VLp: pattern ($FF draw,$00 move), y, x; $01 ends
+01E8 FF0060FFA000FF00 (  timing_test.asm):00240         Square  fcb     $FF,$00,$60,$FF,-$60,$00,$FF,$00,-$60,$FF,$60,$00,$01
+     A0FF600001
+01F5 FF007F01         (  timing_test.asm):00241         HLine   fcb     $FF,$00,$7F,$01
+                      (  timing_test.asm):00242         ; Robot Arena's flybot: (-w,4.5) (-w,-4.5) (w,4.5) (w,-4.5) (-w,4.5), w = 6 (x8 art units / 2)
+01F9 0030C0FFA000FF60 (  timing_test.asm):00243         Bowtie  fcb     $00,$30,-$40,$FF,-$60,$00,$FF,$60,$7F,$FF,-$60,$00,$FF,$60,-$7F,$01
+     7FFFA000FF608101
+                      (  timing_test.asm):00244         
+                      (  timing_test.asm):00245         ; Mine Storm's ship (pointing up) as Mine Storm builds it in RAM ($CB89)
+0209 003F00FFC408FFD8 (  timing_test.asm):00246         Ship    fcb     $00,$3F,$00,$FF,$C4,$08,$FF,$D8,$D8,$FF,$20,$00,$00,$00,$40,$FF,$E0,$00,$FF,$28,$D8,$FF,$3C,$08,$01
+     D8FF2000000040FF
+     E000FF28D8FF3C08
+     01
+0222 007E00FF8810FFB0 (  timing_test.asm):00247         Ship2   fcb     $00,$7E,$00,$FF,$88,$10,$FF,$B0,$B0,$FF,$40,$00,$00,$00,$7F,$FF,$C0,$00,$FF,$50,$B0,$FF,$78,$10,$01
+     B0FF400000007FFF
+     C000FF50B0FF7810
+     01
+023B 02450253026A0278 (  timing_test.asm):00248         TitleTab fdb    TxSq,TxLn,TxBt,TxSh,TxSh2
+     028D
+0245 5351554152455320 (  timing_test.asm):00249         TxSq    fcc     "SQUARES 08-17"
+     30382D3137
+0252 80               (  timing_test.asm):00250                 fcb     $80
+0253 4C494E4553202B20 (  timing_test.asm):00251         TxLn    fcc     "LINES + END DOTS 08-17"
+     454E4420444F5453
+     2030382D3137
+0269 80               (  timing_test.asm):00252                 fcb     $80
+026A 424F575449455320 (  timing_test.asm):00253         TxBt    fcc     "BOWTIES 08-17"
+     30382D3137
+0277 80               (  timing_test.asm):00254                 fcb     $80
+0278 5348495053203041 (  timing_test.asm):00255         TxSh    fcc     "SHIPS 0A-0D  5F / 7F"
+     2D30442020354620
+     2F203746
+028C 80               (  timing_test.asm):00256                 fcb     $80
+028D 4249472053484950 (  timing_test.asm):00257         TxSh2   fcc     "BIG SHIPS 0A-0D  5F / 7F"
+     532030412D304420
+     203546202F203746
+02A5 80               (  timing_test.asm):00258                 fcb     $80
+02A6 3038             (  timing_test.asm):00259         Hex     fcc     "08"
+02A8 8000             (  timing_test.asm):00260                 fcb     $80,0
+02AA 3039             (  timing_test.asm):00261                 fcc     "09"
+02AC 8000             (  timing_test.asm):00262                 fcb     $80,0
+02AE 3041             (  timing_test.asm):00263                 fcc     "0A"
+02B0 8000             (  timing_test.asm):00264                 fcb     $80,0
+02B2 3042             (  timing_test.asm):00265                 fcc     "0B"
+02B4 8000             (  timing_test.asm):00266                 fcb     $80,0
+02B6 3043             (  timing_test.asm):00267                 fcc     "0C"
+02B8 8000             (  timing_test.asm):00268                 fcb     $80,0
+02BA 3044             (  timing_test.asm):00269                 fcc     "0D"
+02BC 8000             (  timing_test.asm):00270                 fcb     $80,0
+02BE 3045             (  timing_test.asm):00271                 fcc     "0E"
+02C0 8000             (  timing_test.asm):00272                 fcb     $80,0
+02C2 3046             (  timing_test.asm):00273                 fcc     "0F"
+02C4 8000             (  timing_test.asm):00274                 fcb     $80,0
+02C6 3130             (  timing_test.asm):00275                 fcc     "10"
+02C8 8000             (  timing_test.asm):00276                 fcb     $80,0
+02CA 3131             (  timing_test.asm):00277                 fcc     "11"
+02CC 8000             (  timing_test.asm):00278                 fcb     $80,0
+02CE 3132             (  timing_test.asm):00279                 fcc     "12"
+02D0 8000             (  timing_test.asm):00280                 fcb     $80,0
+02D2 3133             (  timing_test.asm):00281                 fcc     "13"
+02D4 8000             (  timing_test.asm):00282                 fcb     $80,0
+02D6 3134             (  timing_test.asm):00283                 fcc     "14"
+02D8 8000             (  timing_test.asm):00284                 fcb     $80,0
+02DA 3135             (  timing_test.asm):00285                 fcc     "15"
+02DC 8000             (  timing_test.asm):00286                 fcb     $80,0
+02DE 3136             (  timing_test.asm):00287                 fcc     "16"
+02E0 8000             (  timing_test.asm):00288                 fcb     $80,0
+02E2 3137             (  timing_test.asm):00289                 fcc     "17"
+02E4 8000             (  timing_test.asm):00290                 fcb     $80,0

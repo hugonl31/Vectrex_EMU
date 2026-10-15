@@ -205,6 +205,8 @@ class GLRenderer:
         w, h = max(8, w), max(8, h)
         if not IS_WIN:
             self.ctxo.reshape()                           # (macOS: the OpenGL view follows the frame)
+            k = getattr(self.ctxo, 'scale', 1.0)          # (a Retina screen: its pixels, not Tk's points)
+            w, h = int(round(w * k)), int(round(h * k))
         self.size = (w, h)
         gl = self.gl
         gl.glViewport(0, 0, w, h)

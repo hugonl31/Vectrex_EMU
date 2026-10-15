@@ -23,7 +23,8 @@ as on Windows; if that folder can not be written to, the settings go to `~/Libra
 first start is blocked. Right-click (or Ctrl+click) the app > **Open** > **Open**. On macOS 15 or later:
 double-click it once, then **System Settings > Privacy & Security > Open Anyway**. After that it starts normally.
 Or in Terminal, once: `xattr -dr com.apple.quarantine Vectrex_EMU.app`. The right mouse button is
-Ctrl+click on a one-button mouse or trackpad. Display > Screen at the full rate uses the monitor's rate
+Ctrl+click on a one-button mouse or trackpad. On a Retina screen the picture is drawn at the screen's full resolution (its pixels, not
+macOS's points: twice as sharp), found by itself; it follows the window to another screen. Display > Screen at the full rate uses the monitor's rate
 (120 Hz ProMotion); the fixed 60 Hz is paced by the clock there.
 
 **Linux** (`Vectrex_EMU_linux.zip`; x86-64, glibc 2.35 or later: Ubuntu 22.04, Debian 12, Fedora 36

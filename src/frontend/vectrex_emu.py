@@ -1714,7 +1714,7 @@ class App:
         """the knob or the OSD switched: the window grows / shrinks by the strip below the picture, the
         picture keeps its size"""
         if self.ren and hasattr(self.ren, 'map') and not self.full:
-            ph = ALG_MAX_Y * self.ren.map[0]
+            ph = ALG_MAX_Y * self.ren.map[0] / self.px()           # (Tk's units)
             hw = int(ph * (1.0 + self.knob_reserve()))
             fit = self.fit_h
             if hw > fit:
@@ -1853,6 +1853,7 @@ class App:
                 return self.close_browser()                     # (a click outside closes it)
             return self.close_browser()
     def browse_double(self, e):
+        e = self.px_event(e)
         if self.browser and self.browser_row(e) is not None:
             self.browser['sel'] = self.browser_row(e)
             self.browse_load()
@@ -1869,6 +1870,16 @@ class App:
         cx, cy, r, rx = self.knob_geom()
         return dict(cx=cx, cy=cy, r=r, rx=rx, vol=self.run.crt.volume if self.run.power else 0.0,
                     pressed=time.perf_counter() < getattr(self, 'reset_shown_until', 0))
+    def px(self):
+        """the picture's pixels per Tk point: 2 on a Mac's Retina screen (the picture is drawn at its full
+        resolution), else 1 - the knob, the cartridge, the browser and the OSD are laid out in pixels"""
+        return getattr(getattr(self.ren, 'ctxo', None), 'scale', 1.0) if self.ren else 1.0
+    def px_event(self, e):
+        """a mouse event on the picture in its pixels"""
+        k = self.px()
+        if k == 1.0:
+            return e
+        return type('E', (), dict(x=e.x * k, y=e.y * k, delta=getattr(e, 'delta', 0), widget=e.widget))
     def knob_hit(self, e):
         """'knob' / 'reset' / None for a mouse position"""
         if not self.knob_state():
@@ -1879,6 +1890,7 @@ class App:
         return None
     def knob_click(self, e):
         """a click on the knob: right half turns it up, left half down; on RESET: the RESET button"""
+        e = self.px_event(e)
         if self.browser:
             return self.browser_click(e)
         if self.cart_state() and math.hypot(e.x - self.cart_geom()[0], e.y - self.cart_geom()[1]) <= 1.3 * self.cart_geom()[2]:
@@ -1891,6 +1903,7 @@ class App:
             self.reset_button()
     def knob_wheel(self, e):
         """the mouse wheel over the knob turns it (the ROM browser open: it scrolls)"""
+        e = self.px_event(e)
         if self.browser:
             return self.scroll(-3 if e.delta > 0 else 3)
         if self.knob_hit(e) == 'knob':
@@ -2281,7 +2294,7 @@ class App:
             pass
     def toggle_full(self, e=None):
         if not self.full:                                       # the picture height in the window, now
-            self.win_pic_h = (ALG_MAX_Y * self.ren.map[0] if self.ren and hasattr(self.ren, 'map') else
+            self.win_pic_h = (ALG_MAX_Y * self.ren.map[0] / self.px() if self.ren and hasattr(self.ren, 'map') else
                               min(self.screen.winfo_height(), self.screen.winfo_width() * ALG_MAX_Y / ALG_MAX_X))
         self.full = not self.full
         self.root.config(menu='' if self.full else self.menubar)   # (full screen: no menu bar)

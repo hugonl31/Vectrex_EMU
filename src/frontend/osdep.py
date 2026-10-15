@@ -70,6 +70,7 @@ class GLX:
     """an OpenGL context on the Tk frame's own X window (its own connection to the X server), with a
     framebuffer config of the window's visual"""
     max_swap_interval = 8
+    scale = 1.0                 # (X11: Tk's sizes are pixels)
     def __init__(self, widget):
         X = ctypes.CDLL(ctypes.util.find_library('X11') or 'libX11.so.6')
         G = ctypes.CDLL('libGL.so.1')
@@ -210,7 +211,8 @@ class MacGL:
         else:
             self.view = _mac_view_class().alloc().initWithFrame_(self._rect())
             self.nswin.contentView().addSubview_(self.view)
-        self.view.setWantsBestResolutionOpenGLSurface_(False)
+        self.scale = 1.0                # the screen's pixels per Tk point (2 on a Retina screen, see reshape)
+        self._retina()
         base = [A.NSOpenGLPFADoubleBuffer, A.NSOpenGLPFAColorSize, 24, A.NSOpenGLPFAAlphaSize, 8]
         pf = None
         for extra in ([A.NSOpenGLPFAAccelerated, A.NSOpenGLPFANoRecovery], [A.NSOpenGLPFAAccelerated], []):
@@ -295,7 +297,18 @@ class MacGL:
         except Exception:       # noqa
             pass
         return True
+    def _retina(self):
+        """a Retina screen: the picture at its full resolution (the view's pixels, not its points)"""
+        try:
+            s = float((self.child or self.nswin).backingScaleFactor())
+        except Exception:       # noqa
+            s = 1.0
+        if os.environ.get('VX_RETINA') == '0':                  # (tests: points only)
+            s = 1.0
+        self.view.setWantsBestResolutionOpenGLSurface_(s > 1.0)
+        self.scale = max(1.0, s)
     def reshape(self):
+        self._retina()                  # (the window may have moved to another screen)
         if self.child is not None:
             self.child.setFrame_display_(self._screen_rect(), True)
         else:

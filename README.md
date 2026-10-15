@@ -2,7 +2,7 @@
 
 **A Vectrex emulator that doesn't try to be perfect. It tries to be a Vectrex.**
 
-<p align="center"><img src="docs/images/hero.png" width="420" alt="Mine Storm in Vectrex_EMU"></p>
+<p align="center"><img src="docs/images/title.png" width="460" alt="Scramble in Vectrex_EMU, with the phosphor afterglow trailing behind the ship and the scrolling landscape"></p>
 
 The Vectrex (GCE / Milton Bradley, 1982) is the only home console that ever drew its games with a real
 vector beam: one electron beam, steered by analog circuits, tracing every line straight onto the

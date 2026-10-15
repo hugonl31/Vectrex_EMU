@@ -211,8 +211,12 @@ class MacGL:
             self.view = _mac_view_class().alloc().initWithFrame_(self._rect())
             self.nswin.contentView().addSubview_(self.view)
         self.view.setWantsBestResolutionOpenGLSurface_(False)
-        attrs = [A.NSOpenGLPFADoubleBuffer, A.NSOpenGLPFAColorSize, 24, A.NSOpenGLPFAAlphaSize, 8, 0]
-        pf = A.NSOpenGLPixelFormat.alloc().initWithAttributes_(attrs)
+        base = [A.NSOpenGLPFADoubleBuffer, A.NSOpenGLPFAColorSize, 24, A.NSOpenGLPFAAlphaSize, 8]
+        pf = None
+        for extra in ([A.NSOpenGLPFAAccelerated, A.NSOpenGLPFANoRecovery], [A.NSOpenGLPFAAccelerated], []):
+            pf = A.NSOpenGLPixelFormat.alloc().initWithAttributes_(base + extra + [0])   # (the graphics card first)
+            if pf is not None:
+                break
         if pf is None:
             raise OSError('no OpenGL pixel format')
         self.ctx = A.NSOpenGLContext.alloc().initWithFormat_shareContext_(pf, None)

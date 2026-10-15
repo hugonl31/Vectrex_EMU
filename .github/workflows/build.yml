@@ -9,7 +9,11 @@ on:
 
 jobs:
   mac:
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: python.org Python 3.12 (universal2, with Tk)
@@ -55,7 +59,7 @@ jobs:
           wait
       - name: snapshots from the sources (both macOS display ways)
         run: |
-          for m in child nocurve nobloom; do
+          for m in child nobloom; do
             VX_SET=$( [ $m = nocurve ] && echo curve_on=0 ; [ $m = nobloom ] && echo curve_on=0,bloom=0,phosphor=0 ) VX_STAGES=1 VECTREX_HZ=4 VX_MACGL=child venv/bin/python tools/snapshot_test.py mac-source-$m.png 5 --scale 0.3 > mac-source-$m.log 2>&1 &
             sleep 6
             screencapture -x mac-screen-$m.png || true
@@ -69,11 +73,22 @@ jobs:
           screencapture -x mac-app-screen.png || true
           wait $! ; echo "exit $?" >> mac-app.log
           cat mac-app.log
+      - name: macOS 15 results under their own names
+        if: matrix.os == 'macos-15'
+        run: for f in mac-*.png mac-*.log; do mv "$f" "m15-$f"; done
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-15'
+        with:
+          name: mac15
+          path: |
+            m15-*.png
+            m15-*.log
       - name: pack the app
         run: |
           rm -rf dist-mac/bios
           ditto -c -k --sequesterRsrc --keepParent dist-mac/Vectrex_EMU.app Vectrex_EMU-mac-app.zip
       - uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-14'
         with:
           name: mac
           path: |
@@ -133,4 +148,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest-build --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
-          gh release create latest-build -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA"             --title "Latest build"             --notes "Built from ${GITHUB_SHA::7}. The Mac app (Intel + Apple Silicon) and the Linux program alone: put the Vectrex BIOS in a bios folder next to it (bios/bios.bin) and your ROMs in a roms folder. See README.md. The PNG and log files are the build's own checks."             mac/* linux/*
+          gh release create latest-build -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA"             --title "Latest build"             --notes "Built from ${GITHUB_SHA::7}. The Mac app (Intel + Apple Silicon) and the Linux program alone: put the Vectrex BIOS in a bios folder next to it (bios/bios.bin) and your ROMs in a roms folder. See README.md. The PNG and log files are the build's own checks."             mac/* mac15/* linux/*

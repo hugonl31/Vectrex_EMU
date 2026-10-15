@@ -37,11 +37,11 @@ jobs:
         run: venv/bin/python tools/snapshot_test.py mac-source.png 5
       - name: run the app
         run: |
-          dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 8 > app.log 2>&1 &
+          dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU --demo 8 > mac-app.log 2>&1 &
           sleep 5
           screencapture -x mac-screen.png || true
-          wait $! ; echo "exit $?" >> app.log
-          cat app.log
+          wait $! ; echo "exit $?" >> mac-app.log
+          cat mac-app.log
       - name: pack the app
         run: |
           rm -rf dist-mac/bios
@@ -53,7 +53,7 @@ jobs:
             Vectrex_EMU-mac-app.zip
             mac-source.png
             mac-screen.png
-            app.log
+            mac-app.log
           if-no-files-found: warn
 
   linux:
@@ -80,8 +80,8 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5
       - name: run the program
         run: |
-          xvfb-run -a -s "-screen 0 1600x1200x24" dist-linux/Vectrex_EMU --demo 6 > app.log 2>&1; echo "exit $?" >> app.log
-          cat app.log
+          xvfb-run -a -s "-screen 0 1600x1200x24" dist-linux/Vectrex_EMU --demo 6 > linux-app.log 2>&1; echo "exit $?" >> linux-app.log
+          cat linux-app.log
       - name: pack the program
         run: |
           rm -rf dist-linux/bios
@@ -92,5 +92,19 @@ jobs:
           path: |
             Vectrex_EMU-linux-bin.zip
             linux-source.png
-            app.log
+            linux-app.log
           if-no-files-found: warn
+
+  release:                         # the builds on the repository's "Latest build" release page
+    needs: [mac, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: replace the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest-build --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
+          gh release create latest-build -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA"             --title "Latest build"             --notes "Built from ${GITHUB_SHA::7}. The Mac app (Intel + Apple Silicon) and the Linux program alone: put the Vectrex BIOS in a bios folder next to it (bios/bios.bin) and your ROMs in a roms folder. See README.md. The PNG and log files are the build's own checks."             mac/* linux/*

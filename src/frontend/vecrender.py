@@ -771,7 +771,11 @@ class GLBloomRenderer(GLRenderer):
     def _target(self, w, h):
         gl = self.gl
         if not hasattr(self, 'float_ok'):
-            self.float_ok = self._float_works(w, h)
+            gl.glGetString.restype = ctypes.c_char_p
+            soft = b'Software' in (gl.glGetString(0x1F01) or b'')     # GL_RENDERER: Apple's software renderer
+            if soft:                                                  #  reads them as garbage in the full picture
+                print('Apple software renderer: 8-bit images (the afterglow is shorter)')
+            self.float_ok = not soft and self._float_works(w, h)
         t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t))
         gl.glBindTexture(GL_TEXTURE_2D, t.value)
         for k, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):

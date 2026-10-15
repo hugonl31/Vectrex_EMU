@@ -729,7 +729,7 @@ class GLBloomRenderer(GLRenderer):
         self.T_prev = None
         self.hud = None              # text in the corner (the frame rate counter)
 
-    def _float_works(self):
+    def _float_works(self, tw, th):
         """can a shader read a 16-bit float image? (Apple's software renderer - a Mac without a graphics
         card, a virtual machine - draws them as garbage: then the images are 8-bit, a shorter afterglow)"""
         gl = self.gl
@@ -738,24 +738,26 @@ class GLBloomRenderer(GLRenderer):
             t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t)); gl.glBindTexture(GL_TEXTURE_2D, t.value)
             for k, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):
                 gl.glTexParameteri(GL_TEXTURE_2D, k, v)
-            gl.glTexImage2D(GL_TEXTURE_2D, 0, fmt, 8, 8, 0, GL_RGBA, kind, None)
+            gl.glTexImage2D(GL_TEXTURE_2D, 0, fmt, tw, th, 0, GL_RGBA, kind, None)
             f = ctypes.c_uint(); self.GenFB(1, ctypes.byref(f)); self.BindFB(GL_FRAMEBUFFER, f.value)
             self.FBTex(GL_FRAMEBUFFER, GL_COLOR_ATT0, GL_TEXTURE_2D, t.value, 0)
             made.append((t, f))
             return t.value, f.value
         ok = False
         try:
-            a = target(GL_RGBA16F, GL_HALF_FLOAT)
-            gl.glClearColor(0.25, 0.25, 0.25, 1.0); gl.glClear(GL_COLOR_BUFFER_BIT)
+            gl.glViewport(0, 0, tw, th); gl.glDisable(GL_BLEND)
+            a = target(GL_RGBA16F, GL_HALF_FLOAT)                      # (the window's size, drawn into as
+            gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)   #  the phosphor images are)
+            self._quad(0, 0.25, 0.25, 0.25, 1.0)
             b = target(0x8058, 0x1401)                                  # GL_RGBA8, unsigned byte
-            gl.glViewport(0, 0, 8, 8); gl.glDisable(GL_BLEND)
             self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0)
             self._quad(a[0])                                            # (the tone shader: 0.25 stays 0.25)
             self.UseProgram(0)
-            px = (ctypes.c_ubyte * (8 * 8 * 4))()
+            px = (ctypes.c_ubyte * (tw * th * 4))()
             gl.glReadPixels.argtypes = [ctypes.c_int] * 4 + [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
-            gl.glReadPixels(0, 0, 8, 8, GL_RGBA, 0x1401, px)
-            ok = all(abs(px[i] - 64) <= 3 for i in range(len(px)) if i % 4 != 3)
+            gl.glReadPixels(0, 0, tw, th, GL_RGBA, 0x1401, px)
+            bad = sum(1 for i in range(0, len(px), 4 * 37) if abs(px[i] - 64) > 3 or abs(px[i + 1] - 64) > 3)
+            ok = bad == 0
         except Exception:       # noqa
             ok = False
         self.BindFB(GL_FRAMEBUFFER, 0); gl.glEnable(GL_BLEND); gl.glClearColor(0, 0, 0, 1)
@@ -769,7 +771,7 @@ class GLBloomRenderer(GLRenderer):
     def _target(self, w, h):
         gl = self.gl
         if not hasattr(self, 'float_ok'):
-            self.float_ok = self._float_works()
+            self.float_ok = self._float_works(w, h)
         t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t))
         gl.glBindTexture(GL_TEXTURE_2D, t.value)
         for k, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):

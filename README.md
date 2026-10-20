@@ -29,6 +29,13 @@ The project started from **vecx**, a long-standing open-source Vectrex emulator,
 *nothing gets changed because it "looks nicer" - only because a real Vectrex does it.* So every step was
 the same loop: look at the real machine, measure it, change the emulator, compare again.
 
+A word about the photos below: glowing phosphor is very hard to photograph faithfully. The eye sees a
+CRT differently from a camera - the exposure decides how much of the glow a photo catches, so its bloom,
+its brightness and its fading afterglow are never quite what you see in the room. Photos and films told
+us *where* things happen and how long they last; getting the bloom and the decay to *look* right was
+harder. In the end the most important tool was A/B testing by eye: many rounds with the real Vectrex
+and the emulator on an IPS monitor side by side, until the two looked very much alike in real life.
+
 ### 1. Photographing the beam
 
 The first surprise was how different a real Vectrex looks up close. We took long series of close-up
@@ -67,12 +74,6 @@ real tube leaves one smooth trail.
 <img src="docs/images/emu_phosphor_decay.png" width="400" alt="the mothership's fading trail in Vectrex_EMU"><br>
 <em>Mine Storm's mothership on the move: the trail of fading phosphor it leaves on a real Vectrex (left) and in Vectrex_EMU (right).</em>
 </p>
-
-A word about the photos: a CRT is very hard to photograph faithfully. The camera's exposure decides how
-much of the glow it catches, so the bloom and the brightness in a photo are never quite what the eye
-sees - the real tube's bloom looks different in person. The emulator was therefore tuned by eye too,
-over many rounds with the real Vectrex and the emulator on an IPS monitor side by side, until the two
-looked very much alike in real life.
 
 Even the brightness was measured: a test page of bars and dots at 16 intensities showed exactly where a
 dim beam disappears on the real tube (10 lines and 10 dots still visible).

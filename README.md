@@ -47,19 +47,6 @@ move the beam all start and stop a few cycles apart. The emulator now runs every
 access in the exact cycle the real chips do, with the measured analog delays - and the gaps appear in
 the same places.
 
-How *wide* they are is another matter: it varies from one Vectrex to the next. Component tolerances
-and age shift the analog timing, so some machines show wide gaps and others barely any. The Vectrex in
-these photos has exceptionally wide ones. Rather than copy this one machine, Vectrex_EMU takes a
-compromise: the gaps are there, in the right places, but at the size of a well-tuned Vectrex - so they
-are smaller than in the photos. **Tube > Line gaps** sets them to taste: the integrators' stop delay,
-9.3 cycles (corners nearly closed) to 15.3 (wide, like the machine in the photos), 12.3 by default.
-By default we chose a tighter tube - a better tuned, or less worn, Vectrex:
-
-<p align="center">
-<img src="docs/images/emu_ship_mine.png" width="380" alt="the ship and a mine in Vectrex_EMU with the default gaps"><br>
-<em>The default (12.3 cycles): the same gaps in the same places, but tighter.</em>
-</p>
-
 <p align="center">
 <img src="docs/images/real_mothership.jpg" width="380" alt="the mothership on a real Vectrex">
 <img src="docs/images/emu_mothership.png" width="380" alt="the mothership in Vectrex_EMU"><br>
@@ -153,7 +140,22 @@ Things no digital emulator has, because they are analog:
 
 The result is not a "filter" laid over a clean picture: the imperfections come out of the emulation.
 
-### 7. Speech: two rare modules
+### 7. One choice: how wide the gaps are
+
+Everything above copies the real machine. One thing is a choice. How *wide* the gaps in the lines are
+(chapter 1) varies from one Vectrex to the next: component tolerances and age shift the analog timing,
+so some machines show wide gaps and others barely any. The Vectrex in our photos has exceptionally wide
+ones. Rather than copy this one machine, Vectrex_EMU keeps the gaps where they belong but, by default,
+at the size of a better tuned - or less worn - Vectrex: a tighter tube. **Tube > Line gaps** sets them
+to taste: the integrators' stop delay, 9.3 cycles (corners nearly closed) to 15.3 (wide, like the
+machine in the photos), 12.3 by default.
+
+<p align="center">
+<img src="docs/images/emu_ship_mine.png" width="380" alt="the ship and a mine in Vectrex_EMU with the default gaps"><br>
+<em>The default (12.3 cycles): the same gaps in the same places as on the real machine in chapter 1, but tighter.</em>
+</p>
+
+### 8. Speech: two rare modules
 
 A handful of Vectrex games and demos talk - or sing - through a speech module plugged into the second
 controller port. There are two: the **VecVoice** (Richard Hutchinson), built around General Instrument's
@@ -185,7 +187,7 @@ recordings of the real ones, comparing A/B by ear:
 The SP0256-AL2's ROM is (c) Microchip and not included: it is a free download (see
 [Speech](#speech-vecvoice-and-vecvox)), and so is the list of games that talk.
 
-### 8. Overlays - and forty years of scratches
+### 9. Overlays - and forty years of scratches
 
 Every Vectrex game came with a printed plastic **overlay** for the screen: see-through colour tints the
 vectors behind it, solid print adds the borders, the artwork and the game's name. The emulator reads the

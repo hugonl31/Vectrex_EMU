@@ -86,13 +86,23 @@ a shorter afterglow and without the scratches.
 ## What it looks like
 
 <p align="center">
-<img src="docs/images/games_overlays.png" width="820" alt="Mine Storm, Bedlam and Armor Attack with their overlays"><br>
+<a href="docs/images/gallery/overlay_mine_storm.png"><img src="docs/images/gallery/overlay_mine_storm_small.jpg" width="270" alt="Mine Storm with its overlay"></a>
+<a href="docs/images/gallery/overlay_bedlam.png"><img src="docs/images/gallery/overlay_bedlam_small.jpg" width="270" alt="Bedlam with its overlay"></a>
+<a href="docs/images/gallery/overlay_armor_attack.png"><img src="docs/images/gallery/overlay_armor_attack_small.jpg" width="270" alt="Armor Attack with its overlay"></a><br>
 <em>With their overlays: Mine Storm, Bedlam and Armor Attack, the sheets worn by forty years of handling.</em>
 </p>
 
 <p align="center">
-<img src="docs/images/games.png" width="820" alt="GCE games in Vectrex_EMU"><br>
-<em>And without: original GCE games in Vectrex_EMU.</em>
+<a href="docs/images/gallery/armor_attack.png"><img src="docs/images/gallery/armor_attack_small.jpg" width="200" alt="Armor Attack"></a>
+<a href="docs/images/gallery/berzerk.png"><img src="docs/images/gallery/berzerk_small.jpg" width="200" alt="Berzerk"></a>
+<a href="docs/images/gallery/hyperchase.png"><img src="docs/images/gallery/hyperchase_small.jpg" width="200" alt="HyperChase Auto Race"></a>
+<a href="docs/images/gallery/web_wars.png"><img src="docs/images/gallery/web_wars_small.jpg" width="200" alt="Web Wars"></a><br>
+<a href="docs/images/gallery/scramble.png"><img src="docs/images/gallery/scramble_small.jpg" width="200" alt="Scramble"></a>
+<a href="docs/images/gallery/spike.png"><img src="docs/images/gallery/spike_small.jpg" width="200" alt="Spike"></a>
+<a href="docs/images/gallery/star_castle.png"><img src="docs/images/gallery/star_castle_small.jpg" width="200" alt="Star Castle"></a>
+<a href="docs/images/gallery/star_trek.png"><img src="docs/images/gallery/star_trek_small.jpg" width="200" alt="Star Trek - The Motion Picture"></a><br>
+<em>And without: Armor Attack, Berzerk, HyperChase, Web Wars, Scramble, Spike, Star Castle and Star Trek.<br>
+Click a picture for the full resolution - a window on a 4K screen, panel included.</em>
 </p>
 
 Below the picture sits the Vectrex's own control panel, drawn in green outlines: the **on-screen display**

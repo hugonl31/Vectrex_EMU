@@ -635,7 +635,7 @@ BEND_TYPES = ['grow', 'shift', 'grow+shift']
 PHOS_GAIN = 1.0 / (1.0 - 0.40)  # a still picture as bright as with the earlier model (afterglow 0.40)
 PHOS_HOLD = 0.021               # a lit spot is at full brightness at least this long (a 50 fps frame;
                                 #  longer for a slower game: see hold())
-PHOS_HOLD_OFF = 0.034           # trail off: a spot holds until the next frames, then is gone
+PHOS_HOLD_OFF = 0.021           # trail off: a spot holds until the game draws it again, then is gone
 PHOS_A = ((0.1404, 0.0454), (0.0582, 0.350))   # the measured afterglow (share, time constant s)
 # the afterglow joins up: a fading spot (older than the hold) spreads to its neighbours each display frame,
 # keeping PHOS_GROW of its brightness, so the copies a moving object leaves join into one smooth trail -
@@ -926,6 +926,8 @@ class GLBloomRenderer(GLRenderer):
         self.bend_type = 0           # index into BEND_TYPES
         self.curve_on = True         # the curved tube (C, see CURVE_SHADER; on by default: the owner's choice)
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
+        self.even_beam = False       # Tube > Even beam: an ideal vector display - every point as bright and wide as a
+                                     #  line, no corner glow, overlapping light not adding up (off: the real tube)
         self.halo_k = BEAM_HALO_K    # its brightness (Tube > Corner glow strength)
         self.phos_spread = PHOS_SPREAD  # the afterglow's softness (0; not in the menu)
         self.phos_grow = PHOS_GROW      # how the afterglow joins up (Tube > Afterglow joining)
@@ -1292,7 +1294,7 @@ class GLBloomRenderer(GLRenderer):
             return None
         halos = [(ln[0], ln[1], ln[2], ln[3], (ln[4] & 127) | 256) + tuple(ln[5:]) for ln in lines
                  if len(ln) > 5 and ln[0] == ln[2] and ln[1] == ln[3] and ln[5] >= 64 and (ln[4] & 127)] \
-            if getattr(self, 'halo_on', True) else None
+            if getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False) else None
         if halos:
             lines = halos + list(lines)                    # (drawn first: the spots and lines go over them)
         n = len(lines)
@@ -1375,6 +1377,8 @@ class GLBloomRenderer(GLRenderer):
                 bl = min(1.0, max(0.0, (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0)))
                 fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) * cwidth
                 k = getattr(self, 'halo_k', BEAM_HALO_K) * min(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl)
+            elif getattr(self, 'even_beam', False):       # an ideal display: lines and points alike
+                k = BEAM_LINE
             elif lp / gp > 0.05:
                 e = cyc / (lp / gp)                        # cycles per game pixel
                 k = BEAM_LINE * (1.0 - BEAM_SPEED * exp(-e / 0.8))   # fast sweeps slightly fainter
@@ -1414,12 +1418,13 @@ class GLBloomRenderer(GLRenderer):
     # ---- the phosphor in real time (see PHOS_GAIN)
     def hold(self):
         """how long a lit spot stays at full brightness: until the game draws it again - its longest
-        recent frame (at least PHOS_HOLD) plus 1 ms; afterglow off: plus a display frame, then dark.
+        recent frame (at least PHOS_HOLD) plus 1 ms; afterglow off: the same plus 2 ms, then dark at once
+        (longer kept the last copy of a moving object at full brightness next to the new one).
         (A 40 fps game redraws only every 25 ms: a fixed 21 ms hold dimmed what it drew first.)"""
         per = min(0.1, max(getattr(self, 'periods', None) or [0.02]))
         if self.trail_on:
             return max(PHOS_HOLD, per + 0.001)
-        return max(PHOS_HOLD_OFF, per + 0.014)
+        return max(PHOS_HOLD_OFF, per + 0.002)
 
     def _phos_uniforms(self, u):
         """the afterglow curve's settings for a shader using PHOS_FUNC"""
@@ -1458,7 +1463,10 @@ class GLBloomRenderer(GLRenderer):
             self.BindFB(GL_FRAMEBUFFER, self.out); gl.glViewport(0, 0, w, h)
             gl.glClearColor(0, 0, 0, 1); gl.glClear(GL_COLOR_BUFFER_BIT)
             gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+            even = getattr(self, 'even_beam', False) and self.BlendEq
+            if even: self.BlendEq(0x8008)                 # (even beam: the brighter light, not the sum)
             self._draw_built(self._build(imm) if imm else self.last)
+            if even: self.BlendEq(0x8006)
             self.young = []; self.T_prev = T
             self._art()
             self._hud()
@@ -1471,7 +1479,7 @@ class GLBloomRenderer(GLRenderer):
         self.BindFB(GL_FRAMEBUFFER, self.F[1]); gl.glViewport(0, 0, w, h)
         gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
         gl.glEnable(GL_BLEND); self.BlendFuncSep(GL_ONE, GL_ONE, GL_ONE, GL_ONE)
-        self.BlendEqSep(0x8006, 0x8008)                   # (add, max)
+        self.BlendEqSep(0x8008 if getattr(self, 'even_beam', False) else 0x8006, 0x8008)   # (add - even beam: max -, max)
         keep = []
         for f in self.young:
             b, t0, t1, done = f
@@ -1482,7 +1490,7 @@ class GLBloomRenderer(GLRenderer):
         if imm:                                           # (imm_max: one even line, no bright joints)
             if getattr(self, 'imm_max', False): self.BlendEq(0x8008)
             self._draw_built(self._build(imm, load=False), 0.0, 1.0, imm=True)
-        self.BlendEq(0x8006)
+        self.BlendEq(0x8006)                              # (and back to adding, for everything else)
         self.young = keep
         # 2. the phosphor image: aged, lit again where the fresh light is brighter
         od = getattr(self, 'decay_override', None)        # (switching off: frozen, dimmed by the curve)

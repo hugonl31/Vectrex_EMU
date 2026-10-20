@@ -59,11 +59,17 @@ Updated 2026-10-20 (the same version, rebuilt):
 - The power-off flash stays inside the visible picture.
 
 **Tube**
+- Even beam (off by default): an ideal vector display - every point as bright and thin as a line, no corner
+  glow, overlapping light not adding up; for those who want the perfect look instead of the tube's.
+- Afterglow off no longer shows the last copy of a moving object next to the new one (it held 34 ms, now
+  the game's frame + 2 ms).
 - Line gaps: the integrators' stop delay (9.3 - 12.3 - 15.3 cycles), live.
 - Afterglow softness taken out of the menu (it had no visible effect).
 
 **Menus, keys, settings**
 - Each menu has its own reset (Vectrex, display, tube, overlay, sound), resetting only that menu.
+- Menu items greyed out while their feature is off (the afterglow's sliders with the afterglow off, the
+  scratch sliders with the scratches off, Buzz volume with the buzz off, the speech module without one...).
 - Sliders: the default in the middle, 0 to twice the default; buzz default 0.152.
 - Keys: + / - / 0 window size, 9 real size, P pause, L ROM browser, O overlay - without Ctrl; only Ctrl+E
   (eject) and Ctrl+R (RESET) need Ctrl. These keys can not be given to a player.

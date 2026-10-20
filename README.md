@@ -176,10 +176,10 @@ the tube:
 
 <p align="center">
 <img src="docs/images/real_ship_mine.jpg" height="210" alt="Mine Storm's ship and a mine on a real Vectrex">
-<img src="docs/images/emu_ship_mine_perfect.png" height="210" alt="the same in an ideal emulation, without gaps">
+<img src="docs/images/emu_ship_mine_nogaps.png" height="210" alt="the same without the analog delays: no gaps">
 <img src="docs/images/emu_ship_mine_gaps.png" height="210" alt="the same in Vectrex_EMU with the delays"><br>
-<em>Left: a real Vectrex (one with unusually wide gaps). Middle: an ideal emulation - the CPU exact, the
-analog side perfect - with no gaps at all. Right: Vectrex_EMU with the delays, set to this machine's wide
+<em>Left: a real Vectrex (one with unusually wide gaps). Middle: the CPU exact, but the analog side
+without its delays - every corner closes. Right: Vectrex_EMU with the delays, set to this machine's wide
 gaps: the same short lines and open corners.</em>
 </p>
 
@@ -188,6 +188,17 @@ line - the phosphor gets more light and shines as a bright dot, with a soft glow
 lines come out thinner and dimmer than slow ones, because the beam spends less time on each spot. The
 emulator draws every line with the beam's real speed and every pause with its real length, so these
 follow by themselves.
+
+That is the difference between a *perfect* vector display and a Vectrex. An emulator can easily draw
+the perfect one - every line equally thin and bright, no dots, no glow, every shape closed - and many
+do. It looks clean, and it is exactly what Vectrex_EMU avoids: the character is in the imperfections.
+
+<p align="center">
+<img src="docs/images/emu_ship_mine_perfect.png" height="230" alt="a perfect vector display: even lines, no dots">
+<img src="docs/images/emu_ship_mine.png" height="230" alt="the same with the Vectrex's character"><br>
+<em>Left: a perfect vector display - what we avoid. Right: the Vectrex's character, as Vectrex_EMU draws
+it. (Anyone who prefers the perfect look can have it: <b>Tube > Even beam</b>.)</em>
+</p>
 
 <p align="center">
 <img src="docs/images/real_mothership.jpg" width="380" alt="the mothership on a real Vectrex">

@@ -144,6 +144,10 @@ TOPICS = [
          "dot such as a shot or a star - the screen glows softly around the spot, as the light scatters in the "
          "tube's thick glass. It also softens the tiny dark gaps a Vectrex leaves at some corners."),
 ('item', 'Corner glow strength...', "How strong that glow is (right click on the slider: the default)."),
+('item', 'Even beam (an ideal vector display)', "Off by default. Every point as bright and as thin as the lines: "
+         "no brighter, fatter corners and dots where the beam rests, no corner glow, no fainter fast lines, and "
+         "where lines overlap they do not add up. A vector display without the tube's character - dots such as "
+         "stars stay visible, just no brighter than a line. The gaps stay: they come from the timing."),
 ('item', 'Line gaps (analog delay)...', "The small gaps at line ends and corners: on a real Vectrex the beam "
          "stops moving a few cycles after the game switches it off, and how many differs from one machine to "
          "the next. 12.3 cycles (the default) is a well-tuned Vectrex; 9.3 nearly closes the corners, 15.3 "

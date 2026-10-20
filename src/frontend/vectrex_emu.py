@@ -1030,7 +1030,7 @@ class App:
                 print('renderer unavailable (%s): using the Tk canvas' % e)
         # display settings are kept in Vectrex_EMU.conf; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'halo_on', 'halo_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'halo_on', 'halo_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax',
                                       'scr_on', 'scr_wear', 'scr_damage', 'scr_glint')
                           if self.ren and hasattr(self.ren, k)]
@@ -1230,6 +1230,7 @@ class App:
         R = lambda: self.ren
         C = lambda: self.run.crt
         self.menu_checks = []                                   # (variable, current state) to refresh
+        self.menu_deps = []                                     # (menu, entry, is it usable now) - greyed out when not
         def mac_key(key):
             """macOS: the menus show the Command shortcuts (as text: Tk's bindings do the work, so a key
             never fires twice through a menu key equivalent)"""
@@ -1244,10 +1245,18 @@ class App:
         def item(menu, label, key, cmd):
             key = mac_key(key)
             menu.add_command(label=label, accelerator=key, command=cmd)
+        def dep(menu, on):
+            """the entry just added only matters while `on()` (its feature is on): greyed out otherwise"""
+            self.menu_deps.append((menu, menu.index('end'), on))
         def refresh():
             for v, get in self.menu_checks:
                 try:
                     v.set(bool(get()))
+                except Exception:   # noqa
+                    pass
+            for menu, i, on in self.menu_deps:
+                try:
+                    menu.entryconfigure(i, state='normal' if on() else 'disabled')
                 except Exception:   # noqa
                     pass
         def fill(mb):
@@ -1298,30 +1307,33 @@ class App:
             item(m, 'Reset display settings to default', '', self.reset_display)
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Tube', menu=m)
             check(m, 'Phosphor (afterglow and bloom)', '', lambda: R().phosphor, self.toggle_phosphor)
-            item(m, 'Bloom...', '', lambda: self.slider('bloom'))
-            check(m, 'Afterglow', '', lambda: R().trail_on, lambda: self.flip(self.ren, 'trail_on'))
-            item(m, 'Afterglow length...', '', lambda: self.slider('trail'))
-            item(m, 'Afterglow joining...', '', lambda: self.slider('phos_grow'))
-            item(m, 'Afterglow overlap...', '', lambda: self.slider('phos_smooth'))
+            PH = lambda: R().phosphor; AG = lambda: R().phosphor and R().trail_on
+            item(m, 'Bloom...', '', lambda: self.slider('bloom')); dep(m, PH)
+            check(m, 'Afterglow', '', lambda: R().trail_on, lambda: self.flip(self.ren, 'trail_on')); dep(m, PH)
+            item(m, 'Afterglow length...', '', lambda: self.slider('trail')); dep(m, AG)
+            item(m, 'Afterglow joining...', '', lambda: self.slider('phos_grow')); dep(m, AG)
+            item(m, 'Afterglow overlap...', '', lambda: self.slider('phos_smooth')); dep(m, AG)
             check(m, 'Curved tube', '', lambda: R().curve_on, lambda: self.flip(self.ren, 'curve_on'))
             check(m, 'Corner glow (halo where the beam rests)', '', lambda: R().halo_on, lambda: self.flip(self.ren, 'halo_on'))
-            item(m, 'Corner glow strength...', '', lambda: self.slider('halo_k'))
+            dep(m, lambda: not R().even_beam)
+            item(m, 'Corner glow strength...', '', lambda: self.slider('halo_k')); dep(m, lambda: R().halo_on and not R().even_beam)
+            check(m, 'Even beam (an ideal vector display)', '', lambda: R().even_beam, lambda: self.flip(self.ren, 'even_beam'))
             item(m, 'Line gaps (analog delay)...', '', lambda: self.slider('line_gap'))
             m.add_separator()
             check(m, 'Mains hum wobble', '', lambda: R().wob_on, self.toggle_wobble)
-            item(m, 'Wobble strength...', '', lambda: self.slider('wob_strength'))
+            item(m, 'Wobble strength...', '', lambda: self.slider('wob_strength')); dep(m, lambda: R().wob_on)
             mh = tk.Menu(m, tearoff=0, postcommand=refresh)
-            m.add_cascade(label='Mains', menu=mh)
+            m.add_cascade(label='Mains', menu=mh); dep(m, lambda: R().wob_on)
             for hz, where in zip(vecrender.MAINS_HZ, ('Europe, most of the world', 'USA, Canada, ...')):
                 check(mh, '%d Hz (%s)' % (hz, where), '', lambda hz=hz: R().mains_hz == hz,
                       lambda hz=hz: self.set_mains(hz))
             check(m, 'Brightness bending', '', lambda: R().bend_on, lambda: self.flip(self.ren, 'bend_on'))
             bt = tk.Menu(m, tearoff=0, postcommand=refresh)
-            m.add_cascade(label='Bending type', menu=bt)
+            m.add_cascade(label='Bending type', menu=bt); dep(m, lambda: R().bend_on)
             for i, name in enumerate(vecrender.BEND_TYPES):
                 check(bt, name, '', lambda i=i: R().bend_type % len(vecrender.BEND_TYPES) == i,
                       lambda i=i: self.set_bend_type(i))
-            item(m, 'Bending strength...', '', lambda: self.slider('bend_strength'))
+            item(m, 'Bending strength...', '', lambda: self.slider('bend_strength')); dep(m, lambda: R().bend_on)
             m.add_separator()
             item(m, 'Reset tube settings to default', '', self.reset_tube)
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Overlay', menu=m)
@@ -1331,19 +1343,21 @@ class App:
             item(m, 'Choose overlay...', '', self.choose_art)
             item(m, 'No overlay for this game', '', self.no_art)
             m.add_separator()
-            item(m, 'Tint strength...', '', lambda: self.slider('art_tint'))
-            item(m, 'Room light...', '', lambda: self.slider('art_room'))
-            item(m, 'Printed art brightness...', '', lambda: self.slider('art_print'))
-            check(m, 'Parallax (seen from the usual height)', '', lambda: A('art_parallax', False), lambda: self.flip(self.ren, 'art_parallax'))
+            OV = lambda: bool(A('art_on', False) and A('art', None))           # (an overlay is shown)
+            SC = lambda: OV() and A('scr_on', False)
+            item(m, 'Tint strength...', '', lambda: self.slider('art_tint')); dep(m, OV)
+            item(m, 'Room light...', '', lambda: self.slider('art_room')); dep(m, OV)
+            item(m, 'Printed art brightness...', '', lambda: self.slider('art_print')); dep(m, OV)
+            check(m, 'Parallax (seen from the usual height)', '', lambda: A('art_parallax', False), lambda: self.flip(self.ren, 'art_parallax')); dep(m, OV)
             if getattr(self.ren, 'gprog', None):
                 m.add_separator()
-                check(m, 'Scratches (decades of handling)', '', lambda: A('scr_on', False), self.toggle_scratches)
-                item(m, 'Wear (fine scratches)...', '', lambda: self.slider('scr_wear'))
-                item(m, 'Damage (larger, deeper scratches)...', '', lambda: self.slider('scr_damage'))
-                item(m, 'Glint strength...', '', lambda: self.slider('scr_glint'))
-                item(m, 'New random scratches', '', self.new_scratches)
+                check(m, 'Scratches (decades of handling)', '', lambda: A('scr_on', False), self.toggle_scratches); dep(m, OV)
+                item(m, 'Wear (fine scratches)...', '', lambda: self.slider('scr_wear')); dep(m, SC)
+                item(m, 'Damage (larger, deeper scratches)...', '', lambda: self.slider('scr_damage')); dep(m, SC)
+                item(m, 'Glint strength...', '', lambda: self.slider('scr_glint')); dep(m, SC)
+                item(m, 'New random scratches', '', self.new_scratches); dep(m, SC)
                 m.add_separator()
-            pm = tk.Menu(m, tearoff=0); m.add_cascade(label='Position and size (this overlay)', menu=pm)
+            pm = tk.Menu(m, tearoff=0); m.add_cascade(label='Position and size (this overlay)', menu=pm); dep(m, OV)
             item(pm, 'Left / right...', '', lambda: self.slider('art_dx'))
             item(pm, 'Up / down...', '', lambda: self.slider('art_dy'))
             item(pm, 'Size...', '', lambda: self.slider('art_scale'))
@@ -1352,9 +1366,10 @@ class App:
             item(m, 'Reset overlay settings to default', '', self.reset_overlay)
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Sound', menu=m)
             check(m, 'Vectrex buzz', '', lambda: C().buzz_on, lambda: self.flip(self.run.crt, 'buzz_on'))
-            item(m, 'Buzz volume...', '', lambda: self.slider('buzz_vol'))
+            item(m, 'Buzz volume...', '', lambda: self.slider('buzz_vol')); dep(m, lambda: C().buzz_on)
             check(m, 'Vectrex speaker', '', lambda: C().speaker_on, lambda: self.flip(self.run.crt, 'speaker_on'))
             sm = tk.Menu(m, tearoff=0); m.add_cascade(label='Speech module (VecVoice / VecVox)', menu=sm)
+            dep(m, lambda: self.speech != 'off')                        # (only with a module in port 2)
             item(sm, 'Volume...', 'Ctrl+PgDn / Ctrl+PgUp', lambda: self.slider('voice_vol'))
             check(sm, 'Full-range speakers', '', lambda: C().voice_full, lambda: self.set_voice_full(True))
             check(sm, 'Small speaker', '', lambda: not C().voice_full, lambda: self.set_voice_full(False))
@@ -2652,7 +2667,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('curved tube', None), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_damage=('scratches: damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('curved tube', None), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_damage=('scratches: damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""

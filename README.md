@@ -23,8 +23,12 @@ photo, recording and measurement, and every call on how it should look, sound an
 
 * [Download and play](#download-and-play) - [what you add](#what-you-add) - [requirements](#requirements)
 * [What it looks like](#what-it-looks-like) - [Features](#features)
-* [The story: measuring a Vectrex](#the-story-measuring-a-vectrex) - the photos, the glow, the sound,
-  test cartridges, the analog side, [speech](#8-speech-two-rare-modules), [overlays and scratches](#9-overlays---and-forty-years-of-scratches)
+* [The story: measuring a Vectrex](#the-story-measuring-a-vectrex) -
+  [1. photographing the beam](#1-photographing-the-beam), [2. filming the glow](#2-filming-the-glow),
+  [3. listening](#3-listening), [4. asking the chips](#4-asking-the-chips-directly),
+  [5. the Mine Storm bug](#5-the-mine-storm-bug), [6. the analog side](#6-the-analog-side),
+  [7. how wide the gaps are](#7-one-choice-how-wide-the-gaps-are), [8. speech](#8-speech-two-rare-modules),
+  [9. overlays and scratches](#9-overlays---and-forty-years-of-scratches)
 * [Using it](#using-it) - [switching on](#switching-on), [menus](#menus-and-sliders), [keys](#keys),
   [controls](#controls), [overlays](#overlays), [speech modules](#speech-modules),
   [cartridge hardware](#cartridge-hardware), [Mac and Linux notes](#mac-and-linux-notes)
@@ -82,8 +86,13 @@ a shorter afterglow and without the scratches.
 ## What it looks like
 
 <p align="center">
+<img src="docs/images/games_overlays.png" width="820" alt="Mine Storm, Bedlam and Armor Attack with their overlays"><br>
+<em>With their overlays: Mine Storm, Bedlam and Armor Attack, the sheets worn by forty years of handling.</em>
+</p>
+
+<p align="center">
 <img src="docs/images/games.png" width="820" alt="GCE games in Vectrex_EMU"><br>
-<em>Original GCE games in Vectrex_EMU.</em>
+<em>And without: original GCE games in Vectrex_EMU.</em>
 </p>
 
 Below the picture sits the Vectrex's own control panel, drawn in green outlines: the **on-screen display**
@@ -144,13 +153,6 @@ the lines of Mine Storm's ship stop short of their corners, and the mines open u
 An ideal emulator - one that runs the 6809 exactly but treats the rest as perfect - draws none of that:
 every line meets its neighbour, every shape closes.
 
-<p align="center">
-<img src="docs/images/real_ship_mine.jpg" width="380" alt="Mine Storm's ship and a mine on a real Vectrex">
-<img src="docs/images/emu_ship_mine_perfect.png" width="380" alt="the same in an ideal emulation, without gaps"><br>
-<em>Left: a real Vectrex (one with unusually wide gaps). Right: an ideal emulation - the CPU exact, the
-analog side perfect: no gaps at all.</em>
-</p>
-
 So where do the gaps come from? They turned out to be timing. The 6809 CPU, the 6522 VIA and its timer,
 and the analog integrators that move the beam do not switch together: they start and stop a few cycles
 apart. A new value from the DAC reaches the X integrator about 15 cycles late and the Y sample about 14;
@@ -162,10 +164,12 @@ cycle the real chips do and added those analog delays - and the gaps appeared, i
 the tube:
 
 <p align="center">
-<img src="docs/images/real_ship_mine.jpg" width="380" alt="Mine Storm's ship and a mine on a real Vectrex">
-<img src="docs/images/emu_ship_mine_gaps.png" width="380" alt="the same in Vectrex_EMU with wide gaps"><br>
-<em>Left: the real Vectrex. Right: Vectrex_EMU with the delays, set to this machine's wide gaps: the
-same short lines and open corners.</em>
+<img src="docs/images/real_ship_mine.jpg" height="210" alt="Mine Storm's ship and a mine on a real Vectrex">
+<img src="docs/images/emu_ship_mine_perfect.png" height="210" alt="the same in an ideal emulation, without gaps">
+<img src="docs/images/emu_ship_mine_gaps.png" height="210" alt="the same in Vectrex_EMU with the delays"><br>
+<em>Left: a real Vectrex (one with unusually wide gaps). Middle: an ideal emulation - the CPU exact, the
+analog side perfect - with no gaps at all. Right: Vectrex_EMU with the delays, set to this machine's wide
+gaps: the same short lines and open corners.</em>
 </p>
 
 The photos showed more than gaps. Where the beam rests for a moment - at a corner, at the end of a
@@ -390,9 +394,8 @@ the larger ones, **Glint strength** how strongly they catch the light:
 
 ### Switching on
 
-Like a real Vectrex it **starts switched off**: turn the volume knob up (Page Up, the mouse wheel over
-the knob below the picture, or a click on its right half) and it clicks on, the tube warms up and the
-BIOS start screen plays. **Vectrex > Start switched on** skips the knob; **Vectrex > Skip the Vectrex
+The volume knob is the power switch (Page Up, the mouse wheel over the knob, or a click on its right
+half): it clicks on, the tube warms up and the BIOS start screen plays. **Vectrex > Start switched on** skips the knob; **Vectrex > Skip the Vectrex
 intro** runs the BIOS start screen (the VECTREX logo, its tune and the game's title, ~13 s) unseen in a
 fraction of a second at every power on, so the cartridge starts at once - in the same state as after the
 real intro. Both are saved.
@@ -527,10 +530,9 @@ Put overlay files in **`roms/overlays`** (or `overlays` next to the program), na
 Several overlays for one game (`Spike.art`, `Spike (red).art`): the plain one is chosen; pick another with
 **Overlay > Choose overlay...** (remembered per game). The ROM browser does not list the overlays folder.
 
-**Overlay** menu: on / off (**O**), choose automatically / choose / none for this game, tint strength,
-**Room light** (the sheet in an evening room or in daylight) and **Printed art brightness**, parallax,
-**Scratches** with **Wear**, **Damage**, **Glint strength** and **New random scratches** (see
-[chapter 9](#9-overlays---and-forty-years-of-scratches)), a fine position / size per overlay, and its reset.
+The **Overlay** menu has the rest - on / off (**O**), choose / none per game, tint, room light, printed
+art, parallax, the scratches, a fine position / size per overlay - each explained in
+[chapter 9](#9-overlays---and-forty-years-of-scratches) and in the built-in Help.
 
 **Mine Storm's overlay comes with the emulator** (`bios/bios.art`, inside the Windows exe), for the game
 built into the console; an overlay of your own named `bios`, `Mine Storm (built-in game)` or
@@ -559,10 +561,9 @@ Technology Inc. Joe Zbiciak distributes it with Microchip's permission:
 
 Both modules need it (the VecVox speaks with the SP0256's voice). Without it the setting stays on Joystick.
 
-**Sound > Speech module**: the modules have their own amplifier, so their sound has its own **Volume**
-(also Ctrl+Page Up / Down; SPEECH VOL on the on-screen display, 100 % = the MiSTer core's Normal level),
-for **Full-range speakers** (an arcade cabinet's warm bass) or a **Small speaker** - not through the
-Vectrex's knob, buzz or speaker.
+**Sound > Speech module**: its own **Volume** (also Ctrl+Page Up / Down; SPEECH VOL on the on-screen
+display, 100 % = the MiSTer core's Normal level), and **Full-range speakers** (an arcade cabinet's warm
+bass) or a **Small speaker**.
 
 **Port 2's buttons:** a module answers "ready" on port 2's button 2, so to the Vectrex it looks like
 player 2 holding button 2, as with a real module plugged in. **GCE's original Berzerk** waits for every
@@ -670,8 +671,8 @@ Build outputs (`core/`, `build/`, `Vectrex_EMU.exe`, `dist-*`) are not in the re
 
 ## Credits and license
 
-Vectrex_EMU is free software under the **GNU General Public License v3**, the license of the vecx
-emulator it is built on (`src/core/LICENSE.md`).
+Vectrex_EMU is free software under the **GNU General Public License v3** ([LICENSE.md](LICENSE.md)), the
+license of the vecx emulator it is built on.
 
 * **vecx** - the original emulator core.
 * **MAME** - the SP0256 synthesizer in `src/core/sp0256.c` is ported from MAME's sp0256.cpp

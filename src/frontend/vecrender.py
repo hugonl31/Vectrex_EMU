@@ -1464,9 +1464,11 @@ class GLBloomRenderer(GLRenderer):
             gl.glClearColor(0, 0, 0, 1); gl.glClear(GL_COLOR_BUFFER_BIT)
             gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
             even = getattr(self, 'even_beam', False) and self.BlendEq
-            if even: self.BlendEq(0x8008)                 # (even beam: the brighter light, not the sum)
+            if even:                                      # (even beam: the brighter light, not the sum - max
+                self.BlendEq(0x8008); self.blend_max = True   #  ignores alpha: the spot's falloff in the colour)
             self._draw_built(self._build(imm) if imm else self.last)
-            if even: self.BlendEq(0x8006)
+            if even:
+                self.BlendEq(0x8006); self.blend_max = False
             self.young = []; self.T_prev = T
             self._art()
             self._hud()

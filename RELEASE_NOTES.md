@@ -5,9 +5,11 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.0.0
 
-The first release for Windows, macOS and Linux. Downloads: the Mac app (Intel + Apple Silicon) and the
-Linux program, each with the Vectrex BIOS in its `bios` folder; Windows: build `Vectrex_EMU.exe` with
-`build_exe.bat` (see README.md). Put your ROMs in a `roms` folder next to the program. The PNG and log
+The first release for Windows, macOS and Linux - ready to run on all three: `Vectrex_EMU-windows.zip`,
+`Vectrex_EMU-mac-app.zip` (Intel + Apple Silicon) and `Vectrex_EMU-linux-bin.zip`. Each has the emulator,
+the Vectrex BIOS (with Mine Storm) and Mine Storm's overlay (inside the Windows exe, in the `bios` folder
+on Mac / Linux), and `roms`, `roms/overlays` and `bios` folders with a note on what goes there: your ROMs,
+overlays (MiSTer's `overlays.zip`) and the speech ROM (a free download, see README.md). The PNG and log
 files are the build's own checks.
 
 - macOS: the picture at a Retina screen's full resolution; Command shortcuts (⌘E eject, ⌘R RESET, ⌃⌘F
@@ -17,6 +19,11 @@ files are the build's own checks.
 - Windows: `build_exe.bat` builds the core and installs PyInstaller when missing
 
 Updated 2026-10-20 (the same version, rebuilt):
+
+**Release**
+- A ready-to-run Windows build (`Vectrex_EMU-windows.zip`), built by the GitHub workflow like the Mac and
+  Linux ones; the README restructured (download and play first, a contents list, the details in
+  docs/TECHNICAL.md).
 
 **Speech**
 - VecVoice (SP0256-AL2, a C port of MAME's synthesizer; the MiSTer core's serial link) and VecVox
@@ -29,6 +36,8 @@ Updated 2026-10-20 (the same version, rebuilt):
   Joystick for it), Berzerk Ultimate talks. README: the games that talk.
 
 **Overlays**
+- MiSTer's overlay files are found under their own names too (underscores as spaces, a trailing "Proto" or
+  version ignored: `ArmorAttack.art`, `Dark_Tower_Proto.art`, `VectorbladeV1.13.art`).
 - MiSTer `.art` overlays and PNGs (RGBA, the sheet or the whole MiSTer frame; any PNG kind and filter),
   in `roms/overlays` (or `overlays`), found by the ROM's name (also without its `(...)` parts and version
   number); the ROM browser skips that folder. Mine Storm's overlay comes with the emulator (`bios/bios.art`,

@@ -181,7 +181,8 @@ TOPICS = [
       "see-through parts tint the vectors behind them, the solid print gives borders, pictures and the "
       "game's name. The emulator shows the MiSTer core's overlay files (.art) and PNG images with "
       "transparency (an 846 x 1080 sheet): put them in roms/overlays (or overlays next to the program), "
-      "named like the ROM - Armor Attack.bin finds Armor Attack.art. Mine Storm's overlay comes with the "
+      "named like the ROM - Armor Attack.bin finds Armor Attack.art (MiSTer's own names such as "
+      "ArmorAttack.art or Armor_Attack.art too: underscores count as spaces). Mine Storm's overlay comes with the "
       "emulator (from the MiSTer project's overlays, Libretro artwork)."),
 ('item', 'Overlay (O)', "The overlay on or off."),
 ('item', 'Choose automatically (by ROM name)', "The overlay with the ROM's name; else the same name without "

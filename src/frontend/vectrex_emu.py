@@ -708,16 +708,18 @@ def builtin_overlay():
 
 def _art_base(s):
     """a name without its trailing (...) / [...] parts and version: 'Berzerk (Hack - Speed, 2016)' -> 'Berzerk',
-    'Thrust v1.2 (Hack - Spinner, 2019)' -> 'Thrust'"""
+    'Thrust v1.2 (Hack - Spinner, 2019)' -> 'Thrust'; MiSTer's 'Dark Tower Proto', 'VectorbladeV1.13' -> 'Dark Tower',
+    'Vectorblade'"""
     while True:
-        t = re.sub(r'\s*[\(\[][^\)\]]*[\)\]]\s*$|\s+v\d+(\.\d+)*[a-z]?$', '', s, flags=re.I)
+        t = re.sub(r'\s*[\(\[][^\)\]]*[\)\]]\s*$|\s+v\d+(\.\d+)*[a-z]?$|\s+proto$|(?<=[a-z])v\d+(\.\d+)+$', '', s, flags=re.I)
         if t == s:
             return s.strip()
         s = t
 
 def find_overlay(name):
     """the overlay for a ROM name: the same name, else the same base name (without (...) parts), else the
-    same letters and digits ('Heads-Up' = 'Heads Up') - .art (MiSTer) or .png files"""
+    same letters and digits ('Heads-Up' = 'Heads Up') - .art (MiSTer) or .png files; an underscore in the
+    file's name counts as a space (MiSTer's names: Armor_Attack.art)"""
     files = []
     for d in overlay_dirs():
         if os.path.isdir(d):
@@ -726,7 +728,7 @@ def find_overlay(name):
     # (several with one base name: the plain one first - no hack, no variant suffix - then the shortest)
     files.sort(key=lambda f: (bool(re.search(r'hack|_\(', os.path.basename(f), re.I)), len(os.path.basename(f)),
                               os.path.basename(f).lower()))
-    stem = lambda f: os.path.splitext(os.path.basename(f))[0]
+    stem = lambda f: re.sub(r'\s+', ' ', os.path.splitext(os.path.basename(f))[0].replace('_', ' ')).strip()
     norm = lambda s: re.sub(r'[^a-z0-9]', '', s.lower())
     name = ART_ALIAS.get(_art_base(name).lower(), name)          # (the European names)
     for test in (lambda f: stem(f).lower() == name.lower(),

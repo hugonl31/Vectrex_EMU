@@ -250,8 +250,12 @@ the glints around the bright spots.</em>
 </p>
 
 <p align="center">
-<img src="docs/images/scratches_example_01.png" width="480" alt="the Vectrex start screen through a worn overlay"><br>
-<em>The start screen through a worn sheet: the fine scratches light up only around the text.</em>
+<img src="docs/images/scratches_example_01.png" width="200" alt="the Vectrex start screen through a worn overlay">
+<img src="docs/images/scratches_example_02.png" width="200" alt="Bedlam through a worn overlay">
+<img src="docs/images/scratches_example_03.png" width="200" alt="Web Warp's start screen through a worn overlay">
+<img src="docs/images/scratches_example_04.png" width="200" alt="Pole Position through a worn overlay"><br>
+<em>Worn sheets in play: the start screen, Bedlam, Web Warp and Pole Position - the scratches light up
+only around what is drawn.</em>
 </p>
 
 **Overlay > Scratches** switches them; **Wear** sets the number and depth of the fine ones, **Damage**

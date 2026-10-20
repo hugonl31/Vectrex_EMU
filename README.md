@@ -38,8 +38,8 @@ rests for a moment shine as bright dots; fast lines are thinner than slow ones.
 
 <p align="center">
 <img src="docs/images/real_ship_mine.jpg" width="380" alt="Mine Storm's ship and a mine on a real Vectrex">
-<img src="docs/images/emu_ship_mine.png" width="380" alt="the same in Vectrex_EMU"><br>
-<em>Left: a real Vectrex (one with unusually wide gaps). Right: Vectrex_EMU. Note the short lines, the open corners and the bright resting dots.</em>
+<img src="docs/images/emu_ship_mine_gaps.png" width="380" alt="the same in Vectrex_EMU with wide gaps"><br>
+<em>Left: a real Vectrex (one with unusually wide gaps). Right: Vectrex_EMU with Tube > Line gaps set to match it. Note the short lines, the open corners and the bright resting dots.</em>
 </p>
 
 Those gaps turned out to be timing: the 6809 CPU, the 6522 VIA timer and the analog integrators that
@@ -53,11 +53,11 @@ these photos has exceptionally wide ones. Rather than copy this one machine, Vec
 compromise: the gaps are there, in the right places, but at the size of a well-tuned Vectrex - so they
 are smaller than in the photos. **Tube > Line gaps** sets them to taste: the integrators' stop delay,
 9.3 cycles (corners nearly closed) to 15.3 (wide, like the machine in the photos), 12.3 by default.
-We chose a fairly tight tube; turn it up for the wide gaps of the Vectrex in the photo above:
+By default we chose a tighter tube - a better tuned, or less worn, Vectrex:
 
 <p align="center">
-<img src="docs/images/emu_ship_mine_gaps.png" width="380" alt="the ship and a mine with wide gaps in Vectrex_EMU"><br>
-<em>Vectrex_EMU with Tube > Line gaps turned up: the wide gaps of the Vectrex in the photo above.</em>
+<img src="docs/images/emu_ship_mine.png" width="380" alt="the ship and a mine in Vectrex_EMU with the default gaps"><br>
+<em>The default (12.3 cycles): the same gaps in the same places, but tighter.</em>
 </p>
 
 <p align="center">

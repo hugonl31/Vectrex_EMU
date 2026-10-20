@@ -25,16 +25,17 @@ photo, recording and measurement, and every call on how it should look, sound an
 
 ## The story: measuring a Vectrex
 
+**First, a word about the photos.** Glowing phosphor is very hard to photograph faithfully. The eye
+sees a CRT differently from a camera: the exposure decides how much of the glow a photo catches, so its
+bloom, its brightness and its fading afterglow are never quite what you see in the room. Keep that in
+mind with every comparison below. The photos are still valuable - they showed us *where* things happen
+and how long they last - but getting the bloom and the decay to *look* right took more than photos. In
+the end the most important tool was A/B testing by eye: many rounds with the real Vectrex and the
+emulator on an IPS monitor side by side, until the two looked very much alike in real life.
+
 The project started from **vecx**, a long-standing open-source Vectrex emulator, and from one rule:
 *nothing gets changed because it "looks nicer" - only because a real Vectrex does it.* So every step was
 the same loop: look at the real machine, measure it, change the emulator, compare again.
-
-A word about the photos below: glowing phosphor is very hard to photograph faithfully. The eye sees a
-CRT differently from a camera - the exposure decides how much of the glow a photo catches, so its bloom,
-its brightness and its fading afterglow are never quite what you see in the room. Photos and films told
-us *where* things happen and how long they last; getting the bloom and the decay to *look* right was
-harder. In the end the most important tool was A/B testing by eye: many rounds with the real Vectrex
-and the emulator on an IPS monitor side by side, until the two looked very much alike in real life.
 
 ### 1. Photographing the beam
 

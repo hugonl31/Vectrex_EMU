@@ -40,9 +40,8 @@ the same loop: look at the real machine, measure it, change the emulator, compar
 ### 1. Photographing the beam
 
 The first surprise was how different a real Vectrex looks up close. We took long series of close-up
-photos of the real tube, game by game, and laid them next to the emulator. The lines of Mine Storm's
-ship stop short of their corners; the mines open up at their inner points; the corners where the beam
-rests for a moment shine as bright dots; fast lines are thinner than slow ones.
+photos of the real tube, game by game, and laid them next to the emulator. The real lines have **gaps**:
+the lines of Mine Storm's ship stop short of their corners, and the mines open up at their inner points.
 
 An ideal emulator - one that runs the 6809 exactly but treats the rest as perfect - draws none of that:
 every line meets its neighbour, every shape closes.
@@ -67,9 +66,15 @@ the tube:
 <p align="center">
 <img src="docs/images/real_ship_mine.jpg" width="380" alt="Mine Storm's ship and a mine on a real Vectrex">
 <img src="docs/images/emu_ship_mine_gaps.png" width="380" alt="the same in Vectrex_EMU with wide gaps"><br>
-<em>Left: the real Vectrex. Right: Vectrex_EMU with the delays, set to this machine's wide gaps. Note the
-short lines, the open corners and the bright resting dots.</em>
+<em>Left: the real Vectrex. Right: Vectrex_EMU with the delays, set to this machine's wide gaps: the
+same short lines and open corners.</em>
 </p>
+
+The photos showed more than gaps. Where the beam rests for a moment - at a corner, at the end of a
+line - the phosphor gets more light and shines as a bright dot, with a soft glow around it; and fast
+lines come out thinner and dimmer than slow ones, because the beam spends less time on each spot. The
+emulator draws every line with the beam's real speed and every pause with its real length, so these
+follow by themselves.
 
 <p align="center">
 <img src="docs/images/real_mothership.jpg" width="380" alt="the mothership on a real Vectrex">

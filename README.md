@@ -275,10 +275,7 @@ the glints around the bright spots.</em>
 </p>
 
 <p align="center">
-<img src="docs/images/scratches_example_01.png" width="200" alt="the Vectrex start screen through a worn overlay">
-<img src="docs/images/scratches_example_02.png" width="200" alt="Bedlam through a worn overlay">
-<img src="docs/images/scratches_example_03.png" width="200" alt="Web Warp's start screen through a worn overlay">
-<img src="docs/images/scratches_example_04.png" width="200" alt="Pole Position through a worn overlay"><br>
+<img src="docs/images/scratches_examples.png" width="600" alt="the start screen, Bedlam, Web Warp and Pole Position through worn overlays"><br>
 <em>Worn sheets in play: the start screen, Bedlam, Web Warp and Pole Position - the scratches light up
 only around what is drawn.</em>
 </p>

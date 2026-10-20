@@ -1,7 +1,7 @@
 # not in the repository: ROMs, your settings, builds (the BIOS is: bios/bios.bin, free for
 # non-commercial use by Smith Engineering's permission)
-roms/
-games/
+/roms/
+/games/
 Vectrex_EMU.conf
 *.zip
 *.exe

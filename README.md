@@ -44,16 +44,32 @@ photos of the real tube, game by game, and laid them next to the emulator. The l
 ship stop short of their corners; the mines open up at their inner points; the corners where the beam
 rests for a moment shine as bright dots; fast lines are thinner than slow ones.
 
+An ideal emulator - one that runs the 6809 exactly but treats the rest as perfect - draws none of that:
+every line meets its neighbour, every shape closes.
+
+<p align="center">
+<img src="docs/images/real_ship_mine.jpg" width="380" alt="Mine Storm's ship and a mine on a real Vectrex">
+<img src="docs/images/emu_ship_mine_perfect.png" width="380" alt="the same in an ideal emulation, without gaps"><br>
+<em>Left: a real Vectrex (one with unusually wide gaps). Right: an ideal emulation - the CPU exact, the
+analog side perfect: no gaps at all.</em>
+</p>
+
+So where do the gaps come from? They turned out to be timing. The 6809 CPU, the 6522 VIA and its timer,
+and the analog integrators that move the beam do not switch together: they start and stop a few cycles
+apart. A new value from the DAC reaches the X integrator about 15 cycles late and the Y sample about 14;
+the integrators start and stop some 12 cycles after their RAMP signal switches; the timer runs a little
+longer than its count (as Malban measured these delays for his VIDE emulator, checked here against our
+photos). A line therefore starts a moment late and stops a moment late, and a short line at a corner
+can end before the beam got there. We made the emulator run every instruction's bus access in the exact
+cycle the real chips do and added those analog delays - and the gaps appeared, in the same places as on
+the tube:
+
 <p align="center">
 <img src="docs/images/real_ship_mine.jpg" width="380" alt="Mine Storm's ship and a mine on a real Vectrex">
 <img src="docs/images/emu_ship_mine_gaps.png" width="380" alt="the same in Vectrex_EMU with wide gaps"><br>
-<em>Left: a real Vectrex (one with unusually wide gaps). Right: Vectrex_EMU with Tube > Line gaps set to match it. Note the short lines, the open corners and the bright resting dots.</em>
+<em>Left: the real Vectrex. Right: Vectrex_EMU with the delays, set to this machine's wide gaps. Note the
+short lines, the open corners and the bright resting dots.</em>
 </p>
-
-Those gaps turned out to be timing: the 6809 CPU, the 6522 VIA timer and the analog integrators that
-move the beam all start and stop a few cycles apart. The emulator now runs every instruction's bus
-access in the exact cycle the real chips do, with the measured analog delays - and the gaps appear in
-the same places.
 
 <p align="center">
 <img src="docs/images/real_mothership.jpg" width="380" alt="the mothership on a real Vectrex">

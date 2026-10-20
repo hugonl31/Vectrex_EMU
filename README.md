@@ -94,8 +94,16 @@ a shorter afterglow and without the scratches.
 </p>
 
 <p align="center">
-<img src="docs/images/games.png" width="820" alt="GCE games in Vectrex_EMU"><br>
-<em>And without: original GCE games in Vectrex_EMU.</em>
+<a href="docs/images/gallery/armor_attack.png"><img src="docs/images/gallery/armor_attack_small.jpg" width="200" alt="Armor Attack"></a>
+<a href="docs/images/gallery/berzerk.png"><img src="docs/images/gallery/berzerk_small.jpg" width="200" alt="Berzerk"></a>
+<a href="docs/images/gallery/pole_position.png"><img src="docs/images/gallery/pole_position_small.jpg" width="200" alt="Pole Position"></a>
+<a href="docs/images/gallery/scramble.png"><img src="docs/images/gallery/scramble_small.jpg" width="200" alt="Scramble"></a><br>
+<a href="docs/images/gallery/spike.png"><img src="docs/images/gallery/spike_small.jpg" width="200" alt="Spike"></a>
+<a href="docs/images/gallery/starhawk.png"><img src="docs/images/gallery/starhawk_small.jpg" width="200" alt="StarHawk"></a>
+<a href="docs/images/gallery/vectorblade.png"><img src="docs/images/gallery/vectorblade_small.jpg" width="200" alt="Vectorblade"></a>
+<a href="docs/images/gallery/web_wars.png"><img src="docs/images/gallery/web_wars_small.jpg" width="200" alt="Web Wars"></a><br>
+<em>And without: Armor Attack, Berzerk, Pole Position, Scramble, Spike, StarHawk, Vectorblade and Web Wars
+(click a picture for the full resolution).</em>
 </p>
 
 Below the picture sits the Vectrex's own control panel, drawn in green outlines: the **on-screen display**

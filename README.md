@@ -259,7 +259,7 @@ the larger ones, **Glint strength** how strongly they catch the light:
 
 <p align="center">
 <img src="docs/images/scratch_sliders.png" width="720" alt="the scratch sliders"><br>
-<em>An exploding mine (2x zoom) with Wear, Damage and Glint strength at 0, 1 (default) and 2.</em>
+<em>Mine Storm's ship and a mine (2x zoom) with Wear, Damage and Glint strength at 0, 1 (default) and 2.</em>
 </p>
 
 ---

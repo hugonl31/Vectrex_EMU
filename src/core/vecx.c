@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#include <time.h>
 #include "e6809.h"
 #include "vecx.h"
 #include "e8910.h"
@@ -9,7 +10,7 @@
 #define einline inline
 
 unsigned char rom[8192];
-unsigned char cart[1048576];  /* 32K / 64K (PB6) images, 256K: the 4-bank PB6 + IRQ cart (Vectorblade), 1M: the multicart */
+unsigned char cart[1048576];  /* 32K / 64K (PB6) images, 256K: the 4-bank PB6 + IRQ cart (Vectorblade), 512K: the 512K latch cart, 1M: the multicart */
 unsigned long vt_bank_switches = 0;
 void vt_line(long x0,long y0,long x1,long y1,unsigned char c,unsigned cyc,unsigned t0);
 unsigned long long vt_frame_t0;   /* alg_cycles when this frame's drawing started (vtest sets it) */
@@ -21,6 +22,7 @@ static unsigned char ram[1024];
 
 unsigned snd_regs[16];
 static unsigned snd_select;
+static unsigned snd_ioa = 0xff;               /* the AY's port A output latch (register 14 written) */
 
 /* the via 6522 registers */
 
@@ -55,6 +57,8 @@ static unsigned via_cb2s;  /* version of cb2 controlled by the shift register */
 
 unsigned e6809_get_pc (void);
 #include "ds2431.c"
+#include "sp0256.c"
+#include "speakjet.c"
 #include "psg.c"
 
 /* PB6 -> EPROM A15 (and the optional DS2431). 3.3K pull-up to VCC: when DDRB bit6 = input, the
@@ -84,12 +88,24 @@ int vt_vb;                          /* set by the loader for images over 64K */
 /* Sean Kelly's Multi-Cart (3.0, 1 MB): a latch written at $7FFF picks the 4K page of the flash the
  * cartridge window starts at (games sit on 4K / 8K / 16K / 32K boundaries); power-on: page 0 (the menu) */
 int vt_multicart; unsigned vt_mc_page;
+/* The 512K latch cartridge (Hugo Bokhorst's v2 board: an SST39SF040, 512K): A15 = PB6, A16-A18 = a 74HC377
+ * whose clock is /CART OR A14 - a write to $0000-$3FFF stores the data's bits 0-2 at the end of the
+ * cycle (the flash sees the same write first: its address is taken at the start). The window is
+ * $0000-$7FFF (/CE = port pin 16), the flash's /WE = R/W. The latch has no reset: power-on = any bank
+ * (VT_HBLATCH=n fixes it), the RESET button leaves it. */
+int vt_hb512; unsigned vt_hb_latch;
 static int vb_bank (void)
 {
 	return cart_bank () + ((via_ifr & 0x80) ? 0 : 2);
 }
-int vt_cur_bank (void) { return vt_vb ? vb_bank () : cart_bank (); }
-/* the flash: SST39SF020A command sequences (5555=AA, 2AAA=55, then 5555=A0 program / 80 erase / 90 ID
+int vt_cur_bank (void) { return vt_vb ? vb_bank () : vt_hb512 ? (int) (vt_hb_latch * 2 + cart_bank ()) : cart_bank (); }
+/* where a cartridge address sits in the flash */
+static unsigned long flash_at (unsigned address)
+{
+	if (vt_hb512) return ((unsigned long) vt_hb_latch << 16) | ((unsigned long) cart_bank () << 15) | (address & 0x7fff);
+	return ((unsigned long) vb_bank () << 16) | address;
+}
+/* the flash: SST39SF020A / SST39SF040 command sequences (5555=AA, 2AAA=55, then 5555=A0 program / 80 erase / 90 ID
  * entry / F0 exit; erase: then AA, 55 and 30 at a 4K sector or 10 at 5555 for the whole chip). The
  * chip is instant here (a program / erase is done before the next read), so the game's polling sees
  * the result at once. Changes are kept in vt_flash_dirty; the frontend's core saves them. */
@@ -98,9 +114,9 @@ int vt_flash_dirty;
 static void flash_write (unsigned address, unsigned data)
 {
 	unsigned a = address & 0x7fff;
-	unsigned long base = (unsigned long) vb_bank () << 16;
+	unsigned long at = flash_at (address);
 	if (fl_cmd == 0xa0) {                               /* byte program: bits can only go 0 */
-		cart[base + address] &= data; fl_cmd = 0; fl_step = 0; vt_flash_dirty = 1; return;
+		cart[at] &= data; fl_cmd = 0; fl_step = 0; vt_flash_dirty = 1; return;
 	}
 	if (data == 0xf0) { fl_id = 0; fl_step = 0; fl_cmd = 0; return; }
 	switch (fl_step) {
@@ -117,7 +133,7 @@ static void flash_write (unsigned address, unsigned data)
 	case 4: fl_step = (a == 0x2aaa && data == 0x55) ? 5 : 0; break;
 	case 5:
 		fl_step = 0;
-		if (data == 0x30) { memset (cart + ((base + address) & ~0xfffUL), 0xff, 4096); vt_flash_dirty = 1; }
+		if (data == 0x30) { memset (cart + (at & ~0xfffUL), 0xff, 4096); vt_flash_dirty = 1; }
 		else if (data == 0x10 && a == 0x5555) { memset (cart, 0xff, sizeof cart); vt_flash_dirty = 1; }
 		break;
 	}
@@ -143,6 +159,14 @@ static double alg_zofs;
 static long alg_xofs, alg_yofs;
 static unsigned alg_rdly_on, alg_rdly_off, alg_rdly_off_t1;
 static double rdly_frac, rdly_frac_t1;   /* the stop delays' fractions (VT_RAMPOFF) */
+/* the frontend's Tube > Line gaps: the integrators' stop delay in cycles (default 12.3), live - the gaps at
+ * line ends and corners grow with it, as they differ between real Vectrexes */
+void vt_set_rampoff (double c)
+{
+	if (c < 0) c = 0; if (c > 40) c = 40;
+	alg_rdly_off = alg_rdly_off_t1 = (unsigned) c;
+	rdly_frac = rdly_frac_t1 = c - (unsigned) c;
+}
 static double alg_calshift;
 static double alg_wob50, alg_wob100;     /* mains hum (VT_WOBBLE), see alg_wobble */
 int vt_wobble_off;                        /* live: input flags bit 1 */
@@ -236,7 +260,9 @@ static einline void snd_update (void)
 			snd_regs[snd_select] = via_ora;
 			e8910_write(snd_select, via_ora);
 			psg_write (snd_select, via_ora);
-		}
+		} else snd_ioa = via_ora;                       /* (port A's output latch) */
+		if (vt_vecvoice && (snd_select == 14 || snd_select == 7))
+			ser_set ((snd_regs[7] & 0x40) ? (snd_ioa >> 4) & 1 : 1, vx_cyc);   /* (the VecVoice's serial line) */
 
 		break;
 	case 0x18:
@@ -290,6 +316,13 @@ static einline void alg_update (void)
 	case 0x06:
 		/* sound output line */
 		alg_jsh = alg_jch3;
+
+		if ((via_orb & 0x01) == 0x00) {
+			/* demultiplexor is on: the DAC drives the sound line (held when the mux moves on) */
+			psg_dac_set ((int) alg_xsh - 128);
+			{ static long n; if (getenv ("VT_DACLOG") && !(++n & 1023)) fprintf (stderr, "dac %ld pc=%04X\n", n, e6809_get_pc () & 0xffff); }
+		}
+
 		break;
 	}
 
@@ -386,6 +419,14 @@ unsigned char read8 (unsigned address)
 					/* the snd chip is driving port a */
 
 					data = (unsigned char) snd_regs[snd_select];
+					if (vt_vecvoice && snd_select == 14) {
+						/* port 2's buttons: the speech accessory's ready line */
+						psg_advance (vx_cyc); ser_run (vx_cyc);
+						data = (unsigned char) ((data & 0xdf) | (speech_ready () ? 0x00 : 0x20));   /* (the ready line = button 2 (pin 2,
+						   as the AtariVox's READY), low = takes the next byte: what VecVoice Demo, VecTalk and
+						   VecVox Xmas wait for; the other buttons idle. Games that wait for every button of both
+						   controllers to be released (Berzerk) see button 2 held) */
+					}
 				} else {
 					data = (unsigned char) via_ora;
 				}
@@ -484,6 +525,10 @@ unsigned char read8 (unsigned address)
 		/* the 4-bank cartridge */
 		if (fl_id) data = (address & 1) ? 0xb6 : 0xbf;  /* (SST, SST39SF020A) */
 		else data = cart[((unsigned long) vb_bank () << 16) | address];
+	} else if (vt_hb512 && address < 0x8000) {
+		/* the 512K latch cartridge */
+		if (fl_id) data = (address & 1) ? 0xb7 : 0xbf;  /* (SST, SST39SF040) */
+		else data = cart[flash_at (address)];
 	} else if (address < 0x8000) {
 		/* cartridge (none in the slot: nothing drives the bus) */
 
@@ -509,6 +554,11 @@ void write8 (unsigned address, unsigned char data)
 		extern unsigned long long alg_cycles;
 		printf ("W %04X <- %02X at PC=%04X cyc=%llu\n", address, data, e6809_get_pc () & 0xffff, alg_cycles);
 	  } }
+	{ static long ta = -2, tb; extern unsigned long long alg_cycles;   /* VT_VIATRACE=a,b: the VIA writes a..b cycles into each frame */
+	  if (ta == -2) { const char *z = getenv ("VT_VIATRACE"); ta = -1; if (z) sscanf (z, "%ld,%ld", &ta, &tb); }
+	  long rel = (long) (alg_cycles - vt_frame_t0);
+	  if (ta >= 0 && (address & 0xf000) == 0xd000 && rel >= ta && rel <= tb)
+		printf ("VIA %X <- %02X at PC=%04X t=%ld\n", address & 15, data, e6809_get_pc () & 0xffff, rel); }
 	if (wq_on && (address & 0xf000) == 0xd000 && wq_n < 8) {
 		if (address & 0x800) ram[address & 0x3ff] = data;
 		wq_a[wq_n] = address & ~0x800u; wq_d[wq_n++] = data;
@@ -701,6 +751,13 @@ void write8 (unsigned address, unsigned char data)
 		vt_mc_page = data & 0xff;                       /* (the multicart's latch) */
 	} else if (vt_vb && address < 0xc000) {
 		flash_write (address, data);                    /* (the 4-bank cartridge's flash) */
+	} else if (vt_hb512 && address < 0x8000) {
+		flash_write (address, data);                    /* (the 512K latch cartridge: the flash, then the latch) */
+		if (!(address & 0x4000)) {
+			int b0 = vt_cur_bank ();
+			vt_hb_latch = data & 7;
+			if (vt_cur_bank () != b0) { vt_bank_switches++; vt_bankchange (b0, vt_cur_bank ()); }
+		}
 	} else if (address < 0x8000) {
 		/* cartridge */
 	}
@@ -712,17 +769,18 @@ void vecx_reset (void);
 void vecx_reset_button (void)
 {
 	static unsigned char keep[1024];
-	unsigned page = vt_mc_page;                         /* (the multicart's latch is not reset by the button) */
+	unsigned page = vt_mc_page, ra = vt_hb_latch;      /* (the cartridges' latches are not reset by the button) */
 	memcpy (keep, ram, sizeof keep);
 	vecx_reset ();
 	memcpy (ram, keep, sizeof keep);
-	vt_mc_page = page;
+	vt_mc_page = page; vt_hb_latch = ra;
 }
 
 void vecx_reset (void)
 {
 	{ extern unsigned char e6809_obus_idle; e6809_obus_idle = rom[0x1fff]; }   /* (the BIOS byte at $FFFF: the idle cycles' bus) */
 	vt_mc_page = 0; fl_step = fl_cmd = fl_id = 0;          /* (power-on: the multicart's menu page, the flash idle) */
+	{ const char *z = getenv ("VT_HBLATCH"); static unsigned n; vt_hb_latch = z ? (unsigned) atoi (z) & 7 : (unsigned) (time (0) + n++ * 5) & 7; }   /* (the 512K cartridge's latch: whatever it powers up with) */
 	unsigned r;
 	static int ow_ready;
 	if (!ow_ready) { ow_ready = 1; ow_init (); const char *z = getenv ("VT_ZOFS"); if (z) alg_zofs = atof (z); alg_zideal = getenv ("VT_ZIDEAL") != NULL; vt_sr1 = getenv ("VT_SR1") != NULL; z = getenv ("VT_WOBBLE"); if (z) sscanf (z, "%lf,%lf", &alg_wob50, &alg_wob100); z = getenv ("VT_ZTAU"); if (z) { alg_ztau = atof (z); alg_zk = 1.0 - exp (-1.0 / alg_ztau); } z = getenv ("VT_CALSHIFT"); if (z) alg_calshift = atof (z); z = getenv ("VT_ZREFK"); if (z) ZREF_K = atof (z); z = getenv ("VT_RAMPDLY"); if (z) { alg_rdly_off_t1 = 0; if (sscanf (z, "%u,%u,%u", &alg_rdly_on, &alg_rdly_off, &alg_rdly_off_t1) < 3) alg_rdly_off_t1 = alg_rdly_off; } z = getenv ("VT_RAMPOFF"); if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); if (b < 0) b = a; alg_rdly_on = alg_rdly_on ? alg_rdly_on : 12; alg_rdly_off = (unsigned) a; rdly_frac = a - (unsigned) a; alg_rdly_off_t1 = (unsigned) b; rdly_frac_t1 = b - (unsigned) b; } z = getenv ("VT_XYZDLY"); if (z) sscanf (z, "%u,%u,%u", &dly_nx, &dly_ny, &dly_nz); z = getenv ("VT_ANALOGDLY"); alg_adly = !(z && atoi (z) == 0); if (alg_adly && !getenv ("VT_RAMPDLY") && !getenv ("VT_RAMPOFF")) { alg_rdly_on = 12; alg_rdly_off = 12; alg_rdly_off_t1 = 12; rdly_frac = rdly_frac_t1 = 0.3; }   /* (stop 12.3 cycles with timer 1 one cycle longer (VT_T1EXTRA=1); Malban: 15. Fitted to the owner's test cart photos 2026-10-12 (11.8 fitted the lines best, 12.3 gives Mine Storm's ship its ~15 % short lines): line ends dark only at scales $0B-$0C / $12-$13 as on the tube; Robot Arena's bowties closed; Mine Storm's mothership interior closed, ship lines ~25 % short) */ if (alg_adly) { if (!getenv ("VT_TEXTSHIFT")) vt_text_shift = 0; if (!getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = 0; } z = getenv ("VT_HWOFS"); if (z) { double ox = 0, oy = 0; sscanf (z, "%lf,%lf", &ox, &oy); alg_xofs = (long) (ox * ZS); alg_yofs = (long) (oy * ZS); } }
@@ -732,6 +790,13 @@ void vecx_reset (void)
 	for (r = 0; r < 1024; r++) {
 		ram[r] = r & 0xff;
 	}
+	/* a real Vectrex powers up with its RAM in a random state; the BIOS keeps the random number seed
+	 * (Vec_Random_Seed, $C87E/$C87F) as it finds it, so Mine Storm's first starfield differs each time.
+	 * VT_POWERSEED=n (the frontend sets it): a different odd seed at every power-on from n (the MiSTer
+	 * core's way, Mathis Rosenhauer's idea); unset: the fixed pattern above (repeatable tests). */
+	{ const char *z = getenv ("VT_POWERSEED"); static unsigned long n;
+	  if (z) { unsigned long x = strtoul (z, 0, 10) + 0x9E3779B9UL * ++n; x ^= x >> 15; x *= 0x2C1B3C6DUL; x ^= x >> 12;
+	           ram[0x7e] = (unsigned char) (x | 1); ram[0x7f] = (unsigned char) ((x >> 8) | 1); } }
 
 	for (r = 0; r < 16; r++) {
 		snd_regs[r] = 0;
@@ -743,7 +808,8 @@ void vecx_reset (void)
 	snd_regs[14] = 0xff;
 	e8910_write(14, 0xff);
 
-	snd_select = 0;
+	snd_select = 0; snd_ioa = 0xff;
+	sp_reset (); sj_reset (); ser_line = 1; ser_div = ser_cnt = 0; ser_t = vx_cyc;
 
 	via_ora = 0;
 	via_orb = 0;

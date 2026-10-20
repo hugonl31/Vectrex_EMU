@@ -1,3 +1,4 @@
+#include <ctype.h>
 /* vtest - headless scripted Vectrex test harness (vecx core, GPL).
  *
  * Models the Robot Arena cartridge: 64 KiB image, PB6 -> A15 with a pull-up
@@ -266,8 +267,18 @@ static void emu_chunk (long cyc)
 	extern int psg_take (int16_t *buf, int max);
 	int ns = psg_take (buf, 4096);
 	if (ns > 0) {
-		if (wavf) { fwrite (buf, 2, ns, wavf); wav_bytes += ns * 2; }
-		live_audio ((const unsigned char *) buf, ns * 2);
+		extern int vt_speech_sep, vt_vecvoice; extern int psg_take_speech (int16_t *buf, int max);
+		if (vt_speech_sep && vt_vecvoice) {     /* (two channels: the console, the speech module) */
+			static int16_t sb[4096], st[8192];
+			psg_take_speech (sb, ns);
+			for (int i = 0; i < ns; i++) { st[2 * i] = buf[i]; st[2 * i + 1] = sb[i]; }
+			if (wavf) { for (int i = 0; i < ns; i++) { int v = buf[i] + sb[i]; buf[i] = (int16_t) (v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
+			            fwrite (buf, 2, ns, wavf); wav_bytes += ns * 2; }
+			live_audio ((const unsigned char *) st, ns * 4);
+		} else {
+			if (wavf) { fwrite (buf, 2, ns, wavf); wav_bytes += ns * 2; }
+			live_audio ((const unsigned char *) buf, ns * 2);
+		}
 	}
 }
 static FILE *recf;                      /* "recstart": log every frame's input like --live */
@@ -318,21 +329,38 @@ int main (int argc, char **argv)
 	if (n <= 32768) memcpy (cart + 32768, cart, 32768); /* 32K image: both halves */
 	/* VT_CARTHW=0: a bone-stock Vectrex with a plain 32K cartridge - the first 32K of any image, no
 	 * bank switching of any kind (PB6, Vectorblade's IRQ, multicart latch) */
+	/* VT_CARTHW: 1 (or unset) = by the image's size, or a board by name: pb6 (64K), vb (Vectorblade's
+	 * 4 x 48K flash), hb512 (the 512K latch flash), multi (Sean Kelly's Multi-Cart) */
 	const char *hw = getenv ("VT_CARTHW");
-	if (hw && atoi (hw) == 0) {
+	int kind = n == 524288 ? 'r' : n > 262144 ? 'm' : n > 65536 ? 'v' : 'p';   /* (the 512K latch cart: exactly 512K; other big images: the Multi-Cart) */
+	if (hw && !strcmp (hw, "pb6")) kind = 'p';
+	else if (hw && !strcmp (hw, "vb")) kind = 'v';
+	else if (hw && !strcmp (hw, "hb512")) kind = 'r';
+	else if (hw && !strcmp (hw, "multi")) kind = 'm';
+	else if (hw && atoi (hw) == 0 && isdigit ((unsigned char) hw[0])) kind = 0;
+	if (kind == 0) {
 		memcpy (cart + 32768, cart, 32768); memset (cart + 65536, 0xff, sizeof cart - 65536);
-	} else if (n > 262144) {                            /* Sean Kelly's Multi-Cart (latch at $7FFF) */
+	} else if (kind == 'm') {                           /* Sean Kelly's Multi-Cart (latch at $7FFF) */
 		extern int vt_multicart; vt_multicart = 1;
-	} else if (n > 65536) {                                    /* the 4-bank PB6 + IRQ cartridge (Vectorblade) */
-		extern int vt_vb; extern const char *vt_flash_file; extern size_t vt_cart_len;
-		vt_vb = 1; vt_cart_len = n;
+	} else if (kind == 'v' || kind == 'r') {            /* the flash cartridges: Vectorblade's 4 x 48K, the 512K latch cart */
+		extern int vt_vb, vt_hb512; extern const char *vt_flash_file; extern size_t vt_cart_len;
+		if (kind == 'v') { vt_vb = 1; vt_cart_len = n > 65536 ? n : 262144; }
+		else { vt_hb512 = 1; vt_cart_len = 524288; }  /* (the whole chip: a game may save anywhere) */
 		/* the flash's saved state (high scores, settings) - next to the ROM, the dump stays as it is */
 		static char sav[4096]; snprintf (sav, sizeof sav, "%s.sav", argv[2]); vt_flash_file = sav;
 		FILE *fs = fopen (sav, "rb");
-		if (fs) { static unsigned char tmp[262144]; size_t m = fread (tmp, 1, sizeof tmp, fs); fclose (fs);
-		          if (m == n) memcpy (cart, tmp, n); }
+		if (fs) { static unsigned char tmp[524288]; size_t m = fread (tmp, 1, sizeof tmp, fs); fclose (fs);
+		          if (m == vt_cart_len) memcpy (cart, tmp, m); }
 	}
 	{ extern int vt_cart_mirror; vt_cart_mirror = !memcmp (cart, cart + 32768, 32768); }
+	{ extern int vt_speech_sep; vt_speech_sep = getenv ("VT_SPEECHOUT") != NULL; }
+	{ /* VT_VECVOICE = the SP0256-AL2 ROM file: a speech accessory on controller port 2 - the VecVoice (SP0256),
+	   * or with VT_SPEECHDEV=vecvox the VecVox (SpeakJet, spoken with the SP0256) */
+	  const char *dev = getenv ("VT_SPEECHDEV"), *z = getenv ("VT_VECVOICE");
+	  extern int sp_load (const char *); extern void sp_start (const char *);
+	  if (z && *z) { int e = sp_load (z);
+	                      if (!e) sp_start (dev);
+	                      else fprintf (stderr, "VecVoice: %s\n", e == -1 ? "no SP0256-AL2 ROM file" : "the file is not the SP0256-AL2 ROM"); } }
 	if (getenv ("VT_BANKLOG")) verbose_bank = 1;
 	{ extern long vt_text_shift; extern double vt_text_shift_w; if (getenv ("VT_TEXTSHIFT")) vt_text_shift = atol (getenv ("VT_TEXTSHIFT")); if (getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = atof (getenv ("VT_TEXTSHIFTW")); }
 	if (getenv ("VT_COMMON")) common_base = (unsigned) strtol (getenv ("VT_COMMON"), 0, 16);

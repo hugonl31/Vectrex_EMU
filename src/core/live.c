@@ -145,6 +145,12 @@ static int live_main (const char *recfn, const char *symfn)
 	while (fread (m, 1, 4, stdin) == 4) {
 		if (m[3] & 0x80) break;
 		if ((m[3] & 0x40) && fread (m + 4, 1, 3, stdin) != 3) break;   /* (player 2) */
+		if (m[3] & 0x20) {                      /* (bit 5: a setting follows - the stop delay, 1/100 cycles) */
+			unsigned char g[2]; extern void vt_set_rampoff (double c);
+			if (fread (g, 1, 2, stdin) != 2) break;
+			vt_set_rampoff ((g[0] | g[1] << 8) / 100.0);
+			m[3] &= ~0x20;                      /* (recordings keep their format) */
+		}
 		fwrite (m, 1, (m[3] & 0x40) ? 7 : 4, rec);
 		nframes++;
 		apply_input (m);
@@ -152,7 +158,9 @@ static int live_main (const char *recfn, const char *symfn)
 		run_frame ();
 		int n = nlast > 4000 ? 4000 : nlast;
 		unsigned char *p = out;
-		*p++ = 'V'; *p++ = 'F'; put16 (p, n); p += 2; put16 (p, abuf_n / 2); p += 2;     /* 16-bit samples */
+		{ extern int vt_speech_sep, vt_vecvoice; int two = vt_speech_sep && vt_vecvoice;   /* (bit 15: two channels -
+		  the console and the speech module, interleaved) */
+		  *p++ = 'V'; *p++ = 'F'; put16 (p, n); p += 2; put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
 		{ extern unsigned long long vt_frame_t0;        /* the frame's drawing start, absolute cycles */
 		  unsigned t = (unsigned) vt_frame_t0; put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
 		for (int i = 0; i < n; i++) {

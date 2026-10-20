@@ -30,7 +30,7 @@ jobs:
       - name: the BIOS next to the app (tests only; the zips carry it)
         run: |
           mkdir -p dist-mac/bios
-          cp bios/bios.bin dist-mac/bios/
+          cp bios/bios.bin bios/bios.art dist-mac/bios/
       - name: snapshot from the sources
         run: |
           venv/bin/python tools/snapshot_test.py mac-source.png 5 --scale 0.4 > mac-source.log 2>&1 &
@@ -78,7 +78,7 @@ jobs:
       - name: the BIOS next to the program (tests only; the zips carry it)
         run: |
           mkdir -p dist-linux/bios
-          cp bios/bios.bin dist-linux/bios/
+          cp bios/bios.bin bios/bios.art dist-linux/bios/
       - name: snapshot from the sources
         run: xvfb-run -a -s "-screen 0 1600x1200x24" python tools/snapshot_test.py linux-source.png 5 2>&1 | tee linux-source.log
       - name: run the program

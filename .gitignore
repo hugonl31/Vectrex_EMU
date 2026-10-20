@@ -12,3 +12,6 @@ __pycache__/
 *.pyc
 *.sav
 /archive/
+# the SP0256-AL2 speech ROM ((c) Microchip): the user downloads it, it is never shared from here
+bios/sp0256-al2.bin
+bios/al2.bin

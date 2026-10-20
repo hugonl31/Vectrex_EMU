@@ -15,23 +15,24 @@ recording of a real Vectrex (2026-10-08).
 
 Keys (only what full screen needs; everything else is in the menu bar, the keyboard is the players')
   F11 full screen, Esc (ROM browser: close; full screen: back to the window; window: quit),
-  Ctrl+O ROM browser, Ctrl+E eject (Mine Storm), Ctrl+R RESET button, Ctrl+P pause,
+  L ROM browser, O overlay on / off, P pause, Ctrl+E eject (Mine Storm), Ctrl+R RESET button,
   Page Up / Page Down the volume knob, which is also the power switch, as on the Vectrex: down to
-  0 % = off, up from 0 % = on (a dirty potentiometer while turning), Ctrl++ / Ctrl+- / Ctrl+0 size
+  0 % = off, up from 0 % = on (a dirty potentiometer while turning), + / - / 0 size
 Controls (Vectrex > Controls): each player's controller (the connected ones, by name) and keys - both
   work at once; each controller keeps its own axes, buttons and dead zone; a test field per player.
-  Defaults: player 1 arrows + A S D F (buttons 1-4), Shift half stick, and the first controller found
+  Defaults: player 1 arrows + A W S D (buttons 1-4), Shift half stick, and the first controller found
   (its X / Y axes, buttons 1-4; an Xbox pad: the left stick, X Y A B); player 2 keyboard, no keys.
 Settings are kept in Vectrex_EMU.conf next to the exe (or in %APPDATA%\Vectrex_EMU if that folder
 is read-only). The screen is shown at a fixed 60 Hz whatever the game's frame rate: every line lights
 the phosphor at the moment the beam drew it and the spot fades from there to black, so afterglow and
 trails move smoothly (vsync on a 60 / 120 / 240 Hz monitor, else paced to 60 Hz - G-Sync shows it as is).
 """
-import argparse, ctypes, ctypes.wintypes as W, json, math, os, queue, shutil, struct, subprocess
+import argparse, ctypes, ctypes.wintypes as W, json, math, os, queue, random, shutil, struct, subprocess
 import sys, threading, time, datetime, collections, re
 import tkinter as tk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vecrender
+import vart
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 if not IS_WIN:                                          # macOS / Linux: the window, keys, controllers, sound
@@ -47,6 +48,15 @@ CORE = os.path.join(RES, 'core', 'vectrex_core.exe' if IS_WIN else 'vectrex_core
 BIOS = os.path.join(RES, 'bios', 'bios.bin')
 if not os.path.exists(BIOS):                            # (macOS / Linux: the bios folder next to the program)
     BIOS = os.path.join(ROOT, 'bios', 'bios.bin')
+# the VecVoice's speech ROM (SP0256-AL2, (c) Microchip Technology Inc.): not shipped - the user downloads
+# it from Joe Zbiciak's page (Microchip let him distribute it) into the bios folder next to the program
+SP_ROM_URL = 'http://spatula-city.org/~im14u2c/sp0256-al2/'
+def sp_rom():
+    for d in (os.path.join(ROOT, 'bios'), os.path.join(RES, 'bios')):
+        for n in ('sp0256-al2.bin', 'al2.bin'):
+            if os.path.exists(os.path.join(d, n)):
+                return os.path.join(d, n)
+    return None
 def _writable(d):
     try:
         t = os.path.join(d, '.write_test'); open(t, 'w').close(); os.remove(t); return True
@@ -94,16 +104,22 @@ DIR_MASK = [8, 8 | 2, 2, 1 | 2, 1, 1 | 4, 4, 8 | 4]
 CTRL_INPUTS = ['up', 'down', 'left', 'right', 'b1', 'b2', 'b3', 'b4', 'half']
 CTRL_NAMES = dict(up='Up', down='Down', left='Left', right='Right', b1='Button 1', b2='Button 2',
                   b3='Button 3', b4='Button 4', half='Half stick')
-# defaults (the owner, 2026-10-09): player 1 on the arrows and A S D F, Shift for half the stick;
+# defaults (the owner, 2026-10-19): player 1 on the arrows and A W S D (buttons 1-4: left, top, bottom, right
+# - the WASD cross under the left hand), Shift for half the stick;
 # player 2 has no keys (a controller, or keys of your own)
 DEFAULT_KEYS = {'p1': dict(up=[(0x26, 'Up')], down=[(0x28, 'Down')], left=[(0x25, 'Left')], right=[(0x27, 'Right')],
-                           b1=[(0x41, 'A')], b2=[(0x53, 'S')], b3=[(0x44, 'D')], b4=[(0x46, 'F')],
+                           b1=[(0x41, 'A')], b2=[(0x57, 'W')], b3=[(0x53, 'S')], b4=[(0x44, 'D')],
                            half=[(0x10, 'Shift')]),
                 'p2': {k: [] for k in CTRL_INPUTS}}
 DEFAULT_DEADZONE = 0.2
-# keys the emulator keeps for itself (a player can not have them): F11, Esc, Page Up / Down, and
-# everything with Ctrl
-RESERVED_VK = {0x7A: 'F11', 0x1B: 'Esc', 0x21: 'Page Up', 0x22: 'Page Down', 0x11: 'Ctrl', 0xA2: 'Ctrl', 0xA3: 'Ctrl'}
+# keys the emulator keeps for itself (a player can not have them): F11, Esc, Page Up / Down, + - 0 9 (the
+# window size, the real size), P L O (pause, the ROM browser, the overlay) and everything with Ctrl
+RESERVED_VK = {0x7A: 'F11', 0x1B: 'Esc', 0x21: 'Page Up', 0x22: 'Page Down', 0x11: 'Ctrl', 0xA2: 'Ctrl', 0xA3: 'Ctrl',
+               0xBB: '+', 0xBD: '-', 0x30: '0', 0x39: '9', 0x6B: 'Numpad +', 0x6D: 'Numpad -', 0x60: 'Numpad 0',
+               0x69: 'Numpad 9', 0x50: 'P', 0x4C: 'L', 0x4F: 'O'}
+
+# the real Vectrex picture's height (the tube's window behind the overlay), for Display > Real size
+REAL_PIC_MM = 207.0     # (the overlay sheet: 162 x 207 mm, the owner measured; the picture is as tall as the sheet)
 
 def default_map(dev):
     """a controller's mapping when it is first chosen (2026-10-11): its X / Y axes the stick, its buttons
@@ -167,7 +183,8 @@ class Input:
 
     # ---- the settings
     def load(self, c):
-        self.keys = {p: {k: [tuple(x) for x in c.get('keys', {}).get(p, {}).get(k, DEFAULT_KEYS[p][k])]
+        self.keys = {p: {k: [tuple(x) for x in c.get('keys', {}).get(p, {}).get(k, DEFAULT_KEYS[p][k])
+                             if x[0] not in RESERVED_VK]        # (a key that became a shortcut: dropped)
                          for k in CTRL_INPUTS} for p in ('p1', 'p2')}
         self.maps = {}
         for d, m in c.get('pads', {}).items():
@@ -396,13 +413,17 @@ WAVEHDR._fields_ = [('lpData', ctypes.c_void_p), ('dwBufferLength', W.DWORD), ('
 WHDR_DONE = 1
 
 class Biquad:
-    """RBJ audio-cookbook biquad (lowpass, highpass, peak)"""
+    """RBJ audio-cookbook biquad (lowpass, highpass, peak, low shelf)"""
     def __init__(self, kind, f0, q, gain_db=0.0):
         w = 2 * math.pi * f0 / RATE; cw, sw = math.cos(w), math.sin(w); al = sw / (2 * q)
         if kind == 'lp':
             b = [(1 - cw) / 2, 1 - cw, (1 - cw) / 2]; a = [1 + al, -2 * cw, 1 - al]
         elif kind == 'hp':
             b = [(1 + cw) / 2, -(1 + cw), (1 + cw) / 2]; a = [1 + al, -2 * cw, 1 - al]
+        elif kind == 'ls':
+            A = 10 ** (gain_db / 40.0); sa = 2 * math.sqrt(A) * al
+            b = [A * ((A + 1) - (A - 1) * cw + sa), 2 * A * ((A - 1) - (A + 1) * cw), A * ((A + 1) - (A - 1) * cw - sa)]
+            a = [(A + 1) + (A - 1) * cw + sa, -2 * ((A - 1) + (A + 1) * cw), (A + 1) + (A - 1) * cw - sa]
         else:
             A = 10 ** (gain_db / 40.0)
             b = [1 + al * A, -2 * cw, 1 - al * A]; a = [1 + al / A, -2 * cw, 1 - al / A]
@@ -442,15 +463,28 @@ def load_wav(name):
                 pass
     return []
 
+# the speech module's level: the MiSTer core's Normal (x1.5) and 50 % more (the owner, 2026-10-19)
+VOICE_BOOST = 1.5
+
+# the sliders: the default in the middle, this much below and above it (the owner, 2026-10-19)
+SLIDER_SPAN = 1.0                   # (0 .. twice the default)
+
 class CrtSound:
     """the Vectrex's own noise mixed into the game sound: the BUZZ (the beam and deflection
     currents leak into the audio amplifier, so it follows what is drawn: louder and harsher with
     more and brighter vectors, repeating at the frame rate), then all of it through the small
     built-in speaker."""
     def __init__(self):
-        self.buzz_on = True; self.buzz_vol = 0.25       # (the owner's choice, 2026-10-09: the buzz no longer follows the volume knob)
+        self.buzz_on = True; self.buzz_vol = 0.152      # (the owner's choice, 2026-10-19; the buzz does not follow the volume knob)
         self.speaker_on = True                           # the Vectrex's small speaker (see below)
         self.volume = 1.0                                # the volume knob (Page Up / Page Down)
+        # the speech module (VecVoice / VecVox): its own amplifier and audio out - its own volume (Ctrl+Page
+        # Up / Down) and the speakers owners plug into it: full range (as it comes) or a small speaker
+        self.voice_vol = 1.0                             # (100 % = the MiSTer core's Normal level)
+        self.voice_full = True
+        self.voice_spk = [Biquad('hp', 140, 0.7), Biquad('pk', 1800, 1.0, 2.0), Biquad('lp', 7500, 0.7)]
+        # full-range speakers: an arcade cabinet's warm bass (+6 dB below ~150 Hz; no rumble under 40 Hz)
+        self.voice_bass = [Biquad('hp', 40, 0.7), Biquad('ls', 150, 0.7, 6.0)]
         self.scruff_until = 0.0                          # turning the knob: a dirty potentiometer crackles
         self.overlay = []                                # power on / off sound, mixed in after the speaker
         self.snd_on = load_wav('on.wav'); self.snd_off = load_wav('off.wav')
@@ -469,8 +503,8 @@ class CrtSound:
         self.spk = [Biquad('hp', 220, 0.9), Biquad('hp', 175, 0.7), Biquad('pk', 270, 1.3, 2.0),   # (cabinet: a little port bass)
                     Biquad('pk', 900, 1.0, 4.0),
                     Biquad('lp', 6200, 0.7), Biquad('lp', 8000, 0.7)]
-    def process(self, pcm, lines):
-        if not ((self.buzz_on and self.buzz_vol > 0) or self.speaker_on or self.overlay or self.dead
+    def process(self, pcm, lines, speech=None):
+        if speech is None and not ((self.buzz_on and self.buzz_vol > 0) or self.speaker_on or self.overlay or self.dead
                 or self.volume != 1.0 or time.perf_counter() < self.scruff_until):
             return pcm
         from array import array
@@ -511,6 +545,16 @@ class CrtSound:
                 out = f.run(out)
             # the driver's limited excursion: a soft limit instead of clean peaks
             out = [32767.0 * math.tanh(v / 26000.0) for v in out]
+        if speech:                                              # (the speech module: not through the
+            sp = array('h'); sp.frombytes(speech)               #  Vectrex's knob, buzz or speaker)
+            s = [v * self.voice_vol * 2.0 * VOICE_BOOST for v in sp]   # (the core sends it at half scale
+            for f in (self.voice_bass if self.voice_full else self.voice_spk):   #  for the headroom)
+                s = f.run(s)
+            for i in range(min(n, len(s))):
+                v = out[i] + s[i]
+                if v > 24000: v = 24000 + 8767 * math.tanh((v - 24000) / 8767)      # (a soft limit above
+                elif v < -24000: v = -24000 - 8767 * math.tanh((-v - 24000) / 8767) #  24000: no hard clipping)
+                out[i] = v
         self.mix_overlay(out)
         return array('h', [max(-32768, min(32767, int(v))) for v in out]).tobytes()
     def new_turn(self):
@@ -641,14 +685,82 @@ class Audio:
             self.reap()
             self.w.waveOutClose(self.h)
 
+# the cartridge boards (Vectrex > Cartridge hardware): conf value -> menu label
+CART_HW = {'auto': "Auto (by the ROM's size)", 'off': 'Off - bone stock, 32 KB',
+           'pb6': '64 KB, PB6 bank switching', 'vb': 'Vectorblade / MiSTer flash, 4 x 48 KB',
+           'hb512': '512 KB flash with bank latch (HB v2 board)', 'multi': '1 MB multi-cart (4 KB pages, latch at $7FFF)'}
+
+# ------------------------------------------------------------------ overlays
+# The screen overlays: MiSTer .art files named like the ROM, in roms/overlays (or overlays next to the
+# program); the ROM browser does not list that folder. Rotated packages (_90CW / _90CCW) are not needed:
+# the emulator turns the whole screen, the overlay with it.
+def overlay_dirs():
+    return [os.path.join(ROOT, 'roms', 'overlays'), os.path.join(ROOT, 'overlays')]
+
+def builtin_overlay():
+    """the one overlay that comes with the emulator: Mine Storm's, for the console's own game (bios/bios.art,
+    inside the exe or next to the program)"""
+    for d in (RES, ROOT):
+        p = os.path.join(d, 'bios', 'bios.art')
+        if os.path.exists(p):
+            return p
+    return None
+
+def _art_base(s):
+    """a name without its trailing (...) / [...] parts and version: 'Berzerk (Hack - Speed, 2016)' -> 'Berzerk',
+    'Thrust v1.2 (Hack - Spinner, 2019)' -> 'Thrust'"""
+    while True:
+        t = re.sub(r'\s*[\(\[][^\)\]]*[\)\]]\s*$|\s+v\d+(\.\d+)*[a-z]?$', '', s, flags=re.I)
+        if t == s:
+            return s.strip()
+        s = t
+
+def find_overlay(name):
+    """the overlay for a ROM name: the same name, else the same base name (without (...) parts), else the
+    same letters and digits ('Heads-Up' = 'Heads Up') - .art (MiSTer) or .png files"""
+    files = []
+    for d in overlay_dirs():
+        if os.path.isdir(d):
+            files += [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.lower().endswith(('.art', '.png'))
+                      and not re.search(r'_90c?cw$', os.path.splitext(f)[0], re.I)]
+    # (several with one base name: the plain one first - no hack, no variant suffix - then the shortest)
+    files.sort(key=lambda f: (bool(re.search(r'hack|_\(', os.path.basename(f), re.I)), len(os.path.basename(f)),
+                              os.path.basename(f).lower()))
+    stem = lambda f: os.path.splitext(os.path.basename(f))[0]
+    norm = lambda s: re.sub(r'[^a-z0-9]', '', s.lower())
+    name = ART_ALIAS.get(_art_base(name).lower(), name)          # (the European names)
+    for test in (lambda f: stem(f).lower() == name.lower(),
+                 lambda f: stem(f).lower() == _art_base(name).lower(),
+                 lambda f: _art_base(stem(f)).lower() == _art_base(name).lower(),
+                 lambda f: norm(_art_base(stem(f))) == norm(_art_base(name))):
+        hit = [f for f in files if test(f)]
+        if hit:
+            return hit[0]
+    return None
+
+# the same game under its European (MB) name
+ART_ALIAS = {'mr. boston clean sweep': 'Clean Sweep'}
+
+# the overlay's position / size (per overlay, Overlay > Position and size): their defaults
+ART_ADJ_DEFAULT = {'art_dx': 0.0, 'art_dy': 0.0, 'art_scale': 1.0}
+
+# controller port 2 (Vectrex > Controller port 2): conf value -> menu label
+PORT2 = {'off': 'Joystick', 'vecvoice': 'VecVoice speech (SP0256)', 'vecvox': 'VecVox speech (SpeakJet)'}
+
 # ------------------------------------------------------------------ emulator link
 class Core:
-    def __init__(self, rom, ideal=False, cart_hw=True):
+    def __init__(self, rom, ideal=False, cart_hw='auto', speech='off'):
         env = dict(os.environ)
         env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})  # perfect / a real Vectrex
-        # cartridge hardware: the bank-switching boards (64K PB6, Vectorblade's PB6 + IRQ with its flash,
-        # Sean Kelly's Multi-Cart latch) - off: a bone-stock Vectrex with a plain 32K cartridge
-        env['VT_CARTHW'] = '1' if cart_hw else '0'
+        # cartridge hardware: auto = the board by the ROM's size (64K PB6, Vectorblade's PB6 + IRQ with its
+        # flash, the 512K latch flash, Sean Kelly's Multi-Cart latch), or one board by name; off = a
+        # bone-stock Vectrex with a plain 32K cartridge
+        env['VT_CARTHW'] = {'auto': '1', 'off': '0'}.get(cart_hw, cart_hw)
+        env['VT_POWERSEED'] = str(random.getrandbits(31))         # (the RAM's random state at every power-on)
+        if speech != 'off' and sp_rom():
+            env['VT_VECVOICE'] = sp_rom()                           # (a speech accessory on port 2)
+            env['VT_SPEECHDEV'] = speech
+            env['VT_SPEECHOUT'] = '1'                               # (its sound on a channel of its own)
         # no input recording, no log: the core records to NUL, its messages are discarded
         self.rom = rom
         self.p = subprocess.Popen([CORE, BIOS, rom, '--live', NUL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -663,21 +775,35 @@ class Core:
                 raise EOFError('the emulator core stopped (is %s a Vectrex ROM?)' % os.path.basename(self.rom))
             b += c
         return bytes(b)
+    gap = None
+    def set_gap(self, cycles):
+        """Tube > Line gaps: the stop delay goes to the core with the next frame"""
+        self.gap = cycles
     def frame(self, jx, jy, btn, flags, p2=None):
-        """one game frame: player 1's stick and buttons, the flags, player 2's (the 2nd port: flags bit 6)"""
+        """one game frame: player 1's stick and buttons, the flags, player 2's (the 2nd port: flags bit 6),
+        and a changed setting (flags bit 5: the stop delay, 1/100 cycles)"""
+        g, self.gap = self.gap, None
+        extra = b''
+        if g is not None:
+            v = max(0, min(4000, int(round(g * 100)))); flags |= 0x20; extra = bytes([v & 255, v >> 8])
         if p2:
-            self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags | 0x40, p2[0] + 128, p2[1] + 128, p2[2]]))
+            self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags | 0x40, p2[0] + 128, p2[1] + 128, p2[2]]) + extra)
         else:
-            self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags]))
+            self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags]) + extra)
         h = self._read(10)
         if h[:2] != b'VF':
             raise IOError('bad frame header %r' % h)
         n, ns, ft = struct.unpack('<HHI', h[2:])
         if ft < self.ft_last: self.ft_hi += 1 << 32                   # (32-bit cycle counter wraps)
         self.ft_last = ft; self.frame_t0 = self.ft_hi + ft
-        body = self._read(n * 13 + ns * 2)             # 16-bit samples
+        two = ns & 0x8000; ns &= 0x7fff                # (bit 15: two channels - the console, the speech module)
+        body = self._read(n * 13 + ns * (4 if two else 2))             # 16-bit samples
         lines = [struct.unpack_from('<HHHHBHH', body, i * 13) for i in range(n)]  # + energy, start cycle
-        return lines, body[n * 13:]
+        if not two:
+            return lines, body[n * 13:], None
+        from array import array
+        a = array('h'); a.frombytes(body[n * 13:])
+        return lines, a[0::2].tobytes(), a[1::2].tobytes()
     def close(self):
         try:
             self.p.stdin.write(bytes([128, 128, 0, 0x80])); self.p.stdin.close()
@@ -748,7 +874,7 @@ class Runner(threading.Thread):
                 # the speed meter: real and emulated time, both at this frame's start (marking after
                 # it counted its whole length at its first moment: a frame rate change read as 99 %)
                 self.emu_mark = (time.perf_counter(), self.emu_time)
-                lines, pcm = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
+                lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
                 if TEST_LOAD: time.sleep(TEST_LOAD)                     # (test: a host too slow)
                 self.frames += 1
                 if self.frames == 1:
@@ -770,7 +896,7 @@ class Runner(threading.Thread):
                     if self.pend[3] >= 0.015:
                         self.queue.append(tuple(self.pend)); self.pend = None   # (t_next: its start)
                         self.dframes += 1
-                self.audio.play(self.crt.process(pcm, lines))
+                self.audio.play(self.crt.process(pcm, lines, speech))
                 self.emu_time += max(len(pcm) // 2, 1) / RATE           # (the speed meter, see emu_mark)
                 # pace by emulated time (this frame's samples = its length in CPU cycles): real time
                 # is the clock; the sound queue (40 ms head start) only caps runaway buffering
@@ -808,12 +934,17 @@ class App:
         except Exception:   # noqa
             c0 = {}
         ctl = c0.get('controls')
-        self.cart_hw = bool(c0.get('cart_hw', True))            # (bank-switching cartridges: on by default)
+        self.cart_hw = {True: 'auto', False: 'off'}.get(c0.get('cart_hw', 'auto'), c0.get('cart_hw'))   # (older confs: on / off)
+        if self.cart_hw not in CART_HW:
+            self.cart_hw = 'auto'
         self.start_on = bool(c0.get('start_on', False))         # starts switched off: turn the knob, as on a Vectrex
         self.skip_boot = bool(c0.get('skip_boot', False))       # power on straight into the cartridge
         self.inp = Input(ctl)
         self.audio = Audio() if IS_WIN else osdep.Audio(RATE)
-        self.core = Core(rom, args.ideal, self.cart_hw)
+        self.speech = c0.get('speech', 'vecvoice' if c0.get('vecvoice') else 'off')   # (port 2: a speech accessory)
+        if self.speech not in PORT2 or not sp_rom():
+            self.speech = 'off'
+        self.core = Core(rom, args.ideal, self.cart_hw, self.speech)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.root = tk.Tk()
         self.root.configure(bg='black')
@@ -885,6 +1016,7 @@ class App:
         self.root.geometry(geo or '%dx%d+%d+10' % (self.W0, self.H0w,
                                                  (self.root.winfo_screenwidth() - self.W0) // 2))
         self.zoom = 1.0; self.full = False
+        self.root.after(500, lambda: self.start_fit(geo))        # (once the frame and the menu bar are on screen)
         self.ren = None; self.lines = []
         if not args.tk:
             try:
@@ -894,12 +1026,14 @@ class App:
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
             except Exception as e:                              # noqa: fall back to the Tk canvas
                 print('renderer unavailable (%s): using the Tk canvas' % e)
-        # display settings (B, F5-F8) are kept in Vectrex_EMU.conf; F9 restores the defaults
+        # display settings are kept in Vectrex_EMU.conf; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'halo_on', 'halo_k', 'phos_spread', 'phos_grow', 'phos_smooth')
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'halo_on', 'halo_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
+                                      'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax',
+                                      'scr_on', 'scr_wear', 'scr_damage', 'scr_glint')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
-        self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume']
+        self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full']
         self.sound_default = {k: getattr(self.run.crt, k) for k in self.sound_keys}
         try:
             saved = json.load(open(self.settings_f)).get('display', {})
@@ -908,6 +1042,25 @@ class App:
         for k in self.look_keys:
             if k in saved:
                 setattr(self.ren, k, type(self.look_default[k])(saved[k]))
+        if self.ren and hasattr(self.ren, 'line_gap'):
+            self.core.set_gap(self.ren.line_gap)                # (Tube > Line gaps: the core's stop delay)
+        try:
+            c1 = json.load(open(self.settings_f))
+        except Exception:           # noqa
+            c1 = {}
+        self.art_auto = bool(c1.get('art_auto', True))          # Overlay > Choose automatically
+        self.art_for = dict(c1.get('overlay_for', {}))          # per game: an overlay file, or 'none'
+        self.art_adj = dict(c1.get('overlay_adjust', {}))       # per overlay: [dx, dy, scale]
+        self.art_path = None
+        self.rot = int(c1.get('rotate', 0)) if c1.get('rotate', 0) in (0, 90, 180, 270) else 0
+        self.monitor_inch = float(c1.get('monitor_inch') or 0)   # (Display > Monitor size; 0: as the monitor reports it)
+        if self.ren and hasattr(self.ren, 'scr_seed'):            # (Overlay > New random scratches)
+            self.ren.scr_seed = int(c1.get('scratch_seed', 1))
+        self.real_on = bool(c1.get('real_size', False))           # (Display > Real size: kept until + / - / 0)
+        if self.ren and hasattr(self.ren, 'set_art'):
+            if self.rot:
+                self.ren.rot = self.rot; self.apply_scale()
+            self.load_art()
         for k in self.sound_keys:
             if k in saved:
                 setattr(self.run.crt, k, type(self.sound_default[k])(saved[k]))
@@ -924,12 +1077,14 @@ class App:
         self.screen.bind('<Configure>', self.on_resize)
         # the shortcuts (the owner, 2026-10-09): only what full screen needs - F11, Esc, Page Up / Down
         # and Ctrl+...; everything else is in the menu bar, so the keyboard stays free for the players
-        for key in ('<Control-plus>', '<Control-equal>', '<Control-KP_Add>'):
+        for key in ('<Key-plus>', '<Key-equal>', '<KP_Add>'):    # (+ - 0: no Ctrl; the players can not have them)
             self.root.bind(key, lambda e: self.zoom_step(1.1))
-        for key in ('<Control-minus>', '<Control-KP_Subtract>'):
+        for key in ('<Key-minus>', '<KP_Subtract>'):
             self.root.bind(key, lambda e: self.zoom_step(1 / 1.1))
-        for key in ('<Control-Key-0>', '<Control-KP_0>'):
+        for key in ('<Key-0>', '<KP_0>', '<KP_Insert>'):
             self.root.bind(key, lambda e: self.zoom_step(None))
+        for key in ('<Key-9>', '<KP_9>'):                     # (9: the real size)
+            self.root.bind(key, lambda e: self.real_size())
         try:                                                    # the picture size in full screen
             conf = json.load(open(self.settings_f))
         except Exception:           # noqa
@@ -954,19 +1109,30 @@ class App:
             self.screen.bind('<Button-4>', lambda e: wheel(e, 120))
             self.screen.bind('<Button-5>', lambda e: wheel(e, -120))
         self.build_menu()
-        self.root.bind('<Control-o>', lambda e: (self.close_browser() if self.browser else self.open_browser(), 'break')[1])
+        # P L O without Ctrl (the players can not have them); only Ctrl+E (eject) and Ctrl+R (RESET) need
+        # Ctrl - they end the game
+        for k in ('<Key-l>', '<Key-L>'):
+            self.root.bind(k, lambda e: (self.close_browser() if self.browser else self.open_browser(), 'break')[1])
+        for k in ('<Key-o>', '<Key-O>'):
+            self.root.bind(k, lambda e: (self.toggle_art(), 'break')[1])
         self.items = []; self.item_col = []; self.shown = 0
         self.colors = ['#%02x%02x%02x' % (int(v * 190), int(v * 220), int(v * 255))
                        for v in [min(1.0, 0.30 + c / 127 * 0.85) for c in range(128)]]
         self.root.bind('<FocusIn>', lambda e: setattr(self.inp, 'focused', True))
         self.root.bind('<FocusOut>', lambda e: setattr(self.inp, 'focused', False))
         self.root.bind('<Control-e>', self.eject)
-        self.root.bind('<Control-p>', lambda e: (self.toggle_pause(), 'break')[1])
+        for k in ('<Key-p>', '<Key-P>'):
+            self.root.bind(k, lambda e: (self.toggle_pause(), 'break')[1])
         self.root.bind('<Control-r>', self.reset_button)
         for k in ('<Prior>', '<KP_Prior>'):                     # (also the numpad's Page Up / Down)
             self.root.bind(k, lambda e: self.turn_volume(+0.05))
         for k in ('<Next>', '<KP_Next>'):
             self.root.bind(k, lambda e: self.turn_volume(-0.05))
+        for m in ('Control', 'Command') if IS_MAC else ('Control',):   # (Ctrl: the speech module's volume)
+            for k in ('Prior', 'KP_Prior'):
+                self.root.bind('<%s-%s>' % (m, k), lambda e: self.turn_voice(+0.05))
+            for k in ('Next', 'KP_Next'):
+                self.root.bind('<%s-%s>' % (m, k), lambda e: self.turn_voice(-0.05))
         self.root.bind('<Escape>', self.escape)
         self.root.protocol('WM_DELETE_WINDOW', self.quit)
         if IS_MAC:                                              # macOS: Command does what Ctrl does, Ctrl+Command+F
@@ -1084,25 +1250,37 @@ class App:
                     pass
         def fill(mb):
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Vectrex', menu=m)
-            item(m, 'ROM browser', 'Ctrl+O', self.open_browser)
+            item(m, 'ROM browser', 'L', self.open_browser)
             item(m, 'Open ROM file...', '', self.open_rom)
             item(m, 'Eject cartridge (Mine Storm)', 'Ctrl+E', self.eject)
             m.add_separator()
             item(m, 'RESET button', 'Ctrl+R', self.reset_button)
             item(m, 'Volume (0 % = off)...', 'PgDn / PgUp', lambda: self.slider('volume'))
-            check(m, 'Pause', 'Ctrl+P', lambda: self.run.paused, self.toggle_pause)
+            check(m, 'Pause', 'P', lambda: self.run.paused, self.toggle_pause)
             m.add_separator()
             item(m, 'Controls (keyboard, controllers)...', '', self.controls_window)
-            check(m, 'Cartridge hardware (bank switching)', '', lambda: self.cart_hw, self.toggle_cart_hw)
+            hw = tk.Menu(m, tearoff=0); m.add_cascade(label='Cartridge hardware', menu=hw)
+            for k, label in CART_HW.items():
+                check(hw, label, '', lambda k=k: self.cart_hw == k, lambda k=k: self.set_cart_hw(k))
+            p2 = tk.Menu(m, tearoff=0); m.add_cascade(label='Controller port 2', menu=p2)
+            for k, label in PORT2.items():
+                check(p2, label, '', lambda k=k: self.speech == k, lambda k=k: self.set_speech(k))
             check(m, 'Start switched on', '', lambda: self.start_on, self.toggle_start_on)
             check(m, 'Skip the Vectrex intro (start screen)', '', lambda: self.skip_boot, self.toggle_skip_boot)
+            m.add_separator()
+            item(m, 'Reset Vectrex settings to default', '', self.reset_vectrex)
             m.add_separator()
             item(m, 'Quit', 'Esc', self.quit)
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Display', menu=m)
             check(m, 'Full screen', 'F11', lambda: self.full, self.toggle_full)
-            item(m, 'Bigger', 'Ctrl++', lambda: self.zoom_step(1.1))
-            item(m, 'Smaller', 'Ctrl+-', lambda: self.zoom_step(1 / 1.1))
-            item(m, 'Start size', 'Ctrl+0', lambda: self.zoom_step(None))
+            item(m, 'Bigger', '+', lambda: self.zoom_step(1.1))
+            item(m, 'Smaller', '-', lambda: self.zoom_step(1 / 1.1))
+            item(m, 'Start size (fits the desktop)', '0', lambda: self.zoom_step(None))
+            item(m, 'Real size (as big as a Vectrex)', '9', self.real_size)
+            item(m, 'Monitor size (for Real size)...', '', lambda: self.slider('monitor_inch'))
+            rm = tk.Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='Rotate screen', menu=rm)
+            for deg, label in ((0, 'Normal'), (90, '90 degrees right (clockwise)'), (180, '180 degrees'), (270, '90 degrees left')):
+                check(rm, label, '', lambda deg=deg: self.rot == deg, lambda deg=deg: self.set_rotation(deg))
             m.add_separator()
             check(m, 'On-screen display (fps, Hz, speed, volume)', '', lambda: self.fps_on, self.toggle_fps)
             check(m, 'Volume knob and RESET button', '', lambda: self.knob_on, self.toggle_knob)
@@ -1114,6 +1292,8 @@ class App:
             check(sc, "The monitor's full rate (%s; the finest afterglow)" % ('%d Hz' % self.refresh if getattr(self, 'refresh', 0) else '120, 144, 240 Hz...'),
                   '', lambda: not self.vrr and self.rate == 'max', lambda: self.set_screen('max'))
             check(sc, "G-Sync / FreeSync (the game's frame rate, no tearing)", '', lambda: self.vrr, lambda: self.set_screen('vrr'))
+            m.add_separator()
+            item(m, 'Reset display settings to default', '', self.reset_display)
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Tube', menu=m)
             check(m, 'Phosphor (afterglow and bloom)', '', lambda: R().phosphor, self.toggle_phosphor)
             item(m, 'Bloom...', '', lambda: self.slider('bloom'))
@@ -1121,10 +1301,10 @@ class App:
             item(m, 'Afterglow length...', '', lambda: self.slider('trail'))
             item(m, 'Afterglow joining...', '', lambda: self.slider('phos_grow'))
             item(m, 'Afterglow overlap...', '', lambda: self.slider('phos_smooth'))
-            item(m, 'Afterglow softness...', '', lambda: self.slider('phos_spread'))
             check(m, 'Curved tube', '', lambda: R().curve_on, lambda: self.flip(self.ren, 'curve_on'))
             check(m, 'Corner glow (halo where the beam rests)', '', lambda: R().halo_on, lambda: self.flip(self.ren, 'halo_on'))
             item(m, 'Corner glow strength...', '', lambda: self.slider('halo_k'))
+            item(m, 'Line gaps (analog delay)...', '', lambda: self.slider('line_gap'))
             m.add_separator()
             check(m, 'Mains hum wobble', '', lambda: R().wob_on, self.toggle_wobble)
             item(m, 'Wobble strength...', '', lambda: self.slider('wob_strength'))
@@ -1141,13 +1321,43 @@ class App:
                       lambda i=i: self.set_bend_type(i))
             item(m, 'Bending strength...', '', lambda: self.slider('bend_strength'))
             m.add_separator()
-            item(m, 'Reset the look and sound to the defaults', '', self.reset_look)
+            item(m, 'Reset tube settings to default', '', self.reset_tube)
+            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Overlay', menu=m)
+            A = lambda k, d: getattr(self.ren, k, d) if self.ren else d
+            check(m, 'Overlay', 'O', lambda: A('art_on', False) and bool(A('art', None)), self.toggle_art)
+            check(m, 'Choose automatically (by ROM name)', '', lambda: self.art_auto, self.toggle_art_auto)
+            item(m, 'Choose overlay...', '', self.choose_art)
+            item(m, 'No overlay for this game', '', self.no_art)
+            m.add_separator()
+            item(m, 'Tint strength...', '', lambda: self.slider('art_tint'))
+            item(m, 'Room light...', '', lambda: self.slider('art_room'))
+            item(m, 'Printed art brightness...', '', lambda: self.slider('art_print'))
+            check(m, 'Parallax (seen from the usual height)', '', lambda: A('art_parallax', False), lambda: self.flip(self.ren, 'art_parallax'))
+            if getattr(self.ren, 'gprog', None):
+                m.add_separator()
+                check(m, 'Scratches (decades of handling)', '', lambda: A('scr_on', False), self.toggle_scratches)
+                item(m, 'Wear (fine scratches)...', '', lambda: self.slider('scr_wear'))
+                item(m, 'Damage (larger, deeper scratches)...', '', lambda: self.slider('scr_damage'))
+                item(m, 'Glint strength...', '', lambda: self.slider('scr_glint'))
+                item(m, 'New random scratches', '', self.new_scratches)
+                m.add_separator()
+            pm = tk.Menu(m, tearoff=0); m.add_cascade(label='Position and size (this overlay)', menu=pm)
+            item(pm, 'Left / right...', '', lambda: self.slider('art_dx'))
+            item(pm, 'Up / down...', '', lambda: self.slider('art_dy'))
+            item(pm, 'Size...', '', lambda: self.slider('art_scale'))
+            item(pm, 'Reset position and size', '', self.reset_art_adj)
+            m.add_separator()
+            item(m, 'Reset overlay settings to default', '', self.reset_overlay)
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Sound', menu=m)
             check(m, 'Vectrex buzz', '', lambda: C().buzz_on, lambda: self.flip(self.run.crt, 'buzz_on'))
             item(m, 'Buzz volume...', '', lambda: self.slider('buzz_vol'))
             check(m, 'Vectrex speaker', '', lambda: C().speaker_on, lambda: self.flip(self.run.crt, 'speaker_on'))
+            sm = tk.Menu(m, tearoff=0); m.add_cascade(label='Speech module (VecVoice / VecVox)', menu=sm)
+            item(sm, 'Volume...', 'Ctrl+PgDn / Ctrl+PgUp', lambda: self.slider('voice_vol'))
+            check(sm, 'Full-range speakers', '', lambda: C().voice_full, lambda: self.set_voice_full(True))
+            check(sm, 'Small speaker', '', lambda: not C().voice_full, lambda: self.set_voice_full(False))
             m.add_separator()
-            item(m, 'Reset the look and sound to the defaults', '', self.reset_look)
+            item(m, 'Reset sound settings to default', '', self.reset_sound)
             m = tk.Menu(mb, tearoff=0); mb.add_cascade(label='Help', menu=m)
             item(m, 'Help...', '', lambda: self.help_window('start'))
             item(m, 'What the menus do...', '', lambda: self.help_window('vectrex'))
@@ -1158,29 +1368,52 @@ class App:
         mb = tk.Menu(self.root); fill(mb)
         self.menubar = mb
         self.root.config(menu=mb)
-    # every adjustable value: (title, keys, the object it lives on, attribute, low, high, log scale, format)
+    # every adjustable value: (title, keys, the object it lives on, attribute, low, high, log scale, format) -
+    # low / high only for the volume knob and values that are off by default; the others: SLIDER_SPAN
     SLIDERS = {
         'volume':        ('Volume (0 % = off)', 'Page Down / Page Up', 'crt', 'volume', 0.0, 1.0, False, '%.0f %%', 100),
+        'voice_vol':     ('Speech module volume (100 % = MiSTer Normal)', 'Ctrl+Page Down / Ctrl+Page Up', 'crt', 'voice_vol', 0.0, 2.0, False, '%.0f %%', 100),
         'bloom':         ('Bloom', '', 'ren', 'bloom', 0.0, 3.0, False, '%.2f', 1),
         'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.1, 10.0, True, 'x%.2f', 1),
         'halo_k':        ('Corner glow strength', '', 'ren', 'halo_k', 0.0, 0.4, False, '%.3f', 1),
+        'line_gap':      ('Line gaps (stop delay; 12.3 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 9.3, 15.3, False, '%.1f cycles', 1),
+        'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
+        'art_room':      ('Overlay room light', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
+        'art_print':     ('Overlay printed art brightness', '', 'ren', 'art_print', 0.0, 1.0, False, '%.2f', 1),
+        'scr_wear':      ('Scratches: wear - the fine ones, number and depth (x1 = 40 years of handling)', '', 'ren', 'scr_wear', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_damage':    ('Scratches: damage - the larger, deeper ones, number and depth', '', 'ren', 'scr_damage', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_glint':     ('Scratches: glint strength', '', 'ren', 'scr_glint', 0.0, 2.0, False, 'x%.2f', 1),
+        'art_dx':        ('Overlay left / right (picture heights)', '', 'ren', 'art_dx', -0.05, 0.05, False, '%+.3f', 1),
+        'art_dy':        ('Overlay up / down (picture heights)', '', 'ren', 'art_dy', -0.05, 0.05, False, '%+.3f', 1),
+        'art_scale':     ('Overlay size', '', 'ren', 'art_scale', 0.9, 1.1, False, 'x%.3f', 1),
         'phos_grow':     ('Afterglow joining (0 = separate copies)', '', 'ren', 'phos_grow', 0.0, 0.97, False, '%.2f', 1),
         'phos_smooth':   ('Afterglow overlap (px; 0 = off)', '', 'ren', 'phos_smooth', 0.0, 4.0, False, '%.2f', 1),
-        'phos_spread':   ('Afterglow softness (blur; 0 = off)', '', 'ren', 'phos_spread', 0.0, 1.0, False, '%.2f', 1),
         'wob_strength':  ('Wobble strength', '', 'ren', 'wob_strength', 0.0, 1.0, False, '%.3f px', 1),
         'bend_strength': ('Bending strength', '', 'ren', 'bend_strength', 0.0, 10.0, False, '%.2f', 1),
         'buzz_vol':      ('Buzz volume', '', 'crt', 'buzz_vol', 0.0, 4.0, False, '%.3f', 1),
+        'monitor_inch':  ('Monitor size (diagonal)', '', 'app', 'monitor_inch', 10.0, 100.0, True, '%.1f inch', 1),
     }
     def slider(self, name):
         """a small window with a slider for one value, at the mouse: drag to set, right click for the
         default; it follows the keys too. Esc or clicking elsewhere closes it."""
         title, keys, where, attr, lo, hi, log, fmt, show = self.SLIDERS[name]
-        obj = lambda: self.run.crt if where == 'crt' else self.ren
+        obj = lambda: self.run.crt if where == 'crt' else self if where == 'app' else self.ren
         if not obj() or not hasattr(obj(), attr):
             return
         default = (self.sound_default if where == 'crt' else self.look_default).get(attr, getattr(obj(), attr))
+        if attr == 'monitor_inch':                              # (the size the monitor reports, else 24 inch)
+            default = self.monitor_auto_inch() or 24.0
+            if not self.monitor_inch:
+                self.monitor_inch = default
         if attr == 'volume':
             default = 1.0
+        # the defaults are the faithful values (measured, or the owner's side-by-side choice): the slider has
+        # the default in its middle and goes 100 % below and above it (0 .. twice) - for small personal adjustments. (Not
+        # the volume knob: 0 % is the power switch; not a value whose default is 0 = off.)
+        default = ART_ADJ_DEFAULT.get(attr, default)            # (an overlay's position / size: 0, 0, x1)
+        rel = attr not in ('volume', 'line_gap', 'monitor_inch') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
+        if rel:
+            lo, hi, log = default * (1 - SLIDER_SPAN), default * (1 + SLIDER_SPAN), False
         if getattr(self, 'slider_win', None):
             try: self.slider_win.destroy()
             except tk.TclError: pass
@@ -1195,7 +1428,8 @@ class App:
         head = tk.Label(t, fg=g, bg=bg, font=(MONO, 10, 'bold'), anchor='w'); head.pack(fill='x', padx=10, pady=(8, 0))
         busy = [False]
         def value_text():
-            return '%s   %s' % (title, fmt % (getattr(obj(), attr) * show))
+            v = getattr(obj(), attr)
+            return '%s   %s%s' % (title, fmt % (v * show), '   (%+d %% from the default)' % round((v / default - 1) * 100) if rel else '')
         def moved(p):
             if busy[0]: return
             v = to_val(float(p))
@@ -1203,7 +1437,10 @@ class App:
                 self.set_volume(round(v * 20) / 20.0)
             else:
                 setattr(obj(), attr, round(v, 4))
+                if attr == 'line_gap': self.core.set_gap(getattr(obj(), attr))
             head.configure(text=value_text())
+            if attr == 'monitor_inch':
+                self.real_size(); return
             self.show_look(attr, obj())
         sc = tk.Scale(t, from_=0, to=N, orient='horizontal', length=420, showvalue=0, command=moved, bg=g, fg=g,
                       troughcolor='#123', highlightthickness=0, activebackground='#8cb', sliderrelief='flat', bd=0,
@@ -1219,6 +1456,8 @@ class App:
         def to_default(e=None):
             if attr == 'volume': self.set_volume(default)
             else: setattr(obj(), attr, default)
+            if attr == 'line_gap': self.core.set_gap(default)
+            if attr == 'monitor_inch': self.real_size()
             busy[0] = True; sc.set(to_pos(default)); busy[0] = False
             head.configure(text=value_text())
             return 'break'
@@ -1246,6 +1485,102 @@ class App:
         x, y = self.root.winfo_pointerxy()
         t.geometry('+%d+%d' % (max(0, x - t.winfo_width() // 2), max(0, y - 20)))
         t.focus_force(); sc.focus_set()
+    # ---------------------------------------------------------------- the overlay
+    def load_art(self):
+        """the overlay for the cartridge in the slot: chosen for this game, else (Choose automatically) by
+        its name, else none"""
+        if not (self.ren and hasattr(self.ren, 'set_art')):
+            return
+        key = self.rom_name
+        pick = self.art_for.get(key)
+        path = None
+        if pick == 'none':
+            path = None
+        elif pick and os.path.exists(pick):
+            path = pick
+        elif self.art_auto:
+            if self.args.rom:
+                path = find_overlay(key)
+                if not path and _art_base(key).lower() == 'mine storm':
+                    path = builtin_overlay()
+            else:                                               # (no cartridge: the console's own Mine Storm -
+                path = next((p for p in (find_overlay('bios'), find_overlay('Mine Storm (built-in game)'),   # yours,
+                                         find_overlay('Mine Storm'), builtin_overlay()) if p), None)  # else the one supplied)
+        art = None
+        if path:
+            try:
+                art = vart.load_overlay(path)
+            except Exception as e:                              # noqa: not an overlay
+                print('overlay %s: %s' % (path, e)); path = None
+        self.ren.set_art(art)
+        self.ren.art_name = os.path.basename(path) if path else ''
+        self.art_path = path
+        a = self.art_adj.get(os.path.basename(path), [0.0, 0.0, 1.0]) if path else [0.0, 0.0, 1.0]
+        self.ren.art_dx, self.ren.art_dy, self.ren.art_scale = (float(v) for v in a)
+    def toggle_art(self, e=None):
+        """O: the overlay on / off"""
+        if not (self.ren and hasattr(self.ren, 'art_on')):
+            return
+        if not self.ren.art:
+            self.show_look('no overlay for this game (Overlay > Choose overlay)')
+            return
+        self.ren.art_on = not self.ren.art_on
+        self.show_look('overlay %s' % (('ON: ' + os.path.splitext(os.path.basename(self.art_path))[0]) if self.ren.art_on else 'OFF'))
+    def toggle_scratches(self):
+        """Overlay > Scratches: the sheet's wear from decades of handling (made on the graphics card)"""
+        if self.ren and hasattr(self.ren, 'scr_on'):
+            self.ren.scr_on = not self.ren.scr_on
+            self.show_look('scr_on')
+    def new_scratches(self):
+        """Overlay > New random scratches: another pattern (each overlay its own variation of it)"""
+        if self.ren and hasattr(self.ren, 'scr_seed'):
+            self.ren.scr_seed = random.randint(2, 99999)
+            if not self.ren.scr_on:
+                self.ren.scr_on = True
+            self.save_settings()
+            self.show_look('new random scratches')
+    def toggle_art_auto(self):
+        self.art_auto = not self.art_auto
+        self.load_art()
+        self.show_look('overlay chosen automatically: %s' % ('ON' if self.art_auto else 'OFF'))
+    def choose_art(self):
+        """Overlay > Choose overlay: any .art file for this game (remembered for it)"""
+        from tkinter import filedialog
+        start = next((d for d in overlay_dirs() if os.path.isdir(d)), ROOT)
+        fn = filedialog.askopenfilename(parent=self.root, title='Overlay for ' + self.rom_name, initialdir=start,
+                                        filetypes=[('Vectrex overlay (.art, .png)', '*.art *.png'), ('All files', '*.*')])
+        if not fn:
+            return
+        self.art_for[self.rom_name] = os.path.abspath(fn)
+        if self.ren: self.ren.art_on = True
+        self.load_art()
+        self.show_look('overlay: ' + os.path.splitext(os.path.basename(fn))[0] if self.art_path else 'not an overlay file')
+    def no_art(self):
+        self.art_for[self.rom_name] = 'none'
+        self.load_art()
+        self.show_look('no overlay for ' + self.rom_name)
+    def reset_art_adj(self):
+        if self.ren:
+            for k, v in ART_ADJ_DEFAULT.items(): setattr(self.ren, k, v)
+        self.show_look('overlay position and size: the defaults')
+    def set_rotation(self, deg):
+        """Display > Rotate screen: the whole screen turned (a monitor on its side: tate)"""
+        if deg == self.rot or not (self.ren and hasattr(self.ren, 'set_art')):
+            return
+        turn = (deg in (90, 270)) != (self.rot in (90, 270))
+        self.rot = deg; self.ren.rot = deg
+        if turn and not self.full:
+            self.root.update_idletasks()
+            w, h = self.root.winfo_width(), self.root.winfo_height()
+            self.root.geometry('%dx%d' % (h, w))
+            self.root.update_idletasks()
+        self.apply_scale()
+        self.show_look('screen turned %s' % ({0: 'back to normal', 90: '90 degrees right', 180: '180 degrees', 270: '90 degrees left'}[deg]))
+    def set_voice_full(self, on):
+        """Sound > Speech module: the speakers plugged into its audio out - full range (as it comes, no
+        filtering) or a small speaker (no deep bass, rounded treble - still better than the Vectrex's)"""
+        self.run.crt.voice_full = on
+        self.show_look('voice_full')
     def set_volume(self, v):
         """the knob to a value (the slider): through 0 % it switches the Vectrex off / on"""
         c = self.run.crt
@@ -1645,7 +1980,7 @@ class App:
                             'the buttons add up, a direction key overrides the stick on its axis.\n'
                             'Click a box, then press a key or a controller button, or push the stick the way the row says -\n'
                             'Shift+click: add a second - right click: clear (a stick box: back to the default axis).\n'
-                            'Not allowed: F11, Esc, Page Up / Down and Ctrl+... (the emulator\'s shortcuts).',
+                            'Not allowed: F11, Esc, Page Up / Down, + - 0 9, P L O and Ctrl+... (the emulator\'s shortcuts).',
                  fg=dim, bg=bg, font=(MONO, 9), justify='left').grid(row=row + 2, column=0, columnspan=5, sticky='w', padx=4, pady=(8, 4))
         bar = tk.Frame(body, bg=bg); bar.grid(row=row + 3, column=0, columnspan=5, sticky='e', pady=(6, 0))
         def test():
@@ -1697,13 +2032,25 @@ class App:
         t.protocol('WM_DELETE_WINDOW', close)
         fill_menus(); refresh(); test()
         t.focus_force()
-    def toggle_cart_hw(self):
-        """Vectrex > Cartridge hardware: on = the bank-switching boards are emulated (64K PB6 carts,
-        Vectorblade, Sean Kelly's Multi-Cart); off = a bone-stock Vectrex: every ROM a plain 32K cartridge.
-        The cartridge is put in again (a power cycle) with the new setting."""
-        self.cart_hw = not self.cart_hw
+    def set_cart_hw(self, k):
+        """Vectrex > Cartridge hardware: Auto = the board the ROM's size calls for (64K PB6 carts,
+        Vectorblade's 4 x 48K flash, the 512K latch flash, Sean Kelly's Multi-Cart), or one board for every
+        ROM; Off = a bone-stock Vectrex: every ROM a plain 32K cartridge. The cartridge is put in again (a
+        power cycle) with the new setting."""
+        self.cart_hw = k
         self.restart(self.args.rom)
-        self.show_look('cartridge hardware %s' % ('ON (bank switching)' if self.cart_hw else 'OFF (bone stock, 32K)'))
+        self.show_look('cartridge: %s' % CART_HW[k].upper())
+    def set_speech(self, k):
+        """Vectrex > Controller port 2: the second joystick, or a speech accessory - the VecVoice (an
+        SP0256-AL2) or the VecVox (a SpeakJet, spoken here with the SP0256's voice at the SpeakJet's
+        pitch and lengths). Both need the SP0256-AL2 ROM in the bios folder (sp0256-al2.bin, from
+        SP_ROM_URL); the Vectrex is switched off and on with the new setting."""
+        if k != 'off' and not sp_rom():
+            self.show_look('SPEECH NEEDS BIOS/SP0256-AL2.BIN - SEE THE README')
+            return
+        self.speech = k
+        self.restart(self.args.rom)
+        self.show_look('port 2: %s' % PORT2[k].upper())
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True
@@ -1747,7 +2094,8 @@ class App:
         pl, pt, pr, pb = self.pic_rect()
         r = vecrender.KNOB_R * (pb - pt)
         cx = pr - 0.35 * r - 3.41 * r                           # (VOLUME ends at the picture's right edge)
-        cy = pb + 2.0 * r                                       # (OFF/ON and RESET 0.2 r below the picture, black below)
+        cy = pb + 2.3 * r                                       # (OFF/ON and RESET 0.5 r below the picture - clear of an overlay's
+                                                                #  lower edge, which the parallax puts 0.32 r below it - black below)
         return cx, cy, r, cx - 3.4 * r
     def osd_state(self):
         """the window's OSD: its two rows in the strip below the picture, left of the knob panel (full
@@ -1787,7 +2135,7 @@ class App:
         d = os.path.join(ROOT, 'roms')
         if os.path.isdir(d):
             for base, dirs, files in os.walk(d):
-                dirs.sort(key=str.lower)
+                dirs[:] = sorted((x for x in dirs if x.lower() != 'overlays'), key=str.lower)   # (not the overlays)
                 for f in files:
                     if os.path.splitext(f)[1].lower() in ('.bin', '.vec', '.gam', '.rom'):
                         p = os.path.join(base, f)
@@ -1889,11 +2237,16 @@ class App:
         resolution), else 1 - the knob, the cartridge, the browser and the OSD are laid out in pixels"""
         return getattr(getattr(self.ren, 'ctxo', None), 'scale', 1.0) if self.ren else 1.0
     def px_event(self, e):
-        """a mouse event on the picture in its pixels"""
+        """a mouse event on the picture in its pixels (a turned screen: in the turned picture's)"""
         k = self.px()
-        if k == 1.0:
+        rot = getattr(self, 'rot', 0)
+        if k == 1.0 and not rot:
             return e
-        return type('E', (), dict(x=e.x * k, y=e.y * k, delta=getattr(e, 'delta', 0), widget=e.widget))
+        x, y = e.x * k, e.y * k
+        if rot and self.ren and hasattr(self.ren, 'real_size'):
+            rw, rh = self.ren.real_size
+            x, y = {90: (y, rw - x), 180: (rw - x, rh - y), 270: (rh - y, x)}[rot]
+        return type('E', (), dict(x=x, y=y, delta=getattr(e, 'delta', 0), widget=e.widget))
     def knob_hit(self, e):
         """'knob' / 'reset' / None for a mouse position"""
         if not self.knob_state():
@@ -1982,6 +2335,12 @@ class App:
             self.set_power(new > 0)
         self.show_look('volume')
         return 'break'
+    def turn_voice(self, d):
+        """Ctrl+Page Up / Ctrl+Page Down: the speech module's own volume (5 % steps, 0 - 200 %)"""
+        c = self.run.crt
+        c.voice_vol = round(max(0.0, min(2.0, c.voice_vol + d)), 3)
+        self.show_look('voice_vol')
+        return 'break'
     def reset_button(self, e=None):
         """Ctrl+R: the Vectrex RESET button (RAM kept: the BIOS warm-starts the cartridge)"""
         if self.run.power:
@@ -2051,6 +2410,16 @@ class App:
             a += da
             x += step * math.cos(a); y += step * math.sin(a)
             pts.append((x, y))
+        # within the visible picture (not past its edge, off the sheet or on the overlay's border):
+        # shifted back inside, or (too big) made smaller - still one smooth stroke
+        bx0, bx1, by0, by1 = 0.06 * ALG_MAX_X, 0.94 * ALG_MAX_X, 0.05 * ALG_MAX_Y, 0.95 * ALG_MAX_Y
+        xs = [p_[0] for p_ in pts]; ys = [p_[1] for p_ in pts]
+        k = min(1.0, (bx1 - bx0) / max(1.0, max(xs) - min(xs)), (by1 - by0) / max(1.0, max(ys) - min(ys)))
+        cx0, cy0 = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+        pts = [(cx0 + (px_ - cx0) * k, cy0 + (py_ - cy0) * k) for px_, py_ in pts]
+        xs = [p_[0] for p_ in pts]; ys = [p_[1] for p_ in pts]
+        dx = max(0.0, bx0 - min(xs)) - max(0.0, max(xs) - bx1); dy = max(0.0, by0 - min(ys)) - max(0.0, max(ys) - by1)
+        pts = [(px_ + dx, py_ + dy) for px_, py_ in pts]
         self.streaks = [(int(x0), int(y0), int(x1), int(y1), 90, 40, 0) for (x0, y0), (x1, y1) in zip(pts, pts[1:])]
 
     def crt_fx(self):
@@ -2125,9 +2494,14 @@ class App:
         else:
             self.W, self.H = e.width, e.height
     def zoom_step(self, f):
-        """+ / - / 0: the window size; in full screen the picture size on the black screen (kept apart)"""
+        """+ / - / 0: the window size (0: the start size, as big as fits the desktop); in full screen the
+        picture size on the black screen (kept apart)"""
+        self.real_on = False
         if not self.full:
-            return self.set_zoom(1.0 if f is None else self.zoom * f)
+            if f is None:
+                self.measure_fit()
+                return self.set_zoom(1.0)
+            return self.set_zoom(self.cur_zoom() * f)
         self.full_scale = self.win_fit() if f is None else max(0.2, min(1.0, (self.full_scale or 1.0) * f))
         self.apply_scale()
         self.save_settings()
@@ -2142,13 +2516,116 @@ class App:
             self.ren.reserve = self.knob_reserve()
             self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
             if hasattr(self.ren, 'clear'): self.ren.clear()
+    def cur_zoom(self):
+        """the picture's height now, relative to the start size"""
+        try:
+            pl, pt, pr, pb = self.pic_rect()
+            return (pb - pt) / float(self.H0) if pb > pt else self.zoom
+        except Exception:       # noqa
+            return self.zoom
     def set_zoom(self, z):
         if self.full:
             return
         self.zoom = max(0.3, min(4.0, z))
         h = int(self.H0 * self.zoom); w = int(h * vecrender.ALG_MAX_X / vecrender.ALG_MAX_Y)
         h = int(h * (1.0 + self.knob_reserve()))                # (+ the strip)
+        if getattr(self, 'rot', 0) in (90, 270):                # (a turned screen: a wide window)
+            w, h = h, w
         self.root.geometry('%dx%d' % (w, h))
+        self.root.after(60, self.keep_on_desktop)
+    def start_fit(self, geo):
+        """after the start: the start size measured on the real frame; the first time (no remembered
+        size) the window takes it, else it is only kept on the desktop"""
+        if self.full:
+            return
+        self.measure_fit()
+        if not geo and not self.args.height_mm:
+            self.set_zoom(self.args.scale)
+        else:
+            self.keep_on_desktop()
+    def frame_overhead(self):
+        """(width, height) the window's frame adds to its inside: borders, title bar, menu bar (measured
+        once it is on screen; a guess before)"""
+        fr = vecrender.frame_rect(self.root.winfo_id())
+        iw, ih = self.root.winfo_width(), self.root.winfo_height()
+        if fr and iw > 1:
+            return fr[2] - fr[0] - iw, fr[3] - fr[1] - ih
+        ui = self.root.winfo_fpixels('1i') / 96.0
+        return int(16 * ui), int(150 * ui)
+    def desktop(self):
+        """the desktop without the task bar (left, top, right, bottom) of the window's monitor"""
+        mi = vecrender.monitor_info(self.root.winfo_id())
+        if mi:
+            return mi['work']
+        return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight() - 80
+    def measure_fit(self):
+        """the start size: the window as big as fits the desktop, above the task bar"""
+        l, t, r, b = self.desktop()
+        ow, oh = self.frame_overhead()
+        aw, ah = r - l - ow - 4, b - t - oh - 4
+        s, a = 1.0 + self.knob_reserve(), vecrender.ALG_MAX_X / float(vecrender.ALG_MAX_Y)
+        if getattr(self, 'rot', 0) in (90, 270):                # (turned: the picture's height runs across)
+            h0 = min(aw / s, ah / a)
+        else:
+            h0 = min(ah / s, aw / a)
+        if not self.args.height_mm:
+            self.H0 = max(200, int(h0))
+        self.fit_h = int(h0 * s)
+    def keep_on_desktop(self):
+        """move the window back onto the desktop if it now reaches behind the task bar or off the screen"""
+        fr = vecrender.frame_rect(self.root.winfo_id())
+        if not fr or self.full:
+            return
+        l, t, r, b = self.desktop()
+        dx = (l - fr[0]) if fr[0] < l else (r - fr[2]) if fr[2] > r and fr[2] - fr[0] <= r - l else 0
+        dy = (t - fr[1]) if fr[1] < t else (b - fr[3]) if fr[3] > b and fr[3] - fr[1] <= b - t else 0
+        if fr[3] - fr[1] > b - t:
+            dy = t - fr[1]                                      # (taller than the desktop: the top on screen)
+        if dx or dy:
+            self.root.geometry('+%d+%d' % (self.root.winfo_x() + dx, self.root.winfo_y() + dy))
+    def center_vertically(self):
+        """the window in the middle of the desktop's height (above the task bar), left / right unchanged"""
+        fr = vecrender.frame_rect(self.root.winfo_id())
+        if not fr or self.full:
+            return
+        l, t, r, b = self.desktop()
+        dy = t + ((b - t) - (fr[3] - fr[1])) // 2 - fr[1]
+        if dy:
+            self.root.geometry('+%d+%d' % (self.root.winfo_x(), self.root.winfo_y() + dy))
+    def monitor_auto_inch(self):
+        """the monitor's diagonal as it reports it (EDID), inches, or None"""
+        mi = vecrender.monitor_info(self.root.winfo_id())
+        if mi and mi['mm'][0]:
+            return round(math.hypot(*mi['mm']) / 25.4, 1)
+        return None
+    def real_size(self, quiet=False):
+        """Display > Real size (9): the overlay sheet as big as a real one, 162 x 207 mm - the picture as tall
+        as the sheet (REAL_PIC_MM), from the monitor's
+        size (Monitor size, else as it reports it) and resolution - in the window and in full screen (it
+        stays until + / - / 0)"""
+        inch = self.monitor_inch or self.monitor_auto_inch()
+        mi = vecrender.monitor_info(self.root.winfo_id())
+        if mi:
+            px = mi['px']
+        else:
+            px = (self.root.winfo_screenwidth(), self.root.winfo_screenheight())
+        if not inch:                                            # (unknown: ask for it)
+            return self.slider('monitor_inch')
+        ppmm = math.hypot(*px) / (inch * 25.4)
+        h = REAL_PIC_MM * ppmm
+        self.real_on = True
+        if self.full:
+            sh = self.root.winfo_screenheight()
+            self.full_scale = max(0.2, min(1.0, h * (1.0 + self.knob_reserve()) / float(sh)))
+            self.apply_scale(); self.save_settings()
+        else:
+            self.set_zoom(h / float(self.H0))
+            self.root.after(120, self.center_vertically)        # (left / right: where the player keeps it)
+        self.save_settings()
+        if quiet:
+            return
+        self.show_look('real size: overlay %d x %d mm (%d px high) on a %.1f inch monitor%s' % (
+            round(REAL_PIC_MM * 846 / 1080.0), REAL_PIC_MM, round(h), inch, '' if self.monitor_inch else ' (as it reports it)'))
     def look_text(self):
         r = self.ren
         if not self.look_keys:
@@ -2173,18 +2650,22 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('curved tube', None), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
-                       buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None))
+                       curve_on=('curved tube', None), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_damage=('scratches: damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
         self.save_settings()
         if what == 'bend_type':
             text = 'bending type: %s' % vecrender.BEND_TYPES[self.ren.bend_type % len(vecrender.BEND_TYPES)]
         elif what in self.LOOK_LABELS:
-            obj = obj or (self.run.crt if what in ('volume', 'buzz_vol', 'buzz_on', 'speaker_on') else self.ren)
+            obj = obj or (self.run.crt if what in ('volume', 'buzz_vol', 'buzz_on', 'speaker_on', 'voice_vol', 'voice_full') else self.ren)
             name, fmt = self.LOOK_LABELS[what]; v = getattr(obj, what)
             if what == 'volume':
                 text = 'volume %d %%' % round(v * 100) if self.run.power else 'volume 0 % (off)'
+            elif what == 'voice_vol':
+                text = 'speech module volume %d %%' % round(v * 100)
+            elif what == 'voice_full':
+                text = 'speech module: %s' % ('full-range speakers' if v else 'small speaker')
             else:
                 text = '%s %s' % (name, ('ON' if v else 'OFF') if fmt is None else fmt % v)
         else:
@@ -2223,7 +2704,9 @@ class App:
         path, self.rom_name = self.cartridge(rom)
         self.args.rom = os.path.abspath(rom) if rom else None
         self.save_settings()
-        self.core = Core(path, self.args.ideal, self.cart_hw)
+        self.core = Core(path, self.args.ideal, self.cart_hw, self.speech)
+        if self.ren and hasattr(self.ren, 'line_gap'):
+            self.core.set_gap(self.ren.line_gap)
         run = Runner(self.core, self.inp, self.audio, False)
         run.crt = old.crt; run.crt.overlay = []
         run.power = old.power                                   # (switched off: it stays off, cartridge in)
@@ -2237,10 +2720,11 @@ class App:
                 for _ in range(12): self.draw([])
         if run.power:
             self.crt_on(0.0)                                    # a quick power cycle: warm tube, a bulge
+        self.load_art()
         self.title()
         run.start()
     def open_rom(self, e=None):
-        """Ctrl+O: pick a ROM; the Vectrex power-cycles with it, in the same window"""
+        """Vectrex > Open ROM file: pick a ROM; the Vectrex power-cycles with it, in the same window"""
         from tkinter import filedialog
         start = os.path.dirname(os.path.abspath(self.args.rom)) if self.args.rom else ROOT
         fn = filedialog.askopenfilename(parent=self.root, title='Open a Vectrex ROM', initialdir=start,
@@ -2270,15 +2754,66 @@ class App:
             if on: setattr(obj, on, True)
             self.show_look(what, obj)
         return 'break'
-    def reset_look(self, e=None):
+    # each menu's reset puts back only what that menu sets
+    def reset_tube(self, e=None):
+        """Tube > Reset tube settings to default (not the overlay's: those are in the Overlay menu)"""
         for k, v in self.look_default.items():
-            setattr(self.ren, k, v)
-        for k, v in self.sound_default.items():
-            if k != 'volume':                                   # (the knob is the power switch: it stays)
-                setattr(self.run.crt, k, v)
+            if not k.startswith('art_'):
+                setattr(self.ren, k, v)
         if self.ren and hasattr(self.ren, 'hist'):
             self.ren.hist = []
-        self.show_look('look and sound: the defaults')
+        if self.ren and hasattr(self.ren, 'line_gap'):
+            self.core.set_gap(self.ren.line_gap)
+        self.show_look('tube settings: the defaults')
+    def reset_overlay(self):
+        """Overlay > Reset overlay settings to default: on, chosen automatically, tint, room light, print,
+        parallax, scratches (off, wear, glint); for this game no chosen overlay, for its overlay no position
+        / size of its own (other games keep theirs)"""
+        for k, v in self.look_default.items():
+            if k.startswith(('art_', 'scr_')):
+                setattr(self.ren, k, v)
+        self.art_auto = True
+        self.art_for.pop(self.rom_name, None)
+        if getattr(self, 'art_path', None):
+            self.art_adj.pop(os.path.basename(self.art_path), None)
+        self.load_art()
+        self.save_settings()
+        self.show_look('overlay settings: the defaults')
+    def reset_sound(self):
+        """Sound > Reset sound settings to default (not the volume knob: it is the power switch)"""
+        for k, v in self.sound_default.items():
+            if k != 'volume':
+                setattr(self.run.crt, k, v)
+        self.show_look('sound settings: the defaults')
+    def reset_display(self):
+        """Display > Reset display settings to default: the start size (no real size, the monitor size as
+        it reports it), not turned, the OSD, the knob and the cartridge on, fixed 60 Hz (full screen stays
+        as it is; its picture as big as in the window)"""
+        self.monitor_inch = 0.0; self.real_on = False
+        if self.rot:
+            self.set_rotation(0)
+        for on, flip in ((self.fps_on, self.toggle_fps), (self.knob_on, self.toggle_knob), (self.cart_on, self.toggle_cart)):
+            if not on:
+                flip()
+        self.vrr = False; self.rate = '60'; self.apply_rate()
+        if self.full:
+            self.full_scale = self.win_fit(); self.apply_scale()
+        else:
+            self.full_scale = None
+            self.zoom_step(None)
+        self.save_settings()
+        self.show_look('display settings: the defaults')
+    def reset_vectrex(self):
+        """Vectrex > Reset Vectrex settings to default: cartridge hardware Auto, port 2 the joystick, start
+        switched off, with the intro (the Vectrex is switched off and on if the hardware changes; the
+        controls keep theirs - the Controls window has its own reset; the volume knob stays)"""
+        again = self.cart_hw != 'auto' or self.speech != 'off'
+        self.cart_hw = 'auto'; self.speech = 'off'
+        self.start_on = False; self.skip_boot = False
+        self.save_settings()
+        if again:
+            self.restart(self.args.rom)
+        self.show_look('Vectrex settings: the defaults')
     def save_settings(self):
         try:
             d = json.load(open(self.settings_f))
@@ -2292,7 +2827,19 @@ class App:
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')
         d['controls'] = self.inp.save()
-        d['cart_hw'] = getattr(self, 'cart_hw', True)
+        d['cart_hw'] = getattr(self, 'cart_hw', 'auto')
+        d['speech'] = getattr(self, 'speech', 'off')
+        if hasattr(self, 'art_for'):
+            if self.art_path and self.ren:                      # (this overlay's position and size)
+                a = [round(getattr(self.ren, k), 4) for k in ('art_dx', 'art_dy', 'art_scale')]
+                if a == [0.0, 0.0, 1.0]: self.art_adj.pop(os.path.basename(self.art_path), None)
+                else: self.art_adj[os.path.basename(self.art_path)] = a
+            d['art_auto'] = self.art_auto; d['overlay_for'] = self.art_for; d['overlay_adjust'] = self.art_adj
+            d['rotate'] = self.rot
+            d['monitor_inch'] = self.monitor_inch
+            if self.ren and hasattr(self.ren, 'scr_seed'):
+                d['scratch_seed'] = self.ren.scr_seed
+            d['real_size'] = self.real_on
         d['start_on'] = getattr(self, 'start_on', False)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['knob'] = getattr(self, 'knob_on', True)
@@ -2317,6 +2864,8 @@ class App:
         if self.full and not self.full_scale:                   # first time: as big as it was in the window
             self.full_scale = self.win_fit()
         self.root.update_idletasks()
+        if self.real_on:                                        # (Real size: the same size in full screen and back)
+            self.real_size(quiet=True)
         self.apply_scale()
         self.pointer_moved()
 
@@ -2467,6 +3016,8 @@ class App:
         vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('MONITOR', '%d HZ' % round(self.disp_fps), g),
                 ('EMU RATE', '--' if idle else '%d%%' % self.speed_shown(), g if idle else self.speed_color(2)),
                 ('VOLUME', '%d%%' % round(self.run.crt.volume * 100) if self.run.power else 'OFF', g)]
+        if getattr(self, 'speech', 'off') != 'off':             # (a speech module plugged in: its volume too)
+            vals.append(('SPEECH VOL', '%d%%' % round(self.run.crt.voice_vol * 100), g))
         width = max(len(n) + 2 + len(v) for n, v, _ in vals)   # (the values end in one column)
         return [[(n + ':' + ' ' * (width - len(n) - 1 - len(v)), g), (v, c)] for n, v, c in vals]
     def speed_shown(self):
@@ -2524,7 +3075,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('rom', nargs='?', default=None, help='cartridge ROM (none: Mine Storm, the built-in game)')
     ap.add_argument('--height-mm', type=float, default=0,
-                    help='picture height in mm on your monitor (e.g. 183 = a 9 inch Vectrex tube); '
+                    help='picture height in mm on your monitor (e.g. 190 = the real Vectrex picture); '
                          'default: as tall as the screen, then the size you last used')
     ap.add_argument('--scale', type=float, default=1.0, help='start size relative to that')
     ap.add_argument('--tk', action='store_true', help='plain Tk canvas (no anti-aliasing)')

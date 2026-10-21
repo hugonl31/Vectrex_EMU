@@ -358,56 +358,69 @@ steeply, the print more gently, and **Printed art brightness** sets one against 
 </p>
 
 **The scratches.** A real overlay is forty years old. Decades of being handled, wiped and stored have
-left it slightly **matte**, criss-crossed by countless fine scratches - and, here and there, a longer,
-deeper one. In the dark you hardly see them, until a vector lights them from behind: then the fine ones
-make a soft matte halo around the line, and the scratches that happen to run *across* the light catch it
-and glint, so around a bright spot they form a little ring of dashes, like a sun drawn by a child.
+left it slightly **matte**, criss-crossed by fine scratches - and, here and there, a deeper one. In the
+dark you hardly see them, until a vector lights them from behind: the fine ones make a soft matte halo
+around the line, and single hairlines light up around it.
 
-Getting that right took about thirty rounds of pictures, each compared with real sheets. The first
-scratches were far too big - they looked like damage. Real wear is finer: a matte buff, millions of
-scratches too small to see one by one, 5 to 35 mm long, in every direction, crossing every spot many
-times over; it makes the plastic duller in its own colour, never whiter. On top of that sit fewer,
-longer, deeper scratches - and those follow a rule: each step has about 4.6 times fewer, a little longer
-and deeper, down to one single deep scratch. The recipe that matched best:
+Getting that right took many rounds of pictures, compared with real sheets - in the end with photos of
+the author's own Vectrex and Mine Storm overlay, in the dark, with and without the sheet, and with a
+flashlight behind it. What they show:
 
-* 1 million fine scratches (5 - 35 mm; counted over MiSTer's whole frame, about 620,000 on the sheet itself), then nine steps of 215,000, 46,000, 10,000, 2,150, 465, 100, 22, 5
-  and 1 scratch, each step's lengths spread from 0.4 to 2.5 times its typical length (up to 100 mm);
-* their depth stays low for a long time and then rises fast, so only the last few really stand out;
-* every one slightly bent - drawn by a grain of sand under the sheet, not by a machine - at a random
-  angle, and more of them where hands hold a sheet (the middle, the lower half, the edges) than in the
-  corners.
+* **Which scratches light up.** A scratch catches light that comes from square across it. So every point
+  of light lights the scratches that face it, and all of it adds up: around a bright dot that makes
+  **rings** of glinting scratches, as around the flashlight; along a long line every part of it lights
+  other scratches, so there you see **random hairlines in every direction**. (A first try lit the
+  scratches that run along the nearest line: they looked painted on, "Van Gogh" as the author put it.)
+* **The plastic glows.** Around bright lines and text the sheet itself spreads a soft, wide glow in its
+  own colour (**Plastic glow**, with its strength).
+* **The wear is mostly short and shallow.** Far fewer fine scratches than first thought, most of the
+  visible ones of medium depth, and only a few deep ones. 95.5 % are 5 - 15 mm long, 4 % 15 - 35 mm and
+  0.5 % up to 80 mm, at random angles; a few (4 %) are **scribbles** - a short smooth sweep ending in a
+  little curl, as from a grain of sand dragged under the sheet.
+* **Deep damage cuts through the colour.** Where a deep scratch is widest, the colour layer is gone and a
+  little untinted, white light comes through.
+
+The recipe: ten steps from the finest to the deepest, their number following a curve with its peak in
+the middle - about 77,000 fine scratches (the matte buff), 15,000 medium ones and, by default, hardly
+any damage (about 15 on the whole sheet: most people want a sheet without; **Damage** adds them). Their
+depth rises step by step, and there are more of them where hands hold a sheet (the middle, the lower
+half, the edges) than in the corners.
 
 <p align="center">
 <img src="docs/images/scratch_layers.png" width="820" alt="the scratch layers"><br>
-<em>The scratch layers as the graphics card holds them, white = deeper: the fine wear, the nine longer
-steps, both together (each a 5 x 5 cm patch), and the longer steps on the whole sheet - denser where the
-sheet is held.</em>
+<em>One square of the sheet around the player's ship and a mine: the game, then the scratches as the
+graphics card holds them (white = deeper) - the fine ones, the medium ones, the damage (shown at x1; at
+its default there is none in this square) and all of them together at the defaults.</em>
 </p>
 
-The graphics card draws all of them - almost 900,000 lines - into two textures in about 50 ms, once,
-when an overlay is loaded; per scratch it keeps its depth and its direction, so the shader can work out
-the glint for any direction of light. After that they cost about a millisecond per frame. Each overlay
-has its own pattern, as every real sheet is worn its own way, and **New random scratches** deals a new set.
+The graphics card draws them - about 90,000 scratches - into three textures in a fraction of a second,
+once, when an overlay is loaded; per scratch it keeps its depth and its direction, so the shader can work
+out the glint for light from any direction. After that they cost about a millisecond per frame. Each
+overlay has its own pattern, as every real sheet is worn its own way, and **New random scratches** deals
+a new set.
 
 <p align="center">
 <img src="docs/images/scratches_onoff.png" width="640" alt="scratches off and on"><br>
 <img src="docs/images/scratches_zoom.png" width="640" alt="scratches off and on, zoomed in"><br>
-<em>The same moment without and with the scratches (on by default): the matte halo around the lines,
-the glints around the bright spots.</em>
+<em>Web Wars without and with the scratches (on by default): the matte halo and the hairlines around
+the lines.</em>
 </p>
 
 <p align="center">
-<img src="docs/images/scratches_examples.png" width="600" alt="the start screen, Bedlam, Web Warp and Pole Position through worn overlays"><br>
-<em>Worn sheets in play: the start screen, Bedlam, Web Warp and Pole Position - the scratches light up
-only around what is drawn.</em>
+<img src="docs/images/scratches_examples.png" width="600" alt="the start screen through Mine Storm's overlay, Bedlam, the start screen through Web Wars' overlay and Pole Position"><br>
+<em>Worn sheets in play: the start screen through Mine Storm's overlay, Bedlam, the start screen through
+Web Wars' overlay, and Pole Position - the scratches light up only around what is drawn.</em>
 </p>
 
-**Overlay > Scratches** switches them; **Wear** sets the number and depth of the fine ones, **Damage**
-the larger ones, **Glint strength** how strongly they catch the light:
+**Overlay > Scratches** switches them. **Wear** sets how much the sheet was handled (all scratches
+together); **Wear type...** opens one window with three sliders - **fine**, **medium** and **damage** -
+for the kind of wear; **Scribbles** the share of curly ones; **Glint strength** how strongly they catch
+the light and **Glint reach** how far from the lines they still do. **Plastic glow** and its strength are
+in the same menu.
 
 <p align="center">
 <img src="docs/images/scratch_sliders.png" width="720" alt="the scratch sliders"><br>
-<em>Mine Storm's ship and a mine (2x zoom) with Wear, Damage and Glint strength at 0, 1 (default) and 2.</em>
+<em>The mothership's wing (2x zoom) with the defaults, and with each scratch setting turned down or up.</em>
 </p>
 
 ---
@@ -553,7 +566,7 @@ Several overlays for one game (`Spike.art`, `Spike (red).art`): the plain one is
 **Overlay > Choose overlay...** (remembered per game). The ROM browser does not list the overlays folder.
 
 The **Overlay** menu has the rest - on / off (**O**), choose / none per game, tint, room light, printed
-art, parallax, the scratches, a fine position / size per overlay - each explained in
+art, parallax, the plastic glow, the scratches, a fine position / size per overlay - each explained in
 [chapter 9](#9-overlays---and-forty-years-of-scratches) and in the built-in Help.
 
 **Mine Storm's overlay comes with the emulator** (`bios/bios.art`, inside the Windows exe), for the game

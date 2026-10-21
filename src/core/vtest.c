@@ -74,6 +74,8 @@ static unsigned long long idle_cycles, idle_frame;
 static unsigned long long busy_max, busy_sum;
 static unsigned long frames_over;     /* frames whose busy time > 30000 */
 static int frame_done, in_wait;
+int vt_t2w_new;                       /* cartridge code restarted timer 2 (vecx.c) */
+static unsigned long long last_recal; /* the last Wait_Recal (cycles) */
 static int crashed;
 static unsigned crash_pc;
 static unsigned long bankchg_log;
@@ -133,6 +135,25 @@ void vt_step (unsigned icycles)
 		memcpy (last, cur, sizeof (line_t) * ncur);
 		nlast = ncur; ncur = 0;
 		frame_done = 1;
+		last_recal = total_cycles;
+	}
+	/* a game that paces itself without Wait_Recal (Vectorblade) restarts timer 2 once a frame from its
+	 * own code, as Wait_Recal does: its frame ends there, at its own rate (50 fps) - not cut every
+	 * frame_budget cycles (45 fps: the display then held the last copy of what moved too long, and a
+	 * rising title shook). Only without a Wait_Recal in the last 100000 cycles, at least 15000 apart. */
+	if (vt_t2w_new) {
+		vt_t2w_new = 0;
+		if (total_cycles - last_recal > 100000 && total_cycles - frame_start_cycles >= 15000) {
+			extern unsigned long long alg_cycles, vt_frame_t0;
+			if (getenv ("VT_LOG_T2FRAME")) fprintf (stderr, "T2 frame %llu cycles\n", total_cycles - frame_start_cycles);
+			frame_start_cycles = total_cycles;
+			idle_frame = 0;
+			frames++;
+			memcpy (last, cur, sizeof (line_t) * ncur);
+			nlast = ncur; ncur = 0;
+			frame_done = 1;
+			vt_frame_t0 = alg_cycles;
+		}
 	}
 	/* crash detection: execution outside cart window / BIOS */
 	{ extern int vt_vb; if (vt_vb && pc >= 0x8000 && pc < 0xC000) return; }   /* (the 48K cartridge) */

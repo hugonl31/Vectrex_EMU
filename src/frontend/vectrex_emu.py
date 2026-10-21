@@ -1032,7 +1032,7 @@ class App:
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
                                       'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'halo_on', 'halo_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax',
-                                      'scr_on', 'scr_wear', 'scr_damage', 'scr_glint')
+                                      'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
         self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full']
@@ -1350,11 +1350,16 @@ class App:
             item(m, 'Printed art brightness...', '', lambda: self.slider('art_print')); dep(m, OV)
             check(m, 'Parallax (seen from the usual height)', '', lambda: A('art_parallax', False), lambda: self.flip(self.ren, 'art_parallax')); dep(m, OV)
             if getattr(self.ren, 'gprog', None):
+                check(m, 'Plastic glow', '', lambda: A('art_glow', False), lambda: self.flip(self.ren, 'art_glow')); dep(m, OV)
+                item(m, 'Plastic glow strength...', '', lambda: self.slider('art_glow_k')); dep(m, lambda: OV() and A('art_glow', False))
+            if getattr(self.ren, 'gprog', None):
                 m.add_separator()
                 check(m, 'Scratches (decades of handling)', '', lambda: A('scr_on', False), self.toggle_scratches); dep(m, OV)
-                item(m, 'Wear (fine scratches)...', '', lambda: self.slider('scr_wear')); dep(m, SC)
-                item(m, 'Damage (larger, deeper scratches)...', '', lambda: self.slider('scr_damage')); dep(m, SC)
+                item(m, 'Wear (how much handled)...', '', lambda: self.slider('scr_wear')); dep(m, SC)
+                item(m, 'Wear type...', '', lambda: self.sliders('Wear type', ('scr_fine', 'scr_medium', 'scr_large'))); dep(m, SC)
+                item(m, 'Scribbles...', '', lambda: self.slider('scr_scrib')); dep(m, SC)
                 item(m, 'Glint strength...', '', lambda: self.slider('scr_glint')); dep(m, SC)
+                item(m, 'Glint reach...', '', lambda: self.slider('scr_reach')); dep(m, SC)
                 item(m, 'New random scratches', '', self.new_scratches); dep(m, SC)
                 m.add_separator()
             pm = tk.Menu(m, tearoff=0); m.add_cascade(label='Position and size (this overlay)', menu=pm); dep(m, OV)
@@ -1397,9 +1402,14 @@ class App:
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
         'art_room':      ('Overlay room light', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
         'art_print':     ('Overlay printed art brightness', '', 'ren', 'art_print', 0.0, 1.0, False, '%.2f', 1),
-        'scr_wear':      ('Scratches: wear - the fine ones, number and depth (x1 = 40 years of handling)', '', 'ren', 'scr_wear', 0.0, 2.0, False, 'x%.2f', 1),
-        'scr_damage':    ('Scratches: damage - the larger, deeper ones, number and depth', '', 'ren', 'scr_damage', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_wear':      ('Scratches: wear - how much the sheet was handled (all of them)', '', 'ren', 'scr_wear', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_fine':      ('Fine scratches (steps 1-3: the matte buff)', '', 'ren', 'scr_fine', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_medium':    ('Medium scratches (steps 4-7)', '', 'ren', 'scr_medium', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_large':     ('Damage (steps 8-10: deep, through the colour)', '', 'ren', 'scr_large', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_scrib':     ('Scratches: scribbles - the share of curly ones', '', 'ren', 'scr_scrib', 0.0, 2.0, False, 'x%.2f', 1),
         'scr_glint':     ('Scratches: glint strength', '', 'ren', 'scr_glint', 0.0, 2.0, False, 'x%.2f', 1),
+        'art_glow_k':    ('Overlay plastic glow strength', '', 'ren', 'art_glow_k', 0.0, 2.0, False, 'x%.2f', 1),
+        'scr_reach':     ('Scratches: glint reach (left: close to the lines, right: farther out)', '', 'ren', 'scr_reach', 0.0, 2.0, False, 'x%.2f', 1),
         'art_dx':        ('Overlay left / right (picture heights)', '', 'ren', 'art_dx', -0.05, 0.05, False, '%+.3f', 1),
         'art_dy':        ('Overlay up / down (picture heights)', '', 'ren', 'art_dy', -0.05, 0.05, False, '%+.3f', 1),
         'art_scale':     ('Overlay size', '', 'ren', 'art_scale', 0.9, 1.1, False, 'x%.3f', 1),
@@ -1502,6 +1512,77 @@ class App:
         x, y = self.root.winfo_pointerxy()
         t.geometry('+%d+%d' % (max(0, x - t.winfo_width() // 2), max(0, y - 20)))
         t.focus_force(); sc.focus_set()
+    def sliders(self, title, names):
+        """one small window with a slider for each of several values (renderer settings with the default in the
+        middle, 0 .. twice): drag to set, right click on one for its default, Esc or clicking elsewhere closes"""
+        if not self.ren:
+            return
+        if getattr(self, 'slider_win', None):
+            try: self.slider_win.destroy()
+            except tk.TclError: pass
+        N = 1000; g, bg = '#6a8', '#000'
+        t = tk.Toplevel(self.root, bg=bg); self.slider_win = t
+        t.title(title); t.transient(self.root); t.resizable(False, False)
+        try: t.attributes('-toolwindow', True)
+        except tk.TclError: pass
+        rows = []; busy = [False]
+        for name in names:
+            label, keys, where, attr, lo, hi, log, fmt, show = self.SLIDERS[name]
+            default = self.look_default.get(attr, getattr(self.ren, attr))
+            if attr not in ('scr_large',):                      # (Damage: its own range, a low default)
+                lo, hi = default * (1 - SLIDER_SPAN), default * (1 + SLIDER_SPAN)
+            head = tk.Label(t, fg=g, bg=bg, font=(MONO, 10, 'bold'), anchor='w'); head.pack(fill='x', padx=10, pady=(10, 0))
+            r = dict(attr=attr, lo=lo, hi=hi, fmt=fmt, show=show, label=label, default=default, head=head)
+            def text(r=r):
+                v = getattr(self.ren, r['attr'])
+                return '%s   %s' % (r['label'], r['fmt'] % (v * r['show']))
+            def moved(p, r=r):
+                if busy[0]: return
+                setattr(self.ren, r['attr'], round(r['lo'] + (r['hi'] - r['lo']) * float(p) / N, 4))
+                r['head'].configure(text=text(r)); self.show_look(r['attr'], self.ren)
+            sc = tk.Scale(t, from_=0, to=N, orient='horizontal', length=420, showvalue=0, command=moved, bg=g, fg=g,
+                          troughcolor='#123', highlightthickness=0, activebackground='#8cb', sliderrelief='flat', bd=0,
+                          width=16, sliderlength=22)
+            sc.pack(padx=10, pady=4)
+            def to_default(e=None, r=r, sc=sc):
+                setattr(self.ren, r['attr'], r['default'])
+                busy[0] = True; sc.set(N * (r['default'] - r['lo']) / (r['hi'] - r['lo'])); busy[0] = False
+                r['head'].configure(text=text(r)); self.show_look(r['attr'], self.ren)
+                return 'break'
+            def jump(e, sc=sc):                                 # (a click on the bar: the handle goes there)
+                if 'trough' not in sc.identify(e.x, e.y):
+                    return None
+                sc.set(max(0, min(N, (e.x - 11) / float(max(1, sc.winfo_width() - 22)) * N)))
+                return 'break'
+            sc.bind('<Button-1>', jump); sc.bind(RCLICK, to_default)
+            r.update(sc=sc, text=text); rows.append(r)
+        tk.Label(t, fg=g, bg=bg, font=(MONO, 9), anchor='w', justify='left',
+                 text='right click on a slider: its default   Esc: close').pack(fill='x', padx=10, pady=(4, 8))
+        def sync():                                             # (other ways of changing them too)
+            if not t.winfo_exists(): return
+            busy[0] = True
+            for r in rows:
+                v = max(r['lo'], min(r['hi'], getattr(self.ren, r['attr'])))
+                r['sc'].set(N * (v - r['lo']) / (r['hi'] - r['lo'])); r['head'].configure(text=r['text'](r))
+            busy[0] = False
+            t.after(250, sync)
+        def close(e=None):
+            self.save_settings()
+            try: t.destroy()
+            except tk.TclError: pass
+            self.slider_win = None
+        t.bind('<Escape>', close); t.protocol('WM_DELETE_WINDOW', close)
+        def lost(e=None):                                       # (focus went elsewhere: close)
+            if not t.winfo_exists(): return
+            f = t.focus_get()
+            if f is None or not str(f).startswith(str(t)):
+                close()
+        t.bind('<FocusOut>', lambda e: t.after(150, lost))
+        sync()
+        t.update_idletasks()
+        x, y = self.root.winfo_pointerxy()
+        t.geometry('+%d+%d' % (max(0, x - t.winfo_width() // 2), max(0, y - 20)))
+        t.focus_force(); rows[0]['sc'].focus_set()
     # ---------------------------------------------------------------- the overlay
     def load_art(self):
         """the overlay for the cartridge in the slot: chosen for this game, else (Choose automatically) by
@@ -2667,7 +2748,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('curved tube', None), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_damage=('scratches: damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('curved tube', None), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""

@@ -201,16 +201,26 @@ TOPICS = [
          "follows it more gently (half: half as bright, the right end twice)."),
 ('item', 'Printed art brightness...', "The solid print (borders, pictures, the game's name) against the plastic; "
          "it follows the room light too, more gently than the plastic."),
-('item', 'Scratches (decades of handling)', "A 40-year-old sheet is worn: millions of fine scratches make it "
-         "slightly matte, and fewer, longer, deeper ones run across it, down to a single deep one. In the dark "
+('item', 'Scratches (decades of handling)', "A 40-year-old sheet is worn: a quarter of a million fine scratches make it "
+         "slightly matte, and fewer, deeper ones - thousands of short scuffs, down to a few deep ones. In the dark "
          "you see them only where the vectors light them up: a soft matte halo around the lines, and the "
-         "scratches that run across the light glint, so they form little rings around bright spots. In room "
+         "scratches that lie square to the light glint - rings around a bright dot, random hairlines along a "
+         "long line (each part of it lights other ones). In room "
          "light the whole sheet looks more matte, in its own colours. On by default; made on the graphics "
          "card in a fraction of a second, each overlay with its own pattern."),
-('item', 'Wear (fine scratches)...', "How worn the sheet is: the number and depth of the fine scratches."),
-('item', 'Damage (larger, deeper scratches)...', "The number and depth of the larger scratches - from none to a "
-         "well-used sheet."),
+('item', 'Wear (how much handled)...', "How worn the sheet is: all the scratches together, fine and large - "
+         "from almost new (left) to twice as worn (right)."),
+('item', 'Wear type...', "Three sliders for the kind of wear: the fine scratches (the matte buff), the medium ones "
+         "and the damage - the few deep ones that cut through the colour layer where they are widest, so a "
+         "little white light comes through. Each from none to twice as many. Right click on a slider: its default."),
+('item', 'Scribbles...', "The share of curly scratches - short sweeps ending in a little curl, as from a grain of "
+         "sand dragged under the sheet."),
 ('item', 'Glint strength...', "How strongly the scratches catch the light."),
+('item', 'Glint reach...', "How far from the lines the scratches still catch their light: to the left only "
+         "close to them, to the right farther out."),
+('item', 'Plastic glow', "The plastic itself spreads a little of the light: a soft, wide glow in the "
+         "sheet's colour around bright lines and text, as on a real overlay in the dark."),
+('item', 'Plastic glow strength...', "How strong the plastic glow is (x1 = as on the owner's sheet in the dark)."),
 ('item', 'New random scratches', "Another pattern of scratches (each overlay gets its own variation of it)."),
 ('item', 'Parallax (seen from the usual height)', "The sheet sits a little in front of the tube, so seen from "
          "the usual height the picture sits a little higher on it (as on MiSTer)."),

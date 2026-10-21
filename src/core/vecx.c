@@ -673,7 +673,8 @@ void write8 (unsigned address, unsigned char data)
 				via_t2c = (data << 8) | via_t2ll;
 				via_ifr &= 0xdf;
 				{ unsigned pc = e6809_get_pc () & 0xffff; static int n;
-				  if (getenv ("VT_WATCH_T2") && pc < 0xE000 && n++ < 20) fprintf (stderr, "T2 high write at PC=%04X addr=%04X\n", pc, address); }
+				  if (getenv ("VT_WATCH_T2") && pc < 0xE000 && n++ < 20) fprintf (stderr, "T2 high write at PC=%04X addr=%04X\n", pc, address);
+				  { extern int vt_t2w_new; if (pc < 0xE000) vt_t2w_new = 1; } }   /* (the game's own frame timer: vtest.c) */
 
 				via_t2on = 1; /* timer 2 starts running */
 				via_t2int = 1;

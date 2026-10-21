@@ -430,38 +430,67 @@ void main() {
 # passes on the screen: 1. multiply (blend DST_COLOR, SRC_COLOR: dst x 2 src, so a filter can also lift its
 # colour), 2. add the sheet's own light.
 # ------------------------------------------------------------------ overlay scratches
-# Decades of handling: millions of fine scratches (a matte that scatters the tube's light into a halo
-# around the lines) and fewer, longer, deeper ones, down to a single deep scratch. Made on the graphics
+# Decades of handling: many fine scratches (a matte that scatters the tube's light into a halo
+# around the lines) and fewer, deeper ones, down to a few deep scratches. Made on the graphics
 # card from a seed (SCR_GEN_VS draws every scratch from its index), in the sheet's own space (162 x 207 mm),
 # so the pattern stays with the overlay. The recipe is the owner's choice from previews (2026-10-20):
 # fine wear 1 M (over the 1360-wide plane: 18.5 per mm2), 5-35 mm, straight; then nine steps, about 4.6x fewer
 # each, lengths 0.4-2.5x of each step's typical one (at most 100 mm), slightly bent, more where hands
 # hold the sheet; their depth stays low for long, then rises fast (cubic, the last three +10 %).
-# A scratch lights up where it runs across the direction to the light (the "sun drawn by a child"
-# corona); the room's light makes the sheet more matte in its own colours.
+# Revised from the owner's real sheet (2026-10-21, previews D, C4 -> D3): the count per step as a bell
+# shifted to the larger scratches - few fine ones, most at steps 4-7, few of the deepest (SCR_COUNTS, the
+# owner's Wear 0.70 / Damage 0.68 included); every step 5-80 mm long, random direction, one line wide, the
+# depth per step as before; a few of them scribbles (SCR_SCRIBBLE: short, a smooth sweep ending in a curl).
+# A scratch lights up from every bit of light it lies across from: each point of light lights the
+# scratches square to the direction to it (an angle lobe |sin|^p, Glint width), summed over all the light
+# around (SCR_GLINT_SIG). A bright dot so gets rings of glinting scratches; a long line lights scratches of
+# every direction (each part of it other ones), as on the owner's sheet (photos, 2026-10-20). Done with
+# angle harmonics: the scratch textures keep each texel's sum of d, d cos 2t, d sin 2t, d cos 4t, d sin 4t,
+# and the light is blurred with the matching kernels (r/s)^4 G(r) x cos / sin 2phi, 4phi - separable,
+# at quarter size (SCR_HARM_*). The room's light makes the sheet more matte in its own colours; the
+# plastic itself spreads the light softly, wide around bright lines (Plastic glow).
 SCR_TPM = 2048 / 207.0                  # texels per mm of the scratch textures (2048 high)
-SCR_FINE = (18.53, 5.0, 35.0, 0.3, 1.0, 0.0376)    # per mm2, length mm, depth, width mm (1/3 px at 8.86 px/mm)
+SCR_COUNTS = (9843, 24276, 8177, 3480, 2900, 2418, 684, 112, 8, 2)    # steps 1 (fine wear) .. 10, on the sheet
+SCR_LEN = (5.0, 80.0)                   # every scratch's length, mm (log-uniform within each tier, SCR_TIERS):
+SCR_TIERS = (15.0, 35.0, 0.04, 0.005)   #  most 5-15, 4 % 15-35 (medium long), 0.5 % 35-80 (long)
+SCR_GROUP = (1.0, 1.0, 1.0)             # Wear type at x1: fine (steps 1-3), medium (4-7), damage (8-10)
+SCR_PEN = (0.45, 0.85, 1.5)            # damage cuts through the colour layer where widest: (from, full, light through)
+SCR_BASE = (1.8145, 1.202, 0.5043)      # the owner's look at the sliders' x1 (2026-10-21): steps 1-5 x1.81, 6-10
+                                        #  x1.20 (number; depth x sqrt), Glint strength x0.50
+SCR_FINE = (SCR_COUNTS[0] / (162 * 207.0), SCR_LEN[0], SCR_LEN[1], 0.3, 1.0, 0.0376)    # per mm2, length mm, depth, width mm
+SCR_FINE_1M = 18.53                     # (the first recipe's 1 M: the matte's scale, SCR_REF, stays with it)
+SCR_SCRIBBLE = (0.04, 1.0)              # the share of scratches that are scribbles, and how strongly they turn
 SCR_STEP_W = 0.0538                     # a step scratch's width (mm) per unit depth (the previews' drawing)
 def _scr_steps():
     out = []
     for i in range(9):
-        n = 1e6 / 4.64 ** (i + 1)                               # (215k, 46k, 10k, 2.2k, 465, 100, 22, 5, 1)
-        lo, hi = 7 + 43 * i / 8.0, 40 + 60 * i / 8.0
-        mid = (lo * hi) ** 0.5
         depth = (0.02 + 1.58 * (i / 8.0) ** 3) * (1.1 if i >= 6 else 1.0)
-        out.append((n, 0.4 * mid, min(100.0, 2.5 * mid), depth, 0 if i < 5 else (1 if i < 8 else 2)))
+        out.append((SCR_COUNTS[i + 1], SCR_LEN[0], SCR_LEN[1], depth, 0))
     return out
 SCR_STEPS = _scr_steps()                # (count on the sheet, length mm lo / hi, depth, half width)
-SCR_DAMAGE_FROM = 4                     # steps from here on are the damage (Overlay > Damage): 465, 100, 22, 5, 1;
+SCR_GLINT_SIG = ((4.0, 1.0), (12.0, 0.7))    # the glint's reach: (sigma in quarter px, weight at Glint reach x1);
+                                        #  peaks at 2 sigma: ~32 and ~96 window px
+SCR_GLOW_SIG = 12.0                     # the plastic's glow (quarter px; the wider glint sigma's Gaussian)
+SCR_GLINT_K = 2.0                       # the glint's strength at Glint strength x1
+ART_GLOW_K = 0.718                        # the plastic glow's strength
+def scr_lobe(width):
+    """Glint width (x1 = |sin|^4; wider = a lower power): the lobe's harmonics a2, a4 (1 - a2 cos 2x + a4 cos 4x)"""
+    import math
+    p = 4.0 * 4.0 ** (1.0 - max(0.0, min(2.0, width)))
+    n = 720; xs = [(i + 0.5) * math.pi / n for i in range(n)]
+    f = [abs(math.cos(x)) ** p for x in xs]; m0 = sum(f)
+    return (2 * sum(v * math.cos(2 * x) for v, x in zip(f, xs)) / m0,
+            2 * sum(v * math.cos(4 * x) for v, x in zip(f, xs)) / m0)
+SCR_DAMAGE_FROM = 4                     # steps from here on are the damage (Overlay > Damage): steps 6-10;
                                         #  the fine wear and the steps before it the wear (Overlay > Wear)
-ART_ROOM_MID = 0.075                    # Room light's default
+ART_ROOM_MID = 0.075                    # the room light curve's pivot (the default now 0.0648, the owner's)
 ART_ROOM_POW = 2.0                      # the plastic's light goes with the setting squared (x2 slider = x4 light);
 ART_PRINT_POW = 1.0                     #  the print's straight with it (x2 = x2: it clips less)
 def room_light(r):
     """the room's light on the sheet from the Room light setting: the default as it is, steeper around it"""
     return ART_ROOM_MID * (max(0.0, r) / ART_ROOM_MID) ** ART_ROOM_POW
 # the matte's scale: the fine layer's mean sum at 4 M (the previews' reference)
-SCR_REF = 4 * SCR_FINE[0] * 15.42 * 0.65 * 0.7628 * SCR_FINE[5]
+SCR_REF = 4 * SCR_FINE_1M * 15.42 * 0.65 * 0.7628 * SCR_FINE[5]
 def _scr_handled_mean():
     import math as m
     tot = 0.0; mx = 0.0
@@ -477,6 +506,8 @@ SCR_HANDLED_MEAN, SCR_HANDLED_MAX = _scr_handled_mean()
 
 SCR_GEN_VS = b"""
 uniform float batch, limit, seed, stepid, mode, place, L0, L1, d0, d1, wv, off, chan, dmax;
+uniform vec2 scrib;                     // (the share of scribbles, how strongly they turn)
+uniform vec4 llen;                      // (the length tiers: 15 mm, 35 mm, the share 15-35, the share 35-80)
 varying vec4 val;
 const float SW = 162.0, SH = 207.0, PI = 3.14159265;
 float h(float j, float k) {
@@ -496,7 +527,11 @@ void main() {
     float u = h(j, 0.0), v = h(j, 1.0);
     bool keep = j < limit;
     if (place > 0.5) keep = keep && h(j, 2.0) < dens(vec2(u, v)) / dmax;
-    float L = min(exp(mix(log(L0), log(L1), h(j, 3.0))), 100.0);
+    float hl = h(j, 3.0), pl = llen.w, pm = llen.z;    // (three tiers: long, medium long, the rest)
+    float L = hl < pl ? exp(mix(log(llen.y), log(L1), hl / pl))
+            : hl < pl + pm ? exp(mix(log(llen.x), log(llen.y), (hl - pl) / pm))
+            : exp(mix(log(L0), log(llen.x), (hl - pl - pm) / (1.0 - pl - pm)));
+    L = min(L, 100.0);
     float th0 = h(j, 4.0) * 2.0 * PI;
     float bend = mode > 0.5 ? sqrt(-2.0 * log(max(h(j, 5.0), 1e-6))) * cos(2.0 * PI * h(j, 6.0)) * 0.35 : 0.0;
     float d = mix(d0, d1, h(j, 7.0));
@@ -504,24 +539,108 @@ void main() {
     if (mode > 0.5) taper *= 0.75 + 0.25 * sin(7.0 * s + h(j, 8.0) * 6.2832);
     float th = th0 + bend * (s - 0.5), a0 = th0 - 0.5 * bend;
     vec2 p = abs(bend) > 1e-4 ? vec2(sin(th) - sin(a0), cos(a0) - cos(th)) * (L / bend) : vec2(cos(th0), sin(th0)) * s * L;
-    p += vec2(u * SW, v * SH) - 0.5 * L * vec2(cos(th0), sin(th0)) + off * vec2(-sin(th), cos(th));
+    p -= 0.5 * L * vec2(cos(th0), sin(th0));
+    // a scribble (a few): a sand grain dragged under the sheet - short, one smooth sweep of up to half a
+    // circle, ending in a small curl; the path summed in 32 pieces, centred
+    float sc = h(j, 9.0) < scrib.x ? scrib.y : 0.0;
+    if (sc > 0.0) {
+        L = 6.0 + 18.0 * h(j, 10.0);
+        float K = sc * (1.2 + 1.9 * h(j, 11.0)) * (h(j, 12.0) < 0.5 ? -1.0 : 1.0);     // (the sweep, radians)
+        float C = sc * (0.8 + 2.2 * h(j, 13.0)) * (h(j, 14.0) < 0.5 ? -1.0 : 1.0);     // (the end's curl)
+        vec2 acc = vec2(0.0), tot = vec2(0.0);
+        for (int i = 0; i < 32; i++) {
+            float t = (float(i) + 0.5) / 32.0, ts = t * s;
+            float ea = clamp((t - 0.7) / 0.3, 0.0, 1.0), eb = clamp((ts - 0.7) / 0.3, 0.0, 1.0);
+            float ha = th0 + K * (t - 0.5) + C * ea * ea, hb = th0 + K * (ts - 0.5) + C * eb * eb;
+            tot += vec2(cos(ha), sin(ha)); acc += vec2(cos(hb), sin(hb)) * s;
+        }
+        p = (acc - 0.5 * tot) * (L / 32.0);
+        float es = clamp((s - 0.7) / 0.3, 0.0, 1.0);
+        th = th0 + K * (s - 0.5) + C * es * es;
+    }
+    p += vec2(u * SW, v * SH) + off * vec2(-sin(th), cos(th));
     gl_Position = keep ? vec4(p / vec2(SW, SH) * 2.0 - 1.0, 0.0, 1.0) : vec4(-9.0, -9.0, 0.0, 1.0);
     float w = d * taper * wv / max(abs(cos(th)), abs(sin(th)));     // (an aliased line: per length, not per texel)
     float c2 = cos(2.0 * th), s2 = sin(2.0 * th);
     if (chan < 0.5) val = w * vec4(1.0, c2, s2, cos(4.0 * th));
     else if (chan < 1.5) val = vec4(w * sin(4.0 * th), 0.0, 0.0, 0.0);
-    else val = vec4(0.0, w, w * c2, w * s2);
+    else if (chan < 2.5) val = vec4(0.0, w, w * c2, w * s2);
+    else {                                  // (C: the 4t terms; z: the damage's cut through the colour, widest part)
+        float cut = stepid > 6.5 ? pow(max(sin(PI * s), 0.0), 3.0) * d / 1.25 / max(abs(cos(th)), abs(sin(th))) : 0.0;
+        val = vec4(w * cos(4.0 * th), w * sin(4.0 * th), cut, 0.0);
+    }
 }
 """
 SCR_GEN_FS = b"""
 varying vec4 val;
 void main() { gl_FragColor = val; }
 """
+# the light's angle harmonics (quarter size): a horizontal pass per part (u = x / sigma, g = exp(-u^2/2)):
+# part 0 / 1: sigma 1 / 2 (g, u g, u^2 g, u^3 g); part 2: u^4 g of both
+SCR_HARM_H = b"""
+uniform sampler2D src;
+uniform float part, s1, s2;
+uniform vec2 px;
+float lum(vec3 c) { return max(max(c.r, c.g), c.b); }
+void main() {
+    vec2 uv = gl_TexCoord[0].st;
+    vec4 o = vec4(0.0);
+    float sg = part < 0.5 ? s1 : s2;
+    int n = int(ceil(5.0 * max(s1, s2)));
+    for (int i = -64; i <= 64; i++) {
+        if (i < -n || i > n) continue;
+        float l = lum(texture2D(src, uv + vec2(float(i) * px.x, 0.0)).rgb);
+        if (part < 1.5) {
+            float u = float(i) / sg, g = exp(-0.5 * u * u) * l;
+            o += g * vec4(1.0, u, u * u, u * u * u);
+        } else {
+            float u1 = float(i) / s1, u2 = float(i) / s2;
+            o.x += exp(-0.5 * u1 * u1) * u1 * u1 * u1 * u1 * l;
+            o.y += exp(-0.5 * u2 * u2) * u2 * u2 * u2 * u2 * l;
+        }
+    }
+    gl_FragColor = o;
+}
+"""
+# vertical (v = y / sigma, y down): part 0: (R, C2, S2, C4), part 1: (S4, glow) - R = sum w (r/s)^4 G * light,
+# normalized (16 pi s^2); C / S n = the same with cos / sin n phi; glow = G of sigma 2 (2 pi s^2)
+SCR_HARM_V = b"""
+uniform sampler2D H1, H2, H3;
+uniform float part, s1, s2, w1, w2;
+uniform vec2 px;
+void main() {
+    vec2 uv = gl_TexCoord[0].st;
+    vec4 o = vec4(0.0);
+    int n = int(ceil(5.0 * max(s1, s2)));
+    float n1 = w1 / (50.265 * s1 * s1), n2 = w2 / (50.265 * s2 * s2);
+    for (int j = -64; j <= 64; j++) {
+        if (j < -n || j > n) continue;
+        vec2 q = uv + vec2(0.0, float(j) * px.y);
+        vec4 a = texture2D(H1, q), b = texture2D(H2, q), c = texture2D(H3, q);
+        for (int k = 0; k < 2; k++) {
+            float sg = k == 0 ? s1 : s2, nn = k == 0 ? n1 : n2;
+            vec4 h = k == 0 ? a : b; float h4 = k == 0 ? c.x : c.y;
+            float v = -float(j) / sg, g = exp(-0.5 * v * v);
+            float v1 = g * v, v2 = v1 * v, v3 = v2 * v, v4 = v3 * v;
+            if (part < 0.5)
+                o += nn * vec4(h4 * g + 2.0 * h.z * v2 + h.x * v4, h4 * g - h.x * v4,
+                               2.0 * (h.w * v1 + h.y * v3), h4 * g - 6.0 * h.z * v2 + h.x * v4);
+            else {
+                o.x += nn * 4.0 * (h.w * v1 - h.y * v3);
+                if (k == 1) o.y += h.x * g / (6.2832 * s2 * s2);
+            }
+        }
+    }
+    gl_FragColor = o;
+}
+"""
 # the scratches on the screen: A = fine wear (sum d, d cos 2t, d sin 2t, d cos 4t), B = (d sin 4t, the steps:
-# sum d, d cos 2t, d sin 2t); S = the screen before the overlay, M / F its light blurred (~6 / ~11 px)
+# sum d, d cos 2t, d sin 2t), C = (the steps: d cos 4t, d sin 4t); S = the screen before the overlay, M / F its
+# light blurred (~6 / ~11 px); V1 / V2 the light's angle harmonics (SCR_HARM_V)
 SCR_SHADE = b"""
-uniform sampler2D art, A, B, S, M, F;
-uniform float pass, sf, ref, glint, room, scrk;
+uniform sampler2D art, A, B, C, S, M, F, V1, V2;
+uniform float pass, sf, ref, glint, room, scrk, scron, a2, a4, gk, glow;
+uniform vec4 pen;                       // (the damage's cut: from, full, light through)
 uniform vec2 size, qpx;
 float lum(vec3 c) { return max(max(c.r, c.g), c.b); }
 void main() {
@@ -534,32 +653,34 @@ void main() {
     vec3 trans = mix(mix(vec3(1.0), hue, filt), vec3(0.0), opq);    // (the plastic's colour; the print: no light)
     vec3 own = mix(vec3(0.35), o.rgb, max(filt, opq));
     vec2 sv = vec2(su, tc.y);
-    vec4 a = texture2D(A, sv), b = texture2D(B, sv);
+    vec4 a = texture2D(A, sv) * scron, b = texture2D(B, sv) * scron, cc = texture2D(C, sv) * scron;
     float D = max(a.x, 0.0);
     float m = D > 0.0 ? (1.0 - exp(-1.5 * D / ref)) / (1.0 - exp(-1.5)) : 0.0;
     vec2 uv = gl_FragCoord.xy / size, px = 1.5 / size;
     vec3 near = (texture2D(S, uv).rgb * 2.0 + texture2D(S, uv + px).rgb + texture2D(S, uv - px).rgb
                  + texture2D(S, uv + vec2(px.x, -px.y)).rgb + texture2D(S, uv - vec2(px.x, -px.y)).rgb) / 6.0;
     vec3 mid = texture2D(M, uv).rgb, far = texture2D(F, uv).rgb;
-    float gx = lum(texture2D(F, uv + vec2(qpx.x, 0.0)).rgb) - lum(texture2D(F, uv - vec2(qpx.x, 0.0)).rgb);
-    float gy = lum(texture2D(F, uv - vec2(0.0, qpx.y)).rgb) - lum(texture2D(F, uv + vec2(0.0, qpx.y)).rgb);   // (y down)
-    float phi = atan(gy, gx + 1e-7), c2 = cos(2.0 * phi), s2 = sin(2.0 * phi);
-    float An = 0.375 * D - 0.5 * (a.y * c2 + a.z * s2) + 0.125 * (a.w * cos(4.0 * phi) + b.x * sin(4.0 * phi));
-    float ratio = D > 0.0 ? clamp(0.15 + 0.85 * An / (0.375 * D), 0.0, 4.0) : 1.0;
-    float k = scrk * m * ratio;
+    float k = scrk * m;
     if (pass < 0.5) {                                   // the light the matte scatters leaves the line itself
         gl_FragColor = vec4(vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq)), 1.0);
         return;
     }
     vec3 halo = (0.6 * near + 0.8 * mid + 0.5 * far) * trans;
     vec3 c = halo * k * 0.8 * glint + room * 0.6 * m * own;
+    vec4 h = texture2D(V1, uv), h2 = texture2D(V2, uv);
+    vec3 lc = (far + 0.002) / (lum(far) + 0.002);        // (the light's colour; the harmonics are its brightness)
+    float Rl = max(h.x, 0.0);
+    // the glint: each scratch from all the light it lies across from (the lobe 1 - a2 cos 2x + a4 cos 4x)
+    float Gf = D * Rl - a2 * (a.y * h.y + a.z * h.z) + a4 * (a.w * h.w + b.x * h2.x);
+    float Gs = b.y * Rl - a2 * (b.z * h.y + b.w * h.z) + a4 * (cc.x * h.w + cc.y * h2.x);
+    float df = D > 0.0 ? clamp(Gf / max(D * Rl, 1e-7), 0.0, 4.0) : 0.0;
+    float ds = b.y > 0.0 ? clamp(Gs / max(b.y * Rl, 1e-7), 0.0, 4.0) : 0.0;
     float dd = clamp(b.y * 0.6, 0.0, 1.4);
-    if (dd > 0.0) {                                     // the longer, deeper ones: they glint across the light
-        float bc = b.z / max(b.y, 1e-6), bs = b.w / max(b.y, 1e-6);
-        float across = pow(clamp(0.5 - 0.5 * (bc * c2 + bs * s2), 0.0, 1.0), 3.0);
-        vec3 lit = (1.0 * near + 1.4 * far) * trans;
-        c += dd * (0.3 + 0.7 * across) * lit * 3.0 * glint + dd * room * 0.9 * own;
-    }
+    c += (m * df * df + 2.0 * dd * ds * ds) * Rl * gk * glint * lc * trans + dd * room * 0.9 * own;
+    c += glow * max(h2.y, 0.0) * lc * trans;            // (the plastic's own glow)
+    // the damage cut through the colour layer at its widest: the tube's light comes through untinted (white)
+    float cut = smoothstep(pen.x, pen.y, cc.z);
+    c += cut * pen.z * (0.5 * near + 0.8 * mid + 0.6 * far) * (vec3(1.0) - trans * 0.5) + cut * room * 0.5;   // (it scatters the light around it)
     gl_FragColor = vec4(c, 1.0);
 }
 """
@@ -821,6 +942,7 @@ class GLBloomRenderer(GLRenderer):
         GetUniform = proc('glGetUniformLocation', i, u, ctypes.c_char_p)
         self.Uniform1i = proc('glUniform1i', None, i, i)
         self.Uniform2f = proc('glUniform2f', None, i, ctypes.c_float, ctypes.c_float)
+        self.Uniform4f = proc('glUniform4f', None, i, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float)
         gl.glTexImage2D.argtypes = [u, i, i, i, i, i, u, u, p_]
         gl.glTexParameteri.argtypes = [u, u, i]
         gl.glBindTexture.argtypes = [u, u]
@@ -890,22 +1012,35 @@ class GLBloomRenderer(GLRenderer):
         try:                                                    # (the overlay's scratches; without them if the
             self.gprog = program_vf(SCR_GEN_VS, SCR_GEN_FS, 'scratch maker')    #  card can not)
             self.u_g = {k: GetUniform(self.gprog, k.encode()) for k in
-                        ('batch', 'limit', 'seed', 'stepid', 'mode', 'place', 'L0', 'L1', 'd0', 'd1', 'wv', 'off', 'chan', 'dmax')}
+                        ('batch', 'limit', 'seed', 'stepid', 'mode', 'place', 'L0', 'L1', 'd0', 'd1', 'wv', 'off', 'chan', 'dmax', 'scrib', 'llen')}
             self.rprog = program(SCR_SHADE, 'scratches')
             self.u_r = {k: GetUniform(self.rprog, k.encode()) for k in
-                        ('art', 'A', 'B', 'S', 'M', 'F', 'pass', 'sf', 'ref', 'glint', 'room', 'scrk', 'size', 'qpx')}
+                        ('art', 'A', 'B', 'C', 'S', 'M', 'F', 'V1', 'V2', 'pass', 'sf', 'ref', 'glint', 'room', 'scrk',
+                         'scron', 'a2', 'a4', 'gk', 'glow', 'pen', 'size', 'qpx')}
+            self.hprog = program(SCR_HARM_H, 'glint (horizontal)')
+            self.u_h = {k: GetUniform(self.hprog, k.encode()) for k in ('src', 'part', 's1', 's2', 'px')}
+            self.vprog = program(SCR_HARM_V, 'glint (vertical)')
+            self.u_v = {k: GetUniform(self.vprog, k.encode()) for k in ('H1', 'H2', 'H3', 'part', 's1', 's2', 'w1', 'w2', 'px')}
         except OSError as e:
             print('overlay scratches unavailable: %s' % e); self.gprog = None
         self.scr_on = True           # Overlay > Scratches (on by default: the owner)
         self.scr_wear = 1.0          # the fine wear and the smaller steps: their number and depth (Overlay > Wear)
-        self.scr_damage = 1.0        # the larger, deeper scratches: their number and depth (Overlay > Damage)
+        self.scr_fine = 1.0          # Overlay > Wear type: the fine scratches (steps 1-3), number (depth x sqrt)
+        self.scr_medium = 1.0        #  the medium ones (steps 4-7)
+        self.scr_large = 0.1         #  the damage (steps 8-10): little by default (the owner: most people want none), up to x2
         self.scr_glint = 1.0         # how strongly they catch the light (Overlay > Glint strength)
+        self.scr_scrib = 1.0         # the share of curly scratches (Overlay > Scribbles)
+        self.scr_width = 1.0         # how far round from square to the light they still glint (fixed: |sin|^4)
+        self.scr_reach = 1.0         # how far from the lines they glint (Overlay > Glint reach: the far kernel's share)
+        self.art_glow = True         # the plastic spreads the light softly around bright lines (Overlay > Plastic glow)
+        self.art_glow_k = 1.0        # how strongly (Overlay > Plastic glow strength; x1 = ART_GLOW_K)
+        self._lobe = (None, None)
         self.scr_seed = 1            # New random scratches (each overlay its own variation of it)
         self.scr_tex = None; self.scr_key = None; self.scr_made_t = 0.0
         self.art = None              # the overlay: (texture, width, height) - see set_art
         self.art_on = True           # Overlay > Overlay
         self.art_tint = 1.0          # how strongly the filters colour the beam (Overlay > Tint strength)
-        self.art_room = 0.075        # the room's light on the filters (Overlay > Room light): an evening room (the owner's choice)
+        self.art_room = 0.0648       # the room's light on the filters (Overlay > Room light): an evening room (the owner's choice)
         self.art_print = 0.36        # the printed parts' brightness (Overlay > Printed art brightness, the owner's choice)
         self.art_parallax = True     # the sheet a little in front of the tube: from the usual viewing height the
                                      #  picture sits a little higher on it (MiSTer's "Offset: Compensated")
@@ -978,7 +1113,7 @@ class GLBloomRenderer(GLRenderer):
             print('16-bit float images do not work here: 8-bit images (the afterglow is shorter)')
         return ok
 
-    def _target(self, w, h):
+    def _target(self, w, h, f32=False):
         gl = self.gl
         if not hasattr(self, 'float_ok'):
             gl.glGetString.restype = ctypes.c_char_p
@@ -990,7 +1125,9 @@ class GLBloomRenderer(GLRenderer):
         gl.glBindTexture(GL_TEXTURE_2D, t.value)
         for k, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):
             gl.glTexParameteri(GL_TEXTURE_2D, k, v)
-        if self.float_ok:
+        if self.float_ok and f32:
+            gl.glTexImage2D(GL_TEXTURE_2D, 0, 0x8814, w, h, 0, GL_RGBA, GL_FLOAT, None)     # GL_RGBA32F
+        elif self.float_ok:
             gl.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_HALF_FLOAT, None)
         else:
             gl.glTexImage2D(GL_TEXTURE_2D, 0, 0x8058, w, h, 0, GL_RGBA, 0x1401, None)     # GL_RGBA8
@@ -1024,6 +1161,9 @@ class GLBloomRenderer(GLRenderer):
         self.R = self._target(w, h) if getattr(self, 'rot', 0) else None   # (a turned screen: drawn here first)
         self.S = self._target(w, h)                       # (scratches: the screen before the overlay)
         self.B3 = self._target(self.qw, self.qh)          # (scratches: its light, blurred a little)
+        self.Q0 = self._target(self.qw, self.qh)          # (its light at quarter size, sharp)
+        self.H = [self._target(self.qw, self.qh, True) for _ in range(3)]   # (the glint: horizontal harmonics)
+        self.V = [self._target(self.qw, self.qh, True) for _ in range(2)]   # (and both ways)
 
     @property
     def out(self):
@@ -1090,7 +1230,8 @@ class GLBloomRenderer(GLRenderer):
         gl = self.gl
         w, h = self.size
         x0, y0, x1, y1 = self.art_rect()
-        scr = self.scr_on and getattr(self, 'gprog', None) and self.float_ok and self._scr_ready()
+        scr = (getattr(self, 'gprog', None) and self.float_ok
+               and ((self.scr_on and self._scr_ready()) or getattr(self, 'art_glow', False)))
         if scr:                                                 # (the screen before the overlay: the scratches' light)
             gl.glBindTexture(GL_TEXTURE_2D, self.S[0]); gl.glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h)
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, w, h, 0, -1, 1)
@@ -1119,7 +1260,9 @@ class GLBloomRenderer(GLRenderer):
     def _scr_ready(self):
         """the scratch textures for this overlay, seed and wear (made again when they change; while the
         Wear slider moves at most every 0.3 s)"""
-        key = (self.art[0], getattr(self, 'art_name', ''), int(self.scr_seed), round(self.scr_wear, 3), round(self.scr_damage, 3))
+        key = (self.art[0], getattr(self, 'art_name', ''), int(self.scr_seed), round(self.scr_wear, 3),
+               (round(self.scr_fine, 3), round(self.scr_medium, 3), round(self.scr_large, 3)),
+               round(self.scr_scrib, 3))
         if key != self.scr_key:
             now = __import__('time').perf_counter()
             if self.scr_tex and now - self.scr_made_t < 0.3:
@@ -1132,7 +1275,7 @@ class GLBloomRenderer(GLRenderer):
         tw, th = int(round(2048 * 162 / 207.0)), 2048
         if not self.scr_tex:
             made = []
-            for _ in range(2):
+            for _ in range(3):
                 t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t)); gl.glBindTexture(GL_TEXTURE_2D, t.value)
                 for k, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):
                     gl.glTexParameteri(GL_TEXTURE_2D, k, v)
@@ -1144,7 +1287,7 @@ class GLBloomRenderer(GLRenderer):
                     return
                 made.append((t.value, f.value))
             self.scr_tex = made
-            NB, SEG = 4096, 12                                  # the template: 4096 scratches of 12 pieces each
+            NB, SEG = 4096, 24                                  # the template: 4096 scratches of 24 pieces each
             pts = []
             for j in range(NB):
                 for k in range(SEG):
@@ -1155,6 +1298,11 @@ class GLBloomRenderer(GLRenderer):
         name = key[1] or str(key[0])
         sd = (int(key[2]) * 7919 + sum((i + 1) * ord(c) for i, c in enumerate(name))) % 9973 + 1.0   # (each overlay its own)
         wear, dmg = key[3], key[4]
+        def amount(k):                                          # step k (1-10): (number x, depth x)
+            base = SCR_BASE[0] if k <= 5 else SCR_BASE[1]
+            g = 0 if k <= 3 else 1 if k <= 7 else 2
+            s = base * wear * dmg[g] * SCR_GROUP[g]                 # (Wear: all; Wear type: its group)
+            return s, s ** 0.5
         gl.glViewport(0, 0, tw, th); gl.glDisable(GL_TEXTURE_2D)
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity()
         gl.glMatrixMode(GL_MODELVIEW); gl.glPushMatrix(); gl.glLoadIdentity()
@@ -1163,6 +1311,8 @@ class GLBloomRenderer(GLRenderer):
         gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_ONE, GL_ONE)
         gl.glLineWidth(1.0); gl.glDisable(GL_LINE_SMOOTH)
         self.UseProgram(self.gprog); u = self.u_g
+        self.Uniform2f(u['scrib'], SCR_SCRIBBLE[0] * key[5], SCR_SCRIBBLE[1])
+        self.Uniform4f(u['llen'], *SCR_TIERS)
         def draw(n, stepid, mode, place, L0, L1, d0, d1, wv, chan, off=0.0):
             cand = n / (SCR_HANDLED_MEAN if place else 1.0)
             whole = int(cand); cand = whole + (1 if (sd * 0.6180339 + stepid * 0.37) % 1.0 < cand - whole else 0)
@@ -1172,18 +1322,21 @@ class GLBloomRenderer(GLRenderer):
             for b in range(0, cand, self.scr_nb):
                 self.Uniform1f(u['batch'], float(b // self.scr_nb)); self.Uniform1f(u['limit'], float(min(self.scr_nb, cand - b)))
                 gl.glDrawArrays(GL_LINES, 0, self.scr_nb * self.scr_seg * 2)
-        fine_n = SCR_FINE[0] * 162 * 207 * wear                 # (Wear and Damage: the number x, the depth x sqrt)
-        fw = SCR_FINE[5] * SCR_TPM * wear ** 0.5
+        fine_n = SCR_FINE[0] * 162 * 207 * amount(1)[0]         # (Wear: all of them; Damage: the balance)
+        fw = SCR_FINE[5] * SCR_TPM * amount(1)[1]
         for c, (t, f) in enumerate(self.scr_tex):
             self.BindFB(GL_FRAMEBUFFER, f); gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
-            draw(fine_n, 0, 0, 0, SCR_FINE[1], SCR_FINE[2], SCR_FINE[3], SCR_FINE[4], fw, c)
-        for i, (n, L0, L1, depth, half) in enumerate(SCR_STEPS):     # (the steps: into B, weighted by their depth)
-            s_ = dmg if i >= SCR_DAMAGE_FROM else wear
-            if s_ <= 0:
-                continue
-            for o in range(-half, half + 1):
-                wv = depth * s_ ** 0.5 * SCR_STEP_W * SCR_TPM * (1.0 if o == 0 else 0.55)
-                draw(n * s_, i + 1, 1, 1, L0, L1, 0.75, 1.25, wv, 2, o * SCR_STEP_W)
+            if c < 2:
+                draw(fine_n, 0, 0, 0, SCR_FINE[1], SCR_FINE[2], SCR_FINE[3], SCR_FINE[4], fw, c)
+        for c in (2, 3):                                        # (the steps: into B (d, 2t) and C (4t))
+            self.BindFB(GL_FRAMEBUFFER, self.scr_tex[c - 1][1])
+            for i, (n, L0, L1, depth, half) in enumerate(SCR_STEPS):     # (weighted by their depth)
+                kn, kd = amount(i + 2)
+                if kn <= 0:
+                    continue
+                for o in range(-half, half + 1):
+                    wv = depth * kd * SCR_STEP_W * SCR_TPM * (1.0 if o == 0 else 0.55)
+                    draw(n * kn, i + 1, 1, 1, L0, L1, 0.75, 1.25, wv, c, o * SCR_STEP_W)
         self.UseProgram(0)
         gl.glMatrixMode(GL_MODELVIEW); gl.glPopMatrix(); gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
         gl.glClearColor(0, 0, 0, 1)
@@ -1195,8 +1348,11 @@ class GLBloomRenderer(GLRenderer):
         gl = self.gl
         w, h = self.size
         gl.glDisable(GL_BLEND)                                  # (the light: S at quarter size, blurred once (M)
-        self.BindFB(GL_FRAMEBUFFER, self.B1[1]); gl.glViewport(0, 0, self.qw, self.qh)   #  and three times (F))
+        self.BindFB(GL_FRAMEBUFFER, self.Q0[1]); gl.glViewport(0, 0, self.qw, self.qh)   #  and three times (F))
         self._quad(self.S[0])
+        self.BindFB(GL_FRAMEBUFFER, self.B1[1]); self._quad(self.Q0[0])
+        self._harmonics()
+        self.BindFB(GL_FRAMEBUFFER, self.B1[1]); gl.glViewport(0, 0, self.qw, self.qh)
         self.UseProgram(self.prog); self.Uniform1i(self.u_tex, 0)
         for it in range(3):
             self.BindFB(GL_FRAMEBUFFER, self.B2[1]); self.Uniform2f(self.u_dir, 1.0 / self.qw, 0.0); self._quad(self.B1[0])
@@ -1208,8 +1364,10 @@ class GLBloomRenderer(GLRenderer):
         self.BindFB(GL_FRAMEBUFFER, self.out); gl.glViewport(0, 0, w, h)
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, w, h, 0, -1, 1)
         gl.glMatrixMode(GL_MODELVIEW)
-        units = ((self.art[0], 'art'), (self.scr_tex[0][0], 'A'), (self.scr_tex[1][0], 'B'), (self.S[0], 'S'),
-                 (self.B3[0], 'M'), (self.B1[0], 'F'))
+        on = bool(self.scr_on and self.scr_tex)
+        st = [t for t, f in self.scr_tex] if self.scr_tex else [self.art[0]] * 3
+        units = ((self.art[0], 'art'), (st[0], 'A'), (st[1], 'B'), (st[2], 'C'), (self.S[0], 'S'),
+                 (self.B3[0], 'M'), (self.B1[0], 'F'), (self.V[0][0], 'V1'), (self.V[1][0], 'V2'))
         for n_, (t, name) in enumerate(units):
             self.ActiveTexture(0x84C0 + n_); gl.glBindTexture(GL_TEXTURE_2D, t)
         self.ActiveTexture(0x84C0); gl.glEnable(GL_TEXTURE_2D)
@@ -1217,8 +1375,15 @@ class GLBloomRenderer(GLRenderer):
         for n_, (t, name) in enumerate(units):
             self.Uniform1i(u[name], n_)
         self.Uniform1f(u['sf'], self.art[3] / float(self.art[1])); self.Uniform1f(u['ref'], SCR_REF)
-        self.Uniform1f(u['glint'], self.scr_glint); self.Uniform1f(u['room'], room_light(self.art_room))
-        self.Uniform1f(u['scrk'], 2.5 * 0.85 * 0.5)
+        self.Uniform1f(u['glint'], self.scr_glint * SCR_BASE[2]); self.Uniform1f(u['room'], room_light(self.art_room))
+        self.Uniform1f(u['scrk'], 2.5 * 0.85 * 0.5 if on else 0.0)
+        self.Uniform1f(u['scron'], 1.0 if on else 0.0)
+        if self._lobe[0] != self.scr_width:
+            self._lobe = (self.scr_width, scr_lobe(self.scr_width))
+        self.Uniform1f(u['a2'], self._lobe[1][0]); self.Uniform1f(u['a4'], self._lobe[1][1])
+        self.Uniform1f(u['gk'], SCR_GLINT_K if on else 0.0)
+        self.Uniform1f(u['glow'], ART_GLOW_K * self.art_glow_k if getattr(self, 'art_glow', False) else 0.0)
+        self.Uniform4f(u['pen'], SCR_PEN[0], SCR_PEN[1], SCR_PEN[2], 0.0)
         self.Uniform2f(u['size'], float(w), float(h)); self.Uniform2f(u['qpx'], 1.0 / self.qw, 1.0 / self.qh)
         gl.glEnable(GL_BLEND); gl.glColor4f(1, 1, 1, 1)
         for ps, (sf_, df_) in ((0.0, (0x0306, 0)), (1.0, (1, 1))):      # (DST_COLOR, ZERO: the line gives / ONE, ONE)
@@ -1233,6 +1398,30 @@ class GLBloomRenderer(GLRenderer):
         gl.glDisable(GL_TEXTURE_2D)
         gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
+
+    def _harmonics(self):
+        """the light's angle harmonics for the glint and the plastic glow (Q0 -> H -> V, quarter size)"""
+        (s1, w1), (s2, w2) = SCR_GLINT_SIG
+        r = max(0.0, min(2.0, getattr(self, 'scr_reach', 1.0)))      # (Glint reach: from the near kernel to the far one)
+        w1, w2 = w1 * (1.5 - 0.5 * r), w2 * r
+        px = (1.0 / self.qw, 1.0 / self.qh)
+        self.UseProgram(self.hprog); u = self.u_h
+        self.Uniform1i(u['src'], 0); self.Uniform1f(u['s1'], s1); self.Uniform1f(u['s2'], s2); self.Uniform2f(u['px'], *px)
+        for part in range(3):
+            self.BindFB(GL_FRAMEBUFFER, self.H[part][1]); self.Uniform1f(u['part'], float(part)); self._quad(self.Q0[0])
+        gl = self.gl
+        self.UseProgram(self.vprog); u = self.u_v
+        for n_, nm in enumerate(('H1', 'H2', 'H3')):
+            self.ActiveTexture(0x84C0 + n_); gl.glBindTexture(GL_TEXTURE_2D, self.H[n_][0]); self.Uniform1i(u[nm], n_)
+        self.ActiveTexture(0x84C0)
+        self.Uniform1f(u['s1'], s1); self.Uniform1f(u['s2'], s2); self.Uniform1f(u['w1'], w1); self.Uniform1f(u['w2'], w2)
+        self.Uniform2f(u['px'], *px)
+        for part in range(2):
+            self.BindFB(GL_FRAMEBUFFER, self.V[part][1]); self.Uniform1f(u['part'], float(part)); self._quad(self.H[0][0])
+        for n_ in (2, 1):
+            self.ActiveTexture(0x84C0 + n_); gl.glBindTexture(GL_TEXTURE_2D, 0)
+        self.ActiveTexture(0x84C0)
+        self.UseProgram(0)
 
     def _quad(self, tex, r=1.0, g=1.0, b=1.0, a=1.0):
         gl = self.gl

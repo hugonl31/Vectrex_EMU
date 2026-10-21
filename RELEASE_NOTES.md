@@ -18,7 +18,7 @@ files are the build's own checks.
 - Linux: OpenGL through GLX (X11 / XWayland), controllers and sound through SDL2
 - Windows: `build_exe.bat` builds the core and installs PyInstaller when missing
 
-Updated 2026-10-20 (the same version, rebuilt):
+Updated 2026-10-21:
 
 **Release**
 - A ready-to-run Windows build (`Vectrex_EMU-windows.zip`), built by the GitHub workflow like the Mac and
@@ -46,9 +46,20 @@ Updated 2026-10-20 (the same version, rebuilt):
   art, parallax, position and size per overlay, scratches.
 - Flat over the curved tube; the sheet in its real shape (162 x 207 mm).
 - Room light lights the whole sheet: the plastic steeply, the print more gently.
-- Scratches (on by default): fine wear, longer and deeper ones down to a single deep scratch, made on the
-  graphics card (about 50 ms), a matte halo and glints around the lit lines; Wear, Damage, Glint strength,
-  New random scratches; each overlay its own pattern.
+- Scratches (on by default), modelled on photos of a real Mine Storm overlay in the dark: mostly short
+  fine and medium scratches, a few scribbles, hardly any deep damage by default; a matte halo around the
+  lit lines, and the scratches square to the light glint - rings around a bright dot, random hairlines along
+  a line. Made on the graphics card when an overlay is loaded; each overlay its own pattern.
+- Scratch settings: Wear (all of them), Wear type (fine / medium / damage, one window), Scribbles, Glint
+  strength, Glint reach, New random scratches. Deep damage cuts through the colour layer: a little white
+  light comes through.
+- Plastic glow (on by default) and its strength: the sheet spreads a soft, wide glow in its own colour around
+  bright lines.
+
+**Games**
+- Vectorblade paces itself without the BIOS's Wait_Recal: its frames now end at its own timer restart, so
+  it runs at its 50 fps (the on-screen display showed 45) and the title banner rises smoothly instead of
+  shaking.
 
 **Display**
 - Rotate screen: 0 / 90 / 180 / 270 degrees, the overlay and the panel included.

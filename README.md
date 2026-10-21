@@ -420,7 +420,8 @@ in the same menu.
 
 <p align="center">
 <img src="docs/images/scratch_sliders.png" width="720" alt="the scratch sliders"><br>
-<em>The mothership's wing (2x zoom) with the defaults, and with each scratch setting turned down or up.</em>
+<em>Clean Sweep's player by the yellow box (2x zoom) with the defaults, and with each scratch setting turned
+down or up.</em>
 </p>
 
 ---

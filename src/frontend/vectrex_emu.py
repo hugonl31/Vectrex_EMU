@@ -1002,11 +1002,9 @@ class App:
                 os.replace(here, self.settings_f)
             except OSError:
                 pass
-        os.makedirs(SETTINGS_DIR, exist_ok=True)
-        old = os.path.join(APPDATA_DIR, 'settings.json')       # (carry over the settings of earlier versions)
-        if not os.path.exists(self.settings_f) and os.path.exists(old):
-            shutil.copy(old, self.settings_f)
-        geo = None
+        os.makedirs(SETTINGS_DIR, exist_ok=True)               # (a new folder starts with the defaults: no settings
+        geo = None                                              #  are carried over from %APPDATA% - an early test version's
+                                                                #  settings.json there gave a fresh download its buzz and volume)
         if not args.height_mm and args.scale == 1.0:
             try:
                 geo = json.load(open(self.settings_f)).get('geometry')

@@ -105,6 +105,7 @@ struct Engine {
     std::mutex qm; std::deque<QFrame> queue;
     Ring ring;
     AAudioStream *stream = nullptr;
+    std::mutex am;                                      // (the stream: reopened from an error callback's thread)
     std::atomic<long> underruns{ 0 };
     std::atomic<int> burst{ 256 };                      // (the sound device's burst, samples: the queue keeps 2+)
     std::atomic<bool> sounding{ false };                // (the first frame's sound is in: underruns count from now)
@@ -207,7 +208,11 @@ struct Engine {
     {
         Engine *e = (Engine *) user;                     // (a headset plugged in / out: open the stream again)
         LOGI("audio stream error %d: reopening", err);
-        std::thread([e]() { e->close_audio(); e->open_audio(); }).detach();
+        std::thread([e]() {
+            std::lock_guard<std::mutex> g(e->am);
+            if (!e->running) return;                     // (the game ending: stop() closes it)
+            e->close_audio(); e->open_audio();
+        }).detach();
     }
     void open_audio()
     {
@@ -332,7 +337,12 @@ struct Engine {
     void render_loop(ANativeWindow *win)
     {
         std::unique_ptr<Backend> be;
-        std::string want = get("renderer", "auto"), err;
+        std::string want, err;
+        Scene scene; int seen;                           // (the settings as they are now: also those changed in the
+        {                                                //  menu since the game began)
+            std::lock_guard<std::mutex> g(cm);
+            want = get("renderer", "auto"); seen = conf_version; scene.look = make_look();
+        }
         if (want != "gles") {
             be = make_vulkan();
             if (!be->init(win, err)) { LOGE("Vulkan unavailable: %s", err.c_str()); be.reset(); }
@@ -344,7 +354,6 @@ struct Engine {
         if (!be) { LOGE("no renderer"); return; }
         renderer_name = be->name();
         LOGI("renderer: %s (%s images)", be->name(), be->float_images() ? "16-bit float" : "8-bit");
-        Scene scene; scene.look = look;
         scene.sheet_ok = be->can_sheet();
         if (art_w) { be->set_art(art_w, art_h, art_rgba); scene.set_art(art_w, art_h, art_sheet, art_name.c_str()); }
         // the overlay's scratches: made at the start, and again when their settings change (at most every 0.3 s
@@ -367,7 +376,6 @@ struct Engine {
         FramePlan plan;
         std::vector<QFrame> got;
         bool was_off = false;
-        int seen = conf_version;
         double st_t0 = now(), st_cpu = 0, st_emu = 0; long st_shown = 0, st_games = 0;    // (the speed meter: the log, every 10 s)
         double os_t0 = clock(), os_emu = 0; long os_shown = 0, os_games = 0;              // (and the on-screen display, every second)
         while (running && window_ok) {
@@ -378,11 +386,11 @@ struct Engine {
             }
             if (scr_key(scene.look) != made_key && now() - made_t >= 0.3) scratches();
             { std::lock_guard<std::mutex> g(qm); got.assign(std::make_move_iterator(queue.begin()), std::make_move_iterator(queue.end())); queue.clear(); }
+            if (power_t >= 0) scene.power_on_t = power_t;   // (before the frames: the first ones warm up too)
             for (auto &f : got) {
                 st_games++; st_emu += f.len; os_games++; os_emu += f.len;
                 scene.add_frame(std::move(f.lines), f.t_start, f.len, f.t0);
             }
-            if (power_t >= 0) scene.power_on_t = power_t;
             if (off && !was_off) { was_off = true; scene.power_off(clock()); }
             int w = 0, h = 0; be->size(w, h);
             if (w <= 0 || h <= 0) { std::this_thread::sleep_for(std::chrono::milliseconds(16)); continue; }
@@ -434,6 +442,7 @@ struct Engine {
         running = false;
         stop_render();
         if (emu_thr.joinable()) emu_thr.join();
+        std::lock_guard<std::mutex> g(am);
         close_audio();
     }
 };

@@ -221,10 +221,11 @@ final class RomSource {
         return all(is);
     }
 
-    static byte[] all(InputStream is) throws IOException {
+    static byte[] all(InputStream is) throws IOException { return all(is, 1 << 20, "larger than 1 MB: not a Vectrex ROM"); }
+    static byte[] all(InputStream is, int max, String tooLarge) throws IOException {
         ByteArrayOutputStream o = new ByteArrayOutputStream();
         byte[] b = new byte[65536]; int n;
-        while ((n = is.read(b)) > 0) { o.write(b, 0, n); if (o.size() > (1 << 20)) throw new IOException("larger than 1 MB: not a Vectrex ROM"); }
+        while ((n = is.read(b)) > 0) { o.write(b, 0, n); if (o.size() > max) throw new IOException(tooLarge); }
         return o.toByteArray();
     }
 

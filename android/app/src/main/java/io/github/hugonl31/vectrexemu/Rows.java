@@ -51,6 +51,24 @@ final class Rows {
         if (changed != null) changed.set(key, v);
     }
 
+    // a slider's value: shown at once, written to the settings file when it rests (a quarter second: a drag or
+    // a held key moves it many times a second, and each write rewrites the file)
+    private final android.os.Handler later = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final java.util.Map<String, String> pending = new java.util.LinkedHashMap<>();
+    private final Runnable write = this::flush;
+    void saveLater(String key, String v) {
+        pending.put(key, v);
+        later.removeCallbacks(write); later.postDelayed(write, 250);
+    }
+    void flush() {
+        later.removeCallbacks(write);
+        if (pending.isEmpty()) return;
+        Prefs.Store.Editor e = Prefs.get(c).edit();
+        for (java.util.Map.Entry<String, String> kv : pending.entrySet()) e.putString(kv.getKey(), kv.getValue());
+        e.apply();
+        pending.clear();
+    }
+
     void item(Prefs.Item it) {
         switch (it.kind) {
             case BOOL: check(it); break;
@@ -96,7 +114,8 @@ final class Rows {
                 if (!user) return;
                 float x = it.min + (it.max - it.min) * pr / 100f;
                 if (Math.abs(x - def) < (it.max - it.min) * 0.006) x = def;          // (the default exactly, near it)
-                save(it.key, Float.toString(x)); show.run();
+                saveLater(it.key, Float.toString(x)); if (changed != null) changed.set(it.key, Float.toString(x));
+                show.run();
             }
             public void onStartTrackingTouch(SeekBar s) { }
             public void onStopTrackingTouch(SeekBar s) { }

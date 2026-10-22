@@ -139,7 +139,7 @@ final class Overlays {
 
     static Art load(Context ctx, Cand c) {
         try (InputStream is = c.open(ctx)) {
-            byte[] b = RomSource.all(is);
+            byte[] b = RomSource.all(is, 64 << 20, "larger than 64 MB: not an overlay");
             boolean isPng = c.name.toLowerCase(Locale.ROOT).endsWith(".png");
             Art a = isPng ? png(b) : vart(b);
             if (a != null) {

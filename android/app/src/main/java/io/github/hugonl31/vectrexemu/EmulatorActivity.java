@@ -75,6 +75,8 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     private FrameLayout root;
     private TextView osd;
     private ScrollView menu;
+    private Rows menuRows;                              // (its sliders' values: saved when they rest)
+    private float[] adjCur;                             // (the overlay's position and size, as the sliders set them)
 
     @Override
     protected void onCreate(Bundle b) {
@@ -113,7 +115,8 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         byte[] bios = asset("bios/bios.bin");
         String romFile = getIntent().getStringExtra(LaunchActivity.X_ROM_FILE);
         String romName = getIntent().getStringExtra(LaunchActivity.X_ROM_NAME);
-        byte[] cart = romFile != null ? RomSource.all(new FileInputStream(romFile)) : new byte[0];
+        byte[] cart = new byte[0];
+        if (romFile != null) try (InputStream is = new FileInputStream(romFile)) { cart = RomSource.all(is); }
         game = romFile != null ? RomSource.stem(romName) : "Mine Storm";
         // the flash cartridges' saved state: next to the ROM as on the desktop (Saves), the core's copy in the app
         savApp = Saves.app(this, romFile != null ? romName : "Mine Storm.bin");
@@ -172,8 +175,11 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         }
-        if (Build.VERSION.SDK_INT >= 28)
-            getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        if (Build.VERSION.SDK_INT >= 28 && getWindow().getAttributes().layoutInDisplayCutoutMode != WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
+            WindowManager.LayoutParams a = getWindow().getAttributes();
+            a.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(a);
+        }
     }
 
     @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) immersive(); }
@@ -189,6 +195,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     private void quit() {
         if (quitting) return;
         quitting = true;
+        if (menuRows != null) menuRows.flush();
         Runnable leave = () -> {
             if (started) { nativeStop(); Saves.after(this, savHome, savApp); }
             finishAndRemoveTask();
@@ -242,7 +249,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(32, 24, 32, 24);
         menu.addView(col);
-        Rows r = new Rows(this, col, (k, v) -> {
+        Rows r = menuRows = new Rows(this, col, (k, v) -> {
             if (k.equals(Prefs.OSD)) showOsd("1".equals(v));
             else nativeSet(k, v);
         }, 0.85f);
@@ -270,6 +277,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
             String[] keys = { "art_dx", "art_dy", "art_scale" };
             String[] labels = { "Left / right", "Up / down", "Size" };
             float[][] range = { { -0.05f, 0.05f, 0f }, { -0.05f, 0.05f, 0f }, { 0.9f, 1.1f, 1f } };
+            adjCur = Prefs.adjust(this, overlayName);
             for (int i = 0; i < 3; i++) adjustRow(r, col, keys[i], labels[i], range[i], i);
         }
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Math.min(getResources().getDisplayMetrics().widthPixels / 2, r.dp(460)),
@@ -280,17 +288,16 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     private void adjustRow(Rows r, LinearLayout col, String key, String label, float[] range, int idx) {
         TextView t = new TextView(this); t.setTextColor(Color.WHITE); t.setTextSize(14); t.setPadding(r.dp(8), r.dp(8), 0, 0);
         android.widget.SeekBar sb = new android.widget.SeekBar(this); sb.setMax(100); sb.setKeyProgressIncrement(1);
-        float[] a = Prefs.adjust(this, overlayName);
-        sb.setProgress(Math.round((a[idx] - range[0]) / (range[1] - range[0]) * 100));
-        Runnable lab = () -> t.setText(String.format(java.util.Locale.ROOT, idx == 2 ? "%s:  x%.3f" : "%s:  %+.3f", label, Prefs.adjust(this, overlayName)[idx]));
+        sb.setProgress(Math.round((adjCur[idx] - range[0]) / (range[1] - range[0]) * 100));
+        Runnable lab = () -> t.setText(String.format(java.util.Locale.ROOT, idx == 2 ? "%s:  x%.3f" : "%s:  %+.3f", label, adjCur[idx]));
         lab.run();
         sb.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(android.widget.SeekBar s, int pr, boolean user) {
                 if (!user) return;
-                float[] cur = Prefs.adjust(EmulatorActivity.this, overlayName);
+                float[] cur = adjCur;
                 cur[idx] = range[0] + (range[1] - range[0]) * pr / 100f;
                 if (Math.abs(cur[idx] - range[2]) < 0.0011f) cur[idx] = range[2];
-                Prefs.get(EmulatorActivity.this).edit().putString(Prefs.adjustOf(overlayName), cur[0] + "," + cur[1] + "," + cur[2]).apply();
+                r.saveLater(Prefs.adjustOf(overlayName), cur[0] + "," + cur[1] + "," + cur[2]);
                 nativeSet(key, Float.toString(cur[idx]));
                 lab.run();
             }
@@ -301,6 +308,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     }
     private void closeMenu() {
         if (menu == null) return;
+        menuRows.flush();
         root.removeView(menu); menu = null;
         if (menuPaused) { menuPaused = false; pause(false); }
         root.getChildAt(0).requestFocus();
@@ -327,11 +335,8 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         else if (m.player.equals("2")) p = 1;
         else {                                           // (the first controller player 1, the second player 2;
             p = 0;                                       //  keyboards and remotes player 1)
-            if (Controls.isPad(d)) {
-                int n = 0;
-                for (int i = 0; i < player.size(); i++) if (isPadId(player.keyAt(i))) n++;
-                p = n >= 1 ? 1 : 0;
-            }
+            if (Controls.isPad(d))                       // (player 1 taken by a controller: player 2)
+                for (int i = 0; i < player.size(); i++) if (player.valueAt(i) == 0 && isPadId(player.keyAt(i))) p = 1;
         }
         player.put(id, p);
         Log.i(TAG, "input device " + (d != null ? d.getName() : id) + ": player " + (p + 1));
@@ -405,7 +410,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
             return true;
         }
         if (code == KeyEvent.KEYCODE_BUTTON_START) {
-            if (down) { startHeld = true; if (selectHeld) { comboUsed = true; quit(); } }
+            if (down) { if (first) comboUsed = false; startHeld = true; if (selectHeld) { comboUsed = true; quit(); } }
             else { boolean open = startHeld && !comboUsed && !selectHeld; startHeld = false; comboUsed = false; if (open) openMenu(true); }
             return true;
         }

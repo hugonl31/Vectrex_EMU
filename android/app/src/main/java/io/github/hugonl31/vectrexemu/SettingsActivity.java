@@ -263,11 +263,16 @@ public class SettingsActivity extends Activity {
             } catch (SecurityException e) { Toast.makeText(this, "The folder could not be kept: " + e.getMessage(), Toast.LENGTH_LONG).show(); return; }
             Prefs.get(this).edit().putString(req == REQ_ROM_TREE ? Prefs.ROM_TREE : Prefs.OVERLAY_TREE, u.toString()).apply();
         } else if (req == REQ_SPEECH) {
-            try (InputStream is = getContentResolver().openInputStream(u); FileOutputStream o = new FileOutputStream(new File(getFilesDir(), "al2.bin"))) {
-                byte[] d = RomSource.all(is);
+            byte[] d;                                    // (checked first: a wrong file leaves the ROM there as it was)
+            try (InputStream is = getContentResolver().openInputStream(u)) {
+                d = RomSource.all(is);
                 if (d.length != 2048) throw new IOException("not the SP0256-AL2 ROM (" + d.length + " bytes, it has 2048)");
-                o.write(d);
-            } catch (IOException e) {
+            } catch (IOException | SecurityException e) {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
+                return;
+            }
+            try (FileOutputStream o = new FileOutputStream(new File(getFilesDir(), "al2.bin"))) { o.write(d); }
+            catch (IOException e) {
                 new File(getFilesDir(), "al2.bin").delete();
                 Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
             }

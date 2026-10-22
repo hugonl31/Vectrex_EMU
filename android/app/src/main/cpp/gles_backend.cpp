@@ -41,6 +41,11 @@ public:
         const char *ext = (const char *) glGetString(GL_EXTENSIONS);
         float_ok = ext && (strstr(ext, "GL_EXT_color_buffer_half_float") || strstr(ext, "GL_EXT_color_buffer_float"));
         f32_ok = ext && strstr(ext, "GL_EXT_color_buffer_float");    // (the glint's harmonics: 32-bit where drawable)
+        if (float_ok) {                                  // (listed is not always drawable: tried now, before the
+            Target t; float_ok = make(t, 4, 4, GL_RGBA16F); free(t);   //  overlay's passes are chosen by it)
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            if (!float_ok) LOGI("GLES: float images incomplete, 8-bit images");
+        }
         if (!(prog_cap = program("capsule.vert", "capsule.frag", err)) || !(prog_up = program("fs.vert", "update.frag", err))
             || !(prog_show = program("fs.vert", "show.frag", err)) || !(prog_blur = program("fs.vert", "blur.frag", err))
             || !(prog_fin = program("fs.vert", "final.frag", err)) || !(prog_art = program("art.vert", "art.frag", err))

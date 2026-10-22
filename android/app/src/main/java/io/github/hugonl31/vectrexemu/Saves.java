@@ -49,10 +49,12 @@ final class Saves {
         if (!app.exists() && old.exists() && !old.equals(app)) old.renameTo(app);
         if (h == null) return;
         try (InputStream in = open(c, h)) {
-            if (in == null) return;
-            try (OutputStream out = new FileOutputStream(app)) { copy(in, out); }
-            Log.i(TAG, "save: " + h.name + " from the ROM's folder");
+            if (in != null) {
+                try (OutputStream out = new FileOutputStream(app)) { copy(in, out); }
+                Log.i(TAG, "save: " + h.name + " from the ROM's folder");
+            }
         } catch (IOException | RuntimeException e) { /* none there */ }
+        // (where it goes, kept either way: a first save goes there too, also when the game is ended from outside)
         Prefs.get(c).edit().putString("sav_home/" + app.getName(), h.encode()).apply();
     }
 

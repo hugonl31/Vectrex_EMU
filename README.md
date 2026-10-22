@@ -484,9 +484,9 @@ white louvre cells (5600 K daylight white), lying flat on the ceiling above and 
 20 degrees.
 
 <p align="center">
-<img src="docs/images/light_glass.jpg" width="380" alt="the ceiling light reflected in the glass, room light at maximum">
-<img src="docs/images/light_overlay.jpg" width="406" alt="the ceiling light reflected on Mine Storm's overlay, room light at maximum"><br>
-<em>Room light at its maximum (daylight): the lamp in the glass without an overlay, and on Mine Storm's overlay with
+<img src="docs/images/light_reflection1.png" width="400" alt="the ceiling light reflected in the glass, room light at maximum">
+<img src="docs/images/light_reflection2.png" width="400" alt="the ceiling light reflected on Clean Sweep's overlay, room light at maximum"><br>
+<em>Clean Sweep at maximum room light (daylight): the lamp in the glass without an overlay, and on the overlay with
 its scratches.</em>
 </p>
 

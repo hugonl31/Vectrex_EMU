@@ -38,9 +38,10 @@ import java.util.List;
 /** The game: full screen, the picture drawn by the native side (engine.cpp) into a SurfaceView, the
  *  controllers read here. Runs in the ":emu" process, which ends with the game.
  *    Back, or Select + Start      quit (straight back to the front end)
- *    Start                        pause (the picture stands still)                 keyboard: P
+ *    Start                        the in-game menu, the game paused (Start or B: back to the game)
  *    Select + L1                  the RESET button                                 keyboard: Ctrl+R
- *    Select + R1, or Menu         the in-game menu: the settings, live            keyboard: F1 */
+ *    Select + R1, or Menu         the in-game menu, the game going on behind it    keyboard: F1
+ *    (pause alone: the menu's Pause, or P on a keyboard, as the desktop) */
 public class EmulatorActivity extends Activity implements SurfaceHolder.Callback {
     static { System.loadLibrary("vectrexemu"); }
     static native void nativeStart(String[] keys, String[] values, byte[] bios, byte[] cart, String sav,
@@ -58,6 +59,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
 
     static final String TAG = "VectrexEMU";
     private boolean started, quitting, offEffect, userPaused;
+    private boolean menuPaused;                         // (the menu opened with Start paused the game: closing it goes on)
     private final Handler ui = new Handler(Looper.getMainLooper());
     private String game, overlayName;
     private Saves.Home savHome; private File savApp;
@@ -229,8 +231,9 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     }
 
     // ---------------------------------------------------------------- the in-game menu
-    private void openMenu() {
+    private void openMenu(boolean pausing) {
         if (menu != null || !started) return;
+        if (pausing && !userPaused) { pause(true); menuPaused = true; }
         for (int p = 0; p < 2; p++) { Pad s = pads[p]; s.buttons = 0; s.dpad = 0; s.ax = s.ay = s.hx = s.hy = 0; s.half = false; send(p); }
         menu = new ScrollView(this);
         menu.setBackgroundColor(Color.argb(225, 0, 0, 0));
@@ -246,10 +249,12 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         r.title("Vectrex_EMU", 22);
         r.text(game + "   (B or Back: back to the game)", Rows.DIM);
         View first = r.button("Back to the game", v -> closeMenu());
-        r.button(userPaused ? "Continue (Start)" : "Pause (Start)", v -> { pause(!userPaused); closeMenu(); });
+        if (menuPaused) r.button("Stay paused", v -> { menuPaused = false; closeMenu(); });
+        else r.button(userPaused ? "Continue (P)" : "Pause (P)", v -> { pause(!userPaused); closeMenu(); });
         r.button("RESET (Select + L1)", v -> { nativeReset(); closeMenu(); });
         r.button("Quit (Select + Start)", v -> quit());
-        r.text("The game goes on behind the menu: every change shows at once and is kept.", Rows.DIM);
+        r.text(menuPaused ? "Every change shows at once and is kept. (Select + R1: the menu with the game going on behind it.)"
+                          : "The game goes on behind the menu: every change shows at once and is kept.", Rows.DIM);
         for (Object o : Prefs.ITEMS) {
             if (o instanceof String) { if (!o.equals("Vectrex")) r.header((String) o); continue; }
             Prefs.Item it = (Prefs.Item) o;
@@ -297,6 +302,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     private void closeMenu() {
         if (menu == null) return;
         root.removeView(menu); menu = null;
+        if (menuPaused) { menuPaused = false; pause(false); }
         root.getChildAt(0).requestFocus();
         immersive();
     }
@@ -376,6 +382,11 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         if (menu != null) {
             boolean comboMenu = selectHeld && code == KeyEvent.KEYCODE_BUTTON_R1;
             if (code == KeyEvent.KEYCODE_BUTTON_SELECT) { selectHeld = down; return true; }
+            if (code == KeyEvent.KEYCODE_BUTTON_START) {             // (closes it when let go, as it opened it)
+                if (first) startHeld = true;
+                else if (!down && startHeld) { startHeld = false; closeMenu(); }
+                return true;
+            }
             if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_BUTTON_B || code == KeyEvent.KEYCODE_ESCAPE
                     || code == KeyEvent.KEYCODE_MENU || code == KeyEvent.KEYCODE_F1 || comboMenu) {
                 if (first) closeMenu();
@@ -385,7 +396,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         }
         // the emulator's own keys
         if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) { if (first) quit(); return true; }
-        if (code == KeyEvent.KEYCODE_MENU || code == KeyEvent.KEYCODE_F1) { if (first) openMenu(); return true; }
+        if (code == KeyEvent.KEYCODE_MENU || code == KeyEvent.KEYCODE_F1) { if (first) openMenu(false); return true; }
         if (code == KeyEvent.KEYCODE_P && !ev.isCtrlPressed()) { if (first) pause(!userPaused); return true; }
         if (code == KeyEvent.KEYCODE_R && ev.isCtrlPressed()) { if (first) nativeReset(); return true; }
         if (code == KeyEvent.KEYCODE_BUTTON_SELECT) {
@@ -395,11 +406,11 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         }
         if (code == KeyEvent.KEYCODE_BUTTON_START) {
             if (down) { startHeld = true; if (selectHeld) { comboUsed = true; quit(); } }
-            else { if (startHeld && !comboUsed && !selectHeld) pause(!userPaused); startHeld = false; comboUsed = false; }
+            else { boolean open = startHeld && !comboUsed && !selectHeld; startHeld = false; comboUsed = false; if (open) openMenu(true); }
             return true;
         }
         if (selectHeld && first && code == KeyEvent.KEYCODE_BUTTON_L1) { comboUsed = true; nativeReset(); return true; }
-        if (selectHeld && first && code == KeyEvent.KEYCODE_BUTTON_R1) { comboUsed = true; openMenu(); return true; }
+        if (selectHeld && first && code == KeyEvent.KEYCODE_BUTTON_R1) { comboUsed = true; openMenu(false); return true; }
         // the game's: the controller's mapping
         Controls.Map m = mapOf(ev.getDevice(), ev.getDeviceId());
         int bit = 0, dir = 0; boolean half = false;

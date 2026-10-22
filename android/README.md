@@ -67,6 +67,11 @@ the ROM, the ROM's name with `.sav` added (`Vectorblade.bin.sav`), so both progr
 the ROM folder granted with write access (Choose ROM folder asks for it); otherwise - and for a ROM a
 front end hands over as a `content://` URI - the save stays in the app's own storage.
 
+A front end that fetches the game from the network first (HyperSpin: from a NAS) hands over a copy in
+its own storage, not next to the game's folder: choose the overlays' folder on the NAS once (Choose overlay
+folder, through the front end's entry in the folder picker). HyperSpin's mark on the copy's name
+(`hsfetmp_<number>_`) is left out, so the overlay and the save go by the game's own name.
+
 ## Controls
 
 | | Controller | Keyboard (as the desktop) |
@@ -74,9 +79,10 @@ front end hands over as a `content://` URI - the save stays in the app's own sto
 | the stick | left stick (analog), D-pad | arrow keys |
 | buttons 1-4 | X Y A B | A W S D |
 | half the stick (held) | - | Shift |
-| pause (the picture stands still) | Start | P |
+| the settings, the game paused (Start or B: back to the game) | Start | - |
+| the settings, the game going on behind them | Select + R1, or Menu | F1 |
+| pause (the picture stands still) | the settings' Stay paused | P |
 | the RESET button | Select + L1 | Ctrl+R |
-| the settings, live (the game goes on behind them) | Select + R1, or Menu | F1 |
 | quit | Back, or Select + Start | Esc |
 
 **Settings > Controllers**: each controller by its name, as the desktop keeps them - its buttons for
@@ -91,8 +97,9 @@ Everything in the desktop program's Tube, Overlay and Sound menus, with the same
 owner's choices, side by side with a real Vectrex) - the overlay's scratches (wear, wear type, scribbles,
 glint strength and reach, **New random scratches**), the plastic glow, Even beam, the bending type - and:
 
-In a game, **Select + R1** (or Menu, F1) opens the same settings over the right side of the picture, the
-game going on behind them: every change shows at once and is kept, as in the desktop's menus.
+In a game, **Start** opens the same settings over the right side of the picture, the game paused (the
+Vectrex has no Start button); **Select + R1** (or Menu, F1) opens them with the game going on behind them,
+as the desktop's menus. Every change shows at once and is kept.
 
 * **Renderer** - Auto (Vulkan, else OpenGL ES 3.1), or one of them. If a device shows a broken picture
   with Vulkan, OpenGL ES is the way out.

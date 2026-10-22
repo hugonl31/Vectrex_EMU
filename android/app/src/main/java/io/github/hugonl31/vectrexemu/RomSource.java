@@ -65,6 +65,12 @@ final class RomSource {
         return c;
     }
 
+    /** the game's own name, without a front end's mark on its copy: HyperSpin hands over a copy of a game it
+     *  fetched from the network named "hsfetmp_<hex>_" + the name (the overlay and the save go by the name) */
+    static String realName(String n) {
+        return n == null ? null : n.replaceFirst("^hsfetmp_[0-9a-fA-F]+_", "");
+    }
+
     static boolean hasRomExt(String s) {
         String l = s.toLowerCase(Locale.ROOT);
         for (String e : ROM_EXT) if (l.endsWith(e)) return true;
@@ -78,7 +84,7 @@ final class RomSource {
         for (String c : cs) {
             try {
                 Rom r = open(ctx, c.trim());
-                if (r != null) return r;
+                if (r != null) { r.name = realName(r.name); return r; }
             } catch (IOException | SecurityException e) {
                 why.append(c).append(": ").append(e.getMessage()).append('\n');
             }

@@ -59,17 +59,21 @@ The programs are not signed, so the first start needs one extra step:
 It starts switched off, like a real Vectrex: **turn the volume knob up** (Page Up, or the mouse wheel
 over the knob below the picture). Without a cartridge it plays its built-in game, **Mine Storm**.
 
-**In the zip:** the emulator, the Vectrex BIOS (with Mine Storm; Smith Engineering allows it to be copied
-freely for non-commercial use) and Mine Storm's overlay - inside `Vectrex_EMU.exe` on Windows, in the
-`bios` folder on Mac and Linux - plus the folders `roms`, `roms/overlays` and `bios`, each with a short
-note on what goes there.
+**In the zip**, the same on Windows, Mac and Linux: the emulator, and next to it three folders, each
+with a short note on what goes there:
+
+| Folder | |
+|---|---|
+| `bios` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
+| `roms` | empty: your cartridge ROMs go here |
+| `overlays` | Mine Storm's overlay, `Mine Storm (built in).art`; your overlays go here too |
 
 ### What you add
 
 | What | Where | Where to get it |
 |---|---|---|
 | **Cartridge ROMs** (`.bin`, `.vec`, `.gam`, `.rom`) | `roms` (subfolders too) | your own cartridges |
-| **Overlays** (optional) | `roms/overlays` | the MiSTer Vectrex core's `overlays.zip` ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)), or PNGs - see [Overlays](#overlays) |
+| **Overlays** (optional) | `overlays` | the MiSTer Vectrex core's `overlays.zip` ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)), or PNGs - see [Overlays](#overlays) |
 | **Speech ROM** (optional, for the VecVoice / VecVox speech modules) | `bios` | `al2.bin`, a free download - see [Speech modules](#speech-modules) |
 
 Then click the cartridge below the picture (or press **L**) and pick a game.
@@ -549,7 +553,7 @@ written: no logs, no recordings.
 
 ### Overlays
 
-Put overlay files in **`roms/overlays`** (or `overlays` next to the program), named like the ROM -
+Put overlay files in the folder **`overlays`** next to the program, named like the ROM -
 `Armor Attack.bin` finds `Armor Attack.art`. Two formats:
 
 * **MiSTer `.art`**: get them from the MiSTer Vectrex core ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer),
@@ -564,15 +568,17 @@ Put overlay files in **`roms/overlays`** (or `overlays` next to the program), na
   see-through plastic (MiSTer's tools use 51), 0 clear; without transparency it is all see-through, black clear.
 
 Several overlays for one game (`Spike.art`, `Spike (red).art`): the plain one is chosen; pick another with
-**Overlay > Choose overlay...** (remembered per game). The ROM browser does not list the overlays folder.
+**Overlay > Choose overlay...** (remembered per game). (Overlays in `roms/overlays`, where they went
+before, are still found.)
 
 The **Overlay** menu has the rest - on / off (**O**), choose / none per game, tint, room light, printed
 art, parallax, the plastic glow, the scratches, a fine position / size per overlay - each explained in
 [chapter 9](#9-overlays---and-forty-years-of-scratches) and in the built-in Help.
 
-**Mine Storm's overlay comes with the emulator** (`bios/bios.art`, inside the Windows exe), for the game
-built into the console; an overlay of your own named `bios`, `Mine Storm (built-in game)` or
-`Mine Storm` takes its place. It is the [Libretro overlay-borders](https://github.com/libretro/overlay-borders)
+**Mine Storm's overlay comes with the emulator** as an ordinary file, `overlays/Mine Storm (built in).art`,
+for the game built into the console. To use another one, put your own `Mine Storm.art` next to it (the
+plain name is chosen first), or replace or delete that file (without it Mine Storm runs without an
+overlay). It is the [Libretro overlay-borders](https://github.com/libretro/overlay-borders)
 Mine Storm artwork as converted to `.art` by the [Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)
 project (`Mine_Storm.art` in its `overlays.zip`).
 
@@ -697,7 +703,8 @@ For tinkerers - the [releases](../../releases) are built from the same sources b
 |---|---|
 | `src/core/` | the core (C): `vecx.c` CPU bus and analog model, `e6809.c` CPU, `e8910.c` / `psg.c` sound chip, `live.c` the frame pipe to the front end, `vtest.c` main (also a scripted test harness), `sp0256.c` / `speakjet.c` the speech modules, `ds2431.c` a 1-Wire save chip, `bot.c` a test player |
 | `src/frontend/` | `vectrex_emu.py` window, input, sound, settings, menus; `vecrender.py` the OpenGL renderer (beam, phosphor, overlays, scratches); `vart.py` overlay files; `help_text.py` the built-in Help |
-| `bios/` | the Vectrex BIOS (`bios.bin`, with Mine Storm) and Mine Storm's overlay (`bios.art`) |
+| `bios/` | the Vectrex BIOS (`bios.bin`, with Mine Storm) |
+| `overlays/` | Mine Storm's overlay (`Mine Storm (built in).art`) |
 | `sounds/` | the power-on / power-off sounds, recorded on a real Vectrex |
 | `package/` | the folders and notes that go into each release zip |
 | `testcart/` | the test cartridges (6809 assembly) used to measure the real Vectrex |

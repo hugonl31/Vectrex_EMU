@@ -7,9 +7,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 The first release for Windows, macOS and Linux - ready to run on all three: `Vectrex_EMU-windows.zip`,
 `Vectrex_EMU-mac-app.zip` (Intel + Apple Silicon) and `Vectrex_EMU-linux-bin.zip`. Each has the emulator,
-the Vectrex BIOS (with Mine Storm) and Mine Storm's overlay (inside the Windows exe, in the `bios` folder
-on Mac / Linux), and `roms`, `roms/overlays` and `bios` folders with a note on what goes there: your ROMs,
-overlays (MiSTer's `overlays.zip`) and the speech ROM (a free download, see README.md). The PNG and log
+the same folders next to it on every system - `bios` (the Vectrex BIOS, with Mine Storm), `roms` (your
+ROMs) and `overlays` (Mine Storm's overlay; MiSTer's `overlays.zip` goes here too) - each with a note on
+what goes there; the speech ROM is a free download (see README.md). The PNG and log
 files are the build's own checks.
 
 - macOS: the picture at a Retina screen's full resolution; Command shortcuts (⌘E eject, ⌘R RESET, ⌃⌘F
@@ -18,9 +18,16 @@ files are the build's own checks.
 - Linux: OpenGL through GLX (X11 / XWayland), controllers and sound through SDL2
 - Windows: `build_exe.bat` builds the core and installs PyInstaller when missing
 
-Updated 2026-10-21:
+Updated 2026-10-22:
 
 **Release**
+- One layout on every system: the program, and next to it `bios` (`bios.bin`, also on Windows - no longer
+  inside the exe), `roms` and `overlays`. Mine Storm's overlay is an ordinary file there,
+  `Mine Storm (built in).art`: a `Mine Storm.art` of your own is chosen before it, or replace it. Overlays
+  in `roms/overlays` are still found, and overlays chosen by hand are found again after a move.
+- The ROM browser's "no ROMs" note in three short lines that fit.
+- A speech module chosen without the speech ROM: a window says where to download it and where it goes,
+  with buttons for the download page and the bios folder.
 - A ready-to-run Windows build (`Vectrex_EMU-windows.zip`), built by the GitHub workflow like the Mac and
   Linux ones; the README restructured (download and play first, a contents list, the details in
   docs/TECHNICAL.md).
@@ -39,8 +46,8 @@ Updated 2026-10-21:
 - MiSTer's overlay files are found under their own names too (underscores as spaces, a trailing "Proto" or
   version ignored: `ArmorAttack.art`, `Dark_Tower_Proto.art`, `VectorbladeV1.13.art`).
 - MiSTer `.art` overlays and PNGs (RGBA, the sheet or the whole MiSTer frame; any PNG kind and filter),
-  in `roms/overlays` (or `overlays`), found by the ROM's name (also without its `(...)` parts and version
-  number); the ROM browser skips that folder. Mine Storm's overlay comes with the emulator (`bios/bios.art`,
+  in `overlays`, found by the ROM's name (also without its `(...)` parts and version
+  number). Mine Storm's overlay comes with the emulator (`overlays/Mine Storm (built in).art`,
   credit and disclaimer in the README).
 - Overlay menu: on / off (O), choose automatically / choose / none per game, tint, room light, printed
   art, parallax, position and size per overlay, scratches.

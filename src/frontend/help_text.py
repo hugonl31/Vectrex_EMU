@@ -17,7 +17,7 @@ TOPICS = [
       "it clicks off again. Vectrex > Start switched on skips the knob."),
 ('h', 'Cartridges'),
 ('p', "Without a cartridge the Vectrex runs its built-in game, Mine Storm. Put your ROM files in the "
-      "folder *roms* next to Vectrex_EMU.exe and click the cartridge below the picture (or L): the "
+      "folder *roms* next to the program and click the cartridge below the picture (or L): the "
       "ROM browser lists them. Choosing one power-cycles the Vectrex with it, as if you had swapped the "
       "cartridge. The emulator starts again with the cartridge used last."),
 ('h', 'Playing'),
@@ -184,10 +184,11 @@ TOPICS = [
 ('p', "On a real Vectrex every game came with a printed plastic sheet in front of the screen: coloured, "
       "see-through parts tint the vectors behind them, the solid print gives borders, pictures and the "
       "game's name. The emulator shows the MiSTer core's overlay files (.art) and PNG images with "
-      "transparency (an 846 x 1080 sheet): put them in roms/overlays (or overlays next to the program), "
+      "transparency (an 846 x 1080 sheet): put them in the folder *overlays* next to the program, "
       "named like the ROM - Armor Attack.bin finds Armor Attack.art (MiSTer's own names such as "
       "ArmorAttack.art or Armor_Attack.art too: underscores count as spaces). Mine Storm's overlay comes with the "
-      "emulator (from the MiSTer project's overlays, Libretro artwork)."),
+      "emulator as overlays/Mine Storm (built in).art (from the MiSTer project's overlays, Libretro artwork): "
+      "a Mine Storm.art of your own is chosen instead, or replace that file."),
 ('item', 'Overlay (O)', "The overlay on or off."),
 ('item', 'Choose automatically (by ROM name)', "The overlay with the ROM's name; else the same name without "
          "its (...) parts and version number, so hacks and versions find the game's overlay; Mr. Boston "

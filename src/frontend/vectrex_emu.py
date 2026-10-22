@@ -41,13 +41,14 @@ if getattr(sys, 'frozen', False):                       # Vectrex_EMU.exe (PyIns
     ROOT = os.path.dirname(os.path.abspath(sys.executable)) if IS_WIN else osdep.app_root(sys.executable)
 else:                                                   # src\frontend\vectrex_emu.py
     ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-# the core, the BIOS and the power sounds travel inside Vectrex_EMU.exe (unpacked to its temp folder at
-# start); from the sources they come from the project folders
+# the core and the power sounds travel inside the program (Vectrex_EMU.exe: unpacked to its temp folder at
+# start); from the sources they come from the project folders. Next to the program, the same on every system:
+# bios (bios.bin, the speech ROM), roms (the user's ROMs) and overlays (Mine Storm (built in).art and the user's)
 RES = getattr(sys, '_MEIPASS', ROOT)
 CORE = os.path.join(RES, 'core', 'vectrex_core.exe' if IS_WIN else 'vectrex_core')
-BIOS = os.path.join(RES, 'bios', 'bios.bin')
-if not os.path.exists(BIOS):                            # (macOS / Linux: the bios folder next to the program)
-    BIOS = os.path.join(ROOT, 'bios', 'bios.bin')
+BIOS = os.path.join(ROOT, 'bios', 'bios.bin')
+if not os.path.exists(BIOS) and os.path.exists(os.path.join(RES, 'bios', 'bios.bin')):
+    BIOS = os.path.join(RES, 'bios', 'bios.bin')        # (an older exe with the BIOS inside)
 # the VecVoice's speech ROM (SP0256-AL2, (c) Microchip Technology Inc.): not shipped - the user downloads
 # it from Joe Zbiciak's page (Microchip let him distribute it) into the bios folder next to the program
 SP_ROM_URL = 'http://spatula-city.org/~im14u2c/sp0256-al2/'
@@ -691,17 +692,27 @@ CART_HW = {'auto': "Auto (by the ROM's size)", 'off': 'Off - bone stock, 32 KB',
            'hb512': '512 KB flash with bank latch (HB v2 board)', 'multi': '1 MB multi-cart (4 KB pages, latch at $7FFF)'}
 
 # ------------------------------------------------------------------ overlays
-# The screen overlays: MiSTer .art files named like the ROM, in roms/overlays (or overlays next to the
-# program); the ROM browser does not list that folder. Rotated packages (_90CW / _90CCW) are not needed:
+# The screen overlays: MiSTer .art files (or PNGs) named like the ROM, in the overlays folder next to the
+# program (roms/overlays still works; the ROM browser does not list that folder). Rotated packages (_90CW / _90CCW) are not needed:
 # the emulator turns the whole screen, the overlay with it.
 def overlay_dirs():
-    return [os.path.join(ROOT, 'roms', 'overlays'), os.path.join(ROOT, 'overlays')]
+    """the overlays folder next to the program (and roms/overlays, where they were before 2026-10-22)"""
+    return [os.path.join(ROOT, 'overlays'), os.path.join(ROOT, 'roms', 'overlays')]
 
+BUILTIN_ART = 'Mine Storm (built in).art'
 def builtin_overlay():
-    """the one overlay that comes with the emulator: Mine Storm's, for the console's own game (bios/bios.art,
-    inside the exe or next to the program)"""
-    for d in (RES, ROOT):
-        p = os.path.join(d, 'bios', 'bios.art')
+    """the one overlay that comes with the emulator: Mine Storm's, for the console's own game - a plain file in
+    the overlays folder, so it can be swapped (a 'Mine Storm.art' of your own is chosen before it)"""
+    for p in [os.path.join(d, BUILTIN_ART) for d in overlay_dirs()] + [os.path.join(d, 'bios', 'bios.art') for d in (ROOT, RES)]:
+        if os.path.exists(p):
+            return p
+    return None
+
+def moved_overlay(path):
+    """an overlay chosen by hand whose file has moved (roms/overlays -> overlays): the same name in an overlay
+    folder"""
+    for d in overlay_dirs():
+        p = os.path.join(d, os.path.basename(path))
         if os.path.exists(p):
             return p
     return None
@@ -1596,6 +1607,8 @@ class App:
             path = None
         elif pick and os.path.exists(pick):
             path = pick
+        elif pick and moved_overlay(pick):                      # (its file moved to the overlays folder)
+            path = self.art_for[key] = moved_overlay(pick)
         elif self.art_auto:
             if self.args.rom:
                 path = find_overlay(key)
@@ -2144,11 +2157,42 @@ class App:
         pitch and lengths). Both need the SP0256-AL2 ROM in the bios folder (sp0256-al2.bin, from
         SP_ROM_URL); the Vectrex is switched off and on with the new setting."""
         if k != 'off' and not sp_rom():
-            self.show_look('SPEECH NEEDS BIOS/SP0256-AL2.BIN - SEE THE README')
+            self.speech_rom_help()
             return
         self.speech = k
         self.restart(self.args.rom)
         self.show_look('port 2: %s' % PORT2[k].upper())
+    def speech_rom_help(self):
+        """a speech module chosen without the speech ROM: a small window saying where to get it and where it
+        goes, with buttons for the download page and the bios folder"""
+        bios = os.path.join(ROOT, 'bios')
+        g, bg = '#6a8', '#000'
+        t = tk.Toplevel(self.root, bg=bg); t.title('Speech ROM needed'); t.transient(self.root); t.resizable(False, False)
+        text = ("The speech modules (VecVoice, VecVox) need the SP0256-AL2 speech ROM.\n"
+                "It is (c) Microchip and can not come with the emulator, but it is a free download:\n\n"
+                "1.  Download al2.bin from\n      %s\n"
+                "2.  Put it in the bios folder next to the program:\n      %s\n"
+                "      (as al2.bin or sp0256-al2.bin)\n"
+                "3.  Choose the speech module again (Vectrex > Controller port 2)." % (SP_ROM_URL, bios))
+        tk.Label(t, text=text, fg=g, bg=bg, font=(MONO, 10), justify='left', anchor='w').pack(padx=14, pady=(12, 8))
+        row = tk.Frame(t, bg=bg); row.pack(padx=14, pady=(0, 12), anchor='e')
+        def opened(target):
+            try:
+                if IS_WIN: os.startfile(target)
+                else: subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', target])
+            except Exception as e:                              # noqa
+                print('could not open %s: %s' % (target, e))
+        def folder():
+            os.makedirs(bios, exist_ok=True); opened(bios)
+        for label, cmd in (('Open the download page', lambda: opened(SP_ROM_URL)), ('Open the bios folder', folder),
+                           ('Close', t.destroy)):
+            tk.Button(row, text=label, command=cmd, fg=bg, bg=g, activebackground='#8cb', relief='flat',
+                      font=(MONO, 10), padx=10, pady=3).pack(side='left', padx=(8, 0))
+        t.bind('<Escape>', lambda e: t.destroy())
+        t.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - t.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - t.winfo_height()) // 3
+        t.geometry('+%d+%d' % (max(0, x), max(0, y))); t.focus_force()
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True
@@ -3196,9 +3240,9 @@ def main():
             r = tk.Tk(); r.withdraw()
             missing = [f for f in (CORE, BIOS) if not os.path.exists(f)]
             msg = 'Missing:\n' + '\n'.join(missing)
-            if not IS_WIN and BIOS in missing:
+            if BIOS in missing:
                 msg += '\n\nThe Vectrex BIOS goes in a folder called bios next to the program: bios/bios.bin.'
-                if osdep.translocated(ROOT):
+                if not IS_WIN and osdep.translocated(ROOT):
                     msg += ('\n\nmacOS runs this downloaded app from a hidden copy, which can not see that folder. '
                             'In Finder, drag Vectrex_EMU.app out of its folder and back in, then start it again '
                             '(macOS then runs it where it is).')

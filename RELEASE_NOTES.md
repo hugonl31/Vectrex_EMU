@@ -3,6 +3,34 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.1
+
+**The tube's geometry, measured** ([README chapter 10](README.md#10-the-tubes-geometry-measured-not-invented))
+- The generic barrel curve is gone: the picture now has a real Vectrex's own uneven shape, fitted to photos
+  of the Test Cartridge grid, the start screen and Distortion 1 (a narrower top, a bowed bottom, leaning
+  sides, the top right corner pulled up). A second Vectrex showed much the same shape.
+- The vectors are bent line by line (long lines in pieces), so they stay sharp and the phosphor's glow and
+  afterglow stay exact. Overlays are not bent - a flat sheet - only scaled onto the tube's picture.
+- Tube > Tube geometry (on / off) and Tube geometry strength (x1 measured, 0 ideal); the picture keeps its
+  size and place with the imperfections off.
+- The glass: the screen opening's rounded shape with a soft edge (Tube > Glass edge), black above it as
+  beside it; the on-screen display and the knob lined up with the glass.
+
+**The room's light** ([README chapter 11](README.md#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections))
+- A new Light menu: an office ceiling light (a fluorescent fixture with white louvre cells, 5600 K) in the
+  room, following Light > Room light.
+- Its mirror image in the glass (a gentle dome: a little curved, in perspective, anti-aliased, slightly
+  blurred); the glass turns slightly grey in a bright room without an overlay.
+- A large soft glow on the phosphor layer behind the thick glass: enlarged, squarer, offset inwards by the
+  glass's thickness, with a fine random grain.
+- On an overlay: the lamp's reflection, the plastic brighter around it, and the scratches glinting around
+  the whole lamp - every scratch close by, only the bigger ones further out.
+- Light position... (a pad: drag the lamp), strengths for the glass and the overlay, each on / off, and
+  Reset light settings to default.
+
+**Also**
+- Help updated for every new option.
+
 ## v1.0.0
 
 The first release for Windows, macOS and Linux - ready to run on all three: `Vectrex_EMU-windows.zip`,

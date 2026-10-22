@@ -155,8 +155,15 @@ TOPICS = [
          "stops moving a few cycles after the game switches it off, and how many differs from one machine to "
          "the next. 12.3 cycles (the default) is a well-tuned Vectrex; 9.3 nearly closes the corners, 15.3 "
          "gives the wide gaps of a worn one."),
-('item', 'Curved tube', "The Vectrex's screen face is curved; this bends the picture a little, as you see "
-         "it on the glass."),
+('item', 'Tube geometry (a real Vectrex)', "Where the beam really lands, measured on the owner's Vectrex (and "
+         "matching a second one): the picture a little smaller and narrower, more so towards the sides; vertical "
+         "lines bowed slightly to the left, horizontal ones down; the top a little narrower than the bottom; the "
+         "top right corner pulled up. So the Test Cartridge's screens look as on the real tube. Overlays follow: "
+         "the sheet is made a little narrower so their playgrounds still sit on the game's lines."),
+('item', 'Tube geometry strength...', "From an ideal, straight picture (left) through the owner's Vectrex (the "
+         "middle) to twice as much."),
+('item', 'Glass edge (rounded corners)', "The tube's glass face ends in rounded corners with a soft edge: what "
+         "is drawn beyond it disappears there, as on the real screen."),
 ('h', 'Mains hum wobble'),
 ('item', 'Mains hum wobble / Wobble strength', "The picture sways a tiny bit with the mains."),
 ('item', 'Mains: 50 Hz / 60 Hz', "Europe and most of the world / USA, Canada and others."),
@@ -201,11 +208,7 @@ TOPICS = [
 ('item', 'Tint strength...', "How strongly the coloured plastic colours the vectors."),
 ('item', 'Room light...', "How much the room lights up the sheet - the coloured plastic and the print: low for "
          "an evening (the plastic almost black, only the vectors), high for daylight. The plastic's light rises "
-         "steeper than the setting (half gives a quarter, the right end four times the default); the print "
-         "follows it more gently (half: half as bright, the right end twice)."),
-('item', 'Printed art brightness...', "The solid print (borders, pictures, the game's name) against the plastic; "
-         "it follows the room light too, more gently than the plastic."),
-('item', 'Scratches (decades of handling)', "A 40-year-old sheet is worn: a quarter of a million fine scratches make it "
+         "steeper than the setting (half gives a quarter, the riscratches make it "
          "slightly matte, and fewer, deeper ones - thousands of short scuffs, down to a few deep ones. In the dark "
          "you see them only where the vectors light them up: a soft matte halo around the lines, and the "
          "scratches that lie square to the light glint - rings around a bright dot, random hairlines along a "
@@ -232,6 +235,30 @@ TOPICS = [
 ('item', 'Reset overlay settings to default', "On, chosen automatically, tint, room light, print, parallax "
          "and the scratches back to the defaults; this game's chosen overlay and this overlay's position and size "
          "too (other games keep theirs)."),
+]),
+
+('light', 'Menu: Light', [
+('p', "The room around the Vectrex: how much light there is, and the office ceiling light above and in front of "
+      "you, mirrored in the tube's glass and on an overlay."),
+('item', 'Room light...', "How much the room lights up the overlay's sheet - the coloured plastic and the print: low for "
+         "an evening (the plastic almost black, only the vectors), high for daylight. The plastic's light rises "
+         "steeper than the setting (half gives a quarter, the right end four times the default); the print "
+         "follows it more gently (half: half as bright, the right end twice)."),
+('item', 'Glass catches room light (without an overlay)', "Without an overlay the glass turns grey in the room's "
+         "light - hardly at the default, clearly at the slider's right end - with the phosphor layer's fine bumps "
+         "behind it; off: always black. With an overlay the glass stays black, for the contrast."),
+('item', 'Ceiling light reflected on the glass', "The ceiling light mirrored sharply in the glass (a little "
+         "softened: the glass is not perfectly clean), and behind the thick glass the phosphor layer lit up in a wide, "
+         "soft glow - larger than the light and offset from it, more so towards the edges where the glass is "
+         "thicker. Without an overlay, with the room light: faint at the default, bright at the right end."),
+('item', 'Glass reflection strength...', "How bright the light on the glass is."),
+('item', 'Ceiling light reflected on the overlay', "On an overlay the light is mirrored a little blurred (plexiglass), "
+         "the plastic around it gets brighter in its own colour, and the scratches around it glint - the more worn "
+         "the sheet, the more of them."),
+('item', 'Overlay reflection strength...', "How bright the light on the overlay is."),
+('item', 'Light position...', "Drag the dot to move the ceiling light: left and right along the top of the screen, "
+         "and up and down - from just visible at the top edge to its middle a quarter of the way down."),
+('item', 'Reset light settings to default', "The room light, the glass and the ceiling light as they came."),
 ]),
 
 ('sound', 'Menu: Sound', [
@@ -314,7 +341,7 @@ TOPICS = [
          "bit, and high scores written back into the flash chip."),
 ('item', 'Multi-carts', "Many games on one board, picked from a menu (Sean Kelly's Multi-Cart: 1 MB)."),
 ('item', 'Save chips', "A tiny EEPROM such as the DS2431, talked to over one wire through the same port B "
-         "bit, keeps high scores without a battery (Robot Arena)."),
+         "bit, keeps high scores without a battery."),
 ('more', 'Why it is tricky', "The Vectrex never had a bank-switch signal. PB6 was simply a spare I/O line "
          "brought out to the slot, and the /IRQ line was never meant for switching memory. Games that use them have to switch banks only from code that sits at the same place "
          "in every bank, keep the signal steady while they draw, and expect a stock console to boot into "

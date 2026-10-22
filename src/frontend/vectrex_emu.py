@@ -990,11 +990,10 @@ class App:
         self.browser = None
         self.fps_on = conf0.get('fps_counter', True)            # the OSD (Ctrl+F)
         self.fit_h = fit                                        # (the window's screen area at most)
-        if self.knob_on or self.fps_on or self.cart_on:         # (room for the strip below the picture)
-            fit = int(fit / (1.0 + vecrender.KNOB_STRIP))
+        fit = int(fit / (1.0 + self.knob_reserve()))             # (room for the black above, the strip below)
         self.H0 = min(fit, int(self.H0 * args.scale))
         self.W0 = int(self.H0 * vecrender.ALG_MAX_X / vecrender.ALG_MAX_Y)
-        self.H0w = int(self.H0 * (1.0 + (vecrender.KNOB_STRIP if self.knob_on or self.fps_on or self.cart_on else 0.0)))
+        self.H0w = int(self.H0 * (1.0 + self.knob_reserve()))
         self.settings_f = os.path.join(SETTINGS_DIR, 'Vectrex_EMU.conf')
         here = os.path.join(SETTINGS_DIR, 'settings.json')     # (the earlier name: rename it)
         if not os.path.exists(self.settings_f) and os.path.exists(here):
@@ -1033,13 +1032,13 @@ class App:
             try:
                 self.root.update()
                 self.ren = vecrender.make_renderer(self.screen.winfo_id(), self.screen)
-                self.ren.reserve = vecrender.KNOB_STRIP if self.knob_on or self.fps_on or self.cart_on else 0.0
+                self.ren.reserve = self.knob_reserve()
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
             except Exception as e:                              # noqa: fall back to the Tk canvas
                 print('renderer unavailable (%s): using the Tk canvas' % e)
         # display settings are kept in Vectrex_EMU.conf; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'halo_on', 'halo_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib')
                           if self.ren and hasattr(self.ren, k)]
@@ -1324,7 +1323,9 @@ class App:
             item(m, 'Afterglow length...', '', lambda: self.slider('trail')); dep(m, AG)
             item(m, 'Afterglow joining...', '', lambda: self.slider('phos_grow')); dep(m, AG)
             item(m, 'Afterglow overlap...', '', lambda: self.slider('phos_smooth')); dep(m, AG)
-            check(m, 'Curved tube', '', lambda: R().curve_on, lambda: self.flip(self.ren, 'curve_on'))
+            check(m, 'Tube geometry (a real Vectrex)', '', lambda: R().curve_on, lambda: self.flip(self.ren, 'curve_on'))
+            item(m, 'Tube geometry strength...', '', lambda: self.slider('geom_k')); dep(m, lambda: R().curve_on)
+            check(m, 'Glass edge (rounded corners)', '', lambda: R().glass_on, lambda: self.flip(self.ren, 'glass_on'))
             check(m, 'Corner glow (halo where the beam rests)', '', lambda: R().halo_on, lambda: self.flip(self.ren, 'halo_on'))
             dep(m, lambda: not R().even_beam)
             item(m, 'Corner glow strength...', '', lambda: self.slider('halo_k')); dep(m, lambda: R().halo_on and not R().even_beam)
@@ -1357,7 +1358,6 @@ class App:
             OV = lambda: bool(A('art_on', False) and A('art', None))           # (an overlay is shown)
             SC = lambda: OV() and A('scr_on', False)
             item(m, 'Tint strength...', '', lambda: self.slider('art_tint')); dep(m, OV)
-            item(m, 'Room light...', '', lambda: self.slider('art_room')); dep(m, OV)
             item(m, 'Printed art brightness...', '', lambda: self.slider('art_print')); dep(m, OV)
             check(m, 'Parallax (seen from the usual height)', '', lambda: A('art_parallax', False), lambda: self.flip(self.ren, 'art_parallax')); dep(m, OV)
             if getattr(self.ren, 'gprog', None):
@@ -1380,6 +1380,18 @@ class App:
             item(pm, 'Reset position and size', '', self.reset_art_adj)
             m.add_separator()
             item(m, 'Reset overlay settings to default', '', self.reset_overlay)
+            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Light', menu=m)
+            item(m, 'Room light...', '', lambda: self.slider('art_room'))
+            check(m, 'Glass catches room light (without an overlay)', '', lambda: R().glass_room, lambda: self.flip(self.ren, 'glass_room'))
+            if getattr(self.ren, 'lprog', None):
+                m.add_separator()
+                check(m, 'Ceiling light reflected on the glass', '', lambda: R().light_on, lambda: self.flip(self.ren, 'light_on')); dep(m, lambda: R().glass_room)
+                item(m, 'Glass reflection strength...', '', lambda: self.slider('light_k')); dep(m, lambda: R().glass_room and R().light_on)
+                check(m, 'Ceiling light reflected on the overlay', '', lambda: R().light_ov, lambda: self.flip(self.ren, 'light_ov'))
+                item(m, 'Overlay reflection strength...', '', lambda: self.slider('light_ov_k')); dep(m, lambda: R().light_ov)
+                item(m, 'Light position...', '', self.light_pad); dep(m, lambda: R().light_on or R().light_ov)
+            m.add_separator()
+            item(m, 'Reset light settings to default', '', self.reset_light)
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Sound', menu=m)
             check(m, 'Vectrex buzz', '', lambda: C().buzz_on, lambda: self.flip(self.run.crt, 'buzz_on'))
             item(m, 'Buzz volume...', '', lambda: self.slider('buzz_vol')); dep(m, lambda: C().buzz_on)
@@ -1409,9 +1421,12 @@ class App:
         'bloom':         ('Bloom', '', 'ren', 'bloom', 0.0, 3.0, False, '%.2f', 1),
         'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.1, 10.0, True, 'x%.2f', 1),
         'halo_k':        ('Corner glow strength', '', 'ren', 'halo_k', 0.0, 0.4, False, '%.3f', 1),
+        'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'line_gap':      ('Line gaps (stop delay; 12.3 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 9.3, 15.3, False, '%.1f cycles', 1),
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
-        'art_room':      ('Overlay room light', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
+        'art_room':      ('Room light (the overlay; without one, the glass)', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
+        'light_k':       ('Ceiling light on the glass: strength', '', 'ren', 'light_k', 0.0, 2.0, False, 'x%.2f', 1),
+        'light_ov_k':    ('Ceiling light on the overlay: strength', '', 'ren', 'light_ov_k', 0.0, 2.0, False, 'x%.2f', 1),
         'art_print':     ('Overlay printed art brightness', '', 'ren', 'art_print', 0.0, 1.0, False, '%.2f', 1),
         'scr_wear':      ('Scratches: wear - how much the sheet was handled (all of them)', '', 'ren', 'scr_wear', 0.0, 2.0, False, 'x%.2f', 1),
         'scr_fine':      ('Fine scratches (steps 1-3: the matte buff)', '', 'ren', 'scr_fine', 0.0, 2.0, False, 'x%.2f', 1),
@@ -2207,7 +2222,7 @@ class App:
         """the strip below the picture (share of the picture height): the knob panel and (window) the
         OSD; the picture and the strip are one block (in the window it grows by the strip; in full screen
         + makes the block at most as high as the screen)"""
-        return vecrender.KNOB_STRIP if self.knob_on or self.fps_on or self.cart_on else 0.0
+        return vecrender.PAD_TOP + (vecrender.KNOB_STRIP if self.knob_on or self.fps_on or self.cart_on else vecrender.PAD_TOP)
     def toggle_knob(self, e=None):
         """K: the volume knob and RESET button on screen, bottom right, outside the picture"""
         self.knob_on = not self.knob_on
@@ -2235,7 +2250,8 @@ class App:
         up with its right edge (see vecrender.KNOB_R)"""
         pl, pt, pr, pb = self.pic_rect()
         r = vecrender.KNOB_R * (pb - pt)
-        cx = pr - 0.35 * r - 3.41 * r                           # (VOLUME ends at the picture's right edge)
+        gr = (pl + pr) / 2 + vecrender.GLASS_AW * (pb - pt) / 2  # (the glass's right edge)
+        cx = gr - 0.35 * r - 3.41 * r                           # (VOLUME ends at the glass's right edge)
         cy = pb + 2.3 * r                                       # (OFF/ON and RESET 0.5 r below the picture - clear of an overlay's
                                                                 #  lower edge, which the parallax puts 0.32 r below it - black below)
         return cx, cy, r, cx - 3.4 * r
@@ -2250,7 +2266,8 @@ class App:
         ph = pb - pt; pad = 0.012 * ph
         cx, cy, r, rx = self.knob_geom()
         top = cy - 1.8 * r                                      # (level with the RESET and OFF/ON labels)
-        return dict(area=(pl + pad, top, rx - 1.25 * r, pb + vecrender.KNOB_STRIP * ph),
+        gl_ = (pl + pr) / 2 - vecrender.GLASS_AW * ph / 2      # (from the glass's left edge)
+        return dict(area=(gl_, top, rx - 1.25 * r, pb + vecrender.KNOB_STRIP * ph),
                     rows=self.hud_text(), k=(1.2 if self.full else 1.0) * 0.3 * r / 6.0)
                     # (the text as high as the knob's labels; in full screen 20 % larger)
     # ---------------------------------------------------------------- the cartridge and the ROM browser
@@ -2811,7 +2828,7 @@ class App:
         else:
             w += '   bend OFF'
         if getattr(r, 'curve_on', False):
-            w += '   curved tube'
+            w += '   tube geometry'
         c = self.run.crt
         w += '   buzz %s   speaker %s' % ('%.3f' % c.buzz_vol if c.buzz_on else 'OFF', 'Vectrex' if c.speaker_on else 'clean')
         if not r.phosphor:
@@ -2822,7 +2839,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('curved tube', None), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
@@ -2930,7 +2947,7 @@ class App:
     def reset_tube(self, e=None):
         """Tube > Reset tube settings to default (not the overlay's: those are in the Overlay menu)"""
         for k, v in self.look_default.items():
-            if not k.startswith('art_'):
+            if not k.startswith(('art_', 'light_', 'glass_room')):
                 setattr(self.ren, k, v)
         if self.ren and hasattr(self.ren, 'hist'):
             self.ren.hist = []
@@ -2942,7 +2959,7 @@ class App:
         parallax, scratches (off, wear, glint); for this game no chosen overlay, for its overlay no position
         / size of its own (other games keep theirs)"""
         for k, v in self.look_default.items():
-            if k.startswith(('art_', 'scr_')):
+            if k.startswith(('art_', 'scr_')) and k != 'art_room':
                 setattr(self.ren, k, v)
         self.art_auto = True
         self.art_for.pop(self.rom_name, None)
@@ -2951,6 +2968,65 @@ class App:
         self.load_art()
         self.save_settings()
         self.show_look('overlay settings: the defaults')
+    def reset_light(self):
+        """Light > Reset light settings to default: the room light, the glass, the ceiling light"""
+        for k, v in self.look_default.items():
+            if k.startswith('light_') or k in ('art_room', 'glass_room'):
+                setattr(self.ren, k, v)
+        self.save_settings()
+        self.show_look('light settings: the defaults')
+    def light_pad(self):
+        """Light > Light position: a small window with a field and a dot - drag it to move the ceiling light
+        (left / right; up / down between just visible at the top and its middle a quarter down); right click:
+        the default, Esc or clicking elsewhere closes it"""
+        r = self.ren
+        if not r:
+            return
+        if getattr(self, 'slider_win', None):
+            try: self.slider_win.destroy()
+            except tk.TclError: pass
+        g, bg, dim = '#6a8', '#000', '#2c4a3c'
+        t = tk.Toplevel(self.root, bg=bg); self.slider_win = t
+        t.title('Light position'); t.transient(self.root); t.resizable(False, False)
+        try: t.attributes('-toolwindow', True)
+        except tk.TclError: pass
+        head = tk.Label(t, fg=g, bg=bg, font=(MONO, 10, 'bold'), anchor='w'); head.pack(fill='x', padx=10, pady=(8, 0))
+        W, Hh, M = 420, 180, 12
+        cv = tk.Canvas(t, width=W + 2 * M, height=Hh + 2 * M, bg=bg, highlightthickness=0); cv.pack(padx=10, pady=4)
+        cv.create_rectangle(M, M, M + W, M + Hh, outline=g, width=2)
+        cv.create_text(M + 6, M + 4, text='top: just visible', anchor='nw', fill=dim, font=(MONO, 9))
+        cv.create_text(M + 6, M + Hh - 4, text='bottom: a quarter down', anchor='sw', fill=dim, font=(MONO, 9))
+        dot = cv.create_oval(0, 0, 0, 0, fill=g, outline=g)
+        dx0, dy0 = self.look_default.get('light_x', 0.0), self.look_default.get('light_y', 0.273)
+        def show():
+            x, y = M + r.light_x * W, M + r.light_y * Hh
+            cv.coords(dot, x - 8, y - 8, x + 8, y + 8)
+            head.configure(text='Light position   left / right %d %%   height %d %%' % (round(r.light_x * 100), round(r.light_y * 100)))
+        def move(e):
+            r.light_x = round(max(0.0, min(1.0, (e.x - M) / float(W))), 3)
+            r.light_y = round(max(0.0, min(1.0, (e.y - M) / float(Hh))), 3)
+            show(); return 'break'
+        def default(e=None):
+            r.light_x, r.light_y = dx0, dy0; show(); return 'break'
+        cv.bind('<Button-1>', move); cv.bind('<B1-Motion>', move); cv.bind(RCLICK, default); t.bind(RCLICK, default)
+        tk.Label(t, fg=g, bg=bg, font=(MONO, 9), anchor='w', text='drag the dot   right click: default   Esc: close').pack(fill='x', padx=10, pady=(0, 8))
+        def close(e=None):
+            self.save_settings()
+            try: t.destroy()
+            except tk.TclError: pass
+            self.slider_win = None
+        t.bind('<Escape>', close); t.protocol('WM_DELETE_WINDOW', close)
+        def lost(e=None):
+            if not t.winfo_exists(): return
+            f = t.focus_get()
+            if f is None or not str(f).startswith(str(t)):
+                close()
+        t.bind('<FocusOut>', lambda e: t.after(150, lost))
+        show(); t.update_idletasks()
+        x, y = self.root.winfo_pointerxy()                      # (at the mouse, kept on the screen)
+        x = min(max(0, x - t.winfo_width() // 2), t.winfo_screenwidth() - t.winfo_width())
+        y = min(max(0, y - 20), t.winfo_screenheight() - t.winfo_height() - 60)
+        t.geometry('+%d+%d' % (x, y)); t.focus_force(); cv.focus_set()
     def reset_sound(self):
         """Sound > Reset sound settings to default (not the volume knob: it is the power switch)"""
         for k, v in self.sound_default.items():

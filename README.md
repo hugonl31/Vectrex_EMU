@@ -28,7 +28,9 @@ photo, recording and measurement, and every call on how it should look, sound an
   [3. listening](#3-listening), [4. asking the chips](#4-asking-the-chips-directly),
   [5. the Mine Storm bug](#5-the-mine-storm-bug), [6. the analog side](#6-the-analog-side),
   [7. how wide the gaps are](#7-one-choice-how-wide-the-gaps-are), [8. speech](#8-speech-two-rare-modules),
-  [9. overlays and scratches](#9-overlays---and-forty-years-of-scratches)
+  [9. overlays and scratches](#9-overlays---and-forty-years-of-scratches),
+  [10. the tube's geometry](#10-the-tubes-geometry-measured-not-invented),
+  [11. the room's light](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)
 * [Using it](#using-it) - [switching on](#switching-on), [menus](#menus-and-sliders), [keys](#keys),
   [controls](#controls), [overlays](#overlays), [speech modules](#speech-modules),
   [cartridge hardware](#cartridge-hardware), [Mac and Linux notes](#mac-and-linux-notes)
@@ -128,7 +130,11 @@ also the power switch.
 ## Features
 
 * Cycle-exact 6809 bus timing, the 6522 as measured, Malban's analog delays (as measured for VIDE)
-* Real-time phosphor with the measured afterglow, bloom, glow, curved glass, mains wobble, drift, bending
+* Real-time phosphor with the measured afterglow, bloom, glow, mains wobble, drift, bending
+* The tube's geometry measured from photos of a real Vectrex: its uneven, asymmetric imperfections, not a
+  generic barrel curve
+* A room with a ceiling light: its reflection in the glass, a soft glow on the phosphor behind the thick
+  glass, a sheen on overlays and their scratches glinting around it - all following the room light
 * The buzz, the built-in speaker, the power switch and a worn volume knob
 * Fixed 60 Hz (tear-free on any monitor), the monitor's full rate (120 / 144 / 240 Hz), or G-Sync /
   FreeSync; always at the monitor's full resolution (4K, Retina)
@@ -137,7 +143,7 @@ also the power switch.
 * Bank-switched cartridges: 64K (PB6), Malban's Vectorblade cartridge with its flash save (as on MiSTer),
   a 512K flash cartridge with a bank latch, 1 MB multi-carts (as Sean Kelly's Multi-Cart)
 * Sampled sound and speech through the Vectrex's DAC, and the VecVoice / VecVox speech accessories
-* Overlays (MiSTer `.art` and PNG), flat over the curved tube, lit by the room, with forty years of
+* Overlays (MiSTer `.art` and PNG), flat over the tube, lit by the room, with forty years of
   scratches made on the graphics card
 * Real size (as big as a Vectrex on any monitor), a start size that fits the desktop, the whole screen
   turned in 90 degree steps for a monitor on its side
@@ -284,7 +290,7 @@ Things no digital emulator has, because they are analog:
   <em>A still test picture (testcart/wobble_test.asm) at 50, 48 and 25 fps. For demonstration only: the
   wobble is exaggerated about ten times and the animation runs at half speed, not in real time.</em></p>
 * **Brightness bending**: the high voltage sags with a busy screen; the picture breathes.
-* **The tube**: curved glass, glow around resting spots, a soft round spot - and switching off makes the
+* **The tube**: its measured geometry ([chapter 10](#10-the-tubes-geometry-measured-not-invented)), the glass, glow around resting spots, a soft round spot - and switching off makes the
   picture shrink away with a last flash of the beam, as the real one does.
 
 The result is not a "filter" laid over a clean picture: the imperfections come out of the emulation.
@@ -342,7 +348,7 @@ Every Vectrex game came with a printed plastic **overlay** for the screen: see-t
 vectors behind it, solid print adds the borders, the artwork and the game's name. The emulator reads the
 MiSTer core's overlay files (`.art`) and plain PNG images, and lays the sheet over the finished picture:
 the coloured plastic multiplies the light that comes through it, the print shines in the room's light,
-and the sheet stays **flat** - the curved tube bends the vectors behind it, not the overlay. It sits
+and the sheet stays **flat** - the tube's geometry bends the vectors behind it, not the overlay. It sits
 just in front of the glass, so seen from the usual height the picture sits a little higher on it
 (**parallax**, as on MiSTer). With **Display > Real size** the sheet is exactly as big as a real one,
 162 x 207 mm.
@@ -428,6 +434,91 @@ in the same menu.
 down or up.</em>
 </p>
 
+### 10. The tube's geometry: measured, not invented
+
+Most emulators bend the picture with a neat, symmetrical "barrel" curve - the CRT look. A Vectrex does not
+look like that. Its picture is drawn by a magnetic yoke on a flat-faced tube, and what you see is the sum
+of small, *uneven* imperfections: the grid is a little narrower at the top than at the bottom, the bottom
+edge sags in a gentle bow, the sides lean, and on our machine the top right corner is pulled up. None of it
+is symmetrical, and none of it is a curve anyone would design.
+
+So instead of a formula we took photos. The **Test Cartridge** draws a precise grid of straight lines; we
+photographed it on a real Vectrex with a long lens (to keep the camera's own distortion out), together with
+the start screen and the test's **Distortion 1** pattern, and fitted where every crossing of the grid
+actually lands on the glass. A second Vectrex showed much the same shape - this is how the tube and yoke
+were made, not one tired machine.
+
+<p align="center">
+<img src="docs/images/tube_geometry.jpg" width="900" alt="the Test Cartridge grid: a real Vectrex, the emulator with an ideal tube, the emulator with the measured tube"><br>
+<em>The Test Cartridge grid: a real Vectrex (photo, colour neutralised), the emulator with an ideal tube, and with
+the measured one. Note the narrower top, the bowed bottom, the leaning sides and the raised top right corner.</em>
+</p>
+
+How it works:
+
+* **The straight part** - how big the picture is on the tube (it is smaller than the drawing area, and
+  not quite in proportion) - is always on, so the picture and an overlay keep their size and place when
+  the imperfections are switched off. It also moves the picture up by 1 % of its height: Solar Quest's sun
+  then sits exactly in its overlay's star, as on the real machine.
+* **The imperfections** are a small polynomial (up to the third power) in x and y fitted to the grid
+  photo, plus the pull of that one corner. They are zero in the middle of the screen, so turning them up
+  or down never moves the centre. **Tube > Tube geometry strength** scales them: x1 is the measured tube,
+  0 an ideal one, x2 a more worn-looking one.
+* **The vectors are bent, not the picture.** Every line goes through the map before it is drawn; long
+  lines are cut into short pieces so they curve, each piece keeping its share of the beam's energy and its
+  moment in the frame (so the phosphor's glow and afterglow stay exact). Nothing is stretched as a texture:
+  the lines stay as sharp as the tube draws them.
+* **Overlays are not bent.** A real overlay is a flat sheet of plastic in front of the glass, so it is only
+  scaled (the same both ways, keeping MiSTer's proportions) to sit on the tube's smaller picture, centred.
+* **The glass** has the shape of the real screen opening: a rounded rectangle (a superellipse) with a
+  slightly soft edge, black around it as on the console's casing - as much above it as beside it - with the
+  on-screen display and the knob lined up with its edges (**Tube > Glass edge**).
+
+### 11. The room's light: the glass, the phosphor and the reflections
+
+A Vectrex is never seen in the dark. Its screen is a thick sheet of glass over a phosphor layer, and both
+catch the room: a ceiling lamp shows up as a sharp mirror image in the glass, as a large soft glow on the
+phosphor behind it, and on an overlay as a sheen with every scratch lighting up around it. The **Light**
+menu adds this room, with one lamp: an office ceiling light - a long fluorescent fixture with a grid of
+white louvre cells (5600 K daylight white), lying flat on the ceiling above and in front of you, turned
+20 degrees.
+
+<p align="center">
+<img src="docs/images/light_glass.jpg" width="380" alt="the ceiling light reflected in the glass, room light at maximum">
+<img src="docs/images/light_overlay.jpg" width="406" alt="the ceiling light reflected on Mine Storm's overlay, room light at maximum"><br>
+<em>Room light at its maximum (daylight): the lamp in the glass without an overlay, and on Mine Storm's overlay with
+its scratches.</em>
+</p>
+
+The logic behind each part:
+
+* **One room light for everything.** **Light > Room light** (the same slider as the overlay's) sets how
+  bright the room is. The reflections follow it steeply (its cube): in the default evening room they are
+  barely there, in daylight they are clear - as with a real screen, which you hardly notice reflecting
+  anything until the lights are on.
+* **The glass reflection.** For every point on the screen the shader works out, as a mirror would, which
+  point of the ceiling you see there: the viewing angle across the glass plus the tilt of its surface (the
+  glass is a gentle dome, so the reflection is a little curved and smaller than the lamp). The lamp is drawn
+  in perspective on the ceiling plane - its far end smaller and, by the inverse-square law (gentled), a
+  little dimmer. The grid of cells is anti-aliased per pixel and blurred by about 1 %, as real glass is
+  never perfectly clean. Without an overlay the glass itself turns slightly grey in a bright room (**Glass
+  catches room light**); with an overlay it stays black for contrast.
+* **The phosphor glow.** The phosphor layer sits behind several millimetres of glass and is much more
+  curved, so it shows the lamp very differently: much larger, squarer (its stronger curvature pinches the
+  long fixture), very blurry, and *shifted inwards* - the glass is thin in the middle and thick at the edges,
+  so the offset grows with the distance from the centre. The emulator builds this from the glass
+  reflection's own centre of light, enlarges and squares it, moves every point inwards by the glass's
+  thickness there, and blurs it in three widths. A faint, random (non-repeating) texture gives the
+  phosphor's grain. It is computed once at low resolution whenever the lamp moves.
+* **The overlay.** An overlay is a flat sheet, so it mirrors the lamp without curvature, a little blurred
+  by the plastic, and its plastic brightens around it. Its scratches (chapter 9) catch the light: close to
+  the reflection *every* fine scratch glints; further away only the bigger, deeper ones do, the ones lying
+  across the direction to the lamp. The lamp is an area, not a point, so the glints follow its whole shape.
+* **Moving the lamp.** **Light > Light position...** opens a small pad: drag the dot to move the lamp left
+  and right, and up and down between just visible at the top edge and its middle a quarter down the screen
+  (right click: the default, top left). The strengths of the glass and overlay reflections each have their
+  own slider, and each can be switched off.
+
 ---
 
 ## Using it
@@ -449,14 +540,14 @@ cartridges, bank switching and saving. The text lives in `src/frontend/help_text
 
 ### Menus and sliders
 
-Every option is in the menu bar (Vectrex, Display, Tube, Overlay, Sound, Help); options that are on have a tick,
+Every option is in the menu bar (Vectrex, Display, Tube, Overlay, Light, Sound, Help); options that are on have a tick,
 the few that also have a key show it. Values (volume, bloom, afterglow length, wobble, bending, buzz)
 open a small slider window: drag or click on the bar to set it, **right click for the default**, Esc
 closes it. The defaults are the faithful values - measured on a real Vectrex or chosen side by side with
 one - so each slider has its default **in the middle**: from 0 on the left to twice the default on the
 right, for personal adjustments; it shows how far you are from the default. (The volume knob goes
 0-100 %: 0 % is the power switch.) Each menu ends with its own **Reset ... settings to default**
-(Vectrex, display, tube, overlay, sound): it resets only that menu's settings. In full screen there is
+(Vectrex, display, tube, overlay, light, sound): it resets only that menu's settings. In full screen there is
 no menu (with G-Sync, Windows hides menus there): the [keys](#keys), the knob and the cartridge work there.
 
 **Volume knob on screen** (Display menu, default on): the Vectrex's own panel as simple green
@@ -573,9 +664,10 @@ Several overlays for one game (`Spike.art`, `Spike (red).art`): the plain one is
 **Overlay > Choose overlay...** (remembered per game). (Overlays in `roms/overlays`, where they went
 before, are still found.)
 
-The **Overlay** menu has the rest - on / off (**O**), choose / none per game, tint, room light, printed
+The **Overlay** menu has the rest - on / off (**O**), choose / none per game, tint, printed
 art, parallax, the plastic glow, the scratches, a fine position / size per overlay - each explained in
-[chapter 9](#9-overlays---and-forty-years-of-scratches) and in the built-in Help.
+[chapter 9](#9-overlays---and-forty-years-of-scratches) and in the built-in Help. The room light and the
+ceiling light's reflections are in the **Light** menu ([chapter 11](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)).
 
 **Mine Storm's overlay comes with the emulator** as an ordinary file, `overlays/Mine Storm (built in).art`,
 for the game built into the console. To use another one, put your own `Mine Storm.art` next to it (the

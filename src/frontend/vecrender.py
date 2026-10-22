@@ -5,6 +5,7 @@ twice: a wide faint glow and a bright core (the look of a vector CRT), then copi
 window in one call. Line widths scale with the picture, so any window size looks smooth.
 """
 import ctypes, math, sys, ctypes.wintypes as W
+import roomlight
 
 IS_WIN = sys.platform == 'win32'      # (macOS / Linux: osdep.py makes the OpenGL context)
 
@@ -217,7 +218,7 @@ class GLRenderer:
         rs = getattr(self, 'reserve', 0.0)               # (a strip below the picture: the knob panel)
         s = min(w / ALG_MAX_X, h / (ALG_MAX_Y * (1.0 + rs))) * getattr(self, 'view_scale', 1.0)   # (full screen: + / - size)
         ox = (w / s - ALG_MAX_X) / 2
-        oy = (h / s - ALG_MAX_Y * (1.0 + rs)) / 2          # (above the picture; below it: the strip too)
+        oy = (h / s - ALG_MAX_Y * (1.0 + rs)) / 2 + PAD_TOP * ALG_MAX_Y   # (rs: the black above and the strip below)
         gl.glOrtho(-ox, ALG_MAX_X + ox, h / s - oy, -oy, -1, 1)      # emulator units, y down
         gl.glMatrixMode(GL_MODELVIEW); gl.glLoadIdentity()
         ph = ALG_MAX_Y * s
@@ -329,7 +330,7 @@ void main() {
 # the beam's energy model: a line that took `cyc` cycles over `len` game pixels (160 emulator
 # units) got e = cyc/len cycles of beam per pixel. Fitted to the owner's photos (2026-10-08):
 #  - width (FWHM, game px) = 0.7 + 0.04 e^2: small text (e ~2.6) ~0.95 px with its rows nearly
-#    touching, the big ROBOT ARENA title (e ~1.3, rows 1.41 px apart) ~0.8 px with a thin dark gap,
+#    touching, a big title (e ~1.3, rows 1.41 px apart) ~0.8 px with a thin dark gap,
 #    the slowly drawn ship ring (e ~5.7) ~2 px
 #  - brightness 1 - exp(-e / 0.7): fast sweeps fainter
 #  - the energy comes from the emulator (VT_ZTAU: the beam level rises and falls with a 2.5 cycle
@@ -405,21 +406,158 @@ void main() {
 }
 """
 
-# the curved tube (C): the finished picture bowed like on a curved CRT face - straight lines bend
-# outwards towards the edges (barrel), the corners drawn in. norm: window uv -> units of half the
-# picture height (round, not stretched); CURVE_K: how much a point at that distance moves inwards.
-CURVE_K = 0.07
+# the tube geometry (Tube > Tube geometry): where the beam lands on the owner's Vectrex, measured from photos of
+# the Test Cartridge grid, the start screen and Distortion 1 (2026-10-22): the picture narrower than the ideal
+# one (more so towards the sides), vertical lines bowed to the left, horizontal ones down, the top narrower than
+# the bottom, the top right corner pulled up a little, the whole a little smaller (its height 86 % of the glass
+# is the grid's 77 % as on the tube). A map from the ideal picture (u, v: units of half the picture height,
+# centred, y down) to the tube: cubic in u, v (TUBE_X, TUBE_Y: coefficients of the terms TUBE_TERMS) plus the
+# corner's pull; the shader inverts it per pixel (Newton steps). Strength (Tube geometry...): 0 = the ideal
+# picture, 1 = the owner's tube. The glass: a superellipse (rounded corners, its sides very slightly bulging),
+# as high as the picture, GLASS_AW as wide; beyond it the tube's face ends (Tube > Glass edge).
+TUBE_TERMS = ((0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (3, 0))   # (u power, v power)
+TUBE_X = (0.0, 0.00146, 0.01249, -0.00058, 0.87493, 0.01148, 0.01204, 0.01051, -0.00711, -0.13134)
+TUBE_Y = (0.0, 0.85774, -0.02077, 0.11881, -0.00346, -0.0042, 0.01194, -0.01267, -0.00086, -0.00016)
+TUBE_PULL = 0.016                       # the top right corner pulled up (half picture heights, at the corner)
+GLASS_AW, GLASS_N, GLASS_EDGE = 0.7542, 7.72, 0.025     # the glass: width / height, superellipse power, soft edge
+GLASS_GREY = 0.20                       # the glass in room light without an overlay: grey x Room light (0 .. 1) -
+                                        #  at the default hardly noticeable; with an overlay always black (contrast)
+ART_TUBE_K = 0.924                      # the overlay on the tube's smaller picture: its scale (both ways - the sheet keeps
+                                        #  its proportions; the width as fitted to Armor Attack's playground, the owner)
+TUBE_SEG = 1200.0                       # (lines longer than this, emulator units, are bent in pieces)
+TUBE_LIN = (0.82217, 0.0, 0.91048, -0.0058)   # the straight part: x = a u, y = c v + d - the picture's size on the tube (the
+                                        #  best straight fit to the whole map, |u|, |v| < 0.82): always on, so overlays keep
+                                        #  their place when the imperfections are switched off. Centred, for simplicity (the
+                                        #  owner's tube sits a little off): the picture, the glass and the overlay share one
+TUBE_IMP_OFF = (0.0, -0.001)            #  centre - the imperfections are zero there (the corner's pull's share taken out), so
+                                        #  switching them off never moves the picture's middle
+                                        #  (d: the vectors 1 % of the picture height up - Solar Quest's sun in its overlay's star, the owner)
+def tube_map(k):
+    """the tube's map, emulator units -> emulator units: the straight part plus k x the imperfections (the full
+    map minus the straight part)"""
+    cx, cy = tube_coeffs(1.0); pull = TUBE_PULL
+    la, lb, lc, ld = TUBE_LIN
+    X0, Y0, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
+    (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9), (b0, b1, b2, b3, b4, b5, b6, b7, b8, b9) = cx, cy
+    def f(x, y):
+        u = (x - X0) / U; v = (y - Y0) / U
+        u2, v2 = u * u, v * v
+        X = a0 + a1 * v + a2 * v2 + a3 * v2 * v + a4 * u + a5 * u * v + a6 * u * v2 + a7 * u2 + a8 * u2 * v + a9 * u2 * u
+        Y = b0 + b1 * v + b2 * v2 + b3 * v2 * v + b4 * u + b5 * u * v + b6 * u * v2 + b7 * u2 + b8 * u2 * v + b9 * u2 * u
+        if pull:
+            p = (1.0 + u / 0.85) * 0.5; q = (1.0 - v) * 0.5
+            if p > 0 and q > 0:
+                Y -= pull * p * p * q * q
+        sx, sy = la * u, lc * v
+        X -= TUBE_IMP_OFF[0]; Y -= TUBE_IMP_OFF[1]
+        return X0 + (sx + k * (X - sx) + lb) * U, Y0 + (sy + k * (Y - sy) + ld) * U
+    return f
+
+def tube_coeffs(k):
+    """the map's coefficients at strength k: the identity blended with the owner's tube"""
+    ix = [1.0 if t == (1, 0) else 0.0 for t in TUBE_TERMS]; iy = [1.0 if t == (0, 1) else 0.0 for t in TUBE_TERMS]
+    return ([a + k * (b - a) for a, b in zip(ix, TUBE_X)], [a + k * (b - a) for a, b in zip(iy, TUBE_Y)])
 ART_PARALLAX = 0.008    # the overlay's parallax: lowered this share of the picture height (Overlay > Parallax)
+LIGHT_GLSL = b"""
+// the room's light (see roomlight.py: the same geometry)
+const float HZ = 0.80, CH = 2.4, FIX_W = 0.30, FIX_L = 1.2;
+const vec3 LIGHTC = vec3(1.0, 0.94, 0.894);
+uniform float lca, lsa;
+float ceiling(vec2 p, float soft) {
+    // (anti-aliased: every edge softened by at least this pixel's own size there - fwidth - so the far, squeezed
+    //  cells are as smooth as the near ones; no early returns before the derivatives)
+    float den = max(HZ - p.y, 0.05), vis = step(0.05, HZ - p.y);
+    float D = CH / den, D0 = CH / HZ;
+    float X = p.x * D / 2.0, Zr = D0 - D;
+    float Xr = lca * X - lsa * Zr, Z = lsa * X + lca * Zr;
+    float wx = soft + 0.8 * fwidth(Xr), wz = soft + 0.8 * fwidth(Z);
+    float ins = (1.0 - smoothstep(FIX_W - wx, FIX_W + wx, abs(Xr))) * (1.0 - smoothstep(FIX_L - wz, FIX_L + wz, abs(Z)));
+    float fr = max(smoothstep(FIX_W - 0.05 - wx, FIX_W - 0.05 + wx, abs(Xr)), smoothstep(FIX_L - 0.05 - wz, FIX_L - 0.05 + wz, abs(Z)));
+    float cx = (Xr + FIX_W) / (2.0 * FIX_W) * 2.0, cz = (Z + FIX_L) / (2.0 * FIX_L) * 9.0;
+    float fx = fract(cx), fz = fract(cz);
+    float bx = min(wx / FIX_W, 0.45), bz = min(wz / 0.267, 0.45);
+    float blade = max(smoothstep(0.44 - bx, 0.44 + bx, abs(fx - 0.5)), smoothstep(0.42 - bz, 0.42 + bz, abs(fz - 0.5)));
+    float cell = 0.85 + 0.15 * pow(max(1.0 - abs(fx - 0.5) * 2.0, 0.0), 0.6);
+    float val = mix(mix(cell, 0.18, blade), 0.12, fr);
+    float fall = clamp(pow(D0 / D, 0.7), 0.75, 1.25) / 1.25;
+    return vis * ins * val * fall;
+}
+vec2 reflp(vec2 uv, float curv) {
+    vec3 n = normalize(vec3(curv * uv, 1.0));
+    float dn = -n.z;
+    vec3 r = vec3(-2.0 * dn * n.x, -2.0 * dn * n.y, -1.0 - 2.0 * dn * n.z);
+    return uv * 0.9 + r.xy / r.z;
+}
+"""
 CURVE_SHADER = b"""
-uniform sampler2D tex;
+uniform sampler2D tex, lmap;
 uniform vec2 norm, ctr;
-uniform float k;
+uniform float cx[10], cy[10];
+uniform float pull, glass, aw, gn, edge, grey, lk, bscale, pxs;
+uniform vec3 lpos;
+uniform vec4 lmr;
+""" + LIGHT_GLSL + b"""
+float hash(vec2 p) {                                     // (no sine: no repeats or bands from lost precision)
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float bumps(vec2 p) { return (vnoise(p - 0.35) - vnoise(p + 0.35)) * 4.0; }   // (smooth bumps, lit from the top left)
+vec2 fwd(vec2 p, out mat2 J) {
+    float u = p.x, v = p.y, u2 = u * u, v2 = v * v;
+    float t[10]; float tu[10]; float tv[10];
+    t[0] = 1.0;    tu[0] = 0.0;      tv[0] = 0.0;
+    t[1] = v;      tu[1] = 0.0;      tv[1] = 1.0;
+    t[2] = v2;     tu[2] = 0.0;      tv[2] = 2.0 * v;
+    t[3] = v2 * v; tu[3] = 0.0;      tv[3] = 3.0 * v2;
+    t[4] = u;      tu[4] = 1.0;      tv[4] = 0.0;
+    t[5] = u * v;  tu[5] = v;        tv[5] = u;
+    t[6] = u * v2; tu[6] = v2;       tv[6] = 2.0 * u * v;
+    t[7] = u2;     tu[7] = 2.0 * u;  tv[7] = 0.0;
+    t[8] = u2 * v; tu[8] = 2.0 * u * v; tv[8] = u2;
+    t[9] = u2 * u; tu[9] = 3.0 * u2; tv[9] = 0.0;
+    vec2 f = vec2(0.0); vec2 fu = vec2(0.0); vec2 fv = vec2(0.0);
+    for (int i = 0; i < 10; i++) {
+        f += vec2(cx[i], cy[i]) * t[i]; fu += vec2(cx[i], cy[i]) * tu[i]; fv += vec2(cx[i], cy[i]) * tv[i];
+    }
+    float a = max((1.0 + u / 0.85) * 0.5, 0.0), b = max((1.0 - v) * 0.5, 0.0);   // (the corner's pull)
+    f.y -= pull * a * a * b * b;
+    fu.y -= pull * a * b * b / 0.85;
+    fv.y += pull * a * a * b;
+    J = mat2(fu, fv);
+    return f;
+}
 void main() {
     vec2 uv = gl_TexCoord[0].st;
-    vec2 d = (uv - ctr) * norm;
-    vec2 s = ctr + (uv - ctr) * (1.0 + k * dot(d, d));
-    if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-    else gl_FragColor = vec4(texture2D(tex, s).rgb, 1.0);
+    vec2 tgt = (uv - ctr) * norm; tgt.y = -tgt.y;          // (on the tube: half picture heights, y down)
+    vec2 p = tgt; mat2 J;
+    for (int i = 0; i < 6; i++) {                            // (where the ideal picture had this point)
+        vec2 f = fwd(p, J);
+        float det = J[0][0] * J[1][1] - J[1][0] * J[0][1];
+        p -= (1.0 / det) * mat2(J[1][1], -J[0][1], -J[1][0], J[0][0]) * (f - tgt);
+    }
+    vec2 s = ctr + vec2(p.x, -p.y) / norm;
+    vec3 c = (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) ? vec3(0.0) : texture2D(tex, s).rgb;
+    if (glass > 0.5) {                                       // (the glass ends: a superellipse)
+        float r = pow(pow(abs(tgt.x / aw), gn) + pow(abs(tgt.y), gn), 1.0 / gn);
+        float g = smoothstep(0.0, 1.0, clamp((1.0 - r) / edge, 0.0, 1.0));   // (a soft edge)
+        vec3 add = vec3(0.0);
+        if (grey > 0.0 || lk > 0.0) {                        // (the glass in the room's light: no overlay)
+            float gr = bumps(gl_FragCoord.xy * bscale);      // (the phosphor layer's fine orange-peel bumps)
+            add += grey * (1.0 - 0.25 * tgt.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);
+            if (lk > 0.0) {
+                vec4 m = texture2D(lmap, vec2((tgt.x - lmr.x) / (lmr.y - lmr.x), (tgt.y - lmr.z) / (lmr.w - lmr.z)));
+                float sharp = ceiling((reflp(tgt, 0.2) - lpos.xy) / lpos.z, 0.012);   // (a mirror; 1 % blur, anti-aliased)
+                add += lk * (m.g * (1.0 + 0.018 * gr) * vec3(0.95, 0.96, 1.0) + 0.88 * (0.98 * sharp + m.r) * LIGHTC);   // (m.g: the phosphor's light, roomlight.maps)
+            }
+        }
+        c = (c + add) * g;
+    }
+    gl_FragColor = vec4(c, 1.0);
 }
 """
 
@@ -486,6 +624,11 @@ SCR_DAMAGE_FROM = 4                     # steps from here on are the damage (Ove
 ART_ROOM_MID = 0.075                    # the room light curve's pivot (the default now 0.0648, the owner's)
 ART_ROOM_POW = 2.0                      # the plastic's light goes with the setting squared (x2 slider = x4 light);
 ART_PRINT_POW = 1.0                     #  the print's straight with it (x2 = x2: it clips less)
+ROOM_MAX = 2 * 0.0648                   # the Room light slider's right end (twice the default)
+def light_level(r):
+    """the room's light for the glass and the light's reflections: hardly any at the default, 1 at the slider's end"""
+    return min(1.0, max(0.0, r / ROOM_MAX)) ** 3
+
 def room_light(r):
     """the room's light on the sheet from the Room light setting: the default as it is, steeper around it"""
     return ART_ROOM_MID * (max(0.0, r) / ART_ROOM_MID) ** ART_ROOM_POW
@@ -640,6 +783,8 @@ void main() {
 SCR_SHADE = b"""
 uniform sampler2D art, A, B, C, S, M, F, V1, V2;
 uniform float pass, sf, ref, glint, room, scrk, scron, a2, a4, gk, glow;
+uniform vec4 rlp;                       // (the room's light on the sheet: -, -, px per unit, strength)
+uniform vec2 rpt[6];                    // (its area: six points, window px, y up)
 uniform vec4 pen;                       // (the damage's cut: from, full, light through)
 uniform vec2 size, qpx;
 float lum(vec3 c) { return max(max(c.r, c.g), c.b); }
@@ -678,10 +823,56 @@ void main() {
     float dd = clamp(b.y * 0.6, 0.0, 1.4);
     c += (m * df * df + 2.0 * dd * ds * ds) * Rl * gk * glint * lc * trans + dd * room * 0.9 * own;
     c += glow * max(h2.y, 0.0) * lc * trans;            // (the plastic's own glow)
+    if (rlp.w > 0.0) {                                   // (the ceiling light on the sheet - an area, six points: every
+        vec3 lcol = vec3(1.0, 0.94, 0.894) * mix(vec3(1.0), trans, 0.6);   //  scratch close to it, further out only the bigger)
+        float bc = b.z / max(b.y, 1e-6), bs = b.w / max(b.y, 1e-6);
+        for (int i = 0; i < 6; i++) {
+            vec2 dv = (rpt[i] - gl_FragCoord.xy) / rlp.z; dv.y = -dv.y;
+            float dl = length(dv * vec2(1.0 / 1.25, 1.0));
+            float ph2 = atan(dv.y, dv.x + 1e-7), c2l = cos(2.0 * ph2), s2l = sin(2.0 * ph2);
+            if (D > 0.0) {
+                float acf = pow(clamp(0.5 - 0.5 * (a.y * c2l + a.z * s2l) / D, 0.0, 1.0), 2.0);
+                c += rlp.w / 4.0 * (0.9 * exp(-dl / 0.05) + 0.3 * exp(-dl / 0.11)) * m * acf * 2.5 * lcol;
+            }
+            if (b.y > 0.0) {
+                float acr = pow(clamp(0.5 - 0.5 * (bc * c2l + bs * s2l), 0.0, 1.0), 3.0);
+                float farl = 0.5 * exp(-dl / 0.06) + 0.25 * exp(-dl / 0.10) + 0.18 * exp(-dl / 0.24) + 0.07 * exp(-dl / 0.55);
+                c += rlp.w / 4.0 * farl * dd * acr * 6.0 * lcol;
+            }
+        }
+    }
     // the damage cut through the colour layer at its widest: the tube's light comes through untinted (white)
     float cut = smoothstep(pen.x, pen.y, cc.z);
     c += cut * pen.z * (0.5 * near + 0.8 * mid + 0.6 * far) * (vec3(1.0) - trans * 0.5) + cut * room * 0.5;   // (it scatters the light around it)
     gl_FragColor = vec4(c, 1.0);
+}
+"""
+
+# the room's light on an overlay (Light menu): a flat sheet - the fixture's mirror image a little blurred (plexiglass),
+# the plastic brighter around it, and (mode 2, into the scratches' light) a soft glow their glints catch
+OV_LIGHT_SHADER = b"""
+uniform sampler2D art;
+uniform float mode, k, wear;
+uniform vec3 lpos;
+uniform vec4 pic;                                           // (the picture's centre x, y from the top, half height, window h)
+""" + LIGHT_GLSL + b"""
+void main() {
+    float a = texture2D(art, gl_TexCoord[0].st).a;
+    float sheet = step(0.004, a);                           // (on the sheet only)
+    vec2 uv = vec2(gl_FragCoord.x - pic.x, (pic.w - gl_FragCoord.y) - pic.y) / pic.z;
+    vec2 p = (uv * 0.9 - lpos.xy) / lpos.z;
+    if (mode < 0.5) {
+        vec2 c = lpos.xy / 0.9;
+        vec2 d = (uv - c) * vec2(1.0 / 1.25, 1.0);
+        float s = (70.0 + 110.0 * wear) / 917.0, d2 = dot(d, d);
+        float glow = 0.30 * exp(-d2 / (2.0 * s * s)) + 0.05 * exp(-d2 / (18.0 * s * s));
+        gl_FragColor = vec4(vec3(6.0 * glow * k * sheet), 1.0);
+    } else if (mode < 1.5)
+        gl_FragColor = vec4(LIGHTC * k * ceiling(p, 0.02) * sheet, 1.0);
+    else {
+        float d = length((uv - lpos.xy / 0.9) * vec2(1.0 / 1.25, 1.0));
+        gl_FragColor = vec4(LIGHTC * k * ceiling(p, 0.15) * sheet, 1.0);
+    }
 }
 """
 
@@ -912,6 +1103,7 @@ LOAD_ICON = [[(-2, 0), (102, 0), (102, 18), (97, 18), (97, 22), (3, 22), (3, 18)
              [(50, 52), (50, 30)], [(43, 37), (50, 30), (57, 37)]] +             [[(u, v + 60) for u, v in line] for line in CART_ICON]
 OSD_SCALE = 0.3         # the window OSD's text: 30 % of what would fill the strip (the owner)
 KNOB_SWEEP = 150.0      # degrees either side of 12 o'clock: 0 % to 100 %
+PAD_TOP = (33000.0 / 41000.0 - GLASS_AW) / 2   # black above the glass (the Vectrex's casing): as much as beside it
 KNOB_STRIP = 3.7 * KNOB_R   # the strip below the picture: a little black space, the labels, the knob, black space
 
 class GLBloomRenderer(GLRenderer):
@@ -951,6 +1143,9 @@ class GLBloomRenderer(GLRenderer):
         gl.glTexCoord2f.argtypes = [ctypes.c_float] * 2
         gl.glVertex2f.argtypes = [ctypes.c_float] * 2
         self.Uniform1f = proc('glUniform1f', None, i, ctypes.c_float)
+        self.Uniform1fv = proc('glUniform1fv', None, i, i, ctypes.c_void_p)
+        self.Uniform3f = proc('glUniform3f', None, i, ctypes.c_float, ctypes.c_float, ctypes.c_float)
+        self.Uniform2fv = proc('glUniform2fv', None, i, i, ctypes.c_void_p)
         gl.glTexCoordPointer.argtypes = [ctypes.c_int, ctypes.c_uint, ctypes.c_int, ctypes.c_void_p]
         def program(source, what):
             sh = CreateShader(GL_FRAGMENT_SHADER)
@@ -1004,7 +1199,7 @@ class GLBloomRenderer(GLRenderer):
         except OSError:
             self.BlendEq = None
         self.kprog = program(CURVE_SHADER, 'curve')
-        self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'k', 'ctr')}
+        self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'lca', 'lsa')}
         self.tprog = program(TONE_SHADER, 'tone')
         self.u_ttex = GetUniform(self.tprog, b'tex')
         self.aprog = program(ART_SHADER, 'overlay')
@@ -1013,10 +1208,12 @@ class GLBloomRenderer(GLRenderer):
             self.gprog = program_vf(SCR_GEN_VS, SCR_GEN_FS, 'scratch maker')    #  card can not)
             self.u_g = {k: GetUniform(self.gprog, k.encode()) for k in
                         ('batch', 'limit', 'seed', 'stepid', 'mode', 'place', 'L0', 'L1', 'd0', 'd1', 'wv', 'off', 'chan', 'dmax', 'scrib', 'llen')}
+            self.lprog = program(OV_LIGHT_SHADER, 'light on the overlay')
+            self.u_l = {k: GetUniform(self.lprog, k.encode()) for k in ('art', 'mode', 'k', 'wear', 'lpos', 'pic', 'lca', 'lsa')}
             self.rprog = program(SCR_SHADE, 'scratches')
             self.u_r = {k: GetUniform(self.rprog, k.encode()) for k in
                         ('art', 'A', 'B', 'C', 'S', 'M', 'F', 'V1', 'V2', 'pass', 'sf', 'ref', 'glint', 'room', 'scrk',
-                         'scron', 'a2', 'a4', 'gk', 'glow', 'pen', 'size', 'qpx')}
+                         'scron', 'a2', 'a4', 'gk', 'glow', 'pen', 'rlp', 'rpt', 'size', 'qpx')}
             self.hprog = program(SCR_HARM_H, 'glint (horizontal)')
             self.u_h = {k: GetUniform(self.hprog, k.encode()) for k in ('src', 'part', 's1', 's2', 'px')}
             self.vprog = program(SCR_HARM_V, 'glint (vertical)')
@@ -1059,7 +1256,17 @@ class GLBloomRenderer(GLRenderer):
         self.bend_on = True          # brightness bending (high voltage sag)
         self.bend_strength = 0.6     # game px at the screen edge per 0.1 beam load
         self.bend_type = 0           # index into BEND_TYPES
-        self.curve_on = True         # the curved tube (C, see CURVE_SHADER; on by default: the owner's choice)
+        self.curve_on = True         # the tube geometry (Tube > Tube geometry, see CURVE_SHADER; on by default)
+        self.geom_k = 1.0            # its strength (Tube > Tube geometry strength: 1 = the owner's Vectrex)
+        self.glass_on = True         # the glass's rounded edge (Tube > Glass edge)
+        self.glass_room = True       # the glass grey in room light, without an overlay (Light > Glass catches room light)
+        self.light_on = True         # the ceiling light reflected in the glass (Light > Light reflection on the glass)
+        self.light_k = 1.0           #  its strength
+        self.light_x = 0.0           # Light > Light position: left (0) .. right (1)
+        self.light_y = 0.273         #  highest - 5 % of it visible - (0) .. lowest - its middle a quarter down - (1)
+        self.light_ov = True         # the light on an overlay (Light > Light reflection on the overlay)
+        self.light_ov_k = 1.0        #  its strength
+        self.light_tex = None; self.light_key = None; self.light_made_t = 0.0
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
         self.even_beam = False       # Tube > Even beam: an ideal vector display - every point as bright and wide as a
                                      #  line, no corner glow, overlapping light not adding up (off: the real tube)
@@ -1220,7 +1427,9 @@ class GLBloomRenderer(GLRenderer):
         k = getattr(self, 'art_scale', 1.0)
         hh = ph * k; ww = hh * tw / float(th)
         cx = (pl + pr) / 2 + self.art_dx * ph
-        cy = (pt + pb) / 2 + (self.art_dy + (ART_PARALLAX if self.art_parallax else 0.0)) * ph
+        ww *= ART_TUBE_K; hh *= ART_TUBE_K                      # (the picture on the tube is smaller: the sheet
+                                                                #  too, in its own proportions - MiSTer's art)
+        cy = (pt + pb) / 2 + (self.art_dy + (ART_PARALLAX if self.art_parallax else 0.0)) * ph * ART_TUBE_K
         return cx - ww / 2, cy - hh / 2, cx + ww / 2, cy + hh / 2
 
     def _art(self):
@@ -1232,8 +1441,17 @@ class GLBloomRenderer(GLRenderer):
         x0, y0, x1, y1 = self.art_rect()
         scr = (getattr(self, 'gprog', None) and self.float_ok
                and ((self.scr_on and self._scr_ready()) or getattr(self, 'art_glow', False)))
+        LL = light_level(getattr(self, 'art_room', ART_ROOM_MID))
+        ovl = LL * getattr(self, 'light_ov_k', 1.0) if (getattr(self, 'light_ov', True) and getattr(self, 'lprog', None)) else 0.0
         if scr:                                                 # (the screen before the overlay: the scratches' light)
             gl.glBindTexture(GL_TEXTURE_2D, self.S[0]); gl.glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h)
+            if ovl > 0 and getattr(self, 'scr_on', False):     # (the room's light among it: their glints around it)
+                self.BindFB(GL_FRAMEBUFFER, self.S[1])
+                gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, w, h, 0, -1, 1)
+                gl.glMatrixMode(GL_MODELVIEW)
+                self._ov_light(2, x0, y0, x1, y1, 0.6 * ovl)
+                gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
+                self.BindFB(GL_FRAMEBUFFER, self.out)
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, w, h, 0, -1, 1)
         gl.glMatrixMode(GL_MODELVIEW)
         gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, self.art[0]); gl.glColor4f(1, 1, 1, 1)
@@ -1251,10 +1469,60 @@ class GLBloomRenderer(GLRenderer):
             gl.glEnd()
         self.UseProgram(0)
         gl.glDisable(GL_TEXTURE_2D)
+        if ovl > 0:                                             # (the room's light on the sheet)
+            self._ov_light(0, x0, y0, x1, y1, ovl)
+            self._ov_light(1, x0, y0, x1, y1, 0.45 * ovl)
         gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
         if scr:
             self._scratches(x0, y0, x1, y1)
+
+    # ---------------------------------------------------------------- the room's light (roomlight.py)
+    def _light_ready(self):
+        """the light's soft maps for this position (made again when it moves; while the pad is dragged at most every
+        0.1 s): a small float texture, R the glass's own soft light, G the phosphor layer's"""
+        key = (round(self.light_x, 3), round(self.light_y, 3))
+        if key != self.light_key:
+            now = __import__('time').perf_counter()
+            if self.light_tex and now - self.light_made_t < 0.1:
+                return True
+            R, G = roomlight.maps(key[0], key[1], GLASS_AW, GLASS_N)
+            w, h = roomlight.MAP_W, roomlight.MAP_H
+            px = (ctypes.c_float * (w * h * 4))()
+            for i in range(w * h):
+                px[4 * i] = R[i]; px[4 * i + 1] = G[i]; px[4 * i + 3] = 1.0
+            gl = self.gl
+            if not self.light_tex:
+                t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t)); self.light_tex = t.value
+            gl.glBindTexture(GL_TEXTURE_2D, self.light_tex)
+            for k, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):
+                gl.glTexParameteri(GL_TEXTURE_2D, k, v)
+            gl.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F if self.float_ok else 0x8058, w, h, 0, GL_RGBA, GL_FLOAT, px)
+            self.light_key = key; self.light_made_t = now
+        return True
+
+    def _ov_light(self, mode, x0, y0, x1, y1, k):
+        """the light on an overlay, over the sheet: mode 0 its plastic brighter around the light (multiplied),
+        1 the light's reflection (added), 2 a soft version into the scratches' light (S)"""
+        gl = self.gl
+        w, h = self.size
+        s, ox, oy = self.map
+        _, (fx, fy) = roomlight.place(self.light_x, self.light_y)
+        u = self.u_l
+        self.UseProgram(self.lprog)
+        self.Uniform1i(u['art'], 0); self.Uniform1f(u['mode'], float(mode)); self.Uniform1f(u['k'], k)
+        self.Uniform3f(u['lpos'], fx, fy, roomlight.FLAT_SIZE)
+        self.Uniform1f(u['lca'], math.cos(roomlight.ANG)); self.Uniform1f(u['lsa'], math.sin(roomlight.ANG))
+        self.Uniform4f(u['pic'], (ox + ALG_MAX_X / 2.0) * s, (oy + ALG_MAX_Y / 2.0) * s, ALG_MAX_Y * s / 2.0, float(h))
+        self.Uniform1f(u['wear'], max(0.0, min(2.0, getattr(self, 'scr_wear', 1.0))))
+        gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, self.art[0]); gl.glColor4f(1, 1, 1, 1)
+        gl.glEnable(GL_BLEND)
+        gl.glBlendFunc(*((0x0306, 1) if mode == 0 else (1, 1)))      # (DST_COLOR, ONE: x (1 + src) / ONE, ONE)
+        gl.glBegin(GL_QUADS)
+        for (tu, tv), (x, y) in (((0, 0), (x0, y0)), ((1, 0), (x1, y0)), ((1, 1), (x1, y1)), ((0, 1), (x0, y1))):
+            gl.glTexCoord2f(tu, tv); gl.glVertex2f(x, y)
+        gl.glEnd()
+        self.UseProgram(0); gl.glDisable(GL_TEXTURE_2D)
 
     # ---------------------------------------------------------------- the overlay's scratches
     def _scr_ready(self):
@@ -1384,6 +1652,21 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform1f(u['gk'], SCR_GLINT_K if on else 0.0)
         self.Uniform1f(u['glow'], ART_GLOW_K * self.art_glow_k if getattr(self, 'art_glow', False) else 0.0)
         self.Uniform4f(u['pen'], SCR_PEN[0], SCR_PEN[1], SCR_PEN[2], 0.0)
+        ovl = light_level(getattr(self, 'art_room', ART_ROOM_MID)) * getattr(self, 'light_ov_k', 1.0) \
+            if (on and getattr(self, 'light_ov', True) and getattr(self, 'lprog', None)) else 0.0
+        s_, ox_, oy_ = self.map
+        _, (fx_, fy_) = roomlight.place(self.light_x, self.light_y)
+        hh_ = ALG_MAX_Y * s_ / 2.0
+        self.Uniform4f(u['rlp'], 0.0, 0.0, hh_, ovl)
+        if ovl > 0:
+            key = (round(self.light_x, 3), round(self.light_y, 3))
+            if getattr(self, '_rpt_key', None) != key:
+                self._rpt_key = key; self._rpt = roomlight.flat_points(*key)
+            cx_, cy_ = (ox_ + ALG_MAX_X / 2.0) * s_, (oy_ + ALG_MAX_Y / 2.0) * s_
+            pts = []
+            for pu, pv in self._rpt:
+                pts += [cx_ + pu * hh_, h - (cy_ + pv * hh_)]
+            self.Uniform2fv(u['rpt'], 6, (ctypes.c_float * 12)(*pts))
         self.Uniform2f(u['size'], float(w), float(h)); self.Uniform2f(u['qpx'], 1.0 / self.qw, 1.0 / self.qh)
         gl.glEnable(GL_BLEND); gl.glColor4f(1, 1, 1, 1)
         for ps, (sf_, df_) in ((0.0, (0x0306, 0)), (1.0, (1, 1))):      # (DST_COLOR, ZERO: the line gives / ONE, ONE)
@@ -1477,6 +1760,38 @@ class GLBloomRenderer(GLRenderer):
         self.ClientActiveTexture(0x84C0); gl.glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
 
+    def _tube_lines(self, lines):
+        """Tube geometry: every line through the owner's tube map (TUBE_X / TUBE_Y), long ones in pieces so they
+        bend; each piece keeps its share of the beam's energy and its moment in the frame"""
+        k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
+        if getattr(self, '_tube_k', None) != k:
+            self._tube_k = k; self._tube_f = tube_map(k)
+        f = self._tube_f
+        out = []; sqrt = math.sqrt; opens = []           # (opens: a piece's ends that join the next piece)
+        for ln in lines:
+            x0, y0, x1, y1 = ln[:4]
+            L = sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
+            if L <= TUBE_SEG or k <= 0:                  # (straight: the ends only)
+                a = f(x0, y0); b = f(x1, y1) if L > 0 else a
+                out.append((a[0], a[1], b[0], b[1]) + tuple(ln[4:])); opens.append(0)
+                continue
+            m = int(L / TUBE_SEG) + 1; rest = tuple(ln[7:])
+            e = ln[5] if len(ln) > 5 else None; t0 = ln[6] if len(ln) > 6 else None
+            cyc = (e / 8.0) if e is not None else 0.0
+            pa = f(x0, y0)
+            for i in range(1, m + 1):
+                s = i / float(m)
+                pb = f(x0 + (x1 - x0) * s, y0 + (y1 - y0) * s)
+                piece = (pa[0], pa[1], pb[0], pb[1], ln[4])
+                if e is not None:
+                    piece += (e / m,)
+                    if t0 is not None:
+                        piece += (t0 + cyc * (i - 1) / m,) + rest
+                out.append(piece); pa = pb
+                opens.append((1 if i > 1 else 0) | (2 if i < m else 0))
+        self._tube_open = opens
+        return out
+
     def _build(self, lines, gain=1.0, load=True):
         """the vertex arrays for these lines (window pixels): (v, t, c, tt, n), or None"""
         if not lines:
@@ -1486,6 +1801,7 @@ class GLBloomRenderer(GLRenderer):
             if getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False) else None
         if halos:
             lines = halos + list(lines)                    # (drawn first: the spots and lines go over them)
+        lines = self._tube_lines(lines)
         n = len(lines)
         w, h = self.size
         sc, ox, oy = self.map
@@ -1532,7 +1848,9 @@ class GLBloomRenderer(GLRenderer):
         tt = (ctypes.c_float * (n * 4))()                  # each line's time in its frame (s)
         i = j = q4 = 0
         exp, sqrt = math.exp, math.sqrt
-        for ln in lines:
+        opens = getattr(self, '_tube_open', None)
+        if opens is not None and len(opens) != len(lines): opens = None
+        for li, ln in enumerate(lines):
             x0, y0, x1, y1, b = ln[:5]
             cyc = ln[5] / 8.0 if len(ln) > 5 else 3.0      # beam energy (cycles at full level)
             if bend:
@@ -1589,14 +1907,22 @@ class GLBloomRenderer(GLRenderer):
             else:
                 ux, uy = m, 0.0
             nx, ny = -uy, ux
-            v[i] = ax - ux + nx; v[i + 1] = ay - uy + ny
-            v[i + 2] = bx + ux + nx; v[i + 3] = by + uy + ny
-            v[i + 4] = bx + ux - nx; v[i + 5] = by + uy - ny
-            v[i + 6] = ax - ux - nx; v[i + 7] = ay - uy - ny
+            op = opens[li] if opens else 0
+            sa, sb = (0.0 if op & 1 else 1.0), (0.0 if op & 2 else 1.0)      # (a joint: the quad ends there)
+            v[i] = ax - ux * sa + nx; v[i + 1] = ay - uy * sa + ny
+            v[i + 2] = bx + ux * sb + nx; v[i + 3] = by + uy * sb + ny
+            v[i + 4] = bx + ux * sb - nx; v[i + 5] = by + uy * sb - ny
+            v[i + 6] = ax - ux * sa - nx; v[i + 7] = ay - uy * sa - ny
             i += 8
             rr = gg = bb = k; aa = min(1.0, sg / 16.0)              # pure white (owner, 2026-10-12)
+            if op:                                         # (and the line runs on through the joint: no fall-off)
+                ex, ey = (dx / lp * 1e4, dy / lp * 1e4) if lp > 1e-3 else (0.0, 0.0)
+                ax2, ay2 = (ax - ex, ay - ey) if op & 1 else (ax, ay)
+                bx2, by2 = (bx + ex, by + ey) if op & 2 else (bx, by)
+            else:
+                ax2, ay2, bx2, by2 = ax, ay, bx, by
             for q in range(4):
-                t[j] = ax; t[j + 1] = ay; t[j + 2] = bx; t[j + 3] = by
+                t[j] = ax2; t[j + 1] = ay2; t[j + 2] = bx2; t[j + 3] = by2
                 c[j] = rr; c[j + 1] = gg; c[j + 2] = bb; c[j + 3] = aa
                 j += 4
             tl = ln[6] / 1.5e6 if len(ln) > 6 else 0.0
@@ -1943,7 +2269,7 @@ class GLBloomRenderer(GLRenderer):
             self._quad(self.B2[0])
         self.UseProgram(0)
         # 3. the screen: the picture plus the bloom (curved tube: first into E, bent onto the screen)
-        curve = getattr(self, 'curve_on', False)
+        curve = getattr(self, 'curve_on', False) or getattr(self, 'glass_on', False)   # (the glass pass: the glass edge)
         self.BindFB(GL_FRAMEBUFFER, self.E[1] if curve else self.out); gl.glViewport(0, 0, w, h)
         gl.glClearColor(0, 0, 0, 1); gl.glClear(GL_COLOR_BUFFER_BIT)
         self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0)
@@ -1968,10 +2294,32 @@ class GLBloomRenderer(GLRenderer):
             ph = ALG_MAX_Y * self.map[0]                    # (the picture's height, window px)
             self.UseProgram(self.kprog); self.Uniform1i(self.u_k['tex'], 0)
             self.Uniform2f(self.u_k['norm'], w / (0.5 * ph), h / (0.5 * ph))
-            self.Uniform1f(self.u_k['k'], CURVE_K)
             self.Uniform2f(self.u_k['ctr'], 0.5, 1.0 - (self.map[2] * self.map[0] + 0.5 * ph) / h)
+            kx, ky = tube_coeffs(0.0)                           # (the lines are bent before they are drawn,
+            self.Uniform1fv(self.u_k['cx'], 10, (ctypes.c_float * 10)(*kx))     #  _tube_lines: here the
+            self.Uniform1fv(self.u_k['cy'], 10, (ctypes.c_float * 10)(*ky))     #  glass only)
+            self.Uniform1f(self.u_k['pull'], 0.0)
+            self.Uniform1f(self.u_k['glass'], 1.0 if getattr(self, 'glass_on', True) else 0.0)
+            self.Uniform1f(self.u_k['aw'], GLASS_AW); self.Uniform1f(self.u_k['gn'], GLASS_N)
+            self.Uniform1f(self.u_k['edge'], GLASS_EDGE)
+            art_shown = bool(getattr(self, 'art', None) and getattr(self, 'art_on', False))
+            catch = getattr(self, 'glass_room', True) and not art_shown
+            LL = light_level(getattr(self, 'art_room', ART_ROOM_MID))          # (the room's light, 0 .. 1)
+            self.Uniform1f(self.u_k['grey'], GLASS_GREY * LL if catch else 0.0)
+            lk = LL * getattr(self, 'light_k', 1.0) if (catch and getattr(self, 'light_on', True) and self._light_ready()) else 0.0
+            self.Uniform1f(self.u_k['lk'], lk)
+            self.Uniform1f(self.u_k['bscale'], 1834.0 / max(1.0, ph) / 3.2)   # (soft, smooth bumps)
+            self.Uniform1f(self.u_k['pxs'], 2.0 / max(1.0, ph))          # (one window pixel, half picture heights)
+            if lk > 0:
+                (lx, ly), _ = roomlight.place(self.light_x, self.light_y)
+                self.Uniform3f(self.u_k['lpos'], lx, ly, roomlight.GLASS_SIZE)
+                self.Uniform4f(self.u_k['lmr'], roomlight.MAP_U[0], roomlight.MAP_U[1], roomlight.MAP_V[0], roomlight.MAP_V[1])
+                self.Uniform1f(self.u_k['lca'], math.cos(roomlight.ANG)); self.Uniform1f(self.u_k['lsa'], math.sin(roomlight.ANG))
+                self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, self.light_tex); self.Uniform1i(self.u_k['lmap'], 1)
+                self.ActiveTexture(0x84C0)
             self._quad(self.E[0])
             self.UseProgram(0)
+            self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, 0); self.ActiveTexture(0x84C0)
         self._art()                                             # (flat: after the bend)
         self._hud()
         self._turn_out()

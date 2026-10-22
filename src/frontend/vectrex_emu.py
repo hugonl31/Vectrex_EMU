@@ -476,7 +476,7 @@ class CrtSound:
     more and brighter vectors, repeating at the frame rate), then all of it through the small
     built-in speaker."""
     def __init__(self):
-        self.buzz_on = True; self.buzz_vol = 0.152      # (the owner's choice, 2026-10-19; the buzz does not follow the volume knob)
+        self.buzz_on = True; self.buzz_vol = 0.0912     # (the owner's choice: 0.152 (2026-10-19) - 40 % (2026-10-22); the buzz does not follow the volume knob)
         self.speaker_on = True                           # the Vectrex's small speaker (see below)
         self.volume = 1.0                                # the volume knob (Page Up / Page Down)
         # the speech module (VecVoice / VecVox): its own amplifier and audio out - its own volume (Ctrl+Page

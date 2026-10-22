@@ -92,7 +92,7 @@ Updated 2026-10-22:
 - Each menu has its own reset (Vectrex, display, tube, overlay, sound), resetting only that menu.
 - Menu items greyed out while their feature is off (the afterglow's sliders with the afterglow off, the
   scratch sliders with the scratches off, Buzz volume with the buzz off, the speech module without one...).
-- Sliders: the default in the middle, 0 to twice the default; buzz default 0.152.
+- Sliders: the default in the middle, 0 to twice the default; buzz default 0.091.
 - Keys: + / - / 0 window size, 9 real size, P pause, L ROM browser, O overlay - without Ctrl; only Ctrl+E
   (eject) and Ctrl+R (RESET) need Ctrl. These keys can not be given to a player.
 - Player 1's buttons default to A W S D.

@@ -25,7 +25,8 @@ jobs:
           for c in build/empty testcart/timing_test_64k.bin testcart/bright_test.bin; do
             build/vtest bios/bios.bin $c --live /dev/null < build/in.bin > build/a.bin 2>/dev/null
             build/core_test bios/bios.bin $c build/in.bin > build/b.bin
-            cmp build/a.bin build/b.bin && echo "$c: identical ($(stat -c %s build/a.bin) bytes)"
+            cmp build/a.bin build/b.bin || { echo "$c: the core library differs from the core"; exit 1; }
+            echo "$c: identical ($(stat -c %s build/a.bin) bytes)"
           done
 
   apk:

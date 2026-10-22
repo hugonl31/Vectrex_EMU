@@ -145,7 +145,9 @@ struct Engine {
         Engine *e = (Engine *) user;
         float *out = (float *) data;
         if (e->paused) { memset(out, 0, n * 2 * sizeof(float)); return AAUDIO_CALLBACK_RESULT_CONTINUE; }
-        int need = (int) (e->rs_pos + n * e->rs_step);   // (input samples this callback moves on by)
+        // (the input samples shifted in before this callback's outputs: the phase after the last output may
+        //  pass 1 - that sample is shifted in at the start of the next callback, from its own buffer)
+        int need = (int) (e->rs_pos + (n - 1) * e->rs_step);
         if (need > (int) (sizeof e->rs_in / 2)) need = sizeof e->rs_in / 2;
         int k = e->ring.pop(e->rs_in, need);
         if (k < need) { memset(e->rs_in + k, 0, (need - k) * 2); if (e->running && e->sounding) e->underruns++; }

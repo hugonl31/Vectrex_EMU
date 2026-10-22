@@ -93,8 +93,10 @@ public class SettingsActivity extends Activity {
         button("Reset all settings to their defaults", v -> {
             SharedPreferences.Editor e = Prefs.get(this).edit();
             for (Object o : Prefs.ITEMS) if (o instanceof Prefs.Item) e.remove(((Prefs.Item) o).key);
+            e.remove(Prefs.SEED);
             e.apply(); build();
         });
+        text("(The folders and each game's overlay settings are kept.)", DIM);
 
         header("Front ends (HyperSpin)");
         text("Start the game with an intent to\n  package  " + getPackageName() + "\n  activity  " + LaunchActivity.class.getName()

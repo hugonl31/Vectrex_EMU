@@ -81,7 +81,9 @@ glint strength and reach, **New random scratches**), the plastic glow, Even beam
 
 * **Renderer** - Auto (Vulkan, else OpenGL ES 3.1), or one of them. If a device shows a broken picture
   with Vulkan, OpenGL ES is the way out.
-* **Phosphor resolution** - the phosphor images at a lower resolution, for a slow graphics chip.
+* **Phosphor resolution** - the phosphor images at a lower resolution, for a slow graphics chip. The
+  overlay's scratches and plastic glow cost a few extra passes; with both off the overlay costs next to
+  nothing.
 * **Screen** - landscape, or portrait: a phone or handheld held upright, the picture filling it (the
   desktop's screen turned 90 degrees). Some handhelds keep their screen landscape whatever an app asks.
 * **Switch off when quitting** - off by default (Back returns at once); on: the tube's last zap or

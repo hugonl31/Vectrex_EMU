@@ -80,7 +80,8 @@ final class Prefs {
         ITEMS.add(new Item("art_room", "Room light", 0.0648f, 0f, 0.1296f, null));
         ITEMS.add(new Item("art_print", "Printed art brightness", 0.36f, 0f, 0.72f, null));
         ITEMS.add(new Item("art_parallax", "Parallax", "1", "The sheet a little in front of the tube"));
-        ITEMS.add(new Item("art_glow", "Plastic glow", "1", "The plastic spreads the light softly around bright lines"));
+        ITEMS.add(new Item("art_glow", "Plastic glow", "1", "The plastic spreads the light softly around bright lines."
+                + " (A slow graphics chip: with Scratches and this both off, the overlay costs next to nothing)"));
         ITEMS.add(new Item("art_glow_k", "Plastic glow strength", 1.0f, 0f, 2f, null));
         ITEMS.add(new Item("scr_on", "Scratches", "1", "Forty years of handling, made on the graphics card: they catch the tube's light"));
         ITEMS.add(new Item("scr_wear", "Wear (how much handled)", 1.0f, 0f, 2f, null));

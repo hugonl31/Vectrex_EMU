@@ -17,3 +17,11 @@ __pycache__/
 # the SP0256-AL2 speech ROM ((c) Microchip): the user downloads it, it is never shared from here
 bios/sp0256-al2.bin
 bios/al2.bin
+# Android (android/)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/.idea/
+*.iml

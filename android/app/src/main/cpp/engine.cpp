@@ -1,0 +1,382 @@
+// engine.cpp - the Android app's native side: the emulation thread (the core, one game frame at a
+// time, paced by real time and the sound queue as the desktop's Runner), the render thread (the
+// phosphor picture at the display's refresh, Vulkan or OpenGL ES), the sound (AAudio) and the JNI
+// calls of EmulatorActivity.java.
+#include "backend.h"
+#include "core_api.h"
+#include "crt_sound.h"
+#include "scene.h"
+#include <aaudio/AAudio.h>
+#include <android/log.h>
+#include <android/native_window_jni.h>
+#include <jni.h>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <map>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "VectrexEMU", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "VectrexEMU", __VA_ARGS__)
+
+using namespace vx;
+
+namespace {
+
+const int RATE = 44100;
+
+double now()
+{
+    using namespace std::chrono;
+    return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
+
+// ---------------------------------------------------------------- the sound: a ring the AAudio callback drains
+struct Ring {
+    static const uint32_t N = 1 << 15;                   // (0.74 s)
+    int16_t buf[N];
+    std::atomic<uint32_t> w{ 0 }, r{ 0 };
+    uint32_t size() const { return w.load(std::memory_order_acquire) - r.load(std::memory_order_acquire); }
+    void push(const int16_t *d, int n)
+    {
+        uint32_t wi = w.load(std::memory_order_relaxed);
+        uint32_t room = N - (wi - r.load(std::memory_order_acquire));
+        if ((uint32_t) n > room) n = (int) room;
+        for (int i = 0; i < n; i++) buf[(wi + i) & (N - 1)] = d[i];
+        w.store(wi + n, std::memory_order_release);
+    }
+    int pop(int16_t *d, int n)
+    {
+        uint32_t ri = r.load(std::memory_order_relaxed);
+        uint32_t have = w.load(std::memory_order_acquire) - ri;
+        int k = (int) std::min<uint32_t>(have, (uint32_t) n);
+        for (int i = 0; i < k; i++) d[i] = buf[(ri + i) & (N - 1)];
+        r.store(ri + k, std::memory_order_release);
+        return k;
+    }
+};
+
+struct QFrame { std::vector<Line> lines; double t_start, len; uint64_t t0; bool power; };
+
+struct Engine {
+    std::map<std::string, std::string> conf;
+    std::vector<uint8_t> bios, cart, art_rgba; int art_w = 0, art_h = 0;
+    std::string sav;
+    CrtSound crt;
+    Look look;
+    double line_gap = 12.3;
+    bool skip_boot = false;
+
+    std::atomic<bool> running{ false }, paused{ false };
+    std::atomic<int> in_jx[2], in_jy[2], in_btn[2];
+    std::atomic<bool> p2_seen{ false }, reset_req{ false };
+
+    std::thread emu_thr, ren_thr;
+    std::mutex qm; std::deque<QFrame> queue;
+    Ring ring;
+    AAudioStream *stream = nullptr;
+    std::atomic<long> underruns{ 0 };
+    std::atomic<int> burst{ 256 };                      // (the sound device's burst, samples: the queue keeps 2+)
+    std::atomic<bool> sounding{ false };                // (the first frame's sound is in: underruns count from now)
+
+    std::mutex wm; ANativeWindow *window = nullptr; std::atomic<bool> window_ok{ false };
+    std::string renderer_name;
+
+    std::string get(const char *k, const char *d) { auto it = conf.find(k); return it == conf.end() ? d : it->second; }
+    double num(const char *k, double d) { auto it = conf.find(k); return it == conf.end() ? d : atof(it->second.c_str()); }
+    bool flag(const char *k, bool d) { auto it = conf.find(k); return it == conf.end() ? d : it->second == "1" || it->second == "true"; }
+
+    void configure()
+    {
+        // the core's analog model: a real Vectrex, or the perfect one (vectrex_emu.py Core)
+        if (flag("ideal", false)) setenv("VT_ZIDEAL", "1", 1);
+        else { setenv("VT_ZREFK", "0.38", 1); setenv("VT_CALSHIFT", "2.9", 1); }
+        std::string hw = get("cart_hw", "auto");
+        setenv("VT_CARTHW", hw == "auto" ? "1" : hw == "off" ? "0" : hw.c_str(), 1);
+        char seed[16]; snprintf(seed, sizeof seed, "%d", (int) (now() * 1000) & 0x7fffffff);
+        setenv("VT_POWERSEED", seed, 1);                 // (the RAM's random state at every power-on)
+        std::string sp = get("speech", "off"), rom = get("speech_rom", "");
+        if (sp != "off" && !rom.empty()) {
+            setenv("VT_VECVOICE", rom.c_str(), 1); setenv("VT_SPEECHDEV", sp.c_str(), 1); setenv("VT_SPEECHOUT", "1", 1);
+        }
+        skip_boot = flag("skip_boot", false);
+        line_gap = num("line_gap", 12.3);
+        Look &L = look;
+        L.phosphor = flag("phosphor", L.phosphor); L.trail_on = flag("trail_on", L.trail_on); L.trail = (float) num("trail", L.trail);
+        L.bloom = (float) num("bloom", L.bloom); L.wob_on = flag("wob_on", L.wob_on); L.wob_strength = (float) num("wob_strength", L.wob_strength);
+        L.mains_hz = (int) num("mains_hz", L.mains_hz); L.bend_on = flag("bend_on", L.bend_on); L.bend_strength = (float) num("bend_strength", L.bend_strength);
+        L.bend_type = (int) num("bend_type", L.bend_type); L.curve_on = flag("curve_on", L.curve_on);
+        L.halo_on = flag("halo_on", L.halo_on); L.halo_k = (float) num("halo_k", L.halo_k);
+        L.phos_grow = (float) num("phos_grow", L.phos_grow); L.phos_smooth = (float) num("phos_smooth", L.phos_smooth);
+        L.art_on = flag("art_on", L.art_on); L.art_tint = (float) num("art_tint", L.art_tint); L.art_room = (float) num("art_room", L.art_room);
+        L.art_print = (float) num("art_print", L.art_print); L.art_parallax = flag("art_parallax", L.art_parallax);
+        L.render_scale = (float) num("render_scale", L.render_scale);
+        crt.buzz_on = flag("buzz_on", crt.buzz_on); crt.buzz_vol = num("buzz_vol", crt.buzz_vol);
+        crt.speaker_on = flag("speaker_on", crt.speaker_on); crt.volume = num("volume", crt.volume);
+        crt.voice_vol = num("voice_vol", crt.voice_vol); crt.voice_full = flag("voice_full", crt.voice_full);
+        for (int i = 0; i < 2; i++) { in_jx[i] = 0; in_jy[i] = 0; in_btn[i] = 0; }
+    }
+
+    // ------------------------------------------------------------ sound
+    static aaudio_data_callback_result_t audio_cb(AAudioStream *, void *user, void *data, int32_t n)
+    {
+        Engine *e = (Engine *) user;
+        int16_t *out = (int16_t *) data;
+        int k = e->paused ? 0 : e->ring.pop(out, n);
+        if (k < n) { memset(out + k, 0, (n - k) * 2); if (!e->paused && e->running && e->sounding) e->underruns++; }
+        return AAUDIO_CALLBACK_RESULT_CONTINUE;
+    }
+    static void audio_err(AAudioStream *, void *user, aaudio_result_t err)
+    {
+        Engine *e = (Engine *) user;                     // (a headset plugged in / out: open the stream again)
+        LOGI("audio stream error %d: reopening", err);
+        std::thread([e]() { e->close_audio(); e->open_audio(); }).detach();
+    }
+    void open_audio()
+    {
+        AAudioStreamBuilder *b = nullptr;
+        if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return;
+        AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
+        AAudioStreamBuilder_setChannelCount(b, 1);
+        AAudioStreamBuilder_setSampleRate(b, RATE);      // (the system resamples to the device's rate)
+        AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+        AAudioStreamBuilder_setDataCallback(b, audio_cb, this);
+        AAudioStreamBuilder_setErrorCallback(b, audio_err, this);
+        if (AAudioStreamBuilder_openStream(b, &stream) != AAUDIO_OK) stream = nullptr;
+        AAudioStreamBuilder_delete(b);
+        if (stream) {
+            int b = AAudioStream_getFramesPerBurst(stream);
+            if (b > 0) burst = b;
+            AAudioStream_setBufferSizeInFrames(stream, 2 * burst);   // (two bursts: low latency, no glitches)
+            AAudioStream_requestStart(stream); LOGI("audio: %d Hz, burst %d", AAudioStream_getSampleRate(stream), AAudioStream_getFramesPerBurst(stream)); }
+    }
+    void close_audio()
+    {
+        if (stream) { AAudioStream_requestStop(stream); AAudioStream_close(stream); stream = nullptr; }
+    }
+
+    // ------------------------------------------------------------ the game loop (vectrex_emu.py Runner)
+    void emu_loop()
+    {
+        static vx_frame_t fr;
+        std::vector<int16_t> mono, speech, out;
+        std::vector<Line> lines;
+        const double low = std::max(0.012, 2.5 * burst / RATE);  // (the queue's low water mark: 2.5 bursts)
+        { std::vector<int16_t> z((size_t) (std::max(0.04, low + 0.02) * RATE), 0); ring.push(z.data(), (int) z.size()); }   // (a head start)
+        double t_next = now();
+        uint64_t ft_hi = 0; uint32_t ft_last = 0;
+        bool first = true; double gap = line_gap;
+        struct { std::vector<Line> lines; double t_start, len; uint64_t t0; bool power, on; } pend{ {}, 0, 0, 0, false, false };
+        while (running) {
+            if (paused) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); t_next = now(); continue; }
+            unsigned char m[8];
+            int jx = in_jx[0], jy = in_jy[0], btn = in_btn[0];
+            int flags = 0;
+            if (first) flags |= 8 | (skip_boot ? 16 : 0);       // power on (and the BIOS intro unseen)
+            if (reset_req.exchange(false)) flags |= 4;            // the RESET button
+            m[0] = (unsigned char) (jx + 128); m[1] = (unsigned char) (jy + 128); m[2] = (unsigned char) (btn & 15);
+            if (p2_seen) { flags |= 0x40; m[4] = (unsigned char) (in_jx[1] + 128); m[5] = (unsigned char) (in_jy[1] + 128); m[6] = (unsigned char) (in_btn[1] & 15); }
+            m[3] = (unsigned char) flags;
+            bool hide = first;                                    // (power on: the click now, the picture a frame later)
+            if (first) crt.power_on();
+            vx_frame(m, first ? gap : -1.0, &fr);
+            if (fr.frame_t0 < ft_last) ft_hi += 1ull << 32;       // (the core's 32-bit cycle count wraps)
+            ft_last = fr.frame_t0;
+            uint64_t t0 = ft_hi + fr.frame_t0;
+            int ns = fr.nsamples;
+            double len = std::max(ns, 1) / (double) RATE;
+            if (t_next < now() - 0.1) t_next = now();             // (the intro skipped / a stall: start again from now)
+            // the frame for the screen: pieces shorter than 15 ms join the next one (a game calling Wait_Recal
+            // twice in one refresh - Mine Storm does - would split it in a short and a long piece)
+            lines.clear();
+            if (!hide)
+                for (int i = 0; i < fr.nlines; i++) {
+                    const vx_line_t &l = fr.lines[i];
+                    lines.push_back({ (float) l.x0, (float) l.y0, (float) l.x1, (float) l.y1, l.bright, (float) l.energy, l.t0 });
+                }
+            if (!pend.on) { pend.lines = lines; pend.t_start = t_next; pend.t0 = t0; pend.len = len; pend.power = first; pend.on = true; }
+            else {
+                uint32_t sh = (uint32_t) (t0 - pend.t0);
+                for (auto &l : lines) { l.t0 += sh; pend.lines.push_back(l); }
+                pend.len += len;
+            }
+            if (pend.len >= 0.015) {
+                std::lock_guard<std::mutex> g(qm);
+                queue.push_back({ std::move(pend.lines), pend.t_start, pend.len, pend.t0, pend.power });
+                while (queue.size() > 16) queue.pop_front();
+                pend.lines.clear(); pend.on = false;
+            }
+            // the sound: the console's (and the speech module's), through the CRT model
+            mono.resize(ns); out.resize(ns);
+            const int16_t *sp = nullptr;
+            if (fr.two_channels) {
+                speech.resize(ns);
+                for (int i = 0; i < ns; i++) { mono[i] = fr.pcm[2 * i]; speech[i] = fr.pcm[2 * i + 1]; }
+                sp = speech.data();
+            } else if (ns) memcpy(mono.data(), fr.pcm, ns * 2);
+            crt.process(mono.data(), ns, fr.lines, fr.nlines, sp, out.data());
+            ring.push(out.data(), ns);
+            first = false; sounding = true;
+            // pace by emulated time (this frame's samples = its length in CPU cycles); the sound queue caps
+            // runaway buffering, and when it is about to run dry (the sound card's clock a little ahead of
+            // this one) the next frame comes at once
+            t_next += len;
+            while (running && !paused) {
+                double tn = now(), q = ring.size() / (double) RATE;
+                if (tn >= t_next - 0.002 && q < 0.15) break;
+                if (q < low) break;
+                std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            }
+        }
+        vx_close();                                               // (the flash cartridges' saved state)
+    }
+
+    // ------------------------------------------------------------ the screen
+    void render_loop(ANativeWindow *win)
+    {
+        std::unique_ptr<Backend> be;
+        std::string want = get("renderer", "auto"), err;
+        if (want != "gles") {
+            be = make_vulkan();
+            if (!be->init(win, err)) { LOGE("Vulkan unavailable: %s", err.c_str()); be.reset(); }
+        }
+        if (!be && want != "vulkan") {
+            be = make_gles();
+            if (!be->init(win, err)) { LOGE("OpenGL ES unavailable: %s", err.c_str()); be.reset(); }
+        }
+        if (!be) { LOGE("no renderer"); return; }
+        renderer_name = be->name();
+        LOGI("renderer: %s (%s images)", be->name(), be->float_images() ? "16-bit float" : "8-bit");
+        Scene scene; scene.look = look;
+        if (art_w) { be->set_art(art_w, art_h, art_rgba); scene.set_art_size(art_w, art_h); }
+        FramePlan plan;
+        std::vector<QFrame> got;
+        double st_t0 = now(), st_cpu = 0, st_emu = 0; long st_shown = 0, st_games = 0;    // (the speed meter, every 10 s)
+        while (running && window_ok) {
+            double t_a = now();
+            { std::lock_guard<std::mutex> g(qm); got.assign(std::make_move_iterator(queue.begin()), std::make_move_iterator(queue.end())); queue.clear(); }
+            for (auto &f : got) {
+                st_games++; st_emu += f.len;
+                if (f.power) scene.power_on_t = f.t_start;
+                scene.add_frame(std::move(f.lines), f.t_start, f.len, f.t0);
+            }
+            int w = 0, h = 0; be->size(w, h);
+            if (w <= 0 || h <= 0) { std::this_thread::sleep_for(std::chrono::milliseconds(16)); continue; }
+            scene.set_screen(w, h);
+            scene.make_plan(now(), plan);
+            if (!be->render(plan)) { LOGI("window lost"); break; }
+            st_cpu += now() - t_a; st_shown++;
+            if (now() - st_t0 >= 10.0) {
+                double dt = now() - st_t0;
+                LOGI("%s %dx%d (images %dx%d): %.1f display fps, %.1f game fps, speed %.0f%%, render CPU %.2f ms/frame (with the vsync wait), %ld sound underruns",
+                     be->name(), w, h, plan.tw, plan.th, st_shown / dt, st_games / dt, 100.0 * st_emu / dt, 1000.0 * st_cpu / std::max(1L, st_shown), (long) underruns);
+                st_t0 = now(); st_cpu = st_emu = 0; st_shown = st_games = 0;
+            }
+            if (paused) std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+    }
+
+    void start()
+    {
+        configure();
+        if (vx_load(bios.data(), bios.size(), cart.data(), cart.size(), sav.c_str())) { LOGE("bad BIOS"); return; }
+        running = true;
+        open_audio();
+        emu_thr = std::thread([this]() { emu_loop(); });
+    }
+    void set_window(ANativeWindow *w)
+    {
+        stop_render();
+        std::lock_guard<std::mutex> g(wm);
+        window = w; window_ok = true;
+        ren_thr = std::thread([this, w]() { render_loop(w); });
+    }
+    void stop_render()
+    {
+        window_ok = false;
+        if (ren_thr.joinable()) ren_thr.join();
+        std::lock_guard<std::mutex> g(wm);
+        if (window) { ANativeWindow_release(window); window = nullptr; }
+    }
+    void stop()
+    {
+        running = false;
+        stop_render();
+        if (emu_thr.joinable()) emu_thr.join();
+        close_audio();
+    }
+};
+
+Engine *E = nullptr;
+
+std::vector<uint8_t> bytes(JNIEnv *env, jbyteArray a)
+{
+    std::vector<uint8_t> v;
+    if (!a) return v;
+    jsize n = env->GetArrayLength(a); v.resize(n);
+    if (n) env->GetByteArrayRegion(a, 0, n, (jbyte *) v.data());
+    return v;
+}
+std::string str(JNIEnv *env, jstring s)
+{
+    if (!s) return "";
+    const char *c = env->GetStringUTFChars(s, nullptr); std::string r = c; env->ReleaseStringUTFChars(s, c);
+    return r;
+}
+
+}  // namespace
+
+// shader table (shaders.cpp, made from shaders/ at build time)
+extern "C" {
+
+#define FN(name) Java_io_github_hugonl31_vectrexemu_EmulatorActivity_##name
+
+JNIEXPORT void JNICALL FN(nativeStart)(JNIEnv *env, jclass, jobjectArray keys, jobjectArray vals, jbyteArray bios, jbyteArray cart,
+                                       jstring sav, jbyteArray art, jint aw, jint ah, jbyteArray on_wav, jbyteArray off_wav)
+{
+    if (E) return;
+    E = new Engine();
+    for (jsize i = 0, n = env->GetArrayLength(keys); i < n; i++)
+        E->conf[str(env, (jstring) env->GetObjectArrayElement(keys, i))] = str(env, (jstring) env->GetObjectArrayElement(vals, i));
+    E->bios = bytes(env, bios); E->cart = bytes(env, cart); E->sav = str(env, sav);
+    E->art_rgba = bytes(env, art); E->art_w = E->art_rgba.empty() ? 0 : aw; E->art_h = ah;
+    auto on = bytes(env, on_wav), off = bytes(env, off_wav);
+    E->crt.snd_on = load_wav(on.data(), on.size()); E->crt.snd_off = load_wav(off.data(), off.size());
+    E->start();
+}
+
+JNIEXPORT void JNICALL FN(nativeSurface)(JNIEnv *env, jclass, jobject surface)
+{
+    if (!E) return;
+    if (!surface) { E->stop_render(); return; }
+    E->set_window(ANativeWindow_fromSurface(env, surface));
+}
+
+JNIEXPORT void JNICALL FN(nativeInput)(JNIEnv *, jclass, jint player, jint jx, jint jy, jint buttons)
+{
+    if (!E || player < 0 || player > 1) return;
+    E->in_jx[player] = std::max(-128, std::min(127, (int) jx)); E->in_jy[player] = std::max(-128, std::min(127, (int) jy));
+    E->in_btn[player] = buttons & 15;
+    if (player == 1) E->p2_seen = true;
+}
+
+JNIEXPORT void JNICALL FN(nativeReset)(JNIEnv *, jclass) { if (E) E->reset_req = true; }
+
+JNIEXPORT void JNICALL FN(nativePause)(JNIEnv *, jclass, jboolean p) { if (E) E->paused = p; }
+
+JNIEXPORT void JNICALL FN(nativeStop)(JNIEnv *, jclass)
+{
+    if (!E) return;
+    E->stop();
+    LOGI("stopped, %ld sound underruns", (long) E->underruns);
+}
+
+JNIEXPORT jstring JNICALL FN(nativeRenderer)(JNIEnv *env, jclass) { return env->NewStringUTF(E ? E->renderer_name.c_str() : ""); }
+
+}  // extern "C"

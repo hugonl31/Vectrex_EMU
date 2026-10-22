@@ -1,0 +1,49 @@
+// Vectrex_EMU for Android: the desktop program's core (../../src/core, unchanged) as a native library,
+// the phosphor renderer in Vulkan (OpenGL ES 3.1 where Vulkan is missing or broken), AAudio sound.
+plugins {
+    id 'com.android.application'
+}
+
+def vers = rootProject.file('../VERSION').text.readLines()[0].trim()
+
+android {
+    namespace 'io.github.hugonl31.vectrexemu'
+    compileSdk 35
+    ndkVersion '29.0.14206865'
+
+    defaultConfig {
+        applicationId 'io.github.hugonl31.vectrexemu'
+        minSdk 26                       // (AAudio, Vulkan 1.0 loader)
+        targetSdk 35
+        versionCode 1
+        versionName vers
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
+        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug     // (sideloaded; sign with your own key for a store)
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    externalNativeBuild {
+        cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' }
+    }
+    // the BIOS, the power switch's sounds and Mine Storm's overlay: the desktop program's own files
+    sourceSets.main.assets.srcDirs += ['build/generated/vxassets']
+    applicationVariants.all { v ->
+        v.outputs.all { outputFileName = "Vectrex_EMU-android-${v.buildType.name}.apk" }
+    }
+}
+
+tasks.register('copyVectrexAssets', Copy) {
+    from(rootProject.file('../bios')) { include 'bios.bin'; into 'bios' }
+    from(rootProject.file('../sounds')) { include '*.wav'; into 'sounds' }
+    from(rootProject.file('../overlays')) { include '*.art', '*.png'; into 'overlays' }
+    into layout.buildDirectory.dir('generated/vxassets')
+}
+preBuild.dependsOn 'copyVectrexAssets'

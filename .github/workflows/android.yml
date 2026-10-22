@@ -1,0 +1,47 @@
+# Builds Vectrex_EMU for Android (android/README.md) and checks that its core library gives exactly the
+# vectors and sound of the desktop core (android/tools/core_test.c). The APK is kept as the run's artifact.
+name: android
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', 'src/core/**', 'bios/**', 'overlays/**', 'sounds/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', 'src/core/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+jobs:
+  core-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: the core library against the original core (the same input, the same output)
+        run: |
+          mkdir -p build
+          cc -O2 -w -fgnu89-inline -o build/vtest src/core/vtest.c src/core/vecx.c src/core/e6809.c src/core/e8910.c -lm
+          cc -O2 -w -fgnu89-inline -Isrc/core -o build/core_test android/tools/core_test.c src/core/vecx.c src/core/e6809.c src/core/e8910.c -lm
+          python3 android/tools/make_test_input.py build/in.bin 1500
+          : > build/empty
+          export VT_POWERSEED=42 VT_ZREFK=0.38 VT_CALSHIFT=2.9 VT_CARTHW=1
+          for c in build/empty testcart/timing_test_64k.bin testcart/bright_test.bin; do
+            build/vtest bios/bios.bin $c --live /dev/null < build/in.bin > build/a.bin 2>/dev/null
+            build/core_test bios/bios.bin $c build/in.bin > build/b.bin
+            cmp build/a.bin build/b.bin && echo "$c: identical ($(stat -c %s build/a.bin) bytes)"
+          done
+
+  apk:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: NDK and CMake
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" "cmake;3.22.1" "platforms;android-35" > /dev/null
+      - name: build
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: android/app/build/outputs/apk/release/*.apk

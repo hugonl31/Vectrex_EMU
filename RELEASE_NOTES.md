@@ -26,6 +26,8 @@ Updated 2026-10-22:
   `Mine Storm (built in).art`: a `Mine Storm.art` of your own is chosen before it, or replace it. Overlays
   in `roms/overlays` are still found, and overlays chosen by hand are found again after a move.
 - The ROM browser's "no ROMs" note in three short lines that fit.
+- ROM browser: subfolders of `roms` as folders (a folder pictogram, above the games); inside one, BACK at
+  the top (or Backspace) and the path in the title; it opens in the folder of the game in the slot.
 - A speech module chosen without the speech ROM: a window says where to download it and where it goes,
   with buttons for the download page and the bios folder.
 - Controller port 2 notes that a module holds player 2's button 2 (as a real one does): a game that will

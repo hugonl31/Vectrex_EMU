@@ -466,11 +466,13 @@ Mouse wheel over the knob or a click on its right / left half turns it up / down
 the Vectrex off); a click on RESET presses it.
 
 **Cartridge on screen** (Display menu, default on): a Vectrex cartridge below the middle of the
-picture. Click it (or L): the ROM browser opens over the picture with all ROMs in the folder
-**`roms` next to the program** (subfolders too; `.bin`, `.vec`, `.gam`, `.rom`; no folder or no
-ROMs: the list is empty). The game runs on behind it but gets no input. Up / Down choose, Left / Right
-a page, the mouse wheel or the arrow buttons scroll; Enter, a double click or the plug loads the chosen
-ROM (a power cycle with it); Esc, the X or a click outside closes it. Drawn in the picture, so it works
+picture. Click it (or L): the ROM browser opens over the picture with the ROMs in the folder
+**`roms` next to the program** (`.bin`, `.vec`, `.gam`, `.rom`; no folder or no ROMs: the list is
+empty). Subfolders are shown as folders above the games: open one and **BACK** at the top (or
+Backspace) goes back up; the browser opens in the folder of the game in the slot. The game runs on
+behind it but gets no input. Up / Down choose, Left / Right a page, the mouse wheel or the arrow buttons
+scroll; Enter, a double click or the plug loads the chosen ROM (a power cycle with it) or opens the
+folder; Esc, the X or a click outside closes it. Drawn in the picture, so it works
 in full screen with G-Sync too.
 
 **Display > Real size (9):** as big as on a real Vectrex: the overlay sheet 162 x 207 mm, as the real ones (the picture as tall as the sheet), worked out from your

@@ -1844,12 +1844,24 @@ class GLBloomRenderer(GLRenderer):
             if j >= len(names):
                 break
             y = ly0 + i * rh
-            t = names[j] if len(names[j]) <= cols else names[j][:cols - 2] + '..'
+            kind = b.get('kinds', ['rom'] * len(names))[j]
+            ind = '    ' if kind != 'rom' else ''                 # (room for the folder / back pictogram)
+            t = names[j] if len(ind + names[j]) <= cols else names[j][:cols - 2 - len(ind)] + '..'
+            c = hi if j == sel else g
             if j == sel:
                 gl.glColor4f(*hi, 1.0); self._rect(lx0 + 0.5 * k, y + 0.1 * rh, lx1 - 2.5 * 6 * k, y + 0.95 * rh)
-                self._text_row([('>' , hi), (' ' + t, hi)], lx0 + 1.5 * k, y + 0.3 * rh, k)
+                self._text_row([('>' , hi), (' ' + ind + t, hi)], lx0 + 1.5 * k, y + 0.3 * rh, k)
             else:
-                self._text_row([('  ' + t, g)], lx0 + 1.5 * k, y + 0.3 * rh, k)
+                self._text_row([('  ' + ind + t, g)], lx0 + 1.5 * k, y + 0.3 * rh, k)
+            if kind != 'rom':                                   # (a folder: its outline with a tab; BACK: an arrow)
+                ix, iy = lx0 + 1.5 * k + 2 * 6 * k, y + 0.3 * rh
+                P = lambda a, b_: (ix + a * k, iy + b_ * k)
+                if kind == 'dir':
+                    pts = [P(0, 6), P(0, 1), P(1, 0), P(4, 0), P(5, 1), P(10, 1), P(10, 6), P(0, 6)]
+                else:
+                    pts = [P(10, 3), P(0, 3), P(3, 0), P(0, 3), P(3, 6)]
+                gl.glColor4f(*c, 1.0)
+                self._lines([(a[0], a[1], b_[0], b_[1]) for a, b_ in zip(pts, pts[1:])])
         if len(names) > n:                                      # the scroll bar
             sx = lx1 - 1.2 * 6 * k
             ht = (ly1 - ly0) * n / float(len(names))

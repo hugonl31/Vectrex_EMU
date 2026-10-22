@@ -32,9 +32,10 @@ TOPICS = [
 ]),
 
 ('vectrex', 'Menu: Vectrex', [
-('item', 'ROM browser (L)', "Lists the ROMs in the roms folder next to Vectrex_EMU.exe (subfolders "
-         "too, but not the overlays folder). Up / Down choose, Left / Right page, Enter or a double click loads, Esc closes. The game "
-         "keeps running behind it but gets no input."),
+('item', 'ROM browser (L)', "Lists the ROMs in the roms folder next to the program; its subfolders are "
+         "shown as folders above the games - open one, and BACK at the top (or Backspace) goes back up. Up / "
+         "Down choose, Left / Right page, Enter or a double click loads a ROM or opens a folder, Esc closes. "
+         "The game keeps running behind it but gets no input."),
 ('item', 'Open ROM file...', "The Windows file dialog, for a ROM anywhere on your PC."),
 ('item', 'Eject cartridge (Ctrl+E)', "No cartridge: the Vectrex runs Mine Storm from its own ROM."),
 ('item', 'RESET button (Ctrl+R)', "The RESET button on the console. The RAM is kept and the BIOS restarts "

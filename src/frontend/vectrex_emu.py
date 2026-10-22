@@ -1113,7 +1113,7 @@ class App:
         vis = lambda: self.browser_geom()[3]
         for key, f in (('<Up>', lambda: self.browse(-1)), ('<Down>', lambda: self.browse(1)),
                        ('<Left>', lambda: self.browse(-vis())), ('<Right>', lambda: self.browse(vis())),
-                       ('<Return>', self.browse_load)):
+                       ('<Return>', self.browse_load), ('<BackSpace>', self.browser_back)):
             self.root.bind(key, lambda e, f=f: (f(), 'break')[1] if self.browser else None)
         self.screen.bind('<Button-1>', self.knob_click)
         self.screen.bind('<MouseWheel>', self.knob_wheel)
@@ -2273,26 +2273,49 @@ class App:
             return None
         x, y, r = self.cart_geom()
         return dict(cx=x, cy=y, r=r, open=bool(self.browser))
-    def scan_roms(self):
-        """the ROMs in the roms folder next to the exe (and its subfolders), by name"""
+    ROM_EXT = ('.bin', '.vec', '.gam', '.rom')
+    def scan_roms(self, d=None):
+        """one folder of the roms folder next to the program: (name, path, kind) - in a subfolder first BACK
+        ('up'), then its folders ('dir'), then its ROMs ('rom'), each by name (not the overlays folder)"""
+        top = os.path.join(ROOT, 'roms')
+        d = d or top
         out = []
-        d = os.path.join(ROOT, 'roms')
-        if os.path.isdir(d):
-            for base, dirs, files in os.walk(d):
-                dirs[:] = sorted((x for x in dirs if x.lower() != 'overlays'), key=str.lower)   # (not the overlays)
-                for f in files:
-                    if os.path.splitext(f)[1].lower() in ('.bin', '.vec', '.gam', '.rom'):
-                        p = os.path.join(base, f)
-                        out.append((os.path.splitext(os.path.relpath(p, d))[0].replace(os.sep, ' / '), p))
-        out.sort(key=lambda t: t[0].lower())
+        if os.path.abspath(d) != os.path.abspath(top):
+            out.append(('BACK', os.path.dirname(d), 'up'))
+        try:
+            names = sorted(os.listdir(d), key=str.lower)
+        except OSError:
+            return out
+        for f in names:
+            p = os.path.join(d, f)
+            if os.path.isdir(p) and f.lower() != 'overlays':
+                out.append((f, p, 'dir'))
+        for f in names:
+            p = os.path.join(d, f)
+            if os.path.isfile(p) and os.path.splitext(f)[1].lower() in self.ROM_EXT:
+                out.append((os.path.splitext(f)[0], p, 'rom'))
         return out
+    def browser_dir(self, d, select=None):
+        """show folder d in the ROM browser; select: the path to choose (else the first entry after BACK)"""
+        b = self.browser
+        b['dir'] = d; b['roms'] = self.scan_roms(d); b['top'] = 0
+        hit = [i for i, (_, p, _k) in enumerate(b['roms']) if select and os.path.abspath(p) == os.path.abspath(select)]
+        b['sel'] = hit[0] if hit else (1 if b['roms'] and b['roms'][0][2] == 'up' and len(b['roms']) > 1 else 0)
+        self.scroll(b['sel'] - 3)
     def open_browser(self):
-        roms = self.scan_roms()
+        top = os.path.join(ROOT, 'roms')
         cur = os.path.abspath(self.args.rom) if self.args.rom else None
-        sel = next((i for i, (_, p) in enumerate(roms) if os.path.abspath(p) == cur), 0)
-        self.browser = dict(roms=roms, sel=sel, top=0)          # (the game runs on, without input, until a
+        d = top                                                 # (the folder of the ROM in the slot, if it is in roms)
+        if cur and os.path.abspath(os.path.dirname(cur)).lower().startswith(os.path.abspath(top).lower()):
+            d = os.path.dirname(cur)
+        self.browser = dict(roms=[], sel=0, top=0, dir=top)     # (the game runs on, without input, until a
         self.inp.block = True                                   #  ROM is loaded)
-        self.scroll(sel - 3)
+        self.browser_dir(d, cur)
+    def browser_back(self, e=None):
+        """Backspace / BACK: the folder above (the folder you came from chosen)"""
+        b = self.browser
+        if b and os.path.abspath(b['dir']) != os.path.abspath(os.path.join(ROOT, 'roms')):
+            self.browser_dir(os.path.dirname(b['dir']), b['dir'])
     def close_browser(self):
         self.browser = None
         self.inp.block = False
@@ -2318,11 +2341,14 @@ class App:
         if not (b and self.ren and hasattr(self.ren, 'map')):
             return None
         rect, lst, plug, n, rh, k, up, dn, cl = self.browser_geom()
+        rel = os.path.relpath(b['dir'], os.path.join(ROOT, 'roms'))
+        where = 'ROMS' if rel == '.' else 'ROMS / ' + rel.replace(os.sep, ' / ').upper()
         return dict(rect=rect, list=lst, plug=plug, up=up, dn=dn, close=cl, n_vis=n, row_h=rh, k=k,
-                    names=[t for t, _ in b['roms']],
-                    top=b['top'], sel=b['sel'], title='ROMS  (%d)' % len(b['roms']),
+                    names=[t for t, _, _k in b['roms']], kinds=[k_ for _, _, k_ in b['roms']],
+                    top=b['top'], sel=b['sel'], title='%s  (%d)' % (where, sum(1 for r in b['roms'] if r[2] == 'rom')),
                     empty='NO ROMS FOUND.\nPUT YOUR ROMS IN THE FOLDER\nROMS NEXT TO THE PROGRAM.',
-                    help='UP/DOWN: CHOOSE   LEFT/RIGHT: PAGE   ENTER/PLUG: LOAD   ESC: CLOSE')
+                    help=('UP/DOWN: CHOOSE   LEFT/RIGHT: PAGE   ENTER/PLUG: LOAD   ESC: CLOSE' if rel == '.' else
+                          'UP/DOWN: CHOOSE   ENTER: OPEN/LOAD   BACKSPACE: BACK   ESC: CLOSE'))
     def browse(self, d):
         """move the choice by d rows (and keep it in view)"""
         b = self.browser
@@ -2364,10 +2390,14 @@ class App:
             self.browser['sel'] = self.browser_row(e)
             self.browse_load()
     def browse_load(self):
-        """plug the chosen cartridge in (a power cycle with it)"""
+        """plug the chosen cartridge in (a power cycle with it); a folder: open it; BACK: the folder above"""
         b = self.browser
         if b and b['roms']:
-            path = b['roms'][b['sel']][1]
+            name, path, kind = b['roms'][b['sel']]
+            if kind == 'up':
+                return self.browser_back()
+            if kind == 'dir':
+                return self.browser_dir(path)
             self.close_browser()
             self.restart(path)
     def knob_state(self):

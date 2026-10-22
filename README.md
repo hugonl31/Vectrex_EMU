@@ -142,6 +142,7 @@ also the power switch.
   controller, flight sticks), mapped per controller with dead zones and endpoints
 * Bank-switched cartridges: 64K (PB6), Malban's Vectorblade cartridge with its flash save (as on MiSTer),
   a 512K flash cartridge with a bank latch, 1 MB multi-carts (as Sean Kelly's Multi-Cart)
+* VecFever `.v4e` files load like any ROM: plain ROMs, the DS2431 save chip, 2 x 48K and 4 x 48K banks
 * Sampled sound and speech through the Vectrex's DAC, and the VecVoice / VecVox speech accessories
 * Overlays (MiSTer `.art` and PNG), flat over the tube, lit by the room, with forty years of
   scratches made on the graphics card

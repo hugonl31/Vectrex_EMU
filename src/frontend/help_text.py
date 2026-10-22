@@ -36,7 +36,9 @@ TOPICS = [
          "shown as folders above the games - open one, and BACK at the top (or Backspace) goes back up. Up / "
          "Down choose, Left / Right page, Enter or a double click loads a ROM or opens a folder, Esc closes. "
          "The game keeps running behind it but gets no input."),
-('item', 'Open ROM file...', "The Windows file dialog, for a ROM anywhere on your PC."),
+('item', 'Open ROM file...', "The Windows file dialog, for a ROM anywhere on your PC. VecFever .v4e files "
+         "load too: unpacked into the folder v4e next to the settings (their saves are kept there), run with the "
+         "cartridge board they name; one for hardware the emulator does not have is refused with a message."),
 ('item', 'Eject cartridge (Ctrl+E)', "No cartridge: the Vectrex runs Mine Storm from its own ROM."),
 ('item', 'RESET button (Ctrl+R)', "The RESET button on the console. The RAM is kept and the BIOS restarts "
          "the cartridge without its intro, exactly as on the real machine. Some games use this: they "

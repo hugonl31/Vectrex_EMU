@@ -33,6 +33,7 @@ import tkinter as tk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vecrender
 import vart
+import v4e
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 if not IS_WIN:                                          # macOS / Linux: the window, keys, controllers, sound
@@ -761,6 +762,32 @@ ART_ADJ_DEFAULT = {'art_dx': 0.0, 'art_dy': 0.0, 'art_scale': 1.0}
 PORT2 = {'off': 'Joystick', 'vecvoice': 'VecVoice speech (SP0256)', 'vecvox': 'VecVox speech (SpeakJet)'}
 
 # ------------------------------------------------------------------ emulator link
+# VecFever .v4e files (v4e.py): unpacked into the folder 'v4e' next to the settings, where the game's save (the
+# flash's .sav, a DS2431's memory) is kept too; the core runs the plain image
+V4E_ENV = {}                            # the unpacked image -> extra settings for the core (the DS2431)
+_v4e_done = {}                          # the .v4e file -> ((size, mtime), the unpacked image)
+def v4e_rom(path):
+    """a .v4e file -> the unpacked ROM image's path; ValueError (a message) when it cannot run here"""
+    st = os.stat(path); key = (st.st_size, st.st_mtime)
+    hit = _v4e_done.get(path)
+    if hit and hit[0] == key:
+        return hit[1]
+    with open(path, 'rb') as fh:
+        ctype, img = v4e.unpack(fh.read())
+    d = os.path.join(SETTINGS_DIR, 'v4e')
+    os.makedirs(d, exist_ok=True)
+    out = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + '.bin')
+    try:
+        same = open(out, 'rb').read() == img
+    except OSError:
+        same = False
+    if not same:
+        with open(out, 'wb') as fh:
+            fh.write(img)
+    V4E_ENV[out] = {'VT_DS2431': out + '.ds2431'} if ctype == 4 else {}
+    _v4e_done[path] = (key, out)
+    return out
+
 class Core:
     def __init__(self, rom, ideal=False, cart_hw='auto', speech='off'):
         env = dict(os.environ)
@@ -775,6 +802,7 @@ class Core:
             env['VT_SPEECHDEV'] = speech
             env['VT_SPEECHOUT'] = '1'                               # (its sound on a channel of its own)
         # no input recording, no log: the core records to NUL, its messages are discarded
+        env.update(V4E_ENV.get(rom, {}))                           # (a .v4e cartridge's save chip)
         self.rom = rom
         self.p = subprocess.Popen([CORE, BIOS, rom, '--live', NUL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, env=env, bufsize=0,
@@ -941,7 +969,12 @@ class App:
                 pass
         if args.rom:
             args.rom = os.path.abspath(args.rom)
-        rom, self.rom_name = self.cartridge(args.rom)
+        try:
+            rom, self.rom_name = self.cartridge(args.rom)
+        except (ValueError, OSError) as e:                     # (a .v4e that cannot run here: Mine Storm)
+            self.v4e_err = '%s:\n%s' % (os.path.basename(args.rom), e)
+            args.rom = None
+            rom, self.rom_name = self.cartridge(None)
         try:                                                    # (the controls: Vectrex_EMU.conf)
             c0 = json.load(open(os.path.join(SETTINGS_DIR, 'Vectrex_EMU.conf')))
         except Exception:   # noqa
@@ -960,6 +993,8 @@ class App:
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.root = tk.Tk()
+        if getattr(self, 'v4e_err', None):
+            self.root.after(800, lambda: self.rom_error(self.v4e_err))
         self.root.configure(bg='black')
         if not IS_WIN:
             osdep.KEYS.attach(self.root)
@@ -2290,7 +2325,7 @@ class App:
             return None
         x, y, r = self.cart_geom()
         return dict(cx=x, cy=y, r=r, open=bool(self.browser))
-    ROM_EXT = ('.bin', '.vec', '.gam', '.rom')
+    ROM_EXT = ('.bin', '.vec', '.gam', '.rom', '.v4e')
     def scan_roms(self, d=None):
         """one folder of the roms folder next to the program: (name, path, kind) - in a subfolder first BACK
         ('up'), then its folders ('dir'), then its ROMs ('rom'), each by name (not the overlays folder)"""
@@ -2884,11 +2919,19 @@ class App:
         """(file for the core, name to show); no ROM = an empty slot: the BIOS starts Mine Storm"""
         if rom:
             rom = os.path.abspath(rom)
-            return rom, os.path.splitext(os.path.basename(rom))[0]
+            name = os.path.splitext(os.path.basename(rom))[0]
+            if rom.lower().endswith('.v4e'):                    # (VecFever: unpacked first)
+                return v4e_rom(rom), name
+            return rom, name
         return NUL, 'Mine Storm (built in)'                    # (NUL reads as an empty cartridge)
     def restart(self, rom):
         """swap the cartridge and power-cycle the Vectrex inside this window: the window, full screen,
         sound and settings stay; the screen goes black until the new game draws"""
+        if rom and rom.lower().endswith('.v4e'):               # (a .v4e that cannot run here: the game stays)
+            try:
+                v4e_rom(os.path.abspath(rom))
+            except (ValueError, OSError) as e:
+                self.rom_error('%s:\n%s' % (os.path.basename(rom), e)); return
         old = self.run
         old.stop = True; old.join(timeout=2)
         self.core.close()
@@ -2914,12 +2957,15 @@ class App:
         self.load_art()
         self.title()
         run.start()
+    def rom_error(self, msg):
+        from tkinter import messagebox
+        messagebox.showerror('Vectrex_EMU', 'This cartridge cannot be loaded.\n\n' + msg, parent=self.root)
     def open_rom(self, e=None):
         """Vectrex > Open ROM file: pick a ROM; the Vectrex power-cycles with it, in the same window"""
         from tkinter import filedialog
         start = os.path.dirname(os.path.abspath(self.args.rom)) if self.args.rom else ROOT
         fn = filedialog.askopenfilename(parent=self.root, title='Open a Vectrex ROM', initialdir=start,
-                                        filetypes=[('Vectrex ROM', '*.bin *.vec *.gam *.rom'), ('All files', '*.*')])
+                                        filetypes=[('Vectrex ROM', '*.bin *.vec *.gam *.rom *.v4e'), ('All files', '*.*')])
         if fn:
             self.restart(fn)
         return 'break'

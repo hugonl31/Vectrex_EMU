@@ -74,7 +74,7 @@ with a short note on what goes there:
 
 | What | Where | Where to get it |
 |---|---|---|
-| **Cartridge ROMs** (`.bin`, `.vec`, `.gam`, `.rom`) | `roms` (subfolders too) | your own cartridges |
+| **Cartridge ROMs** (`.bin`, `.vec`, `.gam`, `.rom`, VecFever `.v4e`) | `roms` (subfolders too) | your own cartridges |
 | **Overlays** (optional) | `overlays` | the MiSTer Vectrex core's `overlays.zip` ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)), or PNGs - see [Overlays](#overlays) |
 | **Speech ROM** (optional, for the VecVoice / VecVox speech modules) | `bios` | `al2.bin`, a free download - see [Speech modules](#speech-modules) |
 
@@ -558,7 +558,7 @@ the Vectrex off); a click on RESET presses it.
 
 **Cartridge on screen** (Display menu, default on): a Vectrex cartridge below the middle of the
 picture. Click it (or L): the ROM browser opens over the picture with the ROMs in the folder
-**`roms` next to the program** (`.bin`, `.vec`, `.gam`, `.rom`; no folder or no ROMs: the list is
+**`roms` next to the program** (`.bin`, `.vec`, `.gam`, `.rom`, `.v4e`; no folder or no ROMs: the list is
 empty). Subfolders are shown as folders above the games: open one and **BACK** at the top (or
 Backspace) goes back up; the browser opens in the folder of the game in the slot. The game runs on
 behind it but gets no input. Up / Down choose, Left / Right a page, the mouse wheel or the arrow buttons
@@ -763,6 +763,13 @@ boards, chosen by the ROM's size; or pick one board for any ROM:
 
 **Off**: a bone-stock Vectrex - every ROM is a plain 32K cartridge (the first 32K of the file, no bank
 switching), so bank-switched games do not start. Changing it puts the cartridge in again (power cycle).
+
+**VecFever `.v4e` files** load like any ROM (the ROM browser, Open ROM file). The emulator unpacks them
+(VecFever's packed, checksummed banks) into the folder `v4e` next to its settings and runs the plain image,
+with the board the file names: a plain ROM, a ROM with a DS2431 save chip (its memory saved there too),
+2 x 48K (PB6) or 4 x 48K (PB6 and /IRQ, as Vectorblade); a flash game's `.sav` is kept in that folder.
+Files for hardware the emulator does not have (the VecFever's own programs, a ROM with RAM, 50K flat,
+hybrid, firmware) are refused with a message, and the game in the slot keeps running.
 
 ### Mac and Linux notes
 

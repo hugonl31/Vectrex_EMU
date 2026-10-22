@@ -29,6 +29,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
   Reset light settings to default.
 
 **Also**
+- VecFever `.v4e` files load like any ROM (ROM browser, Open ROM file): plain ROMs, a DS2431 save chip,
+  2 x 48K and 4 x 48K banks; other VecFever types are refused with a message.
+- The picture no longer flashes when the mouse moves over the window (seen on AMD drivers, issue #1).
 - Help updated for every new option.
 
 ## v1.0.0

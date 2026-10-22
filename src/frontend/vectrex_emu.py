@@ -1287,6 +1287,8 @@ class App:
             p2 = tk.Menu(m, tearoff=0); m.add_cascade(label='Controller port 2', menu=p2)
             for k, label in PORT2.items():
                 check(p2, label, '', lambda k=k: self.speech == k, lambda k=k: self.set_speech(k))
+            p2.add_separator()                                  # (a module holds port 2's button 2: the note)
+            p2.add_command(label="A game won't start with a speech module? Choose Joystick.", state='disabled')
             check(m, 'Start switched on', '', lambda: self.start_on, self.toggle_start_on)
             check(m, 'Skip the Vectrex intro (start screen)', '', lambda: self.skip_boot, self.toggle_skip_boot)
             m.add_separator()

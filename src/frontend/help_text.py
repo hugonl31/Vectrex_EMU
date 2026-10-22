@@ -68,7 +68,9 @@ TOPICS = [
          "with the SP0256's voice at the SpeakJet's pitch and lengths: songs keep their tune. Both need the "
          "SP0256-AL2 ROM, which is not included ((c) Microchip Technology Inc.): download al2.bin from Joe "
          "Zbiciak's page (spatula-city.org/~im14u2c/sp0256-al2/, shared with Microchip's permission) and put "
-         "it in the bios folder next to the program as sp0256-al2.bin."),
+         "it in the bios folder next to the program as sp0256-al2.bin. A module signals 'ready' by holding "
+         "player 2's button 2, as a real one does: games without speech that wait for every button to be "
+         "released (GCE's original Berzerk) will not start - choose Joystick for them."),
 ('item', 'Start switched on', "Starts the Vectrex at once instead of waiting for you to turn the knob."),
 ('item', 'Skip the Vectrex intro (start screen)', "On switching on, the BIOS's start screen (the VECTREX "
          "logo, its tune, then the game's name) runs unseen in a fraction of a second and the cartridge "

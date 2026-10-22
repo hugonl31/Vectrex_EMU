@@ -28,6 +28,8 @@ Updated 2026-10-22:
 - The ROM browser's "no ROMs" note in three short lines that fit.
 - A speech module chosen without the speech ROM: a window says where to download it and where it goes,
   with buttons for the download page and the bios folder.
+- Controller port 2 notes that a module holds player 2's button 2 (as a real one does): a game that will
+  not start with a speech module (GCE's Berzerk) wants Joystick.
 - A ready-to-run Windows build (`Vectrex_EMU-windows.zip`), built by the GitHub workflow like the Mac and
   Linux ones; the README restructured (download and play first, a contents list, the details in
   docs/TECHNICAL.md).

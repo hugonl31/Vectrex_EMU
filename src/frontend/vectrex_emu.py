@@ -2275,7 +2275,7 @@ class App:
         return dict(rect=rect, list=lst, plug=plug, up=up, dn=dn, close=cl, n_vis=n, row_h=rh, k=k,
                     names=[t for t, _ in b['roms']],
                     top=b['top'], sel=b['sel'], title='ROMS  (%d)' % len(b['roms']),
-                    empty='NO ROMS: PUT THEM IN THE FOLDER ROMS NEXT TO VECTREX_EMU.EXE',
+                    empty='NO ROMS FOUND.\nPUT YOUR ROMS IN THE FOLDER\nROMS NEXT TO THE PROGRAM.',
                     help='UP/DOWN: CHOOSE   LEFT/RIGHT: PAGE   ENTER/PLUG: LOAD   ESC: CLOSE')
     def browse(self, d):
         """move the choice by d rows (and keep it in view)"""

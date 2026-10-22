@@ -1837,7 +1837,8 @@ class GLBloomRenderer(GLRenderer):
         names, top, sel, n = b['names'], b['top'], b['sel'], b['n_vis']
         cols = int((lx1 - lx0 - 4 * 6 * k) / (6 * k))
         if not names:
-            self._text_row([(b['empty'], g)], lx0 + 6 * k, ly0 + 0.3 * rh, k)
+            for i, line in enumerate(b['empty'].split('\n')):         # (short lines: they fit the list)
+                self._text_row([(line, g)], lx0 + 6 * k, ly0 + (0.3 + i) * rh, k)
         for i in range(n):
             j = top + i
             if j >= len(names):

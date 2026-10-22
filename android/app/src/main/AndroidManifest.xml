@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vectrex_EMU for Android. Front ends (HyperSpin, ...) start LaunchActivity with the game: a VIEW intent
+     with a file:// or content:// URI, or a path in an extra (see README-android.md). The emulator itself
+     runs in a process of its own (":emu"), new for every game: the core keeps its state in globals. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x400000" android:required="false" />
+    <uses-feature android:glEsVersion="0x00030001" android:required="true" />
+
+    <application
+        android:allowBackup="true"
+        android:banner="@drawable/banner"
+        android:icon="@drawable/icon"
+        android:label="@string/app_name"
+        android:isGame="true"
+        android:appCategory="game"
+        android:theme="@style/Vx">
+
+        <!-- the settings (the launcher's entry; on a TV the Leanback launcher's) -->
+        <activity android:name=".SettingsActivity" android:exported="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- what front ends start: reads the game, then starts the emulator in a fresh process -->
+        <activity android:name=".LaunchActivity" android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true"
+            android:noHistory="true" android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="io.github.hugonl31.vectrexemu.PLAY" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".EmulatorActivity" android:exported="false"
+            android:process=":emu"
+            android:taskAffinity="io.github.hugonl31.vectrexemu.game"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:theme="@style/Vx.Game" />
+    </application>
+</manifest>

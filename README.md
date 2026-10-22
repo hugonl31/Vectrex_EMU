@@ -50,6 +50,9 @@ Get the zip for your computer from [Releases](../../releases), unzip it anywhere
 | **macOS** (10.13 or later, Intel and Apple Silicon) | `Vectrex_EMU-mac-app.zip` | `Vectrex_EMU.app` |
 | **Linux** (x86-64: Ubuntu 22.04, Debian 12, Fedora 36 or later) | `Vectrex_EMU-linux-bin.zip` | `./Vectrex_EMU` |
 
+**Android** (TV boxes such as the NVIDIA Shield, retro handhelds; started from HyperSpin and other front
+ends): built from the `android` folder - see [android/README.md](android/README.md).
+
 The programs are not signed, so the first start needs one extra step:
 
 * **Windows**: if SmartScreen says "Windows protected your PC": **More info > Run anyway**.

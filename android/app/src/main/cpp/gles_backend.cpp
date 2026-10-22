@@ -105,7 +105,7 @@ public:
     bool render(const FramePlan &p) override
     {
         if (p.tw != tw || p.th != th) targets(p.tw, p.th, p.qw, p.qh);
-        if (p.sheet && (S.w != p.screen_w || S.h != p.screen_h)) sheet_targets(p);
+        if (p.sheet && (S.w != p.screen_w || S.h != p.screen_h || Q8.w != p.qw8 || Q8.h != p.qh8)) sheet_targets(p);   // (and Glint resolution, changed live)
         // every draw's parameter block, one upload
         ublocks.clear();
         auto add = [&](const float *vp, const float *rest, int nrest) {

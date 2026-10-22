@@ -148,7 +148,7 @@ public:
         int fi = frame++ % FRAMES;
         vkWaitForFences(dev, 1, &fences[fi], VK_TRUE, UINT64_MAX);
         if (p.tw != tw || p.th != th) { vkDeviceWaitIdle(dev); targets(p.tw, p.th, p.qw, p.qh); }
-        if (p.sheet && (S.w != p.screen_w || S.h != p.screen_h)) { vkDeviceWaitIdle(dev); sheet_targets(p); }
+        if (p.sheet && (S.w != p.screen_w || S.h != p.screen_h || Q8.w != p.qw8 || Q8.h != p.qh8)) { vkDeviceWaitIdle(dev); sheet_targets(p); }   // (and Glint resolution, changed live)
         uint32_t si = 0;
         VkResult r = vkAcquireNextImageKHR(dev, swapchain, UINT64_MAX, acquired[fi], VK_NULL_HANDLE, &si);
         if (r == VK_ERROR_OUT_OF_DATE_KHR) { std::string e; vkDeviceWaitIdle(dev); free_swapchain(); return make_swapchain(e); }

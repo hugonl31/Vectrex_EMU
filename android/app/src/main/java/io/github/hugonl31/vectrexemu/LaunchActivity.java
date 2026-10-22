@@ -38,6 +38,7 @@ public class LaunchActivity extends Activity {
                 if (rom.tree != null) { go.putExtra(X_TREE, rom.tree.toString()); go.putExtra(X_PARENT, rom.parentDoc); }
                 if (rom.dir != null) go.putExtra(X_DIR, rom.dir.getPath());
                 Log.i(TAG, "game: " + rom.name + " (" + rom.data.length + " bytes) from " + rom.source);
+                Prefs.played(this, RomSource.stem(rom.name));
             }
         } catch (RomSource.Failure e) {
             Log.e(TAG, e.getMessage());
@@ -45,6 +46,7 @@ public class LaunchActivity extends Activity {
         } catch (IOException e) {
             go.putExtra(X_ERROR, "Cannot keep the game: " + e.getMessage());
         }
+        if (!go.hasExtra(X_ROM_FILE) && !go.hasExtra(X_ERROR)) Prefs.played(this, "Mine Storm");
         endEmulator(this);
         startActivity(go);
         finish();

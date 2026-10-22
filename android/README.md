@@ -75,24 +75,31 @@ remote's centre button is button 4 (fire, in most games).
 
 ## Settings
 
-Everything in the desktop program's Tube, Overlay and Sound menus that this version draws, with the same
-defaults (the owner's choices, side by side with a real Vectrex), and:
+Everything in the desktop program's Tube, Overlay and Sound menus, with the same defaults and ranges (the
+owner's choices, side by side with a real Vectrex) - the overlay's scratches (wear, wear type, scribbles,
+glint strength and reach, **New random scratches**), the plastic glow, Even beam, the bending type - and:
 
 * **Renderer** - Auto (Vulkan, else OpenGL ES 3.1), or one of them. If a device shows a broken picture
   with Vulkan, OpenGL ES is the way out.
 * **Phosphor resolution** - the phosphor images at a lower resolution, for a slow graphics chip.
+* **Screen** - landscape, or portrait: a phone or handheld held upright, the picture filling it (the
+  desktop's screen turned 90 degrees). Some handhelds keep their screen landscape whatever an app asks.
+* **Switch off when quitting** - off by default (Back returns at once); on: the tube's last zap or
+  collapse and the switch's click, half a second, as on the desktop.
+* **Games** - every game played lately: its overlay (automatic, another one, or none) and that overlay's
+  position and size, as the desktop's Overlay menu keeps them per game and per overlay.
 
 ## What is ported
 
 | | |
 |---|---|
 | the core | `src/core`, unchanged and complete: compiled into the app, the same per-frame step as `vtest --live` (`app/src/main/cpp/core_api.c`) - bank switching, the flash cartridges, the speech modules, the BIOS intro skip |
-| the picture | the beam model, the phosphor in real time with the measured afterglow, its joining and overlap, bloom, the corner glow, the curved tube, the tone curve, the mains hum wobble, the brightness bending, overlays (MiSTer `.art` and PNG) with tint, room light and print, the tube warming up at power on |
+| the picture | the beam model, the phosphor in real time with the measured afterglow, its joining and overlap, bloom, the corner glow, the curved tube, the tone curve, the mains hum wobble, the brightness bending, Even beam, the tube warming up at power on and (optional) switching off |
+| the overlay | MiSTer `.art` and PNG, tint, room light, print, parallax; forty years of scratches made on the graphics card (the same recipe and seeds as the desktop: an overlay gets the same scratches on both), their glint from the light around them, the damage cutting through the colour, the plastic glow; per game: which overlay, its position and size |
 | the sound | the buzz that follows the picture, the built-in speaker, the speech module's amplifier and speakers, the power switch |
 
-Not yet (the desktop has them): the overlay's scratches, plastic glow and glint; Even beam; the control
-panel below the picture (volume knob, RESET, the ROM browser - the front end is the menu here); the
-picture collapsing at power off; the screen turned 90 degrees; choosing or adjusting an overlay per game;
+Not ported, on purpose: the control panel below the picture (volume knob, RESET, the ROM browser, the
+on-screen display) - the front end is the menu here, and the log has the speed meter. Not yet:
 per-controller mapping beyond the button layout and the dead zone.
 
 ## The renderer
@@ -108,6 +115,15 @@ source for OpenGL ES. Each display frame, with the numbers in `scene.cpp` straig
 4. **bloom** - two separable blurs at quarter size
 5. **screen** - curve, tone and bloom in one pass, then the overlay (multiply, then its own light)
 
+With the overlay's scratches or plastic glow, step 5 draws into an image of the screen instead, and:
+
+6. **the scratches** - once per overlay: ~200,000 scratches drawn as lines into three float textures,
+   each made in the vertex shader from its index (no vertex data at all)
+7. **their light** - the screen at quarter size blurred (the matte's halo), and at eighth size its angle
+   harmonics (the glint: which scratches face the light around them)
+8. **the sheet** - one pass onto the display: the screen, the overlay, the matte, the glint, the glow
+   and the damage; the desktop needs four blended passes for it
+
 Faster than a straight port:
 
 * the phosphor images cover the picture (and a small margin), not the screen: on a 16:9 screen less than
@@ -115,11 +131,16 @@ Faster than a straight port:
 * the desktop's tone + bloom into a full-size image, then the curve: here one pass (the curve only moves
   where the picture is read) - one full-size image and pass less; likewise its quarter-size copy and the
   first blur
+* the glint's harmonics at eighth size (the desktop: quarter) - its kernels are 16 and 48 screen pixels wide
+  and the field is smooth: the same look for an eighth of the work
 * every pass clears or overwrites its whole image (Vulkan: nothing is loaded from memory - cheap on the
   tiled graphics chips of phones and handhelds); all parameters are push constants; the line data goes
   into a persistently mapped buffer, two frames in flight; descriptor sets are made once
 * Vulkan pre-rotation: on a handheld whose screen is a portrait panel held sideways, the picture is drawn
   turned into the display's own orientation, so Android's compositor does not turn it again
+* the sound at the device's own rate (48 kHz mostly), stereo float, the core's 44.1 kHz resampled in the
+  app: the format Android's low-latency path takes. (A device with a system-wide equalizer on its speaker,
+  as the AYN Thor ships, gets the normal path all the same: switch the equalizer off for the lowest delay.)
 * the display's refresh paces the picture (FIFO / swap interval 1); the emulation runs on its own thread,
   paced by real time and the sound queue as the desktop's, so 50 Hz games stay smooth on 60 Hz screens:
   every line still lights the phosphor at the moment the beam drew it
@@ -147,5 +168,9 @@ The BIOS, the sounds and Mine Storm's overlay are copied from the repository's `
   RESET, the line gap setting) through `vtest --live` and through `core_api.c` must give the same bytes,
   vectors and sound (`tools/make_test_input.py` writes the stream). The workflow runs it.
 * Tested on the Android emulator (API 36, x86_64): Vulkan (with the Khronos validation layers, core and
-  synchronization checks: clean) and OpenGL ES 3.1; launches by path, `file://` URI and extra, zipped ROMs,
-  the ROM folder grant, a new game while one runs, Back, Home and back.
+  synchronization checks: clean, the scratches, the sheet, Even beam, crisp lines and switching off
+  included) and OpenGL ES 3.1; launches by path, `file://` URI and extra, zipped ROMs, the ROM folder
+  grant, a new game while one runs, Back, Home and back, portrait, per-game overlay settings.
+* On an AYN Thor (Snapdragon 8 Gen 2, Adreno 740, Android 13, a portrait panel held sideways): Vulkan and
+  OpenGL ES, the scratches made in 0.4 s at the start, 60 display fps, the game at full speed, no sound
+  underruns; the picture pre-rotated by the app.

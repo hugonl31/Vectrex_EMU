@@ -15,5 +15,7 @@ void main() {
         o = vec4(vec3(vprm.x * g * pc.t.w), exp(-age));     // (alpha: freshness, e^-age)
         return;
     }
-    o = vec4(vec3(vprm.x), g);                              // (blend SRC_ALPHA, ONE: crisp, no phosphor)
+    // crisp, no phosphor: blend SRC_ALPHA, ONE; Even beam (vp.z): the brighter light, not the sum (blend MAX
+    // ignores alpha: the spot's falloff goes into the colour)
+    o = pc.vp.z > 0.5 ? vec4(vec3(vprm.x * g), g) : vec4(vec3(vprm.x), g);
 }

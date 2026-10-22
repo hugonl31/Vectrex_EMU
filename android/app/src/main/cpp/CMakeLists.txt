@@ -12,7 +12,8 @@ file(MAKE_DIRECTORY ${GEN})
 find_program(GLSLC glslc HINTS ${ANDROID_NDK}/shader-tools/windows-x86_64 ${ANDROID_NDK}/shader-tools/linux-x86_64
              ${ANDROID_NDK}/shader-tools/darwin-x86_64 REQUIRED)
 
-set(SHADERS fs.vert capsule.vert capsule.frag update.frag show.frag blur.frag final.frag art.vert art.frag)
+set(SHADERS fs.vert capsule.vert capsule.frag update.frag show.frag blur.frag final.frag art.vert art.frag
+            scr_gen.vert scr_gen.frag copy.frag harm_h.frag harm_v.frag sheet.frag)
 set(SHADER_OUT)
 foreach(s ${SHADERS})
   string(REPLACE "." "_" c ${s})
@@ -27,6 +28,17 @@ foreach(s ${SHADERS})
   list(APPEND SHADER_OUT ${GEN}/${c}.spv.inc ${GEN}/${c}.gles.inc)
 endforeach()
 add_custom_target(vx_shaders DEPENDS ${SHADER_OUT})
+# the table of them (shaders.cpp includes it)
+set(TABLE "")
+set(ENTRIES "")
+foreach(s ${SHADERS})
+  string(REPLACE "." "_" c ${s})
+  string(APPEND TABLE "const uint32_t spv_${c}[] =\n#include \"${c}.spv.inc\"\n;\n"
+                      "const char gles_${c}[] =\n#include \"${c}.gles.inc\"\n;\n")
+  string(APPEND ENTRIES "    { \"${s}\", spv_${c}, sizeof spv_${c}, gles_${c} },\n")
+endforeach()
+file(WRITE ${GEN}/shader_table.inc.new "${TABLE}const ShaderSrc table[] = {\n${ENTRIES}};\n")
+configure_file(${GEN}/shader_table.inc.new ${GEN}/shader_table.inc COPYONLY)
 
 # the core, as the desktop builds it (build_linux.sh: -O2 -w -fgnu89-inline)
 add_library(vxcore STATIC core_api.c ${CORE}/vecx.c ${CORE}/e6809.c ${CORE}/e8910.c)

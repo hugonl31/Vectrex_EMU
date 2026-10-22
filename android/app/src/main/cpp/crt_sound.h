@@ -26,6 +26,10 @@ struct CrtSound {
     // one frame: pcm (n mono samples, the console), the frame's lines, speech (n samples, or null) -> out
     void process(const int16_t *pcm, int n, const vx_line_t *lines, int nlines, const int16_t *speech, int16_t *out);
     void power_on() { overlay.assign(snd_on.begin(), snd_on.end()); }
+    void power_off() { overlay.assign(snd_off.begin(), snd_off.end()); }
+    // n samples while switched off: only the power switch's sound
+    void idle(int n, int16_t *out);
+    bool sounding() const { return !overlay.empty(); }
 private:
     std::vector<Biquad> buzz_f, spk, voice_spk, voice_bass;
     double xp = 0, yp = 0;

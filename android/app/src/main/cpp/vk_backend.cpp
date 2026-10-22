@@ -4,13 +4,16 @@
 //  - the parameters are push constants; the instance data goes into a persistently mapped buffer per
 //    frame in flight (two), no staging copies
 //  - descriptor sets are made once per combination of images and kept until the images change
-//  - the screen: one full-screen pass (curve, tone and bloom in one shader) and the overlay on top
+//  - the screen: one full-screen pass (curve, tone and bloom in one shader) and the overlay on top - or, with
+//    the overlay's scratches, the screen into an image and the sheet pass (sheet.frag) onto the display
+//  - pre-rotation: the swapchain in the display's own orientation, the picture turned into it
 #include "backend.h"
 #include <android/log.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
 #include <algorithm>
 #include <cstring>
+#include <initializer_list>
 #include <map>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "VectrexEMU", __VA_ARGS__)
@@ -19,6 +22,7 @@ namespace vx {
 namespace {
 
 const int FRAMES = 2;
+const int NBIND = 9;                                    // (sampled images per pass, at bindings 1-9)
 
 struct Img { VkImage img = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE; VkImageView view = VK_NULL_HANDLE; VkFramebuffer fb = VK_NULL_HANDLE; int w = 0, h = 0; };
 struct Buf { VkBuffer buf = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE; void *map = nullptr; size_t size = 0; };
@@ -28,6 +32,7 @@ public:
     ~Vk() override { destroy(); }
     const char *name() const override { return "Vulkan"; }
     bool float_images() const override { return off_fmt == VK_FORMAT_R16G16B16A16_SFLOAT; }
+    bool can_sheet() const override { return sheet_ok; }
 
     bool init(ANativeWindow *win, std::string &err) override
     {
@@ -57,6 +62,7 @@ public:
         VkPhysicalDeviceProperties props; vkGetPhysicalDeviceProperties(pd, &props);
         LOGI("Vulkan: %s, API %u.%u.%u, driver %u", props.deviceName, VK_VERSION_MAJOR(props.apiVersion),
              VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion), props.driverVersion);
+        if (props.limits.maxPushConstantsSize < 128) { err = "too few push constants"; return false; }
         vkGetPhysicalDeviceMemoryProperties(pd, &memp);
         float prio = 1.f;
         VkDeviceQueueCreateInfo qci{ VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
@@ -66,10 +72,13 @@ public:
         dci.queueCreateInfoCount = 1; dci.pQueueCreateInfos = &qci; dci.enabledExtensionCount = 1; dci.ppEnabledExtensionNames = dext;
         if (vkCreateDevice(pd, &dci, nullptr, &dev) != VK_SUCCESS) { err = "no Vulkan device"; dev = VK_NULL_HANDLE; return false; }
         vkGetDeviceQueue(dev, qfam, 0, &queue);
-        // the phosphor images: 16-bit float (mandatory in Vulkan with blending; checked all the same)
+        // the phosphor images: 16-bit float (mandatory in Vulkan with blending; checked all the same); the
+        // glint's harmonics: 32-bit float where it can be drawn into (sums of large and small terms)
         VkFormatProperties fp; vkGetPhysicalDeviceFormatProperties(pd, VK_FORMAT_R16G16B16A16_SFLOAT, &fp);
         const VkFormatFeatureFlags need = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
         off_fmt = (fp.optimalTilingFeatures & need) == need ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM;
+        vkGetPhysicalDeviceFormatProperties(pd, VK_FORMAT_R32G32B32A32_SFLOAT, &fp);
+        h_fmt = (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) ? VK_FORMAT_R32G32B32A32_SFLOAT : off_fmt;
         VkCommandPoolCreateInfo cpi{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
         cpi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; cpi.queueFamilyIndex = qfam;
         vkCreateCommandPool(dev, &cpi, nullptr, &pool);
@@ -95,7 +104,7 @@ public:
         reset_sets();
         free_img(art);
         if (w <= 0) return;
-        make_img(art, w, h, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+        make_img(art, w, h, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_NULL_HANDLE);
         Buf st; make_buf(st, rgba.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         memcpy(st.map, rgba.data(), rgba.size());
         VkCommandBuffer c = once_begin();
@@ -110,12 +119,36 @@ public:
         free_buf(st);
     }
 
+    bool make_scratches(const std::vector<ScrDraw> &draws) override
+    {
+        if (!sheet_ok) return false;
+        vkDeviceWaitIdle(dev);
+        reset_sets();
+        const VkImageUsageFlags use = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        for (Img &m : scr) { free_img(m); make_img(m, SCR_TW, SCR_TH, off_fmt, use, rp_off_clear); }
+        VkCommandBuffer c = once_begin();
+        for (int t = 0; t < 3; t++) {                   // (each texture: cleared, then its scratches added up)
+            begin(c, rp_off_clear, scr[t].fb, SCR_TW, SCR_TH);
+            vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe_scr);
+            for (auto &d : draws) {
+                if (d.tex != t) continue;
+                float pc[24] = { 0, 0, 0, 0 }; memcpy(pc + 4, d.pc, sizeof d.pc);
+                push(c, pc, sizeof pc);
+                vkCmdDraw(c, SCR_VERTS, 1, 0, 0);
+            }
+            vkCmdEndRenderPass(c);
+        }
+        once_end(c);
+        return true;
+    }
+
     bool render(const FramePlan &p) override
     {
         if (!swapchain) { std::string e; if (!make_swapchain(e)) return false; }
         int fi = frame++ % FRAMES;
         vkWaitForFences(dev, 1, &fences[fi], VK_TRUE, UINT64_MAX);
         if (p.tw != tw || p.th != th) { vkDeviceWaitIdle(dev); targets(p.tw, p.th, p.qw, p.qh); }
+        if (p.sheet && (S.w != p.screen_w || S.h != p.screen_h)) { vkDeviceWaitIdle(dev); sheet_targets(p); }
         uint32_t si = 0;
         VkResult r = vkAcquireNextImageKHR(dev, swapchain, UINT64_MAX, acquired[fi], VK_NULL_HANDLE, &si);
         if (r == VK_ERROR_OUT_OF_DATE_KHR) { std::string e; vkDeviceWaitIdle(dev); free_swapchain(); return make_swapchain(e); }
@@ -136,47 +169,76 @@ public:
         Img &cap_to = p.phosphor ? F : D;
         begin(c, rp_off_clear, cap_to.fb, cap_to.w, cap_to.h);
         if (!p.batches.empty()) {
-            vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, p.phosphor ? pipe_cap_timed : pipe_cap_plain);
             VkDeviceSize zero = 0; vkCmdBindVertexBuffers(c, 0, 1, &ib.buf, &zero);
+            VkPipeline bound = VK_NULL_HANDLE;
             for (auto &b : p.batches) {
                 if (!b.count) continue;
-                float pc[8] = { p.cap_vp[0], p.cap_vp[1], 0, 0, b.timed, b.age0, b.dtw, b.gain };
+                bool mx = p.even || b.max;
+                VkPipeline cp = p.phosphor ? (mx ? pipe_cap_timed_max : pipe_cap_timed) : (mx ? pipe_cap_plain_max : pipe_cap_plain);
+                if (cp != bound) { vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, cp); bound = cp; }
+                float pc[8] = { p.cap_vp[0], p.cap_vp[1], p.cap_vp[2], 0, b.timed, b.age0, b.dtw, b.gain };
                 push(c, pc, sizeof pc);
                 vkCmdDraw(c, 4, b.count, 0, b.first);
             }
         }
         vkCmdEndRenderPass(c);
-        float pc[16];
-        float fvp[4] = { 0.f, (float) lh, (float) lw, (float) rot };
+        float pc[32];
         auto blk = [&](const float *rest, int n) { pc[0] = pc[1] = pc[2] = pc[3] = 0; memcpy(pc + 4, rest, n * 4); return (uint32_t) (16 + n * 4); };
         if (p.phosphor) {
             // 2. the phosphor image aged and lit again, 3. what it shows
-            fs(c, P2, pipe_up, set(P.view, F.view), pc, blk(p.update, 12));
+            fs(c, P2, rp_off_dc, pipe_up, set({ P.view, F.view }), pc, blk(p.update, 12));
             std::swap(P, P2);
-            fs(c, D, pipe_show, set(P.view, P.view), pc, blk(p.show, 8));
+            fs(c, D, rp_off_dc, pipe_show, set({ P.view }), pc, blk(p.show, 8));
         }
         // 4. the bloom
         for (int i = 0; i < p.blur_passes; i++) {
             Img &src = i == 0 ? D : (i & 1) ? B2 : B1;
-            fs(c, (i & 1) ? B1 : B2, pipe_blur, set(src.view, src.view), pc, blk(p.blur[i], 4));
+            fs(c, (i & 1) ? B1 : B2, rp_off_dc, pipe_blur, set({ src.view }), pc, blk(p.blur[i], 4));
         }
-        // 5. the screen, 6. the overlay
+        if (p.sheet) {
+            // 5. the screen into S (upright), its light at quarter size blurred (M once, F three times), at
+            // eighth size its angle harmonics
+            blk(p.fin + 4, 12); pc[0] = 0; pc[1] = (float) lh; pc[2] = (float) lw; pc[3] = 0;
+            fs(c, S, rp_s, pipe_fin_s, set({ D.view, B1.view }), pc, 64);
+            fs(c, Q0, rp_off_dc, pipe_copy, set({ S.view }), pc, blk(p.blur[0], 0));
+            for (int i = 0; i < 6; i++) {
+                Img &src = i == 0 ? Q0 : (i == 2 ? SB3 : (i & 1) ? SB2 : SB1);
+                Img &dst = (i & 1) ? (i == 1 ? SB3 : SB1) : SB2;
+                fs(c, dst, rp_off_dc, pipe_blur, set({ src.view }), pc, blk(p.sblur[i], 4));
+            }
+            fs(c, Q8, rp_off_dc, pipe_copy, set({ Q0.view }), pc, blk(p.blur[0], 0));
+            for (int k = 0; k < 3; k++) fs(c, Hh[k], rp_h, pipe_harm_h, set({ Q8.view }), pc, blk(p.harm_h[k], 4));
+            for (int k = 0; k < 2; k++) fs(c, V[k], rp_off_dc, pipe_harm_v, set({ Hh[0].view, Hh[1].view, Hh[2].view }, true), pc, blk(p.harm_v[k], 8));
+        }
+        // 6. the display: the screen (curve, tone, bloom) and the overlay on it - or the sheet pass
         begin(c, rp_swap, sfb[si], (int) extent.width, (int) extent.height);
-        vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe_fin);
-        VkDescriptorSet ds = set(D.view, B1.view);
-        vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &ds, 0, nullptr);
-        blk(p.fin + 4, 12); memcpy(pc, fvp, 16);
-        push(c, pc, 64);
-        vkCmdDraw(c, 3, 1, 0, 0);
-        if (p.art && art.img) {
-            VkDescriptorSet as = set(art.view, art.view);
-            vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &as, 0, nullptr);
-            for (int i = 0; i < 2; i++) {
-                float a[12] = { 1.f, (float) rot, (float) lw, (float) lh };
-                memcpy(a + 4, p.art_rect, 16); memcpy(a + 8, p.art_a[i], 16);
-                vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, i ? pipe_art1 : pipe_art0);
-                push(c, a, sizeof a);
-                vkCmdDraw(c, 4, 1, 0, 0);
+        float fvp[4] = { 0.f, (float) lh, (float) lw, (float) rot };
+        if (p.sheet) {
+            bool sc = scr[0].img != VK_NULL_HANDLE;
+            VkDescriptorSet ds = set({ S.view, art.view, sc ? scr[0].view : art.view, sc ? scr[1].view : art.view, sc ? scr[2].view : art.view,
+                                       SB3.view, SB1.view, V[0].view, V[1].view });
+            vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe_sheet);
+            vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &ds, 0, nullptr);
+            blk(p.sheet_pc, 20); memcpy(pc, fvp, 16);
+            push(c, pc, 96);
+            vkCmdDraw(c, 3, 1, 0, 0);
+        } else {
+            vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe_fin);
+            VkDescriptorSet ds = set({ D.view, B1.view });
+            vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &ds, 0, nullptr);
+            blk(p.fin + 4, 12); memcpy(pc, fvp, 16);
+            push(c, pc, 64);
+            vkCmdDraw(c, 3, 1, 0, 0);
+            if (p.art && art.img) {
+                VkDescriptorSet as = set({ art.view });
+                vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &as, 0, nullptr);
+                for (int i = 0; i < 2; i++) {
+                    float a[12] = { 1.f, (float) rot, (float) lw, (float) lh };
+                    memcpy(a + 4, p.art_rect, 16); memcpy(a + 8, p.art_a[i], 16);
+                    vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, i ? pipe_art1 : pipe_art0);
+                    push(c, a, sizeof a);
+                    vkCmdDraw(c, 4, 1, 0, 0);
+                }
             }
         }
         vkCmdEndRenderPass(c);
@@ -207,17 +269,21 @@ private:
     // rotation pass - handhelds with a portrait panel held sideways); lw x lh = the upright window
     int rot = 0, lw = 0, lh = 0; VkSurfaceTransformFlagBitsKHR transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     std::vector<VkImage> simg; std::vector<VkImageView> sview; std::vector<VkFramebuffer> sfb; std::vector<VkSemaphore> rendered;
-    VkFormat off_fmt = VK_FORMAT_R16G16B16A16_SFLOAT;
-    VkRenderPass rp_off_clear = VK_NULL_HANDLE, rp_off_dc = VK_NULL_HANDLE, rp_swap = VK_NULL_HANDLE;
-    VkSampler sampler = VK_NULL_HANDLE;
+    VkFormat off_fmt = VK_FORMAT_R16G16B16A16_SFLOAT, h_fmt = VK_FORMAT_R32G32B32A32_SFLOAT;
+    VkRenderPass rp_off_clear = VK_NULL_HANDLE, rp_off_dc = VK_NULL_HANDLE, rp_s = VK_NULL_HANDLE, rp_h = VK_NULL_HANDLE, rp_swap = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE, sampler_n = VK_NULL_HANDLE;
     VkDescriptorSetLayout dsl = VK_NULL_HANDLE; VkPipelineLayout layout = VK_NULL_HANDLE; VkDescriptorPool dpool = VK_NULL_HANDLE;
-    std::map<std::pair<VkImageView, VkImageView>, VkDescriptorSet> sets;
-    VkPipeline pipe_cap_timed = VK_NULL_HANDLE, pipe_cap_plain = VK_NULL_HANDLE, pipe_up = VK_NULL_HANDLE, pipe_show = VK_NULL_HANDLE,
-               pipe_blur = VK_NULL_HANDLE, pipe_fin = VK_NULL_HANDLE, pipe_art0 = VK_NULL_HANDLE, pipe_art1 = VK_NULL_HANDLE;
+    std::map<std::vector<VkImageView>, VkDescriptorSet> sets;
+    VkPipeline pipe_cap_timed = VK_NULL_HANDLE, pipe_cap_timed_max = VK_NULL_HANDLE, pipe_cap_plain = VK_NULL_HANDLE, pipe_cap_plain_max = VK_NULL_HANDLE,
+               pipe_up = VK_NULL_HANDLE, pipe_show = VK_NULL_HANDLE, pipe_blur = VK_NULL_HANDLE, pipe_fin = VK_NULL_HANDLE, pipe_fin_s = VK_NULL_HANDLE,
+               pipe_art0 = VK_NULL_HANDLE, pipe_art1 = VK_NULL_HANDLE, pipe_scr = VK_NULL_HANDLE, pipe_copy = VK_NULL_HANDLE,
+               pipe_harm_h = VK_NULL_HANDLE, pipe_harm_v = VK_NULL_HANDLE, pipe_sheet = VK_NULL_HANDLE;
     VkCommandPool pool = VK_NULL_HANDLE; VkCommandBuffer cmds[FRAMES]{};
     VkFence fences[FRAMES]{}; VkSemaphore acquired[FRAMES]{};
     Buf inst[FRAMES];
     Img P, P2, F, D, B1, B2, art;
+    Img S, Q0, SB1, SB2, SB3, Q8, Hh[3], V[2];          // (the sheet pass: see render)
+    Img scr[3];                                         // (the scratch textures A, B, C)
     int tw = 0, th = 0;
     uint64_t frame = 0;
 
@@ -243,7 +309,8 @@ private:
         if (b.mem) vkFreeMemory(dev, b.mem, nullptr);
         b = Buf();
     }
-    void make_img(Img &m, int w, int h, VkFormat fmt, VkImageUsageFlags use, bool fb)
+    // an image (and a framebuffer for render pass rp, if given)
+    void make_img(Img &m, int w, int h, VkFormat fmt, VkImageUsageFlags use, VkRenderPass rp)
     {
         m.w = w; m.h = h;
         VkImageCreateInfo ci{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
@@ -256,9 +323,9 @@ private:
         ai.memoryTypeIndex = memtype(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         vkAllocateMemory(dev, &ai, nullptr, &m.mem); vkBindImageMemory(dev, m.img, m.mem, 0);
         m.view = view(m.img, fmt);
-        if (fb) {
+        if (rp) {
             VkFramebufferCreateInfo fi{ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
-            fi.renderPass = rp_off_clear; fi.attachmentCount = 1; fi.pAttachments = &m.view;
+            fi.renderPass = rp; fi.attachmentCount = 1; fi.pAttachments = &m.view;
             fi.width = w; fi.height = h; fi.layers = 1;
             vkCreateFramebuffer(dev, &fi, nullptr, &m.fb);
         }
@@ -304,18 +371,11 @@ private:
         vkQueueSubmit(queue, 1, &s, VK_NULL_HANDLE); vkQueueWaitIdle(queue);
         vkFreeCommandBuffers(dev, pool, 1, &c);
     }
-
-    void targets(int w, int h, int qw, int qh)
+    // black and ready to be read (the first frame reads P and B1 before anything was drawn into them)
+    void clear_all(std::initializer_list<Img *> imgs)
     {
-        reset_sets();
-        for (Img *m : { &P, &P2, &F, &D, &B1, &B2 }) free_img(*m);
-        const VkImageUsageFlags use = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        make_img(P, w, h, off_fmt, use, true); make_img(P2, w, h, off_fmt, use, true);
-        make_img(F, w, h, off_fmt, use, true); make_img(D, w, h, off_fmt, use, true);
-        make_img(B1, qw, qh, off_fmt, use, true); make_img(B2, qw, qh, off_fmt, use, true);
-        tw = w; th = h;
-        VkCommandBuffer c = once_begin();                  // (black, ready to be read: the first frame reads P and B1)
-        for (Img *m : { &P, &P2, &F, &D, &B1, &B2 }) {
+        VkCommandBuffer c = once_begin();
+        for (Img *m : imgs) {
             barrier(c, m->img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
                     VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
             VkClearColorValue z{}; VkImageSubresourceRange r{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
@@ -326,24 +386,51 @@ private:
         once_end(c);
     }
 
-    void reset_sets() { if (dpool) vkResetDescriptorPool(dev, dpool, 0); sets.clear(); }
-    VkDescriptorSet set(VkImageView a, VkImageView b)
+    void targets(int w, int h, int qw, int qh)
     {
-        auto k = std::make_pair(a, b);
+        reset_sets();
+        for (Img *m : { &P, &P2, &F, &D, &B1, &B2 }) free_img(*m);
+        const VkImageUsageFlags use = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        make_img(P, w, h, off_fmt, use, rp_off_clear); make_img(P2, w, h, off_fmt, use, rp_off_clear);
+        make_img(F, w, h, off_fmt, use, rp_off_clear); make_img(D, w, h, off_fmt, use, rp_off_clear);
+        make_img(B1, qw, qh, off_fmt, use, rp_off_clear); make_img(B2, qw, qh, off_fmt, use, rp_off_clear);
+        tw = w; th = h;
+        clear_all({ &P, &P2, &F, &D, &B1, &B2 });
+    }
+    void sheet_targets(const FramePlan &p)
+    {
+        reset_sets();
+        for (Img *m : { &S, &Q0, &SB1, &SB2, &SB3, &Q8, &Hh[0], &Hh[1], &Hh[2], &V[0], &V[1] }) free_img(*m);
+        const VkImageUsageFlags use = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        make_img(S, p.screen_w, p.screen_h, VK_FORMAT_R8G8B8A8_UNORM, use, rp_s);     // (8 bits: the desktop's window)
+        for (Img *m : { &Q0, &SB1, &SB2, &SB3 }) make_img(*m, p.qw4, p.qh4, off_fmt, use, rp_off_clear);
+        make_img(Q8, p.qw8, p.qh8, off_fmt, use, rp_off_clear);
+        for (Img &m : Hh) make_img(m, p.qw8, p.qh8, h_fmt, use, rp_h);
+        for (Img &m : V) make_img(m, p.qw8, p.qh8, off_fmt, use, rp_off_clear);
+        clear_all({ &S, &Q0, &SB1, &SB2, &SB3, &Q8, &Hh[0], &Hh[1], &Hh[2], &V[0], &V[1] });
+    }
+
+    void reset_sets() { if (dpool) vkResetDescriptorPool(dev, dpool, 0); sets.clear(); }
+    // the descriptor set for these images at bindings 1, 2, ... (the rest: the first again); nearest: no filtering
+    VkDescriptorSet set(std::initializer_list<VkImageView> views, bool nearest = false)
+    {
+        std::vector<VkImageView> k(views);
+        k.push_back(nearest ? (VkImageView) 1 : (VkImageView) 0);
         auto it = sets.find(k);
         if (it != sets.end()) return it->second;
         VkDescriptorSetAllocateInfo ai{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
         ai.descriptorPool = dpool; ai.descriptorSetCount = 1; ai.pSetLayouts = &dsl;
         VkDescriptorSet s = VK_NULL_HANDLE;
         if (vkAllocateDescriptorSets(dev, &ai, &s) != VK_SUCCESS) { reset_sets(); vkAllocateDescriptorSets(dev, &ai, &s); }
-        VkDescriptorImageInfo ii[2] = { { sampler, a, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, { sampler, b, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL } };
-        VkWriteDescriptorSet w[2];
-        for (int i = 0; i < 2; i++) {
+        VkDescriptorImageInfo ii[NBIND]; VkWriteDescriptorSet w[NBIND];
+        std::vector<VkImageView> v(views);
+        for (int i = 0; i < NBIND; i++) {
+            ii[i] = { nearest ? sampler_n : sampler, i < (int) v.size() ? v[i] : v[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
             w[i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
             w[i].dstSet = s; w[i].dstBinding = 1 + i; w[i].descriptorCount = 1;
             w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; w[i].pImageInfo = &ii[i];
         }
-        vkUpdateDescriptorSets(dev, 2, w, 0, nullptr);
+        vkUpdateDescriptorSets(dev, NBIND, w, 0, nullptr);
         sets[k] = s;
         return s;
     }
@@ -362,9 +449,9 @@ private:
     {
         vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, n, d);
     }
-    void fs(VkCommandBuffer c, Img &to, VkPipeline pipe, VkDescriptorSet ds, const float *pc, uint32_t n)
+    void fs(VkCommandBuffer c, Img &to, VkRenderPass rp, VkPipeline pipe, VkDescriptorSet ds, const float *pc, uint32_t n)
     {
-        begin(c, rp_off_dc, to.fb, to.w, to.h);
+        begin(c, rp, to.fb, to.w, to.h);
         vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
         vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &ds, 0, nullptr);
         push(c, pc, n);
@@ -464,7 +551,7 @@ private:
         VkShaderModule m = VK_NULL_HANDLE; vkCreateShaderModule(dev, &ci, nullptr, &m);
         return m;
     }
-    enum Blend { B_NONE, B_FRESH, B_CRISP, B_MUL, B_ADD };
+    enum Blend { B_NONE, B_FRESH, B_FRESH_MAX, B_CRISP, B_MAX, B_MUL, B_ADD };
     VkPipeline pipeline(const char *vs, const char *fsn, VkRenderPass rp, Blend bl, bool instanced, VkPrimitiveTopology topo)
     {
         VkShaderModule v = module(vs), f = module(fsn);
@@ -485,15 +572,15 @@ private:
         ba.colorWriteMask = 0xF;
         if (bl != B_NONE) {
             ba.blendEnable = VK_TRUE; ba.colorBlendOp = ba.alphaBlendOp = VK_BLEND_OP_ADD;
+            ba.srcColorBlendFactor = ba.dstColorBlendFactor = ba.srcAlphaBlendFactor = ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
             switch (bl) {
-            case B_FRESH: ba.srcColorBlendFactor = ba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;     // colour added,
-                          ba.srcAlphaBlendFactor = ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;     //  the newest life wins
-                          ba.alphaBlendOp = VK_BLEND_OP_MAX; break;
-            case B_CRISP: ba.srcColorBlendFactor = ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                          ba.dstColorBlendFactor = ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE; break;
-            case B_MUL:   ba.srcColorBlendFactor = ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
-                          ba.dstColorBlendFactor = ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_COLOR; break;
-            default:      ba.srcColorBlendFactor = ba.srcAlphaBlendFactor = ba.dstColorBlendFactor = ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE; break;
+            case B_FRESH: ba.alphaBlendOp = VK_BLEND_OP_MAX; break;                     // colour added, the newest life wins
+            case B_FRESH_MAX: ba.colorBlendOp = ba.alphaBlendOp = VK_BLEND_OP_MAX; break;   // (Even beam: the brighter light)
+            case B_CRISP: ba.srcColorBlendFactor = ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; break;
+            case B_MAX: ba.colorBlendOp = ba.alphaBlendOp = VK_BLEND_OP_MAX; break;
+            case B_MUL: ba.srcColorBlendFactor = ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+                        ba.dstColorBlendFactor = ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_COLOR; break;
+            default: break;                                                            // (B_ADD)
             }
         }
         VkPipelineColorBlendStateCreateInfo cb{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO }; cb.attachmentCount = 1; cb.pAttachments = &ba;
@@ -512,50 +599,72 @@ private:
     {
         rp_off_clear = render_pass(off_fmt, VK_ATTACHMENT_LOAD_OP_CLEAR, false);
         rp_off_dc = render_pass(off_fmt, VK_ATTACHMENT_LOAD_OP_DONT_CARE, false);
+        rp_s = render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_ATTACHMENT_LOAD_OP_DONT_CARE, false);
+        rp_h = render_pass(h_fmt, VK_ATTACHMENT_LOAD_OP_DONT_CARE, false);
         VkSamplerCreateInfo si{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
         si.magFilter = si.minFilter = VK_FILTER_LINEAR; si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; si.maxLod = 0.f;
         vkCreateSampler(dev, &si, nullptr, &sampler);
-        VkDescriptorSetLayoutBinding b[2] = { { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr },
-                                              { 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr } };
-        VkDescriptorSetLayoutCreateInfo dli{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO }; dli.bindingCount = 2; dli.pBindings = b;
+        si.magFilter = si.minFilter = VK_FILTER_NEAREST;     // (32-bit float images need not be filterable)
+        vkCreateSampler(dev, &si, nullptr, &sampler_n);
+        VkDescriptorSetLayoutBinding b[NBIND];
+        for (int i = 0; i < NBIND; i++) b[i] = { (uint32_t) (1 + i), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+        VkDescriptorSetLayoutCreateInfo dli{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO }; dli.bindingCount = NBIND; dli.pBindings = b;
         vkCreateDescriptorSetLayout(dev, &dli, nullptr, &dsl);
-        VkPushConstantRange pr{ VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 64 };
+        VkPushConstantRange pr{ VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128 };
         VkPipelineLayoutCreateInfo pli{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
         pli.setLayoutCount = 1; pli.pSetLayouts = &dsl; pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pr;
         vkCreatePipelineLayout(dev, &pli, nullptr, &layout);
-        VkDescriptorPoolSize ps{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 128 };
+        VkDescriptorPoolSize ps{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64 * NBIND };
         VkDescriptorPoolCreateInfo dpi{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO }; dpi.maxSets = 64; dpi.poolSizeCount = 1; dpi.pPoolSizes = &ps;
         vkCreateDescriptorPool(dev, &dpi, nullptr, &dpool);
-        const auto strip = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, tri = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        const auto strip = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, tri = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, lines = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
         pipe_cap_timed = pipeline("capsule.vert", "capsule.frag", rp_off_clear, B_FRESH, true, strip);
+        pipe_cap_timed_max = pipeline("capsule.vert", "capsule.frag", rp_off_clear, B_FRESH_MAX, true, strip);
         pipe_cap_plain = pipeline("capsule.vert", "capsule.frag", rp_off_clear, B_CRISP, true, strip);
+        pipe_cap_plain_max = pipeline("capsule.vert", "capsule.frag", rp_off_clear, B_MAX, true, strip);
         pipe_up = pipeline("fs.vert", "update.frag", rp_off_dc, B_NONE, false, tri);
         pipe_show = pipeline("fs.vert", "show.frag", rp_off_dc, B_NONE, false, tri);
         pipe_blur = pipeline("fs.vert", "blur.frag", rp_off_dc, B_NONE, false, tri);
         pipe_fin = pipeline("fs.vert", "final.frag", rp_swap, B_NONE, false, tri);
         pipe_art0 = pipeline("art.vert", "art.frag", rp_swap, B_MUL, false, strip);
         pipe_art1 = pipeline("art.vert", "art.frag", rp_swap, B_ADD, false, strip);
-        if (!pipe_cap_timed || !pipe_cap_plain || !pipe_up || !pipe_show || !pipe_blur || !pipe_fin || !pipe_art0 || !pipe_art1) {
+        if (!pipe_cap_timed || !pipe_cap_timed_max || !pipe_cap_plain || !pipe_cap_plain_max || !pipe_up || !pipe_show || !pipe_blur
+            || !pipe_fin || !pipe_art0 || !pipe_art1) {
             err = "a Vulkan pipeline could not be made"; return false;
         }
+        // the sheet's scratches (only with float images: optional, the overlay works without them)
+        if (float_images()) {
+            pipe_scr = pipeline("scr_gen.vert", "scr_gen.frag", rp_off_clear, B_ADD, false, lines);
+            pipe_fin_s = pipeline("fs.vert", "final.frag", rp_s, B_NONE, false, tri);
+            pipe_copy = pipeline("fs.vert", "copy.frag", rp_off_dc, B_NONE, false, tri);
+            pipe_harm_h = pipeline("fs.vert", "harm_h.frag", rp_h, B_NONE, false, tri);
+            pipe_harm_v = pipeline("fs.vert", "harm_v.frag", rp_off_dc, B_NONE, false, tri);
+            pipe_sheet = pipeline("fs.vert", "sheet.frag", rp_swap, B_NONE, false, tri);
+        }
+        sheet_ok = pipe_scr && pipe_fin_s && pipe_copy && pipe_harm_h && pipe_harm_v && pipe_sheet;
+        if (!sheet_ok) LOGI("Vulkan: no overlay scratches here");
         return true;
     }
+    bool sheet_ok = false;
 
     void destroy()
     {
         if (dev) {
             vkDeviceWaitIdle(dev);
-            for (Img *m : { &P, &P2, &F, &D, &B1, &B2, &art }) free_img(*m);
+            for (Img *m : { &P, &P2, &F, &D, &B1, &B2, &art, &S, &Q0, &SB1, &SB2, &SB3, &Q8, &Hh[0], &Hh[1], &Hh[2], &V[0], &V[1], &scr[0], &scr[1], &scr[2] })
+                free_img(*m);
             for (auto &b : inst) free_buf(b);
             free_swapchain();
-            for (VkPipeline p : { pipe_cap_timed, pipe_cap_plain, pipe_up, pipe_show, pipe_blur, pipe_fin, pipe_art0, pipe_art1 })
+            for (VkPipeline p : { pipe_cap_timed, pipe_cap_timed_max, pipe_cap_plain, pipe_cap_plain_max, pipe_up, pipe_show, pipe_blur, pipe_fin,
+                                  pipe_fin_s, pipe_art0, pipe_art1, pipe_scr, pipe_copy, pipe_harm_h, pipe_harm_v, pipe_sheet })
                 if (p) vkDestroyPipeline(dev, p, nullptr);
-            for (VkRenderPass r : { rp_off_clear, rp_off_dc, rp_swap }) if (r) vkDestroyRenderPass(dev, r, nullptr);
+            for (VkRenderPass r : { rp_off_clear, rp_off_dc, rp_s, rp_h, rp_swap }) if (r) vkDestroyRenderPass(dev, r, nullptr);
             if (dpool) vkDestroyDescriptorPool(dev, dpool, nullptr);
             if (layout) vkDestroyPipelineLayout(dev, layout, nullptr);
             if (dsl) vkDestroyDescriptorSetLayout(dev, dsl, nullptr);
             if (sampler) vkDestroySampler(dev, sampler, nullptr);
+            if (sampler_n) vkDestroySampler(dev, sampler_n, nullptr);
             for (int i = 0; i < FRAMES; i++) { if (fences[i]) vkDestroyFence(dev, fences[i], nullptr); if (acquired[i]) vkDestroySemaphore(dev, acquired[i], nullptr); }
             if (pool) vkDestroyCommandPool(dev, pool, nullptr);
             vkDestroyDevice(dev, nullptr); dev = VK_NULL_HANDLE;

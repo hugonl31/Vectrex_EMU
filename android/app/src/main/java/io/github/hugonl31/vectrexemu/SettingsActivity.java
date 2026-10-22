@@ -40,6 +40,7 @@ public class SettingsActivity extends Activity {
     }
 
     private void build() {
+        inGame = false;
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(Color.BLACK);
         col = new LinearLayout(this);
@@ -65,6 +66,16 @@ public class SettingsActivity extends Activity {
         button("Choose speech ROM (al2.bin)" + (al2.exists() ? "  [installed]" : ""), v -> pick(Intent.ACTION_OPEN_DOCUMENT, REQ_SPEECH));
         text("The SP0256-AL2 ROM for the VecVoice / VecVox: a free download (spatula-city.org/~im14u2c/sp0256-al2/).", DIM);
 
+        java.util.List<String> games = Prefs.recent(this);
+        if (!games.isEmpty()) {
+            header("Games");
+            text("Each game's overlay - automatic, another one, or none - and its position and size.", DIM);
+            for (String g : games) {
+                String ch = p.getString(Prefs.overlayFor(g), "");
+                button(g + (ch.isEmpty() ? "" : ch.equals("none") ? "   [no overlay]" : "   [" + ch + "]"), v -> buildGame(g));
+            }
+        }
+
         for (Object o : Prefs.ITEMS) {
             if (o instanceof String) { header((String) o); continue; }
             Prefs.Item it = (Prefs.Item) o;
@@ -75,6 +86,10 @@ public class SettingsActivity extends Activity {
             }
             if (it.help != null) text(it.help, DIM);
         }
+        button("New random scratches", v -> {
+            Prefs.get(this).edit().putInt(Prefs.SEED, 2 + new java.util.Random().nextInt(99998)).apply();
+            Toast.makeText(this, "New scratches on every overlay, from the next game on", Toast.LENGTH_SHORT).show();
+        });
         button("Reset all settings to their defaults", v -> {
             SharedPreferences.Editor e = Prefs.get(this).edit();
             for (Object o : Prefs.ITEMS) if (o instanceof Prefs.Item) e.remove(((Prefs.Item) o).key);
@@ -87,6 +102,77 @@ public class SettingsActivity extends Activity {
                 + "(or the path in an extra named ROM, rom, path or file). Zipped ROMs work.\n"
                 + "In game: Back, or Select + Start, returns to the front end.", GREEN);
     }
+
+    /** one game: its overlay (automatic, another, none) and the chosen overlay's position and size */
+    private void buildGame(String game) {
+        inGame = true;
+        ScrollView sv = new ScrollView(this);
+        sv.setBackgroundColor(Color.BLACK);
+        col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(24);
+        col.setPadding(pad, pad, pad, pad);
+        sv.addView(col);
+        setContentView(sv);
+        SharedPreferences p = Prefs.get(this);
+        title(game, 24);
+        java.util.List<Overlays.Cand> cs = Overlays.candidates(this, null);
+        Overlays.Cand auto = Overlays.find(cs, game);
+        java.util.List<String> names = new java.util.ArrayList<>();
+        names.add(""); names.add("none");
+        for (Overlays.Cand c : cs) if (!names.contains(c.name)) names.add(c.name);
+        String key = Prefs.overlayFor(game);
+        Button bt = new Button(this); bt.setAllCaps(false); bt.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        Runnable show = () -> {
+            String c = p.getString(key, "");
+            bt.setText("Overlay:  " + (c.isEmpty() ? "Automatic (" + (auto != null ? auto.name : "none found") + ")" : c.equals("none") ? "None" : c));
+        };
+        show.run();
+        bt.setOnClickListener(v -> {
+            int k = Math.max(0, names.indexOf(p.getString(key, "")));
+            String n = names.get((k + 1) % names.size());
+            if (n.isEmpty()) p.edit().remove(key).apply(); else p.edit().putString(key, n).apply();
+            buildGame(game);
+        });
+        col.addView(bt, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        text("Overlays in the overlay folder and the app's own; the automatic choice also looks next to the ROM.", DIM);
+        String c = p.getString(key, "");
+        String ov = c.isEmpty() ? (auto != null ? auto.name : null) : c.equals("none") ? null : c;
+        if (ov != null) {
+            header("Position and size of " + ov);
+            float[] a = Prefs.adjust(this, ov);
+            String[] labels = { "Left / right (picture heights)", "Up / down (picture heights)", "Size" };
+            float[][] range = { { -0.05f, 0.05f, 0f }, { -0.05f, 0.05f, 0f }, { 0.9f, 1.1f, 1f } };
+            for (int i = 0; i < 3; i++) {
+                final int idx = i;
+                TextView t = new TextView(this); t.setTextColor(Color.WHITE); t.setTextSize(16); t.setPadding(dp(8), dp(8), 0, 0);
+                SeekBar sb = new SeekBar(this); sb.setMax(100); sb.setKeyProgressIncrement(1);
+                sb.setProgress(Math.round((a[i] - range[i][0]) / (range[i][1] - range[i][0]) * 100));
+                Runnable lab = () -> t.setText(String.format(Locale.ROOT, idx == 2 ? "%s:  x%.3f" : "%s:  %+.3f", labels[idx], Prefs.adjust(this, ov)[idx]));
+                lab.run();
+                sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                    public void onProgressChanged(SeekBar s, int pr, boolean user) {
+                        float[] cur = Prefs.adjust(SettingsActivity.this, ov);
+                        cur[idx] = range[idx][0] + (range[idx][1] - range[idx][0]) * pr / 100f;
+                        if (Math.abs(cur[idx] - range[idx][2]) < 0.0011f) cur[idx] = range[idx][2];
+                        p.edit().putString(Prefs.adjustOf(ov), cur[0] + "," + cur[1] + "," + cur[2]).apply();
+                        lab.run();
+                    }
+                    public void onStartTrackingTouch(SeekBar s) { }
+                    public void onStopTrackingTouch(SeekBar s) { }
+                });
+                col.addView(t); col.addView(sb);
+            }
+            button("Reset position and size", v -> { p.edit().remove(Prefs.adjustOf(ov)).apply(); buildGame(game); });
+        }
+        button("Back", v -> build());
+    }
+
+    @Override
+    public void onBackPressed() {                        // (from a game's page: back to the settings; from them: out)
+        if (inGame) build(); else super.onBackPressed();
+    }
+    private boolean inGame;
 
     private static String folder(String uri) {
         if (uri == null) return "";

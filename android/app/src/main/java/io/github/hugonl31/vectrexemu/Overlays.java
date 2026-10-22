@@ -28,7 +28,9 @@ import java.util.zip.CRC32;
  *  an "overlays" folder there), and among the app's own (Mine Storm's). */
 final class Overlays {
     /** an overlay: RGBA rows top first */
-    static final class Art { int w, h; byte[] rgba; String name; }
+    /** an overlay: RGBA rows top first; sheet: the width (its pixels) of the part over the picture - an .art
+     *  plane's centre 846 columns (at 1080 rows), a PNG sheet's whole width, a whole-plane PNG's centre 846 of 1360 */
+    static final class Art { int w, h; byte[] rgba; String name; float sheet; }
 
     /** a file that may be an overlay: its name and how to open it */
     static final class Cand {
@@ -138,8 +140,13 @@ final class Overlays {
     static Art load(Context ctx, Cand c) {
         try (InputStream is = c.open(ctx)) {
             byte[] b = RomSource.all(is);
-            Art a = c.name.toLowerCase(Locale.ROOT).endsWith(".png") ? png(b) : vart(b);
-            if (a != null) a.name = c.name;
+            boolean isPng = c.name.toLowerCase(Locale.ROOT).endsWith(".png");
+            Art a = isPng ? png(b) : vart(b);
+            if (a != null) {
+                a.name = c.name;
+                a.sheet = !isPng ? a.h * 846f / 1080f
+                        : Math.abs(a.w / (float) a.h - 1360f / 1080f) < 0.02f ? a.w * 846f / 1360f : a.w;
+            }
             return a;
         } catch (IOException | RuntimeException e) {
             return null;

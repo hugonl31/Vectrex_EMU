@@ -1,6 +1,7 @@
 package io.github.hugonl31.vectrexemu;
 
 import android.app.Activity;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -34,7 +35,8 @@ import java.util.List;
 public class EmulatorActivity extends Activity implements SurfaceHolder.Callback {
     static { System.loadLibrary("vectrexemu"); }
     static native void nativeStart(String[] keys, String[] values, byte[] bios, byte[] cart, String sav,
-                                   byte[] art, int artW, int artH, byte[] onWav, byte[] offWav);
+                                   byte[] art, int artW, int artH, float artSheet, String artName, byte[] onWav, byte[] offWav);
+    static native void nativePowerOff();
     static native void nativeSurface(Surface s);
     static native void nativeInput(int player, int jx, int jy, int buttons);
     static native void nativeReset();
@@ -43,7 +45,7 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     static native String nativeRenderer();
 
     static final String TAG = "VectrexEMU";
-    private boolean started, quitting;
+    private boolean started, quitting, offEffect;
 
     // ---------------------------------------------------------------- the players' controllers
     private static final class Pad { float ax, ay, hx, hy; int dpad, buttons; }   // dpad: 1 up 2 down 4 left 8 right
@@ -57,6 +59,9 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        String o = Prefs.value(this, Prefs.ORIENT);         // (Settings > Screen: a device on its side)
+        setRequestedOrientation(o.equals("portrait") ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                : o.equals("reverse_portrait") ? ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         String layout = Prefs.value(this, Prefs.BUTTONS);
         buttonKeys = new int[4];
         for (int i = 0; i < 4; i++) {
@@ -96,16 +101,22 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
         if (tree != null) { where.tree = Uri.parse(tree); where.parentDoc = getIntent().getStringExtra(LaunchActivity.X_PARENT); }
         if (dir != null) where.dir = new File(dir);
         Overlays.Art art = null;
-        if (!"0".equals(Prefs.value(this, "art_on"))) {
+        String choice = Prefs.get(this).getString(Prefs.overlayFor(game), "");    // (Settings > Games: per game)
+        if (!"0".equals(Prefs.value(this, "art_on")) && !choice.equals("none")) {
             List<Overlays.Cand> cs = Overlays.candidates(this, romFile != null ? where : null);
-            Overlays.Cand c = Overlays.find(cs, game);
+            Overlays.Cand c = null;
+            if (!choice.isEmpty()) for (Overlays.Cand k : cs) if (k.name.equals(choice)) c = k;
+            if (c == null) c = Overlays.find(cs, game);
             if (c != null) art = Overlays.load(this, c);
             Log.i(TAG, "overlay for " + game + ": " + (art != null ? art.name + " " + art.w + "x" + art.h : "none") + " (" + cs.size() + " looked at)");
         }
+        float[] adj = Prefs.adjust(this, art != null ? art.name : null);
         File al2 = new File(getFilesDir(), "al2.bin");
-        String[][] conf = Prefs.forNative(this, al2.exists() ? al2.getPath() : null);
+        String[][] conf = Prefs.forNative(this, "speech_rom", al2.exists() ? al2.getPath() : null,
+                "art_dx", Float.toString(adj[0]), "art_dy", Float.toString(adj[1]), "art_scale", Float.toString(adj[2]));
+        offEffect = "1".equals(Prefs.value(this, Prefs.OFF_EFFECT));
         nativeStart(conf[0], conf[1], bios, cart, sav, art != null ? art.rgba : null, art != null ? art.w : 0, art != null ? art.h : 0,
-                    asset("sounds/on.wav"), asset("sounds/off.wav"));
+                    art != null ? art.sheet : 0f, art != null ? art.name : "", asset("sounds/on.wav"), asset("sounds/off.wav"));
         started = true;
     }
 
@@ -147,14 +158,20 @@ public class EmulatorActivity extends Activity implements SurfaceHolder.Callback
     @Override public void surfaceChanged(SurfaceHolder h, int fmt, int w, int hh) { if (started) nativeSurface(h.getSurface()); }
     @Override public void surfaceDestroyed(SurfaceHolder h) { if (started) nativeSurface(null); }
 
-    /** back to the front end: the core saves (flash cartridges), the process ends */
+    /** back to the front end: the core saves (flash cartridges), the process ends; with Switch off when
+     *  quitting, first half a second of the tube going dark and the switch's click */
     private void quit() {
         if (quitting) return;
         quitting = true;
-        if (started) nativeStop();
-        finishAndRemoveTask();
-        overridePendingTransition(0, 0);
-        new Handler(Looper.getMainLooper()).postDelayed(() -> System.exit(0), 250);
+        Handler h = new Handler(Looper.getMainLooper());
+        Runnable leave = () -> {
+            if (started) nativeStop();
+            finishAndRemoveTask();
+            overridePendingTransition(0, 0);
+            h.postDelayed(() -> System.exit(0), 250);
+        };
+        if (started && offEffect) { nativePowerOff(); h.postDelayed(leave, 600); }
+        else leave.run();
     }
 
     @Override public void onBackPressed() { quit(); }

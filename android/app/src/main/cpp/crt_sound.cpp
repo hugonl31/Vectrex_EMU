@@ -94,6 +94,14 @@ void CrtSound::process(const int16_t *pcm, int n, const vx_line_t *lines, int nl
     for (int i = 0; i < n; i++) out[i] = (int16_t) std::max(-32768.0, std::min(32767.0, o[i]));
 }
 
+void CrtSound::idle(int n, int16_t *out)
+{
+    size_t m = std::min((size_t) n, overlay.size());
+    for (int i = 0; i < n; i++) out[i] = 0;
+    for (size_t i = 0; i < m; i++) out[i] = (int16_t) std::max(-32768.0, std::min(32767.0, overlay[i] * POWER_SND_GAIN));
+    overlay.erase(overlay.begin(), overlay.begin() + m);
+}
+
 std::vector<int16_t> load_wav(const uint8_t *d, size_t n)
 {
     std::vector<int16_t> out;

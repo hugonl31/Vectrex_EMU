@@ -66,7 +66,7 @@ struct QFrame { std::vector<Line> lines; double t_start, len; uint64_t t0; bool 
 
 struct Engine {
     std::map<std::string, std::string> conf;
-    std::vector<uint8_t> bios, cart, art_rgba; int art_w = 0, art_h = 0;
+    std::vector<uint8_t> bios, cart, art_rgba; int art_w = 0, art_h = 0; double art_sheet = 0; std::string art_name;
     std::string sav;
     CrtSound crt;
     Look look;
@@ -76,6 +76,7 @@ struct Engine {
     std::atomic<bool> running{ false }, paused{ false };
     std::atomic<int> in_jx[2], in_jy[2], in_btn[2];
     std::atomic<bool> p2_seen{ false }, reset_req{ false };
+    std::atomic<bool> off{ false };                     // (switching off: the picture's zap, the switch's sound)
 
     std::thread emu_thr, ren_thr;
     std::mutex qm; std::deque<QFrame> queue;
@@ -117,6 +118,14 @@ struct Engine {
         L.art_on = flag("art_on", L.art_on); L.art_tint = (float) num("art_tint", L.art_tint); L.art_room = (float) num("art_room", L.art_room);
         L.art_print = (float) num("art_print", L.art_print); L.art_parallax = flag("art_parallax", L.art_parallax);
         L.render_scale = (float) num("render_scale", L.render_scale);
+        L.even_beam = flag("even_beam", L.even_beam);
+        L.art_glow = flag("art_glow", L.art_glow); L.art_glow_k = (float) num("art_glow_k", L.art_glow_k);
+        L.scr_on = flag("scr_on", L.scr_on); L.scr_wear = (float) num("scr_wear", L.scr_wear);
+        L.scr_fine = (float) num("scr_fine", L.scr_fine); L.scr_medium = (float) num("scr_medium", L.scr_medium);
+        L.scr_large = (float) num("scr_large", L.scr_large); L.scr_glint = (float) num("scr_glint", L.scr_glint);
+        L.scr_reach = (float) num("scr_reach", L.scr_reach); L.scr_scrib = (float) num("scr_scrib", L.scr_scrib);
+        L.scr_seed = (int) num("scr_seed", L.scr_seed);
+        L.art_dx = (float) num("art_dx", L.art_dx); L.art_dy = (float) num("art_dy", L.art_dy); L.art_scale = (float) num("art_scale", L.art_scale);
         crt.buzz_on = flag("buzz_on", crt.buzz_on); crt.buzz_vol = num("buzz_vol", crt.buzz_vol);
         crt.speaker_on = flag("speaker_on", crt.speaker_on); crt.volume = num("volume", crt.volume);
         crt.voice_vol = num("voice_vol", crt.voice_vol); crt.voice_full = flag("voice_full", crt.voice_full);
@@ -124,12 +133,34 @@ struct Engine {
     }
 
     // ------------------------------------------------------------ sound
+    // The stream runs at the device's own rate (48 kHz mostly): only then does Android give the low-latency
+    // path (small bursts, no mixer in between); the core's 44.1 kHz is resampled here (cubic Hermite).
+    int out_rate = RATE;
+    double rs_step = 1.0, rs_pos = 0.0;                 // (input samples per output sample; the phase)
+    float rs_h[4] = { 0, 0, 0, 0 };                     // (the last input samples: x-1, x0, x1, x2)
+    int16_t rs_in[16384];
+    // (the stream: stereo float, the format the fast path takes on most devices; the sound itself is mono)
     static aaudio_data_callback_result_t audio_cb(AAudioStream *, void *user, void *data, int32_t n)
     {
         Engine *e = (Engine *) user;
-        int16_t *out = (int16_t *) data;
-        int k = e->paused ? 0 : e->ring.pop(out, n);
-        if (k < n) { memset(out + k, 0, (n - k) * 2); if (!e->paused && e->running && e->sounding) e->underruns++; }
+        float *out = (float *) data;
+        if (e->paused) { memset(out, 0, n * 2 * sizeof(float)); return AAUDIO_CALLBACK_RESULT_CONTINUE; }
+        int need = (int) (e->rs_pos + n * e->rs_step);   // (input samples this callback moves on by)
+        if (need > (int) (sizeof e->rs_in / 2)) need = sizeof e->rs_in / 2;
+        int k = e->ring.pop(e->rs_in, need);
+        if (k < need) { memset(e->rs_in + k, 0, (need - k) * 2); if (e->running && e->sounding) e->underruns++; }
+        float *h = e->rs_h; double pos = e->rs_pos; int j = 0;
+        for (int i = 0; i < n; i++) {
+            while (pos >= 1.0 && j < need) { h[0] = h[1]; h[1] = h[2]; h[2] = h[3]; h[3] = e->rs_in[j++]; pos -= 1.0; }
+            float t = (float) pos;                       // (between h[1] and h[2])
+            float c0 = h[1], c1 = 0.5f * (h[2] - h[0]), c2 = h[0] - 2.5f * h[1] + 2.f * h[2] - 0.5f * h[3];
+            float c3 = 0.5f * (h[3] - h[0]) + 1.5f * (h[1] - h[2]);
+            float y = (((c3 * t + c2) * t + c1) * t + c0) * (1.f / 32768.f);
+            y = y > 1.f ? 1.f : y < -1.f ? -1.f : y;
+            out[2 * i] = out[2 * i + 1] = y;
+            pos += e->rs_step;
+        }
+        e->rs_pos = pos;
         return AAUDIO_CALLBACK_RESULT_CONTINUE;
     }
     static void audio_err(AAudioStream *, void *user, aaudio_result_t err)
@@ -142,19 +173,24 @@ struct Engine {
     {
         AAudioStreamBuilder *b = nullptr;
         if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return;
-        AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
-        AAudioStreamBuilder_setChannelCount(b, 1);
-        AAudioStreamBuilder_setSampleRate(b, RATE);      // (the system resamples to the device's rate)
-        AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+        AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_FLOAT);
+        AAudioStreamBuilder_setChannelCount(b, 2);
+        AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);   // (at the device's rate)
         AAudioStreamBuilder_setDataCallback(b, audio_cb, this);
         AAudioStreamBuilder_setErrorCallback(b, audio_err, this);
         if (AAudioStreamBuilder_openStream(b, &stream) != AAUDIO_OK) stream = nullptr;
         AAudioStreamBuilder_delete(b);
         if (stream) {
+            out_rate = AAudioStream_getSampleRate(stream);
+            if (out_rate <= 0) out_rate = RATE;
+            rs_step = RATE / (double) out_rate; rs_pos = 0.0;
             int b = AAudioStream_getFramesPerBurst(stream);
-            if (b > 0) burst = b;
-            AAudioStream_setBufferSizeInFrames(stream, 2 * burst);   // (two bursts: low latency, no glitches)
-            AAudioStream_requestStart(stream); LOGI("audio: %d Hz, burst %d", AAudioStream_getSampleRate(stream), AAudioStream_getFramesPerBurst(stream)); }
+            AAudioStream_setBufferSizeInFrames(stream, 2 * std::max(b, 1));   // (two bursts: low latency, no glitches)
+            if (b > 0) burst = (int) std::ceil(b * rs_step);                // (in the core's samples, for the queue)
+            AAudioStream_requestStart(stream);
+            LOGI("audio: %d Hz stereo float (the core's 44100 resampled), burst %d, %s", out_rate, b,
+                 AAudioStream_getPerformanceMode(stream) == AAUDIO_PERFORMANCE_MODE_LOW_LATENCY ? "low latency" : "normal latency");
+        }
     }
     void close_audio()
     {
@@ -175,6 +211,14 @@ struct Engine {
         struct { std::vector<Line> lines; double t_start, len; uint64_t t0; bool power, on; } pend{ {}, 0, 0, 0, false, false };
         while (running) {
             if (paused) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); t_next = now(); continue; }
+            if (off) {                                            // switched off: only the switch's sound, then silence
+                static bool clicked = false;
+                if (!clicked) { clicked = true; crt.power_off(); t_next = now(); }
+                int16_t z[RATE / 50]; crt.idle(RATE / 50, z); ring.push(z, RATE / 50);
+                t_next += 0.02;
+                while (running && now() < t_next) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                continue;
+            }
             unsigned char m[8];
             int jx = in_jx[0], jy = in_jy[0], btn = in_btn[0];
             int flags = 0;
@@ -254,9 +298,19 @@ struct Engine {
         renderer_name = be->name();
         LOGI("renderer: %s (%s images)", be->name(), be->float_images() ? "16-bit float" : "8-bit");
         Scene scene; scene.look = look;
-        if (art_w) { be->set_art(art_w, art_h, art_rgba); scene.set_art_size(art_w, art_h); }
+        scene.sheet_ok = be->can_sheet();
+        if (art_w) {
+            be->set_art(art_w, art_h, art_rgba); scene.set_art(art_w, art_h, art_sheet, art_name.c_str());
+            if (look.art_on && look.scr_on && scene.sheet_ok) {          // (the overlay's scratches: made once)
+                double t0 = now();
+                auto draws = scene.scratch_draws();
+                scene.scr_ready = be->make_scratches(draws);
+                LOGI("overlay scratches: %s, %zu draws, %.0f ms", scene.scr_ready ? "made" : "not possible here", draws.size(), 1000 * (now() - t0));
+            }
+        }
         FramePlan plan;
         std::vector<QFrame> got;
+        bool was_off = false;
         double st_t0 = now(), st_cpu = 0, st_emu = 0; long st_shown = 0, st_games = 0;    // (the speed meter, every 10 s)
         while (running && window_ok) {
             double t_a = now();
@@ -266,6 +320,7 @@ struct Engine {
                 if (f.power) scene.power_on_t = f.t_start;
                 scene.add_frame(std::move(f.lines), f.t_start, f.len, f.t0);
             }
+            if (off && !was_off) { was_off = true; scene.power_off(now()); }
             int w = 0, h = 0; be->size(w, h);
             if (w <= 0 || h <= 0) { std::this_thread::sleep_for(std::chrono::milliseconds(16)); continue; }
             scene.set_screen(w, h);
@@ -338,7 +393,8 @@ extern "C" {
 #define FN(name) Java_io_github_hugonl31_vectrexemu_EmulatorActivity_##name
 
 JNIEXPORT void JNICALL FN(nativeStart)(JNIEnv *env, jclass, jobjectArray keys, jobjectArray vals, jbyteArray bios, jbyteArray cart,
-                                       jstring sav, jbyteArray art, jint aw, jint ah, jbyteArray on_wav, jbyteArray off_wav)
+                                       jstring sav, jbyteArray art, jint aw, jint ah, jfloat asheet, jstring aname,
+                                       jbyteArray on_wav, jbyteArray off_wav)
 {
     if (E) return;
     E = new Engine();
@@ -346,6 +402,7 @@ JNIEXPORT void JNICALL FN(nativeStart)(JNIEnv *env, jclass, jobjectArray keys, j
         E->conf[str(env, (jstring) env->GetObjectArrayElement(keys, i))] = str(env, (jstring) env->GetObjectArrayElement(vals, i));
     E->bios = bytes(env, bios); E->cart = bytes(env, cart); E->sav = str(env, sav);
     E->art_rgba = bytes(env, art); E->art_w = E->art_rgba.empty() ? 0 : aw; E->art_h = ah;
+    E->art_sheet = asheet; E->art_name = str(env, aname);
     auto on = bytes(env, on_wav), off = bytes(env, off_wav);
     E->crt.snd_on = load_wav(on.data(), on.size()); E->crt.snd_off = load_wav(off.data(), off.size());
     E->start();
@@ -369,6 +426,9 @@ JNIEXPORT void JNICALL FN(nativeInput)(JNIEnv *, jclass, jint player, jint jx, j
 JNIEXPORT void JNICALL FN(nativeReset)(JNIEnv *, jclass) { if (E) E->reset_req = true; }
 
 JNIEXPORT void JNICALL FN(nativePause)(JNIEnv *, jclass, jboolean p) { if (E) E->paused = p; }
+
+// switching off (Settings > Switch off when quitting): the picture's zap or collapse and the switch's click
+JNIEXPORT void JNICALL FN(nativePowerOff)(JNIEnv *, jclass) { if (E) { E->off = true; E->paused = false; } }
 
 JNIEXPORT void JNICALL FN(nativeStop)(JNIEnv *, jclass)
 {

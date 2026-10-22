@@ -3,6 +3,8 @@
 #include "scene.h"
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <utility>
 
 namespace vx {
 
@@ -22,6 +24,22 @@ static const double PHOS_GCAP = 1.5, PHOS_GAGE = 0.035;
 static const double CURVE_K = 0.07, ART_PARALLAX = 0.008, ART_ROOM_MID = 0.075;
 static const double WOBBLE_SPEED = 2.62;
 static const double CRT_FADE = 0.3;                // the tube warming up after power on (vectrex_emu.py crt_fx)
+// the overlay's scratches (vecrender.py SCR_*: the owner's recipe, from previews and his real sheet)
+static const double SCR_TPM = 2048 / 207.0;        // texels per mm of the scratch textures
+static const int SCR_COUNTS[10] = { 9843, 24276, 8177, 3480, 2900, 2418, 684, 112, 8, 2 };   // steps 1 (fine wear) .. 10
+static const double SCR_LEN0 = 5.0, SCR_LEN1 = 80.0;
+static const float SCR_TIERS[4] = { 15.0f, 35.0f, 0.04f, 0.005f };
+static const double SCR_PEN[3] = { 0.45, 0.85, 1.5 };
+static const double SCR_BASE[3] = { 1.8145, 1.202, 0.5043 };
+static const double SCR_FINE_D0 = 0.3, SCR_FINE_D1 = 1.0, SCR_FINE_W = 0.0376, SCR_FINE_1M = 18.53;
+static const double SCR_SCRIBBLE[2] = { 0.04, 1.0 };
+static const double SCR_STEP_W = 0.0538;
+static const double SCR_GLINT_SIG[2][2] = { { 4.0, 1.0 }, { 12.0, 0.7 } };   // (sigma in quarter px, weight)
+static const double SCR_GLINT_K = 2.0, ART_GLOW_K = 0.718;
+static const double SCR_REF = 4 * SCR_FINE_1M * 15.42 * 0.65 * 0.7628 * SCR_FINE_W;
+// the glint's light at eighth size (the desktop: quarter size with these sigmas): its kernels are 16 and 48
+// screen px wide and the glint field is smooth - at eighth size it looks the same, for an eighth of the work
+static const int HARM_DIV = 8;
 
 static void beam_z(double zi, double &k, double &w)   // (brightness factor, width factor) for zi = Z / 127
 {
@@ -95,13 +113,13 @@ double Scene::hold() const
     return look.trail_on ? std::max(PHOS_HOLD, per + 0.001) : std::max(PHOS_HOLD_OFF, per + 0.002);
 }
 
-void Scene::build(const std::vector<Line> &in0, std::vector<Instance> &out, bool do_load)
+void Scene::build(const std::vector<Line> &in0, std::vector<Instance> &out, bool do_load, float cgain, double cs, double cw)
 {
     out.clear();
     if (in0.empty()) return;
     std::vector<Line> lines;
     lines.reserve(in0.size() + 64);
-    if (look.halo_on)                                    // the resting spots' halos, drawn first (BEAM_HALO_W)
+    if (look.halo_on && !look.even_beam)                 // the resting spots' halos, drawn first (BEAM_HALO_W)
         for (auto &l : in0)
             if (l.x0 == l.x1 && l.y0 == l.y1 && l.energy >= 64 && (l.bright & 127)) { Line h = l; h.bright = (l.bright & 127) | 256; lines.push_back(h); }
     lines.insert(lines.end(), in0.begin(), in0.end());
@@ -132,6 +150,10 @@ void Scene::build(const std::vector<Line> &in0, std::vector<Instance> &out, bool
             x0 = cxm + (x0 - cxm) * gs + gsh; x1 = cxm + (x1 - cxm) * gs + gsh;
             y0 = cym + (y0 - cym) * gs + gsh; y1 = cym + (y1 - cym) * gs + gsh;
         }
+        if (cs != 1.0) {                                 // (switching off: the picture shrinking into the centre)
+            x0 = cxm + (x0 - cxm) * cs; x1 = cxm + (x1 - cxm) * cs;
+            y0 = cym + (y0 - cym) * cs; y1 = cym + (y1 - cym) * cs;
+        }
         if (wob) {                                       // the hum: offsets at the line's start and end
             double dx0, dy0, dx1, dy1;
             woff(hum, l.t0, dx0, dy0); woff(hum, l.t0 + cyc, dx1, dy1);
@@ -141,11 +163,13 @@ void Scene::build(const std::vector<Line> &in0, std::vector<Instance> &out, bool
         double dx = bx - ax, dy = by - ay, lp = std::sqrt(dx * dx + dy * dy);
         double zi = (b & 127) / 127.0, zk, zw, k;
         beam_z(zi, zk, zw);
-        double fw = (BEAM_W0 + BEAM_WZ * zi) * zw;
+        double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cw;
         if (b & 256) {                                   // a resting spot's halo
             double bl = std::min(1.0, std::max(0.0, (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0)));
-            fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl);
+            fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) * cw;
             k = look.halo_k * std::min(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl);
+        } else if (look.even_beam) {                     // an ideal display: lines and points alike
+            k = BEAM_LINE;
         } else if (lp / gp > 0.05) {
             double e = cyc / (lp / gp);                  // cycles per game pixel
             k = BEAM_LINE * (1.0 - BEAM_SPEED * std::exp(-e / 0.8));
@@ -157,7 +181,7 @@ void Scene::build(const std::vector<Line> &in0, std::vector<Instance> &out, bool
             fw *= 1.0 + (BEAM_BLOOM_W - 1.0) * bl;
         }
         double sg = std::max(0.6, fw * gp / 2.355);      // sigma, image px
-        k *= zk * BEAM_PEAK * crt_gain;
+        k *= zk * BEAM_PEAK * cgain;
         if (b & 128) k *= BEAM_FADE;
         out.push_back({ (float) ax, (float) ay, (float) bx, (float) by, (float) k, (float) sg, (float) (l.t0 / 1.5e6), 0.f });
     }
@@ -169,8 +193,9 @@ void Scene::add_frame(std::vector<Line> lines, double t_start, double length, ui
     double t = t_start - power_on_t, f = std::min(1.0, std::max(0.0, t / CRT_FADE));
     crt_gain = (float) std::pow(f * f * (3.0 - 2.0 * f), 2.6);   // slow start, then up to full brightness
     frame_t0 = t0abs;
+    if (!lines.empty()) last_lines = lines;
     std::vector<Instance> b;
-    build(lines, b, true);
+    build(lines, b, true, crt_gain);
     last = b;
     if (!b.empty()) {
         float tmax = 0; for (auto &i : b) tmax = std::max(tmax, i.tl);
@@ -186,7 +211,8 @@ void Scene::make_plan(double T, FramePlan &p)
     p.qw = std::max(4, p.tw / 4); p.qh = std::max(4, p.th / 4);
     p.phosphor = look.phosphor;
     p.inst.clear(); p.batches.clear();
-    p.cap_vp[0] = (float) p.tw; p.cap_vp[1] = (float) p.th; p.cap_vp[2] = p.cap_vp[3] = 0;
+    p.even = look.even_beam;
+    p.cap_vp[0] = (float) p.tw; p.cap_vp[1] = (float) p.th; p.cap_vp[2] = look.even_beam ? 1.f : 0.f; p.cap_vp[3] = 0;
     double dt = T_prev < 0 ? 0.0 : std::min(0.25, std::max(0.0, T - T_prev));
     T_prev = T;
     const double pht = ph * rs;                          // the picture's height in image px (the desktop's window h)
@@ -194,13 +220,32 @@ void Scene::make_plan(double T, FramePlan &p)
         young.clear();
         if (!last.empty()) { p.batches.push_back({ 0, (uint32_t) last.size(), 0.f, 0.f, 0.f, 1.f }); p.inst = last; }
     } else {
-        // 1. the fresh light: each young frame's lines drawn since the last display frame
+        // 1. the fresh light: each young frame's lines drawn since the last display frame (switching off:
+        // all that is left of them at once - the beam stopped)
+        bool flush = off_flush; off_flush = false;
         for (auto it = young.begin(); it != young.end();) {
-            Batch bt{ (uint32_t) p.inst.size(), (uint32_t) it->b.size(), 1.f, (float) (T - it->t0), (float) (T - it->done), (float) PHOS_GAIN };
+            Batch bt{ (uint32_t) p.inst.size(), (uint32_t) it->b.size(), 1.f, (float) (T - it->t0), flush ? 1e9f : (float) (T - it->done), (float) PHOS_GAIN };
             p.inst.insert(p.inst.end(), it->b.begin(), it->b.end());
             p.batches.push_back(bt);
             it->done = T;
-            if (T < it->t1) ++it; else it = young.erase(it);
+            if (!flush && T < it->t1) ++it; else it = young.erase(it);
+        }
+        if (off) {                                       // switching off: lines lit now (the zap, the collapse)
+            std::vector<Instance> b; bool mx = false;
+            if (streak) {
+                if (!zap_lit) { zap_lit = true; build(streaks, b, false, 1.2f); mx = true; }   // (one even line: no bright joints)
+            } else {
+                double t = T - off_t, c = 0.05;          // (to 30 % in 0.05 s, then only its afterglow)
+                if (t < c) {
+                    double q = t / c, sc = 1.0 - 0.7 * q;
+                    build(off_lines, b, false, (float) (0.15 + 0.85 * q * q), sc, 1.0 / std::pow(sc, 0.15));
+                }
+            }
+            if (!b.empty()) {
+                Batch bt{ (uint32_t) p.inst.size(), (uint32_t) b.size(), 2.f, 0.f, 1.f, (float) PHOS_GAIN, mx };
+                p.inst.insert(p.inst.end(), b.begin(), b.end());
+                p.batches.push_back(bt);
+            }
         }
         // 2. the phosphor image aged (update.frag: a, b, c), 3. what it shows (show.frag)
         double hd = hold(), hz = dt > 0.004 ? 1.0 / dt : 60.0;
@@ -236,6 +281,149 @@ void Scene::make_plan(double T, FramePlan &p)
         float room = (float) (ART_ROOM_MID * std::pow(r / ART_ROOM_MID, 2.0)), prt = (float) (look.art_print * (r / ART_ROOM_MID));
         for (int ps = 0; ps < 2; ps++) { p.art_a[ps][0] = (float) ps; p.art_a[ps][1] = look.art_tint; p.art_a[ps][2] = room; p.art_a[ps][3] = prt; }
     }
+    // 7. the sheet's scratches and plastic glow (vecrender.py _scratches, _harmonics)
+    bool scr = look.scr_on && scr_ready;
+    p.sheet = sheet_ok && p.art && (scr || look.art_glow);
+    if (p.sheet) {
+        p.qw4 = std::max(4, sw / 4); p.qh4 = std::max(4, sh / 4);
+        p.qw8 = std::max(4, sw / HARM_DIV); p.qh8 = std::max(4, sh / HARM_DIV);
+        float *q = p.sheet_pc;
+        for (int i = 0; i < 4; i++) q[i] = p.art_rect[i];
+        q[4] = look.art_tint; q[5] = p.art_a[0][2]; q[6] = p.art_a[0][3];
+        q[7] = (float) (art_sheet > 0 ? art_sheet / art_w : 846.0 / 1360.0);
+        q[8] = (float) SCR_REF; q[9] = (float) (look.scr_glint * SCR_BASE[2]); q[10] = scr ? (float) (2.5 * 0.85 * 0.5) : 0.f; q[11] = scr ? 1.f : 0.f;
+        // the glint's angle lobe |sin|^4 (Glint width, fixed at x1 as on the desktop): its harmonics a2, a4
+        static double a2 = 0, a4 = 0;
+        if (a2 == 0) {
+            double m0 = 0, m2 = 0, m4 = 0; const int n = 720;
+            for (int i = 0; i < n; i++) { double x = (i + 0.5) * PI / n, f = std::pow(std::fabs(std::cos(x)), 4.0); m0 += f; m2 += f * std::cos(2 * x); m4 += f * std::cos(4 * x); }
+            a2 = 2 * m2 / m0; a4 = 2 * m4 / m0;
+        }
+        q[12] = (float) a2; q[13] = (float) a4; q[14] = scr ? (float) SCR_GLINT_K : 0.f;
+        q[15] = look.art_glow ? (float) (ART_GLOW_K * look.art_glow_k) : 0.f;
+        q[16] = (float) SCR_PEN[0]; q[17] = (float) SCR_PEN[1]; q[18] = (float) SCR_PEN[2]; q[19] = 1.f;
+        for (int i = 0; i < 6; i++) {                    // the light blurred at quarter size: once (M), three times (F)
+            p.sblur[i][0] = (i & 1) ? 0.f : 1.f / p.qw4; p.sblur[i][1] = (i & 1) ? 1.f / p.qh4 : 0.f; p.sblur[i][2] = p.sblur[i][3] = 0;
+        }
+        double k8 = 4.0 / HARM_DIV;                      // (the sigmas, given in quarter px, at the harmonics' size)
+        double s1 = SCR_GLINT_SIG[0][0] * k8, s2 = SCR_GLINT_SIG[1][0] * k8;
+        double rr = std::max(0.0, std::min(2.0, (double) look.scr_reach));
+        double w1 = SCR_GLINT_SIG[0][1] * (1.5 - 0.5 * rr), w2 = SCR_GLINT_SIG[1][1] * rr;
+        for (int part = 0; part < 3; part++) { p.harm_h[part][0] = (float) part; p.harm_h[part][1] = (float) s1; p.harm_h[part][2] = (float) s2; p.harm_h[part][3] = 1.f / p.qw8; }
+        for (int part = 0; part < 2; part++) {
+            float *v = p.harm_v[part];
+            v[0] = (float) part; v[1] = (float) s1; v[2] = (float) s2; v[3] = 1.f / p.qh8; v[4] = (float) w1; v[5] = (float) w2; v[6] = v[7] = 0;
+        }
+    }
+}
+
+// switching off (vectrex_emu.py crt_off): the zap - the last vector the beam was drawing, cut off: one
+// smooth freehand stroke anywhere within the last picture (6 in 10 are 5-8 cm long on the tube, 3 in 10
+// 2-5 cm, 1 in 10 a squiggle: a small open loop with a longer curved tail) - or (3 in 10) the collapse
+void Scene::power_off(double T)
+{
+    off = true; off_flush = true; zap_lit = false; off_t = T;
+    std::mt19937 rnd((unsigned) (T * 1000.0));
+    auto uni = [&](double a, double b) { return std::uniform_real_distribution<double>(a, b)(rnd); };
+    auto rnd01 = [&]() { return uni(0.0, 1.0); };
+    off_lines.clear();
+    for (auto &l : last_lines)                           // (only what was on screen)
+        if (0 < l.x0 && l.x0 < ALG_MAX_X && 0 < l.x1 && l.x1 < ALG_MAX_X && 0 < l.y0 && l.y0 < ALG_MAX_Y && 0 < l.y1 && l.y1 < ALG_MAX_Y) off_lines.push_back(l);
+    streak = rnd01() < 0.7;
+    const double cm = ALG_MAX_Y / 24.0;                  // (the tube is about 24 cm tall)
+    auto bendf = [&]() { return (rnd01() < 0.5 ? -1.0 : 1.0) * uni(0.8, 3.2); };
+    double roll = rnd01();
+    double length = roll < 0.6 ? uni(5.0, 8.0) * cm : roll < 0.9 ? uni(2.0, 5.0) * cm : uni(4.0, 7.0) * cm;
+    bool squiggle = roll >= 0.9;
+    double k0 = bendf(), k1 = bendf();
+    double kw = rnd01() < 0.5 ? 0.0 : uni(1.5, 4.0), fw = uni(0.6, 1.6), pw = uni(0, 6.3);
+    double loop = (rnd01() < 0.5 ? -1.0 : 1.0) * uni(1.4, 1.9) * 2 * PI;
+    double x = uni(0.08, 0.92) * ALG_MAX_X, y = uni(0.08, 0.92) * ALG_MAX_Y, a = uni(0, 2 * PI);
+    const int n = 80; double step = length / n;
+    std::vector<std::pair<double, double>> pts{ { x, y } };
+    for (int i = 0; i < n; i++) {
+        double u = i / (double) n, da;
+        if (squiggle && u < 0.35) da = loop * (u / 0.35) * 2.0 / (0.35 * n);   // a small loop, tightening, then the tail
+        else da = (k0 * (1.0 - u) * (1.0 - u) + k1 * u * u + kw * std::sin(2 * PI * fw * u + pw)) / n;
+        a += da; x += step * std::cos(a); y += step * std::sin(a);
+        pts.push_back({ x, y });
+    }
+    // within the visible picture: shifted back inside, or (too big) made smaller - still one smooth stroke
+    double bx0 = 0.06 * ALG_MAX_X, bx1 = 0.94 * ALG_MAX_X, by0 = 0.05 * ALG_MAX_Y, by1 = 0.95 * ALG_MAX_Y;
+    auto box = [&](double &x0, double &x1, double &y0, double &y1) {
+        x0 = y0 = 1e18; x1 = y1 = -1e18;
+        for (auto &q : pts) { x0 = std::min(x0, q.first); x1 = std::max(x1, q.first); y0 = std::min(y0, q.second); y1 = std::max(y1, q.second); }
+    };
+    double mnx, mxx, mny, mxy; box(mnx, mxx, mny, mxy);
+    double k = std::min({ 1.0, (bx1 - bx0) / std::max(1.0, mxx - mnx), (by1 - by0) / std::max(1.0, mxy - mny) });
+    double cx0 = (mnx + mxx) / 2, cy0 = (mny + mxy) / 2;
+    for (auto &q : pts) { q.first = cx0 + (q.first - cx0) * k; q.second = cy0 + (q.second - cy0) * k; }
+    box(mnx, mxx, mny, mxy);
+    double dx = std::max(0.0, bx0 - mnx) - std::max(0.0, mxx - bx1), dy = std::max(0.0, by0 - mny) - std::max(0.0, mxy - by1);
+    streaks.clear();
+    for (size_t i = 0; i + 1 < pts.size(); i++)
+        streaks.push_back({ (float) (int) (pts[i].first + dx), (float) (int) (pts[i].second + dy), (float) (int) (pts[i + 1].first + dx),
+                            (float) (int) (pts[i + 1].second + dy), 90, 40.f, 0 });
+}
+
+// the scratch maker's draws (vecrender.py _scr_make): the fine wear into A (chan 0) and B (chan 1), the nine
+// steps into B (chan 2) and C (chan 3); each step's count by Wear and Wear type, more where hands hold the sheet
+std::vector<ScrDraw> Scene::scratch_draws() const
+{
+    std::vector<ScrDraw> out;
+    // the handled sheet's density: its mean over the sheet and its maximum (_scr_handled_mean)
+    double tot = 0, mx = 0;
+    for (int yi = 0; yi < 64; yi++)
+        for (int xi = 0; xi < 48; xi++) {
+            double x = xi / 47.0, y = yi / 63.0, ex = std::min(x, 1 - x), ey = std::min(y, 1 - y);
+            double mid = std::exp(-((x - 0.5) * (x - 0.5) / 0.08 + (y - 0.62) * (y - 0.62) / 0.12));
+            double edge = std::exp(-ex / 0.06) * 0.6, corner = 1 - 0.7 * std::exp(-(ex * ex + ey * ey) / 0.02);
+            double d = (0.25 + mid + edge) * corner; tot += d; mx = std::max(mx, d);
+        }
+    const double hmean = tot / (64 * 48) / mx, hmax = mx;
+    // the seed: the user's, varied per overlay (by its file name: the sum of (i + 1) x its code points)
+    long sum = 0; size_t i = 0; int idx = 0;
+    while (i < art_name.size()) {
+        unsigned char c = art_name[i]; long cp; int n = 1;
+        if (c < 0x80) cp = c; else if ((c >> 5) == 6) { cp = c & 31; n = 2; } else if ((c >> 4) == 14) { cp = c & 15; n = 3; } else { cp = c & 7; n = 4; }
+        for (int k = 1; k < n && i + k < art_name.size(); k++) cp = (cp << 6) | (art_name[i + k] & 63);
+        i += n; sum += (long) (++idx) * cp;
+    }
+    const double sd = (double) (((long) look.scr_seed * 7919 + sum) % 9973 + 1);
+    const double dmg[3] = { look.scr_fine, look.scr_medium, look.scr_large };
+    auto amount = [&](int k, double &kn, double &kd) {  // step k (1-10): (number x, depth x)
+        double base = k <= 5 ? SCR_BASE[0] : SCR_BASE[1];
+        int g = k <= 3 ? 0 : k <= 7 ? 1 : 2;
+        kn = base * look.scr_wear * dmg[g]; kd = std::sqrt(std::max(0.0, kn));
+    };
+    auto draw = [&](int tex, double n, int stepid, int mode, int place, double L0, double L1, double d0, double d1, double wv, int chan) {
+        double cand = n / (place ? hmean : 1.0);
+        long whole = (long) cand;
+        double fr = std::fmod(sd * 0.6180339 + stepid * 0.37, 1.0);
+        long c = whole + (fr < cand - whole ? 1 : 0);
+        for (long b = 0; b < c; b += 4096) {
+            ScrDraw d{ tex, {} };
+            float *q = d.pc;
+            q[0] = (float) (b / 4096); q[1] = (float) std::min(4096L, c - b); q[2] = (float) sd; q[3] = (float) stepid;
+            q[4] = (float) mode; q[5] = (float) place; q[6] = (float) L0; q[7] = (float) L1;
+            q[8] = (float) d0; q[9] = (float) d1; q[10] = (float) wv; q[11] = 0.f;
+            q[12] = (float) chan; q[13] = (float) hmax; q[14] = (float) (SCR_SCRIBBLE[0] * look.scr_scrib); q[15] = (float) SCR_SCRIBBLE[1];
+            for (int k = 0; k < 4; k++) q[16 + k] = SCR_TIERS[k];
+            out.push_back(d);
+        }
+    };
+    double kn, kd;
+    amount(1, kn, kd);
+    double fine_n = SCR_COUNTS[0] * kn, fw = SCR_FINE_W * SCR_TPM * kd;
+    for (int c = 0; c < 2; c++) draw(c, fine_n, 0, 0, 0, SCR_LEN0, SCR_LEN1, SCR_FINE_D0, SCR_FINE_D1, fw, c);
+    for (int c = 2; c <= 3; c++)
+        for (int st = 0; st < 9; st++) {
+            amount(st + 2, kn, kd);
+            if (kn <= 0) continue;
+            double depth = (0.02 + 1.58 * std::pow(st / 8.0, 3)) * (st >= 6 ? 1.1 : 1.0);
+            draw(c - 1, SCR_COUNTS[st + 1] * kn, st + 1, 1, 1, SCR_LEN0, SCR_LEN1, 0.75, 1.25, depth * kd * SCR_STEP_W * SCR_TPM, c);
+        }
+    return out;
 }
 
 }  // namespace vx

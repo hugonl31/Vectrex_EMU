@@ -3,7 +3,7 @@
 // prm = brightness, sigma (px), the line's time in its frame (s)
 layout(location = 0) in vec4 seg;
 layout(location = 1) in vec4 prm;
-PUSH PC { vec4 vp; vec4 t; } pc;          // vp.xy = target size; t = timed, age0, dtw, gain
+PUSH PC { vec4 vp; vec4 t; } pc;          // vp.xy = target size, vp.z = Even beam; t = timed, age0, dtw, gain
 layout(location = 0) flat out vec4 vseg;
 layout(location = 1) flat out vec4 vprm;
 void main() {

@@ -74,9 +74,32 @@ struct Engine {
     bool skip_boot = false;
 
     std::atomic<bool> running{ false }, paused{ false };
+    std::atomic<bool> app_paused{ false }, user_paused{ false };   // (the app in the background / the player's pause)
+    std::mutex cm;                                      // (the settings: conf, changed live from the in-game menu)
+    std::atomic<int> conf_version{ 0 };
+    // the clock both threads keep time by: real time, standing still while paused (a paused picture stays as
+    // it is - its afterglow does not fade - and the game goes on where it stopped: vectrex_emu.py pause_acc)
+    std::mutex km; double paused_total = 0, pause_start = -1;
+    double clock()
+    {
+        std::lock_guard<std::mutex> g(km);
+        return (pause_start >= 0 ? pause_start : now()) - paused_total;
+    }
+    void set_paused()
+    {
+        bool p = app_paused || user_paused;
+        std::lock_guard<std::mutex> g(km);
+        if (p && pause_start < 0) pause_start = now();
+        else if (!p && pause_start >= 0) { paused_total += now() - pause_start; pause_start = -1; }
+        paused = p;
+    }
+    std::mutex sm; std::string stats;                    // (the on-screen display: once a second)
     std::atomic<int> in_jx[2], in_jy[2], in_btn[2];
     std::atomic<bool> p2_seen{ false }, reset_req{ false };
     std::atomic<bool> off{ false };                     // (switching off: the picture's zap, the switch's sound)
+    std::atomic<double> power_t{ -1.0 };                // (when the Vectrex was switched on: the tube warms up from
+                                                        //  then - not in the frame queue, whose oldest frames go when
+                                                        //  the screen is not there yet)
 
     std::thread emu_thr, ren_thr;
     std::mutex qm; std::deque<QFrame> queue;
@@ -108,7 +131,14 @@ struct Engine {
         }
         skip_boot = flag("skip_boot", false);
         line_gap = num("line_gap", 12.3);
-        Look &L = look;
+        look = make_look();
+        set_sound();
+        for (int i = 0; i < 2; i++) { in_jx[i] = 0; in_jy[i] = 0; in_btn[i] = 0; }
+    }
+    // the look from the settings (the defaults for what is not set)
+    Look make_look()
+    {
+        Look L;
         L.phosphor = flag("phosphor", L.phosphor); L.trail_on = flag("trail_on", L.trail_on); L.trail = (float) num("trail", L.trail);
         L.bloom = (float) num("bloom", L.bloom); L.wob_on = flag("wob_on", L.wob_on); L.wob_strength = (float) num("wob_strength", L.wob_strength);
         L.mains_hz = (int) num("mains_hz", L.mains_hz); L.bend_on = flag("bend_on", L.bend_on); L.bend_strength = (float) num("bend_strength", L.bend_strength);
@@ -126,10 +156,18 @@ struct Engine {
         L.scr_reach = (float) num("scr_reach", L.scr_reach); L.scr_scrib = (float) num("scr_scrib", L.scr_scrib);
         L.scr_seed = (int) num("scr_seed", L.scr_seed);
         L.art_dx = (float) num("art_dx", L.art_dx); L.art_dy = (float) num("art_dy", L.art_dy); L.art_scale = (float) num("art_scale", L.art_scale);
+        L.phos_full = get("phos_area", "screen") != "picture";
+        L.glint_div = get("glint_res", "4") == "8" ? 8 : 4;
+        return L;
+    }
+    void set_sound()
+    {
+        static const CrtSound d0;
+        crt.buzz_on = d0.buzz_on; crt.buzz_vol = d0.buzz_vol; crt.speaker_on = d0.speaker_on; crt.volume = d0.volume;
+        crt.voice_vol = d0.voice_vol; crt.voice_full = d0.voice_full;
         crt.buzz_on = flag("buzz_on", crt.buzz_on); crt.buzz_vol = num("buzz_vol", crt.buzz_vol);
         crt.speaker_on = flag("speaker_on", crt.speaker_on); crt.volume = num("volume", crt.volume);
         crt.voice_vol = num("voice_vol", crt.voice_vol); crt.voice_full = flag("voice_full", crt.voice_full);
-        for (int i = 0; i < 2; i++) { in_jx[i] = 0; in_jy[i] = 0; in_btn[i] = 0; }
     }
 
     // ------------------------------------------------------------ sound
@@ -207,18 +245,25 @@ struct Engine {
         std::vector<Line> lines;
         const double low = std::max(0.012, 2.5 * burst / RATE);  // (the queue's low water mark: 2.5 bursts)
         { std::vector<int16_t> z((size_t) (std::max(0.04, low + 0.02) * RATE), 0); ring.push(z.data(), (int) z.size()); }   // (a head start)
-        double t_next = now();
+        double t_next = clock();
         uint64_t ft_hi = 0; uint32_t ft_last = 0;
-        bool first = true; double gap = line_gap;
+        bool first = true; double gap = line_gap; int seen = conf_version;
         struct { std::vector<Line> lines; double t_start, len; uint64_t t0; bool power, on; } pend{ {}, 0, 0, 0, false, false };
         while (running) {
-            if (paused) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); t_next = now(); continue; }
+            if (paused) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); continue; }
+            double send_gap = first ? gap : -1.0;
+            if (seen != conf_version) {                           // (a setting changed in the in-game menu)
+                std::lock_guard<std::mutex> g(cm);
+                seen = conf_version; set_sound();
+                double ng = num("line_gap", 12.3);
+                if (ng != gap) { gap = ng; send_gap = ng; }
+            }
             if (off) {                                            // switched off: only the switch's sound, then silence
                 static bool clicked = false;
-                if (!clicked) { clicked = true; crt.power_off(); t_next = now(); }
+                if (!clicked) { clicked = true; crt.power_off(); t_next = clock(); }
                 int16_t z[RATE / 50]; crt.idle(RATE / 50, z); ring.push(z, RATE / 50);
                 t_next += 0.02;
-                while (running && now() < t_next) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                while (running && clock() < t_next) std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 continue;
             }
             unsigned char m[8];
@@ -230,14 +275,14 @@ struct Engine {
             if (p2_seen) { flags |= 0x40; m[4] = (unsigned char) (in_jx[1] + 128); m[5] = (unsigned char) (in_jy[1] + 128); m[6] = (unsigned char) (in_btn[1] & 15); }
             m[3] = (unsigned char) flags;
             bool hide = first;                                    // (power on: the click now, the picture a frame later)
-            if (first) crt.power_on();
-            vx_frame(m, first ? gap : -1.0, &fr);
+            if (first) { crt.power_on(); power_t = t_next; }
+            vx_frame(m, send_gap, &fr);
             if (fr.frame_t0 < ft_last) ft_hi += 1ull << 32;       // (the core's 32-bit cycle count wraps)
             ft_last = fr.frame_t0;
             uint64_t t0 = ft_hi + fr.frame_t0;
             int ns = fr.nsamples;
             double len = std::max(ns, 1) / (double) RATE;
-            if (t_next < now() - 0.1) t_next = now();             // (the intro skipped / a stall: start again from now)
+            if (t_next < clock() - 0.1) t_next = clock();         // (the intro skipped / a stall: start again from now)
             // the frame for the screen: pieces shorter than 15 ms join the next one (a game calling Wait_Recal
             // twice in one refresh - Mine Storm does - would split it in a short and a long piece)
             lines.clear();
@@ -274,7 +319,7 @@ struct Engine {
             // this one) the next frame comes at once
             t_next += len;
             while (running && !paused) {
-                double tn = now(), q = ring.size() / (double) RATE;
+                double tn = clock(), q = ring.size() / (double) RATE;
                 if (tn >= t_next - 0.002 && q < 0.15) break;
                 if (q < low) break;
                 std::this_thread::sleep_for(std::chrono::microseconds(1000));
@@ -301,39 +346,62 @@ struct Engine {
         LOGI("renderer: %s (%s images)", be->name(), be->float_images() ? "16-bit float" : "8-bit");
         Scene scene; scene.look = look;
         scene.sheet_ok = be->can_sheet();
-        if (art_w) {
-            be->set_art(art_w, art_h, art_rgba); scene.set_art(art_w, art_h, art_sheet, art_name.c_str());
-            if (look.art_on && look.scr_on && scene.sheet_ok) {          // (the overlay's scratches: made once)
-                double t0 = now();
-                auto draws = scene.scratch_draws();
-                scene.scr_ready = be->make_scratches(draws);
-                LOGI("overlay scratches: %s, %zu draws, %.0f ms", scene.scr_ready ? "made" : "not possible here", draws.size(), 1000 * (now() - t0));
-            }
-        }
+        if (art_w) { be->set_art(art_w, art_h, art_rgba); scene.set_art(art_w, art_h, art_sheet, art_name.c_str()); }
+        // the overlay's scratches: made at the start, and again when their settings change (at most every 0.3 s
+        // while a slider moves, as the desktop)
+        auto scr_key = [](const Look &L) {
+            char k[160]; snprintf(k, sizeof k, "%d %d %.3f %.3f %.3f %.3f %.3f %d", L.art_on, L.scr_on, L.scr_wear, L.scr_fine, L.scr_medium, L.scr_large, L.scr_scrib, L.scr_seed);
+            return std::string(k);
+        };
+        std::string made_key; double made_t = -1;
+        auto scratches = [&]() {
+            const Look &L = scene.look;
+            made_key = scr_key(L); made_t = now();
+            if (!art_w || !L.art_on || !L.scr_on || !scene.sheet_ok) return;
+            double t0 = now();
+            auto draws = scene.scratch_draws();
+            scene.scr_ready = be->make_scratches(draws);
+            LOGI("overlay scratches: %s, %zu draws, %.0f ms", scene.scr_ready ? "made" : "not possible here", draws.size(), 1000 * (now() - t0));
+        };
+        scratches();
         FramePlan plan;
         std::vector<QFrame> got;
         bool was_off = false;
-        double st_t0 = now(), st_cpu = 0, st_emu = 0; long st_shown = 0, st_games = 0;    // (the speed meter, every 10 s)
+        int seen = conf_version;
+        double st_t0 = now(), st_cpu = 0, st_emu = 0; long st_shown = 0, st_games = 0;    // (the speed meter: the log, every 10 s)
+        double os_t0 = clock(), os_emu = 0; long os_shown = 0, os_games = 0;              // (and the on-screen display, every second)
         while (running && window_ok) {
             double t_a = now();
+            if (seen != conf_version) {                  // (a setting changed in the in-game menu)
+                std::lock_guard<std::mutex> g(cm);
+                seen = conf_version; scene.look = make_look();
+            }
+            if (scr_key(scene.look) != made_key && now() - made_t >= 0.3) scratches();
             { std::lock_guard<std::mutex> g(qm); got.assign(std::make_move_iterator(queue.begin()), std::make_move_iterator(queue.end())); queue.clear(); }
             for (auto &f : got) {
-                st_games++; st_emu += f.len;
-                if (f.power) scene.power_on_t = f.t_start;
+                st_games++; st_emu += f.len; os_games++; os_emu += f.len;
                 scene.add_frame(std::move(f.lines), f.t_start, f.len, f.t0);
             }
-            if (off && !was_off) { was_off = true; scene.power_off(now()); }
+            if (power_t >= 0) scene.power_on_t = power_t;
+            if (off && !was_off) { was_off = true; scene.power_off(clock()); }
             int w = 0, h = 0; be->size(w, h);
             if (w <= 0 || h <= 0) { std::this_thread::sleep_for(std::chrono::milliseconds(16)); continue; }
             scene.set_screen(w, h);
-            scene.make_plan(now(), plan);
+            scene.make_plan(clock(), plan);
             if (!be->render(plan)) { LOGI("window lost"); break; }
-            st_cpu += now() - t_a; st_shown++;
+            st_cpu += now() - t_a; st_shown++; os_shown++;
             if (now() - st_t0 >= 10.0) {
                 double dt = now() - st_t0;
                 LOGI("%s %dx%d (images %dx%d): %.1f display fps, %.1f game fps, speed %.0f%%, render CPU %.2f ms/frame (with the vsync wait), %ld sound underruns",
                      be->name(), w, h, plan.tw, plan.th, st_shown / dt, st_games / dt, 100.0 * st_emu / dt, 1000.0 * st_cpu / std::max(1L, st_shown), (long) underruns);
                 st_t0 = now(); st_cpu = st_emu = 0; st_shown = st_games = 0;
+            }
+            double od = clock() - os_t0;                 // (the on-screen display: the desktop's - the game's frame rate,
+            if (od >= 1.0) {                             //  the screen's, the emulation speed)
+                char b[96];
+                snprintf(b, sizeof b, "game %.1f fps   screen %.0f Hz   speed %.0f %%", os_games / od, os_shown / od, 100.0 * os_emu / od);
+                { std::lock_guard<std::mutex> g(sm); stats = b; }
+                os_t0 = clock(); os_emu = 0; os_shown = os_games = 0;
             }
             if (paused) std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
@@ -427,10 +495,30 @@ JNIEXPORT void JNICALL FN(nativeInput)(JNIEnv *, jclass, jint player, jint jx, j
 
 JNIEXPORT void JNICALL FN(nativeReset)(JNIEnv *, jclass) { if (E) E->reset_req = true; }
 
-JNIEXPORT void JNICALL FN(nativePause)(JNIEnv *, jclass, jboolean p) { if (E) E->paused = p; }
+JNIEXPORT void JNICALL FN(nativePause)(JNIEnv *, jclass, jboolean p) { if (E) { E->app_paused = p; E->set_paused(); } }
+
+// the player's pause (Start, P): the picture stands still, the game waits
+JNIEXPORT void JNICALL FN(nativeUserPause)(JNIEnv *, jclass, jboolean p) { if (E) { E->user_paused = p; E->set_paused(); } }
+
+// a setting changed while playing (the in-game menu): the look, the sound and the line gaps follow at once
+JNIEXPORT void JNICALL FN(nativeSet)(JNIEnv *env, jclass, jstring k, jstring v)
+{
+    if (!E) return;
+    std::lock_guard<std::mutex> g(E->cm);
+    std::string key = str(env, k), val = v ? str(env, v) : "";
+    if (v) E->conf[key] = val; else E->conf.erase(key);
+    E->conf_version++;
+}
+
+JNIEXPORT jstring JNICALL FN(nativeStats)(JNIEnv *env, jclass)
+{
+    if (!E) return env->NewStringUTF("");
+    std::lock_guard<std::mutex> g(E->sm);
+    return env->NewStringUTF(E->stats.c_str());
+}
 
 // switching off (Settings > Switch off when quitting): the picture's zap or collapse and the switch's click
-JNIEXPORT void JNICALL FN(nativePowerOff)(JNIEnv *, jclass) { if (E) { E->off = true; E->paused = false; } }
+JNIEXPORT void JNICALL FN(nativePowerOff)(JNIEnv *, jclass) { if (E) { E->off = true; E->user_paused = false; E->app_paused = false; E->set_paused(); } }
 
 JNIEXPORT void JNICALL FN(nativeStop)(JNIEnv *, jclass)
 {

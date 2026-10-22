@@ -3,19 +3,30 @@ package io.github.hugonl31.vectrexemu;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileLock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 
 /** The settings: every one with its default (the desktop program's, the owner's choices) and how the
- *  settings screen shows it. The native side gets them as key / value strings (engine.cpp configure). */
+ *  settings screens show it. The native side gets them as key / value strings (engine.cpp configure).
+ *  They live in a small file read afresh every time and written under a lock: the settings screen (the app's
+ *  process) and the in-game menu (the emulator's own process) both change them. */
 final class Prefs {
-    static final String FILE = "vectrex";
     // keys of the app itself (not passed to the emulator's look)
     static final String ROM_TREE = "rom_tree", OVERLAY_TREE = "overlay_tree", BUTTONS = "buttons", DEADZONE = "deadzone";
-    static final String ORIENT = "orientation", OFF_EFFECT = "off_effect", SEED = "scr_seed", RECENT = "recent_games";
+    static final String ORIENT = "orientation", OFF_EFFECT = "off_effect", SEED = "scr_seed", RECENT = "recent_games", OSD = "osd";
     // per game: its overlay ("" automatic, "none", or a file name); per overlay file: its position and size
     static String overlayFor(String game) { return "overlay_for/" + game; }
     static String adjustOf(String overlay) { return "overlay_adjust/" + overlay; }
+    // per controller (by its name; "Keyboard" for keyboards and remotes): its mapping, see Controls
+    static String mapOf(String device, String input) { return "map/" + device + "/" + input; }
 
     enum Kind { BOOL, CHOICE, SLIDER }
 
@@ -23,6 +34,7 @@ final class Prefs {
         final String key, label, help, def; final Kind kind;
         final String[] values, names;          // CHOICE
         final float min, max;                  // SLIDER
+        boolean live = true;                   // (changes while playing: the in-game menu)
         Item(String key, String label, String def, String help) {
             this.key = key; this.label = label; this.def = def; this.help = help; kind = Kind.BOOL;
             values = names = null; min = max = 0;
@@ -35,28 +47,29 @@ final class Prefs {
             this.key = key; this.label = label; this.def = Float.toString(def); this.help = help; kind = Kind.SLIDER;
             values = names = null; this.min = min; this.max = max;
         }
+        Item fixed() { live = false; return this; }     // (takes effect with the next game)
     }
 
     /** sections of the settings screen: a title, then its items */
     static final List<Object> ITEMS = new ArrayList<>();
     static {
         ITEMS.add("Vectrex");
-        ITEMS.add(new Item("skip_boot", "Skip the BIOS intro", "0", "Power on straight into the cartridge (the VECTREX logo and its tune run unseen)"));
+        ITEMS.add(new Item("skip_boot", "Skip the BIOS intro", "0", "Power on straight into the cartridge (the VECTREX logo and its tune run unseen)").fixed());
         ITEMS.add(new Item("cart_hw", "Cartridge hardware", "auto",
                 new String[] { "auto", "off", "pb6", "vb", "hb512", "multi" },
                 new String[] { "Auto (by the ROM's size)", "Off - bone stock, 32 KB", "64 KB, PB6 bank switching",
-                               "Vectorblade / MiSTer flash, 4 x 48 KB", "512 KB flash with bank latch", "1 MB multi-cart" }, null));
-        ITEMS.add(new Item("ideal", "Perfect Vectrex", "0", "No analog drift: an ideal machine instead of a real one"));
+                               "Vectorblade / MiSTer flash, 4 x 48 KB", "512 KB flash with bank latch", "1 MB multi-cart" }, null).fixed());
+        ITEMS.add(new Item("ideal", "Perfect Vectrex", "0", "No analog drift: an ideal machine instead of a real one").fixed());
         ITEMS.add(new Item(OFF_EFFECT, "Switch off when quitting", "0",
-                "The picture's last zap and the switch's click as you quit (half a second); off: back at once"));
+                "The picture's last zap and the switch's click as you quit (half a second); off: back at once").fixed());
         ITEMS.add(new Item("speech", "Controller port 2", "off", new String[] { "off", "vecvoice", "vecvox" },
-                new String[] { "Joystick", "VecVoice speech (SP0256)", "VecVox speech (SpeakJet)" }, "Needs the speech ROM (al2.bin): Choose speech ROM, above"));
+                new String[] { "Joystick", "VecVoice speech (SP0256)", "VecVox speech (SpeakJet)" }, "Needs the speech ROM (al2.bin): Choose speech ROM, above").fixed());
         ITEMS.add("Picture");
         ITEMS.add(new Item("renderer", "Renderer", "auto", new String[] { "auto", "vulkan", "gles" },
-                new String[] { "Auto (Vulkan, else OpenGL ES)", "Vulkan", "OpenGL ES 3.1" }, null));
-        ITEMS.add(new Item("render_scale", "Phosphor resolution", 1.0f, 0.5f, 1.0f, "Below 1 for a slow graphics chip"));
+                new String[] { "Auto (Vulkan, else OpenGL ES)", "Vulkan", "OpenGL ES 3.1" }, null).fixed());
         ITEMS.add(new Item(ORIENT, "Screen", "landscape", new String[] { "landscape", "portrait", "reverse_portrait" },
-                new String[] { "Landscape", "Portrait (the device on its side: the picture fills it)", "Portrait, the other way" }, null));
+                new String[] { "Landscape", "Portrait (the device on its side: the picture fills it)", "Portrait, the other way" }, null).fixed());
+        ITEMS.add(new Item(OSD, "On-screen display", "0", "The game's frame rate, the screen's, the emulation speed (the desktop's panel)"));
         ITEMS.add(new Item("phosphor", "Phosphor and bloom", "1", "Off: crisp lines, no afterglow"));
         ITEMS.add(new Item("trail_on", "Afterglow", "1", null));
         ITEMS.add(new Item("trail", "Afterglow length", 0.6f, 0.05f, 1.2f, "1 = as measured on a real tube"));
@@ -74,6 +87,10 @@ final class Prefs {
         ITEMS.add(new Item("bend_strength", "Bending strength", 0.6f, 0f, 1.2f, null));
         ITEMS.add(new Item("bend_type", "Bending type", "0", new String[] { "0", "1", "2" }, new String[] { "Grow", "Shift", "Grow and shift" }, null));
         ITEMS.add(new Item("line_gap", "Line gaps", 12.3f, 9.3f, 15.3f, "The integrators' stop delay (cycles): 12.3 a well-tuned Vectrex"));
+        ITEMS.add(new Item("render_scale", "Phosphor resolution", 1.0f, 0.5f, 1.0f, "Speed: below 1 for a slow graphics chip"));
+        ITEMS.add(new Item("phos_area", "Phosphor area", "screen", new String[] { "screen", "picture" },
+                new String[] { "The whole screen (as the desktop)", "The picture only (faster)" },
+                "Speed: the picture only - vectors past its edge and the bloom beyond it are not drawn"));
         ITEMS.add("Overlay");
         ITEMS.add(new Item("art_on", "Overlay", "1", "MiSTer .art or PNG, named like the ROM: in the overlay folder or next to the ROM"));
         ITEMS.add(new Item("art_tint", "Tint strength", 1.0f, 0f, 2f, null));
@@ -91,6 +108,8 @@ final class Prefs {
         ITEMS.add(new Item("scr_scrib", "Scribbles (curly ones)", 1.0f, 0f, 2f, null));
         ITEMS.add(new Item("scr_glint", "Glint strength", 1.0f, 0f, 2f, null));
         ITEMS.add(new Item("scr_reach", "Glint reach", 1.0f, 0f, 2f, "Left: close to the lines, right: farther out"));
+        ITEMS.add(new Item("glint_res", "Glint resolution", "4", new String[] { "4", "8" },
+                new String[] { "Quarter size (as the desktop)", "Eighth size (faster)" }, "Speed: the glint's light at eighth size looks nearly the same"));
         ITEMS.add("Sound");
         ITEMS.add(new Item("volume", "Volume", 1.0f, 0f, 2f, null));
         ITEMS.add(new Item("buzz_on", "Buzz", "1", "The beam's currents in the speaker"));
@@ -98,15 +117,57 @@ final class Prefs {
         ITEMS.add(new Item("speaker_on", "Built-in speaker", "1", null));
         ITEMS.add(new Item("voice_vol", "Speech volume", 1.0f, 0f, 2f, null));
         ITEMS.add(new Item("voice_full", "Speech: full-range speakers", "1", "Off: a small speaker"));
-        ITEMS.add("Controls");
-        ITEMS.add(new Item(BUTTONS, "Buttons 1-4", "xyab", new String[] { "xyab", "abxy", "yxba" },
-                new String[] { "X Y A B (as the desktop)", "A B X Y", "Y X B A" }, null));
-        ITEMS.add(new Item(DEADZONE, "Stick dead zone", 0.2f, 0f, 0.5f, null));
     }
 
-    static SharedPreferences get(Context c) { return c.getSharedPreferences(FILE, Context.MODE_PRIVATE); }
+    // ---------------------------------------------------------------- the store
+    static final class Store {
+        private final File file, lock;
+        private final Properties p = new Properties();
+        Store(Context c) {
+            file = new File(c.getFilesDir(), "settings.properties"); lock = new File(c.getFilesDir(), "settings.lock");
+            if (!file.exists()) migrate(c);
+            read();
+        }
+        private void read() {
+            p.clear();
+            try (FileInputStream in = new FileInputStream(file)) { p.load(in); } catch (IOException e) { /* none yet */ }
+        }
+        /** (the settings of the first versions: Android's SharedPreferences) */
+        private void migrate(Context c) {
+            SharedPreferences old = c.getSharedPreferences("vectrex", Context.MODE_PRIVATE);
+            Map<String, ?> all = old.getAll();
+            if (all.isEmpty()) return;
+            Editor e = new Editor();
+            for (Map.Entry<String, ?> en : all.entrySet()) e.put.setProperty(en.getKey(), String.valueOf(en.getValue()));
+            e.apply();
+        }
+        String getString(String k, String d) { return p.getProperty(k, d); }
+        int getInt(String k, int d) { try { return Integer.parseInt(p.getProperty(k, "" + d)); } catch (NumberFormatException e) { return d; } }
+        Editor edit() { return new Editor(); }
+        final class Editor {
+            final Properties put = new Properties(); final List<String> gone = new ArrayList<>();
+            Editor putString(String k, String v) { put.setProperty(k, v); return this; }
+            Editor putInt(String k, int v) { put.setProperty(k, Integer.toString(v)); return this; }
+            Editor remove(String k) { gone.add(k); return this; }
+            /** written at once: read again under the lock, changed, written whole (a new file renamed over) */
+            void apply() {
+                try (RandomAccessFile lf = new RandomAccessFile(lock, "rw"); FileLock l = lf.getChannel().lock()) {
+                    read();
+                    for (String k : gone) p.remove(k);
+                    p.putAll(put);
+                    File tmp = new File(file.getPath() + ".new");
+                    try (FileOutputStream out = new FileOutputStream(tmp)) { p.store(out, "Vectrex_EMU"); out.getFD().sync(); }
+                    if (!tmp.renameTo(file)) throw new IOException("rename");
+                } catch (IOException e) {
+                    android.util.Log.e("VectrexEMU", "settings not saved: " + e);
+                }
+            }
+        }
+    }
 
-    static String value(SharedPreferences p, Item it) { return p.getString(it.key, it.def); }
+    static Store get(Context c) { return new Store(c); }
+
+    static String value(Store p, Item it) { return p.getString(it.key, it.def); }
 
     static Item item(String key) {
         for (Object o : ITEMS) if (o instanceof Item && ((Item) o).key.equals(key)) return (Item) o;
@@ -120,7 +181,7 @@ final class Prefs {
 
     /** everything for the native side, as two arrays (more: extra key / value pairs) */
     static String[][] forNative(Context c, String... more) {
-        SharedPreferences p = get(c);
+        Store p = get(c);
         List<String> k = new ArrayList<>(), v = new ArrayList<>();
         for (Object o : ITEMS) if (o instanceof Item) { Item it = (Item) o; k.add(it.key); v.add(value(p, it)); }
         k.add(SEED); v.add(Integer.toString(p.getInt(SEED, 1)));

@@ -23,7 +23,7 @@ static const double PHOS_GAIN = 1.0 / (1.0 - 0.40), PHOS_HOLD = 0.021, PHOS_HOLD
 static const double PHOS_GCAP = 1.5, PHOS_GAGE = 0.035;
 static const double CURVE_K = 0.07, ART_PARALLAX = 0.008, ART_ROOM_MID = 0.075;
 static const double WOBBLE_SPEED = 2.62;
-static const double CRT_FADE = 0.3;                // the tube warming up after power on (vectrex_emu.py crt_fx)
+// (the tube warming up after power on: Scene::crt_fade, vectrex_emu.py crt_on / crt_fx)
 // the overlay's scratches (vecrender.py SCR_*: the owner's recipe, from previews and his real sheet)
 static const double SCR_TPM = 2048 / 207.0;        // texels per mm of the scratch textures
 static const int SCR_COUNTS[10] = { 9843, 24276, 8177, 3480, 2900, 2418, 684, 112, 8, 2 };   // steps 1 (fine wear) .. 10
@@ -37,9 +37,8 @@ static const double SCR_STEP_W = 0.0538;
 static const double SCR_GLINT_SIG[2][2] = { { 4.0, 1.0 }, { 12.0, 0.7 } };   // (sigma in quarter px, weight)
 static const double SCR_GLINT_K = 2.0, ART_GLOW_K = 0.718;
 static const double SCR_REF = 4 * SCR_FINE_1M * 15.42 * 0.65 * 0.7628 * SCR_FINE_W;
-// the glint's light at eighth size (the desktop: quarter size with these sigmas): its kernels are 16 and 48
-// screen px wide and the glint field is smooth - at eighth size it looks the same, for an eighth of the work
-static const int HARM_DIV = 8;
+// (the glint's light: at quarter size as the desktop, or at eighth size - Look::glint_div - for an eighth of
+//  the work: its kernels are 16 and 48 screen px wide, the glint field smooth)
 
 static void beam_z(double zi, double &k, double &w)   // (brightness factor, width factor) for zi = Z / 127
 {
@@ -93,15 +92,19 @@ void Scene::set_screen(int w, int h)
 
 void Scene::layout()
 {
-    // the picture fitted and centred (the desktop's resize); the images cover it and a small margin
-    // (the bloom and the curve reach a little past its edges), not the whole screen: on a 16:9 screen
-    // that is less than half the pixels to age, show and blur every display frame
+    // the picture fitted and centred (the desktop's resize). The images cover the whole screen, as the
+    // desktop's in full screen (vectors past the picture's edge and the bloom around them show) - or, the
+    // speed option, the picture and a small margin: on a 16:9 screen less than half the pixels (whole pixels:
+    // the images' pixels stay the screen's)
     s = std::min(sw / ALG_MAX_X, sh / ALG_MAX_Y);
     pw = ALG_MAX_X * s; ph = ALG_MAX_Y * s;
     px0 = (sw - pw) / 2; py0 = (sh - ph) / 2;
-    double m = 0.03 * ph;
-    tx0 = std::max(0.0, px0 - m); ty0 = std::max(0.0, py0 - m);
-    tws = std::min((double) sw, px0 + pw + m) - tx0; ths = std::min((double) sh, py0 + ph + m) - ty0;
+    if (look.phos_full) { tx0 = ty0 = 0; tws = sw; ths = sh; }
+    else {
+        double m = 0.03 * ph;
+        tx0 = std::floor(std::max(0.0, px0 - m)); ty0 = std::floor(std::max(0.0, py0 - m));
+        tws = std::ceil(std::min((double) sw, px0 + pw + m)) - tx0; ths = std::ceil(std::min((double) sh, py0 + ph + m)) - ty0;
+    }
     rs = std::max(0.25, std::min(1.0, (double) look.render_scale));
 }
 
@@ -190,7 +193,7 @@ void Scene::build(const std::vector<Line> &in0, std::vector<Instance> &out, bool
 void Scene::add_frame(std::vector<Line> lines, double t_start, double length, uint64_t t0abs)
 {
     if (length > 0) { periods.push_back((float) length); if (periods.size() > 12) periods.erase(periods.begin()); }
-    double t = t_start - power_on_t, f = std::min(1.0, std::max(0.0, t / CRT_FADE));
+    double t = t_start - power_on_t, f = std::min(1.0, std::max(0.0, t / crt_fade));
     crt_gain = (float) std::pow(f * f * (3.0 - 2.0 * f), 2.6);   // slow start, then up to full brightness
     frame_t0 = t0abs;
     if (!lines.empty()) last_lines = lines;
@@ -215,7 +218,7 @@ void Scene::make_plan(double T, FramePlan &p)
     p.cap_vp[0] = (float) p.tw; p.cap_vp[1] = (float) p.th; p.cap_vp[2] = look.even_beam ? 1.f : 0.f; p.cap_vp[3] = 0;
     double dt = T_prev < 0 ? 0.0 : std::min(0.25, std::max(0.0, T - T_prev));
     T_prev = T;
-    const double pht = ph * rs;                          // the picture's height in image px (the desktop's window h)
+    const double pht = p.th;                             // (the desktop's window height: its images' height)
     if (!look.phosphor) {                                // crisp: the newest frame as it is
         young.clear();
         if (!last.empty()) { p.batches.push_back({ 0, (uint32_t) last.size(), 0.f, 0.f, 0.f, 1.f }); p.inst = last; }
@@ -258,7 +261,7 @@ void Scene::make_plan(double T, FramePlan &p)
         v[0] = (float) hd; v[1] = std::max(0.05f, look.trail); v[2] = look.trail_on ? 0.f : 1.f;
         v[3] = look.trail_on ? (float) (look.phos_smooth * pht / 820.0) : 0.f; v[4] = 1.f / p.tw; v[5] = 1.f / p.th; v[6] = v[7] = 0;
     }
-    // 4. the bloom: H, V, H, V at quarter size (the first reads the full-size picture)
+    // 4. the bloom: a quarter-size copy, blurred H, V, H, V (vecrender.py _finish)
     for (int i = 0; i < 4; i++) {
         p.blur[i][0] = (i & 1) ? 0.f : 1.f / p.qw; p.blur[i][1] = (i & 1) ? 1.f / p.qh : 0.f; p.blur[i][2] = p.blur[i][3] = 0;
     }
@@ -286,7 +289,8 @@ void Scene::make_plan(double T, FramePlan &p)
     p.sheet = sheet_ok && p.art && (scr || look.art_glow);
     if (p.sheet) {
         p.qw4 = std::max(4, sw / 4); p.qh4 = std::max(4, sh / 4);
-        p.qw8 = std::max(4, sw / HARM_DIV); p.qh8 = std::max(4, sh / HARM_DIV);
+        const int hdiv = look.glint_div == 8 ? 8 : 4;
+        p.qw8 = std::max(4, sw / hdiv); p.qh8 = std::max(4, sh / hdiv);
         float *q = p.sheet_pc;
         for (int i = 0; i < 4; i++) q[i] = p.art_rect[i];
         q[4] = look.art_tint; q[5] = p.art_a[0][2]; q[6] = p.art_a[0][3];
@@ -305,7 +309,7 @@ void Scene::make_plan(double T, FramePlan &p)
         for (int i = 0; i < 6; i++) {                    // the light blurred at quarter size: once (M), three times (F)
             p.sblur[i][0] = (i & 1) ? 0.f : 1.f / p.qw4; p.sblur[i][1] = (i & 1) ? 1.f / p.qh4 : 0.f; p.sblur[i][2] = p.sblur[i][3] = 0;
         }
-        double k8 = 4.0 / HARM_DIV;                      // (the sigmas, given in quarter px, at the harmonics' size)
+        double k8 = 4.0 / hdiv;                          // (the sigmas, given in quarter px, at the harmonics' size)
         double s1 = SCR_GLINT_SIG[0][0] * k8, s2 = SCR_GLINT_SIG[1][0] * k8;
         double rr = std::max(0.0, std::min(2.0, (double) look.scr_reach));
         double w1 = SCR_GLINT_SIG[0][1] * (1.5 - 0.5 * rr), w2 = SCR_GLINT_SIG[1][1] * rr;

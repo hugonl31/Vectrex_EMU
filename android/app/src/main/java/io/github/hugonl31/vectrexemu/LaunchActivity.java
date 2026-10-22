@@ -19,7 +19,7 @@ import java.io.IOException;
 public class LaunchActivity extends Activity {
     static final String TAG = "VectrexEMU";
     static final String X_ROM_FILE = "vx.rom_file", X_ROM_NAME = "vx.rom_name", X_ERROR = "vx.error",
-                        X_TREE = "vx.tree", X_PARENT = "vx.parent", X_DIR = "vx.dir";
+                        X_TREE = "vx.tree", X_PARENT = "vx.parent", X_DIR = "vx.dir", X_SAV_HOME = "vx.sav_home";
 
     @Override
     protected void onCreate(Bundle b) {
@@ -37,6 +37,12 @@ public class LaunchActivity extends Activity {
                 go.putExtra(X_ROM_NAME, rom.name);
                 if (rom.tree != null) { go.putExtra(X_TREE, rom.tree.toString()); go.putExtra(X_PARENT, rom.parentDoc); }
                 if (rom.dir != null) go.putExtra(X_DIR, rom.dir.getPath());
+                Saves.Home h = new Saves.Home();                     // (the flash save: next to the ROM, as the desktop)
+                h.name = rom.name + ".sav";
+                if (rom.tree != null && rom.parentDoc != null) { h.tree = rom.tree; h.parentDoc = rom.parentDoc; }
+                else if (rom.dir != null && rom.dir.canWrite()) h.dir = rom.dir;
+                else h = null;
+                if (h != null) go.putExtra(X_SAV_HOME, h.encode());
                 Log.i(TAG, "game: " + rom.name + " (" + rom.data.length + " bytes) from " + rom.source);
                 Prefs.played(this, RomSource.stem(rom.name));
             }
@@ -48,6 +54,7 @@ public class LaunchActivity extends Activity {
         }
         if (!go.hasExtra(X_ROM_FILE) && !go.hasExtra(X_ERROR)) Prefs.played(this, "Mine Storm");
         endEmulator(this);
+        Saves.syncAll(this);                                     // (a game ended from outside: its save next to its ROM)
         startActivity(go);
         finish();
         overridePendingTransition(0, 0);

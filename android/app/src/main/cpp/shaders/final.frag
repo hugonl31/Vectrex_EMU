@@ -1,7 +1,8 @@
 // the screen in one pass: the curved tube (vecrender.py CURVE_SHADER) maps each screen pixel into the
 // picture, which is toned (TONE_SHADER) with the bloom added (x 0.85, 0.92, 1 and the strength: the
-// desktop's near-white halo). The desktop tones and adds the bloom into a full-window image and bends
-// that; here the bend only moves the lookup: one full-size pass and one full-size image less.
+// desktop's near-white halo). The desktop tones and adds the bloom into a full-window image E and bends
+// that (a bilinear lookup in E); here the four image pixels around the lookup are toned and bloomed as E's
+// would be, then filtered: the same values, without the full-size image and its pass.
 layout(location = 0) in vec2 uv;
 SAMP(1) pic;
 SAMP(2) bloomt;
@@ -23,12 +24,18 @@ void main() {
     vec2 s = ctr + (p - ctr) * (1.0 + pc.a.w * dot(d, d));
     vec2 t = (s - pc.b.xy) / pc.b.zw;
     if (t.x < 0.0 || t.x > 1.0 || t.y < 0.0 || t.y > 1.0) { outc = vec4(0.0, 0.0, 0.0, 1.0); return; }
-    vec3 c = texture(pic, t).rgb;
-    if (pc.c.y > 0.5) {                   // a soft shoulder: linear up to 0.55, then rolling off towards 1
-        vec3 k = 0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6));
-        c = mix(c, k, step(0.55, c));
+    vec2 sz = vec2(textureSize(pic, 0)), f = t * sz - 0.5, f0 = floor(f), w = f - f0;
+    ivec2 i0 = ivec2(f0), mx = ivec2(sz) - 1;
+    vec3 e[4];
+    for (int k = 0; k < 4; k++) {
+        ivec2 ik = clamp(i0 + ivec2(k & 1, k >> 1), ivec2(0), mx);
+        vec3 c = texelFetch(pic, ik, 0).rgb;
+        if (pc.c.y > 0.5) {               // a soft shoulder: linear up to 0.55, then rolling off towards 1
+            vec3 kk = 0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6));
+            c = mix(c, kk, step(0.55, c));
+        }
+        vec4 b = texture(bloomt, (vec2(ik) + 0.5) / sz);
+        e[k] = c + b.rgb * vec3(0.85, 0.92, 1.0) * (b.a * pc.c.x);
     }
-    vec4 b = texture(bloomt, t);
-    c += b.rgb * vec3(0.85, 0.92, 1.0) * (b.a * pc.c.x);
-    outc = vec4(c, 1.0);
+    outc = vec4(mix(mix(e[0], e[1], w.x), mix(e[2], e[3], w.x), w.y), 1.0);
 }

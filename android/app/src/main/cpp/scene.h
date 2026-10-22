@@ -39,6 +39,9 @@ struct Look {                       // the Tube / Display settings (vecrender.py
     float scr_glint = 1.0f, scr_reach = 1.0f, scr_scrib = 1.0f;                    // Glint strength / reach, Scribbles
     int scr_seed = 1;               // (New random scratches)
     float render_scale = 1.0f;      // the phosphor images' resolution (Android: below 1 for slow GPUs)
+    bool phos_full = true;          // the phosphor images: the whole screen (the desktop in full screen); off:
+                                    //  the picture and a margin (fewer pixels, Android's speed option)
+    int glint_div = 4;              // the glint's light: quarter size (the desktop), 8: eighth (Android's speed option)
 };
 
 // one draw of the scratch maker (scr_gen.vert): into scratch texture tex (0 A, 1 B, 2 C), 4096 scratches
@@ -85,6 +88,7 @@ public:
     bool sheet_ok = false;                              // (the backend can do the sheet pass)
     // the tube warming up after power on (vectrex_emu.py crt_fx)
     double power_on_t = -1e9;
+    double crt_fade = 5.0;          // (its length: 5 s for a cold tube - the first power on - vectrex_emu.py crt_on)
 private:
     struct Young { std::vector<Instance> b; double t0, t1, done; };
     std::deque<Young> young;

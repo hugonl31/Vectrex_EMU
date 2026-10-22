@@ -59,19 +59,31 @@ adb shell "am start -n io.github.hugonl31.vectrexemu/.LaunchActivity --es ROM '/
 ```
 
 Every start is a fresh emulator: a game started while another one plays (or sits in the background)
-ends that one first. **Back**, or **Select + Start** together, quits at once - the flash cartridges'
-saves (Vectorblade's high scores) are written - and Android returns to the front end.
+ends that one first. **Back**, or **Select + Start** together, quits at once and Android returns to the
+front end.
+
+The flash cartridges' saves (Vectorblade's high scores and settings) are kept as on the desktop: next to
+the ROM, the ROM's name with `.sav` added (`Vectorblade.bin.sav`), so both programs share them. That needs
+the ROM folder granted with write access (Choose ROM folder asks for it); otherwise - and for a ROM a
+front end hands over as a `content://` URI - the save stays in the app's own storage.
 
 ## Controls
 
-| Vectrex | Controller | Keyboard (as the desktop) |
+| | Controller | Keyboard (as the desktop) |
 |---|---|---|
-| stick | left stick (analog), D-pad | arrow keys |
-| buttons 1-4 | X Y A B (Settings > Buttons 1-4: also A B X Y, Y X B A) | A W S D |
+| the stick | left stick (analog), D-pad | arrow keys |
+| buttons 1-4 | X Y A B | A W S D |
+| half the stick (held) | - | Shift |
+| pause (the picture stands still) | Start | P |
+| the RESET button | Select + L1 | Ctrl+R |
+| the settings, live (the game goes on behind them) | Select + R1, or Menu | F1 |
 | quit | Back, or Select + Start | Esc |
 
-The first controller that is used is player 1, the second player 2 (the second Vectrex port). A TV
-remote's centre button is button 4 (fire, in most games).
+**Settings > Controllers**: each controller by its name, as the desktop keeps them - its buttons for
+buttons 1-4 and for half the stick (press the row, then the button), the left or the right stick or the D-pad
+only, its dead zone, and its player. Keyboards and TV remotes share one mapping. Unless set, the first
+controller that is used is player 1, the second player 2 (the second Vectrex port). A TV remote's centre
+button is button 4 (fire, in most games).
 
 ## Settings
 
@@ -79,11 +91,17 @@ Everything in the desktop program's Tube, Overlay and Sound menus, with the same
 owner's choices, side by side with a real Vectrex) - the overlay's scratches (wear, wear type, scribbles,
 glint strength and reach, **New random scratches**), the plastic glow, Even beam, the bending type - and:
 
+In a game, **Select + R1** (or Menu, F1) opens the same settings over the right side of the picture, the
+game going on behind them: every change shows at once and is kept, as in the desktop's menus.
+
 * **Renderer** - Auto (Vulkan, else OpenGL ES 3.1), or one of them. If a device shows a broken picture
   with Vulkan, OpenGL ES is the way out.
-* **Phosphor resolution** - the phosphor images at a lower resolution, for a slow graphics chip. The
-  overlay's scratches and plastic glow cost a few extra passes; with both off the overlay costs next to
-  nothing.
+* **On-screen display** - the game's frame rate, the screen's and the emulation speed (the desktop's
+  panel below the picture), in a corner. Off by default: a front end's screen has no panel.
+* For a slow graphics chip, three speed options, each a small step away from the desktop's picture:
+  **Phosphor resolution** (below 1), **Phosphor area** (the picture only: vectors past its edge and the
+  bloom beyond it are not drawn), **Glint resolution** (eighth size). The overlay's scratches and plastic
+  glow cost a few extra passes; with both off the overlay costs next to nothing.
 * **Screen** - landscape, or portrait: a phone or handheld held upright, the picture filling it (the
   desktop's screen turned 90 degrees). Some handhelds keep their screen landscape whatever an app asks.
 * **Switch off when quitting** - off by default (Back returns at once); on: the tube's last zap or
@@ -100,9 +118,9 @@ glint strength and reach, **New random scratches**), the plastic glow, Even beam
 | the overlay | MiSTer `.art` and PNG, tint, room light, print, parallax; forty years of scratches made on the graphics card (the same recipe and seeds as the desktop: an overlay gets the same scratches on both), their glint from the light around them, the damage cutting through the colour, the plastic glow; per game: which overlay, its position and size |
 | the sound | the buzz that follows the picture, the built-in speaker, the speech module's amplifier and speakers, the power switch |
 
-Not ported, on purpose: the control panel below the picture (volume knob, RESET, the ROM browser, the
-on-screen display) - the front end is the menu here, and the log has the speed meter. Not yet:
-per-controller mapping beyond the button layout and the dead zone.
+Not ported, on purpose: the control panel below the picture - the volume knob (a setting here), the ROM
+browser (the front end is the menu); its RESET button and its display are the buttons and the on-screen
+display above.
 
 ## The renderer
 
@@ -114,27 +132,25 @@ source for OpenGL ES. Each display frame, with the numbers in `scene.cpp` straig
    per line, the quad made in the vertex shader), light added, freshness kept as the maximum
 2. **phosphor** - the phosphor image aged by the time passed and lit again (16-bit float, ping-pong)
 3. **show** - what the phosphor shows now (afterglow overlap)
-4. **bloom** - two separable blurs at quarter size
+4. **bloom** - a quarter-size copy, two separable blurs
 5. **screen** - curve, tone and bloom in one pass, then the overlay (multiply, then its own light)
 
 With the overlay's scratches or plastic glow, step 5 draws into an image of the screen instead, and:
 
 6. **the scratches** - once per overlay: ~200,000 scratches drawn as lines into three float textures,
    each made in the vertex shader from its index (no vertex data at all)
-7. **their light** - the screen at quarter size blurred (the matte's halo), and at eighth size its angle
-   harmonics (the glint: which scratches face the light around them)
+7. **their light** - the screen at quarter size blurred (the matte's halo) and its angle harmonics (the
+   glint: which scratches face the light around them)
 8. **the sheet** - one pass onto the display: the screen, the overlay, the matte, the glint, the glow
    and the damage; the desktop needs four blended passes for it
 
 Faster than a straight port:
 
-* the phosphor images cover the picture (and a small margin), not the screen: on a 16:9 screen less than
-  half the pixels are aged, shown and blurred
-* the desktop's tone + bloom into a full-size image, then the curve: here one pass (the curve only moves
-  where the picture is read) - one full-size image and pass less; likewise its quarter-size copy and the
-  first blur
-* the glint's harmonics at eighth size (the desktop: quarter) - its kernels are 16 and 48 screen pixels wide
-  and the field is smooth: the same look for an eighth of the work
+* the desktop's tone + bloom into a full-size image, then the curve: here one pass - the four pixels
+  around each lookup toned and bloomed as the image's would be, then filtered: the same values without
+  the full-size image and its pass
+* (the speed options: the phosphor images over the picture only - on a 16:9 screen less than half the
+  pixels; the glint at eighth size - its kernels are 16 and 48 screen pixels wide, the field smooth)
 * every pass clears or overwrites its whole image (Vulkan: nothing is loaded from memory - cheap on the
   tiled graphics chips of phones and handhelds); all parameters are push constants; the line data goes
   into a persistently mapped buffer, two frames in flight; descriptor sets are made once
@@ -148,7 +164,8 @@ Faster than a straight port:
   every line still lights the phosphor at the moment the beam drew it
 
 The log (`adb logcat -s VectrexEMU`) shows every 10 seconds the display and game frame rates, the
-emulation speed and sound underruns.
+emulation speed and sound underruns. With the default (the desktop's) settings an AYN Thor draws 60
+frames a second with the phosphor over the whole 1920 x 1080 screen and the glint at quarter size.
 
 ## Building
 

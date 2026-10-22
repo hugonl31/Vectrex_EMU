@@ -43,16 +43,16 @@ public:
         f32_ok = ext && strstr(ext, "GL_EXT_color_buffer_float");    // (the glint's harmonics: 32-bit where drawable)
         if (!(prog_cap = program("capsule.vert", "capsule.frag", err)) || !(prog_up = program("fs.vert", "update.frag", err))
             || !(prog_show = program("fs.vert", "show.frag", err)) || !(prog_blur = program("fs.vert", "blur.frag", err))
-            || !(prog_fin = program("fs.vert", "final.frag", err)) || !(prog_art = program("art.vert", "art.frag", err)))
+            || !(prog_fin = program("fs.vert", "final.frag", err)) || !(prog_art = program("art.vert", "art.frag", err))
+            || !(prog_copy = program("fs.vert", "copy.frag", err)))
             return false;
         if (float_ok) {                                  // (the sheet's scratches: optional)
             std::string e2;
             prog_scr = program("scr_gen.vert", "scr_gen.frag", e2);
-            prog_copy = program("fs.vert", "copy.frag", e2);
             prog_hh = program("fs.vert", "harm_h.frag", e2);
             prog_hv = program("fs.vert", "harm_v.frag", e2);
             prog_sheet = program("fs.vert", "sheet.frag", e2);
-            if (!prog_scr || !prog_copy || !prog_hh || !prog_hv || !prog_sheet) { LOGI("GLES: no overlay scratches here (%s)", e2.c_str()); prog_sheet = 0; }
+            if (!prog_scr || !prog_hh || !prog_hv || !prog_sheet) { LOGI("GLES: no overlay scratches here (%s)", e2.c_str()); prog_sheet = 0; }
         }
         glGenVertexArrays(1, &vao_cap); glGenVertexArrays(1, &vao_empty);
         glGenBuffers(1, &inst_buf); glGenBuffers(1, &ubo);
@@ -170,9 +170,10 @@ public:
             std::swap(P, P2);
             fs(D, prog_show, ub_show, bind_ub, { P.tex });
         }
-        // 4. the bloom
+        // 4. the bloom: a quarter-size copy, blurred (H, V, H, V)
+        if (p.blur_passes) fs(B1, prog_copy, ub_blur[0], bind_ub, { D.tex });
         for (int i = 0; i < p.blur_passes; i++)
-            fs((i & 1) ? B1 : B2, prog_blur, ub_blur[i], bind_ub, { i == 0 ? D.tex : (i & 1) ? B2.tex : B1.tex });
+            fs((i & 1) ? B1 : B2, prog_blur, ub_blur[i], bind_ub, { (i & 1) ? B2.tex : B1.tex });
         if (p.sheet) {
             // 5. the screen into S, its light blurred at quarter size (M once, F three times), at eighth size
             // its angle harmonics, 6. the sheet pass onto the window

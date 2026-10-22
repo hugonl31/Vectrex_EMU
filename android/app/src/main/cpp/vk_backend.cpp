@@ -190,11 +190,10 @@ public:
             std::swap(P, P2);
             fs(c, D, rp_off_dc, pipe_show, set({ P.view }), pc, blk(p.show, 8));
         }
-        // 4. the bloom
-        for (int i = 0; i < p.blur_passes; i++) {
-            Img &src = i == 0 ? D : (i & 1) ? B2 : B1;
-            fs(c, (i & 1) ? B1 : B2, rp_off_dc, pipe_blur, set({ src.view }), pc, blk(p.blur[i], 4));
-        }
+        // 4. the bloom: a quarter-size copy, blurred (H, V, H, V)
+        if (p.blur_passes) fs(c, B1, rp_off_dc, pipe_copy, set({ D.view }), pc, blk(p.blur[0], 0));
+        for (int i = 0; i < p.blur_passes; i++)
+            fs(c, (i & 1) ? B1 : B2, rp_off_dc, pipe_blur, set({ (i & 1) ? B2.view : B1.view }), pc, blk(p.blur[i], 4));
         if (p.sheet) {
             // 5. the screen into S (upright), its light at quarter size blurred (M once, F three times), at
             // eighth size its angle harmonics
@@ -629,7 +628,8 @@ private:
         pipe_fin = pipeline("fs.vert", "final.frag", rp_swap, B_NONE, false, tri);
         pipe_art0 = pipeline("art.vert", "art.frag", rp_swap, B_MUL, false, strip);
         pipe_art1 = pipeline("art.vert", "art.frag", rp_swap, B_ADD, false, strip);
-        if (!pipe_cap_timed || !pipe_cap_timed_max || !pipe_cap_plain || !pipe_cap_plain_max || !pipe_up || !pipe_show || !pipe_blur
+        pipe_copy = pipeline("fs.vert", "copy.frag", rp_off_dc, B_NONE, false, tri);
+        if (!pipe_copy || !pipe_cap_timed || !pipe_cap_timed_max || !pipe_cap_plain || !pipe_cap_plain_max || !pipe_up || !pipe_show || !pipe_blur
             || !pipe_fin || !pipe_art0 || !pipe_art1) {
             err = "a Vulkan pipeline could not be made"; return false;
         }
@@ -637,7 +637,6 @@ private:
         if (float_images()) {
             pipe_scr = pipeline("scr_gen.vert", "scr_gen.frag", rp_off_clear, B_ADD, false, lines);
             pipe_fin_s = pipeline("fs.vert", "final.frag", rp_s, B_NONE, false, tri);
-            pipe_copy = pipeline("fs.vert", "copy.frag", rp_off_dc, B_NONE, false, tri);
             pipe_harm_h = pipeline("fs.vert", "harm_h.frag", rp_h, B_NONE, false, tri);
             pipe_harm_v = pipeline("fs.vert", "harm_v.frag", rp_off_dc, B_NONE, false, tri);
             pipe_sheet = pipeline("fs.vert", "sheet.frag", rp_swap, B_NONE, false, tri);

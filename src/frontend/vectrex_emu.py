@@ -1020,7 +1020,9 @@ class App:
         self.look_lbl.pack(side='top', fill='x')                     # (the look: wraps to the window's width)
         self.bar.bind('<Configure>', lambda e: self.look_lbl.configure(wraplength=max(200, e.width - 8)))
         self.status = tk.Label(self.bar, fg='#6a8', bg='black', font=(MONO, 9), anchor='w', justify='left')
-        self.screen = tk.Frame(self.root, bg='black', width=self.W0, height=self.H0w, highlightthickness=0)
+        # (bg '': Tk never paints the frame's background - OpenGL draws all of it; a black fill over the picture
+        #  between two frames flashed on some drivers, e.g. AMD on Windows, GitHub issue 1)
+        self.screen = tk.Frame(self.root, bg='', width=self.W0, height=self.H0w, highlightthickness=0)
         self.screen.pack(fill='both', expand=True)
         self.root.update_idletasks()
         self.root.geometry(geo or '%dx%d+%d+10' % (self.W0, self.H0w,
@@ -3117,10 +3119,16 @@ class App:
         self.apply_scale()
         self.pointer_moved()
 
+    def set_cursor(self, c):
+        """the pointer over the window - set only when it changes (a configure() makes Tk redraw the frame)"""
+        if getattr(self, 'cursor_now', '') != c:
+            self.cursor_now = c
+            for w in (self.root, self.screen):
+                w.configure(cursor=c)
+
     def pointer_moved(self, e=None):
         """the mouse pointer: in full screen it hides 2 s after it last moved"""
-        for w in (self.root, self.screen):
-            w.configure(cursor='')
+        self.set_cursor('')
         if getattr(self, 'hide_job', None):
             self.root.after_cancel(self.hide_job); self.hide_job = None
         if self.full:
@@ -3128,8 +3136,7 @@ class App:
     def hide_pointer(self):
         self.hide_job = None
         if self.full:
-            for w in (self.root, self.screen):
-                w.configure(cursor='none')
+            self.set_cursor('none')
 
     def draw(self, lines):
         self.lines = lines

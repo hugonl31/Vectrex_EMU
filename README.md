@@ -33,7 +33,7 @@ photo, recording and measurement, and every call on how it should look, sound an
   [11. the room's light](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)
 * [Using it](#using-it) - [the first start](#the-first-start-the-setup), [switching on](#switching-on),
   [menus and the control deck](#menus-and-the-control-deck), [quality](#quality-for-any-pc),
-  [the screen](#the-screen-60-hz-high-refresh-g-sync), [keys](#keys),
+  [the screen](#the-screen-60-hz-high-refresh-g-sync), [keys](#keys), [controller shortcuts](#controller-shortcuts),
   [controls](#controls), [overlays](#overlays), [speech modules](#speech-modules),
   [cartridge hardware](#cartridge-hardware), [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2),
   [Mac and Linux notes](#mac-and-linux-notes)
@@ -650,9 +650,7 @@ scroll; Enter, a double click or the plug loads the chosen ROM (a power cycle wi
 folder; Esc, the X or a click outside closes it. **With a controller** (player 1's): the stick up /
 down chooses, left / right turns a page, **button 4** loads the ROM or opens the folder, **button 1** goes
 back to the roms folder (there: closes the browser). **Open it with the controller:** hold the stick up
-(or the Up key) and all four buttons for a second - so every game can be played with a controller only (choose
-*Start switched on* in the setup; Vectrex > *Up + all four buttons (held 1 s) open the ROM browser* switches
-this off for a game that needs that). Drawn in the picture, so it works
+and all four buttons for a second (see [controller shortcuts](#controller-shortcuts)). Drawn in the picture, so it works
 in full screen with G-Sync too.
 
 **View > Real size (9):** as big as on a real Vectrex: the overlay sheet 162 x 207 mm, as the real ones (the picture as tall as the sheet), worked out from your
@@ -721,6 +719,22 @@ These keys (and everything with Ctrl) cannot be given to a player: F11, Esc, Pag
 Only Ctrl+E and Ctrl+R need Ctrl - they end the game.
 
 (The mouse pointer hides in full screen 2 s after it last moved.)
+
+### Controller shortcuts
+
+So every game can be played with a controller only (or a Steam Deck): hold the stick in one direction and
+**all four buttons for a second** (player 1's controller, or the keyboard's player keys):
+
+| Stick + all four buttons, 1 s | |
+|---|---|
+| Up | the ROM browser (then: the stick chooses, button 4 loads, button 1 goes back / closes) |
+| Down | the RESET button (the game's title screen, as on a Vectrex) |
+| Left | controller port 2: the VecVox speech module / the joystick (a power cycle, as in the menu) |
+| Right | the overlay on / off |
+
+While the Vectrex is switched off, any controller button switches it on (choose *Start switched on* in the
+setup to skip that). A game that uses all four buttons with the stick for a second of its own: switch the
+shortcuts off in **Vectrex > Controller shortcuts (stick + all four buttons, 1 s)** (one switch for all).
 
 ### Controls
 
@@ -965,8 +979,8 @@ any other joystick by its own name. Settings files move between all three system
 folder (the first start shows the setup window; *Start playing* switches the Vectrex on). For **Game Mode**
 add `Vectrex_EMU` to Steam as a non-Steam game: there only one window is shown, so the emulator skips the
 setup window and starts switched on; the Deck's controls are player 1's controller. Any controller button
-switches a Vectrex that is off back on; hold the stick up and all four buttons for a second for the ROM browser
-(stick to choose, button 4 loads, button 1 goes back / closes).
+switches a Vectrex that is off back on, and the [controller shortcuts](#controller-shortcuts) open the ROM
+browser, press RESET, switch the overlay and the VecVox.
 
 **No glow, a plain picture?** Then OpenGL did not start, and the emulator says why in a message. On Linux
 the program uses the system's own OpenGL driver, C++ runtime and X libraries (it does not bring copies of

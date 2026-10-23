@@ -49,9 +49,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - The ROM browser shows ROMs copied in while it is open, and follows links: a Finder alias (Mac) or a
   shortcut (Windows) of a folder in `roms` is a subfolder, of a ROM that ROM - no copying your own builds.
 - The ROM browser with a controller: the stick chooses (left / right a page), button 4 loads a ROM or opens a
-  folder, button 1 goes back to the roms folder (there it closes the browser). Hold the stick up (or the Up
-  key) and all four buttons for a second to open it: every game with a controller only (Vectrex menu:
-  on / off).
+  folder, button 1 goes back to the roms folder (there it closes the browser).
+- Controller shortcuts - the stick and all four buttons held for a second: up the ROM browser, down RESET,
+  left port 2 VecVox / joystick, right the overlay on / off. Every game with a controller only; Vectrex >
+  Controller shortcuts switches them off (one switch for all).
 - A controller button switches a Vectrex that is off on (a controller alone had no way to turn the knob).
 - Steam Deck Game Mode: only one window is shown there, so the emulator skips the first-run setup and starts
   switched on (the game did not appear: the hidden setup window was waiting, the Vectrex switched off).

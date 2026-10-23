@@ -1217,7 +1217,7 @@ class App:
             self.cart_hw = 'auto'
         self.show_um2 = bool(c0.get('show_um2', True))          # Add-ons: UVMC2 games (.um2) in the ROM list
         self.start_on = bool(c0.get('start_on', False))         # starts switched off: turn the knob, as on a Vectrex
-        self.pad_browser = bool(c0.get('pad_browser', True))    # stick up + all four buttons held 1 s: the ROM browser
+        self.pad_shortcuts = bool(c0.get('pad_shortcuts', c0.get('pad_browser', True)))   # stick + all four buttons held 1 s
         self.mouse_stick = bool(c0.get('mouse_stick', False))   # Vectrex > Mouse / touchpad steers player 1
         self.smooth = bool(c0.get('smooth_motion', False))   # Smooth motion (60 Hz screens), see smooth_frame
         self.sm_buf = []
@@ -1609,7 +1609,7 @@ class App:
             item(m, 'Setup wizard (display, quality, folders, keys)...', '', lambda: deck.setup_window(self, first=False))
             item(m, 'Controls (keyboard, controllers)...', '', self.controls_window)
             check(m, 'Mouse / touchpad steers player 1', '', lambda: self.mouse_stick, self.toggle_mouse_stick)
-            check(m, 'Up + all four buttons (held 1 s) open the ROM browser', '', lambda: self.pad_browser, self.toggle_pad_browser)
+            check(m, 'Controller shortcuts (stick + all four buttons, 1 s)', '', lambda: self.pad_shortcuts, self.toggle_pad_shortcuts)
             check(m, 'Start switched on', '', lambda: self.start_on, self.toggle_start_on)
             check(m, 'Skip the Vectrex intro (start screen)', '', lambda: self.skip_boot, self.toggle_skip_boot)
             m.add_separator()
@@ -2818,29 +2818,49 @@ class App:
         self.turn_volume(getattr(self, 'vol_before_off', 0) or 0.5)
         return 'break'
     def pad_power(self):
-        """player 1's controller beyond the game: switched off, a button switches on (as any key does - a
-        controller alone, a Steam Deck in Game Mode, had no way to turn the volume knob); the stick up with all
-        four buttons held for a second opens the ROM browser (the keyboard's player keys too) - every game
-        with a controller only. Neither reaches the game afterwards (held until let go)."""
+        """player 1's controller beyond the game. Switched off: a button switches on (as any key does - a
+        controller alone, a Steam Deck in Game Mode, had no way to turn the volume knob). The controller
+        shortcuts (Vectrex menu, on by default): the stick and all four buttons held for a second -
+        up: the ROM browser, down: the RESET button, left: port 2 VecVox / joystick, right: the overlay on /
+        off (the keyboard's player keys too) - every game with a controller only. What was held does not
+        reach the game afterwards (held back until let go)."""
         try:
             if not self.run.power and not self.browser:
                 jx, jy, btn, raw = self.inp.read_player('p1', kbd_dirs=False)
                 if btn and raw is not None:
                     self.power_up()
                     self.hold_until_released()
-            elif self.run.power and not self.browser and self.pad_browser and not self.demo_mode():
+            elif self.run.power and not self.browser and self.pad_shortcuts and not self.demo_mode():
                 jx, jy, btn, raw = self.inp.read_player('p1')
-                if btn & 15 == 15 and jy > 64:                  # (up and all four buttons, held 1 s: a game's
-                    now = time.perf_counter()                   #  own quick use of them does not open it)
-                    if getattr(self, 'combo_t', None) is None:
-                        self.combo_t = now
-                    elif now - self.combo_t >= 1.0:
-                        self.combo_t = float('inf')             # (once per hold)
-                        self.open_browser()
-                else:
-                    self.combo_t = None
+                d = None
+                if btn & 15 == 15:
+                    if abs(jy) >= abs(jx):
+                        d = 'up' if jy > 64 else 'down' if jy < -64 else None
+                    else:
+                        d = 'right' if jx > 64 else 'left' if jx < -64 else None
+                now = time.perf_counter()
+                if d is None:
+                    self.combo = None
+                elif not getattr(self, 'combo', None) or self.combo[0] != d:
+                    self.combo = [d, now, False]
+                elif not self.combo[2] and now - self.combo[1] >= 1.0:
+                    self.combo[2] = True                        # (once per hold)
+                    self.pad_shortcut(d)
         finally:
             self.root.after(100, self.pad_power)
+    def pad_shortcut(self, d):
+        """a controller shortcut (see pad_power)"""
+        if d == 'up':
+            return self.open_browser()
+        if d == 'down':
+            self.reset_shown_until = time.perf_counter() + 0.18
+            self.reset_button()
+            self.show_look('RESET')
+        elif d == 'left':
+            self.set_speech('off' if self.speech == 'vecvox' else 'vecvox')
+        elif d == 'right':
+            self.toggle_art()
+        self.hold_until_released()
     def demo_mode(self):
         return bool(getattr(self.args, 'demo', None))
     def any_key(self, e):
@@ -3203,10 +3223,10 @@ class App:
     def power_flags(self):
         """the core's flags for switching on: 8 = a cold start, 16 = run the BIOS intro unseen"""
         return 8 | (16 if self.skip_boot else 0)
-    def toggle_pad_browser(self):
-        self.pad_browser = not self.pad_browser
+    def toggle_pad_shortcuts(self):
+        self.pad_shortcuts = not self.pad_shortcuts
         self.save_settings()
-        self.show_look('ROM browser shortcut (up + all four buttons, 1 s): ' + ('on' if self.pad_browser else 'off'))
+        self.show_look('controller shortcuts (stick + all four buttons, 1 s): ' + ('on' if self.pad_shortcuts else 'off'))
     def toggle_start_on(self):
         self.start_on = not self.start_on
         self.save_settings()
@@ -3822,7 +3842,7 @@ class App:
         controls keep theirs - the Controls window has its own reset; the volume knob stays)"""
         again = self.cart_hw != 'auto' or self.speech != 'off'
         self.cart_hw = 'auto'; self.speech = 'off'
-        self.start_on = False; self.skip_boot = False; self.pad_browser = True
+        self.start_on = False; self.skip_boot = False; self.pad_shortcuts = True
         self.save_settings()
         if again:
             self.restart(self.args.rom)
@@ -3861,7 +3881,7 @@ class App:
                 d['scratch_seed'] = self.ren.scr_seed
             d['real_size'] = self.real_on
         d['start_on'] = getattr(self, 'start_on', False)
-        d['pad_browser'] = getattr(self, 'pad_browser', True)
+        d['pad_shortcuts'] = getattr(self, 'pad_shortcuts', True)
         d['mouse_stick'] = getattr(self, 'mouse_stick', False)
         d['usb_hid'] = getattr(self, 'usb_hid', True)
         d['smooth_motion'] = getattr(self, 'smooth', False)

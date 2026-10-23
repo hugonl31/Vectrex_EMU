@@ -641,7 +641,10 @@ the Vectrex off); a click on RESET presses it.
 picture. Click it (or L): the ROM browser opens over the picture with the ROMs in the folder
 **`roms` next to the program** (`.bin`, `.vec`, `.gam`, `.rom`, `.v4e`; no folder or no ROMs: the list is
 empty). Subfolders are shown as folders above the games: open one and **BACK** at the top (or
-Backspace) goes back up; the browser opens in the folder of the game in the slot. The game runs on
+Backspace) goes back up; the browser opens in the folder of the game in the slot. **Links work as
+folders:** a Finder alias (Mac), a shortcut (Windows) or a symbolic link of a folder shows as a subfolder,
+of a ROM as that ROM - keep an alias of the folder you build your own games in, and there is nothing to
+copy (the browser opens there again after you load from it). The game runs on
 behind it but gets no input. Up / Down choose, Left / Right a page, the mouse wheel or the arrow buttons
 scroll; Enter, a double click or the plug loads the chosen ROM (a power cycle with it) or opens the
 folder; Esc, the X or a click outside closes it. Drawn in the picture, so it works
@@ -977,7 +980,7 @@ For tinkerers - the [releases](../../releases) are built from the same sources b
 | Path | |
 |---|---|
 | `src/core/` | the core (C): `vecx.c` CPU bus and analog model, `e6809.c` CPU, `e8910.c` / `psg.c` sound chip, `live.c` the frame pipe to the front end, `vtest.c` main (also a scripted test harness), `sp0256.c` / `speakjet.c` the speech modules, `ds2431.c` a 1-Wire save chip, `bot.c` a test player; the UVMC2: `cm33.c` the ARM Cortex-M33 cores, `rp2350.c` the RP2350 (PIO, DMA, timers, SD card, PSRAM), `uvm2_cart.c` the cartridge on the Vectrex's bus, `usbhost.c` its USB host with a keyboard and mouse, `host.c` the host threads |
-| `src/frontend/` | `vectrex_emu.py` window, input, sound, settings, menus; `deck.py` the control deck and the setup; `vecrender.py` the OpenGL renderer (beam, phosphor, overlays, scratches); `vrrdetect.py` G-Sync / FreeSync from the monitor's EDID; `fatimg.py` SD card images; `vart.py` overlay files; `help_text.py` the built-in Help |
+| `src/frontend/` | `vectrex_emu.py` window, input, sound, settings, menus; `deck.py` the control deck and the setup; `vecrender.py` the OpenGL renderer (beam, phosphor, overlays, scratches); `vrrdetect.py` G-Sync / FreeSync from the monitor's EDID; `fatimg.py` SD card images; `links.py` Finder aliases and shortcuts in the ROM folder; `vart.py` overlay files; `help_text.py` the built-in Help |
 | `bios/` | the Vectrex BIOS (`bios.bin`, with Mine Storm) |
 | `overlays/` | Mine Storm's overlay (`Mine Storm (built in).art`) |
 | `sounds/` | the power-on / power-off sounds, recorded on a real Vectrex |

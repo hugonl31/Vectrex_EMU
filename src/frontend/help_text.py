@@ -73,7 +73,9 @@ TOPICS = [
 ]),
 ('vectrex', 'Menu: Vectrex', [
 ('item', 'ROM browser (L)', "Lists the ROMs in the roms folder next to the program; its subfolders are "
-         "shown as folders above the games - open one, and BACK at the top (or Backspace) goes back up. Up / "
+         "shown as folders above the games - open one, and BACK at the top (or Backspace) goes back up. A Finder "
+         "alias (Mac), a shortcut (Windows) or a symbolic link of a folder shows as a subfolder, of a ROM as "
+         "that ROM: an alias of the folder you build your games in, nothing to copy. Up / "
          "Down choose, Left / Right page, Enter or a double click loads a ROM or opens a folder, Esc closes. "
          "The game keeps running behind it but gets no input."),
 ('item', 'Open ROM file...', "The Windows file dialog, for a ROM anywhere on your PC. VecFever .v4e files "

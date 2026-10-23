@@ -30,6 +30,8 @@ jobs:
           lipo -info core/vectrex_core
           lipo -info dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU
           find dist-mac/Vectrex_EMU.app -name 'libSDL2*' -exec lipo -info {} \;
+      - name: Finder aliases in the roms folder
+        run: venv/bin/python tools/alias_test.py
       - name: the BIOS and the overlay next to the app (tests only; the zips carry them)
         run: |
           mkdir -p dist-mac/bios dist-mac/overlays

@@ -46,7 +46,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Esc never quits (in the window it pauses); a key or a click on the picture switches a Vectrex that is off on.
 - Player 1's default buttons are a row, A S D F (W A S D in the setup); the mouse / touchpad can steer player 1.
 - Touchpads scroll the menus and sliders.
-- The ROM browser shows ROMs copied in while it is open.
+- The ROM browser shows ROMs copied in while it is open, and follows links: a Finder alias (Mac) or a
+  shortcut (Windows) of a folder in `roms` is a subfolder, of a ROM that ROM - no copying your own builds.
 - Help > Copy system info, for a GitHub issue.
 - Help updated for every new option.
 

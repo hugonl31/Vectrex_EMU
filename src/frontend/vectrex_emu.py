@@ -37,6 +37,7 @@ import deck
 deck.V = sys.modules[__name__]                  # (the control deck reads this module's tables)
 import v4e
 import fatimg
+import links
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 if not IS_WIN:                                          # macOS / Linux: the window, keys, controllers, sound
@@ -2559,15 +2560,30 @@ class App:
             names = sorted(os.listdir(d), key=str.lower)
         except OSError:
             return out
+        def is_rom(p):
+            ext = os.path.splitext(p)[1].lower()
+            return ext in self.ROM_EXT or (ext == '.um2' and getattr(self, 'show_um2', True))
+        alias = {}                                              # (a Finder alias / Windows shortcut: what it points to)
+        for f in names:
+            p = os.path.join(d, f)
+            if os.path.isfile(p) and not is_rom(p):
+                t = links.target(p)
+                if t:
+                    alias[f] = t
         for f in names:
             p = os.path.join(d, f)
             if os.path.isdir(p) and f.lower() != 'overlays':
                 out.append((f, p, 'dir'))
+            elif f in alias and os.path.isdir(alias[f]):        # (an alias of a folder: shown as a subfolder)
+                out.append((os.path.splitext(f)[0] if f.lower().endswith('.lnk') else f, alias[f], 'dir'))
         for f in names:
             p = os.path.join(d, f)
-            ext = os.path.splitext(f)[1].lower()
-            if os.path.isfile(p) and (ext in self.ROM_EXT or (ext == '.um2' and getattr(self, 'show_um2', True))):
+            if os.path.isfile(p) and is_rom(p):
+                ext = os.path.splitext(f)[1].lower()
                 out.append((os.path.splitext(f)[0] + ('  [UVMC2]' if ext == '.um2' else ''), p, 'rom'))
+            elif f in alias and os.path.isfile(alias[f]) and is_rom(alias[f]):   # (an alias of a ROM)
+                ext = os.path.splitext(alias[f])[1].lower()
+                out.append((os.path.splitext(f)[0] + ('  [UVMC2]' if ext == '.um2' else ''), alias[f], 'rom'))
         return out
     def browser_dir(self, d, select=None):
         """show folder d in the ROM browser; select: the path to choose (else the first entry after BACK)"""
@@ -2582,9 +2598,13 @@ class App:
         top = os.path.join(ROOT, 'roms')
         cur = os.path.abspath(self.args.rom) if self.args.rom else None
         d = top                                                 # (the folder of the ROM in the slot, if it is in roms)
-        if cur and os.path.abspath(os.path.dirname(cur)).lower().startswith(os.path.abspath(top).lower()):
+        stack = []
+        ctx = getattr(self, 'browse_ctx', None)
+        if cur and ctx and os.path.abspath(os.path.dirname(cur)) == os.path.abspath(ctx[0]) and os.path.isdir(ctx[0]):
+            d, stack = ctx[0], list(ctx[1])                     # (where it was loaded from: an alias's folder too)
+        elif cur and os.path.abspath(os.path.dirname(cur)).lower().startswith(os.path.abspath(top).lower()):
             d = os.path.dirname(cur)
-        self.browser = dict(roms=[], sel=0, top=0, dir=top)     # (the game runs on, without input, until a
+        self.browser = dict(roms=[], sel=0, top=0, dir=top, stack=stack)     # (the game runs on, without input, until a
         self.inp.block = True                                   #  ROM is loaded)
         self.browser_dir(d, cur)
         self.root.after(1000, lambda bb=self.browser: self.browser_watch(bb))
@@ -2602,6 +2622,8 @@ class App:
     def browser_back(self, e=None):
         """Backspace / BACK: the folder above (the folder you came from chosen)"""
         b = self.browser
+        if b and b.get('stack'):                                # (the way you came: an alias's folder lies elsewhere)
+            return self.browser_dir(b['stack'].pop(), b['dir'])
         if b and os.path.abspath(b['dir']) != os.path.abspath(os.path.join(ROOT, 'roms')):
             self.browser_dir(os.path.dirname(b['dir']), b['dir'])
     def close_browser(self):
@@ -2685,7 +2707,9 @@ class App:
             if kind == 'up':
                 return self.browser_back()
             if kind == 'dir':
+                b.setdefault('stack', []).append(b['dir'])
                 return self.browser_dir(path)
+            self.browse_ctx = (b['dir'], list(b.get('stack', [])))   # (opened again there: rebuild, load, repeat)
             self.close_browser()
             self.restart(path)
     def knob_state(self):

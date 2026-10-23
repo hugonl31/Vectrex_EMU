@@ -1139,6 +1139,12 @@ PORT2_ICON = ([[(8, 18), (58, 18), (62, 22), (62, 78), (58, 82), (8, 82), (4, 78
                [(33 + 13 * math.cos(math.pi * i / 6), 50 + 13 * math.sin(math.pi * i / 6)) for i in range(13)],
                [(33 + 4 * math.cos(math.pi * i / 3), 50 + 4 * math.sin(math.pi * i / 3)) for i in range(7)]] +
               [[(56 + rr * math.cos(a / 10.0), 50 + rr * math.sin(a / 10.0)) for a in range(-6, 7)] for rr in (20, 30, 40)])
+# the Vectrex controller (a joystick in port 2): its box, the stick and its knob, the four buttons
+JOY_ICON = ([[(4, 46), (96, 46), (96, 84), (4, 84), (4, 46)],
+             [(22, 46), (22, 30)],
+             [(22 + 9 * math.cos(math.pi * i / 6), 22 + 9 * math.sin(math.pi * i / 6)) for i in range(13)]] +
+            [[(44 + 15 * j + 4.5 * math.cos(math.pi * i / 4), 65 + 4.5 * math.sin(math.pi * i / 4)) for i in range(9)]
+             for j in range(4)])
 CART_ICON = [[(3, 0), (97, 0), (97, 37), (100, 40), (100, 99), (99, 100), (1, 100), (0, 99), (0, 40), (3, 37), (3, 0)],
              [(6, 0), (6, 36.5)], [(94, 0), (94, 36.5)], [(3, 36.5), (97, 36.5)],
              [(50, 6), (60, 14), (55, 14), (55, 20), (45, 20), (45, 14), (40, 14), (50, 6)],
@@ -2410,7 +2416,7 @@ class GLBloomRenderer(GLRenderer):
         gl.glLineWidth(max(1.2, r / 45.0))
         s = 2.0 * r / 100.0
         P = lambda u, v: (cx + (u - 50) * s, cy + (v - 50) * s)
-        self._icon(PORT2_ICON, P)
+        self._icon(JOY_ICON if c.get('kind') == 'off' else PORT2_ICON, P)
         lh = 0.30 * r
         t = c['label']
         self._text_row([(t, (0.40, 0.667, 0.533))], cx - (len(t) * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)

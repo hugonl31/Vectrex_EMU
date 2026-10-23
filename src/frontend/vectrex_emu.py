@@ -2531,14 +2531,26 @@ class App:
         title bar is not)"""
         self.flash_rows = list(rows); self.flash_until = time.perf_counter() + secs
     def port2_state(self):
-        """a speech module in controller port 2: its pictogram in the strip below the picture, between the
-        OSD and the cartridge (a joystick there: nothing)"""
-        if self.speech == 'off' or not (self.ren and hasattr(self.ren, 'map')):
+        """what is in controller port 2 - a joystick, the VecVox or the VecVoice - as a pictogram in the strip
+        below the picture, between the OSD and the cartridge; a click on it plugs in the next (port2_click)"""
+        if not (self.ren and hasattr(self.ren, 'map')):
             return None
         if not (self.fps_on or self.cart_on or self.knob_on):  # (no strip below the picture: only the message)
             return None
         x, y, r = self.cart_geom()
-        return dict(cx=x - 3.3 * r, cy=y, r=r, label='VECVOX' if self.speech == 'vecvox' else 'VECVOICE')
+        return dict(cx=x - 3.3 * r, cy=y, r=r, kind=self.speech,
+                    label={'off': 'JOYSTICK', 'vecvox': 'VECVOX', 'vecvoice': 'VECVOICE'}.get(self.speech, 'PORT 2'))
+    def port2_click(self, e):
+        """a click on the port 2 pictogram: joystick -> VecVox -> VecVoice -> joystick (without the speech ROM:
+        its help, as in the menu)"""
+        st = self.port2_state()
+        if not st or math.hypot(e.x - st['cx'], e.y - st['cy']) > 1.3 * st['r']:
+            return False
+        nxt = {'off': 'vecvox', 'vecvox': 'vecvoice', 'vecvoice': 'off'}.get(self.speech, 'off')
+        if nxt != 'off' and not sp_rom():
+            nxt = 'off' if self.speech != 'off' else nxt        # (no ROM: the menu's help shows, port 2 stays)
+        self.set_speech(nxt)
+        return True
     def osd_state(self):
         """the window's OSD: its two rows in the strip below the picture, left of the knob panel (full
         screen: in the top left corner, see hud_text)"""
@@ -2895,6 +2907,8 @@ class App:
             return self.browser_click(e)
         if self.cart_state() and math.hypot(e.x - self.cart_geom()[0], e.y - self.cart_geom()[1]) <= 1.3 * self.cart_geom()[2]:
             return self.open_browser()
+        if self.port2_click(e):
+            return 'break'
         hit = self.knob_hit(e)
         if not self.mouse_stick and not hit and self.usb_live():  # (a UVMC2: the USB mouse's left button)
             pl, pt, pr, pb = self.pic_rect()

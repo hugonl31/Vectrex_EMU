@@ -53,8 +53,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Controller shortcuts - the stick and all four buttons held for a second: up the ROM browser, down RESET,
   left port 2 VecVox / joystick, right the overlay on / off. Every game with a controller only; Vectrex >
   Controller shortcuts switches them off (one switch for all).
-- Controller port 2 as a pictogram in the strip below the picture, next to the cartridge: JOYSTICK, VECVOX or
-  VECVOICE - click it for the next one. Every switch is announced in the middle of the picture.
+- Controller port 2 as a pictogram in the strip below the picture, next to the cartridge: P2 JOYSTICK, P2 VECVOX
+  or P2 VECVOICE - click it for the next one. Every switch is announced in the middle of the picture.
 - A controller button switches a Vectrex that is off on (a controller alone had no way to turn the knob).
 - Steam Deck Game Mode: only one window is shown there, so the emulator skips the first-run setup and starts
   switched on (the game did not appear: the hidden setup window was waiting, the Vectrex switched off).

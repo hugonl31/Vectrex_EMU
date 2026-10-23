@@ -2538,8 +2538,8 @@ class App:
         if not (self.fps_on or self.cart_on or self.knob_on):  # (no strip below the picture: only the message)
             return None
         x, y, r = self.cart_geom()
-        return dict(cx=x - 3.3 * r, cy=y, r=r, kind=self.speech,
-                    label={'off': 'JOYSTICK', 'vecvox': 'VECVOX', 'vecvoice': 'VECVOICE'}.get(self.speech, 'PORT 2'))
+        return dict(cx=x - 4.6 * r, cy=y, r=r, kind=self.speech,
+                    label={'off': 'P2 JOYSTICK', 'vecvox': 'P2 VECVOX', 'vecvoice': 'P2 VECVOICE'}.get(self.speech, 'P2'))
     def port2_click(self, e):
         """a click on the port 2 pictogram: joystick -> VecVox -> VecVoice -> joystick (without the speech ROM:
         its help, as in the menu)"""

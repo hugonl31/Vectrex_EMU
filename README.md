@@ -830,7 +830,7 @@ Technology Inc. Joe Zbiciak distributes it with Microchip's permission:
 3. Choose **Cartridge > Controller port 2 > VecVoice** or **VecVox**. The Vectrex is switched off and on.
 
 What is in port 2 shows as a pictogram in the strip below the picture, between the OSD and the cartridge -
-JOYSTICK (a Vectrex controller), VECVOX or VECVOICE (a speech box): **click it** to plug in the next one
+P2 JOYSTICK (a Vectrex controller), P2 VECVOX or P2 VECVOICE (a speech box): **click it** to plug in the next one
 (joystick, VecVox, VecVoice, joystick...). Every switch is announced in the middle of the picture for two
 seconds. The [controller shortcut](#controller-shortcuts) stick left + all four buttons switches between the
 VecVox and the joystick.

@@ -14,6 +14,8 @@ unsigned char cart[1048576];  /* 32K / 64K (PB6) images, 256K: the 4-bank PB6 + 
 unsigned long vt_bank_switches = 0;
 void vt_line(long x0,long y0,long x1,long y1,unsigned char c,unsigned cyc,unsigned t0);
 unsigned long long vt_frame_t0;   /* alg_cycles when this frame's drawing started (vtest sets it) */
+unsigned long long vt_piece_t0;   /* alg_cycles when the frame (piece) being collected began: the lines' times count
+                                   * from it, and the live frame header sends it (vtest sets it at every cut) */
 void vt_step(unsigned icycles);
 void vt_bankchange(int from,int to);
 static unsigned char ram[1024];
@@ -57,6 +59,8 @@ static unsigned via_cb2s;  /* version of cb2 controlled by the shift register */
 
 unsigned e6809_get_pc (void);
 #include "ds2431.c"
+extern int vt_uvm2;                      /* (uvm2_cart.c) */
+extern int vt_pitrex;                    /* (pitrex_cart.c) */
 #include "sp0256.c"
 #include "speakjet.c"
 #include "psg.c"
@@ -192,6 +196,23 @@ static unsigned alg_ysh;  /* y sample and hold */
  * after a 191-step jump it was ~1.5 steps short (~0.8 %), from 6 cycles on it had settled: 0.3^4 left
  * per 4 cycles -> 0.7 (VT_YSHK=x; 1 = instant, as vecx) */
 static double alg_yshf = 128, ysh_k = -1;
+/* the frontend's Vectrex unit settings, live (input flags bit 5: an id and a float, see live.c): how one
+ * real Vectrex differs from another - 0 the stop delay (cycles), 1 the zero reference's hold (ZREF_K),
+ * 2 the zero calibration shift, 3 / 4 the integrators' drift X / Y (DAC units per cycle x ZS), 5 the Y
+ * hold's settling, 6 the beam's switch-off delay (cycles), 7 the integrators' offset to the zero reference */
+void vt_set_analog (int id, double v)
+{
+	switch (id) {
+	case 0: vt_set_rampoff (v); break;
+	case 1: ZREF_K = v < 0.02 ? 0.02 : v > 1 ? 1 : v; break;
+	case 2: alg_calshift = v; break;
+	case 3: alg_xofs = (long) (v * ZS); break;
+	case 4: alg_yofs = (long) (v * ZS); break;
+	case 5: ysh_k = v < 0.05 ? 0.05 : v > 1 ? 1 : v; break;
+	case 6: beam_off = v < 0 ? 0 : v > 15 ? 15 : v; break;
+	case 7: alg_zofs = v; break;
+	}
+}
 static unsigned alg_zsh;  /* z sample and hold */
 unsigned alg_jch0;		  /* joystick direction channel 0 */
 unsigned alg_jch1;		  /* joystick direction channel 1 */
@@ -674,7 +695,7 @@ void write8 (unsigned address, unsigned char data)
 				via_ifr &= 0xdf;
 				{ unsigned pc = e6809_get_pc () & 0xffff; static int n;
 				  if (getenv ("VT_WATCH_T2") && pc < 0xE000 && n++ < 20) fprintf (stderr, "T2 high write at PC=%04X addr=%04X\n", pc, address);
-				  { extern int vt_t2w_new; if (pc < 0xE000) vt_t2w_new = 1; } }   /* (the game's own frame timer: vtest.c) */
+				  { extern int vt_t2w_new; if (pc < 0xE000 || vt_uvm2 || vt_pitrex) vt_t2w_new = 1; } }   /* (the game's own frame timer: vtest.c) */
 
 				via_t2on = 1; /* timer 2 starts running */
 				via_t2int = 1;
@@ -779,6 +800,8 @@ void vecx_reset_button (void)
 
 void vecx_reset (void)
 {
+	{ extern void uvm2_power_on (void); if (vt_uvm2) uvm2_power_on (); }
+	{ extern void pitrex_power_on (void); if (vt_pitrex) pitrex_power_on (); }   /* (a PiTrex: its program starts afresh) */   /* (a UVMC2: the game starts afresh) */
 	{ extern unsigned char e6809_obus_idle; e6809_obus_idle = rom[0x1fff]; }   /* (the BIOS byte at $FFFF: the idle cycles' bus) */
 	vt_mc_page = 0; fl_step = fl_cmd = fl_id = 0;          /* (power-on: the multicart's menu page, the flash idle) */
 	{ const char *z = getenv ("VT_HBLATCH"); static unsigned n; vt_hb_latch = z ? (unsigned) atoi (z) & 7 : (unsigned) (time (0) + n++ * 5) & 7; }   /* (the 512K cartridge's latch: whatever it powers up with) */
@@ -1090,7 +1113,7 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
 		alg_wobble (alg_vector_t0, &ax, &ay); alg_wobble (alg_cycles, &bx, &by);
 		x0 += ax; y0 -= ay; x1 += bx; y1 -= by;          /* (screen y grows downwards) */
 	}
-	{ unsigned long long tf = alg_vector_t0 > vt_frame_t0 ? alg_vector_t0 - vt_frame_t0 : 0;
+	{ unsigned long long tf = alg_vector_t0 > vt_piece_t0 ? alg_vector_t0 - vt_piece_t0 : 0;
 	  vt_line (x0, y0, x1, y1, color, (unsigned) (alg_vector_cyc * 8.0 + 0.5),   /* 1/8 cycles */
 		   tf > 65535 ? 65535 : (unsigned) tf); }                              /* start in frame */
 
@@ -1354,9 +1377,33 @@ static einline void alg_sstep (void)
 	}
 }
 
+#include "uvm2_cart.c"
+#include "pitrex_cart.c"
+
 void vecx_emu (long cycles)
 {
 	unsigned c, icycles;
+
+	if (vt_uvm2 || vt_pitrex) {             /* the UVMC2 / the PiTrex drives the bus; the 6809 is held (uvm2_cart.c, pitrex_cart.c) */
+		while (cycles > 0) {
+			if (vt_pitrex) pitrex_cycle (); else uvm2_cycle ();
+			via_sstep0 ();
+			alg_sstep ();
+			via_sstep1 ();
+			vt_step (1);
+			vx_cyc++;
+			cycles--;
+			fcycles--;
+			if (fcycles < 0) {
+				vector_t *tmp;
+				fcycles += FCYCLES_INIT;
+				vector_erse_cnt = vector_draw_cnt;
+				vector_draw_cnt = 0;
+				tmp = vectors_erse; vectors_erse = vectors_draw; vectors_draw = tmp;
+			}
+		}
+		return;
+	}
 
 	while (cycles > 0) {
 		if (vt_wtime < 0) { const char *z = getenv ("VT_WRITETIME"); vt_wtime = z ? atoi (z) : 2; }

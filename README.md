@@ -31,9 +31,12 @@ photo, recording and measurement, and every call on how it should look, sound an
   [9. overlays and scratches](#9-overlays---and-forty-years-of-scratches),
   [10. the tube's geometry](#10-the-tubes-geometry-measured-not-invented),
   [11. the room's light](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)
-* [Using it](#using-it) - [switching on](#switching-on), [menus](#menus-and-sliders), [keys](#keys),
+* [Using it](#using-it) - [the first start](#the-first-start-the-setup), [switching on](#switching-on),
+  [menus and the control deck](#menus-and-the-control-deck), [quality](#quality-for-any-pc),
+  [the screen](#the-screen-60-hz-high-refresh-g-sync), [keys](#keys),
   [controls](#controls), [overlays](#overlays), [speech modules](#speech-modules),
-  [cartridge hardware](#cartridge-hardware), [Mac and Linux notes](#mac-and-linux-notes)
+  [cartridge hardware](#cartridge-hardware), [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2),
+  [Mac and Linux notes](#mac-and-linux-notes)
 * [Building from source](#building-from-source) - for tinkerers
 * [Technical details](docs/TECHNICAL.md) - what it models, number by number
 * [Credits and license](#credits-and-license)
@@ -58,8 +61,10 @@ The programs are not signed, so the first start needs one extra step:
   together in one folder.
 * **Linux**: if unzipping dropped the run permission: `chmod +x Vectrex_EMU`.
 
-It starts switched off, like a real Vectrex: **turn the volume knob up** (Page Up, or the mouse wheel
-over the knob below the picture). Without a cartridge it plays its built-in game, **Mine Storm**.
+The first start opens a short **setup** ([below](#the-first-start-the-setup)): it checks the folders, picks
+the best picture for your monitor and PC, and asks whether the Vectrex should start switched on. Switched
+off, it is like a real Vectrex: **turn the volume knob up** (Page Up, the mouse wheel over the knob below
+the picture, or any key). Without a cartridge it plays its built-in game, **Mine Storm**.
 
 **In the zip**, the same on Windows, Mac and Linux: the emulator, and next to it three folders, each
 with a short note on what goes there:
@@ -67,8 +72,10 @@ with a short note on what goes there:
 | Folder | |
 |---|---|
 | `bios` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
-| `roms` | empty: your cartridge ROMs go here |
+| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)) |
 | `overlays` | Mine Storm's overlay, `Mine Storm (built in).art`; your overlays go here too |
+
+A fourth folder, `sd`, appears at the first start: the UVMC2 cartridge's SD card (with a note in it).
 
 ### What you add
 
@@ -77,6 +84,8 @@ with a short note on what goes there:
 | **Cartridge ROMs** (`.bin`, `.vec`, `.gam`, `.rom`, VecFever `.v4e`) | `roms` (subfolders too) | your own cartridges |
 | **Overlays** (optional) | `overlays` | the MiSTer Vectrex core's `overlays.zip` ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)), or PNGs - see [Overlays](#overlays) |
 | **Speech ROM** (optional, for the VecVoice / VecVox speech modules) | `bios` | `al2.bin`, a free download - see [Speech modules](#speech-modules) |
+| **UVMC2 games** (`.um2`, optional) | `roms` | made for the Ultimate Vectrex Multicart 2 - see [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2) |
+| **Game data** for UVMC2 games that need it (Doom's WAD, Quake's `pak0.pak`, vector movies) | `sd` (`sd/doom`, `sd/quake`, `sd/movies`) | your own copy (the shareware Doom and Quake files work) |
 
 Then click the cartridge below the picture (or press **L**) and pick a game.
 
@@ -127,6 +136,14 @@ also the power switch.
 <em>Click the cartridge: the ROM browser, drawn into the picture (it works in full screen too).</em>
 </p>
 
+Every look and sound setting is in one place, the **control deck** (Tab), over the running game: change a
+slider and see it at once, hold H to compare with how it was.
+
+<p align="center">
+<a href="docs/images/v1.0.2/deck.png"><img src="docs/images/v1.0.2/deck_small.jpg" width="520" alt="the control deck over Armor Attack"></a><br>
+<em>The control deck (Tab) over Armor Attack: quality, this game's own settings, and seven strips.</em>
+</p>
+
 ## Features
 
 * Cycle-exact 6809 bus timing, the 6522 as measured, Malban's analog delays (as measured for VIDE)
@@ -148,6 +165,17 @@ also the power switch.
   scratches made on the graphics card
 * Real size (as big as a Vectrex on any monitor), a start size that fits the desktop, the whole screen
   turned in 90 degree steps for a monitor on its side
+* The **control deck** (Tab): every look and sound setting in seven strips over the running game, with a
+  before / after compare, settings saved per game when you ask, and a gamepad to drive it
+* **Quality** Low / Medium / High / Ultra, or **Auto** (steps down by itself when the PC misses frames) -
+  effects only, the emulation is always exact; a **setup** at the first start picks it with a short test
+* **Smooth motion** for 60 Hz screens (frames drawn between the game's 50), G-Sync / FreeSync detected
+  from the monitor itself (a G-Sync module too)
+* **The Vectrex unit**: the analog parts that differ from one Vectrex to the next as sliders, with presets
+  (the measured one, an ideal one, a cranky one, a random one) to export and share
+* **UVMC2 games** (`.um2`): the Ultimate Vectrex Multicart 2 emulated - its RP2350 (two ARM cores, PIO,
+  DMA, PSRAM), the SD card (a folder), the headphone jack, a USB mouse and keyboard - plug and play, with a
+  demo and a vector movie player included
 * Every look and sound setting adjustable and explained in the built-in Help
 
 ---
@@ -302,7 +330,7 @@ Everything above copies the real machine. One thing is a choice. How *wide* the 
 (chapter 1) varies from one Vectrex to the next: component tolerances and age shift the analog timing,
 so some machines show wide gaps and others barely any. The Vectrex in our photos has exceptionally wide
 ones. Rather than copy this one machine, Vectrex_EMU keeps the gaps where they belong but, by default,
-at the size of a better tuned - or less worn - Vectrex: a tighter tube. **Tube > Line gaps** sets them
+at the size of a better tuned - or less worn - Vectrex: a tighter tube. **Vectrex unit > Line gaps** (in the [control deck](#menus-and-the-control-deck)) sets them
 to taste: the integrators' stop delay, 9.3 cycles (corners nearly closed) to 15.3 (wide, like the
 machine in the photos), 12.3 by default.
 
@@ -351,7 +379,7 @@ MiSTer core's overlay files (`.art`) and plain PNG images, and lays the sheet ov
 the coloured plastic multiplies the light that comes through it, the print shines in the room's light,
 and the sheet stays **flat** - the tube's geometry bends the vectors behind it, not the overlay. It sits
 just in front of the glass, so seen from the usual height the picture sits a little higher on it
-(**parallax**, as on MiSTer). With **Display > Real size** the sheet is exactly as big as a real one,
+(**parallax**, as on MiSTer). With **View > Real size** the sheet is exactly as big as a real one,
 162 x 207 mm.
 
 <p align="center">
@@ -424,10 +452,9 @@ Web Wars' overlay, and Pole Position - the scratches light up only around what i
 </p>
 
 **Overlay > Scratches** switches them. **Wear** sets how much the sheet was handled (all scratches
-together); **Wear type...** opens one window with three sliders - **fine**, **medium** and **damage** -
-for the kind of wear; **Scribbles** the share of curly ones; **Glint strength** how strongly they catch
-the light and **Glint reach** how far from the lines they still do. **Plastic glow** and its strength are
-in the same menu.
+together); three sliders - **fine**, **medium** and **damage** - set the kind of wear; **Scribbles**
+the share of curly ones; **Glint strength** how strongly they catch the light and **Glint reach** how far
+from the lines they still do. **Plastic glow** and its strength are on the same strip of the control deck.
 
 <p align="center">
 <img src="docs/images/scratch_sliders.png" width="720" alt="the scratch sliders"><br>
@@ -493,7 +520,7 @@ its scratches.</em>
 
 The logic behind each part:
 
-* **One room light for everything.** **Light > Room light** (the same slider as the overlay's) sets how
+* **One room light for everything.** **Room light > Room light** (the same slider as the overlay's) sets how
   bright the room is. The reflections follow it steeply (its cube): in the default evening room they are
   barely there, in daylight they are clear - as with a real screen, which you hardly notice reflecting
   anything until the lights are on.
@@ -515,7 +542,7 @@ The logic behind each part:
   by the plastic, and its plastic brightens around it. Its scratches (chapter 9) catch the light: close to
   the reflection *every* fine scratch glints; further away only the bigger, deeper ones do, the ones lying
   across the direction to the lamp. The lamp is an area, not a point, so the glints follow its whole shape.
-* **Moving the lamp.** **Light > Light position...** opens a small pad: drag the dot to move the lamp left
+* **Moving the lamp.** **Room light > Light position...** opens a small pad: drag the dot to move the lamp left
   and right, and up and down between just visible at the top edge and its middle a quarter down the screen
   (right click: the default, top left). The strengths of the glass and overlay reflections each have their
   own slider, and each can be switched off.
@@ -524,10 +551,26 @@ The logic behind each part:
 
 ## Using it
 
+Settings written as **Tube > Afterglow** are in the [control deck](#menus-and-the-control-deck) (Tab): the
+strip, then the setting.
+
+### The first start: the setup
+
+<p align="center">
+<a href="docs/images/v1.0.2/setup.png"><img src="docs/images/v1.0.2/setup.png" width="520" alt="the setup at the first start"></a><br>
+<em>The setup, shown once (Vectrex > Setup wizard... runs it again).</em>
+</p>
+
+The first start shows one page: whether the BIOS, the games folder, the UVMC2 SD card folder and the
+speech ROM were found; the **quality** this PC can carry (from a short test; **Test** runs it again); the
+**display** mode, with each one explained and the best for your monitor chosen ([the screen](#the-screen-60-hz-high-refresh-g-sync));
+the **player 1 keys**; and **Start switched on**. Enter starts playing; Esc skips it. Everything
+on it can be changed later, and **Vectrex > Setup wizard...** (also in View) runs it again.
+
 ### Switching on
 
-The volume knob is the power switch (Page Up, the mouse wheel over the knob, or a click on its right
-half): it clicks on, the tube warms up and the BIOS start screen plays. **Vectrex > Start switched on** skips the knob; **Vectrex > Skip the Vectrex
+The volume knob is the power switch (Page Up, the mouse wheel over the knob, a click on its right
+half, or while it is off any key or a click on the picture): it clicks on, the tube warms up and the BIOS start screen plays. **Vectrex > Start switched on** skips the knob; **Vectrex > Skip the Vectrex
 intro** runs the BIOS start screen (the VECTREX logo, its tune and the game's title, ~13 s) unseen in a
 fraction of a second at every power on, so the cartridge starts at once - in the same state as after the
 real intro. Both are saved.
@@ -539,25 +582,62 @@ unfold the history and the mechanics behind it (the phosphor, the mains wobble, 
 analog drift), plus the Vectrex itself (CPU and cycles, RAM, the 6522, the sound chip and its limits),
 cartridges, bank switching and saving. The text lives in `src/frontend/help_text.py`.
 
-### Menus and sliders
+### Menus and the control deck
 
-Every option is in the menu bar (Vectrex, Display, Tube, Overlay, Light, Sound, Help); options that are on have a tick,
-the few that also have a key show it. Values (volume, bloom, afterglow length, wobble, bending, buzz)
-open a small slider window: drag or click on the bar to set it, **right click for the default**, Esc
-closes it. The defaults are the faithful values - measured on a real Vectrex or chosen side by side with
-one - so each slider has its default **in the middle**: from 0 on the left to twice the default on the
-right, for personal adjustments; it shows how far you are from the default. (The volume knob goes
-0-100 %: 0 % is the power switch.) Each menu ends with its own **Reset ... settings to default**
-(Vectrex, display, tube, overlay, light, sound): it resets only that menu's settings. In full screen there is
-no menu (with G-Sync, Windows hides menus there): the [keys](#keys), the knob and the cartridge work there.
+The menu bar is short - **Vectrex** (cartridges, RESET, the setup, controls, starting), **View** (the
+control deck, full screen, sizes, the overlay) and **Help**; options that are on have a tick, the few that
+also have a key show it:
 
-**Volume knob on screen** (Display menu, default on): the Vectrex's own panel as simple green
+<p align="center">
+<img src="docs/images/v1.0.2/menus.png" width="820" alt="the Vectrex, View and Help menus"><br>
+<em>The three menus: Vectrex, View and Help.</em>
+</p>
+
+Everything that sets the look and the sound is in the **control deck**: **Tab** (or View > Control deck)
+opens it over the picture while the game runs on; Tab or Esc closes it. On top, the **quality** and this
+**game**'s own settings; below, seven **strips**:
+
+| Strip | |
+|---|---|
+| **Tube** | phosphor, bloom, afterglow, the tube's geometry, the glass edge, corner glow, an even (ideal) beam, the mains wobble, brightness bending |
+| **Room light** | the room's light, the ceiling light's reflections on the glass and the overlay, the lamp's position |
+| **Overlay** | on / off, choosing one per game, tint, printed art, parallax, the plastic glow, the scratches, position and size |
+| **Sound** | the volume, the buzz, the speaker, the speech module's volume and speaker |
+| **Vectrex unit** | the analog parts that differ per Vectrex: zero hold, calibration, drift, Y settling, beam delay, line gaps - presets *Owner's Vectrex* (the measured one), *Ideal*, *Cranky* and *Random unit*; Export / Import a unit as a file |
+| **Display** | the screen mode, smooth motion, rotation, the on-screen display, knob and cartridge, the monitor size, real size |
+| **Cartridge** | cartridge hardware, controller port 2 (speech modules), UVMC2 games, their USB port, headphone jack and SD card folder |
+
+<p align="center">
+<a href="docs/images/v1.0.2/strip_tube.png"><img src="docs/images/v1.0.2/strip_tube.png" width="400" alt="the Tube strip"></a>
+<a href="docs/images/v1.0.2/strip_unit.png"><img src="docs/images/v1.0.2/strip_unit.png" width="400" alt="the Vectrex unit strip"></a><br>
+<a href="docs/images/v1.0.2/strip_display.png"><img src="docs/images/v1.0.2/strip_display.png" width="400" alt="the Display strip"></a>
+<a href="docs/images/v1.0.2/strip_cartridge.png"><img src="docs/images/v1.0.2/strip_cartridge.png" width="400" alt="the Cartridge strip"></a><br>
+<em>Four of the strips: Tube, Vectrex unit, Display and Cartridge (click for the full size; also
+<a href="docs/images/v1.0.2/strip_light.png">Room light</a>, <a href="docs/images/v1.0.2/strip_overlay.png">Overlay</a>
+and <a href="docs/images/v1.0.2/strip_sound.png">Sound</a>).</em>
+</p>
+
+* **Sliders**: drag or click; **right click: the default**. The defaults are the faithful values - measured
+  on a real Vectrex or chosen side by side with one - so most sliders have the default **in the middle**,
+  from 0 on the left to twice the default on the right.
+* **Hold H** (or the button on the deck): the picture as it was when the deck opened - let go to see your
+  change. **Reset this strip** puts one strip back to its defaults.
+* **This game's own settings** (GAME row): changes are kept for all games, until you press **Save for this
+  game** - then that game starts with its own look and controls, and the everyday settings stay as
+  they were. **Revert** goes back to what was saved, **Remove game settings** forgets them, **Make default**
+  makes the game's settings the everyday ones. Nothing is ever saved to a game unless you ask.
+* **A gamepad drives it too**: LB / RB switch strips, the d-pad moves and changes.
+
+In full screen there is no menu bar (with G-Sync, Windows hides menus there): the [keys](#keys), the deck,
+the knob and the cartridge all work there.
+
+**Volume knob on screen** (Display strip, default on): the Vectrex's own panel as simple green
 outlines in the strip right below the picture, lined up with its right edge - in the window and in
 full screen alike: the volume knob with its position marker, OFF/ON and VOLUME, and the RESET button.
 Mouse wheel over the knob or a click on its right / left half turns it up / down (down to 0 % switches
 the Vectrex off); a click on RESET presses it.
 
-**Cartridge on screen** (Display menu, default on): a Vectrex cartridge below the middle of the
+**Cartridge on screen** (Display strip, default on): a Vectrex cartridge below the middle of the
 picture. Click it (or L): the ROM browser opens over the picture with the ROMs in the folder
 **`roms` next to the program** (`.bin`, `.vec`, `.gam`, `.rom`, `.v4e`; no folder or no ROMs: the list is
 empty). Subfolders are shown as folders above the games: open one and **BACK** at the top (or
@@ -567,21 +647,47 @@ scroll; Enter, a double click or the plug loads the chosen ROM (a power cycle wi
 folder; Esc, the X or a click outside closes it. Drawn in the picture, so it works
 in full screen with G-Sync too.
 
-**Display > Real size (9):** as big as on a real Vectrex: the overlay sheet 162 x 207 mm, as the real ones (the picture as tall as the sheet), worked out from your
+**View > Real size (9):** as big as on a real Vectrex: the overlay sheet 162 x 207 mm, as the real ones (the picture as tall as the sheet), worked out from your
 monitor's size and resolution. Windows usually knows the monitor's size (the monitor reports it); if
 it does not, or a TV or projector reports it wrong, set **Display > Monitor size** (the diagonal in
 inches; right click: as the monitor reports it). Check it with a ruler: an overlay should be 162 mm wide
 and 207 mm high. On macOS and Linux set the monitor size first.
 
-**Display > Screen:** fixed 60 Hz (default: smooth and tear-free on any monitor), the monitor's full
-rate (vsync on every refresh - 120, 144, 165, 240 Hz...: the afterglow fades in finer steps and moving
-things update more often; on a 60 Hz monitor the same as 60 Hz), or G-Sync / FreeSync (one screen
-frame per game frame: no tearing, the wobble stands still at 50 fps; needs such a monitor). Always at
-the monitor's own resolution (e.g. 4K).
-
-**On-screen display** (Display menu, default on): INTERNAL (the game's frames per second), MONITOR
+**On-screen display** (Display strip, default on): INTERNAL (the game's frames per second), MONITOR
 (the screen's refresh), EMU RATE (green 100 %, orange / red when the PC cannot keep up), VOLUME, and
 SPEECH VOL when a speech module is plugged in - below the picture on the left.
+
+### Quality: for any PC
+
+The quality sets the effects drawn on the graphics card - never the emulation, which is always exact:
+
+| Quality | |
+|---|---|
+| **Low** | the phosphor and its afterglow, without bloom, the tube's curve, glass, halo and overlay effects: for laptops and old graphics |
+| **Medium** | one bloom pass; no overlay scratches, glow or reflections |
+| **High** | everything |
+| **Ultra** | everything, at the monitor's full refresh rate: the afterglow fades in finer steps |
+| **Auto** | starts where the setup's test put it and steps down by itself when the PC misses frames (four bad seconds) |
+
+### The screen: 60 Hz, high refresh, G-Sync
+
+A Vectrex draws 50 pictures a second; most screens show 60. **Display > Screen** (and the setup, which
+picks the best for your monitor) offers:
+
+* **G-Sync / FreeSync** (the best, where the monitor has it): the screen waits for each game frame and
+  shows it the moment it is drawn - 50 a second, as the Vectrex makes them, the wobble standing still.
+  Detected from the monitor itself (its EDID): a G-Sync module, G-Sync Compatible / FreeSync, or
+  DisplayID adaptive sync, with its range.
+* **The monitor's full rate** (screens above 60 Hz: 120, 144, 165, 240 Hz...): vsync on every refresh; the
+  afterglow fades in finer steps and moving things update more often.
+* **Smooth motion** (60 Hz screens without G-Sync / FreeSync): pictures drawn between the game's frames, so
+  movement is smooth; the picture comes about 20 ms later.
+* **Plain 60 Hz**: every game frame as it is - one picture in five shown twice, a slight stutter in moving
+  things.
+
+None of them tear, and the picture is always drawn at the monitor's own resolution (e.g. 4K). A game that
+runs slower than 50 frames a second (busy scenes, menus that draw half their lines each frame) keeps its
+lines glowing between its frames, as the tube does - no flicker.
 
 ### Keys
 
@@ -590,7 +696,8 @@ Only what full screen needs has a key, so the rest of the keyboard is free for t
 | Key | |
 |---|---|
 | F11 | full screen on/off |
-| Esc | closes the ROM browser; in full screen: back to the window; in the window: quit |
+| Esc | closes the ROM browser; in full screen: back to the window; in the window: pause (it never quits: close the window for that) |
+| Tab | the control deck (Tab or Esc closes it); hold H in it to compare with before |
 | L | the ROM browser (the Windows file dialog: Vectrex > Open ROM file) |
 | O | the overlay on / off |
 | Ctrl+E | eject the cartridge (Mine Storm) |
@@ -600,6 +707,7 @@ Only what full screen needs has a key, so the rest of the keyboard is free for t
 | Ctrl+Page Up / Ctrl+Page Down | the speech module's own volume (VecVoice / VecVox) in 5 % steps, 0 - 200 % (100 % = the MiSTer core's Normal level) |
 | + / - / 0 | window size / start size (as big as fits the desktop, above the task bar); in full screen: the picture size |
 | 9 | real size: the picture as big as on a real Vectrex, in the window and in full screen (until + / - / 0) |
+| Ctrl+K | UVMC2 games: the keyboard types into the cartridge's USB port (Ctrl+K again gives it back) |
 
 These keys (and everything with Ctrl) cannot be given to a player: F11, Esc, Page Up / Down, + - 0 9, P L O.
 Only Ctrl+E and Ctrl+R need Ctrl - they end the game.
@@ -634,7 +742,9 @@ full deflection, half with the half button. A hat / d-pad works as the stick in 
 field** per player shows the stick (ring), the dead zone (dark square), the endpoints (dashed), what the
 Vectrex gets (dot, with the x / y values) and buttons 1-4 lighting up. Reset to defaults.
 
-Defaults: player 1 - arrows, A W S D = buttons 1-4, Shift = half stick, and the first controller found.
+Defaults: player 1 - arrows, A S D F = buttons 1-4 (a row, as on the controller; the setup offers W A S D
+too), Shift = half stick, and the first controller found. **Vectrex > Mouse / touchpad steers player 1**
+makes the pointer's place on the picture the stick (left button = button 4, right = button 1).
 Player 2 - keyboard only, no keys: pick a second controller, or keys of your own. A chosen controller
 that is unplugged is shown as "not connected" (the keyboard still works) and is used again when it is
 plugged back in. The keys only count while the emulator's window is in front.
@@ -643,7 +753,8 @@ plugged back in. The keys only count while the emulator's window is in front.
 `Vectrex_EMU.conf` next to the program, so the folder is portable: copy it and the settings come along.
 If that folder cannot be written (e.g. under Program Files) they go to `%APPDATA%\Vectrex_EMU` (Windows),
 `~/Library/Application Support/Vectrex_EMU` (Mac) or `~/.config/Vectrex_EMU` (Linux). Nothing else is
-written: no logs, no recordings.
+written: no logs, no recordings. **Help > Copy system info** copies the program's version, your system,
+graphics card and screen to the clipboard, for a GitHub issue.
 
 ### Overlays
 
@@ -656,7 +767,7 @@ Put overlay files in the folder **`overlays`** next to the program, named like t
   are ignored (`ArmorAttack.art`, `Armor_Attack.art`, `Dark_Tower_Proto.art` and `VectorbladeV1.13.art`
   all find their game; hacks such as `Berzerk (Hack - Speed, 2016).bin` find `Berzerk.art`). Only the
   normal files are needed, not the `_90CW` / `_90CCW` ones in its `Tate` folder: the emulator turns the
-  whole screen itself (**Display > Rotate screen**).
+  whole screen itself (**Display > Rotate**).
 * **PNG**: an image with transparency (8-bit RGBA), the sheet 846 x 1080 (or the same proportions) or the
   whole 1360 x 1080 MiSTer frame with the sheet in the middle. Alpha 255 is solid print, 1 - 254 coloured
   see-through plastic (MiSTer's tools use 51), 0 clear; without transparency it is all see-through, black clear.
@@ -665,10 +776,10 @@ Several overlays for one game (`Spike.art`, `Spike (red).art`): the plain one is
 **Overlay > Choose overlay...** (remembered per game). (Overlays in `roms/overlays`, where they went
 before, are still found.)
 
-The **Overlay** menu has the rest - on / off (**O**), choose / none per game, tint, printed
+The control deck's **Overlay** strip has the rest - on / off (**O**), choose / none per game, tint, printed
 art, parallax, the plastic glow, the scratches, a fine position / size per overlay - each explained in
 [chapter 9](#9-overlays---and-forty-years-of-scratches) and in the built-in Help. The room light and the
-ceiling light's reflections are in the **Light** menu ([chapter 11](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)).
+ceiling light's reflections are on the **Room light** strip ([chapter 11](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)).
 
 **Mine Storm's overlay comes with the emulator** as an ordinary file, `overlays/Mine Storm (built in).art`,
 for the game built into the console. To use another one, put your own `Mine Storm.art` next to it (the
@@ -684,7 +795,7 @@ removed. Other overlays do not come with the emulator: the artwork has several a
 
 ### Speech modules
 
-**Vectrex > Controller port 2** plugs a speech module into the second controller port instead of a
+**Cartridge > Controller port 2** plugs a speech module into the second controller port instead of a
 joystick: the **VecVoice** (SP0256) or the **VecVox** (SpeakJet). How they work and how they were
 built: [chapter 8](#8-speech-two-rare-modules).
 
@@ -694,11 +805,11 @@ Technology Inc. Joe Zbiciak distributes it with Microchip's permission:
 1. Download `al2.bin` (2 KB) from [spatula-city.org/~im14u2c/sp0256-al2](http://spatula-city.org/~im14u2c/sp0256-al2/).
 2. Put it in the **`bios` folder next to the emulator** (as `al2.bin` or `sp0256-al2.bin`; MAME's
    `sp0256-al2.bin`, the same data with each byte's bits reversed, works too).
-3. Choose **Vectrex > Controller port 2 > VecVoice** or **VecVox**. The Vectrex is switched off and on.
+3. Choose **Cartridge > Controller port 2 > VecVoice** or **VecVox**. The Vectrex is switched off and on.
 
 Both modules need it (the VecVox speaks with the SP0256's voice). Without it the setting stays on Joystick.
 
-**Sound > Speech module**: its own **Volume** (also Ctrl+Page Up / Down; SPEECH VOL on the on-screen
+**Sound > Speech module volume**: its own **Volume** (also Ctrl+Page Up / Down; SPEECH VOL on the on-screen
 display, 100 % = the MiSTer core's Normal level), and **Full-range speakers** (an arcade cabinet's warm
 bass) or a **Small speaker**.
 
@@ -745,7 +856,7 @@ two games are on none of them; newer games may be missing too.
 
 ### Cartridge hardware
 
-**Vectrex > Cartridge hardware** (saved): **Auto** (the default) models the bank-switching cartridge
+**Cartridge > Cartridge hardware** (saved): **Auto** (the default) models the bank-switching cartridge
 boards, chosen by the ROM's size; or pick one board for any ROM:
 
 * **up to 64K** - PB6 drives the EPROM's A15 (3.3K pull-up: an input PB6 reads high, bank 1 at power-on).
@@ -771,6 +882,59 @@ with the board the file names: a plain ROM, a ROM with a DS2431 save chip (its m
 2 x 48K (PB6) or 4 x 48K (PB6 and /IRQ, as Vectorblade); a flash game's `.sav` is kept in that folder.
 Files for hardware the emulator does not have (the VecFever's own programs, a ROM with RAM, 50K flat,
 hybrid, firmware) are refused with a message, and the game in the slot keeps running.
+
+### UVMC2 games: the Ultimate Vectrex Multicart 2
+
+The **Ultimate Vectrex Multicart 2** (UVMC2) is a cartridge with a computer of its own: an RP2350, two ARM
+Cortex-M33 cores at 150 MHz. Its native games (`.um2` files) run on that chip: the game holds the Vectrex's
+6809 stopped and drives the bus itself, writing the VIA once per bus cycle, as the 6809 would. Vectrex_EMU
+runs the RP2350 - both cores, its PIO state machines, DMA, timers, PSRAM, the SD card, the USB port and the
+headphone jack - and lets it drive the emulated Vectrex, so the picture, the tube and the sound behave as with
+any cartridge: the mains wobble and the buzz too, as on a real Vectrex with a UVMC2.
+
+**Plug and play:** put `.um2` files in `roms` (or anywhere: **Vectrex > Open UVMC2 game...**); the ROM browser
+lists them marked UVMC2. On a PC with four or more cores the cartridge's two cores run on two of the PC's.
+
+<p align="center">
+<a href="docs/images/v1.0.2/uvmc2_demo.png"><img src="docs/images/v1.0.2/uvmc2_demo_small.jpg" width="260" alt="the UVMC2 demo: a rotating cube"></a>
+<a href="docs/images/v1.0.2/uvmc2_movies.png"><img src="docs/images/v1.0.2/uvmc2_movies_small.jpg" width="260" alt="the UVMC2 movie player playing Bad Apple"></a>
+<a href="docs/images/v1.0.2/uvmc2_doom.png"><img src="docs/images/v1.0.2/uvmc2_doom_small.jpg" width="260" alt="Doom on the UVMC2, its WAD read from the SD card folder"></a><br>
+<em>The included UVMC2 Demo and UVMC2 Movie Player (here: Bad Apple), and Doom on the UVMC2 choosing
+its WAD from the SD card folder.</em>
+</p>
+
+**Included**, both written for this emulator from scratch (MIT license, sources in `testcart/`):
+
+* **UVMC2 Demo** - a rotating 3D cube computed on the cartridge's chip and drawn on the Vectrex, line by
+  line, by the chip itself. Source: [`testcart/uvmc2_demo`](testcart/uvmc2_demo) - a small, readable
+  starting point for writing your own UVMC2 programs in plain C.
+* **UVMC2 Movie Player** - plays the Vectrex vector movies made for the PiTrex / VecFever (Bad Apple, La
+  Linea, ...) from the SD card's `movies` folder, one after another; button 4 skips to the next. The movies
+  are not included - they belong to their makers. With a `.pcm` sound file next to a movie (raw 16-bit mono,
+  44100 Hz) it plays that high-quality sound through the Vectrex's own speaker (button 3: through the UVMC2's
+  headphone jack instead); without one, the movie's own 8-bit sound. Source and the `ffmpeg` line to make a
+  `.pcm`: [`testcart/uvmc2_movies`](testcart/uvmc2_movies).
+
+**The SD card is a folder.** A real UVMC2 reads its games' extra files from a microSD card; here that card
+is the folder **`sd` next to the program** (made at the first start, with a note in it). Put files in it as
+you would on the card:
+
+| Game | Needs | Put it in |
+|---|---|---|
+| Doom | a DOOM WAD file: `DOOM.WAD`, `DOOM2.WAD`, or `DOOM1.WAD` (the free shareware episode) | `sd/doom` |
+| Quake | `pak0.pak` (the free shareware one will do), and `pak1.pak` for the full game | `sd/quake` |
+| UVMC2 Movie Player | the movies (`.bin`), and optionally their `.pcm` sound | `sd/movies` |
+
+A game that needs such a file and does not find it **says so when it starts**: which file, and the exact
+folder - and offers to open that folder. **Cartridge > Open the SD folder** opens it any time, **Choose SD
+folder...** uses another folder (a copy of your real card, for example). What a game writes (saves,
+settings) stays in the folder.
+
+**The cartridge strip** has the rest: the UVMC2 games shown in the ROM list or not; **the PC's mouse and
+keyboard on its USB port** (on by default: the mouse over the picture is a USB mouse - VecOS uses it -
+and after **Ctrl+K** the keyboard types into the cartridge, Ctrl+K again gives it back); the **headphone
+jack**: clean as a line out next to the Vectrex's sound, through the Vectrex's own speaker and volume knob,
+or off, with its volume.
 
 ### Mac and Linux notes
 
@@ -803,13 +967,13 @@ For tinkerers - the [releases](../../releases) are built from the same sources b
 
 | Path | |
 |---|---|
-| `src/core/` | the core (C): `vecx.c` CPU bus and analog model, `e6809.c` CPU, `e8910.c` / `psg.c` sound chip, `live.c` the frame pipe to the front end, `vtest.c` main (also a scripted test harness), `sp0256.c` / `speakjet.c` the speech modules, `ds2431.c` a 1-Wire save chip, `bot.c` a test player |
-| `src/frontend/` | `vectrex_emu.py` window, input, sound, settings, menus; `vecrender.py` the OpenGL renderer (beam, phosphor, overlays, scratches); `vart.py` overlay files; `help_text.py` the built-in Help |
+| `src/core/` | the core (C): `vecx.c` CPU bus and analog model, `e6809.c` CPU, `e8910.c` / `psg.c` sound chip, `live.c` the frame pipe to the front end, `vtest.c` main (also a scripted test harness), `sp0256.c` / `speakjet.c` the speech modules, `ds2431.c` a 1-Wire save chip, `bot.c` a test player; the UVMC2: `cm33.c` the ARM Cortex-M33 cores, `rp2350.c` the RP2350 (PIO, DMA, timers, SD card, PSRAM), `uvm2_cart.c` the cartridge on the Vectrex's bus, `usbhost.c` its USB host with a keyboard and mouse, `host.c` the host threads |
+| `src/frontend/` | `vectrex_emu.py` window, input, sound, settings, menus; `deck.py` the control deck and the setup; `vecrender.py` the OpenGL renderer (beam, phosphor, overlays, scratches); `vrrdetect.py` G-Sync / FreeSync from the monitor's EDID; `fatimg.py` SD card images; `vart.py` overlay files; `help_text.py` the built-in Help |
 | `bios/` | the Vectrex BIOS (`bios.bin`, with Mine Storm) |
 | `overlays/` | Mine Storm's overlay (`Mine Storm (built in).art`) |
 | `sounds/` | the power-on / power-off sounds, recorded on a real Vectrex |
 | `package/` | the folders and notes that go into each release zip |
-| `testcart/` | the test cartridges (6809 assembly) used to measure the real Vectrex |
+| `testcart/` | the test cartridges (6809 assembly) used to measure the real Vectrex; `uvmc2_demo/` and `uvmc2_movies/` the included UVMC2 programs (C, MIT) |
 | `docs/` | the pictures, and [TECHNICAL.md](docs/TECHNICAL.md) |
 
 Build outputs (`core/`, `build/`, `Vectrex_EMU.exe`, `dist-*`) are not in the repository.

@@ -6,6 +6,10 @@ window in one call. Line widths scale with the picture, so any window size looks
 """
 import ctypes, math, sys, ctypes.wintypes as W
 import roomlight
+try:                                    # (numpy: the vertex arrays of a frame in one go - _build_np; without it the
+    import numpy as _np                 #  same per line in Python, slower: a dense frame of 11000 lines took 13 ms)
+except Exception:   # noqa
+    _np = None
 
 IS_WIN = sys.platform == 'win32'      # (macOS / Linux: osdep.py makes the OpenGL context)
 
@@ -967,6 +971,37 @@ PHOS_SPREAD = 0.0               # how much the afterglow diffuses per display fr
                                 #  tube's trail is smooth - Mine Storm's big mothership; no longer in the menu: no visible
                                 #  effect, the glow fades first - Afterglow overlap smooths it)
 
+# A game may draw its picture in two halves, one on each frame (a menu that draws half its lines each frame: they share nothing
+# with the one before and nearly everything with the one before that). On the tube both halves keep glowing;
+# with a hold of one frame each half went dark between its redraws - the picture blinked. frame_keys: a frame's
+# lit lines as a set of rounded endpoints; frame_alternates: this frame is the other half of the one before.
+ALT_MAX_LINES = 6000                    # (denser frames - 3D UVMC2 games - are not checked: they draw whole pictures)
+def frame_keys(lines):
+    if _np is None or lines is None or len(lines) == 0 or len(lines) > ALT_MAX_LINES:
+        return None
+    try:
+        A = _np.asarray(lines, dtype=_np.float64)
+        if A.ndim != 2 or A.shape[1] < 5:
+            return None
+        lit = (A[:, 4].astype(_np.int64) & 127) > 0
+        q = (A[lit, :4] // 64).astype(_np.int64)
+        return _np.unique(((q[:, 0] * 1024 + q[:, 1]) * 1024 + q[:, 2]) * 1024 + q[:, 3])
+    except (ValueError, TypeError):
+        return None
+def frame_overlap(a, b):
+    if a is None or b is None or len(a) == 0:
+        return None
+    return float(_np.isin(a, b, assume_unique=True).mean())
+def frame_alternates(st, lines):
+    """this frame's lines are the other half of the previous frame's picture (keeps the last two frames' keys on
+    st): little in common with the previous frame, much with the one before"""
+    k = frame_keys(lines)
+    k1, k2 = getattr(st, 'keys_prev', None), getattr(st, 'keys_prev2', None)
+    st.keys_prev2, st.keys_prev = k1, k
+    o1, o2 = frame_overlap(k, k1), frame_overlap(k, k2)
+    return o1 is not None and o2 is not None and o1 < 0.5 and o2 > o1 + 0.3
+
+
 PHOS_FUNC = b"""
 uniform float hold, tscale, toff;
 float bright(float f) {                     // a spot's brightness by its freshness f = e^-age
@@ -1015,7 +1050,13 @@ void main() {
     o.a *= kf; o.rgb *= mul;
     vec4 f = texture2D(fresh, uv);
     if (o.a < 0.002) o = vec4(0.0);                     // (6 s old: gone)
-    gl_FragColor = lum(f.rgb) * bright(f.a) > lum(o.rgb) * bright(o.a) ? f : o;
+    // the beam lights the spot again: it takes the fresh light (and its freshness) if that is at least about as bright
+    // as what still glows there. (Only strictly brighter light used to win: a redraw of an unchanged line, exactly as
+    // bright, was ignored - the spot kept its first lighting's age and went dark at the hold although the game drew
+    // it again and again: every still line blinked, worst when frames were slow or uneven. ~0.7: a line the wobble
+    // shifts a little is drawn again too.)
+    float fb = lum(f.rgb) * bright(f.a), ob = lum(o.rgb) * bright(o.a);
+    gl_FragColor = (f.a > 0.0 && fb >= 0.7 * ob && fb > 0.0) ? f : o;
 }
 """
 # what the phosphor image shows now (alpha: the bloom weight, as the earlier model)
@@ -1732,7 +1773,7 @@ class GLBloomRenderer(GLRenderer):
         drawn in the last dtw seconds, with their life left (imm: all lines, as drawn now)"""
         if not b:
             return
-        v, t, c, tt, n = b
+        v, t, c, tt, n = b[:5]
         gl = self.gl
         w, h = self.size
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity()
@@ -1794,6 +1835,161 @@ class GLBloomRenderer(GLRenderer):
 
     def _build(self, lines, gain=1.0, load=True):
         """the vertex arrays for these lines (window pixels): (v, t, c, tt, n), or None"""
+        if lines is None or len(lines) == 0:                 # (a list, or a numpy array: Smooth motion)
+            return None
+        if _np is not None and not getattr(self, 'np_off', False) and not any(
+                getattr(self, a, d) != d for a, d in (('crt_sx', 1.0), ('crt_sy', 1.0), ('crt_skew', 0.0), ('crt_shift', 0.0),
+                                                      ('crt_garble', 0.0), ('crt_warp', 0.0))):
+            try:                                           # (the tube switching on or off - collapse, garble: below)
+                return self._build_np(lines, gain, load)
+            except (ValueError, TypeError, IndexError):
+                pass                                       # (lines of other shapes: the per-line way)
+        if hasattr(lines, 'tolist'):                       # (a numpy array - Smooth motion - for the per-line way: rows,
+            lines = [tuple(r[:4]) + (int(r[4]),) + tuple(r[5:]) for r in lines.tolist()]   #  the brightness a whole number)
+        return self._build_py(lines, gain, load)
+
+    def _build_np(self, lines, gain=1.0, load=True):
+        """_build_py with numpy: the same arithmetic on all lines at once (checked equal to it, float32)"""
+        np = _np
+        L = np.asarray(lines, dtype=np.float64)
+        if L.ndim != 2 or L.shape[1] < 7:
+            raise ValueError('lines')
+        L = L[:, :7]
+        b = L[:, 4].astype(np.int64)
+        if getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False):
+            hm = (L[:, 0] == L[:, 2]) & (L[:, 1] == L[:, 3]) & (L[:, 5] >= 64) & ((b & 127) != 0)
+            if hm.any():                                   # (the resting spots' halos, drawn first)
+                H = L[hm].copy(); H[:, 4] = (b[hm] & 127) | 256
+                L = np.concatenate([H, L]); b = L[:, 4].astype(np.int64)
+        x0, y0, x1, y1, e, t0 = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
+        # the tube's map, long lines in pieces (_tube_lines)
+        k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
+        Ls = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
+        m = np.where((Ls > TUBE_SEG) & (k > 0), (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
+        n0 = len(L)
+        idx = np.repeat(np.arange(n0), m)
+        starts = np.cumsum(m) - m
+        i = np.arange(len(idx)) - np.repeat(starts, m) + 1
+        mm = m[idx].astype(np.float64)
+        s0, s1 = (i - 1) / mm, i / mm
+        X0, Y0, X1, Y1 = x0[idx], y0[idx], x1[idx], y1[idx]
+        ax_, ay_ = X0 + (X1 - X0) * s0, Y0 + (Y1 - Y0) * s0
+        bx_ = np.where(mm == 1, X1, X0 + (X1 - X0) * s1); by_ = np.where(mm == 1, Y1, Y0 + (Y1 - Y0) * s1)
+        cx, cy = tube_coeffs(1.0); pull = TUBE_PULL
+        la, lb, lc, ld = TUBE_LIN
+        XM, YM, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
+        def f(x, y):
+            u = (x - XM) / U; v = (y - YM) / U
+            u2, v2 = u * u, v * v
+            X = cx[0] + cx[1] * v + cx[2] * v2 + cx[3] * v2 * v + cx[4] * u + cx[5] * u * v + cx[6] * u * v2 + cx[7] * u2 + cx[8] * u2 * v + cx[9] * u2 * u
+            Y = cy[0] + cy[1] * v + cy[2] * v2 + cy[3] * v2 * v + cy[4] * u + cy[5] * u * v + cy[6] * u * v2 + cy[7] * u2 + cy[8] * u2 * v + cy[9] * u2 * u
+            if pull:
+                p = (1.0 + u / 0.85) * 0.5; q = (1.0 - v) * 0.5
+                Y = Y - np.where((p > 0) & (q > 0), pull * p * p * q * q, 0.0)
+            sx, sy = la * u, lc * v
+            X = X - TUBE_IMP_OFF[0]; Y = Y - TUBE_IMP_OFF[1]
+            return XM + (sx + k * (X - sx) + lb) * U, YM + (sy + k * (Y - sy) + ld) * U
+        x0, y0 = f(ax_, ay_)
+        x1, y1 = f(bx_, by_)
+        same = (Ls[idx] <= 0)                             # (a dot: its end is its start)
+        x1 = np.where(same, x0, x1); y1 = np.where(same, y0, y1)
+        e = e[idx] / mm
+        t0 = t0[idx] + (L[idx, 5] / 8.0) * (i - 1) / mm
+        b = b[idx]
+        op = np.where(mm > 1, np.where(i > 1, 1, 0) | np.where(i < mm, 2, 0), 0)
+        self._tube_open = op
+        n = len(x0)
+        w, h = self.size
+        sc, ox, oy = self.map
+        cyc = e / 8.0
+        # brightness bending: this frame's beam load, smoothed
+        ld_ = float(np.sum(cyc * ((b & 127) / 127.0))) / 30000.0
+        self.load_f = getattr(self, 'load_f', ld_)
+        if load:
+            self.load_f += (ld_ - self.load_f) * 0.3
+        if getattr(self, 'bend_on', False) and self.bend_strength > 0:
+            btype = BEND_TYPES[self.bend_type % len(BEND_TYPES)]
+            amt = self.bend_strength * self.load_f * 10.0
+            gs = 1.0 + (amt / 128.0 if btype != 'shift' else 0.0)
+            gsh = amt * 160.0 * 0.5 if btype != 'grow' else 0.0
+            cxm, cym = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0
+            x0 = cxm + (x0 - cxm) * gs + gsh; x1 = cxm + (x1 - cxm) * gs + gsh
+            y0 = cym + (y0 - cym) * gs + gsh; y1 = cym + (y1 - cym) * gs + gsh
+        if getattr(self, 'wob_on', False) and self.wob_strength > 0:     # hum: offsets at each end
+            a0, ((PX, QX), (PY, QY)) = hum_coeffs(self.frame_t0 / 1.5e6, self.wob_strength, WOBBLE_SPEED, self.mains_hz)
+            k50 = 2 * math.pi * self.mains_hz / 1.5e6
+            def woff(t):
+                a = a0 + t * k50
+                s1, c1 = np.sin(a), np.cos(a)
+                s2, c2 = 2 * s1 * c1, c1 * c1 - s1 * s1
+                s3, c3 = s2 * c1 + c2 * s1, c2 * c1 - s2 * s1
+                return (PX[1] * s1 + QX[1] * c1 + PX[2] * s2 + QX[2] * c2 + PX[3] * s3 + QX[3] * c3,
+                        PY[1] * s1 + QY[1] * c1 + PY[2] * s2 + QY[2] * c2 + PY[3] * s3 + QY[3] * c3)
+            dx0, dy0 = woff(t0); dx1, dy1 = woff(t0 + cyc)
+            x0 = x0 + dx0; y0 = y0 + dy0; x1 = x1 + dx1; y1 = y1 + dy1
+        cgain = getattr(self, 'crt_gain', 1.0); cwidth = getattr(self, 'crt_width', 1.0)
+        gp = 160.0 * sc
+        ax = (x0 + ox) * sc; ay = h - (y0 + oy) * sc
+        bx = (x1 + ox) * sc; by = h - (y1 + oy) * sc
+        dx, dy = bx - ax, by - ay
+        lp = np.sqrt(dx * dx + dy * dy)
+        zi = (b & 127) / 127.0
+        r_ = np.maximum(0.0, (zi - BEAM_Z0) / (BEAM_LOWZ - BEAM_Z0))
+        hi = zi >= BEAM_LOWZ
+        zk = np.where(hi, 0.55 + 0.45 * zi, (0.55 + 0.45 * BEAM_LOWZ) * r_ ** BEAM_LOWP)
+        zw = np.where(hi, 1.0, BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ)
+        fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth
+        halo = (b & 256) != 0
+        moving = (lp / gp > 0.05) & ~halo
+        rest = ~halo & ~moving
+        kk = np.zeros(n)
+        if halo.any():
+            bl = np.clip((cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0), 0.0, 1.0)
+            fw = np.where(halo, BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) * cwidth, fw)
+            kk = np.where(halo, getattr(self, 'halo_k', BEAM_HALO_K) * np.minimum(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl), kk)
+        if getattr(self, 'even_beam', False):
+            kk = np.where(halo, kk, BEAM_LINE)
+        else:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ee = np.where(moving, cyc / np.where(moving, lp / gp, 1.0), 0.0)
+            kk = np.where(moving, BEAM_LINE * (1.0 - BEAM_SPEED * np.exp(-ee / 0.8)), kk)
+            if rest.any():
+                kk = np.where(rest, BEAM_DOTMAX * np.minimum(1.0, cyc / BEAM_DOTC), kk)
+                rd = np.maximum(0.0, (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT))
+                zdot = (0.55 + 0.45 * BEAM_LOWZ) * rd ** BEAM_DOTLOWP
+                zk = np.where(rest & (zi < BEAM_LOWZ), np.maximum(zk, zdot * np.minimum(1.0, cyc / BEAM_DOTLOWC)), zk)
+                fwr = fw * BEAM_DOTW + BEAM_DOTWK * np.minimum(cyc, 80.0)
+                bl = np.clip((cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0), 0.0, 1.0)
+                fw = np.where(rest, fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl), fw)
+        sg = np.maximum(0.6, fw * gp / 2.355)
+        kk = kk * zk * gain * BEAM_PEAK * cgain
+        kk = np.where((b & 128) != 0, kk * BEAM_FADE, kk)
+        mq = 2.6 * sg + 1.0
+        moved = lp > 1e-3
+        lps = np.where(moved, lp, 1.0)
+        ux = np.where(moved, dx / lps * mq, mq); uy = np.where(moved, dy / lps * mq, 0.0)
+        nx, ny = -uy, ux
+        sa = np.where(op & 1, 0.0, 1.0); sb = np.where(op & 2, 0.0, 1.0)
+        V = np.empty((n, 8), dtype=np.float32)
+        V[:, 0] = ax - ux * sa + nx; V[:, 1] = ay - uy * sa + ny
+        V[:, 2] = bx + ux * sb + nx; V[:, 3] = by + uy * sb + ny
+        V[:, 4] = bx + ux * sb - nx; V[:, 5] = by + uy * sb - ny
+        V[:, 6] = ax - ux * sa - nx; V[:, 7] = ay - uy * sa - ny
+        ex = np.where(moved, dx / lps * 1e4, 0.0); ey = np.where(moved, dy / lps * 1e4, 0.0)
+        A2x = np.where(op & 1, ax - ex, ax); A2y = np.where(op & 1, ay - ey, ay)
+        B2x = np.where(op & 2, bx + ex, bx); B2y = np.where(op & 2, by + ey, by)
+        T = np.empty((n, 4, 4), dtype=np.float32)
+        T[:, :, 0] = A2x[:, None]; T[:, :, 1] = A2y[:, None]; T[:, :, 2] = B2x[:, None]; T[:, :, 3] = B2y[:, None]
+        C = np.empty((n, 4, 4), dtype=np.float32)
+        C[:, :, 0] = kk[:, None]; C[:, :, 1] = kk[:, None]; C[:, :, 2] = kk[:, None]
+        C[:, :, 3] = np.minimum(1.0, sg / 16.0)[:, None]
+        TT = np.repeat((t0 / 1.5e6).astype(np.float32), 4)
+        cv = lambda a: (ctypes.c_float * a.size).from_buffer(a)   # (the arrays as they are: no copy)
+        return cv(V.reshape(-1)), cv(T.reshape(-1)), cv(C.reshape(-1)), cv(TT), n, float(TT.max()) if n else 0.0
+
+    def _build_py(self, lines, gain=1.0, load=True):
+        """the vertex arrays for these lines, line by line (the reference for _build_np, and the way when the
+        tube switches on or off)"""
         if not lines:
             return None
         halos = [(ln[0], ln[1], ln[2], ln[3], (ln[4] & 127) | 256) + tuple(ln[5:]) for ln in lines
@@ -1931,7 +2127,36 @@ class GLBloomRenderer(GLRenderer):
         return v, t, c, tt, n
 
     # ---- the phosphor in real time (see PHOS_GAIN)
+    HOLD_MAX = 0.15                                       # (a game that stops drawing: its picture fades after this)
+    HOLD_EPS = 0.004                                      # (the margin: frame times jitter a little, and the phosphor
+                                                          #  image keeps a spot's age to ~0.5 ms - 16-bit float)
     def hold(self):
+        """how long a lit spot stays at full brightness: until the game has drawn its next picture. A real tube
+        keeps a slow game's picture as bright as a fast one's (the eye averages the flashes); here a spot stays
+        lit until the latest picture that has started by now (T_now) is completely drawn - for a picture drawn
+        in two halves on alternate frames, until the half before it is. So a game that slows down, draws its
+        frames in pieces or late, keeps its brightness; a moving object's old copy goes out once the new picture
+        is drawn. At most HOLD_MAX (a stalled game fades)."""
+        h = PHOS_HOLD if self.trail_on else PHOS_HOLD_OFF
+        T = getattr(self, 'T_now', None)
+        lit = getattr(self, 'lit', None)
+        if T is None or not lit:
+            return self._hold_static()
+        cur = [f for f in lit if f[0] <= T]
+        if not cur:
+            return self._hold_static()
+        # the time from the previous picture's first line to the latest one's (two steps for a picture in halves): a
+        # line of the previous picture stays lit until the latest picture has drawn it again (at the same moment
+        # in it) - and its old copy goes out then (the wobble moves the new one a little: holding the old copy
+        # longer showed both, a flicker)
+        step = 2 if any(f[2] for f in cur[-3:]) else 1
+        per = cur[-1][0] - cur[-1 - step][0] if len(cur) > step else 0.0
+        # the newest picture's lines: lit until the next picture starts, however late (a slow or stalled frame)
+        k = len(cur) - 1
+        if cur[k][2] and k > 0:                            # (the second half: hold the first half's lines too)
+            k -= 1
+        return max(h, min(self.HOLD_MAX, max(per + self.HOLD_EPS, (T - cur[k][0]) + self.HOLD_EPS)))
+    def _hold_static(self):
         """how long a lit spot stays at full brightness: until the game draws it again - its longest
         recent frame (at least PHOS_HOLD) plus 1 ms; afterglow off: the same plus 2 ms, then dark at once
         (longer kept the last copy of a moving object at full brightness next to the new one).
@@ -1958,17 +2183,54 @@ class GLBloomRenderer(GLRenderer):
         self.young = []; self.last = None
     hist = property(lambda self: [], lambda self, v: self.clear())     # (older callers: hist = [] clears)
 
-    def add_frame(self, lines, t_start, length=None):
+    def add_frame(self, lines, t_start, length=None, period=None):
         """a game frame that started at real time t_start (perf_counter s) and lasts `length` s; its
-        lines light up at their own moments, as the beam draws them"""
-        if length:                                        # (the hold follows the game's frame period)
-            self.periods = (getattr(self, 'periods', []) + [length])[-12:]
+        lines light up at their own moments, as the beam draws them. The hold follows how long until the game
+        draws these lines again: its frame period - or two, for a game that draws its picture in two halves on
+        alternate frames (period: given by the caller instead)"""
+        if period is None and length:
+            period = length
+            alt = frame_alternates(self, lines)
+            if alt:
+                period = length + getattr(self, 'len_prev', length)
+            self.len_prev = length
+        if period:                                        # (the hold follows the game's frame period)
+            self.periods = (getattr(self, 'periods', []) + [period])[-12:]
         b = self._build(lines)
         self.last = b
         if b:
-            self.young.append([b, t_start, t_start + max(b[3]), -1e9])
+            # (when this picture starts, how long its drawing takes, and whether it is the second half of a picture
+            # drawn on two frames: for the hold - see hold())
+            tdraw = b[5] if len(b) > 5 else max(b[3])
+            try:
+                tmin = float(_np.frombuffer(b[3], dtype=_np.float32).min()) if _np is not None else min(b[3])
+            except (ValueError, TypeError):
+                tmin = 0.0
+            alt = bool(period and length and period > length * 1.5)
+            # (its first line's moment, its drawing span, second half)
+            self.lit = (getattr(self, 'lit', []) + [(t_start + tmin, max(0.0, tdraw - tmin), alt)])[-8:]
+            self.young.append([b, t_start, t_start + (b[5] if len(b) > 5 else max(b[3])), -1e9])
 
+    # Quality (the control deck): a cap on the costly passes for slower graphics, on top of the look the user
+    # chose (which stays as set): 0 Low - the afterglow kept, no bloom, no curved-glass pass, the overlay flat;
+    # 1 Medium - one bloom pass, no scratches, plastic glow or reflections; 2 High and 3 Ultra - as set
+    QUALITY_CAPS = {0: dict(bloom=0.0, passes=0, curve_on=False, glass_on=False, halo_on=False,
+                            art_glow=False, scr_on=False, light_on=False, light_ov=False, art_parallax=False),
+                    1: dict(passes=1, art_glow=False, scr_on=False, light_on=False, light_ov=False)}
+    quality = 2
     def present(self, T, imm=None, flush=False):
+        caps = self.QUALITY_CAPS.get(self.quality)
+        if not caps:
+            return self._present(T, imm, flush)
+        keep = {k: getattr(self, k) for k in caps if hasattr(self, k)}
+        for k in keep:
+            setattr(self, k, caps[k])
+        try:
+            return self._present(T, imm, flush)
+        finally:
+            for k, v in keep.items():
+                setattr(self, k, v)
+    def _present(self, T, imm=None, flush=False):
         """show the screen at real time T: the light of the lines drawn since the last display frame
         (at their own moments), the phosphor image aged by the time passed. imm: lines lit now (the
         tube switching off); flush: the beam stopped - what was drawn so far is all that is left."""
@@ -1992,6 +2254,7 @@ class GLBloomRenderer(GLRenderer):
             return
         dt = min(0.25, max(0.0, T - self.T_prev)) if self.T_prev is not None else 0.0
         self.T_prev = T
+        self.T_now = T
         # 1. the fresh light: lines add up within a frame (rgb), the newest life wins (alpha)
         self.BindFB(GL_FRAMEBUFFER, self.F[1]); gl.glViewport(0, 0, w, h)
         gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
@@ -2045,7 +2308,7 @@ class GLBloomRenderer(GLRenderer):
     def _hud(self):
         """the frame rate counter (small green strokes in the top left corner) and the volume knob"""
         if not (self.hud or getattr(self, 'knob', None) or getattr(self, 'osd', None) or getattr(self, 'cart', None)
-                or getattr(self, 'browser', None)):
+                or getattr(self, 'browser', None) or getattr(self, 'hint', None)):
             return
         gl = self.gl
         w, h = self.size
@@ -2067,6 +2330,12 @@ class GLBloomRenderer(GLRenderer):
             self._cart(self.cart)
         if getattr(self, 'browser', None):
             self._browser(self.browser)
+        if getattr(self, 'hint', None):                   # (a hint in the middle of the picture: centred rows)
+            hk = self.hint['k']
+            gl.glLineWidth(max(1.2, hk * 0.45))
+            for i, t in enumerate(self.hint['rows']):
+                self._text_row([(t, (0.40, 0.667, 0.533))], self.hint['cx'] - len(t) * 3.0 * hk,
+                               self.hint['cy'] + i * 11.0 * hk, hk)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
         gl.glEnableClientState(GL_COLOR_ARRAY); gl.glEnableClientState(GL_VERTEX_ARRAY)
 

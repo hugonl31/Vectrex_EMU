@@ -77,6 +77,7 @@ static int rds8 (unsigned a) { int v = rd8 (a); return v > 127 ? v - 256 : v; }
  * (The intro and the BIOS title screen last ~13 s.) At most 60 million cycles (40 s). */
 static void skip_boot (void)
 {
+	extern int vt_uvm2, vt_pitrex; if (vt_uvm2 || vt_pitrex) return;   /* (a UVMC2 game, a PiTrex: the 6809 never runs, no intro to skip) */
 	extern unsigned long long alg_cycles;
 	unsigned long long c0 = alg_cycles;
 	static int16_t drop[4096];
@@ -138,31 +139,38 @@ static int live_main (const char *recfn, const char *symfn)
 	fwrite (REC_MAGIC, 1, 6, rec); fwrite (&sum, 4, 1, rec);
 	if (symfn && load_syms (symfn)) { opt_addr = SA (S_OPTIONS); gflags_addr = SA (S_GFLAGS); }
 	abuf_cap = 32768; abuf = malloc (abuf_cap);
-	frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : 33000;
+	{ extern int vt_uvm2, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2 || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
 	static unsigned char out[10 + 4000 * 13 + 32768];
 	unsigned char m[8];
 	long nframes = 0;
+	unsigned long long piece0 = 0;
 	while (fread (m, 1, 4, stdin) == 4) {
 		if (m[3] & 0x80) break;
 		if ((m[3] & 0x40) && fread (m + 4, 1, 3, stdin) != 3) break;   /* (player 2) */
-		if (m[3] & 0x20) {                      /* (bit 5: a setting follows - the stop delay, 1/100 cycles) */
-			unsigned char g[2]; extern void vt_set_rampoff (double c);
-			if (fread (g, 1, 2, stdin) != 2) break;
-			vt_set_rampoff ((g[0] | g[1] << 8) / 100.0);
+		if (m[3] & 0x20) {                      /* (bit 5: settings follow - a count, then each an id and 4 bytes: a float for
+							   vt_set_analog, or ids 0x80 / 0x81 a USB keyboard / mouse report for a UVMC2 (usbhost.c)) */
+			unsigned char cnt, g[5]; float f; extern void vt_set_analog (int id, double v); extern void vt_usb_report (int id, const unsigned char *b);
+			if (fread (&cnt, 1, 1, stdin) != 1) break;
+			for (int k = 0; k < cnt; k++) {
+				if (fread (g, 1, 5, stdin) != 5) { cnt = 0; break; }
+				if (g[0] >= 0x80) vt_usb_report (g[0], g + 1);
+				else { memcpy (&f, g + 1, 4); vt_set_analog (g[0], f); }
+			}
 			m[3] &= ~0x20;                      /* (recordings keep their format) */
 		}
 		fwrite (m, 1, (m[3] & 0x40) ? 7 : 4, rec);
 		nframes++;
 		apply_input (m);
 		abuf_n = 0;
+		{ extern unsigned long long vt_piece_t0; piece0 = vt_piece_t0; }   /* (this frame's lines count from its start) */
 		run_frame ();
 		int n = nlast > 4000 ? 4000 : nlast;
 		unsigned char *p = out;
-		{ extern int vt_speech_sep, vt_vecvoice; int two = vt_speech_sep && vt_vecvoice;   /* (bit 15: two channels -
+		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2;   /* (bit 15: two channels -
 		  the console and the speech module, interleaved) */
 		  *p++ = 'V'; *p++ = 'F'; put16 (p, n); p += 2; put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
-		{ extern unsigned long long vt_frame_t0;        /* the frame's drawing start, absolute cycles */
-		  unsigned t = (unsigned) vt_frame_t0; put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
+		{ unsigned t = (unsigned) piece0;               /* the frame's start (absolute cycles): its lines' times count from it */
+		  put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
 		for (int i = 0; i < n; i++) {
 			line_t *l = &last[i];
 			put16 (p, l->x0 < 0 ? 0 : l->x0); put16 (p + 2, l->y0 < 0 ? 0 : l->y0);

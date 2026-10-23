@@ -109,3 +109,13 @@ the mains hum wobble: the BIOS starts a frame every `Vec_Rfrsh` cycles, set here
 step with 50 Hz mains), 31,250 (48 fps: a game slightly over its budget - the picture sways) or 60,000
 (25 fps: in step again). Built from `wobble_test.asm` with `-DREFRESH=n`, padded to 32 KB. (At 25 fps the
 emulator's frame counter shows 50: it splits frames longer than 33,000 cycles in two.)
+
+## FPS test (`fps_test.bin`, `fps_line.bin`)
+
+A still picture whose frame rate changes every 128 frames, its name on screen: **50 FPS**, **40 FPS**, **30 FPS**,
+**25 FPS**, **50/25 ALTERNATE**, **IRREGULAR** (frames of 20-43 ms), then again. On a real Vectrex the picture
+keeps its brightness in every phase - only the mains wobble grows as the frame rate drops. `fps_test.bin` draws a
+ring of boxes; `fps_line.bin` (built with `-DLINE`) one long horizontal line across the middle, to check a single
+vector at every screen refresh. In the emulator: `roms\FPS Test.bin`, `roms\FPS Line Test.bin`.
+
+Build: `lwasm --format=raw -o fps_test_raw.bin fps_test.asm` (add `-DLINE` for the line build), padded to 32 KB.

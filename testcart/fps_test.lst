@@ -1,0 +1,143 @@
+                      (     fps_test.asm):00001         ; fps_test.asm - a still picture whose frame rate changes every 128 frames, to compare the emulator's
+                      (     fps_test.asm):00002         ; brightness with a real Vectrex as a game slows down (on the tube the picture keeps its brightness; only
+                      (     fps_test.asm):00003         ; the mains wobble grows). The BIOS starts a frame every Vec_Rfrsh cycles (30000 = 50 fps at 1.5 MHz).
+                      (     fps_test.asm):00004         ; Phases (the name on screen): 50 FPS, 40 FPS, 30 FPS, 25 FPS, 50/25 ALTERNATE, IRREGULAR - then again.
+                      (     fps_test.asm):00005         ; Build: lwasm --format=raw -o fps_test_raw.bin fps_test.asm, then pad to 32768 bytes with $FF.
+                      (     fps_test.asm):00006         ; -DLINE: one long horizontal line instead of the boxes (fps_line.bin, roms\FPS Line Test.bin).
+                      (     fps_test.asm):00007         
+     F192             (     fps_test.asm):00008         Wait_Recal      equ $F192
+     F2AB             (     fps_test.asm):00009         Intensity_a     equ $F2AB
+     F312             (     fps_test.asm):00010         Moveto_d        equ $F312
+     F354             (     fps_test.asm):00011         Reset0Ref       equ $F354
+     F37A             (     fps_test.asm):00012         Print_Str_d     equ $F37A
+     F3CE             (     fps_test.asm):00013         Draw_VLc        equ $F3CE
+     F3DF             (     fps_test.asm):00014         Draw_Line_d     equ $F3DF
+     C83D             (     fps_test.asm):00015         Vec_Rfrsh       equ $C83D
+     D004             (     fps_test.asm):00016         VIA_t1_cnt_lo   equ $D004
+                      (     fps_test.asm):00017         
+     C880             (     fps_test.asm):00018         Count           equ $C880               ; frames in this phase
+     C881             (     fps_test.asm):00019         Phase           equ $C881               ; 0..5
+     C882             (     fps_test.asm):00020         Step            equ $C882               ; the frame within the alternate / irregular pattern
+                      (     fps_test.asm):00021         
+                      (     fps_test.asm):00022                 org     $0000
+0000 6720474345203230 (     fps_test.asm):00023                 fcc     "g GCE 2026"
+     3236
+000A 80               (     fps_test.asm):00024                 fcb     $80
+000B FD0D             (     fps_test.asm):00025                 fdb     $FD0D
+000D F85020C0         (     fps_test.asm):00026                 fcb     $F8,$50,$20,-$40
+0011 4650532054455354 (     fps_test.asm):00027                 fcc     "FPS TEST"
+0019 80               (     fps_test.asm):00028                 fcb     $80
+001A 00               (     fps_test.asm):00029                 fcb     0
+                      (     fps_test.asm):00030         
+001B 7FC880           (     fps_test.asm):00031                 clr     Count
+001E 7FC881           (     fps_test.asm):00032                 clr     Phase
+0021 7FC882           (     fps_test.asm):00033                 clr     Step
+0024                  (     fps_test.asm):00034         Main:   ; this frame's length (Vec_Rfrsh, cycles), from the phase
+0024 F6C881           (     fps_test.asm):00035                 ldb     Phase
+0027 C104             (     fps_test.asm):00036                 cmpb    #4
+0029 2408             (     fps_test.asm):00037                 bhs     Pattern
+002B 58               (     fps_test.asm):00038                 lslb
+002C 8E00BB           (     fps_test.asm):00039                 ldx     #Fixed
+002F EC85             (     fps_test.asm):00040                 ldd     b,x
+0031 201B             (     fps_test.asm):00041                 bra     SetLen
+0033                  (     fps_test.asm):00042         Pattern:
+0033 F6C882           (     fps_test.asm):00043                 ldb     Step
+0036 5C               (     fps_test.asm):00044                 incb
+0037 C407             (     fps_test.asm):00045                 andb    #7
+0039 F7C882           (     fps_test.asm):00046                 stb     Step
+003C B6C881           (     fps_test.asm):00047                 lda     Phase
+003F 8104             (     fps_test.asm):00048                 cmpa    #4
+0041 2605             (     fps_test.asm):00049                 bne     Irreg
+0043 8E00C3           (     fps_test.asm):00050                 ldx     #Alt
+0046 2003             (     fps_test.asm):00051                 bra     PatLen
+0048 8E00D3           (     fps_test.asm):00052         Irreg:  ldx     #Irr
+004B 58               (     fps_test.asm):00053         PatLen: lslb
+004C EC85             (     fps_test.asm):00054                 ldd     b,x
+004E 1E89             (     fps_test.asm):00055         SetLen: exg     a,b                     ; (Wait_Recal reads Vec_Rfrsh low byte first)
+0050 FDC83D           (     fps_test.asm):00056                 std     Vec_Rfrsh
+0053 BDF192           (     fps_test.asm):00057                 jsr     Wait_Recal
+                      (     fps_test.asm):00058                 ; the next phase after 128 frames
+0056 7CC880           (     fps_test.asm):00059                 inc     Count
+0059 B6C880           (     fps_test.asm):00060                 lda     Count
+005C 8180             (     fps_test.asm):00061                 cmpa    #128
+005E 250F             (     fps_test.asm):00062                 blo     Draw
+0060 7FC880           (     fps_test.asm):00063                 clr     Count
+0063 B6C881           (     fps_test.asm):00064                 lda     Phase
+0066 4C               (     fps_test.asm):00065                 inca
+0067 8106             (     fps_test.asm):00066                 cmpa    #6
+0069 2501             (     fps_test.asm):00067                 blo     PhOk
+006B 4F               (     fps_test.asm):00068                 clra
+006C B7C881           (     fps_test.asm):00069         PhOk:   sta     Phase
+006F 867F             (     fps_test.asm):00070         Draw:   lda     #$7F
+0071 BDF2AB           (     fps_test.asm):00071                 jsr     Intensity_a
+                      (     fps_test.asm):00072          ifdef LINE
+                      (     fps_test.asm):00073                 ; (the LINE build: one long horizontal line across the middle, two strokes - for a line-by-line check)
+                      (     fps_test.asm):00074                 jsr     Reset0Ref
+                      (     fps_test.asm):00075                 lda     #$FF
+                      (     fps_test.asm):00076                 sta     VIA_t1_cnt_lo
+                      (     fps_test.asm):00077                 ldd     #$00A0                  ; (y 0, x -96)
+                      (     fps_test.asm):00078                 jsr     Moveto_d
+                      (     fps_test.asm):00079                 ldd     #$0060                  ; (dy 0, dx 96)
+                      (     fps_test.asm):00080                 jsr     Draw_Line_d
+                      (     fps_test.asm):00081                 ldd     #$0060
+                      (     fps_test.asm):00082                 jsr     Draw_Line_d
+                      (     fps_test.asm):00083                 bra     Text
+                      (     fps_test.asm):00084          endc
+                      (     fps_test.asm):00085                 ; a ring of 8 boxes and one in the middle - lines all over the screen
+0074 CE00E3           (     fps_test.asm):00086                 ldu     #Places
+0077 ECC1             (     fps_test.asm):00087         Boxes:  ldd     ,u++
+0079 10838080         (     fps_test.asm):00088                 cmpd    #$8080
+007D 271B             (     fps_test.asm):00089                 beq     Text
+007F 3440             (     fps_test.asm):00090                 pshs    u
+0081 3406             (     fps_test.asm):00091                 pshs    d
+0083 BDF354           (     fps_test.asm):00092                 jsr     Reset0Ref
+0086 8660             (     fps_test.asm):00093                 lda     #$60
+0088 B7D004           (     fps_test.asm):00094                 sta     VIA_t1_cnt_lo
+008B 3506             (     fps_test.asm):00095                 puls    d
+008D BDF312           (     fps_test.asm):00096                 jsr     Moveto_d
+0090 8E00F7           (     fps_test.asm):00097                 ldx     #Box
+0093 BDF3CE           (     fps_test.asm):00098                 jsr     Draw_VLc
+0096 3540             (     fps_test.asm):00099                 puls    u
+0098 20DD             (     fps_test.asm):00100                 bra     Boxes
+009A BDF354           (     fps_test.asm):00101         Text:   jsr     Reset0Ref
+009D CE0100           (     fps_test.asm):00102                 ldu     #Title
+00A0 CC58C0           (     fps_test.asm):00103                 ldd     #$58C0
+00A3 BDF37A           (     fps_test.asm):00104                 jsr     Print_Str_d
+00A6 BDF354           (     fps_test.asm):00105                 jsr     Reset0Ref
+00A9 F6C881           (     fps_test.asm):00106                 ldb     Phase
+00AC 58               (     fps_test.asm):00107                 lslb
+00AD 8E013F           (     fps_test.asm):00108                 ldx     #Names
+00B0 EE85             (     fps_test.asm):00109                 ldu     b,x
+00B2 CC98C0           (     fps_test.asm):00110                 ldd     #$98C0
+00B5 BDF37A           (     fps_test.asm):00111                 jsr     Print_Str_d
+00B8 16FF69           (     fps_test.asm):00112                 lbra    Main
+                      (     fps_test.asm):00113         
+00BB 7530927CC350EA60 (     fps_test.asm):00114         Fixed:  fdb     30000,37500,50000,60000            ; 50, 40, 30, 25 fps
+00C3 7530EA607530EA60 (     fps_test.asm):00115         Alt:    fdb     30000,60000,30000,60000,30000,60000,30000,60000
+     7530EA607530EA60
+00D3 753075307530CB20 (     fps_test.asm):00116         Irr:    fdb     30000,30000,30000,52000,30000,64000,30000,40000
+     7530FA0075309C40
+00E3 30803000306000A0 (     fps_test.asm):00117         Places: fdb     $3080,$3000,$3060,$00A0,$0060,$C0A0,$C000,$C060,$0000
+     0060C0A0C000C060
+     0000
+00F5 8080             (     fps_test.asm):00118                 fdb     $8080
+00F7 03               (     fps_test.asm):00119         Box:    fcb     3                       ; a 32 x 32 box (dy, dx)
+00F8 0020E00000E02000 (     fps_test.asm):00120                 fcb     0,32,-32,0,0,-32,32,0
+0100 4650532054455354 (     fps_test.asm):00121         Title:  fcc     "FPS TEST"
+0108 80               (     fps_test.asm):00122                 fcb     $80
+0109 353020465053     (     fps_test.asm):00123         N50:    fcc     "50 FPS"
+010F 80               (     fps_test.asm):00124                 fcb     $80
+0110 343020465053     (     fps_test.asm):00125         N40:    fcc     "40 FPS"
+0116 80               (     fps_test.asm):00126                 fcb     $80
+0117 333020465053     (     fps_test.asm):00127         N30:    fcc     "30 FPS"
+011D 80               (     fps_test.asm):00128                 fcb     $80
+011E 323520465053     (     fps_test.asm):00129         N25:    fcc     "25 FPS"
+0124 80               (     fps_test.asm):00130                 fcb     $80
+0125 35302F323520414C (     fps_test.asm):00131         NAlt:   fcc     "50/25 ALTERNATE"
+     5445524E415445
+0134 80               (     fps_test.asm):00132                 fcb     $80
+0135 4952524547554C41 (     fps_test.asm):00133         NIrr:   fcc     "IRREGULAR"
+     52
+013E 80               (     fps_test.asm):00134                 fcb     $80
+013F 010901100117011E (     fps_test.asm):00135         Names:  fdb     N50,N40,N30,N25,NAlt,NIrr
+     01250135

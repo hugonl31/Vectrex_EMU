@@ -61,8 +61,10 @@ typedef struct { long x0, y0, x1, y1; unsigned char c; unsigned cyc, t0; } line_
 static line_t cur[MAXL], last[MAXL];
 static int ncur, nlast;
 
+unsigned long vt_nlines;
 void vt_line (long x0, long y0, long x1, long y1, unsigned char c, unsigned cyc, unsigned t0)
 {
+	vt_nlines++;
 	if (ncur < MAXL) { line_t *l = &cur[ncur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->cyc = cyc; l->t0 = t0; }
 }
 
@@ -136,6 +138,7 @@ void vt_step (unsigned icycles)
 		nlast = ncur; ncur = 0;
 		frame_done = 1;
 		last_recal = total_cycles;
+		{ extern unsigned long long vt_piece_t0, alg_cycles; vt_piece_t0 = alg_cycles; }   /* (the next piece begins) */
 	}
 	/* a game that paces itself without Wait_Recal (Vectorblade) restarts timer 2 once a frame from its
 	 * own code, as Wait_Recal does: its frame ends there, at its own rate (50 fps) - not cut every
@@ -153,6 +156,7 @@ void vt_step (unsigned icycles)
 			nlast = ncur; ncur = 0;
 			frame_done = 1;
 			vt_frame_t0 = alg_cycles;
+			{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }
 		}
 	}
 	/* crash detection: execution outside cart window / BIOS */
@@ -289,9 +293,10 @@ static void emu_chunk (long cyc)
 	int ns = psg_take (buf, 4096);
 	if (ns > 0) {
 		extern int vt_speech_sep, vt_vecvoice; extern int psg_take_speech (int16_t *buf, int max);
-		if (vt_speech_sep && vt_vecvoice) {     /* (two channels: the console, the speech module) */
+		extern int vt_uvm2; extern int uvm2_jack44 (int16_t *, int);
+		if ((vt_speech_sep && vt_vecvoice) || vt_uvm2) {     /* (two channels: the console, the speech module / the UVMC2's jack) */
 			static int16_t sb[4096], st[8192];
-			psg_take_speech (sb, ns);
+			if (vt_uvm2) uvm2_jack44 (sb, ns); else psg_take_speech (sb, ns);
 			for (int i = 0; i < ns; i++) { st[2 * i] = buf[i]; st[2 * i + 1] = sb[i]; }
 			if (wavf) { for (int i = 0; i < ns; i++) { int v = buf[i] + sb[i]; buf[i] = (int16_t) (v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
 			            fwrite (buf, 2, ns, wavf); wav_bytes += ns * 2; }
@@ -314,12 +319,19 @@ static void run_frame (void)
 		fwrite (m, 1, 4, recf);
 	}
 	frame_done = 0;
+	/* a game that calls Wait_Recal ends its frames itself (the BIOS's timer 2: at most 65535 cycles): the whole
+	 * frame, so its picture is never cut in two - a slow game (Armor Attack's helicopter, a 30 fps game) was cut
+	 * at frame_budget in the middle of its drawing, and the display could not tell its pictures apart (flicker).
+	 * A game without it (Mine Storm's warp) or a UVMC2 / PiTrex bus frame: frame_budget, as before */
 	long budget = frame_budget;
+	{ extern int vt_uvm2, vt_pitrex;
+	  if (!vt_uvm2 && !vt_pitrex && last_recal && total_cycles - last_recal < 100000) budget = 70000; }
 	while (!frame_done && budget > 0) { emu_chunk (500); budget -= 500; }
 	if (!frame_done) {                  /* no Wait_Recal: show what was drawn and start a new frame */
 		extern unsigned long long alg_cycles, vt_frame_t0;
 		memcpy (last, cur, sizeof (line_t) * ncur); nlast = ncur; ncur = 0;
 		vt_frame_t0 = alg_cycles;
+		{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }
 	}
 }
 
@@ -347,6 +359,19 @@ int main (int argc, char **argv)
 	memset (cart, 0xff, sizeof cart);
 	f = fopen (argv[2], "rb"); if (!f) { perror (argv[2]); return 2; }
 	size_t n = fread (cart, 1, sizeof cart, f); fclose (f); { extern int vt_nocart; vt_nocart = (n == 0); }   /* (an empty slot: open bus) */
+	{ size_t L = strlen (argv[2]);                  /* a UVMC2 game (.um2): native ARM on the cartridge (uvm2_cart.c) */
+	  if (L > 4 && argv[2][L - 4] == '.' && (argv[2][L - 3] | 32) == 'u' && (argv[2][L - 2] | 32) == 'm' && argv[2][L - 1] == '2') {
+		extern int uvm2_open (const char *); extern int vt_nocart;
+		memset (cart, 0xff, sizeof cart); n = 0; vt_nocart = 1;
+		if (uvm2_open (argv[2])) return 2;
+	  }
+	  /* a PiTrex program (.img / .pit): a Raspberry Pi Zero on the cartridge (pitrex_cart.c) */
+	  if (L > 4 && argv[2][L - 4] == '.' && (((argv[2][L - 3] | 32) == 'i' && (argv[2][L - 2] | 32) == 'm' && (argv[2][L - 1] | 32) == 'g')
+	                                    || ((argv[2][L - 3] | 32) == 'p' && (argv[2][L - 2] | 32) == 'i' && (argv[2][L - 1] | 32) == 't'))) {
+		extern int pitrex_open (const char *); extern int vt_nocart;
+		memset (cart, 0xff, sizeof cart); n = 0; vt_nocart = 1;
+		if (pitrex_open (argv[2])) return 2;
+	  } }
 	if (n <= 32768) memcpy (cart + 32768, cart, 32768); /* 32K image: both halves */
 	/* VT_CARTHW=0: a bone-stock Vectrex with a plain 32K cartridge - the first 32K of any image, no
 	 * bank switching of any kind (PB6, Vectorblade's IRQ, multicart latch) */

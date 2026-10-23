@@ -14,16 +14,16 @@ TOPICS = [
 ('p', "Like a real Vectrex it starts *switched off*. The volume knob is also the power switch: turn it up "
       "(Page Up, the mouse wheel over the knob below the picture, or a click on its right half) and the "
       "Vectrex clicks on, the tube warms up and the BIOS plays its start screen. Turned all the way down "
-      "it clicks off again. Vectrex > Start switched on skips the knob."),
+      "it clicks off again. Vectrex > Start switched on (also in the setup) skips the knob."),
 ('h', 'Cartridges'),
 ('p', "Without a cartridge the Vectrex runs its built-in game, Mine Storm. Put your ROM files in the "
       "folder *roms* next to the program and click the cartridge below the picture (or L): the "
       "ROM browser lists them. Choosing one power-cycles the Vectrex with it, as if you had swapped the "
       "cartridge. The emulator starts again with the cartridge used last."),
 ('h', 'Playing'),
-('p', "Player 1 plays with the arrow keys and A W S D (buttons 1 to 4), Shift for a half push of the "
+('p', "Player 1 plays with the arrow keys and A S D F (buttons 1 to 4, in a row as on the controller; W A S D as a cross in Controls), Shift for a half push of the "
       "stick, or with a game controller; Vectrex > Controls sets both players up. Keys that run the "
-      "emulator: F11 full screen, Esc back / quit, P pause, L ROM browser, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
+      "emulator: F11 full screen, Tab the control deck, Esc back / pause, P pause, L ROM browser, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
       "+ / - / 0 size, 9 real size."),
 ('more', 'Why the menus are not there in full screen', "In full screen with G-Sync, Windows hides its own "
       "menus and pop-ups behind the picture, so everything you need there is drawn into the picture "
@@ -31,6 +31,46 @@ TOPICS = [
       "get back to the window and its menus."),
 ]),
 
+('deck', 'The control deck', [
+('p', "Tab (or View > Control deck) opens one window over the running game with every display, sound and hardware "
+      "setting, in strips: Tube, Room light, Overlay, Sound, Vectrex unit, Display and Cartridge. Every switch and "
+      "slider acts on the game at once. Right click a slider: its default. Reset this strip puts back only that strip. "
+      "Hold H (or the Before button) to see the look from before the deck opened. Tab or Esc closes it."),
+('p', "With a game controller: LB / RB switch strips, up / down pick a row, left / right change it, A switches, "
+      "Y holds the look from before, B closes."),
+('h', 'Quality'),
+('item', 'Auto', "Starts at High and steps down by itself when this PC misses screen frames for a few seconds."),
+('item', 'Low', "The afterglow stays; no bloom, no curved glass or glass edge, the overlay flat. For old laptops."),
+('item', 'Medium', "Afterglow and a light bloom; no scratches, plastic glow or reflections."),
+('item', 'High', "Your look settings exactly as you set them."),
+('item', 'Ultra', "High plus every refresh of the monitor (its full rate): the afterglow fades in finer steps."),
+('p', "Quality only changes the picture effects, never the emulation, and it never changes your own settings: "
+      "it only leaves out the costly ones while it is lower."),
+('h', 'Game'),
+('item', 'Save for this game', "This game keeps the look and controls it has now and starts with them every time. "
+      "Nothing is saved for a game unless you press this."),
+('item', 'Revert', "Back to this game's saved settings (after changing them)."),
+('item', 'Remove game settings', "The game forgets its own settings and uses the everyday ones again."),
+('item', 'Make default', "The settings now become the everyday settings, for every game without its own."),
+('p', "A game without its own settings uses the everyday settings; what you change there is kept for all games."),
+]),
+('unit', 'Deck: Vectrex unit', [
+('p', "No two Vectrexes draw alike: their analog parts have aged and were trimmed differently. These are those "
+      "parts, live, as in VIDE's analog settings - to see how a game looks on a good, a tired or a cranky Vectrex."),
+('item', "Owner's Vectrex", "Measured on the emulator author's own Vectrex (photos of its test screens): the default."),
+('item', 'Ideal', "A perfect machine: the zero reference holds, nothing drifts, the Y hold settles at once."),
+('item', 'Cranky', "A tired unit: a weak zero reference, drift, slow settling, long beam delays."),
+('item', 'Random unit', "A new believable Vectrex somewhere between a good and a tired one, each time."),
+('item', 'Zero hold', "How well the zero reference charges when a game re-centres the beam: lower, and shapes drawn after "
+      "a re-centre start a little off - text lines slant, closed boxes do not meet."),
+('item', 'Zero calibration shift', "Where the calibrated zero ends up after the BIOS's calibration pulse."),
+('item', 'Drift X / Drift Y', "The integrators' offset: while a line is drawn the beam creeps sideways or up and down."),
+('item', 'Zero offset', "The trimmers R333 / R335: the whole picture's centre against the zero reference."),
+('item', 'Y hold settling', "How quickly the Y sample-and-hold reaches a new value (1 = at once)."),
+('item', 'Beam switch-off delay', "How long the beam stays lit after a game blanks it: longer, and lines get tails."),
+('item', 'Line gaps (stop delay)', "When the integrators stop after a line: the gaps at line ends and corners."),
+('item', 'Export... / Import...', "Save the unit as a .vxunit file to share, or load one."),
+]),
 ('vectrex', 'Menu: Vectrex', [
 ('item', 'ROM browser (L)', "Lists the ROMs in the roms folder next to the program; its subfolders are "
          "shown as folders above the games - open one, and BACK at the top (or Backspace) goes back up. Up / "
@@ -87,10 +127,10 @@ TOPICS = [
 ('item', 'Reset Vectrex settings to default', "Cartridge hardware Auto, port 2 the joystick, start switched "
          "off, with the intro. The controls keep theirs (the Controls window has its own reset), the volume "
          "knob stays."),
-('item', 'Quit (Esc)', "Closes the emulator; the settings are kept for next time."),
+('item', 'Quit', "Closes the emulator; the settings are kept for next time."),
 ]),
 
-('display', 'Menu: Display', [
+('display', 'Deck: Display', [
 ('item', 'Full screen (F11)', "The picture on the whole monitor at its full resolution (for example 4K)."),
 ('item', 'Bigger / Smaller / Start size', "The window size (+ / - / 0); the start size is as big as fits the "
          "desktop, above the task bar. In full screen: the picture size."),
@@ -112,7 +152,12 @@ TOPICS = [
          "knob (wheel or click to turn it) and the RESET button."),
 ('item', 'Cartridge', "A cartridge below the picture: click it for the ROM browser."),
 ('h', 'Screen'),
-('item', 'Fixed 60 Hz', "The default: smooth and tear-free on any monitor."),
+('item', 'Matched to the monitor', "The default: 60 Hz on a 60 / 120 / 240 Hz monitor, else the monitor's rate divided down near the game's 50 Hz (144 Hz: 72, 165 Hz: 55) - always in step with the refresh, so smooth and tear-free."),
+('item', 'Smooth motion', "For 60 Hz screens without G-Sync / FreeSync (most laptops): a Vectrex game makes 50 pictures a second, a 60 Hz "
+      "screen shows 60, so every fifth refresh repeats one and moving things stutter slightly. Smooth motion gives every refresh a picture "
+      "of its own, with the vectors where they are between the two game frames around it - the game keeps its own speed and sound, the "
+      "picture comes about 20 ms later. Where two frames do not match line for line (things appearing, other lines), the earlier one is "
+      "shown as is. Off by default (the purist 50 pictures a second)."),
 ('item', "The monitor's full rate", "Every refresh of a 120, 144 or 240 Hz monitor: the afterglow fades in "
          "finer steps and moving things update more often."),
 ('item', 'G-Sync / FreeSync', "One screen picture per game frame, with no tearing - needs such a monitor. "
@@ -121,8 +166,8 @@ TOPICS = [
          "reports it), not turned, the on-screen display, the knob and the cartridge on, fixed 60 Hz."),
 ]),
 
-('tube', 'Menu: Tube', [
-('p', "The Tube menu is about the picture tube and the analog parts that drive it. Each effect is measured "
+('tube', 'Deck: Tube', [
+('p', "The Tube strip is about the picture tube and the analog parts that drive it. Each effect is measured "
       "on a real Vectrex (photos, a video and sound recordings) and can be switched off."),
 ('item', 'Phosphor (afterglow and bloom)', "The glow of the screen's coating. Off: plain lines."),
 ('item', 'Bloom', "How far the brightest lines light up the glass around them."),
@@ -192,7 +237,7 @@ TOPICS = [
          "cycles after it was told to - games that time their drawing to the cycle depend on that."),
 ]),
 
-('overlay', 'Menu: Overlay', [
+('overlay', 'Deck: Overlay', [
 ('p', "On a real Vectrex every game came with a printed plastic sheet in front of the screen: coloured, "
       "see-through parts tint the vectors behind them, the solid print gives borders, pictures and the "
       "game's name. The emulator shows the MiSTer core's overlay files (.art) and PNG images with "
@@ -239,7 +284,7 @@ TOPICS = [
          "too (other games keep theirs)."),
 ]),
 
-('light', 'Menu: Light', [
+('light', 'Deck: Room light', [
 ('p', "The room around the Vectrex: how much light there is, and the office ceiling light above and in front of "
       "you, mirrored in the tube's glass and on an overlay."),
 ('item', 'Room light...', "How much the room lights up the overlay's sheet - the coloured plastic and the print: low for "
@@ -263,7 +308,26 @@ TOPICS = [
 ('item', 'Reset light settings to default', "The room light, the glass and the ceiling light as they came."),
 ]),
 
-('sound', 'Menu: Sound', [
+('addons', 'Deck: Cartridge', [
+('p', "Cartridges with a computer of their own. The Ultimate Vectrex Multicart 2 (UVMC2) carries an RP2350 - two ARM "
+      "Cortex-M33 cores at 150 MHz - and runs native games (.um2 files) on it: the game holds the Vectrex's 6809 "
+      "stopped and drives the bus itself, writing the VIA once per bus cycle, exactly as the 6809 would. The emulator "
+      "runs the RP2350 (both cores, its PIO state machines, DMA, timers, PSRAM) and lets it drive the emulated Vectrex, "
+      "so the picture, the tube and the sound chip behave as with any cartridge - the mains wobble and the buzz too, "
+      "as on a real Vectrex with a UVMC2."),
+('item', "The PC's mouse and keyboard on its USB port", "On (the default): a UVMC2 game sees the PC's mouse as a USB mouse (move it over the picture; left / right click, the wheel) and, after Ctrl+K, the keyboard as a USB keyboard - VecOS uses both. While typing, every key goes to the cartridge (the emulator's own keys and the controller keys rest); Ctrl+K again gives them back. The mouse steering player 1 (Vectrex menu) takes the mouse instead."),
+('item', 'Show UVMC2 games (.um2) in the ROM list', "On: .um2 files in the roms folder appear in the ROM browser "
+         "(marked UVMC2) and in Open ROM file."),
+('item', 'Open UVMC2 game...', "A file dialog for .um2 files anywhere on your PC."),
+('item', 'Headphone jack sound', "The UVMC2's own audio (its 3.5 mm jack, a 16-bit DAC at 32 kHz): clean and full "
+         "range beside the Vectrex's sound (as a line out to an amplifier), through the Vectrex's own small speaker "
+         "and its volume knob, or off. Games that use the Vectrex's sound chip are heard as always."),
+('item', 'Headphone volume...', "The jack's level (100 % = as the game sends it)."),
+('item', 'The SD card folder', "A real UVMC2 reads its games' extra files from a microSD card; here the card is a folder: sd, next to the program (or in %APPDATA%/Vectrex_EMU when the program's folder cannot be written). Put files there as you would on the card - VecDoom: a folder doom with a WAD file in it (sd/doom/DOOM.WAD, or DOOM1.WAD, the free shareware episode); Quake: a folder quake with pak0.pak (and pak1.pak) - and start the game. A game that needs such a file and does not find it says what and where, and opens the folder. The control deck's Cartridge strip: Open the SD folder, or choose another folder. What a game writes (saves, settings) is kept in the folder."),
+('item', 'Reset add-on settings to default', "UVMC2 games listed, the jack clean at 100 %, the SD card folder sd."),
+]),
+
+('sound', 'Deck: Sound', [
 ('item', 'Vectrex buzz / Buzz volume', "The famous Vectrex buzz from the speaker."),
 ('more', 'Where the buzz comes from', "The deflection amplifiers that steer the beam draw large, fast "
          "currents. Some of that leaks into the audio amplifier, which sits on the same board and supply, "

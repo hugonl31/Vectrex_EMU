@@ -33,7 +33,10 @@ import tkinter as tk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vecrender
 import vart
+import deck
+deck.V = sys.modules[__name__]                  # (the control deck reads this module's tables)
 import v4e
+import fatimg
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 if not IS_WIN:                                          # macOS / Linux: the window, keys, controllers, sound
@@ -110,7 +113,7 @@ CTRL_NAMES = dict(up='Up', down='Down', left='Left', right='Right', b1='Button 1
 # - the WASD cross under the left hand), Shift for half the stick;
 # player 2 has no keys (a controller, or keys of your own)
 DEFAULT_KEYS = {'p1': dict(up=[(0x26, 'Up')], down=[(0x28, 'Down')], left=[(0x25, 'Left')], right=[(0x27, 'Right')],
-                           b1=[(0x41, 'A')], b2=[(0x57, 'W')], b3=[(0x53, 'S')], b4=[(0x44, 'D')],
+                           b1=[(0x41, 'A')], b2=[(0x53, 'S')], b3=[(0x44, 'D')], b4=[(0x46, 'F')],   # (a row, as on the controller)
                            half=[(0x10, 'Shift')]),
                 'p2': {k: [] for k in CTRL_INPUTS}}
 DEFAULT_DEADZONE = 0.2
@@ -177,6 +180,7 @@ class Input:
             self._u32.GetWindowThreadProcessId.argtypes = [W.HWND, ctypes.POINTER(W.DWORD)]
         self.focused = True
         self.block = False             # (the ROM browser is open: the game runs on without input)
+        self.mouse = None              # (jx, jy, buttons) from the mouse / touchpad when it steers player 1 (App)
         self.device = 'keyboard'
         self._names = {}
         self._devs = []
@@ -352,7 +356,10 @@ class Input:
         pid = W.DWORD()
         self._u32.GetWindowThreadProcessId(self._u32.GetForegroundWindow(), ctypes.byref(pid))
         self.focused = pid.value == os.getpid()
+    kbd_off = False                     # (typing on a UVMC2's USB keyboard: the keyboard is not the controller)
     def keydown(self, vk):
+        if self.kbd_off:
+            return False
         if not IS_WIN:
             return self.focused and osdep.KEYS.held(vk)
         return self.focused and bool(self.user32.GetAsyncKeyState(vk) & 0x8000)
@@ -400,6 +407,12 @@ class Input:
         self.update_focus()
         a = self.read_player('p1'); b = self.read_player('p2')
         self.device = 'pad' if a[3] else 'keyboard'
+        ms = self.mouse                                         # (the mouse / touchpad as player 1's stick)
+        if ms:
+            jx, jy, btn = a[:3]
+            if abs(ms[0]) > abs(jx): jx = ms[0]
+            if abs(ms[1]) > abs(jy): jy = ms[1]
+            a = (jx, jy, btn | ms[2])
         return a[:3], b[:3]
 
 # ------------------------------------------------------------------ audio (winmm waveOut)
@@ -487,7 +500,12 @@ class CrtSound:
         self.voice_spk = [Biquad('hp', 140, 0.7), Biquad('pk', 1800, 1.0, 2.0), Biquad('lp', 7500, 0.7)]
         # full-range speakers: an arcade cabinet's warm bass (+6 dB below ~150 Hz; no rumble under 40 Hz)
         self.voice_bass = [Biquad('hp', 40, 0.7), Biquad('ls', 150, 0.7, 6.0)]
-        self.scruff_until = 0.0                          # turning the knob: a dirty potentiometer crackles
+        # an Ultimate Vectrex Multicart 2 game: the second channel is the cartridge's headphone jack (its
+        # PT8211 DAC) - clean and full range beside the Vectrex, through the Vectrex's speaker, or off
+        self.jack = False                                # (a .um2 game is running: set by the App)
+        self.jack_mode = 'clean'                         # 'clean' / 'speaker' / 'off'
+        self.jack_vol = 1.0
+        self.scruff_until = 0.0                         # turning the knob: a dirty potentiometer crackles
         self.overlay = []                                # power on / off sound, mixed in after the speaker
         self.snd_on = load_wav('on.wav'); self.snd_off = load_wav('off.wav')
         import random; self.rnd = random.Random(); self.drop = 0; self.crk = 0.0   # (fresh every session)
@@ -505,7 +523,7 @@ class CrtSound:
         self.spk = [Biquad('hp', 220, 0.9), Biquad('hp', 175, 0.7), Biquad('pk', 270, 1.3, 2.0),   # (cabinet: a little port bass)
                     Biquad('pk', 900, 1.0, 4.0),
                     Biquad('lp', 6200, 0.7), Biquad('lp', 8000, 0.7)]
-    def process(self, pcm, lines, speech=None):
+    def process(self, pcm, lines, speech=None, arr=None):
         if speech is None and not ((self.buzz_on and self.buzz_vol > 0) or self.speaker_on or self.overlay or self.dead
                 or self.volume != 1.0 or time.perf_counter() < self.scruff_until):
             return pcm
@@ -515,17 +533,36 @@ class CrtSound:
         if not n:
             return pcm
         out = [float(v) for v in a]
+        jack = None
+        if speech and self.jack:                                # (the UVMC2's jack, not a speech module)
+            if self.jack_mode != 'off':
+                sp = array('h'); sp.frombytes(speech)
+                jack = [v * 2.0 * self.jack_vol for v in sp]     # (the core sends it at half scale)
+            speech = None
+            if jack and self.jack_mode == 'speaker':            # (plugged into the Vectrex: its knob, its speaker)
+                for i in range(min(n, len(jack))): out[i] += jack[i]
+                jack = None
         self.knob(out)                                          # the volume knob: the game sound only (the
         if self.buzz_on and self.buzz_vol > 0:                  # buzz goes on, even on a dead spot)
-            act = [0.0] * n
             k = RATE / 1.5e6                                    # samples per CPU cycle
-            for ln in lines:
-                if len(ln) < 7: continue
-                e = ln[5] / 8.0 * ((ln[4] & 127) / 127.0)
-                i0 = int(ln[6] * k); i1 = int((ln[6] + ln[5] / 8.0) * k)
-                if i0 >= n: continue
-                i1 = min(n - 1, max(i0, i1)); w = e / (i1 - i0 + 1)
-                for i in range(i0, i1 + 1): act[i] += w
+            if arr is not None and len(arr) == len(lines):      # (numpy: each line's share added at its first sample,
+                ev = arr['e'] / 8.0                             #  taken off after its last, summed up - the same)
+                e = ev * ((arr['c'] & 127) / 127.0)
+                i0 = (arr['t'] * k).astype(_np.int64); i1 = ((arr['t'] + ev) * k).astype(_np.int64)
+                ok = i0 < n
+                i0, i1, e = i0[ok], _np.minimum(n - 1, _np.maximum(i0[ok], i1[ok])), e[ok]
+                w = e / (i1 - i0 + 1)
+                d = _np.zeros(n + 1); _np.add.at(d, i0, w); _np.add.at(d, i1 + 1, -w)
+                act = _np.cumsum(d)[:n].tolist()
+            else:
+                act = [0.0] * n
+                for ln in lines:
+                    if len(ln) < 7: continue
+                    e = ln[5] / 8.0 * ((ln[4] & 127) / 127.0)
+                    i0 = int(ln[6] * k); i1 = int((ln[6] + ln[5] / 8.0) * k)
+                    if i0 >= n: continue
+                    i1 = min(n - 1, max(i0, i1)); w = e / (i1 - i0 + 1)
+                    for i in range(i0, i1 + 1): act[i] += w
             # the frame's start: the BIOS zeroes the integrators and recalibrates every frame, even
             # with nothing on screen, so the buzz never stops (its pitch is the frame rate)
             for i in range(min(n, 8)):                          # (a sharp pulse: 0.2 ms)
@@ -556,6 +593,12 @@ class CrtSound:
                 v = out[i] + s[i]
                 if v > 24000: v = 24000 + 8767 * math.tanh((v - 24000) / 8767)      # (a soft limit above
                 elif v < -24000: v = -24000 - 8767 * math.tanh((-v - 24000) / 8767) #  24000: no hard clipping)
+                out[i] = v
+        if jack:                                                # (the jack, clean: a line out beside the Vectrex)
+            for i in range(min(n, len(jack))):
+                v = out[i] + jack[i]
+                if v > 24000: v = 24000 + 8767 * math.tanh((v - 24000) / 8767)
+                elif v < -24000: v = -24000 - 8767 * math.tanh((-v - 24000) / 8767)
                 out[i] = v
         self.mix_overlay(out)
         return array('h', [max(-32768, min(32767, int(v))) for v in out]).tobytes()
@@ -788,10 +831,111 @@ def v4e_rom(path):
     _v4e_done[path] = (key, out)
     return out
 
+PITREX_UI = False                                               # the PiTrex add-on in the menus (core support stays)
+
+
+try:                                                            # (numpy, if there: the frame's lines in one go)
+    import numpy as _np
+    LINE_DT = _np.dtype([('x0', '<u2'), ('y0', '<u2'), ('x1', '<u2'), ('y1', '<u2'), ('c', 'u1'), ('e', '<u2'), ('t', '<u2')])
+except Exception:   # noqa
+    _np = None
+
+
+# the Vectrex unit (control deck): how one real Vectrex's analog parts differ from another's, as in VIDE's
+# analog settings - live in the core (vt_set_analog id), saved, exported and imported as a .vxunit file.
+# (key, core id, label, low, high, format, environment variable at the core's start). The stop delay (line gaps)
+# is the renderer's line_gap, id 0.
+UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0.10, 1.00, '%.2f', 'VT_ZREFK'),
+               ('zcal', 2, 'Zero calibration shift', 0.0, 6.0, '%.1f', 'VT_CALSHIFT'),
+               ('drift_x', 3, 'Drift X (integrator offset)', -0.10, 0.10, '%+.3f', None),
+               ('drift_y', 4, 'Drift Y (integrator offset)', -0.10, 0.10, '%+.3f', None),
+               ('zofs', 7, 'Zero offset (trimmers R333 / R335)', -2.0, 2.0, '%+.2f', 'VT_ZOFS'),
+               ('ysettle', 5, 'Y hold settling (1 = instant)', 0.20, 1.00, '%.2f', 'VT_YSHK'),
+               ('beamoff', 6, 'Beam switch-off delay', 0.0, 3.0, '%.1f cycles', 'VT_BEAMOFF'))
+UNIT_PRESETS = {
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=12.3),  # (measured)
+    'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=12.3),
+    'cranky': dict(zhold=0.18, zcal=4.5, drift_x=0.035, drift_y=-0.025, zofs=0.8, ysettle=0.45, beamoff=1.5, gap=14.6)}
+UNIT_NAMES = {'owner': "Owner's Vectrex (measured)", 'ideal': 'Ideal', 'cranky': 'Cranky', 'random': 'Random unit', 'custom': 'Custom'}
+def random_unit():
+    """a believable other Vectrex: every part somewhere between a good and a tired one"""
+    u = lambda a, b: round(random.uniform(a, b), 3)
+    return dict(zhold=u(0.22, 0.75), zcal=u(0.5, 4.0), drift_x=u(-0.025, 0.025), drift_y=u(-0.025, 0.025),
+                zofs=u(-0.6, 0.6), ysettle=u(0.5, 0.95), beamoff=u(0.2, 1.2), gap=u(11.0, 14.0))
+ADDON_ROM = ('.um2', '.img', '.pit')
+
+
+SD_README = """This folder is the SD card of the Ultimate Vectrex Multicart 2 (UVMC2) in Vectrex_EMU.
+
+Put UVMC2 games (.um2 files) in the roms folder, next to your other games: the ROM browser lists them.
+Some UVMC2 games read their own data from the SD card - put that here, as on the real card. For example:
+  VecDoom:  a folder doom with DOOM.WAD in it        (sd / doom / DOOM.WAD)
+  Quake:    a folder quake with pak0.pak and pak1.pak (sd / quake / ...)
+The game sees this folder as its card while it runs; what it writes (saves, settings) is kept here.
+Another folder can be chosen in the control deck (Tab), Cartridge strip: SD card folder.
+"""
+# UVMC2 games that need files of their own on the SD card (the data of the PC game they port: not shipped with them).
+# (a word in the .um2's file name, the folder on the card, the files - any one of them will do -, what to tell the user)
+UM2_DATA = (
+    ('doom', 'doom', ('*.wad',), 'a DOOM WAD file (DOOM.WAD, DOOM2.WAD, or DOOM1.WAD - the free shareware episode)'),
+    ('quake', 'quake', ('pak0.pak',), 'pak0.pak from Quake (the free shareware one will do), and pak1.pak if you have the full game'),
+)
+def um2_missing(rom, sd):
+    """what a UVMC2 game in UM2_DATA lacks on the SD card folder sd: (folder, what) or None"""
+    import fnmatch
+    name = os.path.basename(rom or '').lower()
+    if not name.endswith('.um2'):
+        return None
+    for word, folder, pats, what in UM2_DATA:
+        if word in name:
+            d = os.path.join(sd, folder)
+            files = [f.lower() for f in os.listdir(d)] if os.path.isdir(d) else []
+            if not any(fnmatch.fnmatch(f, pat) for f in files for pat in pats):
+                return folder, what
+    return None
+def open_folder(d):
+    """the folder in the system's file browser (made first if it is not there)"""
+    try:
+        os.makedirs(d, exist_ok=True)
+        if IS_WIN:
+            os.startfile(d)
+        else:
+            subprocess.Popen(['open' if IS_MAC else 'xdg-open', d])
+    except OSError:
+        pass
+
+
+def ensure_sd_dir(d):
+    """the UVMC2's SD card folder: made, with a short README, if it is not there yet (a new install: plug and play)"""
+    try:
+        if not os.path.isdir(d):
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, 'README.txt'), 'w', encoding='utf8') as f:
+                f.write(SD_README)
+    except OSError:
+        pass
+
+
+def c1_setup_done(fn):
+    try:
+        return bool(json.load(open(fn)).get('setup_done'))
+    except Exception:   # noqa
+        return False
+
+
 class Core:
-    def __init__(self, rom, ideal=False, cart_hw='auto', speech='off'):
+    def __init__(self, rom, ideal=False, cart_hw='auto', speech='off', sd_dir=None, px_dir=None, unit=None, usb=False):
         env = dict(os.environ)
         env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})  # perfect / a real Vectrex
+        if unit and not ideal:                                     # (the Vectrex unit: the analog parts at the start)
+            for key, i, label, lo, hi, fmt, var in UNIT_PARAMS:
+                if var and key in unit:
+                    env[var] = '%.4f' % unit[key]
+            env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
+        if not ideal and rom.lower().endswith(('.um2', '.img', '.pit')):
+            # (a UVMC2 / PiTrex drives the beam with short zero pulses: the slow reference model (0.38) leaves
+            # their lines broken and slanted where the real console draws them clean - photo of Quake on a UVMC2)
+            env.pop('VT_ZREFK', None)
         # cartridge hardware: auto = the board by the ROM's size (64K PB6, Vectorblade's PB6 + IRQ with its
         # flash, the 512K latch flash, Sean Kelly's Multi-Cart latch), or one board by name; off = a
         # bone-stock Vectrex with a plain 32K cartridge
@@ -803,10 +947,51 @@ class Core:
             env['VT_SPEECHOUT'] = '1'                               # (its sound on a channel of its own)
         # no input recording, no log: the core records to NUL, its messages are discarded
         env.update(V4E_ENV.get(rom, {}))                           # (a .v4e cartridge's save chip)
+        # a UVMC2 game: its SD card is the folder sd_dir, as a FAT32 image (fatimg.py), copied back at the end
+        # a UVMC2 game: its core 0 on a host thread of its own when that pays (the core decides: both cores busy);
+        # only with 4 or more processors (the window and the sound need one too)
+        if usb and rom.lower().endswith('.um2'):
+            env['VT_USBHID'] = '1'                                  # (the PC's keyboard and mouse on its USB port)
+        if rom.lower().endswith('.um2') and (os.cpu_count() or 1) >= 4:
+            env.setdefault('VT_THREADS', '1')
+        self.sd = None
+        if px_dir and rom.lower().endswith(('.img', '.pit')):       # a PiTrex program: its SD card is the folder px_dir
+            sd_dir = None
+            img = os.path.join(SETTINGS_DIR, 'pitrex_sd.img')
+            try:
+                fatimg.build(px_dir, img)
+                env['VT_PITREX_SD'] = img
+                self.sd = (img, px_dir)
+            except (OSError, ValueError):
+                pass
+        if sd_dir and rom.lower().endswith('.um2'):
+            img = os.path.join(SETTINGS_DIR, 'uvmc2_sd.img')
+            try:
+                fatimg.build(sd_dir, img)
+                env['VT_UVM2_SD'] = img
+                self.sd = (img, sd_dir)
+            except (OSError, ValueError):
+                pass
         self.rom = rom
         self.p = subprocess.Popen([CORE, BIOS, rom, '--live', NUL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, env=env, bufsize=0,
+                                  stderr=subprocess.PIPE, env=env, bufsize=0,
                                   creationflags=0x08000000 if IS_WIN else 0)            # CREATE_NO_WINDOW
+        # the core's messages: a UVMC2 cartridge's problem ("UVMC2: ...") for the window; the rest dropped
+        self.msgs = []
+        self.threads = 1                                        # (a UVMC2: host threads in use, from the core)
+        self.sig = None                                         # (the last frame's picture, as a checksum)
+        def drain(f=self.p.stderr, out=self.msgs):
+            try:
+                for ln in iter(f.readline, b''):
+                    t = ln.decode('utf-8', 'replace').strip()
+                    if (t.startswith('UVMC2:') or t.startswith('PITREX: the program stopped')) and len(out) < 20:
+                        out.append(t.split(':', 1)[1].strip())          # (a PiTrex's own text, its UART, is not shown)
+                    elif t.startswith('STAT: threads '):               # (the core: its UVMC2 runs on 1 or 2 host threads)
+                        try: self.threads = int(t.split()[2])
+                        except (ValueError, IndexError): pass
+            except (OSError, ValueError):
+                pass
+        threading.Thread(target=drain, daemon=True).start()
     ft_hi = 0; ft_last = 0; frame_t0 = 0
     def _read(self, n):
         b = bytearray()
@@ -819,14 +1004,44 @@ class Core:
     gap = None
     def set_gap(self, cycles):
         """Tube > Line gaps: the stop delay goes to the core with the next frame"""
-        self.gap = cycles
+        self.set_analog(0, cycles)
+    def set_analog(self, i, v):
+        """a Vectrex unit setting (vt_set_analog: 0 stop delay, 1 zero hold, 2 zero calibration, 3 / 4 drift
+        X / Y, 5 Y hold settling, 6 beam off delay, 7 zero offset): to the core with the next frames, one a frame"""
+        q = getattr(self, 'analog_q', None)
+        if q is None:
+            q = self.analog_q = {}
+        q[i] = v
+    # a UVMC2's USB keyboard and mouse (usbhost.c): the PC's, as HID reports - set from the window's thread
+    usb_keys = None                                     # (modifiers, up to 3 key codes) when changed
+    usb_mouse = None                                    # [buttons, dx, dy, wheel] summed since the last frame
+    def usb_key_report(self, mods, keys):
+        self.usb_keys = bytes([mods & 255] + [k & 255 for k in (list(keys) + [0, 0, 0])[:3]])
+    def usb_mouse_move(self, buttons, dx=0, dy=0, wheel=0):
+        m = self.usb_mouse or [buttons, 0, 0, 0]
+        m[0] = buttons; m[1] += dx; m[2] += dy; m[3] += wheel
+        self.usb_mouse = m
     def frame(self, jx, jy, btn, flags, p2=None):
         """one game frame: player 1's stick and buttons, the flags, player 2's (the 2nd port: flags bit 6),
-        and a changed setting (flags bit 5: the stop delay, 1/100 cycles)"""
-        g, self.gap = self.gap, None
+        and settings that changed (flags bit 5: a count, then each an id byte and 4 bytes - a float for the
+        Vectrex unit, or a UVMC2 USB keyboard / mouse report)"""
+        items = []
+        q, self.analog_q = getattr(self, 'analog_q', None), {}
+        for i, v in (q or {}).items():
+            items.append(bytes([i]) + struct.pack('<f', float(v)))
+        k, self.usb_keys = self.usb_keys, None
+        if k is not None:
+            items.append(bytes([0x80]) + k)
+        m, self.usb_mouse = self.usb_mouse, None
+        if m is not None:
+            c = lambda v: max(-127, min(127, int(v))) & 255
+            items.append(bytes([0x81, m[0] & 255, c(m[1]), c(m[2]), c(m[3])]))
+            rest = [m[0], m[1] - max(-127, min(127, int(m[1]))), m[2] - max(-127, min(127, int(m[2]))), 0]
+            if rest[1] or rest[2]:                      # (a fast flick: the rest next frame)
+                self.usb_mouse_move(*rest)
         extra = b''
-        if g is not None:
-            v = max(0, min(4000, int(round(g * 100)))); flags |= 0x20; extra = bytes([v & 255, v >> 8])
+        if items:
+            flags |= 0x20; extra = bytes([len(items)]) + b''.join(items)
         if p2:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags | 0x40, p2[0] + 128, p2[1] + 128, p2[2]]) + extra)
         else:
@@ -839,7 +1054,13 @@ class Core:
         self.ft_last = ft; self.frame_t0 = self.ft_hi + ft
         two = ns & 0x8000; ns &= 0x7fff                # (bit 15: two channels - the console, the speech module)
         body = self._read(n * 13 + ns * (4 if two else 2))             # 16-bit samples
-        lines = [struct.unpack_from('<HHHHBHH', body, i * 13) for i in range(n)]  # + energy, start cycle
+        if _np is not None:                                     # (numpy: the records in one go, the same tuples)
+            self.arr = _np.frombuffer(body, dtype=LINE_DT, count=n)
+            lines = self.arr.tolist()
+        else:
+            self.arr = None
+            lines = [struct.unpack_from('<HHHHBHH', body, i * 13) for i in range(n)]  # + energy, start cycle
+        self.sig = hash(body[:n * 13])                          # (the picture: a new one, or the last drawn again)
         if not two:
             return lines, body[n * 13:], None
         from array import array
@@ -852,6 +1073,8 @@ class Core:
             pass
         try:
             self.p.wait(timeout=10)
+            if self.sd:                                         # (what the game wrote on its card: into the folder)
+                fatimg.sync_back(*self.sd)
         except subprocess.TimeoutExpired:
             self.p.kill()
         return ''
@@ -869,6 +1092,7 @@ class Runner(threading.Thread):
         self.slow = 0
         self.latest = None; self.frames = 0; self.error = None
         self.pend = None; self.dframes = 0              # (screen frames: see the queue)
+        self.gframes = 0                                # (frames with a new picture: the game's own frame rate)
         self.queue = collections.deque(maxlen=16)
         self.emu_time = 0.0; self.emu_mark = None   # (lines, real start time, start cycle) per frame
         self.crt = CrtSound()
@@ -918,6 +1142,9 @@ class Runner(threading.Thread):
                 lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
                 if TEST_LOAD: time.sleep(TEST_LOAD)                     # (test: a host too slow)
                 self.frames += 1
+                sig = getattr(self.core, 'sig', None)               # (the game's own frame rate: pictures that changed)
+                if sig != getattr(self, 'last_sig', None):
+                    self.gframes += 1; self.last_sig = sig
                 if self.frames == 1:
                     self.t_first = time.perf_counter()
                 with self.lock:
@@ -937,7 +1164,7 @@ class Runner(threading.Thread):
                     if self.pend[3] >= 0.015:
                         self.queue.append(tuple(self.pend)); self.pend = None   # (t_next: its start)
                         self.dframes += 1
-                self.audio.play(self.crt.process(pcm, lines, speech))
+                self.audio.play(self.crt.process(pcm, lines, speech, getattr(self.core, 'arr', None)))
                 self.emu_time += max(len(pcm) // 2, 1) / RATE           # (the speed meter, see emu_mark)
                 # pace by emulated time (this frame's samples = its length in CPU cycles): real time
                 # is the clock; the sound queue (40 ms head start) only caps runaway buffering
@@ -983,15 +1210,29 @@ class App:
         self.cart_hw = {True: 'auto', False: 'off'}.get(c0.get('cart_hw', 'auto'), c0.get('cart_hw'))   # (older confs: on / off)
         if self.cart_hw not in CART_HW:
             self.cart_hw = 'auto'
+        self.show_um2 = bool(c0.get('show_um2', True))          # Add-ons: UVMC2 games (.um2) in the ROM list
         self.start_on = bool(c0.get('start_on', False))         # starts switched off: turn the knob, as on a Vectrex
+        self.mouse_stick = bool(c0.get('mouse_stick', False))   # Vectrex > Mouse / touchpad steers player 1
+        self.smooth = bool(c0.get('smooth_motion', False))   # Smooth motion (60 Hz screens), see smooth_frame
+        self.sm_buf = []
+        self.sm_st = type('SmoothState', (), {})()     # (the alternate-halves check's memory)
+        self.usb_hid = bool(c0.get('usb_hid', True))            # a UVMC2 game: the PC's mouse (and keyboard: Ctrl+K) as its USB devices
+        self.usb_typing = False; self.usb_btn = 0; self.usb_last = None; self.usb_down = []
         self.skip_boot = bool(c0.get('skip_boot', False))       # power on straight into the cartridge
         self.inp = Input(ctl)
         self.audio = Audio() if IS_WIN else osdep.Audio(RATE)
         self.speech = c0.get('speech', 'vecvoice' if c0.get('vecvoice') else 'off')   # (port 2: a speech accessory)
         if self.speech not in PORT2 or not sp_rom():
             self.speech = 'off'
-        self.core = Core(rom, args.ideal, self.cart_hw, self.speech)
+        self.sd_dir = c0.get('uvm2_sd_dir') or os.path.join(ROOT if _writable(ROOT) else SETTINGS_DIR, 'sd')   # the UVMC2's SD card
+        ensure_sd_dir(self.sd_dir)                              # (plug and play: there from the first start)
+        self.px_dir = c0.get('pitrex_sd_dir') or os.path.join(ROOT, 'pitrex')   # Add-ons: the PiTrex's SD card
+        u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
+        self.unit = dict(UNIT_PRESETS['owner'], **{k: float(v) for k, v in u.items() if k in UNIT_PRESETS['owner']})
+        self.unit_name = c0.get('unit_name', 'owner') if c0.get('unit_name') in UNIT_NAMES else 'owner'
+        self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
+        self.run.crt.jack = bool(args.rom and args.rom.lower().endswith('.um2'))   # (a UVMC2: its headphone jack)
         self.root = tk.Tk()
         if getattr(self, 'v4e_err', None):
             self.root.after(800, lambda: self.rom_error(self.v4e_err))
@@ -1056,8 +1297,9 @@ class App:
         self.bar.bind('<Configure>', lambda e: self.look_lbl.configure(wraplength=max(200, e.width - 8)))
         self.status = tk.Label(self.bar, fg='#6a8', bg='black', font=(MONO, 9), anchor='w', justify='left')
         # (bg '': Tk never paints the frame's background - OpenGL draws all of it; a black fill over the picture
-        #  between two frames flashed on some drivers, e.g. AMD on Windows, GitHub issue 1)
-        self.screen = tk.Frame(self.root, bg='', width=self.W0, height=self.H0w, highlightthickness=0)
+        #  between two frames flashed on some drivers, e.g. AMD on Windows, GitHub issue 1; until OpenGL's
+        #  first picture it is black: unpainted, the start showed a white block for a moment)
+        self.screen = tk.Frame(self.root, bg='black', width=self.W0, height=self.H0w, highlightthickness=0)
         self.screen.pack(fill='both', expand=True)
         self.root.update_idletasks()
         self.root.geometry(geo or '%dx%d+%d+10' % (self.W0, self.H0w,
@@ -1080,7 +1322,7 @@ class App:
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
-        self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full']
+        self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full', 'jack_mode', 'jack_vol']
         self.sound_default = {k: getattr(self.run.crt, k) for k in self.sound_keys}
         try:
             saved = json.load(open(self.settings_f)).get('display', {})
@@ -1091,6 +1333,13 @@ class App:
                 setattr(self.ren, k, type(self.look_default[k])(saved[k]))
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)                # (Tube > Line gaps: the core's stop delay)
+            self.unit['gap'] = self.ren.line_gap
+        try:                                                    # per-game memory (the control deck: Remember for
+            self.per_game = json.load(open(self.settings_f)).get('per_game', {}) or {}   #  this game): its look + controls
+        except Exception:           # noqa
+            self.per_game = {}
+        self.game_global = None                                 # (the everyday settings while a game has its own)
+        self.game_memory()
         try:
             c1 = json.load(open(self.settings_f))
         except Exception:           # noqa
@@ -1141,8 +1390,18 @@ class App:
         self.vrr = conf.get('gsync', False)                     # G-Sync / FreeSync mode (off by default: any monitor)
         self.rate = conf.get('screen_rate', '60')               # '60' or 'max' (the monitor's full rate)
         self.setup_display()
+        self.quality_mode = conf.get('quality', 'auto')          # the control deck's Quality: 'auto' or '0'..'3'
+        self.ultra_rate = conf.get('ultra_rate')                # (the screen rate before Ultra set the full rate)
+        self.q_level = 2 if self.quality_mode == 'auto' else int(self.quality_mode)
+        self.q_bad = 0; self.q_calm = time.perf_counter() + 6.0
+        if self.ren: self.ren.quality = self.q_level
         self.root.bind('<F11>', self.toggle_full)
         self.root.bind('<Motion>', self.pointer_moved)
+        self.screen.bind('<Motion>', self.mouse_moved, add='+')
+        self.screen.bind('<Leave>', lambda e: self.mouse_moved(None), add='+')
+        self.screen.bind('<ButtonRelease-1>', lambda e: self.mouse_button(1, False), add='+')
+        self.screen.bind('<ButtonPress-3>', lambda e: self.mouse_button(3, True), add='+')
+        self.screen.bind('<ButtonRelease-3>', lambda e: self.mouse_button(3, False), add='+')
         self.screen.bind('<Double-Button-1>', self.browse_double)
         vis = lambda: self.browser_geom()[3]
         for key, f in (('<Up>', lambda: self.browse(-1)), ('<Down>', lambda: self.browse(1)),
@@ -1150,6 +1409,7 @@ class App:
                        ('<Return>', self.browse_load), ('<BackSpace>', self.browser_back)):
             self.root.bind(key, lambda e, f=f: (f(), 'break')[1] if self.browser else None)
         self.screen.bind('<Button-1>', self.knob_click)
+        self.root.bind('<KeyPress>', self.any_key, add='+')    # (switched off: any key switches on)
         self.screen.bind('<MouseWheel>', self.knob_wheel)
         if not IS_WIN and not IS_MAC:                           # (X11, Tk 8.6: the wheel is buttons 4 / 5)
             wheel = lambda e, d: self.knob_wheel(type('E', (), dict(delta=d, x=e.x, y=e.y, widget=e.widget)))
@@ -1181,6 +1441,11 @@ class App:
             for k in ('Next', 'KP_Next'):
                 self.root.bind('<%s-%s>' % (m, k), lambda e: self.turn_voice(-0.05))
         self.root.bind('<Escape>', self.escape)
+        self.root.bind('<Tab>', self.open_deck)                 # (the control deck)
+        for k in ('<Control-k>', '<Control-K>'):
+            self.root.bind(k, self.toggle_usb_typing)          # (a UVMC2: the keyboard types on its USB keyboard)
+        self.root.bind_class('usbtype', '<KeyPress>', lambda e: self.usb_key(e, True))
+        self.root.bind_class('usbtype', '<KeyRelease>', lambda e: self.usb_key(e, False))
         self.root.protocol('WM_DELETE_WINDOW', self.quit)
         if IS_MAC:                                              # macOS: Command does what Ctrl does, Ctrl+Command+F
             for seq in self.root.bind():                        #  is full screen, Command+Q quits (settings saved)
@@ -1206,6 +1471,9 @@ class App:
         if args.fullscreen:                                     # (a restart from full screen stays there)
             self.root.after(100, self.toggle_full)
         self.root.after(150, self.focus)
+        self.root.after(2500, self.check_um2_data)
+        if not c1_setup_done(self.settings_f) and not args.demo:   # (the first start: the setup, once)
+            self.root.after(900, lambda: deck.setup_window(self))
 
     def focus(self):
         self.root.deiconify(); self.root.lift(); self.root.focus_force()
@@ -1236,13 +1504,15 @@ class App:
         else:
             self.pause_acc += now - getattr(self, 'pause_t', now)
     def escape(self, e=None):
-        """Esc: closes the ROM browser; in full screen back to the window; in the window: quit"""
+        """Esc: closes the ROM browser; in full screen back to the window; in the window: pause / go on
+        (it never quits - close the window for that: a user pressed Esc to leave a settings window and lost
+        the game)"""
         if self.browser:
             self.close_browser()
         elif self.full:
             self.toggle_full()
-        else:
-            self.quit()
+        elif self.run.power:
+            self.toggle_pause()
         return 'break'
     def toggle_fps(self, e=None):
         """Ctrl+F: the OSD (game fps, screen Hz, G-Sync, emulation speed, volume): full screen in the
@@ -1266,7 +1536,7 @@ class App:
         self.next_present = time.perf_counter()
         self.save_settings()
         self.root.title('Vectrex - display: ' + ('G-Sync / FreeSync (the game\'s frame rate)' if self.vrr
-                                                 else 'fixed 60 Hz (vsync)' if self.vsync else 'fixed 60 Hz'))
+                                                 else '%d Hz (vsync)' % round(self.hz) if self.vsync else '%d Hz' % round(self.hz)))
         self.root.after(2000, self.title)
         return 'break'
     # ---------------------------------------------------------------- the menu bar
@@ -1308,144 +1578,42 @@ class App:
             m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Vectrex', menu=m)
             item(m, 'ROM browser', 'L', self.open_browser)
             item(m, 'Open ROM file...', '', self.open_rom)
+            item(m, 'Open UVMC2 game...', '', self.open_um2)
             item(m, 'Eject cartridge (Mine Storm)', 'Ctrl+E', self.eject)
             m.add_separator()
             item(m, 'RESET button', 'Ctrl+R', self.reset_button)
             item(m, 'Volume (0 % = off)...', 'PgDn / PgUp', lambda: self.slider('volume'))
             check(m, 'Pause', 'P', lambda: self.run.paused, self.toggle_pause)
             m.add_separator()
+            item(m, 'Setup wizard (display, quality, folders, keys)...', '', lambda: deck.setup_window(self, first=False))
             item(m, 'Controls (keyboard, controllers)...', '', self.controls_window)
-            hw = tk.Menu(m, tearoff=0); m.add_cascade(label='Cartridge hardware', menu=hw)
-            for k, label in CART_HW.items():
-                check(hw, label, '', lambda k=k: self.cart_hw == k, lambda k=k: self.set_cart_hw(k))
-            p2 = tk.Menu(m, tearoff=0); m.add_cascade(label='Controller port 2', menu=p2)
-            for k, label in PORT2.items():
-                check(p2, label, '', lambda k=k: self.speech == k, lambda k=k: self.set_speech(k))
-            p2.add_separator()                                  # (a module holds port 2's button 2: the note)
-            p2.add_command(label="A game won't start with a speech module? Choose Joystick.", state='disabled')
+            check(m, 'Mouse / touchpad steers player 1', '', lambda: self.mouse_stick, self.toggle_mouse_stick)
             check(m, 'Start switched on', '', lambda: self.start_on, self.toggle_start_on)
             check(m, 'Skip the Vectrex intro (start screen)', '', lambda: self.skip_boot, self.toggle_skip_boot)
             m.add_separator()
             item(m, 'Reset Vectrex settings to default', '', self.reset_vectrex)
             m.add_separator()
-            item(m, 'Quit', 'Esc', self.quit)
-            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Display', menu=m)
+            item(m, 'Quit', '', self.quit)
+            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='View', menu=m)
+            item(m, 'Control deck (tube, light, overlay, sound, unit, display, cartridge)...', 'Tab', self.open_deck)
+            m.add_separator()
             check(m, 'Full screen', 'F11', lambda: self.full, self.toggle_full)
             item(m, 'Bigger', '+', lambda: self.zoom_step(1.1))
             item(m, 'Smaller', '-', lambda: self.zoom_step(1 / 1.1))
             item(m, 'Start size (fits the desktop)', '0', lambda: self.zoom_step(None))
             item(m, 'Real size (as big as a Vectrex)', '9', self.real_size)
-            item(m, 'Monitor size (for Real size)...', '', lambda: self.slider('monitor_inch'))
-            rm = tk.Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='Rotate screen', menu=rm)
-            for deg, label in ((0, 'Normal'), (90, '90 degrees right (clockwise)'), (180, '180 degrees'), (270, '90 degrees left')):
-                check(rm, label, '', lambda deg=deg: self.rot == deg, lambda deg=deg: self.set_rotation(deg))
             m.add_separator()
-            check(m, 'On-screen display (fps, Hz, speed, volume)', '', lambda: self.fps_on, self.toggle_fps)
-            check(m, 'Volume knob and RESET button', '', lambda: self.knob_on, self.toggle_knob)
-            check(m, 'Cartridge (click: the ROM browser)', '', lambda: self.cart_on, self.toggle_cart)
+            check(m, 'Overlay', 'O', lambda: bool(getattr(self.ren, 'art_on', False) and getattr(self.ren, 'art', None)), self.toggle_art)
             m.add_separator()
-            sc = tk.Menu(m, tearoff=0, postcommand=refresh)
-            m.add_cascade(label='Screen', menu=sc)
-            check(sc, 'Fixed 60 Hz (smooth on any monitor)', '', lambda: not self.vrr and self.rate != 'max', lambda: self.set_screen('60'))
-            check(sc, "The monitor's full rate (%s; the finest afterglow)" % ('%d Hz' % self.refresh if getattr(self, 'refresh', 0) else '120, 144, 240 Hz...'),
-                  '', lambda: not self.vrr and self.rate == 'max', lambda: self.set_screen('max'))
-            check(sc, "G-Sync / FreeSync (the game's frame rate, no tearing)", '', lambda: self.vrr, lambda: self.set_screen('vrr'))
-            m.add_separator()
-            item(m, 'Reset display settings to default', '', self.reset_display)
-            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Tube', menu=m)
-            check(m, 'Phosphor (afterglow and bloom)', '', lambda: R().phosphor, self.toggle_phosphor)
-            PH = lambda: R().phosphor; AG = lambda: R().phosphor and R().trail_on
-            item(m, 'Bloom...', '', lambda: self.slider('bloom')); dep(m, PH)
-            check(m, 'Afterglow', '', lambda: R().trail_on, lambda: self.flip(self.ren, 'trail_on')); dep(m, PH)
-            item(m, 'Afterglow length...', '', lambda: self.slider('trail')); dep(m, AG)
-            item(m, 'Afterglow joining...', '', lambda: self.slider('phos_grow')); dep(m, AG)
-            item(m, 'Afterglow overlap...', '', lambda: self.slider('phos_smooth')); dep(m, AG)
-            check(m, 'Tube geometry (a real Vectrex)', '', lambda: R().curve_on, lambda: self.flip(self.ren, 'curve_on'))
-            item(m, 'Tube geometry strength...', '', lambda: self.slider('geom_k')); dep(m, lambda: R().curve_on)
-            check(m, 'Glass edge (rounded corners)', '', lambda: R().glass_on, lambda: self.flip(self.ren, 'glass_on'))
-            check(m, 'Corner glow (halo where the beam rests)', '', lambda: R().halo_on, lambda: self.flip(self.ren, 'halo_on'))
-            dep(m, lambda: not R().even_beam)
-            item(m, 'Corner glow strength...', '', lambda: self.slider('halo_k')); dep(m, lambda: R().halo_on and not R().even_beam)
-            check(m, 'Even beam (an ideal vector display)', '', lambda: R().even_beam, lambda: self.flip(self.ren, 'even_beam'))
-            item(m, 'Line gaps (analog delay)...', '', lambda: self.slider('line_gap'))
-            m.add_separator()
-            check(m, 'Mains hum wobble', '', lambda: R().wob_on, self.toggle_wobble)
-            item(m, 'Wobble strength...', '', lambda: self.slider('wob_strength')); dep(m, lambda: R().wob_on)
-            mh = tk.Menu(m, tearoff=0, postcommand=refresh)
-            m.add_cascade(label='Mains', menu=mh); dep(m, lambda: R().wob_on)
-            for hz, where in zip(vecrender.MAINS_HZ, ('Europe, most of the world', 'USA, Canada, ...')):
-                check(mh, '%d Hz (%s)' % (hz, where), '', lambda hz=hz: R().mains_hz == hz,
-                      lambda hz=hz: self.set_mains(hz))
-            check(m, 'Brightness bending', '', lambda: R().bend_on, lambda: self.flip(self.ren, 'bend_on'))
-            bt = tk.Menu(m, tearoff=0, postcommand=refresh)
-            m.add_cascade(label='Bending type', menu=bt); dep(m, lambda: R().bend_on)
-            for i, name in enumerate(vecrender.BEND_TYPES):
-                check(bt, name, '', lambda i=i: R().bend_type % len(vecrender.BEND_TYPES) == i,
-                      lambda i=i: self.set_bend_type(i))
-            item(m, 'Bending strength...', '', lambda: self.slider('bend_strength')); dep(m, lambda: R().bend_on)
-            m.add_separator()
-            item(m, 'Reset tube settings to default', '', self.reset_tube)
-            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Overlay', menu=m)
-            A = lambda k, d: getattr(self.ren, k, d) if self.ren else d
-            check(m, 'Overlay', 'O', lambda: A('art_on', False) and bool(A('art', None)), self.toggle_art)
-            check(m, 'Choose automatically (by ROM name)', '', lambda: self.art_auto, self.toggle_art_auto)
-            item(m, 'Choose overlay...', '', self.choose_art)
-            item(m, 'No overlay for this game', '', self.no_art)
-            m.add_separator()
-            OV = lambda: bool(A('art_on', False) and A('art', None))           # (an overlay is shown)
-            SC = lambda: OV() and A('scr_on', False)
-            item(m, 'Tint strength...', '', lambda: self.slider('art_tint')); dep(m, OV)
-            item(m, 'Printed art brightness...', '', lambda: self.slider('art_print')); dep(m, OV)
-            check(m, 'Parallax (seen from the usual height)', '', lambda: A('art_parallax', False), lambda: self.flip(self.ren, 'art_parallax')); dep(m, OV)
-            if getattr(self.ren, 'gprog', None):
-                check(m, 'Plastic glow', '', lambda: A('art_glow', False), lambda: self.flip(self.ren, 'art_glow')); dep(m, OV)
-                item(m, 'Plastic glow strength...', '', lambda: self.slider('art_glow_k')); dep(m, lambda: OV() and A('art_glow', False))
-            if getattr(self.ren, 'gprog', None):
-                m.add_separator()
-                check(m, 'Scratches (decades of handling)', '', lambda: A('scr_on', False), self.toggle_scratches); dep(m, OV)
-                item(m, 'Wear (how much handled)...', '', lambda: self.slider('scr_wear')); dep(m, SC)
-                item(m, 'Wear type...', '', lambda: self.sliders('Wear type', ('scr_fine', 'scr_medium', 'scr_large'))); dep(m, SC)
-                item(m, 'Scribbles...', '', lambda: self.slider('scr_scrib')); dep(m, SC)
-                item(m, 'Glint strength...', '', lambda: self.slider('scr_glint')); dep(m, SC)
-                item(m, 'Glint reach...', '', lambda: self.slider('scr_reach')); dep(m, SC)
-                item(m, 'New random scratches', '', self.new_scratches); dep(m, SC)
-                m.add_separator()
-            pm = tk.Menu(m, tearoff=0); m.add_cascade(label='Position and size (this overlay)', menu=pm); dep(m, OV)
-            item(pm, 'Left / right...', '', lambda: self.slider('art_dx'))
-            item(pm, 'Up / down...', '', lambda: self.slider('art_dy'))
-            item(pm, 'Size...', '', lambda: self.slider('art_scale'))
-            item(pm, 'Reset position and size', '', self.reset_art_adj)
-            m.add_separator()
-            item(m, 'Reset overlay settings to default', '', self.reset_overlay)
-            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Light', menu=m)
-            item(m, 'Room light...', '', lambda: self.slider('art_room'))
-            check(m, 'Glass catches room light (without an overlay)', '', lambda: R().glass_room, lambda: self.flip(self.ren, 'glass_room'))
-            if getattr(self.ren, 'lprog', None):
-                m.add_separator()
-                check(m, 'Ceiling light reflected on the glass', '', lambda: R().light_on, lambda: self.flip(self.ren, 'light_on')); dep(m, lambda: R().glass_room)
-                item(m, 'Glass reflection strength...', '', lambda: self.slider('light_k')); dep(m, lambda: R().glass_room and R().light_on)
-                check(m, 'Ceiling light reflected on the overlay', '', lambda: R().light_ov, lambda: self.flip(self.ren, 'light_ov'))
-                item(m, 'Overlay reflection strength...', '', lambda: self.slider('light_ov_k')); dep(m, lambda: R().light_ov)
-                item(m, 'Light position...', '', self.light_pad); dep(m, lambda: R().light_on or R().light_ov)
-            m.add_separator()
-            item(m, 'Reset light settings to default', '', self.reset_light)
-            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Sound', menu=m)
-            check(m, 'Vectrex buzz', '', lambda: C().buzz_on, lambda: self.flip(self.run.crt, 'buzz_on'))
-            item(m, 'Buzz volume...', '', lambda: self.slider('buzz_vol')); dep(m, lambda: C().buzz_on)
-            check(m, 'Vectrex speaker', '', lambda: C().speaker_on, lambda: self.flip(self.run.crt, 'speaker_on'))
-            sm = tk.Menu(m, tearoff=0); m.add_cascade(label='Speech module (VecVoice / VecVox)', menu=sm)
-            dep(m, lambda: self.speech != 'off')                        # (only with a module in port 2)
-            item(sm, 'Volume...', 'Ctrl+PgDn / Ctrl+PgUp', lambda: self.slider('voice_vol'))
-            check(sm, 'Full-range speakers', '', lambda: C().voice_full, lambda: self.set_voice_full(True))
-            check(sm, 'Small speaker', '', lambda: not C().voice_full, lambda: self.set_voice_full(False))
-            m.add_separator()
-            item(m, 'Reset sound settings to default', '', self.reset_sound)
+            item(m, 'Setup wizard (display, quality, folders, keys)...', '', lambda: deck.setup_window(self, first=False))
             m = tk.Menu(mb, tearoff=0); mb.add_cascade(label='Help', menu=m)
             item(m, 'Help...', '', lambda: self.help_window('start'))
-            item(m, 'What the menus do...', '', lambda: self.help_window('vectrex'))
+            item(m, 'The control deck (Tab)...', '', lambda: self.help_window('deck'))
+            item(m, 'What the menus and the deck do...', '', lambda: self.help_window('vectrex'))
             item(m, 'The Vectrex: how it works...', '', lambda: self.help_window('system'))
             item(m, 'Cartridges, bank switching and saving...', '', lambda: self.help_window('carts'))
             m.add_separator()
+            item(m, 'Copy system info (for a GitHub issue)', '', self.copy_system_info)
             item(m, 'About this emulator...', '', lambda: self.help_window('accuracy'))
         mb = tk.Menu(self.root); fill(mb)
         self.menubar = mb
@@ -1481,6 +1649,7 @@ class App:
         'wob_strength':  ('Wobble strength', '', 'ren', 'wob_strength', 0.0, 1.0, False, '%.3f px', 1),
         'bend_strength': ('Bending strength', '', 'ren', 'bend_strength', 0.0, 10.0, False, '%.2f', 1),
         'buzz_vol':      ('Buzz volume', '', 'crt', 'buzz_vol', 0.0, 4.0, False, '%.3f', 1),
+        'jack_vol':      ('UVMC2 headphone jack volume', '', 'crt', 'jack_vol', 0.0, 2.0, False, '%.0f %%', 100),
         'monitor_inch':  ('Monitor size (diagonal)', '', 'app', 'monitor_inch', 10.0, 100.0, True, '%.1f inch', 1),
     }
     def slider(self, name):
@@ -1537,7 +1706,7 @@ class App:
                       width=16, sliderlength=22)                # (the handle: green on a dark trough)
         sc.pack(padx=10, pady=4)
         tk.Label(t, fg=g, bg=bg, font=(MONO, 9), anchor='w', justify='left',
-                 text=('keys: %s   ' % keys if keys else '') + 'right click: default (%s)   Esc: close' % (fmt % (default * show))).pack(fill='x', padx=10, pady=(0, 8))
+                 text=('keys: %s   ' % keys if keys else '') + 'right click: default (%s)   Enter: keep   Esc: undo' % (fmt % (default * show))).pack(fill='x', padx=10, pady=(0, 8))
         def sync():                                             # (the keys change it too)
             if not t.winfo_exists(): return
             busy[0] = True; sc.set(to_pos(max(lo, min(hi, getattr(obj(), attr)))))
@@ -1551,6 +1720,15 @@ class App:
             busy[0] = True; sc.set(to_pos(default)); busy[0] = False
             head.configure(text=value_text())
             return 'break'
+        start = getattr(obj(), attr)                            # (Esc: back to this, as in any dialog)
+        def undo(e=None):
+            if attr == 'volume': self.set_volume(start)
+            else: setattr(obj(), attr, start)
+            if attr == 'line_gap': self.core.set_gap(start)
+            if attr == 'monitor_inch': self.real_size()
+            else: self.show_look(attr, obj())
+            close()
+            return 'break'
         def close(e=None):
             self.save_settings()
             try: t.destroy()
@@ -1563,7 +1741,7 @@ class App:
             return 'break'
         sc.bind('<Button-1>', jump)
         sc.bind(RCLICK, to_default); t.bind(RCLICK, to_default)
-        t.bind('<Escape>', close); t.protocol('WM_DELETE_WINDOW', close)
+        t.bind('<Escape>', undo); t.bind('<Return>', close); t.protocol('WM_DELETE_WINDOW', close)
         def lost(e=None):                                       # (focus went elsewhere: close)
             if not t.winfo_exists(): return
             f = t.focus_get()
@@ -1620,7 +1798,7 @@ class App:
             sc.bind('<Button-1>', jump); sc.bind(RCLICK, to_default)
             r.update(sc=sc, text=text); rows.append(r)
         tk.Label(t, fg=g, bg=bg, font=(MONO, 9), anchor='w', justify='left',
-                 text='right click on a slider: its default   Esc: close').pack(fill='x', padx=10, pady=(4, 8))
+                 text='right click on a slider: its default   Enter: keep   Esc: undo').pack(fill='x', padx=10, pady=(4, 8))
         def sync():                                             # (other ways of changing them too)
             if not t.winfo_exists(): return
             busy[0] = True
@@ -1634,7 +1812,13 @@ class App:
             try: t.destroy()
             except tk.TclError: pass
             self.slider_win = None
-        t.bind('<Escape>', close); t.protocol('WM_DELETE_WINDOW', close)
+        starts = [(r_, getattr(self.ren, r_['attr'])) for r_ in rows]   # (Esc: all back as they were)
+        def undo(e=None):
+            for r_, v in starts:
+                setattr(self.ren, r_['attr'], v); self.show_look(r_['attr'], self.ren)
+            close()
+            return 'break'
+        t.bind('<Escape>', undo); t.bind('<Return>', close); t.protocol('WM_DELETE_WINDOW', close)
         def lost(e=None):                                       # (focus went elsewhere: close)
             if not t.winfo_exists(): return
             f = t.focus_get()
@@ -1818,7 +2002,7 @@ class App:
         self.help_show = show
         side.bind('<<ListboxSelect>>', lambda e: side.curselection() and show(help_text.TOPICS[side.curselection()[0]][0]))
         t.bind('<Escape>', lambda e: t.destroy())
-        tx.bind('<MouseWheel>', lambda e: tx.yview_scroll((-3 if e.delta > 0 else 3), 'units'))
+        tx.bind('<MouseWheel>', lambda e: tx.yview_scroll(-3 * self.wheel_steps(e), 'units'))
         show(topic)
     def controls_window(self):
         """Vectrex > Controls: per player a controller (only the connected ones are listed, by their own
@@ -2187,6 +2371,19 @@ class App:
             try: t.destroy()
             except tk.TclError: pass
             self.ctl_win = None
+        def layout(kind):
+            """player 1's buttons 1-4 on the keyboard: a cross under the left hand (W A S D: left, top, bottom,
+            right) or a row as on the controller (A S D F)"""
+            keys = {'cross': ((0x41, 'A'), (0x57, 'W'), (0x53, 'S'), (0x44, 'D')),
+                    'row': ((0x41, 'A'), (0x53, 'S'), (0x44, 'D'), (0x46, 'F'))}[kind]
+            for i, k in enumerate(('b1', 'b2', 'b3', 'b4')):
+                inp.keys['p1'][k] = [keys[i]]
+            cap['what'] = None; refresh(); self.save_settings()
+        tk.Label(bar, text='Player 1 buttons:', fg=dim, bg=bg, font=f9).pack(side='left', padx=(0, 4))
+        for text, kind in (('cross W A S D', 'cross'), ('row A S D F', 'row')):
+            tk.Button(bar, text=text, command=lambda k=kind: layout(k), fg=g, bg=bg, activebackground='#123', activeforeground=hi,
+                      font=f9, relief='flat', highlightthickness=1, highlightbackground=g, bd=1, padx=8).pack(side='left', padx=4)
+        tk.Label(bar, text='  ', bg=bg).pack(side='left')
         for text, cmd in (('Reset to defaults', reset), ('Close', close)):
             tk.Button(bar, text=text, command=cmd, fg=g, bg=bg, activebackground='#123', activeforeground=hi, font=f9,
                       relief='flat', highlightthickness=1, highlightbackground=g, bd=1, padx=10).pack(side='left', padx=5)
@@ -2292,6 +2489,16 @@ class App:
         cy = pb + 2.3 * r                                       # (OFF/ON and RESET 0.5 r below the picture - clear of an overlay's
                                                                 #  lower edge, which the parallax puts 0.32 r below it - black below)
         return cx, cy, r, cx - 3.4 * r
+    def hint_state(self):
+        """a line or two in the middle of the picture when it needs saying: paused (how to go on)"""
+        if self.browser or not (self.ren and hasattr(self.ren, 'map')):
+            return None
+        if self.run.paused and self.run.power:              # (switched off: dark, as a real Vectrex - the knob)
+            rows = ['PAUSED', 'ESC OR P TO GO ON']
+        else:
+            return None
+        pl, pt, pr, pb = self.pic_rect()
+        return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + 0.46 * (pb - pt), k=(pb - pt) / 330.0)
     def osd_state(self):
         """the window's OSD: its two rows in the strip below the picture, left of the knob panel (full
         screen: in the top left corner, see hud_text)"""
@@ -2304,8 +2511,10 @@ class App:
         cx, cy, r, rx = self.knob_geom()
         top = cy - 1.8 * r                                      # (level with the RESET and OFF/ON labels)
         gl_ = (pl + pr) / 2 - vecrender.GLASS_AW * ph / 2      # (from the glass's left edge)
-        return dict(area=(gl_, top, rx - 1.25 * r, pb + vecrender.KNOB_STRIP * ph),
-                    rows=self.hud_text(), k=(1.2 if self.full else 1.0) * 0.3 * r / 6.0)
+        rows = self.hud_text()
+        k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0
+        k = min(k, (pb + vecrender.KNOB_STRIP * ph - top) / (len(rows) * 9.0))   # (more rows - a UVMC2: smaller, to fit)
+        return dict(area=(gl_, top, rx - 1.25 * r, pb + vecrender.KNOB_STRIP * ph), rows=rows, k=k)
                     # (the text as high as the knob's labels; in full screen 20 % larger)
     # ---------------------------------------------------------------- the cartridge and the ROM browser
     def toggle_cart(self, e=None):
@@ -2344,8 +2553,9 @@ class App:
                 out.append((f, p, 'dir'))
         for f in names:
             p = os.path.join(d, f)
-            if os.path.isfile(p) and os.path.splitext(f)[1].lower() in self.ROM_EXT:
-                out.append((os.path.splitext(f)[0], p, 'rom'))
+            ext = os.path.splitext(f)[1].lower()
+            if os.path.isfile(p) and (ext in self.ROM_EXT or (ext == '.um2' and getattr(self, 'show_um2', True))):
+                out.append((os.path.splitext(f)[0] + ('  [UVMC2]' if ext == '.um2' else ''), p, 'rom'))
         return out
     def browser_dir(self, d, select=None):
         """show folder d in the ROM browser; select: the path to choose (else the first entry after BACK)"""
@@ -2363,6 +2573,18 @@ class App:
         self.browser = dict(roms=[], sel=0, top=0, dir=top)     # (the game runs on, without input, until a
         self.inp.block = True                                   #  ROM is loaded)
         self.browser_dir(d, cur)
+        self.root.after(1000, lambda bb=self.browser: self.browser_watch(bb))
+    def browser_watch(self, bb):
+        """the ROM browser open: its folder looked at every second - ROMs copied in (or taken out) appear at
+        once, the chosen one stays chosen (a user had to restart the program to see games just added)"""
+        b = self.browser
+        if not b or b is not bb:                                # (closed, or opened anew: that one's own watch)
+            return
+        roms = self.scan_roms(b['dir'])
+        if [p for _, p, _k in roms] != [p for _, p, _k in b['roms']]:
+            sel = b['roms'][b['sel']][1] if b['roms'] and 0 <= b['sel'] < len(b['roms']) else None
+            self.browser_dir(b['dir'], sel)
+        self.root.after(1000, lambda: self.browser_watch(bb))
     def browser_back(self, e=None):
         """Backspace / BACK: the folder above (the folder you came from chosen)"""
         b = self.browser
@@ -2481,26 +2703,70 @@ class App:
         if math.hypot(e.x - cx, e.y - cy) <= 1.15 * r: return 'knob'
         if math.hypot(e.x - rx, e.y - cy) <= 1.0 * r: return 'reset'
         return None
+    def power_up(self, e=None):
+        """switched off: on, the volume back where it was (a click on the picture or the knob, any key)"""
+        if self.run.power or self.browser:
+            return None
+        self.turn_volume(getattr(self, 'vol_before_off', 0) or 0.5)
+        return 'break'
+    def any_key(self, e):
+        """a key while switched off: on (not the emulator's own keys: Esc, F-keys, modifiers, with Ctrl / Alt)"""
+        if self.run.power or self.browser or (e.state & 0x2000c):
+            return None
+        if e.keysym in ('Escape', 'Shift_L', 'Shift_R', 'Control_L', 'Control_R', 'Alt_L', 'Alt_R', 'Win_L', 'Win_R',
+                        'Caps_Lock', 'Num_Lock', 'Prior', 'Next') or e.keysym.startswith('F') and e.keysym[1:].isdigit():
+            return None
+        return self.power_up()
     def knob_click(self, e):
-        """a click on the knob: right half turns it up, left half down; on RESET: the RESET button"""
+        """a click on the knob: right half turns it up, left half down (switched off: any click on it or on
+        the picture switches on - finding the right half was hit or miss); on RESET: the RESET button"""
         e = self.px_event(e)
         if self.browser:
             return self.browser_click(e)
         if self.cart_state() and math.hypot(e.x - self.cart_geom()[0], e.y - self.cart_geom()[1]) <= 1.3 * self.cart_geom()[2]:
             return self.open_browser()
         hit = self.knob_hit(e)
+        if not self.mouse_stick and not hit and self.usb_live():  # (a UVMC2: the USB mouse's left button)
+            pl, pt, pr, pb = self.pic_rect()
+            if pl <= e.x <= pr and pt <= e.y <= pb:
+                return self.mouse_button(1, True)
+        if self.mouse_stick and self.run.power and not hit:      # (steering with the mouse: a click on the picture fires)
+            pl, pt, pr, pb = self.pic_rect()
+            if pl <= e.x <= pr and pt <= e.y <= pb:
+                return self.mouse_button(1, True)
+        if not self.run.power and hit != 'reset':
+            pl, pt, pr, pb = self.pic_rect()
+            if hit == 'knob' or (pl <= e.x <= pr and pt <= e.y <= pb):
+                return self.power_up()
         if hit == 'knob':
             self.turn_volume(+0.05 if e.x >= self.knob_geom()[0] else -0.05)
         elif hit == 'reset':
             self.reset_shown_until = time.perf_counter() + 0.18
             self.reset_button()
+    def wheel_steps(self, e):
+        """whole wheel notches in this event: a mouse wheel sends 120 a notch, a precision touchpad's two-finger
+        scroll many small amounts - added up, so a short swipe is not a dozen notches (macOS: lines already)"""
+        if IS_MAC:
+            return int(e.delta) or (1 if e.delta > 0 else -1)
+        self.wheel_acc = getattr(self, 'wheel_acc', 0) + e.delta
+        if time.perf_counter() - getattr(self, 'wheel_t', 0.0) > 0.5:
+            self.wheel_acc = e.delta                            # (a new gesture: what was left is forgotten)
+        self.wheel_t = time.perf_counter()
+        n = int(self.wheel_acc / 120)
+        self.wheel_acc -= n * 120
+        return n
     def knob_wheel(self, e):
         """the mouse wheel over the knob turns it (the ROM browser open: it scrolls)"""
         e = self.px_event(e)
+        n = self.wheel_steps(e)
+        if not n:
+            return
         if self.browser:
-            return self.scroll(-3 if e.delta > 0 else 3)
+            return self.scroll(-3 * n)
         if self.knob_hit(e) == 'knob':
-            self.turn_volume(+0.05 if e.delta > 0 else -0.05)
+            self.turn_volume(0.05 * max(-3, min(3, n)))
+        elif self.usb_live():                                   # (a UVMC2: the USB mouse's wheel)
+            self.core.usb_mouse_move(self.usb_btn, 0, 0, max(-127, min(127, n)))
 
     def setup_display(self):
         self.hz = 60.0
@@ -2527,18 +2793,115 @@ class App:
         if getattr(self, 'rate', '60') == 'max' and refresh >= 50:
             self.hz = float(refresh)
             if vs_ok: self.vsync = 1
+            # (a UVMC2 game on a very fast screen: every refresh would cost the window thread time the emulation needs -
+            # divided down to ~120 Hz, still smooth: 240 / 360 / 480 Hz -> 120)
+            if vs_ok and refresh > 170 and (getattr(self.args, 'rom', '') or '').lower().endswith('.um2'):
+                self.vsync = max(1, int(round(refresh / 120.0)))
+                self.hz = refresh / self.vsync
         else:
+            # matched to the monitor: 60 Hz where the monitor runs a multiple of it (60 / 120 / 240), else
+            # its own rate divided down to the step nearest the game's 50 Hz - 144 Hz: 72, 165: 55, 75: 75,
+            # 50: 50 - always in step with the refresh (vsync). Paced by the clock instead, a 144 or 165 Hz
+            # laptop screen showed the frames on an uneven 2-3-2-3 refresh rhythm, torn: a hard flicker
             n = round(refresh / self.hz) if refresh else 0
             if vs_ok and n >= 1 and abs(refresh - n * self.hz) <= 1:
                 self.vsync = n
+            elif vs_ok and refresh >= 50:
+                self.vsync = max(1, int(refresh // 50))
+                self.hz = refresh / self.vsync
         if self.vsync > getattr(getattr(r, 'ctxo', None), 'max_swap_interval', 99):
             self.vsync = 0                                      # (macOS: only every refresh; else paced by the clock)
         if os.environ.get('VECTREX_HZ'):                       # (test: a rate by the clock)
             self.hz = float(os.environ['VECTREX_HZ']); self.vsync = 0
         r.swap_interval(0 if self.vrr else self.vsync)
+    def set_unit(self, key, v, name='custom'):
+        """one part of the Vectrex unit, live (gap: the line gaps, the renderer's line_gap)"""
+        self.unit[key] = v
+        self.unit_name = name
+        if key == 'gap':
+            if self.ren and hasattr(self.ren, 'line_gap'): self.ren.line_gap = v
+            self.core.set_gap(v); return
+        for k, i, label, lo, hi, fmt, var in UNIT_PARAMS:
+            if k == key and not (i == 1 and self.core.rom.lower().endswith(ADDON_ROM)):   # (the add-ons: the standard
+                self.core.set_analog(i, v)                                               #  zero reference, see Core)
+    def unit_preset(self, name):
+        """the Vectrex unit: a preset ('owner', 'ideal', 'cranky') or 'random' - a new believable unit"""
+        u = random_unit() if name == 'random' else dict(UNIT_PRESETS[name])
+        for k, v in u.items():
+            self.set_unit(k, v, name)
+        self.save_settings()
+        self.show_look('Vectrex unit: ' + UNIT_NAMES[name])
+    def export_unit(self):
+        from tkinter import filedialog
+        fn = filedialog.asksaveasfilename(parent=self.root, title='Export this Vectrex unit', defaultextension='.vxunit',
+                                          initialdir=ROOT, filetypes=[('Vectrex unit', '*.vxunit'), ('All files', '*.*')])
+        if fn:
+            try:
+                json.dump(dict(vectrex_unit=1, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
+                self.show_look('Vectrex unit exported: ' + os.path.basename(fn))
+            except OSError as e:
+                self.show_look('could not export: %s' % e)
+    def import_unit(self):
+        from tkinter import filedialog
+        fn = filedialog.askopenfilename(parent=self.root, title='Import a Vectrex unit', initialdir=ROOT,
+                                        filetypes=[('Vectrex unit', '*.vxunit'), ('All files', '*.*')])
+        if not fn:
+            return
+        try:
+            d = json.load(open(fn))
+            u = {k: float(d[k]) for k in UNIT_PRESETS['owner'] if k in d}
+        except (OSError, ValueError, TypeError) as e:
+            self.show_look('not a Vectrex unit file: %s' % e); return
+        for k, v in u.items():
+            self.set_unit(k, v)
+        self.save_settings()
+        self.show_look('Vectrex unit imported: ' + os.path.basename(fn))
+    QUALITY_NAMES = ('Low', 'Medium', 'High', 'Ultra')
+    def set_quality(self, mode):
+        """the control deck's Quality: 'auto' (starts at High, steps down while screen frames are missed) or
+        '0'..'3' Low, Medium, High, Ultra - effects only, never the emulation; Ultra also shows every refresh of
+        the monitor (its full rate), and leaving Ultra puts back the screen rate from before"""
+        self.quality_mode = mode
+        lvl = 2 if mode == 'auto' else int(mode)
+        self.set_q_level(lvl)
+        self.save_settings()
+        self.show_look('quality: ' + ('Auto (%s)' % self.QUALITY_NAMES[lvl] if mode == 'auto' else self.QUALITY_NAMES[lvl]))
+    def set_q_level(self, lvl):
+        self.q_level = lvl; self.q_bad = 0; self.q_calm = time.perf_counter() + 6.0
+        if self.ren: self.ren.quality = lvl
+        if lvl == 3 and not self.vrr and self.rate != 'max':
+            self.ultra_rate = self.rate; self.rate = 'max'; self.apply_rate()
+        elif lvl != 3 and self.ultra_rate and self.rate == 'max':
+            self.rate = self.ultra_rate; self.ultra_rate = None; self.apply_rate()
+    def quality_watch(self):
+        """Auto quality, once a second: four seconds in a row with under 85 % of the screen frames due (or the
+        emulation under 92 % while effects are on) - one step down; no step up by itself (no see-saw); the next start
+        begins at High again"""
+        if self.quality_mode != 'auto' or not self.ren:
+            return
+        if self.q_level == 0 and self.rate != 'max':
+            return
+        now = time.perf_counter()
+        if now < self.q_calm or self.run.paused or not self.run.power or self.vrr or self.browser:
+            self.q_bad = 0; return
+        try:
+            if self.root.state() == 'iconic': self.q_bad = 0; return
+        except tk.TclError:
+            return
+        bad = self.disp_fps < 0.85 * self.hz or self.speed < 92.0
+        self.q_bad = self.q_bad + 1 if bad else 0
+        if self.q_bad >= 4 and self.q_level == 0:              # (Low, and the full rate still too much: matched)
+            self.ultra_rate = None
+            self.rate = '60'; self.apply_rate(); self.q_bad = 0; self.q_calm = time.perf_counter() + 6.0
+            self.save_settings()
+            self.show_look("screen: matched to the monitor - this PC can not draw every refresh (%d Hz)" % round(self.refresh or 0))
+        elif self.q_bad >= 4:
+            self.set_q_level(self.q_level - 1)
+            self.show_look('quality: Auto (%s) - this PC is slower than the effects need' % self.QUALITY_NAMES[self.q_level])
     def set_screen(self, mode):
         """Display > Screen: '60' (fixed 60 Hz), 'max' (the monitor's full rate), 'vrr' (G-Sync / FreeSync)"""
         self.vrr = mode == 'vrr'
+        self.ultra_rate = None                                  # (chosen by hand: Ultra leaves it alone)
         if mode != 'vrr':
             self.rate = mode
         self.apply_rate()
@@ -2555,6 +2918,8 @@ class App:
         if new == old:
             return 'break'
         c.volume = new
+        if new == 0 and old > 0:
+            self.vol_before_off = old                           # (switched on again: back to this)
         if new > 0:
             c.new_turn()
         if (new > 0) != self.run.power:
@@ -2877,7 +3242,7 @@ class App:
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
                        curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
-                       buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None))
+                       buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
         self.save_settings()
@@ -2935,14 +3300,16 @@ class App:
         old = self.run
         old.stop = True; old.join(timeout=2)
         self.core.close()
+        self.save_settings()                                    # (the old game's own settings kept)
         path, self.rom_name = self.cartridge(rom)
         self.args.rom = os.path.abspath(rom) if rom else None
-        self.save_settings()
-        self.core = Core(path, self.args.ideal, self.cart_hw, self.speech)
+        self.core = Core(path, self.args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
+        self.usb_typing_off()
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)
         run = Runner(self.core, self.inp, self.audio, False)
         run.crt = old.crt; run.crt.overlay = []
+        run.crt.jack = bool(rom and rom.lower().endswith('.um2'))
         run.power = old.power                                   # (switched off: it stays off, cartridge in)
         if run.power:
             run.flags = self.power_flags()
@@ -2955,8 +3322,149 @@ class App:
         if run.power:
             self.crt_on(0.0)                                    # a quick power cycle: warm tube, a bulge
         self.load_art()
+        self.game_memory()
+        self.save_settings()
         self.title()
         run.start()
+        self.root.after(1500, self.check_um2_data)
+    def system_info(self):
+        """what a bug report needs: the version, the system, the graphics card, the monitor and how the emulator
+        runs on it now"""
+        import platform
+        import vrrdetect
+        ver = '?'
+        for d in (ROOT, RES, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')):
+            try:
+                ver = open(os.path.join(d, 'VERSION')).read().strip(); break
+            except OSError:
+                pass
+        gpu = glv = '?'
+        try:
+            gl = self.ren.gl; gl.glGetString.restype = ctypes.c_char_p
+            gpu = (gl.glGetString(0x1F01) or b'?').decode(errors='replace')
+            glv = (gl.glGetString(0x1F02) or b'?').decode(errors='replace')
+        except Exception:   # noqa
+            pass
+        try:
+            v = vrrdetect.detect(self.screen.winfo_id())
+        except Exception as e:  # noqa
+            v = dict(why=str(e), monitor='?')
+        cpu = platform.processor() or platform.machine()
+        if IS_WIN:
+            try:
+                import winreg
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\CentralProcessor\0') as k:
+                    cpu = winreg.QueryValueEx(k, 'ProcessorNameString')[0].strip()
+            except OSError:
+                pass
+        rows = [('Vectrex_EMU', ver + (' (exe)' if getattr(sys, 'frozen', False) else ' (from source, Python %s)' % platform.python_version())),
+                ('System', '%s %s (%s)' % (platform.system(), platform.release(), platform.version())),
+                ('Processor', '%s, %d logical cores' % (cpu, os.cpu_count() or 0)),
+                ('Graphics', '%s (OpenGL %s)' % (gpu, glv)),
+                ('Monitor', '%s, %s Hz; G-Sync / FreeSync: %s' % (v.get('monitor', '?'), getattr(self, 'refresh', '?'), v.get('why', '?'))),
+                ('Screen mode', ('G-Sync / FreeSync' if self.vrr else "the monitor's full rate" if self.rate == 'max' else 'matched to the monitor')
+                 + ', %.1f Hz, vsync every %d refresh(es)' % (self.hz, self.vsync) + (', full screen' if self.full else ', window')),
+                ('Picture', '%d x %d px' % tuple(self.ren.size) if self.ren and hasattr(self.ren, 'size') else 'Tk canvas'),
+                ('Quality', '%s (%s now)' % (self.quality_mode, self.QUALITY_NAMES[self.q_level])),
+                ('Now', 'game %s, emulation %d %%, game %d fps, monitor %d Hz' % (self.rom_name, round(self.speed), round(self.fps), round(self.disp_fps))),
+                ('numpy', 'yes' if _np is not None else 'no')]
+        return '\n'.join('%-12s %s' % r for r in rows)
+    def copy_system_info(self):
+        """Help > Copy system info: on the clipboard, and shown - to paste into a GitHub issue"""
+        text = self.system_info()
+        self.root.clipboard_clear(); self.root.clipboard_append(text)
+        t = tk.Toplevel(self.root, bg='#000'); t.title('System info'); t.transient(self.root)
+        tk.Label(t, text='Copied to the clipboard - paste it into your GitHub issue:', fg='#8cb', bg='#000',
+                 font=(MONO, 9), anchor='w').pack(fill='x', padx=12, pady=(10, 4))
+        box = tk.Text(t, width=96, height=len(text.splitlines()) + 1, fg='#6a8', bg='#05080a', font=(MONO, 9), bd=0)
+        box.insert('1.0', text); box.configure(state='disabled'); box.pack(padx=12, pady=(0, 10))
+        t.bind('<Escape>', lambda e: t.destroy()); t.focus_force()
+    def open_deck(self, e=None):
+        """Tab: the control deck - opens, or closes when open"""
+        return deck.open_deck(self)
+    def game_now(self):
+        """this game's own settings, as they are now: the look and the controls"""
+        return dict(look={k: getattr(self.ren, k) for k in self.look_keys} if self.ren else {}, controls=self.inp.save())
+    def game_apply(self, s):
+        for k, v in s.get('look', {}).items():
+            if k in self.look_keys:
+                setattr(self.ren, k, type(self.look_default[k])(v))
+        if s.get('controls'):
+            self.inp.load(s['controls']); self.inp.refresh_devices()
+        if self.ren and hasattr(self.ren, 'line_gap'):
+            self.core.set_gap(self.ren.line_gap); self.unit['gap'] = self.ren.line_gap
+    def game_memory(self):
+        """the cartridge just put in: its own look and controls if it has them (the everyday ones kept aside),
+        else the everyday ones back"""
+        own = self.per_game.get(self.rom_name)
+        if own:
+            if self.game_global is None:
+                self.game_global = self.game_now()
+            self.game_apply(own)
+        elif self.game_global is not None:
+            self.game_apply(self.game_global)
+            self.game_global = None
+    def game_state(self):
+        """for the control deck: 'everyday' (this game uses the everyday settings, changes kept for all games),
+        'own' (its own saved settings), 'changed' (its own, changed since saved)"""
+        own = self.per_game.get(self.rom_name)
+        if not own:
+            return 'everyday'
+        now = json.loads(json.dumps(self.game_now()))
+        return 'own' if now == json.loads(json.dumps(own)) else 'changed'
+    def save_game(self):
+        """Save for this game: from now on this game starts with the look and controls it has now (the
+        everyday settings stay as they were)"""
+        if self.game_global is None:
+            try:
+                d = json.load(open(self.settings_f))
+                self.game_global = dict(look=dict(d.get('display', {})), controls=d.get('controls') or self.inp.save())
+            except Exception:   # noqa
+                self.game_global = self.game_now()
+        self.per_game[self.rom_name] = self.game_now()
+        self.save_settings()
+        self.show_look('%s: settings saved for this game' % self.rom_name)
+    def revert_game(self):
+        """Revert: back to this game's saved settings"""
+        if self.rom_name in self.per_game:
+            self.game_apply(self.per_game[self.rom_name]); self.show_look('%s: its saved settings' % self.rom_name)
+    def remove_game(self):
+        """Remove game settings: this game forgets its own settings, the everyday ones come back"""
+        if self.rom_name in self.per_game:
+            del self.per_game[self.rom_name]
+            if self.game_global is not None:
+                self.game_apply(self.game_global); self.game_global = None
+            self.save_settings()
+            self.show_look('%s: the everyday settings' % self.rom_name)
+    def make_default(self):
+        """Make default: the settings now (this game's) become the everyday settings for every game without
+        its own"""
+        if self.game_global is not None:
+            self.game_global = self.game_now()
+        self.save_settings()
+        self.show_look('these settings are now the everyday settings')
+    def check_um2_data(self):
+        """a UVMC2 game that needs files of its own (Doom's WAD, Quake's pak0.pak) and has not got them on the SD card
+        folder: what it needs and where, and the folder opened on request (a real UVMC2's card is the same: the folder
+        is this emulator's card)"""
+        miss = um2_missing(self.args.rom, self.sd_dir)
+        if not miss:
+            return
+        from tkinter import messagebox
+        folder, what = miss
+        d = os.path.join(self.sd_dir, folder)
+        if self.full:                                   # (pop-ups hide behind a full-screen picture)
+            self.toggle_full()
+        game = os.path.splitext(os.path.basename(self.args.rom))[0]
+        if messagebox.askyesno('Vectrex_EMU', '%s needs %s.\n\nUVMC2 games read such files from the cartridge\'s SD card. '
+                               'In this emulator the SD card is a folder - put the file in:\n\n%s\n\nthen load the game '
+                               'again (click the cartridge: the ROM browser).\n\nOpen that folder now?' % (game, what, d),
+                               parent=self.root):
+            open_folder(d)
+    def cart_message(self, msg):
+        from tkinter import messagebox
+        name = 'PiTrex' if (self.args.rom or '').lower().endswith(('.img', '.pit')) else 'Ultimate Vectrex Multicart 2'
+        messagebox.showwarning('Vectrex_EMU', 'The cartridge (' + name + ') stopped:' + chr(10) + chr(10) + msg, parent=self.root)
     def rom_error(self, msg):
         from tkinter import messagebox
         messagebox.showerror('Vectrex_EMU', 'This cartridge cannot be loaded.\n\n' + msg, parent=self.root)
@@ -2965,7 +3473,7 @@ class App:
         from tkinter import filedialog
         start = os.path.dirname(os.path.abspath(self.args.rom)) if self.args.rom else ROOT
         fn = filedialog.askopenfilename(parent=self.root, title='Open a Vectrex ROM', initialdir=start,
-                                        filetypes=[('Vectrex ROM', '*.bin *.vec *.gam *.rom *.v4e'), ('All files', '*.*')])
+                                        filetypes=[('Vectrex ROM', '*.bin *.vec *.gam *.rom *.v4e' + (' *.um2' if getattr(self, 'show_um2', True) else '')), ('All files', '*.*')])
         if fn:
             self.restart(fn)
         return 'break'
@@ -3078,9 +3586,80 @@ class App:
     def reset_sound(self):
         """Sound > Reset sound settings to default (not the volume knob: it is the power switch)"""
         for k, v in self.sound_default.items():
-            if k != 'volume':
+            if k != 'volume' and not k.startswith('jack_'):
                 setattr(self.run.crt, k, v)
         self.show_look('sound settings: the defaults')
+    def reset_addons(self):
+        """Add-ons > Reset add-on settings to default: UVMC2 games listed, the jack clean at 100 %"""
+        for k, v in self.sound_default.items():
+            if k.startswith('jack_'):
+                setattr(self.run.crt, k, v)
+        self.show_um2 = True
+        self.sd_dir = os.path.join(ROOT, 'sd')
+        self.px_dir = os.path.join(ROOT, 'pitrex')
+        self.save_settings()
+        self.show_look('add-on settings: the defaults')
+    def set_jack(self, mode):
+        self.run.crt.jack_mode = mode
+        self.save_settings()
+        self.show_look('UVMC2 headphone jack: ' + {'clean': 'clean, full range', 'speaker': 'through the Vectrex speaker', 'off': 'off'}[mode])
+    def toggle_um2 (self):
+        self.show_um2 = not self.show_um2
+        self.save_settings()
+        if getattr(self, 'browser', None):
+            self.browser_dir(self.browser['dir'])
+        self.show_look('UVMC2 games in the ROM list: ' + ('shown' if self.show_um2 else 'hidden'))
+    def open_sd_dir(self):
+        open_folder(self.sd_dir)
+    def choose_sd_dir(self):
+        """Add-ons > SD card folder: the folder a UVMC2 game sees as its SD card (from its next start on)"""
+        from tkinter import filedialog
+        d = filedialog.askdirectory(parent=self.root, title='The folder a UVMC2 game sees as its SD card',
+                                    initialdir=self.sd_dir if os.path.isdir(self.sd_dir) else ROOT)
+        if d:
+            self.sd_dir = os.path.abspath(d)
+            self.save_settings()
+            self.show_look('UVMC2 SD card: ' + self.sd_dir + ' (from the next start of the game)')
+    def choose_px_dir(self):
+        """Add-ons > PiTrex SD card folder: the folder the PiTrex sees as its SD card (the files of a PiTrex
+        baremetal SD card: pitrex.img, loader.pit, piZero1/..., the ini files)"""
+        from tkinter import filedialog
+        d = filedialog.askdirectory(parent=self.root, title='The folder the PiTrex sees as its SD card',
+                                    initialdir=self.px_dir if os.path.isdir(self.px_dir) else ROOT)
+        if d:
+            self.px_dir = os.path.abspath(d)
+            self.save_settings()
+            self.show_look('PiTrex SD card: ' + self.px_dir + ' (from the next start)')
+    def start_pitrex(self, e=None):
+        """Add-ons > Start the PiTrex: as when a Vectrex with a PiTrex is switched on - its boot program
+        (pitrex.img on its SD card) starts the loader, the menu of its programs"""
+        boot = os.path.join(self.px_dir, 'pitrex.img')
+        if not os.path.isfile(boot):
+            from tkinter import messagebox
+            messagebox.showinfo('Vectrex_EMU', 'The PiTrex needs its SD card: put the files of a PiTrex baremetal SD card '
+                                '(pitrex.img, loader.pit, the piZero1 folder, ...) in' + chr(10) + chr(10) + self.px_dir + chr(10) + chr(10) +
+                                'or choose another folder in Add-ons > PiTrex SD card folder.', parent=self.root)
+            return 'break'
+        self.restart(boot)
+        return 'break'
+    def open_pitrex(self, e=None):
+        """Add-ons > Open PiTrex program: one program (.img / .pit) started on its own, without the loader"""
+        from tkinter import filedialog
+        start = os.path.join(self.px_dir, 'piZero1') if os.path.isdir(os.path.join(self.px_dir, 'piZero1')) else self.px_dir if os.path.isdir(self.px_dir) else ROOT
+        fn = filedialog.askopenfilename(parent=self.root, title='Open a PiTrex program', initialdir=start,
+                                        filetypes=[('PiTrex program', '*.img *.pit'), ('All files', '*.*')])
+        if fn:
+            self.restart(fn)
+        return 'break'
+    def open_um2(self, e=None):
+        """Add-ons > Open UVMC2 game: a .um2 file (native ARM for the cartridge's RP2350)"""
+        from tkinter import filedialog
+        start = os.path.dirname(os.path.abspath(self.args.rom)) if self.args.rom else os.path.join(ROOT, 'roms')
+        fn = filedialog.askopenfilename(parent=self.root, title='Open an Ultimate Vectrex Multicart 2 game', initialdir=start,
+                                        filetypes=[('UVMC2 game', '*.um2'), ('All files', '*.*')])
+        if fn:
+            self.restart(fn)
+        return 'break'
     def reset_display(self):
         """Display > Reset display settings to default: the start size (no real size, the monitor size as
         it reports it), not turned, the OSD, the knob and the cartridge on, fixed 60 Hz (full screen stays
@@ -3122,9 +3701,16 @@ class App:
         d['fps_counter'] = getattr(self, 'fps_on', True)
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')
-        d['controls'] = self.inp.save()
+        own = hasattr(self, 'per_game') and self.rom_name in self.per_game   # (a game's own settings: saved only
+        g = getattr(self, 'game_global', None) if own else None              #  by the deck's Save for this game)
+        d['controls'] = g['controls'] if g else self.inp.save()
+        if hasattr(self, 'per_game'):
+            d['per_game'] = self.per_game
         d['cart_hw'] = getattr(self, 'cart_hw', 'auto')
         d['speech'] = getattr(self, 'speech', 'off')
+        d['show_um2'] = getattr(self, 'show_um2', True)
+        d['uvm2_sd_dir'] = getattr(self, 'sd_dir', None)
+        d['pitrex_sd_dir'] = getattr(self, 'px_dir', None)
         if hasattr(self, 'art_for'):
             if self.art_path and self.ren:                      # (this overlay's position and size)
                 a = [round(getattr(self.ren, k), 4) for k in ('art_dx', 'art_dy', 'art_scale')]
@@ -3137,13 +3723,21 @@ class App:
                 d['scratch_seed'] = self.ren.scr_seed
             d['real_size'] = self.real_on
         d['start_on'] = getattr(self, 'start_on', False)
+        d['mouse_stick'] = getattr(self, 'mouse_stick', False)
+        d['usb_hid'] = getattr(self, 'usb_hid', True)
+        d['smooth_motion'] = getattr(self, 'smooth', False)
+        d['quality'] = getattr(self, 'quality_mode', 'auto')
+        if getattr(self, 'setup_done', False): d['setup_done'] = True
+        if hasattr(self, 'unit'):
+            d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name
+        d['ultra_rate'] = getattr(self, 'ultra_rate', None)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['knob'] = getattr(self, 'knob_on', True)
         d['cart'] = getattr(self, 'cart_on', True)
         if getattr(self, 'full_scale', None):
             d['full_scale'] = round(self.full_scale, 4)
         if self.look_keys:
-            d['display'] = {k: getattr(self.ren, k) for k in self.look_keys}
+            d['display'] = dict(g['look']) if g else {k: getattr(self.ren, k) for k in self.look_keys}
         d.setdefault('display', {}).update({k: getattr(self.run.crt, k) for k in self.sound_keys})
         try:
             json.dump(d, open(self.settings_f, 'w'))
@@ -3172,6 +3766,178 @@ class App:
             for w in (self.root, self.screen):
                 w.configure(cursor=c)
 
+    def toggle_mouse_stick(self):
+        """Vectrex > Mouse / touchpad steers player 1: the pointer's place on the picture is the stick (from the
+        middle; a third of the picture's width away = all the way), left button = button 4, right = button 1"""
+        self.mouse_stick = not self.mouse_stick
+        self.mouse_btn = 0; self.inp.mouse = None
+        self.save_settings()
+        self.show_look('mouse / touchpad: ' + ('steers player 1 (left button: 4, right: 1)' if self.mouse_stick else 'off'))
+    def usb_live(self):
+        """the PC's mouse / keyboard go to the UVMC2's USB port now"""
+        return (self.usb_hid and self.run.power and not self.browser and not self.run.paused
+                and (self.args.rom or '').lower().endswith('.um2'))
+    # Tk key names -> USB HID usages (the base key: shifted symbols map to their key)
+    HID_KEYS = dict(Return=0x28, KP_Enter=0x58, Escape=0x29, BackSpace=0x2A, Tab=0x2B, space=0x2C, minus=0x2D, underscore=0x2D,
+                    equal=0x2E, plus=0x2E, bracketleft=0x2F, braceleft=0x2F, bracketright=0x30, braceright=0x30, backslash=0x31,
+                    bar=0x31, semicolon=0x33, colon=0x33, apostrophe=0x34, quotedbl=0x34, grave=0x35, asciitilde=0x35,
+                    comma=0x36, less=0x36, period=0x37, greater=0x37, slash=0x38, question=0x38, Caps_Lock=0x39,
+                    Insert=0x49, Home=0x4A, Prior=0x4B, Delete=0x4C, End=0x4D, Next=0x4E, Right=0x4F, Left=0x50, Down=0x51, Up=0x52,
+                    exclam=0x1E, at=0x1F, numbersign=0x20, dollar=0x21, percent=0x22, asciicircum=0x23, ampersand=0x24,
+                    asterisk=0x25, parenleft=0x26, parenright=0x27)
+    HID_MODS = dict(Control_L=1, Shift_L=2, Alt_L=4, Super_L=8, Win_L=8, Control_R=16, Shift_R=32, Alt_R=64, Super_R=128, Win_R=128)
+    def hid_usage(self, ks):
+        if len(ks) == 1 and ks.isalpha():
+            return 0x04 + ord(ks.lower()) - ord('a')
+        if len(ks) == 1 and ks.isdigit():
+            return 0x27 if ks == '0' else 0x1E + int(ks) - 1
+        if re.match(r'F([1-9]|1[0-2])$', ks):
+            return 0x3A + int(ks[1:]) - 1
+        return self.HID_KEYS.get(ks, 0)
+    def toggle_usb_typing(self, e=None):
+        """Ctrl+K (a UVMC2 game): the keyboard types on the cartridge's USB keyboard - the emulator's own keys
+        and the controller keys rest until Ctrl+K again"""
+        if not self.usb_typing and not (self.usb_hid and (self.args.rom or '').lower().endswith('.um2')):
+            self.show_look('Ctrl+K: only for a UVMC2 game (Cartridge strip: its USB keyboard and mouse)')
+            return 'break'
+        self.usb_typing = not self.usb_typing
+        for w in (self.root, self.screen):
+            tags = [x for x in w.bindtags() if x != 'usbtype']
+            w.bindtags(tuple((['usbtype'] if self.usb_typing else []) + tags))
+        self.inp.kbd_off = self.usb_typing
+        self.usb_down = []; self.usb_mods = 0
+        if not self.usb_typing:
+            self.core.usb_key_report(0, [])
+        self.show_look('USB keyboard: ' + ('typing on the UVMC2 (Ctrl+K: back to the controller keys)' if self.usb_typing else 'off'))
+        return 'break'
+    def toggle_usb_hid(self):
+        """the control deck: a UVMC2 game gets the PC's mouse and keyboard as its USB devices (plugged in at the
+        start: a UVMC2 game in the slot starts again)"""
+        self.usb_hid = not self.usb_hid
+        self.save_settings()
+        if (self.args.rom or '').lower().endswith('.um2'):
+            self.restart(self.args.rom)
+        self.show_look('UVMC2 USB keyboard and mouse: ' + ('plugged in' if self.usb_hid else 'unplugged'))
+    def usb_typing_off(self):
+        if getattr(self, 'usb_typing', False):
+            self.toggle_usb_typing()
+    def usb_key(self, e, down):
+        """a key while typing on the UVMC2's USB keyboard: its report (modifiers and the last 3 keys held);
+        Ctrl+K, F11 and Tab stay the emulator's"""
+        ks = e.keysym
+        if ks in ('F11',) or (ks.lower() == 'k' and e.state & 4):
+            return None
+        mod = self.HID_MODS.get(ks, 0)
+        if mod:
+            self.usb_mods = (self.usb_mods | mod) if down else (self.usb_mods & ~mod)
+        else:
+            u = self.hid_usage(ks)
+            if not u:
+                return 'break'
+            if down and u not in self.usb_down:
+                self.usb_down.append(u)
+            elif not down and u in self.usb_down:
+                self.usb_down.remove(u)
+        if self.usb_live():
+            self.core.usb_key_report(self.usb_mods, self.usb_down[-3:])
+        return 'break'
+    # Smooth motion (the control deck's Display strip): on a screen that is not 50 Hz (most are 60 Hz, without
+    # G-Sync / FreeSync) every refresh gets a picture of its own - the vectors where they are between the two game
+    # frames around that moment (one game frame later: ~20 ms more delay). The game runs at its own speed. Where
+    # two frames do not match line for line (other lines, objects appearing), the earlier one is shown as is.
+    SMOOTH_MATCH = 2500                                 # (a line moved by more: not the same line - 7 % of the screen)
+    def smooth_on(self):
+        return getattr(self, 'smooth', False) and not self.vrr and bool(self.ren) and hasattr(self.ren, 'present')
+    def toggle_smooth(self):
+        self.smooth = not self.smooth
+        self.sm_buf = []
+        self.save_settings()
+        self.show_look('smooth motion: ' + ('on (vectors between game frames, every refresh)' if self.smooth else 'off'))
+    def smooth_frame(self, r, T):
+        """this refresh's picture: the game frames a and b around the moment shown, the vectors in between"""
+        buf = self.sm_buf
+        if len(buf) < 1:
+            return
+        per = (buf[-1][1] - buf[0][1]) / (len(buf) - 1) if len(buf) > 1 else 0.02
+        per = min(0.1, max(0.01, per))
+        D = T - self.pause_acc - per - 1.0 / max(1.0, self.hz)     # (one game frame and one refresh back)
+        while len(buf) > 2 and buf[1][1] <= D:
+            self.sm_prev = buf.pop(0)
+        a = buf[0]
+        if D < a[1] - 0.25:                              # (far behind: after a pause or a stall, start again)
+            del buf[:-1]; a = buf[0]
+        b = buf[1] if len(buf) > 1 and buf[1][1] > a[1] else None
+        alpha = 0.0 if b is None else max(0.0, min(1.0, (D - a[1]) / (b[1] - a[1])))
+        k = (1.0 / max(1.0, self.hz)) / per             # (the light of one refresh: the frame's timeline squeezed)
+        la = a[0]
+        if _np is not None:
+            A = _np.asarray(la, dtype=_np.float64)
+            if A.ndim != 2 or not len(A):
+                return
+            A = A[:, :7].copy()
+            if b is not None and alpha > 0 and len(b[0]) == len(la):
+                B = _np.asarray(b[0], dtype=_np.float64)[:, :7]
+                if (_np.abs(B[:, :4] - A[:, :4]).max() < self.SMOOTH_MATCH) and (B[:, 4] == A[:, 4]).all():
+                    A[:, :4] += (B[:, :4] - A[:, :4]) * alpha
+            A[:, 5] *= k; A[:, 6] *= k
+            lines = A
+        else:
+            match = b is not None and alpha > 0 and len(b[0]) == len(la) and all(
+                p[4] == q[4] and max(abs(p[j] - q[j]) for j in range(4)) < self.SMOOTH_MATCH for p, q in zip(la, b[0]))
+            lines = [((p[0] + (q[0] - p[0]) * alpha, p[1] + (q[1] - p[1]) * alpha, p[2] + (q[2] - p[2]) * alpha,
+                       p[3] + (q[3] - p[3]) * alpha) if match else tuple(p[:4])) + (p[4], p[5] * k, p[6] * k)
+                     for p, q in zip(la, b[0] if match else la)]
+        # (a game that draws its picture in halves on alternate frames: both halves, as the tube shows them)
+        if getattr(self, 'sm_alt_for', None) is not a:
+            self.sm_alt_for = a
+            self.sm_alt = vecrender.frame_alternates(self.sm_st, a[0])
+        if self.sm_alt and getattr(self, 'sm_prev', None):
+            P = _np.asarray(self.sm_prev[0], dtype=_np.float64)[:, :7].copy() if _np is not None else None
+            if P is not None and P.ndim == 2 and len(P):
+                P[:, 5] *= k; P[:, 6] *= k
+                lines = _np.concatenate([P, lines]) if _np is not None and not isinstance(lines, list) else lines
+        r.frame_t0 = a[2] + ((b[2] - a[2]) * alpha if b is not None else 0.0)
+        r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
+    def mouse_moved(self, e):
+        if e is not None and not self.mouse_stick and self.usb_live():     # (a UVMC2: the USB mouse moves)
+            p = (e.x_root, e.y_root)
+            if self.usb_last:
+                # (VecOS moves its pointer ~0.0015 picture heights per mouse step: scaled so it follows the PC's
+                # pointer one to one, the fractions carried over)
+                pl, pt, pr, pb = self.pic_rect()
+                k = 1.0 / max(0.2, 0.0015 * (pb - pt))
+                fx, fy = getattr(self, 'usb_frac', (0.0, 0.0))
+                fx += (p[0] - self.usb_last[0]) * k; fy += (p[1] - self.usb_last[1]) * k
+                dx, dy = int(fx), int(fy)
+                self.usb_frac = (fx - dx, fy - dy)
+                if dx or dy:
+                    self.core.usb_mouse_move(self.usb_btn, dx, dy)
+            self.usb_last = p
+        elif e is None:
+            self.usb_last = None
+        if not self.mouse_stick or not self.run.power or self.browser or e is None:
+            self.inp.mouse = None if not getattr(self, 'mouse_btn', 0) else (0, 0, self.mouse_btn)
+            return
+        e = self.px_event(e)
+        pl, pt, pr, pb = self.pic_rect()
+        rad = (pr - pl) / 3.0
+        f = lambda d: int(max(-127, min(127, 0 if abs(d) < 0.08 else d * 127)))
+        self.inp.mouse = (f((e.x - (pl + pr) / 2.0) / rad), f(-(e.y - (pt + pb) / 2.0) / rad), getattr(self, 'mouse_btn', 0))
+    def mouse_button(self, b, down):
+        """a mouse button steering player 1: 1 = the Vectrex's button 4 (fire), 3 = button 1 - or, a UVMC2
+        game, its USB mouse's buttons"""
+        if not self.mouse_stick and self.usb_live():
+            bit = {1: 1, 3: 2, 2: 4}.get(b, 0)
+            self.usb_btn = (self.usb_btn | bit) if down else (self.usb_btn & ~bit)
+            self.core.usb_mouse_move(self.usb_btn)
+            return None
+        if not self.mouse_stick or not self.run.power or self.browser:
+            return None
+        bit = 8 if b == 1 else 1
+        self.mouse_btn = (getattr(self, 'mouse_btn', 0) | bit) if down else (getattr(self, 'mouse_btn', 0) & ~bit)
+        ms = self.inp.mouse or (0, 0, 0)
+        self.inp.mouse = (ms[0], ms[1], self.mouse_btn)
+        return None
     def pointer_moved(self, e=None):
         """the mouse pointer: in full screen it hides 2 s after it last moved"""
         self.set_cursor('')
@@ -3217,12 +3983,23 @@ class App:
         cv.tk.eval('\n'.join(cmd))
 
     def tick(self):
+        if getattr(self.core, 'msgs', None):                    # (the cartridge's own messages: shown once)
+            m = self.core.msgs.pop(0)
+            self.root.after(0, lambda m=m: self.cart_message(m))
         if self.run.error:
             self.status.configure(text='ERROR: ' + self.run.error, fg='#f66'); self.status.pack(side='top', fill='x')
             self.show_bar()
             return
         if self.ren and hasattr(self.ren, 'present'):
-            return self.tick_timed()
+            try:
+                return self.tick_timed()
+            except Exception:   # noqa: one bad screen frame must not stop the display loop - logged, on with the next
+                import traceback
+                if not getattr(self, 'tick_errs', 0) or TEST_LOG:
+                    traceback.print_exc()
+                self.tick_errs = getattr(self, 'tick_errs', 0) + 1
+                self.root.after(5, self.tick)
+                return None
         with self.run.lock:
             lines, self.run.latest = self.run.latest, None
         if not self.run.power:                                  # power off: the tube collapses, fades
@@ -3249,14 +4026,28 @@ class App:
                 return
             while time.perf_counter() < self.next_present:
                 pass
+        elif self.vsync and not vrr and getattr(self, 'vbl', 0.0):
+            # vsync: sleep until shortly before the refresh this picture goes out with, instead of waiting in the
+            # graphics driver (glFinish spins a whole core until the refresh); the margin is the drawing time seen
+            # lately x1.5 plus 2.5 ms (measured: no refresh missed in 830 frames, Doom too)
+            due = self.vbl + self.vsync / float(self.refresh if getattr(self, 'refresh', 0) >= 50 else 60)
+            wait = due - time.perf_counter() - 0.0025 - 1.5 * getattr(self, 'draw_cost', 0.002)
+            if wait > 0.0015:
+                self.root.after(max(1, int(wait * 1000)), self.tick)
+                return
+        t_work = time.perf_counter()                            # (the work before the refresh: frames + drawing)
         with self.run.lock:
             frames = list(self.run.queue); self.run.queue.clear()
             self.run.latest = None
+        smooth = self.smooth_on()
         for lines, t_start, t0, ln in frames:
             self.lines = lines
             if self.run.power:
                 self.crt_fx()
             r.frame_no = self.run.frames; r.frame_t0 = t0
+            if smooth:
+                self.sm_buf.append((lines, t_start - self.pause_acc, t0))
+                continue
             r.add_frame(lines, t_start - self.pause_acc, ln)
         now = time.perf_counter()
         if self.run.paused:
@@ -3283,10 +4074,23 @@ class App:
             r.osd = self.osd_state()
             r.cart = self.cart_state()
             r.browser = self.browser_state()
+            r.hint = self.hint_state()
+            if smooth and not self.run.paused:
+                self.smooth_frame(r, T)
             flush, self.flush = getattr(self, 'flush', False), False
+            if flush:
+                self.sm_buf = []
             r.present(T - self.pause_acc, imm, flush)
+            if not getattr(self, 'gl_shown', False):            # (the first picture: OpenGL paints it all now)
+                self.gl_shown = True
+                self.screen.configure(bg='')
             if self.vsync and not vrr:
+                t_fin = time.perf_counter()
+                self.draw_cost = max(t_fin - t_work, 0.9 * getattr(self, 'draw_cost', 0.002) + 0.1 * (t_fin - t_work))
                 r.gl.glFinish()                                 # (wait for the refresh: the pace)
+                now_f = time.perf_counter()
+                # (the refresh: when glFinish came back after a wait - a frame that came back at once missed it)
+                self.vbl = now_f if now_f - t_fin > 0.0005 or not getattr(self, 'vbl', 0.0) else                     self.vbl + self.vsync / float(self.refresh if getattr(self, 'refresh', 0) >= 50 else 60)
             self.presents.append(time.perf_counter())
             if self.run.paused:
                 self.next_present += 1.0 / PAUSE_HZ
@@ -3319,6 +4123,13 @@ class App:
                 ('VOLUME', '%d%%' % round(self.run.crt.volume * 100) if self.run.power else 'OFF', g)]
         if getattr(self, 'speech', 'off') != 'off':             # (a speech module plugged in: its volume too)
             vals.append(('SPEECH VOL', '%d%%' % round(self.run.crt.voice_vol * 100), g))
+        if (self.args.rom or '').lower().endswith('.um2'):     # (a UVMC2 game: its chip's speed, the game's own frame
+            #  rate - a 3D game draws fewer new pictures than the 50 Hz it refreshes the tube with - and the threads)
+            mhz = 150.0 * self.speed_shown() / 100.0
+            gf = getattr(self, 'game_fps', 0.0)
+            vals += [('UVMC2 RP2350', '--' if idle else '%d MHZ' % round(mhz), g if idle else self.speed_color(2)),
+                     ('GAME FPS', '--' if idle else ('STILL' if gf < 0.5 else '%d' % round(gf)), g),
+                     ('HOST THREADS', '%d' % getattr(self.core, 'threads', 1), g)]
         width = max(len(n) + 2 + len(v) for n, v, _ in vals)   # (the values end in one column)
         return [[(n + ':' + ' ' * (width - len(n) - 1 - len(v)), g), (v, c)] for n, v, c in vals]
     def speed_shown(self):
@@ -3328,9 +4139,10 @@ class App:
         now = time.perf_counter()
         if now - self.last_t > 1:
             self.fps = (self.run.dframes - self.last_f) / (now - self.last_t)
+            self.game_fps = (self.run.gframes - getattr(self, 'last_g', 0)) / (now - self.last_t)
             p = [t for t in self.presents if t > self.last_t]
             self.disp_fps = len(p) / (now - self.last_t)
-            self.last_t, self.last_f = now, self.run.dframes
+            self.last_t, self.last_f, self.last_g = now, self.run.dframes, self.run.gframes
             m, m0 = self.run.emu_mark, getattr(self, 'emu_mark0', None)
             if m and m0 and m[0] > m0[0] and m[1] >= m0[1]:      # (frame completions a second apart)
                 self.speed = 100.0 * (m[1] - m0[1]) / (now - m0[0]) if now - m[0] > 0.25 else \
@@ -3338,6 +4150,7 @@ class App:
             elif m0 and (not m or m[0] <= m0[0]) and self.run.power and not self.run.paused:
                 self.speed = 0.0                                # (no frame for a second: stalled)
             self.emu_mark0 = m
+            self.quality_watch()
             if TEST_LOG: print('speed %.2f %%  game %.1f fps  screen %.1f Hz' % (self.speed, self.fps, self.disp_fps), flush=True)
             idle = self.run.paused or not self.run.power
             self.num_a.configure(text='%d FPS  %d HZ  G-SYNC %s  ' % (round(self.fps), round(self.disp_fps),

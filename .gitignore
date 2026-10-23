@@ -17,3 +17,10 @@ __pycache__/
 # the SP0256-AL2 speech ROM ((c) Microchip): the user downloads it, it is never shared from here
 bios/sp0256-al2.bin
 bios/al2.bin
+# local only: the SD card folder, unpacked VecFever files, PiTrex files, SD card images, notes
+/sd/
+/v4e/
+/pitrex/
+/pitrex_new/
+*.img
+/TODO.md

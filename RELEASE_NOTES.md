@@ -3,6 +3,50 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.2
+
+**UVMC2 games** ([README](README.md#uvmc2-games-the-ultimate-vectrex-multicart-2))
+- The Ultimate Vectrex Multicart 2 emulated: its RP2350 (two ARM Cortex-M33 cores, PIO, DMA, timers, PSRAM)
+  runs `.um2` games that drive the Vectrex's bus themselves. Plug and play: `.um2` files in `roms` appear in
+  the ROM browser; Vectrex > Open UVMC2 game... opens one from anywhere.
+- The SD card is a folder, `sd` next to the program (made at the first start, with a note). A game that
+  needs a file of its own (Doom's WAD, Quake's `pak0.pak`) and lacks it says which file and where, and opens
+  the folder. Control deck > Cartridge: Open the SD folder, Choose SD folder...
+- The headphone jack (clean, through the Vectrex's speaker, or off), and the PC's mouse and keyboard on the
+  cartridge's USB port (Ctrl+K: type into it).
+- The cartridge's two cores run on two of the PC's on four or more cores.
+- Included, written from scratch for this emulator (MIT, sources in `testcart/`): **UVMC2 Demo** (a rotating
+  cube drawn by the cartridge's chip) and **UVMC2 Movie Player** (the PiTrex / VecFever vector movies from
+  `sd/movies`, with high-quality sound through the Vectrex's speaker or the jack; the movies are not included).
+
+**The control deck and the setup** ([README](README.md#menus-and-the-control-deck))
+- Tab opens the control deck over the running game: quality, this game's settings and seven strips (Tube,
+  Room light, Overlay, Sound, Vectrex unit, Display, Cartridge). Hold H to compare with before; Reset this
+  strip; a gamepad drives it too.
+- The menu bar is now Vectrex, View and Help.
+- Settings per game only when you ask: Save for this game, Revert, Remove game settings, Make default.
+- The Vectrex unit: the analog parts that differ per Vectrex as sliders, with presets (Owner's Vectrex,
+  Ideal, Cranky, Random unit), Export / Import.
+- A setup at the first start (Vectrex > Setup wizard... runs it again): the folders found, the quality from a
+  short test, the display mode explained with the best one chosen, player 1's keys, start switched on.
+
+**Picture**
+- Quality Low / Medium / High / Ultra or Auto (steps down by itself when the PC misses frames) - effects only.
+- Smooth motion for 60 Hz screens: pictures drawn between the game's frames.
+- G-Sync / FreeSync detected from the monitor's EDID, a G-Sync module too (it was missed before).
+- No more flicker when a game runs below 50 frames a second, or draws half its lines each frame: the lines
+  keep glowing between their redraws, as on the tube.
+- No white block for a moment at the start.
+- The screen's refresh is met by sleeping instead of spinning: much less CPU.
+
+**Also**
+- Esc never quits (in the window it pauses); a key or a click on the picture switches a Vectrex that is off on.
+- Player 1's default buttons are a row, A S D F (W A S D in the setup); the mouse / touchpad can steer player 1.
+- Touchpads scroll the menus and sliders.
+- The ROM browser shows ROMs copied in while it is open.
+- Help > Copy system info, for a GitHub issue.
+- Help updated for every new option.
+
 ## v1.0.1
 
 **The tube's geometry, measured** ([README chapter 10](README.md#10-the-tubes-geometry-measured-not-invented))

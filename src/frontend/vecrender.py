@@ -1134,6 +1134,11 @@ LOGO_ICON = [  # the Vectrex logo (the owner's vectrex-us-soldermask.kicad_mod),
     [(88.7, 68.4), (89.6, 68.4), (89.3, 69.3), (88.5, 70.3), (88.0, 70.8), (85.5, 73.7), (86.2, 74.4), (86.8, 75.2), (87.6, 76.1), (88.0, 76.6), (88.4, 77.1), (88.8, 77.6), (89.5, 78.4), (89.9, 78.9), (89.3, 79.0), (88.2, 79.0), (87.6, 79.0), (86.8, 79.0), (86.1, 79.0), (81.6, 79.0), (83.1, 77.5), (83.9, 76.7), (84.4, 76.1), (84.4, 75.5), (83.7, 75.6), (83.1, 76.2), (82.1, 77.1), (80.2, 79.1), (78.3, 79.1), (77.7, 79.1), (76.8, 79.0), (77.0, 78.4), (77.7, 77.6), (78.1, 77.1), (78.6, 76.6), (79.2, 75.8), (79.7, 75.3), (80.1, 74.8), (80.6, 74.1), (80.7, 73.5), (80.2, 72.8), (79.4, 71.9), (79.0, 71.4), (78.2, 70.5), (77.8, 70.0), (77.4, 69.5), (76.8, 68.8), (77.6, 68.4), (78.9, 68.4), (79.6, 68.4), (80.4, 68.4), (81.7, 68.4), (82.5, 68.4), (83.3, 68.4), (84.3, 68.4), (84.0, 69.3), (83.4, 70.0), (82.9, 70.5), (82.3, 71.2), (82.0, 71.7), (82.6, 72.1), (83.3, 71.5), (84.1, 70.7), (86.4, 68.4), (88.2, 68.4), (88.7, 68.4)],
 ]
 _TICKS = [[(0, v), (2, v)] for v in (74, 78, 82, 86, 90)] + [[(100, v), (98, v)] for v in (74, 78, 82, 86, 90)]
+# a speech module (VecVox / VecVoice): its box with a speaker, sound waves to the right (0..100 square)
+PORT2_ICON = ([[(8, 18), (58, 18), (62, 22), (62, 78), (58, 82), (8, 82), (4, 78), (4, 22), (8, 18)],
+               [(33 + 13 * math.cos(math.pi * i / 6), 50 + 13 * math.sin(math.pi * i / 6)) for i in range(13)],
+               [(33 + 4 * math.cos(math.pi * i / 3), 50 + 4 * math.sin(math.pi * i / 3)) for i in range(7)]] +
+              [[(56 + rr * math.cos(a / 10.0), 50 + rr * math.sin(a / 10.0)) for a in range(-6, 7)] for rr in (20, 30, 40)])
 CART_ICON = [[(3, 0), (97, 0), (97, 37), (100, 40), (100, 99), (99, 100), (1, 100), (0, 99), (0, 40), (3, 37), (3, 0)],
              [(6, 0), (6, 36.5)], [(94, 0), (94, 36.5)], [(3, 36.5), (97, 36.5)],
              [(50, 6), (60, 14), (55, 14), (55, 20), (45, 20), (45, 14), (40, 14), (50, 6)],
@@ -2308,7 +2313,7 @@ class GLBloomRenderer(GLRenderer):
     def _hud(self):
         """the frame rate counter (small green strokes in the top left corner) and the volume knob"""
         if not (self.hud or getattr(self, 'knob', None) or getattr(self, 'osd', None) or getattr(self, 'cart', None)
-                or getattr(self, 'browser', None) or getattr(self, 'hint', None)):
+                or getattr(self, 'browser', None) or getattr(self, 'hint', None) or getattr(self, 'port2', None)):
             return
         gl = self.gl
         w, h = self.size
@@ -2328,6 +2333,8 @@ class GLBloomRenderer(GLRenderer):
             self._osd(self.osd)
         if getattr(self, 'cart', None):
             self._cart(self.cart)
+        if getattr(self, 'port2', None):
+            self._port2(self.port2)
         if getattr(self, 'browser', None):
             self._browser(self.browser)
         if getattr(self, 'hint', None):                   # (a hint in the middle of the picture: centred rows)
@@ -2393,6 +2400,20 @@ class GLBloomRenderer(GLRenderer):
             self._rect(cx - 52 * s, cy - 56 * s, cx + 52 * s, cy + 56 * s)
         lh = 0.30 * r
         self._text_row([('CARTRIDGE', (0.40, 0.667, 0.533))], cx - (9 * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)
+
+    def _port2(self, c):
+        """a speech module in controller port 2: a little box with a speaker and its sound waves, its name above
+        it (VECVOX / VECVOICE) like the panel's labels"""
+        gl = self.gl
+        cx, cy, r = c['cx'], c['cy'], c['r']
+        gl.glColor4f(0.40, 0.667, 0.533, 1.0)
+        gl.glLineWidth(max(1.2, r / 45.0))
+        s = 2.0 * r / 100.0
+        P = lambda u, v: (cx + (u - 50) * s, cy + (v - 50) * s)
+        self._icon(PORT2_ICON, P)
+        lh = 0.30 * r
+        t = c['label']
+        self._text_row([(t, (0.40, 0.667, 0.533))], cx - (len(t) * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)
 
     def _load_icon(self, x0, y0, x1, y1):
         """the load button: LOAD_ICON turned 90 degrees left, fitted into the box"""

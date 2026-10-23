@@ -729,7 +729,7 @@ So every game can be played with a controller only (or a Steam Deck): hold the s
 |---|---|
 | Up | the ROM browser (then: the stick chooses, button 4 loads, button 1 goes back / closes) |
 | Down | the RESET button (the game's title screen, as on a Vectrex) |
-| Left | controller port 2: the VecVox speech module / the joystick (a power cycle, as in the menu) |
+| Left | controller port 2: the VecVox speech module / the joystick (a power cycle, as in the menu; announced on screen, and the VecVox's pictogram shows below the picture) |
 | Right | the overlay on / off |
 
 While the Vectrex is switched off, any controller button switches it on (choose *Start switched on* in the
@@ -828,6 +828,11 @@ Technology Inc. Joe Zbiciak distributes it with Microchip's permission:
 2. Put it in the **`bios` folder next to the emulator** (as `al2.bin` or `sp0256-al2.bin`; MAME's
    `sp0256-al2.bin`, the same data with each byte's bits reversed, works too).
 3. Choose **Cartridge > Controller port 2 > VecVoice** or **VecVox**. The Vectrex is switched off and on.
+
+A switch of port 2 is announced in the middle of the picture for two seconds, and while a speech module is
+plugged in its pictogram (VECVOX / VECVOICE) sits in the strip below the picture, between the OSD and the
+cartridge (a joystick in port 2: nothing there). The [controller shortcut](#controller-shortcuts) stick left
++ all four buttons switches between the VecVox and the joystick.
 
 Both modules need it (the VecVox speaks with the SP0256's voice). Without it the setting stays on Joystick.
 

@@ -2433,6 +2433,7 @@ class App:
         self.speech = k
         self.restart(self.args.rom)
         self.show_look('port 2: %s' % PORT2[k].upper())
+        self.flash('CONTROLLER PORT 2:', {'off': 'JOYSTICK', 'vecvoice': 'VECVOICE SPEECH', 'vecvox': 'VECVOX SPEECH'}[k])
     def speech_rom_help(self):
         """a speech module chosen without the speech ROM: a small window saying where to get it and where it
         goes, with buttons for the download page and the bios folder"""
@@ -2519,10 +2520,25 @@ class App:
             return None
         if self.run.paused and self.run.power:              # (switched off: dark, as a real Vectrex - the knob)
             rows = ['PAUSED', 'ESC OR P TO GO ON']
+        elif time.perf_counter() < getattr(self, 'flash_until', 0):   # (a short message: what just changed)
+            rows = self.flash_rows
         else:
             return None
         pl, pt, pr, pb = self.pic_rect()
         return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + 0.46 * (pb - pt), k=(pb - pt) / 330.0)
+    def flash(self, *rows, secs=2.0):
+        """a short message in the middle of the picture (seen in full screen and on a Steam Deck too, where the
+        title bar is not)"""
+        self.flash_rows = list(rows); self.flash_until = time.perf_counter() + secs
+    def port2_state(self):
+        """a speech module in controller port 2: its pictogram in the strip below the picture, between the
+        OSD and the cartridge (a joystick there: nothing)"""
+        if self.speech == 'off' or not (self.ren and hasattr(self.ren, 'map')):
+            return None
+        if not (self.fps_on or self.cart_on or self.knob_on):  # (no strip below the picture: only the message)
+            return None
+        x, y, r = self.cart_geom()
+        return dict(cx=x - 3.3 * r, cy=y, r=r, label='VECVOX' if self.speech == 'vecvox' else 'VECVOICE')
     def osd_state(self):
         """the window's OSD: its two rows in the strip below the picture, left of the knob panel (full
         screen: in the top left corner, see hud_text)"""
@@ -4233,6 +4249,7 @@ class App:
             r.knob = self.knob_state()
             r.osd = self.osd_state()
             r.cart = self.cart_state()
+            r.port2 = self.port2_state()
             r.browser = self.browser_state()
             r.hint = self.hint_state()
             if smooth and not self.run.paused:

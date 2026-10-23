@@ -7,8 +7,10 @@ cd "$(dirname "$0")"
 PY=${PY:-python3}
 mkdir -p core build
 cc -O2 -w -fgnu89-inline -o core/vectrex_core src/core/vtest.c src/core/vecx.c src/core/e6809.c src/core/e8910.c src/core/cm33.c src/core/rp2350.c src/core/host.c src/core/arm11.c src/core/usbhost.c -lm -pthread
-"$PY" -m PyInstaller --noconfirm --onefile --windowed --name Vectrex_EMU --distpath dist-linux \
-  --workpath build/pyi-linux --specpath build --paths src/frontend --collect-all sdl2dll --exclude-module sdl2.test --exclude-module sdl2.examples \
+"$PY" -m PyInstaller.utils.cliutils.makespec --onefile --windowed --name Vectrex_EMU \
+  --specpath build --paths src/frontend --collect-all sdl2dll --exclude-module sdl2.test --exclude-module sdl2.examples \
   --add-binary "$PWD/core/vectrex_core:core" --add-data "$PWD/sounds/on.wav:sounds" \
   --add-data "$PWD/sounds/off.wav:sounds" src/frontend/vectrex_emu.py
+"$PY" tools/linux_spec.py build/Vectrex_EMU.spec        # (the system's libstdc++ / X / GL: GitHub issue 3)
+"$PY" -m PyInstaller --noconfirm --distpath dist-linux --workpath build/pyi-linux build/Vectrex_EMU.spec
 echo built dist-linux/Vectrex_EMU

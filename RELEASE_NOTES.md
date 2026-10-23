@@ -37,6 +37,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - No more flicker when a game runs below 50 frames a second, or draws half its lines each frame: the lines
   keep glowing between their redraws, as on the tube.
 - No white block for a moment at the start.
+- Linux: the program uses the system's own C++ runtime and X libraries (its older copies stopped Mesa's
+  OpenGL from loading on new systems such as Fedora 44: no picture); without OpenGL the plain picture works
+  (it crashed), says why, and starts switched on (issue #3).
 - The screen's refresh is met by sleeping instead of spinning: much less CPU.
 
 **Also**

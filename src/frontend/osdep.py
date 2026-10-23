@@ -72,6 +72,7 @@ class _XWindowAttributes(ctypes.Structure):
                 ('override_redirect', ctypes.c_int), ('screen', ctypes.c_void_p)]
 
 _XERR = CF(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+_XERR_KEEP = []                                                 # (X error handlers in use: never freed)
 
 class GLX:
     """an OpenGL context on the Tk frame's own X window (its own connection to the X server), with a
@@ -99,7 +100,8 @@ class GLX:
         G.glXGetProcAddressARB.argtypes = [ctypes.c_char_p]; G.glXGetProcAddressARB.restype = vp
         self.errors = []
         self._xerr = _XERR(lambda d, e: (self.errors.append(1), 0)[1])     # (an X error must not end the program)
-        X.XSetErrorHandler(self._xerr)
+        _XERR_KEEP.append(self._xerr)                           # (Xlib keeps calling it for the whole program - Tk's
+        X.XSetErrorHandler(self._xerr)                          #  errors too: freed with a failed context, a crash)
         widget.update_idletasks()
         self.win = widget.winfo_id()
         self.dpy = X.XOpenDisplay(None)
@@ -113,7 +115,8 @@ class GLX:
         n = i(0)
         cfgs = G.glXChooseFBConfig(self.dpy, scr, att, ctypes.byref(n))
         if not cfgs or not n.value:
-            raise OSError('no GLX framebuffer config')
+            X.XCloseDisplay.argtypes = [vp]; X.XCloseDisplay(self.dpy); self.dpy = None
+            raise OSError('no GLX framebuffer config - the OpenGL driver did not load (see README: Mac and Linux notes)')
         cfg = cfgs[0]
         for k in range(n.value):                                # (the one of the window's visual)
             v = i(0); G.glXGetFBConfigAttrib(self.dpy, cfgs[k], 0x800B, ctypes.byref(v))     # GLX_VISUAL_ID

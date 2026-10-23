@@ -1315,6 +1315,7 @@ class App:
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
             except Exception as e:                              # noqa: fall back to the Tk canvas
                 print('renderer unavailable (%s): using the Tk canvas' % e)
+                self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in Vectrex_EMU.conf; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
                                       'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
@@ -1360,7 +1361,7 @@ class App:
         for k in self.sound_keys:
             if k in saved:
                 setattr(self.run.crt, k, type(self.sound_default[k])(saved[k]))
-        if self.start_on or args.demo:
+        if self.start_on or args.demo or not self.ren:          # (no OpenGL: no knob on screen - on at start)
             self.run.crt.volume = max(0.05, self.run.crt.volume)  # (on at start: the knob turned up)
         else:                                                   # off at start, like a Vectrex: the knob at
             self.run.crt.volume = 0.0                           #  its stop; turning it up switches it on
@@ -1472,9 +1473,18 @@ class App:
             self.root.after(100, self.toggle_full)
         self.root.after(150, self.focus)
         self.root.after(2500, self.check_um2_data)
+        if getattr(self, 'gl_error', None):
+            self.root.after(1200, self.gl_notice)
         if not c1_setup_done(self.settings_f) and not args.demo:   # (the first start: the setup, once)
             self.root.after(900, lambda: deck.setup_window(self))
 
+    def gl_notice(self):
+        """OpenGL did not start: the plain picture, and why (a black or plain window looked like a broken emulator)"""
+        from tkinter import messagebox
+        messagebox.showwarning('Vectrex_EMU', 'OpenGL could not start, so the picture is plain: no glow, afterglow, '
+                               'overlays or on-screen knob.\n\nThe reason: %s\n\nPlease report it on GitHub '
+                               "(Help > Copy system info puts your system's details on the clipboard)." % self.gl_error,
+                               parent=self.root)
     def focus(self):
         self.root.deiconify(); self.root.lift(); self.root.focus_force()
         try:                                                    # (Windows only lets the foreground
@@ -2477,6 +2487,8 @@ class App:
         self.save_settings()
     def pic_rect(self):
         """the picture's (left, top, right, bottom) in window pixels"""
+        if not (self.ren and hasattr(self.ren, 'map')):        # (the Tk canvas: the whole of it)
+            return 0, 0, self.W, self.H
         s, ox, oy = self.ren.map
         return ox * s, oy * s, (ox + ALG_MAX_X) * s, (oy + ALG_MAX_Y) * s
     def knob_geom(self):
@@ -2565,6 +2577,8 @@ class App:
         b['sel'] = hit[0] if hit else (1 if b['roms'] and b['roms'][0][2] == 'up' and len(b['roms']) > 1 else 0)
         self.scroll(b['sel'] - 3)
     def open_browser(self):
+        if not self.ren:                                        # (no OpenGL: the browser is drawn in the picture -
+            return self.open_rom()                              #  the file dialog instead, GitHub issue 3)
         top = os.path.join(ROOT, 'roms')
         cur = os.path.abspath(self.args.rom) if self.args.rom else None
         d = top                                                 # (the folder of the ROM in the slot, if it is in roms)
@@ -3967,7 +3981,8 @@ class App:
             self.item_col.append(None)
         cmd = []
         col = self.item_col; colors = self.colors; items = self.items
-        for i, (x0, y0, x1, y1, c) in enumerate(lines):
+        for i, ln in enumerate(lines):
+            x0, y0, x1, y1, c = ln[:5]                          # (a line: also its energy and start cycle)
             X0, Y0, X1, Y1 = x0 * sx, y0 * sy, x1 * sx, y1 * sy
             if abs(X1 - X0) < 1 and abs(Y1 - Y0) < 1:
                 X1 += 1.5; Y1 += 0.5          # a dot

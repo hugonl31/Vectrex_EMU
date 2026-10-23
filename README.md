@@ -953,6 +953,12 @@ screen the picture is drawn at its full resolution, and at the full rate a ProMo
 Controllers work through SDL2: an Xbox, PlayStation or Switch pad shows up like the Xbox pad on Windows,
 any other joystick by its own name. Settings files move between all three systems as they are.
 
+**No glow, a plain picture?** Then OpenGL did not start, and the emulator says why in a message. On Linux
+the program uses the system's own OpenGL driver, C++ runtime and X libraries (it does not bring copies of
+its own, which broke Mesa on new systems). A build older than v1.0.2 can be started with them:
+`LD_PRELOAD="/usr/lib64/libstdc++.so.6 /usr/lib64/libgcc_s.so.1 /usr/lib64/libX11.so.6" ./Vectrex_EMU`
+(on Debian / Ubuntu: `/usr/lib/x86_64-linux-gnu/...`).
+
 ---
 
 ## Building from source

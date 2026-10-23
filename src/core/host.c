@@ -58,7 +58,7 @@ int host_pin (int which)
 	return SetThreadAffinityMask (GetCurrentThread (), (DWORD_PTR) first[k]) != 0;
 }
 
-#elif defined(__linux__)
+#elif defined(__linux__) && !defined(__ANDROID__)   /* (Android's libc has no pthread_setaffinity_np: the system places threads) */
 #include <sched.h>
 #include <stdio.h>
 #include <pthread.h>
@@ -88,5 +88,5 @@ int host_pin (int which)
 }
 
 #else
-int host_pin (int which) { (void) which; return 0; }    /* (macOS: no SMT on Apple chips; the system places threads) */
+int host_pin (int which) { (void) which; return 0; }    /* (macOS: no SMT on Apple chips; Android; the system places threads) */
 #endif

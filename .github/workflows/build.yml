@@ -166,4 +166,4 @@ jobs:
           gh release delete latest-build --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
           gh release delete "$VER" --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
           gh release create "$VER" -R "$GITHUB_REPOSITORY" --latest --target "$GITHUB_SHA" \
-            --title "$VER" --notes-file notes.md windows/* mac/* linux/*
+            --title "$VER" --notes-file notes.md windows/*.zip mac/*.zip linux/*.zip   # (the checks' logs and pictures stay with the run)

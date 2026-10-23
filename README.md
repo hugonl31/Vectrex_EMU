@@ -649,7 +649,9 @@ behind it but gets no input. Up / Down choose, Left / Right a page, the mouse wh
 scroll; Enter, a double click or the plug loads the chosen ROM (a power cycle with it) or opens the
 folder; Esc, the X or a click outside closes it. **With a controller** (player 1's): the stick up /
 down chooses, left / right turns a page, **button 4** loads the ROM or opens the folder, **button 1** goes
-back to the roms folder (there: closes the browser). Drawn in the picture, so it works
+back to the roms folder (there: closes the browser). **Open it with the controller:** hold the stick up
+(or the Up key) and press all four buttons - so every game can be played with a controller only (choose
+*Start switched on* in the setup). Drawn in the picture, so it works
 in full screen with G-Sync too.
 
 **View > Real size (9):** as big as on a real Vectrex: the overlay sheet 162 x 207 mm, as the real ones (the picture as tall as the sheet), worked out from your
@@ -962,8 +964,8 @@ any other joystick by its own name. Settings files move between all three system
 folder (the first start shows the setup window; *Start playing* switches the Vectrex on). For **Game Mode**
 add `Vectrex_EMU` to Steam as a non-Steam game: there only one window is shown, so the emulator skips the
 setup window and starts switched on; the Deck's controls are player 1's controller. Any controller button
-switches a Vectrex that is off back on, and the ROM browser (the cartridge below the picture, or L) works
-with the stick and buttons 4 / 1.
+switches a Vectrex that is off back on; hold the stick up and press all four buttons for the ROM browser
+(stick to choose, button 4 loads, button 1 goes back / closes).
 
 **No glow, a plain picture?** Then OpenGL did not start, and the emulator says why in a message. On Linux
 the program uses the system's own OpenGL driver, C++ runtime and X libraries (it does not bring copies of

@@ -2630,6 +2630,8 @@ class App:
         d = (1 if jy < -64 else -1 if jy > 64 else 0, 1 if jx > 64 else -1 if jx < -64 else 0)
         if d[0] and d[1]:                                       # (a diagonal: the stronger way)
             d = (d[0], 0) if abs(jy) >= abs(jx) else (0, d[1])
+        if 'pad_d' not in b:                                    # (the stick as it was when it opened - held up
+            b['pad_d'] = d if d != (0, 0) else None; b['pad_t'] = now + 0.6    #  for the shortcut: no step yet)
         if d != (0, 0):
             step = False
             if d != b.get('pad_d'):
@@ -2814,16 +2816,26 @@ class App:
         self.turn_volume(getattr(self, 'vol_before_off', 0) or 0.5)
         return 'break'
     def pad_power(self):
-        """switched off: a button on player 1's controller switches on, as any key does (a controller alone -
-        a Steam Deck in Game Mode - had no way to turn the volume knob); the button does not reach the game"""
+        """player 1's controller beyond the game: switched off, a button switches on (as any key does - a
+        controller alone, a Steam Deck in Game Mode, had no way to turn the volume knob); the stick up with all
+        four buttons (hold up, then press them) opens the ROM browser (the keyboard's player keys too) - every
+        game with a controller only. Neither reaches the game afterwards (held until let go)."""
         try:
             if not self.run.power and not self.browser:
                 jx, jy, btn, raw = self.inp.read_player('p1', kbd_dirs=False)
                 if btn and raw is not None:
                     self.power_up()
                     self.hold_until_released()
+            elif self.run.power and not self.browser and not self.demo_mode():
+                jx, jy, btn, raw = self.inp.read_player('p1')
+                all4 = btn & 15 == 15
+                if all4 and jy > 64 and not getattr(self, 'combo_was', True):
+                    self.open_browser()                         # (up held, then the 4th button pressed)
+                self.combo_was = all4
         finally:
             self.root.after(100, self.pad_power)
+    def demo_mode(self):
+        return bool(getattr(self.args, 'demo', None))
     def any_key(self, e):
         """a key while switched off: on (not the emulator's own keys: Esc, F-keys, modifiers, with Ctrl / Alt)"""
         if self.run.power or self.browser or (e.state & 0x2000c):

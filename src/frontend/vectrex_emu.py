@@ -1217,6 +1217,7 @@ class App:
             self.cart_hw = 'auto'
         self.show_um2 = bool(c0.get('show_um2', True))          # Add-ons: UVMC2 games (.um2) in the ROM list
         self.start_on = bool(c0.get('start_on', False))         # starts switched off: turn the knob, as on a Vectrex
+        self.pad_browser = bool(c0.get('pad_browser', True))    # stick up + all four buttons held 1 s: the ROM browser
         self.mouse_stick = bool(c0.get('mouse_stick', False))   # Vectrex > Mouse / touchpad steers player 1
         self.smooth = bool(c0.get('smooth_motion', False))   # Smooth motion (60 Hz screens), see smooth_frame
         self.sm_buf = []
@@ -1608,6 +1609,7 @@ class App:
             item(m, 'Setup wizard (display, quality, folders, keys)...', '', lambda: deck.setup_window(self, first=False))
             item(m, 'Controls (keyboard, controllers)...', '', self.controls_window)
             check(m, 'Mouse / touchpad steers player 1', '', lambda: self.mouse_stick, self.toggle_mouse_stick)
+            check(m, 'Up + all four buttons (held 1 s) open the ROM browser', '', lambda: self.pad_browser, self.toggle_pad_browser)
             check(m, 'Start switched on', '', lambda: self.start_on, self.toggle_start_on)
             check(m, 'Skip the Vectrex intro (start screen)', '', lambda: self.skip_boot, self.toggle_skip_boot)
             m.add_separator()
@@ -2826,7 +2828,7 @@ class App:
                 if btn and raw is not None:
                     self.power_up()
                     self.hold_until_released()
-            elif self.run.power and not self.browser and not self.demo_mode():
+            elif self.run.power and not self.browser and self.pad_browser and not self.demo_mode():
                 jx, jy, btn, raw = self.inp.read_player('p1')
                 if btn & 15 == 15 and jy > 64:                  # (up and all four buttons, held 1 s: a game's
                     now = time.perf_counter()                   #  own quick use of them does not open it)
@@ -3201,6 +3203,10 @@ class App:
     def power_flags(self):
         """the core's flags for switching on: 8 = a cold start, 16 = run the BIOS intro unseen"""
         return 8 | (16 if self.skip_boot else 0)
+    def toggle_pad_browser(self):
+        self.pad_browser = not self.pad_browser
+        self.save_settings()
+        self.show_look('ROM browser shortcut (up + all four buttons, 1 s): ' + ('on' if self.pad_browser else 'off'))
     def toggle_start_on(self):
         self.start_on = not self.start_on
         self.save_settings()
@@ -3816,7 +3822,7 @@ class App:
         controls keep theirs - the Controls window has its own reset; the volume knob stays)"""
         again = self.cart_hw != 'auto' or self.speech != 'off'
         self.cart_hw = 'auto'; self.speech = 'off'
-        self.start_on = False; self.skip_boot = False
+        self.start_on = False; self.skip_boot = False; self.pad_browser = True
         self.save_settings()
         if again:
             self.restart(self.args.rom)
@@ -3855,6 +3861,7 @@ class App:
                 d['scratch_seed'] = self.ren.scr_seed
             d['real_size'] = self.real_on
         d['start_on'] = getattr(self, 'start_on', False)
+        d['pad_browser'] = getattr(self, 'pad_browser', True)
         d['mouse_stick'] = getattr(self, 'mouse_stick', False)
         d['usb_hid'] = getattr(self, 'usb_hid', True)
         d['smooth_motion'] = getattr(self, 'smooth', False)

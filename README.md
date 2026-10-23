@@ -651,7 +651,8 @@ folder; Esc, the X or a click outside closes it. **With a controller** (player 1
 down chooses, left / right turns a page, **button 4** loads the ROM or opens the folder, **button 1** goes
 back to the roms folder (there: closes the browser). **Open it with the controller:** hold the stick up
 (or the Up key) and all four buttons for a second - so every game can be played with a controller only (choose
-*Start switched on* in the setup). Drawn in the picture, so it works
+*Start switched on* in the setup; Vectrex > *Up + all four buttons (held 1 s) open the ROM browser* switches
+this off for a game that needs that). Drawn in the picture, so it works
 in full screen with G-Sync too.
 
 **View > Real size (9):** as big as on a real Vectrex: the overlay sheet 162 x 207 mm, as the real ones (the picture as tall as the sheet), worked out from your

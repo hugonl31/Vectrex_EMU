@@ -79,7 +79,7 @@ TOPICS = [
          "Down choose, Left / Right page, Enter or a double click loads a ROM or opens a folder, Esc closes. "
          "With a controller: the stick chooses (left / right: a page), button 4 loads or opens, button 1 goes "
          "back to the roms folder (there it closes the browser). Hold the stick up and all four buttons to "
-         "open it with the controller (held for a second). "
+         "open it with the controller (held for a second; Vectrex menu: switch it off). "
          "The game keeps running behind it but gets no input."),
 ('item', 'Open ROM file...', "The Windows file dialog, for a ROM anywhere on your PC. VecFever .v4e files "
          "load too: unpacked into the folder v4e next to the settings (their saves are kept there), run with the "
@@ -119,6 +119,9 @@ TOPICS = [
          "it in the bios folder next to the program as sp0256-al2.bin. A module signals 'ready' by holding "
          "player 2's button 2, as a real one does: games without speech that wait for every button to be "
          "released (GCE's original Berzerk) will not start - choose Joystick for them."),
+('item', 'Up + all four buttons (held 1 s) open the ROM browser', "On (default): holding the stick up (or the Up key) "
+         "and all four buttons for a second opens the ROM browser - every game with a controller only. Switch it off "
+         "for a game that uses that combination."),
 ('item', 'Start switched on', "Starts the Vectrex at once instead of waiting for you to turn the knob."),
 ('item', 'Skip the Vectrex intro (start screen)', "On switching on, the BIOS's start screen (the VECTREX "
          "logo, its tune, then the game's name) runs unseen in a fraction of a second and the cartridge "

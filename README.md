@@ -650,7 +650,7 @@ scroll; Enter, a double click or the plug loads the chosen ROM (a power cycle wi
 folder; Esc, the X or a click outside closes it. **With a controller** (player 1's): the stick up /
 down chooses, left / right turns a page, **button 4** loads the ROM or opens the folder, **button 1** goes
 back to the roms folder (there: closes the browser). **Open it with the controller:** hold the stick up
-(or the Up key) and press all four buttons - so every game can be played with a controller only (choose
+(or the Up key) and all four buttons for a second - so every game can be played with a controller only (choose
 *Start switched on* in the setup). Drawn in the picture, so it works
 in full screen with G-Sync too.
 
@@ -964,7 +964,7 @@ any other joystick by its own name. Settings files move between all three system
 folder (the first start shows the setup window; *Start playing* switches the Vectrex on). For **Game Mode**
 add `Vectrex_EMU` to Steam as a non-Steam game: there only one window is shown, so the emulator skips the
 setup window and starts switched on; the Deck's controls are player 1's controller. Any controller button
-switches a Vectrex that is off back on; hold the stick up and press all four buttons for the ROM browser
+switches a Vectrex that is off back on; hold the stick up and all four buttons for a second for the ROM browser
 (stick to choose, button 4 loads, button 1 goes back / closes).
 
 **No glow, a plain picture?** Then OpenGL did not start, and the emulator says why in a message. On Linux

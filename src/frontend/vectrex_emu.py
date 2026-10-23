@@ -2631,7 +2631,7 @@ class App:
         if d[0] and d[1]:                                       # (a diagonal: the stronger way)
             d = (d[0], 0) if abs(jy) >= abs(jx) else (0, d[1])
         if 'pad_d' not in b:                                    # (the stick as it was when it opened - held up
-            b['pad_d'] = d if d != (0, 0) else None; b['pad_t'] = now + 0.6    #  for the shortcut: no step yet)
+            b['pad_d'] = d if d != (0, 0) else None; b['pad_t'] = now + 0.8    #  for the shortcut: no step yet)
         if d != (0, 0):
             step = False
             if d != b.get('pad_d'):
@@ -2818,8 +2818,8 @@ class App:
     def pad_power(self):
         """player 1's controller beyond the game: switched off, a button switches on (as any key does - a
         controller alone, a Steam Deck in Game Mode, had no way to turn the volume knob); the stick up with all
-        four buttons (hold up, then press them) opens the ROM browser (the keyboard's player keys too) - every
-        game with a controller only. Neither reaches the game afterwards (held until let go)."""
+        four buttons held for a second opens the ROM browser (the keyboard's player keys too) - every game
+        with a controller only. Neither reaches the game afterwards (held until let go)."""
         try:
             if not self.run.power and not self.browser:
                 jx, jy, btn, raw = self.inp.read_player('p1', kbd_dirs=False)
@@ -2828,10 +2828,15 @@ class App:
                     self.hold_until_released()
             elif self.run.power and not self.browser and not self.demo_mode():
                 jx, jy, btn, raw = self.inp.read_player('p1')
-                all4 = btn & 15 == 15
-                if all4 and jy > 64 and not getattr(self, 'combo_was', True):
-                    self.open_browser()                         # (up held, then the 4th button pressed)
-                self.combo_was = all4
+                if btn & 15 == 15 and jy > 64:                  # (up and all four buttons, held 1 s: a game's
+                    now = time.perf_counter()                   #  own quick use of them does not open it)
+                    if getattr(self, 'combo_t', None) is None:
+                        self.combo_t = now
+                    elif now - self.combo_t >= 1.0:
+                        self.combo_t = float('inf')             # (once per hold)
+                        self.open_browser()
+                else:
+                    self.combo_t = None
         finally:
             self.root.after(100, self.pad_power)
     def demo_mode(self):

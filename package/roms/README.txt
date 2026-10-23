@@ -9,3 +9,5 @@ cartridge's RP2350 chip. Some UVMC2 games read data from the cartridge's SD card
 next to the program (see the README in it).
 "UVMC2 Movie Player.um2" plays Vectrex vector movies (the PiTrex / VecFever ones, such as Bad Apple) from the SD
 card folder movies (sd/movies here) - the movies themselves are not included.
+Get them from Malban's free PiTrex SD card download (vide.malban.de): copy its vectrex/movies folder into
+sd/movies.

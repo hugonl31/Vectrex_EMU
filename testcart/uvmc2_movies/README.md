@@ -8,6 +8,9 @@ VecFever (BadApple.bin, LaLinea.bin, BlaBla.bin, ...) from the cartridge's SD ca
 start "UVMC2 Movie Player" from the ROM browser. It shows each movie's name, plays them one after another (in a loop);
 button 4 skips to the next. The movies are not included - they belong to their makers.
 
+**Where to get movies:** Malban's free PiTrex SD card download ([vide.malban.de](http://vide.malban.de)) has four of
+them: Bad Apple, Bad Apple DE, BlaBla and La Linea. Copy its `vectrex/movies` folder into `sd/movies`.
+
 **Sound:** a file with the movie's name and `.pcm` next to it (raw 16-bit mono, 44100 Hz, starting with the movie)
 is the good sound. By default it goes through the Vectrex's own speaker - at 22050 Hz through its DAC (two samples
 averaged, 8 bits with a little dither, each at its time from the movie's start) - so it plays on any Vectrex, no

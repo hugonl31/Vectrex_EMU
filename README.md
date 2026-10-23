@@ -570,7 +570,7 @@ on it can be changed later, and **Vectrex > Setup wizard...** (also in View) run
 ### Switching on
 
 The volume knob is the power switch (Page Up, the mouse wheel over the knob, a click on its right
-half, or while it is off any key or a click on the picture): it clicks on, the tube warms up and the BIOS start screen plays. **Vectrex > Start switched on** skips the knob; **Vectrex > Skip the Vectrex
+half, or while it is off any key, a controller button or a click on the picture): it clicks on, the tube warms up and the BIOS start screen plays. **Vectrex > Start switched on** skips the knob; **Vectrex > Skip the Vectrex
 intro** runs the BIOS start screen (the VECTREX logo, its tune and the game's title, ~13 s) unseen in a
 fraction of a second at every power on, so the cartridge starts at once - in the same state as after the
 real intro. Both are saved.
@@ -647,7 +647,9 @@ of a ROM as that ROM - keep an alias of the folder you build your own games in, 
 copy (the browser opens there again after you load from it). The game runs on
 behind it but gets no input. Up / Down choose, Left / Right a page, the mouse wheel or the arrow buttons
 scroll; Enter, a double click or the plug loads the chosen ROM (a power cycle with it) or opens the
-folder; Esc, the X or a click outside closes it. Drawn in the picture, so it works
+folder; Esc, the X or a click outside closes it. **With a controller** (player 1's): the stick up /
+down chooses, left / right turns a page, **button 4** loads the ROM or opens the folder, **button 1** goes
+back to the roms folder (there: closes the browser). Drawn in the picture, so it works
 in full screen with G-Sync too.
 
 **View > Real size (9):** as big as on a real Vectrex: the overlay sheet 162 x 207 mm, as the real ones (the picture as tall as the sheet), worked out from your
@@ -955,6 +957,13 @@ screen the picture is drawn at its full resolution, and at the full rate a ProMo
 
 Controllers work through SDL2: an Xbox, PlayStation or Switch pad shows up like the Xbox pad on Windows,
 any other joystick by its own name. Settings files move between all three systems as they are.
+
+**Steam Deck:** the Linux build runs on it. In **Desktop Mode** start `Vectrex_EMU` from the extracted
+folder (the first start shows the setup window; *Start playing* switches the Vectrex on). For **Game Mode**
+add `Vectrex_EMU` to Steam as a non-Steam game: there only one window is shown, so the emulator skips the
+setup window and starts switched on; the Deck's controls are player 1's controller. Any controller button
+switches a Vectrex that is off back on, and the ROM browser (the cartridge below the picture, or L) works
+with the stick and buttons 4 / 1.
 
 **No glow, a plain picture?** Then OpenGL did not start, and the emulator says why in a message. On Linux
 the program uses the system's own OpenGL driver, C++ runtime and X libraries (it does not bring copies of

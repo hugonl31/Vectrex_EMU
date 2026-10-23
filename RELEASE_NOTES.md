@@ -48,6 +48,11 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Touchpads scroll the menus and sliders.
 - The ROM browser shows ROMs copied in while it is open, and follows links: a Finder alias (Mac) or a
   shortcut (Windows) of a folder in `roms` is a subfolder, of a ROM that ROM - no copying your own builds.
+- The ROM browser with a controller: the stick chooses (left / right a page), button 4 loads a ROM or opens a
+  folder, button 1 goes back to the roms folder (there it closes the browser).
+- A controller button switches a Vectrex that is off on (a controller alone had no way to turn the knob).
+- Steam Deck Game Mode: only one window is shown there, so the emulator skips the first-run setup and starts
+  switched on (the game did not appear: the hidden setup window was waiting, the Vectrex switched off).
 - Help > Copy system info, for a GitHub issue.
 - Help updated for every new option.
 

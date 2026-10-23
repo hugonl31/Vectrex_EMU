@@ -77,6 +77,8 @@ TOPICS = [
          "alias (Mac), a shortcut (Windows) or a symbolic link of a folder shows as a subfolder, of a ROM as "
          "that ROM: an alias of the folder you build your games in, nothing to copy. Up / "
          "Down choose, Left / Right page, Enter or a double click loads a ROM or opens a folder, Esc closes. "
+         "With a controller: the stick chooses (left / right: a page), button 4 loads or opens, button 1 goes "
+         "back to the roms folder (there it closes the browser). "
          "The game keeps running behind it but gets no input."),
 ('item', 'Open ROM file...', "The Windows file dialog, for a ROM anywhere on your PC. VecFever .v4e files "
          "load too: unpacked into the folder v4e next to the settings (their saves are kept there), run with the "

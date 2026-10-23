@@ -40,6 +40,9 @@ import fatimg
 import links
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
+# Steam Deck Game Mode (gamescope): one window is shown - a second one (the first-run setup) stays out of
+# sight, and there is no mouse for the volume knob: there the setup is skipped and the Vectrex starts on
+IN_GAMESCOPE = bool(os.environ.get('GAMESCOPE_WAYLAND_DISPLAY')) or os.environ.get('XDG_CURRENT_DESKTOP', '').lower() == 'gamescope'
 if not IS_WIN:                                          # macOS / Linux: the window, keys, controllers, sound
     import osdep
 if getattr(sys, 'frozen', False):                       # Vectrex_EMU.exe (PyInstaller; macOS: next to Vectrex_EMU.app)
@@ -364,9 +367,10 @@ class Input:
         if not IS_WIN:
             return self.focused and osdep.KEYS.held(vk)
         return self.focused and bool(self.user32.GetAsyncKeyState(vk) & 0x8000)
-    def read_player(self, p):
+    def read_player(self, p, kbd_dirs=True):
         """(jx, jy, buttons, the controller's stick before the dead zone or None). The keyboard and the
-        controller work at once: the buttons add up, a direction key overrides the stick on its axis."""
+        controller work at once: the buttons add up, a direction key overrides the stick on its axis
+        (kbd_dirs False: not the keyboard's directions - the ROM browser has the arrow keys itself)."""
         if time.perf_counter() - getattr(self, '_devs_t', -9) > 3.0:   # (controllers plugged in / out)
             self.refresh_devices()
         jx = jy = 0.0; btn = 0; raw = None
@@ -392,8 +396,8 @@ class Input:
                     btn |= DIR_MASK[int(round(math.atan2(rs[1], rs[0]) / (math.pi / 4))) % 8]
         km = self.keys[p]
         down = lambda k: any(self.keydown(vk) for vk, _ in km[k])
-        kx = (1.0 if down('right') else 0.0) - (1.0 if down('left') else 0.0)
-        ky = (1.0 if down('up') else 0.0) - (1.0 if down('down') else 0.0)
+        kx = (1.0 if down('right') else 0.0) - (1.0 if down('left') else 0.0) if kbd_dirs else 0.0
+        ky = (1.0 if down('up') else 0.0) - (1.0 if down('down') else 0.0) if kbd_dirs else 0.0
         h = 0.5 if (kx or ky) and down('half') else 1.0
         if kx: jx = kx * h
         if ky: jy = ky * h
@@ -1362,7 +1366,7 @@ class App:
         for k in self.sound_keys:
             if k in saved:
                 setattr(self.run.crt, k, type(self.sound_default[k])(saved[k]))
-        if self.start_on or args.demo or not self.ren:          # (no OpenGL: no knob on screen - on at start)
+        if self.start_on or args.demo or not self.ren or IN_GAMESCOPE:   # (no OpenGL / Game Mode: on at start)
             self.run.crt.volume = max(0.05, self.run.crt.volume)  # (on at start: the knob turned up)
         else:                                                   # off at start, like a Vectrex: the knob at
             self.run.crt.volume = 0.0                           #  its stop; turning it up switches it on
@@ -1477,7 +1481,12 @@ class App:
         if getattr(self, 'gl_error', None):
             self.root.after(1200, self.gl_notice)
         if not c1_setup_done(self.settings_f) and not args.demo:   # (the first start: the setup, once)
-            self.root.after(900, lambda: deck.setup_window(self))
+            if IN_GAMESCOPE:                                    # (Steam Deck Game Mode: its window would stay
+                self.setup_done = True                          #  hidden - the defaults; View > Setup later)
+                self.root.after(900, self.save_settings)
+            else:
+                self.root.after(900, lambda: deck.setup_window(self))
+        self.root.after(500, self.pad_power)
 
     def gl_notice(self):
         """OpenGL did not start: the plain picture, and why (a black or plain window looked like a broken emulator)"""
@@ -2608,6 +2617,61 @@ class App:
         self.inp.block = True                                   #  ROM is loaded)
         self.browser_dir(d, cur)
         self.root.after(1000, lambda bb=self.browser: self.browser_watch(bb))
+        self.root.after(30, lambda bb=self.browser: self.browser_pad(bb))
+    def browser_pad(self, bb):
+        """the ROM browser with player 1's controller: the stick up / down chooses (held: it repeats), left /
+        right turns a page; button 4 loads the ROM (a folder: opens it), button 1 goes back to the roms
+        folder - there it closes the browser. (The keyboard's arrows, Enter, Backspace and Esc as before.)"""
+        b = self.browser
+        if not b or b is not bb:
+            return
+        jx, jy, btn, raw = self.inp.read_player('p1', kbd_dirs=False)
+        now = time.perf_counter()
+        d = (1 if jy < -64 else -1 if jy > 64 else 0, 1 if jx > 64 else -1 if jx < -64 else 0)
+        if d[0] and d[1]:                                       # (a diagonal: the stronger way)
+            d = (d[0], 0) if abs(jy) >= abs(jx) else (0, d[1])
+        if d != (0, 0):
+            step = False
+            if d != b.get('pad_d'):
+                b['pad_d'] = d; b['pad_t'] = now + 0.40; step = True
+            elif now >= b['pad_t']:
+                b['pad_t'] = now + (0.08 if d[0] else 0.25); step = True
+            if step:
+                b['pad'] = True
+                self.browse(d[0] if d[0] else d[1] * self.browser_geom()[3])
+        else:
+            b['pad_d'] = None
+        new = btn & ~b.get('pad_btn', btn)                      # (pressed now: held when it opened does not count)
+        b['pad_btn'] = btn
+        if new & 8:                                             # button 4: load / open
+            b['pad'] = True
+            self.browse_load()
+            if not self.browser:
+                return self.hold_until_released()
+        elif new & 1:                                           # button 1: the roms folder; there: close
+            b['pad'] = True
+            top = os.path.join(ROOT, 'roms')
+            if os.path.abspath(b['dir']) != os.path.abspath(top):
+                st = b.get('stack', [])
+                came = st[1] if len(st) > 1 else b['dir']       # (the folder opened from the roms folder)
+                b['stack'] = []
+                self.browser_dir(top, came)
+            else:
+                self.close_browser()
+                return self.hold_until_released()
+        self.root.after(30, lambda: self.browser_pad(bb))
+    def hold_until_released(self, t0=None):
+        """a controller button closed the ROM browser: the game gets no input until the button (and the stick)
+        is let go - button 4 would start the game just loaded at once (1.5 s at most)"""
+        t0 = t0 or time.perf_counter()
+        if self.browser:
+            return
+        jx, jy, btn, raw = self.inp.read_player('p1', kbd_dirs=False)
+        if (not btn and abs(jx) < 64 and abs(jy) < 64) or time.perf_counter() - t0 > 1.5:
+            self.inp.block = False
+            return
+        self.inp.block = True
+        self.root.after(30, lambda: self.hold_until_released(t0))
     def browser_watch(self, bb):
         """the ROM browser open: its folder looked at every second - ROMs copied in (or taken out) appear at
         once, the chosen one stays chosen (a user had to restart the program to see games just added)"""
@@ -2657,7 +2721,9 @@ class App:
                     names=[t for t, _, _k in b['roms']], kinds=[k_ for _, _, k_ in b['roms']],
                     top=b['top'], sel=b['sel'], title='%s  (%d)' % (where, sum(1 for r in b['roms'] if r[2] == 'rom')),
                     empty='NO ROMS FOUND.\nPUT YOUR ROMS IN THE FOLDER\nROMS NEXT TO THE PROGRAM.',
-                    help=('UP/DOWN: CHOOSE   LEFT/RIGHT: PAGE   ENTER/PLUG: LOAD   ESC: CLOSE' if rel == '.' else
+                    help=(('STICK: CHOOSE / PAGE   BUTTON 4: LOAD   BUTTON 1: CLOSE' if rel == '.' else
+                           'STICK: CHOOSE / PAGE   BUTTON 4: OPEN/LOAD   BUTTON 1: BACK') if b.get('pad') else
+                          'UP/DOWN: CHOOSE   LEFT/RIGHT: PAGE   ENTER/PLUG: LOAD   ESC: CLOSE' if rel == '.' else
                           'UP/DOWN: CHOOSE   ENTER: OPEN/LOAD   BACKSPACE: BACK   ESC: CLOSE'))
     def browse(self, d):
         """move the choice by d rows (and keep it in view)"""
@@ -2747,6 +2813,17 @@ class App:
             return None
         self.turn_volume(getattr(self, 'vol_before_off', 0) or 0.5)
         return 'break'
+    def pad_power(self):
+        """switched off: a button on player 1's controller switches on, as any key does (a controller alone -
+        a Steam Deck in Game Mode - had no way to turn the volume knob); the button does not reach the game"""
+        try:
+            if not self.run.power and not self.browser:
+                jx, jy, btn, raw = self.inp.read_player('p1', kbd_dirs=False)
+                if btn and raw is not None:
+                    self.power_up()
+                    self.hold_until_released()
+        finally:
+            self.root.after(100, self.pad_power)
     def any_key(self, e):
         """a key while switched off: on (not the emulator's own keys: Esc, F-keys, modifiers, with Ctrl / Alt)"""
         if self.run.power or self.browser or (e.state & 0x2000c):

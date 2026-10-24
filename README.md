@@ -127,8 +127,8 @@ picture, softly and a little warped as moulded plastic does, with fine scratches
 them.
 
 <p align="center">
-<a href="docs/images/v1.0.3/main.png"><img src="docs/images/v1.0.3/main_small.jpg" width="440" alt="Scramble in Vectrex_EMU: the tube in the Vectrex's plastic case, the dark menu bar above and the control deck below"></a><br>
-<em>Scramble in the window: the dark menu bar, the tube in its case, and the control deck below.</em>
+<a href="docs/images/v1.0.3/main.png"><img src="docs/images/v1.0.3/main_small.jpg" width="440" alt="Armor Attack in Vectrex_EMU: the tube in the Vectrex's plastic case, the dark menu bar above and the control deck below"></a><br>
+<em>Armor Attack in the window: the dark menu bar, the tube in its case, and the control deck below.</em>
 </p>
 
 <p align="center">

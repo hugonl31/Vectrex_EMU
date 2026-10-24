@@ -131,6 +131,12 @@ them.
 <em>Scramble in the window: the dark menu bar, the tube in its case, and the control deck below.</em>
 </p>
 
+<p align="center">
+<a href="docs/images/v1.0.3/case_grid.png"><img src="docs/images/v1.0.3/case_grid_small.jpg" width="440" alt="the test cartridge's grid in a bright room: the ceiling light on the glass, the grid mirrored in the case's walls"></a><br>
+<em>The case in a bright room (View > Room light > Daylight): the grid mirrored in its glossy walls, the ceiling
+light on the glass.</em>
+</p>
+
 Below the picture sits the **control deck**, the Vectrex's own controls drawn in green outlines: the
 **on-screen display** (the game's frame rate, the monitor's, the emulation speed, the volume), **P2 PORT**
 (click it: joystick, VecVox or VecVoice), a **cartridge** you click to open the **ROM browser**, the
@@ -939,11 +945,11 @@ any cartridge: the mains wobble and the buzz too, as on a real Vectrex with a UV
 lists them marked UVMC2. On a PC with four or more cores the cartridge's two cores run on two of the PC's.
 
 <p align="center">
-<a href="docs/images/v1.0.2/uvmc2_demo.png"><img src="docs/images/v1.0.2/uvmc2_demo_small.jpg" width="260" alt="the UVMC2 demo: a rotating cube"></a>
-<a href="docs/images/v1.0.2/uvmc2_movies.png"><img src="docs/images/v1.0.2/uvmc2_movies_small.jpg" width="260" alt="the UVMC2 movie player playing Bad Apple"></a>
-<a href="docs/images/v1.0.2/uvmc2_doom.png"><img src="docs/images/v1.0.2/uvmc2_doom_small.jpg" width="260" alt="Doom on the UVMC2, its WAD read from the SD card folder"></a><br>
-<em>The included UVMC2 Demo and UVMC2 Movie Player (here: Bad Apple), and Doom on the UVMC2 choosing
-its WAD from the SD card folder.</em>
+<a href="docs/images/v1.0.3/uvmc2_demo.png"><img src="docs/images/v1.0.3/uvmc2_demo_small.jpg" width="260" alt="the UVMC2 demo: a rotating cube"></a>
+<a href="docs/images/v1.0.3/uvmc2_movies.png"><img src="docs/images/v1.0.3/uvmc2_movies_small.jpg" width="260" alt="the UVMC2 movie player playing Bad Apple"></a>
+<a href="docs/images/v1.0.3/uvmc2_doom.png"><img src="docs/images/v1.0.3/uvmc2_doom_small.jpg" width="260" alt="Doom on the UVMC2: the first level, its WAD read from the SD card folder"></a><br>
+<em>The included UVMC2 Demo and UVMC2 Movie Player (here: Bad Apple), and Doom on the UVMC2 in its
+first level (the WAD read from the SD card folder).</em>
 </p>
 
 **Included**, both written for this emulator from scratch (MIT license, sources in `testcart/`):

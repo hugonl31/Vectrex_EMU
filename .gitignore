@@ -1,10 +1,11 @@
-# not in the repository: ROMs, your settings, builds (the BIOS is: bios/bios.bin, free for
+# not in the repository: ROMs, your settings, builds (the BIOS is: system/bios.bin, free for
 # non-commercial use by Smith Engineering's permission)
 /roms/
 /overlays/*
 !/overlays/Mine Storm (built in).art
 /games/
 Vectrex_EMU.conf
+system/settings.json
 *.zip
 *.exe
 /core/
@@ -15,8 +16,8 @@ __pycache__/
 *.sav
 /archive/
 # the SP0256-AL2 speech ROM ((c) Microchip): the user downloads it, it is never shared from here
-bios/sp0256-al2.bin
-bios/al2.bin
+system/sp0256-al2.bin
+system/al2.bin
 # local only: the SD card folder, unpacked VecFever files, PiTrex files, SD card images, notes
 /sd/
 /v4e/
@@ -24,3 +25,5 @@ bios/al2.bin
 /pitrex_new/
 *.img
 /TODO.md
+/cache/
+/uvmc2/

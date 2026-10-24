@@ -3,6 +3,50 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.3
+
+**The picture**
+- Tube geometry refitted to two real Vectrexes' grids ([issue #4](https://github.com/hugonl31/Vectrex_EMU/issues/4)):
+  the outer columns are no longer pinched - they narrow gradually across the whole width, 85 % of the middle
+  ones as on the real tubes (was 77 %, and more on the left than the right). The grid keeps its size and centre.
+- The tube's glass traced from a real Vectrex: its rounded corners exactly as on the tube, the overlay centred on
+  the glass, the picture placed so the overlays line up (Solar Quest's sun on its star).
+- The plastic case round the tube, when there is no overlay: glossy black walls that mirror the picture - softly,
+  a little warped, as moulded plastic does - fine scratches, and 5 mm of the case's matte front with the band
+  where overlays were slid in. The room light and the ceiling light light it. View > Case (C), and the new
+  Config > Case strip: Reflections and Wear.
+- The screen is drawn in 16-bit colour and dithered to the monitor: the room light on overlays, the glass and the
+  case falls off smoothly, without bands.
+
+**Menus and windows: dark**
+- Dark, like VS Code: the title bars, the menu bar, the drop-down menus, the Config window, Controls, the setup,
+  Help, the messages, the ROM browser and Windows' own file dialogs.
+- The menu bar is Vectrex, View, Controls, Config and Help. Alt (or F10) opens the menus, Alt + the underlined
+  letter one of them; hover over an item for a short explanation of what it does.
+- Vectrex: Recent games (the last eight). View: Fit screen, Authentic (as big as a real Vectrex), Choose
+  overlay, Case, Control deck, Quality and Room light (Dark, Evening, Daylight). Controls: Keyboard and
+  controllers, Mouse steers player 1, TV mode shortcuts, Port 2 (Joystick, VecVoice, VecVox). Config opens the
+  Config window (Tab), the window that was called the control deck.
+- The control deck is now the strip below the picture: the on-screen display, P2 PORT (a controller seen from
+  above, the VecVox's speaker box or the VecVoice's speaking head - click it for the next one), the cartridge,
+  RESET and the volume knob (with grip dots and a pointer). View > Control deck switches it all on or off at
+  once; off, the window gets smaller. The window is cut evenly round the case and the strip.
+- The Config window: settings in labelled boxes, what depends on a switch indented under it; it opens where you
+  left it, on the strip you had open. Quality is Auto, Low, Medium or High (Ultra's full refresh rate is
+  Config > Display's "Monitor's full rate").
+- The Controls window and Help open where you left them; the ROM browser opens in the folder you were in, on the
+  same game, scrolled as it was.
+
+**Folders**
+- Next to the program: `roms`, `overlays`, `system` (the BIOS, the speech ROM and the settings, now
+  `settings.json`), `uvmc2` (the UVMC2's SD card, was `sd`) and `cache` (working files). Each has a note on
+  what goes in it. An older folder layout is moved over by itself at the first start.
+- A new icon: a little Vectrex.
+
+**Help**
+- The help pages follow the new menus: Menu: Vectrex, Menu: View and Menu: Controls, then the Config window's
+  strips.
+
 ## v1.0.2
 
 **UVMC2 games** ([README](README.md#uvmc2-games-the-ultimate-vectrex-multicart-2))

@@ -2,7 +2,7 @@
 # Build dist-mac/Vectrex_EMU.app on macOS for Intel and Apple Silicon (universal2): the core with clang
 # for both, the program with PyInstaller from the python.org universal2 Python
 # (python3 -m pip install pyinstaller pyobjc-framework-Cocoa pysdl2 pysdl2-dll). The BIOS is not built
-# in: it goes in a bios folder next to the app (bios/bios.bin).
+# in: it goes in a system folder next to the app (system/bios.bin).
 set -e
 cd "$(dirname "$0")"
 PY=${PY:-python3}
@@ -17,5 +17,5 @@ clang -O2 -w -fgnu89-inline -arch arm64 -arch x86_64 -mmacosx-version-min=10.13 
   --osx-bundle-identifier io.github.hugonl31.vectrexemu --distpath dist-mac --workpath build/pyi-mac \
   --specpath build --paths src/frontend --exclude-module sdl2dll --exclude-module sdl2.test --exclude-module sdl2.examples --add-binary "$PWD/build/sdllib/libSDL2.dylib:sdllib" \
   --add-binary "$PWD/core/vectrex_core:core" --add-data "$PWD/sounds/on.wav:sounds" \
-  --add-data "$PWD/sounds/off.wav:sounds" src/frontend/vectrex_emu.py
+  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" src/frontend/vectrex_emu.py
 echo built dist-mac/Vectrex_EMU.app

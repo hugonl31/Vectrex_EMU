@@ -4,7 +4,7 @@ Windows APIs themselves: WGL, XInput / WinMM, waveOut, GetAsyncKeyState).
     gl_context(widget)   OpenGL drawn into a Tk frame: GLX on Linux (X11 / XWayland), on macOS an NSView
                          with an NSOpenGLContext laid over the frame (clicks pass through to Tk)
     Keys                 the keyboard state from Tk's key events, as Windows virtual-key codes (the
-                         settings keep those, so Vectrex_EMU.conf works on every system)
+                         settings keep those, so the settings file works on every system)
     Pads                 controllers through SDL2: a game controller (Xbox / PlayStation / Switch pads...)
                          looks like Windows' XInput pad, any other joystick like a WinMM one
     Audio                16-bit mono through SDL2's audio queue (the same calls as the waveOut player)
@@ -343,7 +343,7 @@ class MacGL:
             pass
 
 # ------------------------------------------------------------------ the keyboard
-# Tk key names -> Windows virtual-key codes (what Vectrex_EMU.conf keeps)
+# Tk key names -> Windows virtual-key codes (what the settings file keeps)
 _VK = {'BackSpace': 0x08, 'Tab': 0x09, 'ISO_Left_Tab': 0x09, 'Return': 0x0D, 'KP_Enter': 0x0D, 'Shift_L': 0x10,
        'Shift_R': 0x10, 'Control_L': 0x11, 'Control_R': 0x11, 'Alt_L': 0x12, 'Alt_R': 0x12, 'Option_L': 0x12,
        'Option_R': 0x12, 'Meta_L': 0x5B, 'Meta_R': 0x5C, 'Super_L': 0x5B, 'Super_R': 0x5C, 'Command': 0x5B,

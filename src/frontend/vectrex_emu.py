@@ -18,11 +18,11 @@ Keys (only what full screen needs; everything else is in the menu bar, the keybo
   L ROM browser, O overlay on / off, P pause, Ctrl+E eject (Mine Storm), Ctrl+R RESET button,
   Page Up / Page Down the volume knob, which is also the power switch, as on the Vectrex: down to
   0 % = off, up from 0 % = on (a dirty potentiometer while turning), + / - / 0 size
-Controls (Vectrex > Controls): each player's controller (the connected ones, by name) and keys - both
+Controls (Controls > Keyboard and controllers): each player's controller (the connected ones, by name) and keys - both
   work at once; each controller keeps its own axes, buttons and dead zone; a test field per player.
   Defaults: player 1 arrows + A W S D (buttons 1-4), Shift half stick, and the first controller found
   (its X / Y axes, buttons 1-4; an Xbox pad: the left stick, X Y A B); player 2 keyboard, no keys.
-Settings are kept in Vectrex_EMU.conf next to the exe (or in %APPDATA%\Vectrex_EMU if that folder
+Settings are kept in system/settings.json next to the exe (or in %APPDATA%\Vectrex_EMU if that folder
 is read-only). The screen is shown at a fixed 60 Hz whatever the game's frame rate: every line lights
 the phosphor at the moment the beam drew it and the spot fades from there to black, so afterglow and
 trails move smoothly (vsync on a 60 / 120 / 240 Hz monitor, else paced to 60 Hz - G-Sync shows it as is).
@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vecrender
 import vart
 import deck
+import darkmenu
 deck.V = sys.modules[__name__]                  # (the control deck reads this module's tables)
 import v4e
 import fatimg
@@ -54,27 +55,105 @@ else:                                                   # src\frontend\vectrex_e
 # bios (bios.bin, the speech ROM), roms (the user's ROMs) and overlays (Mine Storm (built in).art and the user's)
 RES = getattr(sys, '_MEIPASS', ROOT)
 CORE = os.path.join(RES, 'core', 'vectrex_core.exe' if IS_WIN else 'vectrex_core')
-BIOS = os.path.join(ROOT, 'bios', 'bios.bin')
-if not os.path.exists(BIOS) and os.path.exists(os.path.join(RES, 'bios', 'bios.bin')):
-    BIOS = os.path.join(RES, 'bios', 'bios.bin')        # (an older exe with the BIOS inside)
+# the folder 'system' next to the program: the BIOS, the speech ROM, the settings (it was called 'bios' before:
+# renamed once, when it can be)
+if os.path.isdir(os.path.join(ROOT, 'bios')) and not os.path.exists(os.path.join(ROOT, 'system')):
+    try:
+        os.replace(os.path.join(ROOT, 'bios'), os.path.join(ROOT, 'system'))
+    except OSError:
+        pass
+SYS_DIRS = [os.path.join(ROOT, 'system'), os.path.join(ROOT, 'bios'), os.path.join(RES, 'system'), os.path.join(RES, 'bios')]
+BIOS = next((os.path.join(d, 'bios.bin') for d in SYS_DIRS if os.path.exists(os.path.join(d, 'bios.bin'))),
+            os.path.join(ROOT, 'system', 'bios.bin'))
 # the VecVoice's speech ROM (SP0256-AL2, (c) Microchip Technology Inc.): not shipped - the user downloads
-# it from Joe Zbiciak's page (Microchip let him distribute it) into the bios folder next to the program
+# it from Joe Zbiciak's page (Microchip let him distribute it) into the system folder next to the program
 SP_ROM_URL = 'http://spatula-city.org/~im14u2c/sp0256-al2/'
 def sp_rom():
-    for d in (os.path.join(ROOT, 'bios'), os.path.join(RES, 'bios')):
+    for d in SYS_DIRS:
         for n in ('sp0256-al2.bin', 'al2.bin'):
             if os.path.exists(os.path.join(d, n)):
                 return os.path.join(d, n)
     return None
+def dark_title(win):
+    """the window's title bar and border dark, as the menus: DWM attributes (Windows only)"""
+    if not IS_WIN:
+        return
+    try:
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id()) or win.winfo_id()
+        for a, v in ((20, 1), (35, 0x000e0f0b), (34, 0x00252a1d), (36, 0x00cfd6c8)):   # dark mode, caption, border, text
+            val = ctypes.c_int(v)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, a, ctypes.byref(val), 4)
+    except Exception:   # noqa
+        pass
+if IS_WIN:                      # (Windows' own dialogs - Open, Save, folders - dark too: the app's preferred mode,
+    try:                        #  uxtheme ordinal 135 SetPreferredAppMode(ForceDark), 136 FlushMenuThemes; Windows 10
+        _ux = ctypes.windll.uxtheme  #  1903+ and 11 - older ones ignore it)
+        _ux[135](2); _ux[136]()
+    except Exception:   # noqa
+        pass
+DARK_MENU = not IS_MAC          # (the menu bar drawn by the emulator, dark; macOS keeps its own at the top)
 def _writable(d):
     try:
         t = os.path.join(d, '.write_test'); open(t, 'w').close(); os.remove(t); return True
     except OSError:
         return False
-# Vectrex_EMU.conf (the settings, JSON) lives next to the exe (portable: copy the folder and the settings come along); a
+# The settings (JSON, SETTINGS_F) live next to the exe (portable: copy the folder and the settings come along); a
 # folder that cannot be written (e.g. Program Files) falls back to %APPDATA%\Vectrex_EMU
 APPDATA_DIR = os.path.join(os.environ.get('APPDATA', ROOT), 'Vectrex_EMU') if IS_WIN else osdep.settings_dir()
 SETTINGS_DIR = ROOT if _writable(ROOT) else APPDATA_DIR
+# the settings file: system/settings.json next to the program (with the BIOS: the folders next to it are for the
+# ROMs, overlays and cards), else settings.json in the fallback folder; the earlier names are moved there once
+SETTINGS_F = os.path.join(ROOT, 'system', 'settings.json') if SETTINGS_DIR == ROOT else os.path.join(APPDATA_DIR, 'settings.json')
+def _move_old_settings():
+    if os.path.exists(SETTINGS_F):
+        return
+    for old in (os.path.join(ROOT, 'bios', 'settings.json'), os.path.join(SETTINGS_DIR, 'Vectrex_EMU.conf'),
+                os.path.join(SETTINGS_DIR, 'settings.json')):
+        if os.path.abspath(old) != os.path.abspath(SETTINGS_F) and os.path.exists(old):
+            try:
+                os.makedirs(os.path.dirname(SETTINGS_F), exist_ok=True)
+                os.replace(old, SETTINGS_F)
+            except OSError:
+                pass
+            return
+_move_old_settings()
+# Next to the program, every folder you put things in is one level down: roms, overlays, system (BIOS, speech ROM,
+# settings), uvmc2 (the UVMC2's SD card) and pitrex (the PiTrex's). 'cache' only holds working files: the SD card
+# images a UVMC2 or PiTrex game runs from, built from those folders at its start and copied back at its end.
+CACHE_DIR = os.path.join(SETTINGS_DIR, 'cache')
+SD_DEFAULT = os.path.join(ROOT if SETTINGS_DIR == ROOT else SETTINGS_DIR, 'uvmc2')
+PX_DEFAULT = os.path.join(ROOT, 'pitrex')
+# (earlier places: sd, disks/sd and disks/pitrex - moved once; a setting that still names one follows the card)
+OLD_CARDS = {SD_DEFAULT: [os.path.join(SETTINGS_DIR, 'sd'), os.path.join(SETTINGS_DIR, 'disks', 'sd')],
+             PX_DEFAULT: [os.path.join(ROOT, 'disks', 'pitrex')]}
+def _move_old_cards():
+    for new, olds in OLD_CARDS.items():
+        for old in olds:
+            if os.path.isdir(old) and not os.path.exists(new):
+                try:
+                    os.replace(old, new)
+                except OSError:
+                    pass
+    old = os.path.join(SETTINGS_DIR, 'disks')                 # (its images: into the cache; the folder gone if empty)
+    if os.path.isdir(old):
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            for f in os.listdir(old):
+                if f.lower().endswith('.img') and not os.path.exists(os.path.join(CACHE_DIR, f)):
+                    os.replace(os.path.join(old, f), os.path.join(CACHE_DIR, f))
+            if not os.listdir(old):
+                os.rmdir(old)
+        except OSError:
+            pass
+_move_old_cards()
+def _card_dir(d, default):
+    """a card folder from the settings: the default when unset, or when it names an old place that has moved"""
+    if not d:
+        return default
+    if not os.path.isdir(d) and os.path.isdir(default) and \
+            os.path.abspath(d) in [os.path.abspath(o) for o in OLD_CARDS.get(default, [])] + [os.path.abspath(os.path.join(ROOT, 'sd'))]:
+        return default
+    return d
 NUL = 'NUL' if IS_WIN else os.devnull      # the core's input recording and an empty cartridge slot: nothing is written or kept
 ALG_MAX_X, ALG_MAX_Y = 33000, 41000
 MONO, SANS = ('Consolas', 'Segoe UI') if IS_WIN else ('Menlo', 'Helvetica') if IS_MAC else ('DejaVu Sans Mono', 'DejaVu Sans')
@@ -122,10 +201,10 @@ DEFAULT_KEYS = {'p1': dict(up=[(0x26, 'Up')], down=[(0x28, 'Down')], left=[(0x25
                 'p2': {k: [] for k in CTRL_INPUTS}}
 DEFAULT_DEADZONE = 0.2
 # keys the emulator keeps for itself (a player can not have them): F11, Esc, Page Up / Down, + - 0 9 (the
-# window size, the real size), P L O (pause, the ROM browser, the overlay) and everything with Ctrl
+# window size, the real size), P L O C (pause, the ROM browser, the overlay, the case) and everything with Ctrl
 RESERVED_VK = {0x7A: 'F11', 0x1B: 'Esc', 0x21: 'Page Up', 0x22: 'Page Down', 0x11: 'Ctrl', 0xA2: 'Ctrl', 0xA3: 'Ctrl',
                0xBB: '+', 0xBD: '-', 0x30: '0', 0x39: '9', 0x6B: 'Numpad +', 0x6D: 'Numpad -', 0x60: 'Numpad 0',
-               0x69: 'Numpad 9', 0x50: 'P', 0x4C: 'L', 0x4F: 'O'}
+               0x69: 'Numpad 9', 0x50: 'P', 0x4C: 'L', 0x4F: 'O', 0x43: 'C'}
 
 # the real Vectrex picture's height (the tube's window behind the overlay), for Display > Real size
 REAL_PIC_MM = 207.0     # (the overlay sheet: 162 x 207 mm, the owner measured; the picture is as tall as the sheet)
@@ -165,7 +244,7 @@ class Input:
     """both players' controls: the keyboard (Windows virtual-key codes) and a controller each (an XInput
     pad or a WinMM / DirectInput joystick / gamepad), both at once. Each controller keeps its own mapping
     (axes, buttons, dead zone), so a player can switch controllers without mapping again. Mapped in the
-    Controls window and kept in Vectrex_EMU.conf."""
+    Controls window and kept in the settings (system/settings.json)."""
     def __init__(self, conf=None):
         self.xi = None
         self.pads = None
@@ -752,7 +831,7 @@ BUILTIN_ART = 'Mine Storm (built in).art'
 def builtin_overlay():
     """the one overlay that comes with the emulator: Mine Storm's, for the console's own game - a plain file in
     the overlays folder, so it can be swapped (a 'Mine Storm.art' of your own is chosen before it)"""
-    for p in [os.path.join(d, BUILTIN_ART) for d in overlay_dirs()] + [os.path.join(d, 'bios', 'bios.art') for d in (ROOT, RES)]:
+    for p in [os.path.join(d, BUILTIN_ART) for d in overlay_dirs()] + [os.path.join(d, s, 'bios.art') for d in (ROOT, RES) for s in ('system', 'bios')]:
         if os.path.exists(p):
             return p
     return None
@@ -874,10 +953,16 @@ SD_README = """This folder is the SD card of the Ultimate Vectrex Multicart 2 (U
 
 Put UVMC2 games (.um2 files) in the roms folder, next to your other games: the ROM browser lists them.
 Some UVMC2 games read their own data from the SD card - put that here, as on the real card. For example:
-  VecDoom:  a folder doom with DOOM.WAD in it        (sd / doom / DOOM.WAD)
-  Quake:    a folder quake with pak0.pak and pak1.pak (sd / quake / ...)
+  VecDoom:  a folder doom with DOOM.WAD in it        (uvmc2 / doom / DOOM.WAD)
+  Quake:    a folder quake with pak0.pak and pak1.pak (uvmc2 / quake / ...)
+  Movies:   a folder movies with the vector movies   (uvmc2 / movies / ...)
 The game sees this folder as its card while it runs; what it writes (saves, settings) is kept here.
 Another folder can be chosen in the control deck (Tab), Cartridge strip: SD card folder.
+"""
+CACHE_README = """Working files only - nothing to put here.
+When a UVMC2 game starts, the emulator builds an SD card image of the uvmc2 folder here (uvmc2_sd.img),
+runs the game from it and copies what the game wrote back into the folder. It is made again at every
+start: this folder can be deleted at any time.
 """
 # UVMC2 games that need files of their own on the SD card (the data of the PC game they port: not shipped with them).
 # (a word in the .um2's file name, the folder on the card, the files - any one of them will do -, what to tell the user)
@@ -960,9 +1045,17 @@ class Core:
         if rom.lower().endswith('.um2') and (os.cpu_count() or 1) >= 4:
             env.setdefault('VT_THREADS', '1')
         self.sd = None
+        if (px_dir and rom.lower().endswith(('.img', '.pit'))) or (sd_dir and rom.lower().endswith('.um2')):
+            try:
+                os.makedirs(CACHE_DIR, exist_ok=True)
+                if not os.path.exists(os.path.join(CACHE_DIR, 'README.txt')):
+                    with open(os.path.join(CACHE_DIR, 'README.txt'), 'w', encoding='utf8') as f:
+                        f.write(CACHE_README)
+            except OSError:
+                pass
         if px_dir and rom.lower().endswith(('.img', '.pit')):       # a PiTrex program: its SD card is the folder px_dir
             sd_dir = None
-            img = os.path.join(SETTINGS_DIR, 'pitrex_sd.img')
+            img = os.path.join(CACHE_DIR, 'pitrex_sd.img')
             try:
                 fatimg.build(px_dir, img)
                 env['VT_PITREX_SD'] = img
@@ -970,7 +1063,7 @@ class Core:
             except (OSError, ValueError):
                 pass
         if sd_dir and rom.lower().endswith('.um2'):
-            img = os.path.join(SETTINGS_DIR, 'uvmc2_sd.img')
+            img = os.path.join(CACHE_DIR, 'uvmc2_sd.img')
             try:
                 fatimg.build(sd_dir, img)
                 env['VT_UVM2_SD'] = img
@@ -1194,7 +1287,7 @@ class App:
         self.args = args
         if not args.rom and not args.demo:                      # no ROM given: the one used last, if it is
             try:                                                #  still there (else no cartridge: Mine Storm)
-                last = json.load(open(os.path.join(SETTINGS_DIR, 'Vectrex_EMU.conf'))).get('last_rom')
+                last = json.load(open(SETTINGS_F)).get('last_rom')
                 if last and os.path.isfile(last):
                     args.rom = last
             except Exception:   # noqa
@@ -1207,8 +1300,8 @@ class App:
             self.v4e_err = '%s:\n%s' % (os.path.basename(args.rom), e)
             args.rom = None
             rom, self.rom_name = self.cartridge(None)
-        try:                                                    # (the controls: Vectrex_EMU.conf)
-            c0 = json.load(open(os.path.join(SETTINGS_DIR, 'Vectrex_EMU.conf')))
+        try:                                                    # (the controls: the settings)
+            c0 = json.load(open(SETTINGS_F))
         except Exception:   # noqa
             c0 = {}
         ctl = c0.get('controls')
@@ -1230,9 +1323,9 @@ class App:
         self.speech = c0.get('speech', 'vecvoice' if c0.get('vecvoice') else 'off')   # (port 2: a speech accessory)
         if self.speech not in PORT2 or not sp_rom():
             self.speech = 'off'
-        self.sd_dir = c0.get('uvm2_sd_dir') or os.path.join(ROOT if _writable(ROOT) else SETTINGS_DIR, 'sd')   # the UVMC2's SD card
+        self.sd_dir = _card_dir(c0.get('uvm2_sd_dir'), SD_DEFAULT)   # the UVMC2's SD card
         ensure_sd_dir(self.sd_dir)                              # (plug and play: there from the first start)
-        self.px_dir = c0.get('pitrex_sd_dir') or os.path.join(ROOT, 'pitrex')   # Add-ons: the PiTrex's SD card
+        self.px_dir = _card_dir(c0.get('pitrex_sd_dir'), PX_DEFAULT)   # Add-ons: the PiTrex's SD card
         u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
         self.unit = dict(UNIT_PRESETS['owner'], **{k: float(v) for k, v in u.items() if k in UNIT_PRESETS['owner']})
         self.unit_name = c0.get('unit_name', 'owner') if c0.get('unit_name') in UNIT_NAMES else 'owner'
@@ -1240,6 +1333,13 @@ class App:
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.crt.jack = bool(args.rom and args.rom.lower().endswith('.um2'))   # (a UVMC2: its headphone jack)
         self.root = tk.Tk()
+        for d in (os.path.join(RES, 'icons'), os.path.join(ROOT, 'icons')):    # (the window's icon: a little Vectrex)
+            try:
+                self.icon_img = tk.PhotoImage(file=os.path.join(d, 'vectrex_emu.png'))
+                self.root.iconphoto(True, self.icon_img)
+                break
+            except Exception:
+                pass
         if getattr(self, 'v4e_err', None):
             self.root.after(800, lambda: self.rom_error(self.v4e_err))
         self.root.configure(bg='black')
@@ -1248,7 +1348,7 @@ class App:
         if IS_MAC:                                              # (Ctrl+click: the right button, one-button mice)
             self.root.bind_class('all', '<Control-Button-1>', lambda e: e.widget.event_generate('<Button-2>', x=e.x, y=e.y))
         # picture size: as tall as the screen allows (or --height-mm on this monitor); the window
-        # size you leave it at is remembered in Vectrex_EMU.conf
+        # size you leave it at is remembered in the settings
         sh = self.root.winfo_screenheight()
         try:                                                    # the screen minus the task bar
             wa = W.RECT(); ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(wa), 0)
@@ -1264,7 +1364,7 @@ class App:
         else:
             self.H0 = fit
         try:
-            conf0 = json.load(open(os.path.join(SETTINGS_DIR, 'Vectrex_EMU.conf')))
+            conf0 = json.load(open(SETTINGS_F))
         except Exception:   # noqa
             conf0 = {}
         self.knob_on = conf0.get('knob', True)                # the volume knob + RESET button (K)
@@ -1274,16 +1374,10 @@ class App:
         self.fit_h = fit                                        # (the window's screen area at most)
         fit = int(fit / (1.0 + self.knob_reserve()))             # (room for the black above, the strip below)
         self.H0 = min(fit, int(self.H0 * args.scale))
-        self.W0 = int(self.H0 * vecrender.ALG_MAX_X / vecrender.ALG_MAX_Y)
+        self.W0 = int(self.H0 * vecrender.VIEW_AW)
         self.H0w = int(self.H0 * (1.0 + self.knob_reserve()))
-        self.settings_f = os.path.join(SETTINGS_DIR, 'Vectrex_EMU.conf')
-        here = os.path.join(SETTINGS_DIR, 'settings.json')     # (the earlier name: rename it)
-        if not os.path.exists(self.settings_f) and os.path.exists(here):
-            try:
-                os.replace(here, self.settings_f)
-            except OSError:
-                pass
-        os.makedirs(SETTINGS_DIR, exist_ok=True)               # (a new folder starts with the defaults: no settings
+        self.settings_f = SETTINGS_F
+        os.makedirs(os.path.dirname(SETTINGS_F), exist_ok=True)               # (a new folder starts with the defaults: no settings
         geo = None                                              #  are carried over from %APPDATA% - an early test version's
                                                                 #  settings.json there gave a fresh download its buzz and volume)
         if not args.height_mm and args.scale == 1.0:
@@ -1322,11 +1416,12 @@ class App:
             except Exception as e:                              # noqa: fall back to the Tk canvas
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
-        # display settings are kept in Vectrex_EMU.conf; each menu's Reset ... settings to default restores its own
+        # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
                                       'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax',
-                                      'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib')
+                                      'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
+                                      'case_on', 'case_refl', 'case_wear')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
         self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full', 'jack_mode', 'jack_vol']
@@ -1393,12 +1488,24 @@ class App:
         except Exception:           # noqa
             conf = {}
         self.full_scale = conf.get('full_scale')
+        self.recent = [g for g in conf.get('recent', []) if isinstance(g, str)][:8]
+        self.note_recent(self.args.rom)
+        self.deck_pos = tuple(conf['deck_pos']) if isinstance(conf.get('deck_pos'), list) and len(conf['deck_pos']) == 2 else None
+        self.ctl_pos = tuple(conf['ctl_pos']) if isinstance(conf.get('ctl_pos'), list) and len(conf['ctl_pos']) == 2 else None
+        self.help_geo = conf.get('help_geo') if isinstance(conf.get('help_geo'), str) else None
+        if isinstance(conf.get('deck_strip'), str):              # (Config: the strip it was on, and each strip's row)
+            self.deck_strip = conf['deck_strip']
+        self.deck_focus = {k: int(v) for k, v in conf.get('deck_focus', {}).items()} if isinstance(conf.get('deck_focus'), dict) else {}
+        bl = conf.get('browse_last')                            # (the ROM browser's last folder)
+        self.browse_last = (bl[0], list(bl[1]), bl[2], int(bl[3]) if len(bl) > 3 else 0) if isinstance(bl, list) and len(bl) in (3, 4) and isinstance(bl[0], str) else None
         self.show_bar()
         self.vrr = conf.get('gsync', False)                     # G-Sync / FreeSync mode (off by default: any monitor)
         self.rate = conf.get('screen_rate', '60')               # '60' or 'max' (the monitor's full rate)
         self.setup_display()
         self.quality_mode = conf.get('quality', 'auto')          # the control deck's Quality: 'auto' or '0'..'3'
         self.ultra_rate = conf.get('ultra_rate')                # (the screen rate before Ultra set the full rate)
+        if self.quality_mode == '3':                            # (Ultra, from before: High - the full rate it set stays)
+            self.quality_mode = '2'; self.ultra_rate = None
         self.q_level = 2 if self.quality_mode == 'auto' else int(self.quality_mode)
         self.q_bad = 0; self.q_calm = time.perf_counter() + 6.0
         if self.ren: self.ren.quality = self.q_level
@@ -1429,6 +1536,8 @@ class App:
             self.root.bind(k, lambda e: (self.close_browser() if self.browser else self.open_browser(), 'break')[1])
         for k in ('<Key-o>', '<Key-O>'):
             self.root.bind(k, lambda e: (self.toggle_art(), 'break')[1])
+        for k in ('<Key-c>', '<Key-C>'):
+            self.root.bind(k, lambda e: (self.toggle_case(), 'break')[1])
         self.items = []; self.item_col = []; self.shown = 0
         self.colors = ['#%02x%02x%02x' % (int(v * 190), int(v * 220), int(v * 255))
                        for v in [min(1.0, 0.30 + c / 127 * 0.85) for c in range(128)]]
@@ -1492,7 +1601,7 @@ class App:
     def gl_notice(self):
         """OpenGL did not start: the plain picture, and why (a black or plain window looked like a broken emulator)"""
         from tkinter import messagebox
-        messagebox.showwarning('Vectrex_EMU', 'OpenGL could not start, so the picture is plain: no glow, afterglow, '
+        deck.dialog('warning', 'Vectrex_EMU', 'OpenGL could not start, so the picture is plain: no glow, afterglow, '
                                'overlays or on-screen knob.\n\nThe reason: %s\n\nPlease report it on GitHub '
                                "(Help > Copy system info puts your system's details on the clipboard)." % self.gl_error,
                                parent=self.root)
@@ -1573,14 +1682,16 @@ class App:
             if not IS_MAC or not key:
                 return key
             return '⌃⌘F' if key == 'F11' else key.replace('Ctrl+', '⌘')
-        def check(menu, label, key, get, cmd):
+        def check(menu, label, key, get, cmd, tip=None):
             key = mac_key(key)
             v = tk.BooleanVar(value=False)
-            menu.add_checkbutton(label=label, accelerator=key, variable=v, command=cmd)
+            kw = dict(tip=tip) if DARK_MENU else {}             # (an info box on hover: the dark menus only)
+            menu.add_checkbutton(label=label, accelerator=key, variable=v, command=cmd, **kw)
             self.menu_checks.append((v, get))
-        def item(menu, label, key, cmd):
+        def item(menu, label, key, cmd, tip=None):
             key = mac_key(key)
-            menu.add_command(label=label, accelerator=key, command=cmd)
+            kw = dict(tip=tip) if DARK_MENU else {}
+            menu.add_command(label=label, accelerator=key, command=cmd, **kw)
         def dep(menu, on):
             """the entry just added only matters while `on()` (its feature is on): greyed out otherwise"""
             self.menu_deps.append((menu, menu.index('end'), on))
@@ -1595,51 +1706,94 @@ class App:
                     menu.entryconfigure(i, state='normal' if on() else 'disabled')
                 except Exception:   # noqa
                     pass
+        Menu = darkmenu.DMenu if DARK_MENU else tk.Menu
         def fill(mb):
-            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Vectrex', menu=m)
-            item(m, 'ROM browser', 'L', self.open_browser)
+            m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Vectrex', menu=m)
+            item(m, 'ROM browser', 'L', self.open_browser, "Your games in the roms folder, with their folders; the cartridge below the picture opens it too.")
+            rec = Menu(m, tearoff=0, postcommand=lambda r=None: self.fill_recent(rec))   # (the last games played)
+            m.add_cascade(label='Recent games', menu=rec)
             item(m, 'Open ROM file...', '', self.open_rom)
-            item(m, 'Open UVMC2 game...', '', self.open_um2)
-            item(m, 'Eject cartridge (Mine Storm)', 'Ctrl+E', self.eject)
+            item(m, 'Open UVMC2 game...', '', self.open_um2, "A game for the Ultimate Vectrex Multicart 2 (.um2): it runs on the cartridge's own computer.")
+            item(m, 'Eject cartridge', 'Ctrl+E', self.eject, "No cartridge: the Vectrex plays its built-in game, Mine Storm.")
             m.add_separator()
-            item(m, 'RESET button', 'Ctrl+R', self.reset_button)
-            item(m, 'Volume (0 % = off)...', 'PgDn / PgUp', lambda: self.slider('volume'))
+            item(m, 'RESET button', 'Ctrl+R', self.reset_button, "As the button on the Vectrex: the game starts again, the RAM is kept.")
             check(m, 'Pause', 'P', lambda: self.run.paused, self.toggle_pause)
+            item(m, 'Volume...', 'PgDn / PgUp', lambda: self.slider('volume'), "Turned all the way down (0 %) the Vectrex switches off, as its own knob does.")
             m.add_separator()
-            item(m, 'Setup wizard (display, quality, folders, keys)...', '', lambda: deck.setup_window(self, first=False))
-            item(m, 'Controls (keyboard, controllers)...', '', self.controls_window)
-            check(m, 'Mouse / touchpad steers player 1', '', lambda: self.mouse_stick, self.toggle_mouse_stick)
-            check(m, 'Controller shortcuts (stick + all four buttons, 1 s)', '', lambda: self.pad_shortcuts, self.toggle_pad_shortcuts)
-            check(m, 'Start switched on', '', lambda: self.start_on, self.toggle_start_on)
-            check(m, 'Skip the Vectrex intro (start screen)', '', lambda: self.skip_boot, self.toggle_skip_boot)
-            m.add_separator()
-            item(m, 'Reset Vectrex settings to default', '', self.reset_vectrex)
+            item(m, 'Setup wizard...', '', lambda: deck.setup_window(self, first=False),
+                 "The first-start setup again: what was found, the quality for this PC, the display mode and player 1's keys.")
             m.add_separator()
             item(m, 'Quit', '', self.quit)
-            m = tk.Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='View', menu=m)
-            item(m, 'Control deck (tube, light, overlay, sound, unit, display, cartridge)...', 'Tab', self.open_deck)
-            m.add_separator()
+            m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='View', menu=m, underline=1)
             check(m, 'Full screen', 'F11', lambda: self.full, self.toggle_full)
             item(m, 'Bigger', '+', lambda: self.zoom_step(1.1))
             item(m, 'Smaller', '-', lambda: self.zoom_step(1 / 1.1))
-            item(m, 'Start size (fits the desktop)', '0', lambda: self.zoom_step(None))
-            item(m, 'Real size (as big as a Vectrex)', '9', self.real_size)
+            item(m, 'Fit screen', '0', lambda: self.zoom_step(None), "The window as big as fits the desktop, above the task bar.")
+            item(m, 'Authentic', '9', self.real_size, "As big as on a real Vectrex: the overlay 162 x 207 mm, worked out from your monitor's size.")
             m.add_separator()
-            check(m, 'Overlay', 'O', lambda: bool(getattr(self.ren, 'art_on', False) and getattr(self.ren, 'art', None)), self.toggle_art)
+            check(m, 'Overlay', 'O', lambda: bool(getattr(self.ren, 'art_on', False) and getattr(self.ren, 'art', None)), self.toggle_art,
+                  "The game's plastic overlay in front of the screen, with its colours and artwork.")
+            item(m, 'Choose overlay...', '', self.choose_art)
+            check(m, 'Case', 'C', lambda: bool(getattr(self.ren, 'case_on', False)), self.toggle_case,
+                  "The Vectrex's black plastic round the tube, mirroring the picture. Shown when there is no overlay.")
+            check(m, 'Control deck', '', lambda: self.knob_on or self.fps_on or self.cart_on, self.toggle_strip,
+                  "The strip below the picture - the on-screen display, P2 PORT, the cartridge, RESET and the volume knob - on or off at once. Off: the window gets smaller.")
             m.add_separator()
-            item(m, 'Setup wizard (display, quality, folders, keys)...', '', lambda: deck.setup_window(self, first=False))
-            m = tk.Menu(mb, tearoff=0); mb.add_cascade(label='Help', menu=m)
+            qm = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='Quality', menu=qm)
+            for mode, name, tip in (('auto', 'Auto', "Starts at High and steps down by itself when this PC misses frames."),
+                                    ('0', 'Low', "The afterglow, no bloom, no curved glass, the overlay flat: for old laptops."),
+                                    ('1', 'Medium', "Afterglow and a light bloom; no scratches, plastic glow or reflections."),
+                                    ('2', 'High', "Every effect, exactly as set in Config.")):
+                check(qm, name, '', lambda mode=mode: self.quality_mode == mode, lambda mode=mode: self.set_quality(mode), tip)
+            lm = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='Room light', menu=lm)
+            for name, k, tip in (('Dark', 0.5, "Half the default room light: the plastic almost black, mostly the vectors."),
+                                 ('Evening', 1.0, "The default: a dimly lit room."),
+                                 ('Daylight', 2.0, "Twice the default: the overlay's colours and print clearly lit, the glass grey.")):
+                check(lm, name, '', lambda k=k: self.room_preset() == k, lambda k=k: self.set_room(k), tip)
+            lm.add_separator()
+            item(lm, 'Finer...', '', lambda: (setattr(self, 'deck_strip', 'Room light'), self.open_deck()),
+                 "Config, the Room light strip: the slider, and the ceiling light reflected on the glass and the overlay.")
+            m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Controls', menu=m, underline=1)
+            item(m, 'Keyboard and controllers...', '', self.controls_window,
+                 "Which controller and which keys each player uses, the stick's dead zone, and a test field.")
+            check(m, 'Mouse steers player 1', '', lambda: self.mouse_stick, self.toggle_mouse_stick,
+                  "The pointer's place on the picture is the stick (from the middle); left button = button 4, right = button 1.")
+            check(m, 'TV mode shortcuts', '', lambda: self.pad_shortcuts, self.toggle_pad_shortcuts,
+                  "From the sofa: hold the stick one way with all four buttons for a second - up: the ROM browser, down: RESET, left: port 2 VecVox / joystick, right: the overlay. Switch off for a game that uses that combination.")
+            m.add_separator()
+            for k, lbl, tip in (('off', 'Port 2: Joystick', "The second player's controller."),
+                                ('vecvoice', 'Port 2: VecVoice', "A speech module (SP0256 chip) in port 2, for games that talk. Needs the speech ROM in the system folder."),
+                                ('vecvox', 'Port 2: VecVox', "A speech module (SpeakJet chip) in port 2, for games that talk. Needs the speech ROM in the system folder.")):
+                check(m, lbl, '', lambda k=k: self.speech == k, lambda k=k: self.set_speech(k), tip)
+            if DARK_MENU:                                       # (Config: the Config window at once)
+                mb.add_command(label='Config', command=self.open_deck)
+            m = Menu(mb, tearoff=0); mb.add_cascade(label='Help', menu=m)
             item(m, 'Help...', '', lambda: self.help_window('start'))
-            item(m, 'The control deck (Tab)...', '', lambda: self.help_window('deck'))
-            item(m, 'What the menus and the deck do...', '', lambda: self.help_window('vectrex'))
+            item(m, 'Config (Tab)...', '', lambda: self.help_window('deck'))
+            item(m, 'What the menus and Config do...', '', lambda: self.help_window('vectrex'))
             item(m, 'The Vectrex: how it works...', '', lambda: self.help_window('system'))
             item(m, 'Cartridges, bank switching and saving...', '', lambda: self.help_window('carts'))
             m.add_separator()
-            item(m, 'Copy system info (for a GitHub issue)', '', self.copy_system_info)
+            item(m, 'Copy system info', '', self.copy_system_info, "Your system and this program's version to the clipboard - for a GitHub issue.")
             item(m, 'About this emulator...', '', lambda: self.help_window('accuracy'))
-        mb = tk.Menu(self.root); fill(mb)
-        self.menubar = mb
-        self.root.config(menu=mb)
+        if DARK_MENU:
+            mb = darkmenu.DBar(self.root, font=(SANS, 10)); fill(mb)
+            mb.bind_alt(self.root)
+            self.menubar = mb
+            self.menu_line = tk.Frame(self.root, bg=darkmenu.LINE, height=1)
+            mb.pack(side='top', fill='x', before=self.screen); self.menu_line.pack(side='top', fill='x', before=self.screen)
+            for cls in ('Tk', 'Toplevel'):                     # (every window's title bar dark too)
+                self.root.bind_class(cls, '<Map>', lambda e: dark_title(e.widget) if e.widget is e.widget.winfo_toplevel() else None, add='+')
+            dark_title(self.root)
+        else:
+            mb = tk.Menu(self.root); fill(mb)
+            self.menubar = mb
+            self.root.config(menu=mb)
+    def chrome_h(self):
+        """the height our menu bar takes inside the window (0: full screen, or macOS's own menu bar)"""
+        if not DARK_MENU or self.full or not getattr(self, 'menubar', None):
+            return 0
+        return self.menubar.winfo_reqheight() + 1
     # every adjustable value: (title, keys, the object it lives on, attribute, low, high, log scale, format) -
     # low / high only for the volume knob and values that are off by default; the others: SLIDER_SPAN
     SLIDERS = {
@@ -1662,6 +1816,8 @@ class App:
         'scr_scrib':     ('Scratches: scribbles - the share of curly ones', '', 'ren', 'scr_scrib', 0.0, 2.0, False, 'x%.2f', 1),
         'scr_glint':     ('Scratches: glint strength', '', 'ren', 'scr_glint', 0.0, 2.0, False, 'x%.2f', 1),
         'art_glow_k':    ('Overlay plastic glow strength', '', 'ren', 'art_glow_k', 0.0, 2.0, False, 'x%.2f', 1),
+        'case_refl':     ('Reflections - the picture mirrored in the case', '', 'ren', 'case_refl', 0.0, 2.0, False, 'x%.2f', 1),
+        'case_wear':     ('Wear - scratches, the band the overlays rubbed', '', 'ren', 'case_wear', 0.0, 2.0, False, 'x%.2f', 1),
         'scr_reach':     ('Scratches: glint reach (left: close to the lines, right: farther out)', '', 'ren', 'scr_reach', 0.0, 2.0, False, 'x%.2f', 1),
         'art_dx':        ('Overlay left / right (picture heights)', '', 'ren', 'art_dx', -0.05, 0.05, False, '%+.3f', 1),
         'art_dy':        ('Overlay up / down (picture heights)', '', 'ren', 'art_dy', -0.05, 0.05, False, '%+.3f', 1),
@@ -1701,11 +1857,12 @@ class App:
         N = 1000
         to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
         to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
-        g, bg = '#6a8', '#000'
-        t = tk.Toplevel(self.root, bg=bg); self.slider_win = t
+        g, bg = deck.G, deck.PANEL                               # (styled as the Config window)
+        t = tk.Toplevel(self.root, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); self.slider_win = t
         t.title(title); t.transient(self.root); t.resizable(False, False)
         try: t.attributes('-toolwindow', True)
         except tk.TclError: pass
+        t.after(30, lambda t=t: deck.no_close_button(t))       # (no close button: Esc / Enter / clicking elsewhere)
         head = tk.Label(t, fg=g, bg=bg, font=(MONO, 10, 'bold'), anchor='w'); head.pack(fill='x', padx=10, pady=(8, 0))
         busy = [False]
         def value_text():
@@ -1727,7 +1884,7 @@ class App:
                       troughcolor='#123', highlightthickness=0, activebackground='#8cb', sliderrelief='flat', bd=0,
                       width=16, sliderlength=22)                # (the handle: green on a dark trough)
         sc.pack(padx=10, pady=4)
-        tk.Label(t, fg=g, bg=bg, font=(MONO, 9), anchor='w', justify='left',
+        tk.Label(t, fg=deck.DIM, bg=bg, font=(MONO, 9), anchor='w', justify='left',
                  text=('keys: %s   ' % keys if keys else '') + 'right click: default (%s)   Enter: keep   Esc: undo' % (fmt % (default * show))).pack(fill='x', padx=10, pady=(0, 8))
         def sync():                                             # (the keys change it too)
             if not t.winfo_exists(): return
@@ -1783,11 +1940,12 @@ class App:
         if getattr(self, 'slider_win', None):
             try: self.slider_win.destroy()
             except tk.TclError: pass
-        N = 1000; g, bg = '#6a8', '#000'
-        t = tk.Toplevel(self.root, bg=bg); self.slider_win = t
+        N = 1000; g, bg = deck.G, deck.PANEL                     # (styled as the Config window)
+        t = tk.Toplevel(self.root, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); self.slider_win = t
         t.title(title); t.transient(self.root); t.resizable(False, False)
         try: t.attributes('-toolwindow', True)
         except tk.TclError: pass
+        t.after(30, lambda t=t: deck.no_close_button(t))       # (no close button: Esc / Enter / clicking elsewhere)
         rows = []; busy = [False]
         for name in names:
             label, keys, where, attr, lo, hi, log, fmt, show = self.SLIDERS[name]
@@ -1940,8 +2098,8 @@ class App:
         self.rot = deg; self.ren.rot = deg
         if turn and not self.full:
             self.root.update_idletasks()
-            w, h = self.root.winfo_width(), self.root.winfo_height()
-            self.root.geometry('%dx%d' % (h, w))
+            w, h = self.root.winfo_width(), self.root.winfo_height() - self.chrome_h()
+            self.root.geometry('%dx%d' % (h, w + self.chrome_h()))
             self.root.update_idletasks()
         self.apply_scale()
         self.show_look('screen turned %s' % ({0: 'back to normal', 90: '90 degrees right', 180: '180 degrees', 270: '90 degrees left'}[deg]))
@@ -1970,27 +2128,49 @@ class App:
                 self.help_win.lift(); self.help_show(topic); return
             except tk.TclError:
                 pass
-        g, dim, bg, hi, txt = '#6a8', '#5f8a74', '#000', '#9fe1cb', '#c9ddd3'
-        t = tk.Toplevel(self.root, bg=bg); self.help_win = t
-        t.title('Vectrex_EMU - Help'); t.transient(self.root)
+        g, dim, bg, hi, txt = deck.G, '#5f8a74', deck.BODY, deck.HI, '#c9ddd3'   # (styled as the Config window)
+        t = tk.Toplevel(self.root, bg=deck.BG); self.help_win = t
+        t.withdraw()                                            # (shown once built, in its place)
+        t.title('Help'); t.transient(self.root)
         ui = self.root.winfo_fpixels('1i') / 96.0
-        t.geometry('%dx%d' % (int(980 * ui), int(700 * ui)))
-        side = tk.Listbox(t, bg=bg, fg=g, selectbackground='#123', selectforeground=hi, activestyle='none',
+        geo = getattr(self, 'help_geo', None)                   # (its size and place from last time; else over the window)
+        if not geo:
+            w, h, r = int(980 * ui), int(700 * ui), self.root
+            geo = '%dx%d+%d+%d' % (w, h, r.winfo_rootx() + max(0, (r.winfo_width() - w) // 2), r.winfo_rooty() + max(0, (r.winfo_height() - h) // 3))
+        t.geometry(geo)
+        def close(e=None):
+            try: self.help_geo = '%dx%d+%d+%d' % (t.winfo_width(), t.winfo_height(), t.winfo_x(), t.winfo_y())
+            except tk.TclError: pass
+            self.save_settings()
+            try: t.destroy()
+            except tk.TclError: pass
+            self.help_win = None
+        top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
+        tk.Label(top, text='Esc: close   click a topic   More: the deep dive, in place', fg=deck.DIM, bg=deck.TOPBG,
+                 font=(MONO, 9)).pack(side='left', padx=12, pady=6)
+        foot = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); foot.pack(side='bottom', fill='x')
+        deck._button(foot, 'Close', close, self, small=True).pack(side='right', padx=12, pady=6)
+        mid = tk.Frame(t, bg=deck.BG); mid.pack(fill='both', expand=True, padx=10, pady=10)
+        lf = tk.Frame(mid, bg=deck.PANEL, highlightthickness=1, highlightbackground=deck.EDGE); lf.pack(side='left', fill='y')
+        tk.Label(lf, text='TOPICS', fg=deck.DIM, bg=deck.PANEL, font=(MONO, 8), anchor='w').pack(fill='x', padx=10, pady=(6, 2))
+        side = tk.Listbox(lf, bg=deck.PANEL, fg=g, selectbackground=darkmenu.SEL, selectforeground=hi, activestyle='none',
                           font=(MONO, 11), width=28, borderwidth=0, highlightthickness=0, exportselection=False)
-        side.pack(side='left', fill='y', padx=(12, 6), pady=12)
+        side.pack(side='left', fill='y', padx=(6, 6), pady=(0, 8))
         for _, title, _ in help_text.TOPICS:
             side.insert('end', ' ' + title)
-        sb = tk.Scrollbar(t); sb.pack(side='right', fill='y')
-        tx = tk.Text(t, bg=bg, fg=txt, wrap='word', borderwidth=0, highlightthickness=0, padx=16, pady=12,
-                     font=(SANS, 11), spacing1=2, spacing3=6, cursor='arrow', yscrollcommand=sb.set)
-        tx.pack(side='left', fill='both', expand=True, pady=6)
+        rf = tk.Frame(mid, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); rf.pack(side='left', fill='both', expand=True, padx=(8, 0))
+        sb = darkmenu.DScroll(rf, bg=bg); sb.pack(side='right', fill='y', padx=(0, 3), pady=3)
+        tx = tk.Text(rf, bg=bg, fg=txt, wrap='word', borderwidth=0, highlightthickness=0, padx=16, pady=12,
+                     font=(SANS, 11), spacing1=2, spacing3=6, cursor='arrow', yscrollcommand=sb.set,
+                     selectbackground=darkmenu.SEL, inactiveselectbackground=darkmenu.SEL)
+        tx.pack(side='left', fill='both', expand=True)
         sb.config(command=tx.yview)
         tx.tag_configure('h1', font=(MONO, 18, 'bold'), foreground=hi, spacing3=10)
         tx.tag_configure('h2', font=(MONO, 13, 'bold'), foreground=hi, spacing1=12, spacing3=4)
         tx.tag_configure('item', font=(SANS, 11, 'bold'), foreground=hi, spacing1=8, spacing3=0)
         tx.tag_configure('ind', lmargin1=22, lmargin2=22)
         tx.tag_configure('b', font=(SANS, 11, 'bold'), foreground=hi)
-        tx.tag_configure('deep', lmargin1=22, lmargin2=22, foreground='#a9c2b6', background='#0b1410',
+        tx.tag_configure('deep', lmargin1=22, lmargin2=22, foreground='#a9c2b6', background=deck.PANEL,
                          font=(SANS, 10), spacing1=4, spacing3=8)
         def put(text, *tags):                                   # (*word* = bold)
             for i, part in enumerate(re.split(r'\*([^*]+)\*', text)):
@@ -2023,11 +2203,14 @@ class App:
             tx.config(state='disabled'); tx.yview_moveto(0)
         self.help_show = show
         side.bind('<<ListboxSelect>>', lambda e: side.curselection() and show(help_text.TOPICS[side.curselection()[0]][0]))
-        t.bind('<Escape>', lambda e: t.destroy())
+        t.bind('<Escape>', close)
+        t.protocol('WM_DELETE_WINDOW', close)
         tx.bind('<MouseWheel>', lambda e: tx.yview_scroll(-3 * self.wheel_steps(e), 'units'))
         show(topic)
+        t.deiconify()
+        deck.no_close_button(t)
     def controls_window(self):
-        """Vectrex > Controls: per player a controller (only the connected ones are listed, by their own
+        """Controls > Keyboard and controllers: per player a controller (only the connected ones are listed, by their own
         names; one player's controller is not offered to the other) and the keys - both work at once.
         Click a box, then press a key / a controller button, or push the stick the way the box says;
         Shift+click adds a second; right click clears (a stick box: back to the controller's default).
@@ -2037,27 +2220,39 @@ class App:
             try: self.ctl_win.lift(); return
             except tk.TclError: pass
         inp = self.inp
-        g, dim, bg, hi, off = '#6a8', '#5f8a74', '#000', '#9fe1cb', '#2c4538'
+        g, dim, bg, hi, off = deck.G, '#5f8a74', deck.BODY, deck.HI, '#2c4538'   # (styled as the Config window)
         f9 = (MONO, 10)
         P = ('p1', 'p2')
         col = lambda n, m=0: 1 + 2 * n + m
-        t = tk.Toplevel(self.root, bg=bg); self.ctl_win = t
+        R = lambda r: 2 * r                                     # (the grid's rows: a section line between)
+        t = tk.Toplevel(self.root, bg=deck.BG); self.ctl_win = t
+        t.withdraw()                                            # (shown once built, in its place)
         t.title('Controls'); t.transient(self.root); t.resizable(False, False)
-        body = tk.Frame(t, bg=bg); body.pack(padx=14, pady=12)
+        top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
+        tk.Label(top, text='Esc: close   click a box, then a key or a button   right click: clear', fg=deck.DIM,
+                 bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=12, pady=6)
+        area = tk.Frame(t, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); area.pack(padx=10, pady=(10, 0))
+        body = tk.Frame(area, bg=bg); body.pack(padx=12, pady=10)
+        def section(r, caption):
+            """a caption and a line above grid row r"""
+            sf = tk.Frame(body, bg=bg); sf.grid(row=R(r) - 1, column=0, columnspan=5, sticky='ew', pady=(10, 2))
+            tk.Label(sf, text=caption, fg=deck.DIM, bg=bg, font=(MONO, 8)).pack(side='left', padx=(4, 8))
+            tk.Frame(sf, bg=deck.EDGE, height=1).pack(side='left', fill='x', expand=True, pady=(2, 0))
         inp.refresh_devices()
         for n, text in enumerate(('Player 1 (1st port)', 'Player 2 (2nd port)')):
-            tk.Label(body, text=text, fg=hi, bg=bg, font=f9).grid(row=0, column=col(n), columnspan=2, sticky='w', padx=4)
+            tk.Label(body, text=text, fg=hi, bg=bg, font=f9).grid(row=R(0), column=col(n), columnspan=2, sticky='w', padx=4)
         # the controllers
-        tk.Label(body, text='Controller', fg=dim, bg=bg, font=f9).grid(row=1, column=0, sticky='w', padx=4)
+        tk.Label(body, text='Controller', fg=dim, bg=bg, font=f9).grid(row=R(1), column=0, sticky='w', padx=4)
         menus = {}
+        section(1, 'CONTROLLER')
         for n, p in enumerate(P):
             v = tk.StringVar()
-            om = tk.OptionMenu(body, v, '')
-            om.configure(bg=bg, fg=g, activebackground='#123', activeforeground=hi, highlightthickness=0, font=f9,
-                         width=36, anchor='w')
-            om['menu'].configure(bg=bg, fg=g, activebackground='#123', activeforeground=hi, font=f9)
-            om.grid(row=1, column=col(n), columnspan=2, sticky='w', padx=4, pady=4)
-            menus[p] = (v, om)
+            om = tk.Label(body, textvariable=v, bg=deck.PANEL, fg=g, font=f9, width=38, anchor='w', padx=8, pady=2,
+                          cursor='hand2', highlightthickness=1, highlightbackground='#3d6b55')
+            dm = darkmenu.DMenu(om)
+            om.bind('<Button-1>', lambda e, om=om, dm=dm: dm.post(om.winfo_rootx(), om.winfo_rooty() + om.winfo_height(), t))
+            om.grid(row=R(1), column=col(n), columnspan=2, sticky='w', padx=4, pady=4)
+            menus[p] = (v, om, dm)
         def dev_options(p):
             """[(id, name)]: keyboard only, the connected controllers the other player does not have,
             and this player's own when it is unplugged"""
@@ -2069,18 +2264,19 @@ class App:
             return opts
         def fill_menus():
             for p in P:
-                v, om = menus[p]
+                v, om, m = menus[p]
                 opts = dev_options(p)
-                m = om['menu']; m.delete(0, 'end')
+                m.delete(0, 'end')
                 for i, nm in opts:
                     m.add_command(label=nm, command=lambda p=p, i=i: set_dev(p, i))
                 v.set(next((nm for i, nm in opts if i == inp.dev[p]), opts[0][1]))
         def set_dev(p, i):
             inp.set_dev(p, i); cap['what'] = None
             fill_menus(); refresh(); self.save_settings()
+        section(2, 'BUTTONS AND STICK')
         for n in range(2):
             for m, text in enumerate(('Keyboard', 'Controller')):
-                tk.Label(body, text=text, fg=dim, bg=bg, font=f9).grid(row=2, column=col(n, m), sticky='w', padx=4)
+                tk.Label(body, text=text, fg=dim, bg=bg, font=f9).grid(row=R(2), column=col(n, m), sticky='w', padx=4)
         boxes = {}
         cap = {'what': None}
         def axis_text(d, m, which):
@@ -2216,12 +2412,12 @@ class App:
                 inp.map(d['id'])[k] = []
             cap['what'] = None; refresh(); self.save_settings()
         for r, k in enumerate(CTRL_INPUTS):
-            tk.Label(body, text=CTRL_NAMES[k], fg=g, bg=bg, font=f9).grid(row=3 + r, column=0, sticky='w', padx=4, pady=2)
+            tk.Label(body, text=CTRL_NAMES[k], fg=g, bg=bg, font=f9).grid(row=R(3 + r), column=0, sticky='w', padx=4, pady=2)
             for n, p in enumerate(P):
                 for m, kind in enumerate(('key', 'pad')):
                     w = tk.Label(body, text='', fg=g, bg=bg, font=f9, width=18, anchor='w', padx=6,
                                  highlightthickness=1, highlightbackground='#3d6b55')
-                    w.grid(row=3 + r, column=col(n, m), sticky='w', padx=4, pady=2)
+                    w.grid(row=R(3 + r), column=col(n, m), sticky='w', padx=4, pady=2)
                     w.bind('<Button-1>', lambda e, p=p, k=k, kind=kind: start(p, k, kind, bool(e.state & 1)))
                     w.bind(RCLICK, lambda e, p=p, k=k, kind=kind: clear(p, k, kind))
                     boxes[(p, k, kind)] = w
@@ -2229,7 +2425,8 @@ class App:
         # (ring) and two handles to drag: the dead zone (inner) and the endpoint (outer: where full
         # deflection is reached, for sticks with a long travel); link: X and Y move together
         row = 3 + len(CTRL_INPUTS)
-        tk.Label(body, text='Stick', fg=g, bg=bg, font=f9).grid(row=row, column=0, sticky='w', padx=4, pady=(10, 2))
+        section(row, 'STICK')
+        tk.Label(body, text='Stick', fg=g, bg=bg, font=f9).grid(row=R(row), column=0, sticky='w', padx=4, pady=(2, 2))
         toggles = {}
         def ctl_map(p):
             d = inp.resolve(p)
@@ -2246,7 +2443,7 @@ class App:
                     m['dzy'], m['epy'] = m['dzx'], m['epx']
                 refresh(); self.save_settings()
         for n, p in enumerate(P):
-            f = tk.Frame(body, bg=bg); f.grid(row=row, column=col(n), columnspan=2, sticky='w', padx=4, pady=(10, 2))
+            f = tk.Frame(body, bg=bg); f.grid(row=R(row), column=col(n), columnspan=2, sticky='w', padx=4, pady=(2, 2))
             ws = []
             for mode, text in (('analog', 'analog stick'), ('buttons', 'buttons')):
                 w = tk.Label(f, text=text, fg=g, bg=bg, font=f9, padx=8, highlightthickness=1, highlightbackground='#3d6b55')
@@ -2288,10 +2485,10 @@ class App:
                     m['dz' + ax], m['ep' + ax] = DEFAULT_DEADZONE, 1.0
                 self.save_settings()
         for r, a in enumerate(('x', 'y')):
-            tk.Label(body, text='%s axis' % a.upper(), fg=g, bg=bg, font=f9).grid(row=row + 1 + r, column=0, sticky='w', padx=4, pady=2)
+            tk.Label(body, text='%s axis' % a.upper(), fg=g, bg=bg, font=f9).grid(row=R(row + 1 + r), column=0, sticky='w', padx=4, pady=2)
             for n, p in enumerate(P):
                 cv = tk.Canvas(body, width=BW, height=BH, bg=bg, highlightthickness=0)
-                cv.grid(row=row + 1 + r, column=col(n), columnspan=2, sticky='w', padx=4, pady=2)
+                cv.grid(row=R(row + 1 + r), column=col(n), columnspan=2, sticky='w', padx=4, pady=2)
                 cv.bind('<Button-1>', lambda e, p=p, a=a: bar_press(p, a, e))
                 cv.bind('<B1-Motion>', bar_drag)
                 cv.bind('<ButtonRelease-1>', bar_release)
@@ -2323,12 +2520,13 @@ class App:
                            text='dead zone %d %%  end %d %%' % (round(dz * 100), round(ep * 100)))
         # the test field: what the Vectrex gets from the keys and the controller
         row += 3
-        tk.Label(body, text='Test', fg=g, bg=bg, font=f9).grid(row=row, column=0, sticky='nw', padx=4, pady=(10, 2))
+        section(row, 'TEST: WHAT THE VECTREX GETS')
+        tk.Label(body, text='Test', fg=g, bg=bg, font=f9).grid(row=R(row), column=0, sticky='nw', padx=4, pady=(2, 2))
         S, C = 48, 56                                           # (the square's half size, its centre)
         tests = {}
         for n, p in enumerate(P):
             cv = tk.Canvas(body, width=330, height=2 * C, bg=bg, highlightthickness=0)
-            cv.grid(row=row, column=col(n), columnspan=2, sticky='w', padx=4, pady=(10, 2))
+            cv.grid(row=R(row), column=col(n), columnspan=2, sticky='w', padx=4, pady=(2, 2))
             cv.create_rectangle(C - S, C - S, C + S, C + S, outline='#3d6b55')
             cv.create_line(C - S, C, C + S, C, fill='#1c2e25'); cv.create_line(C, C - S, C, C + S, fill='#1c2e25')
             it = dict(dz=cv.create_rectangle(C, C, C, C, outline='#2c4538', fill='#0c1712'),
@@ -2342,6 +2540,7 @@ class App:
                 cv.create_text(x, C - 17, text=str(i + 1), fill=g, font=f9)
             tests[p] = (cv, it)
         row -= 1
+        section(row + 2, 'HOW IT WORKS')
         tk.Label(body, text='Stick bars: the ring is the controller\'s stick; drag the inner handles for the dead zone, the outer ones\n'
                             'for the endpoint (where the Vectrex stick is already full); right click: back to the default.\n'
                             'Test: the square is the full stick, the dark one the dead zone, the dashed one the endpoints; the ring\n'
@@ -2349,9 +2548,9 @@ class App:
                             'the buttons add up, a direction key overrides the stick on its axis.\n'
                             'Click a box, then press a key or a controller button, or push the stick the way the row says -\n'
                             'Shift+click: add a second - right click: clear (a stick box: back to the default axis).\n'
-                            'Not allowed: F11, Esc, Page Up / Down, + - 0 9, P L O and Ctrl+... (the emulator\'s shortcuts).',
-                 fg=dim, bg=bg, font=(MONO, 9), justify='left').grid(row=row + 2, column=0, columnspan=5, sticky='w', padx=4, pady=(8, 4))
-        bar = tk.Frame(body, bg=bg); bar.grid(row=row + 3, column=0, columnspan=5, sticky='e', pady=(6, 0))
+                            'Not allowed: F11, Esc, Page Up / Down, + - 0 9, P L O C and Ctrl+... (the emulator\'s shortcuts).',
+                 fg=dim, bg=bg, font=(MONO, 9), justify='left').grid(row=R(row + 2), column=0, columnspan=5, sticky='w', padx=4, pady=(2, 4))
+        bar = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE)   # (the foot, as Config's)
         def test():
             if not t.winfo_exists():
                 return
@@ -2389,7 +2588,10 @@ class App:
             inp.reset(); cap['what'] = None
             fill_menus(); refresh(); self.save_settings()
         def close():
-            cap['what'] = None; self.save_settings()
+            cap['what'] = None
+            try: self.ctl_pos = (t.winfo_x(), t.winfo_y())     # (it opens there next time)
+            except tk.TclError: pass
+            self.save_settings()
             try: t.destroy()
             except tk.TclError: pass
             self.ctl_win = None
@@ -2401,18 +2603,35 @@ class App:
             for i, k in enumerate(('b1', 'b2', 'b3', 'b4')):
                 inp.keys['p1'][k] = [keys[i]]
             cap['what'] = None; refresh(); self.save_settings()
-        tk.Label(bar, text='Player 1 buttons:', fg=dim, bg=bg, font=f9).pack(side='left', padx=(0, 4))
+        tk.Label(bar, text='Player 1 buttons:', fg=deck.DIM, bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=(12, 4), pady=6)
         for text, kind in (('cross W A S D', 'cross'), ('row A S D F', 'row')):
-            tk.Button(bar, text=text, command=lambda k=kind: layout(k), fg=g, bg=bg, activebackground='#123', activeforeground=hi,
-                      font=f9, relief='flat', highlightthickness=1, highlightbackground=g, bd=1, padx=8).pack(side='left', padx=4)
-        tk.Label(bar, text='  ', bg=bg).pack(side='left')
-        for text, cmd in (('Reset to defaults', reset), ('Close', close)):
-            tk.Button(bar, text=text, command=cmd, fg=g, bg=bg, activebackground='#123', activeforeground=hi, font=f9,
-                      relief='flat', highlightthickness=1, highlightbackground=g, bd=1, padx=10).pack(side='left', padx=5)
+            deck._button(bar, text, lambda k=kind: layout(k), self, small=True).pack(side='left', padx=3)
+        deck._button(bar, 'Close', close, self, small=True).pack(side='right', padx=12)
+        deck._button(bar, 'Reset to defaults', reset, self, small=True).pack(side='right')
+        section(row + 4, 'OPTIONS')
+        opts = tk.Frame(body, bg=bg); opts.grid(row=R(row + 4), column=0, columnspan=5, sticky='w', pady=(2, 0))
+        for text, get, cmd in (('Mouse / touchpad steers player 1 (left button: 4, right: 1)', lambda: self.mouse_stick, self.toggle_mouse_stick),
+                               ('TV mode shortcuts (stick + all four buttons for a second)', lambda: self.pad_shortcuts, self.toggle_pad_shortcuts)):
+            v = tk.BooleanVar(value=bool(get()))
+            tk.Checkbutton(opts, text=text, variable=v, command=cmd, fg=g, bg=bg, selectcolor=bg, activebackground=bg,
+                           activeforeground=hi, font=f9, anchor='w', highlightthickness=0, bd=0).pack(anchor='w', padx=4)
+        bar.pack(fill='x', pady=(10, 0))
         t.bind('<KeyPress>', key_pressed)
         t.bind('<Escape>', lambda e: (cap.update(what=None), refresh(), 'break')[2] if cap['what'] else close())
         t.protocol('WM_DELETE_WINDOW', close)
         fill_menus(); refresh(); test()
+        t.update_idletasks()
+        pos = getattr(self, 'ctl_pos', None)                    # (where it was last time, if still on a screen)
+        vx, vy = t.winfo_vrootx(), t.winfo_vrooty()
+        vw, vh = max(t.winfo_screenwidth(), t.winfo_vrootwidth()), max(t.winfo_screenheight(), t.winfo_vrootheight())
+        if pos and vx - 50 <= pos[0] <= vx + vw - 100 and vy - 10 <= pos[1] <= vy + vh - 60:
+            t.geometry('+%d+%d' % pos)
+        else:
+            r = self.root
+            t.geometry('+%d+%d' % (r.winfo_rootx() + max(0, (r.winfo_width() - t.winfo_reqwidth()) // 2),
+                                   r.winfo_rooty() + max(0, (r.winfo_height() - t.winfo_reqheight()) // 3)))
+        t.deiconify()
+        deck.no_close_button(t)
         t.focus_force()
     def set_cart_hw(self, k):
         """Vectrex > Cartridge hardware: Auto = the board the ROM's size calls for (64K PB6 carts,
@@ -2436,18 +2655,22 @@ class App:
         self.flash('CONTROLLER PORT 2:', {'off': 'JOYSTICK', 'vecvoice': 'VECVOICE SPEECH', 'vecvox': 'VECVOX SPEECH'}[k])
     def speech_rom_help(self):
         """a speech module chosen without the speech ROM: a small window saying where to get it and where it
-        goes, with buttons for the download page and the bios folder"""
-        bios = os.path.join(ROOT, 'bios')
-        g, bg = '#6a8', '#000'
-        t = tk.Toplevel(self.root, bg=bg); t.title('Speech ROM needed'); t.transient(self.root); t.resizable(False, False)
+        goes, with buttons for the download page and the system folder (styled as the Config window)"""
+        sysdir = os.path.join(ROOT, 'system')
+        t = tk.Toplevel(self.root, bg=deck.BG); t.withdraw()
+        t.title('Speech ROM needed'); t.transient(self.root); t.resizable(False, False)
+        top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
+        tk.Label(top, text='Esc: close', fg=deck.DIM, bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=12, pady=6)
+        bx = tk.Frame(t, bg=deck.PANEL, highlightthickness=1, highlightbackground=deck.EDGE); bx.pack(fill='x', padx=10, pady=(10, 0))
+        tk.Label(bx, text='THE SP0256-AL2 SPEECH ROM', fg=deck.DIM, bg=deck.PANEL, font=(MONO, 8), anchor='w').pack(fill='x', padx=10, pady=(4, 0))
         text = ("The speech modules (VecVoice, VecVox) need the SP0256-AL2 speech ROM.\n"
                 "It is (c) Microchip and can not come with the emulator, but it is a free download:\n\n"
                 "1.  Download al2.bin from\n      %s\n"
-                "2.  Put it in the bios folder next to the program:\n      %s\n"
+                "2.  Put it in the system folder next to the program:\n      %s\n"
                 "      (as al2.bin or sp0256-al2.bin)\n"
-                "3.  Choose the speech module again (Vectrex > Controller port 2)." % (SP_ROM_URL, bios))
-        tk.Label(t, text=text, fg=g, bg=bg, font=(MONO, 10), justify='left', anchor='w').pack(padx=14, pady=(12, 8))
-        row = tk.Frame(t, bg=bg); row.pack(padx=14, pady=(0, 12), anchor='e')
+                "3.  Choose the speech module again (Controls > Port 2)." % (SP_ROM_URL, sysdir))
+        tk.Label(bx, text=text, fg=deck.G, bg=deck.PANEL, font=(MONO, 10), justify='left', anchor='w').pack(padx=10, pady=(2, 10), anchor='w')
+        foot = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); foot.pack(fill='x', pady=(10, 0))
         def opened(target):
             try:
                 if IS_WIN: os.startfile(target)
@@ -2455,16 +2678,16 @@ class App:
             except Exception as e:                              # noqa
                 print('could not open %s: %s' % (target, e))
         def folder():
-            os.makedirs(bios, exist_ok=True); opened(bios)
-        for label, cmd in (('Open the download page', lambda: opened(SP_ROM_URL)), ('Open the bios folder', folder),
-                           ('Close', t.destroy)):
-            tk.Button(row, text=label, command=cmd, fg=bg, bg=g, activebackground='#8cb', relief='flat',
-                      font=(MONO, 10), padx=10, pady=3).pack(side='left', padx=(8, 0))
+            os.makedirs(sysdir, exist_ok=True); opened(sysdir)
+        deck._button(foot, 'Open the download page', lambda: opened(SP_ROM_URL), self, small=True).pack(side='left', padx=(12, 6), pady=6)
+        deck._button(foot, 'Open the system folder', folder, self, small=True).pack(side='left')
+        deck._button(foot, 'Close', t.destroy, self, small=True).pack(side='right', padx=12)
         t.bind('<Escape>', lambda e: t.destroy())
         t.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width() - t.winfo_width()) // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - t.winfo_height()) // 3
-        t.geometry('+%d+%d' % (max(0, x), max(0, y))); t.focus_force()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - t.winfo_reqwidth()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - t.winfo_reqheight()) // 3
+        t.geometry('+%d+%d' % (max(0, x), max(0, y)))
+        t.deiconify(); deck.no_close_button(t); t.focus_force()
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True
@@ -2479,7 +2702,21 @@ class App:
         """the strip below the picture (share of the picture height): the knob panel and (window) the
         OSD; the picture and the strip are one block (in the window it grows by the strip; in full screen
         + makes the block at most as high as the screen)"""
-        return vecrender.PAD_TOP + (vecrender.KNOB_STRIP if self.knob_on or self.fps_on or self.cart_on else vecrender.PAD_TOP)
+        return vecrender.PAD_TOP + vecrender.PAD_BOT + (vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R if self.knob_on or self.fps_on or self.cart_on else 0.0)
+    def toggle_strip(self, e=None):
+        """View > Control deck: the strip below the picture - the OSD, P2 PORT, the cartridge, RESET and the
+        volume knob - on / off at once (the window shrinks by it); back on: as it was before"""
+        parts = ('fps_on', 'knob_on', 'cart_on')
+        if any(getattr(self, k) for k in parts):
+            self.strip_was = {k: getattr(self, k) for k in parts}
+            for k in parts: setattr(self, k, False)
+            self.close_browser()
+        else:
+            was = getattr(self, 'strip_was', None) or {k: True for k in parts}
+            for k in parts: setattr(self, k, was[k])
+        self.strip_changed()
+        self.show_look('control deck ' + ('on' if self.knob_on or self.fps_on or self.cart_on else 'off'))
+        return 'break'
     def toggle_knob(self, e=None):
         """K: the volume knob and RESET button on screen, bottom right, outside the picture"""
         self.knob_on = not self.knob_on
@@ -2494,7 +2731,7 @@ class App:
             fit = self.fit_h
             if hw > fit:
                 ph *= fit / float(hw); hw = fit
-            self.root.geometry('%dx%d' % (int(ph * ALG_MAX_X / ALG_MAX_Y), hw))
+            self.root.geometry('%dx%d' % (int(ph * vecrender.VIEW_AW), hw + self.chrome_h()))
         self.root.update_idletasks()
         self.apply_scale()
         self.save_settings()
@@ -2509,9 +2746,9 @@ class App:
         up with its right edge (see vecrender.KNOB_R)"""
         pl, pt, pr, pb = self.pic_rect()
         r = vecrender.KNOB_R * (pb - pt)
-        gr = (pl + pr) / 2 + vecrender.GLASS_AW * (pb - pt) / 2  # (the glass's right edge)
-        cx = gr - 0.35 * r - 3.41 * r                           # (VOLUME ends at the glass's right edge)
-        cy = pb + 2.3 * r                                       # (OFF/ON and RESET 0.5 r below the picture - clear of an overlay's
+        ar = (pl + pr) / 2 + (vecrender.GLASS_DX + vecrender.ART_AW) * (pb - pt) / 2   # (the overlay's right edge)
+        cx = ar - 2.4 * r                                       # (VOL ends at the overlay's right edge)
+        cy = pb + vecrender.PAD_BOT * (pb - pt) + 1.8 * r   # (the labels below the case, as far as the black round it - clear of an overlay's
                                                                 #  lower edge, which the parallax puts 0.32 r below it - black below)
         return cx, cy, r, cx - 3.4 * r
     def hint_state(self):
@@ -2538,8 +2775,8 @@ class App:
         if not (self.fps_on or self.cart_on or self.knob_on):  # (no strip below the picture: only the message)
             return None
         x, y, r = self.cart_geom()
-        return dict(cx=x - 4.6 * r, cy=y, r=r, kind=self.speech,
-                    label={'off': 'P2 JOYSTICK', 'vecvox': 'P2 VECVOX', 'vecvoice': 'P2 VECVOICE'}.get(self.speech, 'P2'))
+        return dict(cx=x - 3.6 * r, cy=y, r=r, kind=self.speech,
+                    label='P2 PORT')
     def port2_click(self, e):
         """a click on the port 2 pictogram: joystick -> VecVox -> VecVoice -> joystick (without the speech ROM:
         its help, as in the menu)"""
@@ -2562,11 +2799,11 @@ class App:
         ph = pb - pt; pad = 0.012 * ph
         cx, cy, r, rx = self.knob_geom()
         top = cy - 1.8 * r                                      # (level with the RESET and OFF/ON labels)
-        gl_ = (pl + pr) / 2 - vecrender.GLASS_AW * ph / 2      # (from the glass's left edge)
+        gl_ = (pl + pr) / 2 + (vecrender.GLASS_DX - vecrender.ART_AW) * ph / 2   # (from the overlay's left edge)
         rows = self.hud_text()
         k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0
-        k = min(k, (pb + vecrender.KNOB_STRIP * ph - top) / (len(rows) * 9.0))   # (more rows - a UVMC2: smaller, to fit)
-        return dict(area=(gl_, top, rx - 1.25 * r, pb + vecrender.KNOB_STRIP * ph), rows=rows, k=k)
+        k = min(k, (pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph - top) / (len(rows) * 9.0))   # (more rows - a UVMC2: smaller, to fit)
+        return dict(area=(gl_, top, rx - 1.25 * r, pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph), rows=rows, k=k)
                     # (the text as high as the knob's labels; in full screen 20 % larger)
     # ---------------------------------------------------------------- the cartridge and the ROM browser
     def toggle_cart(self, e=None):
@@ -2577,10 +2814,11 @@ class App:
         self.strip_changed()
         return 'break'
     def cart_geom(self):
-        """(centre x, y, size) of the cartridge: below the middle of the picture, level with the knob"""
+        """(centre x, y, size) of the cartridge: level with the knob, the right half of the P2 PORT + cartridge
+        block that is centred below the picture"""
         pl, pt, pr, pb = self.pic_rect()
         cx, cy, r, rx = self.knob_geom()
-        return (pl + pr) / 2.0, cy, r
+        return (pl + pr) / 2.0 + vecrender.GLASS_DX * (pb - pt) / 2 + 1.8 * r, cy, r
     def cart_state(self):
         if not (self.cart_on and self.ren and hasattr(self.ren, 'map')):
             return None
@@ -2639,13 +2877,26 @@ class App:
         d = top                                                 # (the folder of the ROM in the slot, if it is in roms)
         stack = []
         ctx = getattr(self, 'browse_ctx', None)
-        if cur and ctx and os.path.abspath(os.path.dirname(cur)) == os.path.abspath(ctx[0]) and os.path.isdir(ctx[0]):
+        last = getattr(self, 'browse_last', None)
+        sel = cur
+        if last and os.path.isdir(last[0]):                     # (the folder it was last in)
+            d, stack = last[0], list(last[1])
+            if not (cur and os.path.abspath(os.path.dirname(cur)) == os.path.abspath(d)):
+                sel = last[2]
+        elif cur and ctx and os.path.abspath(os.path.dirname(cur)) == os.path.abspath(ctx[0]) and os.path.isdir(ctx[0]):
             d, stack = ctx[0], list(ctx[1])                     # (where it was loaded from: an alias's folder too)
         elif cur and os.path.abspath(os.path.dirname(cur)).lower().startswith(os.path.abspath(top).lower()):
             d = os.path.dirname(cur)
         self.browser = dict(roms=[], sel=0, top=0, dir=top, stack=stack)     # (the game runs on, without input, until a
         self.inp.block = True                                   #  ROM is loaded)
-        self.browser_dir(d, cur)
+        self.browser_dir(d, sel)
+        b = self.browser
+        if last and len(last) > 3 and os.path.abspath(d) == os.path.abspath(last[0]) and b['roms']:
+            vis = self.browser_geom()[3]                         # (the list scrolled as it was, the choice in view)
+            top = max(0, min(int(last[3]), max(0, len(b['roms']) - vis)))
+            if b['sel'] < top or b['sel'] >= top + vis:
+                top = max(0, min(b['sel'] - 3, max(0, len(b['roms']) - vis)))
+            b['top'] = top
         self.root.after(1000, lambda bb=self.browser: self.browser_watch(bb))
         self.root.after(30, lambda bb=self.browser: self.browser_pad(bb))
     def browser_pad(self, bb):
@@ -2723,6 +2974,10 @@ class App:
         if b and os.path.abspath(b['dir']) != os.path.abspath(os.path.join(ROOT, 'roms')):
             self.browser_dir(os.path.dirname(b['dir']), b['dir'])
     def close_browser(self):
+        b = self.browser
+        if b and b.get('dir'):                                  # (it opens there again: the folder, the way back, the row)
+            sel = b['roms'][b['sel']][1] if b['roms'] and 0 <= b['sel'] < len(b['roms']) else None
+            self.browse_last = (b['dir'], [x for x in b.get('stack', []) if isinstance(x, str)], sel, b.get('top', 0))
         self.browser = None
         self.inp.block = False
     def browser_geom(self):
@@ -3040,11 +3295,10 @@ class App:
             self.set_unit(k, v)
         self.save_settings()
         self.show_look('Vectrex unit imported: ' + os.path.basename(fn))
-    QUALITY_NAMES = ('Low', 'Medium', 'High', 'Ultra')
+    QUALITY_NAMES = ('Low', 'Medium', 'High')
     def set_quality(self, mode):
         """the control deck's Quality: 'auto' (starts at High, steps down while screen frames are missed) or
-        '0'..'3' Low, Medium, High, Ultra - effects only, never the emulation; Ultra also shows every refresh of
-        the monitor (its full rate), and leaving Ultra puts back the screen rate from before"""
+        '0'..'2' Low, Medium, High - effects only, never the emulation (the monitor's full rate: Config > Display)"""
         self.quality_mode = mode
         lvl = 2 if mode == 'auto' else int(mode)
         self.set_q_level(lvl)
@@ -3253,10 +3507,34 @@ class App:
     def power_flags(self):
         """the core's flags for switching on: 8 = a cold start, 16 = run the BIOS intro unseen"""
         return 8 | (16 if self.skip_boot else 0)
+    def fill_recent(self, menu):
+        """Vectrex > Recent games: the last games played (the newest first), one click starts one"""
+        menu.delete(0, 'end')
+        games = [g for g in getattr(self, 'recent', []) if os.path.isfile(g)]
+        for g in games:
+            menu.add_command(label=os.path.splitext(os.path.basename(g))[0], command=lambda g=g: self.restart(g))
+        if not games:
+            menu.add_command(label='(none yet)', state='disabled')
+    def note_recent(self, rom):
+        if rom and not self.args.demo:
+            r = [g for g in getattr(self, 'recent', []) if os.path.abspath(g) != os.path.abspath(rom)]
+            self.recent = [os.path.abspath(rom)] + r[:7]
+    def room_preset(self):
+        """View > Room light: which step the room light is at (x0.5 / x1 / x2 the default), else None"""
+        d = self.look_default.get('art_room') if hasattr(self, 'look_default') else None
+        v = getattr(self.ren, 'art_room', None) if self.ren else None
+        if not d or v is None:
+            return None
+        return next((k for k in (0.5, 1.0, 2.0) if abs(v - d * k) < 1e-4), None)
+    def set_room(self, k):
+        if self.ren and hasattr(self.ren, 'art_room'):
+            self.ren.art_room = round(self.look_default['art_room'] * k, 4)
+            self.save_settings()
+            self.show_look('art_room', self.ren)
     def toggle_pad_shortcuts(self):
         self.pad_shortcuts = not self.pad_shortcuts
         self.save_settings()
-        self.show_look('controller shortcuts (stick + all four buttons, 1 s): ' + ('on' if self.pad_shortcuts else 'off'))
+        self.show_look('TV mode shortcuts (stick + all four buttons for a second): ' + ('on' if self.pad_shortcuts else 'off'))
     def toggle_start_on(self):
         self.start_on = not self.start_on
         self.save_settings()
@@ -3306,11 +3584,11 @@ class App:
         if self.full:
             return
         self.zoom = max(0.3, min(4.0, z))
-        h = int(self.H0 * self.zoom); w = int(h * vecrender.ALG_MAX_X / vecrender.ALG_MAX_Y)
+        h = int(self.H0 * self.zoom); w = int(h * vecrender.VIEW_AW)
         h = int(h * (1.0 + self.knob_reserve()))                # (+ the strip)
         if getattr(self, 'rot', 0) in (90, 270):                # (a turned screen: a wide window)
             w, h = h, w
-        self.root.geometry('%dx%d' % (w, h))
+        self.root.geometry('%dx%d' % (w, h + self.chrome_h()))
         self.root.after(60, self.keep_on_desktop)
     def start_fit(self, geo):
         """after the start: the start size measured on the real frame; the first time (no remembered
@@ -3321,7 +3599,8 @@ class App:
         if not geo and not self.args.height_mm:
             self.set_zoom(self.args.scale)
         else:
-            self.keep_on_desktop()
+            self.strip_changed()                                # (a remembered size: the window's shape fitted to the
+            self.keep_on_desktop()                              #  picture again - narrower since the tighter frame)
     def frame_overhead(self):
         """(width, height) the window's frame adds to its inside: borders, title bar, menu bar (measured
         once it is on screen; a guess before)"""
@@ -3341,8 +3620,8 @@ class App:
         """the start size: the window as big as fits the desktop, above the task bar"""
         l, t, r, b = self.desktop()
         ow, oh = self.frame_overhead()
-        aw, ah = r - l - ow - 4, b - t - oh - 4
-        s, a = 1.0 + self.knob_reserve(), vecrender.ALG_MAX_X / float(vecrender.ALG_MAX_Y)
+        aw, ah = r - l - ow - 4, b - t - oh - 4 - self.chrome_h()
+        s, a = 1.0 + self.knob_reserve(), vecrender.VIEW_AW
         if getattr(self, 'rot', 0) in (90, 270):                # (turned: the picture's height runs across)
             h0 = min(aw / s, ah / a)
         else:
@@ -3429,7 +3708,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
@@ -3491,6 +3770,7 @@ class App:
         self.save_settings()                                    # (the old game's own settings kept)
         path, self.rom_name = self.cartridge(rom)
         self.args.rom = os.path.abspath(rom) if rom else None
+        self.note_recent(self.args.rom)
         self.core = Core(path, self.args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.usb_typing_off()
         if self.ren and hasattr(self.ren, 'line_gap'):
@@ -3561,12 +3841,27 @@ class App:
         """Help > Copy system info: on the clipboard, and shown - to paste into a GitHub issue"""
         text = self.system_info()
         self.root.clipboard_clear(); self.root.clipboard_append(text)
-        t = tk.Toplevel(self.root, bg='#000'); t.title('System info'); t.transient(self.root)
-        tk.Label(t, text='Copied to the clipboard - paste it into your GitHub issue:', fg='#8cb', bg='#000',
-                 font=(MONO, 9), anchor='w').pack(fill='x', padx=12, pady=(10, 4))
-        box = tk.Text(t, width=96, height=len(text.splitlines()) + 1, fg='#6a8', bg='#05080a', font=(MONO, 9), bd=0)
-        box.insert('1.0', text); box.configure(state='disabled'); box.pack(padx=12, pady=(0, 10))
-        t.bind('<Escape>', lambda e: t.destroy()); t.focus_force()
+        t = tk.Toplevel(self.root, bg=deck.BG); t.withdraw()   # (styled as the Config window)
+        t.title('System info'); t.transient(self.root); t.resizable(False, False)
+        top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
+        tk.Label(top, text='Copied to the clipboard - paste it into your GitHub issue.   Esc: close', fg=deck.DIM,
+                 bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=12, pady=6)
+        bx = tk.Frame(t, bg=deck.PANEL, highlightthickness=1, highlightbackground=deck.EDGE); bx.pack(fill='x', padx=10, pady=(10, 0))
+        tk.Label(bx, text='YOUR SYSTEM', fg=deck.DIM, bg=deck.PANEL, font=(MONO, 8), anchor='w').pack(fill='x', padx=10, pady=(4, 0))
+        box = tk.Text(bx, width=max(96, max(len(l) for l in text.splitlines()) + 2), height=len(text.splitlines()) + 1, fg=deck.G, bg=deck.PANEL, font=(MONO, 9), bd=0,
+                      highlightthickness=0, selectbackground=darkmenu.SEL, inactiveselectbackground=darkmenu.SEL)
+        box.insert('1.0', text); box.configure(state='disabled'); box.pack(padx=10, pady=(2, 8))
+        foot = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); foot.pack(fill='x', pady=(10, 0))
+        def again():
+            self.root.clipboard_clear(); self.root.clipboard_append(text); self.show_look('system info copied')
+        deck._button(foot, 'Copy again', again, self, small=True).pack(side='left', padx=12, pady=6)
+        deck._button(foot, 'Close', t.destroy, self, small=True).pack(side='right', padx=12)
+        t.bind('<Escape>', lambda e: t.destroy())
+        t.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - t.winfo_reqwidth()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - t.winfo_reqheight()) // 3
+        t.geometry('+%d+%d' % (max(0, x), max(0, y)))
+        t.deiconify(); deck.no_close_button(t); t.focus_force()
     def open_deck(self, e=None):
         """Tab: the control deck - opens, or closes when open"""
         return deck.open_deck(self)
@@ -3644,18 +3939,18 @@ class App:
         if self.full:                                   # (pop-ups hide behind a full-screen picture)
             self.toggle_full()
         game = os.path.splitext(os.path.basename(self.args.rom))[0]
-        if messagebox.askyesno('Vectrex_EMU', '%s needs %s.\n\nUVMC2 games read such files from the cartridge\'s SD card. '
+        if deck.dialog('question', 'Vectrex_EMU', '%s needs %s.\n\nUVMC2 games read such files from the cartridge\'s SD card. '
                                'In this emulator the SD card is a folder - put the file in:\n\n%s\n\nthen load the game '
                                'again (click the cartridge: the ROM browser).\n\nOpen that folder now?' % (game, what, d),
-                               parent=self.root):
+                               parent=self.root, yesno=True):
             open_folder(d)
     def cart_message(self, msg):
         from tkinter import messagebox
         name = 'PiTrex' if (self.args.rom or '').lower().endswith(('.img', '.pit')) else 'Ultimate Vectrex Multicart 2'
-        messagebox.showwarning('Vectrex_EMU', 'The cartridge (' + name + ') stopped:' + chr(10) + chr(10) + msg, parent=self.root)
+        deck.dialog('warning', 'Vectrex_EMU', 'The cartridge (' + name + ') stopped:' + chr(10) + chr(10) + msg, parent=self.root)
     def rom_error(self, msg):
         from tkinter import messagebox
-        messagebox.showerror('Vectrex_EMU', 'This cartridge cannot be loaded.\n\n' + msg, parent=self.root)
+        deck.dialog('error', 'Vectrex_EMU', 'This cartridge cannot be loaded.\n\n' + msg, parent=self.root)
     def open_rom(self, e=None):
         """Vectrex > Open ROM file: pick a ROM; the Vectrex power-cycles with it, in the same window"""
         from tkinter import filedialog
@@ -3691,7 +3986,7 @@ class App:
     def reset_tube(self, e=None):
         """Tube > Reset tube settings to default (not the overlay's: those are in the Overlay menu)"""
         for k, v in self.look_default.items():
-            if not k.startswith(('art_', 'light_', 'glass_room')):
+            if not k.startswith(('art_', 'light_', 'glass_room', 'case_')):
                 setattr(self.ren, k, v)
         if self.ren and hasattr(self.ren, 'hist'):
             self.ren.hist = []
@@ -3712,6 +4007,20 @@ class App:
         self.load_art()
         self.save_settings()
         self.show_look('overlay settings: the defaults')
+    def reset_case(self):
+        """the deck's Case strip: its reset - on, the reflections and the wear at their defaults"""
+        for k, v in self.look_default.items():
+            if k.startswith('case_'):
+                setattr(self.ren, k, v)
+        self.save_settings()
+        self.show_look('case settings: the defaults')
+    def toggle_case(self, e=None):
+        """C: the plastic case round the glass on / off (it only shows without an overlay)"""
+        if not (self.ren and hasattr(self.ren, 'case_on')):
+            return
+        self.ren.case_on = not self.ren.case_on
+        on_art = bool(getattr(self.ren, 'art_on', False) and getattr(self.ren, 'art', None))
+        self.show_look('case %s' % ('ON' + (' (shows without an overlay)' if on_art else '') if self.ren.case_on else 'OFF'))
     def reset_light(self):
         """Light > Reset light settings to default: the room light, the glass, the ceiling light"""
         for k, v in self.look_default.items():
@@ -3729,11 +4038,12 @@ class App:
         if getattr(self, 'slider_win', None):
             try: self.slider_win.destroy()
             except tk.TclError: pass
-        g, bg, dim = '#6a8', '#000', '#2c4a3c'
-        t = tk.Toplevel(self.root, bg=bg); self.slider_win = t
+        g, bg, dim = deck.G, deck.PANEL, '#3d6b55'               # (styled as the Config window)
+        t = tk.Toplevel(self.root, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); self.slider_win = t
         t.title('Light position'); t.transient(self.root); t.resizable(False, False)
         try: t.attributes('-toolwindow', True)
         except tk.TclError: pass
+        t.after(30, lambda t=t: deck.no_close_button(t))       # (no close button: Esc / Enter / clicking elsewhere)
         head = tk.Label(t, fg=g, bg=bg, font=(MONO, 10, 'bold'), anchor='w'); head.pack(fill='x', padx=10, pady=(8, 0))
         W, Hh, M = 420, 180, 12
         cv = tk.Canvas(t, width=W + 2 * M, height=Hh + 2 * M, bg=bg, highlightthickness=0); cv.pack(padx=10, pady=4)
@@ -3783,8 +4093,8 @@ class App:
             if k.startswith('jack_'):
                 setattr(self.run.crt, k, v)
         self.show_um2 = True
-        self.sd_dir = os.path.join(ROOT, 'sd')
-        self.px_dir = os.path.join(ROOT, 'pitrex')
+        self.sd_dir = SD_DEFAULT
+        self.px_dir = PX_DEFAULT
         self.save_settings()
         self.show_look('add-on settings: the defaults')
     def set_jack(self, mode):
@@ -3824,7 +4134,7 @@ class App:
         boot = os.path.join(self.px_dir, 'pitrex.img')
         if not os.path.isfile(boot):
             from tkinter import messagebox
-            messagebox.showinfo('Vectrex_EMU', 'The PiTrex needs its SD card: put the files of a PiTrex baremetal SD card '
+            deck.dialog('info', 'Vectrex_EMU', 'The PiTrex needs its SD card: put the files of a PiTrex baremetal SD card '
                                 '(pitrex.img, loader.pit, the piZero1 folder, ...) in' + chr(10) + chr(10) + self.px_dir + chr(10) + chr(10) +
                                 'or choose another folder in Add-ons > PiTrex SD card folder.', parent=self.root)
             return 'break'
@@ -3886,6 +4196,7 @@ class App:
             d['geometry'] = self.root.geometry()
         if not self.args.demo:
             d['last_rom'] = self.args.rom or None               # (the cartridge in the slot: none = Mine Storm)
+        d['recent'] = list(getattr(self, 'recent', []))
         d['fps_counter'] = getattr(self, 'fps_on', True)
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')
@@ -3923,6 +4234,18 @@ class App:
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['knob'] = getattr(self, 'knob_on', True)
         d['cart'] = getattr(self, 'cart_on', True)
+        if getattr(self, 'deck_pos', None):
+            d['deck_pos'] = list(self.deck_pos)
+        if getattr(self, 'ctl_pos', None):
+            d['ctl_pos'] = list(self.ctl_pos)
+        if getattr(self, 'help_geo', None):
+            d['help_geo'] = self.help_geo
+        if getattr(self, 'deck_strip', None):
+            d['deck_strip'] = self.deck_strip
+        if getattr(self, 'deck_focus', None):
+            d['deck_focus'] = dict(self.deck_focus)
+        if getattr(self, 'browse_last', None):
+            d['browse_last'] = list(self.browse_last)
         if getattr(self, 'full_scale', None):
             d['full_scale'] = round(self.full_scale, 4)
         if self.look_keys:
@@ -3935,9 +4258,16 @@ class App:
     def toggle_full(self, e=None):
         if not self.full:                                       # the picture height in the window, now
             self.win_pic_h = (ALG_MAX_Y * self.ren.map[0] / self.px() if self.ren and hasattr(self.ren, 'map') else
-                              min(self.screen.winfo_height(), self.screen.winfo_width() * ALG_MAX_Y / ALG_MAX_X))
+                              min(self.screen.winfo_height(), self.screen.winfo_width() / vecrender.VIEW_AW))
         self.full = not self.full
-        self.root.config(menu='' if self.full else self.menubar)   # (full screen: no menu bar)
+        if DARK_MENU:                                           # (full screen: no menu bar)
+            if self.full:
+                self.menubar.pack_forget(); self.menu_line.pack_forget()
+            else:
+                self.menubar.pack(side='top', fill='x', before=self.screen)
+                self.menu_line.pack(side='top', fill='x', before=self.screen)
+        else:
+            self.root.config(menu='' if self.full else self.menubar)
         self.root.attributes('-fullscreen', self.full)
         self.show_bar()
         if self.full and not self.full_scale:                   # first time: as big as it was in the window
@@ -4311,7 +4641,7 @@ class App:
         idle = self.run.paused or not self.run.power
         vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('MONITOR', '%d HZ' % round(self.disp_fps), g),
                 ('EMU RATE', '--' if idle else '%d%%' % self.speed_shown(), g if idle else self.speed_color(2)),
-                ('VOLUME', '%d%%' % round(self.run.crt.volume * 100) if self.run.power else 'OFF', g)]
+                ('VOL', '%d%%' % round(self.run.crt.volume * 100) if self.run.power else 'OFF', g)]
         if getattr(self, 'speech', 'off') != 'off':             # (a speech module plugged in: its volume too)
             vals.append(('SPEECH VOL', '%d%%' % round(self.run.crt.voice_vol * 100), g))
         if (self.args.rom or '').lower().endswith('.um2'):     # (a UVMC2 game: its chip's speed, the game's own frame
@@ -4404,7 +4734,7 @@ def main():
             missing = [f for f in (CORE, BIOS) if not os.path.exists(f)]
             msg = 'Missing:\n' + '\n'.join(missing)
             if BIOS in missing:
-                msg += '\n\nThe Vectrex BIOS goes in a folder called bios next to the program: bios/bios.bin.'
+                msg += '\n\nThe Vectrex BIOS goes in a folder called system next to the program: system/bios.bin.'
                 if not IS_WIN and osdep.translocated(ROOT):
                     msg += ('\n\nmacOS runs this downloaded app from a hidden copy, which can not see that folder. '
                             'In Finder, drag Vectrex_EMU.app out of its folder and back in, then start it again '

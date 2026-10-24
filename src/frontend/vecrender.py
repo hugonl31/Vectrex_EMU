@@ -5,7 +5,7 @@ twice: a wide faint glow and a bright core (the look of a vector CRT), then copi
 window in one call. Line widths scale with the picture, so any window size looks smooth.
 """
 import ctypes, math, sys, ctypes.wintypes as W
-import roomlight
+import roomlight, casemodel
 try:                                    # (numpy: the vertex arrays of a frame in one go - _build_np; without it the
     import numpy as _np                 #  same per line in Python, slower: a dense frame of 11000 lines took 13 ms)
 except Exception:   # noqa
@@ -220,8 +220,8 @@ class GLRenderer:
         gl.glViewport(0, 0, w, h)
         gl.glMatrixMode(GL_PROJECTION); gl.glLoadIdentity()
         rs = getattr(self, 'reserve', 0.0)               # (a strip below the picture: the knob panel)
-        s = min(w / ALG_MAX_X, h / (ALG_MAX_Y * (1.0 + rs))) * getattr(self, 'view_scale', 1.0)   # (full screen: + / - size)
-        ox = (w / s - ALG_MAX_X) / 2
+        s = min(w / (VIEW_AW * ALG_MAX_Y), h / (ALG_MAX_Y * (1.0 + rs))) * getattr(self, 'view_scale', 1.0)   # (full screen: + / - size)
+        ox = (w / s - ALG_MAX_X) / 2 + PIC_DX * ALG_MAX_Y          # (the glass in the window's middle)
         oy = (h / s - ALG_MAX_Y * (1.0 + rs)) / 2 + PAD_TOP * ALG_MAX_Y   # (rs: the black above and the strip below)
         gl.glOrtho(-ox, ALG_MAX_X + ox, h / s - oy, -oy, -1, 1)      # emulator units, y down
         gl.glMatrixMode(GL_MODELVIEW); gl.glLoadIdentity()
@@ -420,10 +420,35 @@ void main() {
 # picture, 1 = the owner's tube. The glass: a superellipse (rounded corners, its sides very slightly bulging),
 # as high as the picture, GLASS_AW as wide; beyond it the tube's face ends (Tube > Glass edge).
 TUBE_TERMS = ((0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (3, 0))   # (u power, v power)
-TUBE_X = (0.0, 0.00146, 0.01249, -0.00058, 0.87493, 0.01148, 0.01204, 0.01051, -0.00711, -0.13134)
+TUBE_X = (0.00646, 0.00146, 0.01249, -0.00058, 0.84421, 0.01148, 0.01204, 0.00204, -0.00711, -0.08794)
+# (2026-10-24, GitHub issue 4: the columns refitted to the average of two real Vectrexes' grids - before, the cubic
+#  term pinched the outer columns too hard, 0.78 of the middle's spacing against the real tubes' 0.80 / 0.90, and
+#  more on the left; now 0.86, left and right alike, the grid's width and centre unchanged)
 TUBE_Y = (0.0, 0.85774, -0.02077, 0.11881, -0.00346, -0.0042, 0.01194, -0.01267, -0.00086, -0.00016)
 TUBE_PULL = 0.016                       # the top right corner pulled up (half picture heights, at the corner)
-GLASS_AW, GLASS_N, GLASS_EDGE = 0.7542, 7.72, 0.025     # the glass: width / height, superellipse power, soft edge
+# The glass's outline (2026-10-24): measured on the owner's Vectrex - the test cartridge's grid screen photographed,
+# the glass edge traced, mapped onto the emulator's grid. GLASS_LUT is its radius every degree from the horizontal
+# axis (0 .. 90, half picture heights), the average of the four traced corners (they agree within 2.4 px rms on a
+# 1839 px picture), mirrored into all four: the shape is symmetric. Its centre is GLASS_DX / GLASS_DY from the
+# picture's (half picture heights, y down) - the real picture sits a little left of and below the glass's middle.
+# The overlay is centred on the glass, as the sheet sits on the real tube.
+GLASS_LUT = (
+    0.7114, 0.7115, 0.7118, 0.7122, 0.7126, 0.7131, 0.7140, 0.7153, 0.7169, 0.7187,
+    0.7208, 0.7230, 0.7255, 0.7282, 0.7314, 0.7347, 0.7381, 0.7419, 0.7458, 0.7499,
+    0.7543, 0.7592, 0.7641, 0.7692, 0.7746, 0.7802, 0.7860, 0.7920, 0.7983, 0.8050,
+    0.8120, 0.8194, 0.8273, 0.8356, 0.8445, 0.8539, 0.8637, 0.8740, 0.8848, 0.8960,
+    0.9076, 0.9198, 0.9325, 0.9456, 0.9592, 0.9733, 0.9882, 1.0037, 1.0198, 1.0366,
+    1.0546, 1.0724, 1.0882, 1.1007, 1.1097, 1.1154, 1.1182, 1.1181, 1.1153, 1.1102,
+    1.1041, 1.0976, 1.0911, 1.0846, 1.0782, 1.0718, 1.0655, 1.0593, 1.0532, 1.0473,
+    1.0418, 1.0367, 1.0320, 1.0276, 1.0233, 1.0193, 1.0155, 1.0116, 1.0079, 1.0045,
+    1.0015, 0.9988, 0.9966, 0.9947, 0.9931, 0.9918, 0.9908, 0.9900, 0.9894, 0.9891,
+    0.9889,
+)
+GLASS_AW, GLASS_AH = GLASS_LUT[0], GLASS_LUT[90]          # the glass's width, height / picture height
+GLASS_DX, GLASS_DY = 0.0190 - 0.0190, -0.0260 + 0.0245
+# (the picture moved 0.019 right and 0.0245 up inside the glass and the overlay: the overlays expect it there - Solar
+#  Quest's sun on its vector star, measured in the window and full screen; the real tube's own offset was 0.019 / -0.026)
+GLASS_N, GLASS_EDGE = 7.17, 0.025       # (a superellipse power close to it: the room light's maps) / the soft edge
 GLASS_GREY = 0.20                       # the glass in room light without an overlay: grey x Room light (0 .. 1) -
                                         #  at the default hardly noticeable; with an overlay always black (contrast)
 ART_TUBE_K = 0.924                      # the overlay on the tube's smaller picture: its scale (both ways - the sheet keeps
@@ -497,9 +522,17 @@ CURVE_SHADER = b"""
 uniform sampler2D tex, lmap;
 uniform vec2 norm, ctr;
 uniform float cx[10], cy[10];
-uniform float pull, glass, aw, gn, edge, grey, lk, bscale, pxs;
+uniform float pull, glass, aw, ah, gn, edge, grey, lk, bscale, pxs;
+uniform vec2 goff;
+uniform float glut[91];                 // the glass's radius every degree (GLASS_LUT)
 uniform vec3 lpos;
 uniform vec4 lmr;
+uniform float cse, croom, crefl, cwear;  // the plastic case round the glass (casemodel): on, the room's light on it,
+                                        //  its reflections' and its wear's strength (the deck's Case strip)
+uniform float clut[91];                 // its opening's radius every degree (CASE_LUT)
+uniform vec3 lc;                        // the ceiling light, cm (x right, y up, z to the viewer)
+uniform sampler2D smap;                 // its scratches (casemodel.scratch_map): R the tube's glint, G the room's
+uniform vec4 smr;                       // (the map's bounds: x0, x1, y0, y1)
 """ + LIGHT_GLSL + b"""
 float hash(vec2 p) {                                     // (no sine: no repeats or bands from lost precision)
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -511,6 +544,23 @@ float vnoise(vec2 p) {
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 float bumps(vec2 p) { return (vnoise(p - 0.35) - vnoise(p + 0.35)) * 4.0; }   // (smooth bumps, lit from the top left)
+// the outlines: a radius every degree, Catmull-Rom between them (smooth: the case's light shows no steps)
+vec2 crom(float p0, float p1, float p2, float p3, float f) {             // (value, slope per degree)
+    float a = -p0 + p2, b = 2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3, c = -p0 + 3.0 * p1 - 3.0 * p2 + p3;
+    return 0.5 * vec2(2.0 * p1 + f * (a + f * (b + f * c)), a + f * (2.0 * b + 3.0 * f * c));
+}
+int mi(int i) { return i < 0 ? -i : (i > 90 ? 180 - i : i); }           // (both outlines mirror at 0 and 90 degrees)
+vec2 gR(float a) { float i = min(floor(a), 89.0); int k = int(i);
+    return crom(glut[mi(k - 1)], glut[k], glut[k + 1], glut[mi(k + 2)], a - i); }
+vec2 cR(float a) { float i = min(floor(a), 89.0); int k = int(i);
+    return crom(clut[mi(k - 1)], clut[k], clut[k + 1], clut[mi(k + 2)], a - i); }
+float sdist(vec2 d, vec2 R) {                                            // (signed distance from the outline, units)
+    float dr = R.y * 57.29578;
+    return (length(d) - R.x) * R.x / sqrt(R.x * R.x + dr * dr);
+}
+float ang(vec2 d) { return degrees(atan(abs(d.y), abs(d.x) + 1e-9)); }
+float sdG(vec2 d) { return sdist(d, gR(ang(d))); }
+float sdC(vec2 d) { return sdist(d, cR(ang(d))); }
 vec2 fwd(vec2 p, out mat2 J) {
     float u = p.x, v = p.y, u2 = u * u, v2 = v * v;
     float t[10]; float tu[10]; float tv[10];
@@ -535,6 +585,138 @@ vec2 fwd(vec2 p, out mat2 J) {
     J = mat2(fu, fv);
     return f;
 }
+// ---- the plastic case (casemodel; the owner's previews 2026-10-24): what it shows at this point gd (from the
+//      glass's centre, units, y down). Lengths below in "ref px": the 1839 px high picture of the previews.
+const float U = 919.67, FRONT_W = 0.047;          // (FRONT_W: casemodel's)
+vec3 tex9(vec2 q, float rad) {                       // (the vectors round q (units), a soft ring rad ref px wide)
+    vec2 o = vec2(rad / U) / norm, s = ctr + vec2(q.x, -q.y) / norm;
+    vec3 a = texture2D(tex, s).rgb * 2.0;
+    a += texture2D(tex, s + vec2(o.x, 0.0)).rgb + texture2D(tex, s - vec2(o.x, 0.0)).rgb;
+    a += texture2D(tex, s + vec2(0.0, o.y)).rgb + texture2D(tex, s - vec2(0.0, o.y)).rgb;
+    a += 0.7 * (texture2D(tex, s + o).rgb + texture2D(tex, s - o).rgb
+              + texture2D(tex, s + vec2(o.x, -o.y)).rgb + texture2D(tex, s - vec2(o.x, -o.y)).rgb);
+    return a / 8.8;
+}
+vec3 disc(vec2 q, float rad) {                       // (an even soft disc: a line becomes one solid glowing band,
+    vec2 s = ctr + vec2(q.x, -q.y) / norm;           //  not its thin core and halo apart; 40 taps on a turned spiral)
+    float rot = 6.2832 * hash(gl_FragCoord.xy);
+    vec3 a = vec3(0.0); float ws = 0.0;
+    for (int i = 0; i < 40; i++) {
+        float f = (float(i) + 0.5) / 40.0, r = rad * sqrt(f), an = rot + 2.39996 * float(i);
+        float w = exp(-1.5 * f);
+        a += w * texture2D(tex, s + vec2(cos(an), sin(an)) * r / U / norm).rgb; ws += w;
+    }
+    return a / ws;
+}
+vec3 plastic(vec2 gd, vec2 tgt) {
+    float pu = pxs;                                                      // (one window pixel, units)
+    float dg = sdG(gd), dc = -sdC(gd);
+    vec2 rp = gd * U;
+    // (where the glossy wall meets the matte front the moulding is not perfect: the edge wanders 1 - 3 px)
+    float de = dc + pu * 1.6 * (0.5 - 0.65 * vnoise(rp / 9.0 + 41.0) - 0.35 * vnoise(rp / 2.5 + 13.0));
+    float wa = clamp(dg / pu + 0.5, 0.0, 1.0) * clamp(de / pu + 0.5, 0.0, 1.0);
+    float fa = clamp(0.5 - de / pu, 0.0, 1.0);                           // (beyond: the matte outer frame)
+    float wave = 2.0 * vnoise(rp / 110.0) - 1.0 + 0.5 * (2.0 * vnoise(rp / 40.0 + 17.0) - 1.0);
+    float flow = 2.0 * vnoise(rp / 14.0 + 5.0) - 1.0;
+    vec3 col = vec3(0.0);
+    if (wa > 0.0) {
+        // the wall in 3D (the owner's photos): straight lines from the case's straight outer edge (in front, H
+        // towards the viewer) down to the glass's curved edge, one per direction from the centre - straight along
+        // the outer edge, bending smoothly to meet the tube; its true direction everywhere (no seams)
+        float th = atan(gd.y, gd.x), a = ang(gd), sg = sign(gd.x * gd.y);
+        vec2 G = gR(a), C = cR(a);
+        float Rg = G.x, D = max(C.x - G.x, 1e-4), rho = length(gd);
+        float dRg = G.y * 57.29578 * sg, dD = (C.y - G.y) * 57.29578 * sg;
+        float u = clamp((rho - Rg) / D, 0.0, 1.0);                       // (0 at the glass .. 1 at the outer edge)
+        // its depth: ~1.3 cm at the sides and top / bottom (68 / 64 deg); deeper where the wall is wider - the
+        // tube's face curves back at its corners - so the corners stay steep and mirror the glass too (smooth max)
+        float k = 2.0 * D - 0.12, q = sqrt(k * k + 0.0004);
+        float H = 0.12 + 0.5 * (k + q), dH = (1.0 + k / q) * dD;
+        float cs = cos(th), sn = sin(th);
+        vec3 Pu = vec3(D * cs, D * sn, H);
+        float dr = dRg + u * dD;
+        vec3 Pt = vec3(dr * cs - rho * sn, dr * sn + rho * cs, u * dH);
+        vec3 N = normalize(cross(Pt, Pu)); N *= sign(N.z);                // (x right, y down, z to the viewer)
+        vec2 n = normalize(gd);                                           // (outwards, in the picture)
+        float wave2 = 2.0 * vnoise(rp / 70.0 + 31.0) - 1.0 + 0.4 * (2.0 * vnoise(rp / 26.0 + 9.0) - 1.0);
+        N = normalize(N + vec3(0.02 * wave + 0.005 * flow, 0.02 * wave2 + 0.005 * flow, 0.0));   // (the moulding: far from flat)
+        float lip = smoothstep(0.93, 1.0, u);                                // (the rounded outer edge; at the glass a dark gap)
+        N = normalize(mix(N, vec3(0.0, 0.0, 1.0), 0.85 * lip));
+        float t = u;
+        float dpos = (rho - Rg) * U, dout = max(de, 0.0) * U;
+        // the vectors mirrored in it: the eye's ray off the wall onto the glass (nearest the sharpest, inverse square)
+        vec3 P = vec3(tgt, H * u), E = vec3(0.0, 0.0, 50.0 / 11.0);
+        vec3 Rr = reflect(normalize(P - E), N);
+        vec3 refl = vec3(0.0); float gm = 0.0, back = 0.0;
+        if (Rr.z < -0.02) {
+            vec2 mq = P.xy + Rr.xy * (-P.z / Rr.z);
+            back = length(mq - P.xy) * U;
+            gm = clamp(0.5 - sdG(mq - goff) / pu, 0.0, 1.0);             // (only the glass's light)
+            refl = max(mix(disc(mq, 9.0), disc(mq, 6.0), 0.5) * gm - 0.02, 0.0);
+        }
+        float fall = 1.0 / (1.0 + pow(back / 130.0, 2.0));
+        float side = abs(n.x), bot = max(n.y, 0.0), top = max(-n.y, 0.0);
+        float strength = crefl * 1.5 * (0.85 * pow(side, 1.5) + 0.40 * bot + 0.35 * top) * fall * (1.0 + 0.06 * flow);
+        // the room's light: the same surface (y up for the light's cm)
+        vec3 Nu = vec3(N.x, -N.y, N.z);
+        vec3 Pc = vec3(tgt.x * 11.0, -tgt.y * 11.0, H * u * 11.0);
+        vec3 V = normalize(vec3(0.0, 0.0, 50.0) - Pc), L = normalize(lc - Pc);
+        float lit = croom * pow(clamp((dot(Nu, L) - 0.55) / 0.45, 0.0, 1.0), 1.4);  // (facing the light: bottom, right)
+        float ndh = clamp(dot(Nu, normalize(V + L)), 0.0, 1.0);
+        float spec = croom * 0.35 * pow(ndh, 60.0);
+        float base = 0.006 + 0.002 * flow + 0.010 * lit + spec;
+        // the glass's glare, a faint glow onto the plastic next to it
+        float bl = 0.0;
+        if (lk > 0.0) {
+            vec2 eq = tgt - n * dpos / U;
+            float mr = texture2D(lmap, vec2((eq.x - lmr.x) / (lmr.y - lmr.x), (eq.y - lmr.z) / (lmr.w - lmr.z))).r;
+            bl = lk * mr * (0.03 * exp(-dpos / 55.0) * (0.25 + 0.75 * pow(top, 0.7)) + 0.035 * exp(-dpos / 16.5) * pow(top, 0.7));
+        }
+        // the scratches: they glint where light crosses them - the tube's (nearby) and the room's
+        vec2 sq = vec2((gd.x - smr.x) / (smr.y - smr.x), (smr.w - gd.y) / (smr.w - smr.z));
+        vec2 sc = texture2D(smap, sq).rg;
+        float lv = clamp(3.0 * dot(tex9(tgt - n * (dpos + 25.0) / U, 30.0), vec3(0.333)), 0.0, 1.0);
+        float scr = cwear * 0.9 * (0.5 * sc.r * lv + sc.g * (0.6 * lit + 0.8 * bl * 30.0));
+        col = vec3(base) + refl * strength * vec3(0.85, 0.92, 1.0) + 0.35 * scr * vec3(0.95, 0.97, 1.0)
+            + bl * vec3(0.97, 0.98, 1.0) + exp(-pow(dout / 2.0, 2.0)) * 0.26 * lit;
+        col *= mix(0.2, 1.0, smoothstep(0.0, 0.06, u));                 // (the dark gap where it meets the glass)
+        col *= wa;
+    }
+    // beyond: 5 mm of the case's flat front, facing the viewer - very matte ABS with its fine sand texture
+    float fr = fa * smoothstep(0.002, 0.007, FRONT_W + dc);   // (its outer edge: a soft fade over ~0.5 mm)
+    if (fr > 0.0) {
+        // (the owner's close-up: a mid grey, an even fine grain, tiny bright specks that catch the light - some a
+        //  little coloured - and a slightly lighter rounded edge where it drops into the glossy wall)
+        vec2 cell = floor(rp / 1.1);
+        // (studio-equipment matte, like a Yamaha HS8: an even, very fine micro-grain - no bumps, no glitter)
+        float grain = (vnoise(rp / 2.0 + 5.3) - 0.5) * 0.13 + (hash(cell) - 0.5) * 0.05;
+        // (where the overlays slide in and scrape: a smoother, slightly shinier band halfway across, in faint
+        //  lengthwise marks, its strength varying along the length and less in the corners)
+        float acr = -de * U, mid = 0.0225 * U;                            // (ref px from the inner edge; the middle)
+        float band = exp(-pow((acr - mid - 6.0 * (vnoise(rp / 300.0 + 4.0) - 0.5)) / 3.0, 2.0));
+        float marks = 0.5 + 0.5 * vnoise(vec2(acr / 0.9, 0.0) + rp / 500.0);
+        float cornw = 1.0 - 0.85 * exp(-pow((ang(gd) - 55.0) / 9.0, 2.0));
+        float sidew = mix(1.0, 0.3, smoothstep(45.0, 65.0, ang(gd)));   // (mostly on the left and right, less top / bottom)
+        float wear = min(1.0, cwear) * band * marks * cornw * sidew * smoothstep(0.58, 0.82, vnoise(rp / 340.0 + 17.0));   // (in stretches, longer gaps)
+        grain *= 1.0 - 0.65 * wear;
+        float mott = (vnoise(rp / 55.0 + 23.0) - 0.5) * 0.04;
+        float tone = 0.010 + 0.09 * croom;
+        float sp = hash(cell + 91.7), spark = step(0.982, sp) * (0.5 + hash(cell + 3.3));
+        vec3 tint = mix(vec3(1.0, 0.92, 0.75), vec3(0.75, 0.9, 1.0), hash(cell + 7.9));
+        float rim = exp(-pow(max(-de, 0.0) * U / 3.0, 2.0)) * 0.2;      // (the rounded edge into the wall)
+        float gloss = smoothstep(0.2, 0.85, 0.6 * vnoise(rp / 420.0 + 83.0) + 0.4 * vnoise(rp / 900.0 + 37.0));   // (how shiny: smooth, over 10 - 20 cm)
+        vec3 Pc = vec3(tgt.x * 11.0, -tgt.y * 11.0, 1.4);
+        vec3 Hf = normalize(normalize(vec3(0.0, 0.0, 50.0) - Pc) + normalize(lc - Pc));
+        float sheen = croom * (0.014 + 0.07 * gloss) * pow(Hf.z, 6.0) * (1.0 + 3.0 * grain);   // (a satin sheen, glinting on the grain)
+        float drift = 0.85 + 0.3 * vnoise(rp / 700.0 + 29.0);              // (the plane's lightness: slow, smooth)
+        sheen *= 0.2 + 1.6 * vnoise(rp / 600.0 + 74.0);                  // (the glint: slow, strong variation)
+        sheen *= mix(1.2, 0.45, smoothstep(45.0, 65.0, ang(gd)) * clamp(-gd.y / 0.3, 0.0, 1.0));   // (more on the long sides, less on top)
+        sheen += croom * 0.024 * wear * pow(Hf.z, 6.0);                  // (the scraped band: its own strength)
+        col += (vec3(drift * tone * (1.0 + grain + mott + rim)) * vec3(0.98, 0.99, 1.02) + sheen
+              + croom * (0.01 + 0.04 * gloss) * spark * tint) * fr;
+    }
+    return col + (hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0;   // (dithered: no bands)
+}
 void main() {
     vec2 uv = gl_TexCoord[0].st;
     vec2 tgt = (uv - ctr) * norm; tgt.y = -tgt.y;          // (on the tube: half picture heights, y down)
@@ -547,7 +729,9 @@ void main() {
     vec2 s = ctr + vec2(p.x, -p.y) / norm;
     vec3 c = (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) ? vec3(0.0) : texture2D(tex, s).rgb;
     if (glass > 0.5) {                                       // (the glass ends: a superellipse)
-        float r = pow(pow(abs(tgt.x / aw), gn) + pow(abs(tgt.y), gn), 1.0 / gn);
+        vec2 gd = tgt - goff;
+        float ga = degrees(atan(abs(gd.y), abs(gd.x) + 1e-9));
+        float r = length(gd) / gR(ga).x;                      // (Catmull-Rom: a smooth edge)
         float g = smoothstep(0.0, 1.0, clamp((1.0 - r) / edge, 0.0, 1.0));   // (a soft edge)
         vec3 add = vec3(0.0);
         if (grey > 0.0 || lk > 0.0) {                        // (the glass in the room's light: no overlay)
@@ -560,6 +744,7 @@ void main() {
             }
         }
         c = (c + add) * g;
+        if (cse > 0.5) c += plastic(gd, tgt);
     }
     gl_FragColor = vec4(c, 1.0);
 }
@@ -880,6 +1065,19 @@ void main() {
 }
 """
 
+# the finished screen onto the window: it is drawn in 16-bit floats (the overlay's passes - filter, print, the
+# room's light, its reflection - blend without rounding), here rounded to the window's 8 bits with a dither of
+# less than one step, so soft light falls off smoothly, without bands
+DITHER_SHADER = b"""
+uniform sampler2D tex;
+float h(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+void main() {
+    vec3 c = texture2D(tex, gl_TexCoord[0].st).rgb;
+    float n = h(gl_FragCoord.xy) - h(gl_FragCoord.xy + 17.31);     // (triangular, -1 .. 1 step)
+    gl_FragColor = vec4(c + n / 255.0, 1.0);
+}
+"""
+
 ART_SHADER = b"""
 uniform sampler2D tex;
 uniform float pass, tint, room, print_;
@@ -1115,7 +1313,7 @@ HUD_FONT = {'0': [_A, _B, _C, _D, _E, _F], '1': [(2, 0, 2, 6), (1, 1, 2, 0)], '2
             '=': [(0, 2, 4, 2), (0, 4, 4, 4)], '?': [_A, _B, (4, 3, 2, 3), (2, 3, 2, 4.5), (2, 5.5, 2, 6)], ' ': []}
 
 # the volume knob and the RESET button (menu: Volume knob), drawn like the Vectrex's own panel: a
-# knob with a position marker, OFF/ON above it, the volume wedge and VOLUME to its right; the RESET
+# knob with a position marker, OFF/ON above it, the volume wedge and VOL to its right; the RESET
 # button to its left. Sizes in units of the knob's radius (r); the layout is shared with the mouse
 # handling (vectrex_emu.App.knob_geom).
 KNOB_R = 0.0253         # knob radius / picture height (the owner: a third of the real knob's size, +10 %)
@@ -1134,17 +1332,40 @@ LOGO_ICON = [  # the Vectrex logo (the owner's vectrex-us-soldermask.kicad_mod),
     [(88.7, 68.4), (89.6, 68.4), (89.3, 69.3), (88.5, 70.3), (88.0, 70.8), (85.5, 73.7), (86.2, 74.4), (86.8, 75.2), (87.6, 76.1), (88.0, 76.6), (88.4, 77.1), (88.8, 77.6), (89.5, 78.4), (89.9, 78.9), (89.3, 79.0), (88.2, 79.0), (87.6, 79.0), (86.8, 79.0), (86.1, 79.0), (81.6, 79.0), (83.1, 77.5), (83.9, 76.7), (84.4, 76.1), (84.4, 75.5), (83.7, 75.6), (83.1, 76.2), (82.1, 77.1), (80.2, 79.1), (78.3, 79.1), (77.7, 79.1), (76.8, 79.0), (77.0, 78.4), (77.7, 77.6), (78.1, 77.1), (78.6, 76.6), (79.2, 75.8), (79.7, 75.3), (80.1, 74.8), (80.6, 74.1), (80.7, 73.5), (80.2, 72.8), (79.4, 71.9), (79.0, 71.4), (78.2, 70.5), (77.8, 70.0), (77.4, 69.5), (76.8, 68.8), (77.6, 68.4), (78.9, 68.4), (79.6, 68.4), (80.4, 68.4), (81.7, 68.4), (82.5, 68.4), (83.3, 68.4), (84.3, 68.4), (84.0, 69.3), (83.4, 70.0), (82.9, 70.5), (82.3, 71.2), (82.0, 71.7), (82.6, 72.1), (83.3, 71.5), (84.1, 70.7), (86.4, 68.4), (88.2, 68.4), (88.7, 68.4)],
 ]
 _TICKS = [[(0, v), (2, v)] for v in (74, 78, 82, 86, 90)] + [[(100, v), (98, v)] for v in (74, 78, 82, 86, 90)]
-# a speech module (VecVox / VecVoice): its box with a speaker, sound waves to the right (0..100 square)
-PORT2_ICON = ([[(8, 18), (58, 18), (62, 22), (62, 78), (58, 82), (8, 82), (4, 78), (4, 22), (8, 18)],
-               [(33 + 13 * math.cos(math.pi * i / 6), 50 + 13 * math.sin(math.pi * i / 6)) for i in range(13)],
-               [(33 + 4 * math.cos(math.pi * i / 3), 50 + 4 * math.sin(math.pi * i / 3)) for i in range(7)]] +
-              [[(56 + rr * math.cos(a / 10.0), 50 + rr * math.sin(a / 10.0)) for a in range(-6, 7)] for rr in (20, 30, 40)])
-# the Vectrex controller (a joystick in port 2): its box, the stick and its knob, the four buttons
-JOY_ICON = ([[(4, 46), (96, 46), (96, 84), (4, 84), (4, 46)],
-             [(22, 46), (22, 30)],
-             [(22 + 9 * math.cos(math.pi * i / 6), 22 + 9 * math.sin(math.pi * i / 6)) for i in range(13)]] +
-            [[(44 + 15 * j + 4.5 * math.cos(math.pi * i / 4), 65 + 4.5 * math.sin(math.pi * i / 4)) for i in range(9)]
-             for j in range(4)])
+# the Vectrex controller from above (a joystick in port 2): the case with the cable notch, the stick (rings), the four buttons
+JOY_ICON = [
+    [(54.6, 36.4), (100.6, 36.4), (101.5, 36.5), (102.3, 36.9), (103.0, 37.4), (103.6, 38.2), (103.9, 39.0), (104.0, 39.9), (104.0, 72.1), (103.9, 73.0), (103.6, 73.8), (103.0, 74.5), (102.3, 75.1), (101.5, 75.4), (100.6, 75.5), (-0.6, 75.5), (-1.5, 75.4), (-2.3, 75.1), (-3.0, 74.5), (-3.6, 73.8), (-3.9, 73.0), (-4.0, 72.1), (-4.0, 39.9), (-3.9, 39.0), (-3.6, 38.2), (-3.0, 37.4), (-2.3, 36.9), (-1.5, 36.5), (-0.6, 36.4), (45.4, 36.4)],
+    [(45.4, 36.4), (45.6, 37.6), (46.0, 38.7), (46.7, 39.7), (47.7, 40.4), (48.8, 40.9), (50.0, 41.0), (51.2, 40.9), (52.3, 40.4), (53.3, 39.7), (54.0, 38.7), (54.4, 37.6), (54.6, 36.4)],
+    [(48.4, 39.0), (48.4, 26.1), (48.6, 25.3), (49.2, 24.7), (50.0, 24.5), (50.8, 24.7), (51.4, 25.3), (51.6, 26.1), (51.6, 39.0)],
+    [(27.9, 56.0), (27.6, 58.6), (26.6, 61.0), (25.0, 63.1), (22.9, 64.7), (20.4, 65.8), (17.8, 66.1), (15.2, 65.8), (12.7, 64.7), (10.6, 63.1), (9.0, 61.0), (8.0, 58.6), (7.7, 56.0), (8.0, 53.4), (9.0, 50.9), (10.6, 48.8), (12.7, 47.2), (15.2, 46.2), (17.8, 45.9), (20.4, 46.2), (22.9, 47.2), (25.0, 48.8), (26.6, 50.9), (27.6, 53.4), (27.9, 56.0)],
+    [(25.3, 56.0), (25.0, 57.9), (24.3, 59.7), (23.1, 61.3), (21.5, 62.5), (19.7, 63.2), (17.8, 63.5), (15.9, 63.2), (14.1, 62.5), (12.5, 61.3), (11.3, 59.7), (10.6, 57.9), (10.3, 56.0), (10.6, 54.0), (11.3, 52.2), (12.5, 50.7), (14.1, 49.5), (15.9, 48.8), (17.8, 48.5), (19.7, 48.8), (21.5, 49.5), (23.1, 50.7), (24.3, 52.2), (25.0, 54.0), (25.3, 56.0)],
+    [(21.0, 56.0), (20.9, 56.8), (20.6, 57.6), (20.1, 58.3), (19.4, 58.8), (18.6, 59.1), (17.8, 59.2), (17.0, 59.1), (16.2, 58.8), (15.5, 58.3), (15.0, 57.6), (14.7, 56.8), (14.6, 56.0), (14.7, 55.1), (15.0, 54.4), (15.5, 53.7), (16.2, 53.2), (17.0, 52.9), (17.8, 52.8), (18.6, 52.9), (19.4, 53.2), (20.1, 53.7), (20.6, 54.4), (20.9, 55.1), (21.0, 56.0)],
+    [(50.7, 56.0), (50.4, 57.8), (49.5, 59.4), (48.0, 60.6), (46.3, 61.2), (44.5, 61.2), (42.8, 60.6), (41.3, 59.4), (40.4, 57.8), (40.1, 56.0), (40.4, 54.2), (41.3, 52.6), (42.8, 51.4), (44.5, 50.8), (46.3, 50.8), (48.0, 51.4), (49.5, 52.6), (50.4, 54.2), (50.7, 56.0)],
+    [(49.1, 56.0), (48.7, 57.6), (47.7, 58.9), (46.2, 59.6), (44.6, 59.6), (43.1, 58.9), (42.1, 57.6), (41.7, 56.0), (42.1, 54.4), (43.1, 53.1), (44.6, 52.4), (46.2, 52.4), (47.7, 53.1), (48.7, 54.4), (49.1, 56.0)],
+    [(65.6, 56.0), (65.3, 57.8), (64.4, 59.4), (63.0, 60.6), (61.3, 61.2), (59.4, 61.2), (57.7, 60.6), (56.3, 59.4), (55.4, 57.8), (55.1, 56.0), (55.4, 54.2), (56.3, 52.6), (57.7, 51.4), (59.4, 50.8), (61.3, 50.8), (63.0, 51.4), (64.4, 52.6), (65.3, 54.2), (65.6, 56.0)],
+    [(64.0, 56.0), (63.7, 57.6), (62.6, 58.9), (61.2, 59.6), (59.5, 59.6), (58.1, 58.9), (57.0, 57.6), (56.7, 56.0), (57.0, 54.4), (58.1, 53.1), (59.5, 52.4), (61.2, 52.4), (62.6, 53.1), (63.7, 54.4), (64.0, 56.0)],
+    [(80.6, 56.0), (80.3, 57.8), (79.4, 59.4), (77.9, 60.6), (76.2, 61.2), (74.4, 61.2), (72.7, 60.6), (71.2, 59.4), (70.3, 57.8), (70.0, 56.0), (70.3, 54.2), (71.2, 52.6), (72.7, 51.4), (74.4, 50.8), (76.2, 50.8), (77.9, 51.4), (79.4, 52.6), (80.3, 54.2), (80.6, 56.0)],
+    [(79.0, 56.0), (78.6, 57.6), (77.6, 58.9), (76.1, 59.6), (74.5, 59.6), (73.0, 58.9), (72.0, 57.6), (71.6, 56.0), (72.0, 54.4), (73.0, 53.1), (74.5, 52.4), (76.1, 52.4), (77.6, 53.1), (78.6, 54.4), (79.0, 56.0)],
+    [(95.5, 56.0), (95.2, 57.8), (94.3, 59.4), (92.9, 60.6), (91.2, 61.2), (89.3, 61.2), (87.6, 60.6), (86.2, 59.4), (85.3, 57.8), (85.0, 56.0), (85.3, 54.2), (86.2, 52.6), (87.6, 51.4), (89.3, 50.8), (91.2, 50.8), (92.9, 51.4), (94.3, 52.6), (95.2, 54.2), (95.5, 56.0)],
+    [(93.9, 56.0), (93.6, 57.6), (92.5, 58.9), (91.1, 59.6), (89.4, 59.6), (88.0, 58.9), (86.9, 57.6), (86.6, 56.0), (86.9, 54.4), (88.0, 53.1), (89.4, 52.4), (91.1, 52.4), (92.5, 53.1), (93.6, 54.4), (93.9, 56.0)],
+]
+# the VecVox (port 2): its rounded box with a speaker, sound waves to the right
+PORT2_ICON = [
+    [(10.0, 18.0), (8.4, 18.2), (7.0, 18.8), (5.8, 19.8), (4.8, 21.0), (4.2, 22.4), (4.0, 24.0), (4.0, 76.0), (4.2, 77.6), (4.8, 79.0), (5.8, 80.2), (7.0, 81.2), (8.4, 81.8), (10.0, 82.0), (56.0, 82.0), (57.6, 81.8), (59.0, 81.2), (60.2, 80.2), (61.2, 79.0), (61.8, 77.6), (62.0, 76.0), (62.0, 24.0), (61.8, 22.4), (61.2, 21.0), (60.2, 19.8), (59.0, 18.8), (57.6, 18.2), (56.0, 18.0), (10.0, 18.0)],
+    [(46.0, 50.0), (45.6, 53.4), (44.3, 56.5), (42.2, 59.2), (39.5, 61.3), (36.4, 62.6), (33.0, 63.0), (29.6, 62.6), (26.5, 61.3), (23.8, 59.2), (21.7, 56.5), (20.4, 53.4), (20.0, 50.0), (20.4, 46.6), (21.7, 43.5), (23.8, 40.8), (26.5, 38.7), (29.6, 37.4), (33.0, 37.0), (36.4, 37.4), (39.5, 38.7), (42.2, 40.8), (44.3, 43.5), (45.6, 46.6), (46.0, 50.0)],
+    [(37.0, 50.0), (36.5, 52.0), (35.0, 53.5), (33.0, 54.0), (31.0, 53.5), (29.5, 52.0), (29.0, 50.0), (29.5, 48.0), (31.0, 46.5), (33.0, 46.0), (35.0, 46.5), (36.5, 48.0), (37.0, 50.0)],
+    [(72.5, 38.7), (73.6, 40.4), (74.4, 42.2), (75.1, 44.1), (75.6, 46.0), (75.9, 48.0), (76.0, 50.0), (75.9, 52.0), (75.6, 54.0), (75.1, 55.9), (74.4, 57.8), (73.6, 59.6), (72.5, 61.3)],
+    [(80.8, 33.1), (82.3, 35.6), (83.6, 38.3), (84.7, 41.1), (85.4, 44.0), (85.9, 47.0), (86.0, 50.0), (85.9, 53.0), (85.4, 56.0), (84.7, 58.9), (83.6, 61.7), (82.3, 64.4), (80.8, 66.9)],
+    [(89.0, 27.4), (91.1, 30.8), (92.8, 34.4), (94.2, 38.2), (95.2, 42.1), (95.8, 46.0), (96.0, 50.0), (95.8, 54.0), (95.2, 57.9), (94.2, 61.8), (92.8, 65.6), (91.1, 69.2), (89.0, 72.6)],
+]
+# the VecVoice (port 2): a head in profile, speaking
+VOICE_ICON = [
+    [(24.0, 96.0), (24.1, 95.0), (24.2, 93.8), (24.4, 92.3), (24.7, 90.7), (24.9, 88.9), (25.1, 87.0), (25.2, 85.2), (25.2, 83.3), (25.2, 81.6), (25.0, 80.0), (24.7, 78.5), (24.2, 77.1), (23.6, 75.7), (23.0, 74.4), (22.2, 73.0), (21.5, 71.6), (20.8, 70.3), (20.1, 68.9), (19.5, 67.5), (19.0, 66.0), (18.5, 64.5), (18.1, 63.0), (17.7, 61.4), (17.2, 59.8), (16.9, 58.2), (16.6, 56.6), (16.3, 55.0), (16.1, 53.4), (16.0, 51.7), (16.0, 50.0), (16.1, 48.3), (16.2, 46.5), (16.4, 44.6), (16.7, 42.8), (17.1, 40.9), (17.5, 39.0), (18.0, 37.2), (18.6, 35.4), (19.2, 33.6), (20.0, 32.0), (20.9, 30.4), (21.8, 28.8), (22.9, 27.2), (24.0, 25.7), (25.2, 24.2), (26.5, 22.8), (27.9, 21.4), (29.2, 20.2), (30.6, 19.0), (32.0, 18.0), (33.4, 17.1), (35.0, 16.3), (36.6, 15.6), (38.2, 14.9), (39.9, 14.4), (41.6, 13.9), (43.2, 13.6), (44.9, 13.3), (46.5, 13.1), (48.0, 13.0), (49.5, 13.0), (51.0, 13.1), (52.5, 13.3), (54.0, 13.6), (55.5, 14.0), (56.9, 14.5), (58.3, 15.0), (59.6, 15.6), (60.9, 16.3), (62.0, 17.0), (63.1, 17.8), (64.1, 18.7), (65.0, 19.8), (65.9, 20.8), (66.8, 22.0), (67.5, 23.2), (68.2, 24.4), (68.9, 25.6), (69.5, 26.8), (70.0, 28.0), (70.4, 29.2), (70.7, 30.3), (70.9, 31.5), (71.0, 32.7), (71.1, 33.9), (71.2, 35.2), (71.3, 36.4), (71.4, 37.6), (71.7, 38.8), (72.0, 40.0), (72.5, 41.2), (73.1, 42.5), (73.9, 43.9), (74.7, 45.2), (75.5, 46.5), (76.3, 47.8), (77.0, 49.0), (77.5, 50.1), (77.9, 51.1), (78.0, 52.0), (77.9, 52.7), (77.5, 53.3), (76.9, 53.8), (76.1, 54.1), (75.3, 54.4), (74.5, 54.7), (73.7, 55.0), (72.9, 55.3), (72.4, 55.6), (72.0, 56.0), (71.8, 56.5), (71.8, 57.0), (71.9, 57.5), (72.0, 58.0), (72.2, 58.5), (72.5, 59.0), (72.7, 59.5), (72.9, 60.0), (73.0, 60.5), (73.0, 61.0), (72.9, 61.4), (72.7, 61.8), (72.5, 62.2), (72.3, 62.6), (72.0, 62.9), (71.7, 63.3), (71.5, 63.7), (71.3, 64.1), (71.1, 64.5), (71.0, 65.0), (71.0, 65.5), (71.1, 66.1), (71.3, 66.7), (71.5, 67.3), (71.8, 67.9), (72.0, 68.6), (72.1, 69.2), (72.2, 69.8), (72.2, 70.4), (72.0, 71.0), (71.7, 71.6), (71.3, 72.1), (70.8, 72.7), (70.3, 73.3), (69.7, 73.8), (69.0, 74.3), (68.3, 74.8), (67.6, 75.3), (66.8, 75.7), (66.0, 76.0), (65.1, 76.2), (64.1, 76.2), (63.0, 76.0), (61.8, 75.8), (60.6, 75.6), (59.5, 75.5), (58.4, 75.5), (57.4, 75.7), (56.6, 76.2), (56.0, 77.0), (55.6, 78.3), (55.4, 80.0), (55.3, 82.0), (55.3, 84.2), (55.4, 86.6), (55.5, 88.9), (55.7, 91.1), (55.8, 93.1), (56.0, 94.8), (56.0, 96.0)],
+    [(58.0, 38.0), (58.6, 37.9), (59.4, 37.6), (60.3, 37.4), (61.3, 37.1), (62.2, 37.0), (63.0, 37.0), (63.7, 37.2), (64.3, 37.5), (64.8, 37.9), (65.3, 38.4), (65.7, 38.7), (66.0, 39.0)],
+    [(82.6, 59.5), (83.0, 60.2), (83.4, 60.9), (83.6, 61.6), (83.8, 62.4), (84.0, 63.2), (84.0, 64.0), (84.0, 64.8), (83.8, 65.6), (83.6, 66.4), (83.4, 67.1), (83.0, 67.8), (82.6, 68.5)],
+    [(88.4, 55.5), (89.2, 56.8), (89.8, 58.2), (90.3, 59.6), (90.7, 61.0), (90.9, 62.5), (91.0, 64.0), (90.9, 65.5), (90.7, 67.0), (90.3, 68.4), (89.8, 69.8), (89.2, 71.2), (88.4, 72.5)],
+    [(94.2, 51.6), (95.3, 53.5), (96.3, 55.4), (97.0, 57.5), (97.6, 59.6), (97.9, 61.8), (98.0, 64.0), (97.9, 66.2), (97.6, 68.4), (97.0, 70.5), (96.3, 72.6), (95.3, 74.5), (94.2, 76.4)],
+]
 CART_ICON = [[(3, 0), (97, 0), (97, 37), (100, 40), (100, 99), (99, 100), (1, 100), (0, 99), (0, 40), (3, 37), (3, 0)],
              [(6, 0), (6, 36.5)], [(94, 0), (94, 36.5)], [(3, 36.5), (97, 36.5)],
              [(50, 6), (60, 14), (55, 14), (55, 20), (45, 20), (45, 14), (40, 14), (50, 6)],
@@ -1155,7 +1376,18 @@ LOAD_ICON = [[(-2, 0), (102, 0), (102, 18), (97, 18), (97, 22), (3, 22), (3, 18)
              [(50, 52), (50, 30)], [(43, 37), (50, 30), (57, 37)]] +             [[(u, v + 60) for u, v in line] for line in CART_ICON]
 OSD_SCALE = 0.3         # the window OSD's text: 30 % of what would fill the strip (the owner)
 KNOB_SWEEP = 150.0      # degrees either side of 12 o'clock: 0 % to 100 %
-PAD_TOP = (33000.0 / 41000.0 - GLASS_AW) / 2   # black above the glass (the Vectrex's casing): as much as beside it
+# The window round the glass: the plastic case (its walls and 5 mm of its flat front, casemodel) and FRAME_M of black,
+# the same left, right and above, and below it when there is no strip; centred on the glass, so the picture sits
+# a little left of the window's middle (PIC_DX) and its top may be above the window's (PAD_TOP < 0).
+ART_AW = 846.0 / 1080.0 * ART_TUBE_K                                    # the overlay's width / picture height
+FRAME_X = casemodel.CASE_LUT[0] + casemodel.FRONT_W                      # (the case's outer edge from the glass's centre,
+FRAME_Y = casemodel.CASE_LUT[90] + casemodel.FRONT_W                     #  half picture heights: its walls and matte front)
+FRAME_M = 0.009                                                         # (the black round it: the same on every side)
+GLASS_PAD = (FRAME_X + FRAME_M - GLASS_AW) / 2
+VIEW_AW = FRAME_X + FRAME_M
+PIC_DX = -GLASS_DX / 2                                                  # (picture centre - window centre, picture heights)
+PAD_TOP = (FRAME_Y + FRAME_M) / 2 - 0.5 - GLASS_DY / 2
+PAD_BOT = (FRAME_Y + FRAME_M) / 2 - 0.5 + GLASS_DY / 2                  # (the strip starts below this)
 KNOB_STRIP = 3.7 * KNOB_R   # the strip below the picture: a little black space, the labels, the knob, black space
 
 class GLBloomRenderer(GLRenderer):
@@ -1251,7 +1483,8 @@ class GLBloomRenderer(GLRenderer):
         except OSError:
             self.BlendEq = None
         self.kprog = program(CURVE_SHADER, 'curve')
-        self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'lca', 'lsa')}
+        self.dprog = program(DITHER_SHADER, 'dither'); self.u_dtex = GetUniform(self.dprog, b'tex')
+        self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'ah', 'goff', 'glut', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'lca', 'lsa', 'cse', 'croom', 'crefl', 'cwear', 'clut', 'lc', 'smap', 'smr')}
         self.tprog = program(TONE_SHADER, 'tone')
         self.u_ttex = GetUniform(self.tprog, b'tex')
         self.aprog = program(ART_SHADER, 'overlay')
@@ -1312,6 +1545,10 @@ class GLBloomRenderer(GLRenderer):
         self.geom_k = 1.0            # its strength (Tube > Tube geometry strength: 1 = the owner's Vectrex)
         self.glass_on = True         # the glass's rounded edge (Tube > Glass edge)
         self.glass_room = True       # the glass grey in room light, without an overlay (Light > Glass catches room light)
+        self.case_on = True          # the plastic case round the glass, without an overlay (casemodel; deck: Case)
+        self.case_refl = 1.0         # (its reflections of the picture: strength)
+        self.case_wear = 1.0         # (its scratches and the overlay-rubbed band on its front: strength)
+        self.case_scr = None         # (its scratch map: texture, bounds)
         self.light_on = True         # the ceiling light reflected in the glass (Light > Light reflection on the glass)
         self.light_k = 1.0           #  its strength
         self.light_x = 0.0           # Light > Light position: left (0) .. right (1)
@@ -1417,7 +1654,8 @@ class GLBloomRenderer(GLRenderer):
         self.qw, self.qh = max(4, w // 4), max(4, h // 4)
         self.B1 = self._target(self.qw, self.qh)          # bloom ping-pong
         self.B2 = self._target(self.qw, self.qh)
-        self.R = self._target(w, h) if getattr(self, 'rot', 0) else None   # (a turned screen: drawn here first)
+        self.R = self._target(w, h) if getattr(self, 'rot', 0) or getattr(self, 'float_ok', False) else None   # (the screen drawn
+                                                           #  here first: 16-bit, turned or not - then onto the window)
         self.S = self._target(w, h)                       # (scratches: the screen before the overlay)
         self.B3 = self._target(self.qw, self.qh)          # (scratches: its light, blurred a little)
         self.Q0 = self._target(self.qw, self.qh)          # (its light at quarter size, sharp)
@@ -1430,7 +1668,7 @@ class GLBloomRenderer(GLRenderer):
         return self.R[1] if getattr(self, 'R', None) else 0
 
     def _turn_out(self):
-        """a turned screen: R onto the window, turned rot degrees clockwise"""
+        """the screen in R onto the window - turned rot degrees clockwise if it is, dithered to the window's 8 bits"""
         R = getattr(self, 'R', None)
         if not R:
             return
@@ -1440,11 +1678,17 @@ class GLBloomRenderer(GLRenderer):
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, 1, 0, 1, -1, 1)
         gl.glMatrixMode(GL_MODELVIEW)
         gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, R[0]); gl.glColor4f(1, 1, 1, 1)
-        tc = {90: lambda X, Y: (1 - Y, X), 180: lambda X, Y: (1 - X, 1 - Y), 270: lambda X, Y: (Y, 1 - X)}[self.rot]
+        tc = {0: lambda X, Y: (X, Y), 90: lambda X, Y: (1 - Y, X), 180: lambda X, Y: (1 - X, 1 - Y),
+              270: lambda X, Y: (Y, 1 - X)}[getattr(self, 'rot', 0)]
+        dp = getattr(self, 'dprog', None)
+        if dp:
+            self.UseProgram(dp); self.Uniform1i(self.u_dtex, 0)
         gl.glBegin(GL_QUADS)
         for X, Y in ((0, 0), (1, 0), (1, 1), (0, 1)):
             gl.glTexCoord2f(*tc(X, Y)); gl.glVertex2f(X, Y)
         gl.glEnd()
+        if dp:
+            self.UseProgram(0)
         gl.glDisable(GL_TEXTURE_2D)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
         gl.glViewport(0, 0, *self.size)
@@ -1478,10 +1722,10 @@ class GLBloomRenderer(GLRenderer):
         tw, th = self.art[1], self.art[2]
         k = getattr(self, 'art_scale', 1.0)
         hh = ph * k; ww = hh * tw / float(th)
-        cx = (pl + pr) / 2 + self.art_dx * ph
+        cx = (pl + pr) / 2 + (self.art_dx + GLASS_DX / 2) * ph    # (centred on the glass)
         ww *= ART_TUBE_K; hh *= ART_TUBE_K                      # (the picture on the tube is smaller: the sheet
                                                                 #  too, in its own proportions - MiSTer's art)
-        cy = (pt + pb) / 2 + (self.art_dy + (ART_PARALLAX if self.art_parallax else 0.0)) * ph * ART_TUBE_K
+        cy = (pt + pb) / 2 + GLASS_DY / 2 * ph + (self.art_dy + (ART_PARALLAX if self.art_parallax else 0.0)) * ph * ART_TUBE_K
         return cx - ww / 2, cy - hh / 2, cx + ww / 2, cy + hh / 2
 
     def _art(self):
@@ -1552,6 +1796,23 @@ class GLBloomRenderer(GLRenderer):
             gl.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F if self.float_ok else 0x8058, w, h, 0, GL_RGBA, GL_FLOAT, px)
             self.light_key = key; self.light_made_t = now
         return True
+
+    def _case_scratches(self):
+        """the case's scratch map (made once; a black pixel without numpy): (texture, bounds)"""
+        if self.case_scr is None:
+            gl = self.gl
+            m = casemodel.scratch_map(GLASS_LUT)
+            if m is None:
+                m = (1, 1, bytes(4), (-1.0, 1.0, -1.0, 1.0))
+            w, h, px, bounds = m
+            t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t))
+            gl.glBindTexture(GL_TEXTURE_2D, t.value)
+            for k, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):
+                gl.glTexParameteri(GL_TEXTURE_2D, k, v)
+            buf = ctypes.create_string_buffer(px, len(px))
+            gl.glTexImage2D(GL_TEXTURE_2D, 0, 0x8058, w, h, 0, GL_RGBA, 0x1401, buf)     # (RGBA8)
+            self.case_scr = (t.value, bounds)
+        return self.case_scr
 
     def _ov_light(self, mode, x0, y0, x1, y1, k):
         """the light on an overlay, over the sheet: mode 0 its plastic brighter around the light (multiplied),
@@ -2408,15 +2669,19 @@ class GLBloomRenderer(GLRenderer):
         self._text_row([('CARTRIDGE', (0.40, 0.667, 0.533))], cx - (9 * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)
 
     def _port2(self, c):
-        """a speech module in controller port 2: a little box with a speaker and its sound waves, its name above
-        it (VECVOX / VECVOICE) like the panel's labels"""
+        """what is in controller port 2 - the controller (seen from above), the VecVox (a box with a speaker) or
+        the VecVoice (a speaking head) - with P2 PORT above it like the panel's labels"""
         gl = self.gl
         cx, cy, r = c['cx'], c['cy'], c['r']
         gl.glColor4f(0.40, 0.667, 0.533, 1.0)
         gl.glLineWidth(max(1.2, r / 45.0))
         s = 2.0 * r / 100.0
-        P = lambda u, v: (cx + (u - 50) * s, cy + (v - 50) * s)
-        self._icon(JOY_ICON if c.get('kind') == 'off' else PORT2_ICON, P)
+        oy = cy if c.get('kind') == 'vecvox' else cy - 0.12 * r  # (the VecVox's box centred on the cartridge; the others
+                                                                #  a little higher, close under P2 PORT)
+        s *= {'vecvox': 1.35, 'vecvoice': 1.2}.get(c.get('kind'), 1.1)   # (about as large as the cartridge)
+        ox = cx + (10 * s if c.get('kind') == 'vecvox' else 0)  # (the VecVox: its box and waves a little right)
+        P = lambda u, v: (ox + (u - 50) * s, oy + (v - 50) * s)
+        self._icon({'vecvox': PORT2_ICON, 'vecvoice': VOICE_ICON}.get(c.get('kind'), JOY_ICON), P)
         lh = 0.30 * r
         t = c['label']
         self._text_row([(t, (0.40, 0.667, 0.533))], cx - (len(t) * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)
@@ -2439,23 +2704,34 @@ class GLBloomRenderer(GLRenderer):
         self._lines([(a[0], a[1], b[0], b[1]) for a, b in zip(pts, pts[1:])])
 
     def _browser(self, b):
-        """the ROM browser: a box over the picture, the ROMs (the chosen one marked), a scroll bar and the
-        plug (click: load it)"""
+        """the ROM browser over the picture, in the dark style of the windows (Config, Controls, Help): a title
+        band, the list on the strip colour, the chosen row a filled bar, filled buttons, the keys in a foot band"""
         gl = self.gl
         x0, y0, x1, y1 = b['rect']
-        g = (0.40, 0.667, 0.533); hi = (0.62, 0.95, 0.78)
-        gl.glColor4f(0.0, 0.0, 0.0, 0.88)                       # (dark behind it: the picture dims)
-        gl.glBegin(GL_QUADS)
-        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
-            gl.glVertex2f(x, y)
-        gl.glEnd()
+        H = lambda c: tuple(int(c[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
+        g, hi, dim = H('#66aa88'), H('#88ccbb'), H('#4a7a62')
+        BG_, TOP, PAN, BODY_, SEL_, EDGE_, EDGE2_ = (H(c) for c in ('#05080a', '#0a1210', '#0b1511', '#0f1c17',
+                                                                     '#24443a', '#1d3329', '#2f5544'))
+        def fill(ax0, ay0, ax1, ay1, c, a=1.0):
+            gl.glColor4f(*c, a); gl.glBegin(GL_QUADS)
+            for x, y in ((ax0, ay0), (ax1, ay0), (ax1, ay1), (ax0, ay1)):
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+        def frame(ax0, ay0, ax1, ay1, c):
+            gl.glColor4f(*c, 1.0); self._rect(ax0, ay0, ax1, ay1)
         k, rh = b['k'], b['row_h']
-        gl.glLineWidth(max(1.0, k * 0.42))
-        gl.glColor4f(*g, 1.0)
-        self._rect(x0, y0, x1, y1)
-        self._text_row([(b['title'], g)], x0 + 2 * k * 6 / 6.0 * 2, y0 + 0.6 * rh, k)
         lx0, ly0, lx1, ly1 = b['list']
-        gl.glColor4f(*g, 1.0); self._rect(lx0, ly0, lx1, ly1)
+        gl.glLineWidth(max(1.0, k * 0.30))
+        fill(x0, y0, x1, y1, BG_, 0.96)                         # (the whole box: nearly opaque)
+        fill(x0, y0, x1, ly0 - 0.35 * rh, TOP)                  # (the title band)
+        fill(x0, b['up'][1] - 0.35 * rh, x1, y1, TOP)           # (the foot band: buttons, LOAD, the keys)
+        frame(x0, y0, x1, y1, EDGE_)
+        gl.glColor4f(*EDGE_, 1.0)
+        self._lines([(x0, ly0 - 0.35 * rh, x1, ly0 - 0.35 * rh), (x0, b['up'][1] - 0.35 * rh, x1, b['up'][1] - 0.35 * rh)])
+        gl.glLineWidth(max(1.0, k * 0.42))
+        self._text_row([(b['title'], hi)], x0 + 2 * k * 6 / 6.0 * 2, y0 + 0.6 * rh, k)
+        fill(lx0, ly0, lx1, ly1, BODY_)                         # (the list)
+        frame(lx0, ly0, lx1, ly1, EDGE2_)
         names, top, sel, n = b['names'], b['top'], b['sel'], b['n_vis']
         cols = int((lx1 - lx0 - 4 * 6 * k) / (6 * k))
         if not names:
@@ -2470,11 +2746,9 @@ class GLBloomRenderer(GLRenderer):
             ind = '    ' if kind != 'rom' else ''                 # (room for the folder / back pictogram)
             t = names[j] if len(ind + names[j]) <= cols else names[j][:cols - 2 - len(ind)] + '..'
             c = hi if j == sel else g
-            if j == sel:
-                gl.glColor4f(*hi, 1.0); self._rect(lx0 + 0.5 * k, y + 0.1 * rh, lx1 - 2.5 * 6 * k, y + 0.95 * rh)
-                self._text_row([('>' , hi), (' ' + ind + t, hi)], lx0 + 1.5 * k, y + 0.3 * rh, k)
-            else:
-                self._text_row([('  ' + ind + t, g)], lx0 + 1.5 * k, y + 0.3 * rh, k)
+            if j == sel:                                        # (the chosen row: a filled bar)
+                fill(lx0 + 0.6 * k, y + 0.08 * rh, lx1 - 2.2 * 6 * k, y + 0.97 * rh, SEL_)
+            self._text_row([('  ' + ind + t, c)], lx0 + 1.5 * k, y + 0.3 * rh, k)
             if kind != 'rom':                                   # (a folder: its outline with a tab; BACK: an arrow)
                 ix, iy = lx0 + 1.5 * k + 2 * 6 * k, y + 0.3 * rh
                 P = lambda a, b_: (ix + a * k, iy + b_ * k)
@@ -2484,26 +2758,28 @@ class GLBloomRenderer(GLRenderer):
                     pts = [P(10, 3), P(0, 3), P(3, 0), P(0, 3), P(3, 6)]
                 gl.glColor4f(*c, 1.0)
                 self._lines([(a[0], a[1], b_[0], b_[1]) for a, b_ in zip(pts, pts[1:])])
-        if len(names) > n:                                      # the scroll bar
-            sx = lx1 - 1.2 * 6 * k
+        if len(names) > n:                                      # the scroll bar: a slim filled thumb
+            sx = lx1 - 1.0 * 6 * k
             ht = (ly1 - ly0) * n / float(len(names))
             st = ly0 + (ly1 - ly0 - ht) * top / float(max(1, len(names) - n))
-            gl.glColor4f(*g, 1.0); self._rect(sx, st, sx + 0.8 * 6 * k, st + ht)
-        for (bx0, by0, bx1, by1), d in ((b['up'], -1), (b['dn'], 1)):   # the scroll buttons: a box, a triangle
-            gl.glColor4f(*g, 1.0); self._rect(bx0, by0, bx1, by1)
+            fill(sx, st + 0.2 * k, sx + 0.55 * 6 * k, st + ht - 0.2 * k, EDGE2_)
+        for (bx0, by0, bx1, by1), d in ((b['up'], -1), (b['dn'], 1)):   # the scroll buttons: filled, a triangle
+            fill(bx0, by0, bx1, by1, PAN); frame(bx0, by0, bx1, by1, EDGE2_)
             mx, w3, h3 = (bx0 + bx1) / 2, (bx1 - bx0) * 0.28, (by1 - by0) * 0.22
             my = (by0 + by1) / 2
             ay, by = my + d * h3, my - d * h3                     # (the point: up or down)
+            gl.glColor4f(*g, 1.0)
             self._lines([(mx - w3, by, mx, ay), (mx, ay, mx + w3, by), (mx + w3, by, mx - w3, by)])
-        cx0, cy0, cx1, cy1 = b['close']                         # the close button: a box with an X
-        self._rect(cx0, cy0, cx1, cy1)
-        m = (cx1 - cx0) * 0.25
+        cx0, cy0, cx1, cy1 = b['close']                         # the close button: filled, an X
+        fill(cx0, cy0, cx1, cy1, PAN); frame(cx0, cy0, cx1, cy1, EDGE2_)
+        m = (cx1 - cx0) * 0.28
+        gl.glColor4f(*g, 1.0)
         self._lines([(cx0 + m, cy0 + m, cx1 - m, cy1 - m), (cx1 - m, cy0 + m, cx0 + m, cy1 - m)])
         px0, py0, px1, py1 = b['plug']
-        gl.glColor4f(*(hi if names else g), 1.0)
+        gl.glColor4f(*(hi if names else dim), 1.0)
         self._load_icon(px0, py0, px1, py1)
-        self._text_row([('LOAD', hi if names else g)], px0 - 5.5 * 6 * k, (py0 + py1) / 2 - 3 * k, k)
-        self._text_row([(b['help'], g)], x0 + 0.6 * rh, y1 - 0.85 * rh, k * 0.55)
+        self._text_row([('LOAD', hi if names else dim)], px0 - 5.5 * 6 * k, (py0 + py1) / 2 - 3 * k, k)
+        self._text_row([(b['help'], dim)], x0 + 0.6 * rh, y1 - 0.85 * rh, k * 0.55)
 
     def _knob(self, kb):
         """the volume knob and RESET button, outlines only (the picture shows through)"""
@@ -2531,18 +2807,23 @@ class GLBloomRenderer(GLRenderer):
                     gl.glVertex2f(x0 + a * k, ytop + b * k); gl.glVertex2f(x0 + c * k, ytop + d * k)
                 x0 += 6 * k
             gl.glEnd()
-        # the knob: its rim, the cap (a double edge), the position marker
-        circle(cx, cy, r); circle(cx, cy, 0.66 * r); circle(cx, cy, 0.6 * r)
+        # the knob: its rim, the cap with a ring of fine grip dots round it, a small triangle pointing at the volume
+        circle(cx, cy, r); circle(cx, cy, 0.6 * r)
+        dr = max(0.5, 0.018 * r)
+        for i in range(48):
+            x, y = at(cx, cy, 0.645 * r, i * 7.5)
+            strip([(x + dr * cos(k * pi / 3), y + dr * sin(k * pi / 3)) for k in range(6)], True)
         ang = -KNOB_SWEEP + 2.0 * KNOB_SWEEP * kb['vol']
-        a0 = at(cx, cy, 0.72 * r, ang); a1 = at(cx, cy, 0.94 * r, ang)
-        gl.glBegin(GL_LINES); gl.glVertex2f(*a0); gl.glVertex2f(*a1); gl.glEnd()
+        tip = at(cx, cy, 0.93 * r, ang)
+        bx, by = at(cx, cy, 0.76 * r, ang); px, py = at(0.0, 0.0, 0.08 * r, ang + 90.0)
+        strip([tip, (bx + px, by + py), (bx - px, by - py)], True)
         lh = 0.30 * r                                           # (label height)
         text('OFF/ON', cx, cy - 1.5 * r - lh, lh)
         # the volume wedge: a curved bar right of the knob, thin at the top, wide at the bottom
         inner = [at(cx, cy, 1.25 * r, 50 + i * 4.0) for i in range(21)]
         outer = [at(cx, cy, 1.25 * r + (0.03 + 0.17 * i / 20.0) * r, 50 + i * 4.0) for i in range(21)]
         strip(inner + outer[::-1], True)
-        text('VOLUME', cx + 1.6 * r + (6 * 6 - 2) * lh / 12.0, cy - lh / 2.0, lh)
+        text('VOL', cx + 1.6 * r + (3 * 6 - 2) * lh / 12.0, cy - lh / 2.0, lh)
         # the RESET button: its ring and the dome (pressed: smaller)
         circle(rx, cy, 0.95 * r)
         circle(rx, cy, (0.68 if kb.get('pressed') else 0.78) * r)
@@ -2590,13 +2871,16 @@ class GLBloomRenderer(GLRenderer):
             ph = ALG_MAX_Y * self.map[0]                    # (the picture's height, window px)
             self.UseProgram(self.kprog); self.Uniform1i(self.u_k['tex'], 0)
             self.Uniform2f(self.u_k['norm'], w / (0.5 * ph), h / (0.5 * ph))
-            self.Uniform2f(self.u_k['ctr'], 0.5, 1.0 - (self.map[2] * self.map[0] + 0.5 * ph) / h)
+            self.Uniform2f(self.u_k['ctr'], (self.map[1] * self.map[0] + 0.5 * ALG_MAX_X * self.map[0]) / w,
+                           1.0 - (self.map[2] * self.map[0] + 0.5 * ph) / h)
             kx, ky = tube_coeffs(0.0)                           # (the lines are bent before they are drawn,
             self.Uniform1fv(self.u_k['cx'], 10, (ctypes.c_float * 10)(*kx))     #  _tube_lines: here the
             self.Uniform1fv(self.u_k['cy'], 10, (ctypes.c_float * 10)(*ky))     #  glass only)
             self.Uniform1f(self.u_k['pull'], 0.0)
             self.Uniform1f(self.u_k['glass'], 1.0 if getattr(self, 'glass_on', True) else 0.0)
             self.Uniform1f(self.u_k['aw'], GLASS_AW); self.Uniform1f(self.u_k['gn'], GLASS_N)
+            self.Uniform1f(self.u_k['ah'], GLASS_AH); self.Uniform2f(self.u_k['goff'], GLASS_DX, GLASS_DY)
+            self.Uniform1fv(self.u_k['glut'], 91, (ctypes.c_float * 91)(*GLASS_LUT))
             self.Uniform1f(self.u_k['edge'], GLASS_EDGE)
             art_shown = bool(getattr(self, 'art', None) and getattr(self, 'art_on', False))
             catch = getattr(self, 'glass_room', True) and not art_shown
@@ -2613,8 +2897,22 @@ class GLBloomRenderer(GLRenderer):
                 self.Uniform1f(self.u_k['lca'], math.cos(roomlight.ANG)); self.Uniform1f(self.u_k['lsa'], math.sin(roomlight.ANG))
                 self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, self.light_tex); self.Uniform1i(self.u_k['lmap'], 1)
                 self.ActiveTexture(0x84C0)
+            case = getattr(self, 'case_on', True) and not art_shown and getattr(self, 'glass_on', True)
+            self.Uniform1f(self.u_k['cse'], 1.0 if case else 0.0)
+            if case:
+                self.Uniform1f(self.u_k['croom'], LL if getattr(self, 'glass_room', True) else 0.0)
+                self.Uniform1f(self.u_k['crefl'], getattr(self, 'case_refl', 1.0))
+                self.Uniform1f(self.u_k['cwear'], getattr(self, 'case_wear', 1.0))
+                self.Uniform1fv(self.u_k['clut'], 91, (ctypes.c_float * 91)(*casemodel.CASE_LUT))
+                (lx, ly), _ = roomlight.place(self.light_x, self.light_y)
+                self.Uniform3f(self.u_k['lc'], *casemodel.light_pos(lx, ly))
+                st, sb = self._case_scratches()
+                self.ActiveTexture(0x84C2); gl.glBindTexture(GL_TEXTURE_2D, st); self.Uniform1i(self.u_k['smap'], 2)
+                self.ActiveTexture(0x84C0)
+                self.Uniform4f(self.u_k['smr'], *sb)
             self._quad(self.E[0])
             self.UseProgram(0)
+            self.ActiveTexture(0x84C2); gl.glBindTexture(GL_TEXTURE_2D, 0)
             self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, 0); self.ActiveTexture(0x84C0)
         self._art()                                             # (flat: after the bend)
         self._hud()

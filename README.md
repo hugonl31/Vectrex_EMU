@@ -122,26 +122,37 @@ a shorter afterglow and without the scratches.
 (click a picture for the full resolution).</em>
 </p>
 
-Below the picture sits the Vectrex's own control panel, drawn in green outlines: the **on-screen display**
-(the game's frame rate, the monitor's, the emulation speed, the volume), a **cartridge** you click to
-open the **ROM browser**, the **RESET** button and the **volume knob**, which - as on the Vectrex - is
-also the power switch.
+Without an overlay, the Vectrex's black plastic **case** frames the tube: its glossy walls mirror the
+picture, softly and a little warped as moulded plastic does, with fine scratches and the matte front round
+them.
 
 <p align="center">
-<img src="docs/images/panel.png" width="820" alt="the on-screen panel"><br>
-<em>The panel below the picture: on-screen display, cartridge, RESET and the volume knob.</em>
+<a href="docs/images/v1.0.3/main.png"><img src="docs/images/v1.0.3/main_small.jpg" width="440" alt="Scramble in Vectrex_EMU: the tube in the Vectrex's plastic case, the dark menu bar above and the control deck below"></a><br>
+<em>Scramble in the window: the dark menu bar, the tube in its case, and the control deck below.</em>
+</p>
+
+Below the picture sits the **control deck**, the Vectrex's own controls drawn in green outlines: the
+**on-screen display** (the game's frame rate, the monitor's, the emulation speed, the volume), **P2 PORT**
+(click it: joystick, VecVox or VecVoice), a **cartridge** you click to open the **ROM browser**, the
+**RESET** button and the **volume knob**, which - as on the Vectrex - is also the power switch. View >
+Control deck switches it all off for a smaller window.
+
+<p align="center">
+<img src="docs/images/v1.0.3/panel.png" width="820" alt="the control deck below the picture"><br>
+<em>The control deck: on-screen display, P2 PORT, cartridge, RESET and the volume knob.</em>
 </p>
 
 <p align="center">
-<img src="docs/images/browser.png" width="400" alt="the ROM browser"><br>
-<em>Click the cartridge: the ROM browser, drawn into the picture (it works in full screen too).</em>
+<a href="docs/images/v1.0.3/browser.png"><img src="docs/images/v1.0.3/browser_small.jpg" width="400" alt="the ROM browser"></a><br>
+<em>Click the cartridge: the ROM browser, drawn into the picture (it works in full screen too) - it opens
+in the folder you left it in.</em>
 </p>
 
 Every look and sound setting is in one place, the **Config window** (Tab), over the running game: change a
 slider and see it at once, hold H to compare with how it was.
 
 <p align="center">
-<a href="docs/images/v1.0.2/deck.png"><img src="docs/images/v1.0.2/deck_small.jpg" width="520" alt="the Config window over Armor Attack"></a><br>
+<a href="docs/images/v1.0.3/deck.png"><img src="docs/images/v1.0.3/deck_small.jpg" width="520" alt="the Config window over Armor Attack"></a><br>
 <em>The Config window (Tab) over Armor Attack: quality, this game's own settings, and eight strips.</em>
 </p>
 
@@ -558,7 +569,7 @@ strip, then the setting.
 ### The first start: the setup
 
 <p align="center">
-<a href="docs/images/v1.0.2/setup.png"><img src="docs/images/v1.0.2/setup.png" width="520" alt="the setup at the first start"></a><br>
+<a href="docs/images/v1.0.3/setup.png"><img src="docs/images/v1.0.3/setup.png" width="520" alt="the setup at the first start"></a><br>
 <em>The setup, shown once (Vectrex > Setup wizard... runs it again).</em>
 </p>
 
@@ -593,8 +604,8 @@ letter one of them. **View > Control deck** switches the whole strip below the p
 the cartridge, RESET and the volume knob - on or off at once: the window gets smaller by it.
 
 <p align="center">
-<img src="docs/images/v1.0.2/menus.png" width="820" alt="the Vectrex, View and Help menus"><br>
-<em>The three menus: Vectrex, View and Help.</em>
+<a href="docs/images/v1.0.3/menus.png"><img src="docs/images/v1.0.3/menus.png" width="900" alt="the Vectrex, View and Controls menus"></a><br>
+<em>Vectrex (with Recent games), View (with the Quality choices) and Controls (an item's explanation on hover).</em>
 </p>
 
 Everything that sets the look and the sound is in the **Config window**: **Tab** (or **Config** on the menu bar)
@@ -605,20 +616,21 @@ opens it over the picture while the game runs on; Tab or Esc closes it. On top, 
 |---|---|
 | **Tube** | phosphor, bloom, afterglow, the tube's geometry, the glass edge, corner glow, an even (ideal) beam, the mains wobble, brightness bending |
 | **Room light** | the room's light, the ceiling light's reflections on the glass and the overlay, the lamp's position |
+| **Case** | the plastic case round the tube (without an overlay): on / off, its reflections, its wear |
 | **Overlay** | on / off, choosing one per game, tint, printed art, parallax, the plastic glow, the scratches, position and size |
 | **Sound** | the volume, the buzz, the speaker, the speech module's volume and speaker |
 | **Vectrex unit** | the analog parts that differ per Vectrex: zero hold, calibration, drift, Y settling, beam delay, line gaps - presets *Owner's Vectrex* (the measured one), *Ideal*, *Cranky* and *Random unit*; Export / Import a unit as a file |
-| **Display** | the screen mode, smooth motion, rotation, the on-screen display, knob and cartridge, the monitor size, real size |
+| **Display** | the screen mode, smooth motion, rotation, the on-screen display, knob and cartridge, the monitor size, Authentic size |
 | **Cartridge** | cartridge hardware, controller port 2 (speech modules), UVMC2 games, their USB port, headphone jack and SD card folder |
 
 <p align="center">
-<a href="docs/images/v1.0.2/strip_tube.png"><img src="docs/images/v1.0.2/strip_tube.png" width="400" alt="the Tube strip"></a>
-<a href="docs/images/v1.0.2/strip_unit.png"><img src="docs/images/v1.0.2/strip_unit.png" width="400" alt="the Vectrex unit strip"></a><br>
-<a href="docs/images/v1.0.2/strip_display.png"><img src="docs/images/v1.0.2/strip_display.png" width="400" alt="the Display strip"></a>
-<a href="docs/images/v1.0.2/strip_cartridge.png"><img src="docs/images/v1.0.2/strip_cartridge.png" width="400" alt="the Cartridge strip"></a><br>
+<a href="docs/images/v1.0.3/strip_tube.png"><img src="docs/images/v1.0.3/strip_tube.png" width="400" alt="the Tube strip"></a>
+<a href="docs/images/v1.0.3/strip_unit.png"><img src="docs/images/v1.0.3/strip_unit.png" width="400" alt="the Vectrex unit strip"></a><br>
+<a href="docs/images/v1.0.3/strip_display.png"><img src="docs/images/v1.0.3/strip_display.png" width="400" alt="the Display strip"></a>
+<a href="docs/images/v1.0.3/strip_cartridge.png"><img src="docs/images/v1.0.3/strip_cartridge.png" width="400" alt="the Cartridge strip"></a><br>
 <em>Four of the strips: Tube, Vectrex unit, Display and Cartridge (click for the full size; also
-<a href="docs/images/v1.0.2/strip_light.png">Room light</a>, <a href="docs/images/v1.0.2/strip_overlay.png">Overlay</a>
-and <a href="docs/images/v1.0.2/strip_sound.png">Sound</a>).</em>
+<a href="docs/images/v1.0.3/strip_light.png">Room light</a>, <a href="docs/images/v1.0.3/strip_case.png">Case</a>,
+<a href="docs/images/v1.0.3/strip_overlay.png">Overlay</a> and <a href="docs/images/v1.0.3/strip_sound.png">Sound</a>).</em>
 </p>
 
 * **Sliders**: drag or click; **right click: the default**. The defaults are the faithful values - measured

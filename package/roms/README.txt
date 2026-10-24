@@ -8,6 +8,6 @@ plug and play. "UVMC2 Demo.um2" is a small demo that shows it working: a rotatin
 cartridge's RP2350 chip. Some UVMC2 games read data from the cartridge's SD card: that is the folder uvmc2
 next to the program (see the README in it).
 "UVMC2 Movie Player.um2" plays Vectrex vector movies (the PiTrex / VecFever ones, such as Bad Apple) from the SD
-card folder movies (uvmc2/movies here) - the movies themselves are not included.
-Get them from Malban's free PiTrex SD card download (vide.malban.de): copy its vectrex/movies folder into
+card folder movies (uvmc2/movies here). Bad Apple is included (by Malban, with his permission); more movies
+are in Malban's free PiTrex SD card download (vide.malban.de): copy its vectrex/movies folder into
 uvmc2/movies.

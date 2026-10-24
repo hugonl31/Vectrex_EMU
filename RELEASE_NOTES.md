@@ -43,6 +43,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
   what goes in it. An older folder layout is moved over by itself at the first start.
 - A new icon: a little Vectrex.
 
+**Bad Apple included**
+- The Bad Apple vector movie comes with the emulator, in `uvmc2/movies`: load "UVMC2 Movie Player.um2" and it
+  plays. By Malban (from his PiTrex SD card), bundled with his kind permission.
+
 **Help**
 - The help pages follow the new menus: Menu: Vectrex, Menu: View and Menu: Controls, then the Config window's
   strips.

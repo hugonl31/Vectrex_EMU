@@ -958,14 +958,14 @@ first level (the WAD read from the SD card folder).</em>
   line, by the chip itself. Source: [`testcart/uvmc2_demo`](testcart/uvmc2_demo) - a small, readable
   starting point for writing your own UVMC2 programs in plain C.
 * **UVMC2 Movie Player** - plays the Vectrex vector movies made for the PiTrex / VecFever (Bad Apple, La
-  Linea, ...) from the SD card's `movies` folder, one after another; button 4 skips to the next. The movies
-  are not included - they belong to their makers. With a `.pcm` sound file next to a movie (raw 16-bit mono,
+  Linea, ...) from the SD card's `movies` folder, one after another; button 4 skips to the next. **Bad Apple
+  is included** (`uvmc2/movies/BadApple.bin`, by Malban, bundled with his kind permission). With a `.pcm` sound file next to a movie (raw 16-bit mono,
   44100 Hz) it plays that high-quality sound through the Vectrex's own speaker (button 3: through the UVMC2's
   headphone jack instead); without one, the movie's own 8-bit sound. Source and the `ffmpeg` line to make a
   `.pcm`: [`testcart/uvmc2_movies`](testcart/uvmc2_movies).
   **Where to get movies:** Malban's free PiTrex SD card download ([vide.malban.de](http://vide.malban.de))
   has four of them: Bad Apple, Bad Apple DE, BlaBla and La Linea. Copy its `vectrex/movies` folder into
-  `uvmc2/movies`. For Bad Apple's high-quality sound, make a `BadApple.pcm` from the video with that `ffmpeg` line.
+  `uvmc2/movies` for the other three. For Bad Apple's high-quality sound, make a `BadApple.pcm` from the video with that `ffmpeg` line.
 
 **The SD card is a folder.** A real UVMC2 reads its games' extra files from a microSD card; here that card
 is the folder **`uvmc2` next to the program** (made at the first start, with a note in it). Put files in it as
@@ -975,7 +975,7 @@ you would on the card:
 |---|---|---|
 | Doom | a DOOM WAD file: `DOOM.WAD`, `DOOM2.WAD`, or `DOOM1.WAD` (the free shareware episode) | `uvmc2/doom` |
 | Quake | `pak0.pak` (the free shareware one will do), and `pak1.pak` for the full game | `uvmc2/quake` |
-| UVMC2 Movie Player | the movies (`.bin`: from Malban's PiTrex SD card download, see above), and optionally their `.pcm` sound | `uvmc2/movies` |
+| UVMC2 Movie Player | the movies (`.bin`: Bad Apple is included, the others from Malban's PiTrex SD card download, see above), and optionally their `.pcm` sound | `uvmc2/movies` |
 
 A game that needs such a file and does not find it **says so when it starts**: which file, and the exact
 folder - and offers to open that folder. **Cartridge > Open the SD folder** opens it any time, **Choose SD
@@ -1054,7 +1054,8 @@ license of the vecx emulator it is built on.
 * **The MiSTer Vectrex core** (Dar, Sorgelig, alanswx, Videodr0me) - the DAC sound mix, the power-on seed,
   the VecVoice link and the speech level (Sorgelig's audio compressor table) follow it; its `.art`
   overlay format and overlays; Mine Storm's overlay (Libretro artwork, see [Overlays](#overlays)).
-* **Malban** - the analog delays measured for VIDE, and Vectorblade's cartridge.
+* **Malban** - the analog delays measured for VIDE, Vectorblade's cartridge, and the Bad Apple vector movie
+  (`uvmc2/movies/BadApple.bin`, from his PiTrex SD card), bundled with his permission.
 * **The SP0256-AL2 ROM** is (c) Microchip Technology Inc., distributed by Joe Zbiciak with Microchip's
   permission; it is not part of this project.
 * **The Vectrex BIOS**: Smith Engineering allows it to be copied freely for non-commercial use.

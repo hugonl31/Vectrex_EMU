@@ -56,12 +56,49 @@ enum { A0 = RDI, A1 = RSI, A2 = RDX, A3 = RCX };
 #define OR(n) ((int32_t) (offsetof (arm11_t, r) + 4 * (n)))
 static void rex (int w, int r, int b) { int v = 0x40 | (w << 3) | ((r >> 3) << 2) | (b >> 3); if (v != 0x40) b1 (v); }
 static void modm (int r, int32_t off) { b1 (0x80 | ((r & 7) << 3) | 3); d4 ((uint32_t) off); }      /* [rbx + off] */
-static void ld (int r, int32_t off) { rex (0, r, 0); b1 (0x8B); modm (r, off); }                    /* mov r32, [rbx+off] */
-static void st (int32_t off, int r) { rex (0, r, 0); b1 (0x89); modm (r, off); }                    /* mov [rbx+off], r32 */
-static void sti (int32_t off, uint32_t v) { b1 (0xC7); modm (0, off); d4 (v); }                     /* mov dword [rbx+off], imm */
+static void ld_raw (int r, int32_t off) { rex (0, r, 0); b1 (0x8B); modm (r, off); }                /* mov r32, [rbx+off] */
+static void st_raw (int32_t off, int r) { rex (0, r, 0); b1 (0x89); modm (r, off); }                /* mov [rbx+off], r32 */
+/* the register cache: while a block is translated, up to six of its ARM registers live in x86 registers
+ * (r8-r11, rsi, rdi), loaded at its start; changed ones are written back where it leaves, and all of them are
+ * written back before and loaded again after a call (the calls are rare: peripherals, the spin check) */
+static int8_t jreg[16]; static uint16_t jdirty, jcached; static int jcache_on;
+static int jhost (int32_t off)
+{
+	if (!jcache_on) return -1;
+	int32_t d = off - (int32_t) offsetof (arm11_t, r);
+	if (d < 0 || d >= 60 || (d & 3)) return -1;
+	return jreg[d >> 2];
+}
+static void rr (int op, int dst, int src);
+static void ld (int r, int32_t off) { int h = jhost (off); if (h >= 0) { if (h != r) rr (0x89, r, h); return; } ld_raw (r, off); }
+static void st (int32_t off, int r)
+{
+	int h = jhost (off);
+	if (h >= 0) { if (h != r) rr (0x89, h, r); jdirty |= (uint16_t) (1u << ((off - (int32_t) offsetof (arm11_t, r)) >> 2)); return; }
+	st_raw (off, r);
+}
+static void sti (int32_t off, uint32_t v)                                                               /* mov dword [rbx+off], imm */
+{
+	int h = jhost (off);
+	if (h >= 0) { rex (0, 0, h); b1 (0xB8 + (h & 7)); d4 (v); jdirty |= (uint16_t) (1u << ((off - (int32_t) offsetof (arm11_t, r)) >> 2)); return; }   /* (mov, not xor: the flags stay) */
+	b1 (0xC7); modm (0, off); d4 (v);
+}
 static void movi (int r, uint32_t v) { if (!v) { rex (0, r, r); b1 (0x31); b1 (0xC0 | ((r & 7) << 3) | (r & 7)); return; } rex (0, 0, r); b1 (0xB8 + (r & 7)); d4 (v); }
 static void rr (int op, int dst, int src) { rex (0, src, dst); b1 (op); b1 (0xC0 | ((src & 7) << 3) | (dst & 7)); }   /* op r/m32(dst), r32(src) */
-static void rm_ (int op, int r, int32_t off) { rex (0, r, 0); b1 (op); modm (r, off); }             /* op r32, [rbx+off] (03 add, 0B or, 23 and, 33 xor, 3B cmp, 2B sub, 13 adc, 1B sbb) */
+static void rm_ (int op, int r, int32_t off)                                                           /* op r32, [rbx+off] (03 add, 0B or, 23 and, 33 xor, 3B cmp, 2B sub, 13 adc, 1B sbb) */
+{
+	int h = jhost (off);
+	if (h >= 0) { rex (0, r, h); b1 (op); b1 (0xC0 | ((r & 7) << 3) | (h & 7)); return; }
+	rex (0, r, 0); b1 (op); modm (r, off);
+}
+static void imul_m (int r, int32_t off)                                                                 /* imul r32, [rbx+off] */
+{
+	int h = jhost (off);
+	rex (0, r, h >= 0 ? h : 0); b1 (0x0F); b1 (0xAF);
+	if (h >= 0) b1 (0xC0 | ((r & 7) << 3) | (h & 7)); else modm (r, off);
+}
+static void j_wb (uint16_t m) { for (int n = 0; n < 15; n++) if (((m >> n) & 1) && jreg[n] >= 0) st_raw ((int32_t) (offsetof (arm11_t, r) + 4 * n), jreg[n]); }
+static void j_reload (void) { for (int n = 0; n < 15; n++) if (jreg[n] >= 0) ld_raw (jreg[n], (int32_t) (offsetof (arm11_t, r) + 4 * n)); }
 static void ri (int ext, int dst, uint32_t imm)                                                        /* add0 or1 adc2 sbb3 and4 sub5 xor6 cmp7 */
 {
 	rex (0, 0, dst);
@@ -144,6 +181,7 @@ static int jit_setup (arm11_t *c)
 	jpage_n = c->sys->ram_size >> 12; jpage = (uint8_t *) calloc (jpage_n ? jpage_n : 1, 1);
 	if (!jcode || !jt || !jpage) { fprintf (stderr, "PITREX: no JIT (no executable memory)\n"); jit_state = -1; return 0; }
 	jcode_end = jcode + JCODE_SIZE;
+	memset (jreg, -1, sizeof jreg);
 	E = jcode;
 	/* enter (c, code): save the registers the code uses, rbx = c, r12 = RAM, r14 = the page map, r15 = the blocks */
 	j_enter = E;
@@ -328,6 +366,7 @@ static uint8_t *j_cond_skip (unsigned cond)
 /* go on at a known address: the cycle adjustment, the time check, then a jump - patched to the block's code */
 static void j_link (uint32_t target, int32_t adj)
 {
+	j_wb (jdirty);
 	sti (OR (15), target);
 	addm64 (OF (cycles), adj);
 	b1 (0x48); b1 (0x8B); modm (RAX, OF (cycles));                       /* mov rax, [cycles] */
@@ -345,6 +384,7 @@ static void j_link (uint32_t target, int32_t adj)
 /* leave the block: r15 = pc (already stored when pc == ~0), give back the cycles of the instructions not run */
 static void j_leave (uint32_t pc, unsigned back, int via_dispatch)
 {
+	j_wb (jcached);
 	if (pc != 0xffffffffu) sti (OR (15), pc);
 	addm64 (OF (cycles), -(int32_t) back);
 	jmp_to (via_dispatch ? j_dispatch : j_exit);
@@ -399,8 +439,10 @@ static void j_colds (void)
 		cold_t *k = &colds[i];
 		for (int j = 0; j < k->nj; j++) here (k->j[j]);
 		addm64 (OF (cycles), -(int32_t) k->delta);
+		j_wb (jcached);
 		if (k->store) { movi (RDX, (uint32_t) k->n); call3 ((void *) jh_wr, 4); }
 		else { movi (RAX, (uint32_t) k->n); call3 (k->sx ? (void *) jh_rds : (void *) jh_rd, 3); }
+		j_reload ();
 		addm64 (OF (cycles), (int32_t) k->delta);
 		jmp_to (k->ret);
 	}
@@ -447,6 +489,7 @@ static void j_nz (void) { rr (0x85, RAX, RAX); setm (CC_S, OF (n)); setm (CC_Z, 
 /* a branch to a value in eax (BX, LDR pc, LDM pc, MOV pc): through the interpreter's bx_to for bit 0 */
 static void j_branch_reg (uint32_t ip, unsigned back, int bx)
 {
+	j_wb (jdirty);
 	if (bx) {
 		btr_ (RAX, 0); uint8_t *thumb = jcc (CC_C);
 		ri (4, RAX, ~3u); st (OR (15), RAX);
@@ -541,7 +584,7 @@ static void j_emit (jins_t *I, unsigned uncond_back)
 	}
 	case K_MUL: {
 		unsigned mop = (ins >> 21) & 7, S = (ins >> 20) & 1;
-		ld (RAX, OR (rm)); b1 (0x0F); b1 (0xAF); modm (RAX, OR (rs));   /* imul eax, [rbx+rs] */
+		ld (RAX, OR (rm)); imul_m (RAX, OR (rs));                        /* imul eax, rs */
 		if (mop) rm_ (0x03, RAX, OR (rd));
 		st (OR (rn), RAX);
 		if (S) j_nz ();
@@ -738,6 +781,7 @@ static void j_emit (jins_t *I, unsigned uncond_back)
 		if (ins & 0x01000000u) sti (OR (14), ip + 4);
 		int32_t adj = (cond != 14 ? 2 : 0) - (int32_t) after;
 		if (t < ip && ip - t <= 64) {
+			j_wb (jdirty);
 			sti (OR (15), t); addm64 (OF (cycles), adj); adj = 0;
 			mov64 (A0, RBX); call ((void *) jh_loop);
 			rr (0x85, RAX, RAX); uint8_t *go = jcc (CC_Z);
@@ -757,7 +801,9 @@ static void j_emit (jins_t *I, unsigned uncond_back)
 	case K_MRC: {
 		unsigned rt = (ins >> 12) & 15;
 		addm64 (OF (cycles), -(int32_t) dl);
+		j_wb (jcached);
 		movi (RCX, ins); call3 ((void *) jh_mrc, 2);
+		j_reload ();
 		addm64 (OF (cycles), (int32_t) dl);
 		st (OR (rt), RAX);
 		break;
@@ -799,6 +845,27 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 #ifdef JIT_COUNT
 	b1 (0x48); b1 (0xB8); q8 ((uint64_t) (uintptr_t) &jit_c_run); b1 (0x48); b1 (0xFF); b1 (0x00);   /* (inc qword [jit_c_run]) */
 #endif
+	{	/* the registers it uses most (twice or more) into x86 registers */
+		unsigned uses[16] = { 0 };
+		for (int i = 0; i < n; i++) {
+			uint32_t ins = L[i].ins;
+			uses[(ins >> 16) & 15]++; uses[(ins >> 12) & 15]++; uses[ins & 15]++;
+			if (L[i].kind == K_DP || L[i].kind == K_MUL || L[i].kind == K_MULL) uses[(ins >> 8) & 15]++;
+			if (L[i].kind == K_LDM) for (int k = 0; k < 15; k++) if ((ins >> k) & 1) uses[k]++;
+			if (L[i].kind == K_B && (ins & 0x01000000u)) uses[14]++;
+		}
+		static const int8_t hosts[6] = { R8, R9, R10, R11, RSI, RDI };
+		memset (jreg, -1, sizeof jreg); jdirty = jcached = 0;
+		for (int k = 0; k < 6; k++) {
+			int best = -1; unsigned bu = 1;
+			for (int r = 0; r < 15; r++) if (jreg[r] < 0 && uses[r] > bu) { bu = uses[r]; best = r; }
+			if (best < 0) break;
+			jreg[best] = hosts[k]; jcached |= (uint16_t) (1u << best);
+		}
+		jcache_on = getenv ("VT_JITNOREG") == NULL;
+		if (!jcache_on) { memset (jreg, -1, sizeof jreg); jcached = 0; }
+		j_reload ();
+	}
 	ncold = 0; nicold = 0;
 	for (int i = 0; i < n; i++) {
 		int mem = L[i].kind == K_LS || L[i].kind == K_LSX || L[i].kind == K_LDM || L[i].kind == K_MRC;
@@ -811,6 +878,7 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	/* fell through the end (or a conditional last instruction not taken) */
 	{ jins_t *l = &L[n - 1]; j_link (l->ip + 4, 0); }
 	j_colds (); j_icolds ();
+	jcache_on = 0; memset (jreg, -1, sizeof jreg); jcached = jdirty = 0;
 	jfree = E;
 	e->code = code; e->cost = maxc;
 	jit_n_blocks++;

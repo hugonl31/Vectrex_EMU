@@ -341,7 +341,7 @@ static einline void alg_update (void)
 		if ((via_orb & 0x01) == 0x00) {
 			/* demultiplexor is on: the DAC drives the sound line (held when the mux moves on) */
 			psg_dac_set ((int) alg_xsh - 128);
-			{ static long n; if (getenv ("VT_DACLOG") && !(++n & 1023)) fprintf (stderr, "dac %ld pc=%04X\n", n, e6809_get_pc () & 0xffff); }
+			{ static long n; static int dl = -1; if (dl < 0) dl = getenv ("VT_DACLOG") != NULL; if (dl && !(++n & 1023)) fprintf (stderr, "dac %ld pc=%04X\n", n, e6809_get_pc () & 0xffff); }
 		}
 
 		break;

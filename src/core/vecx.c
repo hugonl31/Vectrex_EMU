@@ -188,6 +188,13 @@ static int beam_fade = -1, fade_left;   /* VT_BEAMFADE: the beam's faint fade-ou
  * lines of intensity 0 with bit 7 set - the renderer draws them, and turns every line's brightness with the knob */
 static double vt_bright = -1;
 static double vt_lag;                   /* (the deflection's lag: see below) */
+/* the integrators' input speed, smoothed (VT_VLAG = tau in cycles; vt_set_analog 10): the DAC's X (and the Y hold's)
+ * voltage reaches the integrator switch through a low-pass, so a speed change while the integrators run turns a
+ * corner in a curve, while RAMP still starts and stops them at once (the owner's Vectrex, 2026-10-25: testcart/
+ * lag_test - lines stop abruptly; testcart/corner_test - corners round off below ~16 cycles of rest) */
+static double vt_vlag = -1, vlag_x, vlag_y, vlag_x1, vlag_y1; static int vlag_init, vlag_n;   /* (VT_VLAGN = 2: two stages) */
+#define VLAG_TAU 0.0
+#define VLAG_N 1
 static int dark_on, dark_adding; static long dark_x0, dark_y0, dark_x1, dark_y1, dark_dx, dark_dy;
 static double dark_cyc; static unsigned long long dark_t0;
 
@@ -221,6 +228,7 @@ void vt_set_analog (int id, double v)
 	case 7: alg_zofs = v; break;
 	case 8: vt_bright = v < -1 ? -1 : v > 1 ? 1 : v; break;
 	case 9: vt_lag = v < 0 ? 0 : v > 50 ? 50 : v; break;
+	case 10: vt_vlag = v < 0 ? 0 : v > 50 ? 50 : v; break;
 	}
 }
 static unsigned alg_zsh;  /* z sample and hold */
@@ -1241,6 +1249,19 @@ static einline void alg_sstep (void)
 		zero_now = dly_z[(dly_p - 1 - dly_nz) & 63];
 		adx = (long) xd * ZS - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 		ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) yd * ZS + alg_yofs;
+	}
+	if (vt_vlag < 0) { const char *z = getenv ("VT_VLAG"); vt_vlag = z ? atof (z) : VLAG_TAU; z = getenv ("VT_VLAGN"); vlag_n = z ? atoi (z) : VLAG_N; }
+	if (vt_vlag > 0.05) {                               /* the speed, smoothed (see vt_vlag) */
+		if (!vlag_init) { vlag_init = 1; vlag_x = vlag_x1 = adx; vlag_y = vlag_y1 = ady; }
+		if (vlag_n == 2) {                              /* (two stages of tau / 2) */
+			double k = 1.0 - exp (-2.0 / vt_vlag);
+			vlag_x1 += (adx - vlag_x1) * k; vlag_y1 += (ady - vlag_y1) * k;
+			vlag_x += (vlag_x1 - vlag_x) * k; vlag_y += (vlag_y1 - vlag_y) * k;
+		} else {
+			double k = 1.0 - exp (-1.0 / vt_vlag);
+			vlag_x += (adx - vlag_x) * k; vlag_y += (ady - vlag_y) * k;
+		}
+		adx = (long) (vlag_x + (vlag_x >= 0 ? 0.5 : -0.5)); ady = (long) (vlag_y + (vlag_y >= 0 ? 0.5 : -0.5));
 	}
 	if (via_acr & 0x80) {
 		sig_ramp = via_t1pb7;

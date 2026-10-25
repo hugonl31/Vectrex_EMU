@@ -98,11 +98,14 @@ static void ram_st (int n) { if (n == 2) b1 (0x66); b1 (0x41); b1 (n == 1 ? 0x88
 static uint32_t jh_rd (arm11_t *c, uint32_t a, uint32_t n) { jit_c_slow++; return mrd (c, a, (int) n); }
 static uint32_t jh_rds (arm11_t *c, uint32_t a, uint32_t n)       /* (signed byte / halfword) */
 { uint32_t v = mrd (c, a, (int) n); return n == 1 ? (uint32_t) (int32_t) (int8_t) v : (uint32_t) (int32_t) (int16_t) v; }
-static void jit_inval_page (uint32_t pg);
+static void jit_flush (void);
 static void jh_wr (arm11_t *c, uint32_t a, uint32_t v, uint32_t n)
 {
 	jit_c_slow++; mwr (c, a, v, (int) n);
-	if (a < jpage_n * 4096u) { uint32_t p0 = a >> 12, p1 = (a + n - 1) >> 12; if (jpage[p0]) jit_inval_page (p0); if (p1 != p0 && p1 < jpage_n && jpage[p1]) jit_inval_page (p1); }
+	if (a < jpage_n * 4096u) {
+		uint32_t p0 = a >> 12, p1 = (a + n - 1) >> 12;
+		if (jpage[p0] || (p1 < jpage_n && jpage[p1])) { jit_flush (); jit_n_inval++; c->jit_until = 0; }   /* (stop at the next block) */
+	}
 }
 static uint32_t jh_loop (arm11_t *c) { jit_c_loop++; return (uint32_t) loop_round (c, c->jit_until); }
 static void jh_bx (arm11_t *c, uint32_t v, uint32_t ip) { bx_to (c, v, ip); }
@@ -187,18 +190,24 @@ static int jit_setup (arm11_t *c)
 	jit_state = 1;
 	return 1;
 }
+/* the links: jumps to a known address, patched straight to that block's code (until then: the dispatcher) */
+typedef struct { uint8_t *jmp_end, *cost; uint32_t target; } jlink_t;
+#define JLINKS 32768
+static jlink_t jlinks[JLINKS]; static int jlinks_n;
+static void jlink_patch (jlink_t *l, jent_t *t)
+{
+	int32_t rel = (int32_t) (t->code - l->jmp_end); memcpy (l->jmp_end - 4, &rel, 4);
+	if (l->cost) memcpy (l->cost, &t->cost, 4);
+}
 static void jit_flush (void)
 {
 	if (jit_state != 1) return;
 	memset (jt, 0, sizeof *jt << JT_BITS); memset (jpage, 0, jpage_n);
 	jfree = E = j_stubs_end;                                           /* (the enter / exit / dispatch code stays) */
+	jlinks_n = 0;
 	jit_n_flush++;
 }
-static void jit_inval_page (uint32_t pg)
-{
-	for (uint32_t i = 0; i <= JT_MASK; i++) if (jt[i].cost && (jt[i].pc >> 12) == pg) { jt[i].pc = 0; jt[i].cost = 0; jt[i].code = NULL; }
-	jpage[pg] = 0; jit_n_inval++;
-}
+
 
 /* ---------------------------------------------------------------- translating */
 /* what the JIT does with an instruction: 0 leave it to the interpreter; else its kind */
@@ -315,6 +324,23 @@ static uint8_t *j_cond_skip (unsigned cond)
 	case 13: ldb (RAX, OF (n)); rmb (0x32, RAX, OF (v)); rmb (0x0A, RAX, OF (z)); return jcc (CC_Z);  /* LE */
 	default: return NULL;
 	}
+}
+/* go on at a known address: the cycle adjustment, the time check, then a jump - patched to the block's code */
+static void j_link (uint32_t target, int32_t adj)
+{
+	sti (OR (15), target);
+	addm64 (OF (cycles), adj);
+	b1 (0x48); b1 (0x8B); modm (RAX, OF (cycles));                       /* mov rax, [cycles] */
+	uint8_t *cost = NULL;
+	if (jit_exact) { b1 (0x48); b1 (0x05); cost = E; d4 (0); }            /* add rax, cost (patched with the block's) */
+	b1 (0x48); b1 (0x3B); modm (RAX, OF (jit_until));                    /* cmp rax, [until] */
+	b1 (0x0F); b1 (0x80 + (jit_exact ? CC_A : CC_NC)); { int32_t rel = (int32_t) (j_exit - (E + 4)); d4 ((uint32_t) rel); }
+	jmp_to (j_dispatch);
+	jent_t *t = &jt[(target >> 2) & JT_MASK];
+	jlink_t l = { E, cost, target };
+	if (t->pc == target && t->code) jlink_patch (&l, t);
+	else if (jlinks_n < JLINKS) jlinks[jlinks_n++] = l;
+
 }
 /* leave the block: r15 = pc (already stored when pc == ~0), give back the cycles of the instructions not run */
 static void j_leave (uint32_t pc, unsigned back, int via_dispatch)
@@ -710,15 +736,15 @@ static void j_emit (jins_t *I, unsigned uncond_back)
 	case K_B: {
 		int32_t off = (int32_t) (ins << 8) >> 6; uint32_t t = ip + 8 + (uint32_t) off;
 		if (ins & 0x01000000u) sti (OR (14), ip + 4);
-		sti (OR (15), t);
-		addm64 (OF (cycles), (cond != 14 ? 2 : 0) - (int32_t) after);
+		int32_t adj = (cond != 14 ? 2 : 0) - (int32_t) after;
 		if (t < ip && ip - t <= 64) {
+			sti (OR (15), t); addm64 (OF (cycles), adj); adj = 0;
 			mov64 (A0, RBX); call ((void *) jh_loop);
 			rr (0x85, RAX, RAX); uint8_t *go = jcc (CC_Z);
 			jmp_to (j_exit);
 			here (go);
 		}
-		jmp_to (j_dispatch);
+		j_link (t, adj);
 		break;
 	}
 	case K_BX: {
@@ -783,11 +809,12 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 		if (mem && !L[i].folded) j_irq_check (L[i].ip + 4, L[i].after);
 	}
 	/* fell through the end (or a conditional last instruction not taken) */
-	{ jins_t *l = &L[n - 1]; j_leave (l->ip + 4, 0, 1); }
+	{ jins_t *l = &L[n - 1]; j_link (l->ip + 4, 0); }
 	j_colds (); j_icolds ();
 	jfree = E;
 	e->code = code; e->cost = maxc;
 	jit_n_blocks++;
+	for (int i = 0; i < jlinks_n; i++) if (jlinks[i].target == pc) { jlink_patch (&jlinks[i], e); jlinks[i--] = jlinks[--jlinks_n]; }
 	return e;
 }
 /* run JIT code from the PC, if there is a block there (and, exact, it fits in the slice): 1 if it ran */

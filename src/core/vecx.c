@@ -492,8 +492,8 @@ unsigned char read8 (unsigned address)
 
 				data = (unsigned char) via_t2c;
 				via_ifr &= 0xdf; /* remove timer 2 interrupt flag */
-				{ unsigned pc = e6809_get_pc () & 0xffff; static int n;
-				  if (getenv ("VT_WATCH_T2") && pc < 0xE000 && n++ < 20) fprintf (stderr, "T2 low read at PC=%04X addr=%04X\n", pc, address); }
+				{ unsigned pc = e6809_get_pc () & 0xffff; static int n, w = -1; if (w < 0) w = getenv ("VT_WATCH_T2") != NULL;   /* (looked up once) */
+				  if (w && pc < 0xE000 && n++ < 20) fprintf (stderr, "T2 low read at PC=%04X addr=%04X\n", pc, address); }
 
 				/* (vecx stopped timer 2 here and dropped its pending flag; a 6522 only clears the flag:
 				 * the counter keeps counting and still sets the flag when it runs out - a game reading
@@ -693,8 +693,8 @@ void write8 (unsigned address, unsigned char data)
 
 				via_t2c = (data << 8) | via_t2ll;
 				via_ifr &= 0xdf;
-				{ unsigned pc = e6809_get_pc () & 0xffff; static int n;
-				  if (getenv ("VT_WATCH_T2") && pc < 0xE000 && n++ < 20) fprintf (stderr, "T2 high write at PC=%04X addr=%04X\n", pc, address);
+				{ unsigned pc = e6809_get_pc () & 0xffff; static int n, w = -1; if (w < 0) w = getenv ("VT_WATCH_T2") != NULL;
+				  if (w && pc < 0xE000 && n++ < 20) fprintf (stderr, "T2 high write at PC=%04X addr=%04X\n", pc, address);
 				  { extern int vt_t2w_new; if (pc < 0xE000 || vt_uvm2 || vt_pitrex) vt_t2w_new = 1; } }   /* (the game's own frame timer: vtest.c) */
 
 				via_t2on = 1; /* timer 2 starts running */

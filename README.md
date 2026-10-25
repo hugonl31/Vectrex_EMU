@@ -139,7 +139,8 @@ light on the glass.</em>
 
 Below the picture sits the **control deck**, the Vectrex's own controls drawn in green outlines: the
 **on-screen display** (the game's frame rate, the monitor's, the emulation speed, the volume), **P2 PORT**
-(click it: joystick, VecVox or VecVoice), a **cartridge** you click to open the **ROM browser**, the
+(click it: joystick, VecVox or VecVoice), a **cartridge** you click to open the **ROM browser** (a right click
+pulls it out of the slot, another puts it back), the
 **RESET** button and the **volume knob**, which - as on the Vectrex - is also the power switch. View >
 Control deck switches it all off for a smaller window.
 

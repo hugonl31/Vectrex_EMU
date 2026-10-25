@@ -2662,7 +2662,17 @@ class GLBloomRenderer(GLRenderer):
         gl.glColor4f(0.40, 0.667, 0.533, 1.0)
         gl.glLineWidth(max(1.2, r / 45.0))
         s = 2.0 * r / 100.0                                     # (as high as the knob)
-        self._icon(CART_ICON, lambda u, v: (cx + (u - 50) * s, cy + (v - 50) * s))
+        out = c.get('out', 0.0)
+        if out <= 0.0:
+            self._icon(CART_ICON, lambda u, v: (cx + (u - 50) * s, cy + (v - 50) * s))
+        else:                                                   # out of the slot: the load symbol (the slot, the cartridge
+            s2 = 2.0 * r / 160.0                                #  below it, an arrow up: put it back), sliding there
+            top = cy - r
+            self._icon([LOAD_ICON[0]], lambda u, v: (cx + (u - 50) * s2, top + v * s2))
+            if out >= 1.0:
+                self._icon(LOAD_ICON[1:3], lambda u, v: (cx + (u - 50) * s2, top + v * s2))
+            dy = 60 * out * s2
+            self._icon(LOAD_ICON[3:], lambda u, v: (cx + (u - 50) * s2, top + (v - 60) * s2 + dy))
         if c.get('open'):
             self._rect(cx - 52 * s, cy - 56 * s, cx + 52 * s, cy + 56 * s)
         lh = 0.30 * r

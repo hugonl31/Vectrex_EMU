@@ -19,7 +19,8 @@ TOPICS = [
 ('p', "Without a cartridge the Vectrex runs its built-in game, Mine Storm. Put your ROM files in the "
       "folder *roms* next to the program and click the cartridge below the picture (or L): the "
       "ROM browser lists them. Choosing one power-cycles the Vectrex with it, as if you had swapped the "
-      "cartridge. The emulator starts again with the cartridge used last."),
+      "cartridge. The emulator starts again with the cartridge used last. A right click on the cartridge "
+      "pulls it out of the slot (Mine Storm); another right click puts the same cartridge back."),
 ('h', 'Playing'),
 ('p', "Player 1 plays with the arrow keys and A S D F (buttons 1 to 4, in a row as on the controller; W A S D as a cross in Controls), Shift for a half push of the "
       "stick, or with a game controller; Controls > Keyboard and controllers sets both players up. Keys that run the "

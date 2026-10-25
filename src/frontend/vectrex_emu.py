@@ -1526,6 +1526,7 @@ class App:
                        ('<Return>', self.browse_load), ('<BackSpace>', self.browser_back)):
             self.root.bind(key, lambda e, f=f: (f(), 'break')[1] if self.browser else None)
         self.screen.bind('<Button-1>', self.knob_click)
+        self.screen.bind(RCLICK, self.cart_right, add='+')
         self.root.bind('<KeyPress>', self.any_key, add='+')    # (switched off: any key switches on)
         self.screen.bind('<MouseWheel>', self.knob_wheel)
         if not IS_WIN and not IS_MAC:                           # (X11, Tk 8.6: the wheel is buttons 4 / 5)
@@ -2839,7 +2840,27 @@ class App:
         if not (self.cart_on and self.ren and hasattr(self.ren, 'map')):
             return None
         x, y, r = self.cart_geom()
-        return dict(cx=x, cy=y, r=r, open=bool(self.browser))
+        out = 0.0 if self.args.rom else 1.0                     # (no cartridge in the slot: it lies out of it)
+        t0 = getattr(self, 'cart_slide_t', None)
+        if t0 is not None:                                      # (a quarter second's slide)
+            f = min(1.0, (time.perf_counter() - t0) / 0.25)
+            out = f if out else 1.0 - f
+            if f >= 1.0: self.cart_slide_t = None
+        return dict(cx=x, cy=y, r=r, open=bool(self.browser), out=out)
+    def cart_right(self, e):
+        """a right click on the cartridge: out of the slot (the Vectrex plays Mine Storm); again: the same cartridge
+        back in"""
+        e = self.px_event(e)
+        if self.browser or not self.cart_state():
+            return None
+        x, y, r = self.cart_geom()
+        if math.hypot(e.x - x, e.y - y) > 1.3 * r:
+            return None
+        if self.args.rom:
+            self.eject()
+        elif getattr(self, 'ejected_rom', None) and os.path.isfile(self.ejected_rom):
+            self.restart(self.ejected_rom)
+        return 'break'
     ROM_EXT = ('.bin', '.vec', '.gam', '.rom', '.v4e')
     def scan_roms(self, d=None):
         """one folder of the roms folder next to the program: (name, path, kind) - in a subfolder first BACK
@@ -3818,6 +3839,8 @@ class App:
         self.core.close()
         self.save_settings()                                    # (the old game's own settings kept)
         path, self.rom_name = self.cartridge(rom)
+        if bool(rom) != bool(self.args.rom):
+            self.cart_slide_t = time.perf_counter()             # (in, or out of, the slot: it slides)
         self.args.rom = os.path.abspath(rom) if rom else None
         self.note_recent(self.args.rom)
         self.core = Core(path, self.args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
@@ -4014,7 +4037,9 @@ class App:
             self.restart(fn)
         return 'break'
     def eject(self, e=None):
-        """Ctrl+E: no cartridge (Mine Storm)"""
+        """Ctrl+E: no cartridge (Mine Storm); the cartridge kept in mind - a right click on it puts it back"""
+        if self.args.rom:
+            self.ejected_rom = os.path.abspath(self.args.rom)
         self.restart(None)
         return 'break'
     def tune_mul(self, what, f, lo, hi, obj=None):

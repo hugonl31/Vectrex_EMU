@@ -174,7 +174,11 @@ static int jit_setup (arm11_t *c)
 #ifdef _WIN32
 	jcode = (uint8_t *) VirtualAlloc (NULL, JCODE_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 #else
+#if defined(__APPLE__) && defined(MAP_JIT)
+	jcode = (uint8_t *) mmap (NULL, JCODE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
+#else
 	jcode = (uint8_t *) mmap (NULL, JCODE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON, -1, 0);
+#endif
 	if (jcode == (uint8_t *) MAP_FAILED) jcode = NULL;
 #endif
 	jt = (jent_t *) calloc ((size_t) 1 << JT_BITS, sizeof *jt);

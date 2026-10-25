@@ -1115,7 +1115,7 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
 
 	x0 /= ZS; y0 /= ZS; x1 /= ZS; y1 /= ZS;
 	if (vt_bright != 0 && !dark_adding && color < 128) {   /* (the knob up: the lines brighter; down: dimmer, the faint ones gone) */
-		int c2 = color + (int) (vt_bright * (vt_bright > 0 ? 20 : 60));
+		int c2 = color + (int) (vt_bright * 127 + (vt_bright > 0 ? 0.5 : -0.5));   /* (all the way up: every line full; down: none) */
 		if (c2 <= 0) return;
 		color = (unsigned char) (c2 > 127 ? 127 : c2);
 	}
@@ -1127,7 +1127,8 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
 		x0 += ax; y0 -= ay; x1 += bx; y1 -= by;          /* (screen y grows downwards) */
 	}
 	{ unsigned long long tf = alg_vector_t0 > vt_piece_t0 ? alg_vector_t0 - vt_piece_t0 : 0;
-	  vt_line (x0, y0, x1, y1, color, (unsigned) (alg_vector_cyc * 8.0 + 0.5),   /* 1/8 cycles */
+	  double eg = (vt_bright != 0 && !dark_adding) ? pow (8.0, vt_bright) : 1.0;   /* (the knob: the beam's energy x8 up .. /8 down) */
+	  vt_line (x0, y0, x1, y1, color, (unsigned) (alg_vector_cyc * eg * 8.0 + 0.5),   /* 1/8 cycles */
 		   tf > 65535 ? 65535 : (unsigned) tf); }                              /* start in frame */
 
 	key = (unsigned long) x0;

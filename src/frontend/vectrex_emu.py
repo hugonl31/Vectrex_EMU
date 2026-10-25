@@ -937,7 +937,7 @@ UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0
                ('zofs', 7, 'Zero offset (trimmers R333 / R335)', -2.0, 2.0, '%+.2f', 'VT_ZOFS'),
                ('ysettle', 5, 'Y hold settling (1 = instant)', 0.20, 1.00, '%.2f', 'VT_YSHK'),
                ('beamoff', 6, 'Beam switch-off delay', 0.0, 3.0, '%.1f cycles', 'VT_BEAMOFF'),
-               ('bright', 8, 'Brightness (the knob at the back)', -1.0, 1.0, '%+.2f', 'VT_BRIGHT'))
+               ('bright', 8, 'Brightness (the knob at the back)', -1.0, 0.4, '%+.2f', 'VT_BRIGHT'))
 UNIT_PRESETS = {
     'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=12.3, bright=0.0),  # (measured)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=12.3, bright=0.0),
@@ -1422,7 +1422,7 @@ class App:
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'even_beam', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear')
@@ -1437,8 +1437,9 @@ class App:
         for k in self.look_keys:
             if k in saved:
                 setattr(self.ren, k, type(self.look_default[k])(saved[k]))
+        self.unit['bright'] = min(0.4, max(-1.0, self.unit.get('bright', 0.0)))   # (the knob's range, see UNIT_PARAMS)
         if self.ren:
-            self.ren.knob_bright = self.unit.get('bright', 0.0)   # (the brightness knob at the back)
+            self.ren.knob_bright = self.unit['bright']          # (the brightness knob at the back)
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)                # (Tube > Line gaps: the core's stop delay)
             self.unit['gap'] = self.ren.line_gap
@@ -1824,6 +1825,7 @@ class App:
         'bloom':         ('Bloom', '', 'ren', 'bloom', 0.0, 3.0, False, '%.2f', 1),
         'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.1, 10.0, True, 'x%.2f', 1),
         'halo_k':        ('Corner glow strength', '', 'ren', 'halo_k', 0.0, 0.4, False, '%.3f', 1),
+        'dot_k':         ('Corner dot brightness (x1 = measured)', '', 'ren', 'dot_k', 0.0, 2.0, False, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'line_gap':      ('Line gaps (stop delay; 12.3 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 9.3, 15.3, False, '%.1f cycles', 1),
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
@@ -3776,7 +3778,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""

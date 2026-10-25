@@ -195,6 +195,7 @@ class Deck:
                     ('check', 'Glass edge (rounded corners)', lambda: A('glass_on'), flip('glass_on'), None),
                     ('check', 'Corner glow (halo where the beam rests)', lambda: A('halo_on'), flip('halo_on'), lambda: not A('even_beam')),
                     ('in', [('slider', 'halo_k', lambda: A('halo_on') and not A('even_beam'))]),
+                    ('slider', 'dot_k', lambda: not A('even_beam')),
                     ('check', 'Even beam (an ideal vector display)', lambda: A('even_beam'), flip('even_beam'), None),
                     ('group', 'SIGNAL'),
                     ('check', 'Mains hum wobble', lambda: A('wob_on'), a.toggle_wobble, None),

@@ -354,7 +354,8 @@ BEAM_LINE = 1.15
 BEAM_FADE = 0.3              # the beam fading out after /BLANK (intensity bit 7 from the core): this much of a line
 # the brightness knob at the back (knob_bright -1..1, 0 = well set; the Vectrex unit's Brightness): up, every line is lifted
 # by up to a full line's brightness and the blanked beam shows (the core sends its moves / rests as intensity 0 + bit 7:
-# the "spider web") at KNOB_WEB of a line, its rests up to KNOB_WEBDOT; down, every line dims, the faint ones first
+# the "spider web") at KNOB_WEB of a line, its rests up to KNOB_WEBDOT; down, the tube's cutoff rises: each intensity
+# loses the same share of its light on its lines, its corner dots and their glow (they go out together), faint ones first
 KNOB_WEB, KNOB_WEBDOT, KNOB_WEBDOTC, KNOB_CUT = 0.40, 1.0, 300.0, 0.35
 # a resting beam (a corner: ~18 cycles in one spot, ~10x a moving line's energy there) also lights a soft
 # halo around itself (light scattered in the tube's glass; the owner's photos: corner dots and stars in
@@ -1564,6 +1565,7 @@ class GLBloomRenderer(GLRenderer):
         self.even_beam = False       # Tube > Even beam: an ideal vector display - every point as bright and wide as a
                                      #  line, no corner glow, overlapping light not adding up (off: the real tube)
         self.halo_k = BEAM_HALO_K    # its brightness (Tube > Corner glow strength)
+        self.dot_k = 1.0             # the resting spots' brightness, x BEAM_DOTMAX (Tube > Corner dot brightness)
         self.phos_spread = PHOS_SPREAD  # the afterglow's softness (0; not in the menu)
         self.phos_grow = PHOS_GROW      # how the afterglow joins up (Tube > Afterglow joining)
         self.phos_smooth = PHOS_SMOOTH  # the afterglow's overlap (Tube > Afterglow overlap)
@@ -2213,6 +2215,7 @@ class GLBloomRenderer(GLRenderer):
         r_ = np.maximum(0.0, (zi - BEAM_Z0) / (BEAM_LOWZ - BEAM_Z0))
         hi = zi >= BEAM_LOWZ
         zk = np.where(hi, 0.55 + 0.45 * zi, (0.55 + 0.45 * BEAM_LOWZ) * r_ ** BEAM_LOWP)
+        zl = zk                                            # (a line's, for the brightness knob)
         zw = np.where(hi, 1.0, BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ)
         fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth
         halo = (b & 256) != 0
@@ -2230,7 +2233,7 @@ class GLBloomRenderer(GLRenderer):
                 ee = np.where(moving, cyc / np.where(moving, lp / gp, 1.0), 0.0)
             kk = np.where(moving, BEAM_LINE * (1.0 - BEAM_SPEED * np.exp(-ee / 0.8)), kk)
             if rest.any():
-                kk = np.where(rest, BEAM_DOTMAX * np.minimum(1.0, cyc / BEAM_DOTC), kk)
+                kk = np.where(rest, BEAM_DOTMAX * getattr(self, 'dot_k', 1.0) * np.minimum(1.0, cyc / BEAM_DOTC), kk)
                 rd = np.maximum(0.0, (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT))
                 zdot = (0.55 + 0.45 * BEAM_LOWZ) * rd ** BEAM_DOTLOWP
                 zk = np.where(rest & (zi < BEAM_LOWZ), np.maximum(zk, zdot * np.minimum(1.0, cyc / BEAM_DOTLOWC)), zk)
@@ -2244,7 +2247,11 @@ class GLBloomRenderer(GLRenderer):
         web = ((b & 128) != 0) & ((b & 127) == 0)
         if kb or web.any():
             full = BEAM_LINE * gain * BEAM_PEAK * cgain
-            kk = (kk + kb * full) if kb > 0 else np.maximum(0.0, kk * (1.0 + kb) + kb * KNOB_CUT * full)
+            if kb > 0:
+                kk = kk + kb * full
+            elif kb < 0:
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    kk = kk * np.where(zl > 0, np.maximum(0.0, 1.0 + kb + kb * KNOB_CUT / np.where(zl > 0, zl, 1.0)), 0.0)
             kw = max(0.0, kb) * full * np.where(moving, KNOB_WEB, KNOB_WEBDOT * np.minimum(1.0, cyc / KNOB_WEBDOTC))
             kk = np.where(web, kw, kk)
         mq = 2.6 * sg + 1.0
@@ -2358,6 +2365,7 @@ class GLBloomRenderer(GLRenderer):
             lp = sqrt(dx * dx + dy * dy)                   # window px
             zi = (b & 127) / 127.0
             zk, zw = beam_z(zi)
+            zl = zk                                        # (a line's, for the brightness knob)
             fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth    # thin, a little fuller when brighter
             if b & 256:                                    # a resting spot's halo (see BEAM_HALO_W)
                 bl = min(1.0, max(0.0, (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0)))
@@ -2370,7 +2378,7 @@ class GLBloomRenderer(GLRenderer):
                 k = BEAM_LINE * (1.0 - BEAM_SPEED * exp(-e / 0.8))   # fast sweeps slightly fainter
             else:                                          # the beam resting: a spot
                 # corners (16-18 cycles) and dots (60-70) at full brightness, as on the real tube
-                k = BEAM_DOTMAX * min(1.0, cyc / BEAM_DOTC)
+                k = BEAM_DOTMAX * getattr(self, 'dot_k', 1.0) * min(1.0, cyc / BEAM_DOTC)
                 if zi < BEAM_LOWZ:                         # a long rest crosses the cutoff earlier (beam_zdot)
                     zk = max(zk, beam_zdot(zi) * min(1.0, cyc / BEAM_DOTLOWC))
                 fw = fw * BEAM_DOTW + BEAM_DOTWK * min(cyc, 80.0)
@@ -2387,8 +2395,8 @@ class GLBloomRenderer(GLRenderer):
                     k = max(0.0, kb) * full * (KNOB_WEB if lp / gp > 0.05 else KNOB_WEBDOT * min(1.0, cyc / KNOB_WEBDOTC))
                 elif kb > 0:
                     k += kb * full
-                else:
-                    k = max(0.0, k * (1.0 + kb) + kb * KNOB_CUT * full)
+                else:                                      # (the cutoff up: this intensity's share of its light)
+                    k *= max(0.0, 1.0 + kb + kb * KNOB_CUT / zl) if zl > 0 else 0.0
             m = 2.6 * sg + 1.0                             # quad margin
             if lp > 1e-3:
                 ux, uy = dx / lp * m, dy / lp * m

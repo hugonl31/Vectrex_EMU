@@ -224,6 +224,8 @@ TOPICS = [
          "dot such as a shot or a star - the screen glows softly around the spot, as the light scatters in the "
          "tube's thick glass. It also softens the tiny dark gaps a Vectrex leaves at some corners."),
 ('item', 'Corner glow strength...', "How strong that glow is (right click on the slider: the default)."),
+('item', 'Corner dot brightness...', "How much brighter the spot is where the beam stops - corners, dots, the joins "
+         "in a dashed line - than the line itself. x1 = as measured; 0 = no brighter than the line."),
 ('item', 'Even beam (an ideal vector display)', "Off by default. Every point as bright and as thin as the lines: "
          "no brighter, fatter corners and dots where the beam rests, no corner glow, no fainter fast lines, and "
          "where lines overlap they do not add up. A vector display without the tube's character - dots such as "

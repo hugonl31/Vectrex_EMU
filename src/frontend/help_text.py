@@ -20,7 +20,7 @@ TOPICS = [
       "folder *roms* next to the program and click the cartridge below the picture (or L): the "
       "ROM browser lists them. Choosing one power-cycles the Vectrex with it, as if you had swapped the "
       "cartridge. The emulator starts again with the cartridge used last. A right click on the cartridge "
-      "pulls it out of the slot (Mine Storm); another right click puts the same cartridge back."),
+      "pulls it out of the slot (Mine Storm); another right click puts the last cartridge back. Ctrl+E does the same."),
 ('h', 'Playing'),
 ('p', "Player 1 plays with the arrow keys and A S D F (buttons 1 to 4, in a row as on the controller; W A S D as a cross in Controls), Shift for a half push of the "
       "stick, or with a game controller; Controls > Keyboard and controllers sets both players up. Keys that run the "
@@ -49,7 +49,7 @@ TOPICS = [
          "cartridge board they name; one for hardware the emulator does not have is refused with a message."),
 ('item', 'Open UVMC2 game...', "A game for the Ultimate Vectrex Multicart 2 (.um2) anywhere on your PC: it runs on "
          "the cartridge's own computer (see Deck: Cartridge)."),
-('item', 'Eject cartridge (Ctrl+E)', "No cartridge: the Vectrex runs Mine Storm from its own ROM."),
+('item', 'Eject / insert cartridge (Ctrl+E)', "Out of the slot: the Vectrex runs Mine Storm from its own ROM. Already out: the last cartridge goes back in (a right click on the cartridge does the same)."),
 ('item', 'RESET button (Ctrl+R)', "The RESET button on the console. The RAM is kept and the BIOS restarts "
          "the cartridge without its intro, exactly as on the real machine. Some games use this: they "
          "keep their high scores through a RESET."),

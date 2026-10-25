@@ -1731,7 +1731,9 @@ class App:
                      "A Raspberry Pi in the cartridge slot: its loader starts, the menu of its games and emulators (button 4 skips the intro).")
                 item(pm, 'Open PiTrex program...', '', self.open_pitrex, "One PiTrex program (.img / .pit) on its own, without the loader.")
                 item(pm, 'SD card folder...', '', self.choose_px_dir, "The folder the PiTrex sees as its SD card: the files of a PiTrex SD card.")
-            item(m, 'Eject cartridge', 'Ctrl+E', self.eject, "No cartridge: the Vectrex plays its built-in game, Mine Storm.")
+            item(m, 'Eject / insert cartridge', 'Ctrl+E', self.eject,
+                 "Out of the slot: the Vectrex plays its built-in game, Mine Storm. Already out: the last cartridge goes back in. "
+                 "A right click on the cartridge below the picture does the same.")
             m.add_separator()
             item(m, 'RESET button', 'Ctrl+R', self.reset_button, "As the button on the Vectrex: the game starts again, the RAM is kept.")
             check(m, 'Pause', 'P', lambda: self.run.paused, self.toggle_pause)
@@ -2856,11 +2858,7 @@ class App:
         x, y, r = self.cart_geom()
         if math.hypot(e.x - x, e.y - y) > 1.3 * r:
             return None
-        if self.args.rom:
-            self.eject()
-        elif getattr(self, 'ejected_rom', None) and os.path.isfile(self.ejected_rom):
-            self.restart(self.ejected_rom)
-        return 'break'
+        return self.eject()
     ROM_EXT = ('.bin', '.vec', '.gam', '.rom', '.v4e')
     def scan_roms(self, d=None):
         """one folder of the roms folder next to the program: (name, path, kind) - in a subfolder first BACK
@@ -4037,10 +4035,15 @@ class App:
             self.restart(fn)
         return 'break'
     def eject(self, e=None):
-        """Ctrl+E: no cartridge (Mine Storm); the cartridge kept in mind - a right click on it puts it back"""
+        """Ctrl+E, a right click on the cartridge: out of the slot (Mine Storm) - or, out, the last cartridge back in
+        (the one taken out, else the last one played; none: nothing happens)"""
         if self.args.rom:
             self.ejected_rom = os.path.abspath(self.args.rom)
-        self.restart(None)
+            self.restart(None)
+            return 'break'
+        last = [g for g in [getattr(self, 'ejected_rom', None)] + list(getattr(self, 'recent', [])) if g and os.path.isfile(g)]
+        if last:
+            self.restart(last[0])
         return 'break'
     def tune_mul(self, what, f, lo, hi, obj=None):
         obj = obj or self.ren

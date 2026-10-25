@@ -915,7 +915,7 @@ def v4e_rom(path):
     _v4e_done[path] = (key, out)
     return out
 
-PITREX_UI = False                                               # the PiTrex add-on in the menus (core support stays)
+PITREX_UI = True                                                # the PiTrex add-on in the menus (core support stays)
 
 
 try:                                                            # (numpy, if there: the frame's lines in one go)
@@ -1714,6 +1714,12 @@ class App:
             m.add_cascade(label='Recent games', menu=rec)
             item(m, 'Open ROM file...', '', self.open_rom)
             item(m, 'Open UVMC2 game...', '', self.open_um2, "A game for the Ultimate Vectrex Multicart 2 (.um2): it runs on the cartridge's own computer.")
+            if PITREX_UI:
+                pm = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='PiTrex', menu=pm)
+                item(pm, 'Start the PiTrex', '', self.start_pitrex,
+                     "A Raspberry Pi in the cartridge slot: its loader starts, the menu of its games and emulators (button 4 skips the intro).")
+                item(pm, 'Open PiTrex program...', '', self.open_pitrex, "One PiTrex program (.img / .pit) on its own, without the loader.")
+                item(pm, 'SD card folder...', '', self.choose_px_dir, "The folder the PiTrex sees as its SD card: the files of a PiTrex SD card.")
             item(m, 'Eject cartridge', 'Ctrl+E', self.eject, "No cartridge: the Vectrex plays its built-in game, Mine Storm.")
             m.add_separator()
             item(m, 'RESET button', 'Ctrl+R', self.reset_button, "As the button on the Vectrex: the game starts again, the RAM is kept.")
@@ -4136,7 +4142,7 @@ class App:
             from tkinter import messagebox
             deck.dialog('info', 'Vectrex_EMU', 'The PiTrex needs its SD card: put the files of a PiTrex baremetal SD card '
                                 '(pitrex.img, loader.pit, the piZero1 folder, ...) in' + chr(10) + chr(10) + self.px_dir + chr(10) + chr(10) +
-                                'or choose another folder in Add-ons > PiTrex SD card folder.', parent=self.root)
+                                'or choose another folder in Vectrex > PiTrex > SD card folder.', parent=self.root)
             return 'break'
         self.restart(boot)
         return 'break'

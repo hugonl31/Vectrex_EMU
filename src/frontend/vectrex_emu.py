@@ -1437,6 +1437,8 @@ class App:
         for k in self.look_keys:
             if k in saved:
                 setattr(self.ren, k, type(self.look_default[k])(saved[k]))
+        if self.ren:
+            self.ren.knob_bright = self.unit.get('bright', 0.0)   # (the brightness knob at the back)
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)                # (Tube > Line gaps: the core's stop delay)
             self.unit['gap'] = self.ren.line_gap
@@ -3317,6 +3319,8 @@ class App:
         if key == 'gap':
             if self.ren and hasattr(self.ren, 'line_gap'): self.ren.line_gap = v
             self.core.set_gap(v); return
+        if key == 'bright' and self.ren:
+            self.ren.knob_bright = v                            # (the renderer turns the lines; the core sends the web)
         for k, i, label, lo, hi, fmt, var in UNIT_PARAMS:
             if k == key and not (i == 1 and self.core.rom.lower().endswith(ADDON_ROM)):   # (the add-ons: the standard
                 self.core.set_analog(i, v)                                               #  zero reference, see Core)

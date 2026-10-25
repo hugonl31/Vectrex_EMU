@@ -183,13 +183,13 @@ static int t1_irqlag = -1, t1_irqwait;   /* VT_T1IRQLAG (see via_sstep0) */
 static int alg_adly;
 static double beam_off = -1;     /* VT_BEAMOFF (see alg_sstep) */
 static int beam_fade = -1, fade_left;   /* VT_BEAMFADE: the beam's faint fade-out after it goes dark (alg_sstep) */
-/* the brightness knob at the back (VT_BRIGHT, vt_set_analog 8: -1..1, 0 = a well-set Vectrex). Up: the tube's bias
- * lets the beam glow even while it is blanked - its moves and its returns to the middle show as a faint web ("spider
- * web"), and a spot where it rests; the lines get brighter. Down: the lines dimmer, the faintest gone */
+/* the brightness knob at the back (VT_BRIGHT, vt_set_analog 8: -1..1, 0 = a well-set Vectrex). Up, the tube's bias lets
+ * the beam glow even while it is blanked: its moves and returns to the middle ("spider web") and its rests are sent as
+ * lines of intensity 0 with bit 7 set - the renderer draws them, and turns every line's brightness with the knob */
 static double vt_bright = -1;
 static int dark_on, dark_adding; static long dark_x0, dark_y0, dark_x1, dark_y1, dark_dx, dark_dy;
 static double dark_cyc; static unsigned long long dark_t0;
-#define DARK_Z 36                       /* (the blanked beam's glow at the knob's top: an intensity of 127) */
+
 static long fade_x0, fade_y0; static double fade_cyc; static unsigned char fade_col; static unsigned long long fade_t0;   /* on by default (VT_ANALOGDLY=0: off); with it the BIOS text needs no fitted shift: the
                        * delays put it where the owner's photos show it (within 0.1 px) */
 static unsigned char dly_x[64], dly_y[64], dly_z[64]; static unsigned dly_p;
@@ -1114,11 +1114,6 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
 	long index;
 
 	x0 /= ZS; y0 /= ZS; x1 /= ZS; y1 /= ZS;
-	if (vt_bright != 0 && !dark_adding && color < 128) {   /* (the knob up: the lines brighter; down: dimmer, the faint ones gone) */
-		int c2 = color + (int) (vt_bright * 127 + (vt_bright > 0 ? 0.5 : -0.5));   /* (all the way up: every line full; down: none) */
-		if (c2 <= 0) return;
-		color = (unsigned char) (c2 > 127 ? 127 : c2);
-	}
 	{ unsigned pc = e6809_get_pc () & 0xFFFF;
 	  if (pc >= 0xF495 && pc < 0xF511) { long sh = vt_text_shift + (long) (vt_text_shift_w * ram[0x2B]); x0 -= sh; x1 -= sh; } }
 	if ((alg_wob50 != 0 || alg_wob100 != 0) && !vt_wobble_off) {
@@ -1127,8 +1122,7 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
 		x0 += ax; y0 -= ay; x1 += bx; y1 -= by;          /* (screen y grows downwards) */
 	}
 	{ unsigned long long tf = alg_vector_t0 > vt_piece_t0 ? alg_vector_t0 - vt_piece_t0 : 0;
-	  double eg = (vt_bright != 0 && !dark_adding) ? pow (8.0, vt_bright) : 1.0;   /* (the knob: the beam's energy x8 up .. /8 down) */
-	  vt_line (x0, y0, x1, y1, color, (unsigned) (alg_vector_cyc * eg * 8.0 + 0.5),   /* 1/8 cycles */
+	  vt_line (x0, y0, x1, y1, color, (unsigned) (alg_vector_cyc * 8.0 + 0.5),   /* 1/8 cycles */
 		   tf > 65535 ? 65535 : (unsigned) tf); }                              /* start in frame */
 
 	key = (unsigned long) x0;
@@ -1366,7 +1360,7 @@ static einline void alg_sstep (void)
 		if (dark_on && (!dark || sig_dx != dark_dx || sig_dy != dark_dy || dark_cyc >= 1500)) {   /* (a long rest: in pieces, each frame sees it) */
 			double c = alg_vector_cyc; unsigned long long t = alg_vector_t0;
 			alg_vector_cyc = dark_cyc; alg_vector_t0 = dark_t0; dark_adding = 1;
-			alg_addline (dark_x0, dark_y0, dark_x1, dark_y1, (unsigned char) (vt_bright * DARK_Z + 0.5));
+			alg_addline (dark_x0, dark_y0, dark_x1, dark_y1, 0x80);   /* (the web: the renderer's to show) */
 			dark_adding = 0; alg_vector_cyc = c; alg_vector_t0 = t;
 			dark_on = 0;
 		}

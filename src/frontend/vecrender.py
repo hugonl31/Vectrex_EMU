@@ -352,6 +352,10 @@ BEAM_S0, BEAM_SK, BEAM_SMAX = 0.6, 0.015, 0.95
 # faster; a resting spot: BEAM_DOTMAX x min(1, cycles / BEAM_DOTC), as wide as the lines.
 BEAM_LINE = 1.15
 BEAM_FADE = 0.3              # the beam fading out after /BLANK (intensity bit 7 from the core): this much of a line
+# the brightness knob at the back (knob_bright -1..1, 0 = well set; the Vectrex unit's Brightness): up, every line is lifted
+# by up to a full line's brightness and the blanked beam shows (the core sends its moves / rests as intensity 0 + bit 7:
+# the "spider web") at KNOB_WEB of a line, its rests up to KNOB_WEBDOT; down, every line dims, the faint ones first
+KNOB_WEB, KNOB_WEBDOT, KNOB_WEBDOTC, KNOB_CUT = 0.40, 1.0, 300.0, 0.35
 # a resting beam (a corner: ~18 cycles in one spot, ~10x a moving line's energy there) also lights a soft
 # halo around itself (light scattered in the tube's glass; the owner's photos: corner dots and stars in
 # a glow). It softens the dark line ends next to corners without hiding them; text has no resting spots.
@@ -2236,6 +2240,13 @@ class GLBloomRenderer(GLRenderer):
         sg = np.maximum(0.6, fw * gp / 2.355)
         kk = kk * zk * gain * BEAM_PEAK * cgain
         kk = np.where((b & 128) != 0, kk * BEAM_FADE, kk)
+        kb = getattr(self, 'knob_bright', 0.0)
+        web = ((b & 128) != 0) & ((b & 127) == 0)
+        if kb or web.any():
+            full = BEAM_LINE * gain * BEAM_PEAK * cgain
+            kk = (kk + kb * full) if kb > 0 else np.maximum(0.0, kk * (1.0 + kb) + kb * KNOB_CUT * full)
+            kw = max(0.0, kb) * full * np.where(moving, KNOB_WEB, KNOB_WEBDOT * np.minimum(1.0, cyc / KNOB_WEBDOTC))
+            kk = np.where(web, kw, kk)
         mq = 2.6 * sg + 1.0
         moved = lp > 1e-3
         lps = np.where(moved, lp, 1.0)
@@ -2369,6 +2380,15 @@ class GLBloomRenderer(GLRenderer):
             k *= zk * gain * BEAM_PEAK * cgain
             if b & 128:                                    # (the beam fading out: a faint trace)
                 k *= BEAM_FADE
+            kb = getattr(self, 'knob_bright', 0.0)
+            if kb or (b & 255) == 128:                     # the brightness knob (see KNOB_WEB)
+                full = BEAM_LINE * gain * BEAM_PEAK * cgain
+                if (b & 255) == 128:                       # (the blanked beam: the web, a rest's spot)
+                    k = max(0.0, kb) * full * (KNOB_WEB if lp / gp > 0.05 else KNOB_WEBDOT * min(1.0, cyc / KNOB_WEBDOTC))
+                elif kb > 0:
+                    k += kb * full
+                else:
+                    k = max(0.0, k * (1.0 + kb) + kb * KNOB_CUT * full)
             m = 2.6 * sg + 1.0                             # quad margin
             if lp > 1e-3:
                 ux, uy = dx / lp * m, dy / lp * m

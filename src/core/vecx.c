@@ -187,6 +187,7 @@ static int beam_fade = -1, fade_left;   /* VT_BEAMFADE: the beam's faint fade-ou
  * the beam glow even while it is blanked: its moves and returns to the middle ("spider web") and its rests are sent as
  * lines of intensity 0 with bit 7 set - the renderer draws them, and turns every line's brightness with the knob */
 static double vt_bright = -1;
+static double vt_lag;                   /* (the deflection's lag: see below) */
 static int dark_on, dark_adding; static long dark_x0, dark_y0, dark_x1, dark_y1, dark_dx, dark_dy;
 static double dark_cyc; static unsigned long long dark_t0;
 
@@ -219,6 +220,7 @@ void vt_set_analog (int id, double v)
 	case 6: beam_off = v < 0 ? 0 : v > 15 ? 15 : v; break;
 	case 7: alg_zofs = v; break;
 	case 8: vt_bright = v < -1 ? -1 : v > 1 ? 1 : v; break;
+	case 9: vt_lag = v < 0 ? 0 : v > 50 ? 50 : v; break;
 	}
 }
 static unsigned alg_zsh;  /* z sample and hold */
@@ -253,6 +255,17 @@ enum {
 };
 
 static unsigned alg_vectoring; /* are we drawing a vector right now? */
+/* the deflection's lag (VT_DEFLAG = tau in cycles, VT_DEFLAGN = 1 or 2 stages; vt_set_analog 9): the integrators'
+ * outputs drive the yoke through the deflection amplifiers (LM379) and the coils' inductance, so the spot follows
+ * the integrator position a few microseconds late, smoothed - the owner's Vectrex (testcart/corner_test, 2026-10-25):
+ * corners round off when the beam rests less than ~16 cycles, sharp with a dot from ~24 cycles. The lines are
+ * recorded along the spot (beam_x / beam_y); while it has not caught up they are cut every LAG_SPLIT cycles */
+static double vt_lag = -1; static int vt_lag_n = 0;
+static double beam_x, beam_y, beam_x1, beam_y1, beam_vx, beam_vy;   /* (beam_x1/y1: the first stage of two) */
+static int beam_init, lag_moving;
+#define LAG_SPLIT 2.0
+#define LAG_TAU 0.0                     /* (the default lag, cycles: see the fit) */
+#define LAG_N 2
 static long alg_vector_x0;
 static long alg_vector_y0;
 static long alg_vector_x1;
@@ -887,6 +900,7 @@ void vecx_reset (void)
 	alg_curr_y = (ALG_MAX_Y*ZS) / 2;
 
 	alg_vectoring = 0;
+	beam_init = 0;                      /* (the spot starts where the integrators are) */
 
 	vector_draw_cnt = 0;
 	vector_erse_cnt = 0;
@@ -1278,18 +1292,19 @@ static einline void alg_sstep (void)
 		}
 	}
 
+	if (!beam_init) { beam_init = 1; beam_x = beam_x1 = alg_curr_x; beam_y = beam_y1 = alg_curr_y; }
 	if (alg_vectoring == 0) {
 		if (sig_blank == 1 &&
-			alg_curr_x >= 0 && alg_curr_x < (ALG_MAX_X*ZS) &&
-			alg_curr_y >= 0 && alg_curr_y < (ALG_MAX_Y*ZS)) {
+			beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) &&
+			beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS)) {
 
 			/* start a new vector */
 
 			alg_vectoring = 1;
-			alg_vector_x0 = alg_curr_x;
-			alg_vector_y0 = alg_curr_y;
-			alg_vector_x1 = alg_curr_x;
-			alg_vector_y1 = alg_curr_y;
+			alg_vector_x0 = (long) beam_x;
+			alg_vector_y0 = (long) beam_y;
+			alg_vector_x1 = (long) beam_x;
+			alg_vector_y1 = (long) beam_y;
 			alg_vector_dx = sig_dx;
 			alg_vector_dy = sig_dy;
 			alg_vector_color = (unsigned char) alg_zsh;
@@ -1322,7 +1337,8 @@ static einline void alg_sstep (void)
 			  } }
 		} else if (sig_dx != alg_vector_dx ||
 				   sig_dy != alg_vector_dy ||
-				   (unsigned char) alg_zsh != alg_vector_color) {
+				   (unsigned char) alg_zsh != alg_vector_color ||
+				   (lag_moving && alg_vector_cyc >= LAG_SPLIT)) {   /* (the spot catching up: a curve, in pieces) */
 
 			/* the parameters of the vectoring processing has changed.
 			 * so end the current line.
@@ -1336,12 +1352,12 @@ static einline void alg_sstep (void)
 			 * current point is not out of limits.
 			 */
 
-			if (alg_curr_x >= 0 && alg_curr_x < (ALG_MAX_X*ZS) &&
-				alg_curr_y >= 0 && alg_curr_y < (ALG_MAX_Y*ZS)) {
-				alg_vector_x0 = alg_curr_x;
-				alg_vector_y0 = alg_curr_y;
-				alg_vector_x1 = alg_curr_x;
-				alg_vector_y1 = alg_curr_y;
+			if (beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) &&
+				beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS)) {
+				alg_vector_x0 = (long) beam_x;
+				alg_vector_y0 = (long) beam_y;
+				alg_vector_x1 = (long) beam_x;
+				alg_vector_y1 = (long) beam_y;
 				alg_vector_dx = sig_dx;
 				alg_vector_dy = sig_dy;
 				alg_vector_color = (unsigned char) alg_zsh;
@@ -1373,6 +1389,24 @@ static einline void alg_sstep (void)
 	alg_curr_x += sig_dx;
 	alg_curr_y += sig_dy;
 	alg_cycles++;
+	if (vt_lag < 0) { const char *z = getenv ("VT_DEFLAG"); vt_lag = z ? atof (z) : LAG_TAU; z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; }
+	{ double ox = beam_x, oy = beam_y;
+	  if (vt_lag > 0.05) {
+		int n = vt_lag_n == 2 ? 2 : 1;
+		double k = 1.0 - exp (-(double) n / vt_lag);            /* (each stage tau / n) */
+		if (n == 2) {
+			beam_x1 += (alg_curr_x - beam_x1) * k; beam_y1 += (alg_curr_y - beam_y1) * k;
+			beam_x += (beam_x1 - beam_x) * k; beam_y += (beam_y1 - beam_y) * k;
+		} else {
+			beam_x += (alg_curr_x - beam_x) * k; beam_y += (alg_curr_y - beam_y) * k;
+		}
+	  } else {
+		beam_x = beam_x1 = alg_curr_x; beam_y = beam_y1 = alg_curr_y;
+	  }
+	  beam_vx = beam_x - ox; beam_vy = beam_y - oy;
+	  /* still catching up: its speed off the integrators' by more than 3 % (and 0.02 units a cycle) */
+	  { double ex = beam_vx - sig_dx, ey = beam_vy - sig_dy, v = fabs ((double) sig_dx) + fabs ((double) sig_dy);
+	    lag_moving = fabs (ex) + fabs (ey) > 0.03 * v + 0.02 * ZS; } }
 	if (dark_on) {
 		if (alg_curr_x >= 0 && alg_curr_x < (ALG_MAX_X*ZS) && alg_curr_y >= 0 && alg_curr_y < (ALG_MAX_Y*ZS)) {
 			dark_x1 = alg_curr_x; dark_y1 = alg_curr_y; dark_cyc += 1.0;
@@ -1394,15 +1428,15 @@ static einline void alg_sstep (void)
 	}
 
 	if (alg_vectoring == 1 &&
-		alg_curr_x >= 0 && alg_curr_x < (ALG_MAX_X*ZS) &&
-		alg_curr_y >= 0 && alg_curr_y < (ALG_MAX_Y*ZS)) {
+		beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) &&
+		beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS)) {
 
 		/* we're vectoring ... current point is still within limits so
-		 * extend the current vector.
+		 * extend the current vector (along the spot: see vt_lag).
 		 */
 
-		alg_vector_x1 = alg_curr_x;
-		alg_vector_y1 = alg_curr_y;
+		alg_vector_x1 = (long) beam_x;
+		alg_vector_y1 = (long) beam_y;
 		alg_vector_cyc += alg_zlev;
 	}
 }

@@ -3783,6 +3783,11 @@ class App:
             name = os.path.splitext(os.path.basename(rom))[0]
             if rom.lower().endswith('.v4e'):                    # (VecFever: unpacked first)
                 return v4e_rom(rom), name
+            d = os.path.dirname(rom)                            # a PiTrex program built for the Pi Zero 2 (ARMv7): the emulated
+            if rom.lower().endswith(('.img', '.pit')) and os.path.basename(d).lower() == 'pizero2':   #  Pi is a Zero 1 - its own build of it
+                alt = os.path.join(os.path.dirname(d), 'piZero1', os.path.basename(rom))
+                if os.path.isfile(alt):
+                    return alt, name
             return rom, name
         return NUL, 'Mine Storm (built in)'                    # (NUL reads as an empty cartridge)
     def restart(self, rom):
@@ -3976,6 +3981,10 @@ class App:
     def cart_message(self, msg):
         from tkinter import messagebox
         name = 'PiTrex' if (self.args.rom or '').lower().endswith(('.img', '.pit')) else 'Ultimate Vectrex Multicart 2'
+        if name == 'PiTrex' and 'undefined' in msg:            # (most likely a program for another Pi)
+            msg += (chr(10) + chr(10) + 'The emulated PiTrex has a Raspberry Pi Zero (the first one). This program uses '
+                    "instructions it does not have - it is probably made for the Pi Zero 2 (a PiTrex SD card's piZero2 "
+                    'folder). Use its build in the piZero1 folder.')
         deck.dialog('warning', 'Vectrex_EMU', 'The cartridge (' + name + ') stopped:' + chr(10) + chr(10) + msg, parent=self.root)
     def rom_error(self, msg):
         from tkinter import messagebox

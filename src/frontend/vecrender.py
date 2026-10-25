@@ -370,9 +370,8 @@ BEAM_DOTW, BEAM_DOTWK = 1.0, 0.002   # its width: the line width x DOTW + DOTWK 
 # (Spinball's dots 26): above BEAM_BLOOM_E0 the spot widens up to BEAM_BLOOM_W x and its glow up to
 # BEAM_BLOOM_H x, fully at BEAM_BLOOM_E1.
 BEAM_BLOOM_E0, BEAM_BLOOM_E1, BEAM_BLOOM_W, BEAM_BLOOM_H = 20.0, 38.0, 2.0, 2.5
-# the beam's brightness and width with its intensity (Z/127): from intensity 63 up as before (0.55 + 0.45 z,
-# the look tuned on the owner's photos); below it the tube is close to its cutoff and the spot fades and
-# shrinks fast: the owner (2026-10-12): Vectorblade's background stars (intensity 15-47) are much
+# the beam's width with its intensity (Z/127; its brightness: TUBE_LIGHT): below intensity 63 the tube is close
+# to its cutoff and the spot shrinks fast: the owner (2026-10-12): Vectorblade's background stars (intensity 15-47) are much
 # thinner, smaller and fainter on the real tube than the shots (127), on the emulator nearly the same.
 BEAM_LOWZ, BEAM_LOWP, BEAM_LOWW = 0.5, 1.7, 0.45  # below this z: the cutoff curve (BEAM_Z0); width x LOWW at z = 0
 # the tube's cutoff, measured (testcart/bright_test, the owner's photo and count by eye 2026-10-14): the
@@ -381,12 +380,43 @@ BEAM_LOWZ, BEAM_LOWP, BEAM_LOWW = 0.5, 1.7, 0.45  # below this z: the cutoff cur
 BEAM_Z0 = 27 / 127.0
 
 
+# the tube's light for its drive, measured (2026-10-25): the test cartridge's INTENSITY page (all 128 intensities, 8
+# per bar) on the owner's Vectrex, iPhone ProRAW (linear, unclipped at ISO 16; ISO 200 for the faint bars), the
+# red channel's light summed across each step's line, the camera's fall-off to the screen's edges fitted out (a
+# factor per step position, the same in every bar). TUBE_LIGHT[d] = the light at drive d (Z + the brightness
+# knob's bias, in intensity steps; the circuit is linear in Z: the DAC, D302 / Q505 and the cathode, see the
+# service manual), 1 = Z 127 at the knob's default. Dark up to 27 (the cutoff), measured from 30 to 117 (2 %),
+# above (the knob up) the saturation that fits 36-117: light = u / (1 + u), u = ((d - 14.8) / 53.4)^4.06
+TUBE_LIGHT = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.00207, 0.00413, 0.0062,
+    0.00832, 0.011, 0.01609, 0.01875, 0.02184, 0.02544, 0.02954, 0.03445, 0.04026, 0.04699, 0.05467, 0.06331,
+    0.07288, 0.08335, 0.09446, 0.10647, 0.11936, 0.13313, 0.14778, 0.16327, 0.17957, 0.19664, 0.21442, 0.23288,
+    0.25193, 0.27152, 0.29157, 0.312, 0.33274, 0.35371, 0.37483, 0.39602, 0.41721, 0.43833, 0.4593, 0.48007,
+    0.50058, 0.52077, 0.54059, 0.56, 0.57898, 0.59748, 0.61548, 0.63296, 0.64991, 0.66631, 0.68216, 0.69745,
+    0.71219, 0.72637, 0.74001, 0.75311, 0.76569, 0.77774, 0.78929, 0.80035, 0.81093, 0.82105, 0.83073, 0.83998,
+    0.84881, 0.85724, 0.8653, 0.87299, 0.88032, 0.88732, 0.89401, 0.90038, 0.90646, 0.91226, 0.9178, 0.92308,
+    0.92812, 0.93294, 0.93753, 0.94191, 0.94609, 0.95009, 0.9539, 0.95755, 0.96103, 0.96436, 0.96753, 0.97057,
+    0.97348, 0.97626, 0.97891, 0.98146, 0.98389, 0.98622, 0.98845, 0.99059, 0.99263, 0.99459, 0.99647, 0.99827, 1,
+    1.0017, 1.0032, 1.0048, 1.0062, 1.0076, 1.009, 1.0103, 1.0115, 1.0127, 1.0139, 1.015, 1.016, 1.0171, 1.0181,
+    1.019, 1.0199, 1.0208, 1.0216, 1.0225, 1.0233, 1.024, 1.0248, 1.0254, 1.0261, 1.0268, 1.0274, 1.028, 1.0286,
+    1.0292, 1.0297, 1.0303, 1.0308, 1.0313, 1.0318, 1.0322, 1.0327, 1.0331, 1.0335, 1.0339, 1.0343, 1.0347, 1.0351,
+    1.0354]
+TUBE_LIGHT_D = len(TUBE_LIGHT) - 1
+
+
+def tube_light(d):
+    """the tube's light at drive d (intensity steps, may be fractional; TUBE_LIGHT)"""
+    d = min(max(d, 0.0), float(TUBE_LIGHT_D)); i = min(int(d), TUBE_LIGHT_D - 1)
+    return TUBE_LIGHT[i] + (TUBE_LIGHT[i + 1] - TUBE_LIGHT[i]) * (d - i)
+
+
 def beam_z(zi):
-    """(brightness factor, width factor) for the intensity zi = Z / 127"""
+    """(brightness factor, width factor) for the drive zi = Z / 127 (+ the knob's bias): the brightness as a
+    display value (the screen shows light^(1/2.2)), from the measured tube (TUBE_LIGHT)"""
+    k = tube_light(zi * 127.0) ** (1 / 2.2)
     if zi >= BEAM_LOWZ:
-        return 0.55 + 0.45 * zi, 1.0
-    r = max(0.0, (zi - BEAM_Z0) / (BEAM_LOWZ - BEAM_Z0))
-    return (0.55 + 0.45 * BEAM_LOWZ) * r ** BEAM_LOWP, BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ
+        return k, 1.0
+    return k, BEAM_LOWW + (1.0 - BEAM_LOWW) * max(0.0, zi) / BEAM_LOWZ
 
 
 # a resting spot collects light: on the owner's tube (counted by eye, 2026-10-14) the test page's dots
@@ -2215,9 +2245,8 @@ class GLBloomRenderer(GLRenderer):
         kb = getattr(self, 'knob_bright', 0.0)
         web = (b & 255) == 128                             # (the blanked beam, see knob_bright)
         zi = np.maximum(0.0, (b & 127) / 127.0 + kb)       # the drive: intensity + the knob's bias
-        r_ = np.maximum(0.0, (zi - BEAM_Z0) / (BEAM_LOWZ - BEAM_Z0))
         hi = zi >= BEAM_LOWZ                               # (above 1, the knob up: on along the same line)
-        zk = np.where(hi, 0.55 + 0.45 * zi, (0.55 + 0.45 * BEAM_LOWZ) * r_ ** BEAM_LOWP)
+        zk = np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT) ** (1 / 2.2)   # the measured tube (beam_z)
         zw = np.where(hi, 1.0, BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ)
         fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth
         halo = (b & 256) != 0

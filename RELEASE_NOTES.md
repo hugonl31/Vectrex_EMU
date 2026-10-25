@@ -23,7 +23,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
   Help, the messages, the ROM browser and Windows' own file dialogs.
 - The menu bar is Vectrex, View, Controls, Config and Help. Alt (or F10) opens the menus, Alt + the underlined
   letter one of them; hover over an item for a short explanation of what it does.
-- Vectrex: Recent games (the last eight). View: Fit screen, Authentic (as big as a real Vectrex), Choose
+- Vectrex: Recent games (the last ten, also games dropped onto the window). View: Fit screen, Authentic (as big as a real Vectrex), Choose
   overlay, Case, Control deck, Quality and Room light (Dark, Evening, Daylight). Controls: Keyboard and
   controllers, Mouse steers player 1, TV mode shortcuts, Port 2 (Joystick, VecVoice, VecVox). Config opens the
   Config window (Tab), the window that was called the control deck.

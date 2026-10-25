@@ -1491,7 +1491,7 @@ class App:
         except Exception:           # noqa
             conf = {}
         self.full_scale = conf.get('full_scale')
-        self.recent = [g for g in conf.get('recent', []) if isinstance(g, str)][:8]
+        self.recent = [g for g in conf.get('recent', []) if isinstance(g, str)][:10]
         self.note_recent(self.args.rom)
         self.deck_pos = tuple(conf['deck_pos']) if isinstance(conf.get('deck_pos'), list) and len(conf['deck_pos']) == 2 else None
         self.ctl_pos = tuple(conf['ctl_pos']) if isinstance(conf.get('ctl_pos'), list) and len(conf['ctl_pos']) == 2 else None
@@ -3547,7 +3547,7 @@ class App:
     def note_recent(self, rom):
         if rom and not self.args.demo:
             r = [g for g in getattr(self, 'recent', []) if os.path.abspath(g) != os.path.abspath(rom)]
-            self.recent = [os.path.abspath(rom)] + r[:7]
+            self.recent = [os.path.abspath(rom)] + r[:9]
     def room_preset(self):
         """View > Room light: which step the room light is at (x0.5 / x1 / x2 the default), else None"""
         d = self.look_default.get('art_room') if hasattr(self, 'look_default') else None

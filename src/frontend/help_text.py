@@ -146,8 +146,9 @@ TOPICS = [
 ('item', 'Y hold settling', "How quickly the Y sample-and-hold reaches a new value (1 = at once)."),
 ('item', 'Beam switch-off delay', "How long the beam stays lit after a game blanks it: longer, and lines get tails."),
 ('item', 'Line gaps (stop delay)', "When the integrators stop after a line: the gaps at line ends and corners."),
-('item', 'Brightness (the knob at the back)', "As the knob on the back of a Vectrex, 0 = well set. Down: the lines dimmer, the "
-      "faintest gone first (how a game looks on a dim Vectrex). Up: brighter, and the beam glows even when a game switches it "
+('item', 'Brightness (the knob at the back)', "As the knob on the back of a Vectrex: 0 = a black screen, 1 = as bright as a real "
+      "one goes, 0.71 = well set (right click on the slider). Down: the faintest lines go first, a line's corner dots with "
+      "it (how a game looks on a dim Vectrex). Up: brighter, and the beam glows even when a game switches it "
       "off - its moves and its returns to the middle show as a faint web, the 'spider web' of a Vectrex turned up too far, and "
       "a spot where it rests. The test cartridge's screens show it well."),
 ('item', 'Export... / Import...', "Save the unit as a .vxunit file to share, or load one."),

@@ -930,6 +930,15 @@ except Exception:   # noqa
 # analog settings - live in the core (vt_set_analog id), saved, exported and imported as a .vxunit file.
 # (key, core id, label, low, high, format, environment variable at the core's start). The stop delay (line gaps)
 # is the renderer's line_gap, id 0.
+# the brightness knob at the back: 0..1 as the knob turns (0 = a black screen, 1 = the brightest a real Vectrex goes),
+# the tube's bias on the intensity drive KNOB_LO .. KNOB_HI (vecrender knob_bright; the core's VT_BRIGHT / analog 8).
+# KNOB_DEFAULT = a well-set Vectrex (no bias). The owner's Vectrex side by side, 2026-10-25
+KNOB_LO, KNOB_HI = -0.80, 0.32
+KNOB_DEFAULT = round(-KNOB_LO / (KNOB_HI - KNOB_LO), 4)
+def knob_bias(v):
+    """the knob's position 0..1 -> the bias on the intensity drive"""
+    b = KNOB_LO + (KNOB_HI - KNOB_LO) * min(1.0, max(0.0, v))
+    return 0.0 if abs(b) < 1e-3 else b                  # (the default: exactly no bias)
 UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0.10, 1.00, '%.2f', 'VT_ZREFK'),
                ('zcal', 2, 'Zero calibration shift', 0.0, 6.0, '%.1f', 'VT_CALSHIFT'),
                ('drift_x', 3, 'Drift X (integrator offset)', -0.10, 0.10, '%+.3f', None),
@@ -937,17 +946,17 @@ UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0
                ('zofs', 7, 'Zero offset (trimmers R333 / R335)', -2.0, 2.0, '%+.2f', 'VT_ZOFS'),
                ('ysettle', 5, 'Y hold settling (1 = instant)', 0.20, 1.00, '%.2f', 'VT_YSHK'),
                ('beamoff', 6, 'Beam switch-off delay', 0.0, 3.0, '%.1f cycles', 'VT_BEAMOFF'),
-               ('bright', 8, 'Brightness (the knob at the back)', -1.0, 0.4, '%+.2f', 'VT_BRIGHT'))
+               ('knob', 8, 'Brightness (the knob at the back)', 0.0, 1.0, '%.2f', 'VT_BRIGHT'))
 UNIT_PRESETS = {
-    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=12.3, bright=0.0),  # (measured)
-    'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=12.3, bright=0.0),
-    'cranky': dict(zhold=0.18, zcal=4.5, drift_x=0.035, drift_y=-0.025, zofs=0.8, ysettle=0.45, beamoff=1.5, gap=14.6, bright=0.0)}
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=12.3, knob=KNOB_DEFAULT),  # (measured)
+    'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=12.3, knob=KNOB_DEFAULT),
+    'cranky': dict(zhold=0.18, zcal=4.5, drift_x=0.035, drift_y=-0.025, zofs=0.8, ysettle=0.45, beamoff=1.5, gap=14.6, knob=KNOB_DEFAULT)}
 UNIT_NAMES = {'owner': "Owner's Vectrex (measured)", 'ideal': 'Ideal', 'cranky': 'Cranky', 'random': 'Random unit', 'custom': 'Custom'}
 def random_unit():
     """a believable other Vectrex: every part somewhere between a good and a tired one"""
     u = lambda a, b: round(random.uniform(a, b), 3)
     return dict(zhold=u(0.22, 0.75), zcal=u(0.5, 4.0), drift_x=u(-0.025, 0.025), drift_y=u(-0.025, 0.025),
-                zofs=u(-0.6, 0.6), ysettle=u(0.5, 0.95), beamoff=u(0.2, 1.2), gap=u(11.0, 14.0), bright=0.0)
+                zofs=u(-0.6, 0.6), ysettle=u(0.5, 0.95), beamoff=u(0.2, 1.2), gap=u(11.0, 14.0), knob=KNOB_DEFAULT)
 ADDON_ROM = ('.um2', '.img', '.pit')
 
 
@@ -1024,7 +1033,7 @@ class Core:
         if unit and not ideal:                                     # (the Vectrex unit: the analog parts at the start)
             for key, i, label, lo, hi, fmt, var in UNIT_PARAMS:
                 if var and key in unit:
-                    env[var] = '%.4f' % unit[key]
+                    env[var] = '%.4f' % (knob_bias(unit[key]) if key == 'knob' else unit[key])
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
         if not ideal and rom.lower().endswith(('.um2', '.img', '.pit')):
             # (a UVMC2 / PiTrex drives the beam with short zero pulses: the slow reference model (0.38) leaves
@@ -1437,9 +1446,9 @@ class App:
         for k in self.look_keys:
             if k in saved:
                 setattr(self.ren, k, type(self.look_default[k])(saved[k]))
-        self.unit['bright'] = min(0.4, max(-1.0, self.unit.get('bright', 0.0)))   # (the knob's range, see UNIT_PARAMS)
+        self.unit['knob'] = min(1.0, max(0.0, self.unit.get('knob', KNOB_DEFAULT)))   # (see KNOB_LO)
         if self.ren:
-            self.ren.knob_bright = self.unit['bright']          # (the brightness knob at the back)
+            self.ren.knob_bright = knob_bias(self.unit['knob'])   # (the brightness knob at the back)
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)                # (Tube > Line gaps: the core's stop delay)
             self.unit['gap'] = self.ren.line_gap
@@ -3321,11 +3330,11 @@ class App:
         if key == 'gap':
             if self.ren and hasattr(self.ren, 'line_gap'): self.ren.line_gap = v
             self.core.set_gap(v); return
-        if key == 'bright' and self.ren:
-            self.ren.knob_bright = v                            # (the renderer turns the lines; the core sends the web)
+        if key == 'knob' and self.ren:
+            self.ren.knob_bright = knob_bias(v)                 # (the renderer turns the lines; the core sends the web)
         for k, i, label, lo, hi, fmt, var in UNIT_PARAMS:
             if k == key and not (i == 1 and self.core.rom.lower().endswith(ADDON_ROM)):   # (the add-ons: the standard
-                self.core.set_analog(i, v)                                               #  zero reference, see Core)
+                self.core.set_analog(i, knob_bias(v) if k == 'knob' else v)              #  zero reference, see Core)
     def unit_preset(self, name):
         """the Vectrex unit: a preset ('owner', 'ideal', 'cranky') or 'random' - a new believable unit"""
         u = random_unit() if name == 'random' else dict(UNIT_PRESETS[name])

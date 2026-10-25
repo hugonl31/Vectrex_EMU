@@ -27,6 +27,12 @@ UNIT_PIXEL = 2
 CAP_ROUND = 2
 LEVELS = 16                   # brightness steps (pens)
 
+def Renderer_rest(ln):
+    """a resting spot (see REST_SPEED): the beam moved slower than REST_SPEED units a cycle on average"""
+    cyc = ln[5] / 8.0 if len(ln) > 5 else 0.0
+    return ((ln[2] - ln[0]) ** 2 + (ln[3] - ln[1]) ** 2) ** 0.5 <= REST_SPEED * cyc or (ln[0] == ln[2] and ln[1] == ln[3])
+
+
 class Renderer:
     def __init__(self, hwnd):
         self.g = ctypes.windll.gdiplus
@@ -370,6 +376,10 @@ BEAM_DOTW, BEAM_DOTWK = 1.0, 0.002   # its width: the line width x DOTW + DOTWK 
 # (Spinball's dots 26): above BEAM_BLOOM_E0 the spot widens up to BEAM_BLOOM_W x and its glow up to
 # BEAM_BLOOM_H x, fully at BEAM_BLOOM_E1.
 BEAM_BLOOM_E0, BEAM_BLOOM_E1, BEAM_BLOOM_W, BEAM_BLOOM_H = 20.0, 38.0, 2.0, 2.5
+# a resting spot: a piece where the beam moved slower than REST_SPEED units a cycle on average (the spot's lag brings it
+# to rest gradually - the last fraction of a unit is the rest; lines are drawn at 1 unit a cycle and more). Drawn
+# where the spot came to rest
+REST_SPEED = 0.5
 # the beam's width with its intensity (Z/127; its brightness: TUBE_LIGHT): below intensity 63 the tube is close
 # to its cutoff and the spot shrinks fast: the owner (2026-10-12): Vectorblade's background stars (intensity 15-47) are much
 # thinner, smaller and fainter on the real tube than the shots (127), on the emulator nearly the same.
@@ -2113,7 +2123,29 @@ class GLBloomRenderer(GLRenderer):
         self.ClientActiveTexture(0x84C0); gl.glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
 
-    def _tube_lines(self, lines):
+    @staticmethod
+    def _rest(ln):
+        return Renderer_rest(ln)
+
+    @staticmethod
+    def _joins(lines):
+        """the beam drawing one stroke in several pieces (the core cuts a line where the speed changes - the spot's
+        lag turns corners in curves of pieces): per line 1 = its start continues the piece before, 2 = its end
+        continues into the next (the same point, the next moment). Those ends are drawn open, so a stroke is one
+        smooth line - no round ends overlapping into dots at the joins. Resting spots (zero length) are not opened"""
+        n = len(lines); out = [0] * n
+        for i in range(1, n):
+            a, c = lines[i - 1], lines[i]
+            if len(a) < 7 or len(c) < 7 or (a[4] & 256) or (c[4] & 256): continue
+            if abs(c[0] - a[2]) > 1.5 or abs(c[1] - a[3]) > 1.5: continue
+            if abs(c[6] - (a[6] + a[5] / 8.0)) > 1.5: continue
+            if not Renderer_rest(c): out[i] |= 1
+            if not Renderer_rest(a): out[i - 1] |= 2
+        for i, ln in enumerate(lines):
+            if Renderer_rest(ln): out[i] |= 4                # (bit 2: a resting spot)
+        return out
+
+    def _tube_lines(self, lines, joins=None):
         """Tube geometry: every line through the owner's tube map (TUBE_X / TUBE_Y), long ones in pieces so they
         bend; each piece keeps its share of the beam's energy and its moment in the frame"""
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
@@ -2121,12 +2153,12 @@ class GLBloomRenderer(GLRenderer):
             self._tube_k = k; self._tube_f = tube_map(k)
         f = self._tube_f
         out = []; sqrt = math.sqrt; opens = []           # (opens: a piece's ends that join the next piece)
-        for ln in lines:
+        for li, ln in enumerate(lines):
             x0, y0, x1, y1 = ln[:4]
             L = sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
             if L <= TUBE_SEG or k <= 0:                  # (straight: the ends only)
                 a = f(x0, y0); b = f(x1, y1) if L > 0 else a
-                out.append((a[0], a[1], b[0], b[1]) + tuple(ln[4:])); opens.append(0)
+                out.append((a[0], a[1], b[0], b[1]) + tuple(ln[4:])); opens.append(joins[li] if joins else (4 if Renderer_rest(ln) else 0))
                 continue
             m = int(L / TUBE_SEG) + 1; rest = tuple(ln[7:])
             e = ln[5] if len(ln) > 5 else None; t0 = ln[6] if len(ln) > 6 else None
@@ -2141,7 +2173,7 @@ class GLBloomRenderer(GLRenderer):
                     if t0 is not None:
                         piece += (t0 + cyc * (i - 1) / m,) + rest
                 out.append(piece); pa = pb
-                opens.append((1 if i > 1 else 0) | (2 if i < m else 0))
+                opens.append((1 if i > 1 else (joins[li] & 1 if joins else 0)) | (2 if i < m else (joins[li] & 2 if joins else 0)))
         self._tube_open = opens
         return out
 
@@ -2169,11 +2201,20 @@ class GLBloomRenderer(GLRenderer):
         L = L[:, :7]
         b = L[:, 4].astype(np.int64)
         if getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False):
-            hm = (L[:, 0] == L[:, 2]) & (L[:, 1] == L[:, 3]) & (L[:, 5] >= 64) & ((b & 127) != 0)
+            hm = (np.sqrt((L[:, 2] - L[:, 0]) ** 2 + (L[:, 3] - L[:, 1]) ** 2) <= REST_SPEED * L[:, 5] / 8.0) & (L[:, 5] >= 64) & ((b & 127) != 0)
             if hm.any():                                   # (the resting spots' halos, drawn first)
                 H = L[hm].copy(); H[:, 4] = (b[hm] & 127) | 256
                 L = np.concatenate([H, L]); b = L[:, 4].astype(np.int64)
         x0, y0, x1, y1, e, t0 = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
+        # one stroke in several pieces: the joined ends open (_joins)
+        jo = np.zeros(len(L), dtype=np.int64)
+        zl = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2) <= REST_SPEED * e / 8.0     # (resting spots: see REST_SPEED)
+        if len(L) > 1:
+            nh = (b & 256) == 0
+            cont = ((np.abs(x0[1:] - x1[:-1]) <= 1.5) & (np.abs(y0[1:] - y1[:-1]) <= 1.5)
+                    & (np.abs(t0[1:] - (t0[:-1] + e[:-1] / 8.0)) <= 1.5) & nh[1:] & nh[:-1])
+            jo[1:] |= np.where(cont & ~zl[1:], 1, 0)
+            jo[:-1] |= np.where(cont & ~zl[:-1], 2, 0)
         # the tube's map, long lines in pieces (_tube_lines)
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
         Ls = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
@@ -2203,12 +2244,12 @@ class GLBloomRenderer(GLRenderer):
             return XM + (sx + k * (X - sx) + lb) * U, YM + (sy + k * (Y - sy) + ld) * U
         x0, y0 = f(ax_, ay_)
         x1, y1 = f(bx_, by_)
-        same = (Ls[idx] <= 0)                             # (a dot: its end is its start)
-        x1 = np.where(same, x0, x1); y1 = np.where(same, y0, y1)
+        same = zl[idx]                                    # (a resting spot: where the spot came to rest)
+        x0 = np.where(same, x1, x0); y0 = np.where(same, y1, y0)
         e = e[idx] / mm
         t0 = t0[idx] + (L[idx, 5] / 8.0) * (i - 1) / mm
         b = b[idx]
-        op = np.where(mm > 1, np.where(i > 1, 1, 0) | np.where(i < mm, 2, 0), 0)
+        op = np.where(i > 1, 1, jo[idx] & 1) | np.where(i < mm, 2, jo[idx] & 2) | np.where(same, 4, 0)
         self._tube_open = op
         n = len(x0)
         w, h = self.size
@@ -2253,7 +2294,7 @@ class GLBloomRenderer(GLRenderer):
         zw = np.where(hi, 1.0, BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ)
         fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth
         halo = (b & 256) != 0
-        moving = (lp / gp > 0.05) & ~halo
+        moving = ~same & ~halo                             # (a spot only where the beam stood still)
         rest = ~halo & ~moving
         kk = np.zeros(n)
         if halo.any():
@@ -2306,11 +2347,11 @@ class GLBloomRenderer(GLRenderer):
         if not lines:
             return None
         halos = [(ln[0], ln[1], ln[2], ln[3], (ln[4] & 127) | 256) + tuple(ln[5:]) for ln in lines
-                 if len(ln) > 5 and ln[0] == ln[2] and ln[1] == ln[3] and ln[5] >= 64 and (ln[4] & 127)] \
+                 if len(ln) > 5 and Renderer_rest(ln) and ln[5] >= 64 and (ln[4] & 127)] \
             if getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False) else None
         if halos:
             lines = halos + list(lines)                    # (drawn first: the spots and lines go over them)
-        lines = self._tube_lines(lines)
+        lines = self._tube_lines(lines, self._joins(lines))
         n = len(lines)
         w, h = self.size
         sc, ox, oy = self.map
@@ -2362,6 +2403,9 @@ class GLBloomRenderer(GLRenderer):
         if opens is not None and len(opens) != len(lines): opens = None
         for li, ln in enumerate(lines):
             x0, y0, x1, y1, b = ln[:5]
+            zlen = bool(opens[li] & 4) if opens else Renderer_rest(ln)   # (a resting spot: see REST_SPEED)
+            if zlen:
+                x0, y0 = x1, y1                            # (where the spot came to rest)
             cyc = ln[5] / 8.0 if len(ln) > 5 else 3.0      # beam energy (cycles at full level)
             if bend:
                 x0 = cxm + (x0 - cxm) * gs + gsh; x1 = cxm + (x1 - cxm) * gs + gsh
@@ -2397,7 +2441,7 @@ class GLBloomRenderer(GLRenderer):
                 k = getattr(self, 'halo_k', BEAM_HALO_K) * min(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl)
             elif getattr(self, 'even_beam', False):       # an ideal display: lines and points alike
                 k = BEAM_LINE
-            elif lp / gp > 0.05:
+            elif not zlen:
                 e = cyc / (lp / gp)                        # cycles per game pixel
                 k = BEAM_LINE * (1.0 - BEAM_SPEED * exp(-e / 0.8))   # fast sweeps slightly fainter
             else:                                          # the beam resting: a spot

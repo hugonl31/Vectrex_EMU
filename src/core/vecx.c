@@ -273,8 +273,9 @@ static unsigned alg_vectoring; /* are we drawing a vector right now? */
 static double vt_lag = -1; static int vt_lag_n = 0;
 static double beam_x, beam_y, beam_x1, beam_y1, beam_vx, beam_vy;   /* (beam_x1/y1: the first stage of two) */
 static int beam_init, lag_moving;
-static double piece_bvx, piece_bvy, lag_split_k = 0.5;   /* (VT_DEFLAGSPLIT: a new piece once the spot's speed changed by
-                                                          * this share: Vectorblade ~2,400 lines a frame, the shapes as fitted) */      /* (the spot's speed where the current line piece began) */
+static double piece_bvx, piece_bvy, lag_split_k = 0.1;   /* (VT_DEFLAGSPLIT: a new piece once the spot's speed changed by
+                                                          * this share: curves fine enough to look smooth - the renderer joins
+                                                          * the pieces of a stroke seamlessly; Vectorblade ~4,800 lines a frame) */
 #define LAG_SPLIT 2.0
 #define LAG_TAU 8.0                     /* (the default lag, cycles: the owner's Vectrex, 2026-10-25 - the combined fit of
                                          * testcart/corner_test, lag_test and axis_test with X/Y delay 9, RAMP start 5, stop 7:
@@ -1369,7 +1370,9 @@ static einline void alg_sstep (void)
 				   : (sig_dx != alg_vector_dx || sig_dy != alg_vector_dy)) ||                  /*  a little: a curve in chords) */
 				   (unsigned char) alg_zsh != alg_vector_color ||
 				   (lag_moving && alg_vector_cyc >= LAG_SPLIT && fabs (beam_vx - piece_bvx) + fabs (beam_vy - piece_bvy) >
-				    lag_split_k * (fabs (piece_bvx) + fabs (piece_bvy)) + 2 * ZS)) {   /* (the spot catching up: a curve, in chords) */
+				    lag_split_k * (fabs (piece_bvx) + fabs (piece_bvy)) + 2 * ZS) ||   /* (the spot catching up: a curve, in chords) */
+				   (vt_lag > 0.05 && fabs (beam_vx) + fabs (beam_vy) < 0.25 * ZS &&     /* (the spot has come to a stop: its */
+				    fabs (piece_bvx) + fabs (piece_bvy) >= 0.5 * ZS)) {                 /*  rest a piece of its own - a spot) */
 
 			/* the parameters of the vectoring processing has changed.
 			 * so end the current line.

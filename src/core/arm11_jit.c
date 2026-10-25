@@ -1,5 +1,6 @@
 /* arm11_jit.c - a JIT for arm11.c: the ARM code of a PiTrex program translated, a block at a time, into x86-64
- * machine code (included by arm11.c; x86-64 hosts only - elsewhere the interpreter runs everything).
+ * or ARM64 machine code (included by arm11.c; on other hosts the interpreter runs everything). This file: what both
+ * share, and the x86-64 code; arm11_jit_a64.c the ARM64 code.
  *
  * A block is a run of ARM instructions from one address: up to the first instruction that changes the PC (or
  * one the JIT leaves to the interpreter), never across a 4 KB page. Its code keeps the ARM state where the
@@ -16,13 +17,17 @@
  * Writes to a page that holds translated code drop that page's blocks (the loader copies programs in).
  *
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
-#if (defined(_M_X64) || defined(__x86_64__)) && !defined(ARM11_NO_JIT)
+#if (defined(_M_X64) || defined(__x86_64__) || defined(_M_ARM64) || defined(__aarch64__)) && !defined(ARM11_NO_JIT)
 #define ARM11_JIT 1
 #include <stddef.h>
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <sys/mman.h>
+#endif
+#ifdef __APPLE__
+#include <pthread.h>
+#include <libkern/OSCacheControl.h>
 #endif
 
 typedef struct { uint32_t pc, cost; uint8_t *code; } jent_t;     /* (cost: the most cycles the block can take) */
@@ -41,6 +46,118 @@ unsigned long long jit_c_run, jit_c_slow, jit_c_loop, jit_c_interp, jit_c_enter;
 unsigned long jit_interp_hist[4096]; uint32_t jit_interp_ins[4096];
 typedef void (*jenter_fn) (arm11_t *c, uint8_t *code);
 
+static void jit_flush (void);
+static int jit_setup (arm11_t *c);
+static jent_t *jit_translate (arm11_t *c, uint32_t pc);
+
+/* ---------------------------------------------------------------- the helpers the code calls */
+static uint32_t jh_rd (arm11_t *c, uint32_t a, uint32_t n) { jit_c_slow++; return mrd (c, a, (int) n); }
+static uint32_t jh_rds (arm11_t *c, uint32_t a, uint32_t n)       /* (signed byte / halfword) */
+{ uint32_t v = mrd (c, a, (int) n); return n == 1 ? (uint32_t) (int32_t) (int8_t) v : (uint32_t) (int32_t) (int16_t) v; }
+static void jh_wr (arm11_t *c, uint32_t a, uint32_t v, uint32_t n)
+{
+	jit_c_slow++; mwr (c, a, v, (int) n);
+	if (a < jpage_n * 4096u) {
+		uint32_t p0 = a >> 12, p1 = (a + n - 1) >> 12;
+		if (jpage[p0] || (p1 < jpage_n && jpage[p1])) { jit_flush (); jit_n_inval++; c->jit_until = 0; }   /* (stop at the next block) */
+	}
+}
+static uint32_t jh_loop (arm11_t *c) { jit_c_loop++; return (uint32_t) loop_round (c, c->jit_until); }
+static void jh_bx (arm11_t *c, uint32_t v, uint32_t ip) { bx_to (c, v, ip); }
+static uint32_t jh_mrc (arm11_t *c, uint32_t ins) { unsigned rt = (ins >> 12) & 15; uint32_t v = 0; cp15 (c, 1, (ins >> 21) & 7, (ins >> 16) & 15, ins & 15, (ins >> 5) & 7, &v); (void) rt; return v; }
+static void jh_mcr (arm11_t *c, uint32_t ins, uint32_t v) { cp15 (c, 0, (ins >> 21) & 7, (ins >> 16) & 15, ins & 15, (ins >> 5) & 7, &v); }
+
+/* ---------------------------------------------------------------- translating */
+/* what the JIT does with an instruction: 0 leave it to the interpreter; else its kind */
+enum { K_NONE, K_DP, K_MUL, K_MULL, K_LS, K_LSX, K_LDM, K_B, K_BX, K_CPNOP, K_MRC, K_CLZ, K_EXT };
+static int j_kind (uint32_t ins, uint32_t ip, int *ends, unsigned *extra)
+{
+	unsigned cond = ins >> 28, op = (ins >> 25) & 7, rn = (ins >> 16) & 15, rd = (ins >> 12) & 15, rs = (ins >> 8) & 15, rm = ins & 15;
+	*ends = 0; *extra = 0;
+	if (cond == 15) return K_NONE;
+	switch (op) {
+	case 0: case 1:
+		if (op == 0 && (ins & 0x90) == 0x90) {
+			unsigned sh = (ins >> 5) & 3;
+			if (sh == 0) {
+				if ((ins & 0x0f000000u) == 0) {
+					unsigned mop = (ins >> 21) & 7;
+					if (rm == 15 || rs == 15 || rn == 15 || rd == 15) return K_NONE;
+					if (mop <= 1) return K_MUL;
+					if (mop >= 4) return rd == rn ? K_NONE : K_MULL;
+				}
+				return K_NONE;
+			}
+			{ unsigned P = (ins >> 24) & 1, I = (ins >> 22) & 1, W = (ins >> 21) & 1, L = (ins >> 20) & 1;
+			  if (!I && rm == 15) return K_NONE;
+			  if (rd == 15 || (!P && W)) return K_NONE;
+			  if ((!P || W) && (rn == rd || rn == 15)) return K_NONE;
+			  if (!L && sh == 1) return K_LSX;                               /* STRH */
+			  if (L) return K_LSX;                                           /* LDRH / LDRSB / LDRSH */
+			  if (rd >= 14 || (rd & 1)) return K_NONE;                        /* LDRD / STRD */
+			  if ((!P || W) && rn == rd + 1) return K_NONE;
+			  return K_LSX; }
+		}
+		{
+			unsigned opc = (ins >> 21) & 15, S = (ins >> 20) & 1;
+			if ((opc & 0xc) == 0x8 && !S) {
+				if (op == 0 && opc == 9 && ((ins >> 4) & 15) == 1 && rm != 15) { *ends = 1; return K_BX; }   /* BX */
+				if (op == 0 && opc == 9 && ((ins >> 4) & 15) == 3 && rm != 15) { *ends = 1; return K_BX; }   /* BLX register */
+				if (op == 0 && opc == 11 && ((ins >> 4) & 15) == 1 && rm != 15 && rd != 15) return K_CLZ;
+				return K_NONE;
+			}
+			if (op == 0 && (ins & 0x10)) {                                       /* register-shifted register */
+				if (rn == 15 || rm == 15 || rs == 15 || rd == 15) return K_NONE;
+				int logical = !(opc >= 2 && opc <= 7) && opc != 10 && opc != 11;
+				if (S && logical) return K_NONE;                                   /* (its carry: the interpreter) */
+				return K_DP;
+			}
+			if (rd == 15 && (opc & 0xc) != 0x8) { if (S) return K_NONE; *ends = 1; *extra = 2; }
+			return K_DP;
+		}
+	case 2: case 3:
+		if (op == 3 && (ins & 0x10)) {
+			unsigned op1 = (ins >> 20) & 31, op2 = (ins >> 5) & 7;
+			if (op2 == 3 && (op1 & 0x18) == 0x08 && rn == 15 && rd != 15 && rm != 15 && ((op1 & 7) == 2 || (op1 & 7) == 3 || (op1 & 7) == 6 || (op1 & 7) == 7)) return K_EXT;   /* SXTB SXTH UXTB UXTH */
+			return K_NONE;
+		}
+		{ unsigned P = (ins >> 24) & 1, W = (ins >> 21) & 1, L = (ins >> 20) & 1;
+		  if (!P && W) return K_NONE;
+		  if (op == 3 && rm == 15) return K_NONE;
+		  if ((!P || W) && (rn == rd || rn == 15)) return K_NONE;
+		  if (rd == 15 && !L) { *extra = 1; return K_LS; }
+		  if (rd == 15) { *ends = 1; *extra = 1 + 2; return K_LS; }
+		  *extra = 1; return K_LS; }
+	case 4: {
+		unsigned S = (ins >> 22) & 1, L = (ins >> 20) & 1, W = (ins >> 21) & 1; uint32_t list = ins & 0xffff;
+		if (S || rn == 15 || !list) return K_NONE;
+		if (W && ((list >> rn) & 1) && !L) {                                      /* (STM writing back its base, in the list: the interpreter) */
+			return K_NONE;
+		}
+		unsigned cnt = 0; for (int i = 0; i < 16; i++) cnt += (list >> i) & 1;
+		*extra = cnt;
+		if (L && (list & 0x8000)) { *ends = 1; *extra += 2; }
+		return K_LDM;
+	}
+	case 5: {
+		int32_t off = (int32_t) (ins << 8) >> 6;
+		if (ip + 8 + (uint32_t) off == ip) return K_NONE;                        /* (b . : the interpreter sleeps) */
+		*ends = 1; *extra = 2; return K_B;
+	}
+	case 7:
+		if ((ins & 0x0f000010u) == 0x0e000010u && ((ins >> 8) & 15) == 15) {     /* MRC / MCR p15 */
+			unsigned L = (ins >> 20) & 1, crn = (ins >> 16) & 15, crm = ins & 15, opc2 = (ins >> 5) & 7, rt = (ins >> 12) & 15;
+			if (rt == 15) return K_NONE;
+			if (!L && crn == 7 && !(crm == 0 && opc2 == 4)) return K_CPNOP;      /* (cache and barrier operations) */
+			if (L) return K_MRC;
+			return K_NONE;
+		}
+		return K_NONE;
+	default: return K_NONE;
+	}
+}
+
+#if defined(_M_X64) || defined(__x86_64__)
 /* ---------------------------------------------------------------- an x86-64 emitter (just what the templates use) */
 static uint8_t *E;
 static void b1 (int x) { *E++ = (uint8_t) x; }
@@ -130,24 +247,6 @@ enum { CC_O, CC_NO, CC_C, CC_NC, CC_Z, CC_NZ, CC_BE, CC_A, CC_S, CC_NS, CC_P, CC
 /* RAM at r12 + rcx */
 static void ram_ld (int n, int sx) { b1 (0x41); if (n == 4) b1 (0x8B); else { b1 (0x0F); b1 (n == 1 ? (sx ? 0xBE : 0xB6) : (sx ? 0xBF : 0xB7)); } b1 (0x04); b1 (0x0C); }   /* eax = [r12+rcx] */
 static void ram_st (int n) { if (n == 2) b1 (0x66); b1 (0x41); b1 (n == 1 ? 0x88 : 0x89); b1 (0x04); b1 (0x0C); }   /* [r12+rcx] = al / ax / eax */
-
-/* ---------------------------------------------------------------- the helpers the code calls */
-static uint32_t jh_rd (arm11_t *c, uint32_t a, uint32_t n) { jit_c_slow++; return mrd (c, a, (int) n); }
-static uint32_t jh_rds (arm11_t *c, uint32_t a, uint32_t n)       /* (signed byte / halfword) */
-{ uint32_t v = mrd (c, a, (int) n); return n == 1 ? (uint32_t) (int32_t) (int8_t) v : (uint32_t) (int32_t) (int16_t) v; }
-static void jit_flush (void);
-static void jh_wr (arm11_t *c, uint32_t a, uint32_t v, uint32_t n)
-{
-	jit_c_slow++; mwr (c, a, v, (int) n);
-	if (a < jpage_n * 4096u) {
-		uint32_t p0 = a >> 12, p1 = (a + n - 1) >> 12;
-		if (jpage[p0] || (p1 < jpage_n && jpage[p1])) { jit_flush (); jit_n_inval++; c->jit_until = 0; }   /* (stop at the next block) */
-	}
-}
-static uint32_t jh_loop (arm11_t *c) { jit_c_loop++; return (uint32_t) loop_round (c, c->jit_until); }
-static void jh_bx (arm11_t *c, uint32_t v, uint32_t ip) { bx_to (c, v, ip); }
-static uint32_t jh_mrc (arm11_t *c, uint32_t ins) { unsigned rt = (ins >> 12) & 15; uint32_t v = 0; cp15 (c, 1, (ins >> 21) & 7, (ins >> 16) & 15, ins & 15, (ins >> 5) & 7, &v); (void) rt; return v; }
-static void jh_mcr (arm11_t *c, uint32_t ins, uint32_t v) { cp15 (c, 0, (ins >> 21) & 7, (ins >> 16) & 15, ins & 15, (ins >> 5) & 7, &v); }
 
 /* call fn (c, ecx, eax[, edx]) - the arguments as the code holds them */
 static void call3 (void *fn, int nargs)
@@ -250,96 +349,6 @@ static void jit_flush (void)
 	jit_n_flush++;
 }
 
-
-/* ---------------------------------------------------------------- translating */
-/* what the JIT does with an instruction: 0 leave it to the interpreter; else its kind */
-enum { K_NONE, K_DP, K_MUL, K_MULL, K_LS, K_LSX, K_LDM, K_B, K_BX, K_CPNOP, K_MRC, K_CLZ, K_EXT };
-static int j_kind (uint32_t ins, uint32_t ip, int *ends, unsigned *extra)
-{
-	unsigned cond = ins >> 28, op = (ins >> 25) & 7, rn = (ins >> 16) & 15, rd = (ins >> 12) & 15, rs = (ins >> 8) & 15, rm = ins & 15;
-	*ends = 0; *extra = 0;
-	if (cond == 15) return K_NONE;
-	switch (op) {
-	case 0: case 1:
-		if (op == 0 && (ins & 0x90) == 0x90) {
-			unsigned sh = (ins >> 5) & 3;
-			if (sh == 0) {
-				if ((ins & 0x0f000000u) == 0) {
-					unsigned mop = (ins >> 21) & 7;
-					if (rm == 15 || rs == 15 || rn == 15 || rd == 15) return K_NONE;
-					if (mop <= 1) return K_MUL;
-					if (mop >= 4) return rd == rn ? K_NONE : K_MULL;
-				}
-				return K_NONE;
-			}
-			{ unsigned P = (ins >> 24) & 1, I = (ins >> 22) & 1, W = (ins >> 21) & 1, L = (ins >> 20) & 1;
-			  if (!I && rm == 15) return K_NONE;
-			  if (rd == 15 || (!P && W)) return K_NONE;
-			  if ((!P || W) && (rn == rd || rn == 15)) return K_NONE;
-			  if (!L && sh == 1) return K_LSX;                               /* STRH */
-			  if (L) return K_LSX;                                           /* LDRH / LDRSB / LDRSH */
-			  if (rd >= 14 || (rd & 1)) return K_NONE;                        /* LDRD / STRD */
-			  if ((!P || W) && rn == rd + 1) return K_NONE;
-			  return K_LSX; }
-		}
-		{
-			unsigned opc = (ins >> 21) & 15, S = (ins >> 20) & 1;
-			if ((opc & 0xc) == 0x8 && !S) {
-				if (op == 0 && opc == 9 && ((ins >> 4) & 15) == 1 && rm != 15) { *ends = 1; return K_BX; }   /* BX */
-				if (op == 0 && opc == 9 && ((ins >> 4) & 15) == 3 && rm != 15) { *ends = 1; return K_BX; }   /* BLX register */
-				if (op == 0 && opc == 11 && ((ins >> 4) & 15) == 1 && rm != 15 && rd != 15) return K_CLZ;
-				return K_NONE;
-			}
-			if (op == 0 && (ins & 0x10)) {                                       /* register-shifted register */
-				if (rn == 15 || rm == 15 || rs == 15 || rd == 15) return K_NONE;
-				int logical = !(opc >= 2 && opc <= 7) && opc != 10 && opc != 11;
-				if (S && logical) return K_NONE;                                   /* (its carry: the interpreter) */
-				return K_DP;
-			}
-			if (rd == 15 && (opc & 0xc) != 0x8) { if (S) return K_NONE; *ends = 1; *extra = 2; }
-			return K_DP;
-		}
-	case 2: case 3:
-		if (op == 3 && (ins & 0x10)) {
-			unsigned op1 = (ins >> 20) & 31, op2 = (ins >> 5) & 7;
-			if (op2 == 3 && (op1 & 0x18) == 0x08 && rn == 15 && rd != 15 && rm != 15 && ((op1 & 7) == 2 || (op1 & 7) == 3 || (op1 & 7) == 6 || (op1 & 7) == 7)) return K_EXT;   /* SXTB SXTH UXTB UXTH */
-			return K_NONE;
-		}
-		{ unsigned P = (ins >> 24) & 1, W = (ins >> 21) & 1, L = (ins >> 20) & 1;
-		  if (!P && W) return K_NONE;
-		  if (op == 3 && rm == 15) return K_NONE;
-		  if ((!P || W) && (rn == rd || rn == 15)) return K_NONE;
-		  if (rd == 15 && !L) { *extra = 1; return K_LS; }
-		  if (rd == 15) { *ends = 1; *extra = 1 + 2; return K_LS; }
-		  *extra = 1; return K_LS; }
-	case 4: {
-		unsigned S = (ins >> 22) & 1, L = (ins >> 20) & 1, W = (ins >> 21) & 1; uint32_t list = ins & 0xffff;
-		if (S || rn == 15 || !list) return K_NONE;
-		if (W && ((list >> rn) & 1) && !L) {                                      /* (STM writing back its base, in the list: the interpreter) */
-			return K_NONE;
-		}
-		unsigned cnt = 0; for (int i = 0; i < 16; i++) cnt += (list >> i) & 1;
-		*extra = cnt;
-		if (L && (list & 0x8000)) { *ends = 1; *extra += 2; }
-		return K_LDM;
-	}
-	case 5: {
-		int32_t off = (int32_t) (ins << 8) >> 6;
-		if (ip + 8 + (uint32_t) off == ip) return K_NONE;                        /* (b . : the interpreter sleeps) */
-		*ends = 1; *extra = 2; return K_B;
-	}
-	case 7:
-		if ((ins & 0x0f000010u) == 0x0e000010u && ((ins >> 8) & 15) == 15) {     /* MRC / MCR p15 */
-			unsigned L = (ins >> 20) & 1, crn = (ins >> 16) & 15, crm = ins & 15, opc2 = (ins >> 5) & 7, rt = (ins >> 12) & 15;
-			if (rt == 15) return K_NONE;
-			if (!L && crn == 7 && !(crm == 0 && opc2 == 4)) return K_CPNOP;      /* (cache and barrier operations) */
-			if (L) return K_MRC;
-			return K_NONE;
-		}
-		return K_NONE;
-	default: return K_NONE;
-	}
-}
 
 typedef struct { uint32_t ins, ip; int kind, ends; unsigned extra, after; int folded; } jins_t;
 static const uint8_t *j_ram;
@@ -889,6 +898,10 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	for (int i = 0; i < jlinks_n; i++) if (jlinks[i].target == pc) { jlink_patch (&jlinks[i], e); jlinks[i--] = jlinks[--jlinks_n]; }
 	return e;
 }
+#else
+#include "arm11_jit_a64.c"
+#endif
+
 /* run JIT code from the PC, if there is a block there (and, exact, it fits in the slice): 1 if it ran */
 static int jit_try (arm11_t *c, uint64_t until)
 {

@@ -41,21 +41,6 @@ import fatimg
 import links
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
-_rosetta = None
-def rosetta():
-    """an Apple silicon Mac that can run Intel code (Rosetta 2): the PiTrex's ARM-to-x86 JIT runs there, translated
-    once more, and that is still much faster than the core's interpreter (the JIT is for x86-64 only)"""
-    global _rosetta
-    if _rosetta is None:
-        _rosetta = False
-        if IS_MAC:
-            try:
-                import platform
-                if platform.machine() == 'arm64' and os.path.exists('/usr/bin/arch'):
-                    _rosetta = subprocess.run(['/usr/bin/arch', '-x86_64', '/usr/bin/true'], capture_output=True, timeout=10).returncode == 0
-            except (OSError, subprocess.SubprocessError):
-                _rosetta = False
-    return _rosetta
 # Steam Deck Game Mode (gamescope): one window is shown - a second one (the first-run setup) stays out of
 # sight, and there is no mouse for the volume knob: there the setup is skipped and the Vectrex starts on
 IN_GAMESCOPE = bool(os.environ.get('GAMESCOPE_WAYLAND_DISPLAY')) or os.environ.get('XDG_CURRENT_DESKTOP', '').lower() == 'gamescope'
@@ -1086,10 +1071,7 @@ class Core:
             except (OSError, ValueError):
                 pass
         self.rom = rom
-        cmd = [CORE, BIOS, rom, '--live', NUL]
-        if rom.lower().endswith(('.img', '.pit')) and rosetta():
-            cmd = ['/usr/bin/arch', '-x86_64'] + cmd        # (a PiTrex on Apple silicon: the core's Intel half, its JIT, under Rosetta)
-        self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        self.p = subprocess.Popen([CORE, BIOS, rom, '--live', NUL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, bufsize=0,
                                   creationflags=0x08000000 if IS_WIN else 0)            # CREATE_NO_WINDOW
         # the core's messages: a UVMC2 cartridge's problem ("UVMC2: ...") for the window; the rest dropped

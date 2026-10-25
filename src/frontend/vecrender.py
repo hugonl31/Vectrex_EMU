@@ -380,27 +380,28 @@ BEAM_LOWZ, BEAM_LOWP, BEAM_LOWW = 0.5, 1.7, 0.45  # below this z: the cutoff cur
 BEAM_Z0 = 27 / 127.0
 
 
-# the tube's light for its drive, measured (2026-10-25): the test cartridge's INTENSITY page (all 128 intensities, 8
-# per bar) on the owner's Vectrex, iPhone ProRAW (linear, unclipped at ISO 16; ISO 200 for the faint bars), the
-# red channel's light summed across each step's line, the camera's fall-off to the screen's edges fitted out (a
-# factor per step position, the same in every bar). TUBE_LIGHT[d] = the light at drive d (Z + the brightness
-# knob's bias, in intensity steps; the circuit is linear in Z: the DAC, D302 / Q505 and the cathode, see the
-# service manual), 1 = Z 127 at the knob's default. Dark up to 27 (the cutoff), measured from 30 to 117 (2 %),
-# above (the knob up) the saturation that fits 36-117: light = u / (1 + u), u = ((d - 14.8) / 53.4)^4.06
+# the tube's light for its drive, measured (2026-10-25): the test cartridge's INTENSITY page (all intensities, 8 per
+# bar) on the owner's Vectrex, iPhone ProRAW (linear), the red channel's light summed across each step's line, the
+# camera's fall-off to the screen's edges fitted out (a factor per step position, the same in every bar). Up to 72:
+# the ultra-wide camera (ISO 16; ISO 200 for the faint bars); from 72: the main camera (ISO 50, f/4, 1/25 s - its
+# ISO 50 and ISO 320 photos agree within 2 %, the ultra-wide's do not: it compresses its highlights). TUBE_LIGHT[d]
+# = the light at drive d (Z + the brightness knob's bias, in intensity steps; the circuit is linear in Z: the DAC,
+# D302 / Q505 and the cathode, see the service manual), 1 = Z 127 at the knob's default. Dark up to 27 (the cutoff),
+# measured from 30 to 108 (within 5 %), above that (the top bar was out of the photos, and the knob up) the curve
+# fitted to 48-108: light ~ u / (1 + u), u = ((d - 18.5) / 81.7)^2.67 - a mild saturation (Z 127 = 2.8 x Z 72)
 TUBE_LIGHT = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.00207, 0.00413, 0.0062,
-    0.00832, 0.011, 0.01609, 0.01875, 0.02184, 0.02544, 0.02954, 0.03445, 0.04026, 0.04699, 0.05467, 0.06331,
-    0.07288, 0.08335, 0.09446, 0.10647, 0.11936, 0.13313, 0.14778, 0.16327, 0.17957, 0.19664, 0.21442, 0.23288,
-    0.25193, 0.27152, 0.29157, 0.312, 0.33274, 0.35371, 0.37483, 0.39602, 0.41721, 0.43833, 0.4593, 0.48007,
-    0.50058, 0.52077, 0.54059, 0.56, 0.57898, 0.59748, 0.61548, 0.63296, 0.64991, 0.66631, 0.68216, 0.69745,
-    0.71219, 0.72637, 0.74001, 0.75311, 0.76569, 0.77774, 0.78929, 0.80035, 0.81093, 0.82105, 0.83073, 0.83998,
-    0.84881, 0.85724, 0.8653, 0.87299, 0.88032, 0.88732, 0.89401, 0.90038, 0.90646, 0.91226, 0.9178, 0.92308,
-    0.92812, 0.93294, 0.93753, 0.94191, 0.94609, 0.95009, 0.9539, 0.95755, 0.96103, 0.96436, 0.96753, 0.97057,
-    0.97348, 0.97626, 0.97891, 0.98146, 0.98389, 0.98622, 0.98845, 0.99059, 0.99263, 0.99459, 0.99647, 0.99827, 1,
-    1.0017, 1.0032, 1.0048, 1.0062, 1.0076, 1.009, 1.0103, 1.0115, 1.0127, 1.0139, 1.015, 1.016, 1.0171, 1.0181,
-    1.019, 1.0199, 1.0208, 1.0216, 1.0225, 1.0233, 1.024, 1.0248, 1.0254, 1.0261, 1.0268, 1.0274, 1.028, 1.0286,
-    1.0292, 1.0297, 1.0303, 1.0308, 1.0313, 1.0318, 1.0322, 1.0327, 1.0331, 1.0335, 1.0339, 1.0343, 1.0347, 1.0351,
-    1.0354]
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.00125, 0.00249, 0.00374,
+    0.00503, 0.00664, 0.00972, 0.01133, 0.01319, 0.01537, 0.01784, 0.02081, 0.02432, 0.02838, 0.03302, 0.03824,
+    0.04402, 0.05034, 0.05705, 0.06431, 0.07209, 0.08041, 0.08926, 0.09862, 0.10846, 0.11877, 0.12951, 0.14066,
+    0.15217, 0.164, 0.17611, 0.18845, 0.20098, 0.21364, 0.2264, 0.2392, 0.252, 0.26475, 0.27742, 0.28997, 0.30235,
+    0.31455, 0.3256, 0.3368, 0.34826, 0.36011, 0.37248, 0.38549, 0.39929, 0.41402, 0.42782, 0.44165, 0.45549,
+    0.46933, 0.48316, 0.49698, 0.51077, 0.52451, 0.53821, 0.55184, 0.56541, 0.57891, 0.59232, 0.60563, 0.61885,
+    0.63197, 0.64497, 0.65785, 0.67062, 0.68325, 0.69575, 0.70812, 0.72035, 0.73243, 0.74437, 0.75616, 0.7678,
+    0.77928, 0.79061, 0.80178, 0.8128, 0.82365, 0.83435, 0.84489, 0.85527, 0.86548, 0.87554, 0.88544, 0.89518,
+    0.90476, 0.91418, 0.92345, 0.93256, 0.94151, 0.95032, 0.95897, 0.96747, 0.97582, 0.98403, 0.99208, 1, 1.0078,
+    1.0154, 1.0229, 1.0303, 1.0375, 1.0446, 1.0515, 1.0584, 1.0651, 1.0717, 1.0781, 1.0845, 1.0907, 1.0968, 1.1028,
+    1.1087, 1.1144, 1.1201, 1.1256, 1.1311, 1.1364, 1.1417, 1.1468, 1.1519, 1.1568, 1.1617, 1.1665, 1.1711, 1.1757,
+    1.1803, 1.1847, 1.189, 1.1933, 1.1975, 1.2016, 1.2056, 1.2095, 1.2134, 1.2172, 1.2209, 1.2246, 1.2282, 1.2317]
 TUBE_LIGHT_D = len(TUBE_LIGHT) - 1
 
 

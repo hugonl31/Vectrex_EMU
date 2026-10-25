@@ -352,11 +352,12 @@ BEAM_S0, BEAM_SK, BEAM_SMAX = 0.6, 0.015, 0.95
 # faster; a resting spot: BEAM_DOTMAX x min(1, cycles / BEAM_DOTC), as wide as the lines.
 BEAM_LINE = 1.15
 BEAM_FADE = 0.3              # the beam fading out after /BLANK (intensity bit 7 from the core): this much of a line
-# the brightness knob at the back (knob_bright -1..1, 0 = well set; the Vectrex unit's Brightness): up, every line is lifted
-# by up to a full line's brightness and the blanked beam shows (the core sends its moves / rests as intensity 0 + bit 7:
-# the "spider web") at KNOB_WEB of a line, its rests up to KNOB_WEBDOT; down, the tube's cutoff rises: each intensity
-# loses the same share of its light on its lines, its corner dots and their glow (they go out together), faint ones first
-KNOB_WEB, KNOB_WEBDOT, KNOB_WEBDOTC, KNOB_CUT = 0.40, 1.0, 300.0, 0.35
+# the brightness knob at the back (knob_bright, the Vectrex unit's Brightness; 0 = well set): it sets the tube's bias - a
+# fixed offset on the intensity drive, the same for every line: the beam is driven at Z/127 + knob through the tube's
+# curve (beam_z), its cutoff included. So the knob moves the cutoff through the intensities one by one (the test cart's
+# INTENSITY steps light up from their brighter left ends), and a line's corner dots and glow go with it. /BLANK drives
+# the beam at 0: with the knob up past the cutoff the blanked beam glows too - its moves, returns to the middle and rests
+# (the core sends them as intensity 0 + bit 7 while the knob is up): the "spider web"
 # a resting beam (a corner: ~18 cycles in one spot, ~10x a moving line's energy there) also lights a soft
 # halo around itself (light scattered in the tube's glass; the owner's photos: corner dots and stars in
 # a glow). It softens the dark line ends next to corners without hiding them; text has no resting spots.
@@ -2211,11 +2212,12 @@ class GLBloomRenderer(GLRenderer):
         bx = (x1 + ox) * sc; by = h - (y1 + oy) * sc
         dx, dy = bx - ax, by - ay
         lp = np.sqrt(dx * dx + dy * dy)
-        zi = (b & 127) / 127.0
+        kb = getattr(self, 'knob_bright', 0.0)
+        web = (b & 255) == 128                             # (the blanked beam, see knob_bright)
+        zi = np.maximum(0.0, (b & 127) / 127.0 + kb)       # the drive: intensity + the knob's bias
         r_ = np.maximum(0.0, (zi - BEAM_Z0) / (BEAM_LOWZ - BEAM_Z0))
-        hi = zi >= BEAM_LOWZ
+        hi = zi >= BEAM_LOWZ                               # (above 1, the knob up: on along the same line)
         zk = np.where(hi, 0.55 + 0.45 * zi, (0.55 + 0.45 * BEAM_LOWZ) * r_ ** BEAM_LOWP)
-        zl = zk                                            # (a line's, for the brightness knob)
         zw = np.where(hi, 1.0, BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ)
         fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth
         halo = (b & 256) != 0
@@ -2242,18 +2244,7 @@ class GLBloomRenderer(GLRenderer):
                 fw = np.where(rest, fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl), fw)
         sg = np.maximum(0.6, fw * gp / 2.355)
         kk = kk * zk * gain * BEAM_PEAK * cgain
-        kk = np.where((b & 128) != 0, kk * BEAM_FADE, kk)
-        kb = getattr(self, 'knob_bright', 0.0)
-        web = ((b & 128) != 0) & ((b & 127) == 0)
-        if kb or web.any():
-            full = BEAM_LINE * gain * BEAM_PEAK * cgain
-            if kb > 0:
-                kk = kk + kb * full
-            elif kb < 0:
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    kk = kk * np.where(zl > 0, np.maximum(0.0, 1.0 + kb + kb * KNOB_CUT / np.where(zl > 0, zl, 1.0)), 0.0)
-            kw = max(0.0, kb) * full * np.where(moving, KNOB_WEB, KNOB_WEBDOT * np.minimum(1.0, cyc / KNOB_WEBDOTC))
-            kk = np.where(web, kw, kk)
+        kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
         mq = 2.6 * sg + 1.0
         moved = lp > 1e-3
         lps = np.where(moved, lp, 1.0)
@@ -2313,6 +2304,7 @@ class GLBloomRenderer(GLRenderer):
         bend = getattr(self, 'bend_on', False) and self.bend_strength > 0
         # the tube switching on / off: brightness (warm-up) and picture size (bulge, collapse)
         cgain = getattr(self, 'crt_gain', 1.0)
+        kb = getattr(self, 'knob_bright', 0.0)            # (the brightness knob: see knob_bright)
         cwidth = getattr(self, 'crt_width', 1.0)              # (the spot blooms as the picture collapses)
         csx, csy = getattr(self, 'crt_sx', 1.0), getattr(self, 'crt_sy', 1.0)
         cskew = getattr(self, 'crt_skew', 0.0); cshift = getattr(self, 'crt_shift', 0.0)
@@ -2363,9 +2355,9 @@ class GLBloomRenderer(GLRenderer):
             bx = (x1 + ox) * sc; by = h - (y1 + oy) * sc
             dx, dy = bx - ax, by - ay
             lp = sqrt(dx * dx + dy * dy)                   # window px
-            zi = (b & 127) / 127.0
+            web = (b & 255) == 128                         # (the blanked beam, see knob_bright)
+            zi = max(0.0, (b & 127) / 127.0 + kb)          # the drive: intensity + the knob's bias
             zk, zw = beam_z(zi)
-            zl = zk                                        # (a line's, for the brightness knob)
             fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth    # thin, a little fuller when brighter
             if b & 256:                                    # a resting spot's halo (see BEAM_HALO_W)
                 bl = min(1.0, max(0.0, (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0)))
@@ -2386,17 +2378,8 @@ class GLBloomRenderer(GLRenderer):
                 fw *= 1.0 + (BEAM_BLOOM_W - 1.0) * bl          # (a long bright rest blooms)
             sg = max(0.6, fw * gp / 2.355)                 # sigma, window px
             k *= zk * gain * BEAM_PEAK * cgain
-            if b & 128:                                    # (the beam fading out: a faint trace)
+            if b & 128 and not web:                        # (the beam fading out: a faint trace)
                 k *= BEAM_FADE
-            kb = getattr(self, 'knob_bright', 0.0)
-            if kb or (b & 255) == 128:                     # the brightness knob (see KNOB_WEB)
-                full = BEAM_LINE * gain * BEAM_PEAK * cgain
-                if (b & 255) == 128:                       # (the blanked beam: the web, a rest's spot)
-                    k = max(0.0, kb) * full * (KNOB_WEB if lp / gp > 0.05 else KNOB_WEBDOT * min(1.0, cyc / KNOB_WEBDOTC))
-                elif kb > 0:
-                    k += kb * full
-                else:                                      # (the cutoff up: this intensity's share of its light)
-                    k *= max(0.0, 1.0 + kb + kb * KNOB_CUT / zl) if zl > 0 else 0.0
             m = 2.6 * sg + 1.0                             # quad margin
             if lp > 1e-3:
                 ux, uy = dx / lp * m, dy / lp * m

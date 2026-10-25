@@ -875,12 +875,13 @@ static void ad_make (ad_t *e, uint32_t ip, uint32_t ins)
 static int loop_round (arm11_t *c, uint64_t until)
 {
 	if (c->ctr_read && !c->mmio_round && c->r[15] == c->loop_target) {
-		if (++c->ctr_iters >= 2) { c->ctr_iters = 0; c->ctr_read = 0; c->cycles = until; c->loop_target = c->r[15]; c->loop_loads = c->loop_stores = 0; return 1; }
+		if (++c->ctr_iters >= 2) { c->ctr_iters = 0; c->ctr_read = 0; if (until > c->cycles) c->slept[0] += until - c->cycles; c->cycles = until; c->loop_target = c->r[15]; c->loop_loads = c->loop_stores = 0; return 1; }
 	} else c->ctr_iters = 0;
+	int mmio = c->mmio_round;                         /* (polling a peripheral: a wait after two equal rounds, not four) */
 	c->ctr_read = 0; c->mmio_round = 0;
 	if (c->r[15] == c->loop_target && !c->loop_stores && c->loop_loads == 1 && c->ld_addr == c->prev_ld_addr
 	    && c->ld_val == c->prev_ld_val && !memcmp (c->loop_regs, c->r, sizeof c->loop_regs)) {
-		if (++c->loop_iters >= 4) { c->wait_on = 1; c->wait_addr = c->ld_addr; c->wait_val = c->ld_val; c->wait_n = 4; c->loop_iters = 0; c->cycles = until; }
+		if (++c->loop_iters >= (mmio ? 1u : 4u)) { c->wait_on = 1; c->wait_addr = c->ld_addr; c->wait_val = c->ld_val; c->wait_n = 4; c->loop_iters = 0; if (until > c->cycles) c->slept[1] += until - c->cycles; c->cycles = until; }
 	} else c->loop_iters = 0;
 	memcpy (c->loop_regs, c->r, sizeof c->loop_regs);
 	c->loop_target = c->r[15]; c->prev_ld_addr = c->ld_addr; c->prev_ld_val = c->ld_val;
@@ -888,7 +889,10 @@ static int loop_round (arm11_t *c, uint64_t until)
 	return c->wait_on != 0;
 }
 
+#include "arm11_jit.c"
+
 /* ---------------------------------------------------------------- the run loop */
+uint32_t *arm11_prof;                                                            /* (PROFILE: a histogram of PCs / 4, every 64th step) */
 uint64_t arm11_run (arm11_t *c, uint64_t until)
 {
 	uint64_t start = c->cycles;
@@ -897,6 +901,9 @@ uint64_t arm11_run (arm11_t *c, uint64_t until)
 	const uint8_t *ram = c->sys->ram; uint32_t ram_size = c->sys->ram_size;
 	while (c->cycles < until) {
 		if (c->halted || c->sleeping || ((c->irq_line && !c->ibit) || (c->fiq_line && !c->fbit)) || !dc) goto slow;
+#ifdef ARM11_JIT
+		if (jit_try (c, until)) continue;
+#endif
 		{
 			/* the fast path: ARM state, an instruction in RAM, decoded already */
 			uint32_t ip = c->r[15];
@@ -906,20 +913,22 @@ uint64_t arm11_run (arm11_t *c, uint64_t until)
 			if (e->pc != ip || e->ins != ins) ad_make (e, ip, ins);
 			if (!e->fn) goto slow;
 			c->last_pc = ip; c->r[15] = ip + 4; c->cycles++; c->steps++;
+			if (arm11_prof && !(c->steps & 63)) arm11_prof[(ip >> 2) & 0xfffff]++;
 			if (e->cond == 14 || cond_ok (c, e->cond)) e->fn (c, e, ip);
 			if (c->r[15] < ip && ip - c->r[15] <= 64 && loop_round (c, until)) break;
 			continue;
 		}
 	slow:
-		if (c->halted) { c->cycles = until; break; }
+		if (c->halted) { if (until > c->cycles) c->slept[2] += until - c->cycles; c->cycles = until; break; }
 		if (c->fiq_line && !c->fbit) { exception (c, 0x1c, MODE_FIQ, c->r[15] + 4); continue; }
 		if (c->irq_line && !c->ibit) { exception (c, 0x18, MODE_IRQ, c->r[15] + 4); continue; }
 		if (c->sleeping) {
 			if (c->irq_line || c->fiq_line) c->sleeping = 0;
-			else { c->cycles = until; break; }
+			else { if (until > c->cycles) c->slept[2] += until - c->cycles; c->cycles = until; break; }
 		}
 		uint32_t ip = c->r[15];
 		step (c); c->steps++;
+		if (arm11_prof && !(c->steps & 63)) arm11_prof[(ip >> 2) & 0xfffff]++;
 		if (c->r[15] < ip && ip - c->r[15] <= 64 && loop_round (c, until)) break;
 	}
 	return c->cycles - start;

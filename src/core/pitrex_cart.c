@@ -21,12 +21,18 @@ int vt_pitrex;                              /* a PiTrex program in the slot */
 #define PX_RAM  (256u << 20)
 #define PX_PERI 0x20000000u
 static arm11_t px_cpu; static arm11_sys_t px_sys; static uint8_t *px_ram;
-static double px_frac;
+static double px_frac; static uint64_t px_target;   /* (the Pi's time the slices run to: what one overruns, the next gives back) */
 static uint32_t px_fsel[6], px_out[2], px_eds[2], px_ren[2], px_fen[2];
-static int px_rdy = 1, px_pending, px_rw; static unsigned px_addr; static uint8_t px_wdata, px_rdata;
+static int px_rdy = 1, px_pending, px_rw; static uint64_t px_latch_cyc; static unsigned px_addr; static uint8_t px_wdata, px_rdata;
 static uint32_t px_st_cmp[4], px_st_cs;
 static uint32_t px_irq_en1, px_irq_en2, px_irq_enb, px_fiq;
 static uint32_t px_at_load, px_at_ctrl, px_at_raw, px_at_prediv = 0x7d; static uint64_t px_at_t0;
+static uint64_t px_at_due = ~0ull;                 /* (the ARM timer: the Pi cycle it reaches its load value at - no division per slice) */
+static void px_at_plan (void)
+{
+	uint64_t div = (uint64_t) (px_at_prediv + 1) * ((px_at_ctrl & 0x0c) == 4 ? 16 : (px_at_ctrl & 0x0c) == 8 ? 256 : 1);
+	px_at_due = (px_at_ctrl & 0x80) && px_at_load ? px_at_t0 + 4 * div * px_at_load : ~0ull;
+}
 static uint32_t px_mbox_resp; static int px_mbox_full;
 static char px_line[256]; static int px_ln;
 static char px_fault_told;
@@ -170,7 +176,7 @@ static void px_latch (void)
 	px_addr = ((o >> 7) & 15) | (((o >> 11) & 1) << 12) | (((o >> 12) & 1) << 14) | 0x8000u;
 	px_rw = (o >> 13) & 1;
 	px_wdata = (uint8_t) (o >> 16);
-	px_pending = 1; px_rdy = 0;
+	px_pending = 1; px_rdy = 0; px_latch_cyc = px_cpu.cycles;
 }
 static void px_set_out (uint32_t nv)
 {
@@ -194,11 +200,7 @@ static void px_timer_tick (uint64_t us0, uint64_t us1)
 		uint32_t c = px_st_cmp[i];
 		if ((uint32_t) (c - (uint32_t) us0 - 1) < (uint32_t) (us1 - us0)) px_st_cs |= 1u << i;
 	}
-	if (px_at_ctrl & 0x80) {                                                 /* the ARM timer (250 MHz core / prescale) */
-		uint32_t div = (px_at_prediv + 1) * ((px_at_ctrl & 0x0c) == 4 ? 16 : (px_at_ctrl & 0x0c) == 8 ? 256 : 1);
-		uint64_t ticks = (px_cpu.cycles - px_at_t0) / 4 / div;
-		if (px_at_load && ticks >= px_at_load) { px_at_raw = 1; px_at_t0 = px_cpu.cycles; }
-	}
+	if (px_cpu.cycles >= px_at_due) { px_at_raw = 1; px_at_t0 = px_cpu.cycles; px_at_plan (); }   /* the ARM timer (250 MHz core / prescale) */
 }
 
 /* the mailbox's property channel: the tags a bare-metal program asks */
@@ -331,11 +333,11 @@ static void px_wr (arm11_t *c, uint32_t a, uint32_t v, int n)
 	}
 	if (off >= 0xb400 && off < 0xb424) {
 		switch (off - 0xb400) {
-		case 0x00: px_at_load = v; px_at_t0 = px_cpu.cycles; break;
-		case 0x08: px_at_ctrl = v; px_at_t0 = px_cpu.cycles; break;
+		case 0x00: px_at_load = v; px_at_t0 = px_cpu.cycles; px_at_plan (); break;
+		case 0x08: px_at_ctrl = v; px_at_t0 = px_cpu.cycles; px_at_plan (); break;
 		case 0x0c: px_at_raw = 0; break;
-		case 0x18: px_at_load = v; break;
-		case 0x1c: px_at_prediv = v & 0x3ff; break;
+		case 0x18: px_at_load = v; px_at_plan (); break;
+		case 0x1c: px_at_prediv = v & 0x3ff; px_at_plan (); break;
 		}
 		px_irq_update (); return;
 	}
@@ -369,12 +371,26 @@ static int px_peek_same (void)
 	else return 0;
 	return v == px_cpu.wait_val;
 }
+#if defined(_M_X64) || defined(__x86_64__)              /* (the time-stamp counter, for the test timings) */
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+#define VT_TSC() __rdtsc ()
+#else
+#define VT_TSC() 0ull
+#endif
+unsigned long long px_tsc_arm, px_tsc_all; static int px_tsc_on = -1;   /* (VT_PXTSC: the time the Pi takes, for the tsc command) */
 static void px_run (uint32_t cyc)
 {
-	uint64_t until = px_cpu.cycles + cyc, us0 = px_us ();
+	if (px_tsc_on < 0) px_tsc_on = getenv ("VT_PXTSC") != NULL;
+	unsigned long long t0 = px_tsc_on ? VT_TSC () : 0;
+	uint64_t until = px_target += cyc, us0 = px_us ();
+	if (px_cpu.cycles >= until) return;
 	while (px_cpu.cycles < until && !px_cpu.halted) {
 		if (px_cpu.wait_on) {
-			if (px_peek_same () && !(px_cpu.irq_line && !px_cpu.ibit)) { px_cpu.cycles = until; break; }
+			if (px_peek_same () && !(px_cpu.irq_line && !px_cpu.ibit)) { if (until > px_cpu.cycles) px_cpu.slept[1] += until - px_cpu.cycles; px_cpu.cycles = until; break; }
 			px_cpu.wait_on = 0;
 		}
 		arm11_run (&px_cpu, until);
@@ -382,6 +398,7 @@ static void px_run (uint32_t cyc)
 	if (px_cpu.halted) px_cpu.cycles = until;
 	px_timer_tick (us0, px_us ());
 	px_irq_update ();
+	if (px_tsc_on) px_tsc_arm += VT_TSC () - t0;
 }
 
 int pitrex_open (const char *path)
@@ -403,7 +420,30 @@ int pitrex_open (const char *path)
 #endif
 	    } } }
 	vt_pitrex = 1;
+	{ extern uint32_t *arm11_prof; if (getenv ("VT_PXPROF")) arm11_prof = (uint32_t *) calloc (1u << 20, 4); }
 	return 0;
+}
+void pitrex_ramdump (const char *fn)        /* (for the JIT check: the Pi's RAM, the first 128 MB) */
+{
+	FILE *f = fopen (fn, "wb"); if (!f || !px_ram) { if (f) fclose (f); return; }
+	fwrite (px_ram, 1, 128u << 20, f); fclose (f);
+}
+void pitrex_digest (void)                  /* (for the JIT check: the Pi's state in one line) */
+{
+	if (!px_ram) return;
+	uint64_t h = 1469598103934665603ull; const uint64_t *q = (const uint64_t *) px_ram;
+	for (size_t i = 0; i < PX_RAM / 8; i++) h = (h ^ q[i]) * 1099511628211ull;
+	uint32_t rh = 0; for (int i = 0; i < 16; i++) rh = rh * 31 + px_cpu.r[i];
+	{ static uint64_t c0, s0[3]; uint64_t dc = px_cpu.cycles - c0; if (dc) fprintf (stderr, "pitrex: since last: %.2f s Pi time, slept: counter %.1f %%  poll %.1f %%  wfi %.1f %%\n", dc / 1e9,
+	      100.0 * (px_cpu.slept[0] - s0[0]) / dc, 100.0 * (px_cpu.slept[1] - s0[1]) / dc, 100.0 * (px_cpu.slept[2] - s0[2]) / dc);
+	  c0 = px_cpu.cycles; memcpy (s0, px_cpu.slept, sizeof s0); }
+	printf ("pitrex: cycles %llu pc %08X regs %08X cpsr %08X ram %016llX accesses %lu\n", (unsigned long long) px_cpu.cycles, px_cpu.r[15], rh, arm11_cpsr (&px_cpu), (unsigned long long) h, px_n_acc);
+}
+void pitrex_prof_dump (const char *fn)
+{
+	extern uint32_t *arm11_prof; if (!arm11_prof) return;
+	FILE *f = fopen (fn, "wb"); if (f) { fwrite (arm11_prof, 4, 1u << 20, f); fclose (f); }
+	memset (arm11_prof, 0, 4u << 20);
 }
 void pitrex_power_on (void)
 {
@@ -412,23 +452,28 @@ void pitrex_power_on (void)
 	memcpy (px_ram + 0x8000, px_image, px_image_n);
 	px_sys.rd = px_rd; px_sys.wr = px_wr; px_sys.ram = px_ram; px_sys.ram_size = PX_RAM;
 	px_cpu.sys = &px_sys;
-	arm11_reset (&px_cpu, 0x8000);
+	arm11_reset (&px_cpu, 0x8000); arm11_invalidate (&px_cpu); px_target = 0;
 	px_cpu.r[0] = 0; px_cpu.r[1] = 0xc42; px_cpu.r[2] = 0x100;                /* (as the firmware starts a kernel) */
 	memset (px_fsel, 0, sizeof px_fsel); px_out[0] = px_out[1] = 0; px_fsel_changed ();
 	px_rdy = 1; px_pending = 0; px_rdata = 0xff; px_frac = 0;
 	px_st_cs = 0; memset (px_st_cmp, 0, sizeof px_st_cmp); px_irq_en1 = px_irq_en2 = px_irq_enb = 0;
-	px_at_ctrl = 0; px_at_raw = 0; px_mbox_full = 0; px_ln = 0; px_fault_told = 0;
+	px_at_ctrl = 0; px_at_raw = 0; px_at_due = ~0ull; px_mbox_full = 0; px_ln = 0; px_fault_told = 0;
 }
 
+#define PX_SETUP 100                         /* (Pi cycles from LATCH_EN to the E edge it can catch) */
 /* one E period: the Pi runs, an access it latched happens; returns 1 (the 6809 is held) */
 static int pitrex_cycle (void)
 {
 	px_frac += 1000000000.0 / 1500000.0;
 	uint32_t per = (uint32_t) px_frac; px_frac -= per;
 	px_run (per / 2);
-	if (px_pending) {                                                         /* (the access, as E rises) */
+	/* (the access, as E rises - if LATCH_EN came early enough before it: the board keeps RDY low for at least a
+	 * part of an E period, and the Pi's code polls for that low before it waits for the high) */
+	if (px_pending && px_cpu.cycles - px_latch_cyc >= PX_SETUP) {
 		if (px_rw) px_rdata = read8 (px_addr & 0xffff);
 		else write8 (px_addr & 0xffff, px_wdata);
+		{ static FILE *dl; static int dlo = -1; if (dlo < 0) { const char *z = getenv ("VT_PXACCLOG"); dlo = z != NULL; if (z) dl = fopen (z, "wb"); }
+		  if (dl) { extern unsigned long long total_cycles_e (void); uint64_t r[2] = { px_cpu.cycles, ((uint64_t) px_addr << 16) | ((uint64_t) px_rw << 8) | (px_rw ? px_rdata : px_wdata) }; fwrite (r, 8, 2, dl); } }
 		px_pending = 0; px_rdy = 1; px_n_acc++;
 	}
 	px_run (per - per / 2);
@@ -437,7 +482,7 @@ static int pitrex_cycle (void)
 		px_fault_told = 1;
 	}
 	{ static int lg = -1; static unsigned long long n; if (lg < 0) lg = getenv ("VT_PXLOG") != NULL;
-	  if (lg && ++n % 1500000 == 0) fprintf (stderr, "pitrex: pc %08X lr %08X sp %08X cpsr %08X cycles %llu steps %llu accesses %lu wait %d irq %d\n",
-	      px_cpu.r[15], px_cpu.r[14], px_cpu.r[13], arm11_cpsr (&px_cpu), (unsigned long long) px_cpu.cycles, (unsigned long long) px_cpu.steps, px_n_acc, px_cpu.wait_on, px_cpu.irq_line); }
+	  if (lg && ++n % 1500000 == 0) fprintf (stderr, "pitrex: pc %08X lr %08X sp %08X cpsr %08X cycles %llu steps %llu accesses %lu wait %d irq %d waddr %08X wval %08X out %08X outmask %08X rdy %d pend %d\n",
+	      px_cpu.r[15], px_cpu.r[14], px_cpu.r[13], arm11_cpsr (&px_cpu), (unsigned long long) px_cpu.cycles, (unsigned long long) px_cpu.steps, px_n_acc, px_cpu.wait_on, px_cpu.irq_line, px_cpu.wait_addr, px_cpu.wait_val, px_out[0], px_outmask, px_rdy, px_pending); }
 	return 1;
 }

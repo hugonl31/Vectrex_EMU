@@ -42,6 +42,16 @@
 #include <unistd.h>
 #endif
 #include "vecx.h"
+#if defined(_M_X64) || defined(__x86_64__)              /* (the time-stamp counter, for the test timings) */
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+#define VT_TSC() __rdtsc ()
+#else
+#define VT_TSC() 0ull
+#endif
 #include "e8910.h"
 
 unsigned e6809_get_pc (void);
@@ -348,6 +358,7 @@ static void stats (void)
 	if (vt_via_mirror) printf (" (first at PC=%04X addr=%04X)", vt_via_mirror_pc, vt_via_mirror_addr);
 	if (frames > 1) printf (" avgbusy=%llu maxbusy=%llu over30000=%lu", busy_sum / (frames - 1), busy_max, frames_over);
 	printf (" ram=%08x\n", ram_sum ());
+	{ extern void arm11_jit_stats (void); extern int vt_pitrex; if (vt_pitrex) { extern void pitrex_digest (void); arm11_jit_stats (); pitrex_digest (); } }
 }
 
 int main (int argc, char **argv)
@@ -460,6 +471,11 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "wavend")) { if (wavf) { wav_hdr (wavf, wav_bytes); fclose (wavf); wavf = 0; } }
 		else if (!strcmp (cmd, "peek")) { unsigned a = (unsigned) strtol (a1, 0, 16); int k = a2[0] ? atoi (a2) : 1; printf ("peek %04X:", a); for (int i = 0; i < k; i++) printf (" %02X", e6809_read8 (a + i)); printf ("\n"); }
 		else if (!strcmp (cmd, "stats")) stats ();
+		else if (!strcmp (cmd, "tsc")) { extern unsigned long long px_tsc_arm; static unsigned long long l0, a0; unsigned long long n = VT_TSC ();
+			printf ("tsc: all %.3f G arm %.3f G\n", (n - l0) / 1e9, (px_tsc_arm - a0) / 1e9); l0 = n; a0 = px_tsc_arm; }
+		else if (!strcmp (cmd, "pxram")) { extern void pitrex_ramdump (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); pitrex_ramdump (path); }
+		else if (!strcmp (cmd, "jitmap")) { extern void arm11_jit_map (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); arm11_jit_map (path); }
+		else if (!strcmp (cmd, "pxprof")) { extern void pitrex_prof_dump (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); pitrex_prof_dump (path); }
 		else if (!strcmp (cmd, "bot")) { char a3[64] = ""; sscanf (line, "%*s %*s %*s %63s", a3); bot_run (a1, atol (a2), a3[0] ? atoi (a3) : 2); }
 		else if (!strcmp (cmd, "regs")) printf ("PC=%04X X=%04X Y=%04X U=%04X S=%04X bank=%d\n", e6809_get_pc () & 0xFFFF, e6809_get_x (), e6809_get_y (), e6809_get_u (), e6809_get_s (), vt_cur_bank ());
 		else if (!strcmp (cmd, "recstart")) {   /* must be the first command: replays start at reset */

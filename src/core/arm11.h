@@ -46,9 +46,13 @@ struct arm11 {
 	uint32_t loop_regs[13];
 	int wait_on; uint32_t wait_addr, wait_val; int wait_n;
 	int poll_skip;
+	uint64_t jit_until;
+	uint64_t slept[3];                      /* (cycles slept through: 0 a timing loop on a counter, 1 a poll, 2 WFI / halted) */                     /* (the JIT: the run's end, for its dispatcher - arm11_jit.c) */
 };
 
 void arm11_reset (arm11_t *c, uint32_t pc);              /* SVC mode, interrupts off, ARM state, at pc */
 uint64_t arm11_run (arm11_t *c, uint64_t until);         /* run until cycles reaches until (or it halts / sleeps) */
 uint32_t arm11_cpsr (const arm11_t *c);
+void arm11_invalidate (arm11_t *c);                      /* RAM changed behind its back: drop the translated code */
+void arm11_jit_stats (void);
 #endif

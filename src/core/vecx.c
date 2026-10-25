@@ -193,7 +193,8 @@ static double vt_lag;                   /* (the deflection's lag: see below) */
  * corner in a curve, while RAMP still starts and stops them at once (the owner's Vectrex, 2026-10-25: testcart/
  * lag_test - lines stop abruptly; testcart/corner_test - corners round off below ~16 cycles of rest) */
 static double vt_vlag = -1, vlag_x, vlag_y, vlag_x1, vlag_y1; static int vlag_init, vlag_n;   /* (VT_VLAGN = 2: two stages) */
-#define VLAG_TAU 0.0
+static double vlag_split_k = 0.06;      /* (a new line piece once the speed changed by this share of it + 2 DAC steps: VT_VLAGSPLIT) */
+#define VLAG_TAU 0.0                    /* (off: the combined fit of 2026-10-25 (6.0, X/Y delay 7, start 8, stop 11) rounds the corners as the owner's Vectrex but slants text - the moves between its rows lose distance) */
 #define VLAG_N 1
 static int dark_on, dark_adding; static long dark_x0, dark_y0, dark_x1, dark_y1, dark_dx, dark_dy;
 static double dark_cyc; static unsigned long long dark_t0;
@@ -1250,7 +1251,8 @@ static einline void alg_sstep (void)
 		adx = (long) xd * ZS - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 		ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) yd * ZS + alg_yofs;
 	}
-	if (vt_vlag < 0) { const char *z = getenv ("VT_VLAG"); vt_vlag = z ? atof (z) : VLAG_TAU; z = getenv ("VT_VLAGN"); vlag_n = z ? atoi (z) : VLAG_N; }
+	if (vt_vlag < 0) { const char *z = getenv ("VT_VLAG"); vt_vlag = z ? atof (z) : VLAG_TAU; z = getenv ("VT_VLAGN"); vlag_n = z ? atoi (z) : VLAG_N;
+	                   z = getenv ("VT_VLAGSPLIT"); if (z) vlag_split_k = atof (z); }
 	if (vt_vlag > 0.05) {                               /* the speed, smoothed (see vt_vlag) */
 		if (!vlag_init) { vlag_init = 1; vlag_x = vlag_x1 = adx; vlag_y = vlag_y1 = ady; }
 		if (vlag_n == 2) {                              /* (two stages of tau / 2) */
@@ -1356,8 +1358,9 @@ static einline void alg_sstep (void)
 				fade_left = beam_fade; fade_x0 = alg_vector_x1 + ex; fade_y0 = alg_vector_y1 + ey;
 				fade_col = alg_vector_color; fade_cyc = 0; fade_t0 = alg_cycles;
 			  } }
-		} else if (sig_dx != alg_vector_dx ||
-				   sig_dy != alg_vector_dy ||
+		} else if ((vt_vlag > 0.05 ? (labs (sig_dx - alg_vector_dx) + labs (sig_dy - alg_vector_dy) >   /* (the speed smoothed: a */
+				    (long) ((labs (alg_vector_dx) + labs (alg_vector_dy)) * vlag_split_k) + 2 * ZS)   /*  new piece once it changed */
+				   : (sig_dx != alg_vector_dx || sig_dy != alg_vector_dy)) ||                  /*  a little: a curve in chords) */
 				   (unsigned char) alg_zsh != alg_vector_color ||
 				   (lag_moving && alg_vector_cyc >= LAG_SPLIT)) {   /* (the spot catching up: a curve, in pieces) */
 

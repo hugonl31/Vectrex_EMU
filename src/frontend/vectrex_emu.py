@@ -2847,6 +2847,19 @@ class App:
         top = os.path.join(ROOT, 'roms')
         d = d or top
         out = []
+        rdir = os.path.join(top, ':recent')
+        def kind_of_(p):
+            ext = os.path.splitext(p)[1].lower()
+            return 'um2' if ext == '.um2' else 'pit' if ext in ('.img', '.pit') else 'rom'
+        if os.path.abspath(d) == os.path.abspath(rdir):          # (Recent: the last games played, the newest first)
+            out.append(('BACK', top, 'up'))
+            for g in getattr(self, 'recent', []):
+                if os.path.isfile(g):
+                    if os.path.basename(g).lower() == 'pitrex.img':
+                        out.append(('PiTrex', g, 'pitrex'))     # (the PiTrex's loader: as at the top of the roms folder)
+                    else:
+                        out.append((os.path.splitext(os.path.basename(g))[0], g, kind_of_(g)))
+            return out
         if os.path.abspath(d) != os.path.abspath(top):
             out.append(('BACK', os.path.dirname(d), 'up'))
         try:
@@ -2883,6 +2896,8 @@ class App:
         boot = os.path.join(getattr(self, 'px_dir', '') or '', 'pitrex.img')
         if PITREX_UI and os.path.abspath(d) == os.path.abspath(top) and os.path.isfile(boot):
             out.insert(0, ('PiTrex', boot, 'pitrex'))
+        if os.path.abspath(d) == os.path.abspath(top) and any(os.path.isfile(g) for g in getattr(self, 'recent', [])):
+            out.insert(0, ('Recent', rdir, 'recent'))           # (the last games played - dropped ones too)
         return out
     def browser_dir(self, d, select=None):
         """show folder d in the ROM browser; select: the path to choose (else the first entry after BACK)"""
@@ -3025,7 +3040,7 @@ class App:
             return None
         rect, lst, plug, n, rh, k, up, dn, cl = self.browser_geom()
         rel = os.path.relpath(b['dir'], os.path.join(ROOT, 'roms'))
-        where = 'ROMS' if rel == '.' else 'ROMS / ' + rel.replace(os.sep, ' / ').upper()
+        where = 'ROMS' if rel == '.' else 'ROMS / RECENT' if rel == ':recent' else 'ROMS / ' + rel.replace(os.sep, ' / ').upper()
         return dict(rect=rect, list=lst, plug=plug, up=up, dn=dn, close=cl, n_vis=n, row_h=rh, k=k,
                     names=[t for t, _, _k in b['roms']], kinds=[k_ for _, _, k_ in b['roms']],
                     top=b['top'], sel=b['sel'], title='%s  (%d)' % (where, sum(1 for r in b['roms'] if r[2] in ('rom', 'um2', 'pit'))),
@@ -3081,7 +3096,7 @@ class App:
             name, path, kind = b['roms'][b['sel']]
             if kind == 'up':
                 return self.browser_back()
-            if kind == 'dir':
+            if kind in ('dir', 'recent'):
                 b.setdefault('stack', []).append(b['dir'])
                 return self.browser_dir(path)
             self.browse_ctx = (b['dir'], list(b.get('stack', [])))   # (opened again there: rebuild, load, repeat)

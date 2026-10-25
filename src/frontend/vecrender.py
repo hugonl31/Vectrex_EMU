@@ -2730,6 +2730,14 @@ class GLBloomRenderer(GLRenderer):
         self._lines([(x0, ly0 - 0.35 * rh, x1, ly0 - 0.35 * rh), (x0, b['up'][1] - 0.35 * rh, x1, b['up'][1] - 0.35 * rh)])
         gl.glLineWidth(max(1.0, k * 0.42))
         self._text_row([(b['title'], hi)], x0 + 2 * k * 6 / 6.0 * 2, y0 + 0.6 * rh, k)
+        # UVMC2 games and PiTrex programs: the list's green with a blue / a red tint; their legend in the title band
+        tint = {'um2': (H('#66a4b8'), H('#8ac8dc')), 'pit': (H('#aa9c88'), H('#d0c0aa')), 'pitrex': (H('#aa9c88'), H('#d0c0aa'))}
+        kinds_all = b.get('kinds', [])
+        kl, lxr = k * 0.62, b['close'][0] - 1.2 * 6 * k
+        for kind, word in reversed([e for e in (('um2', 'UVMC2'), ('pit', 'PITREX')) if e[0] in kinds_all or (e[0] == 'pit' and 'pitrex' in kinds_all)]):
+            tx = lxr - len(word) * 6 * kl
+            self._text_row([(word, tint[kind][0])], tx, y0 + 0.6 * rh + (k - kl) * 3, kl)
+            lxr = tx - 2.5 * 6 * kl
         fill(lx0, ly0, lx1, ly1, BODY_)                         # (the list)
         frame(lx0, ly0, lx1, ly1, EDGE2_)
         names, top, sel, n = b['names'], b['top'], b['sel'], b['n_vis']
@@ -2743,20 +2751,28 @@ class GLBloomRenderer(GLRenderer):
                 break
             y = ly0 + i * rh
             kind = b.get('kinds', ['rom'] * len(names))[j]
-            ind = '    ' if kind != 'rom' else ''                 # (room for the folder / back pictogram)
+            ind = '    ' if kind in ('dir', 'up', 'pitrex') else ''   # (room for the folder / back / PiTrex pictogram)
             t = names[j] if len(ind + names[j]) <= cols else names[j][:cols - 2 - len(ind)] + '..'
-            c = hi if j == sel else g
+            c = tint[kind][1 if j == sel else 0] if kind in tint else hi if j == sel else g
             if j == sel:                                        # (the chosen row: a filled bar)
                 fill(lx0 + 0.6 * k, y + 0.08 * rh, lx1 - 2.2 * 6 * k, y + 0.97 * rh, SEL_)
             self._text_row([('  ' + ind + t, c)], lx0 + 1.5 * k, y + 0.3 * rh, k)
-            if kind != 'rom':                                   # (a folder: its outline with a tab; BACK: an arrow)
+            if kind in ('dir', 'up', 'pitrex'):                # (a folder: its outline with a tab; BACK: an arrow; the PiTrex: a raspberry)
                 ix, iy = lx0 + 1.5 * k + 2 * 6 * k, y + 0.3 * rh
                 P = lambda a, b_: (ix + a * k, iy + b_ * k)
+                gl.glColor4f(*c, 1.0)
+                if kind == 'pitrex':
+                    pts = [P(5 + 2.6 * math.cos(2 * math.pi * q / 14), 3.6 + 2.4 * math.sin(2 * math.pi * q / 14)) for q in range(15)]
+                    seg = [(a[0], a[1], b_[0], b_[1]) for a, b_ in zip(pts, pts[1:])]
+                    for (ax, ay), (bx_, by_) in (((5, 1.2), (2.8, -0.2)), ((5, 1.2), (7.2, -0.2)), ((2.8, -0.2), (4.2, 0.6)),
+                                                 ((7.2, -0.2), (5.8, 0.6)), ((3.6, 3.4), (6.4, 3.4)), ((5, 1.6), (5, 5.6))):
+                        seg.append((*P(ax, ay), *P(bx_, by_)))
+                    self._lines(seg)
+                    continue
                 if kind == 'dir':
                     pts = [P(0, 6), P(0, 1), P(1, 0), P(4, 0), P(5, 1), P(10, 1), P(10, 6), P(0, 6)]
                 else:
                     pts = [P(10, 3), P(0, 3), P(3, 0), P(0, 3), P(3, 6)]
-                gl.glColor4f(*c, 1.0)
                 self._lines([(a[0], a[1], b_[0], b_[1]) for a, b_ in zip(pts, pts[1:])])
         if len(names) > n:                                      # the scroll bar: a slim filled thumb
             sx = lx1 - 1.0 * 6 * k

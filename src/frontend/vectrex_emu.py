@@ -915,6 +915,7 @@ def v4e_rom(path):
     _v4e_done[path] = (key, out)
     return out
 
+RECENT_MARK = '\u2197'                                           # (Recent games: a game from outside the roms folder)
 PITREX_UI = True                                                # the PiTrex add-on in the menus (core support stays)
 
 
@@ -969,6 +970,8 @@ start: this folder can be deleted at any time.
 UM2_DATA = (
     ('doom', 'doom', ('*.wad',), 'a DOOM WAD file (DOOM.WAD, DOOM2.WAD, or DOOM1.WAD - the free shareware episode)'),
     ('quake', 'quake', ('pak0.pak',), 'pak0.pak from Quake (the free shareware one will do), and pak1.pak if you have the full game'),
+    ('movie', 'movies', ('*.bin',), 'vector movies (.bin files). Bad Apple comes with the emulator; more are in Malban\'s '
+                                    'free PiTrex SD card download (vide.malban.de): copy its vectrex/movies folder'),
 )
 def um2_missing(rom, sd):
     """what a UVMC2 game in UM2_DATA lacks on the SD card folder sd: (folder, what) or None"""
@@ -1584,6 +1587,11 @@ class App:
         if os.environ.get('VECTREX_TEST_KNOB'):                 # (test: turn the knob up after n ms)
             self.root.after(int(os.environ['VECTREX_TEST_KNOB']), lambda: self.set_volume(0.5))
         self.root.after(10, self.tick)
+        self.win_q = []                                         # (from the window procedure: dropped files, the close button)
+        self.root.after(400, self.win_hooks)
+        if IS_MAC:
+            try: self.root.createcommand('::tk::mac::OpenDocument', lambda *fs: self.win_q.append(('drop', list(fs))))
+            except tk.TclError: pass
         if args.fullscreen:                                     # (a restart from full screen stays there)
             self.root.after(100, self.toggle_full)
         self.root.after(150, self.focus)
@@ -1714,6 +1722,8 @@ class App:
             m.add_cascade(label='Recent games', menu=rec)
             item(m, 'Open ROM file...', '', self.open_rom)
             item(m, 'Open UVMC2 game...', '', self.open_um2, "A game for the Ultimate Vectrex Multicart 2 (.um2): it runs on the cartridge's own computer.")
+            item(m, 'Vector movies', '', self.start_movies,
+                 "Vectrex vector movies (Bad Apple, ...) played by the UVMC2 Movie Player; button 4 skips to the next one.")
             if PITREX_UI:
                 pm = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='PiTrex', menu=pm)
                 item(pm, 'Start the PiTrex', '', self.start_pitrex,
@@ -2845,7 +2855,11 @@ class App:
             return out
         def is_rom(p):
             ext = os.path.splitext(p)[1].lower()
-            return ext in self.ROM_EXT or (ext == '.um2' and getattr(self, 'show_um2', True))
+            return (ext in self.ROM_EXT or (ext == '.um2' and getattr(self, 'show_um2', True))
+                    or (ext in ('.img', '.pit') and PITREX_UI))
+        def kind_of(p):                                         # (a UVMC2 game, a PiTrex program: tinted in the list)
+            ext = os.path.splitext(p)[1].lower()
+            return 'um2' if ext == '.um2' else 'pit' if ext in ('.img', '.pit') else 'rom'
         alias = {}                                              # (a Finder alias / Windows shortcut: what it points to)
         for f in names:
             p = os.path.join(d, f)
@@ -2862,11 +2876,13 @@ class App:
         for f in names:
             p = os.path.join(d, f)
             if os.path.isfile(p) and is_rom(p):
-                ext = os.path.splitext(f)[1].lower()
-                out.append((os.path.splitext(f)[0] + ('  [UVMC2]' if ext == '.um2' else ''), p, 'rom'))
+                out.append((os.path.splitext(f)[0], p, kind_of(p)))
             elif f in alias and os.path.isfile(alias[f]) and is_rom(alias[f]):   # (an alias of a ROM)
-                ext = os.path.splitext(alias[f])[1].lower()
-                out.append((os.path.splitext(f)[0] + ('  [UVMC2]' if ext == '.um2' else ''), alias[f], 'rom'))
+                out.append((os.path.splitext(f)[0], alias[f], kind_of(alias[f])))
+        # the PiTrex, at the top of the roms folder, when its SD card folder has its boot program
+        boot = os.path.join(getattr(self, 'px_dir', '') or '', 'pitrex.img')
+        if PITREX_UI and os.path.abspath(d) == os.path.abspath(top) and os.path.isfile(boot):
+            out.insert(0, ('PiTrex', boot, 'pitrex'))
         return out
     def browser_dir(self, d, select=None):
         """show folder d in the ROM browser; select: the path to choose (else the first entry after BACK)"""
@@ -3012,7 +3028,7 @@ class App:
         where = 'ROMS' if rel == '.' else 'ROMS / ' + rel.replace(os.sep, ' / ').upper()
         return dict(rect=rect, list=lst, plug=plug, up=up, dn=dn, close=cl, n_vis=n, row_h=rh, k=k,
                     names=[t for t, _, _k in b['roms']], kinds=[k_ for _, _, k_ in b['roms']],
-                    top=b['top'], sel=b['sel'], title='%s  (%d)' % (where, sum(1 for r in b['roms'] if r[2] == 'rom')),
+                    top=b['top'], sel=b['sel'], title='%s  (%d)' % (where, sum(1 for r in b['roms'] if r[2] in ('rom', 'um2', 'pit'))),
                     empty='NO ROMS FOUND.\nPUT YOUR ROMS IN THE FOLDER\nROMS NEXT TO THE PROGRAM.',
                     help=(('STICK: CHOOSE / PAGE   BUTTON 4: LOAD   BUTTON 1: CLOSE' if rel == '.' else
                            'STICK: CHOOSE / PAGE   BUTTON 4: OPEN/LOAD   BUTTON 1: BACK') if b.get('pad') else
@@ -3517,8 +3533,15 @@ class App:
         """Vectrex > Recent games: the last games played (the newest first), one click starts one"""
         menu.delete(0, 'end')
         games = [g for g in getattr(self, 'recent', []) if os.path.isfile(g)]
+        top = os.path.abspath(os.path.join(ROOT, 'roms'))
         for g in games:
-            menu.add_command(label=os.path.splitext(os.path.basename(g))[0], command=lambda g=g: self.restart(g))
+            name = 'PiTrex' if os.path.basename(g).lower() == 'pitrex.img' else os.path.splitext(os.path.basename(g))[0]
+            out = not os.path.abspath(g).lower().startswith(top.lower() + os.sep)   # (dropped on the window, or opened from elsewhere)
+            if DARK_MENU:
+                menu.add_command(label=name, icon=RECENT_MARK if out else '', command=lambda g=g: self.restart(g),
+                                 tip=g if out else None)
+            else:
+                menu.add_command(label=(RECENT_MARK + ' ' if out else '') + name, command=lambda g=g: self.restart(g))
         if not games:
             menu.add_command(label='(none yet)', state='disabled')
     def note_recent(self, rom):
@@ -4155,6 +4178,94 @@ class App:
         if fn:
             self.restart(fn)
         return 'break'
+    GAME_EXT = ('.bin', '.vec', '.gam', '.rom', '.v4e', '.um2', '.img', '.pit')
+    def win_hooks(self):
+        """Windows: the window takes files dropped on it (WM_DROPFILES), and its close button closes the emulator
+        even while a menu or a message has the mouse (Tk would only beep). Both noted here and handled in tick."""
+        if not IS_WIN or getattr(self, '_wndproc', None):
+            return
+        try:
+            u, sh = ctypes.windll.user32, ctypes.windll.shell32
+            hwnd = int(self.root.wm_frame(), 16)
+            LRESULT = ctypes.c_ssize_t
+            WNDPROC = ctypes.WINFUNCTYPE(LRESULT, W.HWND, W.UINT, W.WPARAM, W.LPARAM)
+            u.CallWindowProcW.argtypes = [ctypes.c_void_p, W.HWND, W.UINT, W.WPARAM, W.LPARAM]; u.CallWindowProcW.restype = LRESULT
+            u.SetWindowLongPtrW.argtypes = [W.HWND, ctypes.c_int, ctypes.c_void_p]; u.SetWindowLongPtrW.restype = ctypes.c_void_p
+            sh.DragQueryFileW.argtypes = [ctypes.c_void_p, W.UINT, ctypes.c_wchar_p, W.UINT]; sh.DragQueryFileW.restype = W.UINT
+            sh.DragFinish.argtypes = [ctypes.c_void_p]
+            old = [None]
+            def proc(h, msg, wp, lp):
+                if msg == 0x0233:                               # WM_DROPFILES
+                    files = []
+                    for i in range(sh.DragQueryFileW(wp, 0xFFFFFFFF, None, 0)):
+                        n = sh.DragQueryFileW(wp, i, None, 0)
+                        buf = ctypes.create_unicode_buffer(n + 1); sh.DragQueryFileW(wp, i, buf, n + 1)
+                        files.append(buf.value)
+                    sh.DragFinish(wp)
+                    self.win_q.append(('drop', files))
+                    return 0
+                if msg == 0x00A1 and wp == 20:                  # WM_NCLBUTTONDOWN on the close button (HTCLOSE)
+                    self.win_q.append(('close', None))
+                    return 0
+                return u.CallWindowProcW(old[0], h, msg, wp, lp)
+            self._wndproc = WNDPROC(proc)                       # (kept: the window calls it)
+            old[0] = u.SetWindowLongPtrW(hwnd, -4, ctypes.cast(self._wndproc, ctypes.c_void_p))
+            sh.DragAcceptFiles(hwnd, True)
+        except Exception:                                       # noqa  (no drop, the usual close button)
+            pass
+    def win_events(self):
+        q, self.win_q = self.win_q, []
+        for what, arg in q:
+            if what == 'close':
+                self.quit_anyway(); return True
+            if what == 'drop':
+                self.drop_files(arg)
+    def drop_files(self, files):
+        """files dropped onto the window: the first game among them starts at once (it stays where it is - Recent
+        games finds it again)"""
+        games = [f for f in files if os.path.isfile(f) and os.path.splitext(f)[1].lower() in self.GAME_EXT]
+        if not games:
+            if files:
+                self.show_look('Not a Vectrex game: ' + os.path.basename(files[0]))
+            return
+        if self.browser:
+            self.close_browser()
+        self.restart(games[0])
+        try: self.focus()
+        except Exception: pass                                  # noqa
+    def quit_anyway(self):
+        """the close button: whatever is open - a menu, a message - the emulator closes"""
+        try:
+            mb = getattr(self, 'menubar', None)
+            if mb is not None and getattr(mb, 'open', None) is not None:
+                mb.open.close_all()
+        except Exception:                                       # noqa
+            pass
+        try:
+            g = self.root.grab_current()
+            if g is not None: g.grab_release()
+        except Exception:                                       # noqa
+            pass
+        self.quit()
+    def start_movies(self, e=None):
+        """Vectrex > Vector movies: the UVMC2 Movie Player (in the roms folder, or anywhere below it); it plays the
+        movies in the UVMC2's SD card folder, movies (and says where they go when there are none)"""
+        top = os.path.join(ROOT, 'roms')
+        found = None
+        for dp, dn, fn in os.walk(top):
+            dn[:] = [x for x in dn if x.lower() != 'overlays']
+            for f in fn:
+                if f.lower().endswith('.um2') and 'movie' in f.lower():
+                    found = os.path.join(dp, f); break
+            if found:
+                break
+        if not found:
+            deck.dialog('info', 'Vectrex_EMU', 'The movie player (UVMC2 Movie Player.um2) is not in the roms folder:'
+                        + chr(10) + chr(10) + top + chr(10) + chr(10) + 'It comes with the emulator - copy it back there from the download.',
+                        parent=self.root)
+            return 'break'
+        self.restart(found)
+        return 'break'
     def open_um2(self, e=None):
         """Add-ons > Open UVMC2 game: a .um2 file (native ARM for the cartridge's RP2350)"""
         from tkinter import filedialog
@@ -4509,6 +4620,8 @@ class App:
         cv.tk.eval('\n'.join(cmd))
 
     def tick(self):
+        if self.win_q and self.win_events():
+            return                                              # (closed)
         if getattr(self.core, 'msgs', None):                    # (the cartridge's own messages: shown once)
             m = self.core.msgs.pop(0)
             self.root.after(0, lambda m=m: self.cart_message(m))

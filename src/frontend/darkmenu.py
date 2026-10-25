@@ -22,8 +22,8 @@ class DMenu:
         self.bar = None
 
     # ---- the tk.Menu calls
-    def add_command(self, label='', accelerator='', command=None, state='normal', tip=None, **kw):
-        self.items.append(dict(kind='command', label=label, accel=accelerator or '', command=command, state=state, tip=tip))
+    def add_command(self, label='', accelerator='', command=None, state='normal', tip=None, icon='', **kw):
+        self.items.append(dict(kind='command', label=label, accel=accelerator or '', command=command, state=state, tip=tip, icon=icon))
 
     def add_checkbutton(self, label='', accelerator='', variable=None, command=None, state='normal', tip=None, **kw):
         self.items.append(dict(kind='check', label=label, accel=accelerator or '', command=command, var=variable, state=state, tip=tip))
@@ -79,8 +79,8 @@ class DMenu:
                 continue
             on = it.get('state', 'normal') != 'disabled'
             fg = FG if on else DIM
-            mark = '✓' if it['kind'] == 'check' and it.get('var') is not None and it['var'].get() else ''
-            cells = [tk.Label(inner, text=mark, bg=MENU, fg=fg, font=f, width=2, anchor='e'),
+            mark = '✓' if it['kind'] == 'check' and it.get('var') is not None and it['var'].get() else it.get('icon', '')
+            cells = [tk.Label(inner, text=mark, bg=MENU, fg=fg if not it.get('icon') else DIM, font=f, width=2, anchor='e'),
                      tk.Label(inner, text=it['label'], bg=MENU, fg=fg, font=f, anchor='w', padx=6, pady=3),
                      tk.Label(inner, text=it.get('accel', ''), bg=MENU, fg=DIM, font=f, anchor='e', padx=10),
                      tk.Label(inner, text='›' if it['kind'] == 'cascade' else '', bg=MENU, fg=fg, font=f, width=2)]
@@ -293,14 +293,35 @@ class DBar(tk.Frame):
         self.keys = {}                                   # (Alt + letter -> the menu or the command)
         self.open = None
         self.alt = dict(down=False, other=False)
+        self.cmds = []                                   # (the plain commands' names)
+        self.mode = False                                # (a menu was open: names light up / open on the way)
+        self.bind('<Leave>', self.left)
 
     def name(self, label, underline):
         b = tk.Label(self, text=label, bg=BAR, fg=FG, font=self.font, padx=10, pady=4)
         b.pack(side='left')
         b.letter = underline
-        b.bind('<Enter>', lambda e, b=b: b.configure(bg=HOV) if self.open is None else None)
+        b.bind('<Enter>', lambda e, b=b: self.enter(b))
         b.bind('<Leave>', lambda e, b=b: b.configure(bg=BAR) if self.open is None else None)
         return b
+
+    def enter(self, b):
+        """the pointer on a name: lit; while the menus are in use (one was open), a menu's name opens it"""
+        if self.open is not None:
+            return
+        m = next((m for b2, m in self.menus if b2 is b), None)
+        if self.mode and m is not None:
+            self.show(m); return
+        b.configure(bg=HOV)
+
+    def left(self, e):
+        """the pointer off the bar: the menus are no longer in use"""
+        try:
+            w = self.winfo_containing(e.x_root, e.y_root)
+        except (KeyError, tk.TclError):
+            w = None
+        if w is not self and (w is None or w.master is not self):
+            self.mode = False
 
     def add_cascade(self, label='', menu=None, underline=0, **kw):
         b = self.name(label, underline)
@@ -312,7 +333,11 @@ class DBar(tk.Frame):
     def add_command(self, label='', command=None, underline=0, **kw):
         """a name that does something at once (no menu)"""
         b = self.name(label, underline)
-        b.bind('<ButtonPress-1>', lambda e: command())
+        def press(e, b=b):
+            self.mode = False; b.configure(bg=BAR)
+            command()
+        b.bind('<ButtonPress-1>', press)
+        self.cmds.append(b)
         self.keys[label[underline].lower()] = command
 
     def bind_alt(self, root):
@@ -382,7 +407,13 @@ class DBar(tk.Frame):
     def motion_over(self, x, y, current):
         m = self.name_at(x, y)
         if m is not None and m is not current:
-            self.show(m)
+            self.show(m); return
+        for b in self.cmds:                              # (a plain command: the menu closes, the name lit)
+            if b.winfo_rootx() <= x < b.winfo_rootx() + b.winfo_width() and b.winfo_rooty() <= y < b.winfo_rooty() + b.winfo_height():
+                current.close_all()
+                self.mode = True
+                b.configure(bg=HOV)
+                return
 
     def step(self, current, d):
         i = next((k for k, (b, m) in enumerate(self.menus) if m is current), 0)
@@ -390,6 +421,7 @@ class DBar(tk.Frame):
         self.show(nxt); nxt.step(1)                      # (from the keys: its first row chosen)
 
     def closed(self):
+        self.mode = False
         if self.open is not None:
             try: self.label_of(self.open).configure(bg=BAR)
             except StopIteration: pass

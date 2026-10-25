@@ -233,7 +233,7 @@ TOPICS = [
          "stars stay visible, just no brighter than a line. The gaps stay: they come from the timing."),
 ('item', 'Line gaps (analog delay)...', "The small gaps at line ends and corners: on a real Vectrex the beam "
          "stops moving a few cycles after the game switches it off, and how many differs from one machine to "
-         "the next. 12.3 cycles (the default) is a well-tuned Vectrex; 9.3 nearly closes the corners, 15.3 "
+         "the next. 7 cycles (the default) is a well-tuned Vectrex; 4 nearly closes the corners, 10 "
          "gives the wide gaps of a worn one."),
 ('item', 'Tube geometry (a real Vectrex)', "Where the beam really lands, measured on the owner's Vectrex (and "
          "matching a second one): the picture a little smaller and narrower, more so towards the sides; vertical "

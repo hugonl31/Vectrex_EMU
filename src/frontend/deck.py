@@ -456,7 +456,7 @@ class Deck:
     def mk_unit(self, key):
         a, V = self.app, self.V
         if key == 'gap':
-            label, lo, hi, fmt = 'Line gaps (stop delay)', 9.3, 15.3, '%.1f cycles'
+            label, lo, hi, fmt = 'Line gaps (stop delay)', 4.0, 10.0, '%.1f cycles'
         else:
             k, i, label, lo, hi, fmt, var = next(p for p in V.UNIT_PARAMS if p[0] == key)
             label = label.split(' (')[0]

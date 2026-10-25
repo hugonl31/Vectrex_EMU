@@ -491,7 +491,9 @@ GLASS_GREY = 0.20                       # the glass in room light without an ove
 ART_TUBE_K = 0.924                      # the overlay on the tube's smaller picture: its scale (both ways - the sheet keeps
                                         #  its proportions; the width as fitted to Armor Attack's playground, the owner)
 TUBE_SEG = 1200.0                       # (lines longer than this, emulator units, are bent in pieces)
-TUBE_LIN = (0.82217, 0.0, 0.91048, -0.0058)   # the straight part: x = a u, y = c v + d - the picture's size on the tube (the
+TUBE_LIN = (0.82217 / 0.99720, 0.0, 0.91048 / 1.00659, -0.0058)   # (/ 0.99720, / 1.00659: the core's new timing (2026-10-25)
+                                        #  draws the test cart grid that much narrower / taller - the picture stays where the
+                                        #  owner's photos put it) the straight part: x = a u, y = c v + d - the picture's size on the tube (the
                                         #  best straight fit to the whole map, |u|, |v| < 0.82): always on, so overlays keep
                                         #  their place when the imperfections are switched off. Centred, for simplicity (the
                                         #  owner's tube sits a little off): the picture, the glass and the overlay share one
@@ -1571,9 +1573,9 @@ class GLBloomRenderer(GLRenderer):
         self.bloom = 0.55            # bloom strength (the owner's choice, 2026-10-08)
         self.wob_on = True           # mains hum wobble (see HUM_AXES)
         self.wob_strength = 0.1074   # rms offset, game px (the owner's choice, 2026-10-08)
-        self.line_gap = 12.3         # the integrators' stop delay in cycles (the core's; Tube > Line gaps): the gaps at
-                                     #  line ends and corners - 12.3 fitted to the owner's test cart photos as a
-                                     #  well-tuned Vectrex; ~14-15 his wide-gap machine (Malban: 15)
+        self.line_gap = 7.0          # the integrators' stop delay in cycles (the core's; Tube > Line gaps): the gaps at
+                                     #  line ends and corners - 7 fitted to the owner's test cart photos with the core's
+                                     #  lag of the spot (2026-10-25; was 12.3 without it); wide-gap machines more
         self.mains_hz = 50           # the mains frequency of the hum (MAINS_HZ)
         self.bend_on = True          # brightness bending (high voltage sag)
         self.bend_strength = 0.6     # game px at the screen edge per 0.1 beam load

@@ -948,15 +948,22 @@ UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0
                ('beamoff', 6, 'Beam switch-off delay', 0.0, 3.0, '%.1f cycles', 'VT_BEAMOFF'),
                ('knob', 8, 'Brightness (the knob at the back)', 0.0, 1.0, '%.2f', 'VT_BRIGHT'))
 UNIT_PRESETS = {
-    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=12.3, knob=KNOB_DEFAULT),  # (measured)
-    'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=12.3, knob=KNOB_DEFAULT),
-    'cranky': dict(zhold=0.18, zcal=4.5, drift_x=0.035, drift_y=-0.025, zofs=0.8, ysettle=0.45, beamoff=1.5, gap=14.6, knob=KNOB_DEFAULT)}
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT),  # (measured)
+    'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT),
+    'cranky': dict(zhold=0.18, zcal=4.5, drift_x=0.035, drift_y=-0.025, zofs=0.8, ysettle=0.45, beamoff=1.5, gap=9.3, knob=KNOB_DEFAULT)}
 UNIT_NAMES = {'owner': "Owner's Vectrex (measured)", 'ideal': 'Ideal', 'cranky': 'Cranky', 'random': 'Random unit', 'custom': 'Custom'}
+def old_gap(look):
+    """a look saved before 2026-10-25 with the old default line gap (12.3 cycles): the new default (7; the stop delay
+    refitted with the spot's lag, see vecx.c LAG_TAU) - a value someone chose stays"""
+    if isinstance(look, dict) and abs(float(look.get('line_gap', 0)) - 12.3) < 1e-6:
+        look['line_gap'] = 7.0
+
+
 def random_unit():
     """a believable other Vectrex: every part somewhere between a good and a tired one"""
     u = lambda a, b: round(random.uniform(a, b), 3)
     return dict(zhold=u(0.22, 0.75), zcal=u(0.5, 4.0), drift_x=u(-0.025, 0.025), drift_y=u(-0.025, 0.025),
-                zofs=u(-0.6, 0.6), ysettle=u(0.5, 0.95), beamoff=u(0.2, 1.2), gap=u(11.0, 14.0), knob=KNOB_DEFAULT)
+                zofs=u(-0.6, 0.6), ysettle=u(0.5, 0.95), beamoff=u(0.2, 1.2), gap=u(5.7, 8.7), knob=KNOB_DEFAULT)
 ADDON_ROM = ('.um2', '.img', '.pit')
 
 
@@ -1443,6 +1450,7 @@ class App:
             saved = json.load(open(self.settings_f)).get('display', {})
         except Exception:           # noqa: first run
             saved = {}
+        old_gap(saved)
         for k in self.look_keys:
             if k in saved:
                 setattr(self.ren, k, type(self.look_default[k])(saved[k]))
@@ -1836,7 +1844,7 @@ class App:
         'halo_k':        ('Corner glow strength', '', 'ren', 'halo_k', 0.0, 0.4, False, '%.3f', 1),
         'dot_k':         ('Corner dot brightness (x1 = measured)', '', 'ren', 'dot_k', 0.0, 2.0, False, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
-        'line_gap':      ('Line gaps (stop delay; 12.3 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 9.3, 15.3, False, '%.1f cycles', 1),
+        'line_gap':      ('Line gaps (stop delay; 7 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 4.0, 10.0, False, '%.1f cycles', 1),
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
         'art_room':      ('Room light (the overlay; without one, the glass)', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
         'light_k':       ('Ceiling light on the glass: strength', '', 'ren', 'light_k', 0.0, 2.0, False, 'x%.2f', 1),
@@ -3955,6 +3963,7 @@ class App:
         """this game's own settings, as they are now: the look and the controls"""
         return dict(look={k: getattr(self.ren, k) for k in self.look_keys} if self.ren else {}, controls=self.inp.save())
     def game_apply(self, s):
+        old_gap(s.get('look', {}))
         for k, v in s.get('look', {}).items():
             if k in self.look_keys:
                 setattr(self.ren, k, type(self.look_default[k])(v))

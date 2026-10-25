@@ -163,7 +163,7 @@ static double alg_zofs;
 static long alg_xofs, alg_yofs;
 static unsigned alg_rdly_on, alg_rdly_off, alg_rdly_off_t1;
 static double rdly_frac, rdly_frac_t1;   /* the stop delays' fractions (VT_RAMPOFF) */
-/* the frontend's Tube > Line gaps: the integrators' stop delay in cycles (default 12.3), live - the gaps at
+/* the frontend's Tube > Line gaps: the integrators' stop delay in cycles (default 7 - the frontend sends it at the start), live - the gaps at
  * line ends and corners grow with it, as they differ between real Vectrexes */
 void vt_set_rampoff (double c)
 {
@@ -202,7 +202,8 @@ static double dark_cyc; static unsigned long long dark_t0;
 static long fade_x0, fade_y0; static double fade_cyc; static unsigned char fade_col; static unsigned long long fade_t0;   /* on by default (VT_ANALOGDLY=0: off); with it the BIOS text needs no fitted shift: the
                        * delays put it where the owner's photos show it (within 0.1 px) */
 static unsigned char dly_x[64], dly_y[64], dly_z[64]; static unsigned dly_p;
-static unsigned dly_nx = 15, dly_ny = 14, dly_nz = 5;   /* VT_XYZDLY=x,y,zero: the S/H and zero delays */
+static unsigned dly_nx = 9, dly_ny = 9, dly_nz = 5;     /* VT_XYZDLY=x,y,zero: the S/H and zero delays (9 with the spot's
+                                                          * lag LAG_TAU: the combined fit, 2026-10-25; were 15 / 14) */
 extern long vt_text_shift; extern double vt_text_shift_w;
 static int alg_zideal;           /* VT_ZIDEAL=1: a perfect machine, the zero reference stays at centre */
 static unsigned alg_xsh;  /* x sample and hold */
@@ -272,9 +273,13 @@ static unsigned alg_vectoring; /* are we drawing a vector right now? */
 static double vt_lag = -1; static int vt_lag_n = 0;
 static double beam_x, beam_y, beam_x1, beam_y1, beam_vx, beam_vy;   /* (beam_x1/y1: the first stage of two) */
 static int beam_init, lag_moving;
+static double piece_bvx, piece_bvy, lag_split_k = 0.5;   /* (VT_DEFLAGSPLIT: a new piece once the spot's speed changed by
+                                                          * this share: Vectorblade ~2,400 lines a frame, the shapes as fitted) */      /* (the spot's speed where the current line piece began) */
 #define LAG_SPLIT 2.0
-#define LAG_TAU 0.0                     /* (the default lag, cycles: see the fit) */
-#define LAG_N 2
+#define LAG_TAU 8.0                     /* (the default lag, cycles: the owner's Vectrex, 2026-10-25 - the combined fit of
+                                         * testcart/corner_test, lag_test and axis_test with X/Y delay 9, RAMP start 5, stop 7:
+                                         * the corners' rounding, the lines' dots, the text upright, the grid's size kept) */
+#define LAG_N 1
 static long alg_vector_x0;
 static long alg_vector_y0;
 static long alg_vector_x1;
@@ -837,7 +842,7 @@ void vecx_reset (void)
 	{ const char *z = getenv ("VT_HBLATCH"); static unsigned n; vt_hb_latch = z ? (unsigned) atoi (z) & 7 : (unsigned) (time (0) + n++ * 5) & 7; }   /* (the 512K cartridge's latch: whatever it powers up with) */
 	unsigned r;
 	static int ow_ready;
-	if (!ow_ready) { ow_ready = 1; ow_init (); const char *z = getenv ("VT_ZOFS"); if (z) alg_zofs = atof (z); alg_zideal = getenv ("VT_ZIDEAL") != NULL; vt_sr1 = getenv ("VT_SR1") != NULL; z = getenv ("VT_WOBBLE"); if (z) sscanf (z, "%lf,%lf", &alg_wob50, &alg_wob100); z = getenv ("VT_ZTAU"); if (z) { alg_ztau = atof (z); alg_zk = 1.0 - exp (-1.0 / alg_ztau); } z = getenv ("VT_CALSHIFT"); if (z) alg_calshift = atof (z); z = getenv ("VT_ZREFK"); if (z) ZREF_K = atof (z); z = getenv ("VT_RAMPDLY"); if (z) { alg_rdly_off_t1 = 0; if (sscanf (z, "%u,%u,%u", &alg_rdly_on, &alg_rdly_off, &alg_rdly_off_t1) < 3) alg_rdly_off_t1 = alg_rdly_off; } z = getenv ("VT_RAMPOFF"); if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); if (b < 0) b = a; alg_rdly_on = alg_rdly_on ? alg_rdly_on : 12; alg_rdly_off = (unsigned) a; rdly_frac = a - (unsigned) a; alg_rdly_off_t1 = (unsigned) b; rdly_frac_t1 = b - (unsigned) b; } z = getenv ("VT_XYZDLY"); if (z) sscanf (z, "%u,%u,%u", &dly_nx, &dly_ny, &dly_nz); z = getenv ("VT_ANALOGDLY"); alg_adly = !(z && atoi (z) == 0); if (alg_adly && !getenv ("VT_RAMPDLY") && !getenv ("VT_RAMPOFF")) { alg_rdly_on = 12; alg_rdly_off = 12; alg_rdly_off_t1 = 12; rdly_frac = rdly_frac_t1 = 0.3; }   /* (stop 12.3 cycles with timer 1 one cycle longer (VT_T1EXTRA=1); Malban: 15. Fitted to the owner's test cart photos 2026-10-12 (11.8 fitted the lines best, 12.3 gives Mine Storm's ship its ~15 % short lines): line ends dark only at scales $0B-$0C / $12-$13 as on the tube; Mine Storm's mothership interior closed, ship lines ~25 % short) */ if (alg_adly) { if (!getenv ("VT_TEXTSHIFT")) vt_text_shift = 0; if (!getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = 0; } z = getenv ("VT_HWOFS"); if (z) { double ox = 0, oy = 0; sscanf (z, "%lf,%lf", &ox, &oy); alg_xofs = (long) (ox * ZS); alg_yofs = (long) (oy * ZS); } }
+	if (!ow_ready) { ow_ready = 1; ow_init (); const char *z = getenv ("VT_ZOFS"); if (z) alg_zofs = atof (z); alg_zideal = getenv ("VT_ZIDEAL") != NULL; vt_sr1 = getenv ("VT_SR1") != NULL; z = getenv ("VT_WOBBLE"); if (z) sscanf (z, "%lf,%lf", &alg_wob50, &alg_wob100); z = getenv ("VT_ZTAU"); if (z) { alg_ztau = atof (z); alg_zk = 1.0 - exp (-1.0 / alg_ztau); } z = getenv ("VT_CALSHIFT"); if (z) alg_calshift = atof (z); z = getenv ("VT_ZREFK"); if (z) ZREF_K = atof (z); z = getenv ("VT_RAMPDLY"); if (z) { alg_rdly_off_t1 = 0; if (sscanf (z, "%u,%u,%u", &alg_rdly_on, &alg_rdly_off, &alg_rdly_off_t1) < 3) alg_rdly_off_t1 = alg_rdly_off; } z = getenv ("VT_RAMPOFF"); if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); if (b < 0) b = a; alg_rdly_on = alg_rdly_on ? alg_rdly_on : 12; alg_rdly_off = (unsigned) a; rdly_frac = a - (unsigned) a; alg_rdly_off_t1 = (unsigned) b; rdly_frac_t1 = b - (unsigned) b; } z = getenv ("VT_XYZDLY"); if (z) sscanf (z, "%u,%u,%u", &dly_nx, &dly_ny, &dly_nz); z = getenv ("VT_ANALOGDLY"); alg_adly = !(z && atoi (z) == 0); if (alg_adly && !getenv ("VT_RAMPDLY") && !getenv ("VT_RAMPOFF")) { alg_rdly_on = 5; alg_rdly_off = 7; alg_rdly_off_t1 = 7; rdly_frac = rdly_frac_t1 = 0.0; }   /* (2026-10-25, the combined fit with the spot's lag LAG_TAU: start 5, stop 7 cycles. Before: stop 12.3 cycles with timer 1 one cycle longer (VT_T1EXTRA=1); Malban: 15. Fitted to the owner's test cart photos 2026-10-12 (11.8 fitted the lines best, 12.3 gives Mine Storm's ship its ~15 % short lines): line ends dark only at scales $0B-$0C / $12-$13 as on the tube; Mine Storm's mothership interior closed, ship lines ~25 % short) */ if (alg_adly) { if (!getenv ("VT_TEXTSHIFT")) vt_text_shift = 0; if (!getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = 0; } z = getenv ("VT_HWOFS"); if (z) { double ox = 0, oy = 0; sscanf (z, "%lf,%lf", &ox, &oy); alg_xofs = (long) (ox * ZS); alg_yofs = (long) (oy * ZS); } }
 
 	/* ram */
 
@@ -1326,6 +1331,7 @@ static einline void alg_sstep (void)
 			alg_vectoring = 1;
 			alg_vector_x0 = (long) beam_x;
 			alg_vector_y0 = (long) beam_y;
+			piece_bvx = beam_vx; piece_bvy = beam_vy;
 			alg_vector_x1 = (long) beam_x;
 			alg_vector_y1 = (long) beam_y;
 			alg_vector_dx = sig_dx;
@@ -1362,7 +1368,8 @@ static einline void alg_sstep (void)
 				    (long) ((labs (alg_vector_dx) + labs (alg_vector_dy)) * vlag_split_k) + 2 * ZS)   /*  new piece once it changed */
 				   : (sig_dx != alg_vector_dx || sig_dy != alg_vector_dy)) ||                  /*  a little: a curve in chords) */
 				   (unsigned char) alg_zsh != alg_vector_color ||
-				   (lag_moving && alg_vector_cyc >= LAG_SPLIT)) {   /* (the spot catching up: a curve, in pieces) */
+				   (lag_moving && alg_vector_cyc >= LAG_SPLIT && fabs (beam_vx - piece_bvx) + fabs (beam_vy - piece_bvy) >
+				    lag_split_k * (fabs (piece_bvx) + fabs (piece_bvy)) + 2 * ZS)) {   /* (the spot catching up: a curve, in chords) */
 
 			/* the parameters of the vectoring processing has changed.
 			 * so end the current line.
@@ -1380,6 +1387,7 @@ static einline void alg_sstep (void)
 				beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS)) {
 				alg_vector_x0 = (long) beam_x;
 				alg_vector_y0 = (long) beam_y;
+				piece_bvx = beam_vx; piece_bvy = beam_vy;
 				alg_vector_x1 = (long) beam_x;
 				alg_vector_y1 = (long) beam_y;
 				alg_vector_dx = sig_dx;
@@ -1413,7 +1421,7 @@ static einline void alg_sstep (void)
 	alg_curr_x += sig_dx;
 	alg_curr_y += sig_dy;
 	alg_cycles++;
-	if (vt_lag < 0) { const char *z = getenv ("VT_DEFLAG"); vt_lag = z ? atof (z) : LAG_TAU; z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; }
+	if (vt_lag < 0) { const char *z = getenv ("VT_DEFLAG"); vt_lag = z ? atof (z) : LAG_TAU; z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; z = getenv ("VT_DEFLAGSPLIT"); if (z) lag_split_k = atof (z); }
 	{ double ox = beam_x, oy = beam_y;
 	  if (vt_lag > 0.05) {
 		int n = vt_lag_n == 2 ? 2 : 1;

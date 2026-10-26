@@ -11,6 +11,7 @@ from tkinter import filedialog
 
 V = None                                # (the app's module: set by vectrex_emu)
 G, BG, DIM, HI, ROWBG, WARN = '#6a8', '#05080a', '#4a7a62', '#8cb', '#16302a', '#e93'
+RED = '#e55'                            # (missing: the setup window, Get games & extras)
 TOPBG, PANEL, BODY, EDGE, EDGE2 = '#0a1210', '#0b1511', '#0f1c17', '#1d3329', '#2f5544'   # (the areas: bars, boxes, the strip)
 
 
@@ -40,9 +41,10 @@ def no_close_button(t):
         pass
 
 
-def dialog(kind, title, text, parent=None, yesno=False):
+def dialog(kind, title, text, parent=None, yesno=False, buttons=('Yes', 'No')):
     """a message in the dark style (Windows' own message boxes are light): kind 'info', 'warning', 'error' or
-    'question'; yesno: Yes / No buttons, returns True for Yes. Waits until it is closed."""
+    'question'; yesno: Yes / No buttons (or `buttons`: other words; then Return does not answer), returns True for Yes.
+    Waits until it is closed."""
     root = parent or tk._default_root
     t = tk.Toplevel(root, bg=BG); t.withdraw()
     t.title(title); t.resizable(False, False)
@@ -60,9 +62,11 @@ def dialog(kind, title, text, parent=None, yesno=False):
         except tk.TclError: pass
         t.destroy()
     if yesno:
-        _button(foot, 'No', lambda: done(False), None, small=True).pack(side='right', padx=(6, 12), pady=6)
-        _button(foot, 'Yes', lambda: done(True), None, on=True, small=True).pack(side='right')
-        t.bind('<Return>', lambda e: done(True)); t.bind('<Escape>', lambda e: done(False))
+        _button(foot, buttons[1], lambda: done(False), None, small=True).pack(side='right', padx=(6, 12), pady=6)
+        _button(foot, buttons[0], lambda: done(True), None, on=True, small=True).pack(side='right')
+        if buttons == ('Yes', 'No'):
+            t.bind('<Return>', lambda e: done(True))
+        t.bind('<Escape>', lambda e: done(False))
     else:
         _button(foot, 'OK', lambda: done(True), None, on=True, small=True).pack(side='right', padx=12, pady=6)
         for k in ('<Return>', '<Escape>'):
@@ -78,6 +82,19 @@ def dialog(kind, title, text, parent=None, yesno=False):
     except tk.TclError: pass
     t.wait_window()
     return res[0]
+
+
+def center(t, over=None):
+    """a window placed in the middle of the emulator's (seen at once), drawn there before it shows"""
+    over = over or getattr(V, 'APP_ROOT', None) or tk._default_root
+    try:
+        t.withdraw(); t.update_idletasks()
+        x = over.winfo_rootx() + (over.winfo_width() - t.winfo_reqwidth()) // 2
+        y = over.winfo_rooty() + (over.winfo_height() - t.winfo_reqheight()) // 3
+        t.geometry('+%d+%d' % (max(0, x), max(0, y)))
+        t.deiconify(); t.lift(); t.focus_force()
+    except tk.TclError:
+        pass
 
 
 def _rel(p):
@@ -122,9 +139,10 @@ class Deck:
         q = tk.Frame(pan, bg=PANEL); q.pack(fill='x', padx=10, pady=(6, 0))
         tk.Label(q, text='QUALITY', fg=DIM, bg=PANEL, font=f9, width=10, anchor='w').pack(side='left')
         self.qbtn = {}
-        for mode, name in (('auto', 'Auto'), ('0', 'Low'), ('1', 'Medium'), ('2', 'High')):
-            b = _button(q, name, lambda m=mode: self.set_quality(m), a, small=True); b.pack(side='left', padx=2)
-            self.qbtn[mode] = b
+        for key in ('low', 'medium', 'high', 'custom'):
+            b = _button(q, a.QUALITY_NAMES[key], lambda k=key: self.set_quality(k), a, small=True); b.pack(side='left', padx=2)
+            self.qbtn[key] = b
+        _button(q, 'Optimize', lambda: a.test_pc(self.t), a, small=True).pack(side='left', padx=(14, 2))
         self.qhint = tk.Label(pan, fg=DIM, bg=PANEL, font=f9, anchor='w', justify='left'); self.qhint.pack(fill='x', padx=(10 + 10 * 8, 10))
         tk.Frame(pan, bg=EDGE, height=1).pack(fill='x', padx=10, pady=4)
         gm = tk.Frame(pan, bg=PANEL); gm.pack(fill='x', padx=10)
@@ -146,10 +164,10 @@ class Deck:
         self.inner = None
         foot = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); foot.pack(fill='x', pady=(10, 0))
         self.reset_b = _button(foot, 'Reset this strip', self.reset_strip, a, small=True); self.reset_b.pack(side='left', padx=(12, 0), pady=6)
+        _button(foot, 'Reset all', self.reset_all, a, small=True).pack(side='left', padx=(8, 0), pady=6)
         bb = _button(foot, 'Hold: before', None, a, small=True); bb.pack(side='left', padx=8)
         bb.bind('<ButtonPress-1>', lambda e: self.compare(True)); bb.bind('<ButtonRelease-1>', lambda e: self.compare(False))
         tk.Label(foot, text='right click a slider: its default', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=8)
-        _button(foot, 'Close', self.close, a, small=True).pack(side='right', padx=12)
         for k in ('<Tab>', '<Escape>'):
             t.bind(k, lambda e: (self.close(), 'break')[1])
         t.bind('<KeyPress-h>', lambda e: self.compare(True)); t.bind('<KeyRelease-h>', lambda e: self.compare(False))
@@ -169,16 +187,23 @@ class Deck:
             y = r.winfo_rooty() + max(0, (r.winfo_height() - t.winfo_reqheight()) // 3)
         t.geometry('+%d+%d' % (x, y))
         t.deiconify()
-        no_close_button(t)
-        t.focus_force()
+        try: V.dark_title(t)                                    # (the system's own title bar and close button - where
+        except Exception: pass   # noqa                         #  each system puts it: Windows / Linux right, macOS left -
+        t.focus_force()                                         #  dark, as the main window's; Graham Toal, 2026-10-26)
         self.tick()
 
     # ---- the strips: rows of (kind, ...) - check / slider / unit / choice / buttons / note
     def spec(self, s):
+        return self._spec(s)
+
+    def _spec(self, s):
         a, V = self.app, self.V
         R = lambda: a.ren
         C = lambda: a.run.crt
-        A = lambda k, d=False: getattr(a.ren, k, d) if a.ren else d
+        def A(k, d=False):
+            if self.reading is not None:
+                self.reading.append(k)                  # (a check's setting: for its changed mark, see mk_check)
+            return getattr(a.ren, k, d) if a.ren else d
         has = lambda k: bool(a.ren) and hasattr(a.ren, k)
         PH = lambda: A('phosphor'); AG = lambda: A('phosphor') and A('trail_on')
         OV = lambda: bool(A('art_on') and A('art', None)); SC = lambda: OV() and A('scr_on')
@@ -189,14 +214,20 @@ class Deck:
                     ('in', [('slider', 'bloom', PH),
                             ('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
                             ('in', [('slider', 'trail', AG), ('slider', 'phos_grow', AG), ('slider', 'phos_smooth', AG)])]),
+                    ('slider', 'white_k', lambda: has('white_k')),
                     ('group', 'SHAPE AND GLASS'),
                     ('check', 'Tube geometry (a real Vectrex)', lambda: A('curve_on'), flip('curve_on'), None),
                     ('in', [('slider', 'geom_k', lambda: A('curve_on'))]),
                     ('check', 'Glass edge (rounded corners)', lambda: A('glass_on'), flip('glass_on'), None),
+                    ('check', 'Bend smoothing (curves without facets)', lambda: A('bend_smooth', True), flip('bend_smooth'), None),
+                    ('check', 'Second glow pass (a softer, wider glow)', lambda: A('passes', 2) >= 2,
+                     lambda: (setattr(a.ren, 'passes', 1 if a.ren.passes >= 2 else 2), a.save_settings()), PH),
+                    ('check', 'Dither (no bands in soft glows)', lambda: A('dither_on', True), flip('dither_on'), None),
                     ('check', 'Corner glow (halo where the beam rests)', lambda: A('halo_on'), flip('halo_on'), lambda: not A('even_beam')),
                     ('in', [('slider', 'halo_k', lambda: A('halo_on') and not A('even_beam'))]),
                     ('slider', 'dot_k', lambda: not A('even_beam')),
-                    ('check', 'Even beam (an ideal vector display)', lambda: A('even_beam'), flip('even_beam'), None),
+                    ('check', 'Even beam (an ideal vector display)', lambda: A('even_beam'), flip('even_beam'), lambda: not A('beam_trace')),
+                    ('check', 'Beam trace (the spot lights the phosphor)', lambda: A('beam_trace'), flip('beam_trace'), lambda: has('beam_trace')),
                     ('group', 'SIGNAL'),
                     ('check', 'Mains hum wobble', lambda: A('wob_on'), a.toggle_wobble, None),
                     ('in', [('slider', 'wob_strength', lambda: A('wob_on')),
@@ -306,6 +337,16 @@ class Deck:
     RESETS = {'Tube': 'reset_tube', 'Room light': 'reset_light', 'Case': 'reset_case', 'Overlay': 'reset_overlay', 'Sound': 'reset_sound',
               'Display': 'reset_display', 'Cartridge': 'reset_addons'}
 
+    def reset_all(self):
+        """every strip to its defaults: those of the Quality profile chosen (Custom: High's) - asked first"""
+        a = self.app
+        key = a.current_profile()
+        name = a.QUALITY_NAMES['high' if key == 'custom' else key]
+        if dialog('question', 'Reset all', 'Reset every tab to the %s defaults?' % name, parent=self.t, yesno=True,
+                  buttons=('Reset all', 'Cancel')):
+            a.reset_all()
+        self.sync_all()
+
     def reset_strip(self):
         if self.strip == 'Vectrex unit':
             self.app.unit_preset('owner')
@@ -355,19 +396,46 @@ class Deck:
         f = tk.Frame(self.parent, bg=self.bgc); f.pack(fill='x', pady=1)
         return f
 
+    reading = None                                      # (while a check is made: the settings its state reads)
+
+    def changed(self, key):
+        """the look setting key differs from its default (the mark \u25cf beside it)"""
+        a = self.app
+        d = getattr(a, 'look_default', {})
+        if not a.ren or key not in d:
+            return False
+        v, dv = getattr(a.ren, key, None), d[key]
+        return abs(float(v) - float(dv)) > 1e-6 if isinstance(dv, float) else v != dv
+
+    def mark(self, f):
+        m = tk.Label(f, text='', fg=WARN, bg=self.bgc, font=_font(self.app, 9), width=2, anchor='w')
+        return m
+
     def mk_check(self, label, get, cmd, dep):
         f = self.frame()
+        self.reading = []
         v = tk.BooleanVar(value=bool(get()))
+        keys, self.reading = self.reading, None
+        key = keys[-1] if keys else None
         c = tk.Checkbutton(f, text=label, variable=v, command=lambda: (cmd(), self.sync_all()), fg=G, bg=self.bgc,
                            selectcolor=self.bgc, activebackground=self.bgc, activeforeground=HI, font=_font(self.app, 9),
                            anchor='w', highlightthickness=0, bd=0, disabledforeground='#2a4a3a')
-        c.pack(fill='x')
-        return dict(kind='check', f=f, w=c, sync=lambda: v.set(bool(get())), dep=dep, act=lambda d: (cmd(), self.sync_all()))
+        c.pack(side='left')
+        m = self.mark(f); m.pack(side='left')
+        def sync():
+            v.set(bool(get()))
+            m.configure(text='\u25cf' if key and self.changed(key) else '')
+        return dict(kind='check', f=f, w=c, sync=sync, dep=dep, act=lambda d: (cmd(), self.sync_all()))
 
     def mk_note(self, text):
+        """a line of text; one that starts with '!' in red (without the '!')"""
         f = self.frame()
-        l = tk.Label(f, fg=DIM, bg=self.bgc, font=_font(self.app, 9), anchor='w'); l.pack(fill='x')
-        return dict(kind='note', f=f, w=l, sync=lambda: l.configure(text=text()), dep=None, act=None)
+        l = tk.Label(f, fg=DIM, bg=self.bgc, font=_font(self.app, 9), anchor='w', justify='left', wraplength=1200)
+        l.pack(fill='x')
+        def sync():
+            t = text()
+            l.configure(text=t[1:] if t.startswith('!') else t, fg=RED if t.startswith('!') else DIM)
+        return dict(kind='note', f=f, w=l, sync=sync, dep=None, act=None)
 
     def mk_buttons(self, items, dep):
         f = self.frame(); bs = []
@@ -423,7 +491,7 @@ class Deck:
         if attr == 'volume':
             default = 1.0
         default = V.ART_ADJ_DEFAULT.get(attr, default)
-        rel = attr not in ('volume', 'line_gap', 'monitor_inch', 'scr_large') + tuple(V.ART_ADJ_DEFAULT) and default > 0
+        rel = attr not in ('volume', 'line_gap', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
         if rel:
             lo, hi, log = default * (1 - V.SLIDER_SPAN), default * (1 + V.SLIDER_SPAN), False
         return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default)
@@ -450,8 +518,16 @@ class Deck:
         get = lambda: getattr(r['obj'](), r['attr'])
         if r['attr'] == 'monitor_inch':                        # (0 = as the monitor reports it)
             get = lambda: a.monitor_inch or a.monitor_auto_inch() or 24.0
-        return self.mk_scale(label, get, setv, r['lo'], r['hi'], r['log'],
-                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep)
+        row = self.mk_scale(label, get, setv, r['lo'], r['hi'], r['log'],
+                            lambda v: r['fmt'] % (v * r['show']), r['default'], dep)
+        sc = row['f'].winfo_children()[-1]                   # (the slider: the mark between it and the value)
+        m = self.mark(row['f']); m.pack(side='right', before=sc)
+        sync0 = row['sync']
+        def sync():
+            sync0()
+            m.configure(text='\u25cf' if self.changed(r['attr']) else '')
+        row['sync'] = sync
+        return row
 
     def mk_unit(self, key):
         a, V = self.app, self.V
@@ -469,8 +545,12 @@ class Deck:
 
     def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep):
         f = self.frame(); N = 1000
-        to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
-        to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
+        if log == 'mired':                                      # (even in mireds: White balance)
+            to_pos = lambda v: N * (V.vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
+            to_val = lambda p: V.vecrender.white_from_pos(2.0 * p / N - 1.0)
+        else:
+            to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
+            to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
         tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=28, anchor='w').pack(side='left')
         val = tk.Label(f, fg=G, bg=self.bgc, font=_font(self.app, 9), width=12, anchor='w')
         busy = [False]
@@ -515,15 +595,10 @@ class Deck:
                 pass
         for i, r in enumerate(self.rows):                       # (the controller's row)
             r['f'].configure(bg=ROWBG if (i == self.focus and self.pad_used()) else r.get('bg', BG))
-        mode = a.quality_mode
+        mode = a.current_profile()
         for m, b in self.qbtn.items():
             _paint(b, m == mode)
-        lvl = a.q_level
-        self.qhint.configure(text={'auto': 'Auto - now %s: steps down by itself when this PC misses frames.' % a.QUALITY_NAMES[lvl],
-                                   '0': 'Low - afterglow, no bloom, no glass edge or curve, the overlay flat. For old laptops.',
-                                   '1': 'Medium - afterglow and a light bloom; no scratches, plastic glow or reflections.',
-                                   '2': 'High - your look settings exactly as set.'}.get(mode, '')
-                             + '  Effects only, never the emulation.')
+        self.qhint.configure(text='\u25cf changed from default', fg=WARN)
         st = a.game_state()
         name = a.rom_name
         self.ghint.configure(text={'everyday': '%s uses the everyday settings (changes are kept for all games).' % name,
@@ -538,7 +613,9 @@ class Deck:
         return time.perf_counter() - self.pad_t < 8.0
 
     def set_quality(self, m):
-        self.app.set_quality(m); self.sync_all()
+        if m != 'custom':                               # (Custom: what the switches below make it)
+            self.app.set_profile(m)
+        self.sync_all()
 
     def step_strip(self, d):
         i = self.STRIPS.index(self.strip)
@@ -671,21 +748,49 @@ def setup_window(app, first=True):
     box('WHAT WAS FOUND')
     m, txt, side = row('BIOS')
     ok(m, os.path.exists(V.BIOS)); txt.configure(text=_rel(V.BIOS) + ' (with Mine Storm built in)' if os.path.exists(V.BIOS) else 'not found: put bios.bin in the system folder')
-    # the games
-    m, txt, side = row('Games folder')
+    # the games, the overlays, the PiTrex, the speech ROM: what is missing red - it can all be downloaded in one go
+    import getter
+    getter.V_APP = a
     roms = os.path.join(V.ROOT, 'roms')
     def count():
         n = 0
         for dp, dn, fn in os.walk(roms):
             n += sum(1 for f in fn if f.lower().endswith(('.bin', '.vec', '.gam', '.v4e', '.um2')))
         return n
-    if os.path.isdir(roms):
-        ok(m, True); txt.configure(text='roms - %d games found (the ROM browser: L)' % count())
+    def miss(mark, txt, text):
+        mark.configure(text='✗', fg=RED); txt.configure(text=text, fg=RED)
+    found = []                                          # (refreshed after a download: the rows below)
+    def games_row():
+        m, txt, side = row('Games')
+        def upd(m=m, txt=txt):
+            have, of = getter.games_have()
+            if have >= of:
+                ok(m, True); txt.configure(text='roms - %d games, all %d original ones (the ROM browser: L)' % (count(), of), fg=G)
+            else:
+                miss(m, txt, 'roms - %d of the %d original games: the missing ones can be downloaded' % (have, of))
+        found.append(upd); upd()
+    games_row()
+    m, txt, side = row('Overlays')
+    od = os.path.join(V.ROOT, 'overlays')
+    no = len([f for f in os.listdir(od) if f.lower().endswith(('.art', '.png'))]) if os.path.isdir(od) else 0
+    if no > 1:
+        ok(m, True); txt.configure(text='%d overlays (they come with the emulator)' % no)
     else:
-        ok(m, False); txt.configure(text='no roms folder yet')
-        def mk_roms(m=m, txt=txt):
-            os.makedirs(roms, exist_ok=True); ok(m, True); txt.configure(text='roms - made: put your games in it'); cb.destroy()
-        cb = _button(side, 'Create', mk_roms, a, small=True); cb.pack()
+        miss(m, txt, "only %d: the overlays come with the emulator - put them back in the overlays folder" % no)
+    def item_row(name, key, have_text, miss_text):
+        m, txt, side = row(name)
+        def upd(m=m, txt=txt):
+            if getter.state(key, a)[0]:
+                ok(m, True); txt.configure(text=have_text, fg=G)
+            else:
+                miss(m, txt, miss_text)
+        found.append(upd); upd()
+    item_row('Homebrew games', 'homebrew', 'the free homebrew games that have an overlay',
+             'missing: free homebrew games that have an overlay - they can be downloaded')
+    item_row('Speech ROM', 'speech', 'found: VecVoice / VecVox games can speak',
+             'missing: VecVoice / VecVox games are silent - it can be downloaded')
+    item_row('PiTrex SD card', 'pitrex', '%s (PiTrex: Vectrex > PiTrex)' % _rel(a.px_dir),
+             'missing: the PiTrex has no programs - they can be downloaded')
     # the UVMC2 SD card
     m, txt, side = row('UVMC2 SD folder')
     def sd_state(m=m, txt=txt):
@@ -696,33 +801,49 @@ def setup_window(app, first=True):
         def mk_sd():
             os.makedirs(a.sd_dir, exist_ok=True); sd_state(); sb.destroy()
         sb = _button(side, 'Create', mk_sd, a, small=True); sb.pack()
-    # the speech ROM
-    m, txt, side = row('Speech ROM')
-    sp = V.sp_rom(); ok(m, True)
-    txt.configure(text='found: VecVoice / VecVox games can speak' if sp else 'not found - optional (the README says where to get it)')
+    # one button for all that is missing
+    gf = tk.Frame(grid, bg=PB); gf.grid(row=rowi[0], column=0, columnspan=4, sticky='w', pady=(6, 2)); rowi[0] += 1
+    def missing():
+        return [k for k in ('games', 'homebrew', 'speech', 'pitrex') if not getter.state(k, a)[0]]
+    def get_all():
+        getter.window(a, only=missing() or None, parent=t)
+        def watch():                                    # (the rows follow the downloads)
+            for f in found:
+                f()
+            if getattr(a, 'getter_win', None) and a.getter_win.winfo_exists() and t.winfo_exists():
+                t.after(1000, watch)
+        t.after(1000, watch)
+    gb = _button(gf, 'Download everything missing', get_all, a, on=bool(missing())); gb.pack(side='left')
+    tk.Label(gf, text=('Everything in red can be downloaded automatically, in one click.' if missing() else
+                       'All there. Vectrex > Get games & extras... fetches them again any time.'),
+             fg=RED if missing() else DIM, bg=PB, font=f9).pack(side='left', padx=(10, 0))
     # quality
     box('QUALITY')
     m, txt, side = row('Quality'); ok(m, True)
-    qv = tk.StringVar(value=a.quality_mode)
+    qv = tk.StringVar(value=a.current_profile())
     qf = tk.Frame(grid, bg=PB); qf.grid(row=rowi[0], column=2, columnspan=2, sticky='w'); rowi[0] += 1
     qb = {}
     def qset(mode):
         qv.set(mode)
         for k, b in qb.items(): _paint(b, k == mode)
-    for mode, name in (('auto', 'Auto'), ('0', 'Low'), ('1', 'Medium'), ('2', 'High')):
-        b = _button(qf, name, lambda mo=mode: qset(mo), a, small=True); b.pack(side='left', padx=2); qb[mode] = b
-    qset(a.quality_mode)
-    def test(txt=txt):
-        txt.configure(text='testing this PC...'); t.update()
-        ms = quality_test(a)
-        if ms is None:
-            txt.configure(text='Auto: starts at High, steps down by itself if this PC misses frames'); return
-        rec = 'High' if ms < 4.0 else 'Medium' if ms < 9.0 else 'Low'
-        txt.configure(text='this PC draws a frame in %.1f ms: %s suits it (Auto finds it by itself too)' % (ms, rec))
-        try: disp_after_test(ms)
-        except NameError: pass
-    _button(side, 'Test', test, a, small=True).pack()
-    t.after(400, test)
+    for key in ('low', 'medium', 'high'):
+        b = _button(qf, a.QUALITY_NAMES[key], lambda k=key: qset(k), a, small=True); b.pack(side='left', padx=2); qb[key] = b
+    qset(qv.get())
+    def optimize(txt=txt):
+        """Optimize (pctest): the best this PC runs at full speed, set now; the presets here still choose instead"""
+        import pctest
+        rep = pctest.optimize(a, lambda st: (txt.configure(text='optimizing: ' + st), t.update()))
+        if rep is None:
+            txt.configure(text='drawn without OpenGL: no effects to choose'); return
+        pctest.apply(a, rep)
+        qset(a.current_profile())
+        txt.configure(text='\n'.join(pctest.result_lines(rep)[:-1]))
+    _button(side, 'Optimize', optimize, a, small=True).pack()
+    if first:
+        txt.configure(text='Optimize: a few short tests find the best settings this PC can run at full speed.')
+        t.after(400, optimize)                          # (a new install: at once)
+    else:
+        txt.configure(text='%s now. Optimize finds the best this PC can run at full speed.' % a.QUALITY_NAMES[a.current_profile()])
     # the display: one choice, explained, the best for this screen chosen
     v = vrrdetect.detect(a.screen.winfo_id())
     ref = int(round(getattr(a, 'refresh', 0) or 60))
@@ -795,7 +916,7 @@ def setup_window(app, first=True):
     tk.Label(foot, text='Enter: start playing   Esc: skip', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=(12, 8), pady=7)
     def done(browser=False, skip=False):
         if not skip:
-            if qv.get() != a.quality_mode: a.set_quality(qv.get())
+            if qv.get() not in (a.current_profile(), 'custom'): a.set_profile(qv.get())
             d = dv.get()
             a.set_screen('vrr' if d == 'vrr' else 'max' if d == 'max' else '60')
             if (d == 'smooth') != bool(a.smooth): a.toggle_smooth()
@@ -836,31 +957,3 @@ def vrr_note(v):
     if v['vrr'] is None:
         return 'This monitor may have it%s - try it' % rng
     return 'This monitor does not report it%s' % rng
-
-
-def quality_test(a, n=40):
-    """the time this PC needs to draw one screen frame at High (CPU and graphics card, without waiting for
-    the monitor): the median of n frames, ms; None without the OpenGL renderer"""
-    r = a.ren
-    if not (r and hasattr(r, '_present') and hasattr(r, 'gl')):
-        return None
-    q0 = r.quality; r.quality = 2
-    times = []
-    sw = r._swap
-    def timed():
-        r.gl.glFinish()
-        times.append(time.perf_counter() - t0[0])
-    t0 = [0.0]
-    r._swap = timed                                           # (no swap: not paced by the monitor)
-    try:
-        lines = a.lines or []
-        for _ in range(n):
-            t0[0] = time.perf_counter()
-            r.present(time.perf_counter(), lines if lines else None)
-    finally:
-        r._swap = sw
-        try: del r._swap
-        except AttributeError: pass
-        r.quality = q0
-    times.sort()
-    return 1000.0 * times[len(times) // 2] if times else None

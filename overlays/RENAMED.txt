@@ -1,0 +1,59 @@
+MiSTer overlay name -> name used here (renamed to match the ROM names)
+
+ArmorAttack.art	Armor Attack.art
+ArmorAttack_(alt).art	Armor Attack (alt).art
+Blitz!_Action_Football.art	Blitz! Action Football.art
+Clean_Sweep.art	Clean Sweep.art
+Cosmic_Chasm.art	Cosmic Chasm.art
+Dark_Tower_(orange).art	Dark Tower (orange).art
+Dark_Tower_Proto.art	Dark Tower.art
+Flipper_Pinball.art	Flipper Pinball.art
+Fortress_of_Narzod.art	Fortress of Narzod.art
+Heads_Up_Action_Soccer.art	Heads-Up Action Soccer.art
+Hex_(blue).art	Hex (blue).art
+HyperChase_Auto_Race.art	HyperChase Auto Race.art
+Mine_Storm.art	Mine Storm (built in).art
+Mine_Storm_(blue).art	Mine Storm (blue).art
+Mine_Storm_(blue_grid).art	Mine Storm (blue grid).art
+Mine_Storm_(cyan_grid).art	Mine Storm (cyan grid).art
+Mine_Storm_(strategy).art	Mine Storm (strategy).art
+Mine_Storm_II.art	Mine Storm II.art
+Moon_Lander.art	Moon Lander.art
+Narrow_Escape_(2d hack).art	Narrow Escape 2D.art
+Nebula_Commander.art	Nebula Commander.art
+Neon_Hawk.art	Neon Hawk.art
+Omega_Chase_16K.art	Omega Chase.art
+Patriots_(red).art	Patriots (red).art
+Pitchers_Duel_Proto.art	Pitcher's Duel.art
+Polar_Rescue.art	Polar Rescue.art
+Pole_Position.art	Pole Position.art
+Protector.art	Protector & YASI.art
+Protector_(limited_edition).art	Protector & YASI (limited edition).art
+Protector_(yellow).art	Protector & YASI (yellow).art
+Rip_Off.art	Rip Off.art
+Rip_Off_(eu).art	Rip Off (eu).art
+Scramble_(alt).art	Scramble (alt).art
+Scramble_(jp).art	Scramble (jp).art
+Soccer_Football_(eu).art	Heads-Up Action Soccer (eu).art
+Solar_Quest.art	Solar Quest.art
+Space_Wars.art	Space Wars.art
+Spike_(purple).art	Spike (purple).art
+Spike_(red).art	Spike (red).art
+Spike_Hoppin.art	Spike Hoppin'.art
+Spikes_Wedding.art	Spikes Wedding.art
+Spinball_(alt).art	Spinball (alt).art
+Star_Castle.art	Star Castle.art
+Star_Hawk.art	StarHawk.art
+Star_Ship.art	Star Ship.art
+Star_Trek_The_Motion_Picture.art	Star Trek - The Motion Picture.art
+Super_Cobra.art	Super Cobra.art
+Thrust_(red_yellow_blue).art	Thrust (red yellow blue).art
+Tour_De_France_Proto.art	Tour De France.art
+VectorbladeV1.13.art	Vectorblade.art
+Vectrexians_(orange_pink).art	Vectrexians (orange pink).art
+War_Of_The_Worlds_(red).art	War of the Worlds (red).art
+Web_Warp.art	Web Warp.art
+Web_Wars.art	Web Wars.art
+Web_Wars_(Newport_Menthol).art	Web Wars (Newport Menthol).art
+Web_Wars_(Newport_Red).art	Web Wars (Newport Red).art
+YASI_(3band).art	Protector & YASI (YASI 3band).art

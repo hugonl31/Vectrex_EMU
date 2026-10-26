@@ -2,7 +2,11 @@
 # non-commercial use by Smith Engineering's permission)
 /roms/
 /overlays/*
-!/overlays/Mine Storm (built in).art
+# (the overlays that come with the emulator: the MiSTer core's set, renamed for the ROMs - overlays/CREDITS.md,
+# overlays/RENAMED.txt; PNGs of your own stay local)
+!/overlays/*.art
+!/overlays/CREDITS.md
+!/overlays/RENAMED.txt
 /games/
 Vectrex_EMU.conf
 system/settings.json

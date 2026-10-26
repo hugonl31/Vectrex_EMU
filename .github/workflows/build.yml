@@ -1,7 +1,7 @@
 # Builds Vectrex_EMU for Windows (x64), macOS (universal2: Intel + Apple Silicon) and Linux (x86-64), checks
 # that each one starts (Mac and Linux: a snapshot of the OpenGL picture, Mine Storm), and publishes the three
 # zips as the release named in VERSION. Each zip, the same on every system: the program, and next to it
-# system (bios.bin), roms and overlays (Mine Storm (built in).art) folders, each with a note on what goes
+# system (bios.bin), roms and overlays (the MiSTer set, renamed for the games) folders, each with a note on what goes
 # there (package/).
 name: build
 on:

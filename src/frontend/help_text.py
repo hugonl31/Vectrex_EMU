@@ -12,7 +12,8 @@ TOPICS = [
       "phosphor, the slight wobble from the mains, the buzz from the speaker."),
 ('h', 'Switching it on'),
 ('p', "Like a real Vectrex it starts *switched off*. The volume knob is also the power switch: turn it up "
-      "(Page Up, the mouse wheel over the knob below the picture, or a click on its right half) and the "
+      "(Page Up, the mouse wheel over the knob below the picture, or grab the knob and turn it round: drag "
+      "clockwise; a click on its right half steps it up) and the "
       "Vectrex clicks on, the tube warms up and the BIOS plays its start screen. Turned all the way down "
       "it clicks off again. Start switched on (the deck's Vectrex unit strip, and the setup) skips the knob."),
 ('h', 'Cartridges'),
@@ -80,7 +81,8 @@ TOPICS = [
 ('item', 'Control deck', "The strip below the picture - the on-screen display, P2 PORT, the cartridge, RESET and the "
          "volume knob - on or off at once. Off, the window gets smaller by it; on again, the parts come back as they were. "
          "Each part on its own: Config > Display."),
-('item', 'Quality', "Auto, Low, Medium or High: how many of the picture's effects this PC draws (see The Config window)."),
+('item', 'Quality', "Low, Medium or High (Custom when changed by hand): how many of the picture's effects this PC draws; "
+                    "Test this PC... suggests one (see The Config window)."),
 ('item', 'Room light', "Dark (half the default), Evening (the default) or Daylight (twice): how much the room lights up "
          "the overlay, the glass and the case. Finer: Config, the Room light strip."),
 ]),
@@ -111,17 +113,22 @@ TOPICS = [
 ('deck', 'The Config window', [
 ('p', "Tab (or Config on the menu bar) opens one window over the running game with every display, sound and hardware "
       "setting, in strips: Tube, Room light, Case, Overlay, Sound, Vectrex unit, Display and Cartridge. Every switch and "
-      "slider acts on the game at once. Right click a slider: its default. Reset this strip puts back only that strip. "
+      "slider acts on the game at once. Right click a slider: its default. Reset this strip puts back only that strip; Reset all puts back every strip (to the Quality profile's defaults, Custom: High's). "
       "Hold H (or the Before button) to see the look from before the deck opened. Tab or Esc closes it."),
 ('p', "With a game controller: LB / RB switch strips, up / down pick a row, left / right change it, A switches, "
       "Y holds the look from before, B closes."),
 ('h', 'Quality'),
-('item', 'Auto', "Starts at High and steps down by itself when this PC misses screen frames for a few seconds."),
-('item', 'Low', "The afterglow stays; no bloom, no curved glass or glass edge, the overlay flat. For old laptops."),
-('item', 'Medium', "Afterglow and a light bloom; no scratches, plastic glow or reflections."),
-('item', 'High', "Your look settings exactly as you set them."),
-('p', "Quality only changes the picture effects, never the emulation, and it never changes your own settings: "
-      "it only leaves out the costly ones while it is lower."),
+('item', 'Low', "The Vectrex look for old laptops: the afterglow, the glow, the corner dots and the overlay's colours "
+                "stay; the tube curve, glass edge, scratches, plastic glow, parallax, room light, reflections, bend "
+                "smoothing and dither are off."),
+('item', 'Medium', "All but the room light and its reflections; a lighter glow."),
+('item', 'High', "Every effect on."),
+('item', 'Custom', "A profile you changed: any picture setting (Tube, Room light, Case, Overlay) set by hand in the strips below."),
+('item', 'Test this PC...', "Draws a heavy scene at each profile for a moment, measures the processor and the "
+                           "graphics card, and suggests the profile that suits this PC - to accept or not. The first-start "
+                           "setup runs it. Nothing changes by itself while you play."),
+('p', "Quality only changes the picture effects, never the emulation. A profile sets the effects' switches; you "
+      "can change any of them afterwards."),
 ('h', 'This game'),
 ('item', 'Save', "This game keeps the look and controls it has now and starts with them every time. "
       "Nothing is saved for a game unless you press this."),
@@ -145,6 +152,16 @@ TOPICS = [
 ('item', 'Zero offset', "The trimmers R333 / R335: the whole picture's centre against the zero reference."),
 ('item', 'Y hold settling', "How quickly the Y sample-and-hold reaches a new value (1 = at once)."),
 ('item', 'Beam switch-off delay', "How long the beam stays lit after a game blanks it: longer, and lines get tails."),
+('item', 'Zeroing time X / Y', "How fast ZERO brings the beam back to the middle (an RC: the integrators' capacitors "
+      "emptied through a switch: X 4.5, Y 3.3 cycles). Games that zero only briefly leave "
+      "the beam a little short of the middle; a ZERO drawn with the beam on curves, Y first. 0 = at once (the old model)."),
+('item', 'Offset shift (zero reference)', "The zero reference moves the beam by itself: ZERO goes to the point it "
+      "sets, not to the middle - on the diagonal, a positive offset left and down (the trick behind old fast text "
+      "routines). 166 = measured; 0 = the reference only matters while the beam moves."),
+('item', 'Deflection lag X / Y', "How far the spot lags behind the integrators: rounder corners, curved ends, and the "
+      "short gaps where joined lines meet (the spot still moving while the beam is dark). 6 = measured."),
+('item', 'DAC bit 0-3 error', "The DAC's ladder: each bit's current off by this share. Text drawn right and back at a "
+      "width has different bits each way, so its slant changes from one width to the next. The owner's: measured."),
 ('item', 'Line gaps (stop delay)', "When the integrators stop after a line: the gaps at line ends and corners."),
 ('item', 'Brightness (the knob at the back)', "As the knob on the back of a Vectrex: 0 = a black screen, 1 = as bright as a real "
       "one goes, 0.71 = well set (right click on the slider). Down: the faintest lines go first, a line's corner dots with "
@@ -227,6 +244,15 @@ TOPICS = [
 ('item', 'Corner glow strength...', "How strong that glow is (right click on the slider: the default)."),
 ('item', 'Corner dot brightness...', "How much brighter the spot is where the beam stops - corners, dots, the joins "
          "in a dashed line - than the line itself. x1 = as measured; 0 = no brighter than the line."),
+('item', 'White balance (colour temperature)', "The middle is neutral: the lines and their glow the screen's own "
+         "pure white. Towards cool (up to 12000 K) the glow turns colder while the lines' bright cores stay pure white - "
+         "the screen's brightest - and only over the last part of the slider do the cores follow. Towards warm (down to "
+         "5600 K) the same. 9300 K by default (the cool white of many old CRT monitors): a cold glow round white lines. "
+         "Only the lines change colour - the overlay and the case keep theirs."),
+('item', 'Beam trace (the spot lights the phosphor)', "Off by default. The core sends the spot's own path - every "
+         "cycle where it was - and the phosphor lights up by how long the beam stayed in each place: slow is bright, a "
+         "stopped beam builds a dot, fast is faint, and curves are smooth curves, not pieces of straight line. "
+         "One measured rule instead of the line renderer's corner dots and glow."),
 ('item', 'Even beam (an ideal vector display)', "Off by default. Every point as bright and as thin as the lines: "
          "no brighter, fatter corners and dots where the beam rests, no corner glow, no fainter fast lines, and "
          "where lines overlap they do not add up. A vector display without the tube's character - dots such as "

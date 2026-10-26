@@ -4,7 +4,7 @@ Draws the emulator's vectors into an off-screen 32-bit bitmap with GDI+ anti-ali
 twice: a wide faint glow and a bright core (the look of a vector CRT), then copies the bitmap to the
 window in one call. Line widths scale with the picture, so any window size looks smooth.
 """
-import ctypes, math, sys, ctypes.wintypes as W
+import ctypes, math, sys, time, ctypes.wintypes as W
 import roomlight, casemodel
 try:                                    # (numpy: the vertex arrays of a frame in one go - _build_np; without it the
     import numpy as _np                 #  same per line in Python, slower: a dense frame of 11000 lines took 13 ms)
@@ -317,23 +317,57 @@ void main() {
 # is shaded by the distance to the segment, so lines get soft round ends and a zero-length segment
 # (the beam resting: dots, corners) is a round spot. gl_Color.rgb = premultiplied brightness,
 # gl_Color.a = the spot's sigma / 16 px.
+#
+# Tube > Beam trace (beam = 1): a piece of the spot's own path (the core's beam-trace mode). The spot, a Gaussian of
+# sigma sg, moves uniformly from A to B and leaves its energy (gl_Color.rgb) spread along the way:
+#   d = Q sqrt(2 pi) sg / L  exp(-v^2 / 2 sg^2)  (Phi(u / sg) - Phi((u - L) / sg))   (u along, v across the piece)
+# and for a piece of zero length (the spot at rest) Q exp(-r^2 / 2 sg^2). The pieces' soft ends add up exactly to one
+# even line where the spot moves on: no caps, no joins. d is the energy in the phosphor's saturation units (see
+# BEAM_TRACE_CSAT); SAT_SHADER turns the frame's sum into light.
 CAPSULE_SHADER = b"""
 uniform float premul;
-uniform float timed, age0, dtw, gain;
+uniform float timed, age0, dtw, gain, beam;
+uniform vec3 wb;
+uniform vec3 wbc;
+vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pure white in the bright core: a cold white
+    float m = max(c.r, max(c.g, c.b));      //  line that keeps the screen's full brightness (WB_CORE)
+    return c * mix(wb, wbc, smoothstep(0.35, 0.9, m));
+}
+float Phi(float x) {                        // the normal distribution (erf: Abramowitz and Stegun 7.1.26)
+    float z = abs(x) * 0.70710678, t = 1.0 / (1.0 + 0.3275911 * z);
+    float e = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-z * z);
+    return 0.5 + 0.5 * (x < 0.0 ? -e : e);
+}
 void main() {
     vec4 s = gl_TexCoord[0];
     vec2 p = gl_FragCoord.xy, a = s.xy, ba = s.zw - s.xy;
-    float h = clamp(dot(p - a, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
-    float d = length(p - a - ba * h);
     float sg = gl_Color.a * 16.0;
-    float g = exp(-0.5 * d * d / (sg * sg));
+    float g;
+    // a joint with the next / previous piece of the same stroke: cut along the bisector of the two directions
+    // (gl_TexCoord[2]: the start's and the end's normals, [3].xy: their planes), so the two pieces share every pixel
+    // once - no dark wedge outside a bend, no double light inside it
+    vec4 cut = gl_TexCoord[2]; vec2 cc = gl_TexCoord[3].xy;
+    if (dot(cut.xy, cut.xy) > 0.5 && dot(p, cut.xy) < cc.x) discard;
+    if (dot(cut.zw, cut.zw) > 0.5 && dot(p, cut.zw) > cc.y) discard;
+    if (beam > 0.5) {
+        vec2 q = p - a; float L = length(ba);
+        if (L < 1e-3) g = exp(-0.5 * dot(q, q) / (sg * sg));
+        else {
+            vec2 t = ba / L; float u = dot(q, t), v = q.x * t.y - q.y * t.x;
+            g = 2.5066283 * sg / L * exp(-0.5 * v * v / (sg * sg)) * (Phi(u / sg) - Phi((u - L) / sg));
+        }
+    } else {
+        float h = clamp(dot(p - a, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
+        float d = length(p - a - ba * h);
+        g = exp(-0.5 * d * d / (sg * sg));
+    }
     if (timed > 0.5) {                      // fresh phosphor light: brightness, and its life left
         float age = timed > 1.5 ? 0.0 : age0 - gl_TexCoord[1].x;
         if (age < 0.0 || age >= dtw) discard;          // (not drawn yet / already lit earlier)
         gl_FragColor = vec4(gl_Color.rgb * g * gain, exp(-age));      // (alpha: freshness, e^-age)
         return;
     }
-    gl_FragColor = premul > 0.5 ? vec4(gl_Color.rgb * g, g) : vec4(gl_Color.rgb, g);
+    gl_FragColor = premul > 0.5 ? vec4(cold(gl_Color.rgb * g, wb), g) : vec4(cold(gl_Color.rgb, wb), g);   // (wb: crisp lines)
 }
 """
 
@@ -380,6 +414,157 @@ BEAM_BLOOM_E0, BEAM_BLOOM_E1, BEAM_BLOOM_W, BEAM_BLOOM_H = 20.0, 38.0, 2.0, 2.5
 # to rest gradually - the last fraction of a unit is the rest; lines are drawn at 1 unit a cycle and more). Drawn
 # where the spot came to rest
 REST_SPEED = 0.5
+# a spot that slows down inside a stroke (a rest between two vectors of one shape, a corner): with the deflection's lag
+# it never stops for rests up to ~30 cycles - it slows to a fraction of the line speed and speeds up again - yet the
+# owner's Corner Test photo (2026-10-26) shows a dot in the middle of the line from a 16-cycle rest on, growing with
+# the rest (peak over the line ~2.3x at 16, 3.2x at 24, 4.9x at 32, 7-9x at 48-96 cycles). The dwell: per stroke (joined
+# pieces, one brightness) its line speed (the mean over its pieces at 80 % of the mean speed or more); a zone of pieces
+# slower than REST_DWELL_SLOW x that, not at the stroke's start or end, held the spot this much longer than the line
+# speed would: sum(cycles - length / speed). Less REST_DWELL_D0 cycles (short dips: Draw_VL's joins in curves - no
+# dots), it becomes a resting spot (the rules above: brightness, halo, bloom) where the spot was slowest, of
+# REST_DWELL_MAX x (1 - e^(-d / REST_DWELL_TAU)) cycles: on the photo the dots grow up to a 32-cycle rest and hardly
+# after (the moving spot's own glow, not a bloom); the zone's own resting pieces (REST_SPEED) go in it.
+REST_DWELL_SLOW, REST_DWELL_D0, REST_DWELL_MAX, REST_DWELL_TAU = 0.6, 3.0, 30.0, 12.0
+# such a spot (brightness bit 512) is weaker than a true rest while short: the owner (2026-10-26): the 12- and 16-cycle
+# rests "a slight bulge of the line", a faint glow, not a defined dot. Brightness x w^2.5, width x (1 + REST_DWELL_SOFT
+# (1 - w)), w = its cycles / REST_DWELL_C (at most 1)
+# (2026-10-26 again: 12 and 16 only a slight bump in the line's thickness, not a defined dot: no halo below
+# REST_DWELL_HALO cycles)
+REST_DWELL_C, REST_DWELL_SOFT, REST_DWELL_HALO = 28.0, 1.5, 20.0
+
+
+def dwell_rests(L):
+    """the lines (a numpy array, 7 columns: x0 y0 x1 y1 brightness e t) with each stroke's dwell zones as resting
+    spots (see REST_DWELL_SLOW); unchanged when there are none"""
+    np = _np
+    x0, y0, x1, y1, e, t = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
+    b = L[:, 4].astype(np.int64)
+    cyc = e / 8.0
+    ln = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
+    n = len(L)
+    cont = np.zeros(n, dtype=bool)
+    cont[1:] = ((np.abs(x0[1:] - x1[:-1]) <= 1.5) & (np.abs(y0[1:] - y1[:-1]) <= 1.5)
+                & (np.abs(t[1:] - (t[:-1] + cyc[:-1])) <= 1.5) & (b[1:] == b[:-1]) & ((b[1:] & 127) != 0))
+    sid = np.cumsum(~cont) - 1
+    ns = int(sid[-1]) + 1
+    with np.errstate(divide='ignore', invalid='ignore'):
+        sp = np.where(cyc > 0, ln / np.where(cyc > 0, cyc, 1.0), 0.0)
+        v1 = np.bincount(sid, ln, ns) / np.maximum(np.bincount(sid, cyc, ns), 1e-9)
+        fast = sp >= 0.8 * v1[sid]
+        vr = np.bincount(sid, ln * fast, ns) / np.maximum(np.bincount(sid, cyc * fast, ns), 1e-9)
+    v = vr[sid]
+    slow = (sp < REST_DWELL_SLOW * v) & (v > 0)
+    if not slow.any():
+        return L
+    first = np.r_[True, sid[1:] != sid[:-1]]
+    last = np.r_[sid[1:] != sid[:-1], True]
+    zs = slow & (first | ~np.r_[False, slow[:-1]])
+    nz = int(zs.sum())
+    zid = np.where(slow, np.cumsum(zs) - 1, -1)
+    m = zid >= 0
+    zi = zid[m]
+    ex = np.bincount(zi, (cyc - ln / np.maximum(v, 1e-9))[m], nz)
+    edge = np.bincount(zi, (first | last)[m].astype(np.float64), nz) > 0
+    D = ex - REST_DWELL_D0
+    keep = ~edge & (D > 0)
+    if not keep.any():
+        return L
+    idx = np.nonzero(m)[0]
+    o = np.lexsort((sp[idx], zi))
+    idx, zz = idx[o], zi[o]
+    pick = idx[np.r_[True, zz[1:] != zz[:-1]]]          # (per zone its slowest piece: the spot's end there)
+    zk = np.nonzero(keep)[0]
+    pk = pick[zk]
+    drop = m & keep[np.maximum(zid, 0)] & (ln <= REST_SPEED * cyc)
+    R = L[pk].copy()
+    R[:, 0] = R[:, 2] = x1[pk]; R[:, 1] = R[:, 3] = y1[pk]
+    R[:, 4] = b[pk] | 512                              # (a dwell, see REST_DWELL_C)
+    R[:, 5] = 8.0 * REST_DWELL_MAX * (1.0 - np.exp(-D[zk] / REST_DWELL_TAU)); R[:, 6] = t[pk] + cyc[pk]
+    return np.concatenate([L[~drop], R])
+
+
+# a bend drawn as straight pieces (the core's pieces of the lagging spot: a point every few cycles) shows its facets
+# when zoomed in (the owner, 2026-10-26). The spot's real path is smooth between those points: where a stroke turns by
+# more than BEND_STEP degrees at a piece's ends, the piece is cut into up to BEND_MAX pieces along the centripetal
+# Catmull-Rom curve through its neighbours' points (no overshoot on pieces of unequal lengths), the cycles shared
+# evenly; the joints' cuts then keep the width even
+BEND_STEP, BEND_MAX = 3.0, 8
+
+
+BEND_SAG = 0.2                  # (only where the straight pieces would stray this many screen pixels from the curve)
+
+
+def smooth_bends(L, unit_px=None):
+    """the lines (numpy, 7+ columns) with the strokes' bent pieces cut along a smooth curve (see BEND_STEP). unit_px
+    (screen pixels per core unit): each piece cut only as finely as the screen can show - a short piece or a gentle
+    turn not at all (the facets would stray less than BEND_SAG pixels: Vectorblade's curves, 3449 lines, cost 1.9 ms
+    a frame cut by the angle alone, the line building twice as long)"""
+    np = _np
+    n = len(L)
+    if n < 2:
+        return L
+    x0, y0, x1, y1, e, t = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
+    b = L[:, 4].astype(np.int64)
+    cyc = e / 8.0
+    dx, dy = x1 - x0, y1 - y0
+    ln = np.sqrt(dx * dx + dy * dy)
+    mv = ln > 0.5
+    cont = np.zeros(n, dtype=bool)                     # (piece i continues piece i - 1)
+    cont[1:] = ((np.abs(x0[1:] - x1[:-1]) <= 1.5) & (np.abs(y0[1:] - y1[:-1]) <= 1.5)
+                & (np.abs(t[1:] - (t[:-1] + cyc[:-1])) <= 1.5) & (b[1:] == b[:-1]) & mv[1:] & mv[:-1])
+    if not cont.any():
+        return L
+    ux = np.where(mv, dx / np.where(mv, ln, 1.0), 0.0); uy = np.where(mv, dy / np.where(mv, ln, 1.0), 0.0)
+    turn = np.zeros(n)                                  # (the turn at piece i's start, degrees)
+    turn[1:] = np.where(cont[1:], np.degrees(np.arccos(np.clip(ux[1:] * ux[:-1] + uy[1:] * uy[:-1], -1.0, 1.0))), 0.0)
+    nxt = np.r_[cont[1:], False]
+    tend = np.r_[turn[1:], 0.0]
+    big = np.maximum(turn, tend)
+    k = np.where((big > BEND_STEP) & (big < 120.0), np.minimum(BEND_MAX, np.ceil(big / BEND_STEP)), 1).astype(np.int64)
+    if unit_px:                                         # (how far the chord strays from the arc: its length x turn / 8)
+        sag = ln * np.radians(np.minimum(big, 120.0)) / 8.0 * unit_px
+        k = np.minimum(k, np.maximum(1, np.ceil(np.sqrt(sag / BEND_SAG)))).astype(np.int64)
+    if (k == 1).all():
+        return L
+    # the four points: the previous piece's start, this piece, the next piece's end (or mirrored)
+    P1x, P1y, P2x, P2y = x0, y0, x1, y1
+    P0x = np.where(cont, np.r_[0.0, x0[:-1]], 2 * x0 - x1); P0y = np.where(cont, np.r_[0.0, y0[:-1]], 2 * y0 - y1)
+    P3x = np.where(nxt, np.r_[x1[1:], 0.0], 2 * x1 - x0); P3y = np.where(nxt, np.r_[y1[1:], 0.0], 2 * y1 - y0)
+    # (a sharp turn at one end - kept as it is there: the next point straight on)
+    sharp0 = turn >= 120.0; sharp1 = tend >= 120.0
+    P0x = np.where(sharp0, 2 * x0 - x1, P0x); P0y = np.where(sharp0, 2 * y0 - y1, P0y)
+    P3x = np.where(sharp1, 2 * x1 - x0, P3x); P3y = np.where(sharp1, 2 * y1 - y0, P3y)
+    idx = np.repeat(np.arange(n), k)
+    st = np.cumsum(k) - k
+    j = np.arange(len(idx)) - np.repeat(st, k)
+    kk = k[idx].astype(np.float64)
+    def curve(s):
+        i = idx
+        d01 = np.maximum(np.hypot(P1x[i] - P0x[i], P1y[i] - P0y[i]), 1e-3) ** 0.5
+        d12 = np.maximum(ln[i], 1e-3) ** 0.5
+        d23 = np.maximum(np.hypot(P3x[i] - P2x[i], P3y[i] - P2y[i]), 1e-3) ** 0.5
+        t0_ = 0.0; t1_ = d01; t2_ = t1_ + d12; t3_ = t2_ + d23
+        u = t1_ + s * d12
+        out = []
+        for a0, a1, a2, a3 in ((P0x[i], P1x[i], P2x[i], P3x[i]), (P0y[i], P1y[i], P2y[i], P3y[i])):
+            A1 = ((t1_ - u) * a0 + (u - t0_) * a1) / (t1_ - t0_)
+            A2 = ((t2_ - u) * a1 + (u - t1_) * a2) / (t2_ - t1_)
+            A3 = ((t3_ - u) * a2 + (u - t2_) * a3) / (t3_ - t2_)
+            B1 = ((t2_ - u) * A1 + (u - t0_) * A2) / (t2_ - t0_)
+            B2 = ((t3_ - u) * A2 + (u - t1_) * A3) / (t3_ - t1_)
+            out.append(((t2_ - u) * B1 + (u - t1_) * B2) / (t2_ - t1_))
+        return out
+    s0, s1 = j / kk, (j + 1) / kk
+    ax, ay = curve(s0); bx, by = curve(s1)
+    one = kk == 1
+    ax = np.where(one | (j == 0), x0[idx], ax); ay = np.where(one | (j == 0), y0[idx], ay)
+    bx = np.where(one | (j == kk - 1), x1[idx], bx); by = np.where(one | (j == kk - 1), y1[idx], by)
+    R = L[idx].copy()
+    R[:, 0], R[:, 1], R[:, 2], R[:, 3] = ax, ay, bx, by
+    R[:, 5] = e[idx] / kk
+    R[:, 6] = t[idx] + cyc[idx] * j / kk
+    return R
+
 # the beam's width with its intensity (Z/127; its brightness: TUBE_LIGHT): below intensity 63 the tube is close
 # to its cutoff and the spot shrinks fast: the owner (2026-10-12): Vectorblade's background stars (intensity 15-47) are much
 # thinner, smaller and fainter on the real tube than the shots (127), on the emulator nearly the same.
@@ -415,6 +600,59 @@ TUBE_LIGHT = [
 TUBE_LIGHT_D = len(TUBE_LIGHT) - 1
 
 
+# Tube > White balance: the beam's white as a colour temperature (WHITE_LO..WHITE_HI kelvin, the slider even in mireds;
+# the default 9300 K - the owner's choice, 2026-10-26: the cool white of old CRT monitors). The white on the CIE daylight
+# curve against sRGB's own (6504 K: the beam's white before), as bright: gains on the beam's light only (the overlay, the
+# case and the glass keep their colours)
+WHITE_DEFAULT, WHITE_LO, WHITE_HI = 9300.0, 5600.0, 12000.0
+# the slider (the owner, 2026-10-26): its middle neutral - the line and its glow the screen's pure white (WHITE_MID);
+# towards cool (warm) the glow takes the temperature while the line's bright core stays white; only over the last
+# WHITE_CORE of each half does the core follow too, reaching the end's temperature at the end. Each half even in mireds
+WHITE_MID, WHITE_CORE = 6504.0, 0.3
+
+
+def white_pos(T):
+    """the slider's place for T kelvin: -1 (WHITE_LO, warm) .. 0 (WHITE_MID) .. 1 (WHITE_HI, cool)"""
+    m, m0 = 1e6 / float(T), 1e6 / WHITE_MID
+    if m <= m0:
+        return min(1.0, (m0 - m) / (m0 - 1e6 / WHITE_HI))
+    return -min(1.0, (m - m0) / (1e6 / WHITE_LO - m0))
+
+
+def white_from_pos(f):
+    """the temperature at the slider's place f (-1 .. 1)"""
+    m0 = 1e6 / WHITE_MID
+    m = m0 - f * (m0 - 1e6 / WHITE_HI) if f >= 0 else m0 - f * (1e6 / WHITE_LO - m0)
+    return 1e6 / m
+
+
+def white_core_k(T):
+    """the line core's temperature for the slider at T: neutral, but over the last WHITE_CORE of a half on to T's"""
+    f = white_pos(T)
+    if abs(f) <= 1.0 - WHITE_CORE:
+        return WHITE_MID
+    g = (abs(f) - (1.0 - WHITE_CORE)) / WHITE_CORE
+    return white_from_pos(g if f > 0 else -g)
+
+
+# WB_CORE: the white balance is a tint of the light around the lines - the glow, the bloom, the afterglow - while their
+# bright cores stay the screen's own pure white (cold() in the shaders): a screen is brightest at full R, G and B, and
+# a colder white made by lowering red would cost ~13 % of the brightness at 9300 K (~18 % at 12000 K). The eye reads
+# the line from its glow: cold, at full brightness (the owner, 2026-10-26)
+def white_gain(T):
+    """display-space (r, g, b) gains for the colour temperature T kelvin (1, 1, 1 at 6504 K), equally bright"""
+    def lin(T):
+        T = min(max(float(T), 4000.0), 25000.0)
+        if T <= 7000: x = -4.6070e9 / T ** 3 + 2.9678e6 / T ** 2 + 0.09911e3 / T + 0.244063
+        else: x = -2.0064e9 / T ** 3 + 1.9018e6 / T ** 2 + 0.24748e3 / T + 0.237040
+        y = -3.0 * x * x + 2.870 * x - 0.275; X, Z = x / y, (1 - x - y) / y
+        return (3.2406 * X - 1.5372 - 0.4986 * Z, -0.9689 * X + 1.8758 + 0.0415 * Z, 0.0557 * X - 0.2040 + 1.0570 * Z)
+    c, c0 = lin(T), lin(6504.0)
+    c = [a / b for a, b in zip(c, c0)]
+    L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    return tuple(max(0.0, v / L) ** (1 / 2.2) for v in c)
+
+
 def tube_light(d):
     """the tube's light at drive d (intensity steps, may be fractional; TUBE_LIGHT)"""
     d = min(max(d, 0.0), float(TUBE_LIGHT_D)); i = min(int(d), TUBE_LIGHT_D - 1)
@@ -445,6 +683,31 @@ def beam_zdot(zi):
 
 
 BEAM_PEAK = 0.62             # below clipping, so overlaps add up instead of turning white
+
+# Tube > Beam trace: the phosphor lit by the energy the spot leaves (the core's beam-trace mode: the spot's own path,
+# see vecx.c bp_step). Per pixel the frame's energy d (in units of BEAM_TRACE_CSAT cycles of a Z 127 beam resting on
+# one spot's area) gives light 1 - exp(-d): linear for lines, saturating where the spot rests - the one constant fits
+# the owner's rest-dot measurement (testcart/lag_test: a rest of N cycles ~ 31 (1 - e^-(N-5)/69) cycles of line light,
+# within 1-2; 2026-10-25). Shown as light^(1/2.2) x BEAM_TRACE_GAIN (a typical line as bright as in the line renderer).
+# The spot: a Gaussian, BEAM_TRACE_SG x the line renderer's (display) width - the light's profile, not its square root
+BEAM_TRACE_CSAT = 8.5
+BEAM_TRACE_GAIN = 3.0
+BEAM_TRACE_SG = 0.674
+SAT_SHADER = b"""
+uniform sampler2D tex;
+uniform float k;
+uniform vec3 wb;
+uniform vec3 wbc;
+vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pure white in the bright core: a cold white
+    float m = max(c.r, max(c.g, c.b));      //  line that keeps the screen's full brightness (WB_CORE)
+    return c * mix(wb, wbc, smoothstep(0.35, 0.9, m));
+}
+void main() {
+    vec4 c = texture2D(tex, gl_TexCoord[0].st);
+    vec3 l = 1.0 - exp(-max(c.rgb, vec3(0.0)));
+    gl_FragColor = vec4(cold(k * pow(l, vec3(1.0 / 2.2)), wb), c.a);
+}
+"""
 
 # the picture to the screen with a soft shoulder: linear up to 0.6, then rolling off towards 1, so
 # bright slow shapes (the ship at full intensity) keep their detail instead of clipping white
@@ -1310,8 +1573,15 @@ void main() {
 SHOW_SHADER = b"""
 uniform sampler2D tex;
 uniform float sm;
+uniform vec3 wb;
 uniform vec2 px;
 """ + PHOS_FUNC + b"""
+uniform vec3 wbc;
+vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pure white in the bright core: a cold white
+    float m = max(c.r, max(c.g, c.b));      //  line that keeps the screen's full brightness (WB_CORE)
+    return c * mix(wb, wbc, smoothstep(0.35, 0.9, m));
+}
+
 vec3 glow(vec2 uv) {                        // a pixel's afterglow (the lit part - younger than the hold - not)
     vec4 p = texture2D(tex, uv);
     if (p.a <= 0.0 || -log(p.a) < hold) return vec3(0.0);
@@ -1329,7 +1599,7 @@ void main() {
         vec3 lit = (p.a > 0.0 && -log(p.a) < hold) ? p.rgb : vec3(0.0);
         c = max(lit, g);
     }
-    gl_FragColor = vec4(c, 0.7);
+    gl_FragColor = vec4(cold(c, wb), 0.7);          // (White balance: in the glow, see cold)
 }
 """
 
@@ -1517,8 +1787,11 @@ class GLBloomRenderer(GLRenderer):
         self.u_dir = GetUniform(self.prog, b'dir')
         self.cprog = program(CAPSULE_SHADER, 'capsule')
         self.u_premul = GetUniform(self.cprog, b'premul')
-        self.u_t = {k: GetUniform(self.cprog, k.encode()) for k in ('timed', 'age0', 'dtw', 'gain')}
+        self.u_t = {k: GetUniform(self.cprog, k.encode()) for k in ('timed', 'age0', 'dtw', 'gain', 'beam', 'wb', 'wbc')}
+        self.satprog = program(SAT_SHADER, 'beam trace phosphor')
+        self.u_sat = {k: GetUniform(self.satprog, k.encode()) for k in ('tex', 'k', 'wb', 'wbc')}
         self.ClientActiveTexture = proc('glClientActiveTexture', None, u)
+        self.MultiTexCoord4f = proc('glMultiTexCoord4f', None, u, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float)
         self.ActiveTexture = proc('glActiveTexture', None, u)
         self.BlendEqSep = proc('glBlendEquationSeparate', None, u, u)
         self.BlendFuncSep = proc('glBlendFuncSeparate', None, u, u, u, u)
@@ -1526,11 +1799,27 @@ class GLBloomRenderer(GLRenderer):
         self.u_up = {k: GetUniform(self.uprog, k.encode()) for k in ('oldt', 'fresh', 'kf', 'mul', 'hold', 'tscale', 'toff', 'spread', 'px', 'grow', 'gcap', 'gn', 'gage')}
         self.sprog = program(SHOW_SHADER, 'phosphor show')
         self.u_stex = GetUniform(self.sprog, b'tex')
-        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'sm', 'px')}
+        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'sm', 'px', 'wb', 'wbc')}
         try:                                                    # (max blending: overlaps do not add up)
             self.BlendEq = proc('glBlendEquation', None, u)
         except OSError:
             self.BlendEq = None
+        # the graphics card's own time for a picture (GL_TIME_ELAPSED queries, read a few frames later so nothing
+        # waits for them): Auto quality tells a slow graphics card from a slow processor by it (gpu_ms; None: unknown)
+        self.gpu_ms = None
+        try:
+            self.GenQ = proc('glGenQueries', None, i, ctypes.POINTER(u))
+            self.BeginQ = proc('glBeginQuery', None, u, u)
+            self.EndQ = proc('glEndQuery', None, u)
+            self.QueryIV = proc('glGetQueryObjectiv', None, u, u, ctypes.POINTER(i))
+            try:
+                self.QueryU64 = proc('glGetQueryObjectui64v', None, u, u, ctypes.POINTER(ctypes.c_uint64))
+            except OSError:
+                self.QueryU64 = proc('glGetQueryObjectui64vEXT', None, u, u, ctypes.POINTER(ctypes.c_uint64))
+            qs = (u * 4)(); self.GenQ(4, qs)
+            self.gpu_q = list(qs); self.gpu_q_busy = []
+        except (OSError, AttributeError):
+            self.gpu_q = None
         self.kprog = program(CURVE_SHADER, 'curve')
         self.dprog = program(DITHER_SHADER, 'dither'); self.u_dtex = GetUniform(self.dprog, b'tex')
         self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'ah', 'goff', 'glut', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'lca', 'lsa', 'cse', 'croom', 'crefl', 'cwear', 'clut', 'lc', 'smap', 'smr')}
@@ -1606,10 +1895,16 @@ class GLBloomRenderer(GLRenderer):
         self.light_ov_k = 1.0        #  its strength
         self.light_tex = None; self.light_key = None; self.light_made_t = 0.0
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
+        self.white_k = WHITE_DEFAULT # Tube > White balance: the beam's white, kelvin (see white_gain)
+        self.beam_trace = False      # Tube > Beam trace: the spot's own path lights the phosphor by the time it spent
+                                     #  (BEAM_TRACE_CSAT; the core's beam-trace mode) - off: the line renderer
         self.even_beam = False       # Tube > Even beam: an ideal vector display - every point as bright and wide as a
                                      #  line, no corner glow, overlapping light not adding up (off: the real tube)
         self.halo_k = BEAM_HALO_K    # its brightness (Tube > Corner glow strength)
         self.dot_k = 1.0             # the resting spots' brightness, x BEAM_DOTMAX (Tube > Corner dot brightness)
+        self.dwell_on = True         # the spot slowing inside a stroke lights a resting spot (REST_DWELL_SLOW)
+        self.bend_smooth = True      # bends cut along a smooth curve (BEND_STEP)
+        self.dither_on = True        # the picture dithered from 16 bits to the window's 8 (no bands in soft glows)
         self.phos_spread = PHOS_SPREAD  # the afterglow's softness (0; not in the menu)
         self.phos_grow = PHOS_GROW      # how the afterglow joins up (Tube > Afterglow joining)
         self.phos_smooth = PHOS_SMOOTH  # the afterglow's overlap (Tube > Afterglow overlap)
@@ -1698,6 +1993,7 @@ class GLBloomRenderer(GLRenderer):
         self.P = self._target(w, h)                       # the phosphor image (ping-pong with P2)
         self.P2 = self._target(w, h)
         self.F = self._target(w, h)                       # this display frame's fresh light
+        self.F2 = self._target(w, h)                      # (Beam trace: the fresh light as light, see SAT_SHADER)
         self.D = self._target(w, h)                       # what the screen shows
         self.E = self._target(w, h)                       # (the curved tube: the screen before bending)
         self.young = []; self.last = None   # (built in window pixels: from now on)
@@ -1715,12 +2011,17 @@ class GLBloomRenderer(GLRenderer):
     @property
     def out(self):
         """the frame buffer the finished screen goes to: the window, or (turned) R"""
-        return self.R[1] if getattr(self, 'R', None) else 0
+        return self.R[1] if getattr(self, 'R', None) and not self._no_r() else 0
+
+    def _no_r(self):
+        """the dither off (Quality Low), the screen not turned: no 16-bit copy dithered onto the window - drawn there
+        directly"""
+        return not getattr(self, 'dither_on', True) and not getattr(self, 'rot', 0)
 
     def _turn_out(self):
         """the screen in R onto the window - turned rot degrees clockwise if it is, dithered to the window's 8 bits"""
         R = getattr(self, 'R', None)
-        if not R:
+        if not R or self._no_r():
             return
         gl = self.gl
         rw, rh = self.real_size
@@ -2108,17 +2409,33 @@ class GLBloomRenderer(GLRenderer):
         self.ClientActiveTexture(0x84C1)                   # (unit 1: each line's time in its frame)
         gl.glEnableClientState(GL_TEXTURE_COORD_ARRAY)
         gl.glTexCoordPointer(1, GL_FLOAT, 0, tt)
+        cuts = len(b) > 8 and b[7] is not None             # (units 2, 3: the joints' cuts - see CAPSULE_SHADER)
+        if cuts:
+            self.ClientActiveTexture(0x84C2); gl.glEnableClientState(GL_TEXTURE_COORD_ARRAY); gl.glTexCoordPointer(4, GL_FLOAT, 0, b[7])
+            self.ClientActiveTexture(0x84C3); gl.glEnableClientState(GL_TEXTURE_COORD_ARRAY); gl.glTexCoordPointer(2, GL_FLOAT, 0, b[8])
+        else:
+            for unit in (0x84C2, 0x84C3):
+                self.ClientActiveTexture(unit); gl.glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+            self.MultiTexCoord4f(0x84C2, 0.0, 0.0, 0.0, 0.0); self.MultiTexCoord4f(0x84C3, 0.0, 0.0, 0.0, 0.0)
         self.ClientActiveTexture(0x84C0)
         self.UseProgram(self.cprog)
-        self.Uniform1f(self.u_premul, 1.0 if getattr(self, 'blend_max', False) else 0.0)
+        bt = len(b) > 6 and b[6]                           # (built for the beam trace)
+        self.Uniform1f(self.u_premul, 1.0 if (getattr(self, 'blend_max', False) or bt) else 0.0)
         u = self.u_t
+        self.Uniform1f(u['beam'], 1.0 if bt else 0.0)
+        self.Uniform3f(u['wb'], *(self._wb() if (age0 is None and not bt) else (1.0, 1.0, 1.0)))
+        self.Uniform3f(u['wbc'], *(self._wbc() if (age0 is None and not bt) else (1.0, 1.0, 1.0)))   # (crisp lines here; the
+                                                                                                 #  rest: SHOW_SHADER / _sat)
         if age0 is None:
             self.Uniform1f(u['timed'], 0.0)
         else:
-            for k, x in (('timed', 2.0 if imm else 1.0), ('age0', age0), ('dtw', dtw), ('gain', PHOS_GAIN)):
+            for k, x in (('timed', 2.0 if imm else 1.0), ('age0', age0), ('dtw', dtw), ('gain', 1.0 if bt else PHOS_GAIN)):
                 self.Uniform1f(u[k], x)
         gl.glDrawArrays(GL_QUADS, 0, n * 4)
         self.UseProgram(0)
+        if cuts:
+            for unit in (0x84C2, 0x84C3):
+                self.ClientActiveTexture(unit); gl.glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         self.ClientActiveTexture(0x84C1); gl.glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         self.ClientActiveTexture(0x84C0); gl.glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
@@ -2181,6 +2498,19 @@ class GLBloomRenderer(GLRenderer):
         """the vertex arrays for these lines (window pixels): (v, t, c, tt, n), or None"""
         if lines is None or len(lines) == 0:                 # (a list, or a numpy array: Smooth motion)
             return None
+        if (_np is not None and getattr(self, 'dwell_on', True) and not getattr(self, 'even_beam', False)
+                and not (getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'))):
+            try:                                           # (the spot slowing inside a stroke: a resting spot, see REST_DWELL_SLOW)
+                A = getattr(lines, 'np', None)               # (the core's frame: its array made already)
+                if A is None or len(A) != len(lines):
+                    A = _np.asarray(lines, dtype=_np.float64)
+                if A.ndim == 2 and A.shape[1] >= 7 and len(A) > 2:
+                    A2 = dwell_rests(A)
+                    if getattr(self, 'bend_smooth', True):
+                        A2 = smooth_bends(A2, self.map[0] if hasattr(self, 'map') else None)
+                    lines = A2                             # (the array: not converted a second time)
+            except (ValueError, TypeError, IndexError):
+                pass
         if _np is not None and not getattr(self, 'np_off', False) and not any(
                 getattr(self, a, d) != d for a, d in (('crt_sx', 1.0), ('crt_sy', 1.0), ('crt_skew', 0.0), ('crt_shift', 0.0),
                                                       ('crt_garble', 0.0), ('crt_warp', 0.0))):
@@ -2193,15 +2523,19 @@ class GLBloomRenderer(GLRenderer):
         return self._build_py(lines, gain, load)
 
     def _build_np(self, lines, gain=1.0, load=True):
-        """_build_py with numpy: the same arithmetic on all lines at once (checked equal to it, float32)"""
+        """_build_py with numpy: the same arithmetic on all lines at once (checked equal to it, float32). Beam trace on:
+        the core's pieces of the spot's path, each its energy (see CAPSULE_SHADER)"""
         np = _np
         L = np.asarray(lines, dtype=np.float64)
         if L.ndim != 2 or L.shape[1] < 7:
             raise ValueError('lines')
         L = L[:, :7]
         b = L[:, 4].astype(np.int64)
-        if getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False):
-            hm = (np.sqrt((L[:, 2] - L[:, 0]) ** 2 + (L[:, 3] - L[:, 1]) ** 2) <= REST_SPEED * L[:, 5] / 8.0) & (L[:, 5] >= 64) & ((b & 127) != 0)
+        beam = bool(getattr(self, 'beam_trace', False)) and hasattr(self, 'satprog')
+        if beam:
+            pass                                           # (no halos, joins or rest rules: the energy does it)
+        elif getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False):
+            hm = (np.sqrt((L[:, 2] - L[:, 0]) ** 2 + (L[:, 3] - L[:, 1]) ** 2) <= REST_SPEED * L[:, 5] / 8.0) & (L[:, 5] >= 64) & ((b & 127) != 0) & ~(((b & 512) != 0) & (L[:, 5] < 8.0 * REST_DWELL_HALO))
             if hm.any():                                   # (the resting spots' halos, drawn first)
                 H = L[hm].copy(); H[:, 4] = (b[hm] & 127) | 256
                 L = np.concatenate([H, L]); b = L[:, 4].astype(np.int64)
@@ -2209,7 +2543,9 @@ class GLBloomRenderer(GLRenderer):
         # one stroke in several pieces: the joined ends open (_joins)
         jo = np.zeros(len(L), dtype=np.int64)
         zl = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2) <= REST_SPEED * e / 8.0     # (resting spots: see REST_SPEED)
-        if len(L) > 1:
+        if beam:
+            zl = (x0 == x1) & (y0 == y1)                   # (a piece of zero length: the spot at rest)
+        elif len(L) > 1:
             nh = (b & 256) == 0
             cont = ((np.abs(x0[1:] - x1[:-1]) <= 1.5) & (np.abs(y0[1:] - y1[:-1]) <= 1.5)
                     & (np.abs(t0[1:] - (t0[:-1] + e[:-1] / 8.0)) <= 1.5) & nh[1:] & nh[:-1])
@@ -2250,6 +2586,8 @@ class GLBloomRenderer(GLRenderer):
         t0 = t0[idx] + (L[idx, 5] / 8.0) * (i - 1) / mm
         b = b[idx]
         op = np.where(i > 1, 1, jo[idx] & 1) | np.where(i < mm, 2, jo[idx] & 2) | np.where(same, 4, 0)
+        if beam:
+            op = np.zeros(len(idx), dtype=np.int64)        # (the soft ends add up: none open)
         self._tube_open = op
         n = len(x0)
         w, h = self.size
@@ -2315,15 +2653,41 @@ class GLBloomRenderer(GLRenderer):
                 fwr = fw * BEAM_DOTW + BEAM_DOTWK * np.minimum(cyc, 80.0)
                 bl = np.clip((cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0), 0.0, 1.0)
                 fw = np.where(rest, fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl), fw)
+                dw = rest & ((b & 512) != 0)
+                if dw.any():                               # (a dwell: soft while short, see REST_DWELL_C)
+                    wd = np.minimum(1.0, cyc / REST_DWELL_C)
+                    kk = np.where(dw, kk * wd ** 2.5, kk); fw = np.where(dw, fw * (1.0 + REST_DWELL_SOFT * (1.0 - wd)), fw)
         sg = np.maximum(0.6, fw * gp / 2.355)
         kk = kk * zk * gain * BEAM_PEAK * cgain
         kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
         mq = 2.6 * sg + 1.0
+        if beam:                                           # the spot's energy: the tube's light for the drive x cycles
+            fwb = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth
+            sg = np.maximum(0.5, BEAM_TRACE_SG * fwb * gp / 2.355)
+            kk = np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT) * cyc / BEAM_TRACE_CSAT * gain * cgain
+            kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
+            mq = 3.5 * sg + 1.0
         moved = lp > 1e-3
         lps = np.where(moved, lp, 1.0)
         ux = np.where(moved, dx / lps * mq, mq); uy = np.where(moved, dy / lps * mq, 0.0)
         nx, ny = -uy, ux
-        sa = np.where(op & 1, 0.0, 1.0); sb = np.where(op & 2, 0.0, 1.0)
+        # the joints' cuts (see CAPSULE_SHADER): the bisector of this piece's and the neighbour's direction; a sharp
+        # turn (more than ~120 degrees) or a piece without length keeps its round end
+        dxu = np.where(moved, dx / lps, 0.0); dyu = np.where(moved, dy / lps, 0.0)
+        op = op.copy()
+        n0x = np.zeros(n); n0y = np.zeros(n); n1x = np.zeros(n); n1y = np.zeros(n)
+        if n > 1:
+            sx_, sy_ = dxu[:-1] + dxu[1:], dyu[:-1] + dyu[1:]
+            sl = np.sqrt(sx_ * sx_ + sy_ * sy_)
+            ok = (sl > 1.0) & moved[:-1] & moved[1:] & ((op[1:] & 1) != 0) & ((op[:-1] & 2) != 0)
+            bxn = np.where(ok, sx_ / np.where(ok, sl, 1.0), 0.0); byn = np.where(ok, sy_ / np.where(ok, sl, 1.0), 0.0)
+            n0x[1:] = bxn; n0y[1:] = byn; n1x[:-1] = bxn; n1y[:-1] = byn
+            # (an open end without a cut - its neighbour not open, a sharp turn: closed, round)
+            op[1:] = np.where(((op[1:] & 1) != 0) & ~ok, op[1:] & ~1, op[1:])
+            op[:-1] = np.where(((op[:-1] & 2) != 0) & ~ok, op[:-1] & ~2, op[:-1])
+        if (op & 1).any() or (op & 2).any():
+            pass
+        sa = np.ones(n); sb = np.ones(n)                   # (the quads run past joints too: the cuts end them)
         V = np.empty((n, 8), dtype=np.float32)
         V[:, 0] = ax - ux * sa + nx; V[:, 1] = ay - uy * sa + ny
         V[:, 2] = bx + ux * sb + nx; V[:, 3] = by + uy * sb + ny
@@ -2334,12 +2698,17 @@ class GLBloomRenderer(GLRenderer):
         B2x = np.where(op & 2, bx + ex, bx); B2y = np.where(op & 2, by + ey, by)
         T = np.empty((n, 4, 4), dtype=np.float32)
         T[:, :, 0] = A2x[:, None]; T[:, :, 1] = A2y[:, None]; T[:, :, 2] = B2x[:, None]; T[:, :, 3] = B2y[:, None]
+        T2 = np.empty((n, 4, 4), dtype=np.float32)
+        T2[:, :, 0] = n0x[:, None]; T2[:, :, 1] = n0y[:, None]; T2[:, :, 2] = n1x[:, None]; T2[:, :, 3] = n1y[:, None]
+        T3 = np.zeros((n, 4, 2), dtype=np.float32)
+        T3[:, :, 0] = (n0x * ax + n0y * ay)[:, None]; T3[:, :, 1] = (n1x * bx + n1y * by)[:, None]
         C = np.empty((n, 4, 4), dtype=np.float32)
         C[:, :, 0] = kk[:, None]; C[:, :, 1] = kk[:, None]; C[:, :, 2] = kk[:, None]
         C[:, :, 3] = np.minimum(1.0, sg / 16.0)[:, None]
         TT = np.repeat((t0 / 1.5e6).astype(np.float32), 4)
         cv = lambda a: (ctypes.c_float * a.size).from_buffer(a)   # (the arrays as they are: no copy)
-        return cv(V.reshape(-1)), cv(T.reshape(-1)), cv(C.reshape(-1)), cv(TT), n, float(TT.max()) if n else 0.0
+        return (cv(V.reshape(-1)), cv(T.reshape(-1)), cv(C.reshape(-1)), cv(TT), n, float(TT.max()) if n else 0.0, beam,
+                cv(T2.reshape(-1)), cv(T3.reshape(-1)))
 
     def _build_py(self, lines, gain=1.0, load=True):
         """the vertex arrays for these lines, line by line (the reference for _build_np, and the way when the
@@ -2347,7 +2716,8 @@ class GLBloomRenderer(GLRenderer):
         if not lines:
             return None
         halos = [(ln[0], ln[1], ln[2], ln[3], (ln[4] & 127) | 256) + tuple(ln[5:]) for ln in lines
-                 if len(ln) > 5 and Renderer_rest(ln) and ln[5] >= 64 and (ln[4] & 127)] \
+                 if len(ln) > 5 and Renderer_rest(ln) and ln[5] >= 64 and (ln[4] & 127)
+                 and not (ln[4] & 512 and ln[5] < 8.0 * REST_DWELL_HALO)] \
             if getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False) else None
         if halos:
             lines = halos + list(lines)                    # (drawn first: the spots and lines go over them)
@@ -2399,6 +2769,7 @@ class GLBloomRenderer(GLRenderer):
         tt = (ctypes.c_float * (n * 4))()                  # each line's time in its frame (s)
         i = j = q4 = 0
         exp, sqrt = math.exp, math.sqrt
+        ends = []                                          # (per piece: its ends, direction, open ends - for the cuts)
         opens = getattr(self, '_tube_open', None)
         if opens is not None and len(opens) != len(lines): opens = None
         for li, ln in enumerate(lines):
@@ -2452,6 +2823,9 @@ class GLBloomRenderer(GLRenderer):
                 fw = fw * BEAM_DOTW + BEAM_DOTWK * min(cyc, 80.0)
                 bl = min(1.0, max(0.0, (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0)))
                 fw *= 1.0 + (BEAM_BLOOM_W - 1.0) * bl          # (a long bright rest blooms)
+                if b & 512:                                # (a dwell: soft while short, see REST_DWELL_C)
+                    wd = min(1.0, cyc / REST_DWELL_C)
+                    k *= wd ** 2.5; fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd)
             sg = max(0.6, fw * gp / 2.355)                 # sigma, window px
             k *= zk * gain * BEAM_PEAK * cgain
             if b & 128 and not web:                        # (the beam fading out: a faint trace)
@@ -2463,7 +2837,8 @@ class GLBloomRenderer(GLRenderer):
                 ux, uy = m, 0.0
             nx, ny = -uy, ux
             op = opens[li] if opens else 0
-            sa, sb = (0.0 if op & 1 else 1.0), (0.0 if op & 2 else 1.0)      # (a joint: the quad ends there)
+            sa = sb = 1.0                                  # (the quads run past joints too: the cuts end them, see below)
+            ends.append((ax, ay, bx, by, dx / lp if lp > 1e-3 else 0.0, dy / lp if lp > 1e-3 else 0.0, lp > 1e-3, op))
             v[i] = ax - ux * sa + nx; v[i + 1] = ay - uy * sa + ny
             v[i + 2] = bx + ux * sb + nx; v[i + 3] = by + uy * sb + ny
             v[i + 4] = bx + ux * sb - nx; v[i + 5] = by + uy * sb - ny
@@ -2483,7 +2858,29 @@ class GLBloomRenderer(GLRenderer):
             tl = ln[6] / 1.5e6 if len(ln) > 6 else 0.0
             tt[q4] = tt[q4 + 1] = tt[q4 + 2] = tt[q4 + 3] = tl
             q4 += 4
-        return v, t, c, tt, n
+        # the joints' cuts (as _build_np): the bisector at each joint of two open, moving pieces; an open end without
+        # one goes back to its round end (its quad and its segment)
+        t2 = (ctypes.c_float * (n * 16))(); t3 = (ctypes.c_float * (n * 8))()
+        cut = [[0.0, 0.0, 0.0, 0.0] for _ in range(n)]
+        for k in range(n - 1):
+            a_, b_ = ends[k], ends[k + 1]
+            if not (a_[7] & 2 and b_[7] & 1): continue
+            sx_, sy_ = a_[4] + b_[4], a_[5] + b_[5]; sl = sqrt(sx_ * sx_ + sy_ * sy_)
+            if not (a_[6] and b_[6] and sl > 1.0): continue
+            cut[k][2], cut[k][3] = sx_ / sl, sy_ / sl; cut[k + 1][0], cut[k + 1][1] = sx_ / sl, sy_ / sl
+        for k in range(n):
+            ax, ay, bx, by, ux_, uy_, mv, op = ends[k]
+            c0 = cut[k][0] * ax + cut[k][1] * ay; c1 = cut[k][2] * bx + cut[k][3] * by
+            for q in range(4):
+                t2[k * 16 + q * 4:k * 16 + q * 4 + 4] = cut[k]
+                t3[k * 8 + q * 2] = c0; t3[k * 8 + q * 2 + 1] = c1
+            lost0 = (op & 1) and cut[k][0] == 0.0 and cut[k][1] == 0.0
+            lost1 = (op & 2) and cut[k][2] == 0.0 and cut[k][3] == 0.0
+            if lost0 or lost1:                             # (back to a round end: the segment stops at the end point)
+                for q in range(4):
+                    if lost0: t[k * 16 + q * 4] = ax; t[k * 16 + q * 4 + 1] = ay
+                    if lost1: t[k * 16 + q * 4 + 2] = bx; t[k * 16 + q * 4 + 3] = by
+        return v, t, c, tt, n, (max(tt) if n else 0.0), False, t2, t3
 
     # ---- the phosphor in real time (see PHOS_GAIN)
     HOLD_MAX = 0.15                                       # (a game that stops drawing: its picture fades after this)
@@ -2543,6 +2940,14 @@ class GLBloomRenderer(GLRenderer):
     hist = property(lambda self: [], lambda self, v: self.clear())     # (older callers: hist = [] clears)
 
     def add_frame(self, lines, t_start, length=None, period=None):
+        t = time.perf_counter()
+        try:
+            return self._add_frame(lines, t_start, length, period)
+        finally:                                        # (the processor's time for a game frame's lines: build_ms)
+            ms = 1000.0 * (time.perf_counter() - t)
+            self.build_ms = ms if getattr(self, 'build_ms', None) is None else 0.9 * self.build_ms + 0.1 * ms
+
+    def _add_frame(self, lines, t_start, length=None, period=None):
         """a game frame that started at real time t_start (perf_counter s) and lasts `length` s; its
         lines light up at their own moments, as the beam draws them. The hold follows how long until the game
         draws these lines again: its frame period - or two, for a game that draws its picture in two halves on
@@ -2570,25 +2975,66 @@ class GLBloomRenderer(GLRenderer):
             self.lit = (getattr(self, 'lit', []) + [(t_start + tmin, max(0.0, tdraw - tmin), alt)])[-8:]
             self.young.append([b, t_start, t_start + (b[5] if len(b) > 5 else max(b[3])), -1e9])
 
-    # Quality (the control deck): a cap on the costly passes for slower graphics, on top of the look the user
-    # chose (which stays as set): 0 Low - the afterglow kept, no bloom, no curved-glass pass, the overlay flat;
-    # 1 Medium - one bloom pass, no scratches, plastic glow or reflections; 2 High and 3 Ultra - as set
-    QUALITY_CAPS = {0: dict(bloom=0.0, passes=0, curve_on=False, glass_on=False, halo_on=False,
-                            art_glow=False, scr_on=False, light_on=False, light_ov=False, art_parallax=False),
-                    1: dict(passes=1, art_glow=False, scr_on=False, light_on=False, light_ov=False)}
+    # Quality profiles (the control deck, Vectrex > Quality): each sets these switches - the costly refinements - and
+    # leaves the rest of the look alone; a switch changed by hand makes the profile Custom (the app's
+    # current_profile). What makes it a Vectrex stays in every profile: the phosphor's afterglow, the beam's glow, the
+    # corner dots and their glow, the overlay's colours. High: all on (the defaults). Medium: the room's light and its
+    # reflections off, one bloom pass. Low (best looks for the work): also the tube's curved geometry and glass edge,
+    # the overlay's scratches, plastic glow and parallax, the case's reflections, the bends' smoothing (smooth_bends)
+    # and the dither (dither_on: the picture straight to the window). Chosen by hand, or suggested by Test this PC
+    # (pctest.py) - nothing switches by itself while playing.
+    PROFILE_KEYS = ('passes', 'curve_on', 'glass_on', 'glass_room', 'light_on', 'light_ov', 'art_glow', 'scr_on',
+                    'art_parallax', 'case_refl', 'bend_smooth', 'dither_on')
+    PROFILE_OFF = {'medium': dict(passes=1, light_on=False, light_ov=False, glass_room=False),
+                   'low': dict(passes=1, curve_on=False, glass_on=False, glass_room=False, light_on=False, light_ov=False,
+                               art_glow=False, scr_on=False, art_parallax=False, case_refl=0.0, bend_smooth=False,
+                               dither_on=False)}
     quality = 2
+    def _gpu_begin(self):
+        q = getattr(self, 'gpu_q', None)
+        if not q:
+            return None
+        busy = self.gpu_q_busy
+        while busy:                                     # (the oldest finished: its time)
+            ok = ctypes.c_int(0)
+            self.QueryIV(busy[0], 0x8867, ctypes.byref(ok))      # (GL_QUERY_RESULT_AVAILABLE)
+            if not ok.value:
+                break
+            ns = ctypes.c_uint64(0)
+            self.QueryU64(busy[0], 0x8866, ctypes.byref(ns))     # (GL_QUERY_RESULT)
+            ms = ns.value / 1e6
+            self.gpu_ms = ms if self.gpu_ms is None else 0.9 * self.gpu_ms + 0.1 * ms
+            q.append(busy.pop(0))
+        if not q:
+            return None
+        qid = q.pop(0)
+        self.BeginQ(0x88BF, qid)                        # (GL_TIME_ELAPSED)
+        return qid
+
+    def _gpu_end(self, qid):
+        if qid is not None:
+            self.EndQ(0x88BF)
+            self.gpu_q_busy.append(qid)
+
     def present(self, T, imm=None, flush=False):
-        caps = self.QUALITY_CAPS.get(self.quality)
-        if not caps:
-            return self._present(T, imm, flush)
-        keep = {k: getattr(self, k) for k in caps if hasattr(self, k)}
-        for k in keep:
-            setattr(self, k, caps[k])
+        self._t_pres = time.perf_counter()
+        self._q_cur = self._gpu_begin()
         try:
             return self._present(T, imm, flush)
         finally:
-            for k, v in keep.items():
-                setattr(self, k, v)
+            q, self._q_cur = getattr(self, '_q_cur', None), None
+            self._gpu_end(q)
+
+    def _swap(self):
+        q, self._q_cur = getattr(self, '_q_cur', None), None   # (the picture's work ends here: not the wait for the
+        self._gpu_end(q)                                        #  refresh)
+        t = getattr(self, '_t_pres', None)
+        if t is not None:                                       # (the processor's time for the picture: cpu_ms)
+            ms = 1000.0 * (time.perf_counter() - t)
+            self.cpu_ms = ms if getattr(self, 'cpu_ms', None) is None else 0.9 * self.cpu_ms + 0.1 * ms
+            self._t_pres = None
+        return super()._swap()
+
     def _present(self, T, imm=None, flush=False):
         """show the screen at real time T: the light of the lines drawn since the last display frame
         (at their own moments), the phosphor image aged by the time passed. imm: lines lit now (the
@@ -2600,9 +3046,19 @@ class GLBloomRenderer(GLRenderer):
             gl.glClearColor(0, 0, 0, 1); gl.glClear(GL_COLOR_BUFFER_BIT)
             gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
             even = getattr(self, 'even_beam', False) and self.BlendEq
-            if even:                                      # (even beam: the brighter light, not the sum - max
+            bb = self._build(imm) if imm else self.last
+            if bb and len(bb) > 6 and bb[6]:              # (beam trace: the energy summed, then as light)
+                self.BindFB(GL_FRAMEBUFFER, self.F[1]); gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
+                gl.glBlendFunc(GL_ONE, GL_ONE)
+                self._draw_built(bb)
+                gl.glDisable(GL_BLEND)
+                self.BindFB(GL_FRAMEBUFFER, self.out); gl.glViewport(0, 0, w, h)
+                self._sat(self.F[0], self._wb())
+                bb = None
+            elif even:                                    # (even beam: the brighter light, not the sum - max
                 self.BlendEq(0x8008); self.blend_max = True   #  ignores alpha: the spot's falloff in the colour)
-            self._draw_built(self._build(imm) if imm else self.last)
+            if bb:
+                self._draw_built(bb)
             if even:
                 self.BlendEq(0x8006); self.blend_max = False
             self.young = []; self.T_prev = T
@@ -2631,6 +3087,10 @@ class GLBloomRenderer(GLRenderer):
             self._draw_built(self._build(imm, load=False), 0.0, 1.0, imm=True)
         self.BlendEq(0x8006)                              # (and back to adding, for everything else)
         self.young = keep
+        fresh = self.F[0]
+        if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'):   # (beam trace: the energy as light)
+            self.BindFB(GL_FRAMEBUFFER, self.F2[1]); gl.glDisable(GL_BLEND)
+            self._sat(self.F[0]); fresh = self.F2[0]
         # 2. the phosphor image: aged, lit again where the fresh light is brighter
         od = getattr(self, 'decay_override', None)        # (switching off: frozen, dimmed by the curve)
         src, dst = self.P, self.P2
@@ -2647,18 +3107,40 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform1f(self.u_up['gage'], math.exp(-PHOS_GAGE))
         hz = 1.0 / dt if dt > 0.004 else 60.0             # (the reach per display frame: as in an 820 px high
         self.Uniform1f(self.u_up['gn'], float(max(1, min(4, round(h / 820.0 * 60.0 / hz)))))   #  window at 60 Hz)
-        self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, self.F[0]); self.ActiveTexture(0x84C0)
+        self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, fresh); self.ActiveTexture(0x84C0)
         self._quad(src[0])
         self.UseProgram(0)
         self.P, self.P2 = dst, src
         # 3. what it shows
         self.BindFB(GL_FRAMEBUFFER, self.D[1])
         self.UseProgram(self.sprog); self.Uniform1i(self.u_stex, 0); self._phos_uniforms(self.u_sh)
+        self.Uniform3f(self.u_sh['wb'], *self._wb())
+        self.Uniform3f(self.u_sh['wbc'], *self._wbc())
         self.Uniform1f(self.u_sh['sm'], getattr(self, 'phos_smooth', PHOS_SMOOTH) * h / 820.0 if self.trail_on else 0.0)
         self.Uniform2f(self.u_sh['px'], 1.0 / max(1, w), 1.0 / max(1, h))
         self._quad(self.P[0])
         self.UseProgram(0)
         self._finish(self.D[0])
+
+    def _wb(self):
+        """the White balance gains for the glow (cached by temperature)"""
+        k = float(getattr(self, 'white_k', WHITE_DEFAULT))
+        if getattr(self, '_wb_k', None) != k:
+            self._wb_k = k; self._wb_g = white_gain(k); self._wb_c = white_gain(white_core_k(k))
+        return self._wb_g
+
+    def _wbc(self):
+        """the White balance gains for the lines' bright cores (white_core_k)"""
+        self._wb()
+        return self._wb_c
+
+    def _sat(self, tex, wb=(1.0, 1.0, 1.0)):
+        """the beam trace's energy (tex) as light, into the bound frame buffer (SAT_SHADER; wb: crisp, the white balance)"""
+        self.UseProgram(self.satprog); self.Uniform1i(self.u_sat['tex'], 0)
+        self.Uniform1f(self.u_sat['k'], BEAM_TRACE_GAIN); self.Uniform3f(self.u_sat['wb'], *wb)
+        self.Uniform3f(self.u_sat['wbc'], *(self._wbc() if tuple(wb) != (1.0, 1.0, 1.0) else wb))
+        self._quad(tex)
+        self.UseProgram(0)
 
     def draw(self, lines):
         """one picture at once (callers without frame timing)"""
@@ -2682,13 +3164,13 @@ class GLBloomRenderer(GLRenderer):
             m = max(4 * k, 0.01 * h)                      # (a little away from the corner)
             self._text_row(row, m, m + i * 9.0 * k, k)
         if getattr(self, 'knob', None):
-            self._knob(self.knob)
+            self._listed('knob', self.knob, lambda: self._knob(self.knob))
         if getattr(self, 'osd', None):
-            self._osd(self.osd)
+            self._listed('osd', self.osd, lambda: self._osd(self.osd))
         if getattr(self, 'cart', None):
-            self._cart(self.cart)
+            self._listed('cart', self.cart, lambda: self._cart(self.cart))
         if getattr(self, 'port2', None):
-            self._port2(self.port2)
+            self._listed('port2', self.port2, lambda: self._port2(self.port2))
         if getattr(self, 'browser', None):
             self._browser(self.browser)
         if getattr(self, 'hint', None):                   # (a hint in the middle of the picture: centred rows)
@@ -2699,6 +3181,32 @@ class GLBloomRenderer(GLRenderer):
                                self.hint['cy'] + i * 11.0 * hk, hk)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
         gl.glEnableClientState(GL_COLOR_ARRAY); gl.glEnableClientState(GL_VERTEX_ARRAY)
+
+    def _listed(self, name, state, draw):
+        """the strip's knob, OSD, cartridge and port pictogram: each drawn once into an OpenGL display list and played
+        back while it looks the same (their hundreds of strokes from Python every refresh took ~1 ms - a slow PC's
+        emulation shares the processor with it)"""
+        gl = self.gl
+        key = (repr(state), self.size, getattr(self, 'hud_k', None))
+        cache = self.__dict__.setdefault('_lists', {})
+        old = cache.get(name)
+        if old and old[0] == key:
+            gl.glCallList(old[1])
+            return
+        if old:
+            lst = old[1]
+        else:
+            gl.glGenLists.restype = ctypes.c_uint
+            lst = gl.glGenLists(1)
+            if not lst:                                 # (no lists: drawn directly)
+                draw()
+                return
+        gl.glNewList(lst, 0x1301)                       # (GL_COMPILE_AND_EXECUTE)
+        try:
+            draw()
+        finally:
+            gl.glEndList()
+        cache[name] = (key, lst)
 
     def _text_row(self, segs, x, y, k):
         """one row of (text, colour) pieces in the stroke font, 6 k high, top left at x, y"""
@@ -2937,7 +3445,9 @@ class GLBloomRenderer(GLRenderer):
         bx, by = at(cx, cy, 0.76 * r, ang); px, py = at(0.0, 0.0, 0.08 * r, ang + 90.0)
         strip([tip, (bx + px, by + py), (bx - px, by - py)], True)
         lh = 0.30 * r                                           # (label height)
-        text('OFF/ON', cx, cy - 1.5 * r - lh, lh)
+        text(kb.get('label', 'OFF/ON'), cx, cy - 1.5 * r - lh, lh)
+        if kb.get('hint'):                                      # (the pointer on the knob: how to turn it)
+            text(kb['hint'], cx, cy - 1.5 * r - 2.6 * lh, 0.75 * lh)
         # the volume wedge: a curved bar right of the knob, thin at the top, wide at the bottom
         inner = [at(cx, cy, 1.25 * r, 50 + i * 4.0) for i in range(21)]
         outer = [at(cx, cy, 1.25 * r + (0.03 + 0.17 * i / 20.0) * r, 50 + i * 4.0) for i in range(21)]
@@ -2972,7 +3482,8 @@ class GLBloomRenderer(GLRenderer):
         self._quad(src)
         self.UseProgram(0)
         gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-        self._quad(self.B1[0], 0.85, 0.92, 1.0, self.bloom)        # a near-white halo
+        g = self._wb(); gm = max(g)                                # the halo: the white balance's hue, at full
+        self._quad(self.B1[0], g[0] / gm, g[1] / gm, g[2] / gm, self.bloom)   #  strength (the cores stay white: cold)
         ov = getattr(self, 'overlay', None)
         if ov:                                                  # lines on top that leave no afterglow
             g0 = getattr(self, 'crt_gain', 1.0)                 # (the tube switching off: zap, collapse)

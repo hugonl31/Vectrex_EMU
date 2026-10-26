@@ -73,7 +73,7 @@ with a short note on what goes there:
 |---|---|
 | `system` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
 | `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)) |
-| `overlays` | Mine Storm's overlay, `Mine Storm (built in).art`; your overlays go here too |
+| `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
 More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), and
 `cache`, working files only (the SD card image a UVMC2 game runs from).
@@ -83,10 +83,23 @@ More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card
 | What | Where | Where to get it |
 |---|---|---|
 | **Cartridge ROMs** (`.bin`, `.vec`, `.gam`, `.rom`, VecFever `.v4e`) | `roms` (subfolders too) | your own cartridges |
-| **Overlays** (optional) | `overlays` | the MiSTer Vectrex core's `overlays.zip` ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)), or PNGs - see [Overlays](#overlays) |
+| **Overlays** (more of them, optional) | `overlays` | they come with the emulator; your own `.art` / PNGs - see [Overlays](#overlays) |
 | **Speech ROM** (optional, for the VecVoice / VecVox speech modules) | `system` | `al2.bin`, a free download - see [Speech modules](#speech-modules) |
 | **UVMC2 games** (`.um2`, optional) | `roms` | made for the Ultimate Vectrex Multicart 2 - see [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2) |
 | **Game data** for UVMC2 games that need it (Doom's WAD, Quake's `pak0.pak`, vector movies) | `uvmc2` (`uvmc2/doom`, `uvmc2/quake`, `uvmc2/movies`) | your own copy (the shareware Doom and Quake files work) |
+
+**Vectrex > Get games & extras...** (also in the first-start setup, which shows in red what is missing) fetches
+them in one click: the original GCE games, free homebrew games that have an overlay (public domain releases,
+Malban's Telengard, and Vectorblade and the Neon Hawk demo as the MiSTer project shares them with their authors'
+permission), the speech ROM and the PiTrex's SD card files - unpacked into `roms`, `system` and the PiTrex folder
+and named as the ROM browser lists them; files you already have are kept. Each has a chain of sources tried in
+turn: the games and the speech ROM, which never change, from the project's own copy first, then archive.org,
+GitHub, Joe Zbiciak's page and the Wayback Machine; the PiTrex from the newest download on Malban's page first
+(the project's copy of the last version only when you ask for it). Should all of them fail, the window says
+where to get it, and **Add file...** takes your own download and names it the same way. None of it comes with
+the emulator. *The maintainer of Vectrex_EMU does not take responsibility for the sharing of these files: you
+download them yourself and take that responsibility.* The disclaimer is shown once, with every file and its
+sources; accepted, the downloads go without asking.
 
 Then click the cartridge below the picture (or press **L**) and pick a game.
 
@@ -186,8 +199,8 @@ slider and see it at once, hold H to compare with how it was.
   turned in 90 degree steps for a monitor on its side
 * The **Config window** (Tab): every look and sound setting in eight strips over the running game, with a
   before / after compare, settings saved per game when you ask, and a gamepad to drive it
-* **Quality** Low / Medium / High, or **Auto** (steps down by itself when the PC misses frames) -
-  effects only, the emulation is always exact; a **setup** at the first start picks it with a short test
+* **Quality** Low / Medium / High (or Custom, changed by hand) - effects only, the emulation is always exact;
+  **Test this PC** measures once what the PC can draw and suggests one (the first-start **setup** runs it)
 * **Smooth motion** for 60 Hz screens (frames drawn between the game's 50), G-Sync / FreeSync detected
   from the monitor itself (a G-Sync module too)
 * **The Vectrex unit**: the analog parts that differ from one Vectrex to the next as sliders, with presets
@@ -403,7 +416,7 @@ just in front of the glass, so seen from the usual height the picture sits a lit
 
 <p align="center">
 <img src="docs/images/overlay_onoff.png" width="640" alt="Mine Storm without and with its overlay"><br>
-<em>Mine Storm without and with its overlay (the one overlay that comes with the emulator).</em>
+<em>Mine Storm without and with its overlay (one of the overlays that come with the emulator).</em>
 </p>
 
 **Room light** lights the sheet itself: in an evening room the plastic is nearly black and only the
@@ -644,7 +657,8 @@ opens it over the picture while the game runs on; Tab or Esc closes it. On top, 
   on a real Vectrex or chosen side by side with one - so most sliders have the default **in the middle**,
   from 0 on the left to twice the default on the right.
 * **Hold H** (or the button on the deck): the picture as it was when the deck opened - let go to see your
-  change. **Reset this strip** puts one strip back to its defaults.
+  change. **Reset this strip** puts one strip back to its defaults; **Reset all** puts back every strip -
+  to the chosen Quality profile's defaults (from Custom: High's).
 * **This game's own settings** (THIS GAME row): changes are kept for all games, until you press **Save** -
   then that game starts with its own look and controls, and the everyday settings stay as
   they were. **Revert** goes back to what was saved, **Remove** forgets them, **Make default**
@@ -657,8 +671,9 @@ the knob and the cartridge all work there.
 **Volume knob on screen** (Display strip, default on): the Vectrex's own panel as simple green
 outlines in the strip right below the picture, lined up with its right edge - in the window and in
 full screen alike: the volume knob with its position pointer, OFF/ON and VOL, and the RESET button.
-Mouse wheel over the knob or a click on its right / left half turns it up / down (down to 0 % switches
-the Vectrex off); a click on RESET presses it.
+Grab the knob and turn it round (drag clockwise: louder - the pointer shows the volume and how to turn it),
+or use the mouse wheel over it, a click on its right / left half (5 % up / down) or Page Up / Page Down; down
+to 0 % switches the Vectrex off, as on the real one. A click on RESET presses it.
 
 **Cartridge on screen** (Display strip, default on): a Vectrex cartridge below the middle of the
 picture. Click it (or L): the ROM browser opens over the picture with the ROMs in the folder
@@ -688,14 +703,19 @@ SPEECH VOL when a speech module is plugged in - below the picture on the left.
 
 ### Quality: for any PC
 
-The quality sets the effects drawn on the graphics card - never the emulation, which is always exact:
+The quality is a profile of the costly picture effects - never the emulation, which is always exact. It sets
+their switches in Config; change any picture setting (Tube, Room light, Case, Overlay) and the profile reads
+**Custom**:
 
 | Quality | |
 |---|---|
-| **Low** | the phosphor and its afterglow, without bloom, the tube's curve, glass, halo and overlay effects: for laptops and old graphics |
-| **Medium** | one bloom pass; no overlay scratches, glow or reflections |
-| **High** | everything |
-| **Auto** | starts where the setup's test put it and steps down by itself when the PC misses frames (four bad seconds) |
+| **Low** | the Vectrex look for old laptops: the afterglow, the glow, the corner dots and the overlay's colours kept; the tube's curve and glass edge, the overlay's scratches, plastic glow and parallax, the room light and reflections, the case's reflections, the bends' smoothing and the dither off |
+| **Medium** | all but the room light and its reflections; a lighter glow |
+| **High** | every effect on |
+
+**Test this PC...** (Vectrex > Quality, the Config window, and the first-start setup) draws a heavy scene at each
+profile for a moment, measures the processor and the graphics card, and shows a report with the profile that
+suits this PC, to accept or not. Nothing changes by itself while you play.
 
 ### The screen: 60 Hz, high refresh, G-Sync
 
@@ -805,8 +825,9 @@ graphics card and screen to the clipboard, for a GitHub issue.
 Put overlay files in the folder **`overlays`** next to the program, named like the ROM -
 `Armor Attack.bin` finds `Armor Attack.art`. Two formats:
 
-* **MiSTer `.art`**: get them from the MiSTer Vectrex core ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer),
-  its `overlays.zip`; see its `CREDITS.md` for each design's author). Copy them in as they are: MiSTer's
+* **MiSTer `.art`**: the emulator comes with the MiSTer Vectrex core's set ([Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)'s
+  `overlays.zip`), renamed like the games (`overlays/RENAMED.txt`; `overlays/CREDITS.md` names each design's
+  author). New ones from there can be copied in as they are: MiSTer's
   names are found too - underscores count as spaces, and `(...)` parts, versions and a trailing "Proto"
   are ignored (`ArmorAttack.art`, `Armor_Attack.art`, `Dark_Tower_Proto.art` and `VectorbladeV1.13.art`
   all find their game; hacks such as `Berzerk (Hack - Speed, 2016).bin` find `Berzerk.art`). Only the
@@ -825,8 +846,7 @@ art, parallax, the plastic glow, the scratches, a fine position / size per overl
 [chapter 9](#9-overlays---and-forty-years-of-scratches) and in the built-in Help. The room light and the
 ceiling light's reflections are on the **Room light** strip ([chapter 11](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)).
 
-**Mine Storm's overlay comes with the emulator** as an ordinary file, `overlays/Mine Storm (built in).art`,
-for the game built into the console. To use another one, put your own `Mine Storm.art` next to it (the
+**Mine Storm's overlay** is `overlays/Mine Storm (built in).art`, for the game built into the console. To use another one, put your own `Mine Storm.art` next to it (the
 plain name is chosen first), or replace or delete that file (without it Mine Storm runs without an
 overlay). It is the [Libretro overlay-borders](https://github.com/libretro/overlay-borders)
 Mine Storm artwork as converted to `.art` by the [Vectrex_MiSTer](https://github.com/Videodr0me/Vectrex_MiSTer)
@@ -835,7 +855,7 @@ project (`Mine_Storm.art` in its `overlays.zip`).
 *Disclaimer: the overlay artwork is not part of this project and not covered by its licence; it belongs
 to its creators and is included unchanged as a courtesy, for non-commercial use. Vectrex is a trademark
 of its owners; this project is not affiliated with them, Libretro or MiSTer. On request it will be
-removed. Other overlays do not come with the emulator: the artwork has several authors and terms.*
+removed. The other overlays are the MiSTer project's set as it shares them, each credited in `overlays/CREDITS.md`.*
 
 ### Speech modules
 

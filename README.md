@@ -19,6 +19,26 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.0.4
+
+* **The beam, simulated** - the spot itself now follows the analog circuits: it lags behind the integrators, slows
+  into corners and lights them, bends round curves instead of breaking them into facets, and goes dark where the
+  real one does. Fitted to new test cartridges photographed on a real Vectrex (the DAC, the corners, the gaps, the
+  lag); the DAC and the analog side measured and modelled, the brightness knob at the back too.
+  [The story](#12-the-beam-itself-four-test-cartridges-and-a-maze), with side-by-side comparisons.
+* **The PiTrex** - the Raspberry Pi cartridge emulated: its ARM processor (with a JIT compiler, fast enough
+  for the arcade emulators it runs), the Pi's hardware and its SD card. Its menu, Tempest, Battlezone, Elite,
+  Vectorblade... [PiTrex](#the-pitrex-a-raspberry-pi-in-the-cartridge-slot).
+* **Quality profiles and Optimize** - Low, Medium, High or Custom, as in games; **Optimize** measures this PC once
+  and turns off only what it has to, then says what it changed (Undo is one click). [Quality](#quality-for-any-pc).
+* **Everything in one click** - the setup shows what is missing in red and fetches it: the original GCE games,
+  free homebrew games with overlays, the speech ROM, the PiTrex's SD card. **65 overlays now come with the
+  emulator.** [What you add](#what-you-add).
+* **Config** - Reset all, the window's close button back, the changed settings marked with a dot, the white
+  balance with a neutral middle (the lines stay full-bright white, the glow takes the tint).
+* **The strip below the picture** - every part clickable shows a hand; a click on the on-screen display opens
+  Config; the volume knob turns the moment you move; Recent games; a right click on the cartridge pulls it out.
+
 ## Contents
 
 * [Download and play](#download-and-play) - [what you add](#what-you-add) - [requirements](#requirements)
@@ -30,13 +50,14 @@ photo, recording and measurement, and every call on how it should look, sound an
   [7. how wide the gaps are](#7-one-choice-how-wide-the-gaps-are), [8. speech](#8-speech-two-rare-modules),
   [9. overlays and scratches](#9-overlays---and-forty-years-of-scratches),
   [10. the tube's geometry](#10-the-tubes-geometry-measured-not-invented),
-  [11. the room's light](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections)
+  [11. the room's light](#11-the-rooms-light-the-glass-the-phosphor-and-the-reflections),
+  [12. the beam itself](#12-the-beam-itself-four-test-cartridges-and-a-maze)
 * [Using it](#using-it) - [the first start](#the-first-start-the-setup), [switching on](#switching-on),
   [menus and the Config window](#menus-and-the-config-window), [quality](#quality-for-any-pc),
   [the screen](#the-screen-60-hz-high-refresh-g-sync), [keys](#keys), [TV mode shortcuts](#tv-mode-shortcuts),
   [controls](#controls), [overlays](#overlays), [speech modules](#speech-modules),
   [cartridge hardware](#cartridge-hardware), [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2),
-  [Mac and Linux notes](#mac-and-linux-notes)
+  [the PiTrex](#the-pitrex-a-raspberry-pi-in-the-cartridge-slot), [Mac and Linux notes](#mac-and-linux-notes)
 * [Building from source](#building-from-source) - for tinkerers
 * [Technical details](docs/TECHNICAL.md) - what it models, number by number
 * [Credits and license](#credits-and-license)
@@ -75,8 +96,8 @@ with a short note on what goes there:
 | `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)) |
 | `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
-More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), and
-`cache`, working files only (the SD card image a UVMC2 game runs from).
+More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), `pitrex`,
+the PiTrex's SD card, and `cache`, working files only (the SD card images the UVMC2 and the PiTrex run from).
 
 ### What you add
 
@@ -163,9 +184,10 @@ Control deck switches it all off for a smaller window.
 </p>
 
 <p align="center">
-<a href="docs/images/v1.0.3/browser.png"><img src="docs/images/v1.0.3/browser_small.jpg" width="400" alt="the ROM browser"></a><br>
+<a href="docs/images/v1.0.4/browser.png"><img src="docs/images/v1.0.4/browser_small.jpg" width="440" alt="the ROM browser: Recent, the PiTrex, a folder, Vectrex games, PiTrex programs in red and UVMC2 games in blue"></a><br>
 <em>Click the cartridge: the ROM browser, drawn into the picture (it works in full screen too) - it opens
-in the folder you left it in.</em>
+in the folder you left it in. Recent games and the PiTrex at the top, then folders; Vectrex games green,
+PiTrex programs red, UVMC2 games blue.</em>
 </p>
 
 Every look and sound setting is in one place, the **Config window** (Tab), over the running game: change a
@@ -199,8 +221,10 @@ slider and see it at once, hold H to compare with how it was.
   turned in 90 degree steps for a monitor on its side
 * The **Config window** (Tab): every look and sound setting in eight strips over the running game, with a
   before / after compare, settings saved per game when you ask, and a gamepad to drive it
+* **The beam simulated**: the spot's lag behind the integrators, its rests in corners and slow bends, curves
+  drawn smooth, fitted to test cartridges photographed on a real Vectrex
 * **Quality** Low / Medium / High (or Custom, changed by hand) - effects only, the emulation is always exact;
-  **Test this PC** measures once what the PC can draw and suggests one (the first-start **setup** runs it)
+  **Optimize** measures this PC once and turns off only what it must (the first-start **setup** runs it)
 * **Smooth motion** for 60 Hz screens (frames drawn between the game's 50), G-Sync / FreeSync detected
   from the monitor itself (a G-Sync module too)
 * **The Vectrex unit**: the analog parts that differ from one Vectrex to the next as sliders, with presets
@@ -208,6 +232,10 @@ slider and see it at once, hold H to compare with how it was.
 * **UVMC2 games** (`.um2`): the Ultimate Vectrex Multicart 2 emulated - its RP2350 (two ARM cores, PIO,
   DMA, PSRAM), the SD card (a folder), the headphone jack, a USB mouse and keyboard - plug and play, with a
   demo and a vector movie player included
+* **The PiTrex**: the Raspberry Pi cartridge - its ARM11 (with a JIT for x86-64 and ARM64), the Pi's hardware
+  and the SD card (a folder): its menu, the arcade emulators, Vectorblade, Elite and more
+* **One-click downloads** of the original games, free homebrew, the speech ROM and the PiTrex's SD card;
+  65 overlays included
 * Every look and sound setting adjustable and explained in the built-in Help
 
 ---
@@ -581,6 +609,48 @@ The logic behind each part:
 
 ---
 
+### 12. The beam itself: four test cartridges and a maze
+
+Until now the emulator drew what the integrators said, line by line, and then made each line look like the
+Vectrex's. For v1.0.4 we went one step further and simulated **the spot itself**: where the electron beam
+really is, cycle by cycle, and how much light it leaves. To measure it we wrote new test cartridges (they are
+in [`testcart`](testcart), for anyone with a Vectrex and a flash cartridge) and photographed them on the real
+tube:
+
+* **The lag test** and **the gap test**: the deflection amplifiers do not follow the integrators at once - the
+  spot runs about 6 cycles behind them. That one lag explains the gaps where lines join (they grow with the
+  scale exactly as on the tube) and why a fast corner is rounded.
+* **The corner test**: where the beam stops - a corner, the end of a line - it rests, and a resting spot pours
+  light into one point. A rest of 12 cycles is only a slight thickening, from 16 cycles on it is a dot, and a
+  long rest is a bright, blooming star. The emulator now finds those rests from the spot's own speed, inside a
+  stroke too.
+* **Curves**: the spot moves smoothly, so a curve made of short lines is drawn as a curve, not as facets.
+* **The DAC test**: lines drawn at every speed from the same point, with a reference placed by a move. On the
+  real Vectrex the DAC turned out linear and the lines meet the reference; the emulator matches within the
+  photos' own scatter. The Vectrex unit's DAC bit errors, the ZERO circuit's timing and the offset are modelled
+  too (Config > Vectrex unit), and the **brightness knob** at the back - the tube's bias, measured from black to
+  a real Vectrex's brightest.
+* **Clean Sweep's maze**: its walls are drawn by switching the beam on and off during long sweeps. With the
+  photo's camera angle and the tube's curve fitted out, every wall end in the emulator lands within about one
+  pixel of the real one.
+
+For an even more literal picture, **Tube > Beam trace** draws the phosphor from the spot's path itself, the
+energy it leaves where it moves and where it rests. The **white balance** follows the real tube: the bright
+cores of the lines stay the screen's full-bright white, and the cool tint lives in the glow around them.
+
+<p align="center">
+<a href="docs/images/v1.0.4/cmp_vectorblade.jpg"><img src="docs/images/v1.0.4/cmp_vectorblade.jpg" width="820" alt="Vectorblade's logo: a real Vectrex and Vectrex_EMU side by side"></a><br>
+<a href="docs/images/v1.0.4/cmp_corner.jpg"><img src="docs/images/v1.0.4/cmp_corner.jpg" width="820" alt="the corner test cartridge: a real Vectrex and Vectrex_EMU side by side"></a><br>
+<a href="docs/images/v1.0.4/cmp_gaps.jpg"><img src="docs/images/v1.0.4/cmp_gaps.jpg" width="820" alt="the gap test cartridge: a real Vectrex and Vectrex_EMU side by side"></a><br>
+<a href="docs/images/v1.0.4/cmp_cleansweep.jpg"><img src="docs/images/v1.0.4/cmp_cleansweep.jpg" width="640" alt="Clean Sweep's maze: a real Vectrex and Vectrex_EMU side by side"></a><br>
+<em>Left the real Vectrex, right the emulator: Vectorblade's logo, the corner test (rests of 0 to 96 cycles at
+four intensities, then corners and dots), the gap test (joins at scales 6 to 13) and Clean Sweep's maze (the game
+in a different moment). The photos' white balance is matched to the emulator's, as the eye sees the tube; the
+camera always shows the glow bigger than the eye does.</em>
+</p>
+
+---
+
 ## Using it
 
 Settings written as **Tube > Afterglow** are in the [Config window](#menus-and-the-config-window) (Tab): the
@@ -589,12 +659,13 @@ strip, then the setting.
 ### The first start: the setup
 
 <p align="center">
-<a href="docs/images/v1.0.3/setup.png"><img src="docs/images/v1.0.3/setup.png" width="520" alt="the setup at the first start"></a><br>
-<em>The setup, shown once (Vectrex > Setup wizard... runs it again).</em>
+<a href="docs/images/v1.0.4/ui_setup.png"><img src="docs/images/v1.0.4/ui_setup_small.jpg" width="520" alt="the setup at the first start, what is missing in red"></a><br>
+<em>The setup, shown once (Vectrex > Setup wizard... runs it again): what is missing in red, one click gets it.</em>
 </p>
 
-The first start shows one page: whether the BIOS, the games folder, the UVMC2 SD card folder and the
-speech ROM were found; the **quality** this PC can carry (from a short test; **Test** runs it again); the
+The first start shows one page: whether the BIOS, the games, the overlays, homebrew, the speech ROM, the PiTrex's
+SD card and the UVMC2 SD card folder were found - what is missing in red, and **Download everything missing**
+gets it all; the **quality** (a new install runs **Optimize** at once); the
 **display** mode, with each one explained and the best for your monitor chosen ([the screen](#the-screen-60-hz-high-refresh-g-sync));
 the **player 1 keys**; and **Start switched on**. Enter starts playing; Esc skips it. Everything
 on it can be changed later, and **Vectrex > Setup wizard...** (also in View) runs it again.
@@ -713,9 +784,19 @@ their switches in Config; change any picture setting (Tube, Room light, Case, Ov
 | **Medium** | all but the room light and its reflections; a lighter glow |
 | **High** | every effect on |
 
-**Test this PC...** (Vectrex > Quality, the Config window, and the first-start setup) draws a heavy scene at each
-profile for a moment, measures the processor and the graphics card, and shows a report with the profile that
-suits this PC, to accept or not. Nothing changes by itself while you play.
+**Optimize** (View > Quality, the Config window, and the first-start setup) says what it will do, then draws a
+heavy scene for a few seconds and measures each effect on this PC - the processor and the graphics card. It turns
+off only what it has to for the full emulation speed, the costliest first, and keeps everything that saves less
+than 2 %. Then it says what it turned off; **Undo** puts it back. The result is the **Custom** profile, and the
+Config window marks every setting that differs from its default with a dot. Nothing changes by itself while you
+play. Choosing Low, Medium or High sets all picture settings to that profile; **Reset all** in the Config window
+puts every strip back to the chosen profile (from Custom: High).
+
+<p align="center">
+<a href="docs/images/v1.0.4/ui_config.png"><img src="docs/images/v1.0.4/ui_config_small.jpg" width="440" alt="the Config window: Quality, Optimize, the changed settings marked"></a><br>
+<em>The Config window: Quality with Optimize, this game's settings, the Tube strip (a changed setting marked
+with a dot) and Reset all.</em>
+</p>
 
 ### The screen: 60 Hz, high refresh, G-Sync
 
@@ -1009,6 +1090,31 @@ and after **Ctrl+K** the keyboard types into the cartridge, Ctrl+K again gives i
 jack**: clean as a line out next to the Vectrex's sound, through the Vectrex's own speaker and volume knob,
 or off, with its volume.
 
+### The PiTrex: a Raspberry Pi in the cartridge slot
+
+The [PiTrex](http://vide.malban.de) (Malban, Kevin Koster and others) is a cartridge with a Raspberry Pi Zero in
+it: the Pi draws on the Vectrex directly, so it runs arcade emulators (Asteroids, Battlezone, Tempest, Black
+Widow, Space Duel, Tailgunner, the Cinematronics games and more), Vectorblade, Elite, a BASIC, and a Vectrex
+emulator of its own. Vectrex_EMU emulates the whole cartridge: the Pi's ARM11 processor - with a JIT compiler
+for x86-64 and ARM64, fast enough for its arcade emulators - its timers and interrupts, the bus to the Vectrex
+and the SD card.
+
+<p align="center">
+<a href="docs/images/v1.0.4/pitrex_menu.jpg"><img src="docs/images/v1.0.4/pitrex_menu.jpg" width="290" alt="the PiTrex menu"></a>
+<a href="docs/images/v1.0.4/pitrex_games.jpg"><img src="docs/images/v1.0.4/pitrex_games.jpg" width="520" alt="Tempest, Battlezone, Black Widow, Asteroids, Hyperoid and Gyrocks on the PiTrex"></a><br>
+<em>The PiTrex's menu, and some of what runs on it: Tempest, Battlezone, Black Widow, Asteroids, Hyperoid and Gyrocks.</em>
+</p>
+
+* **Vectrex > PiTrex > Start the PiTrex** boots its menu; **Open PiTrex program...** runs one program on its own;
+  **SD card folder...** chooses the folder the PiTrex sees as its SD card (default `pitrex` next to the program).
+  The ROM browser lists the PiTrex at the top.
+* **The SD card**: Malban's PiTrex SD card download - **Get games & extras** (or the setup) fetches the newest and
+  unpacks it into `pitrex`.
+* **Arcade games need their ROMs**, your own: MAME sets (non-merged or split; merged ones are not supported) in
+  `pitrex/roms`, the AAE ones (Star Wars, Major Havoc) in `pitrex/roms/aae`. The PiTrex's own FAQ in that folder
+  lists them.
+* In its menu, **button 4** starts, the stick chooses.
+
 ### Mac and Linux notes
 
 The same emulator, everything in this README applies. The BIOS and Mine Storm's overlay sit in the
@@ -1077,6 +1183,9 @@ license of the vecx emulator it is built on.
   overlay format and overlays; Mine Storm's overlay (Libretro artwork, see [Overlays](#overlays)).
 * **Malban** - the analog delays measured for VIDE, Vectorblade's cartridge, and the Bad Apple vector movie
   (`uvmc2/movies/BadApple.bin`, from his PiTrex SD card), bundled with his permission.
+* **The PiTrex** (Malban, Kevin Koster and the PiTrex team) - the cartridge and its programs; the emulator runs
+  their SD card as it comes, downloaded from Malban's page.
+* **The overlays** - the authors of each design are listed in `overlays/CREDITS.md`.
 * **The SP0256-AL2 ROM** is (c) Microchip Technology Inc., distributed by Joe Zbiciak with Microchip's
   permission; it is not part of this project.
 * **The Vectrex BIOS**: Smith Engineering allows it to be copied freely for non-commercial use.

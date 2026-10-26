@@ -3,6 +3,61 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.4
+
+**The beam, simulated**
+- The spot itself follows the analog circuits: it runs about 6 cycles behind the integrators (the deflection's
+  lag), which gives the gaps where lines join - growing with the scale as on the tube - and rounds fast corners.
+- Rests by the spot's own speed: where the beam stops or slows, inside a stroke too, it lights a dot - a slight
+  thickening at 12 cycles, a dot from 16 on, a blooming star for a long rest.
+- Curves drawn smooth: a curve made of short lines bends as the spot does, without facets.
+- Tube > Beam trace: the phosphor drawn from the spot's own path, the energy it leaves moving and resting.
+- Fitted to new test cartridges photographed on a real Vectrex (in `testcart`): lag, corners, axes, gaps, the
+  beam's ZERO and offset, and the DAC. The DAC turned out linear; lines meet the references placed by moves, as
+  on the tube. Clean Sweep's maze lands within about a pixel of the real one.
+- The Vectrex unit gained the ZERO circuit's timing, the offset, the lag and the DAC's bit errors (Config >
+  Vectrex unit, in the presets too).
+- The brightness knob at the back (Config > Vectrex unit): the tube's bias on the intensity drive, measured from
+  black to a real Vectrex's brightest. Turned up, the blanked beam glows - the moves and returns to the middle
+  become a faint "spider web".
+- White balance: the slider's middle is neutral; towards cool or warm the glow takes the tint first, while the
+  lines' bright cores stay the screen's full-bright white - they tint too only at the slider's far ends.
+
+**The PiTrex**
+- The Raspberry Pi cartridge emulated: the Pi Zero's ARM11 with a JIT compiler (x86-64 and ARM64), its timers,
+  interrupts, the bus to the Vectrex and the SD card (a folder, `pitrex`). Its menu, the arcade emulators
+  (Tempest, Battlezone, Black Widow, Asteroids, Space Duel, the Cinematronics games...), Vectorblade, Elite,
+  GS BASIC and its own Vectrex emulators run.
+- Vectrex > PiTrex: Start the PiTrex, Open PiTrex program..., SD card folder... The ROM browser lists it at the
+  top; PiTrex programs are tinted red, UVMC2 games blue. Programs built for the Pi Zero 2 run their Pi Zero 1
+  build.
+- Arcade games need your own ROMs (MAME sets, non-merged or split, in `pitrex/roms`; AAE ones in
+  `pitrex/roms/aae`).
+
+**Quality: profiles and Optimize**
+- Low, Medium, High - and Custom, as in games: changing any picture setting under a profile makes it Custom;
+  choosing a profile sets every picture setting to it.
+- Optimize measures this PC once with a heavy scene, turns off only what it must for the full emulation speed
+  (the costliest first, nothing that saves less than 2 %), says what it changed, and Undo puts it back. A new
+  install runs it in the setup.
+- Faster on weak PCs: the lines are drawn from display lists, the work measured on the graphics card itself.
+
+**Get games & extras**
+- The setup shows in red what is missing and gets it all in one click: the original GCE games, free homebrew
+  games with overlays, the speech ROM and the PiTrex's SD card - from a chain of sources, newest first for the
+  PiTrex; named as the ROM browser lists them, never overwriting what you have. A disclaimer is shown once.
+- 65 overlays come with the emulator, named like the games (`overlays/CREDITS.md`: each design's author).
+
+**Config and the strip below the picture**
+- Reset all: every strip back to the chosen Quality profile (from Custom: High). The window's close button is
+  back. Settings changed from their default are marked with a dot.
+- Everything clickable below the picture shows a hand; a click on the on-screen display opens Config.
+- The volume knob turns the moment the mouse moves; with the intro skipped, the power-on click and the knob's
+  scratch play at once, and the picture keeps moving (G-Sync too).
+- Recent games (the last ten, a clock in the ROM browser); a right click on the cartridge pulls it out of the
+  slot (Ctrl+E), another puts it back.
+- Messages appear in the middle of the picture.
+
 ## v1.0.3
 
 **The picture**

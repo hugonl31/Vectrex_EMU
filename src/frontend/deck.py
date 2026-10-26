@@ -104,6 +104,75 @@ def work_area(w):
     return 0, 0, w.winfo_screenwidth(), w.winfo_screenheight() - 60
 
 
+class Scroller:
+    """a scrolling area for a window's middle: what is put in .holder scrolls (the slim dark scrollbar, the mouse
+    wheel) when fit() gets less height than it needs - a 1080p screen at 125 / 150 % - and is shown whole otherwise"""
+    def __init__(self, parent, bg):
+        self.frame = tk.Frame(parent, bg=bg)
+        self.cv = tk.Canvas(self.frame, bg=bg, highlightthickness=0, bd=0)
+        self.holder = tk.Frame(self.cv, bg=bg)
+        self.win = self.cv.create_window(0, 0, window=self.holder, anchor='nw')
+        self.sbar = darkmenu.DScroll(self.frame, command=self.cv.yview, bg=bg)
+        self.cv.configure(yscrollcommand=self.sbar.set)
+        self.cv.pack(side='left', fill='both', expand=True)
+        self.cv.bind('<Configure>', lambda e: self.cv.itemconfigure(self.win, width=e.width))
+        self.on = False
+
+    def fit(self, max_h):
+        self.holder.update_idletasks()
+        w, h = self.holder.winfo_reqwidth(), self.holder.winfo_reqheight()
+        on = h > max_h
+        if on and not self.on:
+            self.sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
+        elif self.on and not on:
+            self.sbar.pack_forget()
+        self.on = on
+        self.cv.configure(width=w, height=min(h, max(150, int(max_h))), scrollregion=(0, 0, w, h))
+        if not on:
+            self.cv.yview_moveto(0)
+
+    def fit_window(self, t, margin=50):
+        """as tall as window t can be on its screen (its other parts and the title bar kept)"""
+        t.update_idletasks()
+        x0, y0, x1, y1 = work_area(t)
+        ui = t.winfo_fpixels('1i') / 96.0                        # (the title bar grows with the scaling)
+        self.fit((y1 - y0) - (t.winfo_reqheight() - self.cv.winfo_reqheight()) - int(margin * ui))
+
+    def wheel(self, e):
+        if self.on:
+            self.cv.yview_scroll(-1 if (getattr(e, 'delta', 0) > 0 or getattr(e, 'num', 0) == 4) else 1, 'units')
+
+    def bind_wheel(self, t):
+        for seq in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            t.bind(seq, self.wheel, add='+')
+
+    def see(self, w):
+        """scroll so that widget w (in holder) is in view"""
+        if not self.on:
+            return
+        try:
+            self.holder.update_idletasks()
+            y = w.winfo_rooty() - self.holder.winfo_rooty(); h = w.winfo_height()
+            total = max(1, self.holder.winfo_reqheight()); top = self.cv.canvasy(0); vis = self.cv.winfo_height()
+            if y < top:
+                self.cv.yview_moveto(y / float(total))
+            elif y + h > top + vis:
+                self.cv.yview_moveto((y + h - vis) / float(total))
+        except tk.TclError:
+            pass
+
+
+def on_screen(t):
+    """window t moved (if it must) so all of it is on its screen's desktop"""
+    t.update_idletasks()
+    x0, y0, x1, y1 = work_area(t)
+    w, h = t.winfo_reqwidth(), t.winfo_reqheight()
+    x, y = t.winfo_x(), t.winfo_y()
+    nx = max(x0, min(x, x1 - w)); ny = max(y0, min(y, y1 - h - 40))
+    if (nx, ny) != (x, y):
+        t.geometry('+%d+%d' % (nx, ny))
+
+
 def center(t, over=None):
     """a window placed in the middle of the emulator's (seen at once), drawn there before it shows"""
     over = over or getattr(V, 'APP_ROOT', None) or tk._default_root
@@ -181,6 +250,8 @@ class Deck:
             b.bind('<Button-1>', lambda e, st=st: self.show(st)); b.pack(side='left', padx=(0, 2))
             self.sbtn[st] = b
         self.body = tk.Frame(t, bg=BODY, highlightthickness=1, highlightbackground=EDGE2); self.body.pack(fill='x', padx=10)
+        self.sc = Scroller(self.body, BODY); self.sc.frame.pack(fill='both', expand=True)   # (a short screen: the strip scrolls)
+        self.sc.bind_wheel(t)
         self.inner = None
         foot = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); foot.pack(fill='x', pady=(10, 0))
         self.reset_b = _button(foot, 'Reset this strip', self.reset_strip, a, small=True); self.reset_b.pack(side='left', padx=(12, 0), pady=6)
@@ -205,6 +276,8 @@ class Deck:
         else:
             x = r.winfo_rootx() + max(0, (r.winfo_width() - t.winfo_reqwidth()) // 2)
             y = r.winfo_rooty() + max(0, (r.winfo_height() - t.winfo_reqheight()) // 3)
+        x0, y0, x1, y1 = work_area(t)                             # (all of it on the desktop)
+        x = max(x0, min(x, x1 - t.winfo_reqwidth())); y = max(y0, min(y, y1 - t.winfo_reqheight() - 40))
         t.geometry('+%d+%d' % (x, y))
         t.deiconify()
         try: V.dark_title(t)                                    # (the system's own title bar and close button - where
@@ -399,12 +472,18 @@ class Deck:
                         highlightbackground=EDGE2 if k == s else EDGE)
         if self.inner is not None:
             self.inner.destroy()
-        self.inner = tk.Frame(self.body, bg=BODY); self.inner.pack(fill='both', expand=True, padx=8, pady=8)
+        self.inner = tk.Frame(self.sc.holder, bg=BODY); self.inner.pack(fill='both', expand=True, padx=8, pady=8)
         self.box = None; self.parent = self.inner; self.bgc = BODY
         self.rows = []
         self.add_rows(self.spec(s))
         self.focus = min(self.focus, max(0, len(self.rows) - 1))
         self.sync_all()
+        try:
+            self.sc.fit_window(self.t)
+            if self.t.winfo_ismapped():
+                on_screen(self.t)
+        except tk.TclError:
+            pass
 
     def add_rows(self, rows):
         for row in rows:
@@ -701,6 +780,7 @@ class Deck:
                 k = live.index(self.focus) if self.focus in live else 0
                 self.focus = live[(k + (1 if 'v' in new else -1)) % len(live)]
                 self.rows[self.focus]['f'].update_idletasks()
+                self.sc.see(self.rows[self.focus]['f'])                # (the row in view on a short screen)
             r = self.rows[self.focus] if 0 <= self.focus < len(self.rows) else None
             if r and r['act'] and (r['dep'] is None or r['dep']()):
                 if '>' in b and (r['kind'] == 'scale' or '>' in new): r['act'](1)
@@ -990,7 +1070,7 @@ def setup_window(app, first=True):
     r = a.root
     x0, y0, x1, y1 = work_area(r)
     bw, bh = body.winfo_reqwidth(), body.winfo_reqheight() + 4
-    room = (y1 - y0) - top.winfo_reqheight() - foot.winfo_reqheight() - 60   # (60: the title bar and a margin)
+    room = (y1 - y0) - top.winfo_reqheight() - foot.winfo_reqheight() - int(60 * t.winfo_fpixels('1i') / 96.0)   # (the title bar, a margin)
     if bh > room:                                       # (not all of it fits: the boxes scroll)
         sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
         bh = max(200, room)

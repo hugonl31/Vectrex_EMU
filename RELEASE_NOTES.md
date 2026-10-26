@@ -65,7 +65,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Messages appear in the middle of the picture.
 - Fixed: the window could freeze while a Config slider was dragged (the brightness knob most often); the game
   went on underneath.
-- Fixed: the setup window ran off the bottom of smaller screens; it now scrolls, with Start playing always in view.
+- Fixed: the setup, Config, Controls and Help windows ran off the bottom of smaller screens (1080p at 125 / 150 %);
+  their middle now scrolls when needed, the buttons always in view.
 - A picture slower than 30 FPS (weak graphics with every effect on) is pointed out once - Quality > Optimize - and
   `cache/render_log.txt` records the graphics card's time per picture, to send along.
 

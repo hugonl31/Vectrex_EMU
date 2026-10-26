@@ -2278,6 +2278,13 @@ class App:
         if not geo:
             w, h, r = int(980 * ui), int(700 * ui), self.root
             geo = '%dx%d+%d+%d' % (w, h, r.winfo_rootx() + max(0, (r.winfo_width() - w) // 2), r.winfo_rooty() + max(0, (r.winfo_height() - h) // 3))
+        m = re.match(r'(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$', geo)          # (on the desktop, all of it: a short screen)
+        if m:
+            w, h, x, y = (int(v) for v in m.groups())
+            x0, y0, x1, y1 = deck.work_area(self.root)
+            w = min(w, x1 - x0 - 20); h = min(h, y1 - y0 - 60)
+            x = max(x0, min(x, x1 - w)); y = max(y0, min(y, y1 - h - 40))
+            geo = '%dx%d+%d+%d' % (w, h, x, y)
         t.geometry(geo)
         def close(e=None):
             try: self.help_geo = '%dx%d+%d+%d' % (t.winfo_width(), t.winfo_height(), t.winfo_x(), t.winfo_y())
@@ -2372,7 +2379,8 @@ class App:
         top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
         tk.Label(top, text='Esc: close   click a box, then a key or a button   right click: clear', fg=deck.DIM,
                  bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=12, pady=6)
-        area = tk.Frame(t, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); area.pack(padx=10, pady=(10, 0))
+        sc = deck.Scroller(t, deck.BG); sc.frame.pack(padx=10, pady=(10, 0)); sc.bind_wheel(t)   # (a short screen: it scrolls)
+        area = tk.Frame(sc.holder, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); area.pack()
         body = tk.Frame(area, bg=bg); body.pack(padx=12, pady=10)
         def section(r, caption):
             """a caption and a line above grid row r"""
@@ -2761,6 +2769,7 @@ class App:
         t.bind('<Escape>', lambda e: (cap.update(what=None), refresh(), 'break')[2] if cap['what'] else close())
         t.protocol('WM_DELETE_WINDOW', close)
         fill_menus(); refresh(); test()
+        sc.fit_window(t)
         t.update_idletasks()
         pos = getattr(self, 'ctl_pos', None)                    # (where it was last time, if still on a screen)
         vx, vy = t.winfo_vrootx(), t.winfo_vrooty()
@@ -2772,6 +2781,7 @@ class App:
             t.geometry('+%d+%d' % (r.winfo_rootx() + max(0, (r.winfo_width() - t.winfo_reqwidth()) // 2),
                                    r.winfo_rooty() + max(0, (r.winfo_height() - t.winfo_reqheight()) // 3)))
         t.deiconify()
+        deck.on_screen(t)
         deck.no_close_button(t)
         t.focus_force()
     def set_cart_hw(self, k):

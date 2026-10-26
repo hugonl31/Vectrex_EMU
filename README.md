@@ -2,7 +2,7 @@
 
 **A Vectrex emulator that doesn't try to be perfect. It tries to be a Vectrex.**
 
-<p align="center"><img src="docs/images/title.png" width="560" alt="Scramble in Vectrex_EMU: the tube in the Vectrex's plastic case, the ceiling light on the glass, the control deck below"></p>
+<p align="center"><img src="docs/images/title.png" width="560" alt="Web Wars in Vectrex_EMU: the tube in the Vectrex's plastic case, the ceiling light on the glass, the control deck below"></p>
 
 The Vectrex (GCE / Milton Bradley, 1982) is the only home console that ever drew its games with a real
 vector beam: one electron beam, steered by analog circuits, tracing every line straight onto the

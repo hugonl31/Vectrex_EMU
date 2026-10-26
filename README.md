@@ -2,7 +2,7 @@
 
 **A Vectrex emulator that doesn't try to be perfect. It tries to be a Vectrex.**
 
-<p align="center"><img src="docs/images/title.png" width="560" alt="Vectorblade in Vectrex_EMU: the tube in the Vectrex's plastic case, the ceiling light on the glass"></p>
+<p align="center"><img src="docs/images/title.png" width="560" alt="Scramble in Vectrex_EMU: the tube in the Vectrex's plastic case, the ceiling light on the glass, the control deck below"></p>
 
 The Vectrex (GCE / Milton Bradley, 1982) is the only home console that ever drew its games with a real
 vector beam: one electron beam, steered by analog circuits, tracing every line straight onto the
@@ -27,7 +27,8 @@ photo, recording and measurement, and every call on how it should look, sound an
   lag); the DAC and the analog side measured and modelled, the brightness knob at the back too.
   [The story](#12-the-beam-itself-four-test-cartridges-and-a-maze), with side-by-side comparisons.
 * **The PiTrex** - the Raspberry Pi cartridge emulated: its ARM processor (with a JIT compiler, fast enough
-  for the arcade emulators it runs), the Pi's hardware and its SD card. Its menu, Tempest, Battlezone, Elite,
+  for the arcade emulators it runs), the Pi's hardware and its SD card - and its USB port: the PC's keyboard
+  and mouse, so Elite and GS BASIC find their keyboard (Ctrl+K types). Its menu, Tempest, Battlezone, Elite,
   Vectorblade... [PiTrex](#the-pitrex-a-raspberry-pi-in-the-cartridge-slot).
 * **Quality profiles and Optimize** - Low, Medium, High or Custom, as in games; **Optimize** measures this PC once
   and turns off only what it has to, then says what it changed (Undo is one click). [Quality](#quality-for-any-pc).
@@ -38,6 +39,9 @@ photo, recording and measurement, and every call on how it should look, sound an
   balance with a neutral middle (the lines stay full-bright white, the glow takes the tint).
 * **The strip below the picture** - every part clickable shows a hand; a click on the on-screen display opens
   Config; the volume knob turns the moment you move; Recent games; a right click on the cartridge pulls it out.
+* **Logs to send along** - `cache/core_log.txt` (the emulator core's messages: for the PiTrex whether its JIT runs)
+  and `cache/render_log.txt` (the graphics card, the picture's size, the quality, and the time each picture takes);
+  a PC too slow for the effects is pointed out once. Smaller screens (1080p at 125 / 150 %): every window fits.
 
 ## Contents
 
@@ -97,7 +101,9 @@ with a short note on what goes there:
 | `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
 More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), `pitrex`,
-the PiTrex's SD card, and `cache`, working files only (the SD card images the UVMC2 and the PiTrex run from).
+the PiTrex's SD card, and `cache`, working files: the SD card images the UVMC2 and the PiTrex run from, and two logs
+to send along when something is wrong - `core_log.txt` (the emulator core's messages of the last start) and
+`render_log.txt` (the graphics card and the time each picture takes, every 10 seconds).
 
 ### What you add
 

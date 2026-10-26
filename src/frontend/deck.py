@@ -373,10 +373,10 @@ class Deck:
                     ('in', [('slider', 'buzz_vol', lambda: C().buzz_on)]),
                     ('check', 'Vectrex speaker', lambda: C().speaker_on, lambda: a.flip(a.run.crt, 'speaker_on'), None),
                     ('group', 'SPEECH MODULE (CONTROLLER PORT 2)'),
-                    ('slider', 'voice_vol', lambda: a.speech != 'off'),
+                    ('slider', 'voice_vol', lambda: a.speech in ('vecvoice', 'vecvox')),
                     ('choice', 'Speech module', [('Full-range speakers', lambda: C().voice_full, lambda: a.set_voice_full(True)),
                                                  ('Small speaker', lambda: not C().voice_full, lambda: a.set_voice_full(False))],
-                     lambda: a.speech != 'off')]
+                     lambda: a.speech in ('vecvoice', 'vecvox'))]
         if s == 'Vectrex unit':
             rows = [('group', 'WHICH VECTREX'),
                     ('choice', 'Unit', [(V.UNIT_NAMES[n].replace(' (measured)', ''), (lambda n=n: a.unit_name == n),

@@ -66,7 +66,7 @@ void e8910_render (unsigned char *buf, int len);
 extern unsigned char (*e6809_read8) (unsigned address);
 
 /* ---------- line capture ---------- */
-typedef struct { long x0, y0, x1, y1; unsigned char c; unsigned cyc, t0; } line_t;
+typedef struct { long x0, y0, x1, y1; unsigned char c, rgb; unsigned cyc, t0; } line_t;   /* (rgb: the 3D Imager's filter, imager.c) */
 #define MAXL 40000
 static line_t cur[MAXL], last[MAXL];
 static int ncur, nlast;
@@ -93,7 +93,8 @@ unsigned long vt_nlines;
 void vt_line (long x0, long y0, long x1, long y1, unsigned char c, unsigned cyc, unsigned t0)
 {
 	vt_nlines++;
-	if (ncur < MAXL) { line_t *l = &cur[ncur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->cyc = cyc; l->t0 = t0; }
+	extern unsigned char vt_line_rgb;
+	if (ncur < MAXL) { line_t *l = &cur[ncur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->rgb = vt_line_rgb; l->cyc = cyc; l->t0 = t0; }
 }
 
 /* ---------- stats ---------- */
@@ -379,6 +380,14 @@ static void stats (void)
 	{ extern void arm11_jit_stats (void); extern int vt_pitrex; if (vt_pitrex) { extern void pitrex_digest (void); arm11_jit_stats (); pitrex_digest (); } }
 }
 
+/* the game's title in the cartridge header (the first 64 bytes): does it hold this word? */
+static int memmem_title (const unsigned char *c, size_t n, const char *w)
+{
+	size_t L = strlen (w), m = n < 64 ? n : 64;
+	for (size_t i = 0; i + L <= m; i++) if (!memcmp (c + i, w, L)) return 1;
+	return 0;
+}
+
 int main (int argc, char **argv)
 {
 	if (argc < 4) { fprintf (stderr, "usage: vtest bios cart script [outdir]\n"); return 2; }
@@ -413,6 +422,12 @@ int main (int argc, char **argv)
 	else if (hw && !strcmp (hw, "hb512")) kind = 'r';
 	else if (hw && !strcmp (hw, "multi")) kind = 'm';
 	else if (hw && atoi (hw) == 0 && isdigit ((unsigned char) hw[0])) kind = 0;
+	{ /* a cartridge with 8K RAM at $2000 (vecx.c vt_cart_ram): by name, or Auto by the title in the header (AnimAction) */
+	  extern int vt_cart_ram; extern unsigned char vt_cram[0x2000];
+	  int auto_hw = !hw || (isdigit ((unsigned char) hw[0]) && atoi (hw) == 1);
+	  vt_cart_ram = (hw && !strcmp (hw, "ram")) || (auto_hw && n >= 48 && memmem_title (cart, n, "ANIMACTION"));
+	  if (hw && !strcmp (hw, "ram")) kind = 'p';
+	  memset (vt_cram, 0, sizeof vt_cram); }
 	if (kind == 0) {
 		memcpy (cart + 32768, cart, 32768); memset (cart + 65536, 0xff, sizeof cart - 65536);
 	} else if (kind == 'm') {                           /* Sean Kelly's Multi-Cart (latch at $7FFF) */
@@ -479,7 +494,12 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "dumpvec")) {    /* the last frame's vectors as text: x0 y0 x1 y1 c */
 			snprintf (path, sizeof path, "%s/%s", outdir, a1);
 			FILE *vf = fopen (path, "w");
-			for (int i = 0; i < nlast; i++) fprintf (vf, "%ld %ld %ld %ld %d %u %u\n", last[i].x0, last[i].y0, last[i].x1, last[i].y1, last[i].c, last[i].cyc, last[i].t0);
+			{ extern int vt_imager;                 /* (with the 3D Imager: each line's colour as an 8th column) */
+			  for (int i = 0; i < nlast; i++) {
+				fprintf (vf, "%ld %ld %ld %ld %d %u %u", last[i].x0, last[i].y0, last[i].x1, last[i].y1, last[i].c, last[i].cyc, last[i].t0);
+				if (vt_imager) fprintf (vf, " %d", last[i].rgb);
+				fprintf (vf, "\n");
+			  } }
 			fclose (vf);
 		}
 		else if (!strcmp (cmd, "slope")) {      /* mean tilt of the horizontal vectors (zero-ref drift) */
@@ -500,6 +520,11 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "pxram")) { extern void pitrex_ramdump (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); pitrex_ramdump (path); }
 		else if (!strcmp (cmd, "jitmap")) { extern void arm11_jit_map (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); arm11_jit_map (path); }
 		else if (!strcmp (cmd, "pxprof")) { extern void pitrex_prof_dump (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); pitrex_prof_dump (path); }
+		else if (!strcmp (cmd, "pen")) {         /* pen X Y TOUCH: the light pen (VT_LIGHTPEN) at X, Y (the lines' units), touching or not */
+			extern void vt_set_analog (int id, double v);
+			char a3[64] = "1"; sscanf (line, "%*s %*s %*s %63s", a3);
+			vt_set_analog (24, atof (a1)); vt_set_analog (25, atof (a2)); vt_set_analog (26, atof (a3));
+		}
 		else if (!strcmp (cmd, "usbkey")) {      /* usbkey MODS KEY (hex HID usages; 0 0: all keys up): a USB keyboard report */
 			extern void vt_usb_report (int id, const unsigned char *b);
 			unsigned char r[4] = { (unsigned char) strtol (a1, 0, 16), (unsigned char) strtol (a2, 0, 16), 0, 0 };

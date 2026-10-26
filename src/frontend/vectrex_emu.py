@@ -821,7 +821,8 @@ class Audio:
 # the cartridge boards (Vectrex > Cartridge hardware): conf value -> menu label
 CART_HW = {'auto': "Auto (by the ROM's size)", 'off': 'Off - bone stock, 32 KB',
            'pb6': '64 KB, PB6 bank switching', 'vb': 'Vectorblade / MiSTer flash, 4 x 48 KB',
-           'hb512': '512 KB flash with bank latch (HB v2 board)', 'multi': '1 MB multi-cart (4 KB pages, latch at $7FFF)'}
+           'hb512': '512 KB flash with bank latch (HB v2 board)', 'multi': '1 MB multi-cart (4 KB pages, latch at $7FFF)',
+           'ram': 'ROM + 8 KB RAM at $2000 (AnimAction)'}
 
 # ------------------------------------------------------------------ overlays
 # The screen overlays: MiSTer .art files (or PNGs) named like the ROM, in the overlays folder next to the
@@ -890,7 +891,15 @@ ART_ALIAS = {'mr. boston clean sweep': 'Clean Sweep'}
 ART_ADJ_DEFAULT = {'art_dx': 0.0, 'art_dy': 0.0, 'art_scale': 1.0}
 
 # controller port 2 (Vectrex > Controller port 2): conf value -> menu label
-PORT2 = {'off': 'Joystick', 'vecvoice': 'VecVoice speech (SP0256)', 'vecvox': 'VecVox speech (SpeakJet)'}
+PORT2 = {'off': 'Joystick', 'vecvoice': 'VecVoice speech (SP0256)', 'vecvox': 'VecVox speech (SpeakJet)',
+         'imager': '3D Imager (colour goggles)', 'lightpen': 'Light pen (the mouse)'}
+
+
+def imager_disc(rom):
+    """the 3D Imager's disc for a game (core imager.c, VT_IMAGER): 3D Mine Storm's has its own colours; Narrow
+    Escape's and Crazy Coaster's - and any other game's - are about thirds"""
+    n = os.path.basename(rom or '').lower()
+    return 'mine' if 'mine' in n and '3d' in n else 'coaster' if 'coaster' in n else 'narrow'
 
 # ------------------------------------------------------------------ emulator link
 # VecFever .v4e files (v4e.py): unpacked into the folder 'v4e' next to the settings, where the game's save (the
@@ -1082,7 +1091,11 @@ class Core:
         # bone-stock Vectrex with a plain 32K cartridge
         env['VT_CARTHW'] = {'auto': '1', 'off': '0'}.get(cart_hw, cart_hw)
         env['VT_POWERSEED'] = str(random.getrandbits(31))         # (the RAM's random state at every power-on)
-        if speech != 'off' and sp_rom():
+        if speech == 'imager':
+            env['VT_IMAGER'] = imager_disc(rom)                     # (the 3D Imager's goggles on port 2, imager.c)
+        elif speech == 'lightpen':
+            env['VT_LIGHTPEN'] = '1'                                # (the light pen on port 2: the mouse, imager.c)
+        elif speech != 'off' and sp_rom():
             env['VT_VECVOICE'] = sp_rom()                           # (a speech accessory on port 2)
             env['VT_SPEECHDEV'] = speech
             env['VT_SPEECHOUT'] = '1'                               # (its sound on a channel of its own)
@@ -1213,19 +1226,24 @@ class Core:
         tw = time.perf_counter()
         h = self._read(10)
         self.wait_s = time.perf_counter() - tw                  # (the core emulating the frame: its own process)
-        if h[:2] != b'VF':
+        if h[:2] not in (b'VF', b'VC'):
             raise IOError('bad frame header %r' % h)
+        col = h[1:2] == b'C'                                    # ('VC': the 3D Imager - each line's colour follows the lines)
         n, ns, ft = struct.unpack('<HHI', h[2:])
         if ft < self.ft_last: self.ft_hi += 1 << 32                   # (32-bit cycle counter wraps)
         self.ft_last = ft; self.frame_t0 = self.ft_hi + ft
         two = ns & 0x8000; ns &= 0x7fff                # (bit 15: two channels - the console, the speech module)
-        body = self._read(n * 13 + ns * (4 if two else 2))             # 16-bit samples
+        body = self._read(n * 13 + (n if col else 0) + ns * (4 if two else 2))   # 16-bit samples
+        if col:                                                 # (the colours out of the way: the rest as always)
+            cols, body = body[n * 13:n * 14], body[:n * 13] + body[n * 14:]
         if _np is not None:                                     # (numpy: the records in one go, the same tuples)
             self.arr = _np.frombuffer(body, dtype=LINE_DT, count=n)
             lines = Lines(self.arr.tolist())
-            A = _np.empty((n, 7), dtype=_np.float64)
+            A = _np.empty((n, 8 if col else 7), dtype=_np.float64)
             for i, f in enumerate(('x0', 'y0', 'x1', 'y1', 'c', 'e', 't')):
                 A[:, i] = self.arr[f]
+            if col:                                             # (an 8th column: the 3D Imager's filter, vecrender IMAGER_RGB)
+                A[:, 7] = _np.frombuffer(cols, dtype=_np.uint8)
             lines.np = A
         else:
             self.arr = None
@@ -1349,7 +1367,12 @@ class Runner(threading.Thread):
                         self.pend = [cp, t_next, t0, self.latest_len]
                     else:
                         sh = (t0 - self.pend[2]) % (1 << 32)
-                        self.pend[0] = list(self.pend[0]) + [ln[:6] + (ln[6] + sh,) if len(ln) > 6 else ln for ln in self.latest]
+                        pa, pb = getattr(self.pend[0], 'np', None), getattr(self.latest, 'np', None)
+                        self.pend[0] = Lines(list(self.pend[0]) + [ln[:6] + (ln[6] + sh,) if len(ln) > 6 else ln for ln in self.latest])
+                        if (pa is not None and pb is not None and pa.shape[1] == pb.shape[1]
+                                and len(pa) + len(pb) == len(self.pend[0])):   # (the arrays joined too: the 3D Imager's colours)
+                            pb = pb.copy(); pb[:, 6] += sh
+                            self.pend[0].np = _np.concatenate([pa, pb])
                         self.pend[3] += self.latest_len
                     if self.pend[3] >= 0.015:
                         self.queue.append(tuple(self.pend)); self.pend = None   # (t_next: its start)
@@ -1415,7 +1438,7 @@ class App:
         self.inp = Input(ctl)
         self.audio = Audio() if IS_WIN else osdep.Audio(RATE)
         self.speech = c0.get('speech', 'vecvoice' if c0.get('vecvoice') else 'off')   # (port 2: a speech accessory)
-        if self.speech not in PORT2 or not sp_rom():
+        if self.speech not in PORT2 or (self.speech in ('vecvoice', 'vecvox') and not sp_rom()):
             self.speech = 'off'
         self.sd_dir = _card_dir(c0.get('uvm2_sd_dir'), SD_DEFAULT)   # the UVMC2's SD card
         ensure_sd_dir(self.sd_dir)                              # (plug and play: there from the first start)
@@ -1617,6 +1640,8 @@ class App:
         self.screen.bind('<ButtonRelease-1>', lambda e: self.mouse_button(1, False), add='+')
         self.screen.bind('<ButtonPress-3>', lambda e: self.mouse_button(3, True), add='+')
         self.screen.bind('<ButtonRelease-3>', lambda e: self.mouse_button(3, False), add='+')
+        self.screen.bind('<ButtonPress-2>', lambda e: self.mouse_button(2, True), add='+')
+        self.screen.bind('<ButtonRelease-2>', lambda e: self.mouse_button(2, False), add='+')
         self.screen.bind('<Double-Button-1>', self.browse_double)
         vis = lambda: self.browser_geom()[3]
         for key, f in (('<Up>', lambda: self.browse(-1)), ('<Down>', lambda: self.browse(1)),
@@ -1898,7 +1923,9 @@ class App:
             m.add_separator()
             for k, lbl, tip in (('off', 'Port 2: Joystick', "The second player's controller."),
                                 ('vecvoice', 'Port 2: VecVoice', "A speech module (SP0256 chip) in port 2, for games that talk. Needs the speech ROM in the system folder."),
-                                ('vecvox', 'Port 2: VecVox', "A speech module (SpeakJet chip) in port 2, for games that talk. Needs the speech ROM in the system folder.")):
+                                ('vecvox', 'Port 2: VecVox', "A speech module (SpeakJet chip) in port 2, for games that talk. Needs the speech ROM in the system folder."),
+                                ('lightpen', 'Port 2: Light pen', "The light pen in port 2, for Art Master, AnimAction and Melody Master: the mouse is the pen - point at the picture, hold the left button to touch the screen."),
+                                ('imager', 'Port 2: 3D Imager', "The 3D Imager goggles in port 2: its spinning colour disc makes 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster colourful (the disc spins up first).")):
                 check(m, lbl, '', lambda k=k: self.speech == k, lambda k=k: self.set_speech(k), tip)
             if DARK_MENU:                                       # (Config: the Config window at once)
                 mb.add_command(label='Config', command=self.open_deck)
@@ -2797,13 +2824,14 @@ class App:
         SP0256-AL2) or the VecVox (a SpeakJet, spoken here with the SP0256's voice at the SpeakJet's
         pitch and lengths). Both need the SP0256-AL2 ROM in the bios folder (sp0256-al2.bin, from
         SP_ROM_URL); the Vectrex is switched off and on with the new setting."""
-        if k != 'off' and not sp_rom():
+        if k in ('vecvoice', 'vecvox') and not sp_rom():
             self.speech_rom_help()
             return
         self.speech = k
         self.restart(self.args.rom)
         self.show_look('port 2: %s' % PORT2[k].upper())
-        self.flash('CONTROLLER PORT 2:', {'off': 'JOYSTICK', 'vecvoice': 'VECVOICE SPEECH', 'vecvox': 'VECVOX SPEECH'}[k])
+        self.flash('CONTROLLER PORT 2:', {'off': 'JOYSTICK', 'vecvoice': 'VECVOICE SPEECH', 'vecvox': 'VECVOX SPEECH',
+                                          'imager': '3D IMAGER', 'lightpen': 'LIGHT PEN (THE MOUSE)'}[k])
     def speech_rom_help(self):
         """a speech module chosen without the speech ROM: a small window saying where to get it and where it
         goes, with buttons for the download page and the system folder (styled as the Config window)"""
@@ -2929,14 +2957,14 @@ class App:
         return dict(cx=x - 3.6 * r, cy=y, r=r, kind=self.speech,
                     label='P2 PORT')
     def port2_click(self, e):
-        """a click on the port 2 pictogram: joystick -> VecVox -> VecVoice -> joystick (without the speech ROM:
-        its help, as in the menu)"""
+        """a click on the port 2 pictogram: joystick -> VecVox -> VecVoice -> 3D Imager -> light pen -> joystick
+        (without the speech ROM: joystick -> 3D Imager -> light pen -> joystick)"""
         st = self.port2_state()
         if not st or math.hypot(e.x - st['cx'], e.y - st['cy']) > 1.3 * st['r']:
             return False
-        nxt = {'off': 'vecvox', 'vecvox': 'vecvoice', 'vecvoice': 'off'}.get(self.speech, 'off')
-        if nxt != 'off' and not sp_rom():
-            nxt = 'off' if self.speech != 'off' else nxt        # (no ROM: the menu's help shows, port 2 stays)
+        nxt = {'off': 'vecvox', 'vecvox': 'vecvoice', 'vecvoice': 'imager', 'imager': 'lightpen', 'lightpen': 'off'}.get(self.speech, 'off')
+        if nxt in ('vecvox', 'vecvoice') and not sp_rom():
+            nxt = 'imager'                                      # (no speech ROM: the speech modules skipped)
         self.set_speech(nxt)
         return True
     def osd_state(self):
@@ -3384,6 +3412,12 @@ class App:
             pl, pt, pr, pb = self.pic_rect()
             if pl <= e.x <= pr and pt <= e.y <= pb:
                 return self.mouse_button(1, True)
+        if self.pen_live() and not hit:                          # (the light pen: a press on the picture: button 1, draw)
+            pl, pt, pr, pb = self.pic_rect()
+            if pl <= e.x <= pr and pt <= e.y <= pb:
+                self.pen_update(e)
+                self.mouse_button(1, True)
+                return 'break'
         if self.mouse_stick and self.run.power and not hit:      # (steering with the mouse: a click on the picture fires)
             pl, pt, pr, pb = self.pic_rect()
             if pl <= e.x <= pr and pt <= e.y <= pb:
@@ -4690,6 +4724,43 @@ class App:
         self.apply_scale()
         self.pointer_moved()
 
+    def pen_cursor(self):
+        """the mouse pointer while the light pen is in port 2: the pen of its pictogram (vecrender LPEN_ICON), small,
+        green with a dark edge, its tip the hot spot - a Windows .cur drawn once into the cache folder at the screen's
+        scaling; elsewhere (or if that fails) Tk's own pencil"""
+        if getattr(self, 'pen_cur', None):
+            return self.pen_cur
+        self.pen_cur = 'pencil'
+        if not IS_WIN:
+            return self.pen_cur
+        try:
+            from PIL import Image, ImageDraw
+            n = max(32, min(96, int(round(32 * self.root.winfo_fpixels('1i') / 96.0))))   # (the pointer's size)
+            ss = 4; N = n * ss
+            img = Image.new('RGBA', (N, N), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
+            k = N / 104.0                                   # (the icon's 0..100 square, its tip near the corner)
+            pts = lambda pl: [(x * k, (102 - y) * k) for x, y in pl]   # (turned up: the tip top left, the wire bottom right)
+            for col, wid in (((5, 8, 10, 255), 3.2), ((102, 170, 136, 255), 1.3)):   # (the dark edge, then the green)
+                for pl in vecrender.LPEN_ICON:
+                    d.line(pts(pl), fill=col, width=max(1, int(round(wid * ss * n / 32.0))), joint='curve')
+            img = img.resize((n, n), Image.LANCZOS)
+            hx, hy = int(round(12 * k / ss)), int(round((102 - 88) * k / ss))   # (the hot spot: the pen's tip)
+            px = img.tobytes('raw', 'BGRA')
+            rows = [px[(n - 1 - y) * n * 4:(n - y) * n * 4] for y in range(n)]          # (bottom-up)
+            mask_row = ((n + 31) // 32) * 4
+            dib = struct.pack('<IiiHHIIiiII', 40, n, 2 * n, 1, 32, 0, n * n * 4 + mask_row * n, 0, 0, 0, 0)
+            body = dib + b''.join(rows) + bytes(mask_row * n)
+            head = struct.pack('<HHH', 0, 2, 1) + struct.pack('<BBBBHHII', n % 256, n % 256, 0, 0, hx, hy, len(body), 22)
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            fn = os.path.join(CACHE_DIR, 'light_pen.cur')
+            with open(fn, 'wb') as f:
+                f.write(head + body)
+            spec = '{@%s}' % fn.replace('\\', '/')
+            self.root.configure(cursor=spec)                # (Tk can read it: else the pencil)
+            self.pen_cur = spec
+        except Exception:   # noqa
+            self.pen_cur = 'pencil'
+        return self.pen_cur
     def set_cursor(self, c):
         """the pointer over the window - set only when it changes (a configure() makes Tk redraw the frame)"""
         if getattr(self, 'cursor_now', '') != c:
@@ -4805,12 +4876,13 @@ class App:
         k = (1.0 / max(1.0, self.hz)) / per             # (the light of one refresh: the frame's timeline squeezed)
         la = a[0]
         if _np is not None:
-            A = _np.asarray(la, dtype=_np.float64)
+            arr = lambda ls: ls.np if getattr(ls, 'np', None) is not None and len(ls.np) == len(ls) else ls   # (with the 3D
+            A = _np.asarray(arr(la), dtype=_np.float64)                                                       #  Imager's colours)
             if A.ndim != 2 or not len(A):
                 return
-            A = A[:, :7].copy()
+            A = A.copy()
             if b is not None and alpha > 0 and len(b[0]) == len(la):
-                B = _np.asarray(b[0], dtype=_np.float64)[:, :7]
+                B = _np.asarray(arr(b[0]), dtype=_np.float64)
                 if (_np.abs(B[:, :4] - A[:, :4]).max() < self.SMOOTH_MATCH) and (B[:, 4] == A[:, 4]).all():
                     A[:, :4] += (B[:, :4] - A[:, :4]) * alpha
             A[:, 5] *= k; A[:, 6] *= k
@@ -4826,12 +4898,37 @@ class App:
             self.sm_alt_for = a
             self.sm_alt = vecrender.frame_alternates(self.sm_st, a[0])
         if self.sm_alt and getattr(self, 'sm_prev', None):
-            P = _np.asarray(self.sm_prev[0], dtype=_np.float64)[:, :7].copy() if _np is not None else None
+            pv = self.sm_prev[0]
+            pv = pv.np if getattr(pv, 'np', None) is not None and len(pv.np) == len(pv) else pv     # (with its colours)
+            P = _np.asarray(pv, dtype=_np.float64).copy() if _np is not None else None
+            if P is not None and not isinstance(lines, list) and P.ndim == 2 and P.shape[1] != lines.shape[1]:
+                w_ = min(P.shape[1], lines.shape[1]); P = P[:, :w_]; lines = lines[:, :w_]   # (the Imager plugged in or out)
             if P is not None and P.ndim == 2 and len(P):
                 P[:, 5] *= k; P[:, 6] *= k
                 lines = _np.concatenate([P, lines]) if _np is not None and not isinstance(lines, list) else lines
         r.frame_t0 = a[2] + ((b[2] - a[2]) * alpha if b is not None else 0.0)
         r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
+    def pen_live(self):
+        """the light pen in port 2, the game running: the mouse is the pen"""
+        return (getattr(self, 'speech', 'off') == 'lightpen' and self.run.power and not self.browser
+                and not self.run.paused and self.ren is not None and hasattr(self.ren, 'window_to_vectrex'))
+    def pen_update(self, e=None, down=None):
+        """the light pen to the core (imager.c lp_set): where the mouse points on the picture - held to the screen
+        while the pointer is over the picture, as the manuals say (the buttons are the controller's: mouse_button)"""
+        if e is not None:
+            self.pen_xy = (e.x, e.y)
+        xy = getattr(self, 'pen_xy', None)
+        if not self.pen_live() or xy is None:
+            if getattr(self, 'pen_sent', None) != 'off':
+                self.core.set_analog(26, 0.0); self.pen_sent = 'off'
+            return
+        pl, pt, pr, pb = self.pic_rect()
+        on = pl <= xy[0] <= pr and pt <= xy[1] <= pb
+        x, y = self.ren.window_to_vectrex(xy[0], xy[1])
+        touch = 1.0 if on else 0.0
+        self.core.set_analog(24, x); self.core.set_analog(25, y); self.core.set_analog(26, touch)
+        self.pen_sent = touch
+        self.pen_over = on
     def mouse_moved(self, e):
         if e is not None and not self.mouse_stick and self.usb_live():     # (a UVMC2: the USB mouse moves)
             p = (e.x_root, e.y_root)
@@ -4849,6 +4946,11 @@ class App:
             self.usb_last = p
         elif e is None:
             self.usb_last = None
+        if getattr(self, 'speech', 'off') == 'lightpen':        # (the light pen: the mouse is the pen)
+            if e is None:
+                self.pen_xy = None
+            self.pen_update(self.px_event(e) if e is not None else None)
+            return
         if not self.mouse_stick or not self.run.power or self.browser or e is None:
             self.inp.mouse = None if not getattr(self, 'mouse_btn', 0) else (0, 0, self.mouse_btn)
             return
@@ -4860,6 +4962,13 @@ class App:
     def mouse_button(self, b, down):
         """a mouse button steering player 1: 1 = the Vectrex's button 4 (fire), 3 = button 1 - or, a UVMC2
         game, its USB mouse's buttons"""
+        if getattr(self, 'speech', 'off') == 'lightpen':        # (the light pen: the mouse buttons are player 1's buttons
+            bit = {1: 1, 3: 2, 2: 4}.get(b, 0)                  #  1, 2, 3 - Art Master: draw, straight line, menu)
+            pb_ = getattr(self, 'pen_btn', 0)
+            pb_ = (pb_ | bit) if (down and self.pen_live()) else (pb_ & ~bit)
+            self.pen_btn = pb_
+            self.inp.mouse = (0, 0, pb_) if pb_ else None
+            return None
         if not self.mouse_stick and self.usb_live():
             bit = {1: 1, 3: 2, 2: 4}.get(b, 0)
             self.usb_btn = (self.usb_btn | bit) if down else (self.usb_btn & ~bit)
@@ -4874,14 +4983,15 @@ class App:
         return None
     def pointer_moved(self, e=None):
         """the mouse pointer: in full screen it hides 2 s after it last moved (a hand on the volume knob)"""
-        self.set_cursor('hand2' if getattr(self, 'hand_hover', False) or getattr(self, 'kdrag', None) else '')
+        self.set_cursor('hand2' if getattr(self, 'hand_hover', False) or getattr(self, 'kdrag', None) else
+                        self.pen_cursor() if self.pen_live() else '')   # (the light pen: a pen, its tip the hot spot)
         if getattr(self, 'hide_job', None):
             self.root.after_cancel(self.hide_job); self.hide_job = None
         if self.full:
             self.hide_job = self.root.after(2000, self.hide_pointer)
     def hide_pointer(self):
         self.hide_job = None
-        if self.full:
+        if self.full and not self.pen_live():               # (the light pen: its pointer stays)
             self.set_cursor('none')
 
     def draw(self, lines):
@@ -5118,7 +5228,7 @@ class App:
         vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('MONITOR', '%d HZ' % round(self.disp_fps), g),
                 ('EMU RATE', '--' if idle else '%d%%' % self.speed_shown(), g if idle else self.speed_color(2)),
                 ('VOL', '%d%%' % round(self.run.crt.volume * 100) if self.run.power else 'OFF', g)]
-        if getattr(self, 'speech', 'off') != 'off':             # (a speech module plugged in: its volume too)
+        if getattr(self, 'speech', 'off') in ('vecvoice', 'vecvox'):   # (a speech module plugged in: its volume too)
             vals.append(('SPEECH VOL', '%d%%' % round(self.run.crt.voice_vol * 100), g))
         if (self.args.rom or '').lower().endswith('.um2'):     # (a UVMC2 game: its chip's speed, the game's own frame
             #  rate - a 3D game draws fewer new pictures than the 50 Hz it refreshes the tube with - and the threads)

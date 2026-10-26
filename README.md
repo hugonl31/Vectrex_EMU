@@ -19,6 +19,21 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.0.5
+
+* **The 3D Imager** - GCE's spinning-disc goggles on controller port 2: 3D Mine Storm, 3D Narrow Escape and
+  3D Crazy Coaster in colour. The game drives the disc's motor and times its pictures from the disc's index hole,
+  as on the real goggles - so the disc spins up when the game starts, the colours run wild for a few seconds and
+  then settle. Click the P2 PORT pictogram until it shows the goggles.
+* **The light pen** - the mouse is GCE's light pen (the pointer turns into a small green pen): Art Master,
+  AnimAction and Melody Master. The pen sees the real beam as it passes - Art Master's cursor follows it by its
+  tracking circle, as on a real Vectrex. Left button = draw, right = straight line, middle = menu.
+* **AnimAction's cartridge RAM** - its 8 KB of RAM at $2000, found by itself.
+
+<a href="docs/images/v1.0.5/lightpen.jpg"><img src="docs/images/v1.0.5/lightpen_small.jpg" width="330" alt="Art Master's SKETCH, drawn with the mouse as the light pen"></a>
+<a href="docs/images/v1.0.5/imager.jpg"><img src="docs/images/v1.0.5/imager_small.jpg" width="330" alt="3D Narrow Escape in colour through the emulated 3D Imager"></a><br>
+<sub>Art Master drawn with the light pen (the mouse), and 3D Narrow Escape through the 3D Imager.</sub>
+
 ## New in v1.0.4
 
 * **The beam, simulated** - the spot itself now follows the analog circuits: it lags behind the integrators, slows
@@ -60,6 +75,7 @@ photo, recording and measurement, and every call on how it should look, sound an
   [menus and the Config window](#menus-and-the-config-window), [quality](#quality-for-any-pc),
   [the screen](#the-screen-60-hz-high-refresh-g-sync), [keys](#keys), [TV mode shortcuts](#tv-mode-shortcuts),
   [controls](#controls), [overlays](#overlays), [speech modules](#speech-modules),
+  [the 3D Imager and the light pen](#the-3d-imager-and-the-light-pen),
   [cartridge hardware](#cartridge-hardware), [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2),
   [the PiTrex](#the-pitrex-a-raspberry-pi-in-the-cartridge-slot), [Mac and Linux notes](#mac-and-linux-notes)
 * [Building from source](#building-from-source) - for tinkerers
@@ -220,6 +236,8 @@ slider and see it at once, hold H to compare with how it was.
 * Bank-switched cartridges: 64K (PB6), Malban's Vectorblade cartridge with its flash save (as on MiSTer),
   a 512K flash cartridge with a bank latch, 1 MB multi-carts (as Sean Kelly's Multi-Cart)
 * VecFever `.v4e` files load like any ROM: plain ROMs, the DS2431 save chip, 2 x 48K and 4 x 48K banks
+* **The 3D Imager** (its spinning colour disc, spin-up and all: 3D Mine Storm, 3D Narrow Escape, 3D Crazy Coaster in
+  colour) and **the light pen** (the mouse: Art Master, AnimAction, Melody Master) on controller port 2
 * Sampled sound and speech through the Vectrex's DAC, and the VecVoice / VecVox speech accessories
 * Overlays (MiSTer `.art` and PNG), flat over the tube, lit by the room, with forty years of
   scratches made on the graphics card
@@ -1010,6 +1028,26 @@ From the AtariVox+ list ([AtariAge](https://atariage.com/store/index.php?l=produ
 and [Revival Studios](https://www.revival-studios.com/vectrex.php); the lists date from 2009-2015 and
 partly disagree (Space Frenzy is filed under VecVoice in places - its speech is SpeakJet codes). Malban's
 two games are on none of them; newer games may be missing too.
+
+### The 3D Imager and the light pen
+
+GCE's two accessories for controller port 2 - click the P2 PORT pictogram below the picture (or Controls > Port 2)
+until it shows the one you want:
+
+* **The 3D Imager** (1983): goggles with a disc spinning in front of the eyes, half black, half red, green and blue
+  filters. The game drives the disc's motor itself and times its pictures from a hole in the disc, so each line is
+  seen through the filter passing at that moment: 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster in colour. As
+  on the real goggles the disc spins up when the game starts (about ten seconds, the colours wild) and then holds
+  its speed. Shown in colour, both eyes' pictures together (no 3D yet).
+* **The light pen** (1983): a light sensor in a pen; when the beam passes under its tip the game knows where it
+  points. Here the mouse is the pen (the pointer turns into a small green pen): over the picture it is held to the
+  screen, and the mouse buttons are player 1's buttons 1, 2 and 3 (Art Master: draw, straight line, menu). For Art
+  Master, AnimAction and Melody Master. The pen sees only what the game draws: to drag the cursor, put the pointer
+  on it, hold the left button and move at a steady pace (too fast and the cursor lets go: go back to it).
+  AnimAction's cartridge has RAM of its own (8 KB at $2000), found by itself (Cartridge hardware: Auto).
+
+<a href="docs/images/v1.0.5/lightpen.jpg"><img src="docs/images/v1.0.5/lightpen_small.jpg" width="330" alt="Art Master's SKETCH, drawn with the mouse as the light pen"></a>
+<a href="docs/images/v1.0.5/imager.jpg"><img src="docs/images/v1.0.5/imager_small.jpg" width="330" alt="3D Narrow Escape in colour through the emulated 3D Imager"></a><br>
 
 ### Cartridge hardware
 

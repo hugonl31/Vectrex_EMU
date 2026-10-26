@@ -99,6 +99,18 @@ TOPICS = [
          "four buttons held for a second (player 1's controller or keys) - up: the ROM browser, down: the RESET "
          "button, left: controller port 2 VecVox / joystick, right: the overlay on / off. Every game with a "
          "controller only. Switch them off for a game that uses that combination (one switch for all)."),
+('item', 'Port 2: Light pen', "GCE's light pen (1983) for Art Master, AnimAction and Melody Master: a light sensor in its tip "
+         "that the game reads when the beam passes under it - so the game knows where it points. Here the mouse is the pen: "
+         "the pointer becomes a small pen, and over the picture the pen is held to the screen. The mouse buttons are "
+         "player 1's controller buttons: left = button 1 (Art Master: draw), right = button 2 (a straight line), middle = "
+         "button 3 (the menu). The pen sees only where the game draws: to drag the cursor, start on it and move steadily. AnimAction needs its cartridge's "
+         "own RAM, found by itself (Cartridge hardware: Auto)."),
+('item', 'Port 2: 3D Imager', "GCE's 3D Imager (1983): goggles with a spinning disc in front of the eyes - half "
+         "of it black, half red, green and blue filters - that turned the white lines into colour (and 3D: each eye saw "
+         "every other picture). For 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster. The game drives the disc's "
+         "motor itself and times its pictures from a hole in the disc, so at the start the disc spins up (about ten "
+         "seconds), the colours run wild, and then they settle as the game holds the disc at speed - as on the real "
+         "goggles. Shown in colour; the two eyes' pictures together (no 3D yet). Click the P2 PORT pictogram to plug it in."),
 ('item', 'Port 2: Joystick / VecVoice / VecVox', "The second joystick, or a speech accessory plugged in there: the VecVoice "
          "(Richard Hutchinson; a GI SP0256-AL2 speech chip) or the VecVox (Alex Herbert; a SpeakJet chip). "
          "The SpeakJet itself can not be emulated exactly (its workings are unknown), so the VecVox speaks "
@@ -481,7 +493,7 @@ TOPICS = [
          "- the screen has to wait."),
 ('item', 'Screen', "A 9-inch tube driven by analog X/Y integrators: no pixels, no picture memory."),
 ('item', 'Controller', "An analog stick and four buttons; two controller ports. Accessories included a "
-         "3D imager (spinning-disc 3D glasses) and a light pen."),
+         "3D imager (spinning-disc colour and 3D goggles) and a light pen - both emulated: Controls > Port 2."),
 ]),
 
 ('carts', 'Cartridges', [

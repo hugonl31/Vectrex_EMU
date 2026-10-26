@@ -3,6 +3,22 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.5
+
+**The 3D Imager**
+- GCE's goggles on controller port 2 (click the P2 PORT pictogram, or Controls > Port 2): the disc's motor driven
+  by the game through the AY's port A, spinning up and coasting as a motor with a flywheel does; the index hole
+  pulses port 2's button 4 and the VIA's CA1 once a turn; each line coloured by the filter in front of the eye at
+  that moment. 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster in colour (both eyes together, no 3D yet).
+- Smooth motion keeps the colours.
+
+**The light pen**
+- The mouse is the pen: it fires when the emulated beam's lit spot passes under it, once per pass (so Art Master's
+  tracking circle is seen dot by dot and its cursor follows the pen). Over the picture the pen is held to the
+  screen; the mouse buttons are player 1's buttons 1, 2 and 3 (Art Master: draw, straight line, menu).
+- The pointer turns into a small green pen while the light pen is in port 2.
+- Art Master, AnimAction and Melody Master run; AnimAction's cartridge RAM (8 KB at $2000) is found by its title.
+
 ## v1.0.4
 
 **The beam, simulated**

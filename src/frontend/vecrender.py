@@ -1685,6 +1685,31 @@ VOICE_ICON = [
     [(88.4, 55.5), (89.2, 56.8), (89.8, 58.2), (90.3, 59.6), (90.7, 61.0), (90.9, 62.5), (91.0, 64.0), (90.9, 65.5), (90.7, 67.0), (90.3, 68.4), (89.8, 69.8), (89.2, 71.2), (88.4, 72.5)],
     [(94.2, 51.6), (95.3, 53.5), (96.3, 55.4), (97.0, 57.5), (97.6, 59.6), (97.9, 61.8), (98.0, 64.0), (97.9, 66.2), (97.6, 68.4), (97.0, 70.5), (96.3, 72.6), (95.3, 74.5), (94.2, 76.4)],
 ]
+# the 3D Imager (port 2): the goggles, the colour disc on top - its black half hatched, its sectors
+IMAGER_ICON = [
+    [(80.0, 38.0), (79.6, 42.7), (78.5, 47.3), (76.7, 51.6), (74.3, 55.6), (71.2, 59.2), (67.6, 62.3), (63.6, 64.7), (59.3, 66.5), (54.7, 67.6), (50.0, 68.0), (45.3, 67.6), (40.7, 66.5), (36.4, 64.7), (32.4, 62.3), (28.8, 59.2), (25.7, 55.6), (23.3, 51.6), (21.5, 47.3), (20.4, 42.7), (20.0, 38.0), (20.4, 33.3), (21.5, 28.7), (23.3, 24.4), (25.7, 20.4), (28.8, 16.8), (32.4, 13.7), (36.4, 11.3), (40.7, 9.5), (45.3, 8.4), (50.0, 8.0), (54.7, 8.4), (59.3, 9.5), (63.6, 11.3), (67.6, 13.7), (71.2, 16.8), (74.3, 20.4), (76.7, 24.4), (78.5, 28.7), (79.6, 33.3), (80.0, 38.0)],
+    [(54.0, 38.0), (53.7, 39.5), (52.8, 40.8), (51.5, 41.7), (50.0, 42.0), (48.5, 41.7), (47.2, 40.8), (46.3, 39.5), (46.0, 38.0), (46.3, 36.5), (47.2, 35.2), (48.5, 34.3), (50.0, 34.0), (51.5, 34.3), (52.8, 35.2), (53.7, 36.5), (54.0, 38.0)],
+    [(50, 8), (50, 68)],
+    [(50, 38), (76, 23)],
+    [(50, 38), (76, 53)],
+    [(30, 15), (42, 34)],
+    [(24, 26), (38, 42)],
+    [(22, 40), (36, 50)],
+    [(28, 56), (40, 58)],
+    [(6.0, 66.0), (6.3, 63.6), (7.1, 61.6), (8.5, 60.0), (10.4, 58.9), (12.9, 58.2), (16.0, 58.0), (84.0, 58.0), (87.1, 58.2), (89.6, 58.9), (91.5, 60.0), (92.9, 61.6), (93.7, 63.6), (94.0, 66.0), (94.0, 84.0), (93.7, 86.4), (92.9, 88.4), (91.5, 90.0), (89.6, 91.1), (87.1, 91.8), (84.0, 92.0), (62.0, 92.0), (60.1, 91.8), (58.4, 91.3), (57.0, 90.5), (55.8, 89.3), (54.8, 87.8), (54.0, 86.0), (52.7, 84.3), (51.3, 83.3), (50.0, 83.0), (48.7, 83.3), (47.3, 84.3), (46.0, 86.0), (45.2, 87.8), (44.2, 89.3), (43.0, 90.5), (41.6, 91.3), (39.9, 91.8), (38.0, 92.0), (16.0, 92.0), (12.9, 91.8), (10.4, 91.1), (8.5, 90.0), (7.1, 88.4), (6.3, 86.4), (6.0, 84.0), (6.0, 66.0)],
+    [(40.0, 74.0), (39.7, 75.8), (38.9, 77.5), (37.6, 79.0), (35.9, 80.3), (33.8, 81.2), (31.4, 81.8), (29.0, 82.0), (26.6, 81.8), (24.2, 81.2), (22.1, 80.3), (20.4, 79.0), (19.1, 77.5), (18.3, 75.8), (18.0, 74.0), (18.3, 72.2), (19.1, 70.5), (20.4, 69.0), (22.1, 67.7), (24.2, 66.8), (26.6, 66.2), (29.0, 66.0), (31.4, 66.2), (33.8, 66.8), (35.9, 67.7), (37.6, 69.0), (38.9, 70.5), (39.7, 72.2), (40.0, 74.0)],
+    [(82.0, 74.0), (81.7, 75.8), (80.9, 77.5), (79.6, 79.0), (77.9, 80.3), (75.8, 81.2), (73.4, 81.8), (71.0, 82.0), (68.6, 81.8), (66.2, 81.2), (64.1, 80.3), (62.4, 79.0), (61.1, 77.5), (60.3, 75.8), (60.0, 74.0), (60.3, 72.2), (61.1, 70.5), (62.4, 69.0), (64.1, 67.7), (66.2, 66.8), (68.6, 66.2), (71.0, 66.0), (73.4, 66.2), (75.8, 66.8), (77.9, 67.7), (79.6, 69.0), (80.9, 70.5), (81.7, 72.2), (82.0, 74.0)],
+]
+# the light pen (port 2): the pen, its tip, its cord and the light at its tip
+LPEN_ICON = [
+    [(78.0, 8.0), (92.0, 22.0), (36.0, 78.0), (22.0, 64.0), (78.0, 8.0)],
+    [(22.0, 64.0), (12.0, 88.0), (36.0, 78.0)],
+    [(15.0, 81.0), (19.0, 85.0)],
+    [(85.0, 15.0), (87.6, 12.5), (90.1, 10.6), (92.3, 9.1), (94.2, 8.2), (96.0, 7.9), (97.6, 8.1), (98.9, 8.8), (100.0, 10.0)],
+    [(60.0, 30.0), (70.0, 40.0)],
+    [(2.0, 96.0), (8.0, 92.0)],
+    [(4.0, 100.0), (10.0, 94.0)],
+]
 CART_ICON = [[(3, 0), (97, 0), (97, 37), (100, 40), (100, 99), (99, 100), (1, 100), (0, 99), (0, 40), (3, 37), (3, 0)],
              [(6, 0), (6, 36.5)], [(94, 0), (94, 36.5)], [(3, 36.5), (97, 36.5)],
              [(50, 6), (60, 14), (55, 14), (55, 20), (45, 20), (45, 14), (40, 14), (50, 6)],
@@ -2522,13 +2547,50 @@ class GLBloomRenderer(GLRenderer):
             lines = [tuple(r[:4]) + (int(r[4]),) + tuple(r[5:]) for r in lines.tolist()]   #  the brightness a whole number)
         return self._build_py(lines, gain, load)
 
+    def _tube_f(self, x, y, k):
+        """the tube's map (_tube_lines): a point of the integrators (the lines' units) where it shows on the curved
+        tube (still the lines' units), k the geometry's strength (0: none)"""
+        np = _np
+        cx, cy = tube_coeffs(1.0); pull = TUBE_PULL
+        la, lb, lc, ld = TUBE_LIN
+        XM, YM, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
+        u = (x - XM) / U; v = (y - YM) / U
+        u2, v2 = u * u, v * v
+        X = cx[0] + cx[1] * v + cx[2] * v2 + cx[3] * v2 * v + cx[4] * u + cx[5] * u * v + cx[6] * u * v2 + cx[7] * u2 + cx[8] * u2 * v + cx[9] * u2 * u
+        Y = cy[0] + cy[1] * v + cy[2] * v2 + cy[3] * v2 * v + cy[4] * u + cy[5] * u * v + cy[6] * u * v2 + cy[7] * u2 + cy[8] * u2 * v + cy[9] * u2 * u
+        if pull:
+            p = (1.0 + u / 0.85) * 0.5; q = (1.0 - v) * 0.5
+            Y = Y - np.where((p > 0) & (q > 0), pull * p * p * q * q, 0.0)
+        sx, sy = la * u, lc * v
+        X = X - TUBE_IMP_OFF[0]; Y = Y - TUBE_IMP_OFF[1]
+        return XM + (sx + k * (X - sx) + lb) * U, YM + (sy + k * (Y - sy) + ld) * U
+
+    def window_to_vectrex(self, px, py):
+        """a window pixel (the picture not turned) as the integrators' place there - the lines' units, the tube's map
+        undone (a few steps: the map is close to the identity): where the light pen points"""
+        sc, ox, oy = self.map
+        w, h = self.size
+        u, v = px / sc - ox, py / sc - oy                 # (the projection's y runs down, as the lines')
+        k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
+        x, y = _np.array([u], dtype=float), _np.array([v], dtype=float)
+        for _ in range(8):
+            fx, fy = self._tube_f(x, y, k)
+            x = x + (u - fx); y = y + (v - fy)
+        return float(x[0]), float(y[0])
+
+    # the 3D Imager's filters (imager.c: the colour code of each line, an 8th column): the phosphor's white light through
+    # red, green and blue gels - the blue a little dimmer, as through a real one
+    IMAGER_RGB = {1: (1.0, 0.12, 0.10), 2: (0.15, 1.0, 0.25), 4: (0.25, 0.45, 1.0)}
+
     def _build_np(self, lines, gain=1.0, load=True):
         """_build_py with numpy: the same arithmetic on all lines at once (checked equal to it, float32). Beam trace on:
         the core's pieces of the spot's path, each its energy (see CAPSULE_SHADER)"""
         np = _np
-        L = np.asarray(lines, dtype=np.float64)
+        src = getattr(lines, 'np', None)                   # (the core's frame as an array: with the 3D Imager's colours)
+        L = np.asarray(src if src is not None and len(src) == len(lines) else lines, dtype=np.float64)
         if L.ndim != 2 or L.shape[1] < 7:
             raise ValueError('lines')
+        col = L[:, 7].astype(np.int64) if L.shape[1] > 7 else None
         L = L[:, :7]
         b = L[:, 4].astype(np.int64)
         beam = bool(getattr(self, 'beam_trace', False)) and hasattr(self, 'satprog')
@@ -2539,6 +2601,8 @@ class GLBloomRenderer(GLRenderer):
             if hm.any():                                   # (the resting spots' halos, drawn first)
                 H = L[hm].copy(); H[:, 4] = (b[hm] & 127) | 256
                 L = np.concatenate([H, L]); b = L[:, 4].astype(np.int64)
+                if col is not None:
+                    col = np.concatenate([col[hm], col])
         x0, y0, x1, y1, e, t0 = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
         # one stroke in several pieces: the joined ends open (_joins)
         jo = np.zeros(len(L), dtype=np.int64)
@@ -2564,20 +2628,7 @@ class GLBloomRenderer(GLRenderer):
         X0, Y0, X1, Y1 = x0[idx], y0[idx], x1[idx], y1[idx]
         ax_, ay_ = X0 + (X1 - X0) * s0, Y0 + (Y1 - Y0) * s0
         bx_ = np.where(mm == 1, X1, X0 + (X1 - X0) * s1); by_ = np.where(mm == 1, Y1, Y0 + (Y1 - Y0) * s1)
-        cx, cy = tube_coeffs(1.0); pull = TUBE_PULL
-        la, lb, lc, ld = TUBE_LIN
-        XM, YM, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
-        def f(x, y):
-            u = (x - XM) / U; v = (y - YM) / U
-            u2, v2 = u * u, v * v
-            X = cx[0] + cx[1] * v + cx[2] * v2 + cx[3] * v2 * v + cx[4] * u + cx[5] * u * v + cx[6] * u * v2 + cx[7] * u2 + cx[8] * u2 * v + cx[9] * u2 * u
-            Y = cy[0] + cy[1] * v + cy[2] * v2 + cy[3] * v2 * v + cy[4] * u + cy[5] * u * v + cy[6] * u * v2 + cy[7] * u2 + cy[8] * u2 * v + cy[9] * u2 * u
-            if pull:
-                p = (1.0 + u / 0.85) * 0.5; q = (1.0 - v) * 0.5
-                Y = Y - np.where((p > 0) & (q > 0), pull * p * p * q * q, 0.0)
-            sx, sy = la * u, lc * v
-            X = X - TUBE_IMP_OFF[0]; Y = Y - TUBE_IMP_OFF[1]
-            return XM + (sx + k * (X - sx) + lb) * U, YM + (sy + k * (Y - sy) + ld) * U
+        f = lambda x, y: self._tube_f(x, y, k)
         x0, y0 = f(ax_, ay_)
         x1, y1 = f(bx_, by_)
         same = zl[idx]                                    # (a resting spot: where the spot came to rest)
@@ -2703,7 +2754,16 @@ class GLBloomRenderer(GLRenderer):
         T3 = np.zeros((n, 4, 2), dtype=np.float32)
         T3[:, :, 0] = (n0x * ax + n0y * ay)[:, None]; T3[:, :, 1] = (n1x * bx + n1y * by)[:, None]
         C = np.empty((n, 4, 4), dtype=np.float32)
-        C[:, :, 0] = kk[:, None]; C[:, :, 1] = kk[:, None]; C[:, :, 2] = kk[:, None]
+        if col is not None:                                # (the 3D Imager: each line through its filter)
+            cc = col[idx] & 7
+            rgb = np.ones((n, 3))
+            for code, (r_, g_, b_) in self.IMAGER_RGB.items():
+                m_ = cc == code
+                if m_.any():
+                    rgb[m_] = (r_, g_, b_)
+            C[:, :, 0] = (kk * rgb[:, 0])[:, None]; C[:, :, 1] = (kk * rgb[:, 1])[:, None]; C[:, :, 2] = (kk * rgb[:, 2])[:, None]
+        else:
+            C[:, :, 0] = kk[:, None]; C[:, :, 1] = kk[:, None]; C[:, :, 2] = kk[:, None]
         C[:, :, 3] = np.minimum(1.0, sg / 16.0)[:, None]
         TT = np.repeat((t0 / 1.5e6).astype(np.float32), 4)
         cv = lambda a: (ctypes.c_float * a.size).from_buffer(a)   # (the arrays as they are: no copy)
@@ -3274,8 +3334,9 @@ class GLBloomRenderer(GLRenderer):
         self._text_row([('CARTRIDGE', (0.40, 0.667, 0.533))], cx - (9 * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)
 
     def _port2(self, c):
-        """what is in controller port 2 - the controller (seen from above), the VecVox (a box with a speaker) or
-        the VecVoice (a speaking head) - with P2 PORT above it like the panel's labels"""
+        """what is in controller port 2 - the controller (seen from above), the VecVox (a box with a speaker), the
+        VecVoice (a speaking head), the 3D Imager (the goggles with their disc) or the light pen - with P2 PORT above it like the
+        panel's labels"""
         gl = self.gl
         cx, cy, r = c['cx'], c['cy'], c['r']
         gl.glColor4f(0.40, 0.667, 0.533, 1.0)
@@ -3286,7 +3347,7 @@ class GLBloomRenderer(GLRenderer):
         s *= {'vecvox': 1.35, 'vecvoice': 1.2}.get(c.get('kind'), 1.1)   # (about as large as the cartridge)
         ox = cx + (10 * s if c.get('kind') == 'vecvox' else 0)  # (the VecVox: its box and waves a little right)
         P = lambda u, v: (ox + (u - 50) * s, oy + (v - 50) * s)
-        self._icon({'vecvox': PORT2_ICON, 'vecvoice': VOICE_ICON}.get(c.get('kind'), JOY_ICON), P)
+        self._icon({'vecvox': PORT2_ICON, 'vecvoice': VOICE_ICON, 'imager': IMAGER_ICON, 'lightpen': LPEN_ICON}.get(c.get('kind'), JOY_ICON), P)
         lh = 0.30 * r
         t = c['label']
         self._text_row([(t, (0.40, 0.667, 0.533))], cx - (len(t) * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)

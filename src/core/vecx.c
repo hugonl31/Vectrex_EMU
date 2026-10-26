@@ -10,6 +10,9 @@
 #define einline inline
 
 unsigned char rom[8192];
+/* A cartridge with RAM of its own (VT_CARTHW=ram, or found by the title: AnimAction): 8K at $2000-$3FFF, beside the
+ * ROM at $0000-$1FFF - AnimAction keeps its animations there (MAME: the "SRAM" cartridge type) */
+int vt_cart_ram; unsigned char vt_cram[0x2000];
 unsigned char cart[1048576];  /* 32K / 64K (PB6) images, 256K: the 4-bank PB6 + IRQ cart (Vectorblade), 512K: the 512K latch cart, 1M: the multicart */
 unsigned long vt_bank_switches = 0;
 void vt_line(long x0,long y0,long x1,long y1,unsigned char c,unsigned cyc,unsigned t0);
@@ -25,6 +28,8 @@ static unsigned char ram[1024];
 unsigned snd_regs[16];
 static unsigned snd_select;
 static unsigned snd_ioa = 0xff;               /* the AY's port A output latch (register 14 written) */
+extern int vt_imager; static void im_motor (int level); static unsigned long long im_pin_until;   /* (the 3D Imager, imager.c) */
+extern int vt_lightpen; static unsigned long long lp_pin_until; static void lp_set (int what, double v);   /* (the light pen, imager.c) */
 
 /* the via 6522 registers */
 
@@ -274,6 +279,7 @@ void vt_set_analog (int id, double v)
 	case 13: zero_ty = v < 0 ? 0 : v > 50 ? 50 : v; break;
 	case 14: ofs_k = v < 0 ? 0 : v > 400 ? 400 : v; break;   /* (the reference's shift, cycles a DAC step) */
 	case 15: vt_lag_y = v < 0 ? -1 : v > 50 ? 50 : v; break;  /* (the Y deflection's lag; -1: as X) */
+	case 24: case 25: case 26: lp_set (id - 24, v); break;   /* (the light pen: x, y, touching - imager.c) */
 	case 16: case 17: case 18: case 19: case 20: case 21: case 22:   /* (the DAC's bit errors e0..e6, see dacv) */
 		if (dac_on < 0) dac_init ();
 		dac_e[id - 16] = v < -0.05 ? -0.05 : v > 0.05 ? 0.05 : v;
@@ -388,6 +394,8 @@ static einline void snd_update (void)
 			e8910_write(snd_select, via_ora);
 			psg_write (snd_select, via_ora);
 		} else snd_ioa = via_ora;                       /* (port A's output latch) */
+		if (vt_imager && (snd_select == 14 || snd_select == 7))
+			im_motor ((snd_regs[7] & 0x40) ? (int) (snd_ioa & 0x40) : 0x40);   /* (the 3D Imager's motor, imager.c) */
 		if (vt_vecvoice && (snd_select == 14 || snd_select == 7))
 			ser_set ((snd_regs[7] & 0x40) ? (snd_ioa >> 4) & 1 : 1, vx_cyc);   /* (the VecVoice's serial line) */
 
@@ -481,6 +489,9 @@ static einline void int_update (void)
 	}
 }
 
+extern unsigned long long alg_cycles;
+#include "imager.c"                         /* the 3D Imager on port 2 (VT_IMAGER) */
+
 static int vt_trial;                    /* (a dry run: no writes, VIA reads without side effects) */
 /* a read where no chip answers: the last byte on the data bus (see e6809_obus; measured on the owner's
  * Vectrex with testcart/openbus_test 2026-10-14). VT_OPENBUS=hex: a fixed value instead (tests). */
@@ -539,6 +550,7 @@ unsigned char read8 (unsigned address)
 
 					via_ca2 = 0;
 				}
+				if (via_ifr & 0x02) { via_ifr &= ~0x02u; int_update (); }   /* (CA1's flag, see imager.c) */
 
 				/* fall through */
 
@@ -547,6 +559,10 @@ unsigned char read8 (unsigned address)
 					/* the snd chip is driving port a */
 
 					data = (unsigned char) snd_regs[snd_select];
+					if (vt_imager && snd_select == 14 && alg_cycles < im_pin_until)
+						data &= 0x7f;               /* (the 3D Imager's index hole passing: button 4 low) */
+					if (vt_lightpen && snd_select == 14 && alg_cycles < lp_pin_until)
+						data &= 0x7f;               /* (the light pen seeing the spot: button 4 low) */
 					if (vt_vecvoice && snd_select == 14) {
 						/* port 2's buttons: the speech accessory's ready line */
 						psg_advance (vx_cyc); ser_run (vx_cyc);
@@ -657,6 +673,8 @@ unsigned char read8 (unsigned address)
 		/* the 512K latch cartridge */
 		if (fl_id) data = (address & 1) ? 0xb7 : 0xbf;  /* (SST, SST39SF040) */
 		else data = cart[flash_at (address)];
+	} else if (vt_cart_ram && (address & 0xe000) == 0x2000) {
+		data = vt_cram[address & 0x1fff];               /* (the cartridge's RAM) */
 	} else if (address < 0x8000) {
 		/* cartridge (none in the slot: nothing drives the bus) */
 
@@ -730,6 +748,7 @@ void write8 (unsigned address, unsigned char data)
 
 					via_ca2 = 0;
 				}
+				if (via_ifr & 0x02) { via_ifr &= ~0x02u; int_update (); }   /* (CA1's flag, see imager.c) */
 
 				/* fall through */
 
@@ -887,6 +906,8 @@ void write8 (unsigned address, unsigned char data)
 			vt_hb_latch = data & 7;
 			if (vt_cur_bank () != b0) { vt_bank_switches++; vt_bankchange (b0, vt_cur_bank ()); }
 		}
+	} else if (vt_cart_ram && (address & 0xe000) == 0x2000) {
+		vt_cram[address & 0x1fff] = data;               /* (the cartridge's RAM) */
 	} else if (address < 0x8000) {
 		/* cartridge */
 	}
@@ -907,6 +928,8 @@ void vecx_reset_button (void)
 
 void vecx_reset (void)
 {
+	im_init ();                             /* (the 3D Imager: its disc standing still) */
+	lp_init ();                             /* (the light pen) */
 	{ extern void uvm2_power_on (void); if (vt_uvm2) uvm2_power_on (); }
 	{ extern void pitrex_power_on (void); if (vt_pitrex) pitrex_power_on (); }   /* (a PiTrex: its program starts afresh) */   /* (a UVMC2: the game starts afresh) */
 	{ extern unsigned char e6809_obus_idle; e6809_obus_idle = rom[0x1fff]; }   /* (the BIOS byte at $FFFF: the idle cycles' bus) */
@@ -1254,6 +1277,7 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
 		alg_wobble (alg_vector_t0, &ax, &ay); alg_wobble (alg_cycles, &bx, &by);
 		x0 += ax; y0 -= ay; x1 += bx; y1 -= by;          /* (screen y grows downwards) */
 	}
+	vt_line_rgb = vt_imager ? im_color (alg_vector_t0 + (unsigned long long) (alg_vector_cyc * 0.5)) : 0;   /* (the 3D Imager) */
 	{ unsigned long long tf = alg_vector_t0 > vt_piece_t0 ? alg_vector_t0 - vt_piece_t0 : 0;
 	  vt_line (x0, y0, x1, y1, color, (unsigned) (alg_vector_cyc * 8.0 + 0.5),   /* 1/8 cycles */
 		   tf > 65535 ? 65535 : (unsigned) tf); }                              /* start in frame */
@@ -1307,6 +1331,8 @@ static einline void alg_sstep (void)
 	unsigned sig_ramp;
 	unsigned sig_blank;
 
+	if (vt_imager) im_tick ();              /* (the 3D Imager's disc: its index hole) */
+	if (vt_lightpen) lp_tick ();            /* (the light pen: the lit spot under it) */
 	if ((via_acr & 0x10) == 0x10) {
 		sig_blank = via_cb2s;
 	} else {

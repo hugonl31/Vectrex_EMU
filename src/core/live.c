@@ -140,7 +140,7 @@ static int live_main (const char *recfn, const char *symfn)
 	if (symfn && load_syms (symfn)) { opt_addr = SA (S_OPTIONS); gflags_addr = SA (S_GFLAGS); }
 	abuf_cap = 32768; abuf = malloc (abuf_cap);
 	{ extern int vt_uvm2, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2 || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
-	static unsigned char out[10 + 30000 * 13 + 32768];   /* (30000: the beam-trace mode's pieces) */
+	static unsigned char out[10 + 30000 * 14 + 32768];   /* (30000: the beam-trace mode's pieces; 14: a 3D Imager colour each) */
 	unsigned char m[8];
 	long nframes = 0;
 	unsigned long long piece0 = 0;
@@ -168,7 +168,8 @@ static int live_main (const char *recfn, const char *symfn)
 		unsigned char *p = out;
 		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2;   /* (bit 15: two channels -
 		  the console and the speech module, interleaved) */
-		  *p++ = 'V'; *p++ = 'F'; put16 (p, n); p += 2; put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
+		  extern int vt_imager;
+		  *p++ = 'V'; *p++ = vt_imager ? 'C' : 'F'; put16 (p, n); p += 2;   /* ('VC': each line's colour follows the lines) */ put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
 		{ unsigned t = (unsigned) piece0;               /* the frame's start (absolute cycles): its lines' times count from it */
 		  put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
 		for (int i = 0; i < n; i++) {
@@ -177,6 +178,7 @@ static int live_main (const char *recfn, const char *symfn)
 			put16 (p + 4, l->x1 < 0 ? 0 : l->x1); put16 (p + 6, l->y1 < 0 ? 0 : l->y1);
 			p[8] = l->c; put16 (p + 9, l->cyc > 65535 ? 65535 : l->cyc); put16 (p + 11, l->t0); p += 13;
 		}
+		{ extern int vt_imager; if (vt_imager) for (int i = 0; i < n; i++) *p++ = last[i].rgb; }   /* (the 3D Imager's colours) */
 		memcpy (p, abuf, abuf_n); p += abuf_n;
 		fwrite (out, 1, p - out, stdout_bin);
 		fflush (stdout_bin);

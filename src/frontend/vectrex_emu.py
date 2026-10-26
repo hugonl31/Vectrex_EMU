@@ -28,7 +28,7 @@ the phosphor at the moment the beam drew it and the spot fades from there to bla
 trails move smoothly (vsync on a 60 / 120 / 240 Hz monitor, else paced to 60 Hz - G-Sync shows it as is).
 """
 import argparse, ctypes, ctypes.wintypes as W, json, math, os, queue, random, shutil, struct, subprocess
-import sys, threading, time, datetime, collections, re
+import sys, threading, time, datetime, collections, re, gc
 import tkinter as tk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vecrender
@@ -1661,6 +1661,11 @@ class App:
             self.root.createcommand('tk::mac::Quit', self.quit)
         self.last_t = self.t_start = time.perf_counter(); self.last_f = 0; self.fps = 0; self.disp_fps = 0
         self.speed = 100.0
+        # Python's cycle collector only on this (the Tk) thread: run by itself it can start in the emulation thread
+        # while that holds run.lock, and a dead Tk variable's __del__ (the Config window rebuilt: a slider dragged)
+        # then waits for the Tk thread - which waits for run.lock: both stood still (2026-10-26, the brightness slider)
+        gc.disable()
+        self.root.after(2000, self.gc_tick)
         self.title()
         if args.demo:
             self.run.demo = True
@@ -4880,6 +4885,12 @@ class App:
         self.shown = len(lines)
         cv.tk.eval('\n'.join(cmd))
 
+    def gc_tick(self):
+        """the cycle collector, every 2 s on the Tk thread (see gc.disable above): young objects each time, all every
+        30 s"""
+        self.gc_n = getattr(self, 'gc_n', 0) + 1
+        gc.collect(2 if self.gc_n % 15 == 0 else 1)
+        self.root.after(2000, self.gc_tick)
     def tick(self):
         if self.win_q and self.win_events():
             return                                              # (closed)

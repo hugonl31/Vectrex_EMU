@@ -57,6 +57,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Recent games (the last ten, a clock in the ROM browser); a right click on the cartridge pulls it out of the
   slot (Ctrl+E), another puts it back.
 - Messages appear in the middle of the picture.
+- Fixed: the window could freeze while a Config slider was dragged (the brightness knob most often); the game
+  went on underneath.
 
 ## v1.0.3
 

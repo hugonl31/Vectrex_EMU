@@ -67,8 +67,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
   went on underneath.
 - Fixed: the setup, Config, Controls and Help windows ran off the bottom of smaller screens (1080p at 125 / 150 %);
   their middle now scrolls when needed, the buttons always in view.
-- A picture slower than 30 FPS (weak graphics with every effect on) is pointed out once - Quality > Optimize - and
-  `cache/render_log.txt` records the graphics card's time per picture, to send along.
+- A PC too slow for the effects (over 25 ms a picture, weak graphics with every effect on) is pointed out once -
+  Quality > Optimize - and `cache/render_log.txt` records the graphics card's time per picture, to send along.
 
 ## v1.0.3
 

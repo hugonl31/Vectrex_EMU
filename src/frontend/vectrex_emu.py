@@ -4928,8 +4928,9 @@ class App:
             pass
         self.root.after(2000, self.gc_tick)
     def perf_tick(self):
-        """every 2 s: the pictures drawn per second. Below 30 for 6 s while a game runs (not on Low): said once - the
-        PC's graphics may not carry these effects (Quality > Optimize). Every 10 s a line in cache/render_log.txt:
+        """every 2 s: the graphics card's and the processor's time per picture. Over 25 ms (or the emulation below
+        90 %) for 6 s while a game runs (not on Low): said once - the PC may not carry these effects (Quality >
+        Optimize). Every 10 s a line in cache/render_log.txt:
         the graphics card, the picture's size, the quality, pictures a second, the card's and the processor's time
         per picture - to send along when the picture is slow"""
         now = time.perf_counter()
@@ -4937,13 +4938,17 @@ class App:
         fps = n / 2.0
         r = self.ren
         running = self.run.power and not self.run.paused and not self.browser
-        slow = running and fps < 30 and r is not None and self.current_profile() != 'low'
+        # slow: this PC's own time per picture, not the pictures a second - a game drawing 25 frames a second (Web
+        # Wars; with G-Sync every game frame is one picture) is not a slow PC (the owner's RTX 5090, 2026-10-26)
+        g_ms, c_ms = getattr(r, 'gpu_ms', None) or 0.0, getattr(r, 'cpu_ms', None) or 0.0
+        heavy = g_ms > 25.0 or c_ms > 25.0 or getattr(self, 'speed', 100.0) < 90.0
+        slow = running and heavy and r is not None and self.current_profile() != 'low'
         self.slow_n = getattr(self, 'slow_n', 0) + 1 if slow else 0
         if self.slow_n == 3 and not getattr(self, 'slow_told', False):
             self.slow_told = True
             self.flash('SLOW PICTURE: %d FPS' % round(fps), 'QUALITY > OPTIMIZE', secs=6.0)
-            self.show_look('the picture runs at %d FPS on this PC: View > Quality > Optimize finds what it can carry '
-                           '(or choose Low)' % round(fps))
+            self.show_look('this PC needs %.0f ms a picture (%d FPS): View > Quality > Optimize finds what it can carry '
+                           '(or choose Low)' % (max(g_ms, c_ms), round(fps)))
         self.perf_n = getattr(self, 'perf_n', 0) + 1
         if self.perf_n % 5 == 1 and r is not None:
             try:

@@ -23,6 +23,7 @@ int vt_pitrex;                              /* a PiTrex program in the slot */
 static arm11_t px_cpu; static arm11_sys_t px_sys; static uint8_t *px_ram;
 static double px_frac; static uint64_t px_target;   /* (the Pi's time the slices run to: what one overruns, the next gives back) */
 static uint32_t px_fsel[6], px_out[2], px_eds[2], px_ren[2], px_fen[2];
+static int px_acc_e = -1, px_hold;   /* (VT_PXACC: see PX_SETUP) */
 static int px_rdy = 1, px_pending, px_rw; static uint64_t px_latch_cyc; static unsigned px_addr; static uint8_t px_wdata, px_rdata;
 static uint32_t px_st_cmp[4], px_st_cs;
 static uint32_t px_irq_en1, px_irq_en2, px_irq_enb, px_fiq;
@@ -455,18 +456,25 @@ void pitrex_power_on (void)
 	arm11_reset (&px_cpu, 0x8000); arm11_invalidate (&px_cpu); px_target = 0;
 	px_cpu.r[0] = 0; px_cpu.r[1] = 0xc42; px_cpu.r[2] = 0x100;                /* (as the firmware starts a kernel) */
 	memset (px_fsel, 0, sizeof px_fsel); px_out[0] = px_out[1] = 0; px_fsel_changed ();
-	px_rdy = 1; px_pending = 0; px_rdata = 0xff; px_frac = 0;
+	px_rdy = 1; px_pending = 0; px_hold = 0; px_rdata = 0xff; px_frac = 0;
 	px_st_cs = 0; memset (px_st_cmp, 0, sizeof px_st_cmp); px_irq_en1 = px_irq_en2 = px_irq_enb = 0;
 	px_at_ctrl = 0; px_at_raw = 0; px_at_due = ~0ull; px_mbox_full = 0; px_ln = 0; px_fault_told = 0;
 }
 
 #define PX_SETUP 100                         /* (Pi cycles from LATCH_EN to the E edge it can catch) */
+/* an access holds RDY low this many E cycles from the edge it is done on (VT_PXACC, default 2): the PiTrex's
+ * vectrexexact waits for each 6809 cycle count less 2 - "one VIA access takes 2 cycles" (vectrexBase/vecx.c) - so with
+ * 1 every access came a cycle early: the BIOS text's rows (17 cycles a character instead of 18, the return move not)
+ * leaned ~3 pixels per row (2026-10-26) */
+
 /* one E period: the Pi runs, an access it latched happens; returns 1 (the 6809 is held) */
 static int pitrex_cycle (void)
 {
 	px_frac += 1000000000.0 / 1500000.0;
 	uint32_t per = (uint32_t) px_frac; px_frac -= per;
 	px_run (per / 2);
+	if (px_acc_e < 0) { const char *z = getenv ("VT_PXACC"); px_acc_e = z ? atoi (z) : 2; if (px_acc_e < 1) px_acc_e = 1; }
+	if (px_hold > 0 && --px_hold == 0) px_rdy = 1;    /* (the access's last E cycle over) */
 	/* (the access, as E rises - if LATCH_EN came early enough before it: the board keeps RDY low for at least a
 	 * part of an E period, and the Pi's code polls for that low before it waits for the high) */
 	if (px_pending && px_cpu.cycles - px_latch_cyc >= PX_SETUP) {
@@ -474,7 +482,8 @@ static int pitrex_cycle (void)
 		else write8 (px_addr & 0xffff, px_wdata);
 		{ static FILE *dl; static int dlo = -1; if (dlo < 0) { const char *z = getenv ("VT_PXACCLOG"); dlo = z != NULL; if (z) dl = fopen (z, "wb"); }
 		  if (dl) { extern unsigned long long total_cycles_e (void); uint64_t r[2] = { px_cpu.cycles, ((uint64_t) px_addr << 16) | ((uint64_t) px_rw << 8) | (px_rw ? px_rdata : px_wdata) }; fwrite (r, 8, 2, dl); } }
-		px_pending = 0; px_rdy = 1; px_n_acc++;
+		px_pending = 0; px_n_acc++;
+		if (px_acc_e > 1) px_hold = px_acc_e - 1; else px_rdy = 1;
 	}
 	px_run (per - per / 2);
 	if (!px_fault_told && px_cpu.halted) {

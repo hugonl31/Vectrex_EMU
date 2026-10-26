@@ -175,6 +175,20 @@ static double alg_calshift;
 static double alg_wob50, alg_wob100;     /* mains hum (VT_WOBBLE), see alg_wobble */
 int vt_wobble_off;                        /* live: input flags bit 1 */
 static double alg_ztau, alg_zk, alg_zlev;
+/* the beam's path, cycle by cycle (the beam-trace renderer, see vtest's VT_BEAMTRACE): where the spot is after the
+ * cycle (game units, as alg_addline's), the beam level 0..1 lighting it and the Z it was set to. Unset: no cost */
+void (*vt_beam_hook) (double x, double y, double lev, unsigned char z, unsigned long long t) = 0;
+/* the beam-trace mode (vt_set_analog 11, VT_BEAMMODE=1; the renderer's Tube > Beam trace): the frame is sent as the
+ * spot's own path instead of the lines the vectoring logic cuts - a piece for every run of cycles where the spot (after
+ * the deflection's lag) keeps its speed and direction within BP_TOL (a straight line: one piece, exact; a curve: a piece
+ * every few cycles; a rest: a zero-length piece with its cycles), each with its beam energy (the level summed per
+ * cycle) and its moment. The renderer spreads each piece's energy along it as the moving spot does, so the pieces join
+ * seamlessly and the light is the time the spot spent - no line ends, joins or rest rules */
+int vt_beam_mode = -1;
+#define BP_TOL 0.03                       /* (the speed's share; + BP_TOL0 game units a cycle) */
+#define BP_TOL0 0.3
+static int bp_open, bp_emitting, bp_shift; static double bp_px, bp_py, bp_x0, bp_y0, bp_x1, bp_y1, bp_vx, bp_vy, bp_cyc, bp_lev;
+static unsigned char bp_z; static unsigned long long bp_t0, bp_t1;
 /* VT_ANALOGDLY=1: the Vectrex's analog delays (as Malban measured them for VIDE / libretro-vecx):
  * the X integrator gets the DAC value 15 cycles late, Y its sample-and-hold 14 cycles late, the
  * integrators start 12 / stop 15 cycles after RAMP switches, the beam zeroes 5 cycles after /ZERO.
@@ -182,12 +196,14 @@ static double alg_ztau, alg_zk, alg_zlev;
 static int t1_irqlag = -1, t1_irqwait;   /* VT_T1IRQLAG (see via_sstep0) */
 static int alg_adly;
 static double beam_off = -1;     /* VT_BEAMOFF (see alg_sstep) */
+static int z_delay = -1;          /* VT_ZDELAY (see alg_sstep) */
 static int beam_fade = -1, fade_left;   /* VT_BEAMFADE: the beam's faint fade-out after it goes dark (alg_sstep) */
 /* the brightness knob at the back (VT_BRIGHT, vt_set_analog 8: -1..1, 0 = a well-set Vectrex). Up, the tube's bias lets
  * the beam glow even while it is blanked: its moves and returns to the middle ("spider web") and its rests are sent as
  * lines of intensity 0 with bit 7 set - the renderer draws them, and turns every line's brightness with the knob */
 static double vt_bright = -1;
 static double vt_lag;                   /* (the deflection's lag: see below) */
+static double ofs_k, zero_tx, zero_ty, vt_lag_y;   /* (see OFS_K) */
 /* the integrators' input speed, smoothed (VT_VLAG = tau in cycles; vt_set_analog 10): the DAC's X (and the Y hold's)
  * voltage reaches the integrator switch through a low-pass, so a speed change while the integrators run turns a
  * corner in a curve, while RAMP still starts and stops them at once (the owner's Vectrex, 2026-10-25: testcart/
@@ -201,9 +217,10 @@ static double dark_cyc; static unsigned long long dark_t0;
 
 static long fade_x0, fade_y0; static double fade_cyc; static unsigned char fade_col; static unsigned long long fade_t0;   /* on by default (VT_ANALOGDLY=0: off); with it the BIOS text needs no fitted shift: the
                        * delays put it where the owner's photos show it (within 0.1 px) */
-static unsigned char dly_x[64], dly_y[64], dly_z[64]; static unsigned dly_p;
-static unsigned dly_nx = 9, dly_ny = 9, dly_nz = 5;     /* VT_XYZDLY=x,y,zero: the S/H and zero delays (9 with the spot's
-                                                          * lag LAG_TAU: the combined fit, 2026-10-25; were 15 / 14) */
+static unsigned char dly_x[64], dly_y[64], dly_z[64]; static unsigned dly_p; static double dly_yf[64];
+static unsigned dly_nx = 9, dly_ny = 9, dly_nz = 8;     /* VT_XYZDLY=x,y,zero: the S/H and zero delays (9 with the spot's
+                                                          * lag LAG_TAU: the combined fit, 2026-10-25; were 15 / 14; zero 8:
+                                                          * the ZERO fit with ZERO_TX, 2026-10-26, was 5) */
 extern long vt_text_shift; extern double vt_text_shift_w;
 static int alg_zideal;           /* VT_ZIDEAL=1: a perfect machine, the zero reference stays at centre */
 static unsigned alg_xsh;  /* x sample and hold */
@@ -213,6 +230,27 @@ static unsigned alg_ysh;  /* y sample and hold */
  * after a 191-step jump it was ~1.5 steps short (~0.8 %), from 6 cycles on it had settled: 0.3^4 left
  * per 4 cycles -> 0.7 (VT_YSHK=x; 1 = instant, as vecx) */
 static double alg_yshf = 128, ysh_k = -1;
+/* the DAC's bit errors (VT_DACBITS=e0,..,e6: each bit's current off by that share of its weight; vt_set_analog 16..22;
+ * all 0: an ideal DAC, the old model). The MC1408's ladder: the output is the sum of its bits' currents, so a code's
+ * value is sum bit_i 2^i (1 + e_i) - for X straight, for the Y hold and the zero reference what they charge to. The
+ * BIOS text goes right at +width and back at -width: two codes with different bits, their errors do not cancel - the
+ * slant changes with the text's width (Malban, "PrintStr (3) - DAC"). Fitted on the owner's Vectrex (testcart/beam_test
+ * pages 3-4, 2026-10-26): e0 +0.017, e1 +0.007, e2 -0.009, e3..e6 within 0.0015 - half of the measured pattern; the
+ * rest is not bit errors (widths with the same bits differ too). Bit 7 sets the scale only (the reference is $80) */
+static double dac_e[8]; static int dac_on = -1;
+static double dacv (unsigned u)
+{
+	double v = 0;
+	for (int i = 0; i < 8; i++) if ((u >> i) & 1) v += (double) (1 << i) * (1.0 + dac_e[i]);
+	return v;
+}
+static void dac_init (void)
+{
+	const char *z = getenv ("VT_DACBITS"); dac_on = 0;
+	if (z) { double e[7] = {0}; int n = sscanf (z, "%lf,%lf,%lf,%lf,%lf,%lf,%lf", e, e + 1, e + 2, e + 3, e + 4, e + 5, e + 6);
+	         for (int i = 0; i < n && i < 7; i++) { dac_e[i] = e[i]; if (e[i] != 0) dac_on = 1; } }
+}
+#define DACV(u) (dac_on > 0 ? dacv (u) : (double) (u))
 /* the frontend's Vectrex unit settings, live (input flags bit 5: an id and a float, see live.c): how one
  * real Vectrex differs from another - 0 the stop delay (cycles), 1 the zero reference's hold (ZREF_K),
  * 2 the zero calibration shift, 3 / 4 the integrators' drift X / Y (DAC units per cycle x ZS), 5 the Y
@@ -231,6 +269,16 @@ void vt_set_analog (int id, double v)
 	case 8: vt_bright = v < -1 ? -1 : v > 1 ? 1 : v; break;
 	case 9: vt_lag = v < 0 ? 0 : v > 50 ? 50 : v; break;
 	case 10: vt_vlag = v < 0 ? 0 : v > 50 ? 50 : v; break;
+	case 11: vt_beam_mode = v > 0.5; break;                   /* (the beam-trace mode, see bp_step) */
+	case 12: zero_tx = v < 0 ? 0 : v > 50 ? 50 : v; break;    /* (ZERO's RC, X / Y: see OFS_K) */
+	case 13: zero_ty = v < 0 ? 0 : v > 50 ? 50 : v; break;
+	case 14: ofs_k = v < 0 ? 0 : v > 400 ? 400 : v; break;   /* (the reference's shift, cycles a DAC step) */
+	case 15: vt_lag_y = v < 0 ? -1 : v > 50 ? 50 : v; break;  /* (the Y deflection's lag; -1: as X) */
+	case 16: case 17: case 18: case 19: case 20: case 21: case 22:   /* (the DAC's bit errors e0..e6, see dacv) */
+		if (dac_on < 0) dac_init ();
+		dac_e[id - 16] = v < -0.05 ? -0.05 : v > 0.05 ? 0.05 : v;
+		dac_on = 0; for (int i = 0; i < 7; i++) if (dac_e[i] != 0) dac_on = 1;
+		break;
 	}
 }
 static unsigned alg_zsh;  /* z sample and hold */
@@ -271,13 +319,35 @@ static unsigned alg_vectoring; /* are we drawing a vector right now? */
  * corners round off when the beam rests less than ~16 cycles, sharp with a dot from ~24 cycles. The lines are
  * recorded along the spot (beam_x / beam_y); while it has not caught up they are cut every LAG_SPLIT cycles */
 static double vt_lag = -1; static int vt_lag_n = 0;
+/* measured on the owner's Vectrex with testcart/beam_test (2026-10-25):
+ * - the integrators' offset (the zero reference, mux 1) moves the beam directly: an integrator's output is its reference
+ *   minus its capacitor's voltage, so the beam sits at the reference times the integrator's RC - OFS_K cycles of
+ *   integration per DAC step (photo: 166), X the other way from Y (+offset: left and down). ZERO empties the capacitors:
+ *   the beam goes to that point, not to the middle (Malban, "Old News - Fast Move", 2026); changing the reference moves
+ *   the beam there and back (through the deflection's lag). VT_OFSK / vt_set_analog 14; 0: the old model (no shift)
+ * - ZERO empties the capacitors through the switch (220 ohm): an RC, not a jump - Y faster than X (the photo's lit
+ *   sweeps from the corners bend to come in along X). The RAMP's input still flows meanwhile. VT_ZEROTAU=x,y cycles /
+ *   vt_set_analog 12, 13; 0: the old jump
+ * - the deflection's lag per axis: VT_DEFLAG (X), VT_DEFLAGY (Y, -1: as X) / vt_set_analog 9, 15 */
+static double ofs_k = -1, zero_tx = -1, zero_ty = -1, vt_lag_y = -2;
+#define OFS_K 166.0
+static int zero_n = 1, zero_was; static double zero_x1, zero_y1;
+#define ZERO_N 1
+#define ZERO_TX 4.5                     /* (2026-10-26: X 4.5, Y 3.3 cycles - the schematic's 220 ohm x 0.01 uF = 3.3; X a */
+#define ZERO_TY 3.3                     /*  little slower (beam_test page 2's sweeps bend). beam_test page 2 alone fitted
+                                         *  12 / 8, but that zeroes too slowly for games that zero briefly: Vectorblade's
+                                         *  title logo split and its raster text garbled; with 6 / 4 and less they draw as
+                                         *  on the owner's photos. Page 2 (ZERO with RAMP on) needs something not modelled) */
+#define LAG_TAU_Y -1.0
 static double beam_x, beam_y, beam_x1, beam_y1, beam_vx, beam_vy;   /* (beam_x1/y1: the first stage of two) */
 static int beam_init, lag_moving;
 static double piece_bvx, piece_bvy, lag_split_k = 0.1;   /* (VT_DEFLAGSPLIT: a new piece once the spot's speed changed by
                                                           * this share: curves fine enough to look smooth - the renderer joins
                                                           * the pieces of a stroke seamlessly; Vectorblade ~4,800 lines a frame) */
 #define LAG_SPLIT 2.0
-#define LAG_TAU 8.0                     /* (the default lag, cycles: the owner's Vectrex, 2026-10-25 - the combined fit of
+#define LAG_TAU 6.0                     /* (2026-10-26: 6 - the gap test's photos, testcart/gap_test: the joins' gaps per
+                                         * scale as on the owner's Vectrex in X and Y; was 8 - the gaps ~1 cycle too long) */
+#define LAG_TAU_WAS 8.0                     /* (the default lag, cycles: the owner's Vectrex, 2026-10-25 - the combined fit of
                                          * testcart/corner_test, lag_test and axis_test with X/Y delay 9, RAMP start 5, stop 7:
                                          * the corners' rounding, the lines' dots, the text upright, the grid's size kept) */
 #define LAG_N 1
@@ -393,7 +463,8 @@ static einline void alg_update (void)
 
 	/* compute the new "deltas" */
 
-	alg_dx = (long) alg_xsh * ZS - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
+	if (dac_on < 0) dac_init ();
+	alg_dx = (long) (DACV (alg_xsh) * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 	alg_dy = (long) ((alg_rshf + alg_zofs) * ZS) - (long) (alg_yshf * ZS) + alg_yofs;
 }
 
@@ -1137,14 +1208,47 @@ static void alg_wobble (unsigned long long t, long *dx, long *dy)
 	*dx = (long) (160.0 * (alg_wob50 * sin (a) + alg_wob100 * sin (2 * a + 0.7)));
 	*dy = (long) (160.0 * (alg_wob50 * 0.8 * sin (a + 1.9) + alg_wob100 * cos (2 * a + 0.3)));
 }
+static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned char color);
+/* the beam-trace mode's piece so far to the frame (through alg_addline: the text shift, the wobble, its moment) */
+static void bp_flush (void)
+{
+	if (!bp_open) return;
+	double c = alg_vector_cyc; unsigned long long t = alg_vector_t0, now = alg_cycles;
+	alg_vector_cyc = bp_cyc; alg_vector_t0 = bp_t0; alg_cycles = bp_t1; bp_emitting = 1;
+	alg_addline ((long) bp_x0, (long) bp_y0, (long) bp_x1, (long) bp_y1, bp_z);
+	bp_emitting = 0; alg_vector_cyc = c; alg_vector_t0 = t; alg_cycles = now;
+	bp_open = 0;
+}
+/* one cycle of the spot (after the lag: beam_x / beam_y, ZS units): the cycle's light goes from where the spot was to
+ * where it is now; the same piece while the speed holds (BP_TOL), the beam level and the Z the same */
+static void bp_step (unsigned sig_blank)
+{
+	double lev = (sig_blank && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f)) ? alg_zlev : 0.0;
+	int inb = beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) && beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS);
+	double x = beam_x, y = beam_y, vx = x - bp_px, vy = y - bp_py;
+	if (lev > 0.0 && inb) {
+		unsigned pc = e6809_get_pc () & 0xFFFF; int sh = pc >= 0xF495 && pc < 0xF511;
+		if (bp_open && (unsigned char) alg_zsh == bp_z && fabs (lev - bp_lev) < 0.02 && sh == bp_shift &&
+		    fabs (vx - bp_vx) + fabs (vy - bp_vy) <= BP_TOL * (fabs (bp_vx) + fabs (bp_vy)) + BP_TOL0 * ZS) {
+			bp_x1 = x; bp_y1 = y; bp_cyc += lev; bp_t1 = alg_cycles;
+		} else {
+			bp_flush ();
+			bp_open = 1; bp_x0 = bp_px; bp_y0 = bp_py; bp_x1 = x; bp_y1 = y; bp_vx = vx; bp_vy = vy;
+			bp_cyc = lev; bp_lev = lev; bp_z = (unsigned char) alg_zsh; bp_shift = sh;
+			bp_t0 = alg_cycles - 1; bp_t1 = alg_cycles;
+		}
+	} else bp_flush ();
+	bp_px = x; bp_py = y;
+}
 static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
 {
 	unsigned long key;
 	long index;
 
+	if (vt_beam_mode > 0 && !bp_emitting && !dark_adding) return;   /* (the beam-trace mode: the pieces, see bp_step) */
 	x0 /= ZS; y0 /= ZS; x1 /= ZS; y1 /= ZS;
 	{ unsigned pc = e6809_get_pc () & 0xFFFF;
-	  if (pc >= 0xF495 && pc < 0xF511) { long sh = vt_text_shift + (long) (vt_text_shift_w * ram[0x2B]); x0 -= sh; x1 -= sh; } }
+	  if (bp_emitting ? bp_shift : (pc >= 0xF495 && pc < 0xF511)) { long sh = vt_text_shift + (long) (vt_text_shift_w * ram[0x2B]); x0 -= sh; x1 -= sh; } }
 	if ((alg_wob50 != 0 || alg_wob100 != 0) && !vt_wobble_off) {
 		long ax, ay, bx, by;
 		alg_wobble (alg_vector_t0, &ax, &ay); alg_wobble (alg_cycles, &bx, &by);
@@ -1213,6 +1317,15 @@ static einline void alg_sstep (void)
 	 * cycle shorter than without it). Whole cycles: the beam stays lit; the fraction: a moving line
 	 * is drawn that much further (alg_addline below). */
 	if (beam_off < 0) { const char *z = getenv ("VT_BEAMOFF"); beam_off = z ? atof (z) : 0.5; if (beam_off > 15) beam_off = 15; }
+	/* VT_ZDELAY=c: the beam's on and off both reach the tube c cycles late - the Z amplifier delays /BLANK as the
+	 * deflection amplifiers delay X and Y (the spot's lag, LAG_TAU), so a line is lit along its own path to its end
+	 * (tried for the owner's DAC test photos, 2026-10-26: every long line reaches the reference placed by a move; ours
+	 * reach 98-98.5 %, within the photos' scatter). Measured 2026-10-26 (TODO.md, Clean Sweep): the real wall ends sit
+	 * ~0.4 cycle further along their sweeps, below this switch's whole-cycle step - a test switch, 0 (off) */
+	if (z_delay < 0) { const char *z = getenv ("VT_ZDELAY"); z_delay = z ? atoi (z) : 0; if (z_delay > 30) z_delay = 30; }
+	if (z_delay > 0) { static unsigned zpos; static unsigned char zh[32];
+		zh[zpos++ & 31] = sig_blank ? 1 : 0;
+		sig_blank = zh[(zpos - 1 - z_delay) & 31]; }
 	{ static unsigned bpos; static unsigned char bh[16]; int boff = (int) beam_off;
 	  if (boff) {
 		bh[bpos++ & 15] = sig_blank ? 1 : 0;
@@ -1236,14 +1349,14 @@ static einline void alg_sstep (void)
 	if (ysh_k < 0) { const char *z = getenv ("VT_YSHK"); ysh_k = z ? atof (z) : 0.7; }
 	if ((via_orb & 0x07) == 0x00 && ysh_k < 1.0) {
 		/* mux enabled, select 0: the Y hold charges toward the DAC value (see alg_yshf) */
-		alg_yshf += ((double) alg_xsh - alg_yshf) * ysh_k;
+		alg_yshf += (DACV (alg_xsh) - alg_yshf) * ysh_k;
 		alg_ysh = (unsigned) (alg_yshf + 0.5);
 		alg_dy = (long) ((alg_rshf + alg_zofs) * ZS) - (long) (alg_yshf * ZS) + alg_yofs;
 	}
 	if ((via_orb & 0x07) == 0x02) {
 		/* mux enabled, select 1: the zero reference capacitor charges toward the DAC value */
-		if (!alg_zideal) alg_rshf += ((double) alg_xsh - alg_rshf) * ZREF_K;
-		alg_dx = (long) alg_xsh * ZS - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
+		if (!alg_zideal) alg_rshf += (DACV (alg_xsh) - alg_rshf) * ZREF_K;
+		alg_dx = (long) (DACV (alg_xsh) * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 		alg_dy = (long) ((alg_rshf + alg_zofs) * ZS) - (long) (alg_yshf * ZS) + alg_yofs;
 	}
 
@@ -1251,11 +1364,17 @@ static einline void alg_sstep (void)
 	unsigned zero_now = via_ca2;
 	if (alg_adly) {
 		dly_x[dly_p & 63] = (unsigned char) alg_xsh; dly_y[dly_p & 63] = (unsigned char) alg_ysh;
+		dly_yf[dly_p & 63] = alg_yshf;
 		dly_z[dly_p & 63] = (unsigned char) via_ca2; dly_p++;
 		unsigned xd = dly_x[(dly_p - 1 - dly_nx) & 63], yd = dly_y[(dly_p - 1 - dly_ny) & 63];
 		zero_now = dly_z[(dly_p - 1 - dly_nz) & 63];
+		if (dac_on > 0) {                                   /* (the DAC's bit errors: the hold's value as it charged) */
+			adx = (long) (dacv (xd) * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
+			ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) (dly_yf[(dly_p - 1 - dly_ny) & 63] * ZS) + alg_yofs;
+		} else {
 		adx = (long) xd * ZS - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 		ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) yd * ZS + alg_yofs;
+		}
 	}
 	if (vt_vlag < 0) { const char *z = getenv ("VT_VLAG"); vt_vlag = z ? atof (z) : VLAG_TAU; z = getenv ("VT_VLAGN"); vlag_n = z ? atoi (z) : VLAG_N;
 	                   z = getenv ("VT_VLAGSPLIT"); if (z) vlag_split_k = atof (z); }
@@ -1304,13 +1423,28 @@ static einline void alg_sstep (void)
 		sig_ramp = act ? 0 : 0x80;
 	  } }
 
+	if (zero_tx < 0) { const char *z = getenv ("VT_ZERON"); zero_n = z ? atoi (z) : ZERO_N; z = getenv ("VT_ZEROTAU"); zero_tx = ZERO_TX; zero_ty = ZERO_TY;
+	                   if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); zero_tx = a; zero_ty = b < 0 ? a : b; } }
 	if (zero_now == 0) {
-		/* need to force the current point to the 'orgin' so just
-		 * calculate distance to origin and use that as dx,dy.
-		 */
-
-		sig_dx = (ALG_MAX_X*ZS) / 2 - alg_curr_x;
-		sig_dy = (ALG_MAX_Y*ZS) / 2 - alg_curr_y;
+		/* ZERO: the integrators' capacitors emptied - at once (zero_tx / zero_ty 0: the old model), or as an RC with
+		 * the RAMP's input still flowing (see OFS_K) */
+		if (zero_tx > 0.05 || zero_ty > 0.05) {
+			int n = zero_n == 2 ? 2 : 1;                         /* (VT_ZERON=2: two stages, each tau / 2) */
+			double kx = zero_tx > 0.05 ? 1.0 - exp (-(double) n / zero_tx) : 1.0, ky = zero_ty > 0.05 ? 1.0 - exp (-(double) n / zero_ty) : 1.0;
+			long rx = sig_ramp == 0 ? (ramp_part < 1.0 ? (long) (adx * ramp_part) : adx) : 0;
+			long ry = sig_ramp == 0 ? (ramp_part < 1.0 ? (long) (ady * ramp_part) : ady) : 0;
+			double cx = (ALG_MAX_X*ZS) / 2, cy = (ALG_MAX_Y*ZS) / 2;
+			if (n == 2) {
+				if (!zero_was) { zero_x1 = alg_curr_x; zero_y1 = alg_curr_y; }
+				zero_x1 += (cx - zero_x1) * kx; zero_y1 += (cy - zero_y1) * ky;
+				cx = zero_x1; cy = zero_y1;
+			}
+			sig_dx = (long) ((cx - alg_curr_x) * kx) + rx;
+			sig_dy = (long) ((cy - alg_curr_y) * ky) + ry;
+		} else {
+			sig_dx = (ALG_MAX_X*ZS) / 2 - alg_curr_x;
+			sig_dy = (ALG_MAX_Y*ZS) / 2 - alg_curr_y;
+		}
 	} else {
 		if (sig_ramp == 0) {
 			sig_dx = ramp_part < 1.0 ? (long) (adx * ramp_part) : adx;
@@ -1321,6 +1455,7 @@ static einline void alg_sstep (void)
 		}
 	}
 
+	zero_was = zero_now == 0;
 	if (!beam_init) { beam_init = 1; beam_x = beam_x1 = alg_curr_x; beam_y = beam_y1 = alg_curr_y; }
 	if (alg_vectoring == 0) {
 		if (sig_blank == 1 &&
@@ -1425,23 +1560,39 @@ static einline void alg_sstep (void)
 	alg_curr_y += sig_dy;
 	alg_cycles++;
 	if (vt_lag < 0) { const char *z = getenv ("VT_DEFLAG"); vt_lag = z ? atof (z) : LAG_TAU; z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; z = getenv ("VT_DEFLAGSPLIT"); if (z) lag_split_k = atof (z); }
+	if (vt_lag_y < -1.5) { const char *z = getenv ("VT_DEFLAGY"); vt_lag_y = z ? atof (z) : LAG_TAU_Y; }
+	if (ofs_k < 0) { const char *z = getenv ("VT_OFSK"); ofs_k = z ? atof (z) : OFS_K; }
 	{ double ox = beam_x, oy = beam_y;
-	  if (vt_lag > 0.05) {
+	  /* where the integrators put the beam: their sum plus the reference's own shift (OFS_K; a perfect machine - VT_ZIDEAL
+	   * - none) */
+	  double sh = alg_zideal ? 0.0 : ofs_k * (alg_rshf - 128.0) * ZS;
+	  double tx = alg_curr_x - sh, ty = alg_curr_y + sh;
+	  double lx = vt_lag, ly = vt_lag_y >= 0 ? vt_lag_y : vt_lag;
+	  if (lx > 0.05 || ly > 0.05) {
 		int n = vt_lag_n == 2 ? 2 : 1;
-		double k = 1.0 - exp (-(double) n / vt_lag);            /* (each stage tau / n) */
+		double kx = lx > 0.05 ? 1.0 - exp (-(double) n / lx) : 1.0;   /* (each stage tau / n) */
+		double ky = ly > 0.05 ? 1.0 - exp (-(double) n / ly) : 1.0;
 		if (n == 2) {
-			beam_x1 += (alg_curr_x - beam_x1) * k; beam_y1 += (alg_curr_y - beam_y1) * k;
-			beam_x += (beam_x1 - beam_x) * k; beam_y += (beam_y1 - beam_y) * k;
+			beam_x1 += (tx - beam_x1) * kx; beam_y1 += (ty - beam_y1) * ky;
+			beam_x += (beam_x1 - beam_x) * kx; beam_y += (beam_y1 - beam_y) * ky;
 		} else {
-			beam_x += (alg_curr_x - beam_x) * k; beam_y += (alg_curr_y - beam_y) * k;
+			beam_x += (tx - beam_x) * kx; beam_y += (ty - beam_y) * ky;
 		}
 	  } else {
-		beam_x = beam_x1 = alg_curr_x; beam_y = beam_y1 = alg_curr_y;
+		beam_x = beam_x1 = tx; beam_y = beam_y1 = ty;
 	  }
 	  beam_vx = beam_x - ox; beam_vy = beam_y - oy;
 	  /* still catching up: its speed off the integrators' by more than 3 % (and 0.02 units a cycle) */
 	  { double ex = beam_vx - sig_dx, ey = beam_vy - sig_dy, v = fabs ((double) sig_dx) + fabs ((double) sig_dy);
 	    lag_moving = fabs (ex) + fabs (ey) > 0.03 * v + 0.02 * ZS; } }
+	if (vt_beam_mode < 0) { const char *z = getenv ("VT_BEAMMODE"); vt_beam_mode = z && atoi (z) > 0; }
+	if (vt_beam_mode > 0) bp_step (sig_blank);
+	if (vt_beam_hook) {
+		double hx = beam_x / ZS, hy = beam_y / ZS;
+		unsigned pc = e6809_get_pc () & 0xFFFF;                 /* (the text's shift, as alg_addline's) */
+		if (pc >= 0xF495 && pc < 0xF511) hx -= vt_text_shift + (long) (vt_text_shift_w * ram[0x2B]);
+		vt_beam_hook (hx, hy, (sig_blank && (alg_zsh & 0x80) == 0) ? alg_zlev : 0.0, (unsigned char) alg_zsh, alg_cycles);
+	}
 	if (dark_on) {
 		if (alg_curr_x >= 0 && alg_curr_x < (ALG_MAX_X*ZS) && alg_curr_y >= 0 && alg_curr_y < (ALG_MAX_Y*ZS)) {
 			dark_x1 = alg_curr_x; dark_y1 = alg_curr_y; dark_cyc += 1.0;

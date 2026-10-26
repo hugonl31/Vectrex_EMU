@@ -67,9 +67,27 @@ extern unsigned char (*e6809_read8) (unsigned address);
 
 /* ---------- line capture ---------- */
 typedef struct { long x0, y0, x1, y1; unsigned char c; unsigned cyc, t0; } line_t;
-#define MAXL 20000
+#define MAXL 40000
 static line_t cur[MAXL], last[MAXL];
 static int ncur, nlast;
+
+/* ---------- beam trace (VT_BEAMTRACE=1, the beam-trace renderer): the lit cycles of a frame ---------- */
+typedef struct { float x, y, lev; unsigned char z; unsigned t; } beam_t;
+#define MAXB 400000
+static beam_t *bcur, *blast; static int nbcur, nblast;
+extern void (*vt_beam_hook) (double x, double y, double lev, unsigned char z, unsigned long long t);
+static void beam_take (double x, double y, double lev, unsigned char z, unsigned long long t)
+{
+	extern unsigned long long vt_frame_t0;
+	if (lev <= 0.0 || nbcur >= MAXB) return;
+	beam_t *b = &bcur[nbcur++]; b->x = (float) x; b->y = (float) y; b->lev = (float) lev; b->z = z;
+	b->t = (unsigned) (t > vt_frame_t0 ? t - vt_frame_t0 : 0);
+}
+static void beam_swap (void)
+{
+	if (!bcur) return;
+	beam_t *k = blast; blast = bcur; bcur = k; nblast = nbcur; nbcur = 0;
+}
 
 unsigned long vt_nlines;
 void vt_line (long x0, long y0, long x1, long y1, unsigned char c, unsigned cyc, unsigned t0)
@@ -145,7 +163,7 @@ void vt_step (unsigned icycles)
 		idle_frame = 0;
 		frames++;
 		memcpy (last, cur, sizeof (line_t) * ncur);
-		nlast = ncur; ncur = 0;
+		nlast = ncur; ncur = 0; beam_swap ();
 		frame_done = 1;
 		last_recal = total_cycles;
 		{ extern unsigned long long vt_piece_t0, alg_cycles; vt_piece_t0 = alg_cycles; }   /* (the next piece begins) */
@@ -163,7 +181,7 @@ void vt_step (unsigned icycles)
 			idle_frame = 0;
 			frames++;
 			memcpy (last, cur, sizeof (line_t) * ncur);
-			nlast = ncur; ncur = 0;
+			nlast = ncur; ncur = 0; beam_swap ();
 			frame_done = 1;
 			vt_frame_t0 = alg_cycles;
 			{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }
@@ -339,7 +357,7 @@ static void run_frame (void)
 	while (!frame_done && budget > 0) { emu_chunk (500); budget -= 500; }
 	if (!frame_done) {                  /* no Wait_Recal: show what was drawn and start a new frame */
 		extern unsigned long long alg_cycles, vt_frame_t0;
-		memcpy (last, cur, sizeof (line_t) * ncur); nlast = ncur; ncur = 0;
+		memcpy (last, cur, sizeof (line_t) * ncur); nlast = ncur; ncur = 0; beam_swap ();
 		vt_frame_t0 = alg_cycles;
 		{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }
 	}
@@ -419,6 +437,7 @@ int main (int argc, char **argv)
 	                      if (!e) sp_start (dev);
 	                      else fprintf (stderr, "VecVoice: %s\n", e == -1 ? "no SP0256-AL2 ROM file" : "the file is not the SP0256-AL2 ROM"); } }
 	if (getenv ("VT_BANKLOG")) verbose_bank = 1;
+	if (getenv ("VT_BEAMTRACE")) { bcur = malloc (sizeof (beam_t) * MAXB); blast = malloc (sizeof (beam_t) * MAXB); vt_beam_hook = beam_take; }
 	{ extern long vt_text_shift; extern double vt_text_shift_w; if (getenv ("VT_TEXTSHIFT")) vt_text_shift = atol (getenv ("VT_TEXTSHIFT")); if (getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = atof (getenv ("VT_TEXTSHIFTW")); }
 	if (getenv ("VT_COMMON")) common_base = (unsigned) strtol (getenv ("VT_COMMON"), 0, 16);
 	e8910_init_headless ();
@@ -451,6 +470,11 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "shot")) { snprintf (path, sizeof path, "%s/%s", outdir, a1); render_shot (path); }
 		else if (!strcmp (cmd, "poke")) {       /* poke ADDR VALUE (hex): set a RAM byte */
 			e6809_write8 ((unsigned) strtol (a1, 0, 16), (unsigned char) strtol (a2, 0, 16));
+		}
+		else if (!strcmp (cmd, "dumpbeam")) {   /* the last frame's lit cycles (VT_BEAMTRACE=1): x y lev z t, binary */
+			snprintf (path, sizeof path, "%s/%s", outdir, a1);
+			FILE *bf = fopen (path, "wb");
+			if (bf) { if (nblast) fwrite (blast, sizeof (beam_t), nblast, bf); fclose (bf); }
 		}
 		else if (!strcmp (cmd, "dumpvec")) {    /* the last frame's vectors as text: x0 y0 x1 y1 c */
 			snprintf (path, sizeof path, "%s/%s", outdir, a1);

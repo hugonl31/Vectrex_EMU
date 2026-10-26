@@ -140,7 +140,7 @@ static int live_main (const char *recfn, const char *symfn)
 	if (symfn && load_syms (symfn)) { opt_addr = SA (S_OPTIONS); gflags_addr = SA (S_GFLAGS); }
 	abuf_cap = 32768; abuf = malloc (abuf_cap);
 	{ extern int vt_uvm2, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2 || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
-	static unsigned char out[10 + 4000 * 13 + 32768];
+	static unsigned char out[10 + 30000 * 13 + 32768];   /* (30000: the beam-trace mode's pieces) */
 	unsigned char m[8];
 	long nframes = 0;
 	unsigned long long piece0 = 0;
@@ -164,7 +164,7 @@ static int live_main (const char *recfn, const char *symfn)
 		abuf_n = 0;
 		{ extern unsigned long long vt_piece_t0; piece0 = vt_piece_t0; }   /* (this frame's lines count from its start) */
 		run_frame ();
-		int n = nlast > 4000 ? 4000 : nlast;
+		int n = nlast > 30000 ? 30000 : nlast;
 		unsigned char *p = out;
 		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2;   /* (bit 15: two channels -
 		  the console and the speech module, interleaved) */

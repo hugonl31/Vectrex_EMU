@@ -5,7 +5,7 @@
 ;   Page 2  LINES   : 16 horizontal lines at scales 8..23; after each, a dot is placed separately
 ;                     (a beam move of the same vector at the same scale) where the line should end:
 ;                     the gap between the lit end and the dot is the line's dark end.
-;   Page 3  BOWTIES : the Robot Arena flybot outline at scales 8..23 (one closed path).
+;   Page 3  BOWTIES : a bow-tie outline at scales 8..23 (one closed path).
 ;   Page 4  SHIPS   : Mine Storm's ship (its vector list, as Mine Storm draws it) at scales $0A-$0D,
 ;                     top row at Mine Storm's intensity $5F, bottom row at $7F.
 ;   Page 5  BIG SHIPS: the same, every vector doubled (twice the speed: the same timing, gaps twice as
@@ -239,7 +239,7 @@ Label:
 ; vector lists for Draw_VLp: pattern ($FF draw,$00 move), y, x; $01 ends
 Square  fcb     $FF,$00,$60,$FF,-$60,$00,$FF,$00,-$60,$FF,$60,$00,$01
 HLine   fcb     $FF,$00,$7F,$01
-; Robot Arena's flybot: (-w,4.5) (-w,-4.5) (w,4.5) (w,-4.5) (-w,4.5), w = 6 (x8 art units / 2)
+; the bow-tie: (-w,4.5) (-w,-4.5) (w,4.5) (w,-4.5) (-w,4.5), w = 6 (x8 art units / 2)
 Bowtie  fcb     $00,$30,-$40,$FF,-$60,$00,$FF,$60,$7F,$FF,-$60,$00,$FF,$60,-$7F,$01
 
 ; Mine Storm's ship (pointing up) as Mine Storm builds it in RAM ($CB89)

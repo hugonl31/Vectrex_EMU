@@ -4912,7 +4912,53 @@ class App:
         30 s"""
         self.gc_n = getattr(self, 'gc_n', 0) + 1
         gc.collect(2 if self.gc_n % 15 == 0 else 1)
+        try:
+            self.perf_tick()
+        except Exception:   # noqa: a diagnostic must never stop the display loop
+            pass
         self.root.after(2000, self.gc_tick)
+    def perf_tick(self):
+        """every 2 s: the pictures drawn per second. Below 30 for 6 s while a game runs (not on Low): said once - the
+        PC's graphics may not carry these effects (Quality > Optimize). Every 10 s a line in cache/render_log.txt:
+        the graphics card, the picture's size, the quality, pictures a second, the card's and the processor's time
+        per picture - to send along when the picture is slow"""
+        now = time.perf_counter()
+        n = sum(1 for t_ in self.presents if t_ > now - 2.0)
+        fps = n / 2.0
+        r = self.ren
+        running = self.run.power and not self.run.paused and not self.browser
+        slow = running and fps < 30 and r is not None and self.current_profile() != 'low'
+        self.slow_n = getattr(self, 'slow_n', 0) + 1 if slow else 0
+        if self.slow_n == 3 and not getattr(self, 'slow_told', False):
+            self.slow_told = True
+            self.flash('SLOW PICTURE: %d FPS' % round(fps), 'QUALITY > OPTIMIZE', secs=6.0)
+            self.show_look('the picture runs at %d FPS on this PC: View > Quality > Optimize finds what it can carry '
+                           '(or choose Low)' % round(fps))
+        self.perf_n = getattr(self, 'perf_n', 0) + 1
+        if self.perf_n % 5 == 1 and r is not None:
+            try:
+                os.makedirs(CACHE_DIR, exist_ok=True)
+                fn = os.path.join(CACHE_DIR, 'render_log.txt')
+                new = not getattr(self, 'perf_log_started', False)
+                self.perf_log_started = True
+                with open(fn, 'w' if new else 'a', encoding='utf-8') as f:
+                    if new:
+                        gpu = '?'
+                        try:
+                            gl = r.gl; gl.glGetString.restype = ctypes.c_char_p
+                            gpu = ' / '.join((gl.glGetString(k) or b'?').decode(errors='replace') for k in (0x1F00, 0x1F01, 0x1F02))
+                        except Exception:   # noqa
+                            pass
+                        f.write('%s  %s\ngraphics: %s\n' % (datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), platform.platform(), gpu))
+                    sz = getattr(r, 'size', (0, 0))
+                    on = [k for k in getattr(r, 'PROFILE_KEYS', ()) if getattr(r, k, None)]
+                    f.write('%s  %s  picture %dx%d  quality %s  overlay %s  %.0f fps  card %s ms  processor %s ms  emu %.0f %%  on: %s\n' % (
+                        datetime.datetime.now().strftime('%H:%M:%S'), os.path.basename(self.args.rom or 'Mine Storm'),
+                        sz[0], sz[1], self.current_profile(), 'on' if (getattr(r, 'art_on', False) and getattr(r, 'art', None)) else 'off',
+                        fps, ('%.1f' % r.gpu_ms) if getattr(r, 'gpu_ms', None) else '-',
+                        ('%.1f' % r.cpu_ms) if getattr(r, 'cpu_ms', None) else '-', getattr(self, 'speed', 0.0), ' '.join(on)))
+            except OSError:
+                pass
     def tick(self):
         if self.win_q and self.win_events():
             return                                              # (closed)

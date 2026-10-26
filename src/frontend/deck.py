@@ -84,6 +84,26 @@ def dialog(kind, title, text, parent=None, yesno=False, buttons=('Yes', 'No')):
     return res[0]
 
 
+def work_area(w):
+    """the usable desktop (x0, y0, x1, y1) on the monitor of window w: without the taskbar (Windows: the monitor's
+    work area; elsewhere the screen less a margin)"""
+    if V.IS_WIN:
+        try:
+            import ctypes, ctypes.wintypes as W
+            class MI(ctypes.Structure):
+                _fields_ = [('cbSize', W.DWORD), ('rcMonitor', W.RECT), ('rcWork', W.RECT), ('dwFlags', W.DWORD)]
+            u = ctypes.windll.user32
+            hwnd = u.GetParent(w.winfo_id()) or w.winfo_id()
+            mon = u.MonitorFromWindow(hwnd, 2)                  # (MONITOR_DEFAULTTONEAREST)
+            mi = MI(); mi.cbSize = ctypes.sizeof(MI)
+            if u.GetMonitorInfoW(mon, ctypes.byref(mi)):
+                r = mi.rcWork
+                return r.left, r.top, r.right, r.bottom
+        except Exception:   # noqa
+            pass
+    return 0, 0, w.winfo_screenwidth(), w.winfo_screenheight() - 60
+
+
 def center(t, over=None):
     """a window placed in the middle of the emulator's (seen at once), drawn there before it shows"""
     over = over or getattr(V, 'APP_ROOT', None) or tk._default_root
@@ -740,12 +760,26 @@ def setup_window(app, first=True):
     tk.Label(top, text='Shown once. Everything here can be changed later: the menus, and Config (Tab).',
              fg=DIM, bg=TOPBG, font=f9, anchor='w').pack(fill='x', padx=14, pady=(0 if first else 8, 8))
     PB = PANEL                                          # (the boxes' colour)
+    # the boxes scroll between the title and the buttons when the screen is not tall enough for all of them (a 1080p
+    # laptop at 150 %: the bottom of the window, with Start playing, was below the taskbar)
+    mid = tk.Frame(t, bg=BG); mid.pack(fill='both', expand=True)
+    cv = tk.Canvas(mid, bg=BG, highlightthickness=0, bd=0)
+    body = tk.Frame(cv, bg=BG)
+    cv.create_window(0, 0, window=body, anchor='nw')
+    sbar = darkmenu.DScroll(mid, command=cv.yview, bg=BG)
+    cv.configure(yscrollcommand=sbar.set)
+    cv.pack(side='left', fill='both', expand=True)
+    def wheel(e):
+        if sbar.winfo_ismapped():
+            cv.yview_scroll(-1 if (e.delta > 0 or getattr(e, 'num', 0) == 4) else 1, 'units')
+    for seq in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+        t.bind(seq, wheel)
     grid = None
     rowi = [0]
     def box(caption):
         """a captioned box; the rows after it go in it"""
         nonlocal grid
-        bx = tk.Frame(t, bg=PB, highlightthickness=1, highlightbackground=EDGE); bx.pack(fill='x', padx=10, pady=(8, 0))
+        bx = tk.Frame(body, bg=PB, highlightthickness=1, highlightbackground=EDGE); bx.pack(fill='x', padx=10, pady=(8, 0))
         tk.Label(bx, text=caption, fg=DIM, bg=PB, font=_font(a, 8), anchor='w').pack(fill='x', padx=10, pady=(4, 0))
         grid = tk.Frame(bx, bg=PB); grid.pack(fill='x', padx=10, pady=(0, 6))
         rowi[0] = 0
@@ -954,8 +988,19 @@ def setup_window(app, first=True):
     t.protocol('WM_DELETE_WINDOW', lambda: done(skip=True))
     t.update_idletasks()
     r = a.root
-    t.geometry('+%d+%d' % (r.winfo_rootx() + max(0, (r.winfo_width() - t.winfo_reqwidth()) // 2),
-                           r.winfo_rooty() + max(0, (r.winfo_height() - t.winfo_reqheight()) // 3)))
+    x0, y0, x1, y1 = work_area(r)
+    bw, bh = body.winfo_reqwidth(), body.winfo_reqheight() + 4
+    room = (y1 - y0) - top.winfo_reqheight() - foot.winfo_reqheight() - 60   # (60: the title bar and a margin)
+    if bh > room:                                       # (not all of it fits: the boxes scroll)
+        sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
+        bh = max(200, room)
+    cv.configure(width=bw, height=bh, scrollregion=(0, 0, bw, body.winfo_reqheight() + 4))
+    t.update_idletasks()
+    tw, th = t.winfo_reqwidth(), t.winfo_reqheight()
+    x = r.winfo_rootx() + max(0, (r.winfo_width() - tw) // 2)
+    y = r.winfo_rooty() + max(0, (r.winfo_height() - th) // 3)
+    x = max(x0, min(x, x1 - tw)); y = max(y0, min(y, y1 - th - 40))   # (all of it on the desktop)
+    t.geometry('+%d+%d' % (x, y))
     t.deiconify()
     no_close_button(t)
     t.focus_force()

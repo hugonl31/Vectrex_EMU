@@ -362,3 +362,14 @@ void usb_tick (uint64_t now, uint32_t sys_hz)
 	if (U.xfer) epx_service ();
 	int_eps ();
 }
+
+/* ------------------------------------------------------------------ the device for another controller */
+/* The same keyboard + mouse device behind another host controller (the PiTrex's DWC OTG, pitrex_usb.c): a bus
+ * reset, its address, and its endpoints - a SETUP packet, an IN packet (length, -1 NAK, -2 STALL), an OUT
+ * packet (0, -1 NAK, -2 STALL). */
+void usbdev_bus_reset (void) { make_cfg (); U.addr = 0; U.pend_addr = -1; U.config = 0; U.ctl_len = U.ctl_pos = 0; U.ctl_stall = 0; }
+int usbdev_addr (void) { return U.addr; }
+void usbdev_log (int on) { U.log = on; }
+int usbdev_setup (const uint8_t *s) { setup_packet (s); return 0; }
+int usbdev_in (int ep, uint8_t *buf, int max) { return dev_in (ep, buf, max); }
+int usbdev_out (int ep, const uint8_t *buf, int n) { return dev_out (ep, buf, n); }

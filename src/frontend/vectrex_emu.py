@@ -28,7 +28,7 @@ the phosphor at the moment the beam drew it and the spot fades from there to bla
 trails move smoothly (vsync on a 60 / 120 / 240 Hz monitor, else paced to 60 Hz - G-Sync shows it as is).
 """
 import argparse, ctypes, ctypes.wintypes as W, json, math, os, queue, random, shutil, struct, subprocess
-import sys, threading, time, datetime, collections, re, gc
+import sys, threading, time, datetime, collections, re, gc, platform
 import tkinter as tk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vecrender
@@ -1091,8 +1091,8 @@ class Core:
         # a UVMC2 game: its SD card is the folder sd_dir, as a FAT32 image (fatimg.py), copied back at the end
         # a UVMC2 game: its core 0 on a host thread of its own when that pays (the core decides: both cores busy);
         # only with 4 or more processors (the window and the sound need one too)
-        if usb and rom.lower().endswith('.um2'):
-            env['VT_USBHID'] = '1'                                  # (the PC's keyboard and mouse on its USB port)
+        if usb and rom.lower().endswith(('.um2', '.img', '.pit')):
+            env['VT_USBHID'] = '1'                                  # (the PC's keyboard and mouse on its USB port: UVMC2, PiTrex)
         if rom.lower().endswith('.um2') and (os.cpu_count() or 1) >= 4:
             env.setdefault('VT_THREADS', '1')
         self.sd = None
@@ -1125,15 +1125,30 @@ class Core:
         self.p = subprocess.Popen([CORE, BIOS, rom, '--live', NUL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, bufsize=0,
                                   creationflags=0x08000000 if IS_WIN else 0)            # CREATE_NO_WINDOW
-        # the core's messages: a UVMC2 cartridge's problem ("UVMC2: ...") for the window; the rest dropped
+        # the core's messages: a UVMC2 cartridge's problem ("UVMC2: ...") for the window; all of them in
+        # cache/core_log.txt (new at every start, at most 4000 lines: what to send when something is wrong)
         self.msgs = []
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            log = open(os.path.join(CACHE_DIR, 'core_log.txt'), 'w', encoding='utf-8', errors='replace')
+            log.write('%s  %s  %s\n' % (datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), os.path.basename(rom), platform.platform()))
+        except OSError:
+            log = None
         self.threads = 1                                        # (a UVMC2: host threads in use, from the core)
         self.sig = None                                         # (the last frame's picture, as a checksum)
-        def drain(f=self.p.stderr, out=self.msgs):
+        def drain(f=self.p.stderr, out=self.msgs, log=log):
+            n = 0
             try:
                 for ln in iter(f.readline, b''):
                     t = ln.decode('utf-8', 'replace').strip()
-                    if (t.startswith('UVMC2:') or t.startswith('PITREX: the program stopped')) and len(out) < 20:
+                    if log and n < 4000:
+                        n += 1
+                        try: log.write(t + '\n'); log.flush()
+                        except (OSError, ValueError): pass
+                    if t.startswith('PITREX: no JIT') and len(out) < 20:     # (the Pi's code interpreted: ~3x slower)
+                        out.append("the PiTrex runs without its JIT on this PC (Windows did not give it executable "
+                                   "memory - a security tool or Exploit protection?): slower")
+                    elif (t.startswith('UVMC2:') or t.startswith('PITREX: the program stopped')) and len(out) < 20:
                         out.append(t.split(':', 1)[1].strip())          # (a PiTrex's own text, its UART, is not shown)
                     elif t.startswith('STAT: threads '):               # (the core: its UVMC2 runs on 1 or 2 host threads)
                         try: self.threads = int(t.split()[2])
@@ -4404,6 +4419,10 @@ class App:
         self.show_look('UVMC2 games in the ROM list: ' + ('shown' if self.show_um2 else 'hidden'))
     def open_sd_dir(self):
         open_folder(self.sd_dir)
+    def open_px_dir(self):
+        """Config > Cartridge, PiTrex: its SD card folder in the file manager"""
+        os.makedirs(self.px_dir, exist_ok=True)
+        open_folder(self.px_dir)
     def choose_sd_dir(self):
         """Add-ons > SD card folder: the folder a UVMC2 game sees as its SD card (from its next start on)"""
         from tkinter import filedialog
@@ -4675,10 +4694,12 @@ class App:
         self.mouse_btn = 0; self.inp.mouse = None
         self.save_settings()
         self.show_look('mouse / touchpad: ' + ('steers player 1 (left button: 4, right: 1)' if self.mouse_stick else 'off'))
+    def usb_cart(self):
+        """a cartridge with a USB port in the slot: a UVMC2 game or a PiTrex program"""
+        return (self.args.rom or '').lower().endswith(('.um2', '.img', '.pit'))
     def usb_live(self):
-        """the PC's mouse / keyboard go to the UVMC2's USB port now"""
-        return (self.usb_hid and self.run.power and not self.browser and not self.run.paused
-                and (self.args.rom or '').lower().endswith('.um2'))
+        """the PC's mouse / keyboard go to the cartridge's USB port now (a UVMC2, a PiTrex)"""
+        return self.usb_hid and self.run.power and not self.browser and not self.run.paused and self.usb_cart()
     # Tk key names -> USB HID usages (the base key: shifted symbols map to their key)
     HID_KEYS = dict(Return=0x28, KP_Enter=0x58, Escape=0x29, BackSpace=0x2A, Tab=0x2B, space=0x2C, minus=0x2D, underscore=0x2D,
                     equal=0x2E, plus=0x2E, bracketleft=0x2F, braceleft=0x2F, bracketright=0x30, braceright=0x30, backslash=0x31,
@@ -4697,10 +4718,10 @@ class App:
             return 0x3A + int(ks[1:]) - 1
         return self.HID_KEYS.get(ks, 0)
     def toggle_usb_typing(self, e=None):
-        """Ctrl+K (a UVMC2 game): the keyboard types on the cartridge's USB keyboard - the emulator's own keys
-        and the controller keys rest until Ctrl+K again"""
-        if not self.usb_typing and not (self.usb_hid and (self.args.rom or '').lower().endswith('.um2')):
-            self.show_look('Ctrl+K: only for a UVMC2 game (Cartridge strip: its USB keyboard and mouse)')
+        """Ctrl+K (a UVMC2 game, a PiTrex program): the keyboard types on the cartridge's USB keyboard - the
+        emulator's own keys and the controller keys rest until Ctrl+K again"""
+        if not self.usb_typing and not (self.usb_hid and self.usb_cart()):
+            self.show_look('Ctrl+K: only for a UVMC2 game or a PiTrex program (Cartridge strip: the USB keyboard and mouse)')
             return 'break'
         self.usb_typing = not self.usb_typing
         for w in (self.root, self.screen):
@@ -4710,16 +4731,17 @@ class App:
         self.usb_down = []; self.usb_mods = 0
         if not self.usb_typing:
             self.core.usb_key_report(0, [])
-        self.show_look('USB keyboard: ' + ('typing on the UVMC2 (Ctrl+K: back to the controller keys)' if self.usb_typing else 'off'))
+        what = 'the PiTrex' if (self.args.rom or '').lower().endswith(('.img', '.pit')) else 'the UVMC2'
+        self.show_look('USB keyboard: ' + ('typing on %s (Ctrl+K: back to the controller keys)' % what if self.usb_typing else 'off'))
         return 'break'
     def toggle_usb_hid(self):
-        """the control deck: a UVMC2 game gets the PC's mouse and keyboard as its USB devices (plugged in at the
-        start: a UVMC2 game in the slot starts again)"""
+        """the control deck: a UVMC2 game or a PiTrex program gets the PC's mouse and keyboard as its USB devices
+        (plugged in at the start: the cartridge in the slot starts again)"""
         self.usb_hid = not self.usb_hid
         self.save_settings()
-        if (self.args.rom or '').lower().endswith('.um2'):
+        if self.usb_cart():
             self.restart(self.args.rom)
-        self.show_look('UVMC2 USB keyboard and mouse: ' + ('plugged in' if self.usb_hid else 'unplugged'))
+        self.show_look('USB keyboard and mouse (UVMC2, PiTrex): ' + ('plugged in' if self.usb_hid else 'unplugged'))
     def usb_typing_off(self):
         if getattr(self, 'usb_typing', False):
             self.toggle_usb_typing()

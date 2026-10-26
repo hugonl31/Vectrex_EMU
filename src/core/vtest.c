@@ -500,6 +500,17 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "pxram")) { extern void pitrex_ramdump (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); pitrex_ramdump (path); }
 		else if (!strcmp (cmd, "jitmap")) { extern void arm11_jit_map (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); arm11_jit_map (path); }
 		else if (!strcmp (cmd, "pxprof")) { extern void pitrex_prof_dump (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); pitrex_prof_dump (path); }
+		else if (!strcmp (cmd, "usbkey")) {      /* usbkey MODS KEY (hex HID usages; 0 0: all keys up): a USB keyboard report */
+			extern void vt_usb_report (int id, const unsigned char *b);
+			unsigned char r[4] = { (unsigned char) strtol (a1, 0, 16), (unsigned char) strtol (a2, 0, 16), 0, 0 };
+			vt_usb_report (0x80, r);
+		}
+		else if (!strcmp (cmd, "usbmouse")) {    /* usbmouse BUTTONS DX [DY]: a USB mouse report */
+			extern void vt_usb_report (int id, const unsigned char *b);
+			char a3[64] = "0"; sscanf (line, "%*s %*s %*s %63s", a3);
+			unsigned char r[4] = { (unsigned char) atoi (a1), (unsigned char) (signed char) atoi (a2), (unsigned char) (signed char) atoi (a3), 0 };
+			vt_usb_report (0x81, r);
+		}
 		else if (!strcmp (cmd, "bot")) { char a3[64] = ""; sscanf (line, "%*s %*s %*s %63s", a3); bot_run (a1, atol (a2), a3[0] ? atoi (a3) : 2); }
 		else if (!strcmp (cmd, "regs")) printf ("PC=%04X X=%04X Y=%04X U=%04X S=%04X bank=%d\n", e6809_get_pc () & 0xFFFF, e6809_get_x (), e6809_get_y (), e6809_get_u (), e6809_get_s (), vt_cur_bank ());
 		else if (!strcmp (cmd, "recstart")) {   /* must be the first command: replays start at reset */

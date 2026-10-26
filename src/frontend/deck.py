@@ -317,13 +317,21 @@ class Deck:
             hw = [(lbl, (lambda k=k: a.cart_hw == k), (lambda k=k: a.set_cart_hw(k))) for k, lbl in V.CART_HW.items()]
             p2 = [(lbl, (lambda k=k: a.speech == k), (lambda k=k: a.set_speech(k))) for k, lbl in V.PORT2.items()]
             um2 = lambda: (a.args.rom or '').lower().endswith('.um2')
+            def px_now():
+                r = a.args.rom or ''
+                if not r.lower().endswith(('.img', '.pit')):
+                    return 'not in the slot'
+                n = os.path.splitext(os.path.basename(r))[0]
+                return 'in the slot now: ' + ('its menu' if n.lower() == 'pitrex' else n)
             return [('group', 'THE SLOT AND PORT 2'),
                     ('menu', 'Cartridge hardware', hw, None), ('menu', 'Controller port 2', p2, None),
                     ('note', lambda: "a game won't start with a speech module? Choose Joystick."),
+                    ('group', 'USB KEYBOARD AND MOUSE'),
+                    ('check', "The PC's mouse and keyboard on the cartridge's USB port", lambda: a.usb_hid, a.toggle_usb_hid, None),
+                    ('note', lambda: 'Ctrl+K: type on it (Ctrl+K again: the keys back to the controller)'),
                     ('group', 'ULTIMATE VECTREX MULTICART 2'),
                     ('note', lambda: 'in the slot now' if um2() else 'not in the slot'),
                     ('check', 'Show UVMC2 games (.um2) in the ROM list', lambda: a.show_um2, a.toggle_um2, None),
-                    ('check', "The PC's mouse and keyboard on its USB port (Ctrl+K: type)", lambda: a.usb_hid, a.toggle_usb_hid, None),
                     ('choice', 'Headphone jack', [('Clean (line out)', lambda: C().jack_mode == 'clean', lambda: a.set_jack('clean')),
                                                   ('Through the speaker', lambda: C().jack_mode == 'speaker', lambda: a.set_jack('speaker')),
                                                   ('Off', lambda: C().jack_mode == 'off', lambda: a.set_jack('off'))], None),
@@ -331,7 +339,13 @@ class Deck:
                     ('buttons', [('Open UVMC2 game...', a.open_um2), ('Open the SD folder', a.open_sd_dir),
                                  ('Choose SD folder...', a.choose_sd_dir)], None),
                     ('note', lambda: 'games that need files (Doom: doom/DOOM.WAD, Quake: quake/pak0.pak) read them from it'),
-                    ('note', lambda: 'SD card folder: %s' % _rel(a.sd_dir))]
+                    ('note', lambda: 'SD card folder: %s' % _rel(a.sd_dir)),
+                    ('group', 'PITREX'),
+                    ('note', px_now),
+                    ('buttons', [('Start the PiTrex', a.start_pitrex), ('Open PiTrex program...', a.open_pitrex)], None),
+                    ('buttons', [('Open the SD folder', a.open_px_dir), ('Choose SD folder...', a.choose_px_dir)], None),
+                    ('note', lambda: 'arcade games need your own ROMs: pitrex/roms (MAME), pitrex/roms/aae'),
+                    ('note', lambda: 'SD card folder: %s' % _rel(a.px_dir))]
         return []
 
     RESETS = {'Tube': 'reset_tube', 'Room light': 'reset_light', 'Case': 'reset_case', 'Overlay': 'reset_overlay', 'Sound': 'reset_sound',

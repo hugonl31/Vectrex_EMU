@@ -10,8 +10,8 @@
  * An access: the address (and data) and R/W set, LATCH_EN raised; the board then does it in the next
  * E period - RDY low meanwhile, high when done (a read's byte then on D0-D7) - and LATCH_EN is dropped.
  * The 6809 never runs. Of the Pi: the system timer, the interrupt controller, the ARM timer, the mailbox
- * (the property tags a program asks), GPIO, the UARTs (their text to the log), and an SD controller that
- * finds no card (programs carry on without their ini files). The Pi runs at 1 GHz: 666.7 of its cycles
+ * (the property tags a program asks), GPIO, the UARTs (their text to the log), an SD controller, and the USB
+ * host controller with the PC's keyboard and mouse on it (pitrex_usb.c, VT_USBHID). The Pi runs at 1 GHz: 666.7 of its cycles
  * per E period, sliced in two; its waits - polling RDY, the cycle counter's delays - are slept through.
  *
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
@@ -187,13 +187,17 @@ static void px_set_out (uint32_t nv)
 }
 
 /* the interrupt controller's pending bits */
+static int px_usb_irq (void);
+static uint32_t px_pend1 (void) { return (px_st_cs & 0x0f) | (px_usb_irq () ? 1u << 9 : 0); }   /* (IRQ 9: USB) */
 static void px_irq_update (void)
 {
-	uint32_t p1 = px_st_cs & 0x0f;
+	uint32_t p1 = px_pend1 ();
 	uint32_t basic = ((px_at_raw & 1) && (px_at_ctrl & 0x20)) ? 1 : 0;
 	int irq = (p1 & px_irq_en1) || (basic & px_irq_enb);
 	px_cpu.irq_line = irq;
 }
+#include "pitrex_usb.c"
+
 /* the system timer's compares: matched since last time */
 static void px_timer_tick (uint64_t us0, uint64_t us1)
 {
@@ -202,6 +206,7 @@ static void px_timer_tick (uint64_t us0, uint64_t us1)
 		if ((uint32_t) (c - (uint32_t) us0 - 1) < (uint32_t) (us1 - us0)) px_st_cs |= 1u << i;
 	}
 	if (px_cpu.cycles >= px_at_due) { px_at_raw = 1; px_at_t0 = px_cpu.cycles; px_at_plan (); }   /* the ARM timer (250 MHz core / prescale) */
+	px_usb_tick ();
 }
 
 /* the mailbox's property channel: the tags a bare-metal program asks */
@@ -264,8 +269,9 @@ static uint32_t px_rd (arm11_t *c, uint32_t a, int n)
 		}
 	} else if (off >= 0xb200 && off < 0xb228) {                                  /* the interrupt controller */
 		switch (off - 0xb200) {
-		case 0x00: v = (((px_at_raw & 1) && (px_at_ctrl & 0x20)) ? 1 : 0) | ((px_st_cs & 0x0f) ? 0x100 : 0); break;
-		case 0x04: v = px_st_cs & 0x0f; break;
+		case 0x00: v = (((px_at_raw & 1) && (px_at_ctrl & 0x20)) ? 1 : 0) | ((px_st_cs & 0x0f) ? 0x100 : 0)
+		               | (px_usb_irq () ? 0x900 : 0); break;               /* (IRQ 9 also shown directly: bit 11) */
+		case 0x04: v = px_pend1 (); break;
 		case 0x0c: v = px_fiq; break;
 		case 0x10: v = px_irq_en1; break; case 0x14: v = px_irq_en2; break; case 0x18: v = px_irq_enb; break;
 		default: v = 0;
@@ -295,7 +301,8 @@ static uint32_t px_rd (arm11_t *c, uint32_t a, int n)
 		v = sd_reg_read (off - 0x300000);
 	} else if ((off >= 0x205000 && off < 0x205020) || (off >= 0x804000 && off < 0x804020)) {   /* I2C (BSC0 / BSC1): no device answers */
 		v = (off & 0xff) == 0x04 ? 0x00000302u : 0;                                /* (S: DONE, ERR - no acknowledge, CLKT) */
-	} else if (off >= 0x100000 && off < 0x100100) v = 0;                          /* PM */
+	} else if (off >= 0x980000 && off < 0x990000) v = px_usb_rd (off - 0x980000);  /* USB (pitrex_usb.c) */
+	else if (off >= 0x100000 && off < 0x100100) v = 0;                          /* PM */
 	else {
 		static int told; if (told++ < 60) fprintf (stderr, "PITREX: read %08X (unmodelled)\n", a);
 	}
@@ -350,6 +357,7 @@ static void px_wr (arm11_t *c, uint32_t a, uint32_t v, int n)
 		return;
 	}
 	if (off >= 0x300000 && off < 0x300100) { sd_reg_write (off - 0x300000, v); return; }
+	if (off >= 0x980000 && off < 0x990000) { px_usb_wr (off - 0x980000, v); px_irq_update (); return; }
 	if ((off >= 0x215040 && off < 0x215044) || off == 0x201000) {              /* a UART's character: the log */
 		char ch = (char) v;
 		if (ch == '\n' || px_ln >= (int) sizeof px_line - 1) { px_line[px_ln] = 0; fprintf (stderr, "PITREX: %s\n", px_line); px_ln = 0; }
@@ -459,6 +467,7 @@ void pitrex_power_on (void)
 	px_rdy = 1; px_pending = 0; px_hold = 0; px_rdata = 0xff; px_frac = 0;
 	px_st_cs = 0; memset (px_st_cmp, 0, sizeof px_st_cmp); px_irq_en1 = px_irq_en2 = px_irq_enb = 0;
 	px_at_ctrl = 0; px_at_raw = 0; px_at_due = ~0ull; px_mbox_full = 0; px_ln = 0; px_fault_told = 0;
+	memset (&D, 0, sizeof D);                                            /* (the USB controller: as at power on) */
 }
 
 #define PX_SETUP 100                         /* (Pi cycles from LATCH_EN to the E edge it can catch) */

@@ -404,7 +404,7 @@ TOPICS = [
          "emulator models them all; the flash carts' saves go to a .sav file next to the ROM, the ROM itself "
          "is never changed."),
 ('h', 'Ultimate Vectrex Multicart 2'),
-('item', "The PC's mouse and keyboard on its USB port", "On (the default): a UVMC2 game sees the PC's mouse as a USB mouse (move it over the picture; left / right click, the wheel) and, after Ctrl+K, the keyboard as a USB keyboard - VecOS uses both. While typing, every key goes to the cartridge (the emulator's own keys and the controller keys rest); Ctrl+K again gives them back. The mouse steering player 1 (Vectrex menu) takes the mouse instead."),
+('item', "The PC's mouse and keyboard on its USB port", "On (the default): a UVMC2 game or a PiTrex program sees the PC's mouse as a USB mouse (move it over the picture; left / right click, the wheel) and, after Ctrl+K, the keyboard as a USB keyboard - VecOS uses both, the PiTrex's Elite the keyboard. While typing, every key goes to the cartridge (the emulator's own keys and the controller keys rest); Ctrl+K again gives them back. The mouse steering player 1 (Vectrex menu) takes the mouse instead."),
 ('item', 'Show UVMC2 games (.um2) in the ROM list', "On: .um2 files in the roms folder appear in the ROM browser "
          "(marked UVMC2) and in Open ROM file."),
 ('item', 'Open UVMC2 game...', "A file dialog for .um2 files anywhere on your PC."),

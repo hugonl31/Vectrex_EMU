@@ -1114,6 +1114,10 @@ and the SD card.
   `pitrex/roms`, the AAE ones (Star Wars, Major Havoc) in `pitrex/roms/aae`. The PiTrex's own FAQ in that folder
   lists them.
 * In its menu, **button 4** starts, the stick chooses.
+* **A USB keyboard and mouse**: the PC's, on the PiTrex's USB port (the Pi's own USB controller emulated, for the USPi
+  library the programs use) - Elite and GS BASIC find their keyboard. **Ctrl+K** types on it (the keys then go to the
+  PiTrex, not the controller; Ctrl+K again gives them back). Cartridge strip: *The PC's mouse and keyboard on its USB
+  port*.
 
 ### Mac and Linux notes
 

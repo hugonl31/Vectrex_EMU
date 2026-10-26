@@ -33,6 +33,12 @@ build workflow replaces that release (title = the version, marked Latest) with t
   build.
 - Arcade games need your own ROMs (MAME sets, non-merged or split, in `pitrex/roms`; AAE ones in
   `pitrex/roms/aae`).
+- A USB keyboard and mouse on the PiTrex: the Pi's own USB controller emulated for the USPi library its programs
+  use - Elite and GS BASIC find their keyboard. Ctrl+K types on it.
+- Config > Cartridge: a PiTrex section (what is in the slot, start it, open a program, its SD card folder) and the USB
+  keyboard and mouse setting of its own, for the UVMC2 and the PiTrex.
+- `cache/core_log.txt`: the emulator core's messages of the last start, to send along when something is wrong (for
+  the PiTrex it says whether its JIT runs; the window says so too when it cannot).
 
 **Quality: profiles and Optimize**
 - Low, Medium, High - and Custom, as in games: changing any picture setting under a profile makes it Custom;

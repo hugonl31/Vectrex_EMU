@@ -145,6 +145,7 @@ static int jit_setup (arm11_t *c)
 	jpage_n = c->sys->ram_size >> 12; jpage = (uint8_t *) calloc (jpage_n ? jpage_n : 1, 1);
 	if (!jcode || !jt || !jpage) { fprintf (stderr, "PITREX: no JIT (no executable memory)\n"); jit_state = -1; return 0; }
 	jcode_end = jcode + JCODE_SIZE;
+	fprintf (stderr, "PITREX: JIT on (ARM64)\n");
 	j_wr_on ();
 	E = jcode;
 	/* enter (c, code): save x19-x30, x19 = c, x20 = RAM, x21 = the page map, x22 = the blocks, x26 = RAM's size */

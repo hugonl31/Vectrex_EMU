@@ -108,9 +108,11 @@ TOPICS = [
 ('item', 'Port 2: 3D Imager', "GCE's 3D Imager (1983): goggles with a spinning disc in front of the eyes - half "
          "of it black, half red, green and blue filters - that turned the white lines into colour (and 3D: each eye saw "
          "every other picture). For 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster. The game drives the disc's "
-         "motor itself and times its pictures from a hole in the disc, so at the start the disc spins up (about ten "
-         "seconds), the colours run wild, and then they settle as the game holds the disc at speed - as on the real "
-         "goggles. Shown in colour; the two eyes' pictures together (no 3D yet). Click the P2 PORT pictogram to plug it in."),
+         "motor itself and times its pictures from a hole in the disc: at the start the game waits, the screen dark, "
+         "while the disc spins up (about 13 seconds), then plays in colour - as on the real goggles. A note on the "
+         "picture shows the disc's speed meanwhile, and the motor is heard: a small electric motor whirring up "
+         "(Config > Cartridge: the motor sound, its volume, the note). Shown in colour; the two eyes' pictures "
+         "together (no 3D yet). Click the P2 PORT pictogram to plug it in."),
 ('item', 'Port 2: Joystick / VecVoice / VecVox', "The second joystick, or a speech accessory plugged in there: the VecVoice "
          "(Richard Hutchinson; a GI SP0256-AL2 speech chip) or the VecVox (Alex Herbert; a SpeakJet chip). "
          "The SpeakJet itself can not be emulated exactly (its workings are unknown), so the VecVox speaks "

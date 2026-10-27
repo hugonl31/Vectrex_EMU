@@ -593,6 +593,11 @@ class CrtSound:
         self.jack = False                                # (a .um2 game is running: set by the App)
         self.jack_mode = 'clean'                         # 'clean' / 'speaker' / 'off'
         self.jack_vol = 1.0
+        # the 3D Imager's motor (the core's second channel while the goggles are in port 2): beside the Vectrex,
+        # clean - not through its knob or speaker (the motor is on the player's head)
+        self.motor = False                               # (the 3D Imager is in port 2: set by the App)
+        self.motor_on = True
+        self.motor_vol = 0.5
         self.scruff_until = 0.0                         # turning the knob: a dirty potentiometer crackles
         self.overlay = []                                # power on / off sound, mixed in after the speaker
         self.snd_on = load_wav('on.wav'); self.snd_off = load_wav('off.wav')
@@ -622,6 +627,12 @@ class CrtSound:
             return pcm
         out = [float(v) for v in a]
         jack = None
+        if speech and self.motor:                               # (the 3D Imager's motor, not a speech module)
+            g = 2.0 * self.motor_vol if self.motor_on else 0.0  # (the core sends it at half scale)
+            if g > 0:
+                sp = array('h'); sp.frombytes(speech)
+                jack = [v * g for v in sp]
+            speech = None
         if speech and self.jack:                                # (the UVMC2's jack, not a speech module)
             if self.jack_mode != 'off':
                 sp = array('h'); sp.frombytes(speech)
@@ -1233,9 +1244,13 @@ class Core:
         if ft < self.ft_last: self.ft_hi += 1 << 32                   # (32-bit cycle counter wraps)
         self.ft_last = ft; self.frame_t0 = self.ft_hi + ft
         two = ns & 0x8000; ns &= 0x7fff                # (bit 15: two channels - the console, the speech module)
-        body = self._read(n * 13 + (n if col else 0) + ns * (4 if two else 2))   # 16-bit samples
-        if col:                                                 # (the colours out of the way: the rest as always)
-            cols, body = body[n * 13:n * 14], body[:n * 13] + body[n * 14:]
+        body = self._read(n * 13 + (n + 2 if col else 0) + ns * (4 if two else 2))   # 16-bit samples
+        if col:                                                 # (the colours and the disc's speed out of the way: the rest as always)
+            cols = body[n * 13:n * 14]
+            self.imager_speed = struct.unpack_from('<H', body, n * 14)[0] / 100.0
+            body = body[:n * 13] + body[n * 14 + 2:]
+        if n:
+            self.lines_t = time.perf_counter()                  # (the last frame with something drawn: the spin-up note)
         if _np is not None:                                     # (numpy: the records in one go, the same tuples)
             self.arr = _np.frombuffer(body, dtype=LINE_DT, count=n)
             lines = Lines(self.arr.tolist())
@@ -1432,6 +1447,7 @@ class App:
         self.smooth = bool(c0.get('smooth_motion', False))   # Smooth motion (60 Hz screens), see smooth_frame
         self.sm_buf = []
         self.sm_st = type('SmoothState', (), {})()     # (the alternate-halves check's memory)
+        self.imager_note = bool(c0.get('imager_note', True))    # the 3D Imager: a note while its disc spins up
         self.usb_hid = bool(c0.get('usb_hid', True))            # a UVMC2 game: the PC's mouse (and keyboard: Ctrl+K) as its USB devices
         self.usb_typing = False; self.usb_btn = 0; self.usb_last = None; self.usb_down = []
         self.skip_boot = bool(c0.get('skip_boot', False))       # power on straight into the cartridge
@@ -1454,6 +1470,7 @@ class App:
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', False) if self.ren else False
         self.run.crt.jack = bool(args.rom and args.rom.lower().endswith('.um2'))   # (a UVMC2: its headphone jack)
+        self.run.crt.motor = self.speech == 'imager'            # (the 3D Imager: its motor's sound)
         self.root = tk.Tk()
         for d in (os.path.join(RES, 'icons'), os.path.join(ROOT, 'icons')):    # (the window's icon: a little Vectrex)
             try:
@@ -1546,7 +1563,8 @@ class App:
                                       'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
-        self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full', 'jack_mode', 'jack_vol']
+        self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full', 'jack_mode', 'jack_vol',
+                           'motor_on', 'motor_vol']
         self.sound_default = {k: getattr(self.run.crt, k) for k in self.sound_keys}
         try:
             saved = json.load(open(self.settings_f)).get('display', {})
@@ -1992,6 +2010,7 @@ class App:
         'bend_strength': ('Bending strength', '', 'ren', 'bend_strength', 0.0, 10.0, False, '%.2f', 1),
         'buzz_vol':      ('Buzz volume', '', 'crt', 'buzz_vol', 0.0, 4.0, False, '%.3f', 1),
         'jack_vol':      ('UVMC2 headphone jack volume', '', 'crt', 'jack_vol', 0.0, 2.0, False, '%.0f %%', 100),
+        'motor_vol':     ('Motor volume', '', 'crt', 'motor_vol', 0.0, 1.0, False, '%.0f %%', 100),
         'monitor_inch':  ('Monitor size (diagonal)', '', 'app', 'monitor_inch', 10.0, 100.0, True, '%.1f inch', 1),
     }
     def slider(self, name):
@@ -2829,6 +2848,10 @@ class App:
             return
         self.speech = k
         self.restart(self.args.rom)
+        dk = getattr(self, 'deck', None)                        # (Config open on Cartridge: the 3D Imager's rows come or go)
+        if dk is not None and getattr(dk, 'strip', None) == 'Cartridge':
+            try: dk.t.after_idle(lambda: dk.show('Cartridge'))
+            except Exception: pass   # noqa
         self.show_look('port 2: %s' % PORT2[k].upper())
         self.flash('CONTROLLER PORT 2:', {'off': 'JOYSTICK', 'vecvoice': 'VECVOICE SPEECH', 'vecvox': 'VECVOX SPEECH',
                                           'imager': '3D IMAGER', 'lightpen': 'LIGHT PEN (THE MOUSE)'}[k])
@@ -2935,13 +2958,57 @@ class App:
         if self.browser or not (self.ren and hasattr(self.ren, 'map')):
             return None
         if self.run.paused and self.run.power:              # (switched off: dark, as a real Vectrex - the knob)
+            st = self.pause_state()
+            if st:                                              # (in the strip below the picture: the picture clean
+                return st                                       #  for a screenshot of the paused game)
             rows = ['PAUSED', 'ESC OR P TO GO ON']
         elif time.perf_counter() < getattr(self, 'flash_until', 0):   # (a short message: what just changed)
             rows = self.flash_rows
         else:
-            return None
+            return self.imager_hint()
         pl, pt, pr, pb = self.pic_rect()
         return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + 0.46 * (pb - pt), k=(pb - pt) / 330.0)
+    def pause_state(self):
+        """PAUSED in the strip below the picture, between the OSD and the P2 PORT pictogram (None without the strip:
+        then in the picture)"""
+        if not (self.fps_on or self.cart_on or self.knob_on):
+            return None
+        pl, pt, pr, pb = self.pic_rect()
+        x, y, r = self.cart_geom()
+        right = x - 3.6 * r - 1.9 * r                           # (the P2 PORT pictogram's left edge, a gap before it)
+        od = self.osd_state()
+        k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0         # (as large as the OSD's text)
+        mid = y - 0.5 * r + 8.5 * k
+        if od:
+            left = od['area'][0] + max(sum(len(t) for t, _ in row) for row in od['rows']) * 6.0 * od['k'] + r
+            k = od['k']
+            mid = od['area'][1] + len(od['rows']) * 9.0 * k / 2.0  # (level with the OSD's rows)
+        else:
+            left = (pl + pr) / 2 + (vecrender.GLASS_DX - vecrender.ART_AW) * (pb - pt) / 2
+        rows, ks = ['PAUSED', 'ESC OR P TO GO ON'], [2.6, 1.3]   # (PAUSED large, how to go on below it)
+        k = min(k, 0.95 * (right - left) / max(6.0 * len(t) * f for t, f in zip(rows, ks)))
+        if k <= 0:
+            return None
+        hgt = 11.0 * k * ks[0] + 6.0 * k * ks[1]
+        cols = [self.SPEED_COLORS[1][2], (0.40, 0.667, 0.533)]   # (PAUSED in the OSD's orange)
+        return dict(rows=rows, ks=ks, cols=cols, cx=(left + right) / 2.0, cy=mid - hgt / 2.0, k=k)
+    def imager_hint(self):
+        """the 3D Imager's disc spinning up (the game draws nothing until it is at speed): a note in the middle of
+        the picture with the speed, fading out once the game draws"""
+        if not (getattr(self, 'speech', 'off') == 'imager' and getattr(self, 'imager_note', True) and self.run.power):
+            return None
+        now = time.perf_counter()
+        v = getattr(self.core, 'imager_speed', 0.0)
+        dark = now - getattr(self.core, 'lines_t', 0.0) > 0.4   # (nothing drawn for a while)
+        a = getattr(self, 'im_note_a', 0.0)
+        a = 1.0 if (dark and v > 0.3) else max(0.0, a - 0.05)   # (~ a third of a second to fade)
+        self.im_note_a = a
+        if a <= 0.0:
+            return None
+        pl, pt, pr, pb = self.pic_rect()
+        top = 26.0                                              # (the games keep their disc at about 26)
+        return dict(rows=['3D IMAGER', 'DISC SPINNING UP'], cx=(pl + pr) / 2.0, cy=pt + 0.42 * (pb - pt),
+                    k=(pb - pt) / 330.0, bar=min(1.0, v / top), rows2=['%d / %d TURNS A SECOND' % (round(v), top)], a=a)
     def flash(self, *rows, secs=2.0):
         """a short message in the middle of the picture (seen in full screen and on a Steam Deck too, where the
         title bar is not)"""
@@ -4120,6 +4187,7 @@ class App:
         run.beam_of = old.beam_of
         run.crt = old.crt; run.crt.overlay = []
         run.crt.jack = bool(rom and rom.lower().endswith('.um2'))
+        run.crt.motor = self.speech == 'imager'
         run.power = old.power                                   # (switched off: it stays off, cartridge in)
         if run.power:
             run.flags = self.power_flags()
@@ -4438,19 +4506,29 @@ class App:
     def reset_sound(self):
         """Sound > Reset sound settings to default (not the volume knob: it is the power switch)"""
         for k, v in self.sound_default.items():
-            if k != 'volume' and not k.startswith('jack_'):
+            if k != 'volume' and not k.startswith(('jack_', 'motor_')):
                 setattr(self.run.crt, k, v)
         self.show_look('sound settings: the defaults')
     def reset_addons(self):
-        """Add-ons > Reset add-on settings to default: UVMC2 games listed, the jack clean at 100 %"""
+        """Add-ons > Reset add-on settings to default: UVMC2 games listed, the jack clean at 100 %, the 3D Imager's
+        motor heard and its note shown"""
         for k, v in self.sound_default.items():
-            if k.startswith('jack_'):
+            if k.startswith(('jack_', 'motor_')):
                 setattr(self.run.crt, k, v)
+        self.imager_note = True
         self.show_um2 = True
         self.sd_dir = SD_DEFAULT
         self.px_dir = PX_DEFAULT
         self.save_settings()
         self.show_look('add-on settings: the defaults')
+    def toggle_motor_snd(self):
+        self.run.crt.motor_on = not self.run.crt.motor_on
+        self.save_settings()
+        self.show_look('3D Imager motor sound: ' + ('on' if self.run.crt.motor_on else 'off'))
+    def toggle_imager_note(self):
+        self.imager_note = not self.imager_note
+        self.save_settings()
+        self.show_look('3D Imager spin-up note: ' + ('on' if self.imager_note else 'off'))
     def set_jack(self, mode):
         self.run.crt.jack_mode = mode
         self.save_settings()
@@ -4671,6 +4749,7 @@ class App:
         d['pad_shortcuts'] = getattr(self, 'pad_shortcuts', True)
         d['mouse_stick'] = getattr(self, 'mouse_stick', False)
         d['usb_hid'] = getattr(self, 'usb_hid', True)
+        d['imager_note'] = getattr(self, 'imager_note', True)
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'high'
         if getattr(self, 'setup_done', False): d['setup_done'] = True

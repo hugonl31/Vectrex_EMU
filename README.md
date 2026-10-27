@@ -23,12 +23,15 @@ photo, recording and measurement, and every call on how it should look, sound an
 
 * **The 3D Imager** - GCE's spinning-disc goggles on controller port 2: 3D Mine Storm, 3D Narrow Escape and
   3D Crazy Coaster in colour. The game drives the disc's motor and times its pictures from the disc's index hole,
-  as on the real goggles - so the disc spins up when the game starts, the colours run wild for a few seconds and
-  then settle. Click the P2 PORT pictogram until it shows the goggles.
+  as on the real goggles - so the game waits in the dark while the disc spins up, then plays in colour. You hear
+  the goggles' little electric motor whir up (its own volume in Config > Sound), and a note on the picture shows
+  the disc's speed meanwhile. Click the P2 PORT pictogram until it shows the goggles.
 * **The light pen** - the mouse is GCE's light pen (the pointer turns into a small green pen): Art Master,
   AnimAction and Melody Master. The pen sees the real beam as it passes - Art Master's cursor follows it by its
   tracking circle, as on a real Vectrex. Left button = draw, right = straight line, middle = menu.
 * **AnimAction's cartridge RAM** - its 8 KB of RAM at $2000, found by itself.
+* **Paused below the picture** - PAUSED shows in the strip below the picture, not on it: a paused game makes a
+  clean screenshot.
 
 <a href="docs/images/v1.0.5/lightpen.jpg"><img src="docs/images/v1.0.5/lightpen_small.jpg" width="330" alt="Art Master's SKETCH, drawn with the mouse as the light pen"></a>
 <a href="docs/images/v1.0.5/imager.jpg"><img src="docs/images/v1.0.5/imager_small.jpg" width="330" alt="3D Narrow Escape in colour through the emulated 3D Imager"></a><br>
@@ -1037,8 +1040,11 @@ until it shows the one you want:
 * **The 3D Imager** (1983): goggles with a disc spinning in front of the eyes, half black, half red, green and blue
   filters. The game drives the disc's motor itself and times its pictures from a hole in the disc, so each line is
   seen through the filter passing at that moment: 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster in colour. As
-  on the real goggles the disc spins up when the game starts (about ten seconds, the colours wild) and then holds
-  its speed. Shown in colour, both eyes' pictures together (no 3D yet).
+  on the real goggles the game first spins the disc up and waits, the screen dark, until it is at speed (about 13
+  seconds), then plays. Meanwhile a note on the picture shows the disc's speed, and you hear its motor: a small
+  brushed motor whirring up, pulsed by the game as it holds the speed (on its own channel, not through the
+  Vectrex's knob: Config > Sound or Cartridge - the sound, its volume, the note). Shown in colour, both eyes'
+  pictures together (no 3D yet).
 * **The light pen** (1983): a light sensor in a pen; when the beam passes under its tip the game knows where it
   points. Here the mouse is the pen (the pointer turns into a small green pen): over the picture it is held to the
   screen, and the mouse buttons are player 1's buttons 1, 2 and 3 (Art Master: draw, straight line, menu). For Art

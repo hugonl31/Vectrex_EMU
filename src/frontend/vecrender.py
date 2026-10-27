@@ -3234,11 +3234,31 @@ class GLBloomRenderer(GLRenderer):
         if getattr(self, 'browser', None):
             self._browser(self.browser)
         if getattr(self, 'hint', None):                   # (a hint in the middle of the picture: centred rows)
-            hk = self.hint['k']
+            h = self.hint; hk = h['k']; a = h.get('a', 1.0)
+            col = (0.40 * a, 0.667 * a, 0.533 * a)
             gl.glLineWidth(max(1.2, hk * 0.45))
-            for i, t in enumerate(self.hint['rows']):
-                self._text_row([(t, (0.40, 0.667, 0.533))], self.hint['cx'] - len(t) * 3.0 * hk,
-                               self.hint['cy'] + i * 11.0 * hk, hk)
+            y = h['cy']
+            for i, t in enumerate(h['rows']):
+                rk = hk * (h['ks'][i] if 'ks' in h else 1.0)   # (each row its own size: a big PAUSED)
+                gl.glLineWidth(max(1.2, rk * 0.45))
+                rc = tuple(c * a for c in h['cols'][i]) if 'cols' in h else col   # (each row its own colour)
+                self._text_row([(t, rc)], h['cx'] - len(t) * 3.0 * rk, y, rk)
+                y += 11.0 * rk
+            if 'bar' in h:                                # (a bar: how far, e.g. the 3D Imager's disc up to speed)
+                w = 22.0 * 6.0 * hk; x0 = h['cx'] - w / 2; y0 = y + 2.0 * hk; y1 = y0 + 4.0 * hk
+                gl.glColor4f(*col, 1.0)
+                self._rect(x0, y0, x0 + w, y1)
+                f = max(0.0, min(1.0, h['bar']))
+                if f > 0:
+                    gl.glBegin(0x0007)                    # (GL_QUADS)
+                    for px, py in ((x0, y0), (x0 + w * f, y0), (x0 + w * f, y1), (x0, y1)):
+                        gl.glVertex2f(px, py)
+                    gl.glEnd()
+                y = y1 + 5.0 * hk
+            for t in h.get('rows2', []):
+                k2 = 0.8 * hk
+                self._text_row([(t, col)], h['cx'] - len(t) * 3.0 * k2, y, k2)
+                y += 11.0 * k2
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
         gl.glEnableClientState(GL_COLOR_ARRAY); gl.glEnableClientState(GL_VERTEX_ARRAY)
 

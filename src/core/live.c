@@ -87,6 +87,8 @@ static void skip_boot (void)
 		if ((n & 1023) == 0) while (psg_take (drop, 4096) > 0) ;   /* (its sound is not heard) */
 	}
 	while (psg_take (drop, 4096) > 0) ;
+	{ extern int psg_take_speech (int16_t *buf, int max); extern int vt_imager;   /* (the second channel: nothing queued) */
+	  if (vt_imager) for (int k = 0; k < 64; k++) psg_take_speech (drop, 4096); }
 	ncur = 0; nlast = 0;
 }
 
@@ -166,7 +168,7 @@ static int live_main (const char *recfn, const char *symfn)
 		run_frame ();
 		int n = nlast > 30000 ? 30000 : nlast;
 		unsigned char *p = out;
-		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2;   /* (bit 15: two channels -
+		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2; extern int vt_imager; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2 || vt_imager;   /* (bit 15: two channels -
 		  the console and the speech module, interleaved) */
 		  extern int vt_imager;
 		  *p++ = 'V'; *p++ = vt_imager ? 'C' : 'F'; put16 (p, n); p += 2;   /* ('VC': each line's colour follows the lines) */ put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
@@ -178,7 +180,11 @@ static int live_main (const char *recfn, const char *symfn)
 			put16 (p + 4, l->x1 < 0 ? 0 : l->x1); put16 (p + 6, l->y1 < 0 ? 0 : l->y1);
 			p[8] = l->c; put16 (p + 9, l->cyc > 65535 ? 65535 : l->cyc); put16 (p + 11, l->t0); p += 13;
 		}
-		{ extern int vt_imager; if (vt_imager) for (int i = 0; i < n; i++) *p++ = last[i].rgb; }   /* (the 3D Imager's colours) */
+		{ extern int vt_imager; extern double vt_imager_speed (void);
+		  if (vt_imager) {                                  /* (the 3D Imager's colours, then its disc's speed: 1/100 turns a second) */
+			for (int i = 0; i < n; i++) *p++ = last[i].rgb;
+			double v = vt_imager_speed () * 100.0; put16 (p, v < 0 ? 0 : v > 65535 ? 65535 : (unsigned) v); p += 2;
+		  } }
 		memcpy (p, abuf, abuf_n); p += abuf_n;
 		fwrite (out, 1, p - out, stdout_bin);
 		fflush (stdout_bin);

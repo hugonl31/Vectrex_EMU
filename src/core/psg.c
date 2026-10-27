@@ -75,6 +75,7 @@ static double sp_mix (double x)                 /* (x: the synthesizer's int16 o
 int vt_speech_sep;
 static double sp_acc2, sp_hp_x, sp_hp_y;
 static int16_t sp_ring[32768]; static int sp_head, sp_tail;
+extern int vt_imager; static double im_motor_sample (void);   /* (imager.c: the 3D Imager's motor, on the same channel) */
 
 /* AY output levels (logarithmic DAC), normalised */
 static const double psg_vol[16] = { 0.0, 0.0106, 0.0150, 0.0222, 0.0320, 0.0466, 0.0665, 0.1039,
@@ -160,6 +161,12 @@ static void psg_tick (void)
 			int n2 = (sp_head + 1) & 32767;
 			if (n2 != sp_tail) { sp_ring[sp_head] = (int16_t) s; sp_head = n2; }
 			sp_acc2 = 0;
+		}
+		if (vt_imager && !vt_vecvoice) {         /* (the goggles' motor: its own sound, not the Vectrex's speaker) */
+			double s = im_motor_sample () * 16000.0;
+			if (s > 32767) s = 32767; if (s < -32768) s = -32768;
+			int n2 = (sp_head + 1) & 32767;
+			if (n2 != sp_tail) { sp_ring[sp_head] = (int16_t) s; sp_head = n2; }
 		}
 		psg_emit (psg_acc / psg_accn);
 		psg_acc = 0; psg_accn = 0;

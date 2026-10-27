@@ -323,7 +323,9 @@ static void emu_chunk (long cyc)
 	if (ns > 0) {
 		extern int vt_speech_sep, vt_vecvoice; extern int psg_take_speech (int16_t *buf, int max);
 		extern int vt_uvm2; extern int uvm2_jack44 (int16_t *, int);
-		if ((vt_speech_sep && vt_vecvoice) || vt_uvm2) {     /* (two channels: the console, the speech module / the UVMC2's jack) */
+		extern int vt_imager;
+		if ((vt_speech_sep && vt_vecvoice) || vt_uvm2 || vt_imager) {     /* (two channels: the console, the speech module /
+		                                                                     the UVMC2's jack / the 3D Imager's motor) */
 			static int16_t sb[4096], st[8192];
 			if (vt_uvm2) uvm2_jack44 (sb, ns); else psg_take_speech (sb, ns);
 			for (int i = 0; i < ns; i++) { st[2 * i] = buf[i]; st[2 * i + 1] = sb[i]; }

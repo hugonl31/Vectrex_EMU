@@ -30,6 +30,7 @@ static unsigned long long im_t, im_due = ~0ull, im_pin_until;
  * not only at the end of each pulse: so a motor held on, as the games do while it spins up, speeds the disc too).
  * Powered: d speed / dt = (50 - 1.55 v) / 5 - 0.2 v / 5 = 10 - 0.35 v (at most 28.6 turns a second, reached with a
  * time constant of ~2.9 s); unpowered it coasts: d speed / dt = -0.04 v. */
+static double ims_ph, ims_turn, ims_drive, ims_n1, ims_n2, ims_n3;
 #define IM_VMAX  (10.0 / 0.35)
 #define IM_KON   0.35
 #define IM_KOFF  0.04
@@ -43,6 +44,7 @@ static void im_init (void)
 	else if (z && !strcmp (z, "1")) { im_a1 = 1.0 / 6.0; im_a2 = 1.0 / 3.0; }
 	im_freq = 0.0; im_phase = 0.0; im_on = 0;
 	im_t = alg_cycles; im_due = ~0ull; im_pin_until = 0;
+	ims_ph = ims_turn = ims_drive = ims_n1 = ims_n2 = ims_n3 = 0.0;
 }
 
 /* the disc's speed and angle now: the motor's pull (or the coasting) since the last time, solved exactly */
@@ -108,6 +110,48 @@ static unsigned char im_color (unsigned long long tc)
 	double f = p - 0.5 * half;
 	unsigned char c = f < im_a1 ? 4 : f < im_a2 ? (im_mine ? 1 : 2) : (im_mine ? 2 : 1);
 	return (unsigned char) (c | (half ? 8 : 0));
+}
+
+/* the disc's speed now (turns a second): live.c sends it with each frame (the frontend's spin-up note) */
+double vt_imager_speed (void)
+{
+	im_move ();
+	return im_freq;
+}
+
+/* The motor's sound, on the second audio channel (psg.c: 44100 samples a second - the frontend mixes it beside
+ * the Vectrex's, not through its knob or speaker: it is on the player's head). A small brushed DC motor - the
+ * kind in cassette players and toys - turning ~5 times faster than the disc (a belt or a pinion: such motors run
+ * at 6000-8000 rpm, the disc at ~1560). Its sound:
+ * - the whine: the current's ripple at each commutation, 6 a turn with 3 poles and 2 brushes (~780 Hz at speed),
+ *   stronger while the game powers the motor - its pulses, as the game regulates the speed, are heard as such;
+ * - the brushes' hiss: noise (~0.9-4.5 kHz) in bursts at each commutation;
+ * - the air the disc pushes: a low rush growing with the square of its speed, swelling once a turn (its
+ *   imbalance). All of it silent while the disc stands, rising with it as it spins up, falling as it coasts. */
+#define IM_GEAR 5.0
+static unsigned ims_seed = 22222u;
+static double im_motor_sample (void)
+{
+	const double dt = 1.0 / 44100.0, PI2 = 6.283185307179586;
+	if (!vt_imager) return 0.0;
+	im_move ();
+	double v = im_freq > 0.0 ? im_freq : 0.0, s = v / IM_VMAX;
+	ims_drive += ((im_on ? 1.0 : 0.0) - ims_drive) * 0.02;            /* (the winding's current: ~1 ms) */
+	ims_ph += v * IM_GEAR * 6.0 * dt; ims_ph -= floor (ims_ph);       /* (the commutations) */
+	ims_turn += v * dt; ims_turn -= floor (ims_turn);                  /* (the disc) */
+	double p = ims_ph;
+	double whine = sin (PI2 * p) + 0.45 * sin (2 * PI2 * p) + 0.25 * sin (3 * PI2 * p) + 0.12 * sin (5 * PI2 * p);
+	ims_seed = ims_seed * 1664525u + 1013904223u;
+	double wn = (double) (ims_seed >> 9) / 4194304.0 - 1.0;
+	ims_n1 += (wn - ims_n1) * 0.45;                                    /* (low pass ~4.5 kHz) */
+	double hp = ims_n1 - ims_n2; ims_n2 += (ims_n1 - ims_n2) * 0.12;   /* (high pass ~0.9 kHz) */
+	double brush = hp * (p < 0.15 ? 1.0 : 0.55);
+	ims_n3 += (wn - ims_n3) * 0.03;                                    /* (low pass ~210 Hz) */
+	double air = ims_n3 * 3.0;
+	double out = whine * s * (0.08 + 0.20 * ims_drive)
+	           + brush * s * (0.10 + 0.30 * ims_drive)
+	           + air * s * s * 0.9;
+	return 0.2 * out * (1.0 + 0.10 * sin (PI2 * ims_turn));   /* (quiet: a motor by the ears, under the game's sound) */
 }
 
 /* ------------------------------------------------------------------ the light pen */

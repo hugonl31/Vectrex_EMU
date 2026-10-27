@@ -376,7 +376,10 @@ class Deck:
                     ('slider', 'voice_vol', lambda: a.speech in ('vecvoice', 'vecvox')),
                     ('choice', 'Speech module', [('Full-range speakers', lambda: C().voice_full, lambda: a.set_voice_full(True)),
                                                  ('Small speaker', lambda: not C().voice_full, lambda: a.set_voice_full(False))],
-                     lambda: a.speech in ('vecvoice', 'vecvox'))]
+                     lambda: a.speech in ('vecvoice', 'vecvox')),
+                    ('group', '3D IMAGER (CONTROLLER PORT 2)'),
+                    ('check', 'Disc motor sound (its whir)', lambda: C().motor_on, a.toggle_motor_snd, lambda: a.speech == 'imager'),
+                    ('in', [('slider', 'motor_vol', lambda: a.speech == 'imager' and C().motor_on)])]
         if s == 'Vectrex unit':
             rows = [('group', 'WHICH VECTREX'),
                     ('choice', 'Unit', [(V.UNIT_NAMES[n].replace(' (measured)', ''), (lambda n=n: a.unit_name == n),
@@ -410,6 +413,7 @@ class Deck:
             hw = [(lbl, (lambda k=k: a.cart_hw == k), (lambda k=k: a.set_cart_hw(k))) for k, lbl in V.CART_HW.items()]
             p2 = [(lbl, (lambda k=k: a.speech == k), (lambda k=k: a.set_speech(k))) for k, lbl in V.PORT2.items()]
             um2 = lambda: (a.args.rom or '').lower().endswith('.um2')
+            IM = lambda: a.speech == 'imager'                    # (the 3D Imager in port 2: its rows usable)
             def px_now():
                 r = a.args.rom or ''
                 if not r.lower().endswith(('.img', '.pit')):
@@ -418,6 +422,10 @@ class Deck:
                 return 'in the slot now: ' + ('its menu' if n.lower() == 'pitrex' else n)
             return [('group', 'THE SLOT AND PORT 2'),
                     ('menu', 'Cartridge hardware', hw, None), ('menu', 'Controller port 2', p2, None),
+                    ] + ([('in', [('check', 'Disc motor sound (its whir)', lambda: C().motor_on, a.toggle_motor_snd, None),
+                                  ('slider', 'motor_vol', lambda: C().motor_on),
+                                  ('check', 'Spin-up note on the picture', lambda: a.imager_note, a.toggle_imager_note, None)])]
+                         if IM() else []) + [   # (the 3D Imager in port 2: its motor and note)
                     ('note', lambda: "a game won't start with a speech module? Choose Joystick."),
                     ('group', 'USB KEYBOARD AND MOUSE'),
                     ('check', "The PC's mouse and keyboard on the cartridge's USB port", lambda: a.usb_hid, a.toggle_usb_hid, None),

@@ -66,10 +66,55 @@ static uint32_t jh_loop (arm11_t *c) { jit_c_loop++; return (uint32_t) loop_roun
 static void jh_bx (arm11_t *c, uint32_t v, uint32_t ip) { bx_to (c, v, ip); }
 static uint32_t jh_mrc (arm11_t *c, uint32_t ins) { unsigned rt = (ins >> 12) & 15; uint32_t v = 0; cp15 (c, 1, (ins >> 21) & 7, (ins >> 16) & 15, ins & 15, (ins >> 5) & 7, &v); (void) rt; return v; }
 static void jh_mcr (arm11_t *c, uint32_t ins, uint32_t v) { cp15 (c, 0, (ins >> 21) & 7, (ins >> 16) & 15, ins & 15, (ins >> 5) & 7, &v); }
+/* a coprocessor instruction the interpreter's copro runs for the block, in its place (K_COP: VFP, the performance
+ * counters): the programs' floating point - each one ended its block and went through the interpreter's loop before
+ * (millions a second: Tempest, the menu). A store into a page with translated code drops its blocks, as jh_wr */
+static void jh_cop (arm11_t *c, uint32_t ins, uint32_t ip)
+{
+	uint32_t lo = 0, hi = 0;
+	if ((ins & 0x0e100000u) == 0x0c000000u && (ins & 0x0fe00000u) != 0x0c400000u) {   /* (VSTR / VSTM: what it writes) */
+		unsigned P = (ins >> 24) & 1, U = (ins >> 23) & 1, W = (ins >> 21) & 1, rn = (ins >> 16) & 15, imm8 = ins & 0xff;
+		uint32_t base = rn == 15 ? ((ip + 8) & ~3u) : c->r[rn];
+		if (P && !W) { lo = U ? base + imm8 * 4 : base - imm8 * 4; hi = lo + (((ins >> 8) & 15) == 11 ? 8 : 4); }
+		else { lo = U ? base : base - imm8 * 4; hi = lo + imm8 * 4; }
+	}
+	copro (c, ins, ip);
+	if (hi > lo && lo < jpage_n * 4096u) {
+		for (uint32_t p = lo >> 12; p <= ((hi - 1) >> 12) && p < jpage_n; p++)
+			if (jpage[p]) { jit_flush (); jit_n_inval++; c->jit_until = 0; break; }   /* (stop at the next block) */
+	}
+}
+/* the coprocessor instructions copro always runs (never undefined), that write neither the PC nor the flags: K_COP */
+static int jcop_ok (uint32_t ins)
+{
+	unsigned cp = (ins >> 8) & 15, rt = (ins >> 12) & 15;
+	if ((ins & 0x0f000010u) == 0x0e000010u) {                                     /* MCR / MRC */
+		unsigned L = (ins >> 20) & 1, opc1 = (ins >> 21) & 7, crn = (ins >> 16) & 15, crm = ins & 15;
+		if (rt == 15) return 0;
+		if (cp == 15) return !L && ((crn == 15 && crm == 12) || crn == 13);         /* (the counters, the thread ids) */
+		if (cp == 10 || cp == 11) return opc1 == 7 || (opc1 & 6) == 0;              /* (VMRS / VMSR, VMOV with a core register) */
+		return 0;
+	}
+	if ((ins & 0x0f000010u) == 0x0e000000u) {                                     /* CDP: VFP data processing (vfp_dp) */
+		if (cp != 10 && cp != 11) return 0;
+		unsigned op = ((ins >> 20) & 3) | (((ins >> 23) & 1) << 2), s = (ins >> 6) & 1, Vn = (ins >> 16) & 15, N = (ins >> 7) & 1;
+		if (op <= 3) return 1;
+		if (op == 4) return !s;
+		if (op != 7 || !s) return 0;
+		return Vn == 0 || Vn == 1 || Vn == 4 || Vn == 5 || (Vn == 7 && N) || Vn == 8 || Vn == 12 || Vn == 13;
+	}
+	if ((ins & 0x0fe00000u) == 0x0c400000u)                                       /* VMOV two core registers */
+		return (cp == 10 || cp == 11) && rt != 15 && ((ins >> 16) & 15) != 15;
+	if ((ins & 0x0e000000u) == 0x0c000000u && (cp == 10 || cp == 11)) {           /* VLDR / VSTR / VLDM / VSTM */
+		unsigned W = (ins >> 21) & 1, rn = (ins >> 16) & 15, P = (ins >> 24) & 1;
+		return !(rn == 15 && (W || !P));
+	}
+	return 0;
+}
 
 /* ---------------------------------------------------------------- translating */
 /* what the JIT does with an instruction: 0 leave it to the interpreter; else its kind */
-enum { K_NONE, K_DP, K_MUL, K_MULL, K_LS, K_LSX, K_LDM, K_B, K_BX, K_CPNOP, K_MRC, K_CLZ, K_EXT };
+enum { K_NONE, K_DP, K_MUL, K_MULL, K_LS, K_LSX, K_LDM, K_B, K_BX, K_CPNOP, K_MRC, K_CLZ, K_EXT, K_COP };
 static int j_kind (uint32_t ins, uint32_t ip, int *ends, unsigned *extra)
 {
 	unsigned cond = ins >> 28, op = (ins >> 25) & 7, rn = (ins >> 16) & 15, rd = (ins >> 12) & 15, rs = (ins >> 8) & 15, rm = ins & 15;
@@ -150,8 +195,15 @@ static int j_kind (uint32_t ins, uint32_t ip, int *ends, unsigned *extra)
 			if (rt == 15) return K_NONE;
 			if (!L && crn == 7 && !(crm == 0 && opc2 == 4)) return K_CPNOP;      /* (cache and barrier operations) */
 			if (L) return K_MRC;
-			return K_NONE;
 		}
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__) || defined(_M_ARM64)   /* (both backends: jh_cop) */
+		if (!(ins & 0x01000000u) && jcop_ok (ins)) return K_COP;                  /* (not SWI) */
+#endif
+		return K_NONE;
+	case 6:
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__) || defined(_M_ARM64)
+		if (jcop_ok (ins)) return K_COP;
+#endif
 		return K_NONE;
 	default: return K_NONE;
 	}
@@ -794,8 +846,12 @@ static void j_emit (jins_t *I, unsigned uncond_back)
 		int32_t off = (int32_t) (ins << 8) >> 6; uint32_t t = ip + 8 + (uint32_t) off;
 		if (ins & 0x01000000u) sti (OR (14), ip + 4);
 		int32_t adj = (cond != 14 ? 2 : 0) - (int32_t) after;
+		uint16_t dirty = jdirty;
 		if (t < ip && ip - t <= 64) {
-			j_wb (jdirty);
+			/* the registers to memory before the call - and then clean: the call may change the host registers that
+			 * held them (RSI / RDI on Linux and macOS, R8-R11 everywhere), so j_link below must not write them again.
+			 * (Before 2026-10-27 it did: on Linux the PiTrex's first loop, its BSS clear, ran away with r1 = garbage) */
+			j_wb (jdirty); jdirty = 0;
 			sti (OR (15), t); addm64 (OF (cycles), adj); adj = 0;
 			mov64 (A0, RBX); call ((void *) jh_loop);
 			rr (0x85, RAX, RAX); uint8_t *go = jcc (CC_Z);
@@ -803,6 +859,7 @@ static void j_emit (jins_t *I, unsigned uncond_back)
 			here (go);
 		}
 		j_link (t, adj);
+		jdirty = dirty;                                /* (a conditional branch not taken: the block goes on as before it) */
 		break;
 	}
 	case K_BX: {
@@ -812,6 +869,13 @@ static void j_emit (jins_t *I, unsigned uncond_back)
 		break;
 	}
 	case K_CPNOP: break;
+	case K_COP:                                        /* (the interpreter's copro, called in place: jh_cop) */
+		addm64 (OF (cycles), -(int32_t) dl);
+		j_wb (jcached);
+		movi (RCX, ins); movi (RAX, ip); call3 ((void *) jh_cop, 3);
+		j_reload ();
+		addm64 (OF (cycles), (int32_t) dl);
+		break;
 	case K_MRC: {
 		unsigned rt = (ins >> 12) & 15;
 		addm64 (OF (cycles), -(int32_t) dl);
@@ -882,7 +946,8 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	}
 	ncold = 0; nicold = 0;
 	for (int i = 0; i < n; i++) {
-		int mem = L[i].kind == K_LS || L[i].kind == K_LSX || L[i].kind == K_LDM || L[i].kind == K_MRC;
+		int mem = L[i].kind == K_LS || L[i].kind == K_LSX || L[i].kind == K_LDM || L[i].kind == K_MRC ||
+		          (L[i].kind == K_COP && ((L[i].ins >> 25) & 7) == 6);   /* (VLDR / VSTR: a peripheral too) */
 		j_emit (&L[i], 0);
 		if (L[i].ends && ((L[i].ins >> 28) == 14 || i == n - 1)) break;
 		if (L[i].kind == K_B) continue;

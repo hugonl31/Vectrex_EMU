@@ -370,13 +370,73 @@ static void px_wr (arm11_t *c, uint32_t a, uint32_t v, int n)
 	}
 }
 
+/* a delay loop on the 1 MHz system timer (while (CLO - t0 < d)): the timer changes every microsecond, so the waiting CPU
+ * woke a thousand cycles apart to go round once more. Solved once per wait: the loop's round tried on a copy of the
+ * CPU (arm11_trial) with the timer at later values - doubling, then halving in - finds the first one it leaves at; until
+ * then it sleeps. (A delay loop goes round for every value before its end. Unsure - a store, another peripheral, a call
+ * - it wakes as before.) VT_PXSOLVE=0: off */
+static int px_sv_on = -1, px_sv_ok; static uint32_t px_sv_id, px_sv_d; static unsigned long px_sv_n, px_sv_hit;
+static unsigned long px_sv_trials;
+static int px_try (uint32_t a, uint32_t v) { px_sv_trials++; return arm11_trial (&px_cpu, a, v); }
+static void px_solve (void)
+{
+	px_sv_id = px_cpu.wait_id; px_sv_ok = 0;
+	if ((px_cpu.wait_addr & 0x00ffffffu) != 0x003004) return;
+	uint32_t a = px_cpu.wait_addr, v0 = px_cpu.wait_val, lo = 0, hi = 0;
+	/* the bounds: lo goes round, hi leaves. The same loop usually waits about as long as last time (its start a
+	 * microsecond or two later or sooner): that length, give or take 8, first; else doubling from 1 */
+	static uint32_t c_pc[16], c_d[16], c_t[16]; unsigned ci = (px_cpu.r[15] >> 2) & 15;
+	int r;
+	/* (woken by an interrupt in the middle of a wait, the loop waits again for the same end: that first) */
+	if (c_pc[ci] == px_cpu.r[15] && c_t[ci] - v0 - 1 < (1u << 24)) {
+		uint32_t g = c_t[ci] - v0;
+		if ((r = px_try (a, v0 + g)) < 0) return;
+		if (r == 1) {
+			if ((r = px_try (a, v0 + g - 1)) < 0) return;
+			if (r == 0) { lo = g - 1; hi = g; }
+		}
+	}
+	if (!hi && c_pc[ci] == px_cpu.r[15] && c_d[ci]) {
+		uint32_t g = c_d[ci];
+		if ((r = px_try (a, v0 + g)) < 0) return;
+		if (r == 1) {
+			hi = g; uint32_t l = g > 8 ? g - 8 : 0;
+			if ((r = px_try (a, v0 + l)) < 0) return;
+			if (r == 0) lo = l; else hi = 0;                    /* (much shorter: the full search) */
+		} else {
+			lo = g;
+			if ((r = px_try (a, v0 + g + 8)) < 0) return;
+			if (r == 1) hi = g + 8; else lo = 0;
+		}
+	}
+	if (!hi) {
+		lo = 0;
+		if (px_try (a, v0) != 0) return;
+		for (uint32_t d = 1; d <= (1u << 24); d <<= 1) {
+			if ((r = px_try (a, v0 + d)) < 0) return;
+			if (r == 1) { hi = d; break; }
+			lo = d;
+		}
+		if (!hi) return;
+	}
+	while (hi - lo > 1) {
+		uint32_t m = lo + (hi - lo) / 2;
+		if ((r = px_try (a, v0 + m)) < 0) return;
+		if (r == 1) hi = m; else lo = m;
+	}
+	px_sv_d = hi; px_sv_ok = 1; px_sv_n++; { static int lg = -1, k; if (lg < 0) lg = getenv ("VT_PXSOLVELOG") != NULL; if (lg && !(k++ % 5000)) fprintf (stderr, "solve pc %08X v0 %u d %u r0-r3 %08X %08X %08X %08X\n", px_cpu.r[15], v0, hi, px_cpu.r[0], px_cpu.r[1], px_cpu.r[2], px_cpu.r[3]); }
+	c_pc[ci] = px_cpu.r[15]; c_d[ci] = hi; c_t[ci] = v0 + hi;
+}
 /* a value the waiting CPU reads, peeked again: still the same? */
 static int px_peek_same (void)
 {
 	uint32_t a = px_cpu.wait_addr, v;
 	if (a < PX_RAM) memcpy (&v, px_ram + a, 4);
 	else if ((a & 0x00ffffffu) == 0x200034) v = px_lev0 ();
-	else if ((a & 0x00ffffffu) == 0x003004) v = (uint32_t) px_us ();
+	else if ((a & 0x00ffffffu) == 0x003004) {
+		v = (uint32_t) px_us ();
+		if (px_sv_ok && px_sv_id == px_cpu.wait_id) { if (v - px_cpu.wait_val < px_sv_d) { px_sv_hit++; return 1; } return 0; }   /* (solved: on until its end) */
+	}
 	else return 0;
 	return v == px_cpu.wait_val;
 }
@@ -399,6 +459,8 @@ static void px_run (uint32_t cyc)
 	if (px_cpu.cycles >= until) return;
 	while (px_cpu.cycles < until && !px_cpu.halted) {
 		if (px_cpu.wait_on) {
+			if (px_sv_on < 0) { const char *z = getenv ("VT_PXSOLVE"); px_sv_on = z ? atoi (z) : 1; }
+			if (px_sv_on && px_cpu.wait_id != px_sv_id) px_solve ();
 			if (px_peek_same () && !(px_cpu.irq_line && !px_cpu.ibit)) { if (until > px_cpu.cycles) px_cpu.slept[1] += until - px_cpu.cycles; px_cpu.cycles = until; break; }
 			px_cpu.wait_on = 0;
 		}
@@ -446,6 +508,7 @@ void pitrex_digest (void)                  /* (for the JIT check: the Pi's state
 	{ static uint64_t c0, s0[3]; uint64_t dc = px_cpu.cycles - c0; if (dc) fprintf (stderr, "pitrex: since last: %.2f s Pi time, slept: counter %.1f %%  poll %.1f %%  wfi %.1f %%\n", dc / 1e9,
 	      100.0 * (px_cpu.slept[0] - s0[0]) / dc, 100.0 * (px_cpu.slept[1] - s0[1]) / dc, 100.0 * (px_cpu.slept[2] - s0[2]) / dc);
 	  c0 = px_cpu.cycles; memcpy (s0, px_cpu.slept, sizeof s0); }
+	if (px_sv_n) fprintf (stderr, "pitrex: timer waits solved %lu, wake-ups saved %lu, trials %lu\n", px_sv_n, px_sv_hit, px_sv_trials);
 	printf ("pitrex: cycles %llu pc %08X regs %08X cpsr %08X ram %016llX accesses %lu\n", (unsigned long long) px_cpu.cycles, px_cpu.r[15], rh, arm11_cpsr (&px_cpu), (unsigned long long) h, px_n_acc);
 }
 void pitrex_prof_dump (const char *fn)

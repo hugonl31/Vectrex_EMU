@@ -4,8 +4,8 @@ Draws the emulator's vectors into an off-screen 32-bit bitmap with GDI+ anti-ali
 twice: a wide faint glow and a bright core (the look of a vector CRT), then copies the bitmap to the
 window in one call. Line widths scale with the picture, so any window size looks smooth.
 """
-import ctypes, math, sys, time, ctypes.wintypes as W
-import roomlight, casemodel
+import ctypes, math, os, sys, time, ctypes.wintypes as W
+import roomlight, casemodel, tubemap
 try:                                    # (numpy: the vertex arrays of a frame in one go - _build_np; without it the
     import numpy as _np                 #  same per line in Python, slower: a dense frame of 11000 lines took 13 ms)
 except Exception:   # noqa
@@ -13,7 +13,7 @@ except Exception:   # noqa
 
 IS_WIN = sys.platform == 'win32'      # (macOS / Linux: osdep.py makes the OpenGL context)
 
-ALG_MAX_X, ALG_MAX_Y = 33000, 41000
+ALG_MAX_X, ALG_MAX_Y = 35000, 41000      # (the core's canvas, vecx.h: 1000 wider each side since 2026-10-27)
 
 class _StartupInput(ctypes.Structure):
     _fields_ = [('GdiplusVersion', ctypes.c_uint32), ('DebugEventCallback', ctypes.c_void_p),
@@ -538,8 +538,9 @@ def smooth_bends(L, unit_px=None):
     st = np.cumsum(k) - k
     j = np.arange(len(idx)) - np.repeat(st, k)
     kk = k[idx].astype(np.float64)
-    def curve(s):
-        i = idx
+    def curve(s, w):
+        """the curve's points at s for the cut pieces' rows w (only those: most pieces are not cut)"""
+        i = idx[w]
         d01 = np.maximum(np.hypot(P1x[i] - P0x[i], P1y[i] - P0y[i]), 1e-3) ** 0.5
         d12 = np.maximum(ln[i], 1e-3) ** 0.5
         d23 = np.maximum(np.hypot(P3x[i] - P2x[i], P3y[i] - P2y[i]), 1e-3) ** 0.5
@@ -554,11 +555,16 @@ def smooth_bends(L, unit_px=None):
             B2 = ((t3_ - u) * A2 + (u - t1_) * A3) / (t3_ - t1_)
             out.append(((t2_ - u) * B1 + (u - t1_) * B2) / (t2_ - t1_))
         return out
-    s0, s1 = j / kk, (j + 1) / kk
-    ax, ay = curve(s0); bx, by = curve(s1)
-    one = kk == 1
-    ax = np.where(one | (j == 0), x0[idx], ax); ay = np.where(one | (j == 0), y0[idx], ay)
-    bx = np.where(one | (j == kk - 1), x1[idx], bx); by = np.where(one | (j == kk - 1), y1[idx], by)
+    ax, ay = x0[idx], y0[idx]                           # (a piece's own ends where it is not cut, and at its first
+    bx, by = x1[idx], y1[idx]                           #  start and last end; the curve between)
+    wa = np.nonzero(j > 0)[0]
+    wb = np.nonzero(j < kk - 1)[0]
+    if len(wa):
+        ax = ax.copy(); ay = ay.copy()
+        ax[wa], ay[wa] = curve(j[wa] / kk[wa], wa)
+    if len(wb):
+        bx = bx.copy(); by = by.copy()
+        bx[wb], by[wb] = curve((j[wb] + 1) / kk[wb], wb)
     R = L[idx].copy()
     R[:, 0], R[:, 1], R[:, 2], R[:, 3] = ax, ay, bx, by
     R[:, 5] = e[idx] / kk
@@ -601,10 +607,11 @@ TUBE_LIGHT_D = len(TUBE_LIGHT) - 1
 
 
 # Tube > White balance: the beam's white as a colour temperature (WHITE_LO..WHITE_HI kelvin, the slider even in mireds;
-# the default 9300 K - the owner's choice, 2026-10-26: the cool white of old CRT monitors). The white on the CIE daylight
+# the default 12000 K - the owner, 2026-10-27: what the real Vectrex looks like, really bluish; 9300 K before). The white on the CIE daylight
 # curve against sRGB's own (6504 K: the beam's white before), as bright: gains on the beam's light only (the overlay, the
 # case and the glass keep their colours)
-WHITE_DEFAULT, WHITE_LO, WHITE_HI = 9300.0, 5600.0, 12000.0
+WHITE_DEFAULT, WHITE_LO, WHITE_HI = 12000.0, 5600.0, 16000.0     # (the owner, 2026-10-27: room to go bluer than the default)
+WHITE_CORE_HI = 12000.0         # (the cores' ramp keeps its old scale: at 12000 K they are fully that, as before; beyond, T itself)
 # the slider (the owner, 2026-10-26): its middle neutral - the line and its glow the screen's pure white (WHITE_MID);
 # towards cool (warm) the glow takes the temperature while the line's bright core stays white; only over the last
 # WHITE_CORE of each half does the core follow too, reaching the end's temperature at the end. Each half even in mireds
@@ -627,12 +634,23 @@ def white_from_pos(f):
 
 
 def white_core_k(T):
-    """the line core's temperature for the slider at T: neutral, but over the last WHITE_CORE of a half on to T's"""
+    """the line core's temperature for the slider at T: neutral, but over the last WHITE_CORE of a half on to T's - the
+    cool half on the scale up to WHITE_CORE_HI (the look the owner chose at 12000 K), past it the core is T itself"""
+    T = float(T)
+    if T >= WHITE_CORE_HI:
+        return T
+    m, m0 = 1e6 / T, 1e6 / WHITE_MID
+    if m <= m0:                                         # (cool: positions on the 6504 .. 12000 K scale)
+        f = min(1.0, (m0 - m) / (m0 - 1e6 / WHITE_CORE_HI))
+        if f <= 1.0 - WHITE_CORE:
+            return WHITE_MID
+        g = (f - (1.0 - WHITE_CORE)) / WHITE_CORE
+        return 1e6 / (m0 - g * (m0 - 1e6 / WHITE_CORE_HI))
     f = white_pos(T)
     if abs(f) <= 1.0 - WHITE_CORE:
         return WHITE_MID
     g = (abs(f) - (1.0 - WHITE_CORE)) / WHITE_CORE
-    return white_from_pos(g if f > 0 else -g)
+    return white_from_pos(-g)
 
 
 # WB_CORE: the white balance is a tint of the light around the lines - the glow, the bloom, the afterglow - while their
@@ -720,85 +738,62 @@ void main() {
 }
 """
 
-# the tube geometry (Tube > Tube geometry): where the beam lands on the owner's Vectrex, measured from photos of
-# the Test Cartridge grid, the start screen and Distortion 1 (2026-10-22): the picture narrower than the ideal
-# one (more so towards the sides), vertical lines bowed to the left, horizontal ones down, the top narrower than
-# the bottom, the top right corner pulled up a little, the whole a little smaller (its height 86 % of the glass
-# is the grid's 77 % as on the tube). A map from the ideal picture (u, v: units of half the picture height,
-# centred, y down) to the tube: cubic in u, v (TUBE_X, TUBE_Y: coefficients of the terms TUBE_TERMS) plus the
-# corner's pull; the shader inverts it per pixel (Newton steps). Strength (Tube geometry...): 0 = the ideal
-# picture, 1 = the owner's tube. The glass: a superellipse (rounded corners, its sides very slightly bulging),
-# as high as the picture, GLASS_AW as wide; beyond it the tube's face ends (Tube > Glass edge).
+# the tube geometry (Tube > Tube geometry): where the beam lands on the owner's Vectrex - measured 2026-10-27 from the
+# owner's exact trace of the Test Cartridge grid on a real tube (tubemap.py: the emulator's grid warped onto the traced
+# one, every line within the trace's own precision). Strength (Tube geometry...): 0 = the straight part only (its size
+# and place: overlays keep their place), 1 = the owner's tube. The shader no longer bends the picture (the lines are
+# bent before they are drawn); tube_coeffs below is its identity.
+# Real sizes (the owner's measurements, 2026-10-27): the overlay sheet 162 x 207 mm lies exactly on the case's matte
+# frame (its outer edge, corners r 8.63 mm), the frame 3.5 mm wide; inside it the glossy walls down to the glass. The
+# renderer's unit stays half a picture height: the sheet ART_TUBE_K units high = 103.5 mm, so 1 unit = MM_UNIT mm.
 TUBE_TERMS = ((0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (3, 0))   # (u power, v power)
-TUBE_X = (0.00646, 0.00146, 0.01249, -0.00058, 0.84421, 0.01148, 0.01204, 0.00204, -0.00711, -0.08794)
-# (2026-10-24, GitHub issue 4: the columns refitted to the average of two real Vectrexes' grids - before, the cubic
-#  term pinched the outer columns too hard, 0.78 of the middle's spacing against the real tubes' 0.80 / 0.90, and
-#  more on the left; now 0.86, left and right alike, the grid's width and centre unchanged)
-TUBE_Y = (0.0, 0.85774, -0.02077, 0.11881, -0.00346, -0.0042, 0.01194, -0.01267, -0.00086, -0.00016)
-TUBE_PULL = 0.016                       # the top right corner pulled up (half picture heights, at the corner)
-# The glass's outline (2026-10-24): measured on the owner's Vectrex - the test cartridge's grid screen photographed,
-# the glass edge traced, mapped onto the emulator's grid. GLASS_LUT is its radius every degree from the horizontal
-# axis (0 .. 90, half picture heights), the average of the four traced corners (they agree within 2.4 px rms on a
-# 1839 px picture), mirrored into all four: the shape is symmetric. Its centre is GLASS_DX / GLASS_DY from the
-# picture's (half picture heights, y down) - the real picture sits a little left of and below the glass's middle.
-# The overlay is centred on the glass, as the sheet sits on the real tube.
+# The glass's outline: the owner's traced edge where the glass meets the case (the blue line's centre), its radius every
+# degree from the horizontal axis (0 .. 90, half picture heights), the four corners averaged (they agree within
+# 0.19 mm), mirrored into all four. 145.7 x 188.5 mm, centred on the frame (within 0.06 mm).
 GLASS_LUT = (
-    0.7114, 0.7115, 0.7118, 0.7122, 0.7126, 0.7131, 0.7140, 0.7153, 0.7169, 0.7187,
-    0.7208, 0.7230, 0.7255, 0.7282, 0.7314, 0.7347, 0.7381, 0.7419, 0.7458, 0.7499,
-    0.7543, 0.7592, 0.7641, 0.7692, 0.7746, 0.7802, 0.7860, 0.7920, 0.7983, 0.8050,
-    0.8120, 0.8194, 0.8273, 0.8356, 0.8445, 0.8539, 0.8637, 0.8740, 0.8848, 0.8960,
-    0.9076, 0.9198, 0.9325, 0.9456, 0.9592, 0.9733, 0.9882, 1.0037, 1.0198, 1.0366,
-    1.0546, 1.0724, 1.0882, 1.1007, 1.1097, 1.1154, 1.1182, 1.1181, 1.1153, 1.1102,
-    1.1041, 1.0976, 1.0911, 1.0846, 1.0782, 1.0718, 1.0655, 1.0593, 1.0532, 1.0473,
-    1.0418, 1.0367, 1.0320, 1.0276, 1.0233, 1.0193, 1.0155, 1.0116, 1.0079, 1.0045,
-    1.0015, 0.9988, 0.9966, 0.9947, 0.9931, 0.9918, 0.9908, 0.9900, 0.9894, 0.9891,
-    0.9889,
+    0.65021, 0.65031, 0.65061, 0.65111, 0.65180, 0.65270, 0.65380, 0.65510, 0.65660, 0.65827,
+    0.66006, 0.66200, 0.66407, 0.66634, 0.66886, 0.67156, 0.67442, 0.67754, 0.68090, 0.68446,
+    0.68825, 0.69224, 0.69646, 0.70092, 0.70564, 0.71062, 0.71588, 0.72144, 0.72731, 0.73349,
+    0.73996, 0.74677, 0.75393, 0.76145, 0.76935, 0.77766, 0.78638, 0.79551, 0.80504, 0.81492,
+    0.82509, 0.83554, 0.84638, 0.85779, 0.86987, 0.88252, 0.89563, 0.90879, 0.92163, 0.93367,
+    0.94436, 0.95326, 0.96003, 0.96443, 0.96651, 0.96643, 0.96426, 0.96040, 0.95554, 0.95002,
+    0.94396, 0.93765, 0.93130, 0.92502, 0.91889, 0.91294, 0.90721, 0.90170, 0.89641, 0.89139,
+    0.88664, 0.88217, 0.87800, 0.87412, 0.87052, 0.86714, 0.86393, 0.86089, 0.85802, 0.85538,
+    0.85298, 0.85078, 0.84884, 0.84717, 0.84572, 0.84444, 0.84337, 0.84251, 0.84187, 0.84149,
+    0.84136,
 )
-GLASS_AW, GLASS_AH = GLASS_LUT[0], GLASS_LUT[90]          # the glass's width, height / picture height
-GLASS_DX, GLASS_DY = 0.0190 - 0.0190, -0.0260 + 0.0245
-# (the picture moved 0.019 right and 0.0245 up inside the glass and the overlay: the overlays expect it there - Solar
-#  Quest's sun on its vector star, measured in the window and full screen; the real tube's own offset was 0.019 / -0.026)
-GLASS_N, GLASS_EDGE = 7.17, 0.025       # (a superellipse power close to it: the room light's maps) / the soft edge
+GLASS_AW, GLASS_AH = GLASS_LUT[0], GLASS_LUT[90]          # the glass's half width, half height (units)
+GLASS_DX, GLASS_DY = 0.0, 0.0                             # (the glass, the frame and the overlay share one centre; the
+                                                          #  picture sits off it by the map's own offset, tubemap.LIN)
+# the room light's reflections and the phosphor layer behind the glass were made for the earlier glass outline: the
+# shader looks them up in its coordinates (gsc: x and y scaled so the glass's edges meet), so they keep their look
+GLASS_REF_AW, GLASS_REF_AH = 0.7114, 0.9889
+GLASS_N = 7.17                          # (that outline's superellipse power: the room light's maps)
+GLASS_EDGE = 0.025 * GLASS_REF_AH / GLASS_AH   # the soft edge (a share of the radius: the same ~2.8 mm as before)
 GLASS_GREY = 0.20                       # the glass in room light without an overlay: grey x Room light (0 .. 1) -
                                         #  at the default hardly noticeable; with an overlay always black (contrast)
-ART_TUBE_K = 0.924                      # the overlay on the tube's smaller picture: its scale (both ways - the sheet keeps
-                                        #  its proportions; the width as fitted to Armor Attack's playground, the owner)
+ART_TUBE_K = 0.924                      # the overlay sheet's half height, units (its 207 mm: the scale of everything)
+MM_UNIT = 103.5 / ART_TUBE_K            # real mm per unit (112.0)
 TUBE_SEG = 1200.0                       # (lines longer than this, emulator units, are bent in pieces)
-TUBE_LIN = (0.82217 / 0.99720, 0.0, 0.91048 / 1.00659, -0.0058)   # (/ 0.99720, / 1.00659: the core's new timing (2026-10-25)
-                                        #  draws the test cart grid that much narrower / taller - the picture stays where the
-                                        #  owner's photos put it) the straight part: x = a u, y = c v + d - the picture's size on the tube (the
-                                        #  best straight fit to the whole map, |u|, |v| < 0.82): always on, so overlays keep
-                                        #  their place when the imperfections are switched off. Centred, for simplicity (the
-                                        #  owner's tube sits a little off): the picture, the glass and the overlay share one
-TUBE_IMP_OFF = (0.0, -0.001)            #  centre - the imperfections are zero there (the corner's pull's share taken out), so
-                                        #  switching them off never moves the picture's middle
-                                        #  (d: the vectors 1 % of the picture height up - Solar Quest's sun in its overlay's star, the owner)
+TUBE_LIN = tubemap.LIN                  # the straight part: x = a u + b, y = c v + d (units)
+
 def tube_map(k):
-    """the tube's map, emulator units -> emulator units: the straight part plus k x the imperfections (the full
-    map minus the straight part)"""
-    cx, cy = tube_coeffs(1.0); pull = TUBE_PULL
+    """the tube's map, emulator units -> emulator units (round the frame's centre at the canvas's middle): the
+    straight part plus k x the measured imperfections"""
     la, lb, lc, ld = TUBE_LIN
     X0, Y0, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
-    (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9), (b0, b1, b2, b3, b4, b5, b6, b7, b8, b9) = cx, cy
+    imp = tubemap.imp
     def f(x, y):
         u = (x - X0) / U; v = (y - Y0) / U
-        u2, v2 = u * u, v * v
-        X = a0 + a1 * v + a2 * v2 + a3 * v2 * v + a4 * u + a5 * u * v + a6 * u * v2 + a7 * u2 + a8 * u2 * v + a9 * u2 * u
-        Y = b0 + b1 * v + b2 * v2 + b3 * v2 * v + b4 * u + b5 * u * v + b6 * u * v2 + b7 * u2 + b8 * u2 * v + b9 * u2 * u
-        if pull:
-            p = (1.0 + u / 0.85) * 0.5; q = (1.0 - v) * 0.5
-            if p > 0 and q > 0:
-                Y -= pull * p * p * q * q
-        sx, sy = la * u, lc * v
-        X -= TUBE_IMP_OFF[0]; Y -= TUBE_IMP_OFF[1]
-        return X0 + (sx + k * (X - sx) + lb) * U, Y0 + (sy + k * (Y - sy) + ld) * U
+        dx, dy = imp(u, v) if k else (0.0, 0.0)
+        return X0 + (la * u + lb + k * dx) * U, Y0 + (lc * v + ld + k * dy) * U
     return f
 
 def tube_coeffs(k):
-    """the map's coefficients at strength k: the identity blended with the owner's tube"""
-    ix = [1.0 if t == (1, 0) else 0.0 for t in TUBE_TERMS]; iy = [1.0 if t == (0, 1) else 0.0 for t in TUBE_TERMS]
-    return ([a + k * (b - a) for a, b in zip(ix, TUBE_X)], [a + k * (b - a) for a, b in zip(iy, TUBE_Y)])
-ART_PARALLAX = 0.008    # the overlay's parallax: lowered this share of the picture height (Overlay > Parallax)
+    """the shader's own bend (none now: the lines are bent before they are drawn): the identity"""
+    return ([1.0 if t == (1, 0) else 0.0 for t in TUBE_TERMS], [1.0 if t == (0, 1) else 0.0 for t in TUBE_TERMS])
+ART_PARALLAX = 0.008    # the overlay's parallax (Overlay > Parallax): the picture behind the glass this share of the picture
+                        #  height x ART_TUBE_K higher than the sheet - the sheet itself stays on the case's frame (2026-10-28)
 LIGHT_GLSL = b"""
 // the room's light (see roomlight.py: the same geometry)
 const float HZ = 0.80, CH = 2.4, FIX_W = 0.30, FIX_L = 1.2;
@@ -835,7 +830,7 @@ uniform sampler2D tex, lmap;
 uniform vec2 norm, ctr;
 uniform float cx[10], cy[10];
 uniform float pull, glass, aw, ah, gn, edge, grey, lk, bscale, pxs;
-uniform vec2 goff;
+uniform vec2 goff, gsc;                  // (gsc: the glass's size / the earlier outline's - the room light's maps)
 uniform float glut[91];                 // the glass's radius every degree (GLASS_LUT)
 uniform vec3 lpos;
 uniform vec4 lmr;
@@ -872,7 +867,10 @@ float sdist(vec2 d, vec2 R) {                                            // (sig
 }
 float ang(vec2 d) { return degrees(atan(abs(d.y), abs(d.x) + 1e-9)); }
 float sdG(vec2 d) { return sdist(d, gR(ang(d))); }
-float sdC(vec2 d) { return sdist(d, cR(ang(d))); }
+float sdC(vec2 d) {                                      // (the case's opening: a rounded rectangle, exact - casemodel's
+    vec2 q = abs(d) - vec2(0.69188 - 0.045826, 0.89275 - 0.045826);   //  155 x 200 mm, corners r 5.13 mm: smooth corners)
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.045826;
+}
 vec2 fwd(vec2 p, out mat2 J) {
     float u = p.x, v = p.y, u2 = u * u, v2 = v * v;
     float t[10]; float tu[10]; float tv[10];
@@ -899,7 +897,7 @@ vec2 fwd(vec2 p, out mat2 J) {
 }
 // ---- the plastic case (casemodel; the owner's previews 2026-10-24): what it shows at this point gd (from the
 //      glass's centre, units, y down). Lengths below in "ref px": the 1839 px high picture of the previews.
-const float U = 919.67, FRONT_W = 0.047;          // (FRONT_W: casemodel's)
+const float U = 919.67, FRONT_W = 0.03125;        // (FRONT_W: casemodel's - 3.5 mm, the owner's measurement)
 vec3 tex9(vec2 q, float rad) {                       // (the vectors round q (units), a soft ring rad ref px wide)
     vec2 o = vec2(rad / U) / norm, s = ctr + vec2(q.x, -q.y) / norm;
     vec3 a = texture2D(tex, s).rgb * 2.0;
@@ -940,10 +938,11 @@ vec3 plastic(vec2 gd, vec2 tgt) {
         float Rg = G.x, D = max(C.x - G.x, 1e-4), rho = length(gd);
         float dRg = G.y * 57.29578 * sg, dD = (C.y - G.y) * 57.29578 * sg;
         float u = clamp((rho - Rg) / D, 0.0, 1.0);                       // (0 at the glass .. 1 at the outer edge)
-        // its depth: ~1.3 cm at the sides and top / bottom (68 / 64 deg); deeper where the wall is wider - the
-        // tube's face curves back at its corners - so the corners stay steep and mirror the glass too (smooth max)
-        float k = 2.0 * D - 0.12, q = sqrt(k * k + 0.0004);
-        float H = 0.12 + 0.5 * (k + q), dH = (1.0 + k / q) * dD;
+        // its depth: ~1.2 cm at the sides and top / bottom; deeper where the wall is wider - the tube's face curves
+        // back at its corners - so the corners stay steep and mirror the glass too (smooth max). Its angle as before
+        // the measured geometry (2026-10-27: 68.5 deg at the sides, 65.5 top / bottom, 63.5 in the corners)
+        float k = 1.9712 * D - 0.09864, q = sqrt(k * k + 0.0004);
+        float H = 0.10123 + 0.5 * (k + q), dH = 0.9856 * (1.0 + k / q) * dD;
         float cs = cos(th), sn = sin(th);
         vec3 Pu = vec3(D * cs, D * sn, H);
         float dr = dRg + u * dD;
@@ -981,7 +980,8 @@ vec3 plastic(vec2 gd, vec2 tgt) {
         float bl = 0.0;
         if (lk > 0.0) {
             vec2 eq = tgt - n * dpos / U;
-            float mr = texture2D(lmap, vec2((eq.x - lmr.x) / (lmr.y - lmr.x), (eq.y - lmr.z) / (lmr.w - lmr.z))).r;
+            vec2 eqn = eq / gsc;                                             // (the maps' glass)
+            float mr = texture2D(lmap, vec2((eqn.x - lmr.x) / (lmr.y - lmr.x), (eqn.y - lmr.z) / (lmr.w - lmr.z))).r;
             bl = lk * mr * (0.03 * exp(-dpos / 55.0) * (0.25 + 0.75 * pow(top, 0.7)) + 0.035 * exp(-dpos / 16.5) * pow(top, 0.7));
         }
         // the scratches: they glint where light crosses them - the tube's (nearby) and the room's
@@ -1004,7 +1004,7 @@ vec3 plastic(vec2 gd, vec2 tgt) {
         float grain = (vnoise(rp / 2.0 + 5.3) - 0.5) * 0.13 + (hash(cell) - 0.5) * 0.05;
         // (where the overlays slide in and scrape: a smoother, slightly shinier band halfway across, in faint
         //  lengthwise marks, its strength varying along the length and less in the corners)
-        float acr = -de * U, mid = 0.0225 * U;                            // (ref px from the inner edge; the middle)
+        float acr = -de * U, mid = 0.5 * FRONT_W * U;                     // (ref px from the inner edge; the middle)
         float band = exp(-pow((acr - mid - 6.0 * (vnoise(rp / 300.0 + 4.0) - 0.5)) / 3.0, 2.0));
         float marks = 0.5 + 0.5 * vnoise(vec2(acr / 0.9, 0.0) + rp / 500.0);
         float cornw = 1.0 - 0.85 * exp(-pow((ang(gd) - 55.0) / 9.0, 2.0));
@@ -1046,12 +1046,13 @@ void main() {
         float r = length(gd) / gR(ga).x;                      // (Catmull-Rom: a smooth edge)
         float g = smoothstep(0.0, 1.0, clamp((1.0 - r) / edge, 0.0, 1.0));   // (a soft edge)
         vec3 add = vec3(0.0);
+        vec2 tq = tgt / gsc;                                 // (the room light's maps: made for the earlier glass outline)
         if (grey > 0.0 || lk > 0.0) {                        // (the glass in the room's light: no overlay)
             float gr = bumps(gl_FragCoord.xy * bscale);      // (the phosphor layer's fine orange-peel bumps)
-            add += grey * (1.0 - 0.25 * tgt.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);
+            add += grey * (1.0 - 0.25 * tq.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);
             if (lk > 0.0) {
-                vec4 m = texture2D(lmap, vec2((tgt.x - lmr.x) / (lmr.y - lmr.x), (tgt.y - lmr.z) / (lmr.w - lmr.z)));
-                float sharp = ceiling((reflp(tgt, 0.2) - lpos.xy) / lpos.z, 0.012);   // (a mirror; 1 % blur, anti-aliased)
+                vec4 m = texture2D(lmap, vec2((tq.x - lmr.x) / (lmr.y - lmr.x), (tq.y - lmr.z) / (lmr.w - lmr.z)));
+                float sharp = ceiling((reflp(tq, 0.2) - lpos.xy) / lpos.z, 0.012);   // (a mirror; 1 % blur, anti-aliased)
                 add += lk * (m.g * (1.0 + 0.018 * gr) * vec3(0.95, 0.96, 1.0) + 0.88 * (0.98 * sharp + m.r) * LIGHTC);   // (m.g: the phosphor's light, roomlight.maps)
             }
         }
@@ -1668,7 +1669,7 @@ JOY_ICON = [
     [(95.5, 56.0), (95.2, 57.8), (94.3, 59.4), (92.9, 60.6), (91.2, 61.2), (89.3, 61.2), (87.6, 60.6), (86.2, 59.4), (85.3, 57.8), (85.0, 56.0), (85.3, 54.2), (86.2, 52.6), (87.6, 51.4), (89.3, 50.8), (91.2, 50.8), (92.9, 51.4), (94.3, 52.6), (95.2, 54.2), (95.5, 56.0)],
     [(93.9, 56.0), (93.6, 57.6), (92.5, 58.9), (91.1, 59.6), (89.4, 59.6), (88.0, 58.9), (86.9, 57.6), (86.6, 56.0), (86.9, 54.4), (88.0, 53.1), (89.4, 52.4), (91.1, 52.4), (92.5, 53.1), (93.6, 54.4), (93.9, 56.0)],
 ]
-# the VecVox (port 2): its rounded box with a speaker, sound waves to the right
+# the VecVoice (port 2): its rounded box with a speaker, sound waves to the right
 PORT2_ICON = [
     [(10.0, 18.0), (8.4, 18.2), (7.0, 18.8), (5.8, 19.8), (4.8, 21.0), (4.2, 22.4), (4.0, 24.0), (4.0, 76.0), (4.2, 77.6), (4.8, 79.0), (5.8, 80.2), (7.0, 81.2), (8.4, 81.8), (10.0, 82.0), (56.0, 82.0), (57.6, 81.8), (59.0, 81.2), (60.2, 80.2), (61.2, 79.0), (61.8, 77.6), (62.0, 76.0), (62.0, 24.0), (61.8, 22.4), (61.2, 21.0), (60.2, 19.8), (59.0, 18.8), (57.6, 18.2), (56.0, 18.0), (10.0, 18.0)],
     [(46.0, 50.0), (45.6, 53.4), (44.3, 56.5), (42.2, 59.2), (39.5, 61.3), (36.4, 62.6), (33.0, 63.0), (29.6, 62.6), (26.5, 61.3), (23.8, 59.2), (21.7, 56.5), (20.4, 53.4), (20.0, 50.0), (20.4, 46.6), (21.7, 43.5), (23.8, 40.8), (26.5, 38.7), (29.6, 37.4), (33.0, 37.0), (36.4, 37.4), (39.5, 38.7), (42.2, 40.8), (44.3, 43.5), (45.6, 46.6), (46.0, 50.0)],
@@ -1677,7 +1678,7 @@ PORT2_ICON = [
     [(80.8, 33.1), (82.3, 35.6), (83.6, 38.3), (84.7, 41.1), (85.4, 44.0), (85.9, 47.0), (86.0, 50.0), (85.9, 53.0), (85.4, 56.0), (84.7, 58.9), (83.6, 61.7), (82.3, 64.4), (80.8, 66.9)],
     [(89.0, 27.4), (91.1, 30.8), (92.8, 34.4), (94.2, 38.2), (95.2, 42.1), (95.8, 46.0), (96.0, 50.0), (95.8, 54.0), (95.2, 57.9), (94.2, 61.8), (92.8, 65.6), (91.1, 69.2), (89.0, 72.6)],
 ]
-# the VecVoice (port 2): a head in profile, speaking
+# the VecVox (port 2): a head in profile, speaking (the SpeakJet: the more advanced module)
 VOICE_ICON = [
     [(24.0, 96.0), (24.1, 95.0), (24.2, 93.8), (24.4, 92.3), (24.7, 90.7), (24.9, 88.9), (25.1, 87.0), (25.2, 85.2), (25.2, 83.3), (25.2, 81.6), (25.0, 80.0), (24.7, 78.5), (24.2, 77.1), (23.6, 75.7), (23.0, 74.4), (22.2, 73.0), (21.5, 71.6), (20.8, 70.3), (20.1, 68.9), (19.5, 67.5), (19.0, 66.0), (18.5, 64.5), (18.1, 63.0), (17.7, 61.4), (17.2, 59.8), (16.9, 58.2), (16.6, 56.6), (16.3, 55.0), (16.1, 53.4), (16.0, 51.7), (16.0, 50.0), (16.1, 48.3), (16.2, 46.5), (16.4, 44.6), (16.7, 42.8), (17.1, 40.9), (17.5, 39.0), (18.0, 37.2), (18.6, 35.4), (19.2, 33.6), (20.0, 32.0), (20.9, 30.4), (21.8, 28.8), (22.9, 27.2), (24.0, 25.7), (25.2, 24.2), (26.5, 22.8), (27.9, 21.4), (29.2, 20.2), (30.6, 19.0), (32.0, 18.0), (33.4, 17.1), (35.0, 16.3), (36.6, 15.6), (38.2, 14.9), (39.9, 14.4), (41.6, 13.9), (43.2, 13.6), (44.9, 13.3), (46.5, 13.1), (48.0, 13.0), (49.5, 13.0), (51.0, 13.1), (52.5, 13.3), (54.0, 13.6), (55.5, 14.0), (56.9, 14.5), (58.3, 15.0), (59.6, 15.6), (60.9, 16.3), (62.0, 17.0), (63.1, 17.8), (64.1, 18.7), (65.0, 19.8), (65.9, 20.8), (66.8, 22.0), (67.5, 23.2), (68.2, 24.4), (68.9, 25.6), (69.5, 26.8), (70.0, 28.0), (70.4, 29.2), (70.7, 30.3), (70.9, 31.5), (71.0, 32.7), (71.1, 33.9), (71.2, 35.2), (71.3, 36.4), (71.4, 37.6), (71.7, 38.8), (72.0, 40.0), (72.5, 41.2), (73.1, 42.5), (73.9, 43.9), (74.7, 45.2), (75.5, 46.5), (76.3, 47.8), (77.0, 49.0), (77.5, 50.1), (77.9, 51.1), (78.0, 52.0), (77.9, 52.7), (77.5, 53.3), (76.9, 53.8), (76.1, 54.1), (75.3, 54.4), (74.5, 54.7), (73.7, 55.0), (72.9, 55.3), (72.4, 55.6), (72.0, 56.0), (71.8, 56.5), (71.8, 57.0), (71.9, 57.5), (72.0, 58.0), (72.2, 58.5), (72.5, 59.0), (72.7, 59.5), (72.9, 60.0), (73.0, 60.5), (73.0, 61.0), (72.9, 61.4), (72.7, 61.8), (72.5, 62.2), (72.3, 62.6), (72.0, 62.9), (71.7, 63.3), (71.5, 63.7), (71.3, 64.1), (71.1, 64.5), (71.0, 65.0), (71.0, 65.5), (71.1, 66.1), (71.3, 66.7), (71.5, 67.3), (71.8, 67.9), (72.0, 68.6), (72.1, 69.2), (72.2, 69.8), (72.2, 70.4), (72.0, 71.0), (71.7, 71.6), (71.3, 72.1), (70.8, 72.7), (70.3, 73.3), (69.7, 73.8), (69.0, 74.3), (68.3, 74.8), (67.6, 75.3), (66.8, 75.7), (66.0, 76.0), (65.1, 76.2), (64.1, 76.2), (63.0, 76.0), (61.8, 75.8), (60.6, 75.6), (59.5, 75.5), (58.4, 75.5), (57.4, 75.7), (56.6, 76.2), (56.0, 77.0), (55.6, 78.3), (55.4, 80.0), (55.3, 82.0), (55.3, 84.2), (55.4, 86.6), (55.5, 88.9), (55.7, 91.1), (55.8, 93.1), (56.0, 94.8), (56.0, 96.0)],
     [(58.0, 38.0), (58.6, 37.9), (59.4, 37.6), (60.3, 37.4), (61.3, 37.1), (62.2, 37.0), (63.0, 37.0), (63.7, 37.2), (64.3, 37.5), (64.8, 37.9), (65.3, 38.4), (65.7, 38.7), (66.0, 39.0)],
@@ -1718,15 +1719,18 @@ CART_ICON = [[(3, 0), (97, 0), (97, 37), (100, 40), (100, 99), (99, 100), (1, 10
 # cartridge 60 below - drawn turned 90 degrees left (the slot on the left, as on the Vectrex's side)
 LOAD_ICON = [[(-2, 0), (102, 0), (102, 18), (97, 18), (97, 22), (3, 22), (3, 18), (-2, 18), (-2, 0)],
              [(50, 52), (50, 30)], [(43, 37), (50, 30), (57, 37)]] +             [[(u, v + 60) for u, v in line] for line in CART_ICON]
+METER_K = 0.7           # the OSD's CPU / GPU meters: rows below its text, this much smaller
+METER_ROWS = 0.25 + 2 * METER_K   # (the room they take, in text rows)
 OSD_SCALE = 0.3         # the window OSD's text: 30 % of what would fill the strip (the owner)
 KNOB_SWEEP = 150.0      # degrees either side of 12 o'clock: 0 % to 100 %
 # The window round the glass: the plastic case (its walls and 5 mm of its flat front, casemodel) and FRAME_M of black,
 # the same left, right and above, and below it when there is no strip; centred on the glass, so the picture sits
 # a little left of the window's middle (PIC_DX) and its top may be above the window's (PAD_TOP < 0).
-ART_AW = 846.0 / 1080.0 * ART_TUBE_K                                    # the overlay's width / picture height
+ART_AW = 162.0 / 207.0 * ART_TUBE_K                                     # the overlay's half width, units (81 mm)
 FRAME_X = casemodel.CASE_LUT[0] + casemodel.FRONT_W                      # (the case's outer edge from the glass's centre,
 FRAME_Y = casemodel.CASE_LUT[90] + casemodel.FRONT_W                     #  half picture heights: its walls and matte front)
-FRAME_M = 0.009                                                         # (the black round it: the same on every side)
+FRAME_M = 0.009 * 0.924 / 1.094                                         # (the black round it: the same on every side - as large
+                                                                        #  a share of the case as before the real sizes, 2026-10-28)
 GLASS_PAD = (FRAME_X + FRAME_M - GLASS_AW) / 2
 VIEW_AW = FRAME_X + FRAME_M
 PIC_DX = -GLASS_DX / 2                                                  # (picture centre - window centre, picture heights)
@@ -1847,7 +1851,7 @@ class GLBloomRenderer(GLRenderer):
             self.gpu_q = None
         self.kprog = program(CURVE_SHADER, 'curve')
         self.dprog = program(DITHER_SHADER, 'dither'); self.u_dtex = GetUniform(self.dprog, b'tex')
-        self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'ah', 'goff', 'glut', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'lca', 'lsa', 'cse', 'croom', 'crefl', 'cwear', 'clut', 'lc', 'smap', 'smr')}
+        self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'ah', 'goff', 'gsc', 'glut', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'lca', 'lsa', 'cse', 'croom', 'crefl', 'cwear', 'clut', 'lc', 'smap', 'smr')}
         self.tprog = program(TONE_SHADER, 'tone')
         self.u_ttex = GetUniform(self.tprog, b'tex')
         self.aprog = program(ART_SHADER, 'overlay')
@@ -2008,19 +2012,23 @@ class GLBloomRenderer(GLRenderer):
         return t.value, f.value
 
     def resize(self, w, h):
+        self._win_wh = (w, h)                             # (the window as Tk gave it: a reallocation calls resize again)
         super().resize(w, h)
         w, h = self.size
+        ps = min(1.0, max(0.25, float(getattr(self, 'phos_scale', 1.0))))
+        pw, ph = max(4, int(round(w * ps))), max(4, int(round(h * ps)))
+        self.psize = (pw, ph); self._ps_alloc = ps      # (the phosphor passes' size: P, P2, D, E)
         for t in self.tex:
             self.gl.glDeleteTextures(1, ctypes.byref(ctypes.c_uint(t)))
         for f in self.fbs:
             self.DelFB(1, ctypes.byref(ctypes.c_uint(f)))
         self.tex = []; self.fbs = []
-        self.P = self._target(w, h)                       # the phosphor image (ping-pong with P2)
-        self.P2 = self._target(w, h)
-        self.F = self._target(w, h)                       # this display frame's fresh light
+        self.P = self._target(pw, ph)                     # the phosphor image (ping-pong with P2; phos_scale)
+        self.P2 = self._target(pw, ph)
+        self.F = self._target(w, h)                       # this display frame's fresh light (always the window's size: the lines)
         self.F2 = self._target(w, h)                      # (Beam trace: the fresh light as light, see SAT_SHADER)
-        self.D = self._target(w, h)                       # what the screen shows
-        self.E = self._target(w, h)                       # (the curved tube: the screen before bending)
+        self.D = self._target(pw, ph)                     # what the screen shows
+        self.E = self._target(pw, ph)                     # (the curved tube: the screen before bending)
         self.young = []; self.last = None   # (built in window pixels: from now on)
         self.qw, self.qh = max(4, w // 4), max(4, h // 4)
         self.B1 = self._target(self.qw, self.qh)          # bloom ping-pong
@@ -2089,19 +2097,20 @@ class GLBloomRenderer(GLRenderer):
 
     def art_rect(self):
         """where the overlay plane goes, window px (x0, y0, x1, y1): its height the picture's (MiSTer's
-        'Framing: Overlay'), its pixels square - the sheet keeps its real shape (162 x 207 mm, as 846 x 1080),
-        a little narrower than the picture (0.805); nudged and scaled by art_dx / art_dy / art_scale (fractions
+        'Framing: Overlay') x ART_TUBE_K - the sheet's real shape and size, 162 x 207 mm, exactly on the case's
+        matte frame (the owner, 2026-10-27; the image stretched to it if its own shape differs); nudged and scaled by art_dx / art_dy / art_scale (fractions
         of the picture height), lowered a little for the parallax"""
         s, ox, oy = self.map
         pl, pt, pr, pb = ox * s, oy * s, (ox + ALG_MAX_X) * s, (oy + ALG_MAX_Y) * s
         ph = pb - pt
         tw, th = self.art[1], self.art[2]
-        k = getattr(self, 'art_scale', 1.0)
-        hh = ph * k; ww = hh * tw / float(th)
-        cx = (pl + pr) / 2 + (self.art_dx + GLASS_DX / 2) * ph    # (centred on the glass)
+        k = 1.0                                                 # (the sheet always on the frame: its position and size
+        hh = ph * k; ww = hh * 162.0 / 207.0 * tw / float(self.art[3])   # (the image's sheet part - an .art plane's centre
+                                                                #  846 of 1360 columns - the real sheet: 162 x 207 mm)
+        cx = (pl + pr) / 2 + GLASS_DX / 2 * ph                  #  sliders move the picture instead - pic_adj; centred on the glass)
         ww *= ART_TUBE_K; hh *= ART_TUBE_K                      # (the picture on the tube is smaller: the sheet
                                                                 #  too, in its own proportions - MiSTer's art)
-        cy = (pt + pb) / 2 + GLASS_DY / 2 * ph + (self.art_dy + (ART_PARALLAX if self.art_parallax else 0.0)) * ph * ART_TUBE_K
+        cy = (pt + pb) / 2 + GLASS_DY / 2 * ph
         return cx - ww / 2, cy - hh / 2, cx + ww / 2, cy + hh / 2
 
     def _art(self):
@@ -2158,7 +2167,7 @@ class GLBloomRenderer(GLRenderer):
             now = __import__('time').perf_counter()
             if self.light_tex and now - self.light_made_t < 0.1:
                 return True
-            R, G = roomlight.maps(key[0], key[1], GLASS_AW, GLASS_N)
+            R, G = roomlight.maps(key[0], key[1], GLASS_REF_AW, GLASS_N)   # (the earlier outline: the shader's gsc)
             w, h = roomlight.MAP_W, roomlight.MAP_H
             px = (ctypes.c_float * (w * h * 4))()
             for i in range(w * h):
@@ -2456,7 +2465,11 @@ class GLBloomRenderer(GLRenderer):
         else:
             for k, x in (('timed', 2.0 if imm else 1.0), ('age0', age0), ('dtw', dtw), ('gain', 1.0 if bt else PHOS_GAIN)):
                 self.Uniform1f(u[k], x)
-        gl.glDrawArrays(GL_QUADS, 0, n * 4)
+        # (in pieces: the Raspberry Pi 5's Mesa / V3D driver crashed inside one glDrawArrays of 13788 client-array
+        #  vertices, 2026-10-27 - gdb backtrace in libgallium; a few calls more cost nothing elsewhere)
+        step = self.DRAW_CHUNK * 4
+        for k in range(0, n * 4, step):
+            gl.glDrawArrays(GL_QUADS, k, min(step, n * 4 - k))
         self.UseProgram(0)
         if cuts:
             for unit in (0x84C2, 0x84C3):
@@ -2488,12 +2501,16 @@ class GLBloomRenderer(GLRenderer):
         return out
 
     def _tube_lines(self, lines, joins=None):
-        """Tube geometry: every line through the owner's tube map (TUBE_X / TUBE_Y), long ones in pieces so they
+        """Tube geometry: every line through the owner's tube map (tubemap), long ones in pieces so they
         bend; each piece keeps its share of the beam's energy and its moment in the frame"""
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
-        if getattr(self, '_tube_k', None) != k:
-            self._tube_k = k; self._tube_f = tube_map(k)
-        f = self._tube_f
+        if getattr(self, '_tube_k', None) != k:          # (its own name: under _tube_f it hid the method _build_np
+            self._tube_k = k; self._tube_fn = tube_map(k)  #  calls - after the first switch-on animation every frame
+        f = self._tube_fn                                  #  took this slow way: Vectorblade at 2 fps after a game change)
+        ps, pdx, pdy = self.pic_adj()
+        if (ps, pdx, pdy) != (1.0, 0.0, 0.0):
+            XM, YM = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0
+            f0 = f; f = lambda x, y: (lambda p: (XM + (p[0] - XM) * ps + pdx, YM + (p[1] - YM) * ps + pdy))(f0(x, y))
         out = []; sqrt = math.sqrt; opens = []           # (opens: a piece's ends that join the next piece)
         for li, ln in enumerate(lines):
             x0, y0, x1, y1 = ln[:4]
@@ -2547,23 +2564,37 @@ class GLBloomRenderer(GLRenderer):
             lines = [tuple(r[:4]) + (int(r[4]),) + tuple(r[5:]) for r in lines.tolist()]   #  the brightness a whole number)
         return self._build_py(lines, gain, load)
 
+    def par_dy(self):
+        """the overlay's parallax as the picture's shift (emulator units, up): the picture behind the glass seen a
+        little higher than the sheet on the frame (Overlay > Parallax, an overlay shown)"""
+        if self.art and getattr(self, 'art_on', False) and getattr(self, 'art_parallax', False):
+            return -ART_PARALLAX * ART_TUBE_K * ALG_MAX_Y
+        return 0.0
+
+    def pic_adj(self):
+        """the picture behind an overlay: (scale, dx, dy) - emulator units round the frame's centre. The sheet lies
+        on the case's frame; its sliders (Overlay left / right, up / down, size) line it up with the game by moving
+        and sizing the picture the other way (the owner, 2026-10-28), plus the parallax. No overlay: (1, 0, 0) - the
+        picture as measured"""
+        if not (self.art and getattr(self, 'art_on', False)):
+            return 1.0, 0.0, 0.0
+        k = getattr(self, 'art_scale', 1.0) or 1.0
+        return (1.0 / k, -getattr(self, 'art_dx', 0.0) * ALG_MAX_Y,
+                -getattr(self, 'art_dy', 0.0) * ART_TUBE_K * ALG_MAX_Y + self.par_dy())
+
     def _tube_f(self, x, y, k):
         """the tube's map (_tube_lines): a point of the integrators (the lines' units) where it shows on the curved
-        tube (still the lines' units), k the geometry's strength (0: none)"""
+        tube (still the lines' units), k the geometry's strength (0: none) - numpy arrays (tubemap)"""
         np = _np
-        cx, cy = tube_coeffs(1.0); pull = TUBE_PULL
         la, lb, lc, ld = TUBE_LIN
         XM, YM, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
-        u = (x - XM) / U; v = (y - YM) / U
-        u2, v2 = u * u, v * v
-        X = cx[0] + cx[1] * v + cx[2] * v2 + cx[3] * v2 * v + cx[4] * u + cx[5] * u * v + cx[6] * u * v2 + cx[7] * u2 + cx[8] * u2 * v + cx[9] * u2 * u
-        Y = cy[0] + cy[1] * v + cy[2] * v2 + cy[3] * v2 * v + cy[4] * u + cy[5] * u * v + cy[6] * u * v2 + cy[7] * u2 + cy[8] * u2 * v + cy[9] * u2 * u
-        if pull:
-            p = (1.0 + u / 0.85) * 0.5; q = (1.0 - v) * 0.5
-            Y = Y - np.where((p > 0) & (q > 0), pull * p * p * q * q, 0.0)
-        sx, sy = la * u, lc * v
-        X = X - TUBE_IMP_OFF[0]; Y = Y - TUBE_IMP_OFF[1]
-        return XM + (sx + k * (X - sx) + lb) * U, YM + (sy + k * (Y - sy) + ld) * U
+        u = (np.asarray(x, dtype=np.float64) - XM) / U; v = (np.asarray(y, dtype=np.float64) - YM) / U
+        X = la * u + lb; Y = lc * v + ld
+        if k:
+            dx, dy = tubemap.imp_np(np, u, v)
+            X = X + k * dx; Y = Y + k * dy
+        ps, pdx, pdy = self.pic_adj()                     # (behind an overlay: its sliders and the parallax)
+        return XM + X * U * ps + pdx, YM + Y * U * ps + pdy
 
     def window_to_vectrex(self, px, py):
         """a window pixel (the picture not turned) as the integrators' place there - the lines' units, the tube's map
@@ -3043,12 +3074,26 @@ class GLBloomRenderer(GLRenderer):
     # the overlay's scratches, plastic glow and parallax, the case's reflections, the bends' smoothing (smooth_bends)
     # and the dither (dither_on: the picture straight to the window). Chosen by hand, or suggested by Test this PC
     # (pctest.py) - nothing switches by itself while playing.
+    # Four tiers (2026-10-27, measured on a Raspberry Pi 5's V3D and an RTX 5090): Ultra - everything on (the defaults).
+    # High - the room's light and its reflections off, one bloom pass. Medium - also the tube's curved geometry and
+    # glass edge, the overlay's scratches, plastic glow and parallax, the case's reflections, the bends' smoothing and
+    # the dither. Low - Medium, and the phosphor image (the afterglow, the display pass, the bloom's source) kept at
+    # half the window's size while the lines themselves are still drawn at full size (phos_scale: the GPU cost of
+    # those passes is per pixel - a quarter of the work, the vectors as sharp), and 30 pictures a second instead of
+    # 60 (half_rate: every pass runs per picture; the phosphor model takes any spacing).
     PROFILE_KEYS = ('passes', 'curve_on', 'glass_on', 'glass_room', 'light_on', 'light_ov', 'art_glow', 'scr_on',
-                    'art_parallax', 'case_refl', 'bend_smooth', 'dither_on')
-    PROFILE_OFF = {'medium': dict(passes=1, light_on=False, light_ov=False, glass_room=False),
-                   'low': dict(passes=1, curve_on=False, glass_on=False, glass_room=False, light_on=False, light_ov=False,
-                               art_glow=False, scr_on=False, art_parallax=False, case_refl=0.0, bend_smooth=False,
-                               dither_on=False)}
+                    'art_parallax', 'case_refl', 'bend_smooth', 'dither_on', 'phos_scale', 'half_rate')
+    _MEDIUM = dict(passes=1, curve_on=False, glass_on=False, glass_room=False, light_on=False, light_ov=False,
+                   art_glow=False, scr_on=False, case_refl=0.0, dither_on=False)   # (parallax kept: a free offset)
+    # (bend smoothing stays on in Medium and Low - the owner wants corners closed: no cost measured on the Pi 5's V3D,
+    #  Medium 62-64 ms a picture with or without it, 2026-10-27)
+    PROFILE_OFF = {'high': dict(passes=1, light_on=False, light_ov=False, glass_room=False),
+                   'medium': dict(_MEDIUM, phos_scale=0.75),     # (three-quarter phosphor: Pi 5 V3D at 1080p 62 -> 37 ms
+                                                                    #  a picture, 16 -> 27 a second; a slightly softer glow)
+                   'low': dict(_MEDIUM, phos_scale=0.5, half_rate=True)}
+    phos_scale = 1.0                 # the phosphor passes' size as a share of the window's (see PROFILE_OFF)
+    DRAW_CHUNK = int(os.environ.get('VECTREX_DRAW_CHUNK', '2048'))   # capsules per draw call (see _draw_built)
+    half_rate = False                # 30 pictures a second on a 60 Hz screen (the app's apply_rate reads it)
     quality = 2
     def _gpu_begin(self):
         q = getattr(self, 'gpu_q', None)
@@ -3077,6 +3122,9 @@ class GLBloomRenderer(GLRenderer):
             self.gpu_q_busy.append(qid)
 
     def present(self, T, imm=None, flush=False):
+        ps = min(1.0, max(0.25, float(getattr(self, 'phos_scale', 1.0))))
+        if getattr(self, 'D', None) and abs(ps - getattr(self, '_ps_alloc', 1.0)) > 1e-6 and getattr(self, '_win_wh', None):
+            self.resize(*self._win_wh)                    # (Quality changed the phosphor's size: new targets)
         self._t_pres = time.perf_counter()
         self._q_cur = self._gpu_begin()
         try:
@@ -3154,30 +3202,31 @@ class GLBloomRenderer(GLRenderer):
         # 2. the phosphor image: aged, lit again where the fresh light is brighter
         od = getattr(self, 'decay_override', None)        # (switching off: frozen, dimmed by the curve)
         src, dst = self.P, self.P2
-        self.BindFB(GL_FRAMEBUFFER, dst[1]); gl.glDisable(GL_BLEND)
+        pw, ph = getattr(self, 'psize', (w, h))
+        self.BindFB(GL_FRAMEBUFFER, dst[1]); gl.glViewport(0, 0, pw, ph); gl.glDisable(GL_BLEND)
         self.UseProgram(self.uprog)
         self.Uniform1i(self.u_up['oldt'], 0); self.Uniform1i(self.u_up['fresh'], 1)
         self.Uniform1f(self.u_up['kf'], 1.0 if od is not None else math.exp(-dt))
         self._phos_uniforms(self.u_up)
         self.Uniform1f(self.u_up['mul'], od if od is not None else 1.0)
         self.Uniform1f(self.u_up['spread'], getattr(self, 'phos_spread', PHOS_SPREAD) if self.trail_on else 0.0)
-        self.Uniform2f(self.u_up['px'], 1.0 / max(1, w), 1.0 / max(1, h))
+        self.Uniform2f(self.u_up['px'], 1.0 / max(1, pw), 1.0 / max(1, ph))
         self.Uniform1f(self.u_up['grow'], getattr(self, 'phos_grow', PHOS_GROW) if self.trail_on else 0.0)
         self.Uniform1f(self.u_up['gcap'], getattr(self, 'phos_gcap', PHOS_GCAP))
         self.Uniform1f(self.u_up['gage'], math.exp(-PHOS_GAGE))
         hz = 1.0 / dt if dt > 0.004 else 60.0             # (the reach per display frame: as in an 820 px high
-        self.Uniform1f(self.u_up['gn'], float(max(1, min(4, round(h / 820.0 * 60.0 / hz)))))   #  window at 60 Hz)
+        self.Uniform1f(self.u_up['gn'], float(max(1, min(4, round(ph / 820.0 * 60.0 / hz)))))   #  window at 60 Hz)
         self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, fresh); self.ActiveTexture(0x84C0)
         self._quad(src[0])
         self.UseProgram(0)
         self.P, self.P2 = dst, src
         # 3. what it shows
-        self.BindFB(GL_FRAMEBUFFER, self.D[1])
+        self.BindFB(GL_FRAMEBUFFER, self.D[1]); gl.glViewport(0, 0, pw, ph)
         self.UseProgram(self.sprog); self.Uniform1i(self.u_stex, 0); self._phos_uniforms(self.u_sh)
         self.Uniform3f(self.u_sh['wb'], *self._wb())
         self.Uniform3f(self.u_sh['wbc'], *self._wbc())
-        self.Uniform1f(self.u_sh['sm'], getattr(self, 'phos_smooth', PHOS_SMOOTH) * h / 820.0 if self.trail_on else 0.0)
-        self.Uniform2f(self.u_sh['px'], 1.0 / max(1, w), 1.0 / max(1, h))
+        self.Uniform1f(self.u_sh['sm'], getattr(self, 'phos_smooth', PHOS_SMOOTH) * ph / 820.0 if self.trail_on else 0.0)
+        self.Uniform2f(self.u_sh['px'], 1.0 / max(1, pw), 1.0 / max(1, ph))
         self._quad(self.P[0])
         self.UseProgram(0)
         self._finish(self.D[0])
@@ -3310,6 +3359,39 @@ class GLBloomRenderer(GLRenderer):
         gl.glLineWidth(max(1.0, k * 0.42))
         for i, r in enumerate(rows):
             self._text_row(r, x0, y0 + i * 9.0 * k, k)
+        if od.get('meters'):
+            self._meters(od['meters'], x0, y0 + (len(rows) + 0.25) * 9.0 * k, x0 + (chars * 6.0 - 1.0) * k, k * METER_K)
+
+    def _meters(self, meters, x, y, x_end, k):
+        """the OSD's CPU and GPU meters: a bar (green below 70 %, orange to 90, red above) with the last 10 seconds as
+        a line in it, and the share in figures - one per row below the OSD's text, smaller than it"""
+        gl = self.gl
+        gl.glLineWidth(max(1.0, k * 0.42))
+        bw = (x_end - x) - (4 + 5) * 6.0 * k                    # (the bar: what the name and the figure leave - the rows
+        if bw < 12.0 * k:                                       #  as wide as the OSD's text above them)
+            return
+        g = (0.40, 0.667, 0.533)
+        def col(p):
+            return g if p < 70 else (0.93, 0.60, 0.20) if p <= 90 else (0.93, 0.33, 0.33)
+        for i, (name, pct, hist) in enumerate(meters):
+            ty = y + i * 9.0 * k
+            self._text_row([(name, g)], x, ty, k)
+            bx0, by0 = x + 4 * 6.0 * k, ty
+            bx1, by1 = bx0 + bw, ty + 6.0 * k
+            gl.glColor4f(*g, 1.0)
+            self._rect(bx0, by0, bx1, by1)
+            if pct is not None:
+                f = max(0.0, min(1.0, pct / 100.0))
+                c = col(pct)
+                if f > 0:
+                    gl.glColor4f(c[0], c[1], c[2], 0.75)
+                    gl.glBegin(0x0007)                          # (GL_QUADS)
+                    for px, py in ((bx0 + k, by0 + k), (bx0 + k + (bw - 2 * k) * f, by0 + k),
+                                   (bx0 + k + (bw - 2 * k) * f, by1 - k), (bx0 + k, by1 - k)):
+                        gl.glVertex2f(px, py)
+                    gl.glEnd()
+            fig = '--' if pct is None else '%d%%' % min(999, pct)       # (right-aligned, as the OSD's values)
+            self._text_row([(fig, g if pct is None else col(pct))], x_end - (len(fig) * 6.0 - 1.0) * k, ty, k)
 
     def _lines(self, segs):
         gl = self.gl
@@ -3362,12 +3444,14 @@ class GLBloomRenderer(GLRenderer):
         gl.glColor4f(0.40, 0.667, 0.533, 1.0)
         gl.glLineWidth(max(1.2, r / 45.0))
         s = 2.0 * r / 100.0
-        oy = cy if c.get('kind') == 'vecvox' else cy - 0.12 * r  # (the VecVox's box centred on the cartridge; the others
+        oy = cy if c.get('kind') == 'vecvoice' else cy - 0.12 * r  # (the VecVoice's box centred on the cartridge; the others
                                                                 #  a little higher, close under P2 PORT)
-        s *= {'vecvox': 1.35, 'vecvoice': 1.2}.get(c.get('kind'), 1.1)   # (about as large as the cartridge)
-        ox = cx + (10 * s if c.get('kind') == 'vecvox' else 0)  # (the VecVox: its box and waves a little right)
+        s *= {'vecvoice': 1.35, 'vecvox': 1.2}.get(c.get('kind'), 1.1)   # (about as large as the cartridge)
+        ox = cx + (10 * s if c.get('kind') == 'vecvoice' else 0)  # (the VecVoice: its box and waves a little right)
         P = lambda u, v: (ox + (u - 50) * s, oy + (v - 50) * s)
-        self._icon({'vecvox': PORT2_ICON, 'vecvoice': VOICE_ICON, 'imager': IMAGER_ICON, 'lightpen': LPEN_ICON}.get(c.get('kind'), JOY_ICON), P)
+        # (the VecVox - a SpeakJet, the more advanced module - the speaking head; the VecVoice the box with waves: the
+        #  owner, 2026-10-27)
+        self._icon({'vecvoice': PORT2_ICON, 'vecvox': VOICE_ICON, 'imager': IMAGER_ICON, 'lightpen': LPEN_ICON}.get(c.get('kind'), JOY_ICON), P)
         lh = 0.30 * r
         t = c['label']
         self._text_row([(t, (0.40, 0.667, 0.533))], cx - (len(t) * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)
@@ -3557,7 +3641,8 @@ class GLBloomRenderer(GLRenderer):
         self.UseProgram(0)
         # 3. the screen: the picture plus the bloom (curved tube: first into E, bent onto the screen)
         curve = getattr(self, 'curve_on', False) or getattr(self, 'glass_on', False)   # (the glass pass: the glass edge)
-        self.BindFB(GL_FRAMEBUFFER, self.E[1] if curve else self.out); gl.glViewport(0, 0, w, h)
+        pw, ph = getattr(self, 'psize', (w, h))
+        self.BindFB(GL_FRAMEBUFFER, self.E[1] if curve else self.out); gl.glViewport(0, 0, *((pw, ph) if curve else (w, h)))
         gl.glClearColor(0, 0, 0, 1); gl.glClear(GL_COLOR_BUFFER_BIT)
         self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0)
         self._quad(src)
@@ -3578,7 +3663,7 @@ class GLBloomRenderer(GLRenderer):
             self.crt_gain = g0
         if curve:
             gl.glDisable(GL_BLEND)
-            self.BindFB(GL_FRAMEBUFFER, self.out)
+            self.BindFB(GL_FRAMEBUFFER, self.out); gl.glViewport(0, 0, w, h)
             ph = ALG_MAX_Y * self.map[0]                    # (the picture's height, window px)
             self.UseProgram(self.kprog); self.Uniform1i(self.u_k['tex'], 0)
             self.Uniform2f(self.u_k['norm'], w / (0.5 * ph), h / (0.5 * ph))
@@ -3590,7 +3675,9 @@ class GLBloomRenderer(GLRenderer):
             self.Uniform1f(self.u_k['pull'], 0.0)
             self.Uniform1f(self.u_k['glass'], 1.0 if getattr(self, 'glass_on', True) else 0.0)
             self.Uniform1f(self.u_k['aw'], GLASS_AW); self.Uniform1f(self.u_k['gn'], GLASS_N)
-            self.Uniform1f(self.u_k['ah'], GLASS_AH); self.Uniform2f(self.u_k['goff'], GLASS_DX, GLASS_DY)
+            self.Uniform1f(self.u_k['ah'], GLASS_AH)
+            self.Uniform2f(self.u_k['goff'], GLASS_DX, GLASS_DY + 2.0 * self.par_dy() / ALG_MAX_Y)   # (the glass with the picture)
+            self.Uniform2f(self.u_k['gsc'], GLASS_AW / GLASS_REF_AW, GLASS_AH / GLASS_REF_AH)
             self.Uniform1fv(self.u_k['glut'], 91, (ctypes.c_float * 91)(*GLASS_LUT))
             self.Uniform1f(self.u_k['edge'], GLASS_EDGE)
             art_shown = bool(getattr(self, 'art', None) and getattr(self, 'art_on', False))

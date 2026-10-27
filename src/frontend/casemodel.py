@@ -1,22 +1,28 @@
 """The plastic case round the tube (shown without an overlay): glossy black walls sloping steeply down to the
-glass, a rounded lip at the glass and at the outer frame, smooth round corners (the owner's photos, 2026-10-24).
+glass, a rounded lip at the glass and at the outer frame, smooth round corners (the owner's photos, 2026-10-24;
+sizes measured 2026-10-27).
 
 The shader (vecrender, CURVE_SHADER) draws it from these numbers; here only the outline and the scratch map.
 Units: half picture heights, y down, like the glass (GLASS_LUT, GLASS_DX/DY)."""
 import math
 
-# the case's inner opening, traced from the owner's photo (the green line): its radius every degree from the
-# glass's centre, smoothed (its corners squarer than the glass's)
+# the case's inner opening (where the glossy walls start): the matte frame's inner edge - the owner's measurements
+# (2026-10-27): the frame's outer edge is the overlay sheet, 162 x 207 mm, corners r 8.63 mm (traced), the frame
+# 3.5 mm wide, so the opening is 155 x 200 mm, corners r 5.13 mm. Its radius every degree from the glass's centre
+# (units: half picture heights, 112.0 mm - vecrender.MM_UNIT)
 CASE_LUT = (
-    0.7598, 0.7599, 0.7602, 0.7608, 0.7616, 0.7627, 0.7640, 0.7655, 0.7672, 0.7692, 0.7715, 0.7740, 0.7767,
-    0.7798, 0.7830, 0.7866, 0.7904, 0.7945, 0.7989, 0.8036, 0.8085, 0.8138, 0.8194, 0.8254, 0.8317, 0.8383,
-    0.8454, 0.8528, 0.8607, 0.8689, 0.8776, 0.8867, 0.8962, 0.9062, 0.9168, 0.9279, 0.9396, 0.9519, 0.9647,
-    0.9782, 0.9924, 1.0074, 1.0231, 1.0395, 1.0570, 1.0754, 1.0947, 1.1151, 1.1367, 1.1600, 1.1852, 1.2112,
-    1.2355, 1.2549, 1.2663, 1.2684, 1.2622, 1.2504, 1.2363, 1.2222, 1.2091, 1.1971, 1.1859, 1.1751, 1.1650,
-    1.1553, 1.1461, 1.1374, 1.1292, 1.1214, 1.1140, 1.1070, 1.1005, 1.0944, 1.0887, 1.0835, 1.0786, 1.0741,
-    1.0700, 1.0662, 1.0628, 1.0598, 1.0570, 1.0546, 1.0525, 1.0508, 1.0494, 1.0483, 1.0475, 1.0471, 1.0469)
+    0.69188, 0.69199, 0.69231, 0.69283, 0.69357, 0.69453, 0.69570, 0.69708, 0.69868, 0.70051,
+    0.70256, 0.70483, 0.70734, 0.71008, 0.71307, 0.71629, 0.71977, 0.72350, 0.72749, 0.73175,
+    0.73629, 0.74111, 0.74622, 0.75164, 0.75736, 0.76341, 0.76979, 0.77652, 0.78361, 0.79107,
+    0.79892, 0.80718, 0.81585, 0.82498, 0.83456, 0.84463, 0.85522, 0.86633, 0.87801, 0.89029,
+    0.90319, 0.91676, 0.93102, 0.94603, 0.96183, 0.97847, 0.99601, 1.01450, 1.03400, 1.05461,
+    1.07638, 1.09860, 1.10928, 1.11059, 1.10342, 1.08985, 1.07686, 1.06449, 1.05272, 1.04152,
+    1.03086, 1.02073, 1.01111, 1.00196, 0.99328, 0.98504, 0.97724, 0.96985, 0.96287, 0.95627,
+    0.95005, 0.94419, 0.93870, 0.93355, 0.92873, 0.92425, 0.92008, 0.91624, 0.91270, 0.90946,
+    0.90653, 0.90388, 0.90153, 0.89946, 0.89767, 0.89616, 0.89493, 0.89398, 0.89330, 0.89289,
+    0.89275)
 
-FRONT_W = 0.047             # the flat matte front round the walls (5 mm; vecrender's shader has the same)
+FRONT_W = 0.03125           # the flat matte front round the walls (3.5 mm; vecrender's shader has the same)
 CM_PER_UNIT = 11.0          # half the picture is about 11 cm
 LIGHT_DIST = 236.0          # the ceiling light's distance (cm): the glare's direction, at a real viewer's distance
 LIGHT_TAN = 0.49            # its direction from roomlight's glass position (the emulator's tangents x this)

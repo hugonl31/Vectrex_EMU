@@ -5,6 +5,62 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.0.5
 
+**The real size of everything** (update, 2026-10-28)
+- The front of a real Vectrex traced at three times real size (the matte frame, the edge of the glass, the Test
+  Cartridge's grid, each line) and the emulator rebuilt from it. The overlay is the anchor: 162 x 207 mm, lying
+  exactly on the case's matte frame.
+- The frame: 162 x 207 mm outside with round corners (8.6 mm), 3.5 mm of matte; the opening 155 x 200 mm. The glass:
+  the traced outline, 145.7 x 188.5 mm. The glossy walls keep their angle; the glass's reflections, the phosphor
+  layer behind it and its soft edge keep their look.
+- The picture: the emulator's grid warped onto the traced one (a smooth fit plus a mesh through every crossing),
+  measured on the finished picture with brightness bending on: every line within 0.05 mm. Kept as a small table -
+  as cheap as before.
+- The drawing area is 1000 units wider on each side (35000): the grid's outer columns show, as on the tube.
+- Overlays lie exactly on the frame, 162 x 207 mm. Their position and size sliders move and size the picture behind
+  the sheet instead; with the overlay off the picture is as measured. Earlier adjustments are reset. Parallax
+  moves the picture (not the sheet) and is on in every quality.
+- The black round the case is the same on every side and down to the on-screen display and the knob.
+
+**Online play**
+- Two PCs, one game: Online > Host this game... shows a five-letter code, Online > Join a game... takes it. A
+  meeting-point server puts the PCs in touch directly (through most routers) or relays the packets; the input delay
+  is set from the measured round trip. Also from the command line (`--net-online`, `--net-join CODE`; `--net-host`
+  for a direct connection). The Online window shows the connection.
+
+**The Config window**
+- Compact for 1080p laptops: short labels with an *i* for the details, two columns only when a tab is too tall;
+  fits at 100, 125 and 150 %. The first-start setup is smaller too.
+- Tabs with changed settings show their name in orange; the Quality row says what changed from (Low, Medium, High,
+  Ultra or Optimal); hold H to compare with before. Reset this tab and Reset all reset everything, Start turned
+  on included.
+- Tabs switch at once, without white flashes or half-drawn controls; the window keeps the Display tab's width.
+- Every window opens where it was last time (Online too).
+- Full screen: the menu bar at the top edge of the screen or with Alt; the Config window and the other windows
+  stay over the picture, also when full screen is switched while they are open.
+
+**Picture and quality**
+- Low quality for a Raspberry Pi 5 and old laptops: the phosphor at half size, 30 pictures a second; Medium at
+  three quarters. Display > Phosphor size: Full, 3/4, Half. The bends' smoothing stays on in every quality.
+- CPU and GPU meters below the on-screen display.
+- White balance: 12000 K (the real Vectrex's cold white) is the default; the slider goes to 16000 K and to a warmer
+  white past neutral.
+- VecVox and VecVoice swapped their pictograms.
+
+**Port 2**
+- With Auto-select port 2 on, an accessory chosen by hand is kept for that game only; the 3D Imager and the light
+  pen are never chosen for all games.
+
+**Faster**
+- The 6809 emulation about a third faster (bit-identical on 68 games); the PiTrex JIT faster (its floating point in
+  the JIT) and now booting on Linux and macOS; ARM64 too.
+- The display thread no longer spins while waiting for the screen; the sound filters and the line conversion
+  cheaper.
+
+**Fixes**
+- Vectorblade (and others) no longer slow to a crawl after a game change.
+- No false 999 % CPU or speed dips right after a game change; no false JIT note when starting VecDoom.
+- A stopped core shows its exit code; garbage cartridges no longer hang the core.
+
 **The 3D Imager**
 - GCE's goggles on controller port 2 (click the P2 PORT pictogram, or Controls > Port 2): the disc's motor driven
   by the game through the AY's port A, spinning up and coasting as a motor with a flywheel does; the index hole

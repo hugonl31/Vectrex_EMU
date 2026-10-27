@@ -82,13 +82,22 @@ int cm33_spin_log = 0;
 int cm33_spin_mode = 2;                  /* spin handling: 0 off, 1 steady counting loops skipped ahead, 2 pure spins suspended too */
 static int excl_any;                     /* (any core holds an exclusive monitor: stores check it) */
 static cm33_t *excl_cores[2];
+/* excl_any follows the monitors (set while a core holds one): else, after a program's first LDREX, every store - and the
+ * JIT's inline stores, which test it - took the slow way for good. With the cores on two host threads it stays set once
+ * set, as before (cm33_excl_sticky: the other core may take a monitor while this one clears the flag) */
+int cm33_excl_sticky;
+static inline void excl_upd (void)
+{
+	if (cm33_excl_sticky) return;
+	excl_any = (excl_cores[0] && excl_cores[0]->excl) || (excl_cores[1] && excl_cores[1]->excl);
+}
 static FORCE_INLINE void mwr (cm33_t *c, uint32_t a, uint32_t v, int n)
 {
 	cm33_sys_t *s = c->sys;
 	c->loop_stores++;
 	if (excl_any) {
 		cm33_t *o = excl_cores[c->core ^ 1];
-		if (o && o->excl && ((o->excl_addr ^ a) & ~7u) == 0) o->excl = 0;
+		if (o && o->excl && ((o->excl_addr ^ a) & ~7u) == 0) { o->excl = 0; excl_upd (); }
 	}
 	uint32_t off = a - s->ram_base;
 	if (off < s->ram_size && off + n <= s->ram_size) {
@@ -111,14 +120,14 @@ static FORCE_INLINE void mwr (cm33_t *c, uint32_t a, uint32_t v, int n)
 	if ((a & 0xfffff000u) == 0xe000e000u) { if (n == 4) cm33_scs_write (c, a, v); return; }
 	s->wr (c, a, v, n);
 }
-void cm33_excl_clear_addr (cm33_t *c, uint32_t a) { if (c->excl && ((c->excl_addr ^ a) & ~7u) == 0) c->excl = 0; }
+void cm33_excl_clear_addr (cm33_t *c, uint32_t a) { if (c->excl && ((c->excl_addr ^ a) & ~7u) == 0) { c->excl = 0; excl_upd (); } }
 
 /* STREX / STREXB / STREXH: 0 stored, 1 failed. In memory the store is a compare-and-swap against what LDREX
  * read, so it is atomic against the other core even when that one runs on another host thread */
 static int strex (cm33_t *c, uint32_t a, uint32_t v, int n)
 {
 	int mine = c->excl && c->excl_addr == a;
-	c->excl = 0;
+	c->excl = 0; excl_upd ();
 	if (!mine) return 1;
 	cm33_sys_t *s = c->sys; uint8_t *p = NULL;
 	uint32_t o = a - s->ram_base;
@@ -130,7 +139,7 @@ static int strex (cm33_t *c, uint32_t a, uint32_t v, int n)
 	/* (the rest of what a store does: the other core's monitor, decoded code there) */
 	c->loop_stores++;
 	cm33_t *oc = excl_cores[c->core ^ 1];
-	if (oc && oc->excl && ((oc->excl_addr ^ a) & ~7u) == 0) oc->excl = 0;
+	if (oc && oc->excl && ((oc->excl_addr ^ a) & ~7u) == 0) { oc->excl = 0; excl_upd (); }
 	if (p != s->xram + (a & 0xffffffu) && s->code_pages && (s->code_pages[o >> 12] | (o >= 2 ? s->code_pages[(o - 2) >> 12] : 0)))
 		cm33_code_written (s, a, (uint32_t) n);
 	return 0;
@@ -358,7 +367,7 @@ static void exc_entry (cm33_t *c, int e, uint32_t ret)
 	c->it = 0;
 	uint32_t pc = RD (c->vtor + 4 * (uint32_t) e, 4);
 	c->r[15] = pc & ~1u;
-	c->excl = 0;
+	c->excl = 0; excl_upd ();
 	c->sleeping = 0;
 	c->wait_on = 0; c->spin_slow = 0;
 	c->cycles += 12;
@@ -400,7 +409,7 @@ static void exc_return (cm33_t *c, uint32_t er)
 	apsr_set (c, x, 1, 1);
 	c->it = ((x >> 8) & 0xfc) | ((x >> 25) & 3);
 	c->r[15] = pc & ~1u;
-	c->excl = 0;
+	c->excl = 0; excl_upd ();
 	c->cycles += 10;
 }
 
@@ -1336,7 +1345,7 @@ static FORCE_INLINE void step (cm33_t *c)
 					goto it_advance;
 				}
 				if (op == 0x3b) {                                     /* CLREX, DSB, DMB, ISB */
-					if (((hw2 >> 4) & 15) == 2) c->excl = 0;
+					if (((hw2 >> 4) & 15) == 2) { c->excl = 0; excl_upd (); }
 					goto it_advance;
 				}
 				if ((op & 0x7e) == 0x3e) {                            /* MRS */
@@ -1578,6 +1587,7 @@ static void h_generic (cm33_t *c, const di_t *d, uint32_t ip);
 static void h_decode (cm33_t *c, const di_t *d, uint32_t ip);
 static void step_out (cm33_t *c);
 #define GENERIC h_generic
+static void mj_written (uint32_t o, uint32_t n);        /* (the JIT's blocks over those bytes: cm33_jit.c) */
 
 void cm33_code_written (cm33_sys_t *s, uint32_t addr, uint32_t n)
 {
@@ -1588,6 +1598,7 @@ void cm33_code_written (cm33_sys_t *s, uint32_t addr, uint32_t n)
 	int any = 0;
 	for (uint32_t p = p0; p <= p1 && p < (s->ram_size >> 12) + 1; p++) any |= s->code_pages[p];
 	if (!any) return;
+	mj_written (o, n);
 	uint32_t k0 = o >= 2 ? (o - 2) >> 1 : 0, k1 = (o + n - 1) >> 1;
 	for (int i = 0; i < 2; i++) {
 		di_t *dc = (di_t *) (i ? s->dcache1 : s->dcache);
@@ -2427,6 +2438,8 @@ static NOINLINE int run_attn (cm33_t *c, uint64_t until)
 	return 0;
 }
 
+#include "cm33_jit.c"
+
 uint64_t cm33_run (cm33_t *c, uint64_t until)
 {
 	uint64_t start = c->cycles;
@@ -2434,6 +2447,13 @@ uint64_t cm33_run (cm33_t *c, uint64_t until)
 	unsigned long long nsteps = 0;
 	uint32_t base = c->sys->ram_base, size = c->sys->ram_size;
 	int slow = !dc;
+#ifdef CM33_JIT
+	mj_core_t *J = NULL;                                               /* (this core's JIT blocks: cm33_jit.c) */
+	if (dc && mj_state >= 0) {
+		mj_core_t *J0 = &mj[c->core & 1];
+		if ((mj_state == 1 && J0->code && mj_cpu[c->core & 1] == c) || mj_setup_core (c)) J = J0;
+	}
+#endif
 	/* (attn: something happened the loop must look at - a peripheral read or write, the SCS, an exception, a
 	 * sleep, a fault, a polling loop, an instruction of the full decoder; and at the start) */
 	c->attn = 1;
@@ -2443,7 +2463,24 @@ uint64_t cm33_run (cm33_t *c, uint64_t until)
 		/* the fast path: an instruction in RAM, not in an IT block - one call through its decoded entry */
 		do {
 			uint32_t ip = c->r[15], o = ip - base;
-			if (o + 4 > size || c->it || slow) exec_slow (c, dc);
+			if (o + 4 > size || c->it || slow) { exec_slow (c, dc);
+#ifdef CM33_JIT
+				if (mj_stats > 0) { if (c->it) mj_st_it++; else mj_st_out++; }
+#endif
+			}
+#ifdef CM33_JIT
+			else if (J && J->blk[o >> 1] != MJ_NONE) {
+				/* a block: compiled (once), run - then the spin detection for its last instruction, as below */
+				if (J->flush_req) mj_flush (J, c->sys);
+				uint8_t *code = J->blk[o >> 1];
+				if (!code) code = mj_translate (J, c, dc, ip);
+				if (code == MJ_NONE) { if (mj_stats > 0) mj_st_none++; continue; }   /* (none starts here: next round, the plain path) */
+				uint32_t last = ((mj_enter_fn) (void *) J->enter) (c, until, code);   /* (on from block to block: the dispatcher) */
+				if (last == MJ_DONE) goto slice_done;            /* (run_attn ended the slice, in the dispatcher) */
+				if (mj_stats > 0) { mj_st_calls++; if (mj_len) mj_st_ins += mj_len[o >> 1]; }
+				if (c->r[15] < last && last - c->r[15] <= 64 && cm33_spin_mode) loop_round (c, last);
+			}
+#endif
 			else {
 				const di_t *d = &dc[o >> 1];
 				hfn fn = d->fn;
@@ -2454,6 +2491,9 @@ uint64_t cm33_run (cm33_t *c, uint64_t until)
 			nsteps++;
 		} while (!c->attn && c->cycles < until);
 	}
+#ifdef CM33_JIT
+slice_done:
+#endif
 	/* (SysTick: the slice's cycles at once - its interrupt is taken from the next slice on) */
 	if (c->syst_csr & 1) systick (c, c->cycles - start);
 	cm33_steps[(c->core & 1) * 8] += nsteps;

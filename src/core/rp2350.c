@@ -176,12 +176,17 @@ static void chip_drive (rp2350_t *rp, uint64_t *val, uint64_t *oe)
 	o |= rp->m_spi;
 	*val = v; *oe = o;
 }
+/* (while the PIO runs its part of a slice only its own pin writes change the levels: pl_on, the levels kept until one -
+ * pio_set_pins drops them) */
+static int pl_on, pl_ok; static uint64_t pl_val; static rp2350_t *pl_rp;
 static uint64_t pin_levels (rp2350_t *rp)
 {
+	if (pl_ok && pl_rp == rp) return pl_val;
 	uint64_t v, o;
 	chip_drive (rp, &v, &o);
 	uint64_t lv = (v & o) | (pull_levels (rp) & ~o);
 	lv = (lv & ~rp->ext_mask) | (rp->ext_val & rp->ext_mask);
+	if (pl_on) { pl_val = lv; pl_ok = 1; pl_rp = rp; }
 	return lv;
 }
 uint64_t rp_pins (rp2350_t *rp, uint64_t *oe) { uint64_t v, o; chip_drive (rp, &v, &o); if (oe) *oe = o; return v; }
@@ -349,6 +354,7 @@ static inline uint32_t rotl32 (uint32_t x, unsigned n) { n &= 31; return n ? (x 
 static void pio_set_pins (pio_t *p, uint32_t base, uint32_t count, uint32_t v, int dirs)
 {
 	if (!count) return;
+	pl_ok = 0;
 	uint32_t m = count >= 32 ? 0xffffffffu : (1u << count) - 1;
 	uint32_t mask = rotl32 (m, base), val = rotl32 (v & m, base);    /* (the pins wrap around at 32) */
 	if (dirs) p->dirs = (p->dirs & ~mask) | (val & mask);
@@ -385,13 +391,31 @@ static void aud_tap (rp2350_t *rp, int pidx, pio_sm_t *s, uint32_t w)
 }
 #define POP(s, w) (sm_tx_pop ((s), (w)) ? (aud_tap (rp, pidx, (s), *(w)), 1) : 0)
 
+/* a state machine's settings as its instructions read them - only the CPU changes them (pio_write), never a run: worked
+ * out once per run (pio_run_sm), not per instruction */
+#if defined(_MSC_VER)
+#define PIO_INLINE static __forceinline
+#else
+#define PIO_INLINE static inline __attribute__ ((always_inline))
+#endif
+typedef struct { uint32_t ex, pc, sh, dmask; int side_cnt, side_en, delay_bits; } pio_k_t;
+/* (and its registers, in a local for the run - so they can live in the host's registers, not in memory) */
+typedef struct { uint32_t pc, x, y, isr, osr; int isr_cnt, osr_cnt, delay; } pio_r_t;
+#define PIO_R_IN(R, s) ((R).pc = (s)->pc, (R).x = (s)->x, (R).y = (s)->y, (R).isr = (s)->isr, (R).osr = (s)->osr, (R).isr_cnt = (s)->isr_cnt, (R).osr_cnt = (s)->osr_cnt, (R).delay = (s)->delay)
+#define PIO_R_OUT(R, s) ((s)->pc = (R).pc, (s)->x = (R).x, (s)->y = (R).y, (s)->isr = (R).isr, (s)->osr = (R).osr, (s)->isr_cnt = (R).isr_cnt, (s)->osr_cnt = (R).osr_cnt, (s)->delay = (R).delay)
+static void pio_k (const pio_sm_t *s, pio_k_t *k)
+{
+	k->ex = s->execctrl; k->pc = s->pinctrl; k->sh = s->shiftctrl;
+	k->side_cnt = (int) (k->pc >> 29); k->side_en = (k->ex >> 30) & 1; k->delay_bits = 5 - k->side_cnt;
+	k->dmask = (1u << k->delay_bits) - 1;
+}
 /* one PIO cycle for one state machine; returns 1 when it is stalled on something outside */
-static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int *jumped)
+PIO_INLINE int pio_exec_k (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int *jumped, const pio_k_t *k, pio_r_t *R)
 {
 	pio_sm_t *s = &p->sm[si];
-	uint32_t ex = s->execctrl, pc = s->pinctrl, sh = s->shiftctrl;
-	int side_cnt = (int) (pc >> 29), side_en = (ex >> 30) & 1;
-	int delay_bits = 5 - side_cnt;
+	uint32_t ex = k->ex, pc = k->pc, sh = k->sh;
+	int side_cnt = k->side_cnt, side_en = k->side_en;
+	int delay_bits = k->delay_bits;
 	unsigned field = (ins >> 8) & 31;
 	/* side-set (applied whether or not the instruction stalls) */
 	if (side_cnt) {
@@ -402,7 +426,7 @@ static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int
 			pio_set_pins (p, (pc >> 10) & 31, (uint32_t) bits, v, (ex >> 29) & 1);
 		}
 	}
-	int delay = (int) (field & ((1u << delay_bits) - 1));
+	int delay = (int) (field & k->dmask);
 	unsigned op = ins >> 13;
 	*jumped = 0;
 	switch (op) {
@@ -410,15 +434,15 @@ static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int
 		unsigned cond = (ins >> 5) & 7, addr = ins & 31; int take;
 		switch (cond) {
 		case 0: take = 1; break;
-		case 1: take = s->x == 0; break;
-		case 2: take = s->x != 0; s->x--; break;
-		case 3: take = s->y == 0; break;
-		case 4: take = s->y != 0; s->y--; break;
-		case 5: take = s->x != s->y; break;
+		case 1: take = R->x == 0; break;
+		case 2: take = R->x != 0; R->x--; break;
+		case 3: take = R->y == 0; break;
+		case 4: take = R->y != 0; R->y--; break;
+		case 5: take = R->x != R->y; break;
 		case 6: take = (pio_pins_in (rp, p) >> ((ex >> 24) & 31)) & 1; break;
-		default: take = s->osr_cnt < (int) (((sh >> 25) & 31) ? ((sh >> 25) & 31) : 32); break;
+		default: take = R->osr_cnt < (int) (((sh >> 25) & 31) ? ((sh >> 25) & 31) : 32); break;
 		}
-		if (take) { s->pc = addr; *jumped = 1; }
+		if (take) { R->pc = addr; *jumped = 1; }
 		break;
 	}
 	case 1: {                                                                  /* WAIT */
@@ -441,71 +465,71 @@ static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int
 	case 2: {                                                                  /* IN */
 		unsigned src = (ins >> 5) & 7, n = ins & 31 ? ins & 31 : 32; uint32_t v;
 		int thresh = (int) (((sh >> 20) & 31) ? ((sh >> 20) & 31) : 32);
-		if (((sh >> 16) & 1) && s->isr_cnt >= thresh) {                       /* autopush first */
-			if (!sm_rx_push (s, s->isr)) return 1;
-			s->isr = 0; s->isr_cnt = 0;
+		if (((sh >> 16) & 1) && R->isr_cnt >= thresh) {                       /* autopush first */
+			if (!sm_rx_push (s, R->isr)) return 1;
+			R->isr = 0; R->isr_cnt = 0;
 		}
 		switch (src) {
 		case 0: { uint32_t w = pio_pins_in (rp, p), b = (pc >> 15) & 31; v = b ? (w >> b) | (w << (32 - b)) : w; break; }
-		case 1: v = s->x; break;
-		case 2: v = s->y; break;
-		case 6: v = s->isr; break;
-		case 7: v = s->osr; break;
+		case 1: v = R->x; break;
+		case 2: v = R->y; break;
+		case 6: v = R->isr; break;
+		case 7: v = R->osr; break;
 		default: v = 0;
 		}
 		if (n < 32) v &= (1u << n) - 1;
-		if ((sh >> 18) & 1) s->isr = n == 32 ? v : (s->isr >> n) | (v << (32 - n));   /* shift right */
-		else s->isr = n == 32 ? v : (s->isr << n) | v;
-		s->isr_cnt += (int) n; if (s->isr_cnt > 32) s->isr_cnt = 32;
-		if (((sh >> 16) & 1) && s->isr_cnt >= thresh) {
-			if (sm_rx_push (s, s->isr)) { s->isr = 0; s->isr_cnt = 0; }
+		if ((sh >> 18) & 1) R->isr = n == 32 ? v : (R->isr >> n) | (v << (32 - n));   /* shift right */
+		else R->isr = n == 32 ? v : (R->isr << n) | v;
+		R->isr_cnt += (int) n; if (R->isr_cnt > 32) R->isr_cnt = 32;
+		if (((sh >> 16) & 1) && R->isr_cnt >= thresh) {
+			if (sm_rx_push (s, R->isr)) { R->isr = 0; R->isr_cnt = 0; }
 		}
 		break;
 	}
 	case 3: {                                                                  /* OUT */
 		unsigned dst = (ins >> 5) & 7, n = ins & 31 ? ins & 31 : 32; uint32_t v;
 		int thresh = (int) (((sh >> 25) & 31) ? ((sh >> 25) & 31) : 32);
-		if (((sh >> 17) & 1) && s->osr_cnt >= thresh) {                       /* autopull */
+		if (((sh >> 17) & 1) && R->osr_cnt >= thresh) {                       /* autopull */
 			uint32_t w; if (!POP (s, &w)) return 1;
-			s->osr = w; s->osr_cnt = 0;
+			R->osr = w; R->osr_cnt = 0;
 		}
-		if ((sh >> 19) & 1) { v = n == 32 ? s->osr : s->osr & ((1u << n) - 1); s->osr = n == 32 ? 0 : s->osr >> n; }
-		else { v = n == 32 ? s->osr : s->osr >> (32 - n); s->osr = n == 32 ? 0 : s->osr << n; }
-		s->osr_cnt += (int) n; if (s->osr_cnt > 32) s->osr_cnt = 32;
+		if ((sh >> 19) & 1) { v = n == 32 ? R->osr : R->osr & ((1u << n) - 1); R->osr = n == 32 ? 0 : R->osr >> n; }
+		else { v = n == 32 ? R->osr : R->osr >> (32 - n); R->osr = n == 32 ? 0 : R->osr << n; }
+		R->osr_cnt += (int) n; if (R->osr_cnt > 32) R->osr_cnt = 32;
 		switch (dst) {
 		case 0: pio_set_pins (p, pc & 31, (pc >> 20) & 63, v, 0); break;
-		case 1: s->x = v; break;
-		case 2: s->y = v; break;
+		case 1: R->x = v; break;
+		case 2: R->y = v; break;
 		case 4: pio_set_pins (p, pc & 31, (pc >> 20) & 63, v, 1); break;
-		case 5: s->pc = v & 31; *jumped = 1; break;
-		case 6: s->isr = v; s->isr_cnt = (int) n; break;
+		case 5: R->pc = v & 31; *jumped = 1; break;
+		case 6: R->isr = v; R->isr_cnt = (int) n; break;
 		case 7: s->exec_pending = 1; s->exec_instr = v & 0xffff; break;
 		}
-		if (((sh >> 17) & 1) && s->osr_cnt >= thresh) {
-			uint32_t w; if (POP (s, &w)) { s->osr = w; s->osr_cnt = 0; }
+		if (((sh >> 17) & 1) && R->osr_cnt >= thresh) {
+			uint32_t w; if (POP (s, &w)) { R->osr = w; R->osr_cnt = 0; }
 		}
 		break;
 	}
 	case 4: {
 		if ((ins >> 4) & 1) {                                                  /* MOV to / from the RX FIFO (RP2350) */
-			unsigned idx = (ins >> 3) & 1 ? (ins & 3) : (s->y & 3);
-			if ((ins >> 7) & 1) s->osr = s->rx[idx & 3], s->osr_cnt = 0;
-			else s->rx[idx & 3] = s->isr;
+			unsigned idx = (ins >> 3) & 1 ? (ins & 3) : (R->y & 3);
+			if ((ins >> 7) & 1) R->osr = s->rx[idx & 3], R->osr_cnt = 0;
+			else s->rx[idx & 3] = R->isr;
 			break;
 		}
 		int ifx = (ins >> 6) & 1, blk = (ins >> 5) & 1;
 		if (!((ins >> 7) & 1)) {                                               /* PUSH */
 			int thresh = (int) (((sh >> 20) & 31) ? ((sh >> 20) & 31) : 32);
-			if (ifx && s->isr_cnt < thresh) break;
-			if (!sm_rx_push (s, s->isr)) { if (blk) return 1; }
-			s->isr = 0; s->isr_cnt = 0;
+			if (ifx && R->isr_cnt < thresh) break;
+			if (!sm_rx_push (s, R->isr)) { if (blk) return 1; }
+			R->isr = 0; R->isr_cnt = 0;
 		} else {                                                               /* PULL */
 			int thresh = (int) (((sh >> 25) & 31) ? ((sh >> 25) & 31) : 32);
-			if (ifx && s->osr_cnt < thresh) break;
+			if (ifx && R->osr_cnt < thresh) break;
 			uint32_t w;
-			if (POP (s, &w)) { s->osr = w; s->osr_cnt = 0; }
+			if (POP (s, &w)) { R->osr = w; R->osr_cnt = 0; }
 			else if (blk) { s->wtx = 1; return 1; }
-			else { s->osr = s->x; s->osr_cnt = 0; }                         /* noblock: from X */
+			else { R->osr = R->x; R->osr_cnt = 0; }                         /* noblock: from X */
 		}
 		break;
 	}
@@ -513,8 +537,8 @@ static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int
 		unsigned dst = (ins >> 5) & 7, mop = (ins >> 3) & 3, src = ins & 7; uint32_t v;
 		switch (src) {
 		case 0: v = pio_pins_in (rp, p) >> ((pc >> 15) & 31); break;
-		case 1: v = s->x; break;
-		case 2: v = s->y; break;
+		case 1: v = R->x; break;
+		case 2: v = R->y; break;
 		case 5: {
 			unsigned sel = (ex >> 5) & 3, nn = ex & 31;
 			if (sel == 0) v = sm_tx_level (s) < (int) nn ? 0xffffffffu : 0;
@@ -522,20 +546,20 @@ static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int
 			else v = ((p->irq >> (nn & 7)) & 1) ? 0xffffffffu : 0;
 			break;
 		}
-		case 6: v = s->isr; break;
-		case 7: v = s->osr; break;
+		case 6: v = R->isr; break;
+		case 7: v = R->osr; break;
 		default: v = 0;
 		}
 		if (mop == 1) v = ~v; else if (mop == 2) v = bitrev (v);
 		switch (dst) {
 		case 0: pio_set_pins (p, pc & 31, (pc >> 20) & 63, v, 0); break;
-		case 1: s->x = v; break;
-		case 2: s->y = v; break;
+		case 1: R->x = v; break;
+		case 2: R->y = v; break;
 		case 3: pio_set_pins (p, pc & 31, (pc >> 20) & 63, v, 1); break;
 		case 4: s->exec_pending = 1; s->exec_instr = v & 0xffff; break;
-		case 5: s->pc = v & 31; *jumped = 1; break;
-		case 6: s->isr = v; s->isr_cnt = 0; break;
-		case 7: s->osr = v; s->osr_cnt = 0; break;
+		case 5: R->pc = v & 31; *jumped = 1; break;
+		case 6: R->isr = v; R->isr_cnt = 0; break;
+		case 7: R->osr = v; R->osr_cnt = 0; break;
 		}
 		break;
 	}
@@ -560,15 +584,23 @@ static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int
 		unsigned dst = (ins >> 5) & 7, v = ins & 31;
 		switch (dst) {
 		case 0: pio_set_pins (p, (pc >> 5) & 31, (pc >> 26) & 7, v, 0); break;
-		case 1: s->x = v; break;
-		case 2: s->y = v; break;
+		case 1: R->x = v; break;
+		case 2: R->y = v; break;
 		case 4: pio_set_pins (p, (pc >> 5) & 31, (pc >> 26) & 7, v, 1); break;
 		}
 		break;
 	}
 	}
-	s->delay = delay;
+	R->delay = delay;
 	return 0;
+}
+static int pio_exec (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t ins, int *jumped)
+{
+	pio_k_t k; pio_k (&p->sm[si], &k);
+	pio_r_t R; PIO_R_IN (R, &p->sm[si]);
+	int st = pio_exec_k (rp, p, pidx, si, ins, jumped, &k, &R);
+	PIO_R_OUT (R, &p->sm[si]);
+	return st;
 }
 
 /* run state machine si of block pidx for `cyc` system cycles */
@@ -579,36 +611,43 @@ static void pio_run_sm (rp2350_t *rp, int pidx, int si, uint32_t cyc)
 	pio_sm_t *s = &p->sm[si];
 	uint32_t ip = s->clkdiv >> 16, fp = (s->clkdiv >> 8) & 0xff;      /* (INT.FRAC; INT 0 = 65536) */
 	uint32_t div = (ip ? ip : 65536u) * 256u + fp;
-	uint64_t acc = (uint64_t) s->frac + (uint64_t) cyc * 256;
-	uint32_t steps = (uint32_t) (acc / div);
-	s->frac = (uint32_t) (acc % div);
+	uint32_t steps;
+	if (div == 256 && s->frac < 256) steps = cyc;             /* (a divider of 1: every cycle a step, the remainder stays - the usual case) */
+	else {
+		uint64_t acc = (uint64_t) s->frac + (uint64_t) cyc * 256;
+		steps = (uint32_t) (acc / div);
+		s->frac = (uint32_t) (acc % div);
+	}
 	if (s->stalled && !s->exec_pending) {                       /* still waiting on the same thing: no change */
 		if (s->wgpio) { if ((int) ((pin_levels (rp) >> (s->wgpio - 1)) & 1) != s->wpol) { s->frac = 0; return; } }
 		else if (s->wtx) { if (!s->txn) { s->frac = 0; return; } }
 	}
 	s->wgpio = 0; s->wtx = 0;
+	pio_k_t k; pio_k (s, &k);
+	pio_r_t R; PIO_R_IN (R, s);
 	while (steps) {
-		if (s->delay) { uint32_t d = (uint32_t) s->delay < steps ? (uint32_t) s->delay : steps; s->delay -= (int) d; steps -= d; continue; }
+		if (R.delay) { uint32_t d = (uint32_t) R.delay < steps ? (uint32_t) R.delay : steps; R.delay -= (int) d; steps -= d; continue; }
 		steps--;
 		uint16_t ins; int from_exec = 0;
 		if (s->exec_pending) { ins = (uint16_t) s->exec_instr; s->exec_pending = 0; from_exec = 1; }
-		else ins = p->instr[s->pc & 31];
+		else ins = p->instr[R.pc & 31];
 		int jumped;
 		pio_count[pidx]++;
-		int st = pio_exec (rp, p, pidx, si, ins, &jumped);
+		int st = pio_exec_k (rp, p, pidx, si, ins, &jumped, &k, &R);
 		if (st) {
 			if (from_exec) { s->exec_pending = 1; s->exec_instr = ins; }
 			s->stalled = 1;
 			/* stalled on the outside world: nothing changes until the next slice */
-			s->frac = 0; return;
+			s->frac = 0; PIO_R_OUT (R, s); return;
 		}
-		s->stalled = 0; s->wgpio = 0; s->wtx = 0;
+		s->stalled = 0;                               /* (wgpio / wtx: set only by a stall, which ends the run) */
 		if (!jumped && !from_exec) {
-			uint32_t wt = (s->execctrl >> 12) & 31, wb = (s->execctrl >> 7) & 31;
-			if ((s->pc & 31) == wt) s->pc = wb; else s->pc = (s->pc + 1) & 31;
+			uint32_t wt = (k.ex >> 12) & 31, wb = (k.ex >> 7) & 31;
+			if ((R.pc & 31) == wt) R.pc = wb; else R.pc = (R.pc + 1) & 31;
 		} else if (from_exec && !jumped) { /* (an EXEC'd instruction does not advance the PC) */ }
 		if (s->exec_pending) continue;
 	}
+	PIO_R_OUT (R, s);
 }
 
 static void pio_irq_update (rp2350_t *rp)
@@ -1682,7 +1721,8 @@ static void th_quit (rp2350_t *rp)
 #endif
 	rp->th_made = 0;
 }
-void rp_threads (rp2350_t *rp, int on) { rp->th_enabled = on; if (!on) th_stop (rp); }
+extern int cm33_excl_sticky;
+void rp_threads (rp2350_t *rp, int on) { rp->th_enabled = on; if (on) cm33_excl_sticky = 1; if (!on) th_stop (rp); }
 
 /* ------------------------------------------------------------------ setup, run */
 rp2350_t *rp_create (void)
@@ -1693,7 +1733,7 @@ rp2350_t *rp_create (void)
 	rp->log = getenv ("VT_RPLOG") != NULL;
 	usb_init ();
 	{ extern int cm33_spin_mode, cm33_spin_log; const char *z = getenv ("VT_SPIN"); if (z) cm33_spin_mode = atoi (z); cm33_spin_log = getenv ("VT_SPINLOG") != NULL; }
-	{ const char *z = getenv ("VT_THREADS"); rp->th_enabled = z && atoi (z) > 0; }
+	{ const char *z = getenv ("VT_THREADS"); rp->th_enabled = z && atoi (z) > 0; if (rp->th_enabled) cm33_excl_sticky = 1; }
 	{ const char *z = getenv ("VT_TQ"); if (z && atoi (z) >= 64) TH_Q = (uint32_t) atoi (z); }
 	{ extern int cm33_specialise; const char *z = getenv ("VT_SPEC"); if (z) cm33_specialise = atoi (z); }   /* (core 0 on a host thread of its own) */
 	rp->sys.rd = cb_rd; rp->sys.wr = cb_wr; rp->sys.cp = cb_cp; rp->sys.event = cb_event;
@@ -1833,8 +1873,63 @@ static void th_manage (rp2350_t *rp, uint64_t t)
 	TH_STORE (&rp->th_target, nt);
 }
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define RP_TSC() __rdtsc ()
+#elif defined(__x86_64__)
+#include <x86intrin.h>
+#define RP_TSC() __rdtsc ()
+#else
+#define RP_TSC() 0ull
+#endif
+unsigned long long rp_t_core[2], rp_t_dma, rp_t_pio, rp_t_rest, rp_t_all, rp_n_slices; static int rp_timing = -1;
+static void rp_timing_print (void)
+{
+	double a = (double) (rp_t_all ? rp_t_all : 1);
+	extern unsigned long long cm33_steps[16];
+	fprintf (stderr, "RP timing (VT_RPTIME): %llu slices; core0 %.1f%%, core1 %.1f%%, PIO + DMA %.1f%%, DMA + timers %.1f%% (of rp_run's time); instructions core0 %llu core1 %llu (interpreter only); %.0f TSC ticks per slice%c",
+	         rp_n_slices, 100.0 * rp_t_core[0] / a, 100.0 * rp_t_core[1] / a, 100.0 * rp_t_pio / a, 100.0 * rp_t_dma / a, cm33_steps[0], cm33_steps[8], a / (double) (rp_n_slices ? rp_n_slices : 1), 10);
+}
 void rp_run (rp2350_t *rp, uint32_t cycles)
 {
+	if (rp_timing < 0) { rp_timing = getenv ("VT_RPTIME") != NULL; if (rp_timing) atexit (rp_timing_print); }
+	if (rp_timing) {                                             /* (the same, timed: VT_RPTIME) */
+		uint64_t end = rp->now + cycles;
+		while (rp->now < end) {
+			unsigned long long t0 = RP_TSC (), t1, t2, t3;
+			uint64_t t = rp->now + 64; if (t > end) t = end;
+			uint32_t dt = (uint32_t) (t - rp->now);
+			if (rp->th_enabled) th_manage (rp, t);
+			for (int k = 0; k < 2; k++) {
+				cm33_t *c = &rp->cpu[k];
+				unsigned long long c0 = RP_TSC ();
+				if (k == 0 && rp->th_on) continue;
+				if (k == 1 && rp->core1_parked) { c->cycles = t; continue; }
+				if (c->cycles < rp->now) c->cycles = rp->now;
+				core_slice (rp, c, t, 0);
+				rp_t_core[k] += RP_TSC () - c0;
+			}
+			t1 = RP_TSC ();
+			dma_service (rp, 64);
+			pl_on = 1; pl_ok = 0;
+			for (int k = 0; k < 3; k++)
+				for (int i = 0; i < 4; i++)
+					if ((rp->pio[k].ctrl >> i) & 1) pio_run_sm (rp, k, i, dt);
+			pl_on = 0; pl_ok = 0;
+			t2 = RP_TSC ();
+			dma_service (rp, 64);
+			rp->now = t;
+			timers_update (rp);
+			if (usb_on ()) { usb_tick (rp->now, rp->sys_hz); usb_irq_update (rp); }
+			pio_irq_update (rp);
+			if (rp->th_on) lk_yield (rp);
+			t3 = RP_TSC ();
+			rp_t_pio += t2 - t1; rp_t_dma += t3 - t2; rp_t_all += t3 - t0; rp_n_slices++;
+			rp_t_rest += (t3 - t0) - (t3 - t2) - (t2 - t1);
+		}
+		rp_t_rest -= 0;
+		return;
+	}
 	uint64_t end = rp->now + cycles;
 	/* in pieces of at most 64 cycles: the cores, then the DMA and the PIO see what they did */
 	while (rp->now < end) {
@@ -1855,9 +1950,11 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 			if (prof_on && c->r[15] >= 0x20000000u && c->r[15] < 0x20020000u) prof_pc[k][(c->r[15] - 0x20000000u) >> 1]++;
 		}
 		dma_service (rp, 64);
+		pl_on = 1; pl_ok = 0;                                    /* (the pin levels kept while the PIO runs: pin_levels) */
 		for (int k = 0; k < 3; k++)
 			for (int i = 0; i < 4; i++)
 				if ((rp->pio[k].ctrl >> i) & 1) pio_run_sm (rp, k, i, dt);
+		pl_on = 0; pl_ok = 0;
 		dma_service (rp, 64);
 		rp->now = t;
 		timers_update (rp);

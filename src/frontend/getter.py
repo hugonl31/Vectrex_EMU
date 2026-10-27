@@ -512,9 +512,9 @@ def window(app, only=None, parent=None):
         a.getter_win.lift()
         return
     t = tk.Toplevel(parent or a.root, bg=deck.BG)
+    t.withdraw()                                        # (shown once built, in its place: deck.center)
     a.getter_win = t
     t.title('Get games & extras'); t.transient(parent or a.root); t.resizable(False, False)
-    t.lift(); t.focus_force()
     f9, f8, f10b = deck._font(a, 9), deck._font(a, 8), deck._font(a, 10, True)
     top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
     tk.Label(top, text='GET GAMES & EXTRAS', fg=deck.HI, bg=deck.TOPBG, font=f10b, anchor='w').pack(fill='x', padx=14, pady=(8, 0))
@@ -655,6 +655,6 @@ def window(app, only=None, parent=None):
     cv.pack(side='left', padx=(12, 0))
     deck._button(bar, 'Close', t.destroy, a).pack(side='right')
     t.bind('<Escape>', lambda e: t.destroy())
-    deck.center(t, a.root)                              # (in the middle of the emulator: seen at once)
+    deck.place(t, 'getter', a)                          # (where it was last time, else in the middle of the emulator)
     if only:                                            # (from the setup's Download everything missing: at once)
         t.after(200, download_all)

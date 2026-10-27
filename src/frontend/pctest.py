@@ -16,7 +16,8 @@ V = None                                # (the app's module: set by vectrex_emu)
 FIT = 0.75                              # (a profile fits: processor and graphics card each busy under this)
 OFF_NAMES = dict(passes='the second glow pass', curve_on='tube curve', glass_on='glass edge', glass_room='glass in room light',
                  light_on='light on the glass', light_ov='light on the overlay', art_glow='plastic glow', scr_on='scratches',
-                 art_parallax='parallax', case_refl='case reflections', bend_smooth='bend smoothing', dither_on='dither')
+                 art_parallax='parallax', case_refl='case reflections', bend_smooth='bend smoothing', dither_on='dither',
+                 phos_scale='the phosphor at full size (now half)', half_rate='60 pictures a second (now 30)')
 KEPT = 'kept: the afterglow, the glow, the corner dots and their glow, the overlay\'s colours'
 
 
@@ -139,7 +140,7 @@ def _loads(game, hz, b, c, g):
 # the effects Optimize may turn off, and what each is when off (vecrender PROFILE_KEYS)
 FEATURES = (('dither_on', False), ('bend_smooth', False), ('case_refl', 0.0), ('art_parallax', False), ('glass_room', False),
             ('light_ov', False), ('light_on', False), ('passes', 1), ('art_glow', False), ('scr_on', False),
-            ('glass_on', False), ('curve_on', False))
+            ('glass_on', False), ('curve_on', False), ('phos_scale', 0.5), ('half_rate', True))
 
 
 def optimize(app, say=lambda s: None):
@@ -157,7 +158,7 @@ def optimize(app, say=lambda s: None):
         say('measuring the processor...')
         game = _game_thread_ms(a, A)
         hz = float(a.hz or 60.0)
-        vals = dict(a.profile_values('high'))
+        vals = dict(a.profile_values('ultra'))
         fits = lambda l: l[0] < FIT and (l[1] or 0.0) < FIT
         say('drawing with every effect on...')
         before = _loads(game, hz, *_profile_ms(a, A, vals, 12))
@@ -217,9 +218,16 @@ def apply(app, rep):
     before it, for Undo"""
     r = app.ren
     undo = {k: getattr(r, k) for k in rep['vals'] if hasattr(r, k)}
+    undo['_base'] = getattr(app, 'quality_base', 'ultra'); undo['_opt'] = dict(getattr(app, 'quality_opt', {}))
     for k, v in rep['vals'].items():
         if hasattr(r, k):
             setattr(r, k, v)
+    cur = app.current_profile()                         # (the result: what Config's changed marks compare with from now on -
+    if cur != 'custom':                                 #  a preset it matches, or Optimize's own choice)
+        app.quality_base = cur
+    else:
+        app.quality_base = 'optimized'
+        app.quality_opt = {k: getattr(r, k) for k in getattr(r, 'PROFILE_KEYS', ()) if hasattr(r, k)}
     if not rep['fits']:                                 # (even so too slow: the screen's own rate, no in-betweens)
         undo['_rate'] = app.rate; undo['_smooth'] = app.smooth
         if app.rate == 'max':
@@ -238,6 +246,8 @@ def undo(app, before):
     for k, v in before.items():
         if not k.startswith('_') and hasattr(r, k):
             setattr(r, k, v)
+    if '_base' in before:
+        app.quality_base = before['_base']; app.quality_opt = before.get('_opt', {})
     if '_rate' in before and before['_rate'] != app.rate:
         app.set_screen(before['_rate'])
     if '_smooth' in before and bool(before['_smooth']) != bool(app.smooth):
@@ -268,6 +278,7 @@ def window(app, parent=None, on_done=None):
     import deck
     a = app
     t = tk.Toplevel(parent or a.root, bg=deck.BG)
+    t.withdraw()                                        # (shown once built, in its place: deck.center)
     t.title('Optimize'); t.transient(parent or a.root); t.resizable(False, False)
     f9, f10b = deck._font(a, 9), deck._font(a, 10, True)
     top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
@@ -299,9 +310,9 @@ def window(app, parent=None, on_done=None):
             deck._button(bar, 'Undo', lambda: (undo(a, st['undo']), st.pop('rep', None), close()), a).pack(side='left', padx=8)
         a.show_look('quality: optimized (%s)' % a.QUALITY_NAMES[a.current_profile()])
         a.flash('QUALITY OPTIMIZED', ('%d EFFECTS OFF' % len(rep['off'])) if rep['off'] else 'EVERY EFFECT ON', secs=3.0)
-        deck.center(t, a.root)                          # (grown: in the middle again)
+        deck.on_screen(t)                               # (grown: where it is - kept on the screen; re-centring jumped)
     go = deck._button(bar, 'Start', start, a, on=True); go.pack(side='left')
     no = deck._button(bar, 'Cancel', close, a); no.pack(side='left', padx=8)
     t.bind('<Escape>', lambda e: close())
-    deck.center(t, a.root)                              # (in the middle of the emulator: seen at once)
+    deck.place(t, 'optimize', a)                        # (where it was last time, else in the middle of the emulator)
     return t

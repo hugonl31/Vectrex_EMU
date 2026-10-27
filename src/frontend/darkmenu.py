@@ -66,6 +66,7 @@ class DMenu:
         self.unpost()
         f = self.font()
         w = self.win = tk.Toplevel(owner, bg=EDGE)
+        w.withdraw()                                    # (shown once built, in its place: no flash in a corner)
         w.overrideredirect(True)
         try: w.attributes('-topmost', True)
         except tk.TclError: pass
@@ -97,6 +98,7 @@ class DMenu:
         x = min(x, vx + max(sw, w.winfo_vrootwidth()) - ww)    # (kept on the screen)
         y = min(y, vy + max(sh, w.winfo_vrootheight()) - wh)
         w.geometry('+%d+%d' % (x, y))
+        w.deiconify()
         self.sel = -1
         if self.parent is None:                         # (the top menu: it takes the clicks and keys)
             w.bind('<ButtonPress-1>', self.click_out)
@@ -129,6 +131,7 @@ class DMenu:
         if self.win is None or self.sel != i or not it.get('tip') or not self.rows[i]:
             return
         t = self.tipw = tk.Toplevel(self.win, bg=EDGE)
+        t.withdraw()                                    # (shown once in its place)
         t.overrideredirect(True)
         try: t.attributes('-topmost', True)
         except tk.TclError: pass
@@ -141,6 +144,7 @@ class DMenu:
         if x + t.winfo_reqwidth() > t.winfo_vrootx() + max(t.winfo_screenwidth(), t.winfo_vrootwidth()):
             x = self.win.winfo_rootx() - t.winfo_reqwidth() - 6
         t.geometry('+%d+%d' % (x, r.winfo_rooty() - 4))
+        t.deiconify()
 
     def unpost(self):
         self.tip_hide()

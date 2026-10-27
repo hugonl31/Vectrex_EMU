@@ -5,7 +5,7 @@ enum {
 	VECTREX_MHZ		= 1500000, /* speed of the vectrex being emulated */
 	VECTREX_COLORS  = 128,     /* number of possible colors ... grayscale */
 
-	ALG_MAX_X		= 33000,
+	ALG_MAX_X		= 35000,		/* (33000 + 1000 each side, 2026-10-27: the Test Cartridge grid's outer columns, -141 / 33007 on the old canvas, are on the real tube) */
 	ALG_MAX_Y		= 41000
 };
 

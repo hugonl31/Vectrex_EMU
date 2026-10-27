@@ -357,7 +357,14 @@ static void run_frame (void)
 	long budget = frame_budget;
 	{ extern int vt_uvm2, vt_pitrex;
 	  if (!vt_uvm2 && !vt_pitrex && last_recal && total_cycles - last_recal < 100000) budget = 70000; }
-	while (!frame_done && budget > 0) { emu_chunk (500); budget -= 500; }
+	{ static int ht = -1; if (ht < 0) ht = getenv ("VT_HANGTRACE") != NULL;
+	  if (ht) { while (!frame_done && budget > 0) { fprintf (stderr, "chunk pc=%04X s=%X budget=%ld\n", e6809_get_pc () & 0xffff, e6809_get_s (), budget); emu_chunk (500); budget -= 500; } }
+	  else
+	while (!frame_done && budget > 0) { emu_chunk (500); budget -= 500; } }
+	{ static int pl = -1; if (pl < 0) pl = getenv ("VT_PROTLOG") != NULL;   /* (debugging the deflection protect: frames it dimmed) */
+	  if (pl) { extern double vt_protect_f (void), vt_protect_v (void); static unsigned long fno; fno++;
+	    if (vt_protect_f () < 0.98) { long ymin = 1 << 30, ymax = -1, xmin = 1 << 30, xmax = -1; for (int i = 0; i < ncur; i++) { if (cur[i].y0 < ymin) ymin = cur[i].y0; if (cur[i].y1 < ymin) ymin = cur[i].y1; if (cur[i].y0 > ymax) ymax = cur[i].y0; if (cur[i].y1 > ymax) ymax = cur[i].y1; if (cur[i].x0 < xmin) xmin = cur[i].x0; if (cur[i].x0 > xmax) xmax = cur[i].x0; }
+	      fprintf (stderr, "PROT frame %lu f=%.2f v=%.2f lines=%d y %ld..%ld x %ld..%ld\n", fno, vt_protect_f (), vt_protect_v (), ncur, ymin, ymax, xmin, xmax); } } }
 	if (!frame_done) {                  /* no Wait_Recal: show what was drawn and start a new frame */
 		extern unsigned long long alg_cycles, vt_frame_t0;
 		memcpy (last, cur, sizeof (line_t) * ncur); nlast = ncur; ncur = 0; beam_swap ();
@@ -378,6 +385,9 @@ static void stats (void)
 	printf (" viamirror=%lu", vt_via_mirror);
 	if (vt_via_mirror) printf (" (first at PC=%04X addr=%04X)", vt_via_mirror_pc, vt_via_mirror_addr);
 	if (frames > 1) printf (" avgbusy=%llu maxbusy=%llu over30000=%lu", busy_sum / (frames - 1), busy_max, frames_over);
+	{ extern double vt_protect_min (void); extern void vt_protect_stats (unsigned long *, unsigned long *, double *, unsigned long long *); unsigned long pl, pd; double pm; unsigned long long pt; vt_protect_stats (&pl, &pd, &pm, &pt);
+	  printf (" protmin=%.2f protdim=%lu/%lu dimmin=%.2f dimat=%.1fs", vt_protect_min (), pd, pl, pm, pt / 1500000.0); }   /* (the deflection protect: 1.00 = never dimmed) */
+	{ extern double vt_alg_skipped (void); printf (" algskip=%.2f", vt_alg_skipped ()); }   /* (the analog side's cycles that were only counted) */
 	printf (" ram=%08x\n", ram_sum ());
 	{ extern void arm11_jit_stats (void); extern int vt_pitrex; if (vt_pitrex) { extern void pitrex_digest (void); arm11_jit_stats (); pitrex_digest (); } }
 }
@@ -485,6 +495,7 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "joy")) { int x = atoi (a1), y = atoi (a2); alg_jch0 = (unsigned) (x + 128); alg_jch1 = (unsigned) (y + 128); }
 		else if (!strcmp (cmd, "btn")) { int m = (int) strtol (a1, 0, 0); snd_regs[14] = 0xff & ~m; }
 		else if (!strcmp (cmd, "shot")) { snprintf (path, sizeof path, "%s/%s", outdir, a1); render_shot (path); }
+		else if (!strcmp (cmd, "reset")) { extern void vecx_reset_button (void); vecx_reset_button (); }   /* the RESET button (RAM kept), as --live flags bit 2 */
 		else if (!strcmp (cmd, "poke")) {       /* poke ADDR VALUE (hex): set a RAM byte */
 			e6809_write8 ((unsigned) strtol (a1, 0, 16), (unsigned char) strtol (a2, 0, 16));
 		}
@@ -496,6 +507,7 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "dumpvec")) {    /* the last frame's vectors as text: x0 y0 x1 y1 c */
 			snprintf (path, sizeof path, "%s/%s", outdir, a1);
 			FILE *vf = fopen (path, "w");
+			if (!vf) { perror (path); continue; }
 			{ extern int vt_imager;                 /* (with the 3D Imager: each line's colour as an 8th column) */
 			  for (int i = 0; i < nlast; i++) {
 				fprintf (vf, "%ld %ld %ld %ld %d %u %u", last[i].x0, last[i].y0, last[i].x1, last[i].y1, last[i].c, last[i].cyc, last[i].t0);

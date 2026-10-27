@@ -178,9 +178,15 @@ static einline void set_reg_d (unsigned value)
  * while the upper bits are all zero.
  */
 
+extern unsigned char rom[8192], *vx_ram;     /* (vecx.c: the BIOS, the 1 KB RAM) */
 static einline unsigned read8 (unsigned address)
 {
-	return (*e6809_read8) (address & 0xffff);
+	/* the BIOS ($E000-$FFFF) and the RAM ($C800-$CFFF, $D800-$DFFF) here at once, as vecx.c's read8 would; the rest
+	 * (the VIA, the cartridge, open bus) through it */
+	address &= 0xffff;
+	if (address >= 0xe000) return rom[address & 0x1fff];
+	if ((address & 0xe800) == 0xc800) return vx_ram[address & 0x3ff];
+	return (*e6809_read8) (address);
 }
 
 /* write a byte ... only the lower 8-bits of the unsigned data
@@ -509,7 +515,7 @@ static einline unsigned ea_indexed (unsigned *cycles)
 		*cycles += 5;
 		break;
 	default:
-		printf ("undefined post-byte\n");
+		{ static int n; if (n++ < 20) printf ("undefined post-byte at PC=%04X\n", reg_pc & 0xffff); }   /* (reported 20 times: a crashed game would flood the log) */
 		break;
 	}
 
@@ -1037,7 +1043,7 @@ einline unsigned exgtfr_read (unsigned reg)
 		break;
 	default:
 		data = 0xffff;
-		printf ("illegal exgtfr reg %.1x\n", reg);
+		{ static int n; if (n++ < 20) printf ("illegal exgtfr reg %.1x\n", reg); }
 		break;
 	}
 
@@ -1078,7 +1084,7 @@ einline void exgtfr_write (unsigned reg, unsigned data)
 		reg_dp = data;
 		break;
 	default:
-		printf ("illegal exgtfr reg %.1x\n", reg);
+		{ static int n; if (n++ < 20) printf ("illegal exgtfr reg %.1x\n", reg); }
 		break;
 	}
 }
@@ -1127,6 +1133,16 @@ void e6809_reset (void)
 	reg_pc = read16 (0xfffe);
 }
 
+/* an opcode the 6809 has no instruction for: reported the first few times only (a garbage cartridge, or a game that
+ * ran off into data, would otherwise print millions of lines), and it costs cycles - returning 0 cycles made the
+ * cycle loop in vecx.c never advance, a hang (found by fuzzing with garbage cartridges, 2026-10-27) */
+static void bad_op (const char *page, unsigned op)
+{
+	static int n;
+	if (n < 20 || !(n & 0xfffff)) printf ("unknown %s op code: %.2x at PC=%04X%s\n", page, op, (reg_pc - 1) & 0xffff, n >= 20 ? " (repeating)" : "");
+	n++;
+}
+
 /* the registers, saved and put back (vecx's dry run of an instruction to learn its length) */
 void e6809_save (unsigned *st)
 {
@@ -1147,7 +1163,7 @@ unsigned e6809_sstep (unsigned irq_i, unsigned irq_f)
 	unsigned cycles = 0;
 	unsigned ea, i0, i1, r;
 
-	{ static int m = -1; if (m < 0) { const char *z = getenv ("VT_REGMASK"); m = z ? atoi (z) : 0; }
+	{ static int m = -1; if (m < 0) { const char *z = getenv ("VT_REGMASK"); m = z ? atoi (z) : 1; }   /* (on since 2026-10-27: a 6809's registers are 16 bits - S wrapped past 0 grew into a 32-bit value; bit-identical on all 54 test games) */
 	  if (m) { reg_a &= 0xff; reg_b &= 0xff; reg_dp &= 0xff; reg_cc &= 0xff;
 	           reg_x &= 0xffff; reg_y &= 0xffff; reg_u &= 0xffff; reg_s &= 0xffff; reg_pc &= 0xffff; } }
 
@@ -2573,7 +2589,7 @@ unsigned e6809_sstep (unsigned irq_i, unsigned irq_f)
 			cycles += 8;
 			break;
 		default:
-			printf ("unknown page-1 op code: %.2x\n", op);
+			bad_op ("page-1", op); cycles += 2;      /* (an illegal opcode takes time too: 0 cycles hung the core) */
 			break;
 		}
 
@@ -2633,14 +2649,14 @@ unsigned e6809_sstep (unsigned irq_i, unsigned irq_f)
 			cycles += 8;
 			break;
 		default:
-			printf ("unknown page-2 op code: %.2x\n", op);
+			bad_op ("page-2", op); cycles += 2;      /* (an illegal opcode takes time too: 0 cycles hung the core) */
 			break;
 		}
 
 		break;
 
 	default:
-		printf ("unknown page-0 op code: %.2x\n", op);
+		bad_op ("page-0", op); cycles += 2;      /* (an illegal opcode takes time too: 0 cycles hung the core) */
 		break;
 	}
 

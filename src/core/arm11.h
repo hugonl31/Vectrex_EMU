@@ -47,6 +47,7 @@ struct arm11 {
 	int wait_on; uint32_t wait_addr, wait_val; int wait_n;
 	int poll_skip;
 	uint64_t jit_until;
+	uint32_t wait_id;                       /* (counts the waits loop_round starts: pitrex_cart.c solves each timer wait once) */
 	uint64_t slept[3];                      /* (cycles slept through: 0 a timing loop on a counter, 1 a poll, 2 WFI / halted) */                     /* (the JIT: the run's end, for its dispatcher - arm11_jit.c) */
 };
 
@@ -55,4 +56,5 @@ uint64_t arm11_run (arm11_t *c, uint64_t until);         /* run until cycles rea
 uint32_t arm11_cpsr (const arm11_t *c);
 void arm11_invalidate (arm11_t *c);                      /* RAM changed behind its back: drop the translated code */
 void arm11_jit_stats (void);
+int arm11_trial (const arm11_t *c, uint32_t addr, uint32_t v);   /* the waiting loop's round with addr reading v: 1 it leaves, 0 it goes round, -1 unknown */
 #endif

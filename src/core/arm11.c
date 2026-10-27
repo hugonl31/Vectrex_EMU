@@ -59,18 +59,21 @@ static void set_cpsr (arm11_t *c, uint32_t v, unsigned fields, int all)
 static uint32_t *spsr_p (arm11_t *c) { int b = bank_of (c->mode); return b ? &c->bank_spsr[b] : NULL; }
 
 /* ---------------------------------------------------------------- memory */
+static int tr_on, tr_bad; static uint32_t tr_addr, tr_val;   /* (arm11_trial: a round on a copy - addr reads val, nothing else outside RAM) */
 static uint32_t mrd (arm11_t *c, uint32_t a, int n)
 {
 	uint32_t v;
 	if (a < c->sys->ram_size && a + n <= c->sys->ram_size) {
 		const uint8_t *p = c->sys->ram + a;
 		if (n == 4) memcpy (&v, p, 4); else if (n == 2) { uint16_t h; memcpy (&h, p, 2); v = h; } else v = *p;
-	} else { v = c->sys->rd (c, a, n); c->mmio_round = 1; }
+	} else if (tr_on) { if (a == tr_addr && n == 4) v = tr_val; else { tr_bad = 1; v = 0; } c->mmio_round = 1; }
+	else { v = c->sys->rd (c, a, n); c->mmio_round = 1; }
 	c->loop_loads++; c->ld_addr = a; c->ld_val = v; c->ld_hash = (c->ld_hash ^ a) * 0x9E3779B1u + v;
 	return v;
 }
 static void mwr (arm11_t *c, uint32_t a, uint32_t v, int n)
 {
+	if (tr_on) { tr_bad = 1; return; }
 	c->loop_stores++;
 	if (c->excl && ((c->excl_addr ^ a) & ~7u) == 0) c->excl = 0;
 	if (a < c->sys->ram_size && a + n <= c->sys->ram_size) {
@@ -881,12 +884,35 @@ static int loop_round (arm11_t *c, uint64_t until)
 	c->ctr_read = 0; c->mmio_round = 0;
 	if (c->r[15] == c->loop_target && !c->loop_stores && c->loop_loads == 1 && c->ld_addr == c->prev_ld_addr
 	    && c->ld_val == c->prev_ld_val && !memcmp (c->loop_regs, c->r, sizeof c->loop_regs)) {
-		if (++c->loop_iters >= (mmio ? 1u : 4u)) { c->wait_on = 1; c->wait_addr = c->ld_addr; c->wait_val = c->ld_val; c->wait_n = 4; c->loop_iters = 0; if (until > c->cycles) c->slept[1] += until - c->cycles; c->cycles = until; }
+		if (++c->loop_iters >= (mmio ? 1u : 4u)) { c->wait_on = 1; c->wait_id++; c->wait_addr = c->ld_addr; c->wait_val = c->ld_val; c->wait_n = 4; c->loop_iters = 0; if (until > c->cycles) c->slept[1] += until - c->cycles; c->cycles = until; }
 	} else c->loop_iters = 0;
 	memcpy (c->loop_regs, c->r, sizeof c->loop_regs);
 	c->loop_target = c->r[15]; c->prev_ld_addr = c->ld_addr; c->prev_ld_val = c->ld_val;
 	c->loop_loads = c->loop_stores = 0;
 	return c->wait_on != 0;
+}
+
+/* the waiting loop (c at its head, as loop_round left it) run on a copy, with addr reading v: 1 it leaves the loop, 0 it
+ * comes round twice, -1 unknown (it stored, read another peripheral, ran a coprocessor instruction, faulted, took too
+ * long). The copy changes nothing: stores and other reads outside RAM stop it. "Leaves" is anything outside the 72
+ * bytes from the head - a call counts too, which only means waking sooner than needed */
+int arm11_trial (const arm11_t *c0, uint32_t addr, uint32_t v)
+{
+	if (c0->tbit || (c0->r[15] & 3)) return -1;
+	arm11_t t = *c0; uint32_t head = c0->r[15]; int rounds = 0, res = -1;
+	tr_on = 1; tr_bad = 0; tr_addr = addr; tr_val = v;
+	for (int k = 0; k < 512; k++) {
+		uint32_t ip = t.r[15];
+		if (ip < head || ip >= head + 72 || (ip & 3) || t.tbit) { res = 1; break; }
+		uint32_t ins; if (ip + 4 > t.sys->ram_size) break;
+		memcpy (&ins, t.sys->ram + ip, 4);
+		if (((ins >> 25) & 7) >= 6) break;                   /* (coprocessor, SWI: not here) */
+		step (&t);
+		if (tr_bad || t.halted) break;
+		if (t.r[15] == head && ++rounds == 2) { res = 0; break; }
+	}
+	tr_on = 0;
+	return res;
 }
 
 #include "arm11_jit.c"

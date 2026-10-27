@@ -19,11 +19,138 @@ def _font(app, size, bold=False):
     return (V.MONO, size, 'bold') if bold else (V.MONO, size)
 
 
+class FlatButton(tk.Label):
+    """a button drawn by Tk itself: Windows' own button control was erased white before Tk painted it - white blocks
+    for a moment whenever a tab or a window appeared. Hover, click (on release, over it), disabled, invoke: as tk.Button"""
+    def __init__(self, parent, text='', command=None, **kw):
+        tk.Label.__init__(self, parent, text=text, **kw)
+        self._cmd = command
+        self.bind('<Enter>', self._enter, add='+')
+        self.bind('<Leave>', self._leave, add='+')
+        self.bind('<ButtonRelease-1>', self._release, add='+')
+
+    def _live(self):
+        return str(tk.Label.cget(self, 'state')) != 'disabled'
+
+    def _enter(self, e=None):
+        if self._live(): tk.Label.configure(self, state='active')
+
+    def _leave(self, e=None):
+        if self._live(): tk.Label.configure(self, state='normal')
+
+    def _release(self, e):
+        if self._live() and self._cmd and 0 <= e.x < self.winfo_width() and 0 <= e.y < self.winfo_height():
+            self._cmd()
+
+    def configure(self, cnf=None, **kw):
+        if 'command' in kw:
+            self._cmd = kw.pop('command')
+        return tk.Label.configure(self, cnf, **kw)
+    config = configure
+
+    def invoke(self):
+        return self._cmd() if (self._cmd and self._live()) else None
+
+
 def _button(parent, text, cmd, app, on=False, small=False):
-    b = tk.Button(parent, text=text, command=cmd, font=_font(app, 9), relief='flat', bd=1, padx=6 if small else 8,
-                  pady=1, highlightthickness=1, highlightbackground=G, cursor='hand2')
+    b = FlatButton(parent, text=text, command=cmd, font=_font(app, 9), relief='flat', bd=1, padx=(6 if small else 8) + 2,
+                   pady=3, highlightthickness=1, highlightbackground=G, cursor='hand2')
     _paint(b, on)
     return b
+
+
+def composited(t):
+    """Windows: the window and all its controls painted into one buffer and shown when finished (WS_EX_COMPOSITED) -
+    Tk's controls are windows of their own, painted one by one: a tab or window showed in blocks, white buttons first
+    (their background erased before Tk draws them). Not for the main window (OpenGL)"""
+    if not V.IS_WIN:
+        return
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        t.update_idletasks()
+        for h in (t.winfo_id(), u.GetParent(t.winfo_id())):
+            if h:
+                st = u.GetWindowLongW(h, -20)
+                u.SetWindowLongW(h, -20, st | 0x02000000)                  # (GWL_EXSTYLE |= WS_EX_COMPOSITED)
+    except Exception:   # noqa
+        pass
+
+
+def grab_screen(x, y, w, h):
+    """a picture of the screen's rectangle - Windows: copied from the screen directly (GDI, ~17 ms for a Config
+    window; PIL's ImageGrab copies the whole desktop first: ~65 ms); elsewhere PIL's ImageGrab"""
+    from PIL import Image
+    if V.IS_WIN:
+        import ctypes, ctypes.wintypes as W
+        u, g = ctypes.windll.user32, ctypes.windll.gdi32
+        class BIH(ctypes.Structure):
+            _fields_ = [('biSize', W.DWORD), ('biWidth', W.LONG), ('biHeight', W.LONG), ('biPlanes', W.WORD),
+                        ('biBitCount', W.WORD), ('biCompression', W.DWORD), ('biSizeImage', W.DWORD),
+                        ('biXPelsPerMeter', W.LONG), ('biYPelsPerMeter', W.LONG), ('biClrUsed', W.DWORD),
+                        ('biClrImportant', W.DWORD)]
+        u.GetDC.restype = W.HDC; u.GetDC.argtypes = [W.HWND]; u.ReleaseDC.argtypes = [W.HWND, W.HDC]
+        g.CreateCompatibleDC.restype = W.HDC; g.CreateCompatibleDC.argtypes = [W.HDC]
+        g.CreateCompatibleBitmap.restype = W.HBITMAP; g.CreateCompatibleBitmap.argtypes = [W.HDC, ctypes.c_int, ctypes.c_int]
+        g.SelectObject.argtypes = [W.HDC, W.HGDIOBJ]; g.DeleteObject.argtypes = [W.HGDIOBJ]; g.DeleteDC.argtypes = [W.HDC]
+        g.BitBlt.argtypes = [W.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, W.HDC, ctypes.c_int, ctypes.c_int, W.DWORD]
+        g.GetDIBits.argtypes = [W.HDC, W.HBITMAP, W.UINT, W.UINT, ctypes.c_void_p, ctypes.c_void_p, W.UINT]
+        sdc = u.GetDC(None); mdc = g.CreateCompatibleDC(sdc); bm = g.CreateCompatibleBitmap(sdc, w, h)
+        try:
+            g.SelectObject(mdc, bm)
+            g.BitBlt(mdc, 0, 0, w, h, sdc, x, y, 0x00CC0020 | 0x40000000)     # (SRCCOPY | CAPTUREBLT)
+            bi = BIH(); bi.biSize = ctypes.sizeof(BIH); bi.biWidth = w; bi.biHeight = -h; bi.biPlanes = 1; bi.biBitCount = 32
+            buf = ctypes.create_string_buffer(w * h * 4)
+            g.GetDIBits(mdc, bm, 0, h, buf, ctypes.byref(bi), 0)
+        finally:
+            g.DeleteObject(bm); g.DeleteDC(mdc); u.ReleaseDC(None, sdc)
+        return Image.frombuffer('RGB', (w, h), buf, 'raw', 'BGRX', 0, 1)
+    from PIL import ImageGrab
+    return ImageGrab.grab((x, y, x + w, y + h), all_screens=True)
+
+
+def no_transitions(t):
+    """Windows: no fade or zoom when window t shows or hides (DWMWA_TRANSITIONS_FORCEDISABLED)"""
+    if not V.IS_WIN:
+        return
+    try:
+        import ctypes
+        t.update_idletasks()
+        h = ctypes.windll.user32.GetParent(t.winfo_id()) or t.winfo_id()
+        v = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(h, 3, ctypes.byref(v), 4)
+    except Exception:   # noqa
+        pass
+
+
+def paint_now(t):
+    """window t painted completely, now: Windows asked to repaint all of it at once (its WM_PAINTs), then Tk's drawing
+    run (Tk draws on its idle pass) - twice, for what the first pass moved"""
+    try:
+        t.update()
+        if V.IS_WIN:
+            import ctypes
+            u = ctypes.windll.user32
+            h = u.GetParent(t.winfo_id()) or t.winfo_id()
+            u.RedrawWindow(h, None, None, 0x0001 | 0x0080 | 0x0100)    # (INVALIDATE ALLCHILDREN UPDATENOW)
+        t.update_idletasks(); t.update()
+    except Exception:   # noqa
+        pass
+
+
+def hold_paint(t, on):
+    """Windows: the window not painted while it changes (WM_SETREDRAW), then painted once, all of it, at once"""
+    if not V.IS_WIN:
+        return
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        h = u.GetParent(t.winfo_id()) or t.winfo_id()
+        u.SendMessageW(h, 0x000B, 0 if on else 1, 0)                       # (WM_SETREDRAW)
+        if not on:
+            u.RedrawWindow(h, None, None, 0x0001 | 0x0004 | 0x0080 | 0x0100)   # (INVALIDATE ERASE ALLCHILDREN UPDATENOW)
+    except Exception:   # noqa
+        pass
 
 
 def no_close_button(t):
@@ -77,7 +204,7 @@ def dialog(kind, title, text, parent=None, yesno=False, buttons=('Yes', 'No')):
         x = root.winfo_rootx() + (root.winfo_width() - t.winfo_reqwidth()) // 2
         y = root.winfo_rooty() + (root.winfo_height() - t.winfo_reqheight()) // 3
         t.geometry('+%d+%d' % (max(0, x), max(0, y)))
-    t.deiconify(); no_close_button(t); t.focus_force()
+    reveal(t, lambda: no_close_button(t)); t.focus_force()
     try: t.grab_set()
     except tk.TclError: pass
     t.wait_window()
@@ -120,7 +247,7 @@ class Scroller:
 
     def fit(self, max_h):
         self.holder.update_idletasks()
-        w, h = self.holder.winfo_reqwidth(), self.holder.winfo_reqheight()
+        w, h = self.holder.winfo_reqwidth(), max(self.holder.winfo_reqheight(), getattr(self, 'min_h', 0))
         on = h > max_h
         if on and not self.on:
             self.sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
@@ -173,7 +300,23 @@ def on_screen(t):
         t.geometry('+%d+%d' % (nx, ny))
 
 
-def center(t, over=None):
+def reveal(t, before=None):
+    """show a built window at once, fully painted: mapped invisible (alpha 0), drawn, then made visible - shown
+    plainly, Windows drew an empty frame first and the widgets a moment later. before(): done while it is still
+    invisible (no_close_button changes the frame)"""
+    try: t.attributes('-alpha', 0.0)
+    except tk.TclError: pass
+    t.deiconify()
+    try:
+        if before: before()
+        t.update()
+    except tk.TclError:
+        pass
+    try: t.attributes('-alpha', 1.0)
+    except tk.TclError: pass
+
+
+def center(t, over=None, before=None):
     """a window placed in the middle of the emulator's (seen at once), drawn there before it shows"""
     over = over or getattr(V, 'APP_ROOT', None) or tk._default_root
     try:
@@ -181,9 +324,55 @@ def center(t, over=None):
         x = over.winfo_rootx() + (over.winfo_width() - t.winfo_reqwidth()) // 2
         y = over.winfo_rooty() + (over.winfo_height() - t.winfo_reqheight()) // 3
         t.geometry('+%d+%d' % (max(0, x), max(0, y)))
-        t.deiconify(); t.lift(); t.focus_force()
+        reveal(t, before); t.lift(); t.focus_force()
     except tk.TclError:
         pass
+
+
+def remember(t, name, app):
+    """window t's place kept as it moves (app.win_pos, saved with the settings): it opens there next time"""
+    if not hasattr(app, 'win_pos'):
+        app.win_pos = {}
+    def moved(e):
+        if e.widget is t:
+            try:
+                if t.winfo_ismapped():
+                    app.win_pos[name] = (t.winfo_x(), t.winfo_y())
+            except tk.TclError:
+                pass
+    t.bind('<Configure>', moved, add='+')
+
+
+def saved_place(t, name, app):
+    """(x, y) where window t was last time - if still on a screen - else None"""
+    pos = (getattr(app, 'win_pos', None) or {}).get(name)
+    if not pos:
+        return None
+    try:
+        vx, vy = t.winfo_vrootx(), t.winfo_vrooty()
+        vw, vh = max(t.winfo_screenwidth(), t.winfo_vrootwidth()), max(t.winfo_screenheight(), t.winfo_vrootheight())
+        x, y = int(pos[0]), int(pos[1])
+        if vx - 50 <= x <= vx + vw - 100 and vy - 10 <= y <= vy + vh - 60:
+            return x, y
+    except (tk.TclError, ValueError, TypeError, IndexError):
+        pass
+    return None
+
+
+def place(t, name, app, before=None):
+    """window t where it was last time (if still on a screen), else in the middle of the emulator - and its place kept
+    from now on (the owner, 2026-10-27: every window remembers where it was)"""
+    pos = saved_place(t, name, app)
+    if pos:
+        try:
+            t.withdraw(); t.update_idletasks()
+            t.geometry('+%d+%d' % pos)
+            reveal(t, before); t.lift(); t.focus_force()
+        except tk.TclError:
+            pass
+    else:
+        center(t, app.root, before)
+    remember(t, name, app)
 
 
 def _rel(p):
@@ -192,6 +381,129 @@ def _rel(p):
         return p if r.startswith('..') else r
     except ValueError:                                  # (another drive)
         return p
+
+
+# ---- hover info: each row's text from the Help (help_text.py), the Vectrex unit's parts with the circuit behind them
+STRIP_TOPIC = {'Tube': 'tube', 'Room light': 'light', 'Case': 'case', 'Overlay': 'overlay', 'Sound': 'sound',
+               'Vectrex unit': 'unit', 'Display': 'display', 'Cartridge': 'addons'}
+TIPBG, TIPFG = '#16261f', '#bfe'
+TAB_CHG_FG = '#d9a35e'          # (a tab with a setting changed from its default: its name orange - the owner: the text only)
+EXTRA = {   # (what used to be a note in the Config window, now in its row's i; 'GROUP/label' or 'label')
+    'Case  (C)': 'Shown without an overlay; the Room light tab lights it.',
+    'Controller port 2': "A game won't start with a speech module plugged in? Choose Joystick.",
+    'ULTIMATE VECTREX MULTICART 2/Open the SD folder': 'Games that need files read them from it - Doom: doom/DOOM.WAD, Quake: quake/pak0.pak.',
+    'ULTIMATE VECTREX MULTICART 2/Choose SD folder...': 'Games that need files read them from it - Doom: doom/DOOM.WAD, Quake: quake/pak0.pak.',
+    'PITREX/Open the SD folder': 'Arcade games need your own ROMs: pitrex/roms (MAME), pitrex/roms/aae.',
+    'PITREX/Choose SD folder...': 'Arcade games need your own ROMs: pitrex/roms (MAME), pitrex/roms/aae.',
+    'WEAK GRAPHICS/30 pictures a second': 'Quality Low sets it.',
+}
+ALIAS = {'left / right': 'position and size', 'up / down': 'position and size', 'size': 'position and size'}   # (rows named unlike their Help item)
+
+
+def _norm(s):
+    """a label or a Help item's name, comparable: lower case, no '...', no (keys) or (notes), no punctuation"""
+    import re
+    s = re.sub(r'\(.*?\)', ' ', s.lower().replace('...', ' ').replace("'", ''))
+    return ' '.join(re.sub(r'[^a-z0-9/ -]', ' ', s).split())
+
+
+def help_info(label, topic=None):
+    """the Help's text for a Config row (its item in `topic` first, then any topic) - None if it has none"""
+    import help_text
+    want = _norm(label)
+    for pre in ('overlay ', 'scratches '):                      # (the strip names it already: Overlay tint strength)
+        if want.startswith(pre) and len(want) >= len(pre) + 4:
+            want = want[len(pre):]
+    want = ALIAS.get(want, want)
+    if len(want) < 3:
+        return None
+    best, score = None, 0
+    for key, title, blocks in help_text.TOPICS:
+        if key in ('start', 'system', 'carts', 'accuracy'):     # (the general topics: not about a setting)
+            continue
+        own = key == topic
+        for b in blocks:
+            if b[0] != 'item':
+                continue
+            for part in [_norm(x) for x in b[1].split(' / ')] + [_norm(b[1])]:
+                if not part:
+                    continue
+                if part == want:
+                    sc = 4
+                elif part.startswith(want) and len(want) >= 4:                       # (a shortened label)
+                    sc = 3
+                elif want.startswith(part + ' ') and len(part) >= 0.6 * len(want):   # (a label with a few more words)
+                    sc = 3
+                elif part.endswith(' ' + want) and len(want) >= 10:                  # (the strip names what comes first)
+                    sc = 3
+                elif part.split()[:2] == want.split()[:2] and len(want.split()) >= 2 and len(part.split()) >= 2:
+                    sc = 2
+                else:
+                    continue
+                if not own and sc < 4:                          # (another strip's item: only by its exact name)
+                    continue
+                sc += 0.5 if own else 0
+                if sc > score:
+                    best, score = b[2], sc
+    return best.replace('*', '') if best else None
+
+
+class Tip:
+    """an info box below widget w while the pointer rests on it (on every widget in `also` too)"""
+    def __init__(self, w, text, also=()):
+        self.w, self.text, self.win, self.job = w, text, None, None
+        for x in (w,) + tuple(also):
+            x.bind('<Enter>', self.enter, add='+'); x.bind('<Leave>', self.leave, add='+')
+            x.bind('<ButtonPress>', self.leave, add='+')
+
+    def enter(self, e=None):
+        self.leave()
+        try: self.job = self.w.after(450, self.show)
+        except tk.TclError: self.job = None                 # (its widget gone: a tab rebuilt under the pointer)
+
+    def leave(self, e=None):
+        if self.job is not None:
+            try: self.w.after_cancel(self.job)
+            except tk.TclError: pass
+            self.job = None
+        if self.win is not None:
+            try: self.win.destroy()
+            except tk.TclError: pass
+            self.win = None
+
+    def show(self):
+        self.job = None
+        try:
+            t = self.win = tk.Toplevel(self.w, bg=EDGE2)
+            t.withdraw()                                    # (shown once in its place)
+            t.overrideredirect(True)
+            try: t.attributes('-topmost', True)
+            except tk.TclError: pass
+            paras = self.text.split('\n\n')
+            box = tk.Frame(t, bg=TIPBG); box.pack(padx=1, pady=1)
+            for i, p in enumerate(paras):
+                tk.Label(box, text=p, bg=TIPBG, fg=TIPFG if i == 0 else HI, font=(V.MONO, 9), justify='left', anchor='w',
+                         wraplength=470).pack(anchor='w', padx=9, pady=(6 if i == 0 else 4, 6 if i == len(paras) - 1 else 0))
+            t.update_idletasks()
+            x, y = self.w.winfo_rootx(), self.w.winfo_rooty() + self.w.winfo_height() + 4
+            x0, y0, x1, y1 = work_area(self.w)
+            if y + t.winfo_reqheight() > y1:                     # (no room below: above it)
+                y = self.w.winfo_rooty() - t.winfo_reqheight() - 4
+            x = max(x0, min(x, x1 - t.winfo_reqwidth()))
+            t.geometry('+%d+%d' % (x, max(y0, y)))
+            t.deiconify()
+        except tk.TclError:
+            self.win = None
+
+
+def info_mark(parent, bg, text):
+    """the small circled i of a row that has hover info (an empty space of its size when text is None: rows line up)"""
+    c = tk.Canvas(parent, width=14, height=14, bg=bg, highlightthickness=0, bd=0)
+    if text:
+        c.create_oval(1, 1, 13, 13, outline=G)
+        c.create_text(7, 7, text='i', fill=G, font=(V.MONO, 7, 'bold'))
+        c.configure(cursor='question_arrow')
+    return c
 
 
 def _paint(b, on):
@@ -222,17 +534,20 @@ class Deck:
         f9, f10b = _font(a, 9), _font(a, 10, True)
         self.bgc = BG
         top = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); top.pack(fill='x')
-        tk.Label(top, text='Tab: close   hold H: before   LB / RB: strip', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=12, pady=6)
+        tk.Label(top, text='Tab: close   hold H: compare with before   LB / RB: tab', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=12, pady=6)
         # the whole emulator and this game: one panel
         pan = tk.Frame(t, bg=PANEL, highlightthickness=1, highlightbackground=EDGE); pan.pack(fill='x', padx=10, pady=(8, 0))
         q = tk.Frame(pan, bg=PANEL); q.pack(fill='x', padx=10, pady=(6, 0))
         tk.Label(q, text='QUALITY', fg=DIM, bg=PANEL, font=f9, width=10, anchor='w').pack(side='left')
         self.qbtn = {}
-        for key in ('low', 'medium', 'high', 'custom'):
+        for key in ('low', 'medium', 'high', 'ultra', 'custom'):
             b = _button(q, a.QUALITY_NAMES[key], lambda k=key: self.set_quality(k), a, small=True); b.pack(side='left', padx=2)
             self.qbtn[key] = b
+            tip = help_info(key.capitalize(), 'deck')
+            if tip: Tip(b, tip)
         _button(q, 'Optimize', lambda: a.test_pc(self.t), a, small=True).pack(side='left', padx=(14, 2))
-        self.qhint = tk.Label(pan, fg=DIM, bg=PANEL, font=f9, anchor='w', justify='left'); self.qhint.pack(fill='x', padx=(10 + 10 * 8, 10))
+        self.qhint = tk.Label(q, fg=WARN, bg=PANEL, font=f9, anchor='w')   # (on the Quality row: nothing moves when it
+        self.qhint.pack(side='left', padx=(12, 0))                          #  comes or goes)
         tk.Frame(pan, bg=EDGE, height=1).pack(fill='x', padx=10, pady=4)
         gm = tk.Frame(pan, bg=PANEL); gm.pack(fill='x', padx=10)
         tk.Label(gm, text='THIS GAME', fg=DIM, bg=PANEL, font=f9, width=10, anchor='w').pack(side='left')
@@ -241,29 +556,34 @@ class Deck:
                                ('remove', 'Remove', a.remove_game), ('default', 'Make default', a.make_default)):
             b = _button(gm, name, lambda c=cmd: (c(), self.sync_all()), a, small=True); b.pack(side='left', padx=2)
             self.gbtn[key] = b
+            tip = help_info(name, 'deck')
+            if tip: Tip(b, tip)
         self.ghint = tk.Label(pan, fg=DIM, bg=PANEL, font=f9, anchor='w'); self.ghint.pack(fill='x', padx=(10 + 10 * 8, 10), pady=(0, 6))
         # the strips: tabs on top of the strip's area (the chosen one in the area's colour)
         sb = tk.Frame(t, bg=BG); sb.pack(fill='x', padx=10, pady=(10, 0))
         self.sbtn = {}
         for st in self.STRIPS:
             b = tk.Label(sb, text=st, font=f9, padx=8, pady=3, cursor='hand2', highlightthickness=1)
-            b.bind('<Button-1>', lambda e, st=st: self.show(st)); b.pack(side='left', padx=(0, 2))
+            b.bind('<Button-1>', lambda e, st=st: self.switch(st)); b.pack(side='left', padx=(0, 2))
             self.sbtn[st] = b
         self.body = tk.Frame(t, bg=BODY, highlightthickness=1, highlightbackground=EDGE2); self.body.pack(fill='x', padx=10)
         self.sc = Scroller(self.body, BODY); self.sc.frame.pack(fill='both', expand=True)   # (a short screen: the strip scrolls)
         self.sc.bind_wheel(t)
-        self.inner = None
+        self.inner = None; self.cols = None; self.split = None
         foot = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); foot.pack(fill='x', pady=(10, 0))
-        self.reset_b = _button(foot, 'Reset this strip', self.reset_strip, a, small=True); self.reset_b.pack(side='left', padx=(12, 0), pady=6)
+        self.reset_b = _button(foot, 'Reset this tab', self.reset_strip, a, small=True); self.reset_b.pack(side='left', padx=(12, 0), pady=6)
         _button(foot, 'Reset all', self.reset_all, a, small=True).pack(side='left', padx=(8, 0), pady=6)
         bb = _button(foot, 'Hold: before', None, a, small=True); bb.pack(side='left', padx=8)
         bb.bind('<ButtonPress-1>', lambda e: self.compare(True)); bb.bind('<ButtonRelease-1>', lambda e: self.compare(False))
         tk.Label(foot, text='right click a slider: its default', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=8)
         for k in ('<Tab>', '<Escape>'):
             t.bind(k, lambda e: (self.close(), 'break')[1])
+        t.bind('<F11>', lambda e: (a.toggle_full(), 'break')[1])   # (full screen also while the Config has the keys)
         t.bind('<KeyPress-h>', lambda e: self.compare(True)); t.bind('<KeyRelease-h>', lambda e: self.compare(False))
         t.bind('<Left>', lambda e: (self.step_strip(-1), 'break')[1]); t.bind('<Right>', lambda e: (self.step_strip(1), 'break')[1])
         t.protocol('WM_DELETE_WINDOW', self.close)
+        self.fix_width()
+        self.prebuild()
         self.show(self.strip)
         t.update_idletasks()
         r = a.root
@@ -279,7 +599,8 @@ class Deck:
         x0, y0, x1, y1 = work_area(t)                             # (all of it on the desktop)
         x = max(x0, min(x, x1 - t.winfo_reqwidth())); y = max(y0, min(y, y1 - t.winfo_reqheight() - 40))
         t.geometry('+%d+%d' % (x, y))
-        t.deiconify()
+        over_full(t, a)                                         # (full screen: kept above the picture, on its screen)
+        reveal(t)
         try: V.dark_title(t)                                    # (the system's own title bar and close button - where
         except Exception: pass   # noqa                         #  each system puts it: Windows / Linux right, macOS left -
         t.focus_force()                                         #  dark, as the main window's; Graham Toal, 2026-10-26)
@@ -303,24 +624,25 @@ class Deck:
         flip = lambda k: (lambda: a.flip(a.ren, k))
         if s == 'Tube':
             return [('group', 'PHOSPHOR'),
-                    ('check', 'Phosphor (afterglow and bloom)', PH, a.toggle_phosphor, None),
+                    ('check', 'Phosphor', PH, a.toggle_phosphor, None),
                     ('in', [('slider', 'bloom', PH),
                             ('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
                             ('in', [('slider', 'trail', AG), ('slider', 'phos_grow', AG), ('slider', 'phos_smooth', AG)])]),
                     ('slider', 'white_k', lambda: has('white_k')),
                     ('group', 'SHAPE AND GLASS'),
-                    ('check', 'Tube geometry (a real Vectrex)', lambda: A('curve_on'), flip('curve_on'), None),
+                    ('check', 'Tube geometry', lambda: A('curve_on'), flip('curve_on'), None),
                     ('in', [('slider', 'geom_k', lambda: A('curve_on'))]),
-                    ('check', 'Glass edge (rounded corners)', lambda: A('glass_on'), flip('glass_on'), None),
-                    ('check', 'Bend smoothing (curves without facets)', lambda: A('bend_smooth', True), flip('bend_smooth'), None),
-                    ('check', 'Second glow pass (a softer, wider glow)', lambda: A('passes', 2) >= 2,
+                    ('check', 'Glass edge', lambda: A('glass_on'), flip('glass_on'), None),
+                    ('check', 'Bend smoothing', lambda: A('bend_smooth', True), flip('bend_smooth'), None),
+                    ('group', 'GLOW AND BEAM'),
+                    ('check', 'Second glow pass', lambda: A('passes', 2) >= 2,
                      lambda: (setattr(a.ren, 'passes', 1 if a.ren.passes >= 2 else 2), a.save_settings()), PH),
-                    ('check', 'Dither (no bands in soft glows)', lambda: A('dither_on', True), flip('dither_on'), None),
-                    ('check', 'Corner glow (halo where the beam rests)', lambda: A('halo_on'), flip('halo_on'), lambda: not A('even_beam')),
+                    ('check', 'Dither', lambda: A('dither_on', True), flip('dither_on'), None),
+                    ('check', 'Corner glow', lambda: A('halo_on'), flip('halo_on'), lambda: not A('even_beam')),
                     ('in', [('slider', 'halo_k', lambda: A('halo_on') and not A('even_beam'))]),
                     ('slider', 'dot_k', lambda: not A('even_beam')),
-                    ('check', 'Even beam (an ideal vector display)', lambda: A('even_beam'), flip('even_beam'), lambda: not A('beam_trace')),
-                    ('check', 'Beam trace (the spot lights the phosphor)', lambda: A('beam_trace'), flip('beam_trace'), lambda: has('beam_trace')),
+                    ('check', 'Even beam', lambda: A('even_beam'), flip('even_beam'), lambda: not A('beam_trace')),
+                    ('check', 'Beam trace', lambda: A('beam_trace'), flip('beam_trace'), lambda: has('beam_trace')),
                     ('group', 'SIGNAL'),
                     ('check', 'Mains hum wobble', lambda: A('wob_on'), a.toggle_wobble, None),
                     ('in', [('slider', 'wob_strength', lambda: A('wob_on')),
@@ -333,7 +655,7 @@ class Deck:
                             ('slider', 'bend_strength', lambda: A('bend_on'))])]
         if s == 'Room light':
             rows = [('group', 'THE ROOM'), ('slider', 'art_room', None),
-                    ('check', 'Glass catches room light (without an overlay)', lambda: A('glass_room'), flip('glass_room'), None)]
+                    ('check', 'Glass catches room light', lambda: A('glass_room'), flip('glass_room'), None)]
             if getattr(a.ren, 'lprog', None):
                 rows += [('group', 'THE CEILING LIGHT'),
                          ('check', 'Reflected on the glass', lambda: A('light_on'), flip('light_on'), lambda: A('glass_room')),
@@ -347,19 +669,19 @@ class Deck:
             return [('group', 'THE PLASTIC ROUND THE GLASS'),
                     ('check', 'Case  (C)', CS, a.toggle_case, None),
                     ('in', [('slider', 'case_refl', CS), ('slider', 'case_wear', CS)]),
-                    ('note', lambda: 'shown without an overlay - lit by the Room light strip')]
+                    ]
         if s == 'Overlay':
             rows = [('group', 'SHEET'),
                     ('check', 'Overlay  (O)', lambda: A('art_on') and bool(A('art', None)), a.toggle_art, None),
-                    ('check', 'Choose automatically (by ROM name)', lambda: a.art_auto, a.toggle_art_auto, None),
+                    ('check', 'Choose automatically', lambda: a.art_auto, a.toggle_art_auto, None),
                     ('buttons', [('Choose overlay...', a.choose_art), ('No overlay for this game', a.no_art)], None),
                     ('in', [('slider', 'art_tint', OV), ('slider', 'art_print', OV),
-                            ('check', 'Parallax (seen from the usual height)', lambda: A('art_parallax'), flip('art_parallax'), OV)])]
+                            ('check', 'Parallax', lambda: A('art_parallax'), flip('art_parallax'), OV)])]
             if getattr(a.ren, 'gprog', None):
                 rows += [('group', 'PLASTIC AND SCRATCHES'),
                          ('check', 'Plastic glow', lambda: A('art_glow'), flip('art_glow'), OV),
                          ('in', [('slider', 'art_glow_k', lambda: OV() and A('art_glow'))]),
-                         ('check', 'Scratches (decades of handling)', lambda: A('scr_on'), a.toggle_scratches, OV),
+                         ('check', 'Scratches', lambda: A('scr_on'), a.toggle_scratches, OV),
                          ('in', [('slider', 'scr_wear', SC), ('slider', 'scr_fine', SC), ('slider', 'scr_medium', SC),
                                  ('slider', 'scr_large', SC), ('slider', 'scr_scrib', SC), ('slider', 'scr_glint', SC),
                                  ('slider', 'scr_reach', SC), ('buttons', [('New random scratches', a.new_scratches)], SC)])]
@@ -372,24 +694,26 @@ class Deck:
                     ('check', 'Vectrex buzz', lambda: C().buzz_on, lambda: a.flip(a.run.crt, 'buzz_on'), None),
                     ('in', [('slider', 'buzz_vol', lambda: C().buzz_on)]),
                     ('check', 'Vectrex speaker', lambda: C().speaker_on, lambda: a.flip(a.run.crt, 'speaker_on'), None),
-                    ('group', 'SPEECH MODULE (CONTROLLER PORT 2)'),
+                    ('group', 'SPEECH MODULE (PORT 2)'),
                     ('slider', 'voice_vol', lambda: a.speech in ('vecvoice', 'vecvox')),
                     ('choice', 'Speech module', [('Full-range speakers', lambda: C().voice_full, lambda: a.set_voice_full(True)),
                                                  ('Small speaker', lambda: not C().voice_full, lambda: a.set_voice_full(False))],
                      lambda: a.speech in ('vecvoice', 'vecvox')),
-                    ('group', '3D IMAGER (CONTROLLER PORT 2)'),
-                    ('check', 'Disc motor sound (its whir)', lambda: C().motor_on, a.toggle_motor_snd, lambda: a.speech == 'imager'),
+                    ('group', '3D IMAGER (PORT 2)'),
+                    ('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, lambda: a.speech == 'imager'),
                     ('in', [('slider', 'motor_vol', lambda: a.speech == 'imager' and C().motor_on)])]
         if s == 'Vectrex unit':
             rows = [('group', 'WHICH VECTREX'),
                     ('choice', 'Unit', [(V.UNIT_NAMES[n].replace(' (measured)', ''), (lambda n=n: a.unit_name == n),
                                          (lambda n=n: a.unit_preset(n))) for n in ('owner', 'ideal', 'cranky', 'random')], None),
-                    ('note', lambda: 'now: %s - every part acts on the game at once' % V.UNIT_NAMES.get(a.unit_name, 'Custom')),
                     ('group', 'STARTING UP'),
                     ('check', 'Start switched on', lambda: a.start_on, a.toggle_start_on, None),
-                    ('check', 'Skip the Vectrex intro (start screen)', lambda: a.skip_boot, a.toggle_skip_boot, None),
-                    ('group', 'ITS PARTS')]
-            rows += [('unit', p[0]) for p in V.UNIT_PARAMS]
+                    ('check', 'Skip the Vectrex intro', lambda: a.skip_boot, a.toggle_skip_boot, None),
+                    ('group', 'ITS PARTS: ZERO REFERENCE, DRIFT, BEAM')]
+            keys = [p[0] for p in V.UNIT_PARAMS]
+            cut = keys.index('zerotx')                          # (two boxes: side by side when the screen is short)
+            rows += [('unit', k) for k in keys[:cut]]
+            rows += [('group', 'ITS PARTS: ZEROING, LAG, DAC')] + [('unit', k) for k in keys[cut:]]
             rows += [('unit', 'gap'), ('buttons', [('Export...', a.export_unit), ('Import...', a.import_unit)], None)]
             return rows
         if s == 'Display':
@@ -399,13 +723,21 @@ class Deck:
             rot = [(n, (lambda d=d: a.rot == d), (lambda d=d: a.set_rotation(d))) for d, n in
                    ((0, 'Normal'), (90, '90 right'), (180, '180'), (270, '90 left'))]
             return [('group', 'THE SCREEN'), ('choice', 'Screen', rates, None),
-                    ('in', [('check', 'Smooth motion (60 Hz screens: vectors between game frames, +20 ms)', lambda: a.smooth,
+                    ('in', [('check', 'Smooth motion', lambda: a.smooth,
                              a.toggle_smooth, lambda: not a.vrr)]),
                     ('choice', 'Rotate', rot, None),
+                    ('group', 'WEAK GRAPHICS'),
+                    ('check', '30 pictures a second', lambda: bool(getattr(a.ren, 'half_rate', False)),
+                     lambda: (setattr(a.ren, 'half_rate', not getattr(a.ren, 'half_rate', False)), a.save_settings()), None),
+                    ('choice', 'Phosphor size', [(n, (lambda v=v: abs(getattr(a.ren, 'phos_scale', 1.0) - v) < 0.01),
+                                                  (lambda v=v: (setattr(a.ren, 'phos_scale', v), a.save_settings())))
+                                                 for n, v in (('Full', 1.0), ('3/4', 0.75), ('Half', 0.5))], None),
                     ('group', 'BELOW THE PICTURE'),
-                    ('check', 'On-screen display (fps, Hz, speed, volume)', lambda: a.fps_on, a.toggle_fps, None),
+                    ('check', 'On-screen display', lambda: a.fps_on, a.toggle_fps, None),
+                    ('in', [('check', 'CPU and GPU meters', lambda: getattr(a, 'osd_meters', True),
+                             a.toggle_osd_meters, lambda: a.fps_on)]),
                     ('check', 'Volume knob and RESET button', lambda: a.knob_on, a.toggle_knob, None),
-                    ('check', 'Cartridge (click: the ROM browser)', lambda: a.cart_on, a.toggle_cart, None),
+                    ('check', 'Cartridge', lambda: a.cart_on, a.toggle_cart, None),
                     ('group', 'SIZE'),
                     ('slider', 'monitor_inch', None),
                     ('buttons', [('Authentic (9)', a.real_size), ('Fit screen (0)', lambda: a.zoom_step(None))], None)]
@@ -422,52 +754,129 @@ class Deck:
                 return 'in the slot now: ' + ('its menu' if n.lower() == 'pitrex' else n)
             return [('group', 'THE SLOT AND PORT 2'),
                     ('menu', 'Cartridge hardware', hw, None), ('menu', 'Controller port 2', p2, None),
-                    ] + ([('in', [('check', 'Disc motor sound (its whir)', lambda: C().motor_on, a.toggle_motor_snd, None),
+                    ('check', 'Auto-select port 2', lambda: getattr(a, 'p2_auto', True), a.toggle_p2_auto, None),
+                    ] + ([('in', [('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, None),
                                   ('slider', 'motor_vol', lambda: C().motor_on),
                                   ('check', 'Spin-up note on the picture', lambda: a.imager_note, a.toggle_imager_note, None)])]
                          if IM() else []) + [   # (the 3D Imager in port 2: its motor and note)
-                    ('note', lambda: "a game won't start with a speech module? Choose Joystick."),
                     ('group', 'USB KEYBOARD AND MOUSE'),
-                    ('check', "The PC's mouse and keyboard on the cartridge's USB port", lambda: a.usb_hid, a.toggle_usb_hid, None),
-                    ('note', lambda: 'Ctrl+K: type on it (Ctrl+K again: the keys back to the controller)'),
+                    ('check', 'PC mouse and keys on USB', lambda: a.usb_hid, a.toggle_usb_hid, None),
                     ('group', 'ULTIMATE VECTREX MULTICART 2'),
                     ('note', lambda: 'in the slot now' if um2() else 'not in the slot'),
-                    ('check', 'Show UVMC2 games (.um2) in the ROM list', lambda: a.show_um2, a.toggle_um2, None),
+                    ('check', 'UVMC2 games in the ROM list', lambda: a.show_um2, a.toggle_um2, None),
                     ('choice', 'Headphone jack', [('Clean (line out)', lambda: C().jack_mode == 'clean', lambda: a.set_jack('clean')),
                                                   ('Through the speaker', lambda: C().jack_mode == 'speaker', lambda: a.set_jack('speaker')),
                                                   ('Off', lambda: C().jack_mode == 'off', lambda: a.set_jack('off'))], None),
                     ('in', [('slider', 'jack_vol', lambda: C().jack_mode != 'off')]),
                     ('buttons', [('Open UVMC2 game...', a.open_um2), ('Open the SD folder', a.open_sd_dir),
                                  ('Choose SD folder...', a.choose_sd_dir)], None),
-                    ('note', lambda: 'games that need files (Doom: doom/DOOM.WAD, Quake: quake/pak0.pak) read them from it'),
-                    ('note', lambda: 'SD card folder: %s' % _rel(a.sd_dir)),
+                    ('note', lambda: 'SD folder: %s' % _rel(a.sd_dir)),
                     ('group', 'PITREX'),
                     ('note', px_now),
                     ('buttons', [('Start the PiTrex', a.start_pitrex), ('Open PiTrex program...', a.open_pitrex)], None),
                     ('buttons', [('Open the SD folder', a.open_px_dir), ('Choose SD folder...', a.choose_px_dir)], None),
-                    ('note', lambda: 'arcade games need your own ROMs: pitrex/roms (MAME), pitrex/roms/aae'),
-                    ('note', lambda: 'SD card folder: %s' % _rel(a.px_dir))]
+                    ('note', lambda: 'SD folder: %s' % _rel(a.px_dir))]
         return []
 
     RESETS = {'Tube': 'reset_tube', 'Room light': 'reset_light', 'Case': 'reset_case', 'Overlay': 'reset_overlay', 'Sound': 'reset_sound',
               'Display': 'reset_display', 'Cartridge': 'reset_addons'}
 
     def reset_all(self):
-        """every strip to its defaults: those of the Quality profile chosen (Custom: High's) - asked first"""
+        """every tab to its defaults: those of the Quality profile chosen (or Optimize's result) - asked first"""
         a = self.app
-        key = a.current_profile()
-        name = a.QUALITY_NAMES['high' if key == 'custom' else key]
-        if dialog('question', 'Reset all', 'Reset every tab to the %s defaults?' % name, parent=self.t, yesno=True,
+        if dialog('question', 'Reset all', 'Reset every tab to the %s defaults?' % a.base_name(), parent=self.t, yesno=True,
                   buttons=('Reset all', 'Cancel')):
-            a.reset_all()
-        self.sync_all()
+            self.frozen(lambda: (a.reset_all(), self.show(self.strip)))
+        else:
+            self.sync_all()
 
     def reset_strip(self):
-        if self.strip == 'Vectrex unit':
-            self.app.unit_preset('owner')
-        elif self.strip in self.RESETS:
-            getattr(self.app, self.RESETS[self.strip])()
-        self.sync_all()
+        def go():
+            if self.strip == 'Vectrex unit':
+                self.app.reset_unit()
+            elif self.strip in self.RESETS:
+                getattr(self.app, self.RESETS[self.strip])()
+            self.show(self.strip)                               # (kept: its values set; rebuilt only if its rows changed)
+        self.frozen(go)
+
+    def layout_key(self):
+        """the screen the layout was measured for: its work area and scaling"""
+        try:
+            return (work_area(self.t), round(self.t.winfo_fpixels('1i'), 1))
+        except tk.TclError:
+            return None
+
+    def fix_width(self):
+        """the window as wide as its widest tab, always: switching tabs never changes its width (the owner, 2026-10-27).
+        Each tab built once to measure it (the window not shown yet); kept for the session, per screen"""
+        a, t = self.app, self.t
+        try:
+            key = (work_area(t), round(t.winfo_fpixels('1i'), 1))
+            cache = getattr(a, 'deck_width', None)
+            if not cache or cache[0] != key:
+                was = self.strip
+                self.show('Display'); t.update_idletasks()      # (the widest tab: the owner, 2026-10-27)
+                widest = t.winfo_reqwidth()
+                self.strip = was
+                a.deck_width = cache = (key, widest)
+            if getattr(self, 'width_pin', None) is None:
+                self.width_pin = tk.Frame(t, bg=BG, height=0)
+                self.width_pin.pack(side='top', before=t.pack_slaves()[0])
+            self.width_pin.configure(width=cache[1])
+        except (tk.TclError, IndexError):
+            pass
+
+    def switch(self, st):
+        """another tab, shown cleanly: behind a still picture of the window until the new tab is fully painted (Windows
+        paints a new tab's controls one by one: empty boxes and white buttons for a frame or two)"""
+        if st == self.strip:
+            return
+        try:
+            shown = self.t.winfo_ismapped()
+        except tk.TclError:
+            shown = False
+        if shown:                                               # (kept tabs: hide one, show the other - behind a
+            self.frozen(lambda: self.show(st))                  #  picture of the window until painted: Windows paints
+        else:                                                   #  ~150 controls over more than one screen refresh)
+            self.show(st)
+
+    def frozen(self, work):
+        """work done behind a still picture of the window, which then fades away: a reset redraws the tab, its rows and
+        maybe the window's size several times - seen, a jumble (the owner, 2026-10-27). Without a picture (no PIL, an
+        error): done as it is"""
+        t = self.t
+        cover = None
+        try:
+            from PIL import ImageTk
+            x, y, w, h = t.winfo_rootx(), t.winfo_rooty(), t.winfo_width(), t.winfo_height()
+            img = grab_screen(x, y, w, h)
+            cv = getattr(self, '_cover', None)                  # (one cover window, made once: kept shown but off the
+            if cv is None:                                      #  screen - shown fresh, Windows faded it in over a few
+                c = tk.Toplevel(t, bg=BG); c.overrideredirect(True)   # frames while the tab changed under it)
+                c.geometry('1x1+-32000+-32000')
+                try: c.attributes('-topmost', True)
+                except tk.TclError: pass
+                lb = tk.Label(c, bd=0, highlightthickness=0); lb.pack()
+                no_transitions(c)
+                cv = self._cover = (c, lb)
+            cover, lb = cv
+            ph = ImageTk.PhotoImage(img)
+            lb.configure(image=ph); lb.image = ph
+            cover.attributes('-alpha', 0.0)                     # (put in place unseen and painted there, then shown: off
+            cover.geometry('%dx%d+%d+%d' % (w, h, x, y))        #  the screen Windows does not refresh its picture - moved
+            cover.lift(); paint_now(cover)                      #  on, it showed the switch before's for a refresh: a
+            cover.attributes('-alpha', 1.0); cover.update_idletasks()   # flicker; the owner, 2026-10-27)
+        except Exception:   # noqa
+            cover = None
+        try:
+            work()
+        finally:
+            if cover is not None:
+                paint_now(t)                            # (the new state fully painted underneath first)
+                def gone():
+                    try: cover.attributes('-alpha', 0.0); cover.geometry('+-32000+-32000')   # (parked again)
+                    except tk.TclError: pass
+                t.after(34, gone)                       # (then, a refresh later, the picture away: the new state, whole)
 
     # ---- building a strip
     def show(self, s):
@@ -475,17 +884,21 @@ class Deck:
             self.app.deck_focus = dict(getattr(self.app, 'deck_focus', None) or {}, **{self.strip: self.focus})
         self.strip = s; self.app.deck_strip = s
         self.focus = (getattr(self.app, 'deck_focus', None) or {}).get(s, 0)
-        for k, b in self.sbtn.items():                          # (the tab: joined to the strip's area when chosen)
-            b.configure(bg=BODY if k == s else BG, fg=HI if k == s else DIM,
-                        highlightbackground=EDGE2 if k == s else EDGE)
-        if self.inner is not None:
-            self.inner.destroy()
-        self.inner = tk.Frame(self.sc.holder, bg=BODY); self.inner.pack(fill='both', expand=True, padx=8, pady=8)
-        self.box = None; self.parent = self.inner; self.bgc = BODY
-        self.rows = []
-        self.add_rows(self.spec(s))
+        self.paint_tabs()
+        # each tab built once and kept: switching hides one and shows the other, a reset only sets the values. Built
+        # anew every time, Windows created and painted its ~150 controls one by one - ~0.2 s, seen as blocks. A tab is
+        # built again only when its rows change (the 3D Imager's rows on Cartridge...) or the screen does
+        old = getattr(self, 'shown', None)
+        ent = self.ensure(s)
+        self.inner, self.rows, self.cols, self.split = ent['frame'], ent['rows'], ent['cols'], ent['split']
         self.focus = min(self.focus, max(0, len(self.rows) - 1))
         self.sync_all()
+        if old is not None and old is not self.inner:
+            try: old.pack_forget()
+            except tk.TclError: pass
+        if not self.inner.winfo_manager():
+            self.inner.pack(fill='both', expand=True, padx=8, pady=8)
+        self.shown = self.inner
         try:
             self.sc.fit_window(self.t)
             if self.t.winfo_ismapped():
@@ -493,10 +906,170 @@ class Deck:
         except tk.TclError:
             pass
 
+    def ensure(self, s):
+        """tab s built (not shown) and kept - again only when its rows or the screen changed"""
+        tabs = self.__dict__.setdefault('tabs', {})
+        key = self.layout_key()
+        sig = self.signature(s)
+        ent = tabs.get(s)
+        if ent and ent['sig'] == sig and ent['key'] == key:
+            return ent
+        keep = (self.inner, self.rows, self.cols, getattr(self, 'split', None))
+        if ent:
+            try: ent['frame'].destroy()
+            except tk.TclError: pass
+        was = self.strip; self.strip = s                        # (the rows' hover info looks up this tab's Help)
+        try:
+            lay = getattr(self.app, 'deck_layout', None)        # (each tab's columns: measured once, then built so)
+            if lay and lay[0] == key and s in lay[1]:
+                self.build(s, lay[1][s])
+            else:
+                self.build(s, None)
+                split = self.two_columns()
+                if split:                                       # (too tall for this screen: its boxes side by side)
+                    self.inner.destroy(); self.build(s, split)
+                    if self.too_wide():
+                        self.inner.destroy(); self.build(s, None); split = None
+                if not lay or lay[0] != key:
+                    lay = self.app.deck_layout = (key, {})
+                lay[1][s] = split
+            ent = tabs[s] = dict(frame=self.inner, rows=self.rows, cols=self.cols, split=self.split, sig=sig, key=key)
+        finally:
+            self.strip = was
+            self.inner, self.rows, self.cols, self.split = keep
+        return ent
+
+    def prebuild(self):
+        """every tab built at once (none shown - quick: nothing is painted), and the window as tall as the tallest: a
+        switch then only shows a page that is ready, the window's size never changes"""
+        try:
+            for st in self.STRIPS:
+                self.ensure(st)
+            self.t.update_idletasks()
+            self.sc.min_h = max(e['frame'].winfo_reqheight() for e in self.tabs.values()) + 16
+        except tk.TclError:
+            pass
+
+    def signature(self, s):
+        """a tab's rows as their kinds and names: built again only when these change"""
+        def sig(rows):
+            out = []
+            for r in rows:
+                if r[0] == 'in':
+                    out.append(('in', sig(r[1])))
+                elif r[0] == 'buttons':
+                    out.append(('buttons', tuple(t for t, c in r[1])))
+                else:
+                    out.append((r[0], r[1] if isinstance(r[1], str) else ''))
+            return tuple(out)
+        try:
+            return sig(self._spec(s))
+        except Exception:   # noqa
+            return None
+
+    def paint_tabs(self):
+        """the tabs: the chosen one joined to the area below it; one with a setting changed from its default: its name
+        orange"""
+        for k, b in self.sbtn.items():
+            try: chg = self.tab_changed(k)
+            except Exception: chg = False   # noqa
+            on = k == self.strip
+            b.configure(bg=BODY if on else BG, fg=TAB_CHG_FG if chg else (HI if on else DIM),
+                        highlightbackground=EDGE2 if on else EDGE)
+
+    def tab_keys(self, st):
+        """the picture settings (the renderer's) a tab shows: its sliders' and its switches' (read as they would be)"""
+        keys = set()
+        def walk(rows):
+            for row in rows:
+                if row[0] == 'in':
+                    walk(row[1])
+                elif row[0] == 'slider':
+                    t = self.app.SLIDERS.get(row[1])
+                    if t and t[2] == 'ren':
+                        keys.add(t[3])
+                elif row[0] == 'check':
+                    self.reading = []
+                    try: row[2]()
+                    except Exception: pass   # noqa
+                    keys.update(self.reading); self.reading = None
+        walk(self._spec(st))
+        return keys
+
+    def tab_changed(self, st):
+        """a setting on tab st differs from its default (the picture: the Quality profile chosen; the Vectrex unit: the
+        owner's measured Vectrex)"""
+        a, V = self.app, self.V
+        same = lambda x, y: abs(float(x) - float(y)) <= 1e-6 if isinstance(y, float) else x == y
+        if st in ('Tube', 'Room light', 'Case', 'Overlay', 'Display'):
+            if any(self.changed(k) for k in self.tab_keys(st) if k != 'line_gap'):
+                return True
+        if st == 'Sound':
+            c, d = a.run.crt, a.sound_default
+            return any(not same(getattr(c, k), d[k]) for k in ('buzz_on', 'buzz_vol', 'speaker_on', 'voice_vol', 'voice_full',
+                                                               'motor_on', 'motor_vol') if k in d)
+        if st == 'Vectrex unit':
+            own = V.UNIT_PRESETS['owner']
+            return (any(not same(float(a.unit.get(k, own[k])), float(own[k])) for k in own)
+                    or bool(a.start_on) or bool(a.skip_boot))
+        if st == 'Display':
+            return (bool(a.smooth) or bool(a.vrr) or a.rate != '60' or a.rot != 0 or not a.fps_on or not a.knob_on
+                    or not a.cart_on or not getattr(a, 'osd_meters', True) or float(a.monitor_inch or 0) != 0.0)
+        if st == 'Cartridge':
+            c, d = a.run.crt, a.sound_default
+            return (a.cart_hw != 'auto' or not getattr(a, 'p2_auto', True) or getattr(a, 'speech_user', 'off') != 'off'
+                    or not a.usb_hid or not a.show_um2 or not a.imager_note
+                    or any(not same(getattr(c, k), d[k]) for k in ('jack_mode', 'jack_vol') if k in d)
+                    or os.path.normcase(os.path.abspath(a.sd_dir)) != os.path.normcase(os.path.abspath(V.SD_DEFAULT))
+                    or os.path.normcase(os.path.abspath(a.px_dir)) != os.path.normcase(os.path.abspath(V.PX_DEFAULT)))
+        return False
+
+    def build(self, s, split):
+        """the tab's rows; split: the number of boxes in the left column (None: one column)"""
+        self.inner = tk.Frame(self.sc.holder, bg=BODY)          # (not packed yet: show swaps it in when it is ready)
+        self.cols = None
+        if split:
+            self.cols = [tk.Frame(self.inner, bg=BODY) for _ in range(2)]
+            self.cols[0].pack(side='left', fill='y', anchor='n', padx=(0, 7)); self.cols[1].pack(side='left', fill='y', anchor='n')
+        self.split, self.gi = split, 0
+        self.box = None; self.parent = self.inner; self.bgc = BODY
+        self.rows = []
+        self.add_rows(self.spec(s))
+
+    def room(self):
+        """the height the tab's area may take on this screen"""
+        self.t.update_idletasks()
+        x0, y0, x1, y1 = work_area(self.t)
+        ui = self.t.winfo_fpixels('1i') / 96.0
+        return (y1 - y0) - (self.t.winfo_reqheight() - self.sc.cv.winfo_reqheight()) - int(50 * ui)
+
+    def two_columns(self):
+        """the boxes' split for two columns when the tab is too tall for the screen - balanced by height (None: it fits)"""
+        try:
+            room = self.room()                                  # (first: it brings the sizes up to date)
+            if self.inner.winfo_reqheight() + 16 <= room:       # (the new tab, not shown yet: its own size)
+                return None
+            hs = [b.winfo_reqheight() for b in self.inner.winfo_children()]
+        except tk.TclError:
+            return None
+        if len(hs) < 2:
+            return None
+        tot = sum(hs)
+        best = min(range(1, len(hs)), key=lambda k: max(sum(hs[:k]), tot - sum(hs[:k])))
+        return best
+
+    def too_wide(self):
+        self.t.update_idletasks()
+        x0, y0, x1, y1 = work_area(self.t)
+        return self.inner.winfo_reqwidth() + 60 > (x1 - x0) - 20
+
     def add_rows(self, rows):
         for row in rows:
             if row[0] == 'group':                               # (a box with its caption)
-                self.box = tk.Frame(self.inner, bg=PANEL, highlightthickness=1, highlightbackground=EDGE)
+                self.group = row[1]
+                where = self.inner if not self.cols else self.cols[0 if self.gi < self.split else 1]
+                self.gi += 1
+                self.box = tk.Frame(where, bg=PANEL, highlightthickness=1, highlightbackground=EDGE)
                 self.box.pack(fill='x', pady=(0, 7))
                 tk.Label(self.box, text=row[1], fg=DIM, bg=PANEL, font=_font(self.app, 8), anchor='w').pack(fill='x', padx=8, pady=(4, 0))
                 self.parent = tk.Frame(self.box, bg=PANEL); self.parent.pack(fill='x', padx=8, pady=(0, 5))
@@ -517,15 +1090,40 @@ class Deck:
         f = tk.Frame(self.parent, bg=self.bgc); f.pack(fill='x', pady=1)
         return f
 
+    def info(self, label, unit=None):
+        '''a row's hover info: the Help's text (a Vectrex unit part: and the circuit behind it), and what used to be a
+        note below it (EXTRA)'''
+        t = help_info(label, STRIP_TOPIC.get(self.strip))
+        x = EXTRA.get('%s/%s' % (getattr(self, 'group', ''), label)) or EXTRA.get(label)
+        if x:
+            t = (t + '\n\n' + x) if t else x
+        if unit:
+            import help_text
+            c = help_text.UNIT_CIRCUIT.get('dac' if unit.startswith('dac') else unit)
+            if c:
+                t = (t + '\n\n' + c) if t else c
+        return t
+
+    def with_info(self, f, label_w, text, unit=None):
+        '''the i mark after label_w (hover info on both), or the same space empty'''
+        t = self.info(text, unit)
+        m = info_mark(f, self.bgc, t); m.pack(side='left', padx=(3, 4), after=label_w)
+        if t:
+            Tip(m, t, also=(label_w,))
+        return m
+
     reading = None                                      # (while a check is made: the settings its state reads)
 
     def changed(self, key):
-        """the look setting key differs from its default (the mark \u25cf beside it)"""
+        """the look setting key differs from its default - under the Quality profile chosen last (the mark \u25cf beside it)"""
         a = self.app
         d = getattr(a, 'look_default', {})
         if not a.ren or key not in d:
             return False
-        v, dv = getattr(a.ren, key, None), d[key]
+        if getattr(self, '_pv', None) is None:                  # (the profile's values: once per sync_all)
+            cur = a.current_profile()
+            self._pv = a.base_values()
+        v, dv = getattr(a.ren, key, None), self._pv.get(key, d[key])
         return abs(float(v) - float(dv)) > 1e-6 if isinstance(dv, float) else v != dv
 
     def mark(self, f):
@@ -542,6 +1140,7 @@ class Deck:
                            selectcolor=self.bgc, activebackground=self.bgc, activeforeground=HI, font=_font(self.app, 9),
                            anchor='w', highlightthickness=0, bd=0, disabledforeground='#2a4a3a')
         c.pack(side='left')
+        self.with_info(f, c, label)
         m = self.mark(f); m.pack(side='left')
         def sync():
             v.set(bool(get()))
@@ -562,15 +1161,20 @@ class Deck:
         f = self.frame(); bs = []
         for text, cmd in items:
             b = _button(f, text, lambda c=cmd: (c(), self.sync_all()), self.app, small=True); b.pack(side='left', padx=(0, 6)); bs.append(b)
+            t = self.info(text)
+            if t: Tip(b, t)
         return dict(kind='buttons', f=f, w=bs, sync=lambda: None, dep=dep, act=lambda d: (items[0][1](), self.sync_all()))
 
     def mk_choice(self, label, opts, dep):
         f = self.frame()
-        tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=16, anchor='w').pack(side='left')
+        lw = tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=14, anchor='w'); lw.pack(side='left')
+        lt = self.info(label); self.with_info(f, lw, label)
         bs = []
         for text, get, cmd in opts:
             b = _button(f, text, lambda c=cmd: (c(), self.sync_all()), self.app, small=True); b.pack(side='left', padx=2)
             bs.append((b, get))
+            t = self.info(text)
+            if t and t != lt: Tip(b, t)                  # (an option with its own Help item)
         def sync():
             for b, get in bs:
                 _paint(b, bool(get()))
@@ -581,7 +1185,8 @@ class Deck:
 
     def mk_menu(self, label, opts, dep):
         f = self.frame()
-        tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=20, anchor='w').pack(side='left')
+        lw = tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=18, anchor='w'); lw.pack(side='left')
+        self.with_info(f, lw, label)
         mb = tk.Label(f, fg=BG, bg=G, font=_font(self.app, 9), padx=8, pady=1, anchor='w', cursor='hand2')
         m = darkmenu.DMenu(mb)                                  # (a dark drop-down, not Windows' own)
         for text, get, cmd in opts:
@@ -662,9 +1267,9 @@ class Deck:
             if self.save_job: self.t.after_cancel(self.save_job)
             self.save_job = self.t.after(400, a.save_settings)
         return self.mk_scale(label, lambda: a.unit.get(key, 0.0), setv, lo, hi, False, lambda v: fmt % v,
-                             V.UNIT_PRESETS['owner'][key], None)
+                             V.UNIT_PRESETS['owner'][key], None, unit=key)
 
-    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep):
+    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None):
         f = self.frame(); N = 1000
         if log == 'mired':                                      # (even in mireds: White balance)
             to_pos = lambda v: N * (V.vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
@@ -672,7 +1277,8 @@ class Deck:
         else:
             to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
             to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
-        tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=28, anchor='w').pack(side='left')
+        lw = tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=26, anchor='w'); lw.pack(side='left')
+        self.with_info(f, lw, label, unit)
         val = tk.Label(f, fg=G, bg=self.bgc, font=_font(self.app, 9), width=12, anchor='w')
         busy = [False]
         def moved(p):
@@ -701,6 +1307,7 @@ class Deck:
     # ---- keeping it in step (keys and the menus change things too)
     def sync_all(self):
         a = self.app
+        self._pv = None                                         # (the profile's values: looked up again)
         for r in self.rows:
             try:
                 r['sync']()
@@ -719,7 +1326,12 @@ class Deck:
         mode = a.current_profile()
         for m, b in self.qbtn.items():
             _paint(b, m == mode)
-        self.qhint.configure(text='\u25cf changed from default', fg=WARN)
+
+        diff = any(self.changed(k) for k in getattr(a, 'look_default', {}) if k != 'line_gap')
+        self.qhint.configure(text=('\u25cf changed from %s' % a.base_name()) if diff else '', fg=WARN)
+        self._pv = None
+        self.paint_tabs()                                       # (the tabs with changes: orange)
+        self._pv = None
         st = a.game_state()
         name = a.rom_name
         self.ghint.configure(text={'everyday': '%s uses the everyday settings (changes are kept for all games).' % name,
@@ -740,7 +1352,7 @@ class Deck:
 
     def step_strip(self, d):
         i = self.STRIPS.index(self.strip)
-        self.show(self.STRIPS[(i + d) % len(self.STRIPS)])
+        self.switch(self.STRIPS[(i + d) % len(self.STRIPS)])
 
     def compare(self, on):
         """Hold: before - the look (and the Vectrex unit) from before the deck opened, while held"""
@@ -821,10 +1433,46 @@ class Deck:
         except tk.TclError: pass
 
 
+def over_full(t, app):
+    """window t in full screen: always above the picture (the full-screen window would hide it once it is clicked)
+    and on the picture's screen - out of full screen: an ordinary window again"""
+    try:
+        full = bool(getattr(app, 'full', False))
+        if t.state() == 'withdrawn':                            # (hidden along with the main window's full-screen switch)
+            t.deiconify()
+        t.attributes('-topmost', full)
+        if not full:                                            # (no longer topmost: Windows may put it behind other
+            t.lift()                                            #  programs - brought to the front again)
+            if V.IS_WIN:
+                import ctypes
+                u = ctypes.windll.user32
+                h = u.GetParent(t.winfo_id()) or t.winfo_id()
+                u.SetWindowPos(h, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)   # (HWND_TOP; NOSIZE|NOMOVE|NOACTIVATE)
+            return
+        r = app.root
+        rx, ry, rw, rh = r.winfo_rootx(), r.winfo_rooty(), r.winfo_width(), r.winfo_height()
+        t.update_idletasks()
+        x, y = t.winfo_x(), t.winfo_y()
+        if not (rx - 20 <= x <= rx + rw - 100 and ry - 10 <= y <= ry + rh - 60):   # (not on the picture: into its middle)
+            x = rx + max(0, (rw - t.winfo_reqwidth()) // 2)
+            y = ry + max(0, (rh - t.winfo_reqheight()) // 3)
+            t.geometry('+%d+%d' % (x, y))
+        t.lift()
+    except tk.TclError:
+        pass
+
+
 def open_deck(app, e=None):
     d = getattr(app, 'deck', None)
     if d is not None:
-        d.close()
+        try:
+            hidden = d.t.state() == 'withdrawn'                 # (open but hidden - Windows hides it when the main
+        except tk.TclError:                                     #  window goes in or out of full screen): shown again
+            hidden = False
+        if hidden:
+            over_full(d.t, app)
+        else:
+            d.close()
     else:
         app.deck = Deck(app)
     return 'break'
@@ -845,7 +1493,7 @@ def setup_window(app, first=True):
     top = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); top.pack(fill='x')
     if first:                                           # (the title bar says Setup: the welcome only the first time)
         tk.Label(top, text='WELCOME TO VECTREX_EMU', fg=HI, bg=TOPBG, font=f10b, anchor='w').pack(fill='x', padx=14, pady=(8, 0))
-    tk.Label(top, text='Shown once. Everything here can be changed later: the menus, and Config (Tab).',
+    tk.Label(top, text='Shown once. Change anything later in Config (Tab).',
              fg=DIM, bg=TOPBG, font=f9, anchor='w').pack(fill='x', padx=14, pady=(0 if first else 8, 8))
     PB = PANEL                                          # (the boxes' colour)
     # the boxes scroll between the title and the buttons when the screen is not tall enough for all of them (a 1080p
@@ -853,7 +1501,8 @@ def setup_window(app, first=True):
     mid = tk.Frame(t, bg=BG); mid.pack(fill='both', expand=True)
     cv = tk.Canvas(mid, bg=BG, highlightthickness=0, bd=0)
     body = tk.Frame(cv, bg=BG)
-    cv.create_window(0, 0, window=body, anchor='nw')
+    bwin = cv.create_window(0, 0, window=body, anchor='nw')
+    cv.bind('<Configure>', lambda e: cv.itemconfigure(bwin, width=e.width))   # (the boxes as wide as the window)
     sbar = darkmenu.DScroll(mid, command=cv.yview, bg=BG)
     cv.configure(yscrollcommand=sbar.set)
     cv.pack(side='left', fill='both', expand=True)
@@ -871,19 +1520,23 @@ def setup_window(app, first=True):
         tk.Label(bx, text=caption, fg=DIM, bg=PB, font=_font(a, 8), anchor='w').pack(fill='x', padx=10, pady=(4, 0))
         grid = tk.Frame(bx, bg=PB); grid.pack(fill='x', padx=10, pady=(0, 6))
         rowi[0] = 0
-    def row(name):
+    def row(name, info=None):
         r = rowi[0]; rowi[0] += 1
         mark = tk.Label(grid, fg=G, bg=PB, font=f9, width=2); mark.grid(row=r, column=0, sticky='w', pady=3)
-        tk.Label(grid, text=name, fg=HI, bg=PB, font=f9, width=18, anchor='w').grid(row=r, column=1, sticky='w')
-        txt = tk.Label(grid, fg=G, bg=PB, font=f9, anchor='w', justify='left', wraplength=430); txt.grid(row=r, column=2, sticky='w')
+        nf = tk.Frame(grid, bg=PB); nf.grid(row=r, column=1, sticky='w')
+        nl_ = tk.Label(nf, text=name, fg=HI, bg=PB, font=f9, width=16, anchor='w'); nl_.pack(side='left')
+        im = info_mark(nf, PB, info); im.pack(side='left', padx=(0, 6))       # (the long explanation: on hover)
+        if info:
+            Tip(im, info, also=(nl_,))
+        txt = tk.Label(grid, fg=G, bg=PB, font=f9, anchor='w', justify='left', wraplength=520); txt.grid(row=r, column=2, sticky='w')
         side = tk.Frame(grid, bg=PB); side.grid(row=r, column=3, sticky='e', padx=(8, 0))
         return mark, txt, side
     def ok(mark, good):
         mark.configure(text='✓' if good else '!', fg=G if good else WARN)
     # what was found
     box('WHAT WAS FOUND')
-    m, txt, side = row('BIOS')
-    ok(m, os.path.exists(V.BIOS)); txt.configure(text=_rel(V.BIOS) + ' (with Mine Storm built in)' if os.path.exists(V.BIOS) else 'not found: put bios.bin in the system folder')
+    m, txt, side = row('BIOS', "The Vectrex's own 8 KB ROM, with Mine Storm built in: system/bios.bin.")
+    ok(m, os.path.exists(V.BIOS)); txt.configure(text=_rel(V.BIOS) if os.path.exists(V.BIOS) else 'not found: put bios.bin in system')
     # the games, the overlays, the PiTrex, the speech ROM: what is missing red - it can all be downloaded in one go
     import getter
     getter.V_APP = a
@@ -897,41 +1550,42 @@ def setup_window(app, first=True):
         mark.configure(text='✗', fg=RED); txt.configure(text=text, fg=RED)
     found = []                                          # (refreshed after a download: the rows below)
     def games_row():
-        m, txt, side = row('Games')
+        m, txt, side = row('Games', "The games in the roms folder (the ROM browser: L). The GCE originals can be downloaded "
+                                    "from their own sites with the button below.")
         def upd(m=m, txt=txt):
             have, of = getter.games_have()
             if have >= of:
-                ok(m, True); txt.configure(text='roms - %d games, all %d original ones (the ROM browser: L)' % (count(), of), fg=G)
+                ok(m, True); txt.configure(text='%d games, all %d originals' % (count(), of), fg=G)
             else:
-                miss(m, txt, 'roms - %d of the %d original games: the missing ones can be downloaded' % (have, of))
+                miss(m, txt, '%d of %d original games' % (have, of))
         found.append(upd); upd()
     games_row()
-    m, txt, side = row('Overlays')
+    m, txt, side = row('Overlays', 'The plastic overlays: they come with the emulator, in the overlays folder.')
     od = os.path.join(V.ROOT, 'overlays')
     no = len([f for f in os.listdir(od) if f.lower().endswith(('.art', '.png'))]) if os.path.isdir(od) else 0
     if no > 1:
-        ok(m, True); txt.configure(text='%d overlays (they come with the emulator)' % no)
+        ok(m, True); txt.configure(text='%d overlays' % no)
     else:
-        miss(m, txt, "only %d: the overlays come with the emulator - put them back in the overlays folder" % no)
-    def item_row(name, key, have_text, miss_text):
-        m, txt, side = row(name)
+        miss(m, txt, 'only %d: put them back in overlays' % no)
+    def item_row(name, key, have_text, miss_text, info=None):
+        m, txt, side = row(name, info)
         def upd(m=m, txt=txt):
             if getter.state(key, a)[0]:
                 ok(m, True); txt.configure(text=have_text, fg=G)
             else:
                 miss(m, txt, miss_text)
         found.append(upd); upd()
-    item_row('Homebrew games', 'homebrew', 'the free homebrew games that have an overlay',
-             'missing: free homebrew games that have an overlay - they can be downloaded')
-    item_row('Speech ROM', 'speech', 'found: VecVoice / VecVox games can speak',
-             'missing: VecVoice / VecVox games are silent - it can be downloaded')
-    item_row('PiTrex SD card', 'pitrex', '%s (PiTrex: Vectrex > PiTrex)' % _rel(a.px_dir),
-             'missing: the PiTrex has no programs - they can be downloaded')
+    item_row('Homebrew games', 'homebrew', 'found', 'missing',
+             'The free homebrew games that have an overlay; they can be downloaded with the button below.')
+    item_row('Speech ROM', 'speech', 'found', 'missing: speech games stay silent',
+             'The speech chip ROM for the VecVoice / VecVox games; without it they are silent. It can be downloaded.')
+    item_row('PiTrex SD card', 'pitrex', _rel(a.px_dir), 'missing',
+             "The PiTrex's programs (its SD card); they can be downloaded. Start it: Vectrex > PiTrex.")
     # the UVMC2 SD card
-    m, txt, side = row('UVMC2 SD folder')
+    m, txt, side = row('UVMC2 SD folder', 'The folder that is the UVMC2 cartridge\'s SD card: games such as Doom read their files from it.')
     def sd_state(m=m, txt=txt):
         e = os.path.isdir(a.sd_dir); ok(m, e)
-        txt.configure(text=('%s' if e else '%s does not exist yet (UVMC2 games such as Doom need it)') % _rel(a.sd_dir))
+        txt.configure(text=('%s' if e else '%s: not there yet') % _rel(a.sd_dir))
         return e
     if not sd_state():
         def mk_sd():
@@ -950,19 +1604,21 @@ def setup_window(app, first=True):
                 t.after(1000, watch)
         t.after(1000, watch)
     gb = _button(gf, 'Download everything missing', get_all, a, on=bool(missing())); gb.pack(side='left')
-    tk.Label(gf, text=('Everything in red can be downloaded automatically, in one click.' if missing() else
-                       'All there. Vectrex > Get games & extras... fetches them again any time.'),
-             fg=RED if missing() else DIM, bg=PB, font=f9).pack(side='left', padx=(10, 0))
+    Tip(gb, 'Everything in red, downloaded from its own site in one click. Vectrex > Get games & extras... fetches it again any time.')
+    if not missing():
+        tk.Label(gf, text='All there.', fg=DIM, bg=PB, font=f9).pack(side='left', padx=(10, 0))
     # quality
     box('QUALITY')
-    m, txt, side = row('Quality'); ok(m, True)
+    m, txt, side = row('Quality', 'How many of the picture effects this PC draws: Low for weak graphics up to Ultra, every effect. '
+                                  'Optimize: a few short tests find the best settings this PC can run at full speed.'); ok(m, True)
     qv = tk.StringVar(value=a.current_profile())
-    qf = tk.Frame(grid, bg=PB); qf.grid(row=rowi[0], column=2, columnspan=2, sticky='w'); rowi[0] += 1
+    qf = tk.Frame(grid, bg=PB); qf.grid(row=rowi[0] - 1, column=2, sticky='w')   # (the buttons on the row itself; the
+    txt.grid_remove(); txt.grid(row=rowi[0], column=2, columnspan=2, sticky='w'); rowi[0] += 1   #  result below, when there is one)
     qb = {}
     def qset(mode):
         qv.set(mode)
         for k, b in qb.items(): _paint(b, k == mode)
-    for key in ('low', 'medium', 'high'):
+    for key in ('low', 'medium', 'high', 'ultra'):
         b = _button(qf, a.QUALITY_NAMES[key], lambda k=key: qset(k), a, small=True); b.pack(side='left', padx=2); qb[key] = b
     qset(qv.get())
     def optimize(txt=txt):
@@ -976,19 +1632,20 @@ def setup_window(app, first=True):
         txt.configure(text='\n'.join(pctest.result_lines(rep)[:-1]))
     _button(side, 'Optimize', optimize, a, small=True).pack()
     if first:
-        txt.configure(text='Optimize: a few short tests find the best settings this PC can run at full speed.')
+        txt.configure(text='optimizing...')
         t.after(400, optimize)                          # (a new install: at once)
     else:
-        txt.configure(text='%s now. Optimize finds the best this PC can run at full speed.' % a.QUALITY_NAMES[a.current_profile()])
+        txt.grid_remove()                               # (nothing to say until Optimize runs)
+        _orig_cfg = txt.configure
+        def _show(**kw):
+            txt.grid(); return _orig_cfg(**kw)
+        txt.configure = _show
     # the display: one choice, explained, the best for this screen chosen
     v = vrrdetect.detect(a.screen.winfo_id())
     ref = int(round(getattr(a, 'refresh', 0) or 60))
     n60 = max(1, round(ref / 60.0))                     # (the matched rate, as App.apply_rate picks it)
     mhz = 60 if abs(ref - 60 * n60) <= 1 else (int(round(ref / max(1, ref // 50))) if ref >= 50 else 60)
-    box('DISPLAY')
-    m, txt, side = row('Display'); ok(m, True)
-    txt.configure(text='How 50 game frames a second meet this %d Hz screen. None of these tear: all wait for the '
-                       "screen's refresh." % ref)
+    box('DISPLAY: THIS SCREEN IS %d HZ - ALL OF THESE ARE TEAR-FREE' % ref)
     best = ('vrr' if v['vrr'] and (not v.get('lo') or v['lo'] <= 50) else 'max' if ref >= 100 else
             'plain' if mhz % 50 == 0 else 'smooth')
     cur_mode = 'vrr' if a.vrr else 'max' if a.rate == 'max' else 'smooth' if a.smooth else 'plain'
@@ -1011,16 +1668,24 @@ def setup_window(app, first=True):
              ("The purist picture: every game frame as it is. At 60 Hz one picture in five is shown twice - a slight stutter "
               "in moving things." if mhz == 60 else "The purist picture: every game frame as it is. At %d Hz some pictures "
               "stay longer than others - a slight stutter in moving things." % mhz))]
-    df = tk.Frame(grid, bg=PB); df.grid(row=rowi[0], column=1, columnspan=3, sticky='w', pady=(2, 4)); rowi[0] += 1
+    short = {'vrr': 'no stutter: each frame shown when drawn',
+             'max': 'every refresh: the finest afterglow' if ref >= 100 else 'needs a screen above 60 Hz',
+             'smooth': 'smooth movement, the picture 20 ms later',
+             'plain': 'every frame as it is' + (', exactly in step' if mhz % 50 == 0 else ', a slight stutter')}
+    df = tk.Frame(grid, bg=PB); df.grid(row=rowi[0], column=0, columnspan=4, sticky='w', pady=(2, 2)); rowi[0] += 1
     for k, title, expl in opts:
         usable = k != 'max' or ref >= 100
-        rb = tk.Radiobutton(df, text=title + ('   (recommended)' if k == best else ''), variable=dv, value=k,
+        rf = tk.Frame(df, bg=PB); rf.pack(fill='x', anchor='w', pady=1)
+        rb = tk.Radiobutton(rf, text=title + (' (recommended)' if k == best else ''), variable=dv, value=k,
                             command=lambda: touched.__setitem__(0, True), fg=HI if usable else '#2a4a3a', bg=PB,
-                            selectcolor=PB, activebackground=PB, activeforeground=HI, font=f9, anchor='w',
+                            selectcolor=PB, activebackground=PB, activeforeground=HI, font=f9, anchor='w', width=36,
                             highlightthickness=0, bd=0, disabledforeground='#2a4a3a', state='normal' if usable else 'disabled')
-        rb.pack(fill='x', anchor='w')
-        tk.Label(df, text=expl, fg=DIM if usable else '#2a4a3a', bg=PB, font=f9, anchor='w', justify='left',
-                 wraplength=640).pack(fill='x', padx=(22, 0), pady=(0, 4))
+        rb.pack(side='left')
+        sl = tk.Label(rf, text=short[k], fg=DIM if usable else '#2a4a3a', bg=PB, font=f9, anchor='w')
+        sl.pack(side='left')
+        if usable:
+            im = info_mark(rf, PB, expl); im.pack(side='left', padx=(6, 0))
+            Tip(im, expl, also=(sl,))
     def disp_after_test(ms):
         """the quality test: a PC too slow to draw every refresh of a fast screen gets Smooth motion instead"""
         if first and not touched[0] and dv.get() == 'max' and ms and ms * ref > 350.0:
@@ -1041,10 +1706,11 @@ def setup_window(app, first=True):
     tk.Label(kfr, text='  arrows: the stick', fg=DIM, bg=PB, font=f9).pack(side='left')
     kset(cur)
     # switched on
-    m, txt, side = row('Start'); ok(m, True)
+    m, txt, side = row('Start', 'Off: the Vectrex starts switched off - turn the volume knob up (Page Up) to switch it on, '
+                                'as on a real Vectrex.'); ok(m, True)
     son = tk.BooleanVar(value=True if first else a.start_on)
     txt.destroy()
-    tk.Checkbutton(grid, text='Start switched on (else: turn the volume knob, as on a real Vectrex)', variable=son,
+    tk.Checkbutton(grid, text='Start switched on', variable=son,
                    fg=G, bg=PB, selectcolor=PB, activebackground=PB, activeforeground=HI, font=f9,
                    highlightthickness=0, bd=0).grid(row=rowi[0] - 1, column=2, columnspan=2, sticky='w')
     # done
@@ -1088,9 +1754,10 @@ def setup_window(app, first=True):
     x = r.winfo_rootx() + max(0, (r.winfo_width() - tw) // 2)
     y = r.winfo_rooty() + max(0, (r.winfo_height() - th) // 3)
     x = max(x0, min(x, x1 - tw)); y = max(y0, min(y, y1 - th - 40))   # (all of it on the desktop)
-    t.geometry('+%d+%d' % (x, y))
-    t.deiconify()
-    no_close_button(t)
+    pos = saved_place(t, 'setup', a)
+    t.geometry('+%d+%d' % (pos or (x, y)))
+    reveal(t, lambda: no_close_button(t))
+    remember(t, 'setup', a)
     t.focus_force()
     return t
 

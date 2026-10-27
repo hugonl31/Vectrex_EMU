@@ -32,6 +32,37 @@ photo, recording and measurement, and every call on how it should look, sound an
 * **AnimAction's cartridge RAM** - its 8 KB of RAM at $2000, found by itself.
 * **Paused below the picture** - PAUSED shows in the strip below the picture, not on it: a paused game makes a
   clean screenshot.
+* **Faster, and a quality for every PC** - the 6809 emulation in two rounds: about 25 %, then another 27 % less
+  processor time per frame, bit-identical on 68 games; the PiTrex's JIT runs its floating point
+  itself (10-20 % faster, VecDoom's load 17.1 -> 15.5 s) and now boots on Linux and macOS too; the display thread
+  no longer burns a processor core waiting for the screen (the program's processor time 0.37 -> 0.22 s per second).
+  Four quality profiles, **Low, Medium, High, Ultra**, each for a kind of PC - measured on a Raspberry Pi 5 at
+  1080p: Low (the phosphor at half size, 30 pictures a second) runs at full speed, Medium (three-quarter phosphor)
+  went from 62 to 37 ms a picture. **Optimize** measures this PC and turns off only what it must. The on-screen
+  display shows **CPU and GPU meters**: how much of each frame the processor and the graphics card need
+  ([Quality](#quality-for-any-pc)).
+* **The real size of everything** - the case, the glass and the picture rebuilt from an exact trace of a real
+  Vectrex at three times real size: the matte frame is the overlay's own 162 x 207 mm with 3.5 mm of matte band
+  and round corners, the glossy walls slope down to the glass at their old angle, and the Test Cartridge grid lands
+  on the real tube's grid line by line (within 0.05 mm). Overlays lie exactly on the frame, as on the real console
+  ([how it was measured](#10-the-tubes-geometry-measured-not-invented)).
+* **A new Config window** - compact enough for a 1080p laptop at 100, 125 and 150 %: short labels with an *i* for
+  the details, two columns only when a tab is too tall. Changed tabs show in orange, the Quality row says what
+  changed (from Low, Medium, High, Ultra or Optimal), *Hold H* compares with before, Reset this tab / Reset all
+  really reset. Tabs switch at once - no white flashes, no half-drawn controls - and every window opens where you
+  left it.
+* **Online play** - two PCs, one Vectrex: the host shows a five-letter code, player 2 types it in (the **Online**
+  menu). Direct through most home routers, relayed through a meeting-point server when not; only the controllers
+  travel, the emulation is identical on both sides ([Online play](#online-play-two-vectrex_emus-one-game)).
+* **Menus in full screen** - move the mouse to the top edge of the screen (or press Alt) and the menu bar appears
+  over the picture; Tab opens the Config window over the full-screen picture, and the other windows stay in front
+  too.
+* **Fixes** - Vectorblade no longer slows to a crawl after a game change; no false 999 % CPU or speed dips when
+  switching games; the white balance's default is the real Vectrex's cold 12000 K.
+
+<a href="docs/images/v1.0.5/config.png"><img src="docs/images/v1.0.5/config_small.jpg" width="330" alt="the new compact Config window: the Tube tab"></a>
+<a href="docs/images/v1.0.5/online.png"><img src="docs/images/v1.0.5/online_small.jpg" width="400" alt="the Online window: hosting a game, the code for player 2"></a><br>
+<sub>The new Config window (Tube tab; the orange tab has changed settings) and the Online window, hosting a game.</sub>
 
 <a href="docs/images/v1.0.5/lightpen.jpg"><img src="docs/images/v1.0.5/lightpen_small.jpg" width="330" alt="Art Master's SKETCH, drawn with the mouse as the light pen"></a>
 <a href="docs/images/v1.0.5/imager.jpg"><img src="docs/images/v1.0.5/imager_small.jpg" width="330" alt="3D Narrow Escape in colour through the emulated 3D Imager"></a><br>
@@ -565,29 +596,61 @@ were made, not one tired machine.
 
 <p align="center">
 <img src="docs/images/tube_geometry.jpg" width="900" alt="the Test Cartridge grid: a real Vectrex, the emulator with an ideal tube, the emulator with the measured tube"><br>
-<em>The Test Cartridge grid: a real Vectrex (photo, colour neutralised), the emulator with an ideal tube, and with
-the measured one. Note the narrower top, the bowed bottom, the leaning sides and the raised top right corner.</em>
+<em>The first measurement (v1.0.x): the Test Cartridge grid on a real Vectrex (photo, colour neutralised), the
+emulator with an ideal tube, and with the measured one.</em>
+</p>
+
+**Then, the real sizes.** Photos fit the picture to the glass, but not the glass to the case or the case to the
+overlay. So the whole front was traced from a real Vectrex at three times real size, every part on its own layer:
+the matte frame, the edge of the glass, and the Test Cartridge's grid line by line. The anchor is the overlay: a
+real sheet is 162 x 207 mm and lies exactly on the case's matte frame, which is 3.5 mm wide. Everything else is
+measured from there:
+
+* **The frame**: 162 x 207 mm outside, round corners (8.6 mm radius), 3.5 mm of matte, grained plastic; inside it
+  the opening of 155 x 200 mm where the glossy walls start.
+* **The glass**: 145.7 x 188.5 mm, a rounded rectangle with gently bulging sides, centred in the frame. The glossy
+  walls slope from the frame down to it at the same angle as before (68.5 degrees at the sides, 63.5 in the
+  corners), so they mirror the picture as they did.
+* **The picture**: the emulator's own grid - its vectors, as the core draws them - warped onto the traced one.
+  A smooth fit plus a mesh pinned to all 17 x 17 crossings of the grid and to the points between them; measured on
+  the emulator's finished picture (brightness bending included, as the real tube's was in the trace), every line
+  lies within 0.05 mm of the real one. The picture's centre sits a little left of and below the glass's centre,
+  as on the real tube.
+* **All of the grid on screen**: the drawing area is a little wider than before, so the grid's two outer columns -
+  just outside the old one - show, as on a real Vectrex.
+
+<p align="center">
+<a href="docs/images/v1.0.5/tube_match.jpg"><img src="docs/images/v1.0.5/tube_match_small.jpg" width="900" alt="the traced front of a real Vectrex, the emulator's Test Cartridge grid, and the two laid over each other"></a><br>
+<em>Left: the trace of a real Vectrex - the matte frame (red), the edge of the glass (blue), the Test Cartridge's
+grid (green). Middle: the emulator's own picture of that grid. Right: the traced grid (red) laid over the
+emulator's picture - the emulator's lines are underneath it.</em>
+</p>
+
+<p align="center">
+<img src="docs/images/v1.0.5/tube_zoom.jpg" width="700" alt="close-up: the traced grid in red exactly over the emulator's lines"><br>
+<em>Close-ups: the top left corner and the middle. Where the emulator's white lines show beside the red, the
+cartridge draws its middle lines twice, 0.7 mm apart - the trace runs between them.</em>
 </p>
 
 How it works:
 
-* **The straight part** - how big the picture is on the tube (it is smaller than the drawing area, and
-  not quite in proportion) - is always on, so the picture and an overlay keep their size and place when
-  the imperfections are switched off. It also moves the picture up by 1 % of its height: Solar Quest's sun
-  then sits exactly in its overlay's star, as on the real machine.
-* **The imperfections** are a small polynomial (up to the third power) in x and y fitted to the grid
-  photo, plus the pull of that one corner. They are zero in the middle of the screen, so turning them up
-  or down never moves the centre. **Tube > Tube geometry strength** scales them: x1 is the measured tube,
-  0 an ideal one, x2 a more worn-looking one.
+* **The straight part** - how big the picture is on the tube - is always on, so the picture and an overlay keep
+  their size and place when the imperfections are switched off.
+* **The imperfections** are the rest of the measured map, kept as a small table (a few hundred numbers,
+  interpolated between them - as cheap as the formula it replaced). They are zero in the middle of the screen, so
+  turning them up or down never moves the centre. **Tube > Tube geometry strength** scales them: x1 is the measured
+  tube, 0 an ideal one, x2 a more worn-looking one.
 * **The vectors are bent, not the picture.** Every line goes through the map before it is drawn; long
   lines are cut into short pieces so they curve, each piece keeping its share of the beam's energy and its
   moment in the frame (so the phosphor's glow and afterglow stay exact). Nothing is stretched as a texture:
   the lines stay as sharp as the tube draws them.
-* **Overlays are not bent.** A real overlay is a flat sheet of plastic in front of the glass, so it is only
-  scaled (the same both ways, keeping MiSTer's proportions) to sit on the tube's smaller picture, centred.
-* **The glass** has the shape of the real screen opening: a rounded rectangle (a superellipse) with a
-  slightly soft edge, black around it as on the console's casing - as much above it as beside it - with the
-  on-screen display and the knob lined up with its edges (**Tube > Glass edge**).
+* **Overlays are not bent, and not moved.** A real overlay is a flat sheet of plastic lying on the case's frame,
+  so it is drawn exactly there: 162 x 207 mm. Its fine adjustment (Overlay left / right, up / down, size) moves and
+  sizes the game's picture behind it instead, the other way - the sheet never leaves the frame. With the overlay
+  off, the picture is as measured. **Parallax** shows the picture behind the glass a little higher than the sheet,
+  as seen from the usual viewing height.
+* **The glass** has the traced outline with a slightly soft edge, the case round it as described above, and
+  black around the case - the same on every side, and below it the on-screen display and the knob.
 
 ### 11. The room's light: the glass, the phosphor and the reflections
 
@@ -805,19 +868,25 @@ The quality is a profile of the costly picture effects - never the emulation, wh
 their switches in Config; change any picture setting (Tube, Room light, Case, Overlay) and the profile reads
 **Custom**:
 
-| Quality | |
-|---|---|
-| **Low** | the Vectrex look for old laptops: the afterglow, the glow, the corner dots and the overlay's colours kept; the tube's curve and glass edge, the overlay's scratches, plastic glow and parallax, the room light and reflections, the case's reflections, the bends' smoothing and the dither off |
-| **Medium** | all but the room light and its reflections; a lighter glow |
-| **High** | every effect on |
+| Quality | | For |
+|---|---|---|
+| **Low** | Medium's cuts, and the phosphor (the afterglow, the display pass, the bloom's source) drawn at half the window's size while the vectors themselves stay at full size, 30 pictures a second instead of 60 | a Raspberry Pi 5, old laptops with integrated graphics |
+| **Medium** | the Vectrex look: the afterglow, the glow, the corner dots and the overlay's colours kept; the tube's curve and glass edge, the overlay's scratches and plastic glow, the room light and reflections, the case's reflections and the dither off; the phosphor at three quarters of the window's size | laptops of the last years |
+| **High** | all but the room light and its reflections; a lighter glow | a MacBook Air, any discrete graphics card |
+| **Ultra** | every effect on | a gaming PC |
+
+Measured on a Raspberry Pi 5 at 1920 x 1080 (2026-10-27): Ultra and High about 300 ms per picture (3 a second - the
+emulation itself at full speed throughout), Medium 37 ms with its three-quarter phosphor (62 ms at full size), Low
+full speed. The two Low switches are
+also in Display > Weak graphics, for any profile.
 
 **Optimize** (View > Quality, the Config window, and the first-start setup) says what it will do, then draws a
 heavy scene for a few seconds and measures each effect on this PC - the processor and the graphics card. It turns
 off only what it has to for the full emulation speed, the costliest first, and keeps everything that saves less
 than 2 %. Then it says what it turned off; **Undo** puts it back. The result is the **Custom** profile, and the
 Config window marks every setting that differs from its default with a dot. Nothing changes by itself while you
-play. Choosing Low, Medium or High sets all picture settings to that profile; **Reset all** in the Config window
-puts every strip back to the chosen profile (from Custom: High).
+play. Choosing Low, Medium, High or Ultra sets all picture settings to that profile; **Reset all** in the Config window
+puts every strip back to the chosen profile (from Custom: Ultra).
 
 <p align="center">
 <a href="docs/images/v1.0.4/ui_config.png"><img src="docs/images/v1.0.4/ui_config_small.jpg" width="440" alt="the Config window: Quality, Optimize, the changed settings marked"></a><br>
@@ -1168,6 +1237,26 @@ and the SD card.
   library the programs use) - Elite and GS BASIC find their keyboard. **Ctrl+K** types on it (the keys then go to the
   PiTrex, not the controller; Ctrl+K again gives them back). Cartridge strip: *The PC's mouse and keyboard on its USB
   port*.
+
+### Online play: two Vectrex_EMUs, one game
+
+Two players, two PCs, one Vectrex: the host is player 1 and chooses the game, the other PC joins as player 2 and
+both switch on together. Only the controllers travel over the network (4 bytes a frame): the emulator is
+deterministic, so both machines compute the same game, to the bit. The **Online** menu does it all: *Host this
+game...* shows a five-letter code for player 2, who types it in *Join a game...*; the Online window also shows the
+connection (round trip, input delay, direct or relayed) and its settings. From the command line:
+
+```
+Vectrex_EMU.exe "roms\Armor Attack.bin" --net-online     the host: it shows a five-letter code
+Vectrex_EMU.exe --net-join KRAVE                          player 2, with that code
+```
+
+The code goes through a small meeting-point server (`tools/vxrelay.py`), which puts the two PCs in touch directly
+(through most home routers without any settings) and relays the packets when that is not possible. Without the
+server: `--net-host` on the host (its router forwards UDP port 7744) and `--net-join ADDRESS` on the other side.
+Player 2 needs the same ROM in its `roms` folder (found by checksum). The host measures the round trip and sets the
+input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and
+through a simulated bad connection (40-60 ms each way, 10 % packet loss): identical pictures throughout.
 
 ### Mac and Linux notes
 

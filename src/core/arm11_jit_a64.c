@@ -640,6 +640,11 @@ static void j_emit (jins_t *I)
 		break;
 	}
 	case K_CPNOP: break;
+	case K_COP:                                        /* (the interpreter's copro, called in place: jh_cop - VFP, the counters) */
+		addm64 (OF (cycles), -(int32_t) dl);
+		movw (1, ins); movw (2, ip); mov_x0_c (); call ((void *) jh_cop);
+		addm64 (OF (cycles), (int32_t) dl);
+		break;
 	case K_MRC: {
 		unsigned rt = (ins >> 12) & 15;
 		addm64 (OF (cycles), -(int32_t) dl);
@@ -684,7 +689,8 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	addm64 (OF (cycles), (int32_t) tot);
 	ncold = 0; nicold = 0;
 	for (int i = 0; i < n; i++) {
-		int mem = L[i].kind == K_LS || L[i].kind == K_LSX || L[i].kind == K_LDM || L[i].kind == K_MRC;
+		int mem = L[i].kind == K_LS || L[i].kind == K_LSX || L[i].kind == K_LDM || L[i].kind == K_MRC ||
+		          (L[i].kind == K_COP && ((L[i].ins >> 25) & 7) == 6);   /* (VLDR / VSTR: a peripheral too) */
 		j_emit (&L[i]);
 		if (L[i].ends && ((L[i].ins >> 28) == 14 || i == n - 1)) break;
 		if (L[i].kind == K_B) continue;

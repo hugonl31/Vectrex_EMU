@@ -911,7 +911,7 @@ also in Display > Weak graphics, for any profile.
 heavy scene for a few seconds and measures each effect on this PC - the processor and the graphics card. It turns
 off only what it has to for the full emulation speed, the costliest first, and keeps everything that saves less
 than 2 %. Then it says what it turned off; **Undo** puts it back. The result is the **Custom** profile, and the
-Config window marks every setting that differs from its default in orange: a checkbox turns orange, a slider
+Config window marks every setting that differs from its default in orange: a checkbox's text turns orange, a slider
 shows an orange stripe where its default is. Nothing changes by itself while you
 play. Choosing Low, Medium, High or Ultra sets all picture settings to that profile; **Reset all** in the Config window
 puts every strip back to the chosen profile (from Custom: Ultra).

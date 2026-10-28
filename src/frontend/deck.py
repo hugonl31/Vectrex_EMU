@@ -11,8 +11,7 @@ from tkinter import filedialog
 
 V = None                                # (the app's module: set by vectrex_emu)
 G, BG, DIM, HI, ROWBG, WARN = '#6a8', '#05080a', '#4a7a62', '#8cb', '#16302a', '#e93'
-RED = '#e55'
-WARN_BOX = '#5a3510'                     # (a changed checkbox: its box filled dark orange)                            # (missing: the setup window, Get games & extras)
+RED = '#e55'                            # (missing: the setup window, Get games & extras)
 TOPBG, PANEL, BODY, EDGE, EDGE2 = '#0a1210', '#0b1511', '#0f1c17', '#1d3329', '#2f5544'   # (the areas: bars, boxes, the strip)
 
 
@@ -1154,12 +1153,12 @@ class Deck:
                            anchor='w', highlightthickness=0, bd=0, disabledforeground='#2a4a3a')
         c.pack(side='left')
         self.with_info(f, c, label)
-        def sync():                                             # (changed from its default: the box and its text orange)
+        def sync():                                             # (changed from its default: its text orange)
             v.set(bool(get()))
             chg = own(self.app) if own else (key and self.changed(key))
             col = WARN if chg else G
             if c.cget('fg') != col:
-                c.configure(fg=col, activeforeground=col if chg else HI, selectcolor=WARN_BOX if chg else self.bgc)
+                c.configure(fg=col, activeforeground=col if chg else HI)
         return dict(kind='check', f=f, w=c, sync=sync, dep=dep, act=lambda d: (cmd(), self.sync_all()))
 
     def mk_note(self, text):

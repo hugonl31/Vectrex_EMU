@@ -1108,7 +1108,7 @@ def ver_key(s):
     return tuple(int(x) for x in n[:4]) if n else None
 
 
-CHAT_TICK = '\u25b8 '        # (the chat: where a message begins)
+CHAT_SHADE_THEM, CHAT_SHADE_ME = '#101d18', '#0b1712'   # (the chat: the other player's messages and yours shaded)
 CHAT_USER, CHAT_NAME = '#c4ccc8', '#e4e9e6'   # (the chat: the players' lines muted white, their names brighter; the
                                                #  emulator's own lines in the green of the rest)
 OSD_CHARS = 20             # (the OSD's width in characters, always: its widest row - ONLINE: RELAY 120 MS)
@@ -5245,7 +5245,7 @@ class App:
         body = tk.Frame(t, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE); body.pack(fill='both', padx=10, pady=(8, 0))
         log = tk.Text(body, width=46, height=9, bg='#06100d', fg='#bfe', font=f9, relief='flat', wrap='word', bd=0,
                       highlightthickness=0, padx=8, pady=6, cursor='arrow', takefocus=0,
-                      spacing1=11, spacing2=1)                  # (room between two messages, little inside a wrapped one)
+                      spacing1=4, spacing2=1, spacing3=3)       # (a little room between two messages)
         sbar = darkmenu.DScroll(body, command=log.yview, bg=bg)
         tk.Canvas.configure(sbar, height=10)                    # (the text's lines set the height, not the bar)
         sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
@@ -5283,18 +5283,20 @@ class App:
         log.tag_configure('who_me', foreground=CHAT_NAME, font=(MONO, 10, 'bold'))
         log.tag_configure('who_them', foreground=CHAT_NAME, font=(MONO, 10, 'bold'))
         import tkinter.font as tkfont
-        log.tag_configure('tick', foreground=deck.DIM)
-        log.tag_configure('msg', lmargin1=0, lmargin2=tkfont.Font(font=f9).measure(CHAT_TICK))
+        for who_, shade in (('me', CHAT_SHADE_ME), ('them', CHAT_SHADE_THEM)):   # (each player's messages on their own
+            log.tag_configure('row_' + who_, background=shade, lmargin1=6, lmargin2=6, rmargin=6,   #  shade, the whole
+                              lmargincolor=shade, rmargincolor=shade)                                 #  width; the
+        log.tag_configure('row_sys', lmargin1=6, lmargin2=6, rmargin=6)                                #  emulator's: none)
+        log.tag_raise('row_me'); log.tag_raise('row_them')
         def add_line(who, text):
             at_end = log.yview()[1] >= 0.999
             log.configure(state='normal')
-            if log.index('end-1c') != '1.0':
-                log.insert('end', '\n')
-            log.insert('end', CHAT_TICK, ('tick', 'msg'))       # (a tick where each message begins; its wrapped lines
-            if who == 'sys':                                    #  indented under its text)
-                log.insert('end', text, ('sys', 'msg'))
+            row = 'row_' + who                                  # (the line's end in the row's tag too: its shade runs to
+            if who == 'sys':                                    #  the right edge)
+                log.insert('end', text, ('sys', row))
             else:
-                log.insert('end', (me if who == 'me' else them) + ': ', ('who_' + who, 'msg')); log.insert('end', text, (who, 'msg'))
+                log.insert('end', (me if who == 'me' else them) + ': ', ('who_' + who, row)); log.insert('end', text, (who, row))
+            log.insert('end', '\n', (row,))
             log.configure(state='disabled')
             if at_end or who == 'me':
                 to_end()
@@ -5345,7 +5347,7 @@ class App:
             t.destroy()
         t.bind('<Escape>', back)
         t.protocol('WM_DELETE_WINDOW', close)
-        try:                                                    # (as many lines as the screen holds, 9 to 30)
+        try:                                                    # (as many lines as the screen holds, 9 to 22)
             import tkinter.font as tkfont
             t.update_idletasks()
             x0, y0, x1, y1 = deck.work_area(t)
@@ -5353,7 +5355,7 @@ class App:
             other = t.winfo_reqheight() - log.winfo_reqheight()
             title = int(40 * t.winfo_fpixels('1i') / 96.0)       # (the title bar, scaled)
             lines = int(((y1 - y0) * 0.85 - other - title) / lh)
-            log.configure(height=max(9, min(30, lines)))
+            log.configure(height=max(9, min(22, lines)))
         except (tk.TclError, ValueError):
             pass
         deck.place(t, 'chat', self)

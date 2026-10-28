@@ -141,6 +141,12 @@ TOPICS = [
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
 ('item', 'Join a game...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
          "have the same ROM in your roms folder (found by its contents, whatever its file name)."),
+('item', 'UVMC2 games and PiTrex programs', "They can be played online too. Both players need the same SD card "
+         "files: the host's card is compared with player 2's, file by file, and the game runs from the files both have "
+         "the same (nothing is copied between the PCs; a file only one side has is missing on both screens, and the chat "
+         "says how many). While online the UVMC2's two cores run on one PC thread and the PiTrex's JIT in its exact mode, "
+         "so both PCs compute the same to the bit - a heavy game like VecDoom may run slower than alone. The PC's "
+         "keyboard and mouse do not reach the cartridge while online."),
 ('item', 'Chat... (Ctrl+T)', "Write to the other player while you play: type a line, Enter sends it, Esc gives the "
          "keyboard back to the game (the window stays; a game controller plays on while you type). The window opens by "
          "itself when the other player writes, and their line also shows briefly in the picture - in full screen too."),
@@ -149,7 +155,8 @@ TOPICS = [
          "hosting without it - on a LAN, or with UDP port 7744 forwarded to this PC - and the ONLINE row in the on-screen "
          "display (the round trip in milliseconds, RELAY when the meeting point passes the game on)."),
 ('more', 'How the two PCs stay in step', "Each side sends its controller every frame and runs a frame only when it has "
-         "both: a game never differs between the two. The host measures the round trip and sets an input delay that hides "
+         "both: a game never differs between the two (twice a second both compare a checksum of the emulated machine: "
+         "if they ever differ, OUT OF SYNC shows and the chat says so). The host measures the round trip and sets an input delay that hides "
          "it (3 frames on a LAN, up to 12 far away). Most home routers let the two PCs talk directly once the meeting "
          "point has introduced them; when two strict routers will not, the meeting point relays the packets."),
 ]),

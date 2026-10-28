@@ -567,3 +567,11 @@ static int pitrex_cycle (void)
 	      px_cpu.r[15], px_cpu.r[14], px_cpu.r[13], arm11_cpsr (&px_cpu), (unsigned long long) px_cpu.cycles, (unsigned long long) px_cpu.steps, px_n_acc, px_cpu.wait_on, px_cpu.irq_line, px_cpu.wait_addr, px_cpu.wait_val, px_out[0], px_outmask, px_rdy, px_pending); }
 	return 1;
 }
+
+uint32_t pitrex_sig (void)                  /* (online play: the Pi's state in one number - cycles, registers, accesses; live.c) */
+{
+	uint32_t h = 2166136261u;
+	h = (h ^ (uint32_t) px_cpu.cycles) * 16777619u; h = (h ^ (uint32_t) (px_cpu.cycles >> 32)) * 16777619u;
+	for (int i = 0; i < 16; i++) h = (h ^ px_cpu.r[i]) * 16777619u;
+	return (h ^ (uint32_t) px_n_acc) * 16777619u;
+}

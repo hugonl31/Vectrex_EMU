@@ -27,4 +27,5 @@ int rp_audio_take (rp2350_t *rp, int16_t *buf, int max_frames, int *rate);
 const char *rp_fault (rp2350_t *rp);
 /* an SD card image (a FAT file system, raw sectors) or NULL for none */
 void rp_set_sd (rp2350_t *rp, const char *image_path);
+uint32_t rp2350_sig (rp2350_t *rp);                  /* (the chip's state in one number: online play) */
 #endif

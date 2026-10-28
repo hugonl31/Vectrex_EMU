@@ -10,7 +10,8 @@
  *                     flags bit6 = 3 more bytes follow: the 2nd-player port (jx2+128, jy2+128, buttons
  *                     bit0..3 = player 2's buttons 1..4); without it player 2 is centred, no buttons
  *                     flags bit7 = quit
- *       out (stdout): "VF" u16 nlines u16 nsamples u32 frame start cycle (low 32 bits), then nlines x (u16 x0 y0 x1 y1 (+ 8000: LIVE_OFS), u8 bright, u16 beam energy on the line in 1/8 cycles, u16 start cycle in the frame),
+ *       out (stdout): "VF" u16 nlines u16 nsamples u32 frame start cycle (low 32 bits), u32 the state's checksum (the
+ *                     console's RAM and cycle count, a UVMC2's / PiTrex's CPU state: online play compares it), then nlines x (u16 x0 y0 x1 y1 (+ 8000: LIVE_OFS), u8 bright, u16 beam energy on the line in 1/8 cycles, u16 start cycle in the frame),
  *                     then nsamples signed 16-bit PCM samples at 44100 Hz (little endian)
  *       Every input message is appended to REC.bin (header + 4 bytes per frame), so the session
  *       can be replayed exactly: the emulator is deterministic and only these inputs reach it.
@@ -144,7 +145,7 @@ static int live_main (const char *recfn, const char *symfn)
 	if (symfn && load_syms (symfn)) { opt_addr = SA (S_OPTIONS); gflags_addr = SA (S_GFLAGS); }
 	abuf_cap = 32768; abuf = malloc (abuf_cap);
 	{ extern int vt_uvm2, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2 || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
-	static unsigned char out[10 + 30000 * 14 + 32768];   /* (30000: the beam-trace mode's pieces; 14: a 3D Imager colour each) */
+	static unsigned char out[16 + 30000 * 14 + 2 + 32768];   /* (30000: the beam-trace mode's pieces; 14: a 3D Imager colour each) */
 	unsigned char m[8];
 	long nframes = 0;
 	unsigned long long piece0 = 0;
@@ -176,6 +177,10 @@ static int live_main (const char *recfn, const char *symfn)
 		  *p++ = 'V'; *p++ = vt_imager ? 'C' : 'F'; put16 (p, n); p += 2;   /* ('VC': each line's colour follows the lines) */ put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
 		{ unsigned t = (unsigned) piece0;               /* the frame's start (absolute cycles): its lines' times count from it */
 		  put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
+		{ extern int vt_uvm2, vt_pitrex; extern uint32_t uvm2_sig (void), pitrex_sig (void);   /* the state's checksum */
+		  uint32_t s = ram_sum () ^ (uint32_t) total_cycles * 2654435761u;
+		  if (vt_uvm2) s ^= uvm2_sig (); else if (vt_pitrex) s ^= pitrex_sig ();
+		  put16 (p, s & 0xffff); put16 (p + 2, s >> 16); p += 4; }
 		for (int i = 0; i < n; i++) {
 			line_t *l = &last[i];
 			/* (+ LIVE_OFS: the beam goes past the canvas, vecx.c ALG_CLIP; the frontend takes it off) */

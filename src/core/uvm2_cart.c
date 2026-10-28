@@ -153,3 +153,8 @@ int uvm2_jack44 (int16_t *out, int n)
 	if (nin > 8000) { memmove (in, in + nin - 4000, 4000 * 2); nin = 4000; }   /* (never far behind) */
 	return k;
 }
+
+uint32_t uvm2_sig (void)                    /* (online play: the cartridge's state in one number, live.c) */
+{
+	return uvm2 ? rp2350_sig (uvm2) : 0;
+}

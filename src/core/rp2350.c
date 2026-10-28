@@ -1966,3 +1966,16 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 uint64_t rp_sio_mask (rp2350_t *rp) { return rp->m_sio; }
 uint64_t rp_gpio_out (rp2350_t *rp) { return rp->gpio_out; }
 uint32_t rp_gpio_ctrl (rp2350_t *rp, int pin) { return rp->gpio_ctrl[pin]; }
+
+/* the chip's state in one number (online play: both sides compare it now and then - live.c): the cores' cycle counts
+ * and registers, which part from the other side's at the first instruction that runs differently */
+uint32_t rp2350_sig (rp2350_t *rp)
+{
+	uint32_t h = 2166136261u;
+	for (int k = 0; k < 2; k++) {
+		const cm33_t *c = &rp->cpu[k];
+		h = (h ^ (uint32_t) c->cycles) * 16777619u; h = (h ^ (uint32_t) (c->cycles >> 32)) * 16777619u;
+		for (int i = 0; i < 16; i++) h = (h ^ c->r[i]) * 16777619u;
+	}
+	return h;
+}

@@ -3,6 +3,26 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.6
+
+**Online play for UVMC2 games and PiTrex programs** (2026-10-28)
+- VecDoom, Veccy Road, Tempest, Space Duel, Vectorblade and the rest of the UVMC2 and PiTrex library can now be played
+  online, like a plain cartridge: Online > Host this game... on the host, the code on player 2's side.
+- The SD card: the host sends its card's file list (name, size, checksum) and player 2 answers which files it has the
+  same. Both play from those files only, from an identical card image built on each PC (fixed file dates, nothing is
+  copied between the PCs and nothing is written back to the card folder). When some files differ the chat says how
+  many of the host's files both have.
+- Identical to the bit on both PCs: while online the UVMC2's two cores run on one PC thread and the PiTrex's JIT in its
+  exact mode (the threaded and fast modes can differ by a few instructions between two PCs); the PC's keyboard and
+  mouse do not reach the cartridge. Measured on a desktop Ryzen 7 9800X3D: VecDoom 1.4x real time, Veccy Road 2.0x, the PiTrex
+  games 3.6 to 6.6x - a much slower PC may not keep VecDoom at full speed online.
+- A sync check for every game: twice a second both sides compare a checksum of the emulated machine (the Vectrex's
+  RAM and cycle count, the UVMC2's or PiTrex's processor state). Should the two games ever part, ONLINE: OUT OF SYNC
+  shows and the chat says at which frame. Tested two PCs on one machine with a check every frame: Space Duel (PiTrex)
+  1017 checks, Veccy Road (UVMC2) 1486, Armor Attack 391 - all the same.
+- Both players need v1.0.6 for UVMC2 and PiTrex games online (with v1.0.5 the host says the SD cards could not be
+  compared); plain cartridges still play between v1.0.5 and v1.0.6.
+
 ## v1.0.5
 
 **The real size of everything** (update, 2026-10-28)

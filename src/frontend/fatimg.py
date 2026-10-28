@@ -66,8 +66,11 @@ def _lfn_entries(name, short11):
     return list(reversed(out))
 
 
+_UTC = [False]                                                    # (online play's card: dates in UTC, not this PC's zone)
+
+
 def _dos_time(t):
-    lt = time.localtime(t)
+    lt = time.gmtime(t) if _UTC[0] else time.localtime(t)
     y = max(1980, lt.tm_year)
     return ((lt.tm_hour << 11) | (lt.tm_min << 5) | (lt.tm_sec // 2)), (((y - 1980) << 9) | (lt.tm_mon << 5) | lt.tm_mday)
 
@@ -77,20 +80,35 @@ def _entry(short11, attr, cluster, size, mtime):
     return short11 + struct.pack('<BBBHHHHHHHI', attr, 0, 0, t, d, d, cluster >> 16, t, d, cluster & 0xffff, size)
 
 
-def _tree_size(folder):
+def _tree_size(folder, only=None):
     total = 0
     for root, dirs, files in os.walk(folder):
         for f in files:
+            p = os.path.join(root, f)
+            if only is not None and os.path.relpath(p, folder).replace(os.sep, '/').lower() not in only:
+                continue
             try:
-                total += os.path.getsize(os.path.join(root, f))
+                total += os.path.getsize(p)
             except OSError:
                 pass
     return total
 
 
-def build(folder, img_path, min_mb=64):
-    """write a FAT32 image of folder (which may be missing: an empty card) to img_path; returns the size"""
-    content = _tree_size(folder) if folder and os.path.isdir(folder) else 0
+def build(folder, img_path, min_mb=64, only=None, fixed_time=None):
+    """write a FAT32 image of folder (which may be missing: an empty card) to img_path; returns the size.
+    only: a set of paths (relative, '/', lower case) - just those files (and the folders that hold them);
+    fixed_time: one date for everything on the card (online play: both sides build the same card, to the byte)"""
+    content = _tree_size(folder, only) if folder and os.path.isdir(folder) else 0
+    _UTC[0] = fixed_time is not None
+    mtime = (lambda p: fixed_time) if fixed_time is not None else os.path.getmtime
+    clock = (lambda: fixed_time) if fixed_time is not None else time.time
+    def wanted(p, isdir):
+        if only is None:
+            return True
+        rel = os.path.relpath(p, folder).replace(os.sep, '/').lower()
+        return rel in only if not isdir else any(o.startswith(rel + '/') for o in only)
+    def listing(path):
+        return [x for x in os.listdir(path) if wanted(os.path.join(path, x), os.path.isdir(os.path.join(path, x)))]
     mb = max(min_mb, (content * 2 + (32 << 20)) >> 20)
     mb = max(mb, 272)                                             # (4 KB clusters need >= 65525 of them for FAT32)
     total = mb * 2048                                             # sectors
@@ -126,13 +144,13 @@ def build(folder, img_path, min_mb=64):
         """the directory's entries; its own cluster chain is allocated by the caller beforehand"""
         ents = []
         if parent_cl is not None:
-            now = time.time()
+            now = clock()
             ents.append(_entry(b'.          ', 0x10, self_cl, 0, now))
             ents.append(_entry(b'..         ', 0x10, parent_cl if parent_cl != 2 else 0, 0, now))
         else:
             ents.append(b'VECTREX SD '.ljust(11) + bytes([0x08]) + b'\x00' * 20)   # (the volume label)
         used = set()
-        names = sorted(os.listdir(path), key=str.lower) if path and os.path.isdir(path) else []
+        names = sorted(listing(path), key=str.lower) if path and os.path.isdir(path) else []
         for nm in names:
             p = os.path.join(path, nm)
             if nm.startswith('.') and nm in ('.', '..'):
@@ -140,13 +158,13 @@ def build(folder, img_path, min_mb=64):
             short, need_lfn = _short_name(nm, used)
             if os.path.isdir(p):
                 # (size the subdirectory first, then allocate and fill it)
-                sub_cnt = 2 + sum(1 + (len(x) + 12) // 13 for x in os.listdir(p))
+                sub_cnt = 2 + sum(1 + (len(x) + 12) // 13 for x in listing(p))
                 cl, _ = alloc((sub_cnt + 1) * 32)
                 sub = make_dir(p, cl, self_cl)
                 put(cl, sub)
                 lfn = _lfn_entries(nm, short) if need_lfn or nm != nm.upper() else []
                 ents.extend(lfn)
-                ents.append(_entry(short, 0x10, cl, 0, os.path.getmtime(p)))
+                ents.append(_entry(short, 0x10, cl, 0, mtime(p)))
             elif os.path.isfile(p):
                 blob = open(p, 'rb').read()
                 cl = 0
@@ -155,12 +173,12 @@ def build(folder, img_path, min_mb=64):
                     put(cl, blob)
                 lfn = _lfn_entries(nm, short) if need_lfn or nm != nm.upper() else []
                 ents.extend(lfn)
-                ents.append(_entry(short, 0x20, cl, len(blob), os.path.getmtime(p)))
+                ents.append(_entry(short, 0x20, cl, len(blob), mtime(p)))
         raw = b''.join(ents)
         return raw + b'\x00' * 32                                 # (an end marker)
 
     # the root: its size first
-    root_names = os.listdir(folder) if folder and os.path.isdir(folder) else []
+    root_names = listing(folder) if folder and os.path.isdir(folder) else []
     root_cnt = 2 + sum(1 + (len(x) + 12) // 13 for x in root_names)
     root_cl, _ = alloc((root_cnt + 1) * 32)
     assert root_cl == 2
@@ -172,7 +190,7 @@ def build(folder, img_path, min_mb=64):
     struct.pack_into('<HBHBHHBHHHII', bs, 11, SECTOR, spc, reserved, nfats, 0, 0, 0xF8, 0, 63, 255, 0, total)
     struct.pack_into('<IHHIHH', bs, 36, fatsz, 0, 0, 2, 1, 6)
     bs[64] = 0x80; bs[66] = 0x29
-    struct.pack_into('<I', bs, 67, int(time.time()) & 0xffffffff)
+    struct.pack_into('<I', bs, 67, int(clock()) & 0xffffffff)
     bs[71:82] = b'VECTREX SD '; bs[82:90] = b'FAT32   '
     bs[510:512] = b'\x55\xAA'
     fsinfo = bytearray(SECTOR)

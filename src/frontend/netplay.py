@@ -48,6 +48,7 @@ SERVER = (os.environ.get('VECTREX_NET_SERVER', '172.233.60.40'), int(os.environ.
 RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
+SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
 
 
 def rom_md5(path):
@@ -72,6 +73,54 @@ def find_rom(md5, size, folders):
                 if rom_md5(p) == md5:
                     return p
     return None
+
+
+# ---- a cartridge with an SD card (UVMC2, PiTrex): both sides must play from the same card, to the byte
+CARD_CHUNK = 900                # (bytes of the host's card list a packet)
+CARD_TIME = 1104537600          # (2005-01-01: every file's date on the card both play from - no PC's own dates)
+
+
+def card_manifest(folder, cache_path=None):
+    """[[path, size, md5]] of every file under an SD card folder (path with '/', sorted); the MD5s are kept in
+    cache_path by path, size and date (a big card is hashed once)"""
+    cache = {}
+    if cache_path:
+        try:
+            with open(cache_path, encoding='utf-8') as f:
+                cache = json.load(f)
+        except (OSError, ValueError):
+            cache = {}
+    out, new = [], {}
+    if folder and os.path.isdir(folder):
+        for d, dirs, files in os.walk(folder):
+            dirs.sort(key=str.lower)
+            for fn in files:
+                full = os.path.join(d, fn)
+                rel = os.path.relpath(full, folder).replace(os.sep, '/')
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue
+                key = '%s|%d|%d' % (full, st.st_size, int(st.st_mtime))
+                md5 = cache.get(key) or rom_md5(full)
+                if not md5:
+                    continue
+                new[key] = md5
+                out.append([rel, st.st_size, md5])
+    if cache_path:
+        try:
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump(new, f)
+        except OSError:
+            pass
+    out.sort(key=lambda e: e[0].lower())
+    return out
+
+
+def card_matches(manifest, folder, cache_path=None):
+    """which of the host's card files this side has, the same to the byte: a list of booleans"""
+    mine = {(e[0].lower(), e[1], e[2]) for e in card_manifest(folder, cache_path)}
+    return [(e[0].lower(), e[1], e[2]) in mine for e in manifest]
 
 
 def is_code(s):
@@ -121,6 +170,10 @@ class NetPlay:
         self.chat_got = {}                              # (arrived ahead of an earlier one: held, to keep the order)
         self.chat_next = 0
         self.chat_t = 0.0
+        # the sync check: every SYNC_EVERY frames both sides send the core's state checksum for that frame; the first
+        # frame where they differ is kept (desync) - the two games have parted (should never happen)
+        self.sums_mine, self.sums_theirs = {}, {}
+        self.desync = None
 
     def reset(self):
         """frame 0: the power-on frame of the game both play"""
@@ -331,6 +384,71 @@ class NetPlay:
             self._send(ord('A') if ok else ord('N'), why.encode())
             time.sleep(0.02)
 
+    # ---- the sync check
+    def mark(self, f, state):
+        """this side's state checksum after frame f (the core's, live.c): every SYNC_EVERY frames it goes to the other side"""
+        if f % SYNC_EVERY:
+            return
+        self.sums_mine[f] = state & 0xffffffff
+        self._send(ord('S'), struct.pack('<II', f, state & 0xffffffff))
+        self._compare(f)
+        for old in [k for k in self.sums_mine if k < f - 40 * SYNC_EVERY]:
+            del self.sums_mine[old]
+
+    def _compare(self, f):
+        if f in self.sums_mine and f in self.sums_theirs:
+            if self.sums_mine[f] != self.sums_theirs.pop(f) and self.desync is None:
+                self.desync = f
+                self.log('out of sync at frame %d' % f)
+
+    # ---- the SD card both play from (after the game was accepted)
+    def send_card(self, manifest, timeout=60.0, stop=lambda: False):
+        """host: its card's file list to player 2, in pieces until all have arrived; returns player 2's answer (a list
+        of booleans: which files it has the same) or None"""
+        import zlib
+        blob = zlib.compress(json.dumps(manifest).encode(), 9)
+        parts = [blob[k:k + CARD_CHUNK] for k in range(0, len(blob), CARD_CHUNK)] or [b'']
+        t0 = time.perf_counter(); i = 0
+        while time.perf_counter() - t0 < timeout and not stop():
+            self._send(ord('C'), struct.pack('<HH', i, len(parts)) + parts[i])
+            i = (i + 1) % len(parts)
+            time.sleep(0.004)
+            p = self._recv()
+            while p:
+                if p[0] == ord('c') and len(p[1]) >= 4:
+                    n = struct.unpack_from('<I', p[1])[0]
+                    bits = p[1][4:]
+                    for _ in range(5):
+                        self._send(ord('K'))
+                    return [bool(bits[k >> 3] >> (k & 7) & 1) for k in range(min(n, len(manifest)))] +                            [False] * max(0, len(manifest) - n)
+                p = self._recv()
+        return None
+
+    def recv_card(self, answer, timeout=60.0, stop=lambda: False):
+        """player 2: the host's card list; answer(manifest) -> the list of booleans sent back. Returns the manifest"""
+        import zlib
+        got, total, manifest, bits, n = {}, None, None, None, 0
+        t0 = time.perf_counter(); last = 0.0
+        while time.perf_counter() - t0 < timeout and not stop():
+            p = self._recv()
+            while p:
+                if p[0] == ord('C') and len(p[1]) >= 4 and manifest is None:
+                    i, total = struct.unpack_from('<HH', p[1]); got[i] = p[1][4:]
+                    if len(got) == total:
+                        manifest = json.loads(zlib.decompress(b''.join(got[k] for k in range(total))).decode())
+                        ok = answer(manifest); n = len(ok)
+                        bits = bytearray((n + 7) // 8)
+                        for k, v in enumerate(ok):
+                            if v:
+                                bits[k >> 3] |= 1 << (k & 7)
+                elif p[0] in (ord('K'), ord('I')) and manifest is not None:     # (the host has it: the game starts)
+                    return manifest
+                p = self._recv()
+            if manifest is not None and time.perf_counter() - last > 0.05:
+                self._send(ord('c'), struct.pack('<I', n) + bytes(bits)); last = time.perf_counter()
+            time.sleep(0.002)
+        return manifest
+
     # ---- the game: one exchange a frame
     def exchange(self, mine):
         """this frame's input of both players: mine (jx, jy, buttons, flags) is the input read now - it runs DELAY
@@ -422,6 +540,10 @@ class NetPlay:
                 k = struct.unpack_from('<H', body)[0]
                 with self.chat_lock:
                     self.chat_out = [m for m in self.chat_out if m[0] != k]
+            elif kind == ord('S') and len(body) >= 8:   # (the other side's state checksum)
+                f, v = struct.unpack_from('<II', body)
+                self.sums_theirs[f] = v
+                self._compare(f)
             elif kind == ord('Q'):                       # (the other side quit)
                 self.lost = True
                 self.log('the other player left')

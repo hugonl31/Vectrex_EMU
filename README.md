@@ -19,6 +19,14 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.0.6
+
+* **Online play for UVMC2 games and PiTrex programs** - VecDoom, Veccy Road, Tempest, Vectorblade and the rest now
+  play online too. The two PCs compare their SD cards file by file and both play from the files they have the same;
+  the emulation runs in its exact single-thread mode while online, so both PCs compute the same game to the bit
+  (VecDoom still runs 1.4x faster than real time on a desktop Ryzen 7 9800X3D). A new **sync check** compares both
+  machines twice a second and says so if they ever part ([Online play](#online-play-two-vectrex_emus-one-game)).
+
 ## New in v1.0.5
 
 * **The 3D Imager** - GCE's spinning-disc goggles on controller port 2: 3D Mine Storm, 3D Narrow Escape and
@@ -1256,7 +1264,7 @@ The code goes through a small meeting-point server (`tools/vxrelay.py`), which p
 server: `--net-host` on the host (its router forwards UDP port 7744) and `--net-join ADDRESS` on the other side.
 **Chat** (Online > Chat, Ctrl+T): write to the other player while you play - Enter sends, Esc gives the keyboard back
 to the game, and a controller plays on while you type. The window opens by itself when the other player writes, and
-their line shows briefly in the picture too. Player 2 needs the same ROM in its `roms` folder (found by checksum). The host measures the round trip and sets the
+their line shows briefly in the picture too. Player 2 needs the same ROM in its `roms` folder (found by checksum). **UVMC2 games and PiTrex programs** play online too: player 2 needs the same game file, and the two SD cards are compared file by file - the game runs from the files both have the same (nothing is copied between the PCs; the chat says when files differ). While online the UVMC2 runs on one PC thread and the PiTrex's JIT in its exact mode, so both PCs stay identical; the PC's keyboard and mouse do not reach the cartridge. Twice a second both sides compare a checksum of the whole emulated machine: ONLINE: OUT OF SYNC would show if they ever differed. The host measures the round trip and sets the
 input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and
 through a simulated bad connection (40-60 ms each way, 10 % packet loss): identical pictures throughout.
 

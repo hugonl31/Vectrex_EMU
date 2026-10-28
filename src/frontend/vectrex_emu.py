@@ -127,6 +127,7 @@ _move_old_settings()
 # settings), uvmc2 (the UVMC2's SD card) and pitrex (the PiTrex's). 'cache' only holds working files: the SD card
 # images a UVMC2 or PiTrex game runs from, built from those folders at its start and copied back at its end.
 CACHE_DIR = os.path.join(SETTINGS_DIR, 'cache')
+CARD_CACHE = os.path.join(CACHE_DIR, 'card_md5.json')     # (online play: the SD cards' file checksums, kept)
 SD_DEFAULT = os.path.join(ROOT if SETTINGS_DIR == ROOT else SETTINGS_DIR, 'uvmc2')
 PX_DEFAULT = os.path.join(ROOT, 'pitrex')
 # (earlier places: sd, disks/sd and disks/pitrex - moved once; a setting that still names one follows the card)
@@ -1262,6 +1263,11 @@ def open_folder(d):
         pass
 
 
+def netplay_card_time():
+    import netplay
+    return netplay.CARD_TIME
+
+
 def ensure_sd_dir(d):
     """the UVMC2's SD card folder: made, with a short README, if it is not there yet (a new install: plug and play)"""
     try:
@@ -1329,6 +1335,8 @@ Lines.__hash__ = None
 
 class Core:
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
+    net_card = None                                     # (online play with a UVMC2 / PiTrex: (card folder, the files both
+                                                        #  sides have the same) - the card both play from)
     def __init__(self, rom, ideal=False, cart_hw='auto', speech='off', sd_dir=None, px_dir=None, unit=None, usb=False):
         env = dict(os.environ)
         env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})  # perfect / a real Vectrex
@@ -1366,6 +1374,11 @@ class Core:
             env['VT_USBHID'] = '1'                                  # (the PC's keyboard and mouse on its USB port: UVMC2, PiTrex)
         if rom.lower().endswith('.um2') and (os.cpu_count() or 1) >= 4:
             env.setdefault('VT_THREADS', '1')
+        net = Core.net_card is not None
+        if net:                                                     # online: both sides must run the same, to the bit -
+            env['VT_THREADS'] = '0'                                 # the UVMC2's two cores in step on one thread,
+            env['VT_JIT'] = 'exact'                                 # the PiTrex JIT exactly as the interpreter (any PC)
+            env.pop('VT_USBHID', None)                              # (no PC keyboard / mouse: not shared)
         self.sd = None
         if (px_dir and rom.lower().endswith(('.img', '.pit'))) or (sd_dir and rom.lower().endswith('.um2')):
             try:
@@ -1375,6 +1388,15 @@ class Core:
                         f.write(CACHE_README)
             except OSError:
                 pass
+        if net and rom.lower().endswith(('.um2', '.img', '.pit')):  # online: the card both have, nothing written back
+            folder, only = Core.net_card
+            img = os.path.join(CACHE_DIR, 'online_sd_%d.img' % os.getpid())   # (two emulators on one PC: a card each)
+            try:
+                fatimg.build(folder, img, only=only, fixed_time=netplay_card_time())
+                env['VT_UVM2_SD' if rom.lower().endswith('.um2') else 'VT_PITREX_SD'] = img
+            except (OSError, ValueError):
+                pass
+            px_dir = sd_dir = None
         if px_dir and rom.lower().endswith(('.img', '.pit')):       # a PiTrex program: its SD card is the folder px_dir
             sd_dir = None
             img = os.path.join(CACHE_DIR, 'pitrex_sd.img')
@@ -1487,12 +1509,12 @@ class Core:
         else:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags]) + extra)
         tw = time.perf_counter()
-        h = self._read(10)
+        h = self._read(14)
         self.wait_s = time.perf_counter() - tw                  # (the core emulating the frame: its own process)
         if h[:2] not in (b'VF', b'VC'):
             raise IOError('bad frame header %r' % h)
         col = h[1:2] == b'C'                                    # ('VC': the 3D Imager - each line's colour follows the lines)
-        n, ns, ft = struct.unpack('<HHI', h[2:])
+        n, ns, ft, self.state_sum = struct.unpack('<HHII', h[2:])     # (+ the state's checksum: online play compares it)
         if ft < self.ft_last: self.ft_hi += 1 << 32                   # (32-bit cycle counter wraps)
         self.ft_last = ft; self.frame_t0 = self.ft_hi + ft
         two = ns & 0x8000; ns &= 0x7fff                # (bit 15: two channels - the console, the speech module)
@@ -1625,6 +1647,8 @@ class Runner(threading.Thread):
                     feed = threading.Thread(target=fill, daemon=True); feed.start()
                 try:
                     lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
+                    if self.net is not None:            # (online: the sync check - this frame's state against the other's)
+                        self.net.mark(self.net.f - 1, getattr(self.core, 'state_sum', 0))
                 finally:
                     if feed:
                         done.set(); feed.join()
@@ -4358,7 +4382,7 @@ class App:
         addr, port, server, code = None, netplay.PORT, None, None
         if role == 'host':
             port = direct_port or netplay.PORT
-            if not (a.rom and os.path.isfile(a.rom)) or self.usb_cart():
+            if not (a.rom and os.path.isfile(a.rom)):
                 self.net_flash('ONLINE: HOST A GAME', 'START WITH A VECTREX ROM', secs=8); return
             if not direct_port:
                 server = self.net_server()
@@ -4379,6 +4403,8 @@ class App:
         game = None
         if role == 'host':
             game = netplay.new_game(a.rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw))
+            if self.card_dir(a.rom):
+                game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
             net.game_info = dict(name=game['name'], md5=game['md5'], size=game['size'])
             if server:
                 self.flash('ONLINE: ASKING THE MEETING POINT', 'FOR A CODE', secs=600)
@@ -4396,7 +4422,8 @@ class App:
             self.flash('ONLINE: JOINING', label, secs=600)
         self.net_result = None
         def work():
-            g = net.connect(game, timeout=600.0, stop=lambda: getattr(self, 'quitting', False) or getattr(self, 'net_cancel', False))
+            stop = lambda: getattr(self, 'quitting', False) or getattr(self, 'net_cancel', False)
+            g = net.connect(game, timeout=600.0, stop=stop)
             rom = None
             if g == 'missing':
                 g, rom = None, 'missing'
@@ -4405,10 +4432,24 @@ class App:
             elif g and role == 'join':
                 here = a.rom if (a.rom and netplay.rom_md5(a.rom) == g.get('md5')) else None
                 dirs = [os.path.join(ROOT, 'roms')] + ([os.path.dirname(os.path.abspath(a.rom))] if a.rom else [])
+                if g.get('card'):                                   # (a PiTrex program lives on its card)
+                    dirs += [d for d in (self.px_dir, self.sd_dir) if d and os.path.isdir(d)]
                 rom = here or netplay.find_rom(g.get('md5'), g.get('size', -1), dirs)
                 net.accept(rom is not None, g.get('name', ''))
+                if rom and g.get('card'):                           # (the host's card list: which files are the same here)
+                    folder = self.card_dir(rom); mine = {}
+                    def answer(m):
+                        mine['ok'] = netplay.card_matches(m, folder, CARD_CACHE); return mine['ok']
+                    m = net.recv_card(answer, stop=stop)
+                    g['card_only'] = (folder, None if m is None else {e[0].lower() for e, k in zip(m, mine['ok']) if k},
+                                      0 if m is None else len(m))
             elif g:
                 rom = a.rom
+                if g.get('card'):                                   # (ours to player 2: the files both have)
+                    folder = self.card_dir(rom)
+                    m = netplay.card_manifest(folder, CARD_CACHE)
+                    ok = net.send_card(m, stop=stop)
+                    g['card_only'] = (folder, None if ok is None else {e[0].lower() for e, k in zip(m, ok) if k}, len(m))
             self.net_result = (net, g, rom, role)
         threading.Thread(target=work, daemon=True).start()
         self.root.after(100, self.net_poll)
@@ -4434,16 +4475,30 @@ class App:
             if not rom:
                 net.close(); self.net_flash('ONLINE: YOU DO NOT HAVE', os.path.splitext(g.get('name', '?'))[0].upper(), secs=8)
                 return
+            card = g.get('card_only')
+            if g.get('card') and (not card or card[1] is None):
+                net.close(); self.net_flash('ONLINE: THE SD CARDS', 'COULD NOT BE COMPARED', secs=8)
+                return
             self.net, self.net_game, self.net_rom = net, g, os.path.abspath(rom)
             Core.force_seed = g.get('seed')
+            Core.net_card = (card[0], card[1]) if card else None
             try:
                 self.restart(rom)
             finally:
-                Core.force_seed = None
+                Core.force_seed = None; Core.net_card = None
+            if card and len(card[1]) < card[2]:                 # (the card both play from: the files both have)
+                self.chat_add('sys', "SD card: %d of the host's %d files are the same on both sides - the game sees only "
+                              "those (a file that is missing shows as missing on both screens)." % (len(card[1]), card[2]))
             self.net_msg = ''
             self.flash('ONLINE: CONNECTED' + (' (RELAYED)' if getattr(net, 'relay', False) else ''), 'YOU ARE PLAYER %d' % (1 if role == 'host' else 2), secs=4)
             self.show_look('online: player %d of %s' % (1 if role == 'host' else 2, os.path.basename(rom)))
         self.chat_poll()
+        net = getattr(self, 'net', None)
+        if net is not None and net.desync is not None and not getattr(net, 'desync_told', False):
+            net.desync_told = True                              # (the two games have parted: say so, once)
+            self.net_flash('ONLINE: OUT OF SYNC', 'THE GAMES DIFFER NOW', secs=8)
+            self.chat_add('sys', 'Out of sync at frame %d: the two games are no longer the same. Leave and start '
+                          'again to play together.' % net.desync)
         if getattr(self, 'net_game', None) and getattr(self.run, 'net_lost', False):
             self.net_end('ONLINE: CONNECTION LOST')
         if getattr(self, 'net_game', None) or res is None:
@@ -4677,7 +4732,7 @@ class App:
             busy = self.net_busy()
             rom = self.args.rom
             name = os.path.splitext(os.path.basename(rom))[0] if rom else ''
-            can_host = bool(rom and os.path.isfile(rom)) and not self.usb_cart()
+            can_host = bool(rom and os.path.isfile(rom))
             host_b.configure(text=('Host ' + (name if len(name) <= 26 else name[:25] + '…')) if can_host else 'Host (start a Vectrex ROM first)',
                              state='normal' if can_host and not busy else 'disabled')
             deck._paint(host_b, can_host and not busy)                  # (lit only while it can be pressed)
@@ -5771,8 +5826,13 @@ class App:
         """a cartridge with a USB port in the slot: a UVMC2 game or a PiTrex program"""
         return (self.args.rom or '').lower().endswith(('.um2', '.img', '.pit'))
     def usb_live(self):
-        """the PC's mouse / keyboard go to the cartridge's USB port now (a UVMC2, a PiTrex)"""
-        return self.usb_hid and self.run.power and not self.browser and not self.run.paused and self.usb_cart()
+        """the PC's mouse / keyboard go to the cartridge's USB port now (a UVMC2, a PiTrex; not in an online game)"""
+        return (self.usb_hid and self.run.power and not self.browser and not self.run.paused and self.usb_cart()
+                and not getattr(self, 'net_game', None))
+    def card_dir(self, rom):
+        """the SD card folder of a UVMC2 game / PiTrex program (None for other cartridges)"""
+        r = (rom or '').lower()
+        return self.sd_dir if r.endswith('.um2') else self.px_dir if r.endswith(('.img', '.pit')) else None
     # Tk key names -> USB HID usages (the base key: shifted symbols map to their key)
     HID_KEYS = dict(Return=0x28, KP_Enter=0x58, Escape=0x29, BackSpace=0x2A, Tab=0x2B, space=0x2C, minus=0x2D, underscore=0x2D,
                     equal=0x2E, plus=0x2E, bracketleft=0x2F, braceleft=0x2F, bracketright=0x30, braceright=0x30, backslash=0x31,

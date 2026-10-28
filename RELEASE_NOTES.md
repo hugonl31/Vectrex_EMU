@@ -36,7 +36,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Fixed: after a drop the side that had run a few frames ahead sent 'no input' for those frames again - the games
   then differed (found with a real 8 s drop between two PCs); now its own inputs are kept until they are out of the
   packets' window. A host whose internet is not back yet tries again every 5 s for 2 minutes.
-- The chat: each player's messages on their own shade (the emulator's lines none), as tall as the screen allows (9-22
+- The chat in three colours - the other player orange, you white, the emulator green - as tall as the screen allows (9-22
   lines); the emulator's own lines green, the players' muted white.
 - **Find players** keeps its list up to date by itself (every 3 s while open) - no Refresh button.
 - **A new version on GitHub** is told at start (a small window with the link; "Don't remind me" keeps it quiet until

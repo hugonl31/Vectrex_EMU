@@ -1108,8 +1108,7 @@ def ver_key(s):
     return tuple(int(x) for x in n[:4]) if n else None
 
 
-CHAT_SHADE_THEM, CHAT_SHADE_ME = '#101d18', '#0b1712'   # (the chat: the other player's messages and yours shaded)
-CHAT_USER, CHAT_NAME = '#c4ccc8', '#e4e9e6'   # (the chat: the players' lines muted white, their names brighter; the
+CHAT_ME, CHAT_THEM = '#d4dad7', '#e8a15a'      # (the chat: your lines muted white, the other player's orange; the
                                                #  emulator's own lines in the green of the rest)
 OSD_CHARS = 20             # (the OSD's width in characters, always: its widest row - ONLINE: RELAY 120 MS)
 ROOM_LIVE_S = 3.0          # (Find players: the game room's list asked again this often while the window is open - a
@@ -5277,17 +5276,13 @@ class App:
             if float(b) >= 0.999:
                 bar_off()
         log.configure(yscrollcommand=scrolled)
-        log.tag_configure('me', foreground=CHAT_USER); log.tag_configure('them', foreground=CHAT_USER)   # (the players:
+        log.tag_configure('me', foreground=CHAT_ME); log.tag_configure('them', foreground=CHAT_THEM)   # (three colours:
                                                                 #  muted white; the emulator's own lines green)
         log.tag_configure('sys', foreground=g)
-        log.tag_configure('who_me', foreground=CHAT_NAME, font=(MONO, 10, 'bold'))
-        log.tag_configure('who_them', foreground=CHAT_NAME, font=(MONO, 10, 'bold'))
+        log.tag_configure('who_me', foreground=CHAT_ME, font=(MONO, 10, 'bold'))   # (you white, the other player orange,
+        log.tag_configure('who_them', foreground=CHAT_THEM, font=(MONO, 10, 'bold'))   #  the emulator green)
         import tkinter.font as tkfont
-        for who_, shade in (('me', CHAT_SHADE_ME), ('them', CHAT_SHADE_THEM)):   # (each player's messages on their own
-            log.tag_configure('row_' + who_, background=shade, lmargin1=6, lmargin2=6, rmargin=6,   #  shade, the whole
-                              lmargincolor=shade, rmargincolor=shade)                                 #  width; the
-        log.tag_configure('row_sys', lmargin1=6, lmargin2=6, rmargin=6)                                #  emulator's: none)
-        log.tag_raise('row_me'); log.tag_raise('row_them')
+
         def add_line(who, text):
             at_end = log.yview()[1] >= 0.999
             log.configure(state='normal')

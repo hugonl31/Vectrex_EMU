@@ -49,9 +49,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
 **The on-screen display**
 - Online, the ONLINE row (the round trip, RELAY through the meeting point, WAITING) takes the volume's row: the display
   keeps its height and stays below the overlay. The volume shows on the knob and on the status line.
-- The strip below the picture: the OSD moved in - as far from P2 PORT as the cartridge is from RESET, room from the
-  window's edge. Paused: PAUSED and P: GO ON sit in that gap (the same room on both sides), halfway between the
-  frame's bottom edge and the bottom of the window.
+- The strip below the picture: the OSD as far from P2 PORT as the cartridge is from RESET, always the same width (its
+  values in one column), and the whole strip centred - the same room left of the OSD as right of VOL.
+- Paused: a big orange PAUSED and ESC/P TO RESUME between the cartridge and RESET, halfway between the frame's bottom
+  edge and the bottom of the window.
 
 ## v1.0.8
 

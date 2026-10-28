@@ -1108,6 +1108,7 @@ def ver_key(s):
     return tuple(int(x) for x in n[:4]) if n else None
 
 
+OSD_CHARS = 20             # (the OSD's width in characters, always: its widest row - ONLINE: RELAY 120 MS)
 ROOM_LIVE_S = 3.0          # (Find players: the game room's list asked again this often while the window is open - a
                            #  full room is 13 pages, the meeting point answers 6 a second per PC)
 ONE_PLAYER_TITLES = ((b'POLE POSITION',), (b'DARK', b'TOWER'))   # (the original games for one player, by the words of
@@ -3658,13 +3659,13 @@ class App:
             return 0, 0, self.W, self.H
         s, ox, oy = self.ren.map
         return ox * s, oy * s, (ox + ALG_MAX_X) * s, (oy + ALG_MAX_Y) * s
-    def knob_geom(self):
+    def knob_geom(self, raw=False):
         """(knob centre x, y, radius, RESET centre x) in window pixels: just below the picture, lined
-        up with its right edge (see vecrender.KNOB_R)"""
+        up with its right edge (see vecrender.KNOB_R) - the whole strip moved by strip_dx (raw: not)"""
         pl, pt, pr, pb = self.pic_rect()
         r = vecrender.KNOB_R * (pb - pt)
         ar = (pl + pr) / 2 + (vecrender.GLASS_DX + vecrender.ART_AW) * (pb - pt) / 2   # (the overlay's right edge)
-        cx = ar - 2.4 * r                                       # (VOL ends at the overlay's right edge)
+        cx = ar - 2.4 * r + (0.0 if raw else self.strip_dx())   # (VOL ends at the overlay's right edge)
         cy = pb + vecrender.PAD_BOT * (pb - pt) + 1.8 * r   # (the labels' tops below the case as far as the black round it -
                                                                 #  the same gap as on every side; the overlay lies on the case)
         return cx, cy, r, cx - 3.4 * r
@@ -3684,34 +3685,29 @@ class App:
         pl, pt, pr, pb = self.pic_rect()
         return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + 0.46 * (pb - pt), k=(pb - pt) / 330.0)
     def pause_state(self):
-        """PAUSED in the strip below the picture, between the OSD and the P2 PORT pictogram (None without the strip:
-        then in the picture)"""
+        """PAUSED in the strip below the picture, between the cartridge and RESET (the owner, 2026-10-29): PAUSED big in
+        orange, how to go on below it, the same room on both sides; up and down halfway between the frame's bottom
+        edge and the bottom of the window (None without the strip: then in the picture)"""
         if not (self.fps_on or self.cart_on or self.knob_on):
             return None
         pl, pt, pr, pb = self.pic_rect()
         x, y, r = self.cart_geom()
-        od = self.osd_state()
-        p2 = od.get('p2x') if od else None
-        right = (p2 if p2 is not None else x - 3.6 * r) - 1.1 * r   # (the P2 PORT pictogram's left edge)
-        k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0         # (as large as the OSD's text)
-        mid = y - 0.5 * r + 8.5 * k
-        if od:
-            left = od['area'][0] + max(sum(len(t) for t, _ in row) for row in od['rows']) * 6.0 * od['k']
-            k = od['k']
-            mid = od['area'][1] + len(od['rows']) * 9.0 * k / 2.0  # (level with the OSD's rows)
-        else:
-            left = (pl + pr) / 2 + (vecrender.GLASS_DX - vecrender.ART_AW) * (pb - pt) / 2
-        rows, ks = ['PAUSED', 'P: GO ON'], [2.6, 1.3]            # (PAUSED large, how to go on below it - short: it fits
-        k = min(k, 0.8 * (right - left) / max(6.0 * len(t) * f for t, f in zip(rows, ks)))   #  the gap, room each side)
-        if k <= 0:
+        kx, ky, kr, rx = self.knob_geom()
+        left, right = x + 1.3 * r, rx - 0.95 * kr               # (the CARTRIDGE label's right end, RESET's ring)
+        room = right - left
+        if room <= 0:
             return None
-        hgt = 11.0 * k * ks[0] + 6.0 * k * ks[1]
-        ph = pb - pt                                            # (up and down: halfway between the frame's bottom edge and
-        fb = (pt + pb) / 2.0 + vecrender.FRAME_Y * ph / 2.0     #  the bottom of the window - the owner, 2026-10-28)
-        wb = pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph
-        mid = (fb + wb) / 2.0
+        ph = pb - pt
+        fb = (pt + pb) / 2.0 + vecrender.FRAME_Y * ph / 2.0     # (the frame's bottom edge)
+        wb = pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph   # (the window's bottom)
+        rows = ['PAUSED', 'ESC/P TO RESUME']
+        kp = 0.80 * room / (6.0 * len(rows[0]))                 # (PAUSED: most of the gap)
+        kn = min(0.42 * kp, 0.80 * room / (6.0 * len(rows[1])))
+        hgt = 11.0 * kp + 6.0 * kn
+        if hgt > 0.8 * (wb - fb):                               # (a low strip: smaller, to fit)
+            f = 0.8 * (wb - fb) / hgt; kp *= f; kn *= f; hgt *= f
         cols = [self.SPEED_COLORS[1][2], (0.40, 0.667, 0.533)]   # (PAUSED in the OSD's orange)
-        return dict(rows=rows, ks=ks, cols=cols, cx=(left + right) / 2.0, cy=mid - hgt / 2.0, k=k)
+        return dict(rows=rows, ks=[1.0, kn / kp], cols=cols, cx=(left + right) / 2.0, cy=(fb + wb) / 2.0 - hgt / 2.0, k=kp)
     def imager_hint(self):
         """the 3D Imager's disc spinning up (the game draws nothing until it is at speed): a note in the middle of
         the picture with the speed, fading out once the game draws"""
@@ -3781,11 +3777,11 @@ class App:
         bot = pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph
         p2x = None
         if k >= OSD_KMIN:                                       # (the strip, the owner 2026-10-29: the OSD moved in, as far
-            chars = max(sum(len(t) for t, _ in row) for row in rows)   #  from P2 PORT as the cartridge is from RESET -
-            w = chars * 6.0 * k                                 #  PAUSED sits in that gap)
-            cxx, _, cr = self.cart_geom()
+            cxx, _, cr = self.cart_geom()                       #  from P2 PORT as the cartridge is from RESET - PAUSED sits
+                                                                #  in that gap; the whole strip centred, strip_dx)
             gap = (rx - 0.95 * r) - (cxx + 1.3 * cr)            # (the cartridge's label to RESET's ring)
-            left = (cxx - 3.6 * cr - 1.1 * cr) - gap - w        # (P2 PORT's left edge, the gap, the OSD's width)
+            left = (cxx - 3.6 * cr - 1.1 * cr) - gap - OSD_CHARS * 6.0 * k   # (P2 PORT's left edge, the gap, the
+                                                                #  OSD's width - always the same)
             if left >= gl_:                                     # (only inwards)
                 gl_ = left
         if k < OSD_KMIN:                                        # (a small window: the strip's text would be unreadable -
@@ -3805,12 +3801,26 @@ class App:
             self.close_browser()
         self.strip_changed()
         return 'break'
-    def cart_geom(self):
+    def cart_geom(self, raw=False):
         """(centre x, y, size) of the cartridge: level with the knob, the right half of the P2 PORT + cartridge
-        block that is centred below the picture"""
+        block that is centred below the picture - the whole strip moved by strip_dx (raw: not)"""
         pl, pt, pr, pb = self.pic_rect()
-        cx, cy, r, rx = self.knob_geom()
-        return (pl + pr) / 2.0 + vecrender.GLASS_DX * (pb - pt) / 2 + 1.8 * r, cy, r
+        cx, cy, r, rx = self.knob_geom(raw=True)
+        return (pl + pr) / 2.0 + vecrender.GLASS_DX * (pb - pt) / 2 + 1.8 * r + (0.0 if raw else self.strip_dx()), cy, r
+    def strip_dx(self):
+        """the strip below the picture moved as one (its distances kept) so that the room left of the OSD and right
+        of VOL is the same (the owner, 2026-10-29); the OSD is always OSD_CHARS wide"""
+        if not (self.fps_on and self.ren and hasattr(self.ren, 'map')):
+            return 0.0
+        pl, pt, pr, pb = self.pic_rect()
+        cx, cy, r, rx = self.knob_geom(raw=True)
+        cxx, _, cr = self.cart_geom(raw=True)
+        k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0
+        gap = (rx - 0.95 * r) - (cxx + 1.3 * cr)
+        left = (cxx - 3.6 * cr - 1.1 * cr) - gap - OSD_CHARS * 6.0 * k   # (as osd_state places it)
+        right = cx + 2.4 * r
+        x0 = (pl + pr) / 2 + vecrender.GLASS_DX * (pb - pt) / 2
+        return x0 - (left + right) / 2.0
     def cart_state(self):
         if not (self.cart_on and self.ren and hasattr(self.ren, 'map')):
             return None
@@ -7226,7 +7236,8 @@ class App:
                 vals.append(('ONLINE', '%s%d MS' % ('RELAY ' if getattr(net, 'relay', False) else '', ng.get('rtt_ms', 0)), g))
             else:
                 vals.append(('ONLINE', 'WAITING', (0.93, 0.60, 0.20)))
-        width = max(len(n) + 2 + len(v) for n, v, _ in vals)   # (the values end in one column)
+        width = max([OSD_CHARS] + [len(n) + 2 + len(v) for n, v, _ in vals])   # (the values end in one column - always
+                                                                #  OSD_CHARS wide: the OSD never changes width)
         return [[(n + ':' + ' ' * (width - len(n) - 1 - len(v)), g), (v, c)] for n, v, c in vals]
     def speed_shown(self):
         return 100 if self.speed >= 99.5 else int(self.speed)

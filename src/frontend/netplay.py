@@ -51,10 +51,11 @@ RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
-NET_VER = 4                 # the online version: both sides must have the same. Raise it with every change to the
+NET_VER = 5                 # the online version: both sides must have the same. Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
                             # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z'); 4: taking a
-                            # controller port (the input's flags: 0x10 port 1, 0x20 port 2)
+                            # controller port (the input's flags: 0x10 port 1, 0x20 port 2); 5: the
+                            # players' names (the hello carries the joiner's)
 PAUSE_ALIVE = 0.25          # (seconds between two 'still here' packets while the game is paused)
 PACE_DEAD = 0.5             # (frames: how far one side may be ahead of the other before it slows down)
 PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
@@ -176,6 +177,8 @@ class NetPlay:
         self.their_f = -1                               # (the clock sync: the other side's latest frame seen, and how
         self.adv = 0.0                                  #  far ahead each side sees itself - in frames, smoothed)
         self.adv_them = 0.0
+        self.me_name, self.me_key = '', ''              # (this player's name and its key - the meeting point checks them)
+        self.peer_name = ''                             # (the other player's name: from the meeting point, or their hello)
         self.offer = None                               # (host: the game it offers now - it may change while it waits)
         self.offer_rom = None
         self.last_heard = time.perf_counter()           # (the other side's last packet: TIMEOUT without one = lost)
@@ -278,6 +281,8 @@ class NetPlay:
             except ValueError:
                 return
             self.peer_info = info
+            if info.get('name'):
+                self.peer_name = str(info['name'])[:12]
             c = []
             if info.get('pub'): c.append(tuple(info['pub']))
             if info.get('lan'): c.append(tuple(info['lan']))
@@ -314,6 +319,8 @@ class NetPlay:
                         self.peer = p[2]
                     self.locked = True
                     ver = struct.unpack_from('<H', p[1])[0] if len(p[1]) >= 2 else 1
+                    if not self.peer_name and len(p[1]) > 2:       # (a direct game: the name its hello says)
+                        self.peer_name = gamer_name(p[1][2:14].decode('ascii', 'replace')) or ''
                     if ver != NET_VER:                  # (another emulator version: the games could part)
                         self.log('player 2 has online version %d, this is %d' % (ver, NET_VER))
                         for _ in range(5):
@@ -348,7 +355,7 @@ class NetPlay:
                 if self.candidates:
                     self._punch(hello=True)
                 else:
-                    self._send(ord('H'), HELLO)
+                    self._send(ord('H'), self._hello())
                 last_h = time.perf_counter()
             time.sleep(0.001)
             p = self._recv()
@@ -382,11 +389,12 @@ class NetPlay:
                 last = now
                 if self.role == 'host' and not self.code:
                     g = getattr(self, 'game_info', {})
-                    self._raw(RMAGIC + b'R' + json.dumps(dict(g, lan=me, ver=NET_VER)).encode(), self.server)
+                    self._raw(RMAGIC + b'R' + json.dumps(dict(g, lan=me, ver=NET_VER, key=self.me_key)).encode(), self.server)
                 elif self.role == 'host':
                     self._raw(RMAGIC + b'K' + self.code.encode(), self.server)
                 else:
-                    self._raw(RMAGIC + b'J' + self.code.upper().encode() + json.dumps(dict(lan=me)).encode(), self.server)
+                    self._raw(RMAGIC + b'J' + self.code.upper().encode() +
+                              json.dumps(dict(lan=me, name=self.me_name, key=self.me_key)).encode(), self.server)
             if now - t0 > 6.0 and not self.code and self.role == 'host':
                 return False                            # (no answer: no meeting point)
             if now - t0 > 6.0 and self.role == 'join' and not self.candidates and not getattr(self, 'server_error', None):
@@ -408,6 +416,9 @@ class NetPlay:
             for _ in range(2):
                 self._raw(RMAGIC + b'U' + self.code.encode() + json.dumps(info).encode(), self.server)
 
+    def _hello(self):
+        return HELLO + (self.me_name or '').encode('ascii', 'replace')[:12]
+
     def _keepalive(self):
         if self.server and self.code and self.role == 'host':
             now = time.perf_counter()
@@ -425,11 +436,11 @@ class NetPlay:
         if since < PUNCH_S + 1.0:
             for c in self.candidates:
                 if hello or self.role == 'join':
-                    self._send(ord('H'), HELLO, to=c)
+                    self._send(ord('H'), self._hello(), to=c)
                 else:
                     self._send(ord('h'), to=c)
             if since > PUNCH_S * 0.5 and self.code and self.server and (hello or self.role == 'join'):
-                self._raw(RMAGIC + b'X' + self.code.encode() + MAGIC + bytes([ord('H')]) + HELLO, self.server)
+                self._raw(RMAGIC + b'X' + self.code.encode() + MAGIC + bytes([ord('H')]) + self._hello(), self.server)
         if since > PUNCH_S:
             self._path()
         self._keepalive()
@@ -690,6 +701,36 @@ def gamer_name(s):
     """a gamer name as the game room keeps it (upper case, 1-12 of A-Z 0-9 _ -, spaces as _), or None"""
     s = str(s or '').strip().upper().replace(' ', '_')
     return s if 1 <= len(s) <= 12 and set(s) <= GAMER_CHARS else None
+
+
+def claim_name(server, name, key, old=None, timeout=3.0):
+    """a player name from the meeting point: reserved for this key (key: this program's secret, kept in its settings).
+    ('ok', name), ('taken', None), ('bad', None) - or None when it does not answer"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0.5)
+    t0, asked = time.perf_counter(), -1.0
+    try:
+        while time.perf_counter() - t0 < timeout:
+            if time.perf_counter() - asked > 1.0:
+                s.sendto(RMAGIC + b'N' + json.dumps(dict(name=name, key=key, old=old)).encode(), server)
+                asked = time.perf_counter()
+            try:
+                data, _ = s.recvfrom(2048)
+            except (socket.timeout, OSError):
+                continue
+            if data.startswith(RMAGIC + b'n'):
+                try:
+                    d = json.loads(data[5:].decode())
+                except ValueError:
+                    continue
+                if d.get('ok'):
+                    return 'ok', d.get('name')
+                return ('taken' if d.get('why') == 'taken' else 'bad'), None
+            if data.startswith(RMAGIC + b'E'):
+                return 'bad', None
+    finally:
+        s.close()
+    return None
 
 
 def list_games(server, timeout=2.0):

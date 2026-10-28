@@ -1116,8 +1116,29 @@ ONE_PLAYER_TITLES = ((b'POLE POSITION',), (b'DARK', b'TOWER'))   # (the original
 TURN_TITLES = {'B E D L A M', 'BERZERK', 'CLEAN SWEEP', 'MR. BOSTON', 'COSMIC CHASM', 'FORTRESS OF NARZOD', 'HYPERCHASE',
                'MINE STORM II', 'POLAR RESCUE', 'SCRAMBLE', 'SOLAR QUEST', 'SPIKE', 'SPINBALL', 'WEB WARS'}
 # (the original games for two who take turns on the built-in controller - their manuals: "only the built-in control
-#  panel is used, and the players take turns"; Mine Storm's cartridge has no title: by its file name. Online both
-#  players start on port 1 in them, see Runner.ports)
+#  panel is used, and the players take turns"; Mine Storm's cartridge has no title: by its file name. Online they
+#  get a note: Take port 1 on your turn, see Runner.port_inputs)
+
+
+TWO_PAD_TITLES = {'ARMOR ATTACK', 'BLITZ!', 'HEADS UP', 'RIP-OFF 0', 'RIP-OFF', 'SPACE WARS'}
+# (the original games where player 2 plays at the same time on the second controller - their manuals)
+
+
+def game_title_key(rom):
+    """the title in a cartridge's header as one string (upper case), '' for none"""
+    try:
+        if not rom or not rom.lower().endswith(('.bin', '.vec', '.gam')):
+            return ''
+        with open(rom, 'rb') as f:
+            h = f.read(96)
+    except OSError:
+        return ''
+    return ' '.join(t for t in (x.decode('latin-1').strip().upper() for x in gce_titles(h)) if t)
+
+
+def game_two_pads(rom):
+    """True for an original game for two players at once, player 2 on controller 2 (TWO_PAD_TITLES)"""
+    return game_title_key(rom) in TWO_PAD_TITLES
 
 
 def game_turns(rom):
@@ -1149,6 +1170,12 @@ def game_players(rom):
         if all(any(w in t for t in titles) for w in words):
             return 1
     return None
+
+
+def netplay_name(s):
+    """a player name as shown (the game room's rules), or ''"""
+    import netplay
+    return netplay.gamer_name(s) or ''
 
 
 def port2_needed(rom):
@@ -1806,8 +1833,8 @@ class Runner(threading.Thread):
     def port_inputs(self, a, b):
         """online: the controller in each port this frame from the two players' inputs (a: the host's, b: the joiner's).
         A player's 'take port' (flags 0x10 / 0x20, sent with the input: on the same frame on both sides) puts their
-        controller in that port and the other's out of it; two players in one port (a game where they take turns on
-        controller 1: both start there) - the sticks added, the buttons together; a port nobody holds: at rest"""
+        controller in that port and the other's out of it (one player a port: a stick at rest still drifts a little);
+        a port nobody holds: at rest"""
         if self.ports is None:
             self.ports = {'host': 1, 'join': 2}
         for who, other, inp in (('host', 'join', a), ('join', 'host', b)):
@@ -2065,7 +2092,9 @@ class App:
         self.quality_opt = dict(conf0.get('quality_opt', {}) or {})   #  'optimized': Optimize's result, quality_opt)
         self.osd_meters = conf0.get('osd_meters', True)         # (the OSD's CPU and GPU meters: how much of each frame is used)
         self.net_server_s = conf0.get('net_server', '')         # (Online settings: the meeting point; '' = netplay.SERVER)
-        self.gamer = conf0.get('gamer_name', '')                # (the game room: the name a public game is listed by)
+        self.gamer = conf0.get('gamer_name', '')                # (this player's name online: the game room, the chat)
+        self.gamer_ok = bool(conf0.get('gamer_ok', False))      # (reserved at the meeting point for player_key)
+        self.player_key = conf0.get('player_key', '')           # (the secret that makes the name this player's)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
         self.update_skip = conf0.get('update_skip', '')         # (that version: not told again - 'don't remind me')
@@ -4694,11 +4723,14 @@ class App:
             net = netplay.NetPlay(role, addr, port, log=self.net_log.append, server=server, code=code)
         except OSError as e:
             self.net_flash('ONLINE: THE NETWORK REFUSED', str(e)[:34].upper(), secs=8); return
+        net.me_name = self.gamer if getattr(self, 'gamer_ok', False) else ''
+        net.me_key = getattr(self, 'player_key', '') if net.me_name else ''
         self.net_pending, self.net_role, self.net_direct = net, role, bool(direct_port)
         if self.speech != 'off' and a.rom:                      # (online: port 2 is the other player's - the joystick in)
             self.restart(a.rom)
         label = (target or '').strip().upper()
         if role == 'host':
+            game['host_name'] = net.me_name                     # (the joiner's chat names the host)
             net.offer, net.offer_rom = game, os.path.abspath(a.rom)
             net.game_info = dict(name=game['name'], md5=game['md5'], size=game['size'])
             if public:
@@ -4830,16 +4862,91 @@ class App:
             return (('THIS GAME NEEDS ' + what.upper(), 'NO TWO PLAYERS: CHOOSE ANOTHER'),
                     'This game needs %s in port 2 (online, port 2 is player 2\'s joystick): it does not support two '
                     'players online - please choose another game.' % what)
+        if game_two_pads(rom):
+            return (('TWO PLAYERS AT ONCE', 'PLAYER 2 ON PORT 2'),
+                    'This game is for two players at once: player 1 on port 1, player 2 on port 2 - just play.')
         if game_turns(rom):
-            return (('PLAYERS TAKE TURNS ON PORT 1', 'BOTH ARE ON IT NOW'),
-                    'In this game two players take turns on one controller: both of you are on port 1 - the one whose '
-                    'turn it is plays, the other keeps their hands off. Take port 1 / Take port 2 (here, or in the Online '
-                    'menu) give a port to one player.')
+            return (('PLAYERS TAKE TURNS ON PORT 1', 'YOUR TURN: TAKE PORT 1'),
+                    'In this game two players take turns on one controller (port 1): on your turn press Take port 1 - '
+                    "here, or in the Online menu - and your controller plays; the other player's is out of it until they "
+                    'take it back.')
         if game_players(rom) == 1:
             return (('A GAME FOR ONE PLAYER', 'PLAYER 2 CAN WATCH'),
                     'This is a game for one player: player 2 sees the same game, but their controller does nothing '
                     'in it. Choose another game to play together.')
         return None
+    def name_ready(self, then):
+        """online: this player's name first (asked once, reserved at the meeting point) - True when it is there; else
+        the name window opens and then() follows it"""
+        if getattr(self, 'gamer', '') and getattr(self, 'gamer_ok', False):
+            return True
+        self.name_window(then)
+        return False
+    def name_window(self, then=None, change=False):
+        """Your player name: asked once (a new name: Change name in Online settings) - reserved at the meeting point for
+        this program's key, so nobody else can take it"""
+        import netplay, secrets
+        if getattr(self, 'name_win', None):
+            try: self.name_win.lift(); return
+            except tk.TclError: pass
+        t, body, foot, close = self._room_window('Change your player name' if change else 'Your player name',
+                                                 'The old name is free for others once the new one is yours.' if change else
+                                                 'Asked once: other players know you by it, in the game room and the chat.',
+                                                 'name_win', banner=False)
+        f9, bg = (MONO, 10), deck.PANEL
+        r1 = tk.Frame(body, bg=bg); r1.pack(fill='x', padx=10, pady=(10, 4))
+        tk.Label(r1, text='Name', fg=deck.G, bg=bg, font=f9, width=6, anchor='w').pack(side='left')
+        nv = tk.StringVar(value='' if change else getattr(self, 'gamer', ''))
+        e = tk.Entry(r1, width=14, textvariable=nv, bg='#06100d', fg='#bfe', insertbackground='#bfe', font=f9, relief='flat',
+                     highlightthickness=1, highlightbackground='#2a5a48', highlightcolor=deck.G)
+        e.pack(side='left')
+        e.bind('<FocusIn>', lambda ev: setattr(self.inp, 'block', True))
+        e.bind('<FocusOut>', lambda ev: setattr(self.inp, 'block', False))
+        tk.Label(r1, text='  up to 12: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
+        msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
+        busy = {'on': False}
+        def take():
+            if busy['on']:
+                return
+            name = netplay.gamer_name(nv.get())
+            if not name:
+                msg.configure(text='A name: 1 to 12 of A-Z 0-9 _ -'); return
+            if not self.player_key:
+                self.player_key = secrets.token_hex(16); self.save_settings()
+            old = self.gamer if (change and self.gamer_ok and self.gamer != name) else None
+            busy['on'] = True; msg.configure(text='Asking the meeting point...'); nv.set(name)
+            server, key = self.net_server(), self.player_key
+            def work():
+                res = netplay.claim_name(server, name, key, old=old)
+                self.root.after(0, lambda: done(res))
+            threading.Thread(target=work, daemon=True).start()
+        def done(res):
+            busy['on'] = False
+            if getattr(self, 'name_win', None) is not t:
+                return
+            if res and res[0] == 'ok':
+                self.gamer, self.gamer_ok = res[1], True; self.save_settings()
+                close()
+                self.flash('YOUR PLAYER NAME:', self.gamer, secs=3)
+                if then:
+                    self.root.after(50, then)
+            elif res and res[0] == 'taken':
+                msg.configure(text='That name belongs to another player. Pick another.')
+            elif res:
+                msg.configure(text='That name is not allowed: 1 to 12 of A-Z 0-9 _ -')
+            else:
+                msg.configure(text='The meeting point did not answer. Try again in a moment.')
+        deck._button(foot, 'Take this name', take, self, on=True).pack(side='left')
+        deck._button(foot, 'Cancel', close, self).pack(side='right')
+        e.bind('<Return>', lambda ev: take())
+        deck.place(t, 'name', self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
+        e.focus_set()
+    def peer_label(self):
+        """the other player: their name, or 'Player 1' / 'Player 2'"""
+        n = getattr(getattr(self, 'net', None), 'peer_name', '') or ''
+        return n or 'Player %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
     def take_port(self, k):
         """Take port 1 / Take port 2 (the chat, the Online menu): this player's controller into that port - with the next
         frame's input, on both sides at once; the other player's out of it (the last one to take a port has it)"""
@@ -4852,7 +4959,7 @@ class App:
         if not ports:
             return ''
         me = 'host' if getattr(self, 'net_role', 'host') == 'host' else 'join'
-        them = 'player %d' % (2 if me == 'host' else 1)
+        them = self.peer_label()
         def holder(k):
             h = [('you' if w == me else them) for w in ('host', 'join') if ports.get(w) == k]
             return ' + '.join(h) if h else 'nobody'
@@ -4865,7 +4972,7 @@ class App:
         if self.card_dir(rom):
             game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
         if game_turns(rom):
-            game['turns'] = True                                # (both players start on port 1)
+            game['turns'] = True                                # (the players take turns on port 1: a note)
         return game, self.net_note(rom)
     def net_offer_changed(self, net):
         """host, waiting for player 2: another cartridge - offered from now on (the game room lists it at once)"""
@@ -4919,6 +5026,8 @@ class App:
             if g.get('card') and (not card or card[1] is None):
                 net.close(); self.net_flash('ONLINE: THE SD CARDS', 'COULD NOT BE COMPARED', secs=8)
                 return
+            if role == 'join' and g.get('host_name'):
+                net.peer_name = netplay_name(g['host_name'])
             self.net, self.net_game, self.net_rom = net, g, os.path.abspath(rom)
             Core.force_seed = g.get('seed')
             Core.net_card = (card[0], card[1]) if card else None
@@ -4983,12 +5092,12 @@ class App:
         net = getattr(self, 'net', None)
         if net is None or not hasattr(net, 'chat_in'):
             return
-        other = 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+        other = self.peer_label().upper()
         me = 'host' if getattr(self, 'net_role', 'host') == 'host' else 'join'
         ev = getattr(self.run, 'port_events', None)
         while ev:                                               # (a port taken: said in the chat and on the screen)
             who, k = ev.popleft()
-            self.chat_add('sys', '%s took port %d.' % ('You' if who == me else other.capitalize(), k))
+            self.chat_add('sys', '%s took port %d.' % ('You' if who == me else self.peer_label(), k))
             self.flash(('YOU HAVE' if who == me else other + ' HAS') + ' PORT %d' % k, secs=2)
         w = getattr(self, 'chat_win', None)
         if w is not None and hasattr(w, 'ports_l'):
@@ -5019,7 +5128,7 @@ class App:
                 self.chat_win = None
         g, dim, bg = deck.G, deck.DIM, deck.PANEL
         f9 = (MONO, 10)
-        me = 'You'; them = 'Player %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+        me = 'You'; them = self.peer_label()
         t = tk.Toplevel(self.root, bg=deck.BG); self.chat_win = t
         t.withdraw()
         t.title('Chat'); t.transient(self.root); t.resizable(False, False)
@@ -5121,20 +5230,16 @@ class App:
     def public_host_window(self):
         """Online > Host public game: a gamer name, then this game in the meeting point's game room for anyone to join"""
         import netplay
+        if not self.name_ready(self.public_host_window):
+            return
         if getattr(self, 'pub_win', None):
             try: self.pub_win.lift(); return
             except tk.TclError: pass
         t, body, foot, close = self._room_window('Host public game', 'Anyone can see this game and join it as player 2.', 'pub_win')
         f9, bg = (MONO, 10), deck.PANEL
         r1 = tk.Frame(body, bg=bg); r1.pack(fill='x', padx=10, pady=(10, 4))
-        tk.Label(r1, text='Gamer name', fg=deck.G, bg=bg, font=f9, width=12, anchor='w').pack(side='left')
-        nv = tk.StringVar(value=getattr(self, 'gamer', ''))
-        e = tk.Entry(r1, width=14, textvariable=nv, bg='#06100d', fg='#bfe', insertbackground='#bfe', font=f9, relief='flat',
-                     highlightthickness=1, highlightbackground='#2a5a48', highlightcolor=deck.G)
-        e.pack(side='left')
-        e.bind('<FocusIn>', lambda ev: setattr(self.inp, 'block', True))
-        e.bind('<FocusOut>', lambda ev: setattr(self.inp, 'block', False))
-        tk.Label(r1, text='  up to 12: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
+        tk.Label(r1, text='Player name', fg=deck.G, bg=bg, font=f9, width=12, anchor='w').pack(side='left')
+        tk.Label(r1, text=self.gamer, fg=deck.HI, bg=bg, font=f9, anchor='w').pack(side='left')
         r2 = tk.Frame(body, bg=bg); r2.pack(fill='x', padx=10, pady=(0, 4))
         tk.Label(r2, text='Game', fg=deck.G, bg=bg, font=f9, width=12, anchor='w').pack(side='left')
         rom = self.args.rom
@@ -5142,7 +5247,7 @@ class App:
         tk.Label(r2, text=os.path.splitext(os.path.basename(rom))[0] if can else 'start a Vectrex ROM first', fg=deck.HI if can else deck.WARN,
                  bg=bg, font=f9, anchor='w').pack(side='left')
         msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
-        tk.Label(t, text="Your gamer name and the game show in everyone's Find players list until someone joins.\n"
+        tk.Label(t, text="Your player name and the game show in everyone's Find players list until someone joins.\n"
                          'A private game with a code stays in Host this game.', fg=deck.DIM, bg=deck.BG, font=(MONO, 9),
                  justify='left', anchor='w').pack(fill='x', padx=14, before=foot)
         state = {'net': None}
@@ -5152,7 +5257,8 @@ class App:
             net = state['net']
             err = getattr(net, 'server_error', None) if net is not None else None
             if err:
-                msg.configure(text={'name taken': 'That name is in use. Pick another.',
+                msg.configure(text={'name taken': 'You have a game in the room already.',
+                                    'that name belongs to another player': 'That name is reserved by another player.',
                                     'the game room is full': 'The game room is full. Try again in a minute.'}.get(err, err[:60]))
                 deck._paint(go, True); state['net'] = None
             elif net is not None and getattr(net, 'code', None):
@@ -5163,27 +5269,26 @@ class App:
         def host():
             if state['net'] is not None:
                 return
-            name = netplay.gamer_name(nv.get())
-            if not name:
-                msg.configure(text='A gamer name: 1 to 12 of A-Z 0-9 _ -'); return
+            name = self.gamer
             if not can:
                 msg.configure(text='Start a Vectrex ROM first: that is the game you host.'); return
-            nv.set(name); self.gamer = name; self.save_settings()
             msg.configure(text='Asking the meeting point...')
             self.net_begin('host', public=name)
             state['net'] = getattr(self, 'net_pending', None)
             deck._paint(go, False)
         go = deck._button(foot, 'Host public game', host, self, on=True); go.pack(side='left')
         deck._button(foot, 'Cancel', close, self).pack(side='right')
-        e.bind('<Return>', lambda ev: host())
+        t.bind('<Return>', lambda ev: host())
         watch()
         deck.place(t, 'pubhost', self)
         try: dark_title(t)
         except Exception: pass   # noqa
-        e.focus_set()
+        t.focus_set()
     def find_players_window(self):
         """Online > Find players: the game room's public games waiting for a player 2 - Join one"""
         import netplay
+        if not self.name_ready(self.find_players_window):
+            return
         if getattr(self, 'find_win', None):
             try: self.find_win.lift(); return
             except tk.TclError: pass
@@ -5245,6 +5350,8 @@ class App:
         """Online: host (a code for player 2), join (type the code), the state now, the settings. what: 'host' starts
         hosting this game at once, 'join' puts the cursor in the code box"""
         import netplay
+        if not self.name_ready(lambda: self.online_window(what)):
+            return
         if what == 'host' and not self.net_busy():
             self.net_begin('host')
         if getattr(self, 'net_win', None):
@@ -5324,6 +5431,10 @@ class App:
         tk.Checkbutton(st, text='Show the online state in the on-screen display', variable=ov, command=osd_flip, fg=g, bg=bg,
                        selectcolor=bg, activebackground=bg, activeforeground=deck.HI, font=f9, anchor='w', highlightthickness=0,
                        bd=0).pack(fill='x', pady=(6, 0))
+        nr = tk.Frame(st, bg=bg); nr.pack(fill='x', pady=(6, 0))
+        tk.Label(nr, text='Player name: ', fg=dim, bg=bg, font=f9).pack(side='left')
+        tk.Label(nr, text=self.gamer if self.gamer_ok else '(not chosen yet)', fg=deck.HI, bg=bg, font=f9).pack(side='left')
+        deck._button(nr, 'Change name', lambda: self.name_window(change=True), self, small=True).pack(side='left', padx=(8, 0))
         uv = tk.BooleanVar(value=self.update_check)
         upd_note = tk.Label(st, text='Online play needs everyone on the same version:\nwithout the check you may miss one.',
                             fg=deck.WARN, bg=bg, font=f9, anchor='w', justify='left')
@@ -5723,7 +5834,7 @@ class App:
         if ng and net is not None and not net.lost:             # (online: on, and the frames counted from this power-on)
             run.power = True; run.crt.volume = run.crt.volume or 0.5
             net.reset(); run.net = net
-            run.ports = {'host': 1, 'join': 1 if ng.get('turns') else 2}   # (taking turns on controller 1: both there)
+            run.ports = {'host': 1, 'join': 2}                  # (one player a port, always: a resting stick drifts)
         if run.power:
             run.flags = self.power_flags()
         self.run = run
@@ -6286,6 +6397,8 @@ class App:
         d['osd_meters'] = getattr(self, 'osd_meters', True)
         d['net_server'] = getattr(self, 'net_server_s', '')
         d['gamer_name'] = getattr(self, 'gamer', '')
+        d['gamer_ok'] = getattr(self, 'gamer_ok', False)
+        d['player_key'] = getattr(self, 'player_key', '')
         d['net_osd'] = getattr(self, 'net_osd', True)
         d['update_check'] = getattr(self, 'update_check', True)
         d['update_skip'] = getattr(self, 'update_skip', '')

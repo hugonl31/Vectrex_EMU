@@ -142,18 +142,18 @@ TOPICS = [
       "players (P on either side goes on); the Vectrex stays switched on until you leave. Port 2 is player 2's "
       "joystick while you are online (hosting, joining or playing: it can not be changed until you leave). Any game can "
       "be played - both see the same picture - but player 2's controller only does something in a game for two: the "
-      "games it knows for the 3D Imager or the light pen, and the original games for one player, get a note on the "
-      "screen and in the chat. Take port 1 / Take port 2 (in the Chat window and the Online menu) put your controller "
+      "games it knows for the 3D Imager or the light pen, the original games for one player, the ones for two at once "
+      "(player 2 on port 2: Armor Attack, Blitz, HeadsUp, Rip Off, Space Wars) and the ones where two take turns on port "
+      "1 get a note on the screen and in the chat. Take port 1 / Take port 2 (in the Chat window and the Online menu) put your controller "
       "into that port and the other player's out of it - the last one to take a port has it (the Vectrex just sees a "
       "controller at rest in a port nobody holds). In the original games where two players take turns on one "
-      "controller (Mine Storm, Berzerk, Scramble...) both start on port 1: the one whose turn it is plays. "
+      "controller (Mine Storm, Berzerk, Scramble...) the one whose turn it is takes port 1. "
       "A game that talks plays without its speech module. While you wait for player 2 you can "
       "change the cartridge: the new game is offered (and listed in the game room) at once."),
 ('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
-('item', 'Host public game...', "The game room: this game listed under your gamer name (up to 12 of A-Z 0-9 _ -, "
-         "kept for next time) for anyone to see in Find players and join as player 2. A name someone in the room already "
-         "uses is refused. The listing ends when someone joins, or when you leave. Host this game stays the private way: a "
+('item', 'Host public game...', "The game room: this game listed under your player name for anyone to see in Find "
+         "players and join as player 2. The listing ends when someone joins, or when you leave. Host this game stays the private way: a "
          "code only the player you tell can use."),
 ('item', 'Find players...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "
          "have waited and whether you have that game (by its contents, any file name, in your roms folder; 'other ver': an "
@@ -171,6 +171,11 @@ TOPICS = [
          "keyboard back to the game (the window stays; a game controller plays on while you type). The window opens by "
          "itself when the other player writes, and their line also shows briefly in the picture - in full screen too."),
 ('item', 'Leave the online game', "The game goes on here alone; the other player is told. While still waiting: stops waiting."),
+('item', 'Your player name', "Asked once, the first time you open an online window: up to 12 of A-Z 0-9 _ -. "
+         "The meeting point keeps it for you - a secret key in your settings makes it yours (only a scrambled copy of the "
+         "key is kept there, no address) - so nobody else can take it; other players see it in the game room and the "
+         "chat. Online settings > Change name takes a new one and frees the old. A name unused for a year is free again; "
+         "settings lost, the name too (take a new one)."),
 ('item', 'Online settings...', "The meeting point (both players need the same one; Default puts back the emulator's own), "
          "hosting without it - on a LAN, or with UDP port 7744 forwarded to this PC - and the ONLINE row in the on-screen "
          "display (the round trip in milliseconds, RELAY when the meeting point passes the game on). Check GitHub for a "

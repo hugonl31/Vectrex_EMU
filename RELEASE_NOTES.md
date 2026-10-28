@@ -40,7 +40,14 @@ build workflow replaces that release (title = the version, marked Latest) with t
   out of it - the last one to take a port has it; the chat says who took which. It goes with the controller input, so
   both PCs switch on the same frame. In the original games where two players take turns on the built-in controller
   (Mine Storm, Bedlam, Berzerk, Clean Sweep, Cosmic Chasm, Fortress of Narzod, HyperChase, Polar Rescue, Scramble,
-  Solar Quest, Spike, Spinball, Web Wars - their manuals) both start on port 1: the one whose turn it is plays.
+  Solar Quest, Spike, Spinball, Web Wars - their manuals) a note says so: on your turn, Take port 1. One player a
+  port, always (a stick at rest still drifts).
+- Player names: asked once, the first time an online window opens, and reserved at the meeting point for you (a
+  secret key in your settings; the server keeps only its SHA-256 and when the name was last used - no addresses), so
+  nobody else can take it. The game room, the chat and the port messages show it. Online settings > Change name frees
+  the old one; a name unused for a year is free again.
+- A note for the original games for two at once (player 2 on port 2: Armor Attack, Blitz, HeadsUp, Rip Off, Space
+  Wars): just play.
 - A new version on GitHub is told at start (a small window with the link; "Don't remind me" keeps it quiet until the
   next one) and always at the top of the Online, Find players and Host public game windows. Online settings: Check
   GitHub for a new version at start (on by default).

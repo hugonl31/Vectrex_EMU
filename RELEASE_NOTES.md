@@ -50,7 +50,11 @@ build workflow replaces that release (title = the version, marked Latest) with t
   Wars): just play.
 - Config: a changed setting is marked in orange - a checkbox's text turns orange, a slider shows an orange
   stripe where its default is (the Quality profile's value; on Unit and Circuit: the owner's measured Vectrex, whose
-  sliders had no mark before). No more dots.
+  sliders had no mark before); a choice's or a menu's label, a button's text orange (Mains, Bending type, Rotate,
+  Phosphor size, Cartridge hardware, Light position...). No more dots. One list: a tab is orange only when a row on
+  it shows orange (before, Sound and Cartridge could be orange with nothing marked; 30 pictures a second and the
+  phosphor size marked nothing). Normal use never counts: the screen rate, G-Sync, Smooth motion, the volume,
+  controller port 2, the monitor's size and the SD folders.
 - Host public game follows the cartridge in the slot at once (put one in, or change it, while the window is open);
   Find players keeps its list up to date by itself (every 3 s while open) - the Refresh button is gone.
 - A new version on GitHub is told at start (a small window with the link; "Don't remind me" keeps it quiet until the

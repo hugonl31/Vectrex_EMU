@@ -912,7 +912,9 @@ heavy scene for a few seconds and measures each effect on this PC - the processo
 off only what it has to for the full emulation speed, the costliest first, and keeps everything that saves less
 than 2 %. Then it says what it turned off; **Undo** puts it back. The result is the **Custom** profile, and the
 Config window marks every setting that differs from its default in orange: a checkbox's text turns orange, a slider
-shows an orange stripe where its default is. Nothing changes by itself while you
+shows an orange stripe where its default is, a choice's label turns orange; the tab's name is orange then too.
+Normal use is never marked: the screen rate, G-Sync, Smooth motion, the volume, controller port 2, the monitor's
+size and the SD folders. Nothing changes by itself while you
 play. Choosing Low, Medium, High or Ultra sets all picture settings to that profile; **Reset all** in the Config window
 puts every strip back to the chosen profile (from Custom: Ultra).
 

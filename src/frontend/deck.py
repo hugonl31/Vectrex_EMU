@@ -627,6 +627,7 @@ class Deck:
         PH = lambda: A('phosphor'); AG = lambda: A('phosphor') and A('trail_on')
         OV = lambda: bool(A('art_on') and A('art', None)); SC = lambda: OV() and A('scr_on')
         flip = lambda k: (lambda: a.flip(a.ren, k))
+        snd = self.sound_changed
         if s == 'Tube':
             return [('group', 'PHOSPHOR'),
                     ('check', 'Phosphor', PH, a.toggle_phosphor, None),
@@ -652,11 +653,11 @@ class Deck:
                     ('check', 'Mains hum wobble', lambda: A('wob_on'), a.toggle_wobble, None),
                     ('in', [('slider', 'wob_strength', lambda: A('wob_on')),
                             ('choice', 'Mains', [('%d Hz' % hz, (lambda hz=hz: A('mains_hz', 0) == hz), (lambda hz=hz: a.set_mains(hz)))
-                                                 for hz in V.vecrender.MAINS_HZ], lambda: A('wob_on'))]),
+                                                 for hz in V.vecrender.MAINS_HZ], lambda: A('wob_on'), lambda: self.changed('mains_hz'))]),
                     ('check', 'Brightness bending', lambda: A('bend_on'), flip('bend_on'), None),
                     ('in', [('choice', 'Bending type', [(n, (lambda i=i: A('bend_type', 0) % len(V.vecrender.BEND_TYPES) == i),
                                                          (lambda i=i: a.set_bend_type(i))) for i, n in enumerate(V.vecrender.BEND_TYPES)],
-                             lambda: A('bend_on')),
+                             lambda: A('bend_on'), lambda: self.changed('bend_type')),
                             ('slider', 'bend_strength', lambda: A('bend_on'))])]
         if s == 'Room light':
             rows = [('group', 'THE ROOM'), ('slider', 'art_room', None),
@@ -667,7 +668,8 @@ class Deck:
                          ('in', [('slider', 'light_k', lambda: A('glass_room') and A('light_on'))]),
                          ('check', 'Reflected on the overlay', lambda: A('light_ov'), flip('light_ov'), None),
                          ('in', [('slider', 'light_ov_k', lambda: A('light_ov'))]),
-                         ('buttons', [('Light position...', a.light_pad)], lambda: A('light_on') or A('light_ov'))]
+                         ('buttons', [('Light position...', a.light_pad)], lambda: A('light_on') or A('light_ov'),
+                          lambda: self.changed('light_x') or self.changed('light_y'))]
             return rows
         if s == 'Case':
             CS = lambda: A('case_on')
@@ -678,7 +680,7 @@ class Deck:
         if s == 'Overlay':
             rows = [('group', 'SHEET'),
                     ('check', 'Overlay  (O)', lambda: A('art_on') and bool(A('art', None)), a.toggle_art, None),
-                    ('check', 'Choose automatically', lambda: a.art_auto, a.toggle_art_auto, None),
+                    ('check', 'Choose automatically', lambda: a.art_auto, a.toggle_art_auto, None, lambda: not a.art_auto),
                     ('buttons', [('Choose overlay...', a.choose_art), ('No overlay for this game', a.no_art)], None),
                     ('in', [('slider', 'art_tint', OV), ('slider', 'art_print', OV),
                             ('check', 'Parallax', lambda: A('art_parallax'), flip('art_parallax'), OV)])]
@@ -696,25 +698,28 @@ class Deck:
             return rows
         if s == 'Sound':
             return [('group', 'THE VECTREX'), ('slider', 'volume', None),
-                    ('check', 'Vectrex buzz', lambda: C().buzz_on, lambda: a.flip(a.run.crt, 'buzz_on'), None),
+                    ('check', 'Vectrex buzz', lambda: C().buzz_on, lambda: a.flip(a.run.crt, 'buzz_on'), None, lambda: snd('buzz_on')),
                     ('in', [('slider', 'buzz_vol', lambda: C().buzz_on)]),
-                    ('check', 'Vectrex speaker', lambda: C().speaker_on, lambda: a.flip(a.run.crt, 'speaker_on'), None),
+                    ('check', 'Vectrex speaker', lambda: C().speaker_on, lambda: a.flip(a.run.crt, 'speaker_on'), None,
+                     lambda: snd('speaker_on')),
                     ('group', 'SPEECH MODULE (PORT 2)'),
                     ('slider', 'voice_vol', lambda: a.speech in ('vecvoice', 'vecvox')),
                     ('choice', 'Speech module', [('Full-range speakers', lambda: C().voice_full, lambda: a.set_voice_full(True)),
                                                  ('Small speaker', lambda: not C().voice_full, lambda: a.set_voice_full(False))],
-                     lambda: a.speech in ('vecvoice', 'vecvox')),
+                     lambda: a.speech in ('vecvoice', 'vecvox'), lambda: snd('voice_full')),
                     ('group', '3D IMAGER (PORT 2)'),
-                    ('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, lambda: a.speech == 'imager'),
+                    ('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, lambda: a.speech == 'imager',
+                     lambda: snd('motor_on')),
                     ('in', [('slider', 'motor_vol', lambda: a.speech == 'imager' and C().motor_on)])]
         if s == 'Unit':                                     # (the Vectrex unit, what an owner turns)
             return [('group', 'WHICH VECTREX'),
                     ('choice', 'Unit', [(V.UNIT_NAMES[n].replace(' (measured)', ''), (lambda n=n: a.unit_name == n),
-                                         (lambda n=n: a.unit_preset(n))) for n in ('owner', 'ideal', 'cranky', 'random')], None),
+                                         (lambda n=n: a.unit_preset(n))) for n in ('owner', 'ideal', 'cranky', 'random')], None,
+                     lambda: a.unit_name != 'owner'),
                     ('buttons', [('Export...', a.export_unit), ('Import...', a.import_unit)], None),
                     ('group', 'STARTING UP'),
-                    ('check', 'Start switched on', lambda: a.start_on, a.toggle_start_on, None),
-                    ('check', 'Skip the Vectrex intro', lambda: a.skip_boot, a.toggle_skip_boot, None),
+                    ('check', 'Start switched on', lambda: a.start_on, a.toggle_start_on, None, lambda: bool(a.start_on)),
+                    ('check', 'Skip the Vectrex intro', lambda: a.skip_boot, a.toggle_skip_boot, None, lambda: bool(a.skip_boot)),
                     ('group', 'THE PICTURE: KNOB, POTS AND YOKE')] + [('unit', k) for k in V.UNIT_TAB_KEYS]
         if s == 'Circuit':                                  # (the Vectrex unit: the service trimmers, the analog parts)
             keys = [p[0] for p in V.UNIT_PARAMS if p[0] not in V.UNIT_TAB_KEYS]
@@ -733,19 +738,21 @@ class Deck:
             return [('group', 'THE SCREEN'), ('choice', 'Screen', rates, None),
                     ('in', [('check', 'Smooth motion', lambda: a.smooth,
                              a.toggle_smooth, lambda: not a.vrr)]),
-                    ('choice', 'Rotate', rot, None),
+                    ('choice', 'Rotate', rot, None, lambda: a.rot != 0),
                     ('group', 'WEAK GRAPHICS'),
                     ('check', '30 pictures a second', lambda: bool(getattr(a.ren, 'half_rate', False)),
-                     lambda: (setattr(a.ren, 'half_rate', not getattr(a.ren, 'half_rate', False)), a.save_settings()), None),
+                     lambda: (setattr(a.ren, 'half_rate', not getattr(a.ren, 'half_rate', False)), a.save_settings()), None,
+                     lambda: self.changed('half_rate')),
                     ('choice', 'Phosphor size', [(n, (lambda v=v: abs(getattr(a.ren, 'phos_scale', 1.0) - v) < 0.01),
                                                   (lambda v=v: (setattr(a.ren, 'phos_scale', v), a.save_settings())))
-                                                 for n, v in (('Full', 1.0), ('3/4', 0.75), ('Half', 0.5))], None),
+                                                 for n, v in (('Full', 1.0), ('3/4', 0.75), ('Half', 0.5))], None,
+                     lambda: self.changed('phos_scale')),
                     ('group', 'BELOW THE PICTURE'),
-                    ('check', 'On-screen display', lambda: a.fps_on, a.toggle_fps, None),
+                    ('check', 'On-screen display', lambda: a.fps_on, a.toggle_fps, None, lambda: not a.fps_on),
                     ('in', [('check', 'CPU and GPU meters', lambda: getattr(a, 'osd_meters', True),
-                             a.toggle_osd_meters, lambda: a.fps_on)]),
-                    ('check', 'Volume knob and RESET button', lambda: a.knob_on, a.toggle_knob, None),
-                    ('check', 'Cartridge', lambda: a.cart_on, a.toggle_cart, None),
+                             a.toggle_osd_meters, lambda: a.fps_on, lambda: not getattr(a, 'osd_meters', True))]),
+                    ('check', 'Volume knob and RESET button', lambda: a.knob_on, a.toggle_knob, None, lambda: not a.knob_on),
+                    ('check', 'Cartridge', lambda: a.cart_on, a.toggle_cart, None, lambda: not a.cart_on),
                     ('group', 'SIZE'),
                     ('slider', 'monitor_inch', None),
                     ('buttons', [('Authentic (9)', a.real_size), ('Fit screen (0)', lambda: a.zoom_step(None))], None)]
@@ -761,20 +768,23 @@ class Deck:
                 n = os.path.splitext(os.path.basename(r))[0]
                 return 'in the slot now: ' + ('its menu' if n.lower() == 'pitrex' else n)
             return [('group', 'THE SLOT AND PORT 2'),
-                    ('menu', 'Cartridge hardware', hw, None), ('menu', 'Controller port 2', p2, None),
-                    ('check', 'Auto-select port 2', lambda: getattr(a, 'p2_auto', True), a.toggle_p2_auto, None),
-                    ] + ([('in', [('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, None),
+                    ('menu', 'Cartridge hardware', hw, None, lambda: a.cart_hw != 'auto'), ('menu', 'Controller port 2', p2, None),
+                    ('check', 'Auto-select port 2', lambda: getattr(a, 'p2_auto', True), a.toggle_p2_auto, None,
+                     lambda: not getattr(a, 'p2_auto', True)),
+                    ] + ([('in', [('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, None, lambda: snd('motor_on')),
                                   ('slider', 'motor_vol', lambda: C().motor_on),
-                                  ('check', 'Spin-up note on the picture', lambda: a.imager_note, a.toggle_imager_note, None)])]
+                                  ('check', 'Spin-up note on the picture', lambda: a.imager_note, a.toggle_imager_note, None,
+                                   lambda: not a.imager_note)])]
                          if IM() else []) + [   # (the 3D Imager in port 2: its motor and note)
                     ('group', 'USB KEYBOARD AND MOUSE'),
-                    ('check', 'PC mouse and keys on USB', lambda: a.usb_hid, a.toggle_usb_hid, None),
+                    ('check', 'PC mouse and keys on USB', lambda: a.usb_hid, a.toggle_usb_hid, None, lambda: not a.usb_hid),
                     ('group', 'ULTIMATE VECTREX MULTICART 2'),
                     ('note', lambda: 'in the slot now' if um2() else 'not in the slot'),
-                    ('check', 'UVMC2 games in the ROM list', lambda: a.show_um2, a.toggle_um2, None),
+                    ('check', 'UVMC2 games in the ROM list', lambda: a.show_um2, a.toggle_um2, None, lambda: not a.show_um2),
                     ('choice', 'Headphone jack', [('Clean (line out)', lambda: C().jack_mode == 'clean', lambda: a.set_jack('clean')),
                                                   ('Through the speaker', lambda: C().jack_mode == 'speaker', lambda: a.set_jack('speaker')),
-                                                  ('Off', lambda: C().jack_mode == 'off', lambda: a.set_jack('off'))], None),
+                                                  ('Off', lambda: C().jack_mode == 'off', lambda: a.set_jack('off'))], None,
+                     lambda: snd('jack_mode')),
                     ('in', [('slider', 'jack_vol', lambda: C().jack_mode != 'off')]),
                     ('buttons', [('Open UVMC2 game...', a.open_um2), ('Open the SD folder', a.open_sd_dir),
                                  ('Choose SD folder...', a.choose_sd_dir)], None),
@@ -985,53 +995,24 @@ class Deck:
             b.configure(bg=BODY if on else BG, fg=TAB_CHG_FG if chg else (HI if on else DIM),
                         highlightbackground=EDGE2 if on else EDGE)
 
-    def tab_keys(self, st):
-        """the picture settings (the renderer's) a tab shows: its sliders' and its switches' (read as they would be)"""
-        keys = set()
+    def tab_changed(self, st):
+        """a setting on tab st differs from its default: one of its rows' tests (row_chg - what the row shows too)"""
         def walk(rows):
             for row in rows:
                 if row[0] == 'in':
-                    walk(row[1])
-                elif row[0] == 'slider':
-                    t = self.app.SLIDERS.get(row[1])
-                    if t and t[2] == 'ren':
-                        keys.add(t[3])
-                elif row[0] == 'check':
-                    self.reading = []
-                    try: row[2]()
-                    except Exception: pass   # noqa
-                    keys.update(self.reading); self.reading = None
-        walk(self._spec(st))
-        return keys
-
-    def tab_changed(self, st):
-        """a setting on tab st differs from its default (the picture: the Quality profile chosen; the Vectrex unit: the
-        owner's measured Vectrex)"""
-        a, V = self.app, self.V
-        same = lambda x, y: abs(float(x) - float(y)) <= 1e-6 if isinstance(y, float) else x == y
-        if st in ('Tube', 'Room light', 'Case', 'Overlay', 'Display'):
-            if any(self.changed(k) for k in self.tab_keys(st) if k != 'line_gap'):
-                return True
-        if st == 'Sound':
-            c, d = a.run.crt, a.sound_default
-            return any(not same(getattr(c, k), d[k]) for k in ('buzz_on', 'buzz_vol', 'speaker_on', 'voice_vol', 'voice_full',
-                                                               'motor_on', 'motor_vol') if k in d)
-        if st in self.UNIT_STRIPS:
-            own = V.UNIT_PRESETS['owner']
-            mine = [k for k in own if (k in V.UNIT_TAB_KEYS) == (st == 'Unit')]
-            return (any(not same(float(a.unit.get(k, own[k])), float(own[k])) for k in mine)
-                    or (st == 'Unit' and (bool(a.start_on) or bool(a.skip_boot))))
-        if st == 'Display':
-            return (not a.smooth or bool(a.vrr) or a.rate != 'max' or a.rot != 0 or not a.fps_on or not a.knob_on
-                    or not a.cart_on or not getattr(a, 'osd_meters', True) or float(a.monitor_inch or 0) != 0.0)
-        if st == 'Cartridge':
-            c, d = a.run.crt, a.sound_default
-            return (a.cart_hw != 'auto' or not getattr(a, 'p2_auto', True) or getattr(a, 'speech_user', 'off') != 'off'
-                    or not a.usb_hid or not a.show_um2 or not a.imager_note
-                    or any(not same(getattr(c, k), d[k]) for k in ('jack_mode', 'jack_vol') if k in d)
-                    or os.path.normcase(os.path.abspath(a.sd_dir)) != os.path.normcase(os.path.abspath(V.SD_DEFAULT))
-                    or os.path.normcase(os.path.abspath(a.px_dir)) != os.path.normcase(os.path.abspath(V.PX_DEFAULT)))
-        return False
+                    if walk(row[1]):
+                        return True
+                    continue
+                if row[0] == 'group':
+                    continue
+                chg = self.row_chg(row)
+                try:
+                    if chg and chg():
+                        return True
+                except Exception:   # noqa
+                    pass
+            return False
+        return walk(self._spec(st))
 
     def build(self, s, split):
         """the tab's rows; split: the number of boxes in the left column (None: one column)"""
@@ -1091,9 +1072,79 @@ class Deck:
                 self.add_rows(row[1])
                 self.parent = outer
             else:
-                r = getattr(self, 'mk_' + row[0])(*row[1:])
+                n = self.ROW_ARGS.get(row[0])                   # (a row's own arguments; one more: its 'changed' test)
+                r = getattr(self, 'mk_' + row[0])(*(row[1:1 + n] if n else row[1:]))
                 r['bg'] = self.bgc
+                self.mark_row(r, self.row_chg(row))
                 self.rows.append(r)
+
+    ROW_ARGS = {'check': 4, 'choice': 3, 'menu': 3, 'buttons': 2}
+
+    def sound_changed(self, k):
+        a = self.app
+        d = getattr(a, 'sound_default', {})
+        if k not in d:
+            return False
+        v, dv = getattr(a.run.crt, k), d[k]
+        return abs(float(v) - float(dv)) > 1e-6 if isinstance(dv, float) else v != dv
+
+    def row_chg(self, row):
+        """a row's 'changed from its default' test (None: a row that never counts - normal use, as the screen rate, the
+        volume, port 2, the monitor's size, the SD folders): the picture's settings against the Quality profile, the
+        sound's against their defaults, the unit's against the owner's measured Vectrex, the rest as their row says"""
+        a, k = self.app, row[0]
+        n = self.ROW_ARGS.get(k)
+        if n and len(row) > 1 + n:
+            return row[1 + n]
+        if k == 'slider':
+            t = a.SLIDERS.get(row[1])
+            if not t:
+                return None
+            if t[2] == 'ren':
+                return lambda: self.changed(t[3])
+            if t[2] == 'crt' and t[3] != 'volume':
+                return lambda: self.sound_changed(t[3])
+            return None
+        if k == 'unit':
+            V = self.V
+            own = V.UNIT_PRESETS['owner'][row[1]]
+            return lambda: abs(float(a.unit.get(row[1], own)) - float(own)) > 1e-6
+        if k == 'check':                                        # (a switch of the picture: the setting it reads)
+            self.reading = []
+            try: row[2]()
+            except Exception: pass   # noqa
+            keys, self.reading = self.reading, None
+            if keys:
+                key = keys[-1]
+                return lambda: self.changed(key)
+        return None
+
+    def mark_row(self, r, chg):
+        """a row's mark, painted with it: a checkbox's text, a choice's or menu's label, a button's text orange (a slider's
+        stripe: mk_scale)"""
+        if not chg or r['kind'] in ('scale', 'note'):
+            return
+        sync0 = r['sync']
+        f = r['f']
+        if r['kind'] == 'check':
+            ws, col0, act0 = [r['w']], G, HI
+        elif r['kind'] in ('choice', 'menu'):
+            ws, col0, act0 = [f.winfo_children()[0]], G, None   # (the label in front)
+        elif r['kind'] == 'buttons':
+            ws, col0, act0 = list(r['w']), G, HI
+        else:
+            return
+        def sync():
+            sync0()
+            try: on = bool(chg())
+            except Exception: on = False   # noqa
+            for w in ws:
+                col = WARN if on else col0
+                if w.cget('fg') != col:
+                    w.configure(fg=col)
+                    if act0 is not None:
+                        w.configure(activeforeground=col if on else act0)
+        r['sync'] = sync
 
     def frame(self):
         f = tk.Frame(self.parent, bg=self.bgc); f.pack(fill='x', pady=1)
@@ -1122,8 +1173,6 @@ class Deck:
         return m
 
     reading = None                                      # (while a check is made: the settings its state reads)
-    CHECK_CHANGED = {'Start switched on': lambda a: bool(a.start_on),          # (the Unit tab's checks: changed from
-                     'Skip the Vectrex intro': lambda a: bool(a.skip_boot)}    #  the owner's Vectrex, as tab_changed)
 
     def changed(self, key):
         """the look setting key differs from its default - under the Quality profile chosen last (its checkbox orange; a slider: an orange stripe there)"""
@@ -1145,20 +1194,14 @@ class Deck:
         f = self.frame()
         self.reading = []
         v = tk.BooleanVar(value=bool(get()))
-        keys, self.reading = self.reading, None
-        key = keys[-1] if keys else None
-        own = self.CHECK_CHANGED.get(label)                     # (a setting of the program, not of the picture: changed
+        self.reading = None
         c = tk.Checkbutton(f, text=label, variable=v, command=lambda: (cmd(), self.sync_all()), fg=G, bg=self.bgc,
                            selectcolor=self.bgc, activebackground=self.bgc, activeforeground=HI, font=_font(self.app, 9),
                            anchor='w', highlightthickness=0, bd=0, disabledforeground='#2a4a3a')
         c.pack(side='left')
         self.with_info(f, c, label)
-        def sync():                                             # (changed from its default: its text orange)
+        def sync():                                             # (changed from its default: its text orange - mark_row)
             v.set(bool(get()))
-            chg = own(self.app) if own else (key and self.changed(key))
-            col = WARN if chg else G
-            if c.cget('fg') != col:
-                c.configure(fg=col, activeforeground=col if chg else HI)
         return dict(kind='check', f=f, w=c, sync=sync, dep=dep, act=lambda d: (cmd(), self.sync_all()))
 
     def mk_note(self, text):
@@ -1258,8 +1301,15 @@ class Deck:
         get = lambda: getattr(r['obj'](), r['attr'])
         if r['attr'] == 'monitor_inch':                        # (0 = as the monitor reports it)
             get = lambda: a.monitor_inch or a.monitor_auto_inch() or 24.0
+        t = a.SLIDERS.get(name)
+        if t and t[2] == 'crt' and t[3] != 'volume':           # (a sound setting: its default)
+            ref = lambda: a.sound_default.get(r['attr'])
+        elif t and t[2] == 'ren':
+            ref = lambda: self.look_ref(r['attr'])
+        else:
+            ref = None                                          # (the volume, the monitor's size: normal use)
         return self.mk_scale(label, get, setv, r['lo'], r['hi'], r['log'],
-                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep, ref=lambda: self.look_ref(r['attr']))
+                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep, ref=ref)
 
     def mk_unit(self, key):
         a, V = self.app, self.V

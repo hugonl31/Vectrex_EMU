@@ -5244,7 +5244,8 @@ class App:
         body = tk.Frame(t, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE); body.pack(fill='both', padx=10, pady=(8, 0))
         log = tk.Text(body, width=46, height=9, bg='#06100d', fg='#bfe', font=f9, relief='flat', wrap='word', bd=0,
                       highlightthickness=0, padx=8, pady=6, cursor='arrow', takefocus=0,
-                      spacing1=4, spacing2=1, spacing3=3)       # (a little room between two messages)
+                      spacing1=9, spacing2=1, spacing3=4)       # (room between two messages: the emulator's own
+                                                                #  lines one after another stay apart too)
         sbar = darkmenu.DScroll(body, command=log.yview, bg=bg)
         tk.Canvas.configure(sbar, height=10)                    # (the text's lines set the height, not the bar)
         sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)

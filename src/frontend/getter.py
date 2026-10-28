@@ -288,15 +288,16 @@ def chain_speech():
         yield u
 
 
-# (key, title, site, its page (to get it by hand), where it goes, size shown, the chain of addresses)
+# (key, title, site, its page (to get it by hand), where it goes, size shown, the chain of addresses). The site is
+# where the files come from originally (they are fetched from the project's own copies first, but reside there)
 SOURCES = [
     ('games', 'GCE Vectrex games', 'archive.org', 'https://archive.org/details/vectrex-champion-collection', 'roms',
      '0.2 MB', chain_games),
-    ('homebrew', 'Homebrew games (free)', 'several', 'https://github.com/Videodr0me/Vectrex_MiSTer/tree/master/games', 'roms',
+    ('homebrew', 'Homebrew games (free)', 'archive.org, GitHub', 'https://github.com/Videodr0me/Vectrex_MiSTer/tree/master/games', 'roms',
      '1 MB', chain_homebrew),
-    ('pitrex', 'PiTrex SD card', 'Malban', 'http://vide.malban.de/pitrex/pitrex-baremetal-download', 'pitrex',
+    ('pitrex', 'PiTrex SD card', 'vide.malban.de', 'http://vide.malban.de/pitrex/pitrex-baremetal-download', 'pitrex',
      '190 MB', chain_pitrex),
-    ('speech', 'Speech ROM (al2.bin)', 'Joe Zbiciak', 'http://spatula-city.org/~im14u2c/sp0256-al2/', 'system',
+    ('speech', 'Speech ROM (al2.bin)', 'spatula-city.org', 'http://spatula-city.org/~im14u2c/sp0256-al2/', 'system',
      '2 KB', chain_speech),
 ]
 SRC = {s[0]: s for s in SOURCES}
@@ -630,7 +631,7 @@ def window(app, only=None, parent=None):
     for i, (key, title, where, page, dest, size, chain) in enumerate(SOURCES):
         r = 2 * i
         tk.Label(grid, text=title, fg=deck.HI, bg=deck.PANEL, font=f9, width=22, anchor='w').grid(row=r, column=1, sticky='w')
-        tk.Label(grid, text=where, fg=deck.DIM, bg=deck.PANEL, font=f9, width=12, anchor='w').grid(row=r, column=2, sticky='w')
+        tk.Label(grid, text=where, fg=deck.DIM, bg=deck.PANEL, font=f9, width=19, anchor='w').grid(row=r, column=2, sticky='w')
         tk.Label(grid, text=size, fg=deck.DIM, bg=deck.PANEL, font=f9, width=7, anchor='e').grid(row=r, column=3, sticky='e')
         s = tk.Label(grid, text='', font=f9, width=32, anchor='w', bg=deck.PANEL)
         s.grid(row=r, column=4, sticky='w', padx=(10, 0))
@@ -656,5 +657,5 @@ def window(app, only=None, parent=None):
     deck._button(bar, 'Close', t.destroy, a).pack(side='right')
     t.bind('<Escape>', lambda e: t.destroy())
     deck.place(t, 'getter', a)                          # (where it was last time, else in the middle of the emulator)
-    if only:                                            # (from the setup's Download everything missing: at once)
-        t.after(200, download_all)
+    # (from the setup's Download everything missing: the missing items, waiting for Download all - nothing
+    #  starts by itself)

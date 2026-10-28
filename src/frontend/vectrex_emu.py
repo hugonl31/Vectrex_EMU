@@ -1273,14 +1273,14 @@ def old_gap(look):
 # how far real Vectrexes differ (the owner, 2026-10-28: as real pots are set - nobody turns one so far that the screen
 # is unusable; the BIOS text stays readable and the games playable). Per part: ('r', lo, hi) a range, or ('s', a, b) a
 # deviation either way from the centre (the owner's measured unit, the pots as the factory set them) of size a..b.
-# RANDOM: a unit slightly off, CRANKY: the same parts further off - every press a new one
+# RANDOM: a unit slightly off, CRANKY: the same parts further off - every press a new one. R302 (dacofs) stays 0:
+# it moves the joystick comparator, so it would change the game itself and break online sync
 UNIT_SPREAD = dict(
     #          random                   cranky
     zhold=   (('r', 0.30, 0.60),       ('r', 0.20, 0.32)),
     zcal=    (('r', 2.0, 3.6),         ('r', 3.4, 4.6)),
     drift_x= (('s', 0.0, 0.012),       ('s', 0.015, 0.04)),
     drift_y= (('s', 0.0, 0.012),       ('s', 0.015, 0.04)),
-    dacofs=  (('s', 0.0, 0.5),         ('s', 0.5, 1.5)),
     zofs=    (('s', 0.0, 0.04),        ('s', 0.05, 0.10)),   # (the most sensitive: +-0.25 flattens the BIOS's small text)
     ysettle= (('r', 0.60, 0.90),       ('r', 0.45, 0.62)),
     beamoff= (('r', 0.3, 0.9),         ('r', 0.9, 1.5)),
@@ -1312,10 +1312,11 @@ def random_unit(cranky=False):
         if kind == 'r':
             v = random.uniform(a, b)
         else:
-            c = 0.0 if k.startswith('dac') and k != 'dacofs' else own[k]   # (the DAC's bit errors: about none - the
+            c = 0.0 if k.startswith('dac') else own[k]                      # (the DAC's bit errors: about none - the
             v = c + random.choice((-1.0, 1.0)) * random.uniform(a, b)       #  owner's are one unit's)
         lo, hi = UNIT_RANGE.get(k, (v, v))
         u[k] = round(min(hi, max(lo, v)), 4)
+    u['dacofs'] = 0.0   # (R302 stays at the factory setting: see above)
     return u
 ADDON_ROM = ('.um2', '.img', '.pit')
 

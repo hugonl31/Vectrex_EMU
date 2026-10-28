@@ -202,7 +202,8 @@ TOPICS = [
 ('item', 'Cranky', "A tired unit, a new one each time: a weak zero reference, drift, slow settling, long beam "
          "delays, pots a little further off - still readable and playable, as real tired Vectrexes are."),
 ('item', 'Random unit', "A new believable Vectrex each time: every part and pot slightly off, as real units "
-         "differ. The brightness knob stays where you set it."),
+         "differ. The brightness knob stays where you set it, and R302 stays at the factory setting (it changes how "
+         "games read the analog stick, so online play stays in sync)."),
 ('item', 'Zero hold', "How well the zero reference charges when a game re-centres the beam: lower, and shapes drawn after "
       "a re-centre start a little off - text lines slant, closed boxes do not meet."),
 ('item', 'Zero calibration shift', "Where the calibrated zero ends up after the BIOS's calibration pulse."),

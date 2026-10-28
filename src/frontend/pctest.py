@@ -69,7 +69,9 @@ def _game_thread_ms(app, A):
     crt = app.run.crt
     t0 = time.perf_counter()
     for _ in range(10):
-        arr = np.frombuffer(body, dtype=V.LINE_DT, count=n)
+        arr = np.frombuffer(body, dtype=V.LINE_DT, count=n).astype(V.LINE_DTS)   # (as the Runner: signed, the offset off)
+        for f in ('x0', 'y0', 'x1', 'y1'):
+            arr[f] -= V.LIVE_OFS
         lines = V.Lines(arr.tolist())
         B = np.empty((n, 7)); [B.__setitem__((slice(None), i), arr[f]) for i, f in enumerate(('x0', 'y0', 'x1', 'y1', 'c', 'e', 't'))]
         lines.np = B

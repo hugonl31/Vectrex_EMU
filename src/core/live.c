@@ -10,7 +10,7 @@
  *                     flags bit6 = 3 more bytes follow: the 2nd-player port (jx2+128, jy2+128, buttons
  *                     bit0..3 = player 2's buttons 1..4); without it player 2 is centred, no buttons
  *                     flags bit7 = quit
- *       out (stdout): "VF" u16 nlines u16 nsamples u32 frame start cycle (low 32 bits), then nlines x (u16 x0 y0 x1 y1, u8 bright, u16 beam energy on the line in 1/8 cycles, u16 start cycle in the frame),
+ *       out (stdout): "VF" u16 nlines u16 nsamples u32 frame start cycle (low 32 bits), then nlines x (u16 x0 y0 x1 y1 (+ 8000: LIVE_OFS), u8 bright, u16 beam energy on the line in 1/8 cycles, u16 start cycle in the frame),
  *                     then nsamples signed 16-bit PCM samples at 44100 Hz (little endian)
  *       Every input message is appended to REC.bin (header + 4 bytes per frame), so the session
  *       can be replayed exactly: the emulator is deterministic and only these inputs reach it.
@@ -118,6 +118,8 @@ static void live_audio (const unsigned char *b, int n)
 	if (abuf_n + n > abuf_cap) n = abuf_cap - abuf_n;
 	memcpy (abuf + abuf_n, b, n); abuf_n += n;
 }
+#define LIVE_OFS 8000                       /* (the lines' coordinates are sent + this: they may be below 0) */
+#define LIVE_C(v) ((v) + LIVE_OFS < 0 ? 0 : (v) + LIVE_OFS > 65535 ? 65535 : (v) + LIVE_OFS)
 static void put16 (unsigned char *p, unsigned v) { p[0] = v; p[1] = v >> 8; }
 
 /* the 4-bank cartridge's flash: saved to <rom>.sav a second after the game last wrote to it, and at the end */
@@ -176,8 +178,9 @@ static int live_main (const char *recfn, const char *symfn)
 		  put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
 		for (int i = 0; i < n; i++) {
 			line_t *l = &last[i];
-			put16 (p, l->x0 < 0 ? 0 : l->x0); put16 (p + 2, l->y0 < 0 ? 0 : l->y0);
-			put16 (p + 4, l->x1 < 0 ? 0 : l->x1); put16 (p + 6, l->y1 < 0 ? 0 : l->y1);
+			/* (+ LIVE_OFS: the beam goes past the canvas, vecx.c ALG_CLIP; the frontend takes it off) */
+			put16 (p, LIVE_C (l->x0)); put16 (p + 2, LIVE_C (l->y0));
+			put16 (p + 4, LIVE_C (l->x1)); put16 (p + 6, LIVE_C (l->y1));
 			p[8] = l->c; put16 (p + 9, l->cyc > 65535 ? 65535 : l->cyc); put16 (p + 11, l->t0); p += 13;
 		}
 		{ extern int vt_imager; extern double vt_imager_speed (void);

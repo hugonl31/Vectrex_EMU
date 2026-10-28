@@ -29,6 +29,10 @@ unsigned char *vx_ram = ram;            /* (e6809.c reads the RAM itself) */
 unsigned snd_regs[16];
 static unsigned snd_select;
 static unsigned snd_ioa = 0xff;               /* the AY's port A output latch (register 14 written) */
+/* the beam is drawn this far past the canvas (units, each side): the measured glass reaches past it (2026-10-28) -
+ * what a game draws there shows on a real tube; beyond it the case hides it */
+#define ALG_CLIP 6000
+#define ALG_IN(x, y) ((x) >= -ALG_CLIP*ZS && (x) < (ALG_MAX_X + ALG_CLIP)*ZS && (y) >= -ALG_CLIP*ZS && (y) < (ALG_MAX_Y + ALG_CLIP)*ZS)
 extern int vt_imager; static void im_motor (int level); static unsigned long long im_pin_until;   /* (the 3D Imager, imager.c) */
 extern int vt_lightpen; static unsigned long long lp_pin_until; static void lp_set (int what, double v);   /* (the light pen, imager.c) */
 
@@ -1310,7 +1314,7 @@ void vt_protect_stats (unsigned long *lines, unsigned long *dim, double *dimmin,
 static void bp_step (unsigned sig_blank)
 {
 	double lev = (sig_blank && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f)) ? alg_zlev : 0.0;
-	int inb = beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) && beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS);
+	int inb = ALG_IN (beam_x, beam_y);
 	double x = beam_x, y = beam_y, vx = x - bp_px, vy = y - bp_py;
 	if (lev > 0.0 && inb) {
 		unsigned pc = e6809_get_pc () & 0xFFFF; int sh = pc >= 0xF495 && pc < 0xF511;
@@ -1609,8 +1613,7 @@ static void alg_sstep_full (void)
 	if (!beam_init) { beam_init = 1; beam_x = beam_x1 = alg_curr_x; beam_y = beam_y1 = alg_curr_y; }
 	if (alg_vectoring == 0) {
 		if (sig_blank == 1 &&
-			beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) &&
-			beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS)) {
+			ALG_IN (beam_x, beam_y)) {
 
 			/* start a new vector */
 
@@ -1671,8 +1674,7 @@ static void alg_sstep_full (void)
 			 * current point is not out of limits.
 			 */
 
-			if (beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) &&
-				beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS)) {
+			if (ALG_IN (beam_x, beam_y)) {
 				alg_vector_x0 = (long) beam_x;
 				alg_vector_y0 = (long) beam_y;
 				piece_bvx = beam_vx; piece_bvy = beam_vy;
@@ -1692,7 +1694,7 @@ static void alg_sstep_full (void)
 	if (vt_bright < 0) { const char *z = getenv ("VT_BRIGHT"); vt_bright = z ? atof (z) : 0; }
 	if (vt_bright > 0 || dark_on) {
 		int dark = !sig_blank && vt_bright > 0;                /* (only up: down, the blanked beam is darker still) */
-		int inb = alg_curr_x >= 0 && alg_curr_x < (ALG_MAX_X*ZS) && alg_curr_y >= 0 && alg_curr_y < (ALG_MAX_Y*ZS);
+		int inb = ALG_IN (alg_curr_x, alg_curr_y);
 		if (dark_on && (!dark || sig_dx != dark_dx || sig_dy != dark_dy || dark_cyc >= 1500)) {   /* (a long rest: in pieces, each frame sees it) */
 			double c = alg_vector_cyc; unsigned long long t = alg_vector_t0;
 			alg_vector_cyc = dark_cyc; alg_vector_t0 = dark_t0; dark_adding = 1;
@@ -1746,7 +1748,7 @@ static void alg_sstep_full (void)
 		vt_beam_hook (hx, hy, (sig_blank && (alg_zsh & 0x80) == 0) ? alg_zlev : 0.0, (unsigned char) alg_zsh, alg_cycles);
 	}
 	if (dark_on) {
-		if (alg_curr_x >= 0 && alg_curr_x < (ALG_MAX_X*ZS) && alg_curr_y >= 0 && alg_curr_y < (ALG_MAX_Y*ZS)) {
+		if (ALG_IN (alg_curr_x, alg_curr_y)) {
 			dark_x1 = alg_curr_x; dark_y1 = alg_curr_y; dark_cyc += 1.0;
 		}
 	}
@@ -1766,8 +1768,7 @@ static void alg_sstep_full (void)
 	}
 
 	if (alg_vectoring == 1 &&
-		beam_x >= 0 && beam_x < (ALG_MAX_X*ZS) &&
-		beam_y >= 0 && beam_y < (ALG_MAX_Y*ZS)) {
+		ALG_IN (beam_x, beam_y)) {
 
 		/* we're vectoring ... current point is still within limits so
 		 * extend the current vector (along the spot: see vt_lag).

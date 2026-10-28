@@ -15,7 +15,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - The picture: the emulator's grid warped onto the traced one (a smooth fit plus a mesh through every crossing),
   measured on the finished picture with brightness bending on: every line within 0.05 mm. Kept as a small table -
   as cheap as before.
-- The drawing area is 1000 units wider on each side (35000): the grid's outer columns show, as on the tube.
+- The drawing area is 1000 units wider on each side (35000): the grid's outer columns show, as on the tube. And the
+  beam is drawn 6000 units past it on every side: with the measured glass the drawing area ended about 6 mm inside
+  the glass's edge, so what a game drew there was missing; now it shows, as on a real Vectrex, up to the edge.
 - Overlays lie exactly on the frame, 162 x 207 mm. Their position and size sliders move and size the picture behind
   the sheet instead; with the overlay off the picture is as measured. Earlier adjustments are reset. Parallax
   moves the picture (not the sheet) and is on in every quality.

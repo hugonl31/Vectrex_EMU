@@ -235,8 +235,12 @@ glass's edge and the Test Cartridge grid).
 - `pic_adj()`: behind an overlay the picture is scaled and moved by the overlay's sliders (inverted) and the
   parallax; the sheet itself (`art_rect`) always lies on the frame. The .art plane is 1360 wide, its sheet the
   middle 846 columns: the plane is sized so the sheet is exactly 162 x 207 mm.
-- `vecx.h` `ALG_MAX_X` 33000 -> 35000: the core drops everything outside the drawing area; the grid's outer
-  columns were at -141 and 33007. Everything centres on `ALG_MAX_X / 2`, so the coordinates only shift.
+- `vecx.h` `ALG_MAX_X` 33000 -> 35000: the grid's outer columns were at -141 and 33007. Everything centres on
+  `ALG_MAX_X / 2`, so the coordinates only shift.
+- `vecx.c` `ALG_CLIP` (6000 units): the beam is drawn that far past the drawing area on every side - the glass
+  reaches about 6 mm beyond it. The live protocol sends the coordinates + `LIVE_OFS` (8000, live.c) so they stay
+  unsigned; the frontend's decoder takes it off (`LINE_DTS`, signed). `tubemap.py`'s table covers the same range
+  (u +-1.19, v +-1.33).
 
 ### Line preparation cost (2026-10-27)
 The renderer turns each game frame's lines into capsules on the drawing thread (`_build`: dwell rests, bend smoothing,

@@ -162,6 +162,7 @@ def _card_dir(d, default):
     return d
 NUL = 'NUL' if IS_WIN else os.devnull      # the core's input recording and an empty cartridge slot: nothing is written or kept
 ALG_MAX_X, ALG_MAX_Y = 35000, 41000      # (the core's canvas, vecx.h)
+LIVE_OFS = 8000                          # (the lines' coordinates come + this: the core draws 6000 past the canvas, live.c)
 OSD_KMIN = 1.5      # the window OSD's smallest text: 6 x this px high (9 px)
 MONO, SANS = ('Consolas', 'Segoe UI') if IS_WIN else ('Menlo', 'Helvetica') if IS_MAC else ('DejaVu Sans Mono', 'DejaVu Sans')
 RCLICK = '<Button-2>' if IS_MAC else '<Button-3>'    # (the right mouse button: Tk on macOS numbers it 2)
@@ -1147,6 +1148,7 @@ PITREX_UI = True                                                # the PiTrex add
 try:                                                            # (numpy, if there: the frame's lines in one go)
     import numpy as _np
     LINE_DT = _np.dtype([('x0', '<u2'), ('y0', '<u2'), ('x1', '<u2'), ('y1', '<u2'), ('c', 'u1'), ('e', '<u2'), ('t', '<u2')])
+    LINE_DTS = _np.dtype([('x0', '<i4'), ('y0', '<i4'), ('x1', '<i4'), ('y1', '<i4'), ('c', 'u1'), ('e', '<u2'), ('t', '<u2')])
 except Exception:   # noqa
     _np = None
 
@@ -1502,7 +1504,9 @@ class Core:
         if n:
             self.lines_t = time.perf_counter()                  # (the last frame with something drawn: the spin-up note)
         if _np is not None:                                     # (numpy: the records in one go, the same tuples)
-            self.arr = _np.frombuffer(body, dtype=LINE_DT, count=n)
+            self.arr = _np.frombuffer(body, dtype=LINE_DT, count=n).astype(LINE_DTS)
+            for f in ('x0', 'y0', 'x1', 'y1'):                  # (sent + LIVE_OFS: the beam may go past the canvas, live.c)
+                self.arr[f] -= LIVE_OFS
             lines = Lines.lazy(self.arr)                        # (the tuples only if something asks for them)
             A = _np.empty((n, 8 if col else 7), dtype=_np.float64)
             for i, f in enumerate(('x0', 'y0', 'x1', 'y1', 'c', 'e', 't')):
@@ -1512,7 +1516,8 @@ class Core:
             lines.np = A
         else:
             self.arr = None
-            lines = [struct.unpack_from('<HHHHBHH', body, i * 13) for i in range(n)]  # + energy, start cycle
+            lines = [(lambda r: (r[0] - LIVE_OFS, r[1] - LIVE_OFS, r[2] - LIVE_OFS, r[3] - LIVE_OFS) + r[4:])(
+                     struct.unpack_from('<HHHHBHH', body, i * 13)) for i in range(n)]  # + energy, start cycle
         self.sig = hash(body[:n * 13])                          # (the picture: a new one, or the last drawn again)
         if not two:
             return lines, body[n * 13:], None
@@ -4198,7 +4203,8 @@ class App:
         # (only what was on screen: lines the core clamped to the border would streak in from the
         #  corners as the picture collapses)
         self.off_lines = [ln for ln in self.lines
-                          if 0 < ln[0] < ALG_MAX_X and 0 < ln[2] < ALG_MAX_X and 0 < ln[1] < ALG_MAX_Y and 0 < ln[3] < ALG_MAX_Y]
+                          if -6000 < ln[0] < ALG_MAX_X + 6000 and -6000 < ln[2] < ALG_MAX_X + 6000
+                          and -6000 < ln[1] < ALG_MAX_Y + 6000 and -6000 < ln[3] < ALG_MAX_Y + 6000]   # (the core's margin, vecx.c ALG_CLIP)
         # the real Vectrex mostly flashes one cut-off stroke (the zap); now and then the picture
         # shrinks into the centre instead
         import random
@@ -4536,6 +4542,8 @@ class App:
             net = getattr(self, 'net', None)
             if txt and net is not None and hasattr(net, 'say'):
                 net.say(txt); self.chat_add('me', txt); v.set('')
+            elif txt:
+                self.chat_add('sys', 'Not connected - not sent.')
             return 'break'
         deck._button(row, 'Send', send, self, on=True, small=True).pack(side='left', padx=(6, 0))
         en.bind('<Return>', send)

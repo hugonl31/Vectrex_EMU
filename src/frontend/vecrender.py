@@ -1491,7 +1491,9 @@ def frame_keys(lines):
     if _np is None or lines is None or len(lines) == 0 or len(lines) > ALT_MAX_LINES:
         return None
     try:
-        A = _np.asarray(lines, dtype=_np.float64)
+        A = getattr(lines, 'np', None)                    # (the core's frame: its array made already - not the tuples
+        if A is None or len(A) != len(lines):            #  built and turned back into an array, ~1.5 ms a heavy frame)
+            A = _np.asarray(lines, dtype=_np.float64)
         if A.ndim != 2 or A.shape[1] < 5:
             return None
         lit = (A[:, 4].astype(_np.int64) & 127) > 0

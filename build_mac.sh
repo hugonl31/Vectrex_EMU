@@ -17,5 +17,5 @@ clang -O2 -w -ffp-contract=off -fgnu89-inline -arch arm64 -arch x86_64 -mmacosx-
   --osx-bundle-identifier io.github.hugonl31.vectrexemu --distpath dist-mac --workpath build/pyi-mac \
   --specpath build --paths src/frontend --exclude-module sdl2dll --exclude-module sdl2.test --exclude-module sdl2.examples --add-binary "$PWD/build/sdllib/libSDL2.dylib:sdllib" \
   --add-binary "$PWD/core/vectrex_core:core" --add-data "$PWD/sounds/on.wav:sounds" \
-  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" src/frontend/vectrex_emu.py
+  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" --add-data "$PWD/VERSION:." src/frontend/vectrex_emu.py
 echo built dist-mac/Vectrex_EMU.app

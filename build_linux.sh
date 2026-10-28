@@ -10,7 +10,7 @@ cc -O2 -w -ffp-contract=off -fgnu89-inline -o core/vectrex_core src/core/vtest.c
 "$PY" -m PyInstaller.utils.cliutils.makespec --onefile --windowed --name Vectrex_EMU \
   --specpath build --paths src/frontend --collect-all sdl2dll --exclude-module sdl2.test --exclude-module sdl2.examples \
   --add-binary "$PWD/core/vectrex_core:core" --add-data "$PWD/sounds/on.wav:sounds" \
-  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" src/frontend/vectrex_emu.py
+  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" --add-data "$PWD/VERSION:." src/frontend/vectrex_emu.py
 "$PY" tools/linux_spec.py build/Vectrex_EMU.spec        # (the system's libstdc++ / X / GL: GitHub issue 3)
 "$PY" -m PyInstaller --noconfirm --distpath dist-linux --workpath build/pyi-linux build/Vectrex_EMU.spec
 echo built dist-linux/Vectrex_EMU

@@ -20,6 +20,6 @@ for %%f in (overlays\*.art overlays\CREDITS.md overlays\RENAMED.txt) do if not e
 set D=%~dp0
 %PY% -m PyInstaller --noconfirm --onefile --windowed --name Vectrex_EMU --distpath "%OUT%" --workpath build\pyi --specpath build --paths src\frontend ^
   --add-binary "%D%core\vectrex_core.exe;core" ^
-  --add-data "%D%sounds\on.wav;sounds" --add-data "%D%sounds\off.wav;sounds" --add-data "%D%icons\vectrex_emu.png;icons" ^
+  --add-data "%D%sounds\on.wav;sounds" --add-data "%D%sounds\off.wav;sounds" --add-data "%D%icons\vectrex_emu.png;icons" --add-data "%D%VERSION;." ^
   --icon "%D%icons\vectrex_emu.ico" src\frontend\vectrex_emu.py || exit /b 1
 echo built %OUT%\Vectrex_EMU.exe

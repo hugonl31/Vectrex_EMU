@@ -140,9 +140,11 @@ TOPICS = [
       "Both need the same version of Vectrex_EMU (another one is refused: the two games could differ), and the PC whose "
       "clock runs a little fast slows down by a hair, so neither has to wait for the other. P pauses the game for both "
       "players (P on either side goes on); the Vectrex stays switched on until you leave. Port 2 is player 2's "
-      "controller: the 3D Imager's and the light pen's games can not be hosted, and a game that talks plays without "
-      "its speech module. While you wait for player 2 you can change the cartridge: the new game is offered (and "
-      "listed in the game room) at once."),
+      "joystick while you are online (hosting, joining or playing: it can not be changed until you leave). Any game can "
+      "be played - both see the same picture - but player 2's controller only does something in a game for two: the "
+      "games it knows for the 3D Imager or the light pen, and the original games for one player, get a note on the "
+      "screen and in the chat. A game that talks plays without its speech module. While you wait for player 2 you can "
+      "change the cartridge: the new game is offered (and listed in the game room) at once."),
 ('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
 ('item', 'Host public game...', "The game room: this game listed under your gamer name (up to 12 of A-Z 0-9 _ -, "
@@ -167,7 +169,10 @@ TOPICS = [
 ('item', 'Leave the online game', "The game goes on here alone; the other player is told. While still waiting: stops waiting."),
 ('item', 'Online settings...', "The meeting point (both players need the same one; Default puts back the emulator's own), "
          "hosting without it - on a LAN, or with UDP port 7744 forwarded to this PC - and the ONLINE row in the on-screen "
-         "display (the round trip in milliseconds, RELAY when the meeting point passes the game on)."),
+         "display (the round trip in milliseconds, RELAY when the meeting point passes the game on). Check GitHub for a "
+         "new version at start (on by default): a newer release is told in a small window at start (Don't remind me: "
+         "quiet until the next one) and always at the top of the online windows - online, both players need the same "
+         "version."),
 ('more', 'How the two PCs stay in step', "Each side sends its controller every frame and runs a frame only when it has "
          "both: a game never differs between the two (twice a second both compare a checksum of the emulated machine: "
          "if they ever differ, OUT OF SYNC shows and the chat says so). The host measures the round trip and sets an input delay that hides "

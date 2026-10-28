@@ -1087,6 +1087,46 @@ def gce_titles(h):
     return out
 
 
+UPDATE_API = 'https://api.github.com/repos/hugonl31/Vectrex_EMU/releases/latest'   # (the update check: the newest
+UPDATE_PAGE = 'https://github.com/hugonl31/Vectrex_EMU/releases/latest'           #  release's name, and its page)
+
+
+def app_version():
+    """this program's version (VERSION: next to it, inside the program, or the source's own), or ''"""
+    for d in (RES, ROOT, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')):
+        try:
+            with open(os.path.join(d, 'VERSION')) as f:
+                return f.read().strip()
+        except OSError:
+            pass
+    return ''
+
+
+def ver_key(s):
+    """'v1.0.10' -> (1, 0, 10); None when it is not a version"""
+    n = re.findall(r'\d+', s or '')
+    return tuple(int(x) for x in n[:4]) if n else None
+
+
+ONE_PLAYER_TITLES = ()     # (the title words of the original games for one player: game_players - see the list's source)
+
+
+def game_players(rom):
+    """1 for a game known to be for one player only (an original cartridge, by the title in its header), else None"""
+    try:
+        if not rom or not rom.lower().endswith(('.bin', '.vec', '.gam')):
+            return None
+        with open(rom, 'rb') as f:
+            h = f.read(96)
+    except OSError:
+        return None
+    titles = gce_titles(h)
+    for words in ONE_PLAYER_TITLES:
+        if all(any(w in t for t in titles) for w in words):
+            return 1
+    return None
+
+
 def port2_needed(rom):
     """what belongs in controller port 2 for a game, by the title in its header: the 3D Imager's games wait for the
     disc (a dark screen for ever without it - Rocket Sledge too, an unreleased 3D game); the light pen's need the
@@ -1977,6 +2017,9 @@ class App:
         self.net_server_s = conf0.get('net_server', '')         # (Online settings: the meeting point; '' = netplay.SERVER)
         self.gamer = conf0.get('gamer_name', '')                # (the game room: the name a public game is listed by)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
+        self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
+        self.update_skip = conf0.get('update_skip', '')         # (that version: not told again - 'don't remind me')
+        self.update_latest = None                               # (the newer version found, or None)
         self.head_hist = {'CPU': [], 'GPU': []}                 # (their last 10 seconds)
         self.fit_h = fit                                        # (the window's screen area at most)
         fit = int(fit / (1.0 + self.knob_reserve()))             # (room for the black above, the strip below)
@@ -2217,6 +2260,7 @@ class App:
             self.root.after(600, self.net_start)
         self.win_q = []                                         # (from the window procedure: dropped files, the close button)
         self.root.after(400, self.win_hooks)
+        self.root.after(3000, self.update_start)                # (a new version on GitHub: asked once, a moment after start)
         if IS_MAC:
             try: self.root.createcommand('::tk::mac::OpenDocument', lambda *fs: self.win_q.append(('drop', list(fs))))
             except tk.TclError: pass
@@ -3400,6 +3444,10 @@ class App:
         SP0256-AL2) or the VecVox (a SpeakJet, spoken here with the SP0256's voice at the SpeakJet's
         pitch and lengths). Both need the SP0256-AL2 ROM in the bios folder (sp0256-al2.bin, from
         SP_ROM_URL); the Vectrex is switched off and on with the new setting."""
+        if self.net_busy():                                     # (online - hosting, joining, waiting or playing: port 2
+            self.net_flash('ONLINE: PORT 2 IS PLAYER 2', 'THE JOYSTICK STAYS IN',   #  is the other player's controller)
+                           'UNTIL YOU LEAVE', secs=4)
+            return
         if k in ('vecvoice', 'vecvox') and not sp_rom():
             self.speech_rom_help()
             return
@@ -4574,9 +4622,7 @@ class App:
             port = direct_port or netplay.PORT
             if not (a.rom and os.path.isfile(a.rom)):
                 self.net_flash('ONLINE: HOST A GAME', 'START WITH A VECTREX ROM', secs=8); return
-            game, why = self.net_offer(a.rom)
-            if why:
-                self.net_flash(*why, secs=8); return
+            game, note = self.net_offer(a.rom)
             if not direct_port:
                 server = self.net_server()
         elif netplay.is_code(target or ''):
@@ -4592,6 +4638,8 @@ class App:
         except OSError as e:
             self.net_flash('ONLINE: THE NETWORK REFUSED', str(e)[:34].upper(), secs=8); return
         self.net_pending, self.net_role, self.net_direct = net, role, bool(direct_port)
+        if self.speech != 'off' and a.rom:                      # (online: port 2 is the other player's - the joystick in)
+            self.restart(a.rom)
         label = (target or '').strip().upper()
         if role == 'host':
             net.offer, net.offer_rom = game, os.path.abspath(a.rom)
@@ -4650,37 +4698,114 @@ class App:
             self.net_result = (net, g, rom, role)
         threading.Thread(target=work, daemon=True).start()
         self.root.after(100, self.net_poll)
-    def net_offer(self, rom):
-        """the game a host offers (the ROM's identity and what must be the same on both sides), and None - or None and
-        why it can not be played online (the rows of a message)"""
-        import netplay
+    # ---------------------------------------------------------------- a new version on GitHub
+    def update_start(self):
+        """asks GitHub for the newest release (in a thread; nothing said when it does not answer)"""
+        if not getattr(self, 'update_check', True) or getattr(self, 'update_asked', False):
+            return
+        self.update_asked = True
+        mine = app_version()
+        def work():
+            import urllib.request
+            try:
+                req = urllib.request.Request(UPDATE_API, headers={'User-Agent': 'Vectrex_EMU ' + mine,
+                                                                  'Accept': 'application/vnd.github+json'})
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    tag = str(json.loads(r.read().decode('utf-8')).get('tag_name') or '')
+            except Exception:   # noqa: no network, GitHub busy - asked again at the next start
+                return
+            a, b = ver_key(tag), ver_key(mine)
+            if a and b and a > b:
+                self.update_latest = tag
+                self.root.after(0, self.update_told)
+        threading.Thread(target=work, daemon=True).start()
+    def update_told(self):
+        if self.update_latest and self.update_latest != getattr(self, 'update_skip', '') and not getattr(self, 'quitting', False):
+            self.update_window()
+    def update_window(self):
+        """a new version: what it is, why it matters online, the link - and 'don't remind me until the next version'"""
+        import webbrowser
+        if getattr(self, 'upd_win', None):
+            return
+        new, mine = self.update_latest, app_version()
+        t, body, foot, close = self._room_window('A new version of Vectrex_EMU', '', 'upd_win', banner=False)
+        f9, bg = (MONO, 10), deck.PANEL
+        tk.Label(body, text='%s is out (you have %s).' % (new, mine), fg=deck.HI, bg=bg, font=f9, anchor='w').pack(fill='x', padx=12, pady=(10, 0))
+        tk.Label(body, text='Online play needs both players on the same version.', fg=deck.G, bg=bg, font=f9,
+                 anchor='w').pack(fill='x', padx=12, pady=(4, 0))
+        link = tk.Label(body, text=UPDATE_PAGE.replace('https://', ''), fg=deck.HI, bg=bg, font=(MONO, 10, 'underline'),
+                        anchor='w', cursor='hand2')
+        link.pack(fill='x', padx=12, pady=(6, 0))
+        link.bind('<Button-1>', lambda e: webbrowser.open(UPDATE_PAGE))
+        quiet = tk.BooleanVar(value=False)
+        tk.Checkbutton(body, text="Don't remind me until the next version", variable=quiet, fg=deck.G, bg=bg, selectcolor=bg,
+                       activebackground=bg, activeforeground=deck.HI, font=(MONO, 9), anchor='w', highlightthickness=0,
+                       bd=0).pack(fill='x', padx=10, pady=(10, 10))
+        def done(open_page=False):
+            if quiet.get():
+                self.update_skip = new; self.save_settings()
+            close()
+            if open_page:
+                webbrowser.open(UPDATE_PAGE)
+        deck._button(foot, 'Open GitHub', lambda: done(True), self, on=True).pack(side='left')
+        deck._button(foot, 'Later', done, self).pack(side='right')
+        t.protocol('WM_DELETE_WINDOW', done); t.bind('<Escape>', lambda ev: done())
+        deck.place(t, 'update', self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
+    def update_banner(self, t):
+        """in the online windows: a newer version is out (said there always - online, both need the same one)"""
+        new = getattr(self, 'update_latest', None)
+        if not new:
+            return
+        import webbrowser
+        b = tk.Frame(t, bg=deck.BG, highlightthickness=1, highlightbackground=deck.WARN); b.pack(fill='x', padx=10, pady=(8, 0))
+        tk.Label(b, text="%s is out: players on it can't play with %s" % (new, app_version()), fg=deck.WARN, bg=deck.BG,
+                 font=(MONO, 9), anchor='w').pack(side='left', padx=8, pady=4)
+        deck._button(b, 'Get it', lambda: webbrowser.open(UPDATE_PAGE), self, small=True).pack(side='right', padx=6, pady=3)
+    def net_note(self, rom):
+        """what is known about a game online - None, or (the rows on the screen, the chat's line): the 3D Imager's and
+        the light pen's games (port 2 is the other player's joystick online), the games for one player. Any game can
+        be played: both see the same picture - player 2's controller just does nothing in a game that has no use for it"""
         need = port2_needed(rom)
-        if need in ('imager', 'lightpen'):                      # (port 2 is player 2's controller online: a 3D game
-            return None, ('ONLINE: THIS GAME NEEDS',            #  waits for the Imager's disc for ever)
-                          'THE 3D IMAGER IN PORT 2' if need == 'imager' else 'THE LIGHT PEN IN PORT 2',
-                          'IT CAN NOT BE PLAYED ONLINE')
+        if need in ('imager', 'lightpen'):
+            what = 'the 3D Imager' if need == 'imager' else 'the light pen'
+            return (('THIS GAME NEEDS ' + what.upper(), 'NO TWO PLAYERS: CHOOSE ANOTHER'),
+                    'This game needs %s in port 2 (online, port 2 is player 2\'s joystick): it does not support two '
+                    'players online - please choose another game.' % what)
+        if game_players(rom) == 1:
+            return (('A GAME FOR ONE PLAYER', 'PLAYER 2 CAN WATCH'),
+                    'This is a game for one player: player 2 sees the same game, but their controller does nothing '
+                    'in it. Choose another game to play together.')
+        return None
+    def net_offer(self, rom):
+        """the game a host offers (the ROM's identity and what must be the same on both sides), and its note (net_note)"""
+        import netplay
         game = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw,   # (R302 moves the joystick
                                           dacofs=float(self.unit.get('dacofs', 0.0))))     #  comparator: the host's on both)
         if self.card_dir(rom):
             game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
-        return game, None
+        return game, self.net_note(rom)
     def net_offer_changed(self, net):
         """host, waiting for player 2: another cartridge - offered from now on (the game room lists it at once)"""
         if getattr(self, 'net_pending', None) is not net or getattr(self, 'net_game', None):
             return
         rom = self.args.rom
-        game, why = self.net_offer(rom) if rom and os.path.isfile(rom) else (None, ('ONLINE: STOPPED WAITING',
-                                                                                    'NO CARTRIDGE IN THE SLOT'))
-        if why:
+        if not (rom and os.path.isfile(rom)):
+            why = ('ONLINE: STOPPED WAITING', 'NO CARTRIDGE IN THE SLOT')
             self.net_stop_why = why; self.net_leave(); self.net_flash(*why, secs=8); return
+        game, note = self.net_offer(rom)
+        if note:
+            self.chat_add('sys', note[1])
         net.update_offer(game, os.path.abspath(rom), dict(name=game['name'], md5=game['md5'], size=game['size']))
         name = os.path.splitext(game['name'])[0].upper()[:34]
+        rows = ('NOW OFFERING', name) + (('',) + note[0] if note else ())
         if getattr(self, 'net_public', None):
-            self.flash('IN THE GAME ROOM AS ' + self.net_public, 'NOW OFFERING', name, secs=600)
+            self.flash('IN THE GAME ROOM AS ' + self.net_public, *rows, secs=600)
         elif net.code:
-            self.flash('ONLINE CODE: ' + ' '.join(net.code), 'NOW OFFERING', name, secs=600)
+            self.flash('ONLINE CODE: ' + ' '.join(net.code), *rows, secs=600)
         else:
-            self.flash('ONLINE: WAITING FOR PLAYER 2', 'NOW OFFERING', name, secs=600)
+            self.flash('ONLINE: WAITING FOR PLAYER 2', *rows, secs=600)
     def net_poll(self):
         """the Tk side: the connection made (the game loaded, both switched on at once), or lost"""
         res = getattr(self, 'net_result', None)
@@ -4725,6 +4850,10 @@ class App:
                               "those (a file that is missing shows as missing on both screens)." % (len(card[1]), card[2]))
             self.net_msg = ''
             self.flash('ONLINE: CONNECTED' + (' (RELAYED)' if getattr(net, 'relay', False) else ''), 'YOU ARE PLAYER %d' % (1 if role == 'host' else 2), secs=4)
+            note = self.net_note(rom)
+            if note:                                            # (the 3D Imager's, the light pen's, one player's)
+                self.chat_add('sys', note[1])
+                self.root.after(4200, lambda r=note[0]: self.net_game and self.flash(*r, secs=6))
             if port2_needed(rom) in ('vecvox', 'vecvoice') or getattr(self, 'speech_user', 'off') in ('vecvox', 'vecvoice'):
                 self.chat_add('sys', "Online, port 2 is player 2's controller: the speech module is unplugged, so this "
                               "game plays without its speech.")
@@ -4870,14 +4999,19 @@ class App:
         else:
             self.root.after(50, lambda: self.root.focus_force())    # (opened by a message: the keys stay with the game)
         return 'break'
-    def _room_window(self, title, sub, attr):
+    def _room_window(self, title, sub, attr, banner=True):
         """a small window in the Online window's style: (toplevel, body frame, foot frame, close)"""
         t = tk.Toplevel(self.root, bg=deck.BG); setattr(self, attr, t)
         t.withdraw()
         t.title(title); t.transient(self.root); t.resizable(False, False)
         top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
         tk.Label(top, text=title.upper(), fg=deck.HI, bg=deck.TOPBG, font=(MONO, 11, 'bold'), anchor='w').pack(fill='x', padx=14, pady=(8, 0))
-        tk.Label(top, text=sub, fg=deck.DIM, bg=deck.TOPBG, font=(MONO, 9), anchor='w').pack(fill='x', padx=14, pady=(0, 8))
+        if sub:
+            tk.Label(top, text=sub, fg=deck.DIM, bg=deck.TOPBG, font=(MONO, 9), anchor='w').pack(fill='x', padx=14, pady=(0, 8))
+        else:
+            tk.Frame(top, bg=deck.TOPBG, height=8).pack(fill='x')
+        if banner:
+            self.update_banner(t)                               # (a new version: online, both need the same)
         body = tk.Frame(t, bg=deck.PANEL, highlightthickness=1, highlightbackground=deck.EDGE); body.pack(fill='x', padx=10, pady=(10, 0))
         foot = tk.Frame(t, bg=deck.BG); foot.pack(fill='x', padx=10, pady=10)
         def close():
@@ -5031,6 +5165,7 @@ class App:
         t.title('Online'); t.transient(self.root); t.resizable(False, False)
         top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
         tk.Label(top, text='Esc: close   the game runs on behind this window', fg=dim, bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=12, pady=6)
+        self.update_banner(t)                                   # (a new version: online, both need the same)
         body = tk.Frame(t, bg=deck.BG); body.pack(fill='x', padx=10, pady=(4, 0))
         def box(caption):
             b = tk.Frame(body, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE); b.pack(fill='x', pady=(6, 0))
@@ -5093,6 +5228,21 @@ class App:
         tk.Checkbutton(st, text='Show the online state in the on-screen display', variable=ov, command=osd_flip, fg=g, bg=bg,
                        selectcolor=bg, activebackground=bg, activeforeground=deck.HI, font=f9, anchor='w', highlightthickness=0,
                        bd=0).pack(fill='x', pady=(6, 0))
+        uv = tk.BooleanVar(value=self.update_check)
+        upd_note = tk.Label(st, text='Online play needs everyone on the same version:\nwithout the check you may miss one.',
+                            fg=deck.WARN, bg=bg, font=f9, anchor='w', justify='left')
+        def upd_flip():
+            self.update_check = uv.get(); self.save_settings()
+            if self.update_check:
+                upd_note.pack_forget(); self.update_start()
+            else:
+                upd_note.pack(fill='x', after=upd_cb, pady=(2, 0))
+        upd_cb = tk.Checkbutton(st, text='Check GitHub for a new version at start', variable=uv, command=upd_flip, fg=g, bg=bg,
+                                selectcolor=bg, activebackground=bg, activeforeground=deck.HI, font=f9, anchor='w',
+                                highlightthickness=0, bd=0)
+        upd_cb.pack(fill='x', pady=(4, 0))
+        if not self.update_check:
+            upd_note.pack(fill='x', after=upd_cb, pady=(2, 0))
         tips = ((host_b, "Wait for player 2 with the game in the slot now: the meeting point gives a code to tell them."),
                 (copy_b, "The code to the clipboard - to paste into a chat."),
                 (join_b, "Ask the host for their game: it starts here when you have the same ROM (found by its contents, "
@@ -5459,7 +5609,7 @@ class App:
                 {'imager': 'THE 3D IMAGER', 'lightpen': 'THE LIGHT PEN', 'vecvox': 'VECVOX SPEECH', 'vecvoice': 'VECVOICE SPEECH'}[k],
                 'PLUGGED INTO PORT 2', secs=3.0))
         ng = getattr(self, 'net_game', None)                    # (online: the host's cartridge hardware, port 2 a joystick)
-        if ng:
+        if ng or self.net_busy():
             self.speech = 'off'
         unit = dict(self.unit, dacofs=float(ng.get('dacofs', 0.0))) if ng else self.unit   # (online: the host's R302 -
         self.core = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw) if ng else self.cart_hw, self.speech,   #  the rest
@@ -6040,6 +6190,8 @@ class App:
         d['net_server'] = getattr(self, 'net_server_s', '')
         d['gamer_name'] = getattr(self, 'gamer', '')
         d['net_osd'] = getattr(self, 'net_osd', True)
+        d['update_check'] = getattr(self, 'update_check', True)
+        d['update_skip'] = getattr(self, 'update_skip', '')
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')
         own = hasattr(self, 'per_game') and self.rom_name in self.per_game   # (a game's own settings: saved only

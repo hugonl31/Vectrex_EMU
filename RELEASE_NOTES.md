@@ -28,11 +28,17 @@ build workflow replaces that release (title = the version, marked Latest) with t
   1 %, so the two never run into each other. Measured with a 0.3 % clock difference: the fast side's waits went from
   ~one every frame (up to 22 ms) to none.
 - Waiting for player 2, the cartridge can be changed: the new game is offered (and listed in the game room) at once.
-  A game that needs the 3D Imager or the light pen in port 2 can not be hosted (port 2 is player 2's controller -
-  a 3D game would wait for the disc for ever); leaving takes the game out of the room at once.
+  Leaving takes the game out of the room at once.
+- Port 2 is player 2's joystick while online (hosting, joining, waiting or playing): it can not be changed until you
+  leave, and starting online plugs the joystick back in. Any game can be played - both see the same picture - but
+  the games known to need the 3D Imager or the light pen get a note on the screen and in the chat (they do not
+  support two players online), and so do the original games for one player.
 - P pauses the game for both players, P on either side goes on; the link stays alive while paused. The Vectrex
   stays switched on while connected. The chat opens when the link is made; a game that talks is said to play
   without its speech module.
+- A new version on GitHub is told at start (a small window with the link; "Don't remind me" keeps it quiet until the
+  next one) and always at the top of the Online, Find players and Host public game windows. Online settings: Check
+  GitHub for a new version at start (on by default).
 - The meeting point holds 150 games joined at once (measured on it: 100 relayed games use 11 % of its core).
 
 **Smooth by default**

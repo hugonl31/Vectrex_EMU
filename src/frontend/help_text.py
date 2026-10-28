@@ -158,7 +158,8 @@ TOPICS = [
 ('item', 'Find players...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "
          "have waited and whether you have that game (by its contents, any file name, in your roms folder; 'other ver': an "
          "older or newer Vectrex_EMU, which can not join). Join starts it "
-         "as with a code. Refresh asks again; the room holds at most 100 waiting games."),
+         "as with a code. The list keeps itself up to date while the window is open; the room holds at most 100 waiting "
+         "games."),
 ('item', 'Join a game...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
          "have the same ROM in your roms folder (found by its contents, whatever its file name)."),
 ('item', 'UVMC2 games and PiTrex programs', "They can be played online too. Both players need the same SD card "

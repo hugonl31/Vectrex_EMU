@@ -48,6 +48,11 @@ build workflow replaces that release (title = the version, marked Latest) with t
   the old one; a name unused for a year is free again.
 - A note for the original games for two at once (player 2 on port 2: Armor Attack, Blitz, HeadsUp, Rip Off, Space
   Wars): just play.
+- Config: a changed setting is marked in orange - a checkbox (and its text) turns orange, a slider shows an orange
+  stripe where its default is (the Quality profile's value; on Unit and Circuit: the owner's measured Vectrex, whose
+  sliders had no mark before). No more dots.
+- Host public game follows the cartridge in the slot at once (put one in, or change it, while the window is open);
+  Find players keeps its list up to date by itself (every 3 s while open) - the Refresh button is gone.
 - A new version on GitHub is told at start (a small window with the link; "Don't remind me" keeps it quiet until the
   next one) and always at the top of the Online, Find players and Host public game windows. Online settings: Check
   GitHub for a new version at start (on by default).

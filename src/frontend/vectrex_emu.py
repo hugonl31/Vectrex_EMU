@@ -1108,6 +1108,8 @@ def ver_key(s):
     return tuple(int(x) for x in n[:4]) if n else None
 
 
+ROOM_LIVE_S = 3.0          # (Find players: the game room's list asked again this often while the window is open - a
+                           #  full room is 13 pages, the meeting point answers 6 a second per PC)
 ONE_PLAYER_TITLES = ((b'POLE POSITION',), (b'DARK', b'TOWER'))   # (the original games for one player, by the words of
                            #  the title in their header - their manuals: "a one-player game"; the 3D Imager's and the light
                            #  pen's games have their own note, port2_needed)
@@ -5242,11 +5244,19 @@ class App:
         tk.Label(r1, text=self.gamer, fg=deck.HI, bg=bg, font=f9, anchor='w').pack(side='left')
         r2 = tk.Frame(body, bg=bg); r2.pack(fill='x', padx=10, pady=(0, 4))
         tk.Label(r2, text='Game', fg=deck.G, bg=bg, font=f9, width=12, anchor='w').pack(side='left')
-        rom = self.args.rom
-        can = bool(rom and os.path.isfile(rom))
-        tk.Label(r2, text=os.path.splitext(os.path.basename(rom))[0] if can else 'start a Vectrex ROM first', fg=deck.HI if can else deck.WARN,
-                 bg=bg, font=f9, anchor='w').pack(side='left')
+        game_l = tk.Label(r2, text='', bg=bg, font=f9, anchor='w'); game_l.pack(side='left')
+        def slot():                                             # (the cartridge in the slot now: it may change any time)
+            rom = self.args.rom
+            return rom if (rom and os.path.isfile(rom)) else None
+        def show_slot():
+            rom = slot()
+            txt = os.path.splitext(os.path.basename(rom))[0] if rom else 'put a cartridge in the slot first'
+            if game_l.cget('text') != txt:
+                game_l.configure(text=txt, fg=deck.HI if rom else deck.WARN)
+                if rom and msg.cget('text').startswith('Put a cartridge'):
+                    msg.configure(text='')
         msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
+        show_slot()
         tk.Label(t, text="Your player name and the game show in everyone's Find players list until someone joins.\n"
                          'A private game with a code stays in Host this game.', fg=deck.DIM, bg=deck.BG, font=(MONO, 9),
                  justify='left', anchor='w').pack(fill='x', padx=14, before=foot)
@@ -5254,6 +5264,7 @@ class App:
         def watch():
             if getattr(self, 'pub_win', None) is not t:
                 return
+            show_slot()
             net = state['net']
             err = getattr(net, 'server_error', None) if net is not None else None
             if err:
@@ -5270,8 +5281,8 @@ class App:
             if state['net'] is not None:
                 return
             name = self.gamer
-            if not can:
-                msg.configure(text='Start a Vectrex ROM first: that is the game you host.'); return
+            if not slot():
+                msg.configure(text='Put a cartridge in the slot first: that is the game you host.'); return
             msg.configure(text='Asking the meeting point...')
             self.net_begin('host', public=name)
             state['net'] = getattr(self, 'net_pending', None)
@@ -5322,7 +5333,8 @@ class App:
                 for c, (txt, col) in enumerate(((g['gamer'], deck.HI), (os.path.splitext(g['name'])[0][:26], deck.G),
                                                 ('%d:%02d' % (w // 60, w % 60), deck.DIM),
                                                 ('yes' if mine else 'no' if same else 'other ver', deck.G if mine else deck.RED))):
-                    tk.Label(grid, text=txt, fg=col, bg=bg, font=f9, anchor='w', width=(14, 26, 9, 12)[c]).grid(row=i, column=c, sticky='w')
+                    lb = tk.Label(grid, text=txt, fg=col, bg=bg, font=f9, anchor='w', width=(14, 26, 9, 12)[c])
+                    lb.grid(row=i, column=c, sticky='w'); lb.room_code = g['code']
                 def join(code=g['code']):
                     close(); self.net_last_join = code
                     self.net_begin('join', target=code)
@@ -5330,17 +5342,37 @@ class App:
                 deck._paint(b, bool(mine) and not self.net_busy())
             note.configure(text=('%d game%s waiting.' % (len(games), '' if len(games) == 1 else 's')) if games else
                            'No public games waiting now. Host one: Online > Host public game.')
-        def refresh():
-            note.configure(text='Asking the meeting point...')
-            server = self.net_server()
-            def work():
-                games = netplay.list_games(server)
-                for g in games or []:
-                    if g['md5'] not in have:                    # (the same ROM here: by its contents, any file name)
-                        have[g['md5']] = netplay.find_rom(g['md5'], g['size'] or -1, dirs_for(g['name']))
-                self.root.after(0, lambda: show(games))
-            threading.Thread(target=work, daemon=True).start()
-        deck._button(foot, 'Refresh', refresh, self).pack(side='left')
+        live = {'busy': False, 'last': None}
+        def refresh():                                          # (the list, live: asked again every LIVE_S seconds while
+            if getattr(self, 'find_win', None) is not t:        #  the window is open - no button to press)
+                return
+            if not live['busy']:
+                live['busy'] = True
+                if live['last'] is None:
+                    note.configure(text='Asking the meeting point...')
+                server = self.net_server()
+                def work():
+                    games = netplay.list_games(server)
+                    for g in games or []:
+                        if g['md5'] not in have:                # (the same ROM here: by its contents, any file name)
+                            have[g['md5']] = netplay.find_rom(g['md5'], g['size'] or -1, dirs_for(g['name']))
+                    self.root.after(0, lambda: done(games))
+                threading.Thread(target=work, daemon=True).start()
+            t.after(int(ROOM_LIVE_S * 1000), refresh)
+        def done(games):
+            live['busy'] = False
+            key = None if games is None else [(g['code'], g['name'], g.get('ver')) for g in games]
+            if key != live['last'] or games is None:            # (redrawn only when the list changed - the waiting
+                live['last'] = key                              #  times tick on by themselves)
+                show(games)
+            else:
+                tick(games)
+        def tick(games):
+            rows = grid.grid_slaves(column=2)
+            for g in games:
+                for w in rows:
+                    if getattr(w, 'room_code', None) == g['code']:
+                        s_ = int(g['wait']); w.configure(text='%d:%02d' % (s_ // 60, s_ % 60))
         deck._button(foot, 'Close', close, self).pack(side='right')
         refresh()
         deck.place(t, 'findplayers', self)

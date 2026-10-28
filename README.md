@@ -911,14 +911,15 @@ also in Display > Weak graphics, for any profile.
 heavy scene for a few seconds and measures each effect on this PC - the processor and the graphics card. It turns
 off only what it has to for the full emulation speed, the costliest first, and keeps everything that saves less
 than 2 %. Then it says what it turned off; **Undo** puts it back. The result is the **Custom** profile, and the
-Config window marks every setting that differs from its default with a dot. Nothing changes by itself while you
+Config window marks every setting that differs from its default in orange: a checkbox turns orange, a slider
+shows an orange stripe where its default is. Nothing changes by itself while you
 play. Choosing Low, Medium, High or Ultra sets all picture settings to that profile; **Reset all** in the Config window
 puts every strip back to the chosen profile (from Custom: Ultra).
 
 <p align="center">
 <a href="docs/images/v1.0.4/ui_config.png"><img src="docs/images/v1.0.4/ui_config_small.jpg" width="440" alt="the Config window: Quality, Optimize, the changed settings marked"></a><br>
 <em>The Config window: Quality with Optimize, this game's settings, the Tube strip (a changed setting marked
-with a dot) and Reset all.</em>
+in orange) and Reset all.</em>
 </p>
 
 ### The screen: 60 Hz, high refresh, G-Sync

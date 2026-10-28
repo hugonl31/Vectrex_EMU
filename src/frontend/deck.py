@@ -11,7 +11,8 @@ from tkinter import filedialog
 
 V = None                                # (the app's module: set by vectrex_emu)
 G, BG, DIM, HI, ROWBG, WARN = '#6a8', '#05080a', '#4a7a62', '#8cb', '#16302a', '#e93'
-RED = '#e55'                            # (missing: the setup window, Get games & extras)
+RED = '#e55'
+WARN_BOX = '#5a3510'                     # (a changed checkbox: its box filled dark orange)                            # (missing: the setup window, Get games & extras)
 TOPBG, PANEL, BODY, EDGE, EDGE2 = '#0a1210', '#0b1511', '#0f1c17', '#1d3329', '#2f5544'   # (the areas: bars, boxes, the strip)
 
 
@@ -1122,9 +1123,11 @@ class Deck:
         return m
 
     reading = None                                      # (while a check is made: the settings its state reads)
+    CHECK_CHANGED = {'Start switched on': lambda a: bool(a.start_on),          # (the Unit tab's checks: changed from
+                     'Skip the Vectrex intro': lambda a: bool(a.skip_boot)}    #  the owner's Vectrex, as tab_changed)
 
     def changed(self, key):
-        """the look setting key differs from its default - under the Quality profile chosen last (the mark \u25cf beside it)"""
+        """the look setting key differs from its default - under the Quality profile chosen last (its checkbox orange; a slider: an orange stripe there)"""
         a = self.app
         d = getattr(a, 'look_default', {})
         if not a.ren or key not in d:
@@ -1145,15 +1148,18 @@ class Deck:
         v = tk.BooleanVar(value=bool(get()))
         keys, self.reading = self.reading, None
         key = keys[-1] if keys else None
+        own = self.CHECK_CHANGED.get(label)                     # (a setting of the program, not of the picture: changed
         c = tk.Checkbutton(f, text=label, variable=v, command=lambda: (cmd(), self.sync_all()), fg=G, bg=self.bgc,
                            selectcolor=self.bgc, activebackground=self.bgc, activeforeground=HI, font=_font(self.app, 9),
                            anchor='w', highlightthickness=0, bd=0, disabledforeground='#2a4a3a')
         c.pack(side='left')
         self.with_info(f, c, label)
-        m = self.mark(f); m.pack(side='left')
-        def sync():
+        def sync():                                             # (changed from its default: the box and its text orange)
             v.set(bool(get()))
-            m.configure(text='\u25cf' if key and self.changed(key) else '')
+            chg = own(self.app) if own else (key and self.changed(key))
+            col = WARN if chg else G
+            if c.cget('fg') != col:
+                c.configure(fg=col, activeforeground=col if chg else HI, selectcolor=WARN_BOX if chg else self.bgc)
         return dict(kind='check', f=f, w=c, sync=sync, dep=dep, act=lambda d: (cmd(), self.sync_all()))
 
     def mk_note(self, text):
@@ -1253,16 +1259,8 @@ class Deck:
         get = lambda: getattr(r['obj'](), r['attr'])
         if r['attr'] == 'monitor_inch':                        # (0 = as the monitor reports it)
             get = lambda: a.monitor_inch or a.monitor_auto_inch() or 24.0
-        row = self.mk_scale(label, get, setv, r['lo'], r['hi'], r['log'],
-                            lambda v: r['fmt'] % (v * r['show']), r['default'], dep)
-        sc = row['f'].winfo_children()[-1]                   # (the slider: the mark between it and the value)
-        m = self.mark(row['f']); m.pack(side='right', before=sc)
-        sync0 = row['sync']
-        def sync():
-            sync0()
-            m.configure(text='\u25cf' if self.changed(r['attr']) else '')
-        row['sync'] = sync
-        return row
+        return self.mk_scale(label, get, setv, r['lo'], r['hi'], r['log'],
+                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep, ref=lambda: self.look_ref(r['attr']))
 
     def mk_unit(self, key):
         a, V = self.app, self.V
@@ -1275,10 +1273,23 @@ class Deck:
             a.set_unit(key, round(v, 4))
             if self.save_job: self.t.after_cancel(self.save_job)
             self.save_job = self.t.after(400, a.save_settings)
+        own = V.UNIT_PRESETS['owner'][key]
         return self.mk_scale(label, lambda: a.unit.get(key, 0.0), setv, lo, hi, False, fmt if callable(fmt) else (lambda v: fmt % v),
-                             V.UNIT_PRESETS['owner'][key], None, unit=key)
+                             own, None, unit=key, ref=lambda: own)   # (the reference: the owner's measured Vectrex)
 
-    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None):
+    def look_ref(self, key):
+        """the value a look setting is compared with (the Quality profile chosen last), or None"""
+        a = self.app
+        d = getattr(a, 'look_default', {})
+        if not a.ren or key not in d:
+            return None
+        if getattr(self, '_pv', None) is None:
+            self._pv = a.base_values()
+        return self._pv.get(key, d[key])
+
+    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None, ref=None):
+        """a slider row; ref() - the value it counts as changed from: an orange stripe on the bar there while the
+        slider is elsewhere (where it goes back to)"""
         f = self.frame(); N = 1000
         if log == 'mired':                                      # (even in mireds: White balance)
             to_pos = lambda v: N * (V.vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
@@ -1294,14 +1305,28 @@ class Deck:
             if busy[0]: return
             if abs(float(p) - to_pos(max(lo, min(hi, get())))) < 0.5:   # (Tk reports the value set by sync() later:
                 return                                                  #  not a move - nothing changes)
-            setv(to_val(float(p))); val.configure(text=fmt(get()))
+            setv(to_val(float(p))); val.configure(text=fmt(get())); stripe_at()
         sc = tk.Scale(f, from_=0, to=N, orient='horizontal', length=300, showvalue=0, command=moved, bg=G, fg=G,
                       troughcolor='#123', highlightthickness=0, activebackground=HI, sliderrelief='flat', bd=0,
                       width=12, sliderlength=18)
         val.pack(side='right'); sc.pack(side='right', padx=6)        # (from the right: lined up at every indent)
+        stripe = tk.Frame(sc, bg=WARN, width=3, height=4, bd=0, highlightthickness=0)
+        def stripe_at(e=None):                                  # (changed: the stripe where the reference value sits)
+            v = ref() if ref else None
+            try:
+                cur = float(get())
+                off = v is None or abs(cur - float(v)) <= 1e-6 * max(1.0, abs(float(v)))
+            except (TypeError, ValueError):
+                off = True
+            w = sc.winfo_width()
+            if off or w < 30:
+                stripe.place_forget(); return
+            p = max(0.0, min(1.0, to_pos(max(lo, min(hi, float(v)))) / N))
+            stripe.place(x=int(round(9 + p * (w - 18))) - 1, y=0, width=3, relheight=1.0)
+        sc.bind('<Configure>', stripe_at, add='+')
         def sync():
             busy[0] = True; sc.set(to_pos(max(lo, min(hi, get())))); busy[0] = False
-            val.configure(text=fmt(get()))
+            val.configure(text=fmt(get())); stripe_at()
         def to_default(e=None):
             setv(default); sync(); return 'break'
         def jump(e):                                            # (a click on the bar: the handle goes there)
@@ -1337,7 +1362,7 @@ class Deck:
             _paint(b, m == mode)
 
         diff = any(self.changed(k) for k in getattr(a, 'look_default', {}) if k != 'line_gap')
-        self.qhint.configure(text=('\u25cf changed from %s' % a.base_name()) if diff else '', fg=WARN)
+        self.qhint.configure(text=('changed from %s' % a.base_name()) if diff else '', fg=WARN)
         self._pv = None
         self.paint_tabs()                                       # (the tabs with changes: orange)
         self._pv = None

@@ -1108,7 +1108,9 @@ def ver_key(s):
     return tuple(int(x) for x in n[:4]) if n else None
 
 
-ONE_PLAYER_TITLES = ()     # (the title words of the original games for one player: game_players - see the list's source)
+ONE_PLAYER_TITLES = ((b'POLE POSITION',), (b'DARK', b'TOWER'))   # (the original games for one player, by the words of
+                           #  the title in their header - their manuals: "a one-player game"; the 3D Imager's and the light
+                           #  pen's games have their own note, port2_needed)
 
 
 def game_players(rom):

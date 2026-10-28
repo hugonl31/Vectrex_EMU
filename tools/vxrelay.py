@@ -60,7 +60,8 @@ RELAY_RATE = 300            # packets/s per side
 ALPHABET = 'ABCDEFGHJKLMNPRSTUVWXYZ'   # (no I, O, Q: nothing to misread)
 MAX_PUBLIC = 100            # public games waiting in the game room at most
 MAX_GAMES = 400             # codes (public and private) at most
-MAX_PAIRS = 100             # games joined at once at most (each may be relayed)
+MAX_PAIRS = 150             # games joined at once at most (each may be relayed: 150 relayed games are ~1/3 of one
+                            # 2 GHz core and ~30 Mbit/s each way at worst - measured on the meeting point, 2026-10-28)
 LIST_PAGE = 8               # games per answer of the list (one packet, under ~1200 bytes)
 GAMER_CHARS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
 

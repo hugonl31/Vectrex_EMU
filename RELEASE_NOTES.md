@@ -12,7 +12,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - **Online > Find players...**: the public games waiting, with the gamer, the game, how long they have waited and
   whether you have that game (by its contents, any file name). Join starts it as a code would.
 - Host this game stays the private way: a five-letter code only the player you tell can use.
-- The meeting point keeps the room small and fast: at most 100 public games waiting, 400 codes and 100 games joined at
+- The meeting point keeps the room small and fast: at most 100 public games waiting, 400 codes and 150 games joined at
   once (a full room says so); a full room costs it well under 1 % of one processor core. The list is asked at most a few
   times a second per PC.
 - Tested between Windows, a Linux mini PC and a Raspberry Pi 5 through the meeting point, direct and relayed, with a

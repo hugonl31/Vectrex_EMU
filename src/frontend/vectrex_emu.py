@@ -3690,18 +3690,19 @@ class App:
             return None
         pl, pt, pr, pb = self.pic_rect()
         x, y, r = self.cart_geom()
-        right = x - 3.6 * r - 1.9 * r                           # (the P2 PORT pictogram's left edge, a gap before it)
         od = self.osd_state()
+        p2 = od.get('p2x') if od else None
+        right = (p2 if p2 is not None else x - 3.6 * r) - 1.1 * r   # (the P2 PORT pictogram's left edge)
         k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0         # (as large as the OSD's text)
         mid = y - 0.5 * r + 8.5 * k
         if od:
-            left = od['area'][0] + max(sum(len(t) for t, _ in row) for row in od['rows']) * 6.0 * od['k'] + r
+            left = od['area'][0] + max(sum(len(t) for t, _ in row) for row in od['rows']) * 6.0 * od['k']
             k = od['k']
             mid = od['area'][1] + len(od['rows']) * 9.0 * k / 2.0  # (level with the OSD's rows)
         else:
             left = (pl + pr) / 2 + (vecrender.GLASS_DX - vecrender.ART_AW) * (pb - pt) / 2
-        rows, ks = ['PAUSED', 'ESC OR P TO GO ON'], [2.6, 1.3]   # (PAUSED large, how to go on below it)
-        k = min(k, 0.95 * (right - left) / max(6.0 * len(t) * f for t, f in zip(rows, ks)))
+        rows, ks = ['PAUSED', 'P: GO ON'], [2.6, 1.3]            # (PAUSED large, how to go on below it - short: it fits
+        k = min(k, 0.8 * (right - left) / max(6.0 * len(t) * f for t, f in zip(rows, ks)))   #  the gap, room each side)
         if k <= 0:
             return None
         hgt = 11.0 * k * ks[0] + 6.0 * k * ks[1]
@@ -3740,7 +3741,9 @@ class App:
         if not (self.fps_on or self.cart_on or self.knob_on):  # (no strip below the picture: only the message)
             return None
         x, y, r = self.cart_geom()
-        return dict(cx=x - 3.6 * r, cy=y, r=r, kind=self.speech,
+        od = self.osd_state() if self.fps_on else None
+        px = od.get('p2x') if od else None
+        return dict(cx=px if px is not None else x - 3.6 * r, cy=y, r=r, kind=self.speech,
                     label='P2 PORT')
     def port2_click(self, e):
         """a click on the port 2 pictogram: joystick -> VecVox -> VecVoice -> 3D Imager -> light pen -> joystick
@@ -3776,6 +3779,15 @@ class App:
                       for n, v in zip(('CPU', 'GPU'), self.headroom())]                 #  too small to read, messy)
         x1 = rx - 1.25 * r
         bot = pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph
+        p2x = None
+        if k >= OSD_KMIN:                                       # (the strip, the owner 2026-10-29: the OSD moved in, as far
+            chars = max(sum(len(t) for t, _ in row) for row in rows)   #  from P2 PORT as the cartridge is from RESET -
+            w = chars * 6.0 * k                                 #  PAUSED sits in that gap)
+            cxx, _, cr = self.cart_geom()
+            gap = (rx - 0.95 * r) - (cxx + 1.3 * cr)            # (the cartridge's label to RESET's ring)
+            left = (cxx - 3.6 * cr - 1.1 * cr) - gap - w        # (P2 PORT's left edge, the gap, the OSD's width)
+            if left >= gl_:                                     # (only inwards)
+                gl_ = left
         if k < OSD_KMIN:                                        # (a small window: the strip's text would be unreadable -
             k = OSD_KMIN                                        #  readable size, in the black left of the picture, its
             chars = max(sum(len(t) for t, _ in row) for row in rows)   #  bottom level with the strip's)
@@ -3783,7 +3795,7 @@ class App:
             gl_ = max(8.0, min(gl_, pl - 12.0 - w))
             top = bot - h
             x1 = max(x1, gl_ + w)
-        return dict(area=(gl_, top, x1, bot), rows=rows, k=k, meters=meters)
+        return dict(area=(gl_, top, x1, bot), rows=rows, k=k, meters=meters, p2x=p2x)
                     # (the text as high as the knob's labels; in full screen 20 % larger)
     # ---------------------------------------------------------------- the cartridge and the ROM browser
     def toggle_cart(self, e=None):

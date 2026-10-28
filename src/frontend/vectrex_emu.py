@@ -1108,6 +1108,9 @@ def ver_key(s):
     return tuple(int(x) for x in n[:4]) if n else None
 
 
+CHAT_TICK = '\u25b8 '        # (the chat: where a message begins)
+CHAT_USER, CHAT_NAME = '#c4ccc8', '#e4e9e6'   # (the chat: the players' lines muted white, their names brighter; the
+                                               #  emulator's own lines in the green of the rest)
 OSD_CHARS = 20             # (the OSD's width in characters, always: its widest row - ONLINE: RELAY 120 MS)
 ROOM_LIVE_S = 3.0          # (Find players: the game room's list asked again this often while the window is open - a
                            #  full room is 13 pages, the meeting point answers 6 a second per PC)
@@ -3782,8 +3785,9 @@ class App:
             gap = (rx - 0.95 * r) - (cxx + 1.3 * cr)            # (the cartridge's label to RESET's ring)
             left = (cxx - 3.6 * cr - 1.1 * cr) - gap - OSD_CHARS * 6.0 * k   # (P2 PORT's left edge, the gap, the
                                                                 #  OSD's width - always the same)
-            if left >= gl_:                                     # (only inwards)
-                gl_ = left
+            gl_ = left                                          # (always by this rule - in full screen too, where the
+                                                                #  larger text reaches past the overlay's edge: the strip,
+                                                                #  centred by strip_dx, stays one piece)
         if k < OSD_KMIN:                                        # (a small window: the strip's text would be unreadable -
             k = OSD_KMIN                                        #  readable size, in the black left of the picture, its
             chars = max(sum(len(t) for t, _ in row) for row in rows)   #  bottom level with the strip's)
@@ -4738,6 +4742,7 @@ class App:
         self.flash(*rows, secs=secs)
     def net_leave(self):
         """Online > Leave: the game goes on here alone (or the waiting stops)"""
+        self.net_rehost_left = 0
         if getattr(self, 'net_pending', None) is not None:
             self.net_cancel = True
             self.net_msg = 'Stopped waiting.'
@@ -5055,7 +5060,13 @@ class App:
                 return
             if not g and isinstance(rom, str) and rom.startswith('server:'):
                 why = rom[7:]
-                net.close(); self.net_flash('ONLINE: NO MEETING POINT' if why == 'server' else 'ONLINE: THE MEETING POINT SAYS', ('THE SERVER DID NOT ANSWER' if why == 'server' else why)[:34].upper(), secs=8)
+                net.close()
+                if why == 'server' and getattr(self, 'net_rehost_left', 0) > 0:   # (waiting again after a drop: the
+                    self.net_rehost_left -= 1                                    #  internet not back yet - tried again)
+                    self.net_flash('ONLINE: NO CONNECTION YET', 'TRYING AGAIN IN 5 S', secs=5)
+                    self.root.after(5000, self.net_rehost)
+                    return
+                self.net_flash('ONLINE: NO MEETING POINT' if why == 'server' else 'ONLINE: THE MEETING POINT SAYS', ('THE SERVER DID NOT ANSWER' if why == 'server' else why)[:34].upper(), secs=8)
                 return
             if not g and rom == 'version':
                 net.close(); self.net_flash('ONLINE: THE OTHER PLAYER HAS', 'ANOTHER EMULATOR VERSION', secs=8)
@@ -5076,6 +5087,7 @@ class App:
                 return
             if role == 'join' and g.get('host_name'):
                 net.peer_name = netplay_name(g['host_name'])
+            self.net_rehost_left = 0
             self.net, self.net_game, self.net_rom = net, g, os.path.abspath(rom)
             Core.force_seed = g.get('seed')
             Core.net_card = (card[0], card[1]) if card else None
@@ -5112,10 +5124,42 @@ class App:
             self.net_flash('ONLINE: OUT OF SYNC', 'THE GAMES DIFFER NOW', secs=8)
             self.chat_add('sys', 'Out of sync at frame %d: the two games are no longer the same. Leave and start '
                           'again to play together.' % net.desync)
+        if net is not None and getattr(self, 'net_game', None) and not net.lost:
+            import netplay
+            out = net.out_s()
+            if out > 0:                                         # (the connection gone: both wait - how long still)
+                left_s = max(0, int(math.ceil(netplay.TIMEOUT - out)))
+                if not getattr(self, 'net_out', False):
+                    self.net_out = True
+                    self.chat_add('sys', 'The connection is gone - waiting %d seconds for %s.' % (int(netplay.TIMEOUT), self.peer_label()))
+                self.flash('CONNECTION LOST', 'WAITING FOR %s' % self.peer_label().upper()[:22], '%d' % left_s, secs=0.6)
+            elif getattr(self, 'net_out', False):
+                self.net_out = False
+                self.chat_add('sys', 'The connection is back.')
+                self.flash('CONNECTION BACK', secs=2)
         if getattr(self, 'net_game', None) and getattr(self.run, 'net_lost', False):
-            self.net_end('ONLINE: CONNECTION LOST')
+            left = bool(getattr(net, 'left', False))
+            role, pub, direct = self.net_role, getattr(self, 'net_public', None), getattr(self, 'net_direct', False)
+            via_room = getattr(self, 'net_via_room', False)
+            self.net_out = False
+            self.net_end('ONLINE: THE OTHER PLAYER LEFT' if left else 'ONLINE: CONNECTION LOST')
+            if role == 'host':                                  # (the host: waiting for a player again - the same way;
+                import netplay                                  #  tried again for 2 minutes while the internet is not back)
+                self.net_rehost_args = dict(direct_port=netplay.PORT if direct else None, public=pub)
+                self.net_rehost_left = 24
+                self.root.after(2500, self.net_rehost)
+            elif via_room:                                      # (the joiner: plays on alone; looks for players again)
+                self.root.after(2500, self.find_players_window)
+            else:
+                self.root.after(2500, lambda: self.online_window('join'))
         if getattr(self, 'net_game', None) or res is None:
             self.root.after(200, self.net_poll)
+    def net_rehost(self):
+        """the host after a drop: waiting for a player again, as before (net_rehost_left: tries still)"""
+        args = getattr(self, 'net_rehost_args', None)
+        if args is None or self.net_busy() or getattr(self, 'quitting', False):
+            return
+        self.net_begin('host', **args)
     def net_end(self, why):
         net = getattr(self, 'net', None)
         self.net = None; self.net_game = None; self.net_rom = None
@@ -5200,9 +5244,10 @@ class App:
         tk.Label(top, text='Enter: send   Esc: back to the game', fg=dim, bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=12, pady=6)
         body = tk.Frame(t, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE); body.pack(fill='both', padx=10, pady=(8, 0))
         log = tk.Text(body, width=46, height=9, bg='#06100d', fg='#bfe', font=f9, relief='flat', wrap='word', bd=0,
-                      highlightthickness=0, padx=8, pady=6, cursor='arrow', takefocus=0)
+                      highlightthickness=0, padx=8, pady=6, cursor='arrow', takefocus=0,
+                      spacing1=11, spacing2=1)                  # (room between two messages, little inside a wrapped one)
         sbar = darkmenu.DScroll(body, command=log.yview, bg=bg)
-        tk.Canvas.configure(sbar, height=10)                    # (the text's 9 lines set the height, not the bar)
+        tk.Canvas.configure(sbar, height=10)                    # (the text's lines set the height, not the bar)
         sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
         log.pack(side='left', fill='both', expand=True)
         newbar = tk.Label(log, text='\u25bc new message', fg=deck.BG, bg=deck.HI, font=(MONO, 9), padx=8, pady=1,
@@ -5232,18 +5277,24 @@ class App:
             if float(b) >= 0.999:
                 bar_off()
         log.configure(yscrollcommand=scrolled)
-        log.tag_configure('me', foreground=g); log.tag_configure('them', foreground='#bfe')
-        log.tag_configure('sys', foreground=dim); log.tag_configure('who_me', foreground=g, font=(MONO, 10, 'bold'))
-        log.tag_configure('who_them', foreground='#e8fff6', font=(MONO, 10, 'bold'))
+        log.tag_configure('me', foreground=CHAT_USER); log.tag_configure('them', foreground=CHAT_USER)   # (the players:
+                                                                #  muted white; the emulator's own lines green)
+        log.tag_configure('sys', foreground=g)
+        log.tag_configure('who_me', foreground=CHAT_NAME, font=(MONO, 10, 'bold'))
+        log.tag_configure('who_them', foreground=CHAT_NAME, font=(MONO, 10, 'bold'))
+        import tkinter.font as tkfont
+        log.tag_configure('tick', foreground=deck.DIM)
+        log.tag_configure('msg', lmargin1=0, lmargin2=tkfont.Font(font=f9).measure(CHAT_TICK))
         def add_line(who, text):
             at_end = log.yview()[1] >= 0.999
             log.configure(state='normal')
             if log.index('end-1c') != '1.0':
                 log.insert('end', '\n')
-            if who == 'sys':
-                log.insert('end', text, 'sys')
+            log.insert('end', CHAT_TICK, ('tick', 'msg'))       # (a tick where each message begins; its wrapped lines
+            if who == 'sys':                                    #  indented under its text)
+                log.insert('end', text, ('sys', 'msg'))
             else:
-                log.insert('end', (me if who == 'me' else them) + ': ', 'who_' + who); log.insert('end', text, who)
+                log.insert('end', (me if who == 'me' else them) + ': ', ('who_' + who, 'msg')); log.insert('end', text, (who, 'msg'))
             log.configure(state='disabled')
             if at_end or who == 'me':
                 to_end()
@@ -5258,7 +5309,7 @@ class App:
         deck._button(pr, 'Take port 1', lambda: self.take_port(1), self, small=True).pack(side='left')
         deck._button(pr, 'Take port 2', lambda: self.take_port(2), self, small=True).pack(side='left', padx=(6, 0))
         t.ports_l = tk.Label(pr, text=self.port_text(), fg=dim, bg=deck.BG, font=(MONO, 9), anchor='e')
-        t.ports_l.pack(side='right')
+        t.ports_l.pack(side='right', padx=(16, 0))              # (room after the buttons)
         row = tk.Frame(t, bg=deck.BG); row.pack(fill='x', padx=10, pady=8)
         v = tk.StringVar()
         en = tk.Entry(row, textvariable=v, bg='#06100d', fg='#e8fff6', insertbackground='#bfe', font=f9, relief='flat',
@@ -5294,6 +5345,17 @@ class App:
             t.destroy()
         t.bind('<Escape>', back)
         t.protocol('WM_DELETE_WINDOW', close)
+        try:                                                    # (as many lines as the screen holds, 9 to 30)
+            import tkinter.font as tkfont
+            t.update_idletasks()
+            x0, y0, x1, y1 = deck.work_area(t)
+            lh = tkfont.Font(font=f9).metrics('linespace') + 2
+            other = t.winfo_reqheight() - log.winfo_reqheight()
+            title = int(40 * t.winfo_fpixels('1i') / 96.0)       # (the title bar, scaled)
+            lines = int(((y1 - y0) * 0.85 - other - title) / lh)
+            log.configure(height=max(9, min(30, lines)))
+        except (tk.TclError, ValueError):
+            pass
         deck.place(t, 'chat', self)
         deck.over_full(t, self)
         try: dark_title(t)
@@ -5433,7 +5495,7 @@ class App:
                     lb = tk.Label(grid, text=txt, fg=col, bg=bg, font=f9, anchor='w', width=(14, 26, 9, 12)[c])
                     lb.grid(row=i, column=c, sticky='w'); lb.room_code = g['code']
                 def join(code=g['code']):
-                    close(); self.net_last_join = code
+                    close(); self.net_last_join = code; self.net_via_room = True
                     self.net_begin('join', target=code)
                 b = deck._button(grid, 'Join', join, self, small=True); b.grid(row=i, column=4, sticky='e', padx=(6, 0), pady=1)
                 deck._paint(b, bool(mine) and not self.net_busy())
@@ -5530,7 +5592,7 @@ class App:
         jv = tk.StringVar(value=getattr(self, 'net_last_join', ''))
         je = field(r2, 22, jv); je.pack(side='left'); t.join_e = je
         def join():
-            self.net_last_join = jv.get().strip()
+            self.net_last_join = jv.get().strip(); self.net_via_room = False
             self.net_begin('join', target=self.net_last_join); sync()
         join_b = deck._button(r2, 'Join', join, self, on=True, small=True); join_b.pack(side='left', padx=(6, 0))
         je.bind('<Return>', lambda ev: join())

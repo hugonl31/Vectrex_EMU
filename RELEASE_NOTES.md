@@ -28,6 +28,16 @@ build workflow replaces that release (title = the version, marked Latest) with t
   stays switched on while connected.
 - **Hosting**: waiting for player 2, change the cartridge and the new game is offered (and listed in the game room) at
   once; Host public game follows the slot while it is open. Leaving takes the game out of the room at once.
+- **A connection drop** (Wi-Fi, the router): both games wait, CONNECTION LOST and a countdown on both screens; back
+  within 30 seconds, the game goes on from the same frame (also when the router gives the PC another port - direct
+  and through the meeting point). After 30 seconds the link ends: the host waits for a player again (in the game room
+  when it was public), the joiner plays on alone and Find players (or the Online window) opens again - as when the
+  other player leaves.
+- Fixed: after a drop the side that had run a few frames ahead sent 'no input' for those frames again - the games
+  then differed (found with a real 8 s drop between two PCs); now its own inputs are kept until they are out of the
+  packets' window. A host whose internet is not back yet tries again every 5 s for 2 minutes.
+- The chat: a tick where each message begins, more room between messages, as tall as the screen allows (9-30
+  lines); the emulator's own lines green, the players' muted white.
 - **Find players** keeps its list up to date by itself (every 3 s while open) - no Refresh button.
 - **A new version on GitHub** is told at start (a small window with the link; "Don't remind me" keeps it quiet until
   the next one) and always at the top of the Online, Find players and Host public game windows. Online settings:

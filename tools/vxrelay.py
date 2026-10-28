@@ -178,6 +178,8 @@ class Relay:
             kind, body = data[4:5], data[5:]
             if kind == b'X':                                # relay: the hot path first
                 p = self.pairs.get(addr)
+                if not p and len(body) >= 6:                # (a side whose router gave it another port: the same address,
+                    p = self.rebind(addr, body[:5].decode('ascii', 'replace'))   #  the same code - moved)
                 if p and len(body) >= 6 and body[:5].decode('ascii', 'replace') == p[1] and len(body) - 5 <= RELAY_MAX:
                     if not self.limited(self.rate, addr, 1.0, RELAY_RATE):
                         self.send(p[0], b'F', body[5:]); p[2][0] = now
@@ -280,6 +282,19 @@ class Relay:
                 self.send(addr, b'P', json.dumps(host).encode())
                 self.send(g['addr'], b'P', json.dumps(join).encode())
                 print('%s join %s:%d' % (c, addr[0], addr[1]), flush=True)
+
+    def rebind(self, addr, code):
+        """a pair's side back with another port (its router, after a drop): its entries moved to the new address"""
+        old = next((a for a, p in self.pairs.items() if p[1] == code and a[0] == addr[0] and a != addr), None)
+        if old is None:
+            return None
+        p = self.pairs.pop(old)
+        self.pairs[addr] = p
+        o = self.pairs.get(p[0])
+        if o is not None and o[0] == old:
+            o[0] = addr
+        print('%s moved %s:%d -> %s:%d' % (code, old[0], old[1], addr[0], addr[1]), flush=True)
+        return p
 
     def room(self, addr, page, now):
         """the public games waiting (the oldest first): page `page` of them"""

@@ -45,7 +45,9 @@ MAGIC = b'VXN1'
 DELAY = 3                   # frames of input delay (each side's input runs this many frames after it was read): at
                             # least this; the host measures the round trip and adds what it needs (the game's 'delay')
 KEEP = 16                   # inputs repeated in every packet
-TIMEOUT = 10.0              # seconds without the other side: the connection is lost
+TIMEOUT = 30.0              # seconds without the other side (no packet, or no new input while the game waits for it):
+                            # the connection is lost - until then both wait, a countdown on the screen
+OUT_GRACE = 1.5             # (seconds the game waits before the countdown shows: a connection drop)
 SERVER = (os.environ.get('VECTREX_NET_SERVER', '172.233.60.40'), int(os.environ.get('VECTREX_NET_SERVER_PORT', '7745')))
 RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
@@ -182,6 +184,8 @@ class NetPlay:
         self.offer = None                               # (host: the game it offers now - it may change while it waits)
         self.offer_rom = None
         self.last_heard = time.perf_counter()           # (the other side's last packet: TIMEOUT without one = lost)
+        self.wait_t0 = None                             # (since when the game waits for the other side's input)
+        self.left = False                               # (the other side said it leaves)
         self.pause_on, self.pause_seq, self.pause_peer = False, 0, False   # (the pause both share: on or not, its
         self.pause_t = 0.0                                                 #  number, set by the other side)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -263,6 +267,10 @@ class NetPlay:
                 if self.candidates and src in self.candidates and self.peer != src:
                     self.peer = src                             # (the direct way works: this address)
                     self.log('direct connection with %s:%d' % src)
+                elif self.locked and self.peer and src[0] == self.peer[0] and src[1] != self.peer[1] and \
+                        data[4] in (ord('I'), ord('Z'), ord('S')):
+                    self.peer = src                             # (its router gave it another port: followed)
+                    self.log('the other side moved to %s:%d' % src)
             self.last_heard = time.perf_counter()
             return data[4], data[5:], src
 
@@ -549,7 +557,9 @@ class NetPlay:
         self.local[f + self.delay] = tuple(int(v) for v in mine)
         t_wait = time.perf_counter()
         while f not in self.remote:
+            self.wait_t0 = t_wait
             if self.lost:                                # (closed meanwhile: the window shut, or the other side left)
+                self.wait_t0 = None
                 return None
             now = time.perf_counter()
             if now - self.last_send > 0.010:
@@ -557,16 +567,19 @@ class NetPlay:
             self._drain()
             if f in self.remote:
                 break
-            if now - max(t_wait, self.last_heard) > TIMEOUT:     # (nothing from the other side: a paused one still
-                                                                 #  sends that it is there)
-                self.lost = True
+            if now - self.last_heard > TIMEOUT or (now - t_wait > TIMEOUT and not self.pause_on):
+                self.lost = True                         # (nothing from the other side - or no new input: it can not
+                self.wait_t0 = None                      #  hear us; a paused one still says it is there)
                 self.log('connection lost (no input for frame %d)' % f)
                 return None
             time.sleep(0.0005)
+        self.wait_t0 = None
         self.stall_s += time.perf_counter() - t_wait
         self._send_inputs()
-        a, b = self.local.pop(f), self.remote.pop(f)
-        self.f += 1
+        a, b = self.local[f], self.remote.pop(f)     # (this side's own input kept: every packet repeats the last KEEP
+        self.f += 1                                  #  frames, and the other side - a few frames behind - may have
+        for old in [k for k in self.local if k < f - KEEP - 4]:   #  missed them in a drop: sent again as they were,
+            del self.local[old]                      #  never as 'no input' - a desync after a drop, 2026-10-29)
         for old in [k for k in self.remote if k < f - 64]:
             del self.remote[old]
         return (a, b) if self.role == 'host' else (b, a)
@@ -595,6 +608,17 @@ class NetPlay:
         if now - self.last_heard > TIMEOUT:
             self.lost = True
             self.log('connection lost (nothing from the other side while paused)')
+
+    def out_s(self):
+        """how long the connection has been gone (0: it is not) - the game waits for the other side longer than
+        OUT_GRACE, or has heard nothing from it (not at the very start: the two power on)"""
+        now = time.perf_counter()
+        if self.lost or self.f < 100:
+            return 0.0
+        w = self.wait_t0
+        s = (now - w) if (w is not None and not self.pause_on) else 0.0
+        s = max(s, now - self.last_heard)
+        return s if s > OUT_GRACE else 0.0
 
     def pace_s(self):
         """the clock sync: seconds to add to this frame. The side ahead of the other slows down a little, so neither
@@ -680,7 +704,7 @@ class NetPlay:
                 if 0 < (seq - self.pause_seq) & 0xFFFF < 0x8000:
                     self.pause_on, self.pause_seq, self.pause_peer = bool(on), seq, True
             elif kind == ord('Q'):                       # (the other side quit)
-                self.lost = True
+                self.lost = True; self.left = True
                 self.log('the other player left')
 
     def close(self):

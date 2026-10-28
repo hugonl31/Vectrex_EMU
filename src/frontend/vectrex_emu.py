@@ -6663,14 +6663,12 @@ class App:
         return next(c[k] for c in self.SPEED_COLORS if self.speed >= c[0])
     def hud_text(self):
         """the OSD, one value per row: the game's frame rate, the monitor's refresh, the emulation rate
-        (coloured) and the volume"""
+        (coloured) and, online, the connection (in the row the volume had: the OSD keeps its height over the overlay;
+        the volume shows on the knob and on the status line when it is turned)"""
         g = (0.40, 0.667, 0.533)
         idle = self.run.paused or not self.run.power or self.run.frames < 50   # (a new game's first second: --)
         vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('MONITOR', '%d HZ' % round(self.disp_fps), g),
-                ('EMU RATE', '--' if idle else '%d%%' % self.speed_shown(), g if idle else self.speed_color(2)),
-                ('VOL', '%d%%' % round(self.run.crt.volume * 100) if self.run.power else 'OFF', g)]
-        if getattr(self, 'speech', 'off') in ('vecvoice', 'vecvox'):   # (a speech module plugged in: its volume too)
-            vals.append(('SPEECH VOL', '%d%%' % round(self.run.crt.voice_vol * 100), g))
+                ('EMU RATE', '--' if idle else '%d%%' % self.speed_shown(), g if idle else self.speed_color(2))]
         # (the same rows for every system - a UVMC2 or a PiTrex too: the CPU / GPU meters below them tell the load)
         if getattr(self, 'net_osd', True) and self.net_busy():  # (online: the other player's state)
             ng, net = getattr(self, 'net_game', None), getattr(self, 'net', None)

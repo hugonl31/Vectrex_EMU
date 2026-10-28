@@ -22,8 +22,8 @@ photo, recording and measurement, and every call on how it should look, sound an
 ## New in v1.0.7
 
 * **The Vectrex's trim pots** - every adjustment of a real Vectrex in Config: the brightness knob, the X and Y size,
-  the high voltage and its ringing, the yoke's centering magnets and rotation (Unit tab), the main board's DAC offset
-  and integrator rate offsets (Circuit tab). The defaults are the factory settings; **Random unit** and
+  the high voltage, the yoke's centering magnets and rotation (Unit tab), the DAC offset, the integrator rate offsets
+  and the high voltage's ringing (Circuit tab). The defaults are the factory settings; **Random unit** and
   **Cranky** roll a new believable unit on every press.
 * **Online play across systems** - Windows against Linux, macOS or a Raspberry Pi now stays in sync in every game
   (a power-on seed computed differently on 64-bit Linux and macOS made about a quarter of games part), PiTrex games
@@ -818,7 +818,7 @@ opens it over the picture while the game runs on; Tab or Esc closes it. On top, 
 | **Case** | the plastic case round the tube (without an overlay): on / off, its reflections, its wear |
 | **Overlay** | on / off, choosing one per game, tint, printed art, parallax, the plastic glow, the scratches, position and size |
 | **Sound** | the volume, the buzz, the speaker, the speech module's volume and speaker |
-| **Vectrex unit** | the trim pots and analog parts that differ per Vectrex, in two tabs: **Unit** (the brightness knob R509, X / Y size R401 / R408, high voltage R525 and its ringing R526, the yoke's centering magnets and rotation) and **Circuit** (DAC offset R302, integrator rate offsets R335 / R333, zero hold, calibration, Y settling, beam delay, line gaps) - presets *Owner's Vectrex* (the measured one), *Ideal*, *Cranky* and *Random unit* (a new unit on every press); Export / Import a unit as a file |
+| **Vectrex unit** | the trim pots and analog parts that differ per Vectrex, in two tabs: **Unit** (the brightness knob R509, X / Y size R401 / R408, high voltage R525, the yoke's centering magnets and rotation) and **Circuit** (DAC offset R302, integrator rate offsets R335 / R333, the high voltage's ringing R526, zero hold, calibration, Y settling, beam delay, line gaps) - presets *Owner's Vectrex* (the measured one), *Ideal*, *Cranky* and *Random unit* (a new unit on every press); Export / Import a unit as a file |
 | **Display** | the screen mode, smooth motion, rotation, the on-screen display, knob and cartridge, the monitor size, Authentic size |
 | **Cartridge** | cartridge hardware, controller port 2 (speech modules), UVMC2 games, their USB port, headphone jack and SD card folder |
 

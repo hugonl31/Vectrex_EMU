@@ -9,7 +9,8 @@
 
 Lockstep: the emulator core is deterministic - the same ROM, the same power-on seed (the RAM's random state) and the
 same controller input every frame give the same game, to the bit (tested 2026-10-27: the RAM's checksum after 1500
-frames of two players' random input, and it does not depend on the Vectrex unit's analog settings either). So the
+frames of two players' random input; the Vectrex unit's analog settings move only the picture - except R302, the
+DAC offset, which also moves the joystick comparator: online both sides use the host's). So the
 two instances never send the picture or the sound, only each frame's controller: 4 bytes. Each frame's input is sent
 DELAY frames ahead (60 ms at 50 Hz: what a connection's round trip may take without a stall), every packet carries
 the last 16 frames' inputs (a lost packet is covered by the next), and a frame runs only once the other side's input

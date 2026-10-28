@@ -7,14 +7,17 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 **The Vectrex's trim pots** (2026-10-28)
 - Every adjustment of a real Vectrex, from the service manual and the boards' parts lists, now in Config:
-  - **Unit** tab (what an owner turns): **R509** the brightness knob at the back, **R401 / R408** the X and Y size,
-    **R525** the high voltage (higher: a smaller, brighter, sharper picture), **R526** the high voltage's ringing,
-    the yoke's **centering magnets** and the **yoke rotation**.
-  - **Circuit** tab (the main board): **R302** the DAC offset, which moves the picture on the diagonal, changes the
-    dimmest lines and makes the joystick read a little off; **R335 / R333** the X / Y integrators' rate offset, which
-    bends long lines; and the existing zero reference, beam and DAC models.
+  - **Unit** tab (what an owner turns): **R509** the brightness knob at the back, **R401 / R408** the X and Y size
+    (60-140 %), **R525** the high voltage (4.6-7.0 kV; higher: a smaller, brighter, sharper picture), the yoke's
+    **centering magnets** and the **yoke rotation**.
+  - **Circuit** tab (the service trim pots): **R302** the DAC offset on the logic board, which moves the picture on the
+    diagonal, changes the dimmest lines and makes the joystick read a little off; **R335 / R333** the X / Y
+    integrators' rate offset (the old Drift rows, now with the real range of +-0.585 DAC steps), which bends long
+    lines; **R526** the high voltage's ringing (off its minimum the voltage drops by up to 8 %); and the existing zero
+    reference, beam and DAC models.
 - A real Vectrex has no focus or position pot: the picture is centred with the yoke's ring magnets. The defaults are every pot in
-  its factory position: 100 % size, 5.8 kV, R302 as the manual sets it.
+  its factory position (100 % size, 5.8 kV, R302 as the manual sets it), and there the core is bit-identical to v1.0.6
+  (lines and state, tested on the Test Cartridge, Mine Storm, Armor Attack and HyperChase).
 - **Random unit** and **Cranky** make a new unit on every press: Random is slightly off in every part, as real units
   differ; Cranky is a tired one. Both stay readable and playable. The brightness knob stays where you set it.
 

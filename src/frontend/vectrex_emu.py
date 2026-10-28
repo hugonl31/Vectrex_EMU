@@ -48,6 +48,17 @@ IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 # Steam Deck Game Mode (gamescope): one window is shown - a second one (the first-run setup) stays out of
 # sight, and there is no mouse for the volume knob: there the setup is skipped and the Vectrex starts on
 IN_GAMESCOPE = bool(os.environ.get('GAMESCOPE_WAYLAND_DISPLAY')) or os.environ.get('XDG_CURRENT_DESKTOP', '').lower() == 'gamescope'
+def _raspberry_pi():
+    """a Raspberry Pi (its device tree names the board): its V3D graphics want the Low quality profile"""
+    for f in ('/proc/device-tree/model', '/sys/firmware/devicetree/base/model'):
+        try:
+            with open(f, 'rb') as fh:
+                if b'Raspberry Pi' in fh.read():
+                    return True
+        except OSError:
+            pass
+    return False
+IS_PI = sys.platform.startswith('linux') and _raspberry_pi()
 if not IS_WIN:                                          # macOS / Linux: the window, keys, controllers, sound
     import osdep
 if getattr(sys, 'frozen', False):                       # Vectrex_EMU.exe (PyInstaller; macOS: next to Vectrex_EMU.app)
@@ -2206,6 +2217,9 @@ class App:
         self.root.after(2500, self.check_um2_data)
         if getattr(self, 'gl_error', None):
             self.root.after(1200, self.gl_notice)
+        if not c1_setup_done(self.settings_f) and IS_PI and self.ren:   # (the first start on a Raspberry Pi: Low - at
+            self.root.after(200, lambda: self.set_profile('low'))       #  Ultra its V3D draws ~300 ms a picture and its
+                                                                         #  driver crashes now and then, 2026-10-28)
         if not c1_setup_done(self.settings_f) and not args.demo:   # (the first start: the setup, once)
             if IN_GAMESCOPE:                                    # (Steam Deck Game Mode: its window would stay
                 self.setup_done = True                          #  hidden - the defaults; View > Setup later)

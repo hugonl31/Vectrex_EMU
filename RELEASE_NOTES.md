@@ -31,6 +31,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - R302 moves the joystick comparator, so online both PCs use the host's R302 (it cannot be changed during an online
   game). The 512K cartridge's latch also powers up the same on both sides.
 - An online UVMC2 / PiTrex game's card image (about 300 MB in the cache folder) is now deleted when the game ends.
+- A Raspberry Pi starts at the Low quality profile the first time (at Ultra its graphics driver draws about 300 ms a
+  picture and crashed now and then, which also ended online games).
 - Tested this PC (Windows) against a Linux mini PC and a Raspberry Pi 5, direct on the LAN and relayed through the
   meeting point, with a sync check every frame: VecDoom, Veccy Road, Space Duel, Tempest, Vectorblade and Armor Attack
   all identical. On a Raspberry Pi 5 the PiTrex games run online; the UVMC2 games are too heavy for it on one thread.

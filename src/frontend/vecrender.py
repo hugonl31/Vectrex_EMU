@@ -2604,9 +2604,11 @@ class GLBloomRenderer(GLRenderer):
         u, v = px / sc - ox, py / sc - oy                 # (the projection's y runs down, as the lines')
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
         x, y = _np.array([u], dtype=float), _np.array([v], dtype=float)
+        ps = self.pic_adj()[0]
+        gx, gy = 1.0 / (TUBE_LIN[0] * ps), 1.0 / (TUBE_LIN[2] * ps)   # (steps scaled by the map's own size: exact in a few)
         for _ in range(8):
             fx, fy = self._tube_f(x, y, k)
-            x = x + (u - fx); y = y + (v - fy)
+            x = x + (u - fx) * gx; y = y + (v - fy) * gy
         return float(x[0]), float(y[0])
 
     # the 3D Imager's filters (imager.c: the colour code of each line, an 8th column): the phosphor's white light through

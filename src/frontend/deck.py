@@ -340,7 +340,10 @@ def remember(t, name, app):
                     app.win_pos[name] = (t.winfo_x(), t.winfo_y())
             except tk.TclError:
                 pass
-    t.bind('<Configure>', moved, add='+')
+    try:
+        t.bind('<Configure>', moved, add='+')
+    except tk.TclError:                                 # (the emulator closed meanwhile)
+        pass
 
 
 def saved_place(t, name, app):
@@ -1624,16 +1627,23 @@ def setup_window(app, first=True):
     def optimize(txt=txt):
         """Optimize (pctest): the best this PC runs at full speed, set now; the presets here still choose instead"""
         import pctest
-        rep = pctest.optimize(a, lambda st: (txt.configure(text='optimizing: ' + st), t.update()))
+        try:
+            rep = pctest.optimize(a, lambda st: (txt.configure(text='optimizing: ' + st), t.update()))
+        except (AttributeError, tk.TclError):           # (the emulator closed meanwhile)
+            return
+        if rep == 'online':
+            txt.configure(text='not during an online game - press Optimize later'); return
         if rep is None:
             txt.configure(text='drawn without OpenGL: no effects to choose'); return
         pctest.apply(a, rep)
         qset(a.current_profile())
         txt.configure(text='\n'.join(pctest.result_lines(rep)[:-1]))
     _button(side, 'Optimize', optimize, a, small=True).pack()
-    if first:
+    if first and not a.net_busy():                      # (a new install: at once - not when it starts an online game)
         txt.configure(text='optimizing...')
-        t.after(400, optimize)                          # (a new install: at once)
+        t.after(400, optimize)
+    elif first:
+        txt.configure(text='Optimize: after the online game')
     else:
         txt.grid_remove()                               # (nothing to say until Optimize runs)
         _orig_cfg = txt.configure

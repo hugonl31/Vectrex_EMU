@@ -149,6 +149,8 @@ def optimize(app, say=lambda s: None):
     measurable stay on). The game is paused meanwhile. dict(vals= the switches, off=[(key, saving %)], before=,
     after= (processor, graphics) shares, fits=, cpu=, gpu=, hz=); None without the OpenGL renderer"""
     a = app
+    if getattr(a, 'net_busy', None) and a.net_busy():
+        return 'online'                                 # (it pauses the game: online that stops both players' game)
     if not (a.ren and hasattr(a.ren, '_present')):
         return None
     was = a.run.paused
@@ -297,7 +299,15 @@ def window(app, parent=None, on_done=None):
             on_done(st.get('rep'))
     def start():
         go.pack_forget(); no.pack_forget()
-        rep = optimize(a, lambda s: (body.configure(text=s), t.update()))
+        try:
+            rep = optimize(a, lambda s: (body.configure(text=s), t.update()))
+        except (AttributeError, tk.TclError):           # (the emulator closed meanwhile)
+            return
+        if rep == 'online':
+            body.configure(text='Not during an online game: Optimize pauses the game for a few seconds, which would '
+                                'stop it for both players. Leave the online game first (Online menu).')
+            deck._button(bar, 'OK', close, a, on=True).pack(side='left')
+            return
         if rep is None:
             body.configure(text='This PC draws without OpenGL: there are no effects to choose.')
             deck._button(bar, 'OK', close, a, on=True).pack(side='left')

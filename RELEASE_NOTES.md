@@ -3,6 +3,35 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.7
+
+**The Vectrex's trim pots** (2026-10-28)
+- Every adjustment of a real Vectrex, from the service manual and the boards' parts lists, now in Config:
+  - **Unit** tab (what an owner turns): **R509** the brightness knob at the back, **R401 / R408** the X and Y size,
+    **R525** the high voltage (higher: a smaller, brighter, sharper picture), **R526** the high voltage's ringing,
+    the yoke's **centering magnets** and the **yoke rotation**.
+  - **Circuit** tab (the main board): **R302** the DAC offset, which moves the picture on the diagonal, changes the
+    dimmest lines and makes the joystick read a little off; **R335 / R333** the X / Y integrators' rate offset, which
+    bends long lines; and the existing zero reference, beam and DAC models.
+- A real Vectrex has no focus or position pot: the picture is centred with the yoke's ring magnets. The defaults are every pot in
+  its factory position: 100 % size, 5.8 kV, R302 as the manual sets it.
+- **Random unit** and **Cranky** make a new unit on every press: Random is slightly off in every part, as real units
+  differ; Cranky is a tired one. Both stay readable and playable. The brightness knob stays where you set it.
+
+**Online play: fixes from tests between Windows, Linux and a Raspberry Pi 5**
+- A Windows PC and a Linux or Mac computer went out of sync in about a quarter of all online games, plain cartridges
+  too: the power-on seed was computed with 64-bit arithmetic on Linux and macOS. Now the same on every system
+  (Windows exactly as before).
+- PiTrex games through the meeting point's relay could not start: the SD card's file list arrived cut short. It is now
+  sent in smaller pieces, a damaged list is collected again, and the relay passes longer packets (so v1.0.6 hosts work
+  through it too).
+- R302 moves the joystick comparator, so online both PCs use the host's R302 (it cannot be changed during an online
+  game). The 512K cartridge's latch also powers up the same on both sides.
+- An online UVMC2 / PiTrex game's card image (about 300 MB in the cache folder) is now deleted when the game ends.
+- Tested this PC (Windows) against a Linux mini PC and a Raspberry Pi 5, direct on the LAN and relayed through the
+  meeting point, with a sync check every frame: VecDoom, Veccy Road, Space Duel, Tempest, Vectorblade and Armor Attack
+  all identical. On a Raspberry Pi 5 the PiTrex games run online; the UVMC2 games are too heavy for it on one thread.
+
 ## v1.0.6
 
 **Online play for UVMC2 games and PiTrex programs** (2026-10-28)

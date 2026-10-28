@@ -2704,7 +2704,8 @@ class GLBloomRenderer(GLRenderer):
                         PY[1] * s1 + QY[1] * c1 + PY[2] * s2 + QY[2] * c2 + PY[3] * s3 + QY[3] * c3)
             dx0, dy0 = woff(t0); dx1, dy1 = woff(t0 + cyc)
             x0 = x0 + dx0; y0 = y0 + dy0; x1 = x1 + dx1; y1 = y1 + dy1
-        cgain = getattr(self, 'crt_gain', 1.0); cwidth = getattr(self, 'crt_width', 1.0)
+        cgain = getattr(self, 'crt_gain', 1.0) * getattr(self, 'hv_light', 1.0)        # (R525: the high voltage's light and
+        cwidth = getattr(self, 'crt_width', 1.0) * getattr(self, 'hv_width', 1.0)      #  spot, vectrex_emu.unit_picture)
         gp = 160.0 * sc
         ax = (x0 + ox) * sc; ay = h - (y0 + oy) * sc
         bx = (x1 + ox) * sc; by = h - (y1 + oy) * sc
@@ -2841,9 +2842,9 @@ class GLBloomRenderer(GLRenderer):
             self.load_f += (load - self.load_f) * 0.3
         bend = getattr(self, 'bend_on', False) and self.bend_strength > 0
         # the tube switching on / off: brightness (warm-up) and picture size (bulge, collapse)
-        cgain = getattr(self, 'crt_gain', 1.0)
+        cgain = getattr(self, 'crt_gain', 1.0) * getattr(self, 'hv_light', 1.0)   # (R525: the high voltage, see unit_picture)
         kb = getattr(self, 'knob_bright', 0.0)            # (the brightness knob: see knob_bright)
-        cwidth = getattr(self, 'crt_width', 1.0)              # (the spot blooms as the picture collapses)
+        cwidth = getattr(self, 'crt_width', 1.0) * getattr(self, 'hv_width', 1.0)   # (the spot blooms as the picture collapses)
         csx, csy = getattr(self, 'crt_sx', 1.0), getattr(self, 'crt_sy', 1.0)
         cskew = getattr(self, 'crt_skew', 0.0); cshift = getattr(self, 'crt_shift', 0.0)
         cgarb = getattr(self, 'crt_garble', 0.0)

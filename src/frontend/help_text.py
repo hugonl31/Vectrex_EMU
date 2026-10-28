@@ -199,13 +199,30 @@ TOPICS = [
          "cranky one or a random one. Changing a part by hand makes it Custom."),
 ('item', "Owner's Vectrex", "Measured on the emulator author's own Vectrex (photos of its test screens): the default."),
 ('item', 'Ideal', "A perfect machine: the zero reference holds, nothing drifts, the Y hold settles at once."),
-('item', 'Cranky', "A tired unit: a weak zero reference, drift, slow settling, long beam delays."),
-('item', 'Random unit', "A new believable Vectrex somewhere between a good and a tired one, each time."),
+('item', 'Cranky', "A tired unit, a new one each time: a weak zero reference, drift, slow settling, long beam "
+         "delays, pots a little further off - still readable and playable, as real tired Vectrexes are."),
+('item', 'Random unit', "A new believable Vectrex each time: every part and pot slightly off, as real units "
+         "differ. The brightness knob stays where you set it."),
 ('item', 'Zero hold', "How well the zero reference charges when a game re-centres the beam: lower, and shapes drawn after "
       "a re-centre start a little off - text lines slant, closed boxes do not meet."),
 ('item', 'Zero calibration shift', "Where the calibrated zero ends up after the BIOS's calibration pulse."),
-('item', 'Drift X / Drift Y', "The integrators' offset: while a line is drawn the beam creeps sideways or up and down."),
-('item', 'Zero offset', "The trimmers R333 / R335: the whole picture's centre against the zero reference."),
+('item', 'R302 DAC offset', "A trim pot on the main board: where the DAC's middle code sits. Off, the whole picture "
+      "moves on the diagonal, the dimmest lines get brighter or vanish and the joystick reads a little off. The service "
+      "manual: never use it to centre the picture. 0 = set as the manual says."),
+('item', 'R335 X rate offset / R333 Y rate offset', "Trim pots on the main board: the integrators' offset. Off, the beam "
+      "creeps sideways (X) or up and down (Y) while a line is drawn - long lines bend away, closed shapes do not meet. "
+      "The Test Cartridge's Integrator Off-Set test is how they are set."),
+('item', 'Zero offset', "The integrators' centre against the zero reference, both axes at once."),
+('item', 'R509 Brightness', "The knob at the back: the tube's bias, on every line - and up high, on the beam's moves too."),
+('item', 'R401 X size / R408 Y size', "Trim pots on the power board: the picture's width and height (100 % = set at "
+      "the factory, so the Test Cartridge's linearity lines reach the screen's edges)."),
+('item', 'R525 High voltage', "A trim pot on the power board: the tube's high voltage (5.8 kV at the factory). Higher: "
+      "a smaller, brighter, sharper picture; lower: bigger, dimmer, softer."),
+('item', 'R526 HV ringing', "A trim pot on the power board: tunes the high voltage's oscillator to the flyback "
+      "transformer (minimum ringing). Off either way the voltage drops a little - the picture grows and dims."),
+('item', 'Centering X / Centering Y', "Not a pot: the two ring magnets on the back of the yoke move the whole picture "
+      "(+: right, up)."),
+('item', 'Yoke rotation', "Not a pot: the yoke turned a little on the tube's neck tilts the whole picture."),
 ('item', 'Y hold settling', "How quickly the Y sample-and-hold reaches a new value (1 = at once)."),
 ('item', 'Beam switch-off delay', "How long the beam stays lit after a game blanks it: longer, and lines get tails."),
 ('item', 'Zeroing time X / Y', "How fast ZERO brings the beam back to the middle (an RC: the integrators' capacitors "
@@ -614,12 +631,37 @@ UNIT_CIRCUIT = {
              "is the share it reaches. 0.38 measured on the owner's Vectrex.",
     'zcal': "The circuit: the BIOS calibrates the zero reference with a short pulse at each frame's start; the held "
             "voltage settles a little off the value written. This is how far, in DAC steps.",
-    'drift_x': "The circuit: the X integrator is an op-amp charging a capacitor. Its input offset and the capacitor's "
-               "leakage add a small constant speed while the integrator runs, so long lines bend away.",
-    'drift_y': "The circuit: the Y integrator is an op-amp charging a capacitor. Its input offset and the capacitor's "
-               "leakage add a small constant speed while the integrator runs, so long lines bend away.",
-    'zofs': "The circuit: two trimmers on the main board (R333 X, R335 Y) set the integrators' centre against the "
-            "zero reference. Set at the factory, moved by age and by repairs.",
+    'drift_x': "The circuit: the X integrator is an op-amp (LF347) charging a capacitor. R335 (10K, +-5 V) feeds a "
+               "small current through 3.3M into it to cancel the op-amp's own offset - up to +-0.6 DAC steps of speed. "
+               "Off, a small constant speed is added while the integrator runs, so long lines bend away. In DAC steps.",
+    'drift_y': "The circuit: the Y integrator is an op-amp (LF347) charging a capacitor. R333 (10K, +-5 V) feeds a "
+               "small current through 3.3M into it to cancel the op-amp's own offset - up to +-0.6 DAC steps of speed. "
+               "Off, a small constant speed is added while the integrator runs, so long lines bend away. In DAC steps.",
+    'dacofs': "The circuit: the DAC (an MC1408) gives a current; an op-amp (LF353) turns it into a voltage, and R301 "
+              "2.7K + R302 10K from -5 V pull against it so the middle code is 0 V. Off, every DAC output moves: the "
+              "integrators take X and Y against the zero reference, so lines keep their speed, but the reference "
+              "moves the beam itself - the picture shifts on the diagonal. Z (brightness) and the joystick's "
+              "comparator move too: online play needs the same value on both PCs. In DAC steps (26 mV); the pot's "
+              "whole turn is -74 to +128.",
+    'zofs': "The circuit: the integrators' centre against the zero reference, both at once (an offset between the "
+            "reference's hold and the integrators' inputs). Set at the factory, moved by age and by repairs.",
+    'sizex': "The circuit: on the power board the X signal goes through a divider - R401 (2K) over 1.5K - into the "
+             "LM379 deflection amplifier: turned fully up the whole signal, down 0.43 of it. 100 % = the pot in the "
+             "middle, as set at the factory. Only the picture changes, not the game.",
+    'sizey': "The circuit: on the power board the Y signal goes through a divider - R408 (2K) over 1.5K - into the "
+             "LM379 deflection amplifier: turned fully up the whole signal, down 0.43 of it. 100 % = the pot in the "
+             "middle, as set at the factory. Only the picture changes, not the game.",
+    'hv': "The circuit: a 555 (IC501) drives the flyback transformer; R525 sets its charge time, and so the tube's high "
+          "voltage (5.8 kV +-150 V in the service manual). A stiffer beam bends less - the picture shrinks as 1 / "
+          "square root of the voltage - and lights the phosphor harder: brighter, a finer spot.",
+    'ring': "The circuit: R526 sets the 555's discharge time - the flyback's off time. At the minimum ringing it "
+            "matches the transformer; off either way it wastes energy and the high voltage drops (here up to 8 % at "
+            "the ends): a bigger, dimmer picture. The ringing itself is not seen on the picture.",
+    'cenx': "The yoke: two ring magnets on its back bend the beam a little before the coils - the whole picture moves. "
+            "The service manual centres with these, never with R302. In % of the picture's height.",
+    'ceny': "The yoke: two ring magnets on its back bend the beam a little before the coils - the whole picture moves. "
+            "The service manual centres with these, never with R302. In % of the picture's height.",
+    'rot': "The yoke: it is clamped on the tube's neck; turned a little, the whole picture tilts with it (+: clockwise).",
     'ysettle': "The circuit: the Y speed is not fed straight in - the multiplexer charges a sample-and-hold "
                "capacitor, which needs a moment to reach a new value. A slow one: the start of a line after a change "
                "in Y speed is drawn at the old speed for a moment.",

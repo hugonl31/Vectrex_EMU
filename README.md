@@ -19,6 +19,16 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.0.7
+
+* **The Vectrex's trim pots** - every adjustment of a real Vectrex in Config: the brightness knob, the X and Y size,
+  the high voltage and its ringing, the yoke's centering magnets and rotation (Unit tab), the main board's DAC offset
+  and integrator rate offsets (Circuit tab). The defaults are the factory settings; **Random unit** and
+  **Cranky** roll a new believable unit on every press.
+* **Online play across systems** - Windows against Linux, macOS or a Raspberry Pi now stays in sync in every game
+  (a power-on seed computed differently on 64-bit Linux and macOS made about a quarter of games part), PiTrex games
+  start through the relay, and the online card image is cleaned up after the game.
+
 ## New in v1.0.6
 
 * **Online play for UVMC2 games and PiTrex programs** - VecDoom, Veccy Road, Tempest, Vectorblade and the rest now
@@ -808,7 +818,7 @@ opens it over the picture while the game runs on; Tab or Esc closes it. On top, 
 | **Case** | the plastic case round the tube (without an overlay): on / off, its reflections, its wear |
 | **Overlay** | on / off, choosing one per game, tint, printed art, parallax, the plastic glow, the scratches, position and size |
 | **Sound** | the volume, the buzz, the speaker, the speech module's volume and speaker |
-| **Vectrex unit** | the analog parts that differ per Vectrex: zero hold, calibration, drift, Y settling, beam delay, line gaps - presets *Owner's Vectrex* (the measured one), *Ideal*, *Cranky* and *Random unit*; Export / Import a unit as a file |
+| **Vectrex unit** | the trim pots and analog parts that differ per Vectrex, in two tabs: **Unit** (the brightness knob R509, X / Y size R401 / R408, high voltage R525 and its ringing R526, the yoke's centering magnets and rotation) and **Circuit** (DAC offset R302, integrator rate offsets R335 / R333, zero hold, calibration, Y settling, beam delay, line gaps) - presets *Owner's Vectrex* (the measured one), *Ideal*, *Cranky* and *Random unit* (a new unit on every press); Export / Import a unit as a file |
 | **Display** | the screen mode, smooth motion, rotation, the on-screen display, knob and cartridge, the monitor size, Authentic size |
 | **Cartridge** | cartridge hardware, controller port 2 (speech modules), UVMC2 games, their USB port, headphone jack and SD card folder |
 

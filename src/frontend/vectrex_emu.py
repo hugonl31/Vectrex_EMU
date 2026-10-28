@@ -1167,14 +1167,22 @@ def knob_bias(v):
     """the knob's position 0..1 -> the bias on the intensity drive"""
     b = KNOB_LO + (KNOB_HI - KNOB_LO) * min(1.0, max(0.0, v))
     return 0.0 if abs(b) < 1e-3 else b                  # (the default: exactly no bias)
+# The trim pots (the service manual's adjustments, sections VII-IX; the parts lists' "semi-fixed resistors"): on the
+# logic board R302 DAC offset, R333 Y / R335 X rate offset (the integrators' drift: +-5 V through 3.3M into the
+# integrator, +-15 mV against the 10K input = +-0.585 DAC steps); on the power board R401 X / R408 Y size, R509 the
+# brightness knob, R525 / R526 the high voltage's 555 (charge time: the voltage; discharge time: the flyback's
+# ringing). No focus pot, no position pot: the picture is centred with the yoke's ring magnets (and the yoke turned on
+# the neck tilts it) - those are here too. The core's ones are in UNIT_PARAMS, the picture's (the deflection after
+# the integrators, the tube's voltage) in UNIT_PICTURE.
 UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0.10, 1.00, '%.2f', 'VT_ZREFK'),
                ('zcal', 2, 'Zero calibration shift', 0.0, 6.0, '%.1f', 'VT_CALSHIFT'),
-               ('drift_x', 3, 'Drift X (integrator offset)', -0.10, 0.10, '%+.3f', None),
-               ('drift_y', 4, 'Drift Y (integrator offset)', -0.10, 0.10, '%+.3f', None),
-               ('zofs', 7, 'Zero offset (trimmers R333 / R335)', -2.0, 2.0, '%+.2f', 'VT_ZOFS'),
+               ('drift_x', 3, 'R335 X rate offset (the X integrator\'s drift)', -0.585, 0.585, '%+.3f', None),
+               ('drift_y', 4, 'R333 Y rate offset (the Y integrator\'s drift)', -0.585, 0.585, '%+.3f', None),
+               ('dacofs', 23, 'R302 DAC offset', -74.0, 128.0, '%+.1f steps', 'VT_DACOFS'),
+               ('zofs', 7, 'Zero offset (the reference against the integrators)', -2.0, 2.0, '%+.2f', 'VT_ZOFS'),
                ('ysettle', 5, 'Y hold settling (1 = instant)', 0.20, 1.00, '%.2f', 'VT_YSHK'),
                ('beamoff', 6, 'Beam switch-off delay', 0.0, 3.0, '%.1f cycles', 'VT_BEAMOFF'),
-               ('knob', 8, 'Brightness (the knob at the back)', 0.0, 1.0, '%.2f', 'VT_BRIGHT'),
+               ('knob', 8, 'R509 Brightness (the knob at the back)', 0.0, 1.0, '%.2f', 'VT_BRIGHT'),
                # measured with testcart/beam_test (2026-10-26, see vecx.c OFS_K, ZERO_TX, dacv)
                ('zerotx', 12, 'Zeroing time X (ZERO is an RC)', 0.0, 30.0, '%.1f cycles', None),
                ('zeroty', 13, 'Zeroing time Y (ZERO is an RC)', 0.0, 30.0, '%.1f cycles', None),
@@ -1187,13 +1195,59 @@ UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0
                ('dac3', 19, 'DAC bit 3 error', -0.03, 0.03, '%+.4f', None))
 UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0)           # (the owner's, measured; lag 6: testcart/gap_test)
 UNIT_DAC_OWNER = dict(dac0=0.0170, dac1=0.0069, dac2=-0.0089, dac3=-0.0014)       # (the owner's: half the slant pattern)
+# the picture's pots and the yoke (the frontend's: they act after the integrators, see unit_picture): R401 / R408 the
+# deflection amplifiers' input dividers (2K pot over 1.5K: 0.43..1 of the signal; 100 % = the pot's middle, 60..140 %),
+# R525 the high voltage (5.8 kV at the factory), R526 the flyback's tuning (0 = minimum ringing), the ring magnets
+# (centring, % of the picture's height) and the yoke turned on the neck (degrees)
+HV_FACTORY = 5.8
+def _ring_fmt(v):
+    return 'minimum' if abs(v) < 0.005 else '%+.2f' % v
+UNIT_PICTURE = (('sizex', None, 'R401 X size (the X deflection amplifier\'s input)', 60.0, 140.0, '%.0f %%', None),
+                ('sizey', None, 'R408 Y size (the Y deflection amplifier\'s input)', 60.0, 140.0, '%.0f %%', None),
+                ('hv', None, 'R525 High voltage', 4.6, 7.0, '%.2f kV', None),
+                ('ring', None, 'R526 HV ringing', -1.0, 1.0, _ring_fmt, None),
+                ('cenx', None, 'Centering X (the yoke\'s magnets)', -10.0, 10.0, '%+.1f %%', None),
+                ('ceny', None, 'Centering Y (the yoke\'s magnets)', -10.0, 10.0, '%+.1f %%', None),
+                ('rot', None, 'Yoke rotation', -5.0, 5.0, '%+.1f deg', None))
+UNIT_PICTURE_KEYS = tuple(p[0] for p in UNIT_PICTURE)
+UNIT_FACTORY_PICTURE = dict(sizex=100.0, sizey=100.0, hv=HV_FACTORY, ring=0.0, cenx=0.0, ceny=0.0, rot=0.0)
+# Config's two tabs: Unit (what an owner turns: the knob, the size, the voltage, the yoke) and Circuit (the rest)
+UNIT_TAB_KEYS = ('knob', 'sizex', 'sizey', 'hv', 'cenx', 'ceny', 'rot')
 UNIT_PRESETS = {
-    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
-                   **UNIT_BEAM, **UNIT_DAC_OWNER),  # (measured)
-    'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
-                   zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0),   # (ZERO as drawn: 220 ohm x 0.01 uF)
-    'cranky': dict(zhold=0.18, zcal=4.5, drift_x=0.035, drift_y=-0.025, zofs=0.8, ysettle=0.45, beamoff=1.5, gap=9.3, knob=KNOB_DEFAULT,
-                   zerotx=6.0, zeroty=4.5, ofsk=166.0, lagx=8.0, lagy=7.5, dac0=0.025, dac1=-0.015, dac2=0.012, dac3=-0.006)}
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
+                   **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
+    'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
+                   zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
+                   **UNIT_FACTORY_PICTURE)}       # (Random and Cranky: made new each time, random_unit / UNIT_SPREAD)
+def unit_picture(unit):
+    """the picture's pots and the yoke -> (the lines' transform or None, the light's share, the spot's width share).
+    The transform (canvas units, about the canvas's middle - the undeflected beam): sx, sy (the size: R401 / R408 times
+    the high voltage's stiffness), the yoke's angle (+: clockwise on the screen), tx, ty (the magnets). The high voltage (R525; R526 off the minimum ringing loses some
+    of it): the deflection goes as 1 / sqrt(HV) (a magnetic yoke), the light as the beam's power above the phosphor's
+    dead voltage (~0.8 kV), the spot as the deflection (a stiffer beam, a smaller spot)"""
+    u = dict(UNIT_FACTORY_PICTURE, **{k: v for k, v in (unit or {}).items() if k in UNIT_PICTURE_KEYS})
+    hv = float(u['hv']) * (1.0 - 0.08 * float(u['ring']) ** 2)
+    stiff = math.sqrt(HV_FACTORY / max(1.0, hv))
+    sx, sy = float(u['sizex']) / 100.0 * stiff, float(u['sizey']) / 100.0 * stiff
+    a = math.radians(float(u['rot']))
+    tx, ty = float(u['cenx']) / 100.0 * ALG_MAX_Y, -float(u['ceny']) / 100.0 * ALG_MAX_Y   # (+: right, up - the canvas's y runs down)
+    light = (hv - 0.8) / (HV_FACTORY - 0.8)
+    xf = None if (abs(sx - 1.0) < 1e-9 and abs(sy - 1.0) < 1e-9 and a == 0.0 and tx == 0.0 and ty == 0.0) else (sx, sy, a, tx, ty)
+    return xf, light, stiff
+def picture_apply(xf, x, y):
+    """the picture's pots on canvas points (numpy arrays or floats)"""
+    sx, sy, a, tx, ty = xf
+    cx, cy = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0
+    u, v = (x - cx) * sx, (y - cy) * sy
+    c, s = math.cos(a), math.sin(a)
+    return cx + c * u - s * v + tx, cy + s * u + c * v + ty
+def picture_undo(xf, x, y):
+    """picture_apply's inverse (the light pen: where on the canvas the spot it sees came from)"""
+    sx, sy, a, tx, ty = xf
+    cx, cy = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0
+    u, v = x - cx - tx, y - cy - ty
+    c, s = math.cos(a), math.sin(a)
+    return cx + (c * u + s * v) / sx, cy + (-s * u + c * v) / sy
 UNIT_NAMES = {'owner': "Owner's Vectrex (measured)", 'ideal': 'Ideal', 'cranky': 'Cranky', 'random': 'Random unit', 'custom': 'Custom'}
 def old_gap(look):
     """a look saved before 2026-10-25 with the old default line gap (12.3 cycles): the new default (7; the stop delay
@@ -1205,13 +1259,53 @@ def old_gap(look):
                                                         #  until 2026-10-27 - now 12000 K, the real Vectrex's bluish white)
 
 
-def random_unit():
-    """a believable other Vectrex: every part somewhere between a good and a tired one"""
-    u = lambda a, b: round(random.uniform(a, b), 3)
-    return dict(zhold=u(0.22, 0.75), zcal=u(0.5, 4.0), drift_x=u(-0.025, 0.025), drift_y=u(-0.025, 0.025),
-                zofs=u(-0.6, 0.6), ysettle=u(0.5, 0.95), beamoff=u(0.2, 1.2), gap=u(5.7, 8.7), knob=KNOB_DEFAULT,
-                zerotx=u(3.3, 6.0), zeroty=u(2.5, 4.5), ofsk=u(150.0, 180.0), lagx=u(5.0, 8.0), lagy=u(5.0, 8.0),
-                dac0=u(-0.02, 0.02), dac1=u(-0.012, 0.012), dac2=u(-0.01, 0.01), dac3=u(-0.005, 0.005))
+# how far real Vectrexes differ (the owner, 2026-10-28: as real pots are set - nobody turns one so far that the screen
+# is unusable; the BIOS text stays readable and the games playable). Per part: ('r', lo, hi) a range, or ('s', a, b) a
+# deviation either way from the centre (the owner's measured unit, the pots as the factory set them) of size a..b.
+# RANDOM: a unit slightly off, CRANKY: the same parts further off - every press a new one
+UNIT_SPREAD = dict(
+    #          random                   cranky
+    zhold=   (('r', 0.30, 0.60),       ('r', 0.20, 0.32)),
+    zcal=    (('r', 2.0, 3.6),         ('r', 3.4, 4.6)),
+    drift_x= (('s', 0.0, 0.012),       ('s', 0.015, 0.04)),
+    drift_y= (('s', 0.0, 0.012),       ('s', 0.015, 0.04)),
+    dacofs=  (('s', 0.0, 0.5),         ('s', 0.5, 1.5)),
+    zofs=    (('s', 0.0, 0.04),        ('s', 0.05, 0.10)),   # (the most sensitive: +-0.25 flattens the BIOS's small text)
+    ysettle= (('r', 0.60, 0.90),       ('r', 0.45, 0.62)),
+    beamoff= (('r', 0.3, 0.9),         ('r', 0.9, 1.5)),
+    gap=     (('r', 6.3, 7.7),         ('r', 7.7, 9.3)),
+    zerotx=  (('r', 3.8, 5.2),         ('r', 5.2, 6.2)),
+    zeroty=  (('r', 2.9, 3.8),         ('r', 3.8, 4.6)),
+    ofsk=    (('r', 158.0, 174.0),     ('r', 150.0, 182.0)),
+    lagx=    (('r', 5.5, 6.8),         ('r', 6.8, 8.0)),
+    lagy=    (('r', 5.5, 6.8),         ('r', 6.8, 8.0)),
+    dac0=    (('s', 0.0, 0.012),       ('s', 0.012, 0.025)),
+    dac1=    (('s', 0.0, 0.008),       ('s', 0.008, 0.015)),
+    dac2=    (('s', 0.0, 0.008),       ('s', 0.008, 0.012)),
+    dac3=    (('s', 0.0, 0.004),       ('s', 0.004, 0.006)),
+    sizex=   (('s', 0.0, 2.5),         ('s', 2.5, 6.0)),
+    sizey=   (('s', 0.0, 2.5),         ('s', 2.5, 6.0)),
+    hv=      (('s', 0.0, 0.12),        ('s', 0.12, 0.35)),
+    ring=    (('s', 0.0, 0.15),        ('s', 0.15, 0.45)),
+    cenx=    (('s', 0.0, 1.0),         ('s', 1.0, 2.5)),
+    ceny=    (('s', 0.0, 1.0),         ('s', 1.0, 2.5)),
+    rot=     (('s', 0.0, 0.5),         ('s', 0.5, 1.3)))
+UNIT_RANGE = dict({p[0]: (p[3], p[4]) for p in UNIT_PARAMS + UNIT_PICTURE}, gap=(4.0, 10.0))   # (the sliders' ends)
+def random_unit(cranky=False):
+    """a believable other Vectrex (UNIT_SPREAD): slightly off, or cranky - further off, still usable. The brightness
+    knob is left where it is set: it is the owner's knob, not a part"""
+    own = UNIT_PRESETS['owner']
+    u = {}
+    for k, spec in UNIT_SPREAD.items():
+        kind, a, b = spec[1 if cranky else 0]
+        if kind == 'r':
+            v = random.uniform(a, b)
+        else:
+            c = 0.0 if k.startswith('dac') and k != 'dacofs' else own[k]   # (the DAC's bit errors: about none - the
+            v = c + random.choice((-1.0, 1.0)) * random.uniform(a, b)       #  owner's are one unit's)
+        lo, hi = UNIT_RANGE.get(k, (v, v))
+        u[k] = round(min(hi, max(lo, v)), 4)
+    return u
 ADDON_ROM = ('.um2', '.img', '.pit')
 
 
@@ -1340,6 +1434,7 @@ class Core:
     def __init__(self, rom, ideal=False, cart_hw='auto', speech='off', sd_dir=None, px_dir=None, unit=None, usb=False):
         env = dict(os.environ)
         env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})  # perfect / a real Vectrex
+        self.picture = unit_picture(unit)[0] if unit and not ideal else None   # (the size / centring pots, the yoke: frame)
         if unit and not ideal:                                     # (the Vectrex unit: the analog parts at the start)
             for key, i, label, lo, hi, fmt, var in UNIT_PARAMS:
                 if var and key in unit:
@@ -1357,6 +1452,8 @@ class Core:
         env['VT_CARTHW'] = {'auto': '1', 'off': '0'}.get(cart_hw, cart_hw)
         env['VT_POWERSEED'] = str(Core.force_seed if Core.force_seed is not None else random.getrandbits(31))   # (the RAM's random
         #  state at every power-on; online play: the host's, the same on both sides)
+        if Core.force_seed is not None:                             # (online: the 512K cartridge's latch powers up the same on
+            env['VT_HBLATCH'] = str(Core.force_seed & 7)            #  both sides - otherwise from the clock, vecx.c)
         if speech == 'imager':
             env['VT_IMAGER'] = imager_disc(rom)                     # (the 3D Imager's goggles on port 2, imager.c)
         elif speech == 'lightpen':
@@ -1391,6 +1488,13 @@ class Core:
         if net and rom.lower().endswith(('.um2', '.img', '.pit')):  # online: the card both have, nothing written back
             folder, only = Core.net_card
             img = os.path.join(CACHE_DIR, 'online_sd_%d.img' % os.getpid())   # (two emulators on one PC: a card each)
+            for old in [os.path.join(CACHE_DIR, x) for x in (os.listdir(CACHE_DIR) if os.path.isdir(CACHE_DIR) else []) if x.startswith('online_sd_')]:
+                try:                                                # (left by a game that did not end cleanly)
+                    if time.time() - os.path.getmtime(old) > 12 * 3600:
+                        os.remove(old)
+                except OSError:
+                    pass
+            self.net_img = img                                      # (removed when the game ends: close)
             try:
                 fatimg.build(folder, img, only=only, fixed_time=netplay_card_time())
                 env['VT_UVM2_SD' if rom.lower().endswith('.um2') else 'VT_PITREX_SD'] = img
@@ -1529,6 +1633,11 @@ class Core:
             self.arr = _np.frombuffer(body, dtype=LINE_DT, count=n).astype(LINE_DTS)
             for f in ('x0', 'y0', 'x1', 'y1'):                  # (sent + LIVE_OFS: the beam may go past the canvas, live.c)
                 self.arr[f] -= LIVE_OFS
+            xf = self.picture
+            if xf is not None and n:                            # (the picture's pots and the yoke: after the integrators,
+                for a, b in (('x0', 'y0'), ('x1', 'y1')):       #  before the tube's own shape - see unit_picture)
+                    px, py = picture_apply(xf, self.arr[a].astype(_np.float64), self.arr[b].astype(_np.float64))
+                    self.arr[a] = _np.rint(px); self.arr[b] = _np.rint(py)
             lines = Lines.lazy(self.arr)                        # (the tuples only if something asks for them)
             A = _np.empty((n, 8 if col else 7), dtype=_np.float64)
             for i, f in enumerate(('x0', 'y0', 'x1', 'y1', 'c', 'e', 't')):
@@ -1540,6 +1649,11 @@ class Core:
             self.arr = None
             lines = [(lambda r: (r[0] - LIVE_OFS, r[1] - LIVE_OFS, r[2] - LIVE_OFS, r[3] - LIVE_OFS) + r[4:])(
                      struct.unpack_from('<HHHHBHH', body, i * 13)) for i in range(n)]  # + energy, start cycle
+            if self.picture is not None:                        # (the picture's pots, as above)
+                def _p(r, xf=self.picture):
+                    x0, y0 = picture_apply(xf, r[0], r[1]); x1, y1 = picture_apply(xf, r[2], r[3])
+                    return (int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))) + tuple(r[4:])
+                lines = [_p(r) for r in lines]
         self.sig = hash(body[:n * 13])                          # (the picture: a new one, or the last drawn again)
         if not two:
             return lines, body[n * 13:], None
@@ -1557,6 +1671,15 @@ class Core:
                 fatimg.sync_back(*self.sd)
         except subprocess.TimeoutExpired:
             self.p.kill()
+            try:
+                self.p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        if getattr(self, 'net_img', None):                      # (the online card: only for that game, ~300 MB)
+            try:
+                os.remove(self.net_img)
+            except OSError:
+                pass
         return ''
 
 # ------------------------------------------------------------------ the game loop (worker thread)
@@ -1908,6 +2031,7 @@ class App:
         self.unit['knob'] = min(1.0, max(0.0, self.unit.get('knob', KNOB_DEFAULT)))   # (see KNOB_LO)
         if self.ren:
             self.ren.knob_bright = knob_bias(self.unit['knob'])   # (the brightness knob at the back)
+        self.apply_picture()                                    # (the size / voltage / yoke pots)
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)                # (Tube > Line gaps: the core's stop delay)
             self.unit['gap'] = self.ren.line_gap
@@ -4041,6 +4165,9 @@ class App:
         r.swap_interval(0 if self.vrr else self.vsync)
     def set_unit(self, key, v, name='custom'):
         """one part of the Vectrex unit, live (gap: the line gaps, the renderer's line_gap)"""
+        if key == 'dacofs' and getattr(self, 'net_game', None):  # (online: R302 moves the joystick comparator - the game
+            self.flash("ONLINE: R302 IS THE HOST'S", 'CHANGE IT WHEN OFFLINE', secs=4)   #  itself - so it stays the host's)
+            return
         self.unit[key] = v
         self.unit_name = name
         if key == 'gap':
@@ -4048,17 +4175,39 @@ class App:
             self.core.set_gap(v); return
         if key == 'knob' and self.ren:
             self.ren.knob_bright = knob_bias(v)                 # (the renderer turns the lines; the core sends the web)
+        if key in UNIT_PICTURE_KEYS:
+            self.apply_picture(); return
         for k, i, label, lo, hi, fmt, var in UNIT_PARAMS:
             if k == key and not (i == 1 and self.core.rom.lower().endswith(ADDON_ROM)):   # (the add-ons: the standard
                 self.core.set_analog(i, knob_bias(v) if k == 'knob' else v)              #  zero reference, see Core)
-    def reset_unit(self):
-        """Config, the Vectrex unit tab's reset: the owner's measured Vectrex, switched off at the start, the intro shown"""
-        self.unit_preset('owner')
-        self.start_on = False; self.skip_boot = False
+    def apply_picture(self):
+        """the picture's pots and the yoke (unit_picture): the lines' transform to the core's frames, the high voltage's
+        light and spot to the renderer"""
+        xf, light, width = unit_picture(self.unit)
+        core = getattr(self, 'core', None)
+        if core is not None:
+            core.picture = None if getattr(self.args, 'ideal', False) else xf
+        if self.ren:
+            self.ren.hv_light, self.ren.hv_width = light, width
+    def reset_unit(self, part=None):
+        """Config's reset: the Unit tab (part 'unit': its rows, switched off at the start, the intro shown), the Circuit
+        tab ('circuit': its rows) or all - the owner's measured Vectrex, the pots as the factory set them"""
+        own = UNIT_PRESETS['owner']
+        if part is None:
+            self.unit_preset('owner')
+        else:
+            keys = [k for k in own if (k in UNIT_TAB_KEYS) == (part == 'unit')]
+            for k in keys:
+                self.set_unit(k, own[k], self.unit_name)
+            same = all(abs(float(self.unit.get(k, own[k])) - float(own[k])) < 1e-9 for k in own)
+            self.unit_name = 'owner' if same else 'custom'
+        if part in (None, 'unit'):
+            self.start_on = False; self.skip_boot = False
         self.save_settings()
     def unit_preset(self, name):
-        """the Vectrex unit: a preset ('owner', 'ideal', 'cranky') or 'random' - a new believable unit"""
-        u = random_unit() if name == 'random' else dict(UNIT_PRESETS[name])
+        """the Vectrex unit: a preset ('owner', 'ideal'), or 'random' / 'cranky' - a new believable unit each time,
+        slightly off or further off (UNIT_SPREAD)"""
+        u = random_unit(name == 'cranky') if name in ('random', 'cranky') else dict(UNIT_PRESETS[name])
         for k, v in u.items():
             self.set_unit(k, v, name)
         self.save_settings()
@@ -4402,7 +4551,8 @@ class App:
         label = (target or '').strip().upper()
         game = None
         if role == 'host':
-            game = netplay.new_game(a.rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw))
+            game = netplay.new_game(a.rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw,   # (R302 moves the joystick
+                                                dacofs=float(self.unit.get('dacofs', 0.0))))     #  comparator: the host's on both)
             if self.card_dir(a.rom):
                 game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
             net.game_info = dict(name=game['name'], md5=game['md5'], size=game['size'])
@@ -5070,8 +5220,9 @@ class App:
         ng = getattr(self, 'net_game', None)                    # (online: the host's cartridge hardware, port 2 a joystick)
         if ng:
             self.speech = 'off'
-        self.core = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw) if ng else self.cart_hw, self.speech,
-                         self.sd_dir, self.px_dir, self.unit, self.usb_hid)
+        unit = dict(self.unit, dacofs=float(ng.get('dacofs', 0.0))) if ng else self.unit   # (online: the host's R302 -
+        self.core = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw) if ng else self.cart_hw, self.speech,   #  the rest
+                         self.sd_dir, self.px_dir, unit, self.usb_hid)                                                  #  only moves the picture)
         self.usb_typing_off()
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)
@@ -5977,6 +6128,8 @@ class App:
         pl, pt, pr, pb = self.pic_rect()
         on = pl <= xy[0] <= pr and pt <= xy[1] <= pb
         x, y = self.ren.window_to_vectrex(xy[0], xy[1])
+        if getattr(self.core, 'picture', None) is not None:     # (the size / centring pots moved the picture: the pen
+            x, y = picture_undo(self.core.picture, x, y)        #  sees the spot where it is drawn)
         touch = 1.0 if on else 0.0
         self.core.set_analog(24, x); self.core.set_analog(25, y); self.core.set_analog(26, touch)
         self.pen_sent = touch

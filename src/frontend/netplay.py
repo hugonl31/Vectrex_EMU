@@ -76,7 +76,8 @@ def find_rom(md5, size, folders):
 
 
 # ---- a cartridge with an SD card (UVMC2, PiTrex): both sides must play from the same card, to the byte
-CARD_CHUNK = 900                # (bytes of the host's card list a packet)
+CARD_CHUNK = 480                # (bytes of the host's card list a packet: with the relay's 19 bytes of headers it stays under
+                                #  the meeting point's 512-byte packets - longer ones arrive cut short through the relay)
 CARD_TIME = 1104537600          # (2005-01-01: every file's date on the card both play from - no PC's own dates)
 
 
@@ -435,12 +436,16 @@ class NetPlay:
                 if p[0] == ord('C') and len(p[1]) >= 4 and manifest is None:
                     i, total = struct.unpack_from('<HH', p[1]); got[i] = p[1][4:]
                     if len(got) == total:
-                        manifest = json.loads(zlib.decompress(b''.join(got[k] for k in range(total))).decode())
-                        ok = answer(manifest); n = len(ok)
-                        bits = bytearray((n + 7) // 8)
-                        for k, v in enumerate(ok):
-                            if v:
-                                bits[k >> 3] |= 1 << (k & 7)
+                        try:
+                            manifest = json.loads(zlib.decompress(b''.join(got[k] for k in range(total))).decode())
+                        except (zlib.error, ValueError, KeyError):     # (a piece damaged on the way: collect them again)
+                            self.log('the card list arrived damaged: collecting it again'); got = {}; manifest = None
+                        if manifest is not None:
+                            ok = answer(manifest); n = len(ok)
+                            bits = bytearray((n + 7) // 8)
+                            for k, v in enumerate(ok):
+                                if v:
+                                    bits[k >> 3] |= 1 << (k & 7)
                 elif p[0] in (ord('K'), ord('I')) and manifest is not None:     # (the host has it: the game starts)
                     return manifest
                 p = self._recv()

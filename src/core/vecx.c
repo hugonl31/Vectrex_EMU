@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#include <stdint.h>
 #include <time.h>
 #include "e6809.h"
 #include "vecx.h"
@@ -248,23 +249,37 @@ static double alg_yshf = 128, ysh_k = -1;
  * pages 3-4, 2026-10-26): e0 +0.017, e1 +0.007, e2 -0.009, e3..e6 within 0.0015 - half of the measured pattern; the
  * rest is not bit errors (widths with the same bits differ too). Bit 7 sets the scale only (the reference is $80) */
 static double dac_e[8]; static int dac_on = -1;
+/* the trimmer R302 "DAC OFFSET" (VT_DACOFS = DAC steps; vt_set_analog 23; 0: set as the service manual says, 0 V out of
+ * IC304 pin 1 at the DAC's middle code). R301 2.7K + R302 10K from -5 V pull a current against the MC1408's into the
+ * I-to-V op-amp (R303 3.6K): the whole DAC output moves - X, the Y hold, the zero reference, Z and the joystick
+ * comparator alike. The integrators take X and Y against the reference, so the lines' speeds do not change, but the
+ * reference itself moves the beam (see OFS_K): the picture shifts on the diagonal. The pot's whole turn: -74 to +128
+ * steps (26 mV each); the op-amp's swing (+-5 V rails) clips the output at about 150 steps from the middle */
+static double dac_ofs;
 static double dacv (unsigned u)
 {
-	double v = 0;
+	double v = dac_ofs;
 	for (int i = 0; i < 8; i++) if ((u >> i) & 1) v += (double) (1 << i) * (1.0 + dac_e[i]);
-	return v;
+	return v < -22.0 ? -22.0 : v > 278.0 ? 278.0 : v;
+}
+static void dac_on_set (void)
+{
+	dac_on = dac_ofs != 0; for (int i = 0; i < 7; i++) if (dac_e[i] != 0) dac_on = 1;
 }
 static void dac_init (void)
 {
 	const char *z = getenv ("VT_DACBITS"); dac_on = 0;
 	if (z) { double e[7] = {0}; int n = sscanf (z, "%lf,%lf,%lf,%lf,%lf,%lf,%lf", e, e + 1, e + 2, e + 3, e + 4, e + 5, e + 6);
-	         for (int i = 0; i < n && i < 7; i++) { dac_e[i] = e[i]; if (e[i] != 0) dac_on = 1; } }
+	         for (int i = 0; i < n && i < 7; i++) dac_e[i] = e[i]; }
+	z = getenv ("VT_DACOFS"); if (z) dac_ofs = atof (z);
+	dac_on_set ();
 }
 #define DACV(u) (dac_on > 0 ? dacv (u) : (double) (u))
 /* the frontend's Vectrex unit settings, live (input flags bit 5: an id and a float, see live.c): how one
  * real Vectrex differs from another - 0 the stop delay (cycles), 1 the zero reference's hold (ZREF_K),
  * 2 the zero calibration shift, 3 / 4 the integrators' drift X / Y (DAC units per cycle x ZS), 5 the Y
- * hold's settling, 6 the beam's switch-off delay (cycles), 7 the integrators' offset to the zero reference */
+ * hold's settling, 6 the beam's switch-off delay (cycles), 7 the integrators' offset to the zero reference,
+ * 23 the DAC's offset (the trimmer R302, see dac_ofs) */
 static unsigned alg_idle_n; static int alg_quiet;
 void vt_set_analog (int id, double v)
 {
@@ -290,7 +305,12 @@ void vt_set_analog (int id, double v)
 	case 16: case 17: case 18: case 19: case 20: case 21: case 22:   /* (the DAC's bit errors e0..e6, see dacv) */
 		if (dac_on < 0) dac_init ();
 		dac_e[id - 16] = v < -0.05 ? -0.05 : v > 0.05 ? 0.05 : v;
-		dac_on = 0; for (int i = 0; i < 7; i++) if (dac_e[i] != 0) dac_on = 1;
+		dac_on_set ();
+		break;
+	case 23:                                                   /* (the trimmer R302, the DAC's offset: see dac_ofs) */
+		if (dac_on < 0) dac_init ();
+		dac_ofs = v < -80 ? -80 : v > 130 ? 130 : v;
+		dac_on_set ();
 		break;
 	}
 }
@@ -422,13 +442,14 @@ static einline void snd_update (void)
 
 static einline void alg_update (void)
 {
+	if (dac_on < 0) dac_init ();
 	switch (via_orb & 0x06) {
 	case 0x00:
 		alg_jsh = alg_jch0;
 
 		if ((via_orb & 0x01) == 0x00) {
 			/* demultiplexor is on: the Y hold charges toward the DAC in alg_sstep (VT_YSHK=1: at once) */
-			if (ysh_k >= 1.0) { alg_ysh = alg_xsh; alg_yshf = alg_xsh; }
+			if (ysh_k >= 1.0) { alg_ysh = alg_xsh; alg_yshf = alg_xsh + dac_ofs; }
 		}
 
 		break;
@@ -447,7 +468,10 @@ static einline void alg_update (void)
 		if ((via_orb & 0x01) == 0x00) {
 			/* demultiplexor is on */
 
-			if (alg_xsh > 0x80) {
+			if (dac_ofs != 0) {                         /* (R302 off: Z's hold gets the DAC's offset too) */
+				int z = (int) floor (alg_xsh + dac_ofs + 0.5) - 0x80;
+				alg_zsh = z > 0 ? (unsigned) (z > 127 ? 127 : z) : 0;
+			} else if (alg_xsh > 0x80) {
 				alg_zsh = alg_xsh - 0x80;
 			} else {
 				alg_zsh = 0;
@@ -470,7 +494,7 @@ static einline void alg_update (void)
 
 	/* compare the current joystick direction with a reference */
 
-	if (alg_jsh > alg_xsh) {
+	if ((double) alg_jsh > (double) alg_xsh + dac_ofs) {   /* (the comparator sees the DAC's offset, R302) */
 		alg_compare = 0x20;
 	} else {
 		alg_compare = 0;
@@ -967,7 +991,7 @@ void vecx_reset (void)
 	 * VT_POWERSEED=n (the frontend sets it): a different odd seed at every power-on from n (the MiSTer
 	 * core's way, Mathis Rosenhauer's idea); unset: the fixed pattern above (repeatable tests). */
 	{ const char *z = getenv ("VT_POWERSEED"); static unsigned long n;
-	  if (z) { unsigned long x = strtoul (z, 0, 10) + 0x9E3779B9UL * ++n; x ^= x >> 15; x *= 0x2C1B3C6DUL; x ^= x >> 12;
+	  if (z) { uint32_t x = (uint32_t) strtoul (z, 0, 10) + 0x9E3779B9u * (uint32_t) ++n;   /* (32 bits on every system: a long is 64 bits on Linux and macOS) */ x ^= x >> 15; x *= 0x2C1B3C6Du; x ^= x >> 12;
 	           ram[0x7e] = (unsigned char) (x | 1); ram[0x7f] = (unsigned char) ((x >> 8) | 1); } }
 
 	for (r = 0; r < 16; r++) {

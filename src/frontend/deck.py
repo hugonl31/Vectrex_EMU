@@ -1,5 +1,5 @@
 """deck.py - the Config window: one window over the running game with every display, sound and hardware
-setting in strips (Tube, Room light, Case, Overlay, Sound, Vectrex unit, Display, Cartridge). Every switch and
+setting in strips (Tube, Room light, Case, Overlay, Sound, Unit, Circuit, Display, Cartridge). Every switch and
 slider acts on the game at once; Quality and this game's own settings on top; hold H (or the Before button)
 to see the look from before the deck opened. Keys: Tab / Esc close, Left / Right strips. A controller:
 LB / RB strips, up / down a row, left / right change it, A switch, B close.
@@ -388,7 +388,7 @@ def _rel(p):
 
 # ---- hover info: each row's text from the Help (help_text.py), the Vectrex unit's parts with the circuit behind them
 STRIP_TOPIC = {'Tube': 'tube', 'Room light': 'light', 'Case': 'case', 'Overlay': 'overlay', 'Sound': 'sound',
-               'Vectrex unit': 'unit', 'Display': 'display', 'Cartridge': 'addons'}
+               'Unit': 'unit', 'Circuit': 'unit', 'Display': 'display', 'Cartridge': 'addons'}
 TIPBG, TIPFG = '#16261f', '#bfe'
 TAB_CHG_FG = '#d9a35e'          # (a tab with a setting changed from its default: its name orange - the owner: the text only)
 EXTRA = {   # (what used to be a note in the Config window, now in its row's i; 'GROUP/label' or 'label')
@@ -515,7 +515,8 @@ def _paint(b, on):
 
 
 class Deck:
-    STRIPS = ('Tube', 'Room light', 'Case', 'Overlay', 'Sound', 'Vectrex unit', 'Display', 'Cartridge')
+    STRIPS = ('Tube', 'Room light', 'Case', 'Overlay', 'Sound', 'Unit', 'Circuit', 'Display', 'Cartridge')
+    UNIT_STRIPS = ('Unit', 'Circuit')                   # (the Vectrex unit: split in two since 2026-10-28, the trim pots)
 
     def __init__(self, app):
         self.V = V
@@ -524,6 +525,7 @@ class Deck:
         self.before = dict(look=a.game_now()['look'], unit=dict(a.unit))   # (Before: the look as it was)
         self.comparing = None
         self.strip = getattr(a, 'deck_strip', 'Tube')
+        if self.strip == 'Vectrex unit': self.strip = 'Unit'   # (its name before the split)
         if self.strip not in self.STRIPS: self.strip = 'Tube'
         self.rows = []; self.focus = 0
         self.pad_prev = set(); self.pad_t = 0.0
@@ -705,20 +707,23 @@ class Deck:
                     ('group', '3D IMAGER (PORT 2)'),
                     ('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, lambda: a.speech == 'imager'),
                     ('in', [('slider', 'motor_vol', lambda: a.speech == 'imager' and C().motor_on)])]
-        if s == 'Vectrex unit':
-            rows = [('group', 'WHICH VECTREX'),
+        if s == 'Unit':                                     # (the Vectrex unit, what an owner turns)
+            return [('group', 'WHICH VECTREX'),
                     ('choice', 'Unit', [(V.UNIT_NAMES[n].replace(' (measured)', ''), (lambda n=n: a.unit_name == n),
                                          (lambda n=n: a.unit_preset(n))) for n in ('owner', 'ideal', 'cranky', 'random')], None),
+                    ('buttons', [('Export...', a.export_unit), ('Import...', a.import_unit)], None),
                     ('group', 'STARTING UP'),
                     ('check', 'Start switched on', lambda: a.start_on, a.toggle_start_on, None),
                     ('check', 'Skip the Vectrex intro', lambda: a.skip_boot, a.toggle_skip_boot, None),
-                    ('group', 'ITS PARTS: ZERO REFERENCE, DRIFT, BEAM')]
-            keys = [p[0] for p in V.UNIT_PARAMS]
-            cut = keys.index('zerotx')                          # (two boxes: side by side when the screen is short)
-            rows += [('unit', k) for k in keys[:cut]]
-            rows += [('group', 'ITS PARTS: ZEROING, LAG, DAC')] + [('unit', k) for k in keys[cut:]]
-            rows += [('unit', 'gap'), ('buttons', [('Export...', a.export_unit), ('Import...', a.import_unit)], None)]
-            return rows
+                    ('group', 'THE PICTURE: KNOB, POTS AND YOKE')] + [('unit', k) for k in V.UNIT_TAB_KEYS]
+        if s == 'Circuit':                                  # (the Vectrex unit: the service trimmers, the analog parts)
+            keys = [p[0] for p in V.UNIT_PARAMS if p[0] not in V.UNIT_TAB_KEYS]
+            pots = ('dacofs', 'drift_x', 'drift_y')
+            rest = [k for k in keys if k not in pots]
+            cut = rest.index('zerotx')                          # (boxes: side by side when the screen is short)
+            return ([('group', 'SERVICE TRIM POTS')] + [('unit', k) for k in pots + ('ring',)]
+                    + [('group', 'ITS PARTS: ZERO REFERENCE, BEAM')] + [('unit', k) for k in rest[:cut]]
+                    + [('group', 'ITS PARTS: ZEROING, LAG, DAC')] + [('unit', k) for k in rest[cut:]] + [('unit', 'gap')])
         if s == 'Display':
             rates = [('Matched to the monitor', lambda: not a.vrr and a.rate != 'max', lambda: a.set_screen('60')),
                      ("Monitor's full rate", lambda: not a.vrr and a.rate == 'max', lambda: a.set_screen('max')),
@@ -795,8 +800,8 @@ class Deck:
 
     def reset_strip(self):
         def go():
-            if self.strip == 'Vectrex unit':
-                self.app.reset_unit()
+            if self.strip in self.UNIT_STRIPS:
+                self.app.reset_unit(self.strip.lower())
             elif self.strip in self.RESETS:
                 getattr(self.app, self.RESETS[self.strip])()
             self.show(self.strip)                               # (kept: its values set; rebuilt only if its rows changed)
@@ -1011,10 +1016,11 @@ class Deck:
             c, d = a.run.crt, a.sound_default
             return any(not same(getattr(c, k), d[k]) for k in ('buzz_on', 'buzz_vol', 'speaker_on', 'voice_vol', 'voice_full',
                                                                'motor_on', 'motor_vol') if k in d)
-        if st == 'Vectrex unit':
+        if st in self.UNIT_STRIPS:
             own = V.UNIT_PRESETS['owner']
-            return (any(not same(float(a.unit.get(k, own[k])), float(own[k])) for k in own)
-                    or bool(a.start_on) or bool(a.skip_boot))
+            mine = [k for k in own if (k in V.UNIT_TAB_KEYS) == (st == 'Unit')]
+            return (any(not same(float(a.unit.get(k, own[k])), float(own[k])) for k in mine)
+                    or (st == 'Unit' and (bool(a.start_on) or bool(a.skip_boot))))
         if st == 'Display':
             return (bool(a.smooth) or bool(a.vrr) or a.rate != '60' or a.rot != 0 or not a.fps_on or not a.knob_on
                     or not a.cart_on or not getattr(a, 'osd_meters', True) or float(a.monitor_inch or 0) != 0.0)
@@ -1263,13 +1269,13 @@ class Deck:
         if key == 'gap':
             label, lo, hi, fmt = 'Line gaps (stop delay)', 4.0, 10.0, '%.1f cycles'
         else:
-            k, i, label, lo, hi, fmt, var = next(p for p in V.UNIT_PARAMS if p[0] == key)
+            k, i, label, lo, hi, fmt, var = next(p for p in V.UNIT_PARAMS + V.UNIT_PICTURE if p[0] == key)
             label = label.split(' (')[0]
         def setv(v):
             a.set_unit(key, round(v, 4))
             if self.save_job: self.t.after_cancel(self.save_job)
             self.save_job = self.t.after(400, a.save_settings)
-        return self.mk_scale(label, lambda: a.unit.get(key, 0.0), setv, lo, hi, False, lambda v: fmt % v,
+        return self.mk_scale(label, lambda: a.unit.get(key, 0.0), setv, lo, hi, False, fmt if callable(fmt) else (lambda v: fmt % v),
                              V.UNIT_PRESETS['owner'][key], None, unit=key)
 
     def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None):

@@ -49,7 +49,7 @@ MAGIC = b'VXR1'
 PORT = 7745
 CODE_TTL = 15.0             # s without a keep-alive: the code is gone
 PAIR_TTL = 30.0             # s without a relayed packet: the pair is gone
-RELAY_MAX = 600             # bytes of payload the relay forwards (the game's description is the longest: ~200)
+RELAY_MAX = 1200            # bytes of payload the relay forwards (v1.0.6 sends its SD card list in 900-byte pieces)
 RELAY_RATE = 300            # packets/s per side
 ALPHABET = 'ABCDEFGHJKLMNPRSTUVWXYZ'   # (no I, O, Q: nothing to misread)
 
@@ -89,7 +89,7 @@ class Relay:
         last_sweep = time.time()
         while True:
             try:
-                data, addr = self.sock.recvfrom(512)
+                data, addr = self.sock.recvfrom(2048)   # (larger than any packet: a shorter buffer cuts them off on Linux)
             except (ConnectionResetError, OSError):
                 continue
             now = time.time()

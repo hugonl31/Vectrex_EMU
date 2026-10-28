@@ -27,6 +27,12 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Clock sync: each side tells the other how far ahead it runs; the PC whose clock is a little fast slows down by at most
   1 %, so the two never run into each other. Measured with a 0.3 % clock difference: the fast side's waits went from
   ~one every frame (up to 22 ms) to none.
+- Waiting for player 2, the cartridge can be changed: the new game is offered (and listed in the game room) at once.
+  A game that needs the 3D Imager or the light pen in port 2 can not be hosted (port 2 is player 2's controller -
+  a 3D game would wait for the disc for ever); leaving takes the game out of the room at once.
+- P pauses the game for both players, P on either side goes on; the link stays alive while paused. The Vectrex
+  stays switched on while connected. The chat opens when the link is made; a game that talks is said to play
+  without its speech module.
 - The meeting point holds 150 games joined at once (measured on it: 100 relayed games use 11 % of its core).
 
 **Smooth by default**

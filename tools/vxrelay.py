@@ -132,6 +132,24 @@ class Relay:
                 if not self.limited(self.listed, addr[0], 1.0, 6):
                     self.room(addr, body[0] if body else 0, now)
                 continue
+            if kind == b'D':                                # (a host gone: its code, and its pair, gone now)
+                c = body[:5].decode('ascii', 'replace')
+                g = self.games.get(c)
+                if g and g['addr'] == addr:
+                    del self.games[c]
+                    for a in (addr, g['peer']):
+                        if a in self.pairs and self.pairs[a][1] == c:
+                            del self.pairs[a]
+                continue
+            if kind == b'U':                                # (a host waiting: another game - the room lists it at once)
+                g = self.games.get(body[:5].decode('ascii', 'replace'))
+                if g and g['addr'] == addr and not g['peer'] and not self.limited(self.listed, addr, 1.0, 4):
+                    try:
+                        info = json.loads(body[5:].decode())
+                        g['info'].update({k: info.get(k) for k in ('name', 'md5', 'size') if k in info})
+                    except (ValueError, UnicodeDecodeError, AttributeError):
+                        pass
+                continue
             if self.limited(self.asked, addr[0], 60.0, 30):   # (registering and joining: 30 a minute per address)
                 continue
             if kind == b'R':

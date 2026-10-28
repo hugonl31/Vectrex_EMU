@@ -138,7 +138,11 @@ TOPICS = [
 ('p', "Two players, two PCs, one Vectrex: the host is player 1 and chooses the game, the other joins as player 2, and "
       "both Vectrexes switch on together. Only the controllers travel over the network: both PCs compute the same game. "
       "Both need the same version of Vectrex_EMU (another one is refused: the two games could differ), and the PC whose "
-      "clock runs a little fast slows down by a hair, so neither has to wait for the other."),
+      "clock runs a little fast slows down by a hair, so neither has to wait for the other. P pauses the game for both "
+      "players (P on either side goes on); the Vectrex stays switched on until you leave. Port 2 is player 2's "
+      "controller: the 3D Imager's and the light pen's games can not be hosted, and a game that talks plays without "
+      "its speech module. While you wait for player 2 you can change the cartridge: the new game is offered (and "
+      "listed in the game room) at once."),
 ('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
 ('item', 'Host public game...', "The game room: this game listed under your gamer name (up to 12 of A-Z 0-9 _ -, "

@@ -51,9 +51,10 @@ RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
-NET_VER = 2                 # the online version: both sides must have the same. Raise it with every change to the
+NET_VER = 3                 # the online version: both sides must have the same. Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
-                            # 1 = v1.0.5-v1.0.8 (they send none)
+                            # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z')
+PAUSE_ALIVE = 0.25          # (seconds between two 'still here' packets while the game is paused)
 PACE_DEAD = 0.5             # (frames: how far one side may be ahead of the other before it slows down)
 PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
 
@@ -174,6 +175,11 @@ class NetPlay:
         self.their_f = -1                               # (the clock sync: the other side's latest frame seen, and how
         self.adv = 0.0                                  #  far ahead each side sees itself - in frames, smoothed)
         self.adv_them = 0.0
+        self.offer = None                               # (host: the game it offers now - it may change while it waits)
+        self.offer_rom = None
+        self.last_heard = time.perf_counter()           # (the other side's last packet: TIMEOUT without one = lost)
+        self.pause_on, self.pause_seq, self.pause_peer = False, 0, False   # (the pause both share: on or not, its
+        self.pause_t = 0.0                                                 #  number, set by the other side)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         if role == 'host' and not server:
             self.sock.bind(('', port))
@@ -253,6 +259,7 @@ class NetPlay:
                 if self.candidates and src in self.candidates and self.peer != src:
                     self.peer = src                             # (the direct way works: this address)
                     self.log('direct connection with %s:%d' % src)
+            self.last_heard = time.perf_counter()
             return data[4], data[5:], src
 
     def _known_ips(self):
@@ -315,7 +322,7 @@ class NetPlay:
                     self.log('player 2 at %s' % ('the relay' if self.relay else '%s:%d' % self.peer))
                     rtt = self._ping()                  # (the round trip: the input delay that hides it, at 50 Hz)
                     self.delay = max(DELAY, min(12, int(rtt * 50.0 + 0.999) + 1))
-                    game = dict(game, delay=self.delay, rtt_ms=round(rtt * 1000), relay=self.relay)
+                    game = dict(self.offer or game, delay=self.delay, rtt_ms=round(rtt * 1000), relay=self.relay)
                     self.reset()                        # (the first frames for this delay: the same on both sides)
                     self.log('round trip %.0f ms: %d frames of input delay' % (rtt * 1000, self.delay))
                     msg = json.dumps(game).encode()
@@ -391,6 +398,14 @@ class NetPlay:
                 return False
             time.sleep(0.01)
         return False
+
+    def update_offer(self, game, rom, info):
+        """host, waiting: another game offered (the cartridge changed) - the game room lists it at once"""
+        self.offer, self.offer_rom = game, rom
+        self.game_info = dict(getattr(self, 'game_info', {}), **info)
+        if self.server and self.code and self.role == 'host':
+            for _ in range(2):
+                self._raw(RMAGIC + b'U' + self.code.encode() + json.dumps(info).encode(), self.server)
 
     def _keepalive(self):
         if self.server and self.code and self.role == 'host':
@@ -530,7 +545,8 @@ class NetPlay:
             self._drain()
             if f in self.remote:
                 break
-            if now - t_wait > TIMEOUT:
+            if now - max(t_wait, self.last_heard) > TIMEOUT:     # (nothing from the other side: a paused one still
+                                                                 #  sends that it is there)
                 self.lost = True
                 self.log('connection lost (no input for frame %d)' % f)
                 return None
@@ -542,6 +558,31 @@ class NetPlay:
         for old in [k for k in self.remote if k < f - 64]:
             del self.remote[old]
         return (a, b) if self.role == 'host' else (b, a)
+
+    # ---- the pause both share: P on either side pauses both, P on either goes on
+    def set_pause(self, on):
+        self.pause_on, self.pause_peer = bool(on), False
+        self.pause_seq = (self.pause_seq + 1) & 0xFFFF
+        self._send_pause()
+
+    def _send_pause(self):
+        self._send(ord('Z'), struct.pack('<BH', 1 if self.pause_on else 0, self.pause_seq))
+        self.pause_t = time.perf_counter()
+
+    def idle(self):
+        """while this side does not run frames (paused): the other side's packets taken, and it told now and then that
+        this side is still there (so neither loses the other)"""
+        if self.lost:
+            return
+        now = time.perf_counter()
+        if now - self.pause_t > PAUSE_ALIVE:
+            self._send_pause()
+            if self.chat_out and now - self.chat_t > 0.15:
+                self._send_chat(now)
+        self._drain()
+        if now - self.last_heard > TIMEOUT:
+            self.lost = True
+            self.log('connection lost (nothing from the other side while paused)')
 
     def pace_s(self):
         """the clock sync: seconds to add to this frame. The side ahead of the other slows down a little, so neither
@@ -622,6 +663,10 @@ class NetPlay:
                 f, v = struct.unpack_from('<II', body)
                 self.sums_theirs[f] = v
                 self._compare(f)
+            elif kind == ord('Z') and len(body) >= 3:   # (the pause: the newer of the two sides' wins)
+                on, seq = struct.unpack_from('<BH', body)
+                if 0 < (seq - self.pause_seq) & 0xFFFF < 0x8000:
+                    self.pause_on, self.pause_seq, self.pause_peer = bool(on), seq, True
             elif kind == ord('Q'):                       # (the other side quit)
                 self.lost = True
                 self.log('the other player left')
@@ -629,6 +674,8 @@ class NetPlay:
     def close(self):
         for _ in range(3):
             self._send(ord('Q'))
+        if self.server and self.code and self.role == 'host':      # (the meeting point: the code gone now - the game
+            self._raw(RMAGIC + b'D' + self.code.encode(), self.server)   #  room no longer lists it)
         try:
             self.sock.close()
         except OSError:

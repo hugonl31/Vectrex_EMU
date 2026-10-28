@@ -1747,6 +1747,10 @@ class Runner(threading.Thread):
                     if t_next < time.perf_counter() - 0.1: t_next = time.perf_counter()
                     continue
                 if self.paused:
+                    if self.net is not None:            # (online: still there for the other side, its packets taken)
+                        self.net.idle()
+                        if self.net.lost:
+                            self.net = None; self.net_lost = True
                     time.sleep(0.02); t_next = time.perf_counter(); continue
                 if self.demo:
                     (jx, jy, btn), p2 = self.demo_input(), (0, 0, 0)
@@ -2266,7 +2270,16 @@ class App:
         self.root.title('Vectrex - %s%s%s' % (self.rom_name, '  [PAUSED]' if self.run.paused else '',
                                               '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
     def toggle_pause(self, e=None):
-        self.run.paused = not self.run.paused; self.title()
+        self.set_paused(not self.run.paused)
+        net = getattr(self, 'net', None)
+        if net is not None and getattr(self, 'net_game', None):  # (online: the pause is both players')
+            net.set_pause(self.run.paused)
+            self.net_flash('ONLINE: PAUSED FOR BOTH PLAYERS' if self.run.paused else 'ONLINE: GOING ON',
+                           'P GOES ON' if self.run.paused else '', secs=600 if self.run.paused else 2)
+    def set_paused(self, on):
+        if bool(on) == bool(self.run.paused):
+            return
+        self.run.paused = bool(on); self.title()
         now = time.perf_counter()                               # (paused: the afterglow stands still)
         if self.run.paused:
             self.pause_t = now
@@ -4499,6 +4512,9 @@ class App:
         """the power switch (on the volume knob): off - dark, silent; on - a cold start"""
         if on == self.run.power:
             return
+        if not on and getattr(self, 'net_game', None):          # (online: switching off and on would start the game
+            self.net_flash('ONLINE: THE VECTREX STAYS ON', 'LEAVE THE GAME TO SWITCH OFF', secs=3)   #  again on one side)
+            return 'break'
         self.run.power = on
         c = self.run.crt
         c.overlay = list(c.snd_on if self.run.power else c.snd_off)
@@ -4553,11 +4569,14 @@ class App:
         a = self.args
         if self.net_busy():
             self.net_flash('ONLINE: LEAVE THE GAME FIRST', secs=4); return
-        addr, port, server, code = None, netplay.PORT, None, None
+        addr, port, server, code, game = None, netplay.PORT, None, None, None
         if role == 'host':
             port = direct_port or netplay.PORT
             if not (a.rom and os.path.isfile(a.rom)):
                 self.net_flash('ONLINE: HOST A GAME', 'START WITH A VECTREX ROM', secs=8); return
+            game, why = self.net_offer(a.rom)
+            if why:
+                self.net_flash(*why, secs=8); return
             if not direct_port:
                 server = self.net_server()
         elif netplay.is_code(target or ''):
@@ -4574,12 +4593,8 @@ class App:
             self.net_flash('ONLINE: THE NETWORK REFUSED', str(e)[:34].upper(), secs=8); return
         self.net_pending, self.net_role, self.net_direct = net, role, bool(direct_port)
         label = (target or '').strip().upper()
-        game = None
         if role == 'host':
-            game = netplay.new_game(a.rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw,   # (R302 moves the joystick
-                                                dacofs=float(self.unit.get('dacofs', 0.0))))     #  comparator: the host's on both)
-            if self.card_dir(a.rom):
-                game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
+            net.offer, net.offer_rom = game, os.path.abspath(a.rom)
             net.game_info = dict(name=game['name'], md5=game['md5'], size=game['size'])
             if public:
                 net.game_info.update(pub=1, gamer=public)           # (the game room lists it under this name)
@@ -4626,7 +4641,7 @@ class App:
                     g['card_only'] = (folder, None if m is None else {e[0].lower() for e, k in zip(m, mine['ok']) if k},
                                       0 if m is None else len(m))
             elif g:
-                rom = a.rom
+                rom = net.offer_rom or a.rom                        # (the game offered when player 2 came)
                 if g.get('card'):                                   # (ours to player 2: the files both have)
                     folder = self.card_dir(rom)
                     m = netplay.card_manifest(folder, CARD_CACHE)
@@ -4635,6 +4650,37 @@ class App:
             self.net_result = (net, g, rom, role)
         threading.Thread(target=work, daemon=True).start()
         self.root.after(100, self.net_poll)
+    def net_offer(self, rom):
+        """the game a host offers (the ROM's identity and what must be the same on both sides), and None - or None and
+        why it can not be played online (the rows of a message)"""
+        import netplay
+        need = port2_needed(rom)
+        if need in ('imager', 'lightpen'):                      # (port 2 is player 2's controller online: a 3D game
+            return None, ('ONLINE: THIS GAME NEEDS',            #  waits for the Imager's disc for ever)
+                          'THE 3D IMAGER IN PORT 2' if need == 'imager' else 'THE LIGHT PEN IN PORT 2',
+                          'IT CAN NOT BE PLAYED ONLINE')
+        game = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw,   # (R302 moves the joystick
+                                          dacofs=float(self.unit.get('dacofs', 0.0))))     #  comparator: the host's on both)
+        if self.card_dir(rom):
+            game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
+        return game, None
+    def net_offer_changed(self, net):
+        """host, waiting for player 2: another cartridge - offered from now on (the game room lists it at once)"""
+        if getattr(self, 'net_pending', None) is not net or getattr(self, 'net_game', None):
+            return
+        rom = self.args.rom
+        game, why = self.net_offer(rom) if rom and os.path.isfile(rom) else (None, ('ONLINE: STOPPED WAITING',
+                                                                                    'NO CARTRIDGE IN THE SLOT'))
+        if why:
+            self.net_stop_why = why; self.net_leave(); self.net_flash(*why, secs=8); return
+        net.update_offer(game, os.path.abspath(rom), dict(name=game['name'], md5=game['md5'], size=game['size']))
+        name = os.path.splitext(game['name'])[0].upper()[:34]
+        if getattr(self, 'net_public', None):
+            self.flash('IN THE GAME ROOM AS ' + self.net_public, 'NOW OFFERING', name, secs=600)
+        elif net.code:
+            self.flash('ONLINE CODE: ' + ' '.join(net.code), 'NOW OFFERING', name, secs=600)
+        else:
+            self.flash('ONLINE: WAITING FOR PLAYER 2', 'NOW OFFERING', name, secs=600)
     def net_poll(self):
         """the Tk side: the connection made (the game loaded, both switched on at once), or lost"""
         res = getattr(self, 'net_result', None)
@@ -4643,7 +4689,8 @@ class App:
             net, g, rom, role = res
             self.net_pending = None
             if getattr(self, 'net_cancel', False) and not g:
-                net.close(); self.net_flash('ONLINE: STOPPED', secs=3)
+                why, self.net_stop_why = getattr(self, 'net_stop_why', None), None   # (stopped for a reason: it shown)
+                net.close(); self.net_flash(*(why or ('ONLINE: STOPPED',)), secs=8 if why else 3)
                 return
             if not g and isinstance(rom, str) and rom.startswith('server:'):
                 why = rom[7:]
@@ -4678,9 +4725,21 @@ class App:
                               "those (a file that is missing shows as missing on both screens)." % (len(card[1]), card[2]))
             self.net_msg = ''
             self.flash('ONLINE: CONNECTED' + (' (RELAYED)' if getattr(net, 'relay', False) else ''), 'YOU ARE PLAYER %d' % (1 if role == 'host' else 2), secs=4)
+            if port2_needed(rom) in ('vecvox', 'vecvoice') or getattr(self, 'speech_user', 'off') in ('vecvox', 'vecvoice'):
+                self.chat_add('sys', "Online, port 2 is player 2's controller: the speech module is unplugged, so this "
+                              "game plays without its speech.")
+            if getattr(self, 'chat_win', None) is None:          # (the chat: open from the start - it can be closed;
+                self.root.after(600, lambda: self.chat_window(focus=False))   #  a new line opens it again)
             self.show_look('online: player %d of %s' % (1 if role == 'host' else 2, os.path.basename(rom)))
         self.chat_poll()
         net = getattr(self, 'net', None)
+        if net is not None and getattr(self, 'net_game', None) and net.pause_peer:   # (the other side paused, or went on)
+            net.pause_peer = False
+            if net.pause_on != bool(self.run.paused):
+                self.set_paused(net.pause_on)
+                other = 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+                self.net_flash(('PAUSED BY ' if net.pause_on else 'GOING ON: ') + other, 'P GOES ON' if net.pause_on else '',
+                               secs=600 if net.pause_on else 2)
         if net is not None and net.desync is not None and not getattr(net, 'desync_told', False):
             net.desync_told = True                              # (the two games have parted: say so, once)
             self.net_flash('ONLINE: OUT OF SYNC', 'THE GAMES DIFFER NOW', secs=8)
@@ -5387,9 +5446,13 @@ class App:
             self.cart_slide_t = time.perf_counter()             # (in, or out of, the slot: it slides)
         self.args.rom = os.path.abspath(rom) if rom else None
         self.note_recent(self.args.rom)
+        pend = getattr(self, 'net_pending', None)
+        host_waiting = pend is not None and getattr(self, 'net_role', '') == 'host' and not getattr(self, 'net_game', None)
+        if host_waiting:
+            self.root.after(0, lambda: self.net_offer_changed(pend))   # (a host waiting: this game offered now)
         was = self.speech
         self.speech = self.port2_auto(self.args.rom)
-        if self.speech != was and self.speech == port2_needed(self.args.rom) and not getattr(self, 'net_game', None):   # (plugged in
+        if self.speech != was and self.speech == port2_needed(self.args.rom) and not getattr(self, 'net_game', None)                 and not host_waiting:   # (plugged in
             #  for this game: said so)
             self.root.after(300, lambda k=self.speech: self.flash(
                 'THIS GAME TALKS' if k in ('vecvox', 'vecvoice') else 'THIS GAME NEEDS',

@@ -1113,6 +1113,28 @@ ONE_PLAYER_TITLES = ((b'POLE POSITION',), (b'DARK', b'TOWER'))   # (the original
                            #  pen's games have their own note, port2_needed)
 
 
+TURN_TITLES = {'B E D L A M', 'BERZERK', 'CLEAN SWEEP', 'MR. BOSTON', 'COSMIC CHASM', 'FORTRESS OF NARZOD', 'HYPERCHASE',
+               'MINE STORM II', 'POLAR RESCUE', 'SCRAMBLE', 'SOLAR QUEST', 'SPIKE', 'SPINBALL', 'WEB WARS'}
+# (the original games for two who take turns on the built-in controller - their manuals: "only the built-in control
+#  panel is used, and the players take turns"; Mine Storm's cartridge has no title: by its file name. Online both
+#  players start on port 1 in them, see Runner.ports)
+
+
+def game_turns(rom):
+    """True for an original game where two players take turns on controller 1 (TURN_TITLES)"""
+    try:
+        if not rom or not rom.lower().endswith(('.bin', '.vec', '.gam')):
+            return False
+        with open(rom, 'rb') as f:
+            h = f.read(96)
+    except OSError:
+        return False
+    titles = [t.decode('latin-1').strip().upper() for t in gce_titles(h)]
+    if not titles:
+        return os.path.splitext(os.path.basename(rom))[0].strip().lower() == 'mine storm'
+    return ' '.join(t for t in titles if t) in TURN_TITLES
+
+
 def game_players(rom):
     """1 for a game known to be for one player only (an original cartridge, by the title in its header), else None"""
     try:
@@ -1747,6 +1769,9 @@ class Runner(threading.Thread):
         super().__init__(daemon=True)
         self.core, self.inp, self.audio = core, inp, audio
         self.inf = inf; self.paused = False; self.stop = False; self.demo = False
+        self.ports = None                                       # (online: which port each player's controller is in -
+        self.port_req = 0                                       #  {'host': 1|2|0, 'join': ...}; a 'take port' asked here
+        self.port_events = collections.deque()                  #  (0x10 / 0x20), and the takes seen, for the chat)
         self.slow = 0
         self.cpu_ms = None                              # (the Python work per game frame, its core's wait not counted)
         self.emu_share = None                           # (the share of a game frame's length this thread and the core take)
@@ -1778,6 +1803,28 @@ class Runner(threading.Thread):
             self.d = (random.randint(-127, 127), random.randint(-127, 127), random.choice(DIR_MASK))
         return getattr(self, 'd', (0, 0, 0))
 
+    def port_inputs(self, a, b):
+        """online: the controller in each port this frame from the two players' inputs (a: the host's, b: the joiner's).
+        A player's 'take port' (flags 0x10 / 0x20, sent with the input: on the same frame on both sides) puts their
+        controller in that port and the other's out of it; two players in one port (a game where they take turns on
+        controller 1: both start there) - the sticks added, the buttons together; a port nobody holds: at rest"""
+        if self.ports is None:
+            self.ports = {'host': 1, 'join': 2}
+        for who, other, inp in (('host', 'join', a), ('join', 'host', b)):
+            k = 1 if inp[3] & 0x10 else 2 if inp[3] & 0x20 else 0
+            if k:
+                self.ports[who] = k
+                if self.ports[other] == k:
+                    self.ports[other] = 0
+                self.port_events.append((who, k))
+        out = []
+        for k in (1, 2):
+            jx = jy = btn = 0
+            for who, inp in (('host', a), ('join', b)):
+                if self.ports[who] == k:
+                    jx += inp[0]; jy += inp[1]; btn |= inp[2]
+            out.append((max(-128, min(127, jx)), max(-128, min(127, jy)), btn))
+        return out[0], out[1]
     def run(self):
         t_next = time.perf_counter()
         try:
@@ -1800,12 +1847,13 @@ class Runner(threading.Thread):
                     (jx, jy, btn), p2 = self.inp.read()                 # (both players)
                 fl, self.flags = self.flags, 0
                 if self.net is not None:                # online: both players' input for this frame (the RESET button
-                    got = self.net.exchange((jx, jy, btn, fl & 4))   #  too: it reaches both machines on one frame)
+                    req, self.port_req = self.port_req, 0              #  too: it reaches both machines on one frame;
+                    got = self.net.exchange((jx, jy, btn, (fl & 4) | req))   #  so does a 'take port', 0x10 / 0x20)
                     if got is None:
                         self.net = None; self.net_lost = True
                     else:
                         a, b = got
-                        (jx, jy, btn), p2 = a[:3], b[:3]
+                        (jx, jy, btn), p2 = self.port_inputs(a, b)
                         fl = (fl & ~4) | ((a[3] | b[3]) & 4)
                 hide = False
                 if fl & 8:                              # power on: the click now, the picture a frame later
@@ -2518,6 +2566,13 @@ class App:
                  "The game room: the public games waiting for a player 2, with their gamer names - join one with a click.")
             item(m, 'Chat...', 'Ctrl+T', self.chat_window,
                  "Write to the other player while you play: the Chat window (it also opens by itself when they write).")
+            dep(m, lambda: bool(getattr(self, 'net_game', None)))
+            item(m, 'Take port 1', '', lambda: self.take_port(1),
+                 "Your controller into controller port 1 (the other player's out of it): for a game where the players "
+                 "take turns on one controller. The last one to take a port has it.")
+            dep(m, lambda: bool(getattr(self, 'net_game', None)))
+            item(m, 'Take port 2', '', lambda: self.take_port(2),
+                 "Your controller into controller port 2 (the other player's out of it).")
             dep(m, lambda: bool(getattr(self, 'net_game', None)))
             item(m, 'Leave the online game', '', self.net_leave, "The game goes on here alone; the other player is told.")
             dep(m, self.net_busy)
@@ -4775,11 +4830,33 @@ class App:
             return (('THIS GAME NEEDS ' + what.upper(), 'NO TWO PLAYERS: CHOOSE ANOTHER'),
                     'This game needs %s in port 2 (online, port 2 is player 2\'s joystick): it does not support two '
                     'players online - please choose another game.' % what)
+        if game_turns(rom):
+            return (('PLAYERS TAKE TURNS ON PORT 1', 'BOTH ARE ON IT NOW'),
+                    'In this game two players take turns on one controller: both of you are on port 1 - the one whose '
+                    'turn it is plays, the other keeps their hands off. Take port 1 / Take port 2 (here, or in the Online '
+                    'menu) give a port to one player.')
         if game_players(rom) == 1:
             return (('A GAME FOR ONE PLAYER', 'PLAYER 2 CAN WATCH'),
                     'This is a game for one player: player 2 sees the same game, but their controller does nothing '
                     'in it. Choose another game to play together.')
         return None
+    def take_port(self, k):
+        """Take port 1 / Take port 2 (the chat, the Online menu): this player's controller into that port - with the next
+        frame's input, on both sides at once; the other player's out of it (the last one to take a port has it)"""
+        if not getattr(self, 'net_game', None) or getattr(self.run, 'net', None) is None:
+            self.flash('ONLY IN AN ONLINE GAME', secs=2); return
+        self.run.port_req = 0x10 if k == 1 else 0x20
+    def port_text(self):
+        """who holds each port now (for the chat window)"""
+        ports = getattr(self.run, 'ports', None)
+        if not ports:
+            return ''
+        me = 'host' if getattr(self, 'net_role', 'host') == 'host' else 'join'
+        them = 'player %d' % (2 if me == 'host' else 1)
+        def holder(k):
+            h = [('you' if w == me else them) for w in ('host', 'join') if ports.get(w) == k]
+            return ' + '.join(h) if h else 'nobody'
+        return 'Port 1: %s     Port 2: %s' % (holder(1), holder(2))
     def net_offer(self, rom):
         """the game a host offers (the ROM's identity and what must be the same on both sides), and its note (net_note)"""
         import netplay
@@ -4787,6 +4864,8 @@ class App:
                                           dacofs=float(self.unit.get('dacofs', 0.0))))     #  comparator: the host's on both)
         if self.card_dir(rom):
             game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
+        if game_turns(rom):
+            game['turns'] = True                                # (both players start on port 1)
         return game, self.net_note(rom)
     def net_offer_changed(self, net):
         """host, waiting for player 2: another cartridge - offered from now on (the game room lists it at once)"""
@@ -4905,6 +4984,16 @@ class App:
         if net is None or not hasattr(net, 'chat_in'):
             return
         other = 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+        me = 'host' if getattr(self, 'net_role', 'host') == 'host' else 'join'
+        ev = getattr(self.run, 'port_events', None)
+        while ev:                                               # (a port taken: said in the chat and on the screen)
+            who, k = ev.popleft()
+            self.chat_add('sys', '%s took port %d.' % ('You' if who == me else other.capitalize(), k))
+            self.flash(('YOU HAVE' if who == me else other + ' HAS') + ' PORT %d' % k, secs=2)
+        w = getattr(self, 'chat_win', None)
+        if w is not None and hasattr(w, 'ports_l'):
+            try: w.ports_l.configure(text=self.port_text())
+            except tk.TclError: pass
         while net.chat_in:
             line = net.chat_in.popleft()
             self.chat_add('them', line)
@@ -4957,6 +5046,11 @@ class App:
             self.__dict__.setdefault('chat_log', []).append(('sys', 'Connected - say hello to %s.' % them.lower()))
         for who, text in self.chat_log:
             add_line(who, text)
+        pr = tk.Frame(t, bg=deck.BG); pr.pack(fill='x', padx=10, pady=(8, 0))   # (the controller ports: who holds them)
+        deck._button(pr, 'Take port 1', lambda: self.take_port(1), self, small=True).pack(side='left')
+        deck._button(pr, 'Take port 2', lambda: self.take_port(2), self, small=True).pack(side='left', padx=(6, 0))
+        t.ports_l = tk.Label(pr, text=self.port_text(), fg=dim, bg=deck.BG, font=(MONO, 9), anchor='e')
+        t.ports_l.pack(side='right')
         row = tk.Frame(t, bg=deck.BG); row.pack(fill='x', padx=10, pady=8)
         v = tk.StringVar()
         en = tk.Entry(row, textvariable=v, bg='#06100d', fg='#e8fff6', insertbackground='#bfe', font=f9, relief='flat',
@@ -5629,6 +5723,7 @@ class App:
         if ng and net is not None and not net.lost:             # (online: on, and the frames counted from this power-on)
             run.power = True; run.crt.volume = run.crt.volume or 0.5
             net.reset(); run.net = net
+            run.ports = {'host': 1, 'join': 1 if ng.get('turns') else 2}   # (taking turns on controller 1: both there)
         if run.power:
             run.flags = self.power_flags()
         self.run = run

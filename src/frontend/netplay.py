@@ -51,9 +51,10 @@ RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
-NET_VER = 3                 # the online version: both sides must have the same. Raise it with every change to the
+NET_VER = 4                 # the online version: both sides must have the same. Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
-                            # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z')
+                            # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z'); 4: taking a
+                            # controller port (the input's flags: 0x10 port 1, 0x20 port 2)
 PAUSE_ALIVE = 0.25          # (seconds between two 'still here' packets while the game is paused)
 PACE_DEAD = 0.5             # (frames: how far one side may be ahead of the other before it slows down)
 PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)

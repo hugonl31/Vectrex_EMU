@@ -36,6 +36,11 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - P pauses the game for both players, P on either side goes on; the link stays alive while paused. The Vectrex
   stays switched on while connected. The chat opens when the link is made; a game that talks is said to play
   without its speech module.
+- Take port 1 / Take port 2 (the Chat window, the Online menu): your controller into that port, the other player's
+  out of it - the last one to take a port has it; the chat says who took which. It goes with the controller input, so
+  both PCs switch on the same frame. In the original games where two players take turns on the built-in controller
+  (Mine Storm, Bedlam, Berzerk, Clean Sweep, Cosmic Chasm, Fortress of Narzod, HyperChase, Polar Rescue, Scramble,
+  Solar Quest, Spike, Spinball, Web Wars - their manuals) both start on port 1: the one whose turn it is plays.
 - A new version on GitHub is told at start (a small window with the link; "Don't remind me" keeps it quiet until the
   next one) and always at the top of the Online, Find players and Host public game windows. Online settings: Check
   GitHub for a new version at start (on by default).

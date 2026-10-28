@@ -143,7 +143,11 @@ TOPICS = [
       "joystick while you are online (hosting, joining or playing: it can not be changed until you leave). Any game can "
       "be played - both see the same picture - but player 2's controller only does something in a game for two: the "
       "games it knows for the 3D Imager or the light pen, and the original games for one player, get a note on the "
-      "screen and in the chat. A game that talks plays without its speech module. While you wait for player 2 you can "
+      "screen and in the chat. Take port 1 / Take port 2 (in the Chat window and the Online menu) put your controller "
+      "into that port and the other player's out of it - the last one to take a port has it (the Vectrex just sees a "
+      "controller at rest in a port nobody holds). In the original games where two players take turns on one "
+      "controller (Mine Storm, Berzerk, Scramble...) both start on port 1: the one whose turn it is plays. "
+      "A game that talks plays without its speech module. While you wait for player 2 you can "
       "change the cartridge: the new game is offered (and listed in the game room) at once."),
 ('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),

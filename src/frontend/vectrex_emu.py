@@ -1830,6 +1830,8 @@ class Runner(threading.Thread):
                 # pace by emulated time (this frame's samples = its length in CPU cycles): real time
                 # is the clock; the sound queue (40 ms head start) only caps runaway buffering
                 t_next += max(len(pcm) // 2, 1) / RATE
+                if self.net is not None:                # (online: the PC ahead of the other slows a little - no waits)
+                    t_next += self.net.pace_s()
                 now = time.perf_counter()
                 if now - t_next > 0.03:
                     self.slow += 1
@@ -4605,6 +4607,8 @@ class App:
             rom = None
             if g == 'missing':
                 g, rom = None, 'missing'
+            elif g == 'version':                                # (the other side has another emulator version)
+                g, rom = None, 'version'
             elif isinstance(g, str):                            # (no meeting point, or its answer: no such code...)
                 g, rom = None, 'server:' + g
             elif g and role == 'join':
@@ -4644,6 +4648,11 @@ class App:
             if not g and isinstance(rom, str) and rom.startswith('server:'):
                 why = rom[7:]
                 net.close(); self.net_flash('ONLINE: NO MEETING POINT' if why == 'server' else 'ONLINE: THE MEETING POINT SAYS', ('THE SERVER DID NOT ANSWER' if why == 'server' else why)[:34].upper(), secs=8)
+                return
+            if not g and rom == 'version':
+                net.close(); self.net_flash('ONLINE: THE OTHER PLAYER HAS', 'ANOTHER EMULATOR VERSION', secs=8)
+                self.chat_add('sys', 'The other player has another version of Vectrex_EMU: online, both need the same '
+                              'one (the latest from GitHub), or the two games could differ.')
                 return
             if not g:
                 net.close()
@@ -4913,11 +4922,12 @@ class App:
                 tk.Label(grid, text=h, fg=deck.DIM, bg=bg, font=(MONO, 9), anchor='w',
                          width=(14, 26, 9, 12)[c]).grid(row=0, column=c, sticky='w')
             for i, g in enumerate(games, 1):
-                mine = have.get(g['md5'])
+                same = g.get('ver', 1) == netplay.NET_VER          # (the same emulator version: only then a game)
+                mine = have.get(g['md5']) if same else None
                 w = int(g['wait'])
                 for c, (txt, col) in enumerate(((g['gamer'], deck.HI), (os.path.splitext(g['name'])[0][:26], deck.G),
                                                 ('%d:%02d' % (w // 60, w % 60), deck.DIM),
-                                                ('yes' if mine else 'no', deck.G if mine else deck.RED))):
+                                                ('yes' if mine else 'no' if same else 'other ver', deck.G if mine else deck.RED))):
                     tk.Label(grid, text=txt, fg=col, bg=bg, font=f9, anchor='w', width=(14, 26, 9, 12)[c]).grid(row=i, column=c, sticky='w')
                 def join(code=g['code']):
                     close(); self.net_last_join = code

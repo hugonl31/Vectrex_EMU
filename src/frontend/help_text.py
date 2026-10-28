@@ -136,7 +136,9 @@ TOPICS = [
 
 ('online', 'Menu: Online', [
 ('p', "Two players, two PCs, one Vectrex: the host is player 1 and chooses the game, the other joins as player 2, and "
-      "both Vectrexes switch on together. Only the controllers travel over the network: both PCs compute the same game."),
+      "both Vectrexes switch on together. Only the controllers travel over the network: both PCs compute the same game. "
+      "Both need the same version of Vectrex_EMU (another one is refused: the two games could differ), and the PC whose "
+      "clock runs a little fast slows down by a hair, so neither has to wait for the other."),
 ('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
 ('item', 'Host public game...', "The game room: this game listed under your gamer name (up to 12 of A-Z 0-9 _ -, "
@@ -144,7 +146,8 @@ TOPICS = [
          "uses is refused. The listing ends when someone joins, or when you leave. Host this game stays the private way: a "
          "code only the player you tell can use."),
 ('item', 'Find players...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "
-         "have waited and whether you have that game (by its contents, any file name, in your roms folder). Join starts it "
+         "have waited and whether you have that game (by its contents, any file name, in your roms folder; 'other ver': an "
+         "older or newer Vectrex_EMU, which can not join). Join starts it "
          "as with a code. Refresh asks again; the room holds at most 100 waiting games."),
 ('item', 'Join a game...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
          "have the same ROM in your roms folder (found by its contents, whatever its file name)."),

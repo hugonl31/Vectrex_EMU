@@ -18,6 +18,17 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Tested between Windows, a Linux mini PC and a Raspberry Pi 5 through the meeting point, direct and relayed, with a
   sync check every frame: Armor Attack and PiTrex Space Duel identical on both sides.
 
+**Online play: safer and smoother**
+- Both sides must have the same version: the joiner's hello and the host's game carry an online version number, and
+  another one is refused at once ("The other player has another emulator version") - before, the two games could
+  differ and only the sync check would notice. Find players marks such games "other ver".
+- Game packets are taken only from the other player's addresses, the meeting point's only from the meeting point: a
+  stranger can no longer end a game or send it input.
+- Clock sync: each side tells the other how far ahead it runs; the PC whose clock is a little fast slows down by at most
+  1 %, so the two never run into each other. Measured with a 0.3 % clock difference: the fast side's waits went from
+  ~one every frame (up to 22 ms) to none.
+- The meeting point holds 150 games joined at once (measured on it: 100 relayed games use 11 % of its core).
+
 **Smooth by default**
 - Reset all (and a new installation) gives the monitor's full rate with Smooth motion on: the same on a 60 Hz screen,
   smoother on 120 / 144 / 165 / 240 Hz - where a fixed 60 can only be paced by the clock. The first-time setup keeps

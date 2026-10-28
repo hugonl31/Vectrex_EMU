@@ -38,6 +38,7 @@ import threading
 import time
 
 PORT = 7744
+VERSION_NO = b'\x00version'  # (player 2's no: another online version)
 CHAT_MAX = 200               # the chat: bytes a line (UTF-8)
 CHAT_GIVEUP = 15.0           # (seconds: a line the other side never confirms is reported as not delivered)
 MAGIC = b'VXN1'
@@ -50,6 +51,14 @@ RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
+NET_VER = 2                 # the online version: both sides must have the same. Raise it with every change to the
+                            # core (anything that could make the same input give another game) or to these packets;
+                            # 1 = v1.0.5-v1.0.8 (they send none)
+PACE_DEAD = 0.5             # (frames: how far one side may be ahead of the other before it slows down)
+PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
+
+
+HELLO = struct.pack('<H', NET_VER)     # (the joiner's hello carries its online version)
 
 
 def rom_md5(path):
@@ -147,7 +156,24 @@ class NetPlay:
         self.port = port
         self.server = server                            # (the meeting point: (host, port), or None for a direct game)
         self.code = code                                # (joining through the meeting point: the host's code)
+        self.server_ip = None                           # (the meeting point's address: its packets only from there)
+        if server:
+            try:
+                self.server_ip = socket.gethostbyname(server[0]); server = (self.server_ip, server[1])
+            except OSError:
+                pass
+        self.server = server
+        if role == 'join' and not server and addr:
+            try:
+                addr = socket.gethostbyname(addr)
+            except OSError:
+                pass
         self.peer = None if (role == 'host' or server) else (addr, port)
+        self.locked = not (role == 'host' and not server)  # (game packets only from the other side's addresses - a
+                                                           #  direct host learns them from the first hello)
+        self.their_f = -1                               # (the clock sync: the other side's latest frame seen, and how
+        self.adv = 0.0                                  #  far ahead each side sees itself - in frames, smoothed)
+        self.adv_them = 0.0
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         if role == 'host' and not server:
             self.sock.bind(('', port))
@@ -183,6 +209,7 @@ class NetPlay:
         self.local = {f: (0, 0, 0, 0) for f in range(self.delay)}     # (the first frames: no input, the same on both)
         self.remote = {f: (0, 0, 0, 0) for f in range(self.delay)}
         self.last_send = 0.0
+        self.their_f = -1; self.adv = 0.0; self.adv_them = 0.0
 
     # ---- the packets
     def _raw(self, data, addr):
@@ -208,6 +235,8 @@ class NetPlay:
             except (BlockingIOError, socket.timeout, ConnectionResetError, OSError):
                 return None
             if data.startswith(RMAGIC) and len(data) >= 5:
+                if not self.server_ip or src[0] != self.server_ip:
+                    continue                                    # (not from the meeting point)
                 kind, body = data[4:5], data[5:]
                 if kind == b'F' and body.startswith(MAGIC):     # (relayed from the other side)
                     self.last_relayed = time.perf_counter()
@@ -218,11 +247,19 @@ class NetPlay:
             if not data.startswith(MAGIC) or len(data) < 5:
                 continue
             if src != ('relay', 0):
+                if self.locked and src[0] not in self._known_ips():
+                    continue                                    # (not from the other player: dropped)
                 self.last_direct = time.perf_counter()
                 if self.candidates and src in self.candidates and self.peer != src:
                     self.peer = src                             # (the direct way works: this address)
                     self.log('direct connection with %s:%d' % src)
             return data[4], data[5:], src
+
+    def _known_ips(self):
+        ips = {c[0] for c in self.candidates}
+        if self.peer:
+            ips.add(self.peer[0])
+        return ips
 
     def _server_packet(self, kind, body):
         if kind == b'C':
@@ -267,6 +304,13 @@ class NetPlay:
                 if p and p[0] == ord('H'):              # (hello: a player)
                     if p[2] != ('relay', 0):
                         self.peer = p[2]
+                    self.locked = True
+                    ver = struct.unpack_from('<H', p[1])[0] if len(p[1]) >= 2 else 1
+                    if ver != NET_VER:                  # (another emulator version: the games could part)
+                        self.log('player 2 has online version %d, this is %d' % (ver, NET_VER))
+                        for _ in range(5):
+                            self._send(ord('V'), struct.pack('<H', NET_VER)); time.sleep(0.02)
+                        return 'version'
                     self._path()
                     self.log('player 2 at %s' % ('the relay' if self.relay else '%s:%d' % self.peer))
                     rtt = self._ping()                  # (the round trip: the input delay that hides it, at 50 Hz)
@@ -281,6 +325,8 @@ class NetPlay:
                         q = self._recv()
                         if q and q[0] == ord('A'):
                             return game
+                        if q and q[0] == ord('N') and q[1] == VERSION_NO:
+                            return 'version'
                         if q and q[0] == ord('N'):      # (no: it does not have the ROM)
                             self.log('player 2 does not have the game: ' + q[1].decode(errors='replace'))
                             return 'missing'
@@ -294,7 +340,7 @@ class NetPlay:
                 if self.candidates:
                     self._punch(hello=True)
                 else:
-                    self._send(ord('H'))
+                    self._send(ord('H'), HELLO)
                 last_h = time.perf_counter()
             time.sleep(0.001)
             p = self._recv()
@@ -304,9 +350,16 @@ class NetPlay:
                     self._send(ord('p'), p[1])
                 elif p[0] == ord('G'):
                     g = json.loads(p[1].decode())
+                    if g.get('nver', 1) != NET_VER:     # (the host has another emulator version)
+                        self.log('the host has online version %s, this is %d' % (g.get('nver', 1), NET_VER))
+                        for _ in range(5):
+                            self._send(ord('N'), VERSION_NO); time.sleep(0.02)
+                        return 'version'
                     self.delay = int(g.get('delay', DELAY))
                     self.reset()
                     return g
+                elif p[0] == ord('V'):                  # (the host refused: another version)
+                    return 'version'
                 p = self._recv()
         return None
 
@@ -321,7 +374,7 @@ class NetPlay:
                 last = now
                 if self.role == 'host' and not self.code:
                     g = getattr(self, 'game_info', {})
-                    self._raw(RMAGIC + b'R' + json.dumps(dict(g, lan=me, ver=1)).encode(), self.server)
+                    self._raw(RMAGIC + b'R' + json.dumps(dict(g, lan=me, ver=NET_VER)).encode(), self.server)
                 elif self.role == 'host':
                     self._raw(RMAGIC + b'K' + self.code.encode(), self.server)
                 else:
@@ -355,9 +408,12 @@ class NetPlay:
         since = now - getattr(self, 'punch_t0', now)
         if since < PUNCH_S + 1.0:
             for c in self.candidates:
-                self._send(ord('H') if (hello or self.role == 'join') else ord('h'), to=c)
+                if hello or self.role == 'join':
+                    self._send(ord('H'), HELLO, to=c)
+                else:
+                    self._send(ord('h'), to=c)
             if since > PUNCH_S * 0.5 and self.code and self.server and (hello or self.role == 'join'):
-                self._raw(RMAGIC + b'X' + self.code.encode() + MAGIC + bytes([ord('H')]), self.server)
+                self._raw(RMAGIC + b'X' + self.code.encode() + MAGIC + bytes([ord('H')]) + HELLO, self.server)
         if since > PUNCH_S:
             self._path()
         self._keepalive()
@@ -487,6 +543,15 @@ class NetPlay:
             del self.remote[old]
         return (a, b) if self.role == 'host' else (b, a)
 
+    def pace_s(self):
+        """the clock sync: seconds to add to this frame. The side ahead of the other slows down a little, so neither
+        PC's clock runs into the other's and waits (a stutter). Each side sees itself ahead by the one-way delay too:
+        half the difference of the two is how far ahead it really is"""
+        ahead = (self.adv - self.adv_them) / 2.0
+        if self.f < 100 or ahead <= PACE_DEAD:
+            return 0.0
+        return min(PACE_MAX, (ahead - PACE_DEAD) * 0.0001)
+
     def say(self, text):
         """a chat line to the other player (any thread): sent with the next frames until it is confirmed"""
         data = text.strip().encode('utf-8')[:CHAT_MAX]
@@ -513,6 +578,7 @@ class NetPlay:
         for k in range(lo, hi + 1):
             jx, jy, b, fl = self.local.get(k, (0, 0, 0, 0))
             body += struct.pack('<bbBB', max(-127, min(127, jx)), max(-127, min(127, jy)), b & 255, fl & 255)
+        body += struct.pack('<h', int(max(-2000, min(2000, self.adv * 16))))   # (the clock sync: how far ahead I see me)
         self._send(ord('I'), body)
         self.last_send = time.perf_counter()
         if self.chat_out and self.last_send - self.chat_t > 0.15:     # (the chat: until confirmed)
@@ -534,6 +600,12 @@ class NetPlay:
                     k = lo + i
                     if k >= self.f and k not in self.remote:
                         self.remote[k] = struct.unpack_from('<bbBB', body, 5 + 4 * i)
+                tf = lo + n - 1 - self.delay                    # (the frame the other side is on)
+                if tf > self.their_f:
+                    self.their_f = tf
+                    self.adv += 0.05 * ((self.f - tf) - self.adv)
+                    if len(body) >= 5 + 4 * n + 2:
+                        self.adv_them = struct.unpack_from('<h', body, 5 + 4 * n)[0] / 16.0
             elif kind == ord('T') and len(body) >= 2:   # (a chat line: confirmed, shown once)
                 k = struct.unpack_from('<H', body)[0]
                 self._send(ord('A'), struct.pack('<H', k))
@@ -608,11 +680,12 @@ def list_games(server, timeout=2.0):
     for p in sorted(pages):
         for row in pages[p]:
             if len(row) >= 6:
-                out.append(dict(code=row[0], gamer=row[1], name=row[2], md5=row[3], size=row[4], wait=row[5]))
+                out.append(dict(code=row[0], gamer=row[1], name=row[2], md5=row[3], size=row[4], wait=row[5],
+                                ver=row[6] if len(row) >= 7 else 1))
     return out
 
 
 def new_game(rom_path, settings):
     """the host's game: the ROM's identity and what must be the same on both sides"""
     return dict(md5=rom_md5(rom_path), size=os.path.getsize(rom_path), name=os.path.basename(rom_path),
-                seed=random.getrandbits(31), **settings)
+                seed=random.getrandbits(31), nver=NET_VER, **settings)

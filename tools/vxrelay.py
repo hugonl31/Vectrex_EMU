@@ -187,7 +187,7 @@ class Relay:
         n = max(1, (len(games) + LIST_PAGE - 1) // LIST_PAGE)
         page = min(page, n - 1)
         rows = [[c, g['gamer'], str(g['info'].get('name') or '')[:40], g['info'].get('md5'), g['info'].get('size'),
-                 int(now - g['since'])] for _, c, g in games[page * LIST_PAGE:(page + 1) * LIST_PAGE]]
+                 int(now - g['since']), g['info'].get('ver') or 1] for _, c, g in games[page * LIST_PAGE:(page + 1) * LIST_PAGE]]
         self.send(addr, b'l', json.dumps(dict(p=page, n=n, t=len(games), g=rows), separators=(',', ':')).encode())
 
     def sweep(self, now):

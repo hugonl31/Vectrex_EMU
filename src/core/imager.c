@@ -30,7 +30,7 @@ static unsigned long long im_t, im_due = ~0ull, im_pin_until;
  * not only at the end of each pulse: so a motor held on, as the games do while it spins up, speeds the disc too).
  * Powered: d speed / dt = (50 - 1.55 v) / 5 - 0.2 v / 5 = 10 - 0.35 v (at most 28.6 turns a second, reached with a
  * time constant of ~2.9 s); unpowered it coasts: d speed / dt = -0.04 v. */
-static double ims_ph, ims_turn, ims_drive, ims_n1, ims_n2, ims_n3;
+static double ims_turn;
 #define IM_VMAX  (10.0 / 0.35)
 #define IM_KON   0.35
 #define IM_KOFF  0.04
@@ -44,7 +44,7 @@ static void im_init (void)
 	else if (z && !strcmp (z, "1")) { im_a1 = 1.0 / 6.0; im_a2 = 1.0 / 3.0; }
 	im_freq = 0.0; im_phase = 0.0; im_on = 0;
 	im_t = alg_cycles; im_due = ~0ull; im_pin_until = 0;
-	ims_ph = ims_turn = ims_drive = ims_n1 = ims_n2 = ims_n3 = 0.0;
+	ims_turn = 0.0;
 }
 
 /* the disc's speed and angle now: the motor's pull (or the coasting) since the last time, solved exactly */
@@ -120,38 +120,75 @@ double vt_imager_speed (void)
 }
 
 /* The motor's sound, on the second audio channel (psg.c: 44100 samples a second - the frontend mixes it beside
- * the Vectrex's, not through its knob or speaker: it is on the player's head). A small brushed DC motor - the
- * kind in cassette players and toys - turning ~5 times faster than the disc (a belt or a pinion: such motors run
- * at 6000-8000 rpm, the disc at ~1560). Its sound:
- * - the whine: the current's ripple at each commutation, 6 a turn with 3 poles and 2 brushes (~780 Hz at speed),
- *   stronger while the game powers the motor - its pulses, as the game regulates the speed, are heard as such;
- * - the brushes' hiss: noise (~0.9-4.5 kHz) in bursts at each commutation;
- * - the air the disc pushes: a low rush growing with the square of its speed, swelling once a turn (its
- *   imbalance). All of it silent while the disc stands, rising with it as it spins up, falling as it coasts. */
-#define IM_GEAR 5.0
+ * the Vectrex's, not through its knob or speaker: it is on the player's head). Distilled from recordings of real
+ * goggles (the owner's, 2026-10-28: 3D Narrow Escape and 3D Crazy Coaster, the stretches without game sound):
+ * not a whine but a soft rush - noise, strongest at 500-1250 Hz, with smaller humps near 3.5 and 8 kHz (ims_fir:
+ * 255 taps made from its measured third-octave levels, within 1.4 dB rms) - swelling once every turn of the disc
+ * (ims_turn_env: its loudness folded at the turn, 0.75 .. 1.53 - a quick swell, a long fade), at the disc's own
+ * speed (22.8 - 24.9 turns a second as the game regulates it). Its tones are only the turn's harmonics, a few dB
+ * above the rush: left out. Silent while the disc stands, growing with the square of its speed. */
+static const float ims_fir[255] = {
+	0.000000f, 0.000001f, 0.000002f, 0.000005f, 0.000008f, 0.000011f, 0.000014f, 0.000017f,
+	0.000018f, 0.000017f, 0.000015f, 0.000010f, 0.000004f, -0.000003f, -0.000008f, -0.000012f,
+	-0.000019f, -0.000034f, -0.000057f, -0.000091f, -0.000122f, -0.000144f, -0.000147f, -0.000133f,
+	-0.000100f, -0.000059f, -0.000007f, 0.000034f, 0.000058f, 0.000054f, 0.000039f, 0.000021f,
+	0.000015f, -0.000007f, -0.000041f, -0.000098f, -0.000154f, -0.000195f, -0.000199f, -0.000169f,
+	-0.000078f, 0.000048f, 0.000230f, 0.000436f, 0.000653f, 0.000848f, 0.001050f, 0.001278f,
+	0.001621f, 0.002026f, 0.002450f, 0.002800f, 0.003074f, 0.003268f, 0.003442f, 0.003541f,
+	0.003657f, 0.003793f, 0.004017f, 0.004251f, 0.004393f, 0.004241f, 0.003814f, 0.003064f,
+	0.002237f, 0.001450f, 0.000830f, 0.000290f, -0.000197f, -0.000814f, -0.001461f, -0.002394f,
+	-0.003620f, -0.005135f, -0.006546f, -0.007557f, -0.007846f, -0.007760f, -0.007296f, -0.006709f,
+	-0.005840f, -0.004754f, -0.003407f, -0.002137f, -0.000784f, 0.000170f, 0.000902f, 0.001089f,
+	0.000672f, -0.000635f, -0.002268f, -0.003858f, -0.004048f, -0.003281f, -0.002054f, -0.001676f,
+	-0.002400f, -0.004494f, -0.007186f, -0.011410f, -0.015929f, -0.020388f, -0.023302f, -0.025095f,
+	-0.026527f, -0.030466f, -0.036387f, -0.045177f, -0.052322f, -0.054771f, -0.048916f, -0.035568f,
+	-0.014333f, 0.009871f, 0.039141f, 0.064663f, 0.080942f, 0.079843f, 0.068757f, 0.057452f,
+	0.071001f, 0.093862f, 0.131970f, 0.154140f, 0.173037f, 0.170255f, 0.377549f, 0.631489f,
+	0.377549f, 0.170255f, 0.173037f, 0.154140f, 0.131970f, 0.093862f, 0.071001f, 0.057452f,
+	0.068757f, 0.079843f, 0.080942f, 0.064663f, 0.039141f, 0.009871f, -0.014333f, -0.035568f,
+	-0.048916f, -0.054771f, -0.052322f, -0.045177f, -0.036387f, -0.030466f, -0.026527f, -0.025095f,
+	-0.023302f, -0.020388f, -0.015929f, -0.011410f, -0.007186f, -0.004494f, -0.002400f, -0.001676f,
+	-0.002054f, -0.003281f, -0.004048f, -0.003858f, -0.002268f, -0.000635f, 0.000672f, 0.001089f,
+	0.000902f, 0.000170f, -0.000784f, -0.002137f, -0.003407f, -0.004754f, -0.005840f, -0.006709f,
+	-0.007296f, -0.007760f, -0.007846f, -0.007557f, -0.006546f, -0.005135f, -0.003620f, -0.002394f,
+	-0.001461f, -0.000814f, -0.000197f, 0.000290f, 0.000830f, 0.001450f, 0.002237f, 0.003064f,
+	0.003814f, 0.004241f, 0.004393f, 0.004251f, 0.004017f, 0.003793f, 0.003657f, 0.003541f,
+	0.003442f, 0.003268f, 0.003074f, 0.002800f, 0.002450f, 0.002026f, 0.001621f, 0.001278f,
+	0.001050f, 0.000848f, 0.000653f, 0.000436f, 0.000230f, 0.000048f, -0.000078f, -0.000169f,
+	-0.000199f, -0.000195f, -0.000154f, -0.000098f, -0.000041f, -0.000007f, 0.000015f, 0.000021f,
+	0.000039f, 0.000054f, 0.000058f, 0.000034f, -0.000007f, -0.000059f, -0.000100f, -0.000133f,
+	-0.000147f, -0.000144f, -0.000122f, -0.000091f, -0.000057f, -0.000034f, -0.000019f, -0.000012f,
+	-0.000008f, -0.000003f, 0.000004f, 0.000010f, 0.000015f, 0.000017f, 0.000018f, 0.000017f,
+	0.000014f, 0.000011f, 0.000008f, 0.000005f, 0.000002f, 0.000001f, 0.000000f };
+static const float ims_turn_env[64] = {
+	0.865594f, 0.886063f, 0.899026f, 0.907738f, 0.915932f, 0.932735f, 0.966325f, 1.022351f,
+	1.102429f, 1.200490f, 1.305302f, 1.401616f, 1.477615f, 1.521025f, 1.529218f, 1.503011f,
+	1.450901f, 1.382666f, 1.309235f, 1.241405f, 1.186399f, 1.150249f, 1.130742f, 1.125759f,
+	1.129208f, 1.132900f, 1.131417f, 1.121770f, 1.104363f, 1.081118f, 1.055076f, 1.029578f,
+	1.007594f, 0.988349f, 0.972253f, 0.960386f, 0.949478f, 0.939359f, 0.928914f, 0.916761f,
+	0.902669f, 0.886738f, 0.869126f, 0.851556f, 0.834898f, 0.819631f, 0.806960f, 0.796188f,
+	0.787581f, 0.781216f, 0.776404f, 0.772352f, 0.768902f, 0.765335f, 0.760927f, 0.755484f,
+	0.751071f, 0.747687f, 0.747706f, 0.753482f, 0.765461f, 0.785068f, 0.811403f, 0.839808f };
+#define IM_MOTOR_GAIN 0.0127      /* (its loudness: the recordings put it ~23 dB under the games' sound - the old one was ~15 dB louder) */
 static unsigned ims_seed = 22222u;
+static float ims_hist[256];                 /* (the noise's last 256 samples, for the filter) */
+static int ims_pos;
 static double im_motor_sample (void)
 {
-	const double dt = 1.0 / 44100.0, PI2 = 6.283185307179586;
+	const double dt = 1.0 / 44100.0;
 	if (!vt_imager) return 0.0;
 	im_move ();
-	double v = im_freq > 0.0 ? im_freq : 0.0, s = v / IM_VMAX;
-	ims_drive += ((im_on ? 1.0 : 0.0) - ims_drive) * 0.02;            /* (the winding's current: ~1 ms) */
-	ims_ph += v * IM_GEAR * 6.0 * dt; ims_ph -= floor (ims_ph);       /* (the commutations) */
+	double v = im_freq > 0.0 ? im_freq : 0.0, s = v / 24.0;          /* (24 turns a second: the games' speed) */
 	ims_turn += v * dt; ims_turn -= floor (ims_turn);                  /* (the disc) */
-	double p = ims_ph;
-	double whine = sin (PI2 * p) + 0.45 * sin (2 * PI2 * p) + 0.25 * sin (3 * PI2 * p) + 0.12 * sin (5 * PI2 * p);
 	ims_seed = ims_seed * 1664525u + 1013904223u;
-	double wn = (double) (ims_seed >> 9) / 4194304.0 - 1.0;
-	ims_n1 += (wn - ims_n1) * 0.45;                                    /* (low pass ~4.5 kHz) */
-	double hp = ims_n1 - ims_n2; ims_n2 += (ims_n1 - ims_n2) * 0.12;   /* (high pass ~0.9 kHz) */
-	double brush = hp * (p < 0.15 ? 1.0 : 0.55);
-	ims_n3 += (wn - ims_n3) * 0.03;                                    /* (low pass ~210 Hz) */
-	double air = ims_n3 * 3.0;
-	double out = whine * s * (0.08 + 0.20 * ims_drive)
-	           + brush * s * (0.10 + 0.30 * ims_drive)
-	           + air * s * s * 0.9;
-	return 0.2 * out * (1.0 + 0.10 * sin (PI2 * ims_turn));   /* (quiet: a motor by the ears, under the game's sound) */
+	ims_pos = (ims_pos + 1) & 255;
+	ims_hist[ims_pos] = (float) ((double) (ims_seed >> 9) / 4194304.0 - 1.0) * 1.7320508f;   /* (unit power) */
+	if (v <= 0.0) return 0.0;
+	double y = 0.0;
+	for (int k = 0; k < 255; k++) y += ims_fir[k] * ims_hist[(ims_pos - k) & 255];
+	double e = ims_turn * 64.0; int i = (int) e; double f = e - i;
+	double env = ims_turn_env[i & 63] * (1.0 - f) + ims_turn_env[(i + 1) & 63] * f;
+	return IM_MOTOR_GAIN * y * env * s * s;
 }
 
 /* ------------------------------------------------------------------ the light pen */

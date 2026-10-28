@@ -1111,7 +1111,7 @@ until it shows the one you want:
   seen through the filter passing at that moment: 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster in colour. As
   on the real goggles the game first spins the disc up and waits, the screen dark, until it is at speed (about 13
   seconds), then plays. Meanwhile a note on the picture shows the disc's speed, and you hear its motor: a small
-  brushed motor whirring up, pulsed by the game as it holds the speed (on its own channel, not through the
+  disc's soft rush, swelling once every turn - made from recordings of real goggles (on its own channel, not through the
   Vectrex's knob: Config > Sound or Cartridge - the sound, its volume, the note). Shown in colour, both eyes'
   pictures together (no 3D yet).
 * **The light pen** (1983): a light sensor in a pen; when the beam passes under its tip the game knows where it

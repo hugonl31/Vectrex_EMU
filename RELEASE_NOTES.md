@@ -67,9 +67,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
   pulses port 2's button 4 and the VIA's CA1 once a turn; each line coloured by the filter in front of the eye at
   that moment. 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster in colour (both eyes together, no 3D yet).
 - Smooth motion keeps the colours.
-- The motor heard: a small brushed electric motor synthesized from the emulated motor's state - its whine rising
-  with the disc's speed, its brushes, the air the disc moves - pulsed as the game regulates it, on a channel of its
-  own (not through the Vectrex's knob). Config > Sound and Config > Cartridge: on / off and its volume.
+- The motor heard, on a channel of its own (not through the Vectrex's knob); Config > Sound and Config > Cartridge:
+  on / off and its volume. Remade from recordings of real goggles (2026-10-28): not a whine but a soft rush
+  (strongest at 500-1250 Hz) swelling once every turn of the disc, at the disc's own speed, about 23 dB under the
+  game's sound.
 - The game waits in the dark while the disc spins up: a note on the picture shows the disc's speed (can be
   switched off).
 

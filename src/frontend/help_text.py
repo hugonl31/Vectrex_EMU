@@ -112,7 +112,7 @@ TOPICS = [
          "every other picture). For 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster. The game drives the disc's "
          "motor itself and times its pictures from a hole in the disc: at the start the game waits, the screen dark, "
          "while the disc spins up (about 13 seconds), then plays in colour - as on the real goggles. A note on the "
-         "picture shows the disc's speed meanwhile, and the motor is heard: a small electric motor whirring up "
+         "picture shows the disc's speed meanwhile, and the motor is heard: the disc's soft rush, swelling once every turn "
          "(Config > Cartridge: the motor sound, its volume, the note). Shown in colour; the two eyes' pictures "
          "together (no 3D yet). Click the P2 PORT pictogram to plug it in - or just start the game: with the joystick in "
          "port 2, a game that needs the goggles (the three 3D games, and Rocket Sledge, an unreleased one) gets them by "

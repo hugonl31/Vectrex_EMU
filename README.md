@@ -19,6 +19,27 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.0.9
+
+* **Online: find a game, talk, take turns** - a player name of your own (asked once, reserved for you at the meeting
+  point); the chat opens when you connect, scrolls, chimes on a new line; **Take port 1 / Take port 2** for the games
+  where two take turns on one controller; a note says how each original game is played by two; P pauses both; the
+  cartridge can change while you wait; Find players stays up to date by itself. A new version on GitHub is told at
+  start - online, both players need the same one.
+* **Config: what changed, in orange** - a changed checkbox, choice or menu in orange, a slider with an orange stripe
+  where its default is; a tab is orange only when something on it shows it.
+
+<p align="center">
+<a href="docs/images/v1.0.9/online_game.jpg"><img src="docs/images/v1.0.9/online_game_small.jpg" width="300" alt="Mine Storm online: MINER HAS PORT 1 on the screen, the ONLINE row in the on-screen display"></a>
+<a href="docs/images/v1.0.9/chat.png"><img src="docs/images/v1.0.9/chat_small.jpg" width="440" alt="the Chat window: the note on how Mine Storm is played by two, the messages, Take port 1 / Take port 2"></a><br>
+<em>Mine Storm online: player 2 took port 1 for their turn - on the screen and in the chat.</em>
+</p>
+<p align="center">
+<a href="docs/images/v1.0.9/find_players.png"><img src="docs/images/v1.0.9/find_players_small.jpg" width="440" alt="Find players: three public games waiting, with the players' names"></a>
+<a href="docs/images/v1.0.9/config_orange.png"><img src="docs/images/v1.0.9/config_orange_small.jpg" width="330" alt="the Config window: Bloom with its orange stripe at the default, Dither and Mains in orange"></a><br>
+<em>Find players, live; the Config window marks what differs from the default in orange.</em>
+</p>
+
 ## New in v1.0.8
 
 * **The game room** - Online > **Host public game** puts your game in the meeting point's game room under your gamer

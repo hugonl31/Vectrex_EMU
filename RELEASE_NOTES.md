@@ -3,6 +3,54 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.9
+
+**Online: find a game, talk, take turns** (2026-10-29)
+- **Player names**: asked once, the first time an online window opens, and reserved for you at the meeting point (a
+  secret key in your settings; the server keeps only its SHA-256 and when the name was last used - no addresses), so
+  nobody else can take it. The game room, the chat and the port messages show it. Online settings > Change name frees
+  the old one; a name unused for a year is free again.
+- **The chat** opens when the link is made (close it: a new line opens it again). It scrolls: at the bottom it follows
+  the new lines, scrolled up it stays where you read and a blinking "new message" bar appears (a click: down). A soft
+  chime when the other player writes and the Chat window is not the one you are in (Online settings: on / off).
+- **Take port 1 / Take port 2** (the Chat window, the Online menu): your controller into that port, the other player's
+  out of it - the last one to take a port has it; the chat and the screen say who. It goes with the controller input,
+  so both PCs switch on the same frame. One player a port, always (a stick at rest still drifts).
+- **Which games play how** (from their manuals), a note on the screen and in the chat:
+  - two at once, player 2 on port 2: Armor Attack, Blitz, HeadsUp, Rip Off, Space Wars - just play;
+  - two taking turns on the built-in controller: Mine Storm, Bedlam, Berzerk, Clean Sweep, Cosmic Chasm, Fortress of
+    Narzod, HyperChase, Polar Rescue, Scramble, Solar Quest, Spike, Spinball, Web Wars - on your turn, Take port 1;
+  - one player: Pole Position, Dark Tower; the 3D Imager's and the light pen's games (port 2 is player 2's joystick
+    online). Any game can still be played - both see the same picture.
+- Port 2 is player 2's joystick while online (hosting, joining, waiting or playing): it can not be changed until you
+  leave, and starting online plugs the joystick back in. A game that talks plays without its speech module.
+- **P pauses the game for both players**, P on either side goes on; the link stays alive while paused. The Vectrex
+  stays switched on while connected.
+- **Hosting**: waiting for player 2, change the cartridge and the new game is offered (and listed in the game room) at
+  once; Host public game follows the slot while it is open. Leaving takes the game out of the room at once.
+- **Find players** keeps its list up to date by itself (every 3 s while open) - no Refresh button.
+- **A new version on GitHub** is told at start (a small window with the link; "Don't remind me" keeps it quiet until
+  the next one) and always at the top of the Online, Find players and Host public game windows. Online settings:
+  Check GitHub for a new version at start (on by default). The programs now know their own version.
+- Online, both need v1.0.9: v1.0.8 and v1.0.9 refuse each other (the online version number went up).
+- Tested between Windows, a Linux mini PC and a Raspberry Pi 5, direct and through the meeting point, with a sync check
+  every frame and random port takes: Armor Attack, Mine Storm and PiTrex Space Duel identical on both sides.
+
+**Config: what changed, in orange**
+- A changed setting is marked in orange: a checkbox's text, a choice's or a menu's label (Mains, Bending type, Rotate,
+  Phosphor size, Cartridge hardware...), a button's text (Light position...), and a slider shows an orange stripe where
+  its default is - the Quality profile's value; on Unit and Circuit the owner's measured Vectrex (those sliders had no
+  mark before). No more dots.
+- One list: a tab is orange only when a row on it shows orange (before, Sound and Cartridge could be orange with nothing
+  marked, and 30 pictures a second or the phosphor size marked nothing). Normal use never counts: the screen rate,
+  G-Sync, Smooth motion, the volume, controller port 2, the monitor's size and the SD folders. The switches below the
+  picture count when they are off.
+
+**The on-screen display**
+- Online, the ONLINE row (the round trip, RELAY through the meeting point, WAITING) takes the volume's row: the display
+  keeps its height and stays below the overlay. The volume shows on the knob and on the status line.
+- Paused: PAUSED and how to go on sit halfway between the frame's bottom edge and the bottom of the window.
+
 ## v1.0.8
 
 **The game room: find someone to play with** (2026-10-28)
@@ -27,39 +75,6 @@ build workflow replaces that release (title = the version, marked Latest) with t
 - Clock sync: each side tells the other how far ahead it runs; the PC whose clock is a little fast slows down by at most
   1 %, so the two never run into each other. Measured with a 0.3 % clock difference: the fast side's waits went from
   ~one every frame (up to 22 ms) to none.
-- Waiting for player 2, the cartridge can be changed: the new game is offered (and listed in the game room) at once.
-  Leaving takes the game out of the room at once.
-- Port 2 is player 2's joystick while online (hosting, joining, waiting or playing): it can not be changed until you
-  leave, and starting online plugs the joystick back in. Any game can be played - both see the same picture - but
-  the games known to need the 3D Imager or the light pen get a note on the screen and in the chat (they do not
-  support two players online), and so do the original games for one player.
-- P pauses the game for both players, P on either side goes on; the link stays alive while paused. The Vectrex
-  stays switched on while connected. The chat opens when the link is made; a game that talks is said to play
-  without its speech module.
-- Take port 1 / Take port 2 (the Chat window, the Online menu): your controller into that port, the other player's
-  out of it - the last one to take a port has it; the chat says who took which. It goes with the controller input, so
-  both PCs switch on the same frame. In the original games where two players take turns on the built-in controller
-  (Mine Storm, Bedlam, Berzerk, Clean Sweep, Cosmic Chasm, Fortress of Narzod, HyperChase, Polar Rescue, Scramble,
-  Solar Quest, Spike, Spinball, Web Wars - their manuals) a note says so: on your turn, Take port 1. One player a
-  port, always (a stick at rest still drifts).
-- Player names: asked once, the first time an online window opens, and reserved at the meeting point for you (a
-  secret key in your settings; the server keeps only its SHA-256 and when the name was last used - no addresses), so
-  nobody else can take it. The game room, the chat and the port messages show it. Online settings > Change name frees
-  the old one; a name unused for a year is free again.
-- A note for the original games for two at once (player 2 on port 2: Armor Attack, Blitz, HeadsUp, Rip Off, Space
-  Wars): just play.
-- Config: a changed setting is marked in orange - a checkbox's text turns orange, a slider shows an orange
-  stripe where its default is (the Quality profile's value; on Unit and Circuit: the owner's measured Vectrex, whose
-  sliders had no mark before); a choice's or a menu's label, a button's text orange (Mains, Bending type, Rotate,
-  Phosphor size, Cartridge hardware, Light position...). No more dots. One list: a tab is orange only when a row on
-  it shows orange (before, Sound and Cartridge could be orange with nothing marked; 30 pictures a second and the
-  phosphor size marked nothing). Normal use never counts: the screen rate, G-Sync, Smooth motion, the volume,
-  controller port 2, the monitor's size and the SD folders.
-- Host public game follows the cartridge in the slot at once (put one in, or change it, while the window is open);
-  Find players keeps its list up to date by itself (every 3 s while open) - the Refresh button is gone.
-- A new version on GitHub is told at start (a small window with the link; "Don't remind me" keeps it quiet until the
-  next one) and always at the top of the Online, Find players and Host public game windows. Online settings: Check
-  GitHub for a new version at start (on by default).
 - The meeting point holds 150 games joined at once (measured on it: 100 relayed games use 11 % of its core).
 
 **Smooth by default**

@@ -170,7 +170,10 @@ TOPICS = [
          "keyboard and mouse do not reach the cartridge while online."),
 ('item', 'Chat... (Ctrl+T)', "Write to the other player while you play: type a line, Enter sends it, Esc gives the "
          "keyboard back to the game (the window stays; a game controller plays on while you type). The window opens by "
-         "itself when the other player writes, and their line also shows briefly in the picture - in full screen too."),
+         "itself when you connect and when the other player writes, and their line also shows briefly in the picture - in "
+         "full screen too. Scrolled up, it stays where you read: a blinking 'new message' bar (a click: down to it). A "
+         "soft chime when they write and the Chat window is not the one you are in (Online settings: on / off). Take "
+         "port 1 / Take port 2: your controller into that port."),
 ('item', 'Leave the online game', "The game goes on here alone; the other player is told. While still waiting: stops waiting."),
 ('item', 'Your player name', "Asked once, the first time you open an online window: up to 12 of A-Z 0-9 _ -. "
          "The meeting point keeps it for you - a secret key in your settings makes it yours (only a scrambled copy of the "

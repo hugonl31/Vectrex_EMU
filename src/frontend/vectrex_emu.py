@@ -1174,6 +1174,25 @@ def game_players(rom):
     return None
 
 
+_CHIME = []
+
+
+def chime_samples():
+    """the chat's chime: two soft bell notes (E6, then A6), 0.35 s, mixed into the game's sound like the power switch's"""
+    if not _CHIME:
+        n, out = int(RATE * 0.35), []
+        for i in range(n):
+            t = i / float(RATE)
+            v = 0.0
+            for f0, t0 in ((1318.5, 0.0), (1760.0, 0.09)):
+                if t >= t0:
+                    u = t - t0
+                    v += math.sin(2 * math.pi * f0 * u) * math.exp(-u / 0.07) * min(1.0, u / 0.004)
+            out.append(int(1500 * v))
+        _CHIME.extend(out)
+    return _CHIME
+
+
 def netplay_name(s):
     """a player name as shown (the game room's rules), or ''"""
     import netplay
@@ -2099,6 +2118,7 @@ class App:
         self.player_key = conf0.get('player_key', '')           # (the secret that makes the name this player's)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
+        self.chat_sound = conf0.get('chat_sound', True)         # (a chime when the other player writes)
         self.update_skip = conf0.get('update_skip', '')         # (that version: not told again - 'don't remind me')
         self.update_latest = None                               # (the newer version found, or None)
         self.head_hist = {'CPU': [], 'GPU': []}                 # (their last 10 seconds)
@@ -3685,6 +3705,10 @@ class App:
         if k <= 0:
             return None
         hgt = 11.0 * k * ks[0] + 6.0 * k * ks[1]
+        ph = pb - pt                                            # (up and down: halfway between the frame's bottom edge and
+        fb = (pt + pb) / 2.0 + vecrender.FRAME_Y * ph / 2.0     #  the bottom of the window - the owner, 2026-10-28)
+        wb = pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph
+        mid = (fb + wb) / 2.0
         cols = [self.SPEED_COLORS[1][2], (0.40, 0.667, 0.533)]   # (PAUSED in the OSD's orange)
         return dict(rows=rows, ks=ks, cols=cols, cx=(left + right) / 2.0, cy=mid - hgt / 2.0, k=k)
     def imager_hint(self):
@@ -5108,11 +5132,27 @@ class App:
         while net.chat_in:
             line = net.chat_in.popleft()
             self.chat_add('them', line)
+            self.chat_chime()
             if getattr(self, 'chat_win', None) is None:
                 self.chat_window(focus=False)
             self.flash(other + ':', line.upper()[:34], secs=4)
         while net.chat_failed:
             self.chat_add('sys', 'Not delivered (the other emulator has no chat yet): ' + net.chat_failed.popleft())
+    def chat_chime(self):
+        """a soft two-note chime in the game's sound (Online settings: on / off) - not while the Chat window is the one
+        you are in"""
+        if not getattr(self, 'chat_sound', True):
+            return
+        w = getattr(self, 'chat_win', None)
+        try:
+            f = self.root.focus_get()
+            if w is not None and f is not None and f.winfo_toplevel() is w:
+                return
+        except (tk.TclError, KeyError):
+            pass
+        c = getattr(self.run, 'crt', None)
+        if c is not None and not c.overlay:
+            c.overlay = list(chime_samples())
     def chat_window(self, e=None, focus=True):
         """Online > Chat (Ctrl+T): write to the other player while playing. Typing here is not the game's keyboard
         (a game controller still plays); Enter sends, Esc gives the keyboard back to the game"""
@@ -5139,11 +5179,42 @@ class App:
         body = tk.Frame(t, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE); body.pack(fill='both', padx=10, pady=(8, 0))
         log = tk.Text(body, width=46, height=9, bg='#06100d', fg='#bfe', font=f9, relief='flat', wrap='word', bd=0,
                       highlightthickness=0, padx=8, pady=6, cursor='arrow', takefocus=0)
-        log.pack(fill='both')
+        sbar = darkmenu.DScroll(body, command=log.yview, bg=bg)
+        tk.Canvas.configure(sbar, height=10)                    # (the text's 9 lines set the height, not the bar)
+        sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
+        log.pack(side='left', fill='both', expand=True)
+        newbar = tk.Label(log, text='\u25bc new message', fg=deck.BG, bg=deck.HI, font=(MONO, 9), padx=8, pady=1,
+                          cursor='hand2')                       # (scrolled up when a line came: it stays where it was)
+        blink = {'on': False, 'job': None}
+        def bar_off():
+            blink['on'] = False
+            newbar.place_forget()
+        def bar_on():
+            if not blink['on']:
+                blink['on'] = True
+                newbar.place(relx=0.5, rely=1.0, anchor='s', y=-4)
+                tick()
+        def tick():
+            if not blink['on']:
+                return
+            try:
+                newbar.configure(bg=deck.HI if newbar.cget('bg') != deck.HI else deck.G)
+                t.after(500, tick)
+            except tk.TclError:
+                pass
+        def to_end(e=None):
+            log.see('end'); bar_off()
+        newbar.bind('<Button-1>', to_end)
+        def scrolled(a, b):
+            sbar.set(a, b)
+            if float(b) >= 0.999:
+                bar_off()
+        log.configure(yscrollcommand=scrolled)
         log.tag_configure('me', foreground=g); log.tag_configure('them', foreground='#bfe')
         log.tag_configure('sys', foreground=dim); log.tag_configure('who_me', foreground=g, font=(MONO, 10, 'bold'))
         log.tag_configure('who_them', foreground='#e8fff6', font=(MONO, 10, 'bold'))
         def add_line(who, text):
+            at_end = log.yview()[1] >= 0.999
             log.configure(state='normal')
             if log.index('end-1c') != '1.0':
                 log.insert('end', '\n')
@@ -5151,7 +5222,11 @@ class App:
                 log.insert('end', text, 'sys')
             else:
                 log.insert('end', (me if who == 'me' else them) + ': ', 'who_' + who); log.insert('end', text, who)
-            log.configure(state='disabled'); log.see('end')
+            log.configure(state='disabled')
+            if at_end or who == 'me':
+                to_end()
+            else:
+                bar_on()
         t.add_line = add_line
         if not getattr(self, 'chat_log', None):
             self.__dict__.setdefault('chat_log', []).append(('sys', 'Connected - say hello to %s.' % them.lower()))
@@ -5463,6 +5538,11 @@ class App:
         tk.Checkbutton(st, text='Show the online state in the on-screen display', variable=ov, command=osd_flip, fg=g, bg=bg,
                        selectcolor=bg, activebackground=bg, activeforeground=deck.HI, font=f9, anchor='w', highlightthickness=0,
                        bd=0).pack(fill='x', pady=(6, 0))
+        cv_ = tk.BooleanVar(value=self.chat_sound)
+        tk.Checkbutton(st, text='Chime when the other player writes', variable=cv_,
+                       command=lambda: (setattr(self, 'chat_sound', cv_.get()), self.save_settings()), fg=g, bg=bg,
+                       selectcolor=bg, activebackground=bg, activeforeground=deck.HI, font=f9, anchor='w', highlightthickness=0,
+                       bd=0).pack(fill='x', pady=(4, 0))
         nr = tk.Frame(st, bg=bg); nr.pack(fill='x', pady=(6, 0))
         tk.Label(nr, text='Player name: ', fg=dim, bg=bg, font=f9).pack(side='left')
         tk.Label(nr, text=self.gamer if self.gamer_ok else '(not chosen yet)', fg=deck.HI, bg=bg, font=f9).pack(side='left')
@@ -6433,6 +6513,7 @@ class App:
         d['player_key'] = getattr(self, 'player_key', '')
         d['net_osd'] = getattr(self, 'net_osd', True)
         d['update_check'] = getattr(self, 'update_check', True)
+        d['chat_sound'] = getattr(self, 'chat_sound', True)
         d['update_skip'] = getattr(self, 'update_skip', '')
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')

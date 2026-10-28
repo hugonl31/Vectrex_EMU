@@ -2007,6 +2007,8 @@ class App:
                 self.root.bind('<%s-%s>' % (m, k), lambda e: self.turn_voice(-0.05))
         self.root.bind('<Escape>', self.escape)
         self.root.bind('<Tab>', self.open_deck)                 # (the control deck)
+        for k in ('<Control-t>', '<Control-T>'):
+            self.root.bind(k, self.chat_window)                 # (online: the Chat window)
         for k in ('<Control-k>', '<Control-K>'):
             self.root.bind(k, self.toggle_usb_typing)          # (a UVMC2: the keyboard types on its USB keyboard)
         self.root.bind_class('usbtype', '<KeyPress>', lambda e: self.usb_key(e, True))
@@ -2278,6 +2280,9 @@ class App:
             item(m, 'Join a game...', '', lambda: self.online_window('join'),
                  "Type the code player 1 tells you (or an address): you are player 2; the host's game starts here when you "
                  "have the same ROM.")
+            item(m, 'Chat...', 'Ctrl+T', self.chat_window,
+                 "Write to the other player while you play: the Chat window (it also opens by itself when they write).")
+            dep(m, lambda: bool(getattr(self, 'net_game', None)))
             item(m, 'Leave the online game', '', self.net_leave, "The game goes on here alone; the other player is told.")
             dep(m, self.net_busy)
             m.add_separator()
@@ -4432,6 +4437,7 @@ class App:
             self.net_msg = ''
             self.flash('ONLINE: CONNECTED' + (' (RELAYED)' if getattr(net, 'relay', False) else ''), 'YOU ARE PLAYER %d' % (1 if role == 'host' else 2), secs=4)
             self.show_look('online: player %d of %s' % (1 if role == 'host' else 2, os.path.basename(rom)))
+        self.chat_poll()
         if getattr(self, 'net_game', None) and getattr(self.run, 'net_lost', False):
             self.net_end('ONLINE: CONNECTION LOST')
         if getattr(self, 'net_game', None) or res is None:
@@ -4442,8 +4448,119 @@ class App:
         if self.run is not None:
             self.run.net = None
         if net is not None:
+            self.chat_add('sys', why.replace('ONLINE: ', '').capitalize() + ' - the chat ends here.')
             net.close()
             self.net_flash(why, 'THE GAME GOES ON HERE ALONE', secs=6)
+    # ---------------------------------------------------------------- the chat (online play)
+    def chat_add(self, who, text):
+        """a line in the chat: who 'me', 'them' or 'sys' - kept for this session, shown in the Chat window"""
+        log = self.__dict__.setdefault('chat_log', [])
+        log.append((who, text)); del log[:-200]
+        w = getattr(self, 'chat_win', None)
+        if w is not None:
+            try: w.add_line(who, text)
+            except tk.TclError: self.chat_win = None
+    def chat_poll(self):
+        """the other player's lines (netplay: they arrive with the frames) - into the Chat window, which opens by itself
+        (the keyboard stays with the game), and briefly in the picture (seen in full screen too)"""
+        net = getattr(self, 'net', None)
+        if net is None or not hasattr(net, 'chat_in'):
+            return
+        other = 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+        while net.chat_in:
+            line = net.chat_in.popleft()
+            self.chat_add('them', line)
+            if getattr(self, 'chat_win', None) is None:
+                self.chat_window(focus=False)
+            self.flash(other + ':', line.upper()[:34], secs=4)
+        while net.chat_failed:
+            self.chat_add('sys', 'Not delivered (the other emulator has no chat yet): ' + net.chat_failed.popleft())
+    def chat_window(self, e=None, focus=True):
+        """Online > Chat (Ctrl+T): write to the other player while playing. Typing here is not the game's keyboard
+        (a game controller still plays); Enter sends, Esc gives the keyboard back to the game"""
+        if not getattr(self, 'net_game', None):
+            if focus:
+                self.flash('CHAT: ONLY IN AN ONLINE GAME', secs=2)
+            return 'break'
+        w = getattr(self, 'chat_win', None)
+        if w is not None:
+            try:
+                w.deiconify(); w.lift()
+                if focus: w.entry.focus_force()
+                return 'break'
+            except tk.TclError:
+                self.chat_win = None
+        g, dim, bg = deck.G, deck.DIM, deck.PANEL
+        f9 = (MONO, 10)
+        me = 'You'; them = 'Player %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+        t = tk.Toplevel(self.root, bg=deck.BG); self.chat_win = t
+        t.withdraw()
+        t.title('Chat'); t.transient(self.root); t.resizable(False, False)
+        top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
+        tk.Label(top, text='Enter: send   Esc: back to the game', fg=dim, bg=deck.TOPBG, font=(MONO, 9)).pack(side='left', padx=12, pady=6)
+        body = tk.Frame(t, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE); body.pack(fill='both', padx=10, pady=(8, 0))
+        log = tk.Text(body, width=46, height=9, bg='#06100d', fg='#bfe', font=f9, relief='flat', wrap='word', bd=0,
+                      highlightthickness=0, padx=8, pady=6, cursor='arrow', takefocus=0)
+        log.pack(fill='both')
+        log.tag_configure('me', foreground=g); log.tag_configure('them', foreground='#bfe')
+        log.tag_configure('sys', foreground=dim); log.tag_configure('who_me', foreground=g, font=(MONO, 10, 'bold'))
+        log.tag_configure('who_them', foreground='#e8fff6', font=(MONO, 10, 'bold'))
+        def add_line(who, text):
+            log.configure(state='normal')
+            if log.index('end-1c') != '1.0':
+                log.insert('end', '\n')
+            if who == 'sys':
+                log.insert('end', text, 'sys')
+            else:
+                log.insert('end', (me if who == 'me' else them) + ': ', 'who_' + who); log.insert('end', text, who)
+            log.configure(state='disabled'); log.see('end')
+        t.add_line = add_line
+        if not getattr(self, 'chat_log', None):
+            self.__dict__.setdefault('chat_log', []).append(('sys', 'Connected - say hello to %s.' % them.lower()))
+        for who, text in self.chat_log:
+            add_line(who, text)
+        row = tk.Frame(t, bg=deck.BG); row.pack(fill='x', padx=10, pady=8)
+        v = tk.StringVar()
+        en = tk.Entry(row, textvariable=v, bg='#06100d', fg='#e8fff6', insertbackground='#bfe', font=f9, relief='flat',
+                      highlightthickness=1, highlightbackground='#2a5a48', highlightcolor=g)
+        en.pack(side='left', fill='x', expand=True, ipady=3)
+        t.entry = en
+        def limit(*_):                                          # (a line: at most netplay.CHAT_MAX bytes)
+            s_ = v.get()
+            while len(s_.encode('utf-8')) > 200:
+                s_ = s_[:-1]
+            if s_ != v.get(): v.set(s_)
+        v.trace_add('write', limit)
+        def send(ev=None):
+            txt = v.get().strip()
+            net = getattr(self, 'net', None)
+            if txt and net is not None and hasattr(net, 'say'):
+                net.say(txt); self.chat_add('me', txt); v.set('')
+            return 'break'
+        deck._button(row, 'Send', send, self, on=True, small=True).pack(side='left', padx=(6, 0))
+        en.bind('<Return>', send)
+        en.bind('<FocusIn>', lambda ev: setattr(self.inp, 'kbd_off', True))     # (typing: not the game's keyboard)
+        en.bind('<FocusOut>', lambda ev: setattr(self.inp, 'kbd_off', False))
+        def back(ev=None):                                      # (Esc: the keyboard back to the game, the window stays)
+            self.inp.kbd_off = False
+            try: self.root.focus_force()
+            except tk.TclError: pass
+            return 'break'
+        def close():
+            self.inp.kbd_off = False
+            self.chat_win = None
+            t.destroy()
+        t.bind('<Escape>', back)
+        t.protocol('WM_DELETE_WINDOW', close)
+        deck.place(t, 'chat', self)
+        deck.over_full(t, self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
+        if focus:
+            en.focus_force()
+        else:
+            self.root.after(50, lambda: self.root.focus_force())    # (opened by a message: the keys stay with the game)
+        return 'break'
     def online_window(self, what=None):
         """Online: host (a code for player 2), join (type the code), the state now, the settings. what: 'host' starts
         hosting this game at once, 'join' puts the cursor in the code box"""

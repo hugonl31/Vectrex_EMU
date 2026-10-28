@@ -52,8 +52,8 @@ photo, recording and measurement, and every call on how it should look, sound an
   really reset. Tabs switch at once - no white flashes, no half-drawn controls - and every window opens where you
   left it.
 * **Online play** - two PCs, one Vectrex: the host shows a five-letter code, player 2 types it in (the **Online**
-  menu). Direct through most home routers, relayed through a meeting-point server when not; only the controllers
-  travel, the emulation is identical on both sides ([Online play](#online-play-two-vectrex_emus-one-game)).
+  menu), and **chat** with each other while you play (Ctrl+T). Direct through most home routers, relayed through a
+  meeting-point server when not; only the controllers travel, the emulation is identical on both sides ([Online play](#online-play-two-vectrex_emus-one-game)).
 * **Menus in full screen** - move the mouse to the top edge of the screen (or press Alt) and the menu bar appears
   over the picture; Tab opens the Config window over the full-screen picture, and the other windows stay in front
   too.
@@ -1254,7 +1254,9 @@ Vectrex_EMU.exe --net-join KRAVE                          player 2, with that co
 The code goes through a small meeting-point server (`tools/vxrelay.py`), which puts the two PCs in touch directly
 (through most home routers without any settings) and relays the packets when that is not possible. Without the
 server: `--net-host` on the host (its router forwards UDP port 7744) and `--net-join ADDRESS` on the other side.
-Player 2 needs the same ROM in its `roms` folder (found by checksum). The host measures the round trip and sets the
+**Chat** (Online > Chat, Ctrl+T): write to the other player while you play - Enter sends, Esc gives the keyboard back
+to the game, and a controller plays on while you type. The window opens by itself when the other player writes, and
+their line shows briefly in the picture too. Player 2 needs the same ROM in its `roms` folder (found by checksum). The host measures the round trip and sets the
 input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and
 through a simulated bad connection (40-60 ms each way, 10 % packet loss): identical pictures throughout.
 

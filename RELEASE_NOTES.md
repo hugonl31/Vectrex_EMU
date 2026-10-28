@@ -26,6 +26,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
   meeting-point server puts the PCs in touch directly (through most routers) or relays the packets; the input delay
   is set from the measured round trip. Also from the command line (`--net-online`, `--net-join CODE`; `--net-host`
   for a direct connection). The Online window shows the connection.
+- Chat while you play (Online > Chat, Ctrl+T): Enter sends, Esc gives the keyboard back to the game; the window opens
+  by itself when the other player writes, and their line shows in the picture for a moment (full screen too). Lines
+  are resent until they arrive and shown in order.
 
 **The Config window**
 - Compact for 1080p laptops: short labels with an *i* for the details, two columns only when a tab is too tall;

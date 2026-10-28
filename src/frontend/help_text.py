@@ -141,6 +141,9 @@ TOPICS = [
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
 ('item', 'Join a game...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
          "have the same ROM in your roms folder (found by its contents, whatever its file name)."),
+('item', 'Chat... (Ctrl+T)', "Write to the other player while you play: type a line, Enter sends it, Esc gives the "
+         "keyboard back to the game (the window stays; a game controller plays on while you type). The window opens by "
+         "itself when the other player writes, and their line also shows briefly in the picture - in full screen too."),
 ('item', 'Leave the online game', "The game goes on here alone; the other player is told. While still waiting: stops waiting."),
 ('item', 'Online settings...', "The meeting point (both players need the same one; Default puts back the emulator's own), "
          "hosting without it - on a LAN, or with UDP port 7744 forwarded to this PC - and the ONLINE row in the on-screen "

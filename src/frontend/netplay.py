@@ -26,15 +26,19 @@ through the server instead (relayed: a little more delay, but it always works). 
 last packet came, so both end up on the same path.
 
 Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md."""
+import collections
 import hashlib
 import json
 import os
 import random
 import socket
 import struct
+import threading
 import time
 
 PORT = 7744
+CHAT_MAX = 200               # the chat: bytes a line (UTF-8)
+CHAT_GIVEUP = 15.0           # (seconds: a line the other side never confirms is reported as not delivered)
 MAGIC = b'VXN1'
 DELAY = 3                   # frames of input delay (each side's input runs this many frames after it was read): at
                             # least this; the host measures the round trip and adds what it needs (the game's 'delay')
@@ -108,6 +112,15 @@ class NetPlay:
         self.reset()
         self.lost = False
         self.stall_s = 0.0                              # (time spent waiting for the other side: the report)
+        # the chat (the Chat window): lines sent until the other side confirms them ('T' / 'A'), each shown once
+        self.chat_lock = threading.Lock()
+        self.chat_out = []                              # ([number, utf-8 bytes, first sent]: not yet confirmed)
+        self.chat_seq = 0
+        self.chat_in = collections.deque()              # (the other player's lines, for the window)
+        self.chat_failed = collections.deque()          # (ours that never arrived: an older emulator over there)
+        self.chat_got = {}                              # (arrived ahead of an earlier one: held, to keep the order)
+        self.chat_next = 0
+        self.chat_t = 0.0
 
     def reset(self):
         """frame 0: the power-on frame of the game both play"""
@@ -350,6 +363,25 @@ class NetPlay:
             del self.remote[old]
         return (a, b) if self.role == 'host' else (b, a)
 
+    def say(self, text):
+        """a chat line to the other player (any thread): sent with the next frames until it is confirmed"""
+        data = text.strip().encode('utf-8')[:CHAT_MAX]
+        if not data:
+            return
+        with self.chat_lock:
+            self.chat_out.append([self.chat_seq & 0xFFFF, data, time.perf_counter()])
+            self.chat_seq += 1
+        self.chat_t = 0.0
+
+    def _send_chat(self, now):
+        with self.chat_lock:
+            for m in list(self.chat_out):
+                if now - m[2] > CHAT_GIVEUP:
+                    self.chat_out.remove(m); self.chat_failed.append(m[1].decode('utf-8', 'replace'))
+                else:
+                    self._send(ord('T'), struct.pack('<H', m[0]) + m[1])
+        self.chat_t = now
+
     def _send_inputs(self):
         hi = self.f + self.delay
         lo = max(0, hi - KEEP + 1)
@@ -359,6 +391,8 @@ class NetPlay:
             body += struct.pack('<bbBB', max(-127, min(127, jx)), max(-127, min(127, jy)), b & 255, fl & 255)
         self._send(ord('I'), body)
         self.last_send = time.perf_counter()
+        if self.chat_out and self.last_send - self.chat_t > 0.15:     # (the chat: until confirmed)
+            self._send_chat(self.last_send)
         if self.server and self.candidates and (self.f & 63) == 0:
             self._path()                                 # (the direct way may open or close during the game)
 
@@ -376,6 +410,18 @@ class NetPlay:
                     k = lo + i
                     if k >= self.f and k not in self.remote:
                         self.remote[k] = struct.unpack_from('<bbBB', body, 5 + 4 * i)
+            elif kind == ord('T') and len(body) >= 2:   # (a chat line: confirmed, shown once)
+                k = struct.unpack_from('<H', body)[0]
+                self._send(ord('A'), struct.pack('<H', k))
+                if (k - self.chat_next) & 0xFFFF < 0x8000:   # (not one shown already)
+                    self.chat_got[k] = body[2:CHAT_MAX + 2].decode('utf-8', 'replace')
+                    while self.chat_next in self.chat_got:     # (in the order they were written)
+                        self.chat_in.append(self.chat_got.pop(self.chat_next))
+                        self.chat_next = (self.chat_next + 1) & 0xFFFF
+            elif kind == ord('A') and len(body) >= 2:   # (ours arrived)
+                k = struct.unpack_from('<H', body)[0]
+                with self.chat_lock:
+                    self.chat_out = [m for m in self.chat_out if m[0] != k]
             elif kind == ord('Q'):                       # (the other side quit)
                 self.lost = True
                 self.log('the other player left')

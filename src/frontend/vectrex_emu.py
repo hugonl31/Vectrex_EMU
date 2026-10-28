@@ -1889,7 +1889,7 @@ class App:
         self.start_on = bool(c0.get('start_on', False))         # starts switched off: turn the knob, as on a Vectrex
         self.pad_shortcuts = bool(c0.get('pad_shortcuts', c0.get('pad_browser', True)))   # stick + all four buttons held 1 s
         self.mouse_stick = bool(c0.get('mouse_stick', False))   # Vectrex > Mouse / touchpad steers player 1
-        self.smooth = bool(c0.get('smooth_motion', False))   # Smooth motion (60 Hz screens), see smooth_frame
+        self.smooth = bool(c0.get('smooth_motion', True))    # Smooth motion (on by default, 2026-10-28), see smooth_frame
         self.sm_buf = []
         self.sm_st = type('SmoothState', (), {})()     # (the alternate-halves check's memory)
         self.imager_note = bool(c0.get('imager_note', True))    # the 3D Imager: a note while its disc spins up
@@ -1969,6 +1969,7 @@ class App:
         self.quality_opt = dict(conf0.get('quality_opt', {}) or {})   #  'optimized': Optimize's result, quality_opt)
         self.osd_meters = conf0.get('osd_meters', True)         # (the OSD's CPU and GPU meters: how much of each frame is used)
         self.net_server_s = conf0.get('net_server', '')         # (Online settings: the meeting point; '' = netplay.SERVER)
+        self.gamer = conf0.get('gamer_name', '')                # (the game room: the name a public game is listed by)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.head_hist = {'CPU': [], 'GPU': []}                 # (their last 10 seconds)
         self.fit_h = fit                                        # (the window's screen area at most)
@@ -2114,7 +2115,8 @@ class App:
         self.browse_last = (bl[0], list(bl[1]), bl[2], int(bl[3]) if len(bl) > 3 else 0) if isinstance(bl, list) and len(bl) in (3, 4) and isinstance(bl[0], str) else None
         self.show_bar()
         self.vrr = conf.get('gsync', False)                     # G-Sync / FreeSync mode (off by default: any monitor)
-        self.rate = conf.get('screen_rate', '60')               # '60' or 'max' (the monitor's full rate)
+        self.rate = conf.get('screen_rate', 'max')              # 'max' (the monitor's full rate, the default: even on 144 / 165 Hz
+                                                                #  screens, where 60 can only be paced by the clock) or '60'
         self.setup_display()
         self.ultra_rate = None
         self.root.bind('<F11>', self.toggle_full)
@@ -2445,9 +2447,14 @@ class App:
             item(m, 'Host this game...', '', lambda: self.online_window('host'),
                  "Play this game with someone over the internet: you are player 1. The Online window shows a five-letter code "
                  "to tell player 2 - no addresses, no router settings.")
+            item(m, 'Host public game...', '', self.public_host_window,
+                 "Put this game in the game room under your gamer name: anyone can see it in Find players and join as "
+                 "player 2.")
             item(m, 'Join a game...', '', lambda: self.online_window('join'),
                  "Type the code player 1 tells you (or an address): you are player 2; the host's game starts here when you "
                  "have the same ROM.")
+            item(m, 'Find players...', '', self.find_players_window,
+                 "The game room: the public games waiting for a player 2, with their gamer names - join one with a click.")
             item(m, 'Chat...', 'Ctrl+T', self.chat_window,
                  "Write to the other player while you play: the Chat window (it also opens by itself when they write).")
             dep(m, lambda: bool(getattr(self, 'net_game', None)))
@@ -4536,9 +4543,10 @@ class App:
             self.net_msg = 'Stopped waiting.'
         if getattr(self, 'net_game', None):
             self.net_end('ONLINE: YOU LEFT')
-    def net_begin(self, role, target=None, direct_port=None):
+    def net_begin(self, role, target=None, direct_port=None, public=None):
         """host (player 1: this game, through the meeting point - or direct_port: straight on that UDP port) or join
-        (target: a code, or an address[:port]) - waits in a thread; net_poll takes the result"""
+        (target: a code, or an address[:port]) - waits in a thread; net_poll takes the result. public: a gamer name -
+        the game is listed in the meeting point's game room (Find players) until someone joins"""
         import netplay
         a = self.args
         if self.net_busy():
@@ -4571,12 +4579,17 @@ class App:
             if self.card_dir(a.rom):
                 game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
             net.game_info = dict(name=game['name'], md5=game['md5'], size=game['size'])
+            if public:
+                net.game_info.update(pub=1, gamer=public)           # (the game room lists it under this name)
+            self.net_public = public if server else None
             if server:
                 self.flash('ONLINE: ASKING THE MEETING POINT', 'FOR A CODE', secs=600)
                 def show_code(net=net):                           # (the code, as soon as the meeting point gave it)
                     if getattr(self, 'net_result', 1) is not None or net.lost:
                         return
-                    if net.code:
+                    if net.code and public:
+                        self.flash('IN THE GAME ROOM AS ' + public, 'WAITING FOR A PLAYER 2', secs=600)
+                    elif net.code:
                         self.flash('ONLINE CODE: ' + ' '.join(net.code), 'TELL PLAYER 2 THIS CODE', secs=600)
                     else:
                         self.root.after(200, show_code)
@@ -4789,6 +4802,146 @@ class App:
         else:
             self.root.after(50, lambda: self.root.focus_force())    # (opened by a message: the keys stay with the game)
         return 'break'
+    def _room_window(self, title, sub, attr):
+        """a small window in the Online window's style: (toplevel, body frame, foot frame, close)"""
+        t = tk.Toplevel(self.root, bg=deck.BG); setattr(self, attr, t)
+        t.withdraw()
+        t.title(title); t.transient(self.root); t.resizable(False, False)
+        top = tk.Frame(t, bg=deck.TOPBG, highlightthickness=1, highlightbackground=deck.EDGE); top.pack(fill='x')
+        tk.Label(top, text=title.upper(), fg=deck.HI, bg=deck.TOPBG, font=(MONO, 11, 'bold'), anchor='w').pack(fill='x', padx=14, pady=(8, 0))
+        tk.Label(top, text=sub, fg=deck.DIM, bg=deck.TOPBG, font=(MONO, 9), anchor='w').pack(fill='x', padx=14, pady=(0, 8))
+        body = tk.Frame(t, bg=deck.PANEL, highlightthickness=1, highlightbackground=deck.EDGE); body.pack(fill='x', padx=10, pady=(10, 0))
+        foot = tk.Frame(t, bg=deck.BG); foot.pack(fill='x', padx=10, pady=10)
+        def close():
+            self.inp.block = False
+            setattr(self, attr, None)
+            try: t.destroy()
+            except tk.TclError: pass
+        t.bind('<Escape>', lambda ev: close())
+        t.protocol('WM_DELETE_WINDOW', close)
+        return t, body, foot, close
+    def public_host_window(self):
+        """Online > Host public game: a gamer name, then this game in the meeting point's game room for anyone to join"""
+        import netplay
+        if getattr(self, 'pub_win', None):
+            try: self.pub_win.lift(); return
+            except tk.TclError: pass
+        t, body, foot, close = self._room_window('Host public game', 'Anyone can see this game and join it as player 2.', 'pub_win')
+        f9, bg = (MONO, 10), deck.PANEL
+        r1 = tk.Frame(body, bg=bg); r1.pack(fill='x', padx=10, pady=(10, 4))
+        tk.Label(r1, text='Gamer name', fg=deck.G, bg=bg, font=f9, width=12, anchor='w').pack(side='left')
+        nv = tk.StringVar(value=getattr(self, 'gamer', ''))
+        e = tk.Entry(r1, width=14, textvariable=nv, bg='#06100d', fg='#bfe', insertbackground='#bfe', font=f9, relief='flat',
+                     highlightthickness=1, highlightbackground='#2a5a48', highlightcolor=deck.G)
+        e.pack(side='left')
+        e.bind('<FocusIn>', lambda ev: setattr(self.inp, 'block', True))
+        e.bind('<FocusOut>', lambda ev: setattr(self.inp, 'block', False))
+        tk.Label(r1, text='  up to 12: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
+        r2 = tk.Frame(body, bg=bg); r2.pack(fill='x', padx=10, pady=(0, 4))
+        tk.Label(r2, text='Game', fg=deck.G, bg=bg, font=f9, width=12, anchor='w').pack(side='left')
+        rom = self.args.rom
+        can = bool(rom and os.path.isfile(rom))
+        tk.Label(r2, text=os.path.splitext(os.path.basename(rom))[0] if can else 'start a Vectrex ROM first', fg=deck.HI if can else deck.WARN,
+                 bg=bg, font=f9, anchor='w').pack(side='left')
+        msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
+        tk.Label(t, text="Your gamer name and the game show in everyone's Find players list until someone joins.\n"
+                         'A private game with a code stays in Host this game.', fg=deck.DIM, bg=deck.BG, font=(MONO, 9),
+                 justify='left', anchor='w').pack(fill='x', padx=14, before=foot)
+        state = {'net': None}
+        def watch():
+            if getattr(self, 'pub_win', None) is not t:
+                return
+            net = state['net']
+            err = getattr(net, 'server_error', None) if net is not None else None
+            if err:
+                msg.configure(text={'name taken': 'That name is in use. Pick another.',
+                                    'the game room is full': 'The game room is full. Try again in a minute.'}.get(err, err[:60]))
+                deck._paint(go, True); state['net'] = None
+            elif net is not None and getattr(net, 'code', None):
+                close(); return
+            elif net is not None and getattr(self, 'net_pending', None) is not net and not getattr(self, 'net_game', None):
+                msg.configure(text='The meeting point did not answer.'); deck._paint(go, True); state['net'] = None
+            t.after(200, watch)
+        def host():
+            if state['net'] is not None:
+                return
+            name = netplay.gamer_name(nv.get())
+            if not name:
+                msg.configure(text='A gamer name: 1 to 12 of A-Z 0-9 _ -'); return
+            if not can:
+                msg.configure(text='Start a Vectrex ROM first: that is the game you host.'); return
+            nv.set(name); self.gamer = name; self.save_settings()
+            msg.configure(text='Asking the meeting point...')
+            self.net_begin('host', public=name)
+            state['net'] = getattr(self, 'net_pending', None)
+            deck._paint(go, False)
+        go = deck._button(foot, 'Host public game', host, self, on=True); go.pack(side='left')
+        deck._button(foot, 'Cancel', close, self).pack(side='right')
+        e.bind('<Return>', lambda ev: host())
+        watch()
+        deck.place(t, 'pubhost', self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
+        e.focus_set()
+    def find_players_window(self):
+        """Online > Find players: the game room's public games waiting for a player 2 - Join one"""
+        import netplay
+        if getattr(self, 'find_win', None):
+            try: self.find_win.lift(); return
+            except tk.TclError: pass
+        t, body, foot, close = self._room_window('Find players', 'Public games waiting for a player 2. You need the same game '
+                                                 'in your roms folder.', 'find_win')
+        f9, bg = (MONO, 10), deck.PANEL
+        grid = tk.Frame(body, bg=bg); grid.pack(fill='x', padx=10, pady=8)
+        note = tk.Label(t, text='', fg=deck.DIM, bg=deck.BG, font=(MONO, 9), anchor='w'); note.pack(fill='x', padx=14, before=foot)
+        have = getattr(self, 'room_have', None) or {}               # (md5 -> the ROM here or None: looked up once)
+        self.room_have = have
+        def dirs_for(name):
+            d = [os.path.join(ROOT, 'roms')] + ([os.path.dirname(os.path.abspath(self.args.rom))] if self.args.rom else [])
+            if name.lower().endswith(('.um2', '.img', '.pit')):     # (as joining looks: the roms folder, the game's folder,
+                d += [x for x in (self.px_dir, self.sd_dir) if x and os.path.isdir(x)]   #  the SD cards)
+            return d
+        def show(games):
+            if getattr(self, 'find_win', None) is not t:
+                return
+            for w in grid.winfo_children():
+                w.destroy()
+            if games is None:
+                note.configure(text='The meeting point did not answer (no network, or it has no game room).')
+                return
+            for c, h in enumerate(('GAMER', 'GAME', 'WAITING', 'YOU HAVE IT')):
+                tk.Label(grid, text=h, fg=deck.DIM, bg=bg, font=(MONO, 9), anchor='w',
+                         width=(14, 26, 9, 12)[c]).grid(row=0, column=c, sticky='w')
+            for i, g in enumerate(games, 1):
+                mine = have.get(g['md5'])
+                w = int(g['wait'])
+                for c, (txt, col) in enumerate(((g['gamer'], deck.HI), (os.path.splitext(g['name'])[0][:26], deck.G),
+                                                ('%d:%02d' % (w // 60, w % 60), deck.DIM),
+                                                ('yes' if mine else 'no', deck.G if mine else deck.RED))):
+                    tk.Label(grid, text=txt, fg=col, bg=bg, font=f9, anchor='w', width=(14, 26, 9, 12)[c]).grid(row=i, column=c, sticky='w')
+                def join(code=g['code']):
+                    close(); self.net_last_join = code
+                    self.net_begin('join', target=code)
+                b = deck._button(grid, 'Join', join, self, small=True); b.grid(row=i, column=4, sticky='e', padx=(6, 0), pady=1)
+                deck._paint(b, bool(mine) and not self.net_busy())
+            note.configure(text=('%d game%s waiting.' % (len(games), '' if len(games) == 1 else 's')) if games else
+                           'No public games waiting now. Host one: Online > Host public game.')
+        def refresh():
+            note.configure(text='Asking the meeting point...')
+            server = self.net_server()
+            def work():
+                games = netplay.list_games(server)
+                for g in games or []:
+                    if g['md5'] not in have:                    # (the same ROM here: by its contents, any file name)
+                        have[g['md5']] = netplay.find_rom(g['md5'], g['size'] or -1, dirs_for(g['name']))
+                self.root.after(0, lambda: show(games))
+            threading.Thread(target=work, daemon=True).start()
+        deck._button(foot, 'Refresh', refresh, self).pack(side='left')
+        deck._button(foot, 'Close', close, self).pack(side='right')
+        refresh()
+        deck.place(t, 'findplayers', self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
     def online_window(self, what=None):
         """Online: host (a code for player 2), join (type the code), the state now, the settings. what: 'host' starts
         hosting this game at once, 'join' puts the cursor in the code box"""
@@ -5762,8 +5915,8 @@ class App:
         return 'break'
     def reset_display(self):
         """Display > Reset display settings to default: the start size (no real size, the monitor size as
-        it reports it), not turned, the OSD, the knob and the cartridge on, fixed 60 Hz (full screen stays
-        as it is; its picture as big as in the window)"""
+        it reports it), not turned, the OSD, the knob and the cartridge on, the monitor's full rate with smooth
+        motion on (full screen stays as it is; its picture as big as in the window)"""
         self.monitor_inch = 0.0; self.real_on = False
         if self.rot:
             self.set_rotation(0)
@@ -5771,14 +5924,14 @@ class App:
             if not on:
                 flip()
         self.osd_meters = True
-        if self.smooth:
+        if not self.smooth:
             self.toggle_smooth()
         if self.ren:                                    # (the weak-graphics switches: the profile's)
             base = self.base_values()
             for k in ('phos_scale', 'half_rate'):
                 if k in base:
                     setattr(self.ren, k, base[k])
-        self.vrr = False; self.rate = '60'; self.apply_rate()
+        self.vrr = False; self.rate = 'max'; self.apply_rate()
         if self.full:
             self.full_scale = self.win_fit(); self.apply_scale()
         else:
@@ -5812,6 +5965,7 @@ class App:
         d['quality_opt'] = dict(getattr(self, 'quality_opt', {}))
         d['osd_meters'] = getattr(self, 'osd_meters', True)
         d['net_server'] = getattr(self, 'net_server_s', '')
+        d['gamer_name'] = getattr(self, 'gamer', '')
         d['net_osd'] = getattr(self, 'net_osd', True)
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')

@@ -139,6 +139,13 @@ TOPICS = [
       "both Vectrexes switch on together. Only the controllers travel over the network: both PCs compute the same game."),
 ('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
+('item', 'Host public game...', "The game room: this game listed under your gamer name (up to 12 of A-Z 0-9 _ -, "
+         "kept for next time) for anyone to see in Find players and join as player 2. A name someone in the room already "
+         "uses is refused. The listing ends when someone joins, or when you leave. Host this game stays the private way: a "
+         "code only the player you tell can use."),
+('item', 'Find players...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "
+         "have waited and whether you have that game (by its contents, any file name, in your roms folder). Join starts it "
+         "as with a code. Refresh asks again; the room holds at most 100 waiting games."),
 ('item', 'Join a game...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
          "have the same ROM in your roms folder (found by its contents, whatever its file name)."),
 ('item', 'UVMC2 games and PiTrex programs', "They can be played online too. Both players need the same SD card "
@@ -296,7 +303,8 @@ TOPICS = [
 ('item', 'G-Sync / FreeSync', "One screen picture per game frame, with no tearing - needs such a monitor. "
          "At 50 frames a second the mains wobble stands still, as on a real Vectrex."),
 ('item', 'Reset display settings to default', "Fit screen (not Authentic; the monitor size as it "
-         "reports it), not turned, the on-screen display, the knob and the cartridge on, fixed 60 Hz."),
+         "reports it), not turned, the on-screen display, the knob and the cartridge on, the monitor's full "
+         "rate with smooth motion on."),
 ]),
 
 ('tube', 'Config: Tube', [

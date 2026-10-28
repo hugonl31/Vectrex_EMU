@@ -19,6 +19,15 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.0.8
+
+* **The game room** - Online > **Host public game** puts your game in the meeting point's game room under your gamer
+  name; Online > **Find players** lists the games waiting for a player 2 (gamer, game, how long, whether you have it)
+  and joins one with a click. The private five-letter code stays for playing with someone you know
+  ([Online play](#online-play-two-vectrex_emus-one-game)).
+* **Smooth by default** - the monitor's full rate with Smooth motion on: unchanged on 60 Hz screens, smoother on 120 /
+  144 / 165 / 240 Hz.
+
 ## New in v1.0.7
 
 * **The Vectrex's trim pots** - every adjustment of a real Vectrex in Config: the brightness knob, the X and Y size,
@@ -1272,7 +1281,7 @@ Vectrex_EMU.exe --net-join KRAVE                          player 2, with that co
 The code goes through a small meeting-point server (`tools/vxrelay.py`), which puts the two PCs in touch directly
 (through most home routers without any settings) and relays the packets when that is not possible. Without the
 server: `--net-host` on the host (its router forwards UDP port 7744) and `--net-join ADDRESS` on the other side.
-**Chat** (Online > Chat, Ctrl+T): write to the other player while you play - Enter sends, Esc gives the keyboard back
+**The game room**: Online > *Host public game* lists your game under a gamer name for anyone to join; Online > *Find players* shows the games waiting for a player 2 and joins one with a click (the meeting point holds at most 100 waiting games). **Chat** (Online > Chat, Ctrl+T): write to the other player while you play - Enter sends, Esc gives the keyboard back
 to the game, and a controller plays on while you type. The window opens by itself when the other player writes, and
 their line shows briefly in the picture too. Player 2 needs the same ROM in its `roms` folder (found by checksum). **UVMC2 games and PiTrex programs** play online too: player 2 needs the same game file, and the two SD cards are compared file by file - the game runs from the files both have the same (nothing is copied between the PCs; the chat says when files differ). While online the UVMC2 runs on one PC thread and the PiTrex's JIT in its exact mode, so both PCs stay identical; the PC's keyboard and mouse do not reach the cartridge. Twice a second both sides compare a checksum of the whole emulated machine: ONLINE: OUT OF SYNC would show if they ever differed. The host measures the round trip and sets the
 input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and

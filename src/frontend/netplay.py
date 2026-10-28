@@ -563,6 +563,55 @@ class NetPlay:
             pass
 
 
+GAMER_CHARS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
+
+
+def gamer_name(s):
+    """a gamer name as the game room keeps it (upper case, 1-12 of A-Z 0-9 _ -, spaces as _), or None"""
+    s = str(s or '').strip().upper().replace(' ', '_')
+    return s if 1 <= len(s) <= 12 and set(s) <= GAMER_CHARS else None
+
+
+def list_games(server, timeout=2.0):
+    """the game room: the public games waiting at the meeting point, the oldest first - a list of dicts (code, gamer,
+    name, md5, size, wait: seconds), or None when it does not answer (no network, or a meeting point without a game
+    room)"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0.25)
+    pages, n, t0, asked = {}, None, time.perf_counter(), -1.0
+    try:
+        while time.perf_counter() - t0 < timeout:
+            want = [p for p in range(n if n is not None else 1) if p not in pages]
+            if not want:
+                break
+            if time.perf_counter() - asked > 0.5:               # (asked again now and then: a lost packet)
+                for p in want[:6]:
+                    s.sendto(RMAGIC + b'L' + bytes([p]), server)
+                asked = time.perf_counter()
+            try:
+                data, _ = s.recvfrom(4096)
+            except (socket.timeout, OSError):
+                continue
+            if not data.startswith(RMAGIC + b'l'):
+                continue
+            try:
+                d = json.loads(data[5:].decode())
+            except ValueError:
+                continue
+            n = max(1, int(d.get('n', 1)))
+            pages[int(d.get('p', 0))] = d.get('g', [])
+    finally:
+        s.close()
+    if n is None:
+        return None
+    out = []
+    for p in sorted(pages):
+        for row in pages[p]:
+            if len(row) >= 6:
+                out.append(dict(code=row[0], gamer=row[1], name=row[2], md5=row[3], size=row[4], wait=row[5]))
+    return out
+
+
 def new_game(rom_path, settings):
     """the host's game: the ROM's identity and what must be the same on both sides"""
     return dict(md5=rom_md5(rom_path), size=os.path.getsize(rom_path), name=os.path.basename(rom_path),

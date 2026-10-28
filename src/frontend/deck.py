@@ -1022,7 +1022,7 @@ class Deck:
             return (any(not same(float(a.unit.get(k, own[k])), float(own[k])) for k in mine)
                     or (st == 'Unit' and (bool(a.start_on) or bool(a.skip_boot))))
         if st == 'Display':
-            return (bool(a.smooth) or bool(a.vrr) or a.rate != '60' or a.rot != 0 or not a.fps_on or not a.knob_on
+            return (not a.smooth or bool(a.vrr) or a.rate != 'max' or a.rot != 0 or not a.fps_on or not a.knob_on
                     or not a.cart_on or not getattr(a, 'osd_meters', True) or float(a.monitor_inch or 0) != 0.0)
         if st == 'Cartridge':
             c, d = a.run.crt, a.sound_default
@@ -1737,7 +1737,8 @@ def setup_window(app, first=True):
             if qv.get() not in (a.current_profile(), 'custom'): a.set_profile(qv.get())
             d = dv.get()
             a.set_screen('vrr' if d == 'vrr' else 'max' if d == 'max' else '60')
-            if (d == 'smooth') != bool(a.smooth): a.toggle_smooth()
+            if (d in ('smooth', 'max')) != bool(a.smooth): a.toggle_smooth()   # (the full rate: smooth too, as
+                                                                                  #  the default - 144 / 165 Hz evenly)
             if kv.get() != cur:
                 keys = {'cross': ((0x41, 'A'), (0x57, 'W'), (0x53, 'S'), (0x44, 'D')),
                         'row': ((0x41, 'A'), (0x53, 'S'), (0x44, 'D'), (0x46, 'F'))}[kv.get()]

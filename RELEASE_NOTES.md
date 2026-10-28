@@ -3,6 +3,32 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.0.8
+
+**The game room: find someone to play with** (2026-10-28)
+- **Online > Host public game...**: your game goes into the meeting point's game room under your gamer name (up to 12
+  of A-Z, 0-9, _ and -, kept for next time). Anyone can see it and join as player 2. A name someone in the room already
+  uses is refused ("That name is in use. Pick another."). The listing ends when someone joins.
+- **Online > Find players...**: the public games waiting, with the gamer, the game, how long they have waited and
+  whether you have that game (by its contents, any file name). Join starts it as a code would.
+- Host this game stays the private way: a five-letter code only the player you tell can use.
+- The meeting point keeps the room small and fast: at most 100 public games waiting, 400 codes and 100 games joined at
+  once (a full room says so); a full room costs it well under 1 % of one processor core. The list is asked at most a few
+  times a second per PC.
+- Tested between Windows, a Linux mini PC and a Raspberry Pi 5 through the meeting point, direct and relayed, with a
+  sync check every frame: Armor Attack and PiTrex Space Duel identical on both sides.
+
+**Smooth by default**
+- Reset all (and a new installation) gives the monitor's full rate with Smooth motion on: the same on a 60 Hz screen,
+  smoother on 120 / 144 / 165 / 240 Hz - where a fixed 60 can only be paced by the clock. The first-time setup keeps
+  Smooth motion on with the full rate too.
+
+**Get games & extras**
+- The first-time setup's "Download everything missing" opens the window with what is missing, and waits for Download
+  all; nothing starts by itself.
+- The Site column names where each set comes from (archive.org; archive.org and GitHub; vide.malban.de;
+  spatula-city.org) - the downloads come from the project's own copies first.
+
 ## v1.0.7
 
 **The Vectrex's trim pots** (2026-10-28)

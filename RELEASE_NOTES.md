@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.1.4
+
+**Fixed: the emulator crawled with the brightness knob turned down** (2026-10-29)
+- With the brightness knob at the back (Config > Vectrex unit) turned below its middle mark, the emulator ran at a
+  crawl - often a frozen first picture - from the next start on. Below the mark the knob's value is negative, and the
+  core took that for "not read yet" and looked it up again on every cycle. Every knob position now runs at full
+  speed; the game itself is the same at every position, so online play is unchanged.
+- Plays online with v1.1.3.
+
 ## v1.1.3
 
 **Fixed: a long pause ended the online game** (2026-10-29)

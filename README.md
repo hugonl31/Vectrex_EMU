@@ -19,6 +19,10 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.1.4
+
+* **Fixed:** with the brightness knob turned down the emulator ran at a crawl from the next start on.
+
 ## New in v1.1.3
 
 * **Fixed:** a pause both online players share, longer than 30 seconds, ended the game when it was over.

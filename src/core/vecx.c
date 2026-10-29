@@ -212,7 +212,7 @@ static int beam_fade = -1, fade_left;   /* VT_BEAMFADE: the beam's faint fade-ou
 /* the brightness knob at the back (VT_BRIGHT, vt_set_analog 8: -1..1, 0 = a well-set Vectrex). Up, the tube's bias lets
  * the beam glow even while it is blanked: its moves and returns to the middle ("spider web") and its rests are sent as
  * lines of intensity 0 with bit 7 set - the renderer draws them, and turns every line's brightness with the knob */
-static double vt_bright = -1;
+static double vt_bright; static int vt_bright_set;   /* (set: read from VT_BRIGHT or vt_set_analog) */
 static double vt_lag;                   /* (the deflection's lag: see below) */
 static double ofs_k, zero_tx, zero_ty, vt_lag_y;   /* (see OFS_K) */
 /* the integrators' input speed, smoothed (VT_VLAG = tau in cycles; vt_set_analog 10): the DAC's X (and the Y hold's)
@@ -293,7 +293,7 @@ void vt_set_analog (int id, double v)
 	case 5: ysh_k = v < 0.05 ? 0.05 : v > 1 ? 1 : v; break;
 	case 6: beam_off = v < 0 ? 0 : v > 15 ? 15 : v; break;
 	case 7: alg_zofs = v; break;
-	case 8: vt_bright = v < -1 ? -1 : v > 1 ? 1 : v; break;
+	case 8: vt_bright = v < -1 ? -1 : v > 1 ? 1 : v; vt_bright_set = 1; break;
 	case 9: vt_lag = v < 0 ? 0 : v > 50 ? 50 : v; break;
 	case 10: vt_vlag = v < 0 ? 0 : v > 50 ? 50 : v; break;
 	case 11: vt_beam_mode = v > 0.5; break;                   /* (the beam-trace mode, see bp_step) */
@@ -1715,7 +1715,7 @@ static void alg_sstep_full (void)
 		}
 	}
 
-	if (vt_bright < 0) { const char *z = getenv ("VT_BRIGHT"); vt_bright = z ? atof (z) : 0; }
+	if (!vt_bright_set) { const char *z = getenv ("VT_BRIGHT"); vt_bright = z ? atof (z) : 0; vt_bright_set = 1; }
 	if (vt_bright > 0 || dark_on) {
 		int dark = !sig_blank && vt_bright > 0;                /* (only up: down, the blanked beam is darker still) */
 		int inb = ALG_IN (alg_curr_x, alg_curr_y);

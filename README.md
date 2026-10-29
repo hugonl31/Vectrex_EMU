@@ -19,6 +19,19 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.1.0
+
+* **Online: drops, speed and the chat** - a connection drop pauses both games with a countdown and goes on where it
+  was when the connection is back within 30 seconds; PiTrex programs play online at full speed between two PCs of the
+  same type; the chat in three colours (the other player, you, the emulator). Online, both players need v1.1.0.
+* **The strip below the picture** - centred, the OSD always the same width; PAUSED between the cartridge and RESET.
+
+<p align="center">
+<a href="docs/images/v1.1.0/pitrex_online.jpg"><img src="docs/images/v1.1.0/pitrex_online_small.jpg" width="330" alt="PiTrex Space Duel online at full speed, the room light on the tube's glass"></a>
+<a href="docs/images/v1.1.0/chat.png"><img src="docs/images/v1.1.0/chat_small.jpg" width="440" alt="the chat: the emulator's lines green, the other player orange, you white"></a><br>
+<em>PiTrex Space Duel online at 100 %; the chat in three colours.</em>
+</p>
+
 ## New in v1.0.9
 
 * **Online: find a game, talk, take turns** - a player name of your own (asked once, reserved for you at the meeting

@@ -53,14 +53,25 @@ RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
-NET_VER = 5                 # the online version: both sides must have the same. Raise it with every change to the
+NET_VER = 6                 # the online version: both sides must have the same. Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
                             # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z'); 4: taking a
                             # controller port (the input's flags: 0x10 port 1, 0x20 port 2); 5: the
-                            # players' names (the hello carries the joiner's)
+                            # players' names (the hello carries the joiner's); 6: v1.1.0 - inputs kept after a drop, the PiTrex
+                            # JIT fast between the same processor type
 PAUSE_ALIVE = 0.25          # (seconds between two 'still here' packets while the game is paused)
 PACE_DEAD = 0.5             # (frames: how far one side may be ahead of the other before it slows down)
 PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
+
+
+JIT_FAST = b'\x00jit:fast'   # (player 2's yes, with its accept: the same processor type - the PiTrex JIT at full speed)
+
+
+def arch():
+    """this PC's processor type as the PiTrex JIT sees it: 'x64', 'arm64' (or what the system says)"""
+    import platform
+    m = platform.machine().lower()
+    return 'x64' if m in ('amd64', 'x86_64', 'x64') else 'arm64' if m in ('arm64', 'aarch64') else m
 
 
 HELLO = struct.pack('<H', NET_VER)     # (the joiner's hello carries its online version)
@@ -347,6 +358,7 @@ class NetPlay:
                         time.sleep(0.05)
                         q = self._recv()
                         if q and q[0] == ord('A'):
+                            game['jit_fast'] = JIT_FAST in q[1]   # (player 2 has the same processor type)
                             return game
                         if q and q[0] == ord('N') and q[1] == VERSION_NO:
                             return 'version'
@@ -801,4 +813,4 @@ def list_games(server, timeout=2.0):
 def new_game(rom_path, settings):
     """the host's game: the ROM's identity and what must be the same on both sides"""
     return dict(md5=rom_md5(rom_path), size=os.path.getsize(rom_path), name=os.path.basename(rom_path),
-                seed=random.getrandbits(31), nver=NET_VER, **settings)
+                seed=random.getrandbits(31), nver=NET_VER, arch=arch(), **settings)

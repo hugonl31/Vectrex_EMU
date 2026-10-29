@@ -1556,6 +1556,7 @@ Lines.__hash__ = None
 
 class Core:
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
+    net_jitfast = False                                 # (online, both PCs the same processor type: the PiTrex JIT fast)
     net_card = None                                     # (online play with a UVMC2 / PiTrex: (card folder, the files both
                                                         #  sides have the same) - the card both play from)
     def __init__(self, rom, ideal=False, cart_hw='auto', speech='off', sd_dir=None, px_dir=None, unit=None, usb=False):
@@ -1601,7 +1602,9 @@ class Core:
         net = Core.net_card is not None
         if net:                                                     # online: both sides must run the same, to the bit -
             env['VT_THREADS'] = '0'                                 # the UVMC2's two cores in step on one thread,
-            env['VT_JIT'] = 'exact'                                 # the PiTrex JIT exactly as the interpreter (any PC)
+            if not Core.net_jitfast:                                # the PiTrex JIT exactly as the interpreter (any two PCs)
+                env['VT_JIT'] = 'exact'                             #  - or, both the same processor type: at full speed, its
+                                                                    #  blocks the same on both (half the speed when exact)
             env.pop('VT_USBHID', None)                              # (no PC keyboard / mouse: not shared)
         self.sd = None
         if (px_dir and rom.lower().endswith(('.img', '.pit'))) or (sd_dir and rom.lower().endswith('.um2')):
@@ -4821,7 +4824,10 @@ class App:
                 if g.get('card'):                                   # (a PiTrex program lives on its card)
                     dirs += [d for d in (self.px_dir, self.sd_dir) if d and os.path.isdir(d)]
                 rom = here or netplay.find_rom(g.get('md5'), g.get('size', -1), dirs)
-                net.accept(rom is not None, g.get('name', ''))
+                g['jit_fast'] = bool(rom is not None and g.get('arch') and g.get('arch') == netplay.arch())
+                net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else ''))
+                                                                    # (the same processor type on both sides: the PiTrex JIT
+                                                                    #  runs at full speed - its blocks fall the same on both)
                 if rom and g.get('card'):                           # (the host's card list: which files are the same here)
                     folder = self.card_dir(rom); mine = {}
                     def answer(m):
@@ -5090,10 +5096,11 @@ class App:
             self.net, self.net_game, self.net_rom = net, g, os.path.abspath(rom)
             Core.force_seed = g.get('seed')
             Core.net_card = (card[0], card[1]) if card else None
+            Core.net_jitfast = bool(g.get('jit_fast'))
             try:
                 self.restart(rom)
             finally:
-                Core.force_seed = None; Core.net_card = None
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False
             if card and len(card[1]) < card[2]:                 # (the card both play from: the files both have)
                 self.chat_add('sys', "SD card: %d of the host's %d files are the same on both sides - the game sees only "
                               "those (a file that is missing shows as missing on both screens)." % (len(card[1]), card[2]))

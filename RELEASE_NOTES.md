@@ -3,6 +3,33 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.1.0
+
+**Online: drops, speed and the chat** (2026-10-29)
+- **A connection drop** (Wi-Fi, the router): both games wait, CONNECTION LOST and a countdown on both screens; back
+  within 30 seconds, the game goes on from the same frame (also when the router gives the PC another port - direct
+  and through the meeting point). After 30 seconds the link ends: the host waits for a player again (in the game room
+  when it was public; a host whose internet is not back yet tries again every 5 s for 2 minutes), the joiner plays on
+  alone and Find players (or the Online window) opens again - as when the other player leaves.
+- Fixed: after a drop, or a burst of lost packets, the side that had run a few frames ahead sent 'no input' for those
+  frames again - the two games then differed (found with a real 8 s drop between two PCs). Its own inputs are kept now
+  until they are out of the packets' window.
+- **PiTrex programs online at full speed** when both PCs have the same type of processor (two Windows / Linux PCs, or
+  two ARM machines): the PiTrex JIT runs as it does offline - its code blocks fall the same on both. Between different
+  types (a PC and a Raspberry Pi or an Apple Silicon Mac) it stays in its exact mode, as before.
+- **The chat** in three colours - the other player orange, you white, the emulator green - with room between messages,
+  as tall as the screen allows (9-22 lines).
+- Online, both need v1.1.0: v1.0.9 and v1.1.0 refuse each other (the online version number went up) - the update
+  message tells v1.0.9 players there is a new version.
+- Tested between Windows, a Linux mini PC and a Raspberry Pi 5, direct and through the meeting point, with a sync check
+  every frame: Armor Attack, Mine Storm and PiTrex Space Duel identical on both sides, through 8 s and 40 s drops.
+
+**The strip below the picture**
+- The OSD as far from P2 PORT as the cartridge is from RESET, always the same width (its values in one column), and the
+  whole strip centred - the same room left of the OSD as right of VOL, in a window and in full screen.
+- Paused: a big orange PAUSED and ESC/P TO RESUME between the cartridge and RESET, halfway between the frame's bottom
+  edge and the bottom of the window.
+
 ## v1.0.9
 
 **Online: find a game, talk, take turns** (2026-10-29)
@@ -28,16 +55,6 @@ build workflow replaces that release (title = the version, marked Latest) with t
   stays switched on while connected.
 - **Hosting**: waiting for player 2, change the cartridge and the new game is offered (and listed in the game room) at
   once; Host public game follows the slot while it is open. Leaving takes the game out of the room at once.
-- **A connection drop** (Wi-Fi, the router): both games wait, CONNECTION LOST and a countdown on both screens; back
-  within 30 seconds, the game goes on from the same frame (also when the router gives the PC another port - direct
-  and through the meeting point). After 30 seconds the link ends: the host waits for a player again (in the game room
-  when it was public), the joiner plays on alone and Find players (or the Online window) opens again - as when the
-  other player leaves.
-- Fixed: after a drop the side that had run a few frames ahead sent 'no input' for those frames again - the games
-  then differed (found with a real 8 s drop between two PCs); now its own inputs are kept until they are out of the
-  packets' window. A host whose internet is not back yet tries again every 5 s for 2 minutes.
-- The chat in three colours - the other player orange, you white, the emulator green - as tall as the screen allows (9-22
-  lines); the emulator's own lines green, the players' muted white.
 - **Find players** keeps its list up to date by itself (every 3 s while open) - no Refresh button.
 - **A new version on GitHub** is told at start (a small window with the link; "Don't remind me" keeps it quiet until
   the next one) and always at the top of the Online, Find players and Host public game windows. Online settings:
@@ -59,11 +76,6 @@ build workflow replaces that release (title = the version, marked Latest) with t
 **The on-screen display**
 - Online, the ONLINE row (the round trip, RELAY through the meeting point, WAITING) takes the volume's row: the display
   keeps its height and stays below the overlay. The volume shows on the knob and on the status line.
-- The strip below the picture: the OSD as far from P2 PORT as the cartridge is from RESET, always the same width (its
-  values in one column), and the whole strip centred - the same room left of the OSD as right of VOL.
-- Paused: a big orange PAUSED and ESC/P TO RESUME between the cartridge and RESET, halfway between the frame's bottom
-  edge and the bottom of the window.
-
 ## v1.0.8
 
 **The game room: find someone to play with** (2026-10-28)

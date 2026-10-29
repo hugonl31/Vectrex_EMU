@@ -1448,7 +1448,7 @@ Some UVMC2 games read their own data from the SD card - put that here, as on the
   Quake:    a folder quake with pak0.pak and pak1.pak (uvmc2 / quake / ...)
   Movies:   a folder movies with the vector movies   (uvmc2 / movies / ...)
 The game sees this folder as its card while it runs; what it writes (saves, settings) is kept here.
-Another folder can be chosen in Config (Tab), the Cartridge tab: SD card folder.
+Another folder can be chosen in Config (Tab), the Ports tab: SD card folder.
 """
 CACHE_README = """Working files only - nothing to put here.
 When a UVMC2 game starts, the emulator builds an SD card image of the uvmc2 folder here (uvmc2_sd.img),
@@ -2182,11 +2182,11 @@ class App:
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'even_beam', 'beam_trace', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
-                                      'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_mm',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'even_beam', 'beam_trace', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+                                      'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
-                                      'phos_scale', 'half_rate')
+                                      'phos_scale', 'half_rate', 'phos_full', 'line_half')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
         self.head = None; self.root.after(1000, self.head_sync)   # (head tracking: its receiver, started when switched on)
@@ -2224,7 +2224,10 @@ class App:
             c1 = {}
         self.art_auto = bool(c1.get('art_auto', True))          # Overlay > Choose automatically
         self.art_for = dict(c1.get('overlay_for', {}))          # per game: an overlay file, or 'none'
-        self.art_adj = dict(c1.get('overlay_adjust2', {}))      # per overlay: [dx, dy, scale] (2: the picture moves, the sheet
+        self.art_adj_all = list(c1.get('overlay_adjust_all', [0.0, 0.0, 1.0]))   # the overlays' position and size for
+        self.art_adj_game = dict(c1.get('overlay_adjust_game', {}))   # all games; a game's own (Save for this game) -
+        self.art_adj = dict(c1.get('overlay_adjust2', {}))      # (the owner, 2026-10-29); before: per overlay, moved into
+                                                                #  the game's own when it loads (2: the picture moves, the sheet
                                                                 #  stays on the frame - since 2026-10-28; the old ones dropped)
         self.art_path = None
         self.rot = int(c1.get('rotate', 0)) if c1.get('rotate', 0) in (0, 90, 180, 270) else 0
@@ -2321,8 +2324,10 @@ class App:
         self.items = []; self.item_col = []; self.shown = 0
         self.colors = ['#%02x%02x%02x' % (int(v * 190), int(v * 220), int(v * 255))
                        for v in [min(1.0, 0.30 + c / 127 * 0.85) for c in range(128)]]
-        self.root.bind('<FocusIn>', lambda e: setattr(self.inp, 'focused', True))
-        self.root.bind('<FocusOut>', lambda e: setattr(self.inp, 'focused', False))
+        self.root.bind_all('<FocusIn>', lambda e: setattr(self.inp, 'focused', True), add='+')    # (any of its windows:
+        self.root.bind_all('<FocusOut>', lambda e: setattr(self.inp, 'focused', False), add='+')  #  the arrows and buttons
+        # 1-4 reach the game with the Config window in front too - macOS / Linux; Windows asks which window is in front,
+        # Input.update_focus. Moving between its windows: out, then in again)
         self.root.bind('<Control-e>', self.eject)
         for k in ('<Key-p>', '<Key-P>'):
             self.root.bind(k, lambda e: (self.toggle_pause(), 'break')[1])
@@ -2581,7 +2586,9 @@ class App:
                   "The strip below the picture - the on-screen display, P2 PORT, the cartridge, RESET and the volume knob - on or off at once. Off: the window gets smaller.")
             m.add_separator()
             qm = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='Quality', menu=qm)
-            for key, tip in (('low', "For weak graphics (old laptops, a Raspberry Pi): Medium's cuts, the phosphor drawn at half "
+            for key, tip in (('basic', "For the weakest graphics (a Raspberry Pi 5 with busy games): Low, and the lines drawn at half "
+                                       "size too - softer lines, a quarter of the drawing work."),
+                             ('low', "For weak graphics (old laptops, a Raspberry Pi): Medium's cuts, the phosphor drawn at half "
                                      "size (the vectors stay sharp) and 30 pictures a second."),
                              ('medium', "The Vectrex look for old laptops: the afterglow, the glow, the corner dots and the overlay's colours "
                                         "kept; the tube curve, glass edge, scratches, plastic glow, room light and reflections off; the glow at 3/4 size."),
@@ -2688,7 +2695,13 @@ class App:
         'dot_k':         ('Corner dot brightness (x1 = measured)', '', 'ren', 'dot_k', 0.0, 2.0, False, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'glass_k':       ('Glass curvature (0 = as seen on a Vectrex, 1 = even squares)', '', 'ren', 'glass_k', 0.0, 1.5, False, 'x%.2f', 1),
-        'head_mm':       ('Largest shift (head tracking, at the full reach)', '', 'ren', 'head_mm', 1.0, 30.0, False, '%.1f mm', 1),
+        'head_k':        ('Shift strength (x1 = 2 mm at the full reach)', '', 'ren', 'head_k', 0.0, 4.0, False, 'x%.2f', 1),
+        'head_tilt':     ('Phone tilt (its angle: nearer / further seen as up / down)', '', 'ren', 'head_tilt', -45.0, 45.0, False, '%+.0f\u00b0', 1),
+        'head_smooth_x': ('Left / right smoothing (less judder, a little later)', '', 'ren', 'head_smooth_x', 0.0, 200.0, False, '%.0f ms', 1),
+        'head_smooth_z': ('Up / down smoothing (less judder, a little later)', '', 'ren', 'head_smooth_z', 0.0, 200.0, False, '%.0f ms', 1),
+        'head_smooth_y': ('Near / far smoothing (less judder, a little later)', '', 'ren', 'head_smooth_y', 0.0, 200.0, False, '%.0f ms', 1),
+        'head_glass_k':  ('Glass strength (x1 = a real mirror image)', '', 'ren', 'head_glass_k', 0.0, 1.0, False, 'x%.2f', 1),
+        'head_ov_k':     ('Sheet strength (x1 = a real mirror image)', '', 'ren', 'head_ov_k', 0.0, 1.0, False, 'x%.2f', 1),
         'line_gap':      ('Line gaps (stop delay; 7 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 4.0, 10.0, False, '%.1f cycles', 1),
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
         'art_room':      ('Room light (the overlay; without one, the glass)', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
@@ -2708,8 +2721,8 @@ class App:
         'art_dx':        ('Overlay left / right (picture heights; the picture moves, the sheet stays on the case)', '', 'ren', 'art_dx', -0.05, 0.05, False, '%+.3f', 1),
         'art_dy':        ('Overlay up / down (picture heights)', '', 'ren', 'art_dy', -0.05, 0.05, False, '%+.3f', 1),
         'art_scale':     ('Overlay size (the picture is sized the other way)', '', 'ren', 'art_scale', 0.9, 1.1, False, 'x%.3f', 1),
-        'phos_grow':     ('Afterglow joining (0 = separate copies)', '', 'ren', 'phos_grow', 0.0, 0.97, False, '%.2f', 1),
-        'phos_smooth':   ('Afterglow overlap (px; 0 = off)', '', 'ren', 'phos_smooth', 0.0, 4.0, False, '%.2f', 1),
+        'phos_grow':     ('Joining strength', '', 'ren', 'phos_grow', 0.0, 1.0, False, '%.2f', 1),
+        'phos_smooth':   ('Smoothing width', '', 'ren', 'phos_smooth', 0.0, 1.0, False, '%.2f', 1),
         'wob_strength':  ('Wobble strength', '', 'ren', 'wob_strength', 0.0, 1.0, False, '%.3f px', 1),
         'bend_strength': ('Bending strength', '', 'ren', 'bend_strength', 0.0, 10.0, False, '%.2f', 1),
         'buzz_vol':      ('Buzz volume', '', 'crt', 'buzz_vol', 0.0, 4.0, False, '%.3f', 1),
@@ -2935,8 +2948,27 @@ class App:
         self.ren.set_art(art)
         self.ren.art_name = os.path.basename(path) if path else ''
         self.art_path = path
-        a = self.art_adj.get(os.path.basename(path), [0.0, 0.0, 1.0]) if path else [0.0, 0.0, 1.0]
+        if path and self.rom_name not in self.art_adj_game and os.path.basename(path) in self.art_adj:
+            self.art_adj_game[self.rom_name] = self.art_adj.pop(os.path.basename(path))   # (an older per-overlay one)
+        a = self.art_adj_game.get(self.rom_name, self.art_adj_all) if path else [0.0, 0.0, 1.0]
         self.ren.art_dx, self.ren.art_dy, self.ren.art_scale = (float(v) for v in a)
+        self.art_adj_ready = bool(path)                         # (from now on changes are saved for this game)
+    def art_adj_now(self):
+        return [round(float(getattr(self.ren, k)), 4) for k in ('art_dx', 'art_dy', 'art_scale')]
+    def art_adj_note(self):
+        """Config's line under the overlay's position: whose it is"""
+        if self.rom_name in self.art_adj_game:
+            return 'Kept for %s only (other games: the global default).' % self.rom_name
+        return '%s uses the global default.' % self.rom_name
+    def art_adj_global(self):
+        """Make global default: the overlay's position and size now become the one for every game without its own
+        (this game uses it too from now on; the sliders' own defaults stay as they are)"""
+        if not self.ren:
+            return
+        self.art_adj_all = self.art_adj_now()
+        self.art_adj_game.pop(self.rom_name, None)
+        self.save_settings()
+        self.show_look('overlay position and size: now the global default')
     def toggle_art(self, e=None):
         """O: the overlay on / off"""
         if not (self.ren and hasattr(self.ren, 'art_on')):
@@ -2980,9 +3012,12 @@ class App:
         self.load_art()
         self.show_look('no overlay for ' + self.rom_name)
     def reset_art_adj(self):
-        if self.ren:
-            for k, v in ART_ADJ_DEFAULT.items(): setattr(self.ren, k, v)
-        self.show_look('overlay position and size: the defaults')
+        """Reset: this game's overlay position and size back to the sliders' defaults (kept for it; Make global default
+        then puts every game back to normal)"""
+        if not self.ren:
+            return
+        for k, v in ART_ADJ_DEFAULT.items(): setattr(self.ren, k, v)
+        self.save_settings(); self.show_look('%s: overlay position and size at the defaults' % self.rom_name)
     def set_rotation(self, deg):
         """Display > Rotate screen: the whole screen turned (a monitor on its side: tate)"""
         if deg == self.rot or not (self.ren and hasattr(self.ren, 'set_art')):
@@ -3590,8 +3625,8 @@ class App:
             self.speech = self.speech_user = k                  # (auto off, or no cartridge: every game, as a real Vectrex)
         self.restart(self.args.rom)
         dk = getattr(self, 'deck', None)                        # (Config open on Cartridge: the 3D Imager's rows come or go)
-        if dk is not None and getattr(dk, 'strip', None) == 'Cartridge':
-            try: dk.t.after_idle(lambda: dk.show('Cartridge'))
+        if dk is not None and getattr(dk, 'strip', None) == 'Ports':
+            try: dk.t.after_idle(lambda: dk.show('Ports'))
             except Exception: pass   # noqa
         self.show_look('port 2: %s' % PORT2[k].upper())
         self.flash('CONTROLLER PORT 2:', {'off': 'JOYSTICK', 'vecvoice': 'VECVOICE SPEECH', 'vecvox': 'VECVOX SPEECH',
@@ -3717,7 +3752,7 @@ class App:
         x, y, r = self.cart_geom()
         od = self.osd_state()                                   # (between the OSD and P2 PORT - the owner, 2026-10-29)
         if od:
-            left = od['area'][0] + OSD_CHARS * 6.0 * od['k']
+            left = od['area'][0] + od.get('w', OSD_CHARS * 6.0 * od['k'])
         else:
             left = (pl + pr) / 2 + (vecrender.GLASS_DX - vecrender.ART_AW) * (pb - pt) / 2
         right = x - 3.6 * r - 1.1 * r                           # (P2 PORT's left edge)
@@ -3862,14 +3897,25 @@ class App:
             gl_ = left                                          # (always by this rule - in full screen too, where the
                                                                 #  larger text reaches past the overlay's edge: the strip,
                                                                 #  centred by strip_dx, stays one piece)
-        if k < OSD_KMIN:                                        # (a small window: the strip's text would be unreadable -
-            k = OSD_KMIN                                        #  readable size, in the black left of the picture, its
-            chars = max(sum(len(t) for t, _ in row) for row in rows)   #  bottom level with the strip's)
-            w, h = chars * 6.0 * k, (len(rows) + mrows) * 9.0 * k
-            gl_ = max(8.0, min(gl_, pl - 12.0 - w))
-            top = bot - h
-            x1 = max(x1, gl_ + w)
-        return dict(area=(gl_, top, x1, bot), rows=rows, k=k, meters=meters, p2x=p2x)
+        thin = False
+        if k < OSD_KMIN:                                        # (a low window: still in the strip under the frame - the
+            cxx, _, cr = self.cart_geom()                       #  owner, 2026-10-29. Readable with the meters: so, larger
+            p2l = cxx - 3.6 * cr - 1.1 * cr                     #  than the knob's labels, reaching right into PAUSED's
+            gap = (rx - 0.95 * r) - (cxx + 1.3 * cr)            #  room (half of it kept); not: the meters two thin lines,
+            right = p2l - gap                                   #  the text smaller and smaller. Its right edge where the
+            room = OSD_CHARS * 6.0 * k                          #  rule puts it - as far from P2 PORT as the cartridge is
+            cmin = self.OSD_CHARS_MIN                           #  from RESET - and no wider than at the knob's size: first
+            kfit = (bot - top) / ((len(rows) + mrows) * 9.0)    #  the room between the names and the numbers closes up)
+            if min(kfit, room / (cmin * 6.0)) >= OSD_KMIN:
+                k = OSD_KMIN
+            else:
+                thin = bool(meters)
+                k = min(OSD_KMIN, room / (cmin * 6.0), (bot - top) / (len(rows) * 9.0 + (vecrender.METER_THIN_H if thin else 0.0)))
+            cols = max(cmin, min(OSD_CHARS, int(room / (6.0 * k))))
+            rows = self.hud_text(cols)
+            gl_ = right - max(len(t) for row in rows for t in [''.join(x for x, _ in row)]) * 6.0 * k
+        w = max(len(''.join(t for t, _ in row)) for row in rows) * 6.0 * k
+        return dict(area=(gl_, top, x1, bot), rows=rows, k=k, meters=meters, p2x=p2x, thin=thin, w=w)
                     # (the text as high as the knob's labels; in full screen 20 % larger)
     # ---------------------------------------------------------------- the cartridge and the ROM browser
     def toggle_cart(self, e=None):
@@ -4534,7 +4580,7 @@ class App:
             self.set_unit(k, v)
         self.save_settings()
         self.show_look('Vectrex unit imported: ' + os.path.basename(fn))
-    QUALITY_NAMES = dict(low='Low', medium='Medium', high='High', ultra='Ultra', custom='Custom')
+    QUALITY_NAMES = dict(basic='Basic', low='Low', medium='Medium', high='High', ultra='Ultra', custom='Custom')
     def base_values(self):
         """the picture switches the settings are compared with (Config's changed marks): the Quality profile shown, or
         under Custom the one chosen last - or Optimize's result, when that came last"""
@@ -4569,7 +4615,7 @@ class App:
         rest = [k for k in self.look_keys if k not in r.PROFILE_KEYS and k != 'line_gap']   # (line_gap: the Vectrex unit's)
         if not all(same(getattr(r, k), self.look_default[k]) for k in rest):
             return 'custom'
-        for key in ('ultra', 'high', 'medium', 'low'):
+        for key in ('ultra', 'high', 'medium', 'low', 'basic'):
             if all(same(getattr(r, k), v) for k, v in self.profile_values(key).items()):
                 return key
         return 'custom'
@@ -4604,7 +4650,7 @@ class App:
             for k, v in base.items():
                 setattr(self.ren, k, v)
         self.reset_tube(); self.reset_light(); self.reset_case(); self.reset_overlay()
-        self.reset_sound(); self.reset_unit(); self.reset_display(); self.reset_addons()
+        self.reset_sound(); self.reset_unit(); self.reset_display(); self.reset_addons(); self.reset_head()
         self.save_settings()
         self.show_look('all settings: the defaults (quality %s)' % name)
         self.flash('DEFAULTS: ' + name.upper())
@@ -5860,14 +5906,18 @@ class App:
             self.W, self.H = e.width, e.height
     def zoom_step(self, f):
         """+ / - / 0: the window size (0: the start size, as big as fits the desktop); in full screen the
-        picture size on the black screen (kept apart)"""
+        picture size on the black screen (kept apart; 0: as big as the screen allows - the owner, 2026-10-29)"""
         self.real_on = False
         if not self.full:
             if f is None:
                 self.measure_fit()
                 return self.set_zoom(1.0)
-            return self.set_zoom(self.cur_zoom() * f)
-        self.full_scale = self.win_fit() if f is None else max(0.2, min(1.0, (self.full_scale or 1.0) * f))
+            z = self.cur_zoom() * f
+            if f > 1.0:                                         # (+: never bigger than fits the screen it is on - the
+                try: z = min(z, max(self.cur_zoom(), self.fit_pic_h() / float(self.H0)))   #  owner, 2026-10-29)
+                except Exception: pass   # noqa
+            return self.set_zoom(z)
+        self.full_scale = 1.0 if f is None else max(0.2, min(1.0, (self.full_scale or 1.0) * f))
         self.apply_scale()
         self.save_settings()
     def win_fit(self):
@@ -5896,7 +5946,26 @@ class App:
         h = int(h * (1.0 + self.knob_reserve()))                # (+ the strip)
         if getattr(self, 'rot', 0) in (90, 270):                # (a turned screen: a wide window)
             w, h = h, w
-        self.root.geometry('%dx%d' % (w, h + self.chrome_h()))
+        h += self.chrome_h()
+        try:                                                    # (its middle stays where it is: it grows and shrinks
+            ow, oh = self.root.winfo_width(), self.root.winfo_height()   #  round it - the owner, 2026-10-29; kept on the
+            x, y = self.root.winfo_x(), self.root.winfo_y()     #  desktop after)
+        except tk.TclError:
+            ow = oh = 0
+        if ow > 1 and oh > 1:
+            nx, ny = x + (ow - w) // 2, y + (oh - h) // 2
+            fr = vecrender.frame_rect(self.root.winfo_id())     # (the whole window, its frame and title too)
+            if fr:                                              # (an edge that reaches the desktop's edge stays there: it
+                l, t, r, b = self.desktop()                     #  grows the other way from then on - the owner)
+                ex0, ey0 = x - fr[0], y - fr[1]                 # (the frame round the inside, each side)
+                ex1, ey1 = fr[2] - (x + ow), fr[3] - (y + oh)
+                if nx - ex0 < l: nx = l + ex0
+                elif nx + w + ex1 > r and w + ex0 + ex1 <= r - l: nx = r - ex1 - w
+                if ny - ey0 < t: ny = t + ey0
+                elif ny + h + ey1 > b and h + ey0 + ey1 <= b - t: ny = b - ey1 - h
+            self.root.geometry('%dx%d+%d+%d' % (w, h, nx, ny))
+        else:
+            self.root.geometry('%dx%d' % (w, h))
         self.root.after(60, self.keep_on_desktop)
     def start_fit(self, geo):
         """after the start: the start size measured on the real frame; the first time (no remembered
@@ -5924,6 +5993,15 @@ class App:
         if mi:
             return mi['work']
         return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight() - 80
+    def fit_pic_h(self):
+        """the picture's height that just fits the desktop of the window's monitor, above the task bar"""
+        l, t, r, b = self.desktop()
+        ow, oh = self.frame_overhead()
+        aw, ah = r - l - ow - 4, b - t - oh - 4 - self.chrome_h()
+        s, a = 1.0 + self.knob_reserve(), vecrender.VIEW_AW
+        if getattr(self, 'rot', 0) in (90, 270):
+            return min(aw / s, ah / a)
+        return min(ah / s, aw / a)
     def measure_fit(self):
         """the start size: the window as big as fits the desktop, above the task bar"""
         l, t, r, b = self.desktop()
@@ -6016,7 +6094,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_k=('glass curvature', 'x%.2f'), head_on=('head tracking', None), head_mm=('head tracking largest shift', '%.1f mm'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_k=('glass curvature', 'x%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining strength', '%.2f'), phos_smooth=('afterglow smoothing width', '%.2f'), phos_grow_on=('afterglow joining', None), phos_smooth_on=('afterglow smoothing', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
@@ -6091,7 +6169,9 @@ class App:
         old.stop = True; old.join(timeout=2)
         self.core.close()
         self.save_settings()                                    # (the old game's own settings kept)
-        path, self.rom_name = self.cartridge(rom)
+        self.art_adj_ready = False                              # (the overlay's position too, until the new one's is in)
+        self.game_loaded = None                                 # (until the new one's settings are in: nothing of
+        path, self.rom_name = self.cartridge(rom)               #  the old game's look saved as the new game's)
         if bool(rom) != bool(self.args.rom):
             self.cart_slide_t = time.perf_counter()             # (in, or out of, the slot: it slides)
         self.args.rom = os.path.abspath(rom) if rom else None
@@ -6237,14 +6317,17 @@ class App:
         elif self.game_global is not None:
             self.game_apply(self.game_global)
             self.game_global = None
+        self.game_loaded = self.rom_name                        # (its settings in place: from now on changes are its)
+        self.game_start = json.loads(json.dumps(self.game_now()))   # (as they were when it went in: Revert)
     def game_state(self):
         """for the control deck: 'everyday' (this game uses the everyday settings, changes kept for all games),
-        'own' (its own saved settings), 'changed' (its own, changed since saved)"""
+        'own' (its own settings, changes kept for it), 'changed' (its own, changed since the cartridge went in -
+        kept too; Revert: as they were then)"""
         own = self.per_game.get(self.rom_name)
         if not own:
             return 'everyday'
         now = json.loads(json.dumps(self.game_now()))
-        return 'own' if now == json.loads(json.dumps(own)) else 'changed'
+        return 'own' if now == getattr(self, 'game_start', now) else 'changed'
     def save_game(self):
         """Save for this game: from now on this game starts with the look and controls it has now (the
         everyday settings stay as they were)"""
@@ -6255,12 +6338,14 @@ class App:
             except Exception:   # noqa
                 self.game_global = self.game_now()
         self.per_game[self.rom_name] = self.game_now()
+        self.game_loaded = self.rom_name; self.game_start = json.loads(json.dumps(self.game_now()))
         self.save_settings()
         self.show_look('%s: settings saved for this game' % self.rom_name)
     def revert_game(self):
-        """Revert: back to this game's saved settings"""
-        if self.rom_name in self.per_game:
-            self.game_apply(self.per_game[self.rom_name]); self.show_look('%s: its saved settings' % self.rom_name)
+        """Revert: back to this game's settings as they were when its cartridge went in"""
+        if self.rom_name in self.per_game and getattr(self, 'game_start', None):
+            self.game_apply(self.game_start); self.save_settings()
+            self.show_look('%s: its settings as they were' % self.rom_name)
     def remove_game(self):
         """Remove game settings: this game forgets its own settings, the everyday ones come back"""
         if self.rom_name in self.per_game:
@@ -6351,9 +6436,17 @@ class App:
             elif not on and h is not None:
                 h.close(); self.head = None
                 if self.ren: self.ren.head_src = None
+            if h is not None:
+                h.tilt_deg = float(getattr(self.ren, 'head_tilt', 0.0))   # (Config > Head > Phone tilt)
+                h.smooth_s = tuple(max(0.0, float(getattr(self.ren, 'head_smooth_' + a, d))) / 1000.0   # (Config > Head:
+                                   for a, d in (('x', 30.0), ('y', 80.0), ('z', 80.0)))       #  the smoothing per axis)
             if h is not None and on and not h.err:
                 if h.receiving() and self.head_said != 'yes':
                     self.head_said = 'yes'; self.flash('HEAD TRACKING: CONNECTED', 'OVER USB' if h.src[0] == 'USB' else 'FROM %s' % h.src[0], secs=3)
+                    self.head_via = h.src[0] == 'USB'
+                elif h.receiving() and (h.src[0] == 'USB') != getattr(self, 'head_via', None):   # (USB in or out: said)
+                    self.head_via = h.src[0] == 'USB'
+                    self.flash('HEAD TRACKING', 'NOW OVER USB' if self.head_via else 'NOW OVER WI-FI', secs=2)
                 elif not h.receiving() and self.head_said is None and time.perf_counter() - self.head_t0 > 8:
                     self.head_said = 'no'
                     self.flash('HEAD TRACKING: NOTHING ON UDP %d' % headtrack.PORT, 'PHONE APP TO %s' % self.head_ip(), secs=5)
@@ -6375,8 +6468,9 @@ class App:
         if h.err:
             return 'UDP port %d is in use by another program' % headtrack.PORT
         if h.receiving():
-            x, y, z = h.pos
-            return 'receiving %s: x %+.1f  z %+.1f' % ('over USB' if h.src[0] == 'USB' else 'from ' + h.src[0], x, z)
+            x, y, z = h.smooth() or h.pos                    # (z with the phone's tilt taken out: Phone tilt)
+            return 'receiving %s: x %+.1f  y %+.1f  z %+.1f  (%.0f cm: shift x%.2f, reflections x%.2f)' % (
+                'over USB' if h.src[0] == 'USB' else 'from ' + h.src[0], x, y, z, h.distance_cm(), h.distance_k(), h.refl_k())
         return where + ' - waiting'
     def head_centre(self):
         """the head's place now is the middle"""
@@ -6397,7 +6491,7 @@ class App:
         """Tube > Reset tube settings to default (not the overlay's: those are in the Overlay menu)"""
         base = self.base_values()                       # (the profile's switches: what Config's marks compare with)
         for k, v in self.look_default.items():
-            if not k.startswith(('art_', 'scr_', 'light_', 'glass_room', 'case_')) and k not in ('phos_scale', 'half_rate', 'line_gap'):
+            if not k.startswith(('art_', 'scr_', 'light_', 'glass_room', 'case_', 'head_')) and k not in ('phos_scale', 'half_rate', 'phos_full', 'line_half', 'line_gap'):
                 setattr(self.ren, k, base.get(k, v))
         if self.ren and hasattr(self.ren, 'hist'):
             self.ren.hist = []
@@ -6414,11 +6508,17 @@ class App:
                 setattr(self.ren, k, base.get(k, v))
         self.art_auto = True
         self.art_for.pop(self.rom_name, None)
-        if getattr(self, 'art_path', None):
-            self.art_adj.pop(os.path.basename(self.art_path), None)
+        self.art_adj_game.pop(self.rom_name, None)
         self.load_art()
         self.save_settings()
         self.show_look('overlay settings: the defaults')
+    def reset_head(self):
+        """the deck's Head tab: its reset - every head tracking setting at its default (on / off: as it was)"""
+        for k, v in self.look_default.items():
+            if k.startswith('head_') and k != 'head_on':
+                setattr(self.ren, k, v)
+        self.save_settings()
+        self.show_look('head tracking settings: the defaults')
     def reset_case(self):
         """the deck's Case tab: its reset - on, the reflections and the wear at their defaults"""
         base = self.base_values()
@@ -6698,7 +6798,7 @@ class App:
             self.toggle_smooth()
         if self.ren:                                    # (the weak-graphics switches: the profile's)
             base = self.base_values()
-            for k in ('phos_scale', 'half_rate'):
+            for k in ('phos_scale', 'half_rate', 'phos_full', 'line_half'):
                 if k in base:
                     setattr(self.ren, k, base[k])
         self.vrr = False; self.rate = 'max'; self.apply_rate()
@@ -6744,8 +6844,10 @@ class App:
         d['update_skip'] = getattr(self, 'update_skip', '')
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')
-        own = hasattr(self, 'per_game') and self.rom_name in self.per_game   # (a game's own settings: saved only
-        g = getattr(self, 'game_global', None) if own else None              #  by the deck's Save for this game)
+        own = hasattr(self, 'per_game') and self.rom_name in self.per_game   # (a game's own settings: its changes kept
+        g = getattr(self, 'game_global', None) if own else None              #  for it, as the everyday ones are - the
+        if own and self.ren and getattr(self, 'game_loaded', None) == self.rom_name:   #  owner, 2026-10-29: lost at a
+            self.per_game[self.rom_name] = self.game_now()                  #  restart before; only once its own are in)
         d['controls'] = g['controls'] if g else self.inp.save()
         if hasattr(self, 'per_game'):
             d['per_game'] = self.per_game
@@ -6756,11 +6858,14 @@ class App:
         d['uvm2_sd_dir'] = getattr(self, 'sd_dir', None)
         d['pitrex_sd_dir'] = getattr(self, 'px_dir', None)
         if hasattr(self, 'art_for'):
-            if self.art_path and self.ren:                      # (this overlay's position and size)
-                a = [round(getattr(self.ren, k), 4) for k in ('art_dx', 'art_dy', 'art_scale')]
-                if a == [0.0, 0.0, 1.0]: self.art_adj.pop(os.path.basename(self.art_path), None)
-                else: self.art_adj[os.path.basename(self.art_path)] = a
+            if self.art_path and self.ren and getattr(self, 'art_adj_ready', False):   # (the overlay's position and
+                cur = self.art_adj_now()                        #  size: kept for this game by itself - the owner,
+                if cur == [round(float(v), 4) for v in self.art_adj_all]:   #  2026-10-29; the same as the global
+                    self.art_adj_game.pop(self.rom_name, None)  #  default: nothing of its own)
+                else:
+                    self.art_adj_game[self.rom_name] = cur
             d['art_auto'] = self.art_auto; d['overlay_for'] = self.art_for; d['overlay_adjust2'] = self.art_adj
+            d['overlay_adjust_all'] = self.art_adj_all; d['overlay_adjust_game'] = self.art_adj_game
             d['rotate'] = self.rot
             d['monitor_inch'] = self.monitor_inch
             if self.ren and hasattr(self.ren, 'scr_seed'):
@@ -6949,7 +7054,7 @@ class App:
         """Ctrl+K (a UVMC2 game, a PiTrex program): the keyboard types on the cartridge's USB keyboard - the
         emulator's own keys and the controller keys rest until Ctrl+K again"""
         if not self.usb_typing and not (self.usb_hid and self.usb_cart()):
-            self.show_look('Ctrl+K: only for a UVMC2 game or a PiTrex program (Cartridge tab: the USB keyboard and mouse)')
+            self.show_look('Ctrl+K: only for a UVMC2 game or a PiTrex program (Ports tab: the USB keyboard and mouse)')
             return 'break'
         self.usb_typing = not self.usb_typing
         for w in (self.root, self.screen):
@@ -7053,7 +7158,10 @@ class App:
             if P is not None and P.ndim == 2 and len(P):
                 P[:, 5] *= k; P[:, 6] *= k
                 lines = _np.concatenate([P, lines]) if _np is not None and not isinstance(lines, list) else lines
-        r.frame_t0 = a[2] + ((b[2] - a[2]) * alpha if b is not None else 0.0)
+        r.frame_t0 = b[2] if (b is not None and alpha >= 0.5) else a[2]   # (the mains wobble at the nearest real frame's
+        # moment: the beam draws only when the game draws - in between, the 50 Hz hum went through all its phase, and the
+        # in-between pictures swept the whole picture with it, a 10 Hz shake (the owner, 2026-10-29); the lines' places
+        # are still in between)
         r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
     def pen_live(self):
         """the light pen in port 2, the game running: the mouse is the pen"""
@@ -7235,7 +7343,7 @@ class App:
         # Wars; with G-Sync every game frame is one picture) is not a slow PC (the owner's RTX 5090, 2026-10-26)
         g_ms, c_ms = getattr(r, 'gpu_ms', None) or 0.0, getattr(r, 'cpu_ms', None) or 0.0
         heavy = g_ms > 25.0 or c_ms > 25.0 or getattr(self, 'speed', 100.0) < 90.0
-        slow = running and heavy and r is not None and self.current_profile() != 'low'
+        slow = running and heavy and r is not None and self.current_profile() not in ('low', 'basic')
         self.slow_n = getattr(self, 'slow_n', 0) + 1 if slow else 0
         if self.slow_n == 3 and not getattr(self, 'slow_told', False):
             self.slow_told = True
@@ -7377,7 +7485,8 @@ class App:
             flush, self.flush = getattr(self, 'flush', False), False
             if flush:
                 self.sm_buf = []
-            r.present(T - self.pause_acc, imm, flush)
+            r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
+            r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
             if not getattr(self, 'gl_shown', False):            # (the first picture: OpenGL paints it all now)
                 self.gl_shown = True
                 self.screen.configure(bg='')
@@ -7427,8 +7536,9 @@ class App:
     SPEED_COLORS = ((99.0, '#6a8', (0.40, 0.667, 0.533)), (90.0, '#e93', (0.93, 0.60, 0.20)), (-1.0, '#f44', (1.0, 0.27, 0.27)))
     def speed_color(self, k):
         return next(c[k] for c in self.SPEED_COLORS if self.speed >= c[0])
-    def hud_text(self):
-        """the OSD, one value per row: the game's frame rate, the monitor's refresh, the emulation rate
+    OSD_CHARS_MIN = 17          # (the OSD closed up: the widest name, 2 spaces, the widest usual value - 8 + 2 + 7)
+    def hud_text(self, cols=None):
+        """the OSD, one value per row (cols: its width in characters, OSD_CHARS unless a low window closes it up): the game's frame rate, the monitor's refresh, the emulation rate
         (coloured) and, online, the connection (in the row the volume had: the OSD keeps its height over the overlay;
         the volume shows on the knob and on the status line when it is turned)"""
         g = (0.40, 0.667, 0.533)
@@ -7442,7 +7552,7 @@ class App:
                 vals.append(('ONLINE', '%s%d MS' % ('RELAY ' if getattr(net, 'relay', False) else '', ng.get('rtt_ms', 0)), g))
             else:
                 vals.append(('ONLINE', 'WAITING', (0.93, 0.60, 0.20)))
-        width = max([OSD_CHARS] + [len(n) + 2 + len(v) for n, v, _ in vals])   # (the values end in one column - always
+        width = max([cols or OSD_CHARS] + [len(n) + 2 + len(v) for n, v, _ in vals])   # (the values end in one column -
                                                                 #  OSD_CHARS wide: the OSD never changes width)
         return [[(n + ':' + ' ' * (width - len(n) - 1 - len(v)), g), (v, c)] for n, v, c in vals]
     def speed_shown(self):

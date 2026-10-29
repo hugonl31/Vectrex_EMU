@@ -3,12 +3,35 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.1.8
+## v1.1.9
 
-**Everything new since v1.0.5** - v1.0.6 to v1.1.8 in one
+**Everything new since v1.0.5** - v1.0.6 to v1.1.9 in one
+
+**New in v1.1.9: fast objects, the Head tab, Basic**
+* **A new phosphor engine** - every flash of the beam is razor sharp and then fades on the measured afterglow on its
+  own: a fast-turning rotor (Armor Attack's helicopter) lights up position after position as on a real tube, and
+  overlapping trails add up instead of cutting each other. No more dotted trails, doubled copies held at full
+  brightness, or a line's glow cut off where it crosses a trail. Best with G-Sync. Afterglow joining and smoothing
+  are switches in Config > Tube now, off by default ([how it was done](https://github.com/hugonl31/Vectrex_EMU/blob/main/docs/images/phosphor_model/README.md)).
+* **Head tracking has its own tab** (Config > Head): the room light's reflections on the glass and on the overlay
+  move with your head too, leaning in and out follows the real-world rule, smoothing per direction, a setting for
+  the phone's tilt. USB comes before Wi-Fi, and SmoothTrack's Calibrate keeps the USB connection.
+* **Basic quality** - Low with the lines drawn at half size too, for a Raspberry Pi 5 with busy games (Vectrexians
+  on a Pi 5: 17 pictures a second at Low, 21-25 at Basic). Ultra alone keeps the full-colour afterglow and averages
+  several game frames per pixel; the other profiles use cheaper versions of both.
+* **Settings survive a restart** - each game's settings are kept by themselves, the overlay's place and size too,
+  with *Make global default* and *Reset*.
+* **The Config window keeps out of the game's way** - the game keeps its controller and keys while it is open, and
+  the emulator's shortcuts work inside it.
+* **The window** resizes around its middle and stays on the screen; + stops at the largest size that fits, 0 in
+  full screen fills it. In a small window the on-screen display stays under the frame (the CPU and GPU meters become
+  thin lines when it runs out of room).
+* **Fixes**: the bloom no longer pulses on slowly moving lines; 30 pictures a second no longer doubles the glow; the
+  room light no longer throws a shaft of light up the glass; Reset all resets the Head tab too; right-click on a
+  slider goes back to the chosen profile's value.
 
 **New in v1.1.7 and v1.1.8: head tracking**
-* **Head tracking** (Config > Overlay) - a phone on your desk follows your head with the app SmoothTrack, and the
+* **Head tracking** (Config > Head) - a phone on your desk follows your head with the app SmoothTrack, and the
   game's picture slides against the overlay and the glass as you move, the way the glowing phosphor behind a real
   overlay does. Over Wi-Fi, or plugged in over USB - iPhone or Android, found by the emulator itself, no extra
   tools to start (v1.1.8); no OpenTrack needed. Only the picture moves, never the game, so it works online too ([Head tracking](https://github.com/hugonl31/Vectrex_EMU#head-tracking)).

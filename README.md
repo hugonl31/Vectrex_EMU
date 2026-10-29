@@ -19,15 +19,38 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.1.8 - everything since v1.0.5
+## New in v1.1.9 - everything since v1.0.5
 
 <p align="center">
 <img src="docs/images/v1.1.7/head_tracking.gif" width="420" alt="Armor Attack with head tracking: the picture slides against the overlay as the head moves round"><br>
 <em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head moves (largest shift 4 mm here).</em>
 </p>
 
+**New in v1.1.9: fast objects, the Head tab, Basic**
+* **A new phosphor engine** - every flash of the beam is razor sharp and then fades on the measured afterglow on its
+  own: a fast-turning rotor (Armor Attack's helicopter) lights up position after position as on a real tube, and
+  overlapping trails add up instead of cutting each other. No more dotted trails, doubled copies held at full
+  brightness, or a line's glow cut off where it crosses a trail. Best with G-Sync. Afterglow joining and smoothing
+  are switches in Config > Tube now, off by default ([how it was done](docs/images/phosphor_model/README.md)).
+* **Head tracking has its own tab** (Config > Head): the room light's reflections on the glass and on the overlay
+  move with your head too, leaning in and out follows the real-world rule, smoothing per direction, a setting for
+  the phone's tilt. USB comes before Wi-Fi, and SmoothTrack's Calibrate keeps the USB connection.
+* **Basic quality** - Low with the lines drawn at half size too, for a Raspberry Pi 5 with busy games (Vectrexians
+  on a Pi 5: 17 pictures a second at Low, 21-25 at Basic). Ultra alone keeps the full-colour afterglow and averages
+  several game frames per pixel; the other profiles use cheaper versions of both.
+* **Settings survive a restart** - each game's settings are kept by themselves, the overlay's place and size too,
+  with *Make global default* and *Reset*.
+* **The Config window keeps out of the game's way** - the game keeps its controller and keys while it is open, and
+  the emulator's shortcuts work inside it.
+* **The window** resizes around its middle and stays on the screen; + stops at the largest size that fits, 0 in
+  full screen fills it. In a small window the on-screen display stays under the frame (the CPU and GPU meters become
+  thin lines when it runs out of room).
+* **Fixes**: the bloom no longer pulses on slowly moving lines; 30 pictures a second no longer doubles the glow; the
+  room light no longer throws a shaft of light up the glass; Reset all resets the Head tab too; right-click on a
+  slider goes back to the chosen profile's value.
+
 **New in v1.1.7 and v1.1.8: head tracking**
-* **Head tracking** (Config > Overlay) - a phone on your desk follows your head with the app SmoothTrack, and the
+* **Head tracking** (Config > Head) - a phone on your desk follows your head with the app SmoothTrack, and the
   game's picture slides against the overlay and the glass as you move, the way the glowing phosphor behind a real
   overlay does. Over Wi-Fi, or plugged in over USB - iPhone or Android, found by the emulator itself, no extra
   tools to start (v1.1.8); no OpenTrack needed. Only the picture moves, never the game, so it works online too
@@ -944,14 +967,16 @@ their switches in Config; change any picture setting (Tube, Room light, Case, Ov
 
 | Quality | | For |
 |---|---|---|
+| **Basic** | Low, and the lines themselves drawn at half size too: softer lines, a quarter of the drawing work | a Raspberry Pi 5 with busy games (Vectrexians) |
 | **Low** | Medium's cuts, and the phosphor (the afterglow, the display pass, the bloom's source) drawn at half the window's size while the vectors themselves stay at full size, 30 pictures a second instead of 60 | a Raspberry Pi 5, old laptops with integrated graphics |
 | **Medium** | the Vectrex look: the afterglow, the glow, the corner dots and the overlay's colours kept; the tube's curve and glass edge, the overlay's scratches and plastic glow, the room light and reflections, the case's reflections and the dither off; the phosphor at three quarters of the window's size | laptops of the last years |
 | **High** | all but the room light and its reflections; a lighter glow | a MacBook Air, any discrete graphics card |
-| **Ultra** | every effect on | a gaming PC |
+| **Ultra** | every effect on, the afterglow in full colour and several game frames in one picture averaged per pixel | a gaming PC |
 
 Measured on a Raspberry Pi 5 at 1920 x 1080 (2026-10-27): Ultra and High about 300 ms per picture (3 a second - the
 emulation itself at full speed throughout), Medium 37 ms with its three-quarter phosphor (62 ms at full size), Low
-full speed. The two Low switches are
+full speed. With v1.1.9 (2026-10-29): Web Wars at Low 16 ms of the graphics chip per picture, Vectrexians (8000+
+vectors a frame) 24 ms at Low and 16 ms at Basic; Ultra on a mini PC's Radeon 780M 8 ms, a steady 60 a second. The two Low switches are
 also in Display > Weak graphics, for any profile.
 
 **Optimize** (View > Quality, the Config window, and the first-start setup) says what it will do, then draws a
@@ -962,7 +987,7 @@ Config window marks every setting that differs from its default in orange: a che
 shows an orange stripe where its default is, a choice's label turns orange; the tab's name is orange then too.
 Normal use is never marked: the screen rate, G-Sync, Smooth motion, the volume, controller port 2, the monitor's
 size and the SD folders. Nothing changes by itself while you
-play. Choosing Low, Medium, High or Ultra sets all picture settings to that profile; **Reset all** in the Config window
+play. Choosing Basic, Low, Medium, High or Ultra sets all picture settings to that profile; **Reset all** in the Config window
 puts every strip back to the chosen profile (from Custom: Ultra).
 
 <p align="center">
@@ -1119,7 +1144,7 @@ sheet of plastic in front of the tube it is. It uses **[SmoothTrack](https://smo
 iPhone and Android made for head tracking in simulators: it follows your head with the phone's front camera and sends
 its position in OpenTrack's format, which Vectrex_EMU reads itself (no OpenTrack needed).
 
-* **Over Wi-Fi:** in SmoothTrack's settings enter this PC's address - Config > Overlay shows it under Head
+* **Over Wi-Fi:** in SmoothTrack's settings enter this PC's address - Config > Head shows it under Head
   tracking - and port **4242**, start tracking, and turn Head tracking on. Let Vectrex_EMU through the firewall when
   Windows asks.
 * **Over USB (iPhone):** install **Apple Devices** (or iTunes) from the Microsoft Store, plug the iPhone in and trust
@@ -1131,8 +1156,11 @@ its position in OpenTrack's format, which Vectrex_EMU reads itself (no OpenTrack
   emulator runs it itself - installs its app on the phone the first time, routes only this PC's address through it
   (the phone's internet stays as it is) and reads SmoothTrack's positions; enter this PC's address and port 4242 in
   the app and allow Gnirehtet's VPN once.
-* **Largest shift** (5 mm to start with) is how far the picture moves with your head at the edge of the app's view;
-  **Centre** makes where your head is now the middle.
+* **Config > Head**: **Centre** makes where your head is now the middle. The picture's shift (x1 = 2 mm at the
+  edge of the app's view), the room light's reflections on the glass and on the overlay (each with its own
+  strength), smoothing for left / right, up / down and near / far, and the phone's tilt if it looks up at you.
+  Leaning in makes the shift larger, as on a real tube. Only with an overlay: without one there is nothing in front
+  of the picture for it to slide against.
 
 Help > Head tracking (SmoothTrack), also a button in the Config window, walks through it with every link.
 

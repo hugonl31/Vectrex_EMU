@@ -51,7 +51,7 @@ TOPICS = [
          "load too: unpacked into the folder v4e next to the settings (their saves are kept there), run with the "
          "cartridge board they name; one for hardware the emulator does not have is refused with a message."),
 ('item', 'Open UVMC2 game...', "A game for the Ultimate Vectrex Multicart 2 (.um2) anywhere on your PC: it runs on "
-         "the cartridge's own computer (see Config: Cartridge)."),
+         "the cartridge's own computer (see Config: Ports)."),
 ('item', 'Eject / insert cartridge (Ctrl+E)', "Out of the slot: the Vectrex runs Mine Storm from its own ROM. Already out: the last cartridge goes back in (a right click on the cartridge does the same)."),
 ('item', 'RESET button (Ctrl+R)', "The RESET button on the console. The RAM is kept and the BIOS restarts "
          "the cartridge without its intro, exactly as on the real machine. Some games use this: they "
@@ -73,7 +73,7 @@ TOPICS = [
       "and the room light."),
 ('item', 'Full screen (F11)', "The picture on the whole monitor at its full resolution (for example 4K)."),
 ('item', 'Bigger / Smaller / Fit screen', "The window size (+ / - / 0); Fit screen is as big as fits the "
-         "desktop, above the task bar. In full screen: the picture size."),
+         "desktop, above the task bar. In full screen: the picture size; Fit screen (0) as big as the screen allows."),
 ('item', 'Authentic (9)', "In the window and in full screen (until + / - / 0): as big as on a real Vectrex: the overlay 162 x 207 mm like the real sheets, worked out "
          "from the monitor's size and resolution."),
 ('item', 'Overlay (O)', "The game's printed plastic sheet in front of the screen on or off (see Config: Overlay)."),
@@ -114,7 +114,7 @@ TOPICS = [
          "motor itself and times its pictures from a hole in the disc: at the start the game waits, the screen dark, "
          "while the disc spins up (about 13 seconds), then plays in colour - as on the real goggles. A note on the "
          "picture shows the disc's speed meanwhile, and the motor is heard: the disc's soft rush, swelling once every turn "
-         "(Config > Cartridge: the motor sound, its volume, the note). Shown in colour; the two eyes' pictures "
+         "(Config > Ports: the motor sound, its volume, the note). Shown in colour; the two eyes' pictures "
          "together (no 3D yet). Click the P2 PORT pictogram to plug it in - or just start the game: with the joystick in "
          "port 2, a game that needs the goggles (the three 3D games, and Rocket Sledge, an unreleased one) gets them by "
          "itself, for that game only."),
@@ -123,7 +123,7 @@ TOPICS = [
          "joystick in port 2 and the speech ROM in the system folder, a game that talks (Vectorblade, Berzerk Ultimate, "
          "Space Frenzy, Verzerk and the others in the README's list) gets its module by itself, for that game only - "
          "said so on the picture. Choosing port 2 by hand while it is on is for that game only (remembered for it; the other "
-         "games keep theirs). Config > Cartridge > Auto-select "
+         "games keep theirs). Config > Ports > Auto-select "
          "port 2 switches all of this off (the 3D Imager and the light pen too): port 2 then changes only when you "
          "change it, as on a real Vectrex. "
          "The SpeakJet itself can not be emulated exactly (its workings are unknown), so the VecVox speaks "
@@ -202,9 +202,12 @@ TOPICS = [
       "setting, in tabs: Tube, Room light, Case, Overlay, Sound, Vectrex unit, Display and Cartridge. Every switch and "
       "slider acts on the game at once. Right click a slider: its default. Reset this tab puts back only that tab; Reset all puts back every tab (to the Quality profile's defaults, Custom: High's). "
       "Hold H (or the Before button) to see the look from before the Config window opened. Tab or Esc closes it."),
-('p', "With a game controller: LB / RB switch tabs, up / down pick a row, left / right change it, A switches, "
-      "Y holds the look from before, B closes."),
+('p', "The game keeps its controllers and keys while the Config window is open: it can be played, and checked, with "
+      "the window open. The emulator's keys work there too - P, O, L, C, + / - / 0 / 9, Ctrl+R, Page Up / Down; Tab or "
+      "Esc closes the window, H holds the look from before."),
 ('h', 'Quality'),
+('item', 'Basic', "For the weakest graphics (a Raspberry Pi 5 with a busy game such as Vectrexians): Low, and the "
+         "lines drawn at half size too - a quarter of the drawing work; the lines are softer."),
 ('item', 'Low', "For weak graphics (a Raspberry Pi 5, old laptops with integrated graphics): Medium's cuts, the phosphor "
                 "drawn at half the window's size while the vectors stay at full size, and 30 pictures a second instead "
                 "of 60. The two switches are also in Display > Weak graphics, for any profile."),
@@ -220,121 +223,13 @@ TOPICS = [
 ('p', "Quality only changes the picture effects, never the emulation. A profile sets the effects' switches; you "
       "can change any of them afterwards."),
 ('h', 'This game'),
-('item', 'Save', "This game keeps the look and controls it has now and starts with them every time. "
-      "Nothing is saved for a game unless you press this."),
-('item', 'Revert', "Back to this game's saved settings (after changing them)."),
+('item', 'Save', "This game gets its own settings: the look and controls it has now, and it starts with them every "
+      "time. From then on what you change while it runs is kept for this game (the everyday settings stay as they "
+      "were)."),
+('item', 'Revert', "Back to this game's settings as they were when its cartridge went in."),
 ('item', 'Remove', "The game forgets its own settings and uses the everyday ones again."),
 ('item', 'Make default', "The settings now become the everyday settings, for every game without its own."),
 ('p', "A game without its own settings uses the everyday settings; what you change there is kept for all games."),
-]),
-
-('unit', 'Config: Vectrex unit', [
-('p', "No two Vectrexes draw alike: their analog parts have aged and were trimmed differently. These are those "
-      "parts, live, as in VIDE's analog settings - to see how a game looks on a good, a tired or a cranky Vectrex."),
-('item', 'Unit', "Which Vectrex the parts below come from: the owner's (measured), an ideal one, a "
-         "cranky one or a random one. Changing a part by hand makes it Custom."),
-('item', "Owner's Vectrex", "Measured on the emulator author's own Vectrex (photos of its test screens): the default."),
-('item', 'Ideal', "A perfect machine: the zero reference holds, nothing drifts, the Y hold settles at once."),
-('item', 'Cranky', "A tired unit, a new one each time: a weak zero reference, drift, slow settling, long beam "
-         "delays, pots a little further off - still readable and playable, as real tired Vectrexes are."),
-('item', 'Random unit', "A new believable Vectrex each time: every part and pot slightly off, as real units "
-         "differ. The brightness knob stays where you set it, and R302 stays at the factory setting (it changes how "
-         "games read the analog stick, so online play stays in sync)."),
-('item', 'Zero hold', "How well the zero reference charges when a game re-centres the beam: lower, and shapes drawn after "
-      "a re-centre start a little off - text lines slant, closed boxes do not meet."),
-('item', 'Zero calibration shift', "Where the calibrated zero ends up after the BIOS's calibration pulse."),
-('item', 'R302 DAC offset', "A trim pot on the main board: where the DAC's middle code sits. Off, the whole picture "
-      "moves on the diagonal, the dimmest lines get brighter or vanish and the joystick reads a little off. The service "
-      "manual: never use it to centre the picture. 0 = set as the manual says."),
-('item', 'R335 X rate offset / R333 Y rate offset', "Trim pots on the main board: the integrators' offset. Off, the beam "
-      "creeps sideways (X) or up and down (Y) while a line is drawn - long lines bend away, closed shapes do not meet. "
-      "The Test Cartridge's Integrator Off-Set test is how they are set."),
-('item', 'Zero offset', "The integrators' centre against the zero reference, both axes at once."),
-('item', 'R509 Brightness', "The knob at the back: the tube's bias, on every line - and up high, on the beam's moves too."),
-('item', 'R401 X size / R408 Y size', "Trim pots on the power board: the picture's width and height (100 % = set at "
-      "the factory, so the Test Cartridge's linearity lines reach the screen's edges)."),
-('item', 'R525 High voltage', "A trim pot on the power board: the tube's high voltage (5.8 kV at the factory). Higher: "
-      "a smaller, brighter, sharper picture; lower: bigger, dimmer, softer."),
-('item', 'R526 HV ringing', "A trim pot on the power board: tunes the high voltage's oscillator to the flyback "
-      "transformer (minimum ringing). Off either way the voltage drops a little - the picture grows and dims."),
-('item', 'Centering X / Centering Y', "Not a pot: the two ring magnets on the back of the yoke move the whole picture "
-      "(+: right, up)."),
-('item', 'Yoke rotation', "Not a pot: the yoke turned a little on the tube's neck tilts the whole picture."),
-('item', 'Y hold settling', "How quickly the Y sample-and-hold reaches a new value (1 = at once)."),
-('item', 'Beam switch-off delay', "How long the beam stays lit after a game blanks it: longer, and lines get tails."),
-('item', 'Zeroing time X / Y', "How fast ZERO brings the beam back to the middle (an RC: the integrators' capacitors "
-      "emptied through a switch: X 4.5, Y 3.3 cycles). Games that zero only briefly leave "
-      "the beam a little short of the middle; a ZERO drawn with the beam on curves, Y first. 0 = at once (the old model)."),
-('item', 'Offset shift (zero reference)', "The zero reference moves the beam by itself: ZERO goes to the point it "
-      "sets, not to the middle - on the diagonal, a positive offset left and down (the trick behind old fast text "
-      "routines). 166 = measured; 0 = the reference only matters while the beam moves."),
-('item', 'Deflection lag X / Y', "How far the spot lags behind the integrators: rounder corners, curved ends, and the "
-      "short gaps where joined lines meet (the spot still moving while the beam is dark). 6 = measured."),
-('item', 'DAC bit 0-3 error', "The DAC's ladder: each bit's current off by this share. Text drawn right and back at a "
-      "width has different bits each way, so its slant changes from one width to the next. The owner's: measured."),
-('item', 'Line gaps (stop delay)', "When the integrators stop after a line: the gaps at line ends and corners."),
-('item', 'Brightness (the knob at the back)', "As the knob on the back of a Vectrex: 0 = a black screen, 1 = as bright as a real "
-      "one goes, 0.71 = well set (right click on the slider). Down: the faintest lines go first, a line's corner dots with "
-      "it (how a game looks on a dim Vectrex). Up: brighter, and the beam glows even when a game switches it "
-      "off - its moves and its returns to the middle show as a faint web, the 'spider web' of a Vectrex turned up too far, and "
-      "a spot where it rests. The test cartridge's screens show it well."),
-('item', 'Export... / Import...', "Save the unit as a .vxunit file to share, or load one."),
-('h', 'Starting up'),
-('item', 'Start switched on', "Starts the Vectrex at once instead of waiting for you to turn the knob."),
-('item', 'Skip the Vectrex intro', "On switching on, the BIOS's start screen (the VECTREX "
-         "logo, its tune, then the game's name) runs unseen in a fraction of a second and the cartridge "
-         "starts straight away - in exactly the state it would have after the real intro."),
-('more', "What the start screen does", "When a Vectrex is switched on, its 8 KB ROM (the 'Executive' or "
-         "BIOS) clears the RAM, sets up the sound chip and the I/O chip, draws the growing VECTREX logo "
-         "with its tune, then reads the cartridge's header - a copyright line, a tune and the game's name - "
-         "and shows that title for a few seconds before it jumps into the game. A cartridge without a valid "
-         "header gets Mine Storm instead. All together this takes about 13 seconds. The RESET button skips "
-         "the logo too, but keeps the RAM."),
-]),
-
-('display', 'Config: Display', [
-('p', "The screen: its rate, its turn, and the parts below the picture (all at once: View > Control deck)."),
-('item', 'Monitor size (for Authentic)...', "The monitor's diagonal in inches, if it does not report its size "
-         "(or reports it wrong): right click on the slider for the reported size. Check with a ruler: the "
-         "overlay should be 162 mm wide and 207 mm high."),
-('item', 'Rotate screen', "The whole screen turned in 90 degree steps - for a monitor turned on its side "
-         "(tate). The overlay, the knob and the display turn with it."),
-('item', 'On-screen display', "Below the picture: INTERNAL (the game's own frames per second), MONITOR "
-         "(your screen's refresh), EMU RATE (green at 100 %; orange or red when the PC can not keep up), "
-         "and ONLINE while you play online (the round trip to the other player, RELAY when it goes through the meeting "
-         "point; WAITING before player 2 is there). The volume shows on the knob when you point at it."),
-('item', 'CPU and GPU meters (how much of each frame is used)', "Two bars below the on-screen display: how much of each "
-         "frame's time the processor (CPU) and the graphics card (GPU) need - green below 70 %, orange to 90 %, red above. "
-         "Near 100 % the emulator can not keep up: lower the Quality (or "
-         "Optimize) for the GPU; for the CPU, a lighter game or a faster PC. CPU is the busier of the emulation and the drawing."),
-('more', "Why games run at different frame rates", "A Vectrex has no picture memory: the CPU steers the "
-         "beam along every line, every frame. Most games redraw 50 times a second, but a busy screen takes "
-         "longer to draw, so the frame rate drops - and the picture flickers more. INTERNAL shows that "
-         "rate: it is part of the game, not a fault of the emulator."),
-('item', 'Volume knob and RESET button', "The Vectrex's panel in simple outlines below the picture: the "
-         "knob (wheel or click to turn it) and the RESET button."),
-('item', 'Cartridge', "A cartridge below the picture: click it for the ROM browser."),
-('h', 'Screen'),
-('item', '30 pictures a second (half the screen rate)', "A new picture on every second screen refresh: half the graphics "
-         "work, for weak graphics. The game runs on at its own speed; only the screen shows fewer pictures, the afterglow "
-         "fading in bigger steps. Quality Low sets it."),
-('item', 'Phosphor size', "The glow and the afterglow drawn at a share of the window's size and scaled up, the lines "
-         "themselves always at full size (sharp). 3/4: about half the glow's graphics work (Quality Medium); Half: a quarter "
-         "(Quality Low) - softer glows, hardly visible on a laptop screen."),
-('item', 'Screen', "How the pictures meet your monitor's refreshes - hover over each choice."),
-('item', 'Matched to the monitor', "The default: 60 Hz on a 60 / 120 / 240 Hz monitor, else the monitor's rate divided down near the game's 50 Hz (144 Hz: 72, 165 Hz: 55) - always in step with the refresh, so smooth and tear-free."),
-('item', 'Smooth motion', "For 60 Hz screens without G-Sync / FreeSync (most laptops): a Vectrex game makes 50 pictures a second, a 60 Hz "
-      "screen shows 60, so every fifth refresh repeats one and moving things stutter slightly. Smooth motion gives every refresh a picture "
-      "of its own, with the vectors where they are between the two game frames around it - the game keeps its own speed and sound, the "
-      "picture comes about 20 ms later. Where two frames do not match line for line (things appearing, other lines), the earlier one is "
-      "shown as is. Off by default (the purist 50 pictures a second)."),
-('item', "The monitor's full rate", "Every refresh of a 120, 144 or 240 Hz monitor: the afterglow fades in "
-         "finer steps and moving things update more often."),
-('item', 'G-Sync / FreeSync', "One screen picture per game frame, with no tearing - needs such a monitor. "
-         "At 50 frames a second the mains wobble stands still, as on a real Vectrex."),
-('item', 'Reset display settings to default', "Fit screen (not Authentic; the monitor size as it "
-         "reports it), not turned, the on-screen display, the knob and the cartridge on, the monitor's full "
-         "rate with smooth motion on."),
 ]),
 
 ('tube', 'Config: Tube', [
@@ -354,13 +249,13 @@ TOPICS = [
          "about 2 seconds. That is why fast objects leave fading copies or a faint trail, and why a game "
          "running at 25 frames a second flickers less than you might expect. A spot drawn again is lit "
          "again; it does not add up."),
-('item', 'Afterglow joining', "How the afterglow of a moving object joins up (0.5 by default): each "
-         "fading spot spreads a little every frame, so the copies a fast object leaves (one per game frame) "
-         "merge into one smooth trail, as on the tube - sharp, not blurred. The glow only spreads for its "
-         "first moments, so a fading shape keeps its own size. 0: separate copies."),
-('item', 'Afterglow overlap', "The fading glow of neighbouring copies overlaps and averages out, as "
-         "on the tube (0.8 by default, in pixels): the trail becomes one smooth gradient, and the corner "
-         "dots a shape leaves join into a line. Only the fading light; lines being drawn stay sharp."),
+('item', 'Afterglow joining', "Off by default: every position a fast object was drawn at leaves its own "
+         "crisp fading copy, as each flash does on the tube. On: the fading glow spreads a little every frame, "
+         "so the copies merge into one softer trail - some screens and some players like that better."),
+('item', 'Joining strength...', "How far the glow spreads when joining is on, 0 to 1 (0 by default: turn it up after switching joining on)."),
+('item', 'Afterglow smoothing', "Off by default. On: the fading glow is averaged over a small spot, so the "
+         "trail becomes one smooth gradient. Only the fading light; the lines being drawn stay sharp."),
+('item', 'Smoothing width...', "How wide that spot is when smoothing is on, 0 to 1 (0 by default: turn it up after switching smoothing on)."),
 ('item', 'Corner glow (halo where the beam rests)', "Where the beam stops for a moment - every corner, every "
          "dot such as a shot or a star - the screen glows softly around the spot, as the light scatters in the "
          "tube's thick glass. It also softens the tiny dark gaps a Vectrex leaves at some corners."),
@@ -475,25 +370,58 @@ TOPICS = [
 ('item', 'New random scratches', "Another pattern of scratches (each overlay gets its own variation of it)."),
 ('item', 'Parallax (seen from the usual height)', "The sheet sits a little in front of the tube, so seen from "
          "the usual height the picture sits a little higher on it (as on MiSTer)."),
-('item', 'Head tracking (a phone follows your head)', "A phone app that tracks your head - SmoothTrack on iOS or Android, "
-         "or anything that sends OpenTrack's UDP format - makes the picture slide against the overlay and the glass as "
-         "you move, as the phosphor behind a real sheet does. Point the app at this PC's address (shown below the "
-         "switch) and port 4242, or plug the phone in with the app's USB mode (found by itself; see Help > Head tracking); allow the "
-         "emulator through the firewall when Windows asks. Centre: where your head "
-         "is now counts as the middle."),
-('item', 'Largest shift (head tracking)...', "How far the picture moves against the overlay when your head is at the edge of the "
-         "app's view (about 15 cm sideways), in mm on the tube; it never moves further. The real depth gives about 4 mm."),
-('item', 'Position and size (this overlay)', "Fine adjustment for the overlay of this game, kept for it. The sheet "
+('item', 'Position and size (this overlay)', "Fine adjustment of the overlay against the game's picture. The sheet "
          "stays on the case's frame, as on a real Vectrex: the game's picture behind it moves and is sized the other "
-         "way. With the overlay off, the picture is back to normal."),
+         "way. With the overlay off, the picture is back to normal. What you change is kept for this game only, by "
+         "itself; other games keep theirs. *Make global default*: the position and size now for every game you have "
+         "not set yourself (the sliders still show it differs from their own default). *Reset*: this game's back to the "
+         "sliders' defaults - Reset, then Make global default, and every game is back to normal."),
+('item', 'Make global default', "The overlay's position and size now become the global default: every game that has no "
+         "position and size of its own uses them. The sliders' marks still show they differ from the sliders' own default."),
 ('item', 'Reset overlay settings to default', "On, chosen automatically, tint, room light, print, parallax "
          "and the scratches back to the defaults; this game's chosen overlay and this overlay's position and size "
          "too (other games keep theirs)."),
 ]),
 
-('headtrack', 'Head tracking (SmoothTrack)', [
+('case', 'Config: Case', [
+('p', "The Vectrex's black plastic case round the tube, shown when there is no overlay: glossy walls sloping down to "
+      "the glass, which mirror the picture - softly, a little warped, as moulded plastic does - and a 5 mm matte front. "
+      "The room light and the ceiling light (the Room light tab) light it too. With an overlay it is hidden: the "
+      "overlay has a frame and lighting of its own."),
+('item', 'Case  (C)', "The case on or off (also View > Case)."),
+('item', 'Reflections...', "How strongly the picture is mirrored in the case's walls."),
+('item', 'Wear...', "Decades of use: the fine scratches on the glossy walls and the band on the matte front where "
+         "overlays were slid in and out. Left end: as new."),
+('item', 'Reset this tab', "The case on, its reflections and wear as they came."),
+]),
+
+('light', 'Config: Room light', [
+('p', "The room around the Vectrex: how much light there is, and the office ceiling light above and in front of "
+      "you, mirrored in the tube's glass and on an overlay."),
+('item', 'Room light...', "How much the room lights up the overlay's sheet - the coloured plastic and the print: low for "
+         "an evening (the plastic almost black, only the vectors), high for daylight. The plastic's light rises "
+         "steeper than the setting (half gives a quarter, the right end four times the default); the print "
+         "follows it more gently (half: half as bright, the right end twice)."),
+('item', 'Glass catches room light (without an overlay)', "Without an overlay the glass turns grey in the room's "
+         "light - hardly at the default, clearly at the slider's right end - with the phosphor layer's fine bumps "
+         "behind it; off: always black. With an overlay the glass stays black, for the contrast."),
+('item', 'Ceiling light reflected on the glass', "The ceiling light mirrored sharply in the glass (a little "
+         "softened: the glass is not perfectly clean), and behind the thick glass the phosphor layer lit up in a wide, "
+         "soft glow - larger than the light and offset from it, more so towards the edges where the glass is "
+         "thicker. Without an overlay, with the room light: faint at the default, bright at the right end."),
+('item', 'Glass reflection strength...', "How bright the light on the glass is."),
+('item', 'Ceiling light reflected on the overlay', "On an overlay the light is mirrored a little blurred (plexiglass), "
+         "the plastic around it gets brighter in its own colour, and the scratches around it glint - the more worn "
+         "the sheet, the more of them."),
+('item', 'Overlay reflection strength...', "How bright the light on the overlay is."),
+('item', 'Light position...', "Drag the dot to move the ceiling light: left and right along the top of the screen, "
+         "and up and down - from just visible at the top edge to its middle a quarter of the way down."),
+('item', 'Reset light settings to default', "The room light, the glass and the ceiling light as they came."),
+]),
+
+('headtrack', 'Config: Head (head tracking)', [
 ('p', "*Head tracking* makes the overlay come alive: as you move your head, the game's picture slides a little against "
-      "the overlay and the glass, as the glowing phosphor behind a real overlay does. Your head is followed by a phone "
+      "the overlay, as the glowing phosphor behind a real overlay does (so it only works with an overlay shown). Your head is followed by a phone "
       "on your desk, with the app *SmoothTrack*."),
 ('h', 'What SmoothTrack is'),
 ('p', "SmoothTrack is a phone app for iPhone and Android, made for head tracking in flight and racing simulators. It "
@@ -503,11 +431,43 @@ TOPICS = [
 ('link', 'SmoothTrack on the App Store (iPhone)', 'https://apps.apple.com/us/app/smoothtrack/id1528839485'),
 ('link', 'SmoothTrack on Google Play (Android)', 'https://play.google.com/store/apps/details?id=com.epaga.smoothtrack'),
 ('h', 'In the emulator'),
-('p', "Config (Tab) > Overlay > *Head tracking*. Below the switch: the address and port to send to, and once it "
-      "arrives your head's position (x across, z up and down). *Largest shift* is how far the picture moves when your "
-      "head is at the edge of the app's view (about 15 cm sideways), 5 mm to start with. *Centre* makes where your "
-      "head is now the middle; SmoothTrack's own recentre does the same. The picture shows HEAD TRACKING: CONNECTED "
-      "when the first position arrives. It changes only the picture, never the game, so it works online too."),
+('p', "Config (Tab) > *Head*: everything for head tracking on one tab. It changes only the picture, never the game, so "
+      "it works online too. The picture shows HEAD TRACKING: CONNECTED when the first position arrives."),
+('item', 'Head tracking (a phone follows your head)', "On or off. Below it: the address and port to send to, and once "
+         "it arrives your head's position (x across, y towards the screen, z up and down), your distance and what it "
+         "does to the effects. *Centre* makes where your head is now the middle and the usual distance (60 cm); "
+         "SmoothTrack's own recentre does the same for across and up and down. The distance works as in the real "
+         "world: the picture just behind the overlay moves by your head's move x its depth / your distance - half the "
+         "distance, twice the shift (about 67 % at 90 cm, 240 % at 25 cm); the ceiling light's mirror image lies far "
+         "behind the glass, so its move hardly changes (about 88 % at 90 cm, 120 % at 25 cm)."),
+('item', 'Phone tilt...', "The angle of the phone, if it does not face you straight. A phone below the screen, tilted up "
+         "at your face, sees your head rise as you lean nearer and sink as you lean back - the picture and the "
+         "reflections would move up and down with it. Set the slider to the phone's tilt and that is taken out: positive "
+         "for a phone below the screen looking up, negative for one above it looking down, 0 for a phone facing you "
+         "straight (no correction). To find it: lean slowly nearer and back while keeping your head at the same height, "
+         "and watch z in the line under Head tracking - turn the slider until z hardly changes. About 10 to 20 degrees "
+         "for a phone on the desk below a monitor."),
+('item', 'Left / right smoothing...', "The head's position smoothed over a few hundredths of a second, each direction "
+         "on its own: the picture and the reflections move without judder. More: calmer, but they follow a little later; "
+         "0 takes each position as it comes. Left / right 30 ms to start with - the way heads move most, so it follows "
+         "quickly."),
+('item', 'Up / down smoothing...', "The same for up and down: 80 ms to start with - heads hardly move up and down, so it "
+         "can be calmer."),
+('item', 'Near / far smoothing...', "The same for nearer and further: 80 ms to start with."),
+('item', 'Picture shift (parallax)', "The game's picture slides against the overlay as you move, the way the phosphor "
+         "behind a real sheet does - only with an overlay shown: without one there is nothing to slide against."),
+('item', 'Shift strength...', "How much the picture moves: x1 = 2 mm on the tube with your head at the edge of the "
+         "app's view (about 15 cm sideways) at your usual distance. Closer to the screen it moves more, further away "
+         "less, as on a real Vectrex (half the distance: twice as much)."),
+('item', 'Reflections on the glass', "The ceiling light's reflection on the tube's glass moves with your head, the same "
+         "way - a mirror image lies as far behind the glass as the light is in front of it, so it slides far more than "
+         "the picture. With or without an overlay; the room light must be on (Room light tab)."),
+('item', 'Glass strength...', "How far the reflection on the glass moves: x1 = as far as a real mirror image does, "
+         "0.30 to start with - calmer, the picture stays the centre of attention."),
+('item', 'Reflections on the overlay', "The ceiling light's reflection on the overlay's plastic, and the light its "
+         "scratches catch, move with your head too."),
+('item', 'Sheet strength...', "How far the reflection on the overlay moves: x1 = a real mirror image, 0.30 to start "
+         "with."),
 ('h', 'Setting it up over Wi-Fi'),
 ('p', "1. Install SmoothTrack on your phone and put the phone in front of you, below or above the screen, its "
       "camera facing you."),
@@ -516,7 +476,7 @@ TOPICS = [
       "same network, or networks your router connects (on a separate guest or IoT Wi-Fi, check it is not isolated)."),
 ('p', "3. Turn on Head tracking. When Windows asks, let Vectrex_EMU through the firewall (private networks)."),
 ('h', 'Setting it up over USB (iPhone)'),
-('p', "Over the cable the timing is steadier than over Wi-Fi, and no network setup is needed. Vectrex_EMU talks to the "
+('p', "*USB is the more stable connection*: steadier timing than Wi-Fi, and no network setup. Vectrex_EMU talks to the "
       "iPhone itself: SmoothTrack's USB tunnel tool (STUSB) is not needed."),
 ('p', "1. Install *Apple Devices* (or iTunes) from the Microsoft Store: it brings Apple's iPhone service. Plug the "
       "iPhone in, open Apple Devices once and tap Trust on the phone."),
@@ -546,45 +506,79 @@ TOPICS = [
       "listens there, usually OpenTrack - close it and turn Head tracking off and on. Over USB with an iPhone: is "
       "Apple Devices installed, the iPhone trusted, and USB Connection activated in the app? With Android: is USB "
       "debugging allowed, the Gnirehtet folder next to the program, and Gnirehtet's own gnirehtet-run not running too?"),
+('p', "*A connection that drops* (no more positions, over USB or Wi-Fi): restarting the SmoothTrack app on the phone "
+      "works best. Otherwise stop and start the tracking in the app, recalibrate, or turn its USB Connection off and on "
+      "again. The emulator connects again by itself as soon as positions come."),
+('p', "*From USB back to Wi-Fi*: unplugged, SmoothTrack does not start sending over Wi-Fi by itself - restart the app "
+      "(USB Connection off). The emulator takes the Wi-Fi positions as soon as they come; while the cable brings them, "
+      "USB is used."),
 ]),
 
-('light', 'Config: Room light', [
-('p', "The room around the Vectrex: how much light there is, and the office ceiling light above and in front of "
-      "you, mirrored in the tube's glass and on an overlay."),
-('item', 'Room light...', "How much the room lights up the overlay's sheet - the coloured plastic and the print: low for "
-         "an evening (the plastic almost black, only the vectors), high for daylight. The plastic's light rises "
-         "steeper than the setting (half gives a quarter, the right end four times the default); the print "
-         "follows it more gently (half: half as bright, the right end twice)."),
-('item', 'Glass catches room light (without an overlay)', "Without an overlay the glass turns grey in the room's "
-         "light - hardly at the default, clearly at the slider's right end - with the phosphor layer's fine bumps "
-         "behind it; off: always black. With an overlay the glass stays black, for the contrast."),
-('item', 'Ceiling light reflected on the glass', "The ceiling light mirrored sharply in the glass (a little "
-         "softened: the glass is not perfectly clean), and behind the thick glass the phosphor layer lit up in a wide, "
-         "soft glow - larger than the light and offset from it, more so towards the edges where the glass is "
-         "thicker. Without an overlay, with the room light: faint at the default, bright at the right end."),
-('item', 'Glass reflection strength...', "How bright the light on the glass is."),
-('item', 'Ceiling light reflected on the overlay', "On an overlay the light is mirrored a little blurred (plexiglass), "
-         "the plastic around it gets brighter in its own colour, and the scratches around it glint - the more worn "
-         "the sheet, the more of them."),
-('item', 'Overlay reflection strength...', "How bright the light on the overlay is."),
-('item', 'Light position...', "Drag the dot to move the ceiling light: left and right along the top of the screen, "
-         "and up and down - from just visible at the top edge to its middle a quarter of the way down."),
-('item', 'Reset light settings to default', "The room light, the glass and the ceiling light as they came."),
+('unit', 'Config: Vectrex unit', [
+('p', "No two Vectrexes draw alike: their analog parts have aged and were trimmed differently. These are those "
+      "parts, live, as in VIDE's analog settings - to see how a game looks on a good, a tired or a cranky Vectrex."),
+('item', 'Unit', "Which Vectrex the parts below come from: the owner's (measured), an ideal one, a "
+         "cranky one or a random one. Changing a part by hand makes it Custom."),
+('item', "Owner's Vectrex", "Measured on the emulator author's own Vectrex (photos of its test screens): the default."),
+('item', 'Ideal', "A perfect machine: the zero reference holds, nothing drifts, the Y hold settles at once."),
+('item', 'Cranky', "A tired unit, a new one each time: a weak zero reference, drift, slow settling, long beam "
+         "delays, pots a little further off - still readable and playable, as real tired Vectrexes are."),
+('item', 'Random unit', "A new believable Vectrex each time: every part and pot slightly off, as real units "
+         "differ. The brightness knob stays where you set it, and R302 stays at the factory setting (it changes how "
+         "games read the analog stick, so online play stays in sync)."),
+('item', 'Zero hold', "How well the zero reference charges when a game re-centres the beam: lower, and shapes drawn after "
+      "a re-centre start a little off - text lines slant, closed boxes do not meet."),
+('item', 'Zero calibration shift', "Where the calibrated zero ends up after the BIOS's calibration pulse."),
+('item', 'R302 DAC offset', "A trim pot on the main board: where the DAC's middle code sits. Off, the whole picture "
+      "moves on the diagonal, the dimmest lines get brighter or vanish and the joystick reads a little off. The service "
+      "manual: never use it to centre the picture. 0 = set as the manual says."),
+('item', 'R335 X rate offset / R333 Y rate offset', "Trim pots on the main board: the integrators' offset. Off, the beam "
+      "creeps sideways (X) or up and down (Y) while a line is drawn - long lines bend away, closed shapes do not meet. "
+      "The Test Cartridge's Integrator Off-Set test is how they are set."),
+('item', 'Zero offset', "The integrators' centre against the zero reference, both axes at once."),
+('item', 'R509 Brightness', "The knob at the back: the tube's bias, on every line - and up high, on the beam's moves too."),
+('item', 'R401 X size / R408 Y size', "Trim pots on the power board: the picture's width and height (100 % = set at "
+      "the factory, so the Test Cartridge's linearity lines reach the screen's edges)."),
+('item', 'R525 High voltage', "A trim pot on the power board: the tube's high voltage (5.8 kV at the factory). Higher: "
+      "a smaller, brighter, sharper picture; lower: bigger, dimmer, softer."),
+('item', 'R526 HV ringing', "A trim pot on the power board: tunes the high voltage's oscillator to the flyback "
+      "transformer (minimum ringing). Off either way the voltage drops a little - the picture grows and dims."),
+('item', 'Centering X / Centering Y', "Not a pot: the two ring magnets on the back of the yoke move the whole picture "
+      "(+: right, up)."),
+('item', 'Yoke rotation', "Not a pot: the yoke turned a little on the tube's neck tilts the whole picture."),
+('item', 'Y hold settling', "How quickly the Y sample-and-hold reaches a new value (1 = at once)."),
+('item', 'Beam switch-off delay', "How long the beam stays lit after a game blanks it: longer, and lines get tails."),
+('item', 'Zeroing time X / Y', "How fast ZERO brings the beam back to the middle (an RC: the integrators' capacitors "
+      "emptied through a switch: X 4.5, Y 3.3 cycles). Games that zero only briefly leave "
+      "the beam a little short of the middle; a ZERO drawn with the beam on curves, Y first. 0 = at once (the old model)."),
+('item', 'Offset shift (zero reference)', "The zero reference moves the beam by itself: ZERO goes to the point it "
+      "sets, not to the middle - on the diagonal, a positive offset left and down (the trick behind old fast text "
+      "routines). 166 = measured; 0 = the reference only matters while the beam moves."),
+('item', 'Deflection lag X / Y', "How far the spot lags behind the integrators: rounder corners, curved ends, and the "
+      "short gaps where joined lines meet (the spot still moving while the beam is dark). 6 = measured."),
+('item', 'DAC bit 0-3 error', "The DAC's ladder: each bit's current off by this share. Text drawn right and back at a "
+      "width has different bits each way, so its slant changes from one width to the next. The owner's: measured."),
+('item', 'Line gaps (stop delay)', "When the integrators stop after a line: the gaps at line ends and corners."),
+('item', 'Brightness (the knob at the back)', "As the knob on the back of a Vectrex: 0 = a black screen, 1 = as bright as a real "
+      "one goes, 0.71 = well set (right click on the slider). Down: the faintest lines go first, a line's corner dots with "
+      "it (how a game looks on a dim Vectrex). Up: brighter, and the beam glows even when a game switches it "
+      "off - its moves and its returns to the middle show as a faint web, the 'spider web' of a Vectrex turned up too far, and "
+      "a spot where it rests. The test cartridge's screens show it well."),
+('item', 'Export... / Import...', "Save the unit as a .vxunit file to share, or load one."),
+('h', 'Starting up'),
+('item', 'Start switched on', "Starts the Vectrex at once instead of waiting for you to turn the knob."),
+('item', 'Skip the Vectrex intro', "On switching on, the BIOS's start screen (the VECTREX "
+         "logo, its tune, then the game's name) runs unseen in a fraction of a second and the cartridge "
+         "starts straight away - in exactly the state it would have after the real intro."),
+('more', "What the start screen does", "When a Vectrex is switched on, its 8 KB ROM (the 'Executive' or "
+         "BIOS) clears the RAM, sets up the sound chip and the I/O chip, draws the growing VECTREX logo "
+         "with its tune, then reads the cartridge's header - a copyright line, a tune and the game's name - "
+         "and shows that title for a few seconds before it jumps into the game. A cartridge without a valid "
+         "header gets Mine Storm instead. All together this takes about 13 seconds. The RESET button skips "
+         "the logo too, but keeps the RAM."),
 ]),
 
-('case', 'Config: Case', [
-('p', "The Vectrex's black plastic case round the tube, shown when there is no overlay: glossy walls sloping down to "
-      "the glass, which mirror the picture - softly, a little warped, as moulded plastic does - and a 5 mm matte front. "
-      "The room light and the ceiling light (the Room light tab) light it too. With an overlay it is hidden: the "
-      "overlay has a frame and lighting of its own."),
-('item', 'Case  (C)', "The case on or off (also View > Case)."),
-('item', 'Reflections...', "How strongly the picture is mirrored in the case's walls."),
-('item', 'Wear...', "Decades of use: the fine scratches on the glossy walls and the band on the matte front where "
-         "overlays were slid in and out. Left end: as new."),
-('item', 'Reset this tab', "The case on, its reflections and wear as they came."),
-]),
-
-('addons', 'Config: Cartridge', [
+('addons', 'Config: Ports', [
 ('p', "Cartridges with a computer of their own. The Ultimate Vectrex Multicart 2 (UVMC2) carries an RP2350 - two ARM "
       "Cortex-M33 cores at 150 MHz - and runs native games (.um2 files) on it: the game holds the Vectrex's 6809 "
       "stopped and drives the bus itself, writing the VIA once per bus cycle, exactly as the 6809 would. The emulator "
@@ -628,7 +622,7 @@ TOPICS = [
          "(button 4 skips the intro)."),
 ('item', 'Open PiTrex program...', "One PiTrex program (.img / .pit) on its own, without the loader."),
 ('item', 'Headphone volume...', "The jack's level (100 % = as the game sends it)."),
-('item', 'The SD card folder', "A real UVMC2 reads its games' extra files from a microSD card; here the card is a folder: uvmc2, next to the program (or in %APPDATA%/Vectrex_EMU when the program's folder cannot be written). Put files there as you would on the card - VecDoom: a folder doom with a WAD file in it (uvmc2/doom/DOOM.WAD, or DOOM1.WAD, the free shareware episode); Quake: a folder quake with pak0.pak (and pak1.pak) - and start the game. A game that needs such a file and does not find it says what and where, and opens the folder. The Config window's Cartridge tab: Open the SD folder, or choose another folder. What a game writes (saves, settings) is kept in the folder."),
+('item', 'The SD card folder', "A real UVMC2 reads its games' extra files from a microSD card; here the card is a folder: uvmc2, next to the program (or in %APPDATA%/Vectrex_EMU when the program's folder cannot be written). Put files there as you would on the card - VecDoom: a folder doom with a WAD file in it (uvmc2/doom/DOOM.WAD, or DOOM1.WAD, the free shareware episode); Quake: a folder quake with pak0.pak (and pak1.pak) - and start the game. A game that needs such a file and does not find it says what and where, and opens the folder. The Config window's Ports tab: Open the SD folder, or choose another folder. What a game writes (saves, settings) is kept in the folder."),
 ('item', 'Reset add-on settings to default', "UVMC2 games listed, the jack clean at 100 %, the SD card folder uvmc2."),
 ]),
 
@@ -649,6 +643,51 @@ TOPICS = [
          "speakers in). Small speaker: no deep bass, rounded treble - still better than the Vectrex's own."),
 ('item', 'Reset sound settings to default', "Back to the measured values - only this menu's settings "
          "(the volume knob stays)."),
+]),
+
+('display', 'Config: Display', [
+('p', "The screen: its rate, its turn, and the parts below the picture (all at once: View > Control deck)."),
+('item', 'Monitor size (for Authentic)...', "The monitor's diagonal in inches, if it does not report its size "
+         "(or reports it wrong): right click on the slider for the reported size. Check with a ruler: the "
+         "overlay should be 162 mm wide and 207 mm high."),
+('item', 'Rotate screen', "The whole screen turned in 90 degree steps - for a monitor turned on its side "
+         "(tate). The overlay, the knob and the display turn with it."),
+('item', 'On-screen display', "Below the picture: INTERNAL (the game's own frames per second), MONITOR "
+         "(your screen's refresh), EMU RATE (green at 100 %; orange or red when the PC can not keep up), "
+         "and ONLINE while you play online (the round trip to the other player, RELAY when it goes through the meeting "
+         "point; WAITING before player 2 is there). The volume shows on the knob when you point at it."),
+('item', 'CPU and GPU meters (how much of each frame is used)', "Two bars below the on-screen display: how much of each "
+         "frame's time the processor (CPU) and the graphics card (GPU) need - green below 70 %, orange to 90 %, red above. "
+         "Near 100 % the emulator can not keep up: lower the Quality (or "
+         "Optimize) for the GPU; for the CPU, a lighter game or a faster PC. CPU is the busier of the emulation and the drawing."),
+('more', "Why games run at different frame rates", "A Vectrex has no picture memory: the CPU steers the "
+         "beam along every line, every frame. Most games redraw 50 times a second, but a busy screen takes "
+         "longer to draw, so the frame rate drops - and the picture flickers more. INTERNAL shows that "
+         "rate: it is part of the game, not a fault of the emulator."),
+('item', 'Volume knob and RESET button', "The Vectrex's panel in simple outlines below the picture: the "
+         "knob (wheel or click to turn it) and the RESET button."),
+('item', 'Cartridge', "A cartridge below the picture: click it for the ROM browser."),
+('h', 'Screen'),
+('item', '30 pictures a second (half the screen rate)', "A new picture on every second screen refresh: half the graphics "
+         "work, for weak graphics. The game runs on at its own speed; only the screen shows fewer pictures, the afterglow "
+         "fading in bigger steps. Quality Low sets it."),
+('item', 'Phosphor size', "The glow and the afterglow drawn at a share of the window's size and scaled up, the lines "
+         "themselves always at full size (sharp). 3/4: about half the glow's graphics work (Quality Medium); Half: a quarter "
+         "(Quality Low) - softer glows, hardly visible on a laptop screen."),
+('item', 'Screen', "How the pictures meet your monitor's refreshes - hover over each choice."),
+('item', 'Matched to the monitor', "The default: 60 Hz on a 60 / 120 / 240 Hz monitor, else the monitor's rate divided down near the game's 50 Hz (144 Hz: 72, 165 Hz: 55) - always in step with the refresh, so smooth and tear-free."),
+('item', 'Smooth motion', "For 60 Hz screens without G-Sync / FreeSync (most laptops): a Vectrex game makes 50 pictures a second, a 60 Hz "
+      "screen shows 60, so every fifth refresh repeats one and moving things stutter slightly. Smooth motion gives every refresh a picture "
+      "of its own, with the vectors where they are between the two game frames around it - the game keeps its own speed and sound, the "
+      "picture comes about 20 ms later. Where two frames do not match line for line (things appearing, other lines), the earlier one is "
+      "shown as is. Off by default (the purist 50 pictures a second)."),
+('item', "The monitor's full rate", "Every refresh of a 120, 144 or 240 Hz monitor: the afterglow fades in "
+         "finer steps and moving things update more often."),
+('item', 'G-Sync / FreeSync', "One screen picture per game frame, with no tearing - needs such a monitor. "
+         "At 50 frames a second the mains wobble stands still, as on a real Vectrex."),
+('item', 'Reset display settings to default', "Fit screen (not Authentic; the monitor size as it "
+         "reports it), not turned, the on-screen display, the knob and the cartridge on, the monitor's full "
+         "rate with smooth motion on."),
 ]),
 
 ('help_controls', 'Controllers', [

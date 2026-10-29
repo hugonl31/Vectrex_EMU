@@ -1,8 +1,9 @@
 """deck.py - the Config window: one window over the running game with every display, sound and hardware
 setting in strips (Tube, Room light, Case, Overlay, Sound, Unit, Circuit, Display, Cartridge). Every switch and
 slider acts on the game at once; Quality and this game's own settings on top; hold H (or the Before button)
-to see the look from before the deck opened. Keys: Tab / Esc close, Left / Right strips. A controller:
-LB / RB strips, up / down a row, left / right change it, A switch, B close.
+to see the look from before the deck opened. Keys: Tab / Esc close. The game keeps its controllers and keys while
+the window is open (the owner, 2026-10-29: a controller no longer works the window - too many rows for it - and the
+game can be played, and checked, with it open).
 Also the first-run setup (setup_window)."""
 import json, math, os, time
 import tkinter as tk
@@ -395,7 +396,7 @@ def _rel(p):
 
 # ---- hover info: each row's text from the Help (help_text.py), the Vectrex unit's parts with the circuit behind them
 STRIP_TOPIC = {'Tube': 'tube', 'Room light': 'light', 'Case': 'case', 'Overlay': 'overlay', 'Sound': 'sound',
-               'Unit': 'unit', 'Circuit': 'unit', 'Display': 'display', 'Cartridge': 'addons'}
+               'Unit': 'unit', 'Circuit': 'unit', 'Display': 'display', 'Ports': 'addons', 'Head': 'headtrack'}
 TIPBG, TIPFG = '#16261f', '#bfe'
 TAB_CHG_FG = '#d9a35e'          # (a tab with a setting changed from its default: its name orange - the owner: the text only)
 EXTRA = {   # (what used to be a note in the Config window, now in its row's i; 'GROUP/label' or 'label')
@@ -522,7 +523,7 @@ def _paint(b, on):
 
 
 class Deck:
-    STRIPS = ('Tube', 'Room light', 'Case', 'Overlay', 'Sound', 'Unit', 'Circuit', 'Display', 'Cartridge')
+    STRIPS = ('Tube', 'Overlay', 'Case', 'Room light', 'Head', 'Unit', 'Circuit', 'Ports', 'Sound', 'Display')   # (the screen from the inside out, the Vectrex, the PC - 2026-10-29)
     UNIT_STRIPS = ('Unit', 'Circuit')                   # (the Vectrex unit: split in two since 2026-10-28, the trim pots)
 
     def __init__(self, app):
@@ -533,6 +534,7 @@ class Deck:
         self.comparing = None
         self.strip = getattr(a, 'deck_strip', 'Tube')
         if self.strip == 'Vectrex unit': self.strip = 'Unit'   # (its name before the split)
+        if self.strip == 'Cartridge': self.strip = 'Ports'     # (its name before 2026-10-29)
         if self.strip not in self.STRIPS: self.strip = 'Tube'
         self.rows = []; self.focus = 0
         self.pad_prev = set(); self.pad_t = 0.0
@@ -542,17 +544,17 @@ class Deck:
         t.title('Config'); t.transient(a.root); t.resizable(False, False)
         try: t.attributes('-toolwindow', True)
         except tk.TclError: pass
-        a.inp.block = True                                      # (the game runs on behind it, without input)
+        a.inp.block = bool(a.browser)                           # (the game runs on behind it, with its input)
         f9, f10b = _font(a, 9), _font(a, 10, True)
         self.bgc = BG
         top = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); top.pack(fill='x')
-        tk.Label(top, text='Tab: close   hold H: compare with before   LB / RB: tab', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=12, pady=6)
+        tk.Label(top, text='Tab: close   hold H: compare with before   the game keeps its controls', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=12, pady=6)
         # the whole emulator and this game: one panel
         pan = tk.Frame(t, bg=PANEL, highlightthickness=1, highlightbackground=EDGE); pan.pack(fill='x', padx=10, pady=(8, 0))
         q = tk.Frame(pan, bg=PANEL); q.pack(fill='x', padx=10, pady=(6, 0))
         tk.Label(q, text='QUALITY', fg=DIM, bg=PANEL, font=f9, width=10, anchor='w').pack(side='left')
         self.qbtn = {}
-        for key in ('low', 'medium', 'high', 'ultra', 'custom'):
+        for key in ('basic', 'low', 'medium', 'high', 'ultra', 'custom'):
             b = _button(q, a.QUALITY_NAMES[key], lambda k=key: self.set_quality(k), a, small=True); b.pack(side='left', padx=2)
             self.qbtn[key] = b
             tip = help_info(key.capitalize(), 'deck')
@@ -592,7 +594,16 @@ class Deck:
             t.bind(k, lambda e: (self.close(), 'break')[1])
         t.bind('<F11>', lambda e: (a.toggle_full(), 'break')[1])   # (full screen also while the Config has the keys)
         t.bind('<KeyPress-h>', lambda e: self.compare(True)); t.bind('<KeyRelease-h>', lambda e: self.compare(False))
-        t.bind('<Left>', lambda e: (self.step_strip(-1), 'break')[1]); t.bind('<Right>', lambda e: (self.step_strip(1), 'break')[1])
+        # the emulator's own keys - P, O, L, C, +, -, 0, 9, Ctrl+R, Page Up / Down, Alt + a menu ... - work with this window
+        # in front too: the main window's bindings, the same calls (the owner, 2026-10-29; the game's own keys reach it
+        # anyway). Not this window's own (Tab, Esc, F11, H), nor the ROM browser's (arrows, Enter, Backspace), nor any key
+        # (switching on) or the mouse's
+        own = set(t.bind()) | {'<Key-Tab>', '<Key-Escape>', '<Key-F11>', 'h', 'H', '<Key>', '<Key-Right>', '<Key-Left>',
+                               '<Key-Up>', '<Key-Down>', '<Key-Return>', '<Key-BackSpace>', '<Motion>', '<FocusOut>'}
+        for seq in a.root.bind():
+            if seq not in own and ('Key' in seq or len(seq) == 1):
+                try: t.tk.call('bind', str(t), seq, a.root.bind(seq))
+                except tk.TclError: pass
         t.protocol('WM_DELETE_WINDOW', self.close)
         self.fix_width()
         self.prebuild()
@@ -640,7 +651,11 @@ class Deck:
                     ('check', 'Phosphor', PH, a.toggle_phosphor, None),
                     ('in', [('slider', 'bloom', PH),
                             ('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
-                            ('in', [('slider', 'trail', AG), ('slider', 'phos_grow', AG), ('slider', 'phos_smooth', AG)])]),
+                            ('in', [('slider', 'trail', AG),
+                                    ('check', 'Afterglow joining', lambda: A('phos_grow_on'), flip('phos_grow_on'), AG),
+                                    ('in', [('slider', 'phos_grow', lambda: AG() and A('phos_grow_on'))]),
+                                    ('check', 'Afterglow smoothing', lambda: A('phos_smooth_on'), flip('phos_smooth_on'), AG),
+                                    ('in', [('slider', 'phos_smooth', lambda: AG() and A('phos_smooth_on'))])])]),
                     ('slider', 'white_k', lambda: has('white_k')),
                     ('group', 'SHAPE AND GLASS'),
                     ('check', 'Tube geometry', lambda: A('curve_on'), flip('curve_on'), None),
@@ -691,13 +706,7 @@ class Deck:
                     ('check', 'Choose automatically', lambda: a.art_auto, a.toggle_art_auto, None, lambda: not a.art_auto),
                     ('buttons', [('Choose overlay...', a.choose_art), ('No overlay for this game', a.no_art)], None),
                     ('in', [('slider', 'art_tint', OV), ('slider', 'art_print', OV),
-                            ('check', 'Parallax', lambda: A('art_parallax'), flip('art_parallax'), OV)]),
-                    ('group', 'HEAD TRACKING'),
-                    ('check', 'Head tracking', lambda: A('head_on'), flip('head_on'), None),
-                    ('in', [('slider', 'head_mm', lambda: A('head_on')),
-                            ('note', lambda: a.head_note()),
-                            ('buttons', [('Centre', a.head_centre)], lambda: A('head_on'))]),
-                    ('buttons', [('SmoothTrack: what it is, setting it up...', lambda: a.help_window('headtrack'))], None)]
+                            ('check', 'Parallax', lambda: A('art_parallax'), flip('art_parallax'), OV)])]
             if getattr(a.ren, 'gprog', None):
                 rows += [('group', 'PLASTIC AND SCRATCHES'),
                          ('check', 'Plastic glow', lambda: A('art_glow'), flip('art_glow'), OV),
@@ -708,7 +717,8 @@ class Deck:
                                  ('slider', 'scr_reach', SC), ('buttons', [('New random scratches', a.new_scratches)], SC)])]
             rows += [('group', 'POSITION ON THE SCREEN'),
                      ('slider', 'art_dx', OV), ('slider', 'art_dy', OV), ('slider', 'art_scale', OV),
-                     ('buttons', [('Reset position and size', a.reset_art_adj)], OV)]
+                     ('note', lambda: a.art_adj_note()),
+                     ('buttons', [('Make global default', a.art_adj_global), ('Reset', a.reset_art_adj)], OV)]
             return rows
         if s == 'Sound':
             return [('group', 'THE VECTREX'), ('slider', 'volume', None),
@@ -770,7 +780,26 @@ class Deck:
                     ('group', 'SIZE'),
                     ('slider', 'monitor_inch', None),
                     ('buttons', [('Authentic (9)', a.real_size), ('Fit screen (0)', lambda: a.zoom_step(None))], None)]
-        if s == 'Cartridge':
+        if s == 'Head':
+            HD = lambda: A('head_on')
+            return [('group', 'HEAD TRACKING'),
+                    ('check', 'Head tracking', HD, flip('head_on'), None),
+                    ('in', [('note', lambda: a.head_note()),
+                            ('buttons', [('Centre', a.head_centre)], HD)]),
+                    ('buttons', [('SmoothTrack: what it is, setting it up...', lambda: a.help_window('headtrack'))], None),
+                    ('group', 'THE PHONE'),
+                    ('slider', 'head_tilt', HD),
+                    ('group', 'SMOOTHING'),
+                    ('slider', 'head_smooth_x', HD), ('slider', 'head_smooth_z', HD), ('slider', 'head_smooth_y', HD),
+                    ('group', 'PICTURE BEHIND THE OVERLAY'),
+                    ('check', 'Picture shift (parallax)', lambda: A('head_pic_on', True), flip('head_pic_on'), HD),
+                    ('in', [('slider', 'head_k', lambda: HD() and A('head_pic_on', True))]),
+                    ('group', 'ROOM LIGHT REFLECTIONS'),
+                    ('check', 'Reflections on the glass', lambda: A('head_glass_on', True), flip('head_glass_on'), HD),
+                    ('in', [('slider', 'head_glass_k', lambda: HD() and A('head_glass_on', True))]),
+                    ('check', 'Reflections on the overlay', lambda: A('head_ov_on', True), flip('head_ov_on'), HD),
+                    ('in', [('slider', 'head_ov_k', lambda: HD() and A('head_ov_on', True))])]
+        if s == 'Ports':
             hw = [(lbl, (lambda k=k: a.cart_hw == k), (lambda k=k: a.set_cart_hw(k))) for k, lbl in V.CART_HW.items()]
             p2 = [(lbl, (lambda k=k: a.speech == k), (lambda k=k: a.set_speech(k))) for k, lbl in V.PORT2.items()]
             um2 = lambda: (a.args.rom or '').lower().endswith('.um2')
@@ -811,7 +840,7 @@ class Deck:
         return []
 
     RESETS = {'Tube': 'reset_tube', 'Room light': 'reset_light', 'Case': 'reset_case', 'Overlay': 'reset_overlay', 'Sound': 'reset_sound',
-              'Display': 'reset_display', 'Cartridge': 'reset_addons'}
+              'Display': 'reset_display', 'Ports': 'reset_addons', 'Head': 'reset_head'}
 
     def reset_all(self):
         """every tab to its defaults: those of the Quality profile chosen (or Optimize's result) - asked first"""
@@ -1390,8 +1419,12 @@ class Deck:
         def sync():
             busy[0] = True; sc.set(to_pos(max(lo, min(hi, get())))); busy[0] = False
             val.configure(text=fmt(get())); stripe_at()
-        def to_default(e=None):
-            setv(default); sync(); return 'break'
+        def to_default(e=None):                                 # (right click: the default the stripe shows - the
+            v = None                                            #  Quality profile chosen's, not Ultra's; the owner)
+            if ref is not None:
+                try: v = ref()
+                except Exception: v = None   # noqa
+            setv(default if v is None else v); sync(); return 'break'
         def jump(e):                                            # (a click on the bar: the handle goes there)
             if 'trough' not in sc.identify(e.x, e.y): return None
             sc.set(max(0, min(N, (e.x - 9) / float(max(1, sc.winfo_width() - 18)) * N))); return 'break'
@@ -1432,9 +1465,9 @@ class Deck:
         st = a.game_state()
         name = a.rom_name
         self.ghint.configure(text={'everyday': '%s uses the everyday settings (changes are kept for all games).' % name,
-                                   'own': '%s has its own settings (saved).' % name,
-                                   'changed': '%s has its own settings - changed, not saved yet.' % name}[st],
-                             fg=WARN if st == 'changed' else DIM)
+                                   'own': '%s has its own settings (changes are kept for it).' % name,
+                                   'changed': '%s has its own settings - changed and kept (Revert: as it was).' % name}[st],
+                             fg=DIM)
         for k, b in self.gbtn.items():
             ok = dict(save=True, revert=st == 'changed', remove=st != 'everyday', default=st != 'everyday')[k]
             b.configure(state='normal' if ok else 'disabled')
@@ -1474,41 +1507,8 @@ class Deck:
         """a controller on the deck, and keeping the rows in step"""
         if not self.t.winfo_exists():
             return
-        a = self.app
-        try:
-            d = a.inp.resolve('p1') or next(iter(a.inp._devs), None)
-            st = a.inp.pad_state(d) if d else None
-        except Exception:   # noqa
-            st = None
-        if st:
-            b = set(st['buttons'])
-            x, y = st['pov'] or (st['axes'].get('LX', 0.0), st['axes'].get('LY', 0.0))
-            if x > 0.6: b.add('>')
-            if x < -0.6: b.add('<')
-            if y > 0.6: b.add('^')
-            if y < -0.6: b.add('v')
-            new = b - self.pad_prev; self.pad_prev = b
-            if new:
-                self.pad_t = time.perf_counter()
-            if 'LB' in new: self.step_strip(-1)
-            if 'RB' in new: self.step_strip(1)
-            live = [i for i, r in enumerate(self.rows) if r['act']]
-            if live and ('^' in new or 'v' in new):
-                k = live.index(self.focus) if self.focus in live else 0
-                self.focus = live[(k + (1 if 'v' in new else -1)) % len(live)]
-                self.rows[self.focus]['f'].update_idletasks()
-                self.sc.see(self.rows[self.focus]['f'])                # (the row in view on a short screen)
-            r = self.rows[self.focus] if 0 <= self.focus < len(self.rows) else None
-            if r and r['act'] and (r['dep'] is None or r['dep']()):
-                if '>' in b and (r['kind'] == 'scale' or '>' in new): r['act'](1)
-                if '<' in b and (r['kind'] == 'scale' or '<' in new): r['act'](-1)
-                if 'A' in new and r['kind'] in ('check', 'buttons'): r['act'](1)
-            if 'B' in new or 'BACK' in new:
-                self.close(); return
-            if 'Y' in new: self.compare(True)
-            if 'Y' not in b and self.comparing is not None: self.compare(False)
-        self.n = getattr(self, 'n', 0) + 1
-        if self.n % 6 == 0 or (st and self.pad_used()):
+        self.n = getattr(self, 'n', 0) + 1                      # (a controller no longer works the window: the game keeps
+        if self.n % 6 == 0:                                     #  it - see the top of this file)
             self.sync_all()
         self.t.after(50, self.tick)
 
@@ -1715,7 +1715,7 @@ def setup_window(app, first=True):
     def qset(mode):
         qv.set(mode)
         for k, b in qb.items(): _paint(b, k == mode)
-    for key in ('low', 'medium', 'high', 'ultra'):
+    for key in ('basic', 'low', 'medium', 'high', 'ultra'):
         b = _button(qf, a.QUALITY_NAMES[key], lambda k=key: qset(k), a, small=True); b.pack(side='left', padx=2); qb[key] = b
     qset(qv.get())
     def optimize(txt=txt):

@@ -21,6 +21,8 @@ Unless noted, the images are crops of the renderer's own phosphor picture, read 
 | `10_two_layer_holes_fixed.png` | Two-layer model: before (left), afterglow started only where nothing was lit, which left trail holes shaped like the new lines (middle); fixed (right). |
 | `11_two_layer_final.png` | The final model: whole glow on every new line, crisp fading copies behind, no cut-outs. |
 
+`v119_helicopter.gif` / `.mp4`: the result in Armor Attack (the owner's settings with the overlay, 7 seconds).
+
 `reports/` holds screenshots of what was seen in the emulator at each step: helicopter artefacts, sharp edges in Smooth motion and G-Sync, trail steps, glow cut by the trail, and joining growing blocks while paused.
 
 ## The model in short

@@ -13,6 +13,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
   overlapping trails add up instead of cutting each other. No more dotted trails, doubled copies held at full
   brightness, or a line's glow cut off where it crosses a trail. Best with G-Sync. Afterglow joining and smoothing
   are switches in Config > Tube now, off by default ([how it was done](https://github.com/hugonl31/Vectrex_EMU/blob/main/docs/images/phosphor_model/README.md)).
+* **Smooth, rock-solid glow on moving lines** - a line sliding slowly across the screen keeps an even glow all along
+  it: the bloom no longer pulses as the line crosses the pixels, several game frames in one picture no longer double
+  the glow, and the plastic glow behind an overlay no longer flickers with the mains wobble or head tracking.
 * **Head tracking has its own tab** (Config > Head): the room light's reflections on the glass and on the overlay
   move with your head too, leaning in and out follows the real-world rule, smoothing per direction, a setting for
   the phone's tilt. USB comes before Wi-Fi, and SmoothTrack's Calibrate keeps the USB connection.
@@ -26,8 +29,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * **The window** resizes around its middle and stays on the screen; + stops at the largest size that fits, 0 in
   full screen fills it. In a small window the on-screen display stays under the frame (the CPU and GPU meters become
   thin lines when it runs out of room).
-* **Fixes**: the bloom no longer pulses on slowly moving lines; 30 pictures a second no longer doubles the glow; the
-  room light no longer throws a shaft of light up the glass; Reset all resets the Head tab too; right-click on a
+* **Fixes**: the room light no longer throws a shaft of light up the glass; Reset all resets the Head tab too; right-click on a
   slider goes back to the chosen profile's value.
 
 **New in v1.1.7 and v1.1.8: head tracking**

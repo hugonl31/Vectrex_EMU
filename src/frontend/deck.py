@@ -691,7 +691,13 @@ class Deck:
                     ('check', 'Choose automatically', lambda: a.art_auto, a.toggle_art_auto, None, lambda: not a.art_auto),
                     ('buttons', [('Choose overlay...', a.choose_art), ('No overlay for this game', a.no_art)], None),
                     ('in', [('slider', 'art_tint', OV), ('slider', 'art_print', OV),
-                            ('check', 'Parallax', lambda: A('art_parallax'), flip('art_parallax'), OV)])]
+                            ('check', 'Parallax', lambda: A('art_parallax'), flip('art_parallax'), OV)]),
+                    ('group', 'HEAD TRACKING'),
+                    ('check', 'Head tracking', lambda: A('head_on'), flip('head_on'), None),
+                    ('in', [('slider', 'head_mm', lambda: A('head_on')),
+                            ('note', lambda: a.head_note()),
+                            ('buttons', [('Centre', a.head_centre)], lambda: A('head_on'))]),
+                    ('buttons', [('SmoothTrack: what it is, setting it up...', lambda: a.help_window('headtrack'))], None)]
             if getattr(a.ren, 'gprog', None):
                 rows += [('group', 'PLASTIC AND SCRATCHES'),
                          ('check', 'Plastic glow', lambda: A('art_glow'), flip('art_glow'), OV),

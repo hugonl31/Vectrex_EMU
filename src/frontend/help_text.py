@@ -3,6 +3,7 @@
     ('h', text)              a sub-heading
     ('item', name, text)     a menu item and what it does
     ('more', title, text)    a deep dive, folded away behind a button
+    ('link', label, url)     a link: a click opens it in the browser
 Paragraph text may use *word* for bold."""
 
 TOPICS = [
@@ -391,6 +392,10 @@ TOPICS = [
          "the sheet is made a little narrower so their playgrounds still sit on the game's lines."),
 ('item', 'Tube geometry strength...', "From an ideal, straight picture (left) through the owner's Vectrex (the "
          "middle) to twice as much."),
+('item', 'Glass curvature...', "The tube's face curves away towards its edges, so seen straight on the squares of a "
+         "grid look narrower at the sides and lower at the top and bottom - in front of a real Vectrex too. 0 shows it as "
+         "seen (the overlays fit it), 1 undoes it: even squares, the picture a little wider. Separate from the analog "
+         "circuits' geometry (Unit and Circuit tabs) and Tube geometry."),
 ('item', 'Bend smoothing (curves without facets)', "A curve a game draws as a chain of short lines is drawn as one smooth "
          "bend, as the tube shows it: no corners where the short lines meet. Off: the lines exactly as the game sends them."),
 ('item', 'Second glow pass (a softer, wider glow)', "A second, wider glow on top of the first: softer, closer to the real "
@@ -470,12 +475,66 @@ TOPICS = [
 ('item', 'New random scratches', "Another pattern of scratches (each overlay gets its own variation of it)."),
 ('item', 'Parallax (seen from the usual height)', "The sheet sits a little in front of the tube, so seen from "
          "the usual height the picture sits a little higher on it (as on MiSTer)."),
+('item', 'Head tracking (a phone follows your head)', "A phone app that tracks your head - SmoothTrack on iOS or Android, "
+         "or anything that sends OpenTrack's UDP format - makes the picture slide against the overlay and the glass as "
+         "you move, as the phosphor behind a real sheet does. Point the app at this PC's address (shown below the "
+         "switch) and port 4242, or use the app's USB mode (its USB tunnel tool on this PC: no address needed); allow the "
+         "emulator through the firewall when Windows asks. Centre: where your head "
+         "is now counts as the middle."),
+('item', 'Largest shift (head tracking)...', "How far the picture moves against the overlay when your head is at the edge of the "
+         "app's view (about 15 cm sideways), in mm on the tube; it never moves further. The real depth gives about 4 mm."),
 ('item', 'Position and size (this overlay)', "Fine adjustment for the overlay of this game, kept for it. The sheet "
          "stays on the case's frame, as on a real Vectrex: the game's picture behind it moves and is sized the other "
          "way. With the overlay off, the picture is back to normal."),
 ('item', 'Reset overlay settings to default', "On, chosen automatically, tint, room light, print, parallax "
          "and the scratches back to the defaults; this game's chosen overlay and this overlay's position and size "
          "too (other games keep theirs)."),
+]),
+
+('headtrack', 'Head tracking (SmoothTrack)', [
+('p', "*Head tracking* makes the overlay come alive: as you move your head, the game's picture slides a little against "
+      "the overlay and the glass, as the glowing phosphor behind a real overlay does. Your head is followed by a phone "
+      "on your desk, with the app *SmoothTrack*."),
+('h', 'What SmoothTrack is'),
+('p', "SmoothTrack is a phone app for iPhone and Android, made for head tracking in flight and racing simulators. It "
+      "uses the phone's front camera to follow your head and sends its position to the PC, over Wi-Fi or a USB "
+      "cable, in OpenTrack's format. Vectrex_EMU reads that itself: you do *not* need OpenTrack."),
+('link', 'SmoothTrack (the app, its FAQ and guides)', 'https://smoothtrack.app/'),
+('link', 'SmoothTrack on the App Store (iPhone)', 'https://apps.apple.com/us/app/smoothtrack/id1528839485'),
+('link', 'SmoothTrack on Google Play (Android)', 'https://play.google.com/store/apps/details?id=com.epaga.smoothtrack'),
+('h', 'In the emulator'),
+('p', "Config (Tab) > Overlay > *Head tracking*. Below the switch: the address and port to send to, and once it "
+      "arrives your head's position (x across, z up and down). *Largest shift* is how far the picture moves when your "
+      "head is at the edge of the app's view (about 15 cm sideways), 5 mm to start with. *Centre* makes where your "
+      "head is now the middle; SmoothTrack's own recentre does the same. The picture shows HEAD TRACKING: CONNECTED "
+      "when the first position arrives. It changes only the picture, never the game, so it works online too."),
+('h', 'Setting it up over Wi-Fi'),
+('p', "1. Install SmoothTrack on your phone and put the phone in front of you, below or above the screen, its "
+      "camera facing you."),
+('p', "2. In SmoothTrack's settings enter the PC's address shown in Config under Head tracking (for example "
+      "192.168.1.20) and port *4242*, then start tracking. The phone and the PC must be able to reach each other: the "
+      "same network, or networks your router connects (on a separate guest or IoT Wi-Fi, check it is not isolated)."),
+('p', "3. Turn on Head tracking. When Windows asks, let Vectrex_EMU through the firewall (private networks)."),
+('h', 'Setting it up over USB (iPhone)'),
+('p', "Over the cable the timing is steadier than over Wi-Fi, and no network setup is needed."),
+('p', "1. Install *Apple Devices* (or iTunes) from the Microsoft Store: it brings Apple's iPhone service. Plug the "
+      "iPhone in, open Apple Devices once and tap Trust on the phone."),
+('p', "2. Download SmoothTrack's USB tunnel tool (STUSB.zip) and unpack it into a folder of its own."),
+('p', "3. In SmoothTrack's settings tap *Activate USB Connection*, then on the PC run *startSTUSB.bat* from that "
+      "folder and leave it running. Do not start OpenTrack: Vectrex_EMU listens on its port, 4242."),
+('p', "4. Turn on Head tracking in Config: below it, receiving from 127.0.0.1 means it works."),
+('link', 'Apple Devices (Microsoft Store)', 'https://apps.microsoft.com/detail/9np83lwlpz9k'),
+('link', 'SmoothTrack USB tunnel tool (STUSB.zip)', 'https://github.com/epaga/epaga.github.io/raw/master/STUSB.zip'),
+('link', 'SmoothTrack help for iPhone (Wi-Fi and USB)', 'https://smoothtrack.app/mobilehelp.html'),
+('h', 'Over USB with Android'),
+('p', "Android phones go over USB with ADB and Gnirehtet, a free tool that gives the phone the PC's network over the "
+      "cable; then the app sends to the PC's address as over Wi-Fi. SmoothTrack's Android guide shows each step."),
+('link', 'SmoothTrack help for Android (Wi-Fi and USB)', 'https://smoothtrack.app/mobilehelpandroid.html'),
+('h', 'When it does not connect'),
+('p', "*NOTHING ON UDP 4242* on the picture: nothing arrives - check the address in the app, that tracking is "
+      "started, the firewall, and that both networks can reach each other. *UDP PORT 4242 IN USE*: another program "
+      "listens there, usually OpenTrack - close it and turn Head tracking off and on. Over USB: is Apple Devices "
+      "installed, the iPhone trusted, startSTUSB running, and USB Connection activated in the app?"),
 ]),
 
 ('light', 'Config: Room light', [

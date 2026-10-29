@@ -19,7 +19,18 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.1.6 - everything since v1.0.5
+## New in v1.1.7 - everything since v1.0.5
+
+<p align="center">
+<img src="docs/images/v1.1.7/head_tracking.gif" width="420" alt="Armor Attack with head tracking: the picture slides against the overlay as the head moves round"><br>
+<em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head circles (largest shift 8 mm here).</em>
+</p>
+
+**New in v1.1.7: head tracking**
+* **Head tracking** (Config > Overlay) - a phone on your desk follows your head with the app SmoothTrack, and the
+  game's picture slides against the overlay and the glass as you move, the way the glowing phosphor behind a real
+  overlay does. Over Wi-Fi, or over a USB cable from an iPhone; no OpenTrack needed. Only the picture moves, never
+  the game, so it works online too ([Head tracking](#head-tracking)).
 
 **Online play, grown up**
 * **Every game online** - UVMC2 games (VecDoom, Veccy Road, Tempest, Vectorblade...) and PiTrex programs play
@@ -170,7 +181,7 @@ sessions of 20 minutes, every ROM with random input, cross-machine games between
 * [Using it](#using-it) - [the first start](#the-first-start-the-setup), [switching on](#switching-on),
   [menus and the Config window](#menus-and-the-config-window), [quality](#quality-for-any-pc),
   [the screen](#the-screen-60-hz-high-refresh-g-sync), [keys](#keys), [TV mode shortcuts](#tv-mode-shortcuts),
-  [controls](#controls), [overlays](#overlays), [speech modules](#speech-modules),
+  [controls](#controls), [overlays](#overlays), [head tracking](#head-tracking), [speech modules](#speech-modules),
   [the 3D Imager and the light pen](#the-3d-imager-and-the-light-pen),
   [cartridge hardware](#cartridge-hardware), [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2),
   [the PiTrex](#the-pitrex-a-raspberry-pi-in-the-cartridge-slot), [Mac and Linux notes](#mac-and-linux-notes)
@@ -1098,6 +1109,26 @@ project (`Mine_Storm.art` in its `overlays.zip`).
 to its creators and is included unchanged as a courtesy, for non-commercial use. Vectrex is a trademark
 of its owners; this project is not affiliated with them, Libretro or MiSTer. On request it will be
 removed. The other overlays are the MiSTer project's set as it shares them, each credited in `overlays/CREDITS.md`.*
+
+### Head tracking
+
+A phone on your desk can follow your head: with **head tracking** on, the game's picture slides a little against
+the overlay and the glass as you move, the way the phosphor behind a real overlay does - the overlay looks like the
+sheet of plastic in front of the tube it is. It uses **[SmoothTrack](https://smoothtrack.app/)**, a phone app for
+iPhone and Android made for head tracking in simulators: it follows your head with the phone's front camera and sends
+its position in OpenTrack's format, which Vectrex_EMU reads itself (no OpenTrack needed).
+
+* **Over Wi-Fi:** in SmoothTrack's settings enter this PC's address - Config > Overlay shows it under Head
+  tracking - and port **4242**, start tracking, and turn Head tracking on. Let Vectrex_EMU through the firewall when
+  Windows asks.
+* **Over USB (iPhone):** install **Apple Devices** (or iTunes) from the Microsoft Store, download SmoothTrack's
+  [USB tunnel tool](https://github.com/epaga/epaga.github.io/raw/master/STUSB.zip), tap *Activate USB Connection* in
+  the app and run `startSTUSB.bat`. Steadier timing, no network setup. Android goes over USB with ADB and Gnirehtet
+  ([SmoothTrack's Android guide](https://smoothtrack.app/mobilehelpandroid.html)).
+* **Largest shift** (5 mm to start with) is how far the picture moves with your head at the edge of the app's view;
+  **Centre** makes where your head is now the middle.
+
+Help > Head tracking (SmoothTrack), also a button in the Config window, walks through it with every link.
 
 ### Speech modules
 

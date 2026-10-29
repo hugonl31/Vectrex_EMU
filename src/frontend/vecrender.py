@@ -1940,6 +1940,9 @@ class GLBloomRenderer(GLRenderer):
         self.curve_on = True         # the tube geometry (Tube > Tube geometry, see CURVE_SHADER; on by default)
         self.geom_k = 1.0            # its strength (Tube > Tube geometry strength: 1 = the owner's Vectrex)
         self.glass_k = 0.0           # the glass's curve undone (Tube > Glass curvature: 0 = as seen, 1 = even squares)
+        self.head_on = False         # head tracking (Overlay > Head tracking: a phone app's head position, headtrack.py)
+        self.head_mm = 5.0           # its largest shift, mm on the tube (at the head's full reach; the owner: 5 mm)
+        self.head_src = None         # (the receiver, the app's: headtrack.HeadTrack)
         self.glass_on = True         # the glass's rounded edge (Tube > Glass edge)
         self.glass_room = True       # the glass grey in room light, without an overlay (Light > Glass catches room light)
         self.case_on = True          # the plastic case round the glass, without an overlay (casemodel; deck: Case)
@@ -2607,11 +2610,17 @@ class GLBloomRenderer(GLRenderer):
         on the case's frame; its sliders (Overlay left / right, up / down, size) line it up with the game by moving
         and sizing the picture the other way (the owner, 2026-10-28), plus the parallax. No overlay: (1, 0, 0) - the
         picture as measured"""
+        hx = hy = 0.0
+        src = getattr(self, 'head_src', None)            # (head tracking: the picture slides against the sheet and the
+        if src is not None and getattr(self, 'head_on', False):   #  glass as the player's head moves - headtrack.py)
+            mx, my = src.offset(getattr(self, 'head_mm', 5.0))
+            e = ALG_MAX_Y / 2.0 / MM_UNIT                 # (emulator units a mm)
+            hx, hy = mx * e, my * e
         if not (self.art and getattr(self, 'art_on', False)):
-            return 1.0, 0.0, 0.0
+            return 1.0, hx, hy
         k = getattr(self, 'art_scale', 1.0) or 1.0
-        return (1.0 / k, -getattr(self, 'art_dx', 0.0) * ALG_MAX_Y,
-                -getattr(self, 'art_dy', 0.0) * ART_TUBE_K * ALG_MAX_Y + self.par_dy())
+        return (1.0 / k, -getattr(self, 'art_dx', 0.0) * ALG_MAX_Y + hx,
+                -getattr(self, 'art_dy', 0.0) * ART_TUBE_K * ALG_MAX_Y + self.par_dy() + hy)
 
     def _tube_f(self, x, y, k):
         """the tube's map (_tube_lines): a point of the integrators (the lines' units) where it shows on the curved

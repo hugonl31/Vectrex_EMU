@@ -2183,12 +2183,13 @@ class App:
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
                                       'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'even_beam', 'beam_trace', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'line_gap',
-                                      'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax',
+                                      'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_mm',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
                                       'phos_scale', 'half_rate')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
+        self.head = None; self.root.after(1000, self.head_sync)   # (head tracking: its receiver, started when switched on)
         self.sound_keys = ['buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full', 'jack_mode', 'jack_vol',
                            'motor_on', 'motor_vol']
         self.sound_default = {k: getattr(self.run.crt, k) for k in self.sound_keys}
@@ -2687,6 +2688,7 @@ class App:
         'dot_k':         ('Corner dot brightness (x1 = measured)', '', 'ren', 'dot_k', 0.0, 2.0, False, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'glass_k':       ('Glass curvature (0 = as seen on a Vectrex, 1 = even squares)', '', 'ren', 'glass_k', 0.0, 1.5, False, 'x%.2f', 1),
+        'head_mm':       ('Largest shift (head tracking, at the full reach)', '', 'ren', 'head_mm', 1.0, 30.0, False, '%.1f mm', 1),
         'line_gap':      ('Line gaps (stop delay; 7 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 4.0, 10.0, False, '%.1f cycles', 1),
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
         'art_room':      ('Room light (the overlay; without one, the glass)', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
@@ -3068,6 +3070,9 @@ class App:
         tx.tag_configure('item', font=(SANS, 11, 'bold'), foreground=hi, spacing1=8, spacing3=0)
         tx.tag_configure('ind', lmargin1=22, lmargin2=22)
         tx.tag_configure('b', font=(SANS, 11, 'bold'), foreground=hi)
+        tx.tag_configure('link', foreground=g, underline=True, lmargin1=22, lmargin2=22)
+        tx.tag_bind('link', '<Enter>', lambda e: tx.config(cursor='hand2'))
+        tx.tag_bind('link', '<Leave>', lambda e: tx.config(cursor='arrow'))
         tx.tag_configure('deep', lmargin1=22, lmargin2=22, foreground='#a9c2b6', background=deck.PANEL,
                          font=(SANS, 10), spacing1=4, spacing3=8)
         def put(text, *tags):                                   # (*word* = bold)
@@ -3086,6 +3091,10 @@ class App:
                     tx.insert('end', b[1] + '\n', 'h2')
                 elif b[0] == 'item':
                     tx.insert('end', b[1] + '\n', 'item'); put(b[2] + '\n', 'ind')
+                elif b[0] == 'link':                                # (a click: the browser)
+                    tag = 'link%d' % n
+                    tx.insert('end', '→ ' + b[1] + '\n', ('link', tag))
+                    tx.tag_bind(tag, '<Button-1>', lambda e, u=b[2]: __import__('webbrowser').open(u))
                 elif b[0] == 'more':
                     tag = 'more%d' % n
                     btn = tk.Label(tx, text='▸  More: ' + b[1], bg=bg, fg=g, cursor='hand2',
@@ -6007,7 +6016,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_k=('glass curvature', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_k=('glass curvature', 'x%.2f'), head_on=('head tracking', None), head_mm=('head tracking largest shift', '%.1f mm'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining', '%.2f'), phos_smooth=('afterglow overlap', '%.2f px'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
@@ -6327,6 +6336,52 @@ class App:
             setattr(obj, what, round(max(lo, min(hi, v)), 4))
             self.show_look(what, obj)
         return 'break'
+    # ---- head tracking (Overlay > Head tracking: headtrack.py)
+    def head_sync(self):
+        """twice a second: the receiver running while head tracking is on, and what it hears said once"""
+        import headtrack
+        try:
+            on = bool(self.ren and getattr(self.ren, 'head_on', False))
+            h = self.head
+            if on and h is None:
+                h = self.head = headtrack.HeadTrack(headtrack.PORT); self.head_t0 = time.perf_counter(); self.head_said = None
+                if h.err:
+                    self.flash('HEAD TRACKING: UDP PORT %d IN USE' % headtrack.PORT, secs=4)
+                self.ren.head_src = h
+            elif not on and h is not None:
+                h.close(); self.head = None
+                if self.ren: self.ren.head_src = None
+            if h is not None and on and not h.err:
+                if h.receiving() and self.head_said != 'yes':
+                    self.head_said = 'yes'; self.flash('HEAD TRACKING: CONNECTED', 'FROM %s' % h.src[0], secs=3)
+                elif not h.receiving() and self.head_said is None and time.perf_counter() - self.head_t0 > 8:
+                    self.head_said = 'no'
+                    self.flash('HEAD TRACKING: NOTHING ON UDP %d' % headtrack.PORT, 'PHONE APP TO %s' % self.head_ip(), secs=5)
+                elif not h.receiving() and self.head_said == 'yes':
+                    self.head_said = 'lost'
+        finally:
+            self.root.after(500, self.head_sync)
+    def head_ip(self):
+        import headtrack
+        ips = headtrack.local_ips()
+        return ips[0] if ips else 'THIS PC'
+    def head_note(self):
+        """Config's line under Head tracking: where the phone app sends to, and whether it does"""
+        import headtrack
+        h = self.head
+        where = 'phone app to %s, port %d' % (self.head_ip(), headtrack.PORT)
+        if h is None:
+            return where
+        if h.err:
+            return 'UDP port %d is in use by another program' % headtrack.PORT
+        if h.receiving():
+            x, y, z = h.pos
+            return 'receiving from %s: x %+.1f  z %+.1f' % (h.src[0], x, z)
+        return where + ' - waiting'
+    def head_centre(self):
+        """the head's place now is the middle"""
+        if self.head is not None:
+            self.head.recentre()
     def flip(self, obj, what):
         if obj and hasattr(obj, what):
             setattr(obj, what, not getattr(obj, what)); self.show_look(what, obj)

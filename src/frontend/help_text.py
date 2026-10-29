@@ -288,8 +288,8 @@ TOPICS = [
 ('item', 'Tube geometry strength...', "From an ideal, straight picture (left) through the owner's Vectrex (the "
          "middle) to twice as much."),
 ('item', 'Glass curvature...', "The tube's face curves away towards its edges, so seen straight on the squares of a "
-         "grid look narrower at the sides and lower at the top and bottom - in front of a real Vectrex too. 0 shows it as "
-         "seen (the overlays fit it), 1 undoes it: even squares, the picture a little wider. Separate from the analog "
+         "grid look narrower at the sides and lower at the top and bottom - in front of a real Vectrex too. 1 (the default) "
+         "shows it as on a Vectrex (the overlays fit it), 0 takes it away: even squares, the picture a little wider. Separate from the analog "
          "circuits' geometry (Unit and Circuit tabs) and Tube geometry."),
 ('item', 'Bend smoothing (curves without facets)', "A curve a game draws as a chain of short lines is drawn as one smooth "
          "bend, as the tube shows it: no corners where the short lines meet. Off: the lines exactly as the game sends them."),

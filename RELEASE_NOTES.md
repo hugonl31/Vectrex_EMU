@@ -3,9 +3,20 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.1.9
+## v1.2.0
 
-**Everything new since v1.0.5** - v1.0.6 to v1.1.9 in one
+**Everything new since v1.0.5** - v1.0.6 to v1.2.0 in one
+
+**New in v1.2.0: updates in one click**
+* **Update now** - when a new version is out, the message that says so has an *Update now* button: the emulator
+  downloads the new version for your system, closes, installs it over the old one and starts again. Your ROMs,
+  overlays, SD cards and BIOS stay as they are (the new version only adds files that are missing), and so do where
+  your overlays sit and how large, your player name and your recent games; the other settings start fresh (the old
+  ones are kept as `system/settings_before_<version>.json`). Not when it runs from the sources or from a folder it
+  cannot write to (Program Files): then the message links to the download. From v1.2.0 on - versions before it still
+  need the download once.
+* **Glass curvature** (Config > Tube) now counts the other way: 1, the default, is the curve as on a Vectrex, 0 takes
+  it away (even squares). Saved settings are turned round once, so nothing changes on screen.
 
 **New in v1.1.9: fast objects, the Head tab, Basic**
 * **A new phosphor engine** - every flash of the beam is razor sharp and then fades on the measured afterglow on its
@@ -67,8 +78,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * **Config shows what changed** - a changed setting in orange, a slider with an orange stripe at its default.
 * **Glass curvature** (Config > Tube) - the tube's face curves away towards its edges, so seen straight on the
   squares of a grid look narrower at the sides and lower at the top and bottom, as in the photo the tube was measured
-  from. The new slider undoes that, separate from the analog circuits' geometry: 0 = as seen on a Vectrex (the
-  default, the overlays' fit), 1 = even squares.
+  from. The slider sets how much of it shows, separate from the analog circuits' geometry: 1 = as seen on a Vectrex
+  (the default, the overlays' fit), 0 = even squares.
 * **Messages in the middle of the picture**, and none stays over a game you can play.
 * **The strip below the picture** - centred, the on-screen display always the same width, PAUSED left of P2 PORT.
 

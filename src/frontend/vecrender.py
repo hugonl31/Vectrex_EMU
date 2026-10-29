@@ -2094,7 +2094,8 @@ class GLBloomRenderer(GLRenderer):
         self.bend_type = 0           # index into BEND_TYPES
         self.curve_on = True         # the tube geometry (Tube > Tube geometry, see CURVE_SHADER; on by default)
         self.geom_k = 1.0            # its strength (Tube > Tube geometry strength: 1 = the owner's Vectrex)
-        self.glass_k = 0.0           # the glass's curve undone (Tube > Glass curvature: 0 = as seen, 1 = even squares)
+        self.glass_curve = 1.0       # the glass's curve (Tube > Glass curvature: 1 = as on the owner's Vectrex, 0 = undone,
+                                     #  even squares - the owner, 2026-10-29; before: glass_k, the amount undone)
         self.head_on = False         # head tracking (Overlay > Head tracking: a phone app's head position, headtrack.py)
         self.head_smooth_x = 30.0    # the head's position smoothed, ms, per axis (the Head tab; the owner: left / right
         self.head_smooth_z = 80.0    #  30, up / down 80, near / far 80 - heads move mostly across)
@@ -2758,7 +2759,7 @@ class GLBloomRenderer(GLRenderer):
         """Tube geometry: every line through the owner's tube map (tubemap), long ones in pieces so they
         bend; each piece keeps its share of the beam's energy and its moment in the frame"""
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
-        g = getattr(self, 'glass_k', 0.0)                # (the glass's curve undone: Tube > Glass curvature)
+        g = self.glass_undo()                            # (the glass's curve undone: Tube > Glass curvature)
         if getattr(self, '_tube_k', None) != (k, g):     # (its own name: under _tube_f it hid the method _build_np
             self._tube_k = (k, g); self._tube_fn = tube_map(k, g)  #  calls - after the first switch-on animation every frame
         f = self._tube_fn                                  #  took this slow way: Vectorblade at 2 fps after a game change)
@@ -2861,7 +2862,7 @@ class GLBloomRenderer(GLRenderer):
         if k:
             dx, dy = tubemap.imp_np(np, u, v)
             X = X + k * dx; Y = Y + k * dy
-        X, Y = glass_flat(X, Y, getattr(self, 'glass_k', 0.0), np)   # (the glass's curve undone: Glass curvature)
+        X, Y = glass_flat(X, Y, self.glass_undo(), np)   # (the glass's curve undone: Glass curvature)
         ps, pdx, pdy = self.pic_adj()                     # (behind an overlay: its sliders and the parallax)
         return XM + X * U * ps + pdx, YM + Y * U * ps + pdy
 
@@ -2962,7 +2963,7 @@ class GLBloomRenderer(GLRenderer):
         # the tube's map, long lines in pieces (_tube_lines)
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
         Ls = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
-        m = np.where((Ls > TUBE_SEG) & ((k > 0) | (getattr(self, 'glass_k', 0.0) > 0)), (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
+        m = np.where((Ls > TUBE_SEG) & ((k > 0) | (self.glass_undo() > 0)), (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
         n0 = len(L)
         idx = np.repeat(np.arange(n0), m)
         starts = np.cumsum(m) - m
@@ -3408,6 +3409,9 @@ class GLBloomRenderer(GLRenderer):
                    'basic': dict(_MEDIUM, phos_scale=0.5, half_rate=True, line_half=True)}   # (Low, the lines at the
                                                                     #  phosphor's half size too: Pi 5, Vectrexians)
     phos_scale = 1.0                 # the phosphor passes' size as a share of the window's (see PROFILE_OFF)
+    def glass_undo(self):
+        """how much of the glass's curve is undone: 0 as seen on a Vectrex (Glass curvature 1), 1 even squares (0)"""
+        return max(0.0, min(1.0, 1.0 - float(getattr(self, 'glass_curve', 1.0))))
     line_half = False                # Basic: the lines drawn at the phosphor's size too (softer; a quarter of the work)
     phos_full = True                 # Ultra's fidelity: the afterglow in full colour, both parts (else packed: half the
                                      #  memory and traffic, a 3D Imager's colours fade to white in the slow tail -

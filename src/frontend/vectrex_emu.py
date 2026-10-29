@@ -1382,6 +1382,9 @@ UNIT_NAMES = {'owner': "Owner's Vectrex (measured)", 'ideal': 'Ideal', 'cranky':
 def old_gap(look):
     """a look saved before 2026-10-25 with the old default line gap (12.3 cycles): the new default (7; the stop delay
     refitted with the spot's lag, see vecx.c LAG_TAU) - a value someone chose stays"""
+    if isinstance(look, dict) and 'glass_k' in look and 'glass_curve' not in look:   # (before v1.2.0: the amount of the
+        try: look['glass_curve'] = max(0.0, min(1.0, 1.0 - float(look.pop('glass_k'))))   #  curve undone - now the curve
+        except (TypeError, ValueError): look.pop('glass_k', None)   #  itself, 1 as on a Vectrex)
     if isinstance(look, dict) and abs(float(look.get('line_gap', 0)) - 12.3) < 1e-6:
         look['line_gap'] = 7.0
     if isinstance(look, dict) and any(abs(float(look.get('white_k', 0)) - old) < 1e-6 for old in (6400.0, 9300.0)):
@@ -2182,7 +2185,7 @@ class App:
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_k', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'even_beam', 'beam_trace', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'even_beam', 'beam_trace', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
@@ -2694,7 +2697,7 @@ class App:
         'halo_k':        ('Corner glow strength', '', 'ren', 'halo_k', 0.0, 0.4, False, '%.3f', 1),
         'dot_k':         ('Corner dot brightness (x1 = measured)', '', 'ren', 'dot_k', 0.0, 2.0, False, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
-        'glass_k':       ('Glass curvature (0 = as seen on a Vectrex, 1 = even squares)', '', 'ren', 'glass_k', 0.0, 1.5, False, 'x%.2f', 1),
+        'glass_curve':   ('Glass curvature (1 = as on a Vectrex, 0 = even squares)', '', 'ren', 'glass_curve', 0.0, 1.0, False, '%.2f', 1),
         'head_k':        ('Shift strength (x1 = 2 mm at the full reach)', '', 'ren', 'head_k', 0.0, 4.0, False, 'x%.2f', 1),
         'head_tilt':     ('Phone tilt (its angle: nearer / further seen as up / down)', '', 'ren', 'head_tilt', -45.0, 45.0, False, '%+.0f\u00b0', 1),
         'head_smooth_x': ('Left / right smoothing (less judder, a little later)', '', 'ren', 'head_smooth_x', 0.0, 200.0, False, '%.0f ms', 1),
@@ -4976,11 +4979,13 @@ class App:
                 req = urllib.request.Request(UPDATE_API, headers={'User-Agent': 'Vectrex_EMU ' + mine,
                                                                   'Accept': 'application/vnd.github+json'})
                 with urllib.request.urlopen(req, timeout=8) as r:
-                    tag = str(json.loads(r.read().decode('utf-8')).get('tag_name') or '')
+                    rel = json.loads(r.read().decode('utf-8'))
+                tag = str(rel.get('tag_name') or '')
             except Exception:   # noqa: no network, GitHub busy - asked again at the next start
                 return
+            self.update_release = rel                       # (its downloads: the one-click update - updater.py)
             a, b = ver_key(tag), ver_key(mine)
-            if a and b and a > b:
+            if a and b and (a > b or os.environ.get('VX_UPDATE_FORCE')):   # (VX_UPDATE_FORCE: tests, any version)
                 self.update_latest = tag
                 self.root.after(0, self.update_told)
         threading.Thread(target=work, daemon=True).start()
@@ -5012,7 +5017,44 @@ class App:
             close()
             if open_page:
                 webbrowser.open(UPDATE_PAGE)
-        deck._button(foot, 'Open GitHub', lambda: done(True), self, on=True).pack(side='left')
+        import updater
+        why = updater.can_update(ROOT)
+        rel = getattr(self, 'update_release', None) or {}
+        url = updater.asset_url(rel)
+        if not why and not url:
+            why = 'This release has no download for this system yet: try again a little later.'
+        status = tk.Label(body, text=why or 'Update now downloads it, closes the emulator, installs it and starts it again: '
+                          'your ROMs, overlays, SD cards and where the overlays sit stay; the other settings start fresh.',
+                          fg=deck.DIM if not why else deck.WARN, bg=bg, font=(MONO, 9), anchor='w', justify='left', wraplength=520)
+        status.pack(fill='x', padx=12, pady=(0, 10))
+        busy = {'on': False}
+        def update_now():
+            if why or busy['on']:
+                return
+            busy['on'] = True
+            def say(text):
+                self.root.after(0, lambda: status.configure(text=text, fg=deck.HI))
+            def work():
+                try:
+                    folder = updater.work_folder(); z = os.path.join(folder, updater.ASSET)
+                    updater.download(url[0], url[1], z, lambda d, tot: say('downloading %s: %.1f of %.1f MB' % (
+                        new, d / 1e6, tot / 1e6)) if d % (1 << 20) < (1 << 16) else None, 'Vectrex_EMU ' + mine)
+                    say('unpacking...')
+                    cmd, script = updater.prepare(z, ROOT, self.settings_f, os.getpid(), new, exe_path=os.path.abspath(sys.executable))
+                except Exception as e:   # noqa
+                    busy['on'] = False
+                    self.root.after(0, lambda: status.configure(text='The update failed (%s): nothing was changed. '
+                                                                     'Open GitHub to download it.' % e, fg=deck.WARN))
+                    return
+                def go():
+                    say('installing %s: the emulator closes and starts again' % new)
+                    updater.start(cmd)
+                    self.root.after(300, self.quit)
+                self.root.after(0, go)
+            threading.Thread(target=work, daemon=True).start()
+        if not why:
+            deck._button(foot, 'Update now', update_now, self, on=True).pack(side='left')
+        deck._button(foot, 'Open GitHub', lambda: done(True), self, on=bool(why)).pack(side='left', padx=(6, 0))
         deck._button(foot, 'Later', done, self).pack(side='right')
         t.protocol('WM_DELETE_WINDOW', done); t.bind('<Escape>', lambda ev: done())
         deck.place(t, 'update', self)
@@ -6094,7 +6136,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_k=('glass curvature', 'x%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining strength', '%.2f'), phos_smooth=('afterglow smoothing width', '%.2f'), phos_grow_on=('afterglow joining', None), phos_smooth_on=('afterglow smoothing', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining strength', '%.2f'), phos_smooth=('afterglow smoothing width', '%.2f'), phos_grow_on=('afterglow joining', None), phos_smooth_on=('afterglow smoothing', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""

@@ -4984,6 +4984,8 @@ class App:
             except Exception:   # noqa: no network, GitHub busy - asked again at the next start
                 return
             self.update_release = rel                       # (its downloads: the one-click update - updater.py)
+            import updater
+            self.update_news = updater.fetch_news(tag, 'Vectrex_EMU ' + mine)   # (its short list: WHATS_NEW.md)
             a, b = ver_key(tag), ver_key(mine)
             if a and b and (a > b or os.environ.get('VX_UPDATE_FORCE')):   # (VX_UPDATE_FORCE: tests, any version)
                 self.update_latest = tag
@@ -5001,8 +5003,17 @@ class App:
         t, body, foot, close = self._room_window('A new version of Vectrex_EMU', '', 'upd_win', banner=False)
         f9, bg = (MONO, 10), deck.PANEL
         tk.Label(body, text='%s is out (you have %s).' % (new, mine), fg=deck.HI, bg=bg, font=f9, anchor='w').pack(fill='x', padx=12, pady=(10, 0))
+        import updater
+        force = bool(os.environ.get('VX_UPDATE_FORCE'))
+        news = (updater.whats_new(getattr(self, 'update_news', ''), mine, always=force)   # (WHATS_NEW.md; without it the
+                or updater.highlights((getattr(self, 'update_release', None) or {}).get('body', ''), mine, always=force))   #  notes)
+        if news:                                                # (what it brings - the release notes' main points)
+            tk.Label(body, text="What's new:", fg=deck.HI, bg=bg, font=f9, anchor='w').pack(fill='x', padx=12, pady=(8, 0))
+            for line in news:
+                tk.Label(body, text=('  ' if line.startswith('...') else '• ') + line, fg=deck.G, bg=bg, font=(MONO, 9),
+                         anchor='w').pack(fill='x', padx=14)
         tk.Label(body, text='Online play needs both players on the same version.', fg=deck.G, bg=bg, font=f9,
-                 anchor='w').pack(fill='x', padx=12, pady=(4, 0))
+                 anchor='w').pack(fill='x', padx=12, pady=(8, 0))
         link = tk.Label(body, text=UPDATE_PAGE.replace('https://', ''), fg=deck.HI, bg=bg, font=(MONO, 10, 'underline'),
                         anchor='w', cursor='hand2')
         link.pack(fill='x', padx=12, pady=(6, 0))

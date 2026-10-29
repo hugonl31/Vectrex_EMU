@@ -1,0 +1,26 @@
+# What's new
+
+The short list the emulator shows when a new version is out (the update message): a few lines per version, the
+newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
+its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
+
+## v1.2.0
+- Updates in one click: installs the new version, keeps your games
+- See what's new before you update, right in this message
+- Glass curvature: now 1 is your Vectrex, 0 even squares
+
+## v1.1.9
+- New phosphor engine: razor-sharp fast objects, trails that add up
+- Smooth, rock-solid glow on moving lines
+- Head tracking: its own tab, reflections move with your head
+- Basic quality for a Raspberry Pi 5 with busy games
+- Settings survive a restart, overlay position kept per game
+
+## v1.1.8
+- Head tracking over USB: iPhone and Android, no extra tools
+
+## v1.1.7
+- Head tracking: the picture slides behind the overlay as you move
+
+## v1.1.6
+- Glass curvature slider (Config > Tube)

@@ -154,3 +154,95 @@ def start(cmd):
 
 def work_folder():
     return tempfile.mkdtemp(prefix='vectrex_emu_update_')
+
+
+def _vkey(s):
+    import re
+    n = re.findall(r'\d+', s or '')
+    return tuple(int(x) for x in n[:3]) if n else None
+
+
+def highlights(body, mine, limit=7, width=74, always=False):
+    """the new release's main points for the message (the owner, 2026-10-29: what it brings, so you want it): from the
+    release notes (GitHub's body), every '**New in vX...**' block newer than this version (mine), a line per point - its
+    bold title and the start of what follows, cut to fit the window. Fixes left out; at most limit lines, then a last
+    one saying there is more. always: the newest block even when it is not newer (tests)"""
+    import re
+    clean = lambda t: re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', t).replace('**', '').replace('`', '').replace('*', '').strip()
+    out, take, mk = [], False, _vkey(mine)
+    bullet = None
+    def flush():
+        if bullet is None:
+            return
+        m = re.match(r'\*\*(.+?)\*\*\s*(.*)', bullet)
+        if not m:
+            return
+        title, rest = clean(m.group(1)), clean(m.group(2))
+        if title.lower().startswith('fix'):
+            return
+        rest = re.sub(r'^\([^)]*\)\s*', '', rest).lstrip('-: ').strip()
+        line = title
+        if rest and len(title) < width - 12:
+            room = width - len(title) - 3
+            clause = re.split(r'[:;.(]', rest)[0].strip()
+            if len(clause) > room:
+                clause = clause[:room - 3].rsplit(' ', 1)[0].rstrip(',') + '...'
+            if clause:
+                line = title + ' - ' + clause
+        out.append(line[:width])
+    newest = True
+    for raw in (body or '').replace('\r', '').split('\n'):
+        s = raw.strip()
+        h = re.match(r'^\*\*New in (.+?)\*\*', s)
+        if h or (s.startswith('**') and not s.startswith('* ')):
+            flush(); bullet = None
+            vs = [_vkey(v) for v in re.findall(r'v\d+\.\d+(?:\.\d+)?', h.group(1))] if h else []
+            v = max([x for x in vs if x] or [None]) if vs else None
+            take = bool(v) and ((mk is not None and v > mk) or (always and newest))
+            if h:
+                newest = False
+            continue
+        if not take:
+            continue
+        if s.startswith('* '):
+            flush(); bullet = s[2:]
+        elif bullet is not None and s:
+            bullet += ' ' + s
+    flush()
+    if len(out) > limit:
+        out = out[:limit - 1] + ['...and more on GitHub']
+    return out
+
+
+NEWS_URL = 'https://raw.githubusercontent.com/hugonl31/Vectrex_EMU/%s/WHATS_NEW.md'   # (at the release's tag)
+
+
+def fetch_news(tag, user_agent):
+    """WHATS_NEW.md as it is in that release (the short list), or '' when it cannot be read"""
+    try:
+        req = urllib.request.Request(NEWS_URL % tag, headers={'User-Agent': user_agent})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return r.read().decode('utf-8', 'replace')
+    except Exception:   # noqa
+        return ''
+
+
+def whats_new(text, mine, limit=7, always=False):
+    """the short list for the message from WHATS_NEW.md: the lines of every version newer than this one (mine), newest
+    first; at most limit lines, the last one then saying there is more. always: the newest version's even when it is
+    not newer (tests)"""
+    import re
+    out, take, mk, first = [], False, _vkey(mine), True
+    for raw in (text or '').replace('\r', '').split('\n'):
+        s = raw.strip()
+        m = re.match(r'^##\s+(v\d+\.\d+(?:\.\d+)?)', s)
+        if m:
+            v = _vkey(m.group(1))
+            take = bool(v) and ((mk is not None and v > mk) or (always and first))
+            first = False
+            continue
+        if take and s.startswith(('- ', '* ')):
+            out.append(s[2:].strip())
+    if len(out) > limit:
+        out = out[:limit - 1] + ['...and more on GitHub']
+    return out

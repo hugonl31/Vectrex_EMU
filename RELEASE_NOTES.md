@@ -8,14 +8,17 @@ build workflow replaces that release (title = the version, marked Latest) with t
 **Everything new since v1.0.5** - v1.0.6 to v1.2.0 in one
 
 **New in v1.2.0: updates in one click**
-* **Update now** - when a new version is out, the message that says so has an *Update now* button: the emulator
-  downloads the new version for your system, closes, installs it over the old one and starts again. Your ROMs,
+* **Updates in one click** - installs a new version, keeps your games: when a new version is out, the message
+  that says so has an *Update now* button. The emulator downloads the new version for your system, closes, installs
+  it over the old one and starts again. Your ROMs,
   overlays, SD cards and BIOS stay as they are (the new version only adds files that are missing), and so do where
   your overlays sit and how large, your player name and your recent games; the other settings start fresh (the old
   ones are kept as `system/settings_before_<version>.json`). Not when it runs from the sources or from a folder it
   cannot write to (Program Files): then the message links to the download. From v1.2.0 on - versions before it still
   need the download once.
-* **Glass curvature** (Config > Tube) now counts the other way: 1, the default, is the curve as on a Vectrex, 0 takes
+* **What's new, in the message** - the main points of a new version: the message that tells you lists them, all
+  the versions since yours, so you see what you get before you update.
+* **Glass curvature** (Config > Tube) - now 1 is your Vectrex, 0 even squares: the slider counts the other way: 1, the default, is the curve as on a Vectrex, 0 takes
   it away (even squares). Saved settings are turned round once, so nothing changes on screen.
 
 **New in v1.1.9: fast objects, the Head tab, Basic**

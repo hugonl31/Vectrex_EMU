@@ -777,16 +777,43 @@ MM_UNIT = 103.5 / ART_TUBE_K            # real mm per unit (112.0)
 TUBE_SEG = 1200.0                       # (lines longer than this, emulator units, are bent in pieces)
 TUBE_LIN = tubemap.LIN                  # the straight part: x = a u + b, y = c v + d (units)
 
-def tube_map(k):
+# The glass's curve, seen straight on (Tube > Glass curvature): the owner's photo of the grid was taken straight on with
+# a long lens, and the tube's face curves away from the camera towards its edges - so there the squares look narrower
+# (left and right) and lower (top and bottom), as they do to a player in front of it. A point on the glass a distance s
+# from the middle along it shows at R sin(s / R). Fitted to the traced grid (2026-10-29): the face curves more across
+# than up and down - R 97 mm across (the columns' spread 8 % -> 3 %), 205 mm up and down (3 % -> 2.5 %). Strength g:
+# 0 = as seen (the photo, the overlays' fit), 1 = the squares even (the projection undone: R / g). Separate from the
+# analog circuits' geometry (the core) and the measured map (Tube geometry)
+GLASS_RX_MM, GLASS_RY_MM = 97.0, 205.0
+GLASS_T_MAX = 0.95                      # (past 95 % of the radius: straight on with the slope there - no infinity)
+
+def glass_flat(X, Y, g, np=None):
+    """the glass's projection undone with strength g: X, Y round the frame's centre (units, scalars or numpy)"""
+    if g <= 0:
+        return X, Y
+    out = []
+    for P, R0 in ((X, GLASS_RX_MM), (Y, GLASS_RY_MM)):
+        R = R0 / g / MM_UNIT                          # (the radius in units)
+        tm = GLASS_T_MAX; slope = 1.0 / math.sqrt(1 - tm * tm)
+        if np is not None:
+            t = P / R; tc = np.clip(t, -tm, tm)
+            out.append(R * (np.arcsin(tc) + (t - tc) * slope))
+        else:
+            t = P / R; tc = min(max(t, -tm), tm)
+            out.append(R * (math.asin(tc) + (t - tc) * slope))
+    return out[0], out[1]
+
+def tube_map(k, g=0.0):
     """the tube's map, emulator units -> emulator units (round the frame's centre at the canvas's middle): the
-    straight part plus k x the measured imperfections"""
+    straight part plus k x the measured imperfections, then the glass's curve undone with strength g"""
     la, lb, lc, ld = TUBE_LIN
     X0, Y0, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
     imp = tubemap.imp
     def f(x, y):
         u = (x - X0) / U; v = (y - Y0) / U
         dx, dy = imp(u, v) if k else (0.0, 0.0)
-        return X0 + (la * u + lb + k * dx) * U, Y0 + (lc * v + ld + k * dy) * U
+        X, Y = glass_flat(la * u + lb + k * dx, lc * v + ld + k * dy, g)
+        return X0 + X * U, Y0 + Y * U
     return f
 
 def tube_coeffs(k):
@@ -1912,6 +1939,7 @@ class GLBloomRenderer(GLRenderer):
         self.bend_type = 0           # index into BEND_TYPES
         self.curve_on = True         # the tube geometry (Tube > Tube geometry, see CURVE_SHADER; on by default)
         self.geom_k = 1.0            # its strength (Tube > Tube geometry strength: 1 = the owner's Vectrex)
+        self.glass_k = 0.0           # the glass's curve undone (Tube > Glass curvature: 0 = as seen, 1 = even squares)
         self.glass_on = True         # the glass's rounded edge (Tube > Glass edge)
         self.glass_room = True       # the glass grey in room light, without an overlay (Light > Glass catches room light)
         self.case_on = True          # the plastic case round the glass, without an overlay (casemodel; deck: Case)
@@ -2506,8 +2534,9 @@ class GLBloomRenderer(GLRenderer):
         """Tube geometry: every line through the owner's tube map (tubemap), long ones in pieces so they
         bend; each piece keeps its share of the beam's energy and its moment in the frame"""
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
-        if getattr(self, '_tube_k', None) != k:          # (its own name: under _tube_f it hid the method _build_np
-            self._tube_k = k; self._tube_fn = tube_map(k)  #  calls - after the first switch-on animation every frame
+        g = getattr(self, 'glass_k', 0.0)                # (the glass's curve undone: Tube > Glass curvature)
+        if getattr(self, '_tube_k', None) != (k, g):     # (its own name: under _tube_f it hid the method _build_np
+            self._tube_k = (k, g); self._tube_fn = tube_map(k, g)  #  calls - after the first switch-on animation every frame
         f = self._tube_fn                                  #  took this slow way: Vectorblade at 2 fps after a game change)
         ps, pdx, pdy = self.pic_adj()
         if (ps, pdx, pdy) != (1.0, 0.0, 0.0):
@@ -2517,7 +2546,7 @@ class GLBloomRenderer(GLRenderer):
         for li, ln in enumerate(lines):
             x0, y0, x1, y1 = ln[:4]
             L = sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
-            if L <= TUBE_SEG or k <= 0:                  # (straight: the ends only)
+            if L <= TUBE_SEG or (k <= 0 and g <= 0):     # (straight: the ends only)
                 a = f(x0, y0); b = f(x1, y1) if L > 0 else a
                 out.append((a[0], a[1], b[0], b[1]) + tuple(ln[4:])); opens.append(joins[li] if joins else (4 if Renderer_rest(ln) else 0))
                 continue
@@ -2595,6 +2624,7 @@ class GLBloomRenderer(GLRenderer):
         if k:
             dx, dy = tubemap.imp_np(np, u, v)
             X = X + k * dx; Y = Y + k * dy
+        X, Y = glass_flat(X, Y, getattr(self, 'glass_k', 0.0), np)   # (the glass's curve undone: Glass curvature)
         ps, pdx, pdy = self.pic_adj()                     # (behind an overlay: its sliders and the parallax)
         return XM + X * U * ps + pdx, YM + Y * U * ps + pdy
 
@@ -2653,7 +2683,7 @@ class GLBloomRenderer(GLRenderer):
         # the tube's map, long lines in pieces (_tube_lines)
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
         Ls = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
-        m = np.where((Ls > TUBE_SEG) & (k > 0), (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
+        m = np.where((Ls > TUBE_SEG) & ((k > 0) | (getattr(self, 'glass_k', 0.0) > 0)), (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
         n0 = len(L)
         idx = np.repeat(np.arange(n0), m)
         starts = np.cumsum(m) - m

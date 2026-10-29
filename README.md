@@ -19,7 +19,7 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.1.5 - everything since v1.0.5
+## New in v1.1.6 - everything since v1.0.5
 
 **Online play, grown up**
 * **Every game online** - UVMC2 games (VecDoom, Veccy Road, Tempest, Vectorblade...) and PiTrex programs play
@@ -48,6 +48,10 @@ photo, recording and measurement, and every call on how it should look, sound an
   and the high voltage's ringing (Circuit tab). **Random unit** and **Cranky** roll a believable other unit.
 * **Smooth by default** - the monitor's full rate with Smooth motion: unchanged on 60 Hz, smoother on 120-240 Hz.
 * **Config shows what changed** - a changed setting in orange, a slider with an orange stripe at its default.
+* **Glass curvature** (Config > Tube) - the tube's face curves away towards its edges, so seen straight on the
+  squares of a grid look narrower at the sides and lower at the top and bottom, as in the photo the tube was measured
+  from. The new slider undoes that, separate from the analog circuits' geometry: 0 = as seen on a Vectrex (the
+  default, the overlays' fit), 1 = even squares.
 * **Messages in the middle of the picture**, and none stays over a game you can play.
 * **The strip below the picture** - centred, the on-screen display always the same width, PAUSED left of P2 PORT.
 

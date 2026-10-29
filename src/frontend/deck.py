@@ -645,6 +645,7 @@ class Deck:
                     ('group', 'SHAPE AND GLASS'),
                     ('check', 'Tube geometry', lambda: A('curve_on'), flip('curve_on'), None),
                     ('in', [('slider', 'geom_k', lambda: A('curve_on'))]),
+                    ('slider', 'glass_k', lambda: True),
                     ('check', 'Glass edge', lambda: A('glass_on'), flip('glass_on'), None),
                     ('check', 'Bend smoothing', lambda: A('bend_smooth', True), flip('bend_smooth'), None),
                     ('group', 'GLOW AND BEAM'),

@@ -3,9 +3,9 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.1.5
+## v1.1.6
 
-**Everything new since v1.0.5** - v1.0.6 to v1.1.5 in one
+**Everything new since v1.0.5** - v1.0.6 to v1.1.6 in one
 
 **Online play, grown up**
 * **Every game online** - UVMC2 games (VecDoom, Veccy Road, Tempest, Vectorblade...) and PiTrex programs play
@@ -34,6 +34,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
   and the high voltage's ringing (Circuit tab). **Random unit** and **Cranky** roll a believable other unit.
 * **Smooth by default** - the monitor's full rate with Smooth motion: unchanged on 60 Hz, smoother on 120-240 Hz.
 * **Config shows what changed** - a changed setting in orange, a slider with an orange stripe at its default.
+* **Glass curvature** (Config > Tube) - the tube's face curves away towards its edges, so seen straight on the
+  squares of a grid look narrower at the sides and lower at the top and bottom, as in the photo the tube was measured
+  from. The new slider undoes that, separate from the analog circuits' geometry: 0 = as seen on a Vectrex (the
+  default, the overlays' fit), 1 = even squares.
 * **Messages in the middle of the picture**, and none stays over a game you can play.
 * **The strip below the picture** - centred, the on-screen display always the same width, PAUSED left of P2 PORT.
 
@@ -47,6 +51,12 @@ sessions of 20 minutes, every ROM with random input, cross-machine games between
 * The brightness knob turned down no longer slows the emulator to a crawl.
 
 Online, it plays with v1.1.3 and later.
+
+## v1.1.5
+
+**Messages back in the middle of the picture** (2026-10-29)
+- The emulator's messages are in the middle of the picture again; none stays over a game you can play (hosting: the
+  code shows for 8 seconds, a click on a port shows it again).
 
 ## v1.1.4
 

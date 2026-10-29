@@ -1110,7 +1110,10 @@ def ver_key(s):
 
 CHAT_ME, CHAT_THEM = '#d4dad7', '#e8a15a'      # (the chat: your lines muted white, the other player's orange; the
                                                #  emulator's own lines in the green of the rest)
-MSG_Y = 0.80                # (the emulator's messages: their middle 4/5 down the picture - the game plays on above)
+MSG_Y = 0.50                # (the emulator's messages: in the middle of the picture, where the player looks - the owner,
+                            #  2026-10-29. Each goes after a few seconds while the game can be played on: see WAIT_MSG_S)
+WAIT_MSG_S = 8.0            # (hosting: the code / game room / waiting message, then the game is the player's again - the
+                            #  Online window keeps the code; a click on a port shows the message again)
 OSD_CHARS = 20             # (the OSD's width in characters, always: its widest row - ONLINE: RELAY 120 MS)
 ROOM_LIVE_S = 3.0          # (Find players: the game room's list asked again this often while the window is open - a
                            #  full room is 13 pages, the meeting point answers 6 a second per PC)
@@ -3692,8 +3695,8 @@ class App:
         else:
             return self.imager_hint()
         pl, pt, pr, pb = self.pic_rect()
-        k = (pb - pt) / 330.0                                   # (the emulator's messages: 4/5 down the picture -
-        return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + MSG_Y * (pb - pt) - len(rows) * 11.0 * k / 2.0, k=k)   #  the game stays playable)
+        k = (pb - pt) / 330.0                                   # (the emulator's messages: in the middle of the picture)
+        return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + MSG_Y * (pb - pt) - len(rows) * 11.0 * k / 2.0, k=k)
     def pause_state(self):
         """PAUSED in the strip below the picture, between the OSD and P2 PORT (the owner, 2026-10-29): PAUSED big in
         orange, how to go on below it, the same room on both sides; up and down halfway between the frame's bottom
@@ -3799,8 +3802,15 @@ class App:
         if k and self.ports_shown():
             if getattr(self, 'net_game', None):
                 self.take_port(k)
-            else:
-                self.flash('WAITING FOR A PLAYER 2', 'PORTS: ONCE THEY ARE HERE', secs=2)
+            else:                                               # (waiting: the hosting message again - the code)
+                net = getattr(self, 'net_pending', None)
+                if getattr(self, 'net_role', 'host') == 'host' and net is not None and getattr(net, 'code', None):
+                    if getattr(self, 'net_public', None):
+                        self.flash('IN THE GAME ROOM AS ' + self.net_public, 'WAITING FOR A PLAYER 2', secs=WAIT_MSG_S)
+                    else:
+                        self.flash('ONLINE CODE: ' + ' '.join(net.code), 'TELL PLAYER 2 THIS CODE', secs=WAIT_MSG_S)
+                else:
+                    self.flash('WAITING FOR A PLAYER 2', 'PORTS: ONCE THEY ARE HERE', secs=2)
             return True
         if k != 2:
             return False
@@ -4849,14 +4859,14 @@ class App:
                     if getattr(self, 'net_result', 1) is not None or net.lost:
                         return
                     if net.code and public:
-                        self.flash('IN THE GAME ROOM AS ' + public, 'WAITING FOR A PLAYER 2', secs=600)
+                        self.flash('IN THE GAME ROOM AS ' + public, 'WAITING FOR A PLAYER 2', secs=WAIT_MSG_S)
                     elif net.code:
-                        self.flash('ONLINE CODE: ' + ' '.join(net.code), 'TELL PLAYER 2 THIS CODE', secs=600)
+                        self.flash('ONLINE CODE: ' + ' '.join(net.code), 'TELL PLAYER 2 THIS CODE', secs=WAIT_MSG_S)
                     else:
                         self.root.after(200, show_code)
                 self.root.after(200, show_code)
             else:
-                self.flash('ONLINE: WAITING FOR PLAYER 2', 'UDP PORT %d' % port, secs=600)
+                self.flash('ONLINE: WAITING FOR PLAYER 2', 'UDP PORT %d' % port, secs=WAIT_MSG_S)
         else:
             self.flash('ONLINE: JOINING', label, secs=600)
         self.net_result = None
@@ -5099,11 +5109,11 @@ class App:
         name = os.path.splitext(game['name'])[0].upper()[:34]
         rows = ('NOW OFFERING', name) + (('',) + note[0] if note else ())
         if getattr(self, 'net_public', None):
-            self.flash('IN THE GAME ROOM AS ' + self.net_public, *rows, secs=600)
+            self.flash('IN THE GAME ROOM AS ' + self.net_public, *rows, secs=WAIT_MSG_S)
         elif net.code:
-            self.flash('ONLINE CODE: ' + ' '.join(net.code), *rows, secs=600)
+            self.flash('ONLINE CODE: ' + ' '.join(net.code), *rows, secs=WAIT_MSG_S)
         else:
-            self.flash('ONLINE: WAITING FOR PLAYER 2', *rows, secs=600)
+            self.flash('ONLINE: WAITING FOR PLAYER 2', *rows, secs=WAIT_MSG_S)
     def net_poll(self):
         """the Tk side: the connection made (the game loaded, both switched on at once), or lost"""
         res = getattr(self, 'net_result', None)

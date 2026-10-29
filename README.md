@@ -19,6 +19,11 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.1.5
+
+* **Messages back in the middle of the picture**, and none stays over a game you can play (hosting: the code shows for
+  8 seconds; a click on a port shows it again).
+
 ## New in v1.1.4
 
 * **Fixed:** with the brightness knob turned down the emulator ran at a crawl from the next start on.

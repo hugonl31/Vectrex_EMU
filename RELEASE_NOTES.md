@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.1.5
+
+**Messages back in the middle of the picture** (2026-10-29)
+- The emulator's messages are in the middle of the picture again, where the player looks.
+- None stays over a game you can play: hosting, the code / game room / waiting message shows for 8 seconds, then the
+  game is yours while you wait (the Online window keeps the code; a click on a port shows the message again). Only
+  PAUSED, CONNECTION LOST with its countdown and the 3D Imager's disc spinning up stay - the game stands still then.
+- Plays online with v1.1.3 and v1.1.4.
+
 ## v1.1.4
 
 **Fixed: the emulator crawled with the brightness knob turned down** (2026-10-29)

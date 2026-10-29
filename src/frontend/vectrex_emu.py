@@ -5093,6 +5093,12 @@ class App:
             if role == 'join' and g.get('host_name'):
                 net.peer_name = netplay_name(g['host_name'])
             self.net_rehost_left = 0
+            self.chat_log = []                                  # (a new link, a new chat: not the last player's lines,
+            w = getattr(self, 'chat_win', None)                 #  nor a window that names the last player)
+            if w is not None:
+                try: w.destroy()
+                except tk.TclError: pass
+                self.chat_win = None
             self.net, self.net_game, self.net_rom = net, g, os.path.abspath(rom)
             Core.force_seed = g.get('seed')
             Core.net_card = (card[0], card[1]) if card else None
@@ -5993,6 +5999,14 @@ class App:
                 v4e_rom(os.path.abspath(rom))
             except (ValueError, OSError) as e:
                 self.rom_error('%s:\n%s' % (os.path.basename(rom), e)); return
+        net_ = getattr(self, 'net', None)
+        if getattr(self, 'net_game', None) and net_ is not None and not net_.lost and net_.f > 0 and \
+                os.path.abspath(rom or '') == os.path.abspath(getattr(self, 'net_rom', '') or ''):
+            self.net_flash('ONLINE: NOT WHILE CONNECTED', 'IT STARTS THE GAME AGAIN HERE', 'ONLY: KEPT FOR THE NEXT GAME', secs=5)
+            self.chat_add('sys', 'That setting starts the game again - on this PC only, so the two games would part. It '
+                          'is kept for the next game.')
+            return                                              # (the same game started again on one side: refused -
+                                                                #  Cartridge hardware, USB keys, a tab's reset...)
         if getattr(self, 'net_game', None) and os.path.abspath(rom or '') != os.path.abspath(getattr(self, 'net_rom', '') or ''):
             self.net_end('ONLINE: GAME CHANGED')                # (the other side would not follow: online play ends)
         old = self.run

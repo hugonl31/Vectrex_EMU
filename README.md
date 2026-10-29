@@ -19,6 +19,11 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.1.2
+
+* **The ports below the picture, online** - P1 PORT appears right of the cartridge (as on a Vectrex), each port shows
+  the player who holds it, and a click on a port takes it. Player names are 10 characters at most.
+
 ## New in v1.1.1
 
 * **Fixes from a night of stress tests** - the online server can no longer be stopped by a bad packet; a setting that

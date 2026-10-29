@@ -3,6 +3,18 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.1.2
+
+**The ports below the picture, online** (2026-10-29)
+- Online (hosting, joining, playing) a **P1 PORT** pictogram appears right of the cartridge - as on a Vectrex, port 1
+  right, port 2 left - in the room between the cartridge and RESET, so nothing in the strip moves.
+- Each port shows the name of the player who holds it; P2 PORT while you wait for a player. **Click a port to take
+  it**; the pointer on a port you do not hold shows TAKE PORT. The Take port buttons in the chat stay.
+- Player names are 10 characters at most, so the longest fits above a port (a name of 10 is drawn a little smaller).
+  A longer name chosen before is asked again, once.
+- PAUSED is back between the OSD and P2 PORT.
+- Plays online with v1.1.1.
+
 ## v1.1.1
 
 **Fixes from a night of stress tests** (2026-10-29)

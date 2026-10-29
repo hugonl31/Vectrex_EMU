@@ -2122,6 +2122,9 @@ class App:
         self.net_server_s = conf0.get('net_server', '')         # (Online settings: the meeting point; '' = netplay.SERVER)
         self.gamer = conf0.get('gamer_name', '')                # (this player's name online: the game room, the chat)
         self.gamer_ok = bool(conf0.get('gamer_ok', False))      # (reserved at the meeting point for player_key)
+        import netplay as _np
+        if self.gamer and not _np.gamer_name(self.gamer):      # (a name from before names had 10 characters at most:
+            self.gamer_ok = False                               #  asked again, once)
         self.player_key = conf0.get('player_key', '')           # (the secret that makes the name this player's)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
@@ -3692,15 +3695,19 @@ class App:
         k = (pb - pt) / 330.0                                   # (the emulator's messages: 4/5 down the picture -
         return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + MSG_Y * (pb - pt) - len(rows) * 11.0 * k / 2.0, k=k)   #  the game stays playable)
     def pause_state(self):
-        """PAUSED in the strip below the picture, between the cartridge and RESET (the owner, 2026-10-29): PAUSED big in
+        """PAUSED in the strip below the picture, between the OSD and P2 PORT (the owner, 2026-10-29): PAUSED big in
         orange, how to go on below it, the same room on both sides; up and down halfway between the frame's bottom
         edge and the bottom of the window (None without the strip: then in the picture)"""
         if not (self.fps_on or self.cart_on or self.knob_on):
             return None
         pl, pt, pr, pb = self.pic_rect()
         x, y, r = self.cart_geom()
-        kx, ky, kr, rx = self.knob_geom()
-        left, right = x + 1.3 * r, rx - 0.95 * kr               # (the CARTRIDGE label's right end, RESET's ring)
+        od = self.osd_state()                                   # (between the OSD and P2 PORT - the owner, 2026-10-29)
+        if od:
+            left = od['area'][0] + OSD_CHARS * 6.0 * od['k']
+        else:
+            left = (pl + pr) / 2 + (vecrender.GLASS_DX - vecrender.ART_AW) * (pb - pt) / 2
+        right = x - 3.6 * r - 1.1 * r                           # (P2 PORT's left edge)
         room = right - left
         if room <= 0:
             return None
@@ -3744,15 +3751,58 @@ class App:
         if not (self.fps_on or self.cart_on or self.knob_on):  # (no strip below the picture: only the message)
             return None
         x, y, r = self.cart_geom()
-        od = self.osd_state() if self.fps_on else None
-        px = od.get('p2x') if od else None
-        return dict(cx=px if px is not None else x - 3.6 * r, cy=y, r=r, kind=self.speech,
-                    label='P2 PORT')
+        return dict(cx=x - 3.6 * r, cy=y, r=r, kind=self.speech,
+                    label=self.port_label(2) if self.ports_shown() else 'P2 PORT')
+    def ports_shown(self):
+        """online (hosting, joining, playing): the two controller ports below the picture, each with who holds it"""
+        return bool(getattr(self, 'net_game', None) or getattr(self, 'net_pending', None))
+    def port_label(self, k):
+        """the name above controller port k online: the player who holds it - else P1 PORT / P2 PORT; the pointer on a
+        port you do not hold: TAKE PORT"""
+        role = getattr(self, 'net_role', 'host')
+        mine = 'host' if role == 'host' else 'join'
+        if getattr(self, 'port_hover', None) == k and getattr(self, 'net_game', None):
+            ports = getattr(self.run, 'ports', None) or {}
+            if ports.get(mine) != k:
+                return 'TAKE PORT'
+        me = (getattr(self, 'gamer', '') or 'YOU') if getattr(self, 'gamer_ok', False) else 'YOU'
+        net = getattr(self, 'net', None) or getattr(self, 'net_pending', None)
+        peer = (getattr(net, 'peer_name', '') or 'PLAYER %d' % (2 if role == 'host' else 1)).upper()
+        names = {'host': me if role == 'host' else peer, 'join': me if role == 'join' else peer}
+        if not getattr(self, 'net_game', None):                 # (waiting: you hold your own port)
+            return me if (k == 1) == (role == 'host') else 'P%d PORT' % k
+        ports = getattr(self.run, 'ports', None) or {'host': 1, 'join': 2}
+        who = [names[w] for w in ('host', 'join') if ports.get(w) == k]
+        return who[0] if who else 'P%d PORT' % k
+    def port1_state(self):
+        """online: controller port 1 right of the cartridge (as on a Vectrex: P1 right, P2 left), its holder's name - in
+        the room between the cartridge and RESET, so nothing in the strip moves when you go online"""
+        if not self.ports_shown() or not (self.ren and hasattr(self.ren, 'map')):
+            return None
+        if not (self.fps_on or self.cart_on or self.knob_on):
+            return None
+        x, y, r = self.cart_geom()
+        kx, ky, kr, rx = self.knob_geom()                       # (in the middle between the cartridge and RESET - where
+        cx = ((x + 1.3 * r) + (rx - 0.95 * kr)) / 2.0           #  nothing else is: the strip stays as it is)
+        return dict(cx=cx, cy=y, r=r, kind='off', label=self.port_label(1))
+    def port_at(self, e):
+        """which controller port pictogram the pointer is on: 1, 2 or None"""
+        for k, st in ((1, self.port1_state()), (2, self.port2_state())):
+            if st and math.hypot(e.x - st['cx'], e.y - st['cy']) <= 1.3 * st['r']:
+                return k
+        return None
     def port2_click(self, e):
-        """a click on the port 2 pictogram: joystick -> VecVox -> VecVoice -> 3D Imager -> light pen -> joystick
-        (without the speech ROM: joystick -> 3D Imager -> light pen -> joystick)"""
-        st = self.port2_state()
-        if not st or math.hypot(e.x - st['cx'], e.y - st['cy']) > 1.3 * st['r']:
+        """a click on a port pictogram - online: that port taken (your controller into it); else the port 2 pictogram:
+        joystick -> VecVox -> VecVoice -> 3D Imager -> light pen -> joystick (without the speech ROM: joystick -> 3D
+        Imager -> light pen -> joystick)"""
+        k = self.port_at(e)
+        if k and self.ports_shown():
+            if getattr(self, 'net_game', None):
+                self.take_port(k)
+            else:
+                self.flash('WAITING FOR A PLAYER 2', 'PORTS: ONCE THEY ARE HERE', secs=2)
+            return True
+        if k != 2:
             return False
         nxt = {'off': 'vecvox', 'vecvox': 'vecvoice', 'vecvoice': 'imager', 'imager': 'lightpen', 'lightpen': 'off'}.get(self.speech, 'off')
         if nxt in ('vecvox', 'vecvoice') and not sp_rom():
@@ -4148,8 +4198,7 @@ class App:
             cx, cy, r = self.cart_geom()[:3]
             if math.hypot(e.x - cx, e.y - cy) <= 1.3 * r:
                 return True
-        st = self.port2_state()
-        return bool(st and math.hypot(e.x - st['cx'], e.y - st['cy']) <= 1.3 * st['r']) or self.osd_hit(e)
+        return bool(self.port_at(e)) or self.osd_hit(e)
     def osd_hit(self, e):
         """the pointer on the OSD's text (vecrender _osd: rows 9 k high, characters 6 k wide) - a click opens Config"""
         od = self.osd_state()
@@ -4277,10 +4326,11 @@ class App:
         (2026-10-26): a click on a half was not what a hand on a knob expects. Down to 0 % it switches off, up
         from there on, as on the Vectrex"""
         if e is None:
-            self.knob_hover = self.hand_hover = False
+            self.knob_hover = self.hand_hover = False; self.port_hover = None
             return
         e = self.px_event(e)
         self.knob_hover = self.knob_hit(e) == 'knob'            # (the knob's label: the volume)
+        self.port_hover = self.port_at(e) if self.ports_shown() else None   # (online, a port: TAKE PORT)
         self.hand_hover = self.clickable(e)                     # (the hand pointer: anything a click works)
         d = getattr(self, 'kdrag', None)
         if not d:
@@ -4962,7 +5012,7 @@ class App:
         e.pack(side='left')
         e.bind('<FocusIn>', lambda ev: setattr(self.inp, 'block', True))
         e.bind('<FocusOut>', lambda ev: setattr(self.inp, 'block', False))
-        tk.Label(r1, text='  up to 12: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
+        tk.Label(r1, text='  up to 10: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
         msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
         busy = {'on': False}
         def take():
@@ -4970,7 +5020,7 @@ class App:
                 return
             name = netplay.gamer_name(nv.get())
             if not name:
-                msg.configure(text='A name: 1 to 12 of A-Z 0-9 _ -'); return
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
             if not self.player_key:
                 self.player_key = secrets.token_hex(16); self.save_settings()
             old = self.gamer if (change and self.gamer_ok and self.gamer != name) else None
@@ -4993,7 +5043,7 @@ class App:
             elif res and res[0] == 'taken':
                 msg.configure(text='That name belongs to another player. Pick another.')
             elif res:
-                msg.configure(text='That name is not allowed: 1 to 12 of A-Z 0-9 _ -')
+                msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9 _ -')
             else:
                 msg.configure(text='The meeting point did not answer. Try again in a moment.')
         deck._button(foot, 'Take this name', take, self, on=True).pack(side='left')
@@ -7253,6 +7303,7 @@ class App:
             r.osd = self.osd_state()
             r.cart = self.cart_state()
             r.port2 = self.port2_state()
+            r.port1 = self.port1_state()
             r.browser = self.browser_state()
             r.hint = self.hint_state()
             if smooth and not self.run.paused:

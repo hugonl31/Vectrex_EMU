@@ -149,7 +149,8 @@ TOPICS = [
       "1 get a note on the screen and in the chat. Take port 1 / Take port 2 (in the Chat window and the Online menu) put your controller "
       "into that port and the other player's out of it - the last one to take a port has it (the Vectrex just sees a "
       "controller at rest in a port nobody holds). In the original games where two players take turns on one "
-      "controller (Mine Storm, Berzerk, Scramble...) the one whose turn it is takes port 1. "
+      "controller (Mine Storm, Berzerk, Scramble...) the one whose turn it is takes port 1. Below the picture, online, "
+      "both ports show who holds them (P1 PORT right of the cartridge, P2 PORT left): a click on a port takes it. "
       "A game that talks plays without its speech module. While you wait for player 2 you can "
       "change the cartridge: the new game is offered (and listed in the game room) at once."),
 ('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
@@ -177,7 +178,7 @@ TOPICS = [
          "soft chime when they write and the Chat window is not the one you are in (Online settings: on / off). Take "
          "port 1 / Take port 2: your controller into that port."),
 ('item', 'Leave the online game', "The game goes on here alone; the other player is told. While still waiting: stops waiting."),
-('item', 'Your player name', "Asked once, the first time you open an online window: up to 12 of A-Z 0-9 _ -. "
+('item', 'Your player name', "Asked once, the first time you open an online window: up to 10 of A-Z 0-9 _ -. "
          "The meeting point keeps it for you - a secret key in your settings makes it yours (only a scrambled copy of the "
          "key is kept there, no address) - so nobody else can take it; other players see it in the game room and the "
          "chat. Online settings > Change name takes a new one and frees the old. A name unused for a year is free again; "

@@ -20,7 +20,7 @@ Packets (all start with b'VXR1'):
     server -> client   C code | P peer | E error | F payload | k (keep-alive answer) | l {p, n, t, g: [[code, gamer,
                        name, md5, size, waiting s], ...]} (page p of n, t games in all)
 
-The game room: a host that registers with pub = 1 and a gamer name (unique among the waiting public games, 1-12 of
+The game room: a host that registers with pub = 1 and a gamer name (unique among the waiting public games, 1-10 of
 A-Z 0-9 _ -) is listed until someone joins it. Caps keep the little server light: MAX_PUBLIC games listed, MAX_GAMES
 codes in all, MAX_PAIRS games joined at once (a full room answers E 'the game room is full').
 
@@ -81,9 +81,9 @@ MAX_NAMES = 200000          # (names kept at most)
 
 
 def gamer_name(s):
-    """a gamer name as the room keeps it (upper case, 1-12 of A-Z 0-9 _ -), or None"""
+    """a gamer name as the room keeps it (upper case, 1-10 of A-Z 0-9 _ -), or None"""
     s = str(s or '').strip().upper().replace(' ', '_')
-    return s if 1 <= len(s) <= 12 and set(s) <= GAMER_CHARS else None
+    return s if 1 <= len(s) <= 10 and set(s) <= GAMER_CHARS else None
 
 
 class Relay:

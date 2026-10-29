@@ -738,9 +738,10 @@ GAMER_CHARS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
 
 
 def gamer_name(s):
-    """a gamer name as the game room keeps it (upper case, 1-12 of A-Z 0-9 _ -, spaces as _), or None"""
+    """a gamer name as the game room keeps it (upper case, 1-10 of A-Z 0-9 _ -, spaces as _: it fits above a port
+    pictogram), or None"""
     s = str(s or '').strip().upper().replace(' ', '_')
-    return s if 1 <= len(s) <= 12 and set(s) <= GAMER_CHARS else None
+    return s if 1 <= len(s) <= 10 and set(s) <= GAMER_CHARS else None
 
 
 def claim_name(server, name, key, old=None, timeout=3.0):

@@ -3263,7 +3263,8 @@ class GLBloomRenderer(GLRenderer):
     def _hud(self):
         """the frame rate counter (small green strokes in the top left corner) and the volume knob"""
         if not (self.hud or getattr(self, 'knob', None) or getattr(self, 'osd', None) or getattr(self, 'cart', None)
-                or getattr(self, 'browser', None) or getattr(self, 'hint', None) or getattr(self, 'port2', None)):
+                or getattr(self, 'browser', None) or getattr(self, 'hint', None) or getattr(self, 'port2', None)
+                or getattr(self, 'port1', None)):
             return
         gl = self.gl
         w, h = self.size
@@ -3285,6 +3286,8 @@ class GLBloomRenderer(GLRenderer):
             self._listed('cart', self.cart, lambda: self._cart(self.cart))
         if getattr(self, 'port2', None):
             self._listed('port2', self.port2, lambda: self._port2(self.port2))
+        if getattr(self, 'port1', None):                    # (online: controller port 1, right of the cartridge)
+            self._listed('port1', self.port1, lambda: self._port2(self.port1))
         if getattr(self, 'browser', None):
             self._browser(self.browser)
         if getattr(self, 'hint', None):                   # (a hint in the middle of the picture: centred rows)
@@ -3457,9 +3460,9 @@ class GLBloomRenderer(GLRenderer):
         # (the VecVox - a SpeakJet, the more advanced module - the speaking head; the VecVoice the box with waves: the
         #  owner, 2026-10-27)
         self._icon({'vecvoice': PORT2_ICON, 'vecvox': VOICE_ICON, 'imager': IMAGER_ICON, 'lightpen': LPEN_ICON}.get(c.get('kind'), JOY_ICON), P)
-        lh = 0.30 * r
         t = c['label']
-        self._text_row([(t, (0.40, 0.667, 0.533))], cx - (len(t) * 6 - 2) * lh / 12.0, cy - 1.5 * r - lh, lh / 6.0)
+        lh = min(0.30 * r, 2.6 * r * 6.0 / max(1, len(t) * 6 - 2))   # (at most as wide as CARTRIDGE: a long player name
+        self._text_row([(t, (0.40, 0.667, 0.533))], cx - (len(t) * 6 - 2) * lh / 12.0, cy - 1.5 * r - 0.30 * r, lh / 6.0)   #  smaller, the same line)
 
     def _load_icon(self, x0, y0, x1, y1):
         """the load button: LOAD_ICON turned 90 degrees left, fitted into the box"""

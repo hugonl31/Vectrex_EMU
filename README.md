@@ -23,7 +23,7 @@ photo, recording and measurement, and every call on how it should look, sound an
 
 <p align="center">
 <img src="docs/images/v1.1.7/head_tracking.gif" width="420" alt="Armor Attack with head tracking: the picture slides against the overlay as the head moves round"><br>
-<em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head circles (largest shift 8 mm here).</em>
+<em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head circles (largest shift 4 mm here).</em>
 </p>
 
 **New in v1.1.7 and v1.1.8: head tracking**

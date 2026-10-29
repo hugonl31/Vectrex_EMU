@@ -173,115 +173,127 @@ class Relay:
             now = time.time()
             if now - last_sweep > 5.0:
                 last_sweep = now; self.sweep(now)
-            if len(data) < 5 or not data.startswith(MAGIC):
-                continue
-            kind, body = data[4:5], data[5:]
-            if kind == b'X':                                # relay: the hot path first
-                p = self.pairs.get(addr)
-                if not p and len(body) >= 6:                # (a side whose router gave it another port: the same address,
-                    p = self.rebind(addr, body[:5].decode('ascii', 'replace'))   #  the same code - moved)
-                if p and len(body) >= 6 and body[:5].decode('ascii', 'replace') == p[1] and len(body) - 5 <= RELAY_MAX:
-                    if not self.limited(self.rate, addr, 1.0, RELAY_RATE):
-                        self.send(p[0], b'F', body[5:]); p[2][0] = now
-                continue
-            if kind == b'K':
-                g = self.games.get(body[:5].decode('ascii', 'replace'))
-                if g and g['addr'] == addr:
-                    g['t'] = now; self.send(addr, b'k')
-                continue
-            if kind == b'L':                                # the game room's list: a page of the public games waiting
-                if not self.limited(self.listed, addr[0], 1.0, 6):
-                    self.room(addr, body[0] if body else 0, now)
-                continue
-            if kind == b'D':                                # (a host gone: its code, and its pair, gone now)
-                c = body[:5].decode('ascii', 'replace')
-                g = self.games.get(c)
-                if g and g['addr'] == addr:
-                    del self.games[c]
-                    for a in (addr, g['peer']):
-                        if a in self.pairs and self.pairs[a][1] == c:
-                            del self.pairs[a]
-                continue
-            if kind == b'U':                                # (a host waiting: another game - the room lists it at once)
-                g = self.games.get(body[:5].decode('ascii', 'replace'))
-                if g and g['addr'] == addr and not g['peer'] and not self.limited(self.listed, addr, 1.0, 4):
-                    try:
-                        info = json.loads(body[5:].decode())
-                        g['info'].update({k: info.get(k) for k in ('name', 'md5', 'size') if k in info})
-                    except (ValueError, UnicodeDecodeError, AttributeError):
-                        pass
-                continue
-            if self.limited(self.asked, addr[0], 60.0, 30):   # (registering and joining: 30 a minute per address)
-                continue
-            if kind == b'N':                                # (a player name: reserved for this key)
+            try:
+                self.packet(data, addr, now)
+            except Exception as e:                          # (a packet nobody planned for: logged, and on with the next)
+                self.bad = getattr(self, 'bad', 0) + 1
+                if self.bad < 20 or self.bad % 1000 == 0:
+                    print('bad packet %d from %s: %s: %s' % (self.bad, addr[0], type(e).__name__, str(e)[:120]), flush=True)
+
+    def packet(self, data, addr, now):
+        """one packet from addr (run: any exception here is caught there - one bad packet never stops the server)"""
+        if len(data) < 5 or not data.startswith(MAGIC):
+            return
+        kind, body = data[4:5], data[5:]
+        if kind == b'X':                                # relay: the hot path first
+            p = self.pairs.get(addr)
+            if not p and len(body) >= 6:                # (a side whose router gave it another port: the same address,
+                p = self.rebind(addr, body[:5].decode('ascii', 'replace'))   #  the same code - moved)
+            if p and len(body) >= 6 and body[:5].decode('ascii', 'replace') == p[1] and len(body) - 5 <= RELAY_MAX:
+                if not self.limited(self.rate, addr, 1.0, RELAY_RATE):
+                    self.send(p[0], b'F', body[5:]); p[2][0] = now
+            return
+        if kind == b'K':
+            g = self.games.get(body[:5].decode('ascii', 'replace'))
+            if g and g['addr'] == addr:
+                g['t'] = now; self.send(addr, b'k')
+            return
+        if kind == b'L':                                # the game room's list: a page of the public games waiting
+            if not self.limited(self.listed, addr[0], 1.0, 6):
+                self.room(addr, body[0] if body else 0, now)
+            return
+        if kind == b'D':                                # (a host gone: its code, and its pair, gone now)
+            c = body[:5].decode('ascii', 'replace')
+            g = self.games.get(c)
+            if g and g['addr'] == addr:
+                del self.games[c]
+                for a in (addr, g['peer']):
+                    if a in self.pairs and self.pairs[a][1] == c:
+                        del self.pairs[a]
+            return
+        if kind == b'U':                                # (a host waiting: another game - the room lists it at once)
+            g = self.games.get(body[:5].decode('ascii', 'replace'))
+            if g and g['addr'] == addr and not g['peer'] and not self.limited(self.listed, addr, 1.0, 4):
                 try:
-                    q = json.loads(body.decode())
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                name, h = gamer_name(q.get('name')), self.key_hash(q.get('key'))
-                if not name or not h:
-                    self.send(addr, b'n', json.dumps(dict(ok=0, why='not allowed')).encode()); continue
-                if not self.name_used(name, h, now):
-                    self.send(addr, b'n', json.dumps(dict(ok=0, why='taken')).encode()); continue
-                old = gamer_name(q.get('old'))
-                if old and old != name and self.names.get(old, {}).get('k') == h:
-                    del self.names[old]; self.names_dirty = True      # (a name changed: the old one free)
-                self.save_names(now, force=True)
-                self.send(addr, b'n', json.dumps(dict(ok=1, name=name)).encode())
-                print('name %s' % name, flush=True)
-                continue
-            if kind == b'R':
-                try:
-                    info = json.loads(body.decode())
-                    lan = info.get('lan')
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                pub = bool(info.get('pub'))
-                gamer = gamer_name(info.get('gamer')) if pub else None
-                if pub and not gamer:
-                    self.send(addr, b'E', b'that gamer name is not allowed'); continue
-                if pub and not self.name_used(gamer, self.key_hash(info.get('key')), now):
-                    self.send(addr, b'E', b'that name belongs to another player'); continue
-                mine = [c for c, g in self.games.items() if g['addr'] == addr and not g['peer']]
-                if mine:                                    # (asked again - the answer lost: the same code)
-                    self.send(addr, b'C', mine[0].encode()); continue
-                if pub and any(g.get('gamer') == gamer for g in self.games.values() if g['pub'] and not g['peer']):
-                    self.send(addr, b'E', b'name taken'); continue
-                if len(self.games) >= MAX_GAMES or (pub and sum(1 for g in self.games.values() if g['pub'] and not g['peer'])
-                                                    >= MAX_PUBLIC):
-                    self.send(addr, b'E', b'the game room is full'); continue
-                c = self.code()
-                if c:
-                    self.games[c] = dict(addr=addr, lan=lan, info={k: info.get(k) for k in ('name', 'md5', 'size', 'ver')}, t=now,
-                                         since=now, peer=None, pub=pub, gamer=gamer)
-                    self.send(addr, b'C', c.encode())
-                    print('%s host %s:%d %s%s' % (c, addr[0], addr[1], info.get('name', ''), ' (public: %s)' % gamer if pub else ''),
-                          flush=True)
-            elif kind == b'J':
-                c = body[:5].decode('ascii', 'replace').upper()
-                g = self.games.get(c)
-                if not g:
-                    self.send(addr, b'E', b'no such game'); continue
-                if g['peer'] and g['peer'] != addr:
-                    self.send(addr, b'E', b'someone already joined'); continue
-                if not g['peer'] and len(self.pairs) >= 2 * MAX_PAIRS:
-                    self.send(addr, b'E', b'the game room is full'); continue
-                try:
-                    jq = json.loads(body[5:].decode() or '{}')
-                    lan = jq.get('lan')
+                    info = json.loads(body[5:].decode())
+                    g['info'].update({k: info.get(k) for k in ('name', 'md5', 'size') if k in info})
                 except (ValueError, UnicodeDecodeError, AttributeError):
-                    jq, lan = {}, None
-                jname = gamer_name(jq.get('name'))           # (the joiner's name: told to the host when it is theirs)
-                if jname and not self.name_used(jname, self.key_hash(jq.get('key')), now):
-                    jname = None
-                g['peer'] = addr
-                self.pairs[addr] = [g['addr'], c, [now]]
-                self.pairs[g['addr']] = [addr, c, [now]]
-                host = dict(role='host', pub=list(g['addr']), lan=g['lan'], game=g['info'], gamer=g.get('gamer'))
-                join = dict(role='join', pub=list(addr), lan=lan, name=jname)
-                self.send(addr, b'P', json.dumps(host).encode())
-                self.send(g['addr'], b'P', json.dumps(join).encode())
-                print('%s join %s:%d' % (c, addr[0], addr[1]), flush=True)
+                    pass
+            return
+        if self.limited(self.asked, addr[0], 60.0, 30):   # (registering and joining: 30 a minute per address)
+            return
+        if kind == b'N':                                # (a player name: reserved for this key)
+            try:
+                q = json.loads(body.decode())
+                if not isinstance(q, dict): return
+            except (ValueError, UnicodeDecodeError):
+                return
+            name, h = gamer_name(q.get('name')), self.key_hash(q.get('key'))
+            if not name or not h:
+                self.send(addr, b'n', json.dumps(dict(ok=0, why='not allowed')).encode()); return
+            if not self.name_used(name, h, now):
+                self.send(addr, b'n', json.dumps(dict(ok=0, why='taken')).encode()); return
+            old = gamer_name(q.get('old'))
+            if old and old != name and self.names.get(old, {}).get('k') == h:
+                del self.names[old]; self.names_dirty = True      # (a name changed: the old one free)
+            self.save_names(now, force=True)
+            self.send(addr, b'n', json.dumps(dict(ok=1, name=name)).encode())
+            print('name %s' % name, flush=True)
+            return
+        if kind == b'R':
+            try:
+                info = json.loads(body.decode())
+                if not isinstance(info, dict): return
+                lan = info.get('lan')
+            except (ValueError, UnicodeDecodeError):
+                return
+            pub = bool(info.get('pub'))
+            gamer = gamer_name(info.get('gamer')) if pub else None
+            if pub and not gamer:
+                self.send(addr, b'E', b'that gamer name is not allowed'); return
+            if pub and not self.name_used(gamer, self.key_hash(info.get('key')), now):
+                self.send(addr, b'E', b'that name belongs to another player'); return
+            mine = [c for c, g in self.games.items() if g['addr'] == addr and not g['peer']]
+            if mine:                                    # (asked again - the answer lost: the same code)
+                self.send(addr, b'C', mine[0].encode()); return
+            if pub and any(g.get('gamer') == gamer for g in self.games.values() if g['pub'] and not g['peer']):
+                self.send(addr, b'E', b'name taken'); return
+            if len(self.games) >= MAX_GAMES or (pub and sum(1 for g in self.games.values() if g['pub'] and not g['peer'])
+                                                >= MAX_PUBLIC):
+                self.send(addr, b'E', b'the game room is full'); return
+            c = self.code()
+            if c:
+                self.games[c] = dict(addr=addr, lan=lan, info={k: info.get(k) for k in ('name', 'md5', 'size', 'ver')}, t=now,
+                                     since=now, peer=None, pub=pub, gamer=gamer)
+                self.send(addr, b'C', c.encode())
+                print('%s host %s:%d %s%s' % (c, addr[0], addr[1], info.get('name', ''), ' (public: %s)' % gamer if pub else ''),
+                      flush=True)
+        elif kind == b'J':
+            c = body[:5].decode('ascii', 'replace').upper()
+            g = self.games.get(c)
+            if not g:
+                self.send(addr, b'E', b'no such game'); return
+            if g['peer'] and g['peer'] != addr:
+                self.send(addr, b'E', b'someone already joined'); return
+            if not g['peer'] and len(self.pairs) >= 2 * MAX_PAIRS:
+                self.send(addr, b'E', b'the game room is full'); return
+            try:
+                jq = json.loads(body[5:].decode() or '{}')
+                if not isinstance(jq, dict): jq = {}
+                lan = jq.get('lan')
+            except (ValueError, UnicodeDecodeError, AttributeError):
+                jq, lan = {}, None
+            jname = gamer_name(jq.get('name'))           # (the joiner's name: told to the host when it is theirs)
+            if jname and not self.name_used(jname, self.key_hash(jq.get('key')), now):
+                jname = None
+            g['peer'] = addr
+            self.pairs[addr] = [g['addr'], c, [now]]
+            self.pairs[g['addr']] = [addr, c, [now]]
+            host = dict(role='host', pub=list(g['addr']), lan=g['lan'], game=g['info'], gamer=g.get('gamer'))
+            join = dict(role='join', pub=list(addr), lan=lan, name=jname)
+            self.send(addr, b'P', json.dumps(host).encode())
+            self.send(g['addr'], b'P', json.dumps(join).encode())
+            print('%s join %s:%d' % (c, addr[0], addr[1]), flush=True)
 
     def rebind(self, addr, code):
         """a pair's side back with another port (its router, after a drop): its entries moved to the new address"""

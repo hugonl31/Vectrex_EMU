@@ -19,6 +19,10 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.1.3
+
+* **Fixed:** a pause both online players share, longer than 30 seconds, ended the game when it was over.
+
 ## New in v1.1.2
 
 * **The ports below the picture, online** - P1 PORT appears right of the cartridge (as on a Vectrex), each port shows

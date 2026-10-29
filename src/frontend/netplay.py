@@ -571,19 +571,21 @@ class NetPlay:
             return None
         f = self.f
         self.local[f + self.delay] = tuple(int(v) for v in mine)
-        t_wait = time.perf_counter()
+        t_wait = t_out = time.perf_counter()
         while f not in self.remote:
-            self.wait_t0 = t_wait
+            self.wait_t0 = t_out
             if self.lost:                                # (closed meanwhile: the window shut, or the other side left)
                 self.wait_t0 = None
                 return None
             now = time.perf_counter()
+            if self.pause_on:                            # (a pause both share: its time is no wait - else the moment it
+                t_out = now                              #  ends, before the next input comes, it read as 30 s of nothing)
             if now - self.last_send > 0.010:
                 self._send_inputs()
             self._drain()
             if f in self.remote:
                 break
-            if now - self.last_heard > TIMEOUT or (now - t_wait > TIMEOUT and not self.pause_on):
+            if now - self.last_heard > TIMEOUT or (now - t_out > TIMEOUT and not self.pause_on):
                 self.lost = True                         # (nothing from the other side - or no new input: it can not
                 self.wait_t0 = None                      #  hear us; a paused one still says it is there)
                 self.log('connection lost (no input for frame %d)' % f)

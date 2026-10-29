@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.1.3
+
+**Fixed: a long pause ended the online game** (2026-10-29)
+- A pause both players share, longer than 30 seconds, ended the link the moment it was over: the joiner counted the
+  pause as time without input, and when the host's "go on" arrived a few milliseconds before its next input, that read
+  as 30 seconds of silence. Paused time no longer counts (found by a 20-minute test that pauses at random; three
+  40-second pauses in a row now go on as they should). It also showed a short false countdown after some pauses.
+- Plays online with v1.1.1 and v1.1.2.
+
 ## v1.1.2
 
 **The ports below the picture, online** (2026-10-29)

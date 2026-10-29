@@ -478,7 +478,7 @@ TOPICS = [
 ('item', 'Head tracking (a phone follows your head)', "A phone app that tracks your head - SmoothTrack on iOS or Android, "
          "or anything that sends OpenTrack's UDP format - makes the picture slide against the overlay and the glass as "
          "you move, as the phosphor behind a real sheet does. Point the app at this PC's address (shown below the "
-         "switch) and port 4242, or use the app's USB mode (its USB tunnel tool on this PC: no address needed); allow the "
+         "switch) and port 4242, or plug the phone in with the app's USB mode (found by itself; see Help > Head tracking); allow the "
          "emulator through the firewall when Windows asks. Centre: where your head "
          "is now counts as the middle."),
 ('item', 'Largest shift (head tracking)...', "How far the picture moves against the overlay when your head is at the edge of the "
@@ -516,25 +516,36 @@ TOPICS = [
       "same network, or networks your router connects (on a separate guest or IoT Wi-Fi, check it is not isolated)."),
 ('p', "3. Turn on Head tracking. When Windows asks, let Vectrex_EMU through the firewall (private networks)."),
 ('h', 'Setting it up over USB (iPhone)'),
-('p', "Over the cable the timing is steadier than over Wi-Fi, and no network setup is needed."),
+('p', "Over the cable the timing is steadier than over Wi-Fi, and no network setup is needed. Vectrex_EMU talks to the "
+      "iPhone itself: SmoothTrack's USB tunnel tool (STUSB) is not needed."),
 ('p', "1. Install *Apple Devices* (or iTunes) from the Microsoft Store: it brings Apple's iPhone service. Plug the "
       "iPhone in, open Apple Devices once and tap Trust on the phone."),
-('p', "2. Download SmoothTrack's USB tunnel tool (STUSB.zip) and unpack it into a folder of its own."),
-('p', "3. In SmoothTrack's settings tap *Activate USB Connection*, then on the PC run *startSTUSB.bat* from that "
-      "folder and leave it running. Do not start OpenTrack: Vectrex_EMU listens on its port, 4242."),
-('p', "4. Turn on Head tracking in Config: below it, receiving from 127.0.0.1 means it works."),
+('p', "2. In SmoothTrack's settings tap *Activate USB Connection* and start tracking."),
+('p', "3. Turn on Head tracking in Config: receiving over USB below it means it works. Unplugged and plugged in "
+      "again, it finds the phone by itself within a few seconds."),
 ('link', 'Apple Devices (Microsoft Store)', 'https://apps.microsoft.com/detail/9np83lwlpz9k'),
-('link', 'SmoothTrack USB tunnel tool (STUSB.zip)', 'https://github.com/epaga/epaga.github.io/raw/master/STUSB.zip'),
 ('link', 'SmoothTrack help for iPhone (Wi-Fi and USB)', 'https://smoothtrack.app/mobilehelp.html'),
-('h', 'Over USB with Android'),
-('p', "Android phones go over USB with ADB and Gnirehtet, a free tool that gives the phone the PC's network over the "
-      "cable; then the app sends to the PC's address as over Wi-Fi. SmoothTrack's Android guide shows each step."),
+('h', 'Setting it up over USB (Android)'),
+('p', "Android phones go over USB with ADB and Gnirehtet, a free tool that carries the phone's network over the cable. "
+      "Vectrex_EMU runs it itself: no command to start, and only this PC's address goes through it, so the phone's "
+      "internet stays as it is."),
+('p', "1. On the phone turn on USB debugging (Settings > About phone: tap Build number seven times, then Settings > "
+      "Developer options > USB debugging)."),
+('p', "2. Download Gnirehtet for your PC (the rust version, for Windows gnirehtet-rust-win64) and unpack it into the "
+      "Vectrex_EMU folder, so a folder whose name starts with gnirehtet sits next to the program. It holds adb and "
+      "gnirehtet.apk."),
+('p', "3. Plug the phone in and allow USB debugging when it asks. In SmoothTrack's settings enter the PC's address "
+      "shown in Config under Head tracking and port *4242*, and start tracking."),
+('p', "4. Turn on Head tracking. The first time, the Gnirehtet app is installed on the phone and asks to allow its VPN "
+      "connection: allow it. Receiving over USB in Config means it works."),
+('link', 'Gnirehtet (downloads: Releases)', 'https://github.com/Genymobile/gnirehtet/releases'),
 ('link', 'SmoothTrack help for Android (Wi-Fi and USB)', 'https://smoothtrack.app/mobilehelpandroid.html'),
 ('h', 'When it does not connect'),
 ('p', "*NOTHING ON UDP 4242* on the picture: nothing arrives - check the address in the app, that tracking is "
       "started, the firewall, and that both networks can reach each other. *UDP PORT 4242 IN USE*: another program "
-      "listens there, usually OpenTrack - close it and turn Head tracking off and on. Over USB: is Apple Devices "
-      "installed, the iPhone trusted, startSTUSB running, and USB Connection activated in the app?"),
+      "listens there, usually OpenTrack - close it and turn Head tracking off and on. Over USB with an iPhone: is "
+      "Apple Devices installed, the iPhone trusted, and USB Connection activated in the app? With Android: is USB "
+      "debugging allowed, the Gnirehtet folder next to the program, and Gnirehtet's own gnirehtet-run not running too?"),
 ]),
 
 ('light', 'Config: Room light', [

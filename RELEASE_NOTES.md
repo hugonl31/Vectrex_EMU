@@ -3,15 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.1.7
+## v1.1.8
 
-**Everything new since v1.0.5** - v1.0.6 to v1.1.7 in one
+**Everything new since v1.0.5** - v1.0.6 to v1.1.8 in one
 
-**New in v1.1.7: head tracking**
+**New in v1.1.7 and v1.1.8: head tracking**
 * **Head tracking** (Config > Overlay) - a phone on your desk follows your head with the app SmoothTrack, and the
   game's picture slides against the overlay and the glass as you move, the way the glowing phosphor behind a real
-  overlay does. Over Wi-Fi, or over a USB cable from an iPhone; no OpenTrack needed. Only the picture moves, never
-  the game, so it works online too ([Head tracking](https://github.com/hugonl31/Vectrex_EMU#head-tracking)).
+  overlay does. Over Wi-Fi, or plugged in over USB - iPhone or Android, found by the emulator itself, no extra
+  tools to start (v1.1.8); no OpenTrack needed. Only the picture moves, never the game, so it works online too ([Head tracking](https://github.com/hugonl31/Vectrex_EMU#head-tracking)).
 
 **Online play, grown up**
 * **Every game online** - UVMC2 games (VecDoom, Veccy Road, Tempest, Vectorblade...) and PiTrex programs play
@@ -57,6 +57,13 @@ sessions of 20 minutes, every ROM with random input, cross-machine games between
 * The brightness knob turned down no longer slows the emulator to a crawl.
 
 Online, it plays with v1.1.3 and later.
+
+## v1.1.7
+
+**Head tracking** (2026-10-29)
+- Config > Overlay > Head tracking: SmoothTrack's head position (OpenTrack's UDP format, port 4242) slides the
+  picture against the overlay and the glass. Largest shift (5 mm), Centre, Help > Head tracking (SmoothTrack) with
+  the setup and every link, also a button in Config.
 
 ## v1.1.6
 

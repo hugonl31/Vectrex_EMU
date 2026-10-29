@@ -6344,7 +6344,7 @@ class App:
             on = bool(self.ren and getattr(self.ren, 'head_on', False))
             h = self.head
             if on and h is None:
-                h = self.head = headtrack.HeadTrack(headtrack.PORT); self.head_t0 = time.perf_counter(); self.head_said = None
+                h = self.head = headtrack.HeadTrack(headtrack.PORT, ROOT); self.head_t0 = time.perf_counter(); self.head_said = None
                 if h.err:
                     self.flash('HEAD TRACKING: UDP PORT %d IN USE' % headtrack.PORT, secs=4)
                 self.ren.head_src = h
@@ -6353,7 +6353,7 @@ class App:
                 if self.ren: self.ren.head_src = None
             if h is not None and on and not h.err:
                 if h.receiving() and self.head_said != 'yes':
-                    self.head_said = 'yes'; self.flash('HEAD TRACKING: CONNECTED', 'FROM %s' % h.src[0], secs=3)
+                    self.head_said = 'yes'; self.flash('HEAD TRACKING: CONNECTED', 'OVER USB' if h.src[0] == 'USB' else 'FROM %s' % h.src[0], secs=3)
                 elif not h.receiving() and self.head_said is None and time.perf_counter() - self.head_t0 > 8:
                     self.head_said = 'no'
                     self.flash('HEAD TRACKING: NOTHING ON UDP %d' % headtrack.PORT, 'PHONE APP TO %s' % self.head_ip(), secs=5)
@@ -6376,7 +6376,7 @@ class App:
             return 'UDP port %d is in use by another program' % headtrack.PORT
         if h.receiving():
             x, y, z = h.pos
-            return 'receiving from %s: x %+.1f  z %+.1f' % (h.src[0], x, z)
+            return 'receiving %s: x %+.1f  z %+.1f' % ('over USB' if h.src[0] == 'USB' else 'from ' + h.src[0], x, z)
         return where + ' - waiting'
     def head_centre(self):
         """the head's place now is the middle"""

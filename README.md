@@ -19,18 +19,19 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.1.7 - everything since v1.0.5
+## New in v1.1.8 - everything since v1.0.5
 
 <p align="center">
 <img src="docs/images/v1.1.7/head_tracking.gif" width="420" alt="Armor Attack with head tracking: the picture slides against the overlay as the head moves round"><br>
 <em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head circles (largest shift 8 mm here).</em>
 </p>
 
-**New in v1.1.7: head tracking**
+**New in v1.1.7 and v1.1.8: head tracking**
 * **Head tracking** (Config > Overlay) - a phone on your desk follows your head with the app SmoothTrack, and the
   game's picture slides against the overlay and the glass as you move, the way the glowing phosphor behind a real
-  overlay does. Over Wi-Fi, or over a USB cable from an iPhone; no OpenTrack needed. Only the picture moves, never
-  the game, so it works online too ([Head tracking](#head-tracking)).
+  overlay does. Over Wi-Fi, or plugged in over USB - iPhone or Android, found by the emulator itself, no extra
+  tools to start (v1.1.8); no OpenTrack needed. Only the picture moves, never the game, so it works online too
+  ([Head tracking](#head-tracking)).
 
 **Online play, grown up**
 * **Every game online** - UVMC2 games (VecDoom, Veccy Road, Tempest, Vectorblade...) and PiTrex programs play
@@ -1121,10 +1122,15 @@ its position in OpenTrack's format, which Vectrex_EMU reads itself (no OpenTrack
 * **Over Wi-Fi:** in SmoothTrack's settings enter this PC's address - Config > Overlay shows it under Head
   tracking - and port **4242**, start tracking, and turn Head tracking on. Let Vectrex_EMU through the firewall when
   Windows asks.
-* **Over USB (iPhone):** install **Apple Devices** (or iTunes) from the Microsoft Store, download SmoothTrack's
-  [USB tunnel tool](https://github.com/epaga/epaga.github.io/raw/master/STUSB.zip), tap *Activate USB Connection* in
-  the app and run `startSTUSB.bat`. Steadier timing, no network setup. Android goes over USB with ADB and Gnirehtet
-  ([SmoothTrack's Android guide](https://smoothtrack.app/mobilehelpandroid.html)).
+* **Over USB (iPhone):** install **Apple Devices** (or iTunes) from the Microsoft Store, plug the iPhone in and trust
+  the PC, then tap *Activate USB Connection* in the app. Vectrex_EMU finds the phone on the cable by itself and reads
+  SmoothTrack straight from it (about 120 positions a second, steadier than Wi-Fi) - SmoothTrack's USB tunnel tool
+  is not needed.
+* **Over USB (Android):** turn on USB debugging on the phone and unpack
+  [Gnirehtet](https://github.com/Genymobile/gnirehtet/releases) (it brings adb) into the Vectrex_EMU folder. The
+  emulator runs it itself - installs its app on the phone the first time, routes only this PC's address through it
+  (the phone's internet stays as it is) and reads SmoothTrack's positions; enter this PC's address and port 4242 in
+  the app and allow Gnirehtet's VPN once.
 * **Largest shift** (5 mm to start with) is how far the picture moves with your head at the edge of the app's view;
   **Centre** makes where your head is now the middle.
 

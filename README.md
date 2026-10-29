@@ -19,53 +19,52 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.1.5
+## New in v1.1.5 - everything since v1.0.5
 
-* **Messages back in the middle of the picture**, and none stays over a game you can play (hosting: the code shows for
-  8 seconds; a click on a port shows it again).
+**Online play, grown up**
+* **Every game online** - UVMC2 games (VecDoom, Veccy Road, Tempest, Vectorblade...) and PiTrex programs play
+  online too: the two PCs compare their SD cards file by file and play from the files they have the same. PiTrex
+  programs run at full speed between two PCs of the same type. Windows, Linux, macOS and a Raspberry Pi all play
+  with each other, and a **sync check** compares both machines twice a second
+  ([Online play](#online-play-two-vectrex_emus-one-game)).
+* **The game room** - Online > **Host public game** puts your game in the meeting point's game room under your
+  player name; Online > **Find players** lists the games waiting for a player 2 (who, what, how long, whether you
+  have it), keeps itself up to date and joins with a click. The private five-letter code stays for friends.
+* **Your player name** - asked once, reserved for you at the meeting point, at most 10 characters.
+* **The ports below the picture** - online, **P1 PORT** appears right of the cartridge (as on a Vectrex: port 1
+  right, port 2 left). Each port shows the player who holds it; **click a port to take it**. For games where two
+  take turns on one controller there are **Take port 1 / Take port 2** in the chat too, and a note says how each
+  original game is played by two.
+* **The chat** - opens when you connect, in three colours (the emulator green, you white, the other player orange),
+  scrolls, chimes on a new line (Ctrl+T).
+* **Drops and pauses** - a connection drop pauses both games with a 30-second countdown and goes on where it was
+  when the connection is back; P pauses both, for as long as you like. While you wait for a player 2 you can play
+  alone, and change the cartridge.
+* **A new version is told at start** - online, both players need the same one.
 
-## New in v1.1.4
+**The emulator**
+* **The Vectrex's trim pots** - every adjustment of a real Vectrex in Config: the brightness knob, X and Y size, the
+  high voltage, the yoke's centering magnets and rotation (Unit tab), the DAC offset, the integrator rate offsets
+  and the high voltage's ringing (Circuit tab). **Random unit** and **Cranky** roll a believable other unit.
+* **Smooth by default** - the monitor's full rate with Smooth motion: unchanged on 60 Hz, smoother on 120-240 Hz.
+* **Config shows what changed** - a changed setting in orange, a slider with an orange stripe at its default.
+* **Messages in the middle of the picture**, and none stays over a game you can play.
+* **The strip below the picture** - centred, the on-screen display always the same width, PAUSED left of P2 PORT.
 
-* **Fixed:** with the brightness knob turned down the emulator ran at a crawl from the next start on.
-
-## New in v1.1.3
-
-* **Fixed:** a pause both online players share, longer than 30 seconds, ended the game when it was over.
-
-## New in v1.1.2
-
-* **The ports below the picture, online** - P1 PORT appears right of the cartridge (as on a Vectrex), each port shows
-  the player who holds it, and a click on a port takes it. Player names are 10 characters at most.
-
-## New in v1.1.1
-
-* **Fixes from a night of stress tests** - the online server can no longer be stopped by a bad packet; a setting that
-  restarts the game is refused while connected; a new game starts a new chat; UVMC2 games draw the same random numbers
-  on every system; the emulator no longer takes the keyboard from other programs; messages sit low in the picture.
-  Online, both players need v1.1.1.
-
-## New in v1.1.0
-
-* **Online: drops, speed and the chat** - a connection drop pauses both games with a countdown and goes on where it
-  was when the connection is back within 30 seconds; PiTrex programs play online at full speed between two PCs of the
-  same type; the chat in three colours (the other player, you, the emulator). Online, both players need v1.1.0.
-* **The strip below the picture** - centred, the OSD always the same width; PAUSED between the cartridge and RESET.
+**Fixes** (many found by a night of stress tests: a million broken packets at the meeting point, random online
+sessions of 20 minutes, every ROM with random input, cross-machine games between Windows and Linux)
+* The meeting point can no longer be stopped by a malformed packet.
+* Online, a setting that restarts the game is refused while connected (it restarted on one PC only).
+* UVMC2 games draw the same random numbers on every system; the power-on seed is the same on 64-bit Linux and macOS.
+* A pause longer than 30 seconds no longer ends the online game; a joiner whose host vanished gives up after 20 s.
+* Windows that open by themselves no longer take the keyboard from other programs.
+* The brightness knob turned down no longer slows the emulator to a crawl.
 
 <p align="center">
 <a href="docs/images/v1.1.0/pitrex_online.jpg"><img src="docs/images/v1.1.0/pitrex_online_small.jpg" width="330" alt="PiTrex Space Duel online at full speed, the room light on the tube's glass"></a>
 <a href="docs/images/v1.1.0/chat.png"><img src="docs/images/v1.1.0/chat_small.jpg" width="440" alt="the chat: the emulator's lines green, the other player orange, you white"></a><br>
 <em>PiTrex Space Duel online at 100 %; the chat in three colours.</em>
 </p>
-
-## New in v1.0.9
-
-* **Online: find a game, talk, take turns** - a player name of your own (asked once, reserved for you at the meeting
-  point); the chat opens when you connect, scrolls, chimes on a new line; **Take port 1 / Take port 2** for the games
-  where two take turns on one controller; a note says how each original game is played by two; P pauses both; the
-  cartridge can change while you wait; Find players stays up to date by itself. A new version on GitHub is told at
-  start - online, both players need the same one.
-* **Config: what changed, in orange** - a changed checkbox, choice or menu in orange, a slider with an orange stripe
-  where its default is; a tab is orange only when something on it shows it.
 
 <p align="center">
 <a href="docs/images/v1.0.9/online_game.jpg"><img src="docs/images/v1.0.9/online_game_small.jpg" width="300" alt="Mine Storm online: MINER HAS PORT 1 on the screen, the ONLINE row in the on-screen display"></a>
@@ -77,33 +76,6 @@ photo, recording and measurement, and every call on how it should look, sound an
 <a href="docs/images/v1.0.9/config_orange.png"><img src="docs/images/v1.0.9/config_orange_small.jpg" width="330" alt="the Config window: Bloom with its orange stripe at the default, Dither and Mains in orange"></a><br>
 <em>Find players, live; the Config window marks what differs from the default in orange.</em>
 </p>
-
-## New in v1.0.8
-
-* **The game room** - Online > **Host public game** puts your game in the meeting point's game room under your gamer
-  name; Online > **Find players** lists the games waiting for a player 2 (gamer, game, how long, whether you have it)
-  and joins one with a click. The private five-letter code stays for playing with someone you know
-  ([Online play](#online-play-two-vectrex_emus-one-game)).
-* **Smooth by default** - the monitor's full rate with Smooth motion on: unchanged on 60 Hz screens, smoother on 120 /
-  144 / 165 / 240 Hz.
-
-## New in v1.0.7
-
-* **The Vectrex's trim pots** - every adjustment of a real Vectrex in Config: the brightness knob, the X and Y size,
-  the high voltage, the yoke's centering magnets and rotation (Unit tab), the DAC offset, the integrator rate offsets
-  and the high voltage's ringing (Circuit tab). The defaults are the factory settings; **Random unit** and
-  **Cranky** roll a new believable unit on every press.
-* **Online play across systems** - Windows against Linux, macOS or a Raspberry Pi now stays in sync in every game
-  (a power-on seed computed differently on 64-bit Linux and macOS made about a quarter of games part), PiTrex games
-  start through the relay, and the online card image is cleaned up after the game.
-
-## New in v1.0.6
-
-* **Online play for UVMC2 games and PiTrex programs** - VecDoom, Veccy Road, Tempest, Vectorblade and the rest now
-  play online too. The two PCs compare their SD cards file by file and both play from the files they have the same;
-  the emulation runs in its exact single-thread mode while online, so both PCs compute the same game to the bit
-  (VecDoom still runs 1.4x faster than real time on a desktop Ryzen 7 9800X3D). A new **sync check** compares both
-  machines twice a second and says so if they ever part ([Online play](#online-play-two-vectrex_emus-one-game)).
 
 ## New in v1.0.5
 

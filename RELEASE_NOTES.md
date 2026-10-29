@@ -5,12 +5,48 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.1.5
 
-**Messages back in the middle of the picture** (2026-10-29)
-- The emulator's messages are in the middle of the picture again, where the player looks.
-- None stays over a game you can play: hosting, the code / game room / waiting message shows for 8 seconds, then the
-  game is yours while you wait (the Online window keeps the code; a click on a port shows the message again). Only
-  PAUSED, CONNECTION LOST with its countdown and the 3D Imager's disc spinning up stay - the game stands still then.
-- Plays online with v1.1.3 and v1.1.4.
+**Everything new since v1.0.5** - v1.0.6 to v1.1.5 in one
+
+**Online play, grown up**
+* **Every game online** - UVMC2 games (VecDoom, Veccy Road, Tempest, Vectorblade...) and PiTrex programs play
+  online too: the two PCs compare their SD cards file by file and play from the files they have the same. PiTrex
+  programs run at full speed between two PCs of the same type. Windows, Linux, macOS and a Raspberry Pi all play
+  with each other, and a **sync check** compares both machines twice a second
+  ([Online play](https://github.com/hugonl31/Vectrex_EMU#online-play-two-vectrex_emus-one-game)).
+* **The game room** - Online > **Host public game** puts your game in the meeting point's game room under your
+  player name; Online > **Find players** lists the games waiting for a player 2 (who, what, how long, whether you
+  have it), keeps itself up to date and joins with a click. The private five-letter code stays for friends.
+* **Your player name** - asked once, reserved for you at the meeting point, at most 10 characters.
+* **The ports below the picture** - online, **P1 PORT** appears right of the cartridge (as on a Vectrex: port 1
+  right, port 2 left). Each port shows the player who holds it; **click a port to take it**. For games where two
+  take turns on one controller there are **Take port 1 / Take port 2** in the chat too, and a note says how each
+  original game is played by two.
+* **The chat** - opens when you connect, in three colours (the emulator green, you white, the other player orange),
+  scrolls, chimes on a new line (Ctrl+T).
+* **Drops and pauses** - a connection drop pauses both games with a 30-second countdown and goes on where it was
+  when the connection is back; P pauses both, for as long as you like. While you wait for a player 2 you can play
+  alone, and change the cartridge.
+* **A new version is told at start** - online, both players need the same one.
+
+**The emulator**
+* **The Vectrex's trim pots** - every adjustment of a real Vectrex in Config: the brightness knob, X and Y size, the
+  high voltage, the yoke's centering magnets and rotation (Unit tab), the DAC offset, the integrator rate offsets
+  and the high voltage's ringing (Circuit tab). **Random unit** and **Cranky** roll a believable other unit.
+* **Smooth by default** - the monitor's full rate with Smooth motion: unchanged on 60 Hz, smoother on 120-240 Hz.
+* **Config shows what changed** - a changed setting in orange, a slider with an orange stripe at its default.
+* **Messages in the middle of the picture**, and none stays over a game you can play.
+* **The strip below the picture** - centred, the on-screen display always the same width, PAUSED left of P2 PORT.
+
+**Fixes** (many found by a night of stress tests: a million broken packets at the meeting point, random online
+sessions of 20 minutes, every ROM with random input, cross-machine games between Windows and Linux)
+* The meeting point can no longer be stopped by a malformed packet.
+* Online, a setting that restarts the game is refused while connected (it restarted on one PC only).
+* UVMC2 games draw the same random numbers on every system; the power-on seed is the same on 64-bit Linux and macOS.
+* A pause longer than 30 seconds no longer ends the online game; a joiner whose host vanished gives up after 20 s.
+* Windows that open by themselves no longer take the keyboard from other programs.
+* The brightness knob turned down no longer slows the emulator to a crawl.
+
+Online, it plays with v1.1.3 and later.
 
 ## v1.1.4
 

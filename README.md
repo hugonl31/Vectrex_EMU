@@ -19,6 +19,13 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.1.1
+
+* **Fixes from a night of stress tests** - the online server can no longer be stopped by a bad packet; a setting that
+  restarts the game is refused while connected; a new game starts a new chat; UVMC2 games draw the same random numbers
+  on every system; the emulator no longer takes the keyboard from other programs; messages sit low in the picture.
+  Online, both players need v1.1.1.
+
 ## New in v1.1.0
 
 * **Online: drops, speed and the chat** - a connection drop pauses both games with a countdown and goes on where it

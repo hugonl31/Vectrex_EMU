@@ -1110,6 +1110,7 @@ def ver_key(s):
 
 CHAT_ME, CHAT_THEM = '#d4dad7', '#e8a15a'      # (the chat: your lines muted white, the other player's orange; the
                                                #  emulator's own lines in the green of the rest)
+MSG_Y = 0.80                # (the emulator's messages: their middle 4/5 down the picture - the game plays on above)
 OSD_CHARS = 20             # (the OSD's width in characters, always: its widest row - ONLINE: RELAY 120 MS)
 ROOM_LIVE_S = 3.0          # (Find players: the game room's list asked again this often while the window is open - a
                            #  full room is 13 pages, the meeting point answers 6 a second per PC)
@@ -3688,7 +3689,8 @@ class App:
         else:
             return self.imager_hint()
         pl, pt, pr, pb = self.pic_rect()
-        return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + 0.46 * (pb - pt), k=(pb - pt) / 330.0)
+        k = (pb - pt) / 330.0                                   # (the emulator's messages: 4/5 down the picture -
+        return dict(rows=rows, cx=(pl + pr) / 2.0, cy=pt + MSG_Y * (pb - pt) - len(rows) * 11.0 * k / 2.0, k=k)   #  the game stays playable)
     def pause_state(self):
         """PAUSED in the strip below the picture, between the cartridge and RESET (the owner, 2026-10-29): PAUSED big in
         orange, how to go on below it, the same room on both sides; up and down halfway between the frame's bottom
@@ -3728,7 +3730,7 @@ class App:
             return None
         pl, pt, pr, pb = self.pic_rect()
         top = 26.0                                              # (the games keep their disc at about 26)
-        return dict(rows=['3D IMAGER', 'DISC SPINNING UP'], cx=(pl + pr) / 2.0, cy=pt + 0.42 * (pb - pt),
+        return dict(rows=['3D IMAGER', 'DISC SPINNING UP'], cx=(pl + pr) / 2.0, cy=pt + MSG_Y * (pb - pt) - 2 * 11.0 * (pb - pt) / 330.0,
                     k=(pb - pt) / 330.0, bar=min(1.0, v / top), rows2=['%d / %d TURNS A SECOND' % (round(v), top)], a=a)
     def flash(self, *rows, secs=2.0):
         """a short message in the middle of the picture (seen in full screen and on a Steam Deck too, where the
@@ -5246,6 +5248,8 @@ class App:
                 return 'break'
             except tk.TclError:
                 self.chat_win = None
+        try: had_keys = self.root.focus_get() is not None    # (the emulator has the keyboard now - not another program)
+        except (tk.TclError, KeyError): had_keys = False
         g, dim, bg = deck.G, deck.DIM, deck.PANEL
         f9 = (MONO, 10)
         me = 'You'; them = self.peer_label()
@@ -5367,14 +5371,14 @@ class App:
             log.configure(height=max(9, min(22, lines)))
         except (tk.TclError, ValueError):
             pass
-        deck.place(t, 'chat', self)
-        deck.over_full(t, self)
+        deck.place(t, 'chat', self, focus=focus)               # (opened by itself: shown, the keyboard not taken -
+        deck.over_full(t, self)                                 #  the player may be in another program)
         try: dark_title(t)
         except Exception: pass   # noqa
         if focus:
             en.focus_force()
-        else:
-            self.root.after(50, lambda: self.root.focus_force())    # (opened by a message: the keys stay with the game)
+        elif had_keys:                                          # (opened by itself while you played: the keys stay with
+            self.root.after(50, lambda: self.root.focus_force())   #  the game; in another program: nothing taken)
         return 'break'
     def _room_window(self, title, sub, attr, banner=True):
         """a small window in the Online window's style: (toplevel, body frame, foot frame, close)"""
@@ -5505,13 +5509,17 @@ class App:
                                                 ('yes' if mine else 'no' if same else 'other ver', deck.G if mine else deck.RED))):
                     lb = tk.Label(grid, text=txt, fg=col, bg=bg, font=f9, anchor='w', width=(14, 26, 9, 12)[c])
                     lb.grid(row=i, column=c, sticky='w'); lb.room_code = g['code']
-                def join(code=g['code']):
+                def join(code=g['code'], same=same, mine=mine):
+                    if not same:                                # (another emulator version: it would only be refused)
+                        note.configure(text='That player has another version of Vectrex_EMU - both need the same.', fg=deck.WARN); return
+                    if not mine:
+                        note.configure(text='You do not have that game in your roms folder.', fg=deck.WARN); return
                     close(); self.net_last_join = code; self.net_via_room = True
                     self.net_begin('join', target=code)
                 b = deck._button(grid, 'Join', join, self, small=True); b.grid(row=i, column=4, sticky='e', padx=(6, 0), pady=1)
                 deck._paint(b, bool(mine) and not self.net_busy())
             note.configure(text=('%d game%s waiting.' % (len(games), '' if len(games) == 1 else 's')) if games else
-                           'No public games waiting now. Host one: Online > Host public game.')
+                           'No public games waiting now. Host one: Online > Host public game.', fg=deck.DIM)
         live = {'busy': False, 'last': None}
         def refresh():                                          # (the list, live: asked again every LIVE_S seconds while
             if getattr(self, 'find_win', None) is not t:        #  the window is open - no button to press)

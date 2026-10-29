@@ -316,7 +316,7 @@ def reveal(t, before=None):
     except tk.TclError: pass
 
 
-def center(t, over=None, before=None):
+def center(t, over=None, before=None, focus=True):
     """a window placed in the middle of the emulator's (seen at once), drawn there before it shows"""
     over = over or getattr(V, 'APP_ROOT', None) or tk._default_root
     try:
@@ -324,7 +324,8 @@ def center(t, over=None, before=None):
         x = over.winfo_rootx() + (over.winfo_width() - t.winfo_reqwidth()) // 2
         y = over.winfo_rooty() + (over.winfo_height() - t.winfo_reqheight()) // 3
         t.geometry('+%d+%d' % (max(0, x), max(0, y)))
-        reveal(t, before); t.lift(); t.focus_force()
+        reveal(t, before); t.lift()
+        if focus: t.focus_force()
     except tk.TclError:
         pass
 
@@ -362,19 +363,25 @@ def saved_place(t, name, app):
     return None
 
 
-def place(t, name, app, before=None):
+def place(t, name, app, before=None, focus=True):
     """window t where it was last time (if still on a screen), else in the middle of the emulator - and its place kept
-    from now on (the owner, 2026-10-27: every window remembers where it was)"""
+    from now on (the owner, 2026-10-27: every window remembers where it was). focus=False: shown without taking the
+    keyboard (a window that opens by itself - the chat: the player may be in another program). Never while another
+    program has the keyboard: a window that opens by itself then shows without taking it"""
+    if focus:
+        try: focus = app.root.focus_get() is not None
+        except (tk.TclError, KeyError): pass
     pos = saved_place(t, name, app)
     if pos:
         try:
             t.withdraw(); t.update_idletasks()
             t.geometry('+%d+%d' % pos)
-            reveal(t, before); t.lift(); t.focus_force()
+            reveal(t, before); t.lift()
+            if focus: t.focus_force()
         except tk.TclError:
             pass
     else:
-        center(t, app.root, before)
+        center(t, app.root, before, focus)
     remember(t, name, app)
 
 

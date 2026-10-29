@@ -47,18 +47,19 @@ DELAY = 3                   # frames of input delay (each side's input runs this
 KEEP = 16                   # inputs repeated in every packet
 TIMEOUT = 30.0              # seconds without the other side (no packet, or no new input while the game waits for it):
                             # the connection is lost - until then both wait, a countdown on the screen
+JOIN_SILENT = 20.0          # (joining: seconds without a packet from the host before giving up)
 OUT_GRACE = 1.5             # (seconds the game waits before the countdown shows: a connection drop)
 SERVER = (os.environ.get('VECTREX_NET_SERVER', '172.233.60.40'), int(os.environ.get('VECTREX_NET_SERVER_PORT', '7745')))
 RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
-NET_VER = 6                 # the online version: both sides must have the same. Raise it with every change to the
+NET_VER = 7                 # the online version: both sides must have the same. Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
                             # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z'); 4: taking a
                             # controller port (the input's flags: 0x10 port 1, 0x20 port 2); 5: the
                             # players' names (the hello carries the joiner's); 6: v1.1.0 - inputs kept after a drop, the PiTrex
-                            # JIT fast between the same processor type
+                            # JIT fast between the same processor type; 7: v1.1.1 - the UVMC2's TRNG from the power-on seed
 PAUSE_ALIVE = 0.25          # (seconds between two 'still here' packets while the game is paused)
 PACE_DEAD = 0.5             # (frames: how far one side may be ahead of the other before it slows down)
 PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
@@ -370,7 +371,10 @@ class NetPlay:
                 time.sleep(0.005 if self.candidates else 0.02)
             return None
         last_h = 0.0
+        t_join = time.perf_counter(); self.last_heard = t_join
         while time.perf_counter() - t0 < timeout and not stop():
+            if time.perf_counter() - max(t_join, self.last_heard) > JOIN_SILENT:   # (the host gone before the game
+                self.log('the host does not answer'); return None                  #  started: no waiting for minutes)
             if time.perf_counter() - last_h > 0.2:      # (hello, five times a second; the host's pings answered at once)
                 if self.candidates:
                     self._punch(hello=True)

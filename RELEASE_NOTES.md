@@ -3,6 +3,32 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.1.1
+
+**Fixes from a night of stress tests** (2026-10-29)
+- The meeting point (the online server) could be stopped by one malformed packet - found by sending it a million
+  random and broken ones. Every packet is now handled on its own; the live server was updated at once.
+- Online, a setting that starts the game again (Cartridge hardware, PC mouse and keys on USB, a tab's reset) restarted
+  it on one PC only, and the two games parted. It is refused while connected now, and kept for the next game.
+- A new online game started with the last one's chat - its lines, and a Chat window that named the last player.
+- The UVMC2's random number generator (the RP2350's TRNG) drew from each system's own C library: a Windows and a
+  Linux PC got different numbers, and a game that used them parted online. It draws from the power-on seed now,
+  the same everywhere (VecDoom and Veccy Road tested identical between Windows and Linux).
+- A joiner whose host vanished before the game began waited up to 10 minutes; it gives up after 20 seconds now.
+- A window that opens by itself (the chat when you connect, Find players after a drop) took the keyboard from
+  whatever program you were in - typing in a browser could pause the game. It only takes the keyboard when the
+  emulator has it.
+- Find players: Join on a game of another version, or one you do not have, says so instead of trying.
+- The emulator's messages sit 4/5 down the picture now, so the game stays playable while you wait for a player.
+- Online, both need v1.1.1 (the online version number went up: the random numbers above).
+
+**Tested**
+- Every ROM (77, with UVMC2 and PiTrex programs) through 3,000 frames twice with random input: no crash, no hang, and
+  the same state both times where online play needs it.
+- The online code over a bad line: 40 % packet loss with duplicates, 120 ms of jitter (packets out of order), 2 s and
+  6 s drops, random pauses, port takes and chat - the same inputs on both sides on every frame, every chat line once
+  and in order.
+
 ## v1.1.0
 
 **Online: drops, speed and the chat** (2026-10-29)

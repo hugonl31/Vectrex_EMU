@@ -16,6 +16,21 @@
 #include "rp2350.h"
 #include "host.h"
 
+/* the TRNG's numbers: from the power-on seed (VT_POWERSEED - online, both sides have the same), xorshift32 - rand ()
+ * gave each C library its own sequence, so a Windows and a Linux PC drew different numbers (2026-10-29) */
+static uint32_t trng_state;
+static uint32_t trng_next (void)
+{
+	if (!trng_state) {
+		const char *z = getenv ("VT_POWERSEED");
+		uint32_t x = (z ? (uint32_t) strtoul (z, 0, 10) : 0u) ^ 0x7A3D1F59u;
+		x ^= x >> 16; x *= 0x45D9F3Bu; x ^= x >> 16;
+		trng_state = x ? x : 1u;
+	}
+	trng_state ^= trng_state << 13; trng_state ^= trng_state >> 17; trng_state ^= trng_state << 5;
+	return trng_state;
+}
+
 #define SRAM_BASE   0x20000000u
 #define SRAM_SIZE   0x82000u
 #define PSRAM_SIZE  (8u << 20)
@@ -1195,7 +1210,7 @@ static uint32_t periph_read (rp2350_t *rp, cm33_t *c, uint32_t a)
 		break;
 	case 0x400f0000:                                                          /* TRNG */
 		if (off == 0x104 || off == 0x100) return 1;                         /* RNG_ISR / IMR: valid */
-		if (off >= 0x114 && off < 0x12c) return (uint32_t) rand () ^ ((uint32_t) rand () << 15) ^ ((uint32_t) rand () << 30);
+		if (off >= 0x114 && off < 0x12c) return trng_next ();             /* (the same numbers on every system for one seed: online play) */
 		break;
 	case 0x40108000: { uint32_t v = greg_rd (rp, a); if ((off % 12) == 0) v |= (v & 1) << 1; return v; }   /* TICKS: RUNNING */
 	case 0x40100000: if (off == 0x30) return 0x40; break;                     /* POWMAN: (reads) */

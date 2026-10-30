@@ -1122,6 +1122,35 @@ def app_version():
     return ''
 
 
+def restore_after_update():
+    """an update by v1.2.6 or older wrote fresh settings (only the overlay places, player name, SD folders and recent
+    games) and kept the old file as settings_before_<this version>.json: the first start brings the rest back from it.
+    A fresh file has no 'display' (the program writes it at every save)"""
+    try:
+        cur = json.load(open(SETTINGS_F, encoding='utf-8'))
+        if 'display' in cur:
+            return
+        old = json.load(open(os.path.join(os.path.dirname(SETTINGS_F), 'settings_before_%s.json' % app_version()),
+                             encoding='utf-8'))
+        if not isinstance(old, dict) or 'display' not in old:
+            return
+        old.update(cur)                                 # (what the update kept: the same values, or newer)
+        json.dump(old, open(SETTINGS_F, 'w', encoding='utf-8'))
+    except Exception:   # noqa: no file, no backup, unreadable: as it is
+        pass
+restore_after_update()
+
+
+def new_defaults(saved, old_def, new_def):
+    """saved settings, without the ones the player never changed whose default is new in this version: those take
+    the new default (the owner, 2026-10-30: updates keep your own settings, the new defaults still reach everybody).
+    old_def: the defaults the settings were saved with (the file's 'defaults', since v1.2.7; none before: all stay)"""
+    if not isinstance(saved, dict) or not isinstance(old_def, dict):
+        return saved
+    return {k: v for k, v in saved.items()
+            if not (k in old_def and k in new_def and v == old_def[k] and old_def[k] != new_def[k])}
+
+
 def ver_key(s):
     """'v1.0.10' -> (1, 0, 10); None when it is not a version"""
     n = re.findall(r'\d+', s or '')
@@ -2095,6 +2124,7 @@ class App:
         ensure_sd_dir(self.sd_dir)                              # (plug and play: there from the first start)
         self.px_dir = _card_dir(c0.get('pitrex_sd_dir'), PX_DEFAULT)   # Add-ons: the PiTrex's SD card
         u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
+        u = new_defaults(u, (c0.get('defaults') or {}).get('unit'), UNIT_PRESETS['owner'])
         self.unit = dict(UNIT_PRESETS['owner'], **{k: float(v) for k, v in u.items() if k in UNIT_PRESETS['owner']})
         if self.unit.get('lagx') == 8.0 and self.unit.get('lagy') == 8.0:      # (the lag's first default, a day: now 6 -
             self.unit['lagx'] = self.unit['lagy'] = UNIT_BEAM['lagx']          #  testcart/gap_test; a value chosen stays)
@@ -2230,6 +2260,11 @@ class App:
             saved = json.load(open(self.settings_f)).get('display', {})
         except Exception:           # noqa: first run
             saved = {}
+        try:
+            saved = new_defaults(saved, (json.load(open(self.settings_f)).get('defaults') or {}).get('display'),
+                                 dict(self.look_default, **self.sound_default))
+        except Exception:           # noqa
+            pass
         old_gap(saved)
         for k in self.look_keys:
             if k in saved:
@@ -7149,6 +7184,8 @@ class App:
         if self.look_keys:
             d['display'] = dict(g['look']) if g else {k: getattr(self.ren, k) for k in self.look_keys}
         d.setdefault('display', {}).update({k: getattr(self.run.crt, k) for k in self.sound_keys})
+        d['defaults'] = {'display': dict(getattr(self, 'look_default', {}), **getattr(self, 'sound_default', {})),
+                         'unit': dict(UNIT_PRESETS['owner'])}   # (this version's defaults: new_defaults, at the next one)
         try:
             json.dump(d, open(self.settings_f, 'w'))
         except OSError:

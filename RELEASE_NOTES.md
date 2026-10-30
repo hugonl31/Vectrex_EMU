@@ -3,6 +3,18 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.7
+
+**Updates keep your settings**
+* **Your own settings stay** - Update now used to start with fresh settings, keeping only the overlay places, the
+  player name, the SD folders and the recent games. Now everything stays: controls, screen rate and G-Sync, the tube
+  look, sound, calibration.
+* **New defaults still arrive** - the settings file also records the defaults it was saved with. A setting you
+  never changed whose default is new in an update moves to the new default; one you changed stays yours.
+* **Settings lost by the v1.2.6 update come back** - an update run by v1.2.6 or older still resets them once (that
+  version runs the update), but its backup, settings_before_v1.2.7.json, is read back on the first start.
+* No core or online changes: online play with v1.2.6 works as before.
+
 ## v1.2.6
 
 **Auto update: the restart works**

@@ -1,9 +1,9 @@
 """The one-click update (the owner, 2026-10-29): the newest release's zip for this system downloaded and unpacked to a
 temporary folder; a small script waits for the emulator to close, puts the new program in place of the old one, adds
 the new release's files that are missing in system, overlays, roms and uvmc2 (the player's ROMs, overlays, SD cards and
-BIOS are never overwritten), writes fresh settings - keeping only the overlays' places and sizes, the player name and
-its key, the SD folders and the recent games (the old settings stay as a backup next to them) - and starts the new
-version.
+BIOS are never overwritten), keeps the settings as they are (since v1.2.7: the new version moves the ones the player
+never changed to its own defaults - vectrex_emu.new_defaults; a copy stays next to them as a backup) and starts the
+new version.
 
 Not when run from the sources, nor when the program's folder cannot be written (Program Files): then the release page."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.request, zipfile
@@ -12,11 +12,6 @@ IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 ASSET = 'Vectrex_EMU-windows.zip' if IS_WIN else 'Vectrex_EMU-mac-app.zip' if IS_MAC else 'Vectrex_EMU-linux-bin.zip'
 PROGRAM = 'Vectrex_EMU.exe' if IS_WIN else 'Vectrex_EMU.app' if IS_MAC else 'Vectrex_EMU'
 FOLDERS = ('system', 'overlays', 'roms', 'uvmc2', 'pitrex')     # (next to the program: only what is missing is added)
-# what a fresh settings file keeps: where the overlays sit and how large (per game and the global default), who the
-# player is online, where the SD cards are, the recent games - not the look, the sound, the controls
-KEEP = ('overlay_adjust', 'overlay_adjust2', 'overlay_adjust_all', 'overlay_adjust_game', 'overlay_for',
-        'gamer_name', 'gamer_ok', 'player_key', 'uvm2_sd_dir', 'pitrex_sd_dir', 'recent', 'last_rom', 'setup_done',
-        'downloads_agreed', 'update_check')
 
 
 def can_update(root):
@@ -57,12 +52,12 @@ def download(url, size, dest, progress, user_agent):
 
 
 def fresh_settings(settings_f):
-    """the new settings: only what KEEP names, from the old file (empty when there is none)"""
+    """the new settings: all of the old file (empty when there is none). Until v1.2.6 only a few were kept (overlay
+    places, player name, SD folders, recent games); a tester lost everything else at each update, 2026-10-30"""
     try:
-        old = json.load(open(settings_f, encoding='utf-8'))
+        return json.load(open(settings_f, encoding='utf-8'))
     except Exception:   # noqa
         return {}
-    return {k: old[k] for k in KEEP if k in old}
 
 
 def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):

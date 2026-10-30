@@ -285,7 +285,7 @@ with a short note on what goes there:
 | Folder | |
 |---|---|
 | `system` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
-| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)) |
+| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Robot Arena** ([Robot_Arena](https://github.com/hugonl31/Robot_Arena)) with its overlay |
 | `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
 More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), `pitrex`,
@@ -430,6 +430,8 @@ slider and see it at once, hold H to compare with how it was.
   demo and a vector movie player included
 * **The PiTrex**: the Raspberry Pi cartridge - its ARM11 (with a JIT for x86-64 and ARM64), the Pi's hardware
   and the SD card (a folder): its menu, the arcade emulators, Vectorblade, Elite and more
+* **Robot Arena included**: a new arena shooter for the Vectrex (64 KB, two arenas, 70 levels), with its
+  overlay ([Robot_Arena](https://github.com/hugonl31/Robot_Arena))
 * **One-click downloads** of the original games, free homebrew, the speech ROM and the PiTrex's SD card;
   65 overlays included
 * Every look and sound setting adjustable and explained in the built-in Help

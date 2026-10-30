@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.10
+
+**Robot Arena included**
+* **Robot Arena** (`roms/Robot Arena.bin`) - a new arena shooter for the Vectrex in 6809 assembly: 64 KB in two
+  banks, two arenas, 70 levels, four bosses. With its screen overlay (`overlays/Robot Arena.png`). Updating adds
+  both to an existing install. More about the game: [Robot_Arena](https://github.com/hugonl31/Robot_Arena).
+* No core or online changes: online play with v1.2.9 works as before.
+
 ## v1.2.9
 
 **A fuller debug report (a few KB more)**

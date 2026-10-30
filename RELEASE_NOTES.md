@@ -3,7 +3,7 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.2.10
+## v1.3.0
 
 **Robot Arena included**
 * **Robot Arena** (`roms/Robot Arena.bin`) - a new arena shooter for the Vectrex in 6809 assembly: 64 KB in two

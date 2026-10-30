@@ -393,6 +393,14 @@ static void stats (void)
 }
 
 /* the game's title in the cartridge header (the first 64 bytes): does it hold this word? */
+/* (tests, hitch: the wall clock in seconds) */
+#ifdef _WIN32
+#include <windows.h>
+static double vt_wall (void) { LARGE_INTEGER f, t; QueryPerformanceFrequency (&f); QueryPerformanceCounter (&t); return (double) t.QuadPart / (double) f.QuadPart; }
+#else
+#include <time.h>
+static double vt_wall (void) { struct timespec ts; clock_gettime (CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec * 1e-9; }
+#endif
 static int memmem_title (const unsigned char *c, size_t n, const char *w)
 {
 	size_t L = strlen (w), m = n < 64 ? n : 64;
@@ -529,6 +537,34 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "wavend")) { if (wavf) { wav_hdr (wavf, wav_bytes); fclose (wavf); wavf = 0; } }
 		else if (!strcmp (cmd, "peek")) { unsigned a = (unsigned) strtol (a1, 0, 16); int k = a2[0] ? atoi (a2) : 1; printf ("peek %04X:", a); for (int i = 0; i < k; i++) printf (" %02X", e6809_read8 (a + i)); printf ("\n"); }
 		else if (!strcmp (cmd, "stats")) stats ();
+		else if (!strcmp (cmd, "sigrun")) {      /* sigrun N: run N frames; per frame the online state checksum and the vectors, folded into one hash (exactness tests) */
+			extern int vt_uvm2, vt_pitrex; extern uint32_t uvm2_sig (void), pitrex_sig (void); long k = atol (a1); uint64_t h = 1469598103934665603ull;
+			for (long i = 0; i < k; i++) { run_frame (); uint32_t s = ram_sum () ^ (uint32_t) total_cycles * 2654435761u; if (vt_uvm2) s ^= uvm2_sig (); else if (vt_pitrex) s ^= pitrex_sig ();
+			  h = (h ^ s) * 1099511628211ull; h = (h ^ (uint64_t) nlast) * 1099511628211ull;
+			  for (int j = 0; j < nlast; j++) {          /* (the coordinates as 32-bit words: the same on every system, whatever the size of a long) */
+				h = (h ^ ((uint64_t) (uint32_t) last[j].x0 << 32 | (uint32_t) last[j].y0)) * 1099511628211ull;
+				h = (h ^ ((uint64_t) (uint32_t) last[j].x1 << 32 | (uint32_t) last[j].y1)) * 1099511628211ull;
+				h = (h ^ (last[j].c | (uint64_t) last[j].cyc << 8 | (uint64_t) last[j].t0 << 32)) * 1099511628211ull; } }
+			printf ("sigrun %ld frames: %016llx cycles=%llu\n", k, (unsigned long long) h, (unsigned long long) total_cycles); fflush (stdout);
+		}
+		else if (!strcmp (cmd, "hitch")) {       /* hitch N: run N frames, each one's wall time against its own length (tests: stalls) */
+			long k = atol (a1); double worst = 0, sum = 0; long late = 0, late2 = 0; static double r[100000]; long nr = 0;
+			long fb0 = frame_budget; frame_budget = 30000;  /* (the frames as --live makes them for a UVMC2 / PiTrex: 50 a second) */
+			for (long i = 0; i < k; i++) {
+				unsigned long long c0 = total_cycles; double t0 = vt_wall ();
+				run_frame ();
+				double dt = vt_wall () - t0, et = (double) (total_cycles - c0) / 1500000.0;
+				double q = et > 0 ? dt / et : 0; sum += dt; if (q > worst) worst = q; if (q > 1.0) late++; if (q > 2.0) late2++; if (nr < 100000) r[nr++] = q;
+			}
+			frame_budget = fb0;
+			for (long i = 1; i < nr; i++) { double x = r[i]; long j = i - 1; while (j >= 0 && r[j] > x) { r[j + 1] = r[j]; j--; } r[j + 1] = x; }
+			printf ("hitch %ld frames: wall %.3f s, frame time / its length: median %.3f p99 %.3f max %.3f, over 1x %ld, over 2x %ld\n", k, sum,
+			        nr ? r[nr / 2] : 0, nr ? r[(nr * 99) / 100] : 0, worst, late, late2); fflush (stdout);
+		}
+		else if (!strcmp (cmd, "memsig")) {      /* memsig: the cartridge computer's whole RAM in one hash (the RP2350's SRAM + PSRAM, the Pi's RAM) */
+			extern int vt_uvm2, vt_pitrex; extern uint64_t uvm2_memsig (void), pitrex_memsig (void);
+			printf ("memsig %016llx\n", (unsigned long long) (vt_uvm2 ? uvm2_memsig () : vt_pitrex ? pitrex_memsig () : 0)); fflush (stdout);
+		}
 		else if (!strcmp (cmd, "tsc")) { extern unsigned long long px_tsc_arm; static unsigned long long l0, a0; unsigned long long n = VT_TSC ();
 			printf ("tsc: all %.3f G arm %.3f G\n", (n - l0) / 1e9, (px_tsc_arm - a0) / 1e9); l0 = n; a0 = px_tsc_arm; }
 		else if (!strcmp (cmd, "pxram")) { extern void pitrex_ramdump (const char *); snprintf (path, sizeof path, "%s/%s", outdir, a1); pitrex_ramdump (path); }

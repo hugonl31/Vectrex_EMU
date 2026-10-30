@@ -3,6 +3,19 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.1
+
+**Faster UVMC2 and PiTrex, same results**
+* **UVMC2 games run 10 to 19 % faster** with one thread (online play), 10 to 17 % with two: the cart computer's
+  code compiler handles more instructions itself. VecDoom on a Raspberry Pi 5: 0.52 -> 0.64 of real time.
+* **PiTrex online play up to 30 % faster** - the exact mode the online game uses across different computers:
+  Speedy -27 to -32 % (now real time on a Pi 5), Space Duel, Tempest and Battlezone -11 to -20 %.
+* **Nothing changes in what you see or in online play**: every UVMC2 game and PiTrex program gives the same pictures
+  and the same online checksums as before, checked frame by frame on Windows, Linux and a Raspberry Pi 5. Old and new
+  versions can still play each other.
+* **Fixes**: Basic quality with Beam trace on and the phosphor off drew the picture at the wrong size; the
+  updater on Linux could wait forever for the old emulator to end.
+
 ## v1.2.0
 
 **Everything new since v1.0.5** - v1.0.6 to v1.2.0 in one

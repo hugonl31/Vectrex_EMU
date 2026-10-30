@@ -19,7 +19,7 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.2.0 - everything since v1.0.5
+## New in v1.2.1 - everything since v1.0.5
 
 <p align="center">
 <img src="docs/images/phosphor_model/v119_helicopter.gif" width="420" alt="Armor Attack's helicopter: the rotor blades flash one after another, the helicopter leaves a fading trail"><br>
@@ -30,6 +30,11 @@ photo, recording and measurement, and every call on how it should look, sound an
 <img src="docs/images/v1.1.7/head_tracking.gif" width="420" alt="Armor Attack with head tracking: the picture slides against the overlay as the head moves round"><br>
 <em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head moves (largest shift 4 mm here).</em>
 </p>
+
+**New in v1.2.1: faster UVMC2 and PiTrex**
+* **UVMC2 games 10 to 19 % faster, PiTrex online play up to 30 % faster** - same pictures and same online
+  checksums as before, checked frame by frame on Windows, Linux and a Raspberry Pi 5 (Speedy now runs in real time
+  there in online mode). Plus two fixes: Basic quality with Beam trace, and the updater on Linux.
 
 **New in v1.2.0: updates in one click**
 * **Updates in one click** - installs a new version, keeps your games: when a new version is out, the message

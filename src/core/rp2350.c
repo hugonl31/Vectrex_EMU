@@ -167,6 +167,7 @@ static uint32_t apply_alias (uint32_t old, uint32_t v, int alias)
 
 /* ------------------------------------------------------------------ pins */
 /* which function owns each pin, as masks (recomputed when a FUNCSEL or a pad changes) */
+static uint32_t cd_ver = 1, cd_have; static rp2350_t *cd_rp; static uint64_t cd_v, cd_o;   /* (chip_drive's copy) */
 static void fmasks (rp2350_t *rp)
 {
 	rp->m_sio = rp->m_spi = rp->m_pull = 0; rp->m_pio[0] = rp->m_pio[1] = rp->m_pio[2] = 0;
@@ -177,10 +178,15 @@ static void fmasks (rp2350_t *rp)
 		else if (f == 1 && (i == 34 || i == 35)) rp->m_spi |= b;
 		if (rp->pads[i] & 8) rp->m_pull |= b;                                 /* PUE */
 	}
+	cd_ver++;
 }
 static uint64_t pull_levels (rp2350_t *rp) { return rp->m_pull; }
+/* (2026-10-30) what the chip drives, kept until something it comes from changes: the SIO's outputs (gpio_change), the
+ * PIOs' pins (pio_set_pins, GPIOBASE), the pin functions (fmasks) each move cd_ver on. One thread only (with core 0
+ * on a thread of its own it is worked out every time, as before, and forgotten when that starts or stops) */
 static void chip_drive (rp2350_t *rp, uint64_t *val, uint64_t *oe)
 {
+	if (cd_have == cd_ver && cd_rp == rp && !rp->th_on) { *val = cd_v; *oe = cd_o; return; }
 	uint64_t o = rp->gpio_oe & rp->m_sio, v = rp->gpio_out & o;
 	for (int k = 0; k < 3; k++) {
 		if (!rp->m_pio[k]) continue;
@@ -190,6 +196,7 @@ static void chip_drive (rp2350_t *rp, uint64_t *val, uint64_t *oe)
 	}
 	o |= rp->m_spi;
 	*val = v; *oe = o;
+	if (!rp->th_on) { cd_v = v; cd_o = o; cd_have = cd_ver; cd_rp = rp; }
 }
 /* (while the PIO runs its part of a slice only its own pin writes change the levels: pl_on, the levels kept until one -
  * pio_set_pins drops them) */
@@ -314,7 +321,7 @@ static uint32_t sio_read (rp2350_t *rp, cm33_t *c, uint32_t off)
 	}
 	return greg_rd (rp, 0xd0000000u + off);
 }
-static void gpio_change (rp2350_t *rp) { (void) rp; }
+static void gpio_change (rp2350_t *rp) { (void) rp; cd_ver++; }
 static void sio_write (rp2350_t *rp, cm33_t *c, uint32_t off, uint32_t v)
 {
 	uint64_t lo = v, hi = (uint64_t) (v & 0xffff) << 32;
@@ -369,7 +376,7 @@ static inline uint32_t rotl32 (uint32_t x, unsigned n) { n &= 31; return n ? (x 
 static void pio_set_pins (pio_t *p, uint32_t base, uint32_t count, uint32_t v, int dirs)
 {
 	if (!count) return;
-	pl_ok = 0;
+	pl_ok = 0; cd_ver++;
 	uint32_t m = count >= 32 ? 0xffffffffu : (1u << count) - 1;
 	uint32_t mask = rotl32 (m, base), val = rotl32 (v & m, base);    /* (the pins wrap around at 32) */
 	if (dirs) p->dirs = (p->dirs & ~mask) | (val & mask);
@@ -630,16 +637,23 @@ static void pio_run_sm (rp2350_t *rp, int pidx, int si, uint32_t cyc)
 	if (div == 256 && s->frac < 256) steps = cyc;             /* (a divider of 1: every cycle a step, the remainder stays - the usual case) */
 	else {
 		uint64_t acc = (uint64_t) s->frac + (uint64_t) cyc * 256;
-		steps = (uint32_t) (acc / div);
-		s->frac = (uint32_t) (acc % div);
+		/* (a slow clock - the audio's, 73.6: no step or one in a slice, mostly - without the two 64-bit divisions) */
+		if (acc < div) { steps = 0; s->frac = (uint32_t) acc; }
+		else if (acc < 2 * (uint64_t) div) { steps = 1; s->frac = (uint32_t) (acc - div); }
+		else { steps = (uint32_t) (acc / div); s->frac = (uint32_t) (acc % div); }
 	}
 	if (s->stalled && !s->exec_pending) {                       /* still waiting on the same thing: no change */
 		if (s->wgpio) { if ((int) ((pin_levels (rp) >> (s->wgpio - 1)) & 1) != s->wpol) { s->frac = 0; return; } }
 		else if (s->wtx) { if (!s->txn) { s->frac = 0; return; } }
 	}
 	s->wgpio = 0; s->wtx = 0;
+	if (!steps) return;                                        /* (no step in this slice: nothing changes) */
 	pio_k_t k; pio_k (s, &k);
 	pio_r_t R; PIO_R_IN (R, s);
+	/* (2026-10-30: the instruction count and "not stalled" kept in locals, written once at the end - nothing in a run
+	 * reads them; the wrap's two ends worked out once) */
+	uint32_t wt = (k.ex >> 12) & 31, wb = (k.ex >> 7) & 31;
+	unsigned long long nins = 0;
 	while (steps) {
 		if (R.delay) { uint32_t d = (uint32_t) R.delay < steps ? (uint32_t) R.delay : steps; R.delay -= (int) d; steps -= d; continue; }
 		steps--;
@@ -647,21 +661,20 @@ static void pio_run_sm (rp2350_t *rp, int pidx, int si, uint32_t cyc)
 		if (s->exec_pending) { ins = (uint16_t) s->exec_instr; s->exec_pending = 0; from_exec = 1; }
 		else ins = p->instr[R.pc & 31];
 		int jumped;
-		pio_count[pidx]++;
+		nins++;
 		int st = pio_exec_k (rp, p, pidx, si, ins, &jumped, &k, &R);
 		if (st) {
 			if (from_exec) { s->exec_pending = 1; s->exec_instr = ins; }
 			s->stalled = 1;
 			/* stalled on the outside world: nothing changes until the next slice */
-			s->frac = 0; PIO_R_OUT (R, s); return;
+			s->frac = 0; PIO_R_OUT (R, s); pio_count[pidx] += nins; return;
 		}
-		s->stalled = 0;                               /* (wgpio / wtx: set only by a stall, which ends the run) */
 		if (!jumped && !from_exec) {
-			uint32_t wt = (k.ex >> 12) & 31, wb = (k.ex >> 7) & 31;
 			if ((R.pc & 31) == wt) R.pc = wb; else R.pc = (R.pc + 1) & 31;
-		} else if (from_exec && !jumped) { /* (an EXEC'd instruction does not advance the PC) */ }
-		if (s->exec_pending) continue;
+		}                                             /* (an EXEC'd instruction does not advance the PC) */
 	}
+	if (nins) s->stalled = 0;                         /* (wgpio / wtx: set only by a stall, which ends the run) */
+	pio_count[pidx] += nins;
 	PIO_R_OUT (R, s);
 }
 
@@ -764,7 +777,7 @@ static void pio_write (rp2350_t *rp, int k, uint32_t off, uint32_t v, int alias)
 		return;
 	}
 	if (off >= 0x128 && off < 0x168) { pio_sm_t *s = &p->sm[(off - 0x128) >> 4]; s->rx[((off - 0x128) >> 2) & 3] = v; return; }
-	if (off == 0x168) { p->gpiobase = v & 16; return; }
+	if (off == 0x168) { p->gpiobase = v & 16; cd_ver++; return; }
 	if (off == 0x170) { p->inte[0] = v; return; }
 	if (off == 0x174) { p->intf[0] = v; return; }
 	if (off == 0x17c) { p->inte[1] = v; return; }
@@ -1705,7 +1718,7 @@ static void th_start (rp2350_t *rp)
 	rp->th_done = rp->cpu[0].cycles;
 	TH_STORE (&rp->th_target, rp->cpu[0].cycles + TH_Q);
 	rp->th_io = 0; rp->th_epochs = 0;
-	TH_STORE (&rp->th_on, 1); rp->th_n_on++;
+	TH_STORE (&rp->th_on, 1); rp->th_n_on++; cd_have = 0;
 	fprintf (stderr, "STAT: threads 2\n"); fflush (stderr);              /* (the window's OSD) */
 }
 /* the main thread: until core 0 has done its epoch (it may want the peripherals meanwhile) */
@@ -1721,7 +1734,7 @@ static void th_stop (rp2350_t *rp)
 {
 	if (!rp->th_on) return;
 	th_wait_epoch (rp);
-	TH_STORE (&rp->th_on, 0);
+	TH_STORE (&rp->th_on, 0); cd_have = 0;
 	lk_give (rp);
 	fprintf (stderr, "STAT: threads 1\n"); fflush (stderr);
 }
@@ -1740,17 +1753,18 @@ extern int cm33_excl_sticky;
 void rp_threads (rp2350_t *rp, int on) { rp->th_enabled = on; if (on) cm33_excl_sticky = 1; if (!on) th_stop (rp); }
 
 /* ------------------------------------------------------------------ setup, run */
+static int rp_usb;                                           /* (usb_on (): known once usb_init has run - rp_create) */
 rp2350_t *rp_create (void)
 {
 	rp2350_t *rp = (rp2350_t *) calloc (1, sizeof *rp);
 	if (!rp) return NULL;
 	rp->psram = (uint8_t *) calloc (1, PSRAM_SIZE);
 	rp->log = getenv ("VT_RPLOG") != NULL;
-	usb_init ();
+	usb_init (); rp_usb = usb_on ();
 	{ extern int cm33_spin_mode, cm33_spin_log; const char *z = getenv ("VT_SPIN"); if (z) cm33_spin_mode = atoi (z); cm33_spin_log = getenv ("VT_SPINLOG") != NULL; }
 	{ const char *z = getenv ("VT_THREADS"); rp->th_enabled = z && atoi (z) > 0; if (rp->th_enabled) cm33_excl_sticky = 1; }
 	{ const char *z = getenv ("VT_TQ"); if (z && atoi (z) >= 64) TH_Q = (uint32_t) atoi (z); }
-	{ extern int cm33_specialise; const char *z = getenv ("VT_SPEC"); if (z) cm33_specialise = atoi (z); }   /* (core 0 on a host thread of its own) */
+	{ extern int cm33_specialise; const char *z = getenv ("VT_SPEC"); if (z) cm33_specialise = atoi (z); } { extern int cm33_exhand; const char *z = getenv ("VT_EXHAND"); if (z) cm33_exhand = atoi (z); }   /* (core 0 on a host thread of its own) */
 	rp->sys.rd = cb_rd; rp->sys.wr = cb_wr; rp->sys.cp = cb_cp; rp->sys.event = cb_event;
 	rp->sys.ram = rp->sram; rp->sys.ram_base = SRAM_BASE; rp->sys.ram_size = SRAM_SIZE; rp->sys.xram = rp->psram; rp->sys.xram_size = PSRAM_SIZE;
 	extern int (*cm33_bkpt_hle) (cm33_t *, int);
@@ -1935,7 +1949,7 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 			dma_service (rp, 64);
 			rp->now = t;
 			timers_update (rp);
-			if (usb_on ()) { usb_tick (rp->now, rp->sys_hz); usb_irq_update (rp); }
+			if (rp_usb) { usb_tick (rp->now, rp->sys_hz); usb_irq_update (rp); }
 			pio_irq_update (rp);
 			if (rp->th_on) lk_yield (rp);
 			t3 = RP_TSC ();
@@ -1973,7 +1987,7 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 		dma_service (rp, 64);
 		rp->now = t;
 		timers_update (rp);
-		if (usb_on ()) { usb_tick (rp->now, rp->sys_hz); usb_irq_update (rp); }
+		if (rp_usb) { usb_tick (rp->now, rp->sys_hz); usb_irq_update (rp); }
 		pio_irq_update (rp);
 		if (rp->th_on) lk_yield (rp);
 	}
@@ -1984,6 +1998,14 @@ uint32_t rp_gpio_ctrl (rp2350_t *rp, int pin) { return rp->gpio_ctrl[pin]; }
 
 /* the chip's state in one number (online play: both sides compare it now and then - live.c): the cores' cycle counts
  * and registers, which part from the other side's at the first instruction that runs differently */
+uint64_t rp2350_memsig (rp2350_t *rp)        /* (tests: the SRAM and the PSRAM in one hash, vtest memsig) */
+{
+	uint64_t h = 1469598103934665603ull;
+	for (uint32_t i = 0; i < SRAM_SIZE; i += 8) { uint64_t w; memcpy (&w, rp->sram + i, 8); h = (h ^ w) * 1099511628211ull; }
+	for (uint32_t i = 0; i < PSRAM_SIZE; i += 8) { uint64_t w; memcpy (&w, rp->psram + i, 8); h = (h ^ w) * 1099511628211ull; }
+	return h;
+}
+
 uint32_t rp2350_sig (rp2350_t *rp)
 {
 	uint32_t h = 2166136261u;

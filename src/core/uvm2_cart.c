@@ -81,7 +81,9 @@ static void uvm2_drive (int clk)
 static int uvm2_cycle (void)
 {
 	uint32_t hz = rp_sys_hz (uvm2);
-	uvm2_frac += (uint32_t) ((uint64_t) hz * 256 / 1500000);
+	{ static uint32_t hz0, inc0;                    /* (the system cycles per E period: worked out again when the clock changes) */
+	  if (hz != hz0 || !inc0) { hz0 = hz; inc0 = (uint32_t) ((uint64_t) hz * 256 / 1500000); }
+	  uvm2_frac += inc0; }
 	uint32_t per = uvm2_frac >> 8; uvm2_frac &= 255;
 	uint32_t h1 = per / 2, h2 = per - h1;
 	/* E low: ~E high; the read data of the last period is still on the bus for a moment, then gone */
@@ -114,7 +116,7 @@ static int uvm2_cycle (void)
 	uvm2_cycles++; uvm2_cycles_pub = uvm2_cycles;
 	{ static int lg = -1; if (lg < 0) lg = getenv ("VT_RPLOG") != NULL;
 	  if (lg && uvm2_cycles % 1500000 == 0) { extern void rp_debug (rp2350_t *); rp_debug (uvm2); extern unsigned long vt_nlines; fprintf (stderr, "lines %lu  ", vt_nlines); { extern uint32_t rp_gpio_ctrl (rp2350_t *, int); fprintf (stderr, "gpio31 ctrl %08X gpio27 %08X  ", rp_gpio_ctrl (uvm2, 31), rp_gpio_ctrl (uvm2, 27)); } fprintf (stderr, "bus: halted %lu reads %lu writes %lu (VIA %lu)\n", uvm2_n_halt, uvm2_n_rd, uvm2_n_wr, uvm2_n_via); } }
-	if (!uvm2_fault_told) {
+	if (!uvm2_fault_told && !(uvm2_cycles & 1023)) {   /* (now and then: a message only) */
 		const char *fl = rp_fault (uvm2);
 		if (fl) { fprintf (stderr, "UVMC2: %s\n", fl); uvm2_fault_told = 1; }
 	}
@@ -154,6 +156,8 @@ int uvm2_jack44 (int16_t *out, int n)
 	return k;
 }
 
+uint64_t rp2350_memsig (rp2350_t *rp);
+uint64_t uvm2_memsig (void) { return uvm2 ? rp2350_memsig (uvm2) : 0; }   /* (tests: vtest memsig) */
 uint32_t uvm2_sig (void)                    /* (online play: the cartridge's state in one number, live.c) */
 {
 	return uvm2 ? rp2350_sig (uvm2) : 0;

@@ -15,5 +15,5 @@ echo using %VCVARS%
 call "%VCVARS%" >nul || (echo Visual C++ could not be set up & exit /b 1)
 if not exist core mkdir core
 if not exist build mkdir build
-cl /nologo /O2 /W0 /TC /Fobuild\ /Fe:core\vectrex_core.exe src\core\vtest.c src\core\vecx.c src\core\e6809.c src\core\e8910.c src\core\cm33.c src\core\rp2350.c src\core\host.c src\core\arm11.c src\core\usbhost.c || exit /b 1
+cl /nologo /O2 /GL /W0 /TC /Fobuild\ /Fe:core\vectrex_core.exe src\core\vtest.c src\core\vecx.c src\core\e6809.c src\core\e8910.c src\core\cm33.c src\core\rp2350.c src\core\host.c src\core\arm11.c src\core\usbhost.c || exit /b 1
 echo built core\vectrex_core.exe

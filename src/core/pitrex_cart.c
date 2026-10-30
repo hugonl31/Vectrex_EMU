@@ -568,6 +568,12 @@ static int pitrex_cycle (void)
 	return 1;
 }
 
+uint64_t pitrex_memsig (void)                 /* (tests: the Pi's RAM in one hash, vtest memsig) */
+{
+	uint64_t h = 1469598103934665603ull;
+	if (px_ram) for (uint32_t i = 0; i < PX_RAM; i += 8) { uint64_t w; memcpy (&w, px_ram + i, 8); h = (h ^ w) * 1099511628211ull; }
+	return h;
+}
 uint32_t pitrex_sig (void)                  /* (online play: the Pi's state in one number - cycles, registers, accesses; live.c) */
 {
 	uint32_t h = 2166136261u;

@@ -116,7 +116,9 @@ def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):
         open(script, 'w', newline='\r\n').write('\n'.join(lines) + '\n')
         return ['cmd.exe', '/c', script], script
     q = lambda s: "'" + s.replace("'", "'\\''") + "'"
-    lines = ['#!/bin/sh', 'while kill -0 %d 2>/dev/null; do sleep 0.5; done' % pid, 'sleep 0.5']
+    lines = ['#!/bin/sh',                             # (until the emulator has ended - Linux: a zombie counts as ended)
+             'while kill -0 %d 2>/dev/null; do [ -r /proc/%d/stat ] && grep -q "^%d ([^)]*) Z" /proc/%d/stat && break; '
+             'sleep 0.5; done' % (pid, pid, pid, pid), 'sleep 0.5']
     if IS_MAC:
         app = os.path.join(root, PROGRAM)
         lines += ['rm -rf %s.old && mv %s %s.old && ditto %s %s && rm -rf %s.old' % (

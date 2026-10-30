@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.2.1
+- UVMC2 games and PiTrex programs run 10 to 30 % faster
+- PiTrex online play up to 30 % faster (Speedy real time on a Pi 5)
+- Fixes: Basic quality with Beam trace, the updater on Linux
+
 ## v1.2.0
 - Updates in one click: installs the new version, keeps your games
 - See what's new before you update, right in this message

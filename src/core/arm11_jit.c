@@ -35,14 +35,26 @@ typedef struct { uint32_t pc, cost; uint8_t *code; } jent_t;     /* (cost: the m
 #define JT_MASK ((1u << JT_BITS) - 1)
 #define JCODE_SIZE (48u << 20)
 #define JMAX 64                                                    /* (instructions in a block, at most) */
+#define JIT_XMAX 8                                                 /* (the same with VT_JIT=exact: measured 2026-10-30, 4-64 x 0-8) */
+#define JIT_XSHORT 4                                               /* (exact: the short blocks, see jt2) */
 static jent_t *jt;                                                 /* the blocks, by address */
 static uint8_t *jcode, *jcode_end, *jfree;                         /* the code buffer */
 static uint8_t *jpage; static uint32_t jpage_n;                    /* per 4 KB page of RAM: translated code in it */
 static int jit_state;                                              /* 0 not set up, 1 on, -1 off */
 static int jit_exact;
+/* (2026-10-30) VT_JIT=exact: a block runs only when all of it fits in what is left of the slice (333 Pi cycles, half an
+ * E period), else the interpreter runs on, one instruction at a time - so a long block left the slice's last part
+ * to the interpreter. Shorter blocks there (any cut gives the interpreter's result: the blocks of exact mode are not part
+ * of it); VT_JITXMAX=n blocks of at most n instructions, exact mode only (without exact the blocks are part of the result
+ * - online play's same-processor mode compares it - and stay as they were) */
+static int jit_maxn = JMAX;
+/* (and when a block does not fit, a short one from the same address - VT_JITXSHORT=n instructions at most, 0: none -
+ * from a table of its own, before the interpreter: the slice's end in compiled code too, exactly) */
+static jent_t *jt2; static int jt_short, jit_xshort = JIT_XSHORT;
+#define JT_SLOT(pc) (jt_short ? &jt2[((pc) >> 2) & JT_MASK] : &jt[((pc) >> 2) & JT_MASK])
 static uint8_t *j_enter, *j_dispatch, *j_exit, *j_stubs_end;
 static unsigned long jit_n_blocks, jit_n_flush, jit_n_inval, jit_n_interp;
-unsigned long long jit_c_run, jit_c_slow, jit_c_loop, jit_c_interp, jit_c_enter;
+unsigned long long jit_c_run, jit_c_slow, jit_c_loop, jit_c_interp, jit_c_enter, jit_c_short;
 unsigned long jit_interp_hist[4096]; uint32_t jit_interp_ins[4096];
 typedef void (*jenter_fn) (arm11_t *c, uint8_t *code);
 
@@ -322,6 +334,8 @@ static int jit_setup (arm11_t *c)
 	const char *z = getenv ("VT_JIT");
 	if (z && (z[0] == '0' || !strcmp (z, "off"))) { jit_state = -1; return 0; }
 	jit_exact = z && !strcmp (z, "exact");
+	if (jit_exact) { const char *q = getenv ("VT_JITXMAX"); jit_maxn = q ? atoi (q) : JIT_XMAX; if (jit_maxn < 1 || jit_maxn > JMAX) jit_maxn = JMAX;
+	                 q = getenv ("VT_JITXSHORT"); if (q) jit_xshort = atoi (q); if (jit_xshort < 0 || jit_xshort > JMAX) jit_xshort = 0; }
 #ifdef _WIN32
 	jcode = (uint8_t *) VirtualAlloc (NULL, JCODE_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 #else
@@ -397,6 +411,7 @@ static void jit_flush (void)
 {
 	if (jit_state != 1) return;
 	memset (jt, 0, sizeof *jt << JT_BITS); memset (jpage, 0, jpage_n);
+	if (jt2) memset (jt2, 0, sizeof *jt2 << JT_BITS);
 	jfree = E = j_stubs_end;                                           /* (the enter / exit / dispatch code stays) */
 	jlinks_n = 0;
 	jit_n_flush++;
@@ -895,12 +910,12 @@ static int jit_try (arm11_t *c, uint64_t until);
 /* translate the block at pc: its entry (code NULL when the first instruction is the interpreter's) */
 static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 {
-	jent_t *e = &jt[(pc >> 2) & JT_MASK];
-	jins_t L[JMAX]; int n = 0;
+	jent_t *e = JT_SLOT (pc);
+	jins_t L[JMAX]; int n = 0; int maxn = jt_short ? jit_xshort : jit_maxn;
 	uint32_t pg = pc >> 12;
 	const uint8_t *ram = c->sys->ram;
 	j_ram_size = c->sys->ram_size; j_ram = c->sys->ram;
-	for (uint32_t ip = pc; n < JMAX && (ip >> 12) == pg && ip + 4 <= j_ram_size; ip += 4) {
+	for (uint32_t ip = pc; n < maxn && (ip >> 12) == pg && ip + 4 <= j_ram_size; ip += 4) {
 		uint32_t ins; memcpy (&ins, ram + ip, 4);
 		int ends; unsigned extra;
 		int k = j_kind (ins, ip, &ends, &extra);
@@ -911,7 +926,7 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	e->pc = pc; e->code = NULL; e->cost = 1;
 	jpage[pg] = 1;
 	if (!n) { jit_n_interp++; return e; }
-	if (jfree + 64 * 1024 > jcode_end) { jit_flush (); e = &jt[(pc >> 2) & JT_MASK]; e->pc = pc; e->cost = 1; jpage[pg] = 1; }
+	if (jfree + 64 * 1024 > jcode_end) { jit_flush (); e = JT_SLOT (pc); e->pc = pc; e->cost = 1; jpage[pg] = 1; }
 	/* the static cycles: 1 each, and the extras of the unconditional ones */
 	unsigned tot = 0, maxc = 0;
 	for (int i = 0; i < n; i++) { unsigned s = 1 + ((L[i].ins >> 28) == 14 ? L[i].extra : 0); tot += s; maxc += 1 + L[i].extra; }
@@ -961,7 +976,7 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	jfree = E;
 	e->code = code; e->cost = maxc;
 	jit_n_blocks++;
-	for (int i = 0; i < jlinks_n; i++) if (jlinks[i].target == pc) { jlink_patch (&jlinks[i], e); jlinks[i--] = jlinks[--jlinks_n]; }
+	if (!jt_short) for (int i = 0; i < jlinks_n; i++) if (jlinks[i].target == pc) { jlink_patch (&jlinks[i], e); jlinks[i--] = jlinks[--jlinks_n]; }
 	return e;
 }
 #else
@@ -979,7 +994,15 @@ static int jit_try (arm11_t *c, uint64_t until)
 	if (e->pc != pc || !e->cost) e = jit_translate (c, pc);
 	if (!e->code) { jit_c_interp++; { uint32_t ins; memcpy (&ins, c->sys->ram + pc, 4); unsigned h = ((ins >> 20) & 0xff0) | ((ins >> 4) & 15); jit_interp_hist[h]++; jit_interp_ins[h] = ins; } return 0; }
 	jit_c_enter++;
-	if (jit_exact && c->cycles + e->cost > until) return 0;
+	if (jit_exact && c->cycles + e->cost > until) {
+		/* (does not fit: a short block from here, if that fits - see jt2) */
+		if (!jit_xshort) return 0;
+		if (!jt2 && !(jt2 = (jent_t *) calloc ((size_t) 1 << JT_BITS, sizeof *jt2))) { jit_xshort = 0; return 0; }
+		jent_t *s = &jt2[(pc >> 2) & JT_MASK];
+		if (s->pc != pc || !s->cost) { jt_short = 1; s = jit_translate (c, pc); jt_short = 0; }
+		if (!s->code || c->cycles + s->cost > until) return 0;
+		e = s; jit_c_short++;
+	}
 	c->jit_until = until;
 	((jenter_fn) (void *) j_enter) (c, e->code);
 	return 1;
@@ -1000,10 +1023,10 @@ void arm11_jit_stats (void)
 	if (jit_state == 1) fprintf (stderr, "jit: blocks %lu flushes %lu page drops %lu interpreter entries %lu code %lu KB\n",
 	                            jit_n_blocks, jit_n_flush, jit_n_inval, jit_n_interp, (unsigned long) ((jfree - jcode) >> 10));
 	if (jit_state == 1) {
-		fprintf (stderr, "jit: run %llu enter %llu slow %llu loop %llu interp %llu\n", jit_c_run, jit_c_enter, jit_c_slow, jit_c_loop, jit_c_interp);
+		fprintf (stderr, "jit: run %llu enter %llu slow %llu loop %llu interp %llu short %llu\n", jit_c_run, jit_c_enter, jit_c_slow, jit_c_loop, jit_c_interp, jit_c_short);
 		for (int k = 0; k < 12; k++) { unsigned long best = 0; int bi = -1; for (int i = 0; i < 4096; i++) if (jit_interp_hist[i] > best) { best = jit_interp_hist[i]; bi = i; }
 			if (bi < 0) break; fprintf (stderr, "jit:   interp %08X x %lu\n", jit_interp_ins[bi], best); jit_interp_hist[bi] = 0; }
-		jit_c_run = jit_c_enter = jit_c_slow = jit_c_loop = jit_c_interp = 0;
+		jit_c_run = jit_c_enter = jit_c_slow = jit_c_loop = jit_c_interp = jit_c_short = 0;
 	}
 }
 #else

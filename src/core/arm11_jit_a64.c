@@ -131,6 +131,8 @@ static int jit_setup (arm11_t *c)
 	const char *z = getenv ("VT_JIT");
 	if (z && (z[0] == '0' || !strcmp (z, "off"))) { jit_state = -1; return 0; }
 	jit_exact = z && !strcmp (z, "exact");
+	if (jit_exact) { const char *q = getenv ("VT_JITXMAX"); jit_maxn = q ? atoi (q) : JIT_XMAX; if (jit_maxn < 1 || jit_maxn > JMAX) jit_maxn = JMAX;
+	                 q = getenv ("VT_JITXSHORT"); if (q) jit_xshort = atoi (q); if (jit_xshort < 0 || jit_xshort > JMAX) jit_xshort = 0; }
 #ifdef _WIN32
 	jcode = (uint8_t *) VirtualAlloc (NULL, JCODE_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 #else
@@ -212,6 +214,7 @@ static void jit_flush (void)
 {
 	if (jit_state != 1) return;
 	memset (jt, 0, sizeof *jt << JT_BITS); memset (jpage, 0, jpage_n);
+	if (jt2) memset (jt2, 0, sizeof *jt2 << JT_BITS);
 	jfree = E = j_stubs_end;                                           /* (the enter / exit / dispatch code stays) */
 	jlinks_n = 0;
 	jit_n_flush++;
@@ -661,12 +664,12 @@ static void j_emit (jins_t *I)
 /* translate the block at pc: its entry (code NULL when the first instruction is the interpreter's) */
 static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 {
-	jent_t *e = &jt[(pc >> 2) & JT_MASK];
-	jins_t L[JMAX]; int n = 0;
+	jent_t *e = JT_SLOT (pc);
+	jins_t L[JMAX]; int n = 0; int maxn = jt_short ? jit_xshort : jit_maxn;
 	uint32_t pg = pc >> 12;
 	const uint8_t *ram = c->sys->ram;
 	j_ram_size = c->sys->ram_size; j_ram = c->sys->ram;
-	for (uint32_t ip = pc; n < JMAX && (ip >> 12) == pg && ip + 4 <= j_ram_size; ip += 4) {
+	for (uint32_t ip = pc; n < maxn && (ip >> 12) == pg && ip + 4 <= j_ram_size; ip += 4) {
 		uint32_t ins; memcpy (&ins, ram + ip, 4);
 		int ends; unsigned extra;
 		int k = j_kind (ins, ip, &ends, &extra);
@@ -677,7 +680,7 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	e->pc = pc; e->code = NULL; e->cost = 1;
 	jpage[pg] = 1;
 	if (!n) { jit_n_interp++; return e; }
-	if (jfree + 64 * 1024 > jcode_end) { jit_flush (); e = &jt[(pc >> 2) & JT_MASK]; e->pc = pc; e->cost = 1; jpage[pg] = 1; }
+	if (jfree + 64 * 1024 > jcode_end) { jit_flush (); e = JT_SLOT (pc); e->pc = pc; e->cost = 1; jpage[pg] = 1; }
 	/* the static cycles: 1 each, and the extras of the unconditional ones */
 	unsigned tot = 0, maxc = 0;
 	for (int i = 0; i < n; i++) { unsigned s = 1 + ((L[i].ins >> 28) == 14 ? L[i].extra : 0); tot += s; maxc += 1 + L[i].extra; }
@@ -703,7 +706,7 @@ static jent_t *jit_translate (arm11_t *c, uint32_t pc)
 	jfree = E;
 	e->code = code; e->cost = maxc;
 	jit_n_blocks++;
-	for (int i = 0; i < jlinks_n; i++) if (jlinks[i].target == pc) { jlink_patch (&jlinks[i], e); jlinks[i--] = jlinks[--jlinks_n]; }
+	if (!jt_short) for (int i = 0; i < jlinks_n; i++) if (jlinks[i].target == pc) { jlink_patch (&jlinks[i], e); jlinks[i--] = jlinks[--jlinks_n]; }
 	j_sync (code, E);
 	j_wr_off ();
 	return e;

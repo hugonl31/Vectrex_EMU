@@ -88,6 +88,25 @@ static unsigned mj_noinl;                        /* (VT_M33NOINL=hex: inline gro
 static void mj_stubs (mj_core_t *J, cm33_t *c);
 static mj_core_t *mj_cur;
 static uint8_t *mj_entry[MJ_MAX];               /* (x86-64: each instruction's code - a slice that stopped there goes on there) */
+/* (2026-10-30) IT blocks in the blocks: the instructions an IT makes conditional are compiled as calls of h_itw, which
+ * does for them what the loop's slow path (exec_slow) does - the condition, the handler, the IT state on - so a block
+ * goes on through them instead of ending at the IT (VecDoom: 130 M of these in 40 s of play went one by one through
+ * exec_slow). VT_M33IT=0: as before */
+static uint8_t mj_itf[MJ_MAX];                  /* (the block's instruction i is inside an IT block) */
+static hfn mj_hfn;                              /* (x_handler / a_handler: call this one, not the instruction's own) */
+static int mj_it_on = 1;
+static void h_itw (cm33_t *c, const di_t *d, uint32_t ip)
+{
+	if (d->fn == h_decode || d->fn == GENERIC) {                     /* (its entry was dropped: the loop's own slow path) */
+		c->r[15] = ip; c->cycles--; exec_slow (c, dcache_for (c)); return;
+	}
+	int in_it = c->it != 0;
+	if (!(in_it && !cond_pass (c, (c->it >> 4) & 15))) d->fn (c, d, ip);
+	if (in_it) {
+		if ((c->it & 7) == 0) c->it = 0;
+		else c->it = (c->it & 0xe0) | ((c->it << 1) & 0x1f);
+	}
+}
 static uint8_t *mj_len;                         /* (VT_M33STATS: each block's instructions, by its start - the statistics) */
 unsigned long long mj_st_calls, mj_st_ins, mj_st_inl, mj_st_hand, mj_st_it, mj_st_out, mj_st_none;
 static void mj_stats_print (void)
@@ -137,6 +156,7 @@ static int mj_setup_core (cm33_t *c)
 		mj_state = (z && (z[0] == '0' || !strcmp (z, "off"))) ? -1 : 1;
 		mj_mode = z && !strcmp (z, "calls");
 		{ const char *q = getenv ("VT_M33NOINL"); mj_noinl = q ? (unsigned) strtoul (q, NULL, 16) : 0; }
+		{ const char *q = getenv ("VT_M33IT"); if (q) mj_it_on = atoi (q); }
 		mj_stats = getenv ("VT_M33STATS") != NULL; if (mj_stats) atexit (mj_stats_print);                   /* (VT_M33JIT=calls: every instruction through its handler - stage 1, the reference) */
 		if (mj_state == 1) fprintf (stderr, "UVMC2: JIT on (%s)\n",
 #ifdef MJ_A64
@@ -303,7 +323,7 @@ static void x_handler (uint32_t ip, uint32_t next, const di_t *d)
 #else
 	b1 (0x48); b1 (0x89); b1 (0xDF); b1 (0x48); b1 (0xBE); q8 ((uint64_t) (uintptr_t) d); b1 (0xBA); d4 (ip);
 #endif
-	x_call ((void *) d->fn);
+	x_call ((void *) (mj_hfn ? mj_hfn : d->fn));
 	x_cyc_ld ();
 	b1 (0x81); m_rbx (7, MO_R15); d4 (next); ex_add (x_jcc (C_NE), ip, 0, 0);   /* (the PC went elsewhere) */
 	x_mi8 (7, MO_ATTN, 0); ex_add (x_jcc (C_NE), ip, 0, 0);                    /* (attn) */
@@ -479,6 +499,7 @@ static int x_inline (uint32_t ip, uint32_t next, const di_t *d, int *cost, int *
 		x_ld (RCX, MO_R (b)); x_ext (d->op == 0 ? 0xBF : d->op == 1 ? 0xBE : d->op == 2 ? 0xB7 : 0xB6, RAX, RCX); x_st (MO_R (a), RAX); return 1;
 	}
 	if (f == h_nop) return 1;
+	if (f == h_it && mj_it_on) { x_sti (MO_F (it), imm); return 1; }        /* (2026-10-30: IT, as h_it - its instructions follow in the block, h_itw) */
 	/* loads and stores */
 	int n = 0, ld = 0, sx = 0, wb = 0, base = -1; uint32_t off = 0;
 	if (f == h_ldw_imm || f == h_ldh_imm || f == h_ldb_imm) { n = f == h_ldw_imm ? 4 : f == h_ldh_imm ? 2 : 1; ld = 1; base = b; off = imm; }
@@ -644,6 +665,28 @@ static int x_inline (uint32_t ip, uint32_t next, const di_t *d, int *cost, int *
 		}
 		x_st (MO_R (a), RAX); return 1;
 	}
+	if ((f == h_ubfx || f == h_bfi || f == h_mul32) && !(mj_noinl & 0x2000)) {
+		/* (2026-10-30) bit fields and 32-bit multiplies, as their handlers: UBFX / SBFX, BFI / BFC, MUL / MLA / MLS */
+		if (f == h_ubfx) {
+			if (a == 15 || b == 15 || imm >= 32 || e < 1 || e > 32 || imm + e > 32) return 0;
+			x_ld (RAX, MO_R (b));
+			if (e < 32) {
+				if (d->op) { if (32 - imm - e) x_shi (4, RAX, (int) (32 - imm - e)); x_shi (7, RAX, (int) (32 - e)); }
+				else { if (imm) x_shi (5, RAX, (int) imm); x_ri (4, RAX, (1u << e) - 1); }
+			}
+			x_st (MO_R (a), RAX); return 1;
+		}
+		if (f == h_bfi) {
+			if (a == 15 || (!d->op && b == 15) || e > 31) return 0;
+			if (d->op) x_movi (RAX, 0); else { x_ld (RAX, MO_R (b)); if (e) x_shi (4, RAX, e); x_ri (4, RAX, imm); }
+			x_ld (RCX, MO_R (a)); x_ri (4, RCX, ~imm); x_rr (0x09, RAX, RCX); x_st (MO_R (a), RAX); return 1;
+		}
+		if (a == 15 || b == 15 || e == 15 || d->op > 2 || (d->op && d->f1 == 15)) return 0;
+		x_ld (RAX, MO_R (b)); x_ld (RCX, MO_R (e)); x_imul (RAX, RCX);
+		if (d->op == 1) x_rm (0x03, RAX, MO_R (d->f1));
+		else if (d->op == 2) { x_ld (RCX, MO_R (d->f1)); x_rr (0x29, RCX, RAX); x_rr (0x89, RAX, RCX); }
+		x_st (MO_R (a), RAX); return 1;
+	}
 	if (f == h_pop && !(imm & 0x8000) && imm && !(mj_noinl & 0x10)) {
 		int cnt = 0; for (int i = 0; i < 15; i++) cnt += (imm >> i) & 1;
 		if (imm & (1u << 13)) return 0;
@@ -751,7 +794,7 @@ static uint8_t *mj_compile (cm33_t *c, const di_t **ins, const uint32_t *ips, in
 		const di_t *d = ins[i]; uint32_t ip = ips[i], next = ip + d->len;
 		int cost, br, sl0 = mj_nsl;
 		mj_entry[i] = E;
-		int inl = x_inline (ip, next, d, &cost, &br);
+		int inl = mj_itf[i] ? 0 : x_inline (ip, next, d, &cost, &br);
 		if (inl) mj_st_inl++; else mj_st_hand++;
 		if (inl) {
 			if (br == 2) {                                                       /* (an unconditional branch: its exit is all - */
@@ -766,7 +809,9 @@ static uint8_t *mj_compile (cm33_t *c, const di_t **ins, const uint32_t *ips, in
 			if (i == n - 1) { x_sti (MO_R15, next); x_sti (MO_LAST, ip); ex_add (x_jmp (), ip, 0, 0); }
 			else { b1 (0x4D); b1 (0x39); b1 (0xE6); ex_add (x_jcc (C_AE), ip, next, 1); }   /* cmp r14, r12; jae: the slice is used up */
 		} else {
+			mj_hfn = mj_itf[i] ? h_itw : NULL;
 			x_handler (ip, next, d);
+			mj_hfn = NULL;
 			if (i == n - 1) ex_add (x_jmp (), ip, 0, 0);
 			else { b1 (0x4D); b1 (0x39); b1 (0xE6); ex_add (x_jcc (C_AE), ip, 0, 0); }
 		}
@@ -886,7 +931,7 @@ static void a_handler (uint32_t ip, uint32_t next, const di_t *d)
 	w (0x91000400u | (21u << 5) | 9u); a_stx (9, MO_CYC);                   /* add x9, x21, #1; str x9, [x19, #cycles] */
 	w (0xAA1303E0u);                                                        /* mov x0, x19 */
 	a_movx (1, (uint64_t) (uintptr_t) d); a_movw (2, ip);
-	a_call ((void *) d->fn);
+	a_call ((void *) (mj_hfn ? mj_hfn : d->fn));
 	a_cyc_ld ();
 	a_ldw (9, MO_R15); a_movw (10, next); a_cmpr (9, 10); ex_add (a_bcc (A_NE), ip, 0, 0);
 	a_ldw (9, MO_ATTN); ex_add (a_cbnz (9), ip, 0, 0);
@@ -1061,6 +1106,7 @@ static int a_inline (uint32_t ip, uint32_t next, const di_t *d, int *cost, int *
 		a_ldw (12, MO_R (b)); a_ext (d->op & 3, 9, 12); a_stw (9, MO_R (a)); return 1;
 	}
 	if (f == h_nop) return 1;
+	if (f == h_it && mj_it_on) { a_sti (MO_F (it), imm); return 1; }        /* (2026-10-30: IT, as h_it - its instructions follow in the block, h_itw) */
 	/* loads and stores */
 	int n = 0, ld = 0, sx = 0, wb = 0, base = -1; uint32_t off = 0;
 	if (f == h_ldw_imm || f == h_ldh_imm || f == h_ldb_imm) { n = f == h_ldw_imm ? 4 : f == h_ldh_imm ? 2 : 1; ld = 1; base = b; off = imm; }
@@ -1176,6 +1222,60 @@ static int a_inline (uint32_t ip, uint32_t next, const di_t *d, int *cost, int *
 		}
 		*cost = 1 + e; return 1;
 	}
+	if (f == h_ldrd && !(mj_noinl & 0x100)) {
+		/* (2026-10-30, as the x86-64 code) LDRD / STRD: two words, as two loads (each with its bookkeeping) or two
+		 * stores, both checked before either - a slow second one after a fast first would do the first twice */
+		if (a == 15 || b == 15 || e == 15 || (d->f2 && a == e) || ((d->f3 & 2) && (a == b || e == b))) return 0;
+		a_ldw (10, MO_R (b)); if (d->f3 & 1) a_ri (A_ADD, 10, 10, imm);
+		if (d->f2) {
+			a_ldw (9, MO_F (ldl_on)); sl_add (a_cbnz (9), ip, next, d);
+			sl_add (a_ram_range (8), ip, next, d);
+			a_load (ip, next, d, 4, 0); a_mov (17, 9);
+			a_ri (A_ADD, 10, 10, 4); a_load (ip, next, d, 4, 0);
+			a_stw (17, MO_R (a)); a_stw (9, MO_R (e));
+		} else {
+			sl_add (a_ram_range (8), ip, next, d);
+			a_cmpi (11, 2); sl_add (a_bcc (A_LO), ip, next, d);
+			a_excl_check (ip, next, d);
+			a_code_page_check (ip, next, d, 4);
+			a_addr13 (); a_ldw (9, MO_R (a)); a_st13 (9, 0); a_ldw (9, MO_R (e)); a_st13 (9, 1);
+			a_inc_stores (2);
+		}
+		if (d->f3 & 2) { a_ldw (13, MO_R (b)); a_ri (A_ADD, 13, 13, imm); a_stw (13, MO_R (b)); }
+		*cost = 3; return 1;
+	}
+	if ((f == h_dpr_add || f == h_dpr_sub || f == h_dpr_rsb || f == h_dpr_and || f == h_dpr_orr || f == h_dpr_eor || f == h_dpr_bic || f == h_dpr_mov || f == h_dpr_mvn)
+	    && !d->f1 && !d->f3 && d->f2 <= 2 && imm < 32 && !(mj_noinl & 0x200)) {
+		/* (2026-10-30, as the x86-64 code) data processing with a shifted register, no flags: rd = rn op (rm shift #k) */
+		if (a == 15 || b == 15 || e == 15) return 0;
+		a_ldw (12, MO_R (e));
+		if (imm) { if (d->f2 == 0) a_lsl (12, 12, (int) imm); else if (d->f2 == 1) a_lsr (12, 12, (int) imm); else a_asr (12, 12, (int) imm); }
+		if (f == h_dpr_mov) a_mov (9, 12);
+		else if (f == h_dpr_mvn) a_rrr (A_ORN, 9, 31, 12);
+		else if (f == h_dpr_rsb) { a_ldw (9, MO_R (b)); a_rrr (A_SUB, 9, 12, 9); }
+		else { a_ldw (9, MO_R (b)); a_rrr (f == h_dpr_add ? A_ADD : f == h_dpr_sub ? A_SUB : f == h_dpr_and ? A_AND : f == h_dpr_orr ? A_ORR : f == h_dpr_eor ? A_EOR : A_BIC, 9, 9, 12); }
+		a_stw (9, MO_R (a)); return 1;
+	}
+	if ((f == h_ubfx || f == h_bfi || f == h_mul32) && !(mj_noinl & 0x2000)) {
+		/* (2026-10-30) bit fields and 32-bit multiplies, as their handlers: UBFX / SBFX, BFI / BFC, MUL / MLA / MLS */
+		if (f == h_ubfx) {
+			if (a == 15 || b == 15 || imm >= 32 || e < 1 || e > 32 || imm + e > 32) return 0;
+			a_ldw (12, MO_R (b));
+			if (d->op) w (0x13000000u | (imm << 16) | ((imm + e - 1) << 10) | (12u << 5) | 9u);   /* sbfx w9, w12, #imm, #e */
+			else a_ubfx (9, 12, (int) imm, e);
+			a_stw (9, MO_R (a)); return 1;
+		}
+		if (f == h_bfi) {
+			if (a == 15 || (!d->op && b == 15) || e > 31) return 0;
+			if (d->op) a_movw (12, 0); else { a_ldw (12, MO_R (b)); if (e) a_lsl (12, 12, e); a_ri (A_AND, 12, 12, imm); }
+			a_ldw (9, MO_R (a)); a_ri (A_AND, 9, 9, ~imm); a_rrr (A_ORR, 9, 9, 12); a_stw (9, MO_R (a)); return 1;
+		}
+		if (a == 15 || b == 15 || e == 15 || d->op > 2 || (d->op && d->f1 == 15)) return 0;
+		a_ldw (12, MO_R (b)); a_ldw (13, MO_R (e));
+		if (d->op) a_ldw (14, MO_R (d->f1));
+		w ((d->op == 2 ? 0x1B008000u : 0x1B000000u) | (13u << 16) | ((d->op ? 14u : 31u) << 10) | (12u << 5) | 9u);   /* madd / msub w9, w12, w13, w14 (wzr) */
+		a_stw (9, MO_R (a)); return 1;
+	}
 	if (f == h_ldst_rs && (e == 1 || e == 2 || e == 4) && imm < 4 && !(mj_noinl & 0x80)) {
 		if (a == 15 || b == 15 || d->f3 == 15) return 0;
 		a_ldw (10, MO_R (d->f3)); if (imm) a_lsl (10, 10, (int) imm); a_ldw (12, MO_R (b)); a_rrr (A_ADD, 10, 10, 12);
@@ -1253,7 +1353,7 @@ static uint8_t *mj_compile (cm33_t *c, const di_t **ins, const uint32_t *ips, in
 		const di_t *d = ins[i]; uint32_t ip = ips[i], next = ip + d->len;
 		int cost, br, sl0 = mj_nsl;
 		mj_entry[i] = E;
-		int inl = a_inline (ip, next, d, &cost, &br);
+		int inl = mj_itf[i] ? 0 : a_inline (ip, next, d, &cost, &br);
 		if (inl) mj_st_inl++; else mj_st_hand++;
 		if (inl) {
 			if (br == 2) {
@@ -1265,7 +1365,9 @@ static uint8_t *mj_compile (cm33_t *c, const di_t **ins, const uint32_t *ips, in
 			if (i == n - 1) { a_sti (MO_R15, next); a_sti (MO_LAST, ip); ex_add (a_b (), ip, 0, 0); }
 			else { w (0xEB1402BFu); ex_add (a_bcc (A_HS), ip, next, 1); }   /* cmp x21, x20; b.hs: the slice is used up */
 		} else {
+			mj_hfn = mj_itf[i] ? h_itw : NULL;
 			a_handler (ip, next, d);
+			mj_hfn = NULL;
 			if (i == n - 1) ex_add (a_b (), ip, 0, 0);
 			else { w (0xEB1402BFu); ex_add (a_bcc (A_HS), ip, 0, 0); }
 		}
@@ -1305,16 +1407,23 @@ static uint8_t *mj_translate_l (mj_core_t *J, cm33_t *c, di_t *dc, uint32_t ip0)
 	/* the instructions first: decoded, up to where the block ends */
 	const di_t *ins[MJ_MAX]; uint32_t ips[MJ_MAX]; int n = 0;
 	uint32_t ip = ip0;
+	int itn = 0;                                                    /* (instructions of an IT block still to come) */
 	while (n < MJ_MAX) {
 		uint32_t o = ip - base;
 		if (o + 4 > size) break;
 		di_t *d = &dc[o >> 1];
 		if (d->fn == h_decode) decode_at (c, ip, d);
 		if (d->fn == GENERIC || d->fn == h_decode) break;
+		mj_itf[n] = itn > 0; if (itn > 0) itn--;
 		ins[n] = d; ips[n] = ip; n++;
 		J->pages[o >> 12] = 1; J->pages[(o + d->len - 1) >> 12] = 1;
 		for (uint32_t h = 0; h < d->len; h += 2) J->incode[(o + h) >> 1] = 1;
 		ip += d->len;
+		if (d->fn == h_it && mj_it_on && !mj_itf[n - 1] && (d->imm & 15)) {   /* an IT: its 1-4 instructions follow, through h_itw */
+			unsigned m = d->imm & 15; itn = (m & 1) ? 4 : (m & 2) ? 3 : (m & 4) ? 2 : 1;
+			continue;
+		}
+		if (mj_itf[n - 1] && itn > 0) continue;                     /* (a branch inside the IT block: only as its last - the block ends there anyway) */
 		if (d->fn == h_it || d->fn == h_b || d->fn == h_bl || d->fn == h_bx) break;
 	}
 	if (!n) { J->blk[o0 >> 1] = MJ_NONE; return MJ_NONE; }

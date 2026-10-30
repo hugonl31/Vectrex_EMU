@@ -3482,9 +3482,13 @@ class GLBloomRenderer(GLRenderer):
             even = getattr(self, 'even_beam', False) and self.BlendEq
             bb = self._build(imm) if imm else self.last
             if bb and len(bb) > 6 and bb[6]:              # (beam trace: the energy summed, then as light)
-                self.BindFB(GL_FRAMEBUFFER, self.F[1]); gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
+                fw, fh = getattr(self, 'fsize', (w, h))   # (Basic: F at the phosphor's size - drawn to its size)
+                self.BindFB(GL_FRAMEBUFFER, self.F[1]); gl.glViewport(0, 0, fw, fh)
+                gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
                 gl.glBlendFunc(GL_ONE, GL_ONE)
+                self.fcs = (w / float(fw), h / float(fh))
                 self._draw_built(bb)
+                self.fcs = (1.0, 1.0)
                 gl.glDisable(GL_BLEND)
                 self.BindFB(GL_FRAMEBUFFER, self.out); gl.glViewport(0, 0, w, h)
                 self._sat(self.F[0], self._wb())

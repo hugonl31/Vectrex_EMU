@@ -76,6 +76,7 @@ static inline uint32_t fetch16 (cm33_t *c, uint32_t a)
 void cm33_code_written (cm33_sys_t *s, uint32_t addr, uint32_t n);
 int (*cm33_bkpt_hle) (cm33_t *c, int imm);
 int cm33_specialise = 1;                         /* (VT_SPEC=0: the general handlers only - for comparing) */
+int cm33_exhand = 1;                             /* (VT_EXHAND=0: LDREX / STREX / TBB / SSAT / USAT through the full decoder, as before 2026-10-30) */
 unsigned long long cm33_gen_op[2][4096];          /* (debug, VT_RPLOG: the full decoder's work by the first halfword's top 12 bits) */
 unsigned long long cm33_steps[16], cm33_gen_count; int cm33_gen_log; uint32_t cm33_gen_hist[4096];   /* (steps: core k at [8 k] - apart, on cache lines of their own) */
 int cm33_spin_log = 0;
@@ -1920,6 +1921,48 @@ static void h_ldrd (cm33_t *c, const di_t *d, uint32_t ip)
 	if (d->f3 & 2) c->r[d->b] = off;
 	c->cycles += 2;
 }
+/* (2026-10-30) the exclusive loads and stores, the table branches and the saturating moves got handlers of their own:
+ * they went through the full decoder every time - VecDoom's spinlocks (LDREX / STREX, 27 M in 40 s of play), its
+ * switch statements (TBB) and its sound mixing (SSAT / USAT). Each does exactly what step () does for it */
+static void h_ldrex (cm33_t *c, const di_t *d, uint32_t ip)          /* LDREX / LDREXB / LDREXH: a = rt, b = rn, e = size */
+{
+	(void) ip; uint32_t a = c->r[d->b] + d->imm;
+	c->r[d->a] = rd_mem (c, a, d->e); c->excl = 1; c->excl_addr = a; c->excl_val = c->r[d->a]; excl_any = 1;
+}
+static void h_strex (cm33_t *c, const di_t *d, uint32_t ip)          /* STREX / STREXB / STREXH: a = rt, b = rn, f1 = rd, e = size */
+{
+	(void) ip; uint32_t a = c->r[d->b] + d->imm;
+	c->r[d->f1] = (uint32_t) strex (c, a, c->r[d->a], d->e);
+}
+static void h_tbb (cm33_t *c, const di_t *d, uint32_t ip)            /* TBB / TBH: a = rn, b = rm, e = 1 / 2 */
+{
+	uint32_t base = d->a == 15 ? ip + 4 : c->r[d->a], idx = c->r[d->b];
+	uint32_t h = d->e == 2 ? rd_mem (c, base + idx * 2, 2) : rd_mem (c, base + idx, 1);
+	c->r[15] = ip + 4 + h * 2;
+	c->cycles += 2;
+}
+static void h_sat (cm33_t *c, const di_t *d, uint32_t ip)            /* SSAT / USAT (and the 16-bit forms): imm = the two halfwords */
+{
+	(void) ip;
+	uint32_t hw1 = d->imm >> 16, hw2 = d->imm & 0xffff;
+	unsigned op = (hw1 >> 4) & 31, rn = d->b, rd = d->a;
+	unsigned lsb = ((hw2 >> 10) & 0x1c) | ((hw2 >> 6) & 3), wm1 = hw2 & 31;
+	int sat = 0;
+	int uns = op >= 24, sh = (hw1 >> 5) & 1;
+	unsigned bits = wm1 + (uns ? 0 : 1);
+	if (sh == 1 && lsb == 0) {
+		uint32_t x = c->r[rn]; int32_t lo = (int16_t) x, hi = (int16_t) (x >> 16);
+		uint32_t a = uns ? sat_u (lo, wm1 & 15, &sat) : (uint32_t) sat_s (lo, (wm1 & 15) + 1, &sat);
+		uint32_t b = uns ? sat_u (hi, wm1 & 15, &sat) : (uint32_t) sat_s (hi, (wm1 & 15) + 1, &sat);
+		c->r[rd] = (a & 0xffff) | (b << 16);
+	} else {
+		int32_t x = (int32_t) c->r[rn];
+		int64_t v = sh ? (int64_t) (x >> (lsb ? lsb : 31)) : (int64_t) x << lsb;
+		if (sh && lsb == 0) v = x >> 31;
+		c->r[rd] = uns ? sat_u (v, bits, &sat) : (uint32_t) sat_s (v, bits, &sat);
+	}
+	if (sat) c->q = 1;
+}
 static void h_ldmdb (cm33_t *c, const di_t *d, uint32_t ip)
 {
 	(void) ip;
@@ -2050,6 +2093,30 @@ static void decode (cm33_t *c, uint32_t ip, di_t *d)
 				d->f2 = (uint8_t) L; d->f3 = (uint8_t) (P | (W << 1));
 				if (d->a == 15 || d->e == 15) { d->fn = GENERIC; return; }
 				d->fn = h_ldrd;
+				return;
+			}
+			if (cm33_exhand) {                                     /* exclusive, table branch (as step () does them) */
+				unsigned o3 = (hw2 >> 4) & 15, rt = hw2 >> 12, rd = (hw2 >> 8) & 15, rm = hw2 & 15;
+				if (o1 == 0 && o2 == 0) {                              /* STREX (not TT: rt 15) */
+					if (rn == 15 || rt == 15 || rd == 15) return;
+					d->a = (uint8_t) rt; d->b = (uint8_t) rn; d->f1 = (uint8_t) rd; d->e = 4; d->imm = (hw2 & 0xff) * 4; d->fn = h_strex; return;
+				}
+				if (o1 == 0 && o2 == 1) {                              /* LDREX */
+					if (rn == 15 || rt == 15) return;
+					d->a = (uint8_t) rt; d->b = (uint8_t) rn; d->e = 4; d->imm = (hw2 & 0xff) * 4; d->fn = h_ldrex; return;
+				}
+				if (o1 == 1 && o2 == 0 && (o3 == 4 || o3 == 5)) {      /* STREXB / STREXH */
+					if (rn == 15 || rt == 15 || rm == 15) return;
+					d->a = (uint8_t) rt; d->b = (uint8_t) rn; d->f1 = (uint8_t) rm; d->e = (uint8_t) (o3 == 4 ? 1 : 2); d->imm = 0; d->fn = h_strex; return;
+				}
+				if (o1 == 1 && o2 == 1 && (o3 == 0 || o3 == 1)) {      /* TBB / TBH */
+					if (rm == 15) return;
+					d->a = (uint8_t) rn; d->b = (uint8_t) rm; d->e = (uint8_t) (o3 ? 2 : 1); d->fn = h_tbb; return;
+				}
+				if (o1 == 1 && o2 == 1 && (o3 == 4 || o3 == 5)) {      /* LDREXB / LDREXH */
+					if (rn == 15 || rt == 15) return;
+					d->a = (uint8_t) rt; d->b = (uint8_t) rn; d->e = (uint8_t) (o3 == 4 ? 1 : 2); d->imm = 0; d->fn = h_ldrex; return;
+				}
 			}
 			return;
 		}
@@ -2102,6 +2169,9 @@ static void decode (cm33_t *c, uint32_t ip, di_t *d)
 					uint32_t mask = (wm1 - lsb + 1 >= 32 ? 0xffffffffu : ((1u << (wm1 - lsb + 1)) - 1)) << lsb;
 					d->a = (uint8_t) rd; d->b = (uint8_t) rn; d->imm = mask; d->e = (uint8_t) lsb; d->op = rn == 15; d->fn = h_bfi; return;
 				}
+				case 16: case 18: case 24: case 26:                    /* SSAT / USAT (and the 16-bit forms) */
+					if (rn == 15 || !cm33_exhand) return;
+					d->a = (uint8_t) rd; d->b = (uint8_t) rn; d->imm = (hw1 << 16) | hw2; d->fn = h_sat; return;
 				}
 				return;
 			}
@@ -2440,10 +2510,24 @@ static NOINLINE int run_attn (cm33_t *c, uint64_t until)
 
 #include "cm33_jit.c"
 
+/* (2026-10-30) the loop's run_attn, called only when it can have something to do: with no polling loop seen, the core
+ * not halted, no exception pending and not asleep it would only clear attn (the start of every slice, mostly); and the
+ * decoded-instruction cache without a call once it is there */
+static FORCE_INLINE int run_attn_q (cm33_t *c, uint64_t until)
+{
+	if (!c->poll_skip && !c->halted && !c->sleeping && !(c->icsr_pend | (c->nvic_pend[0] & c->nvic_en[0]) | (c->nvic_pend[1] & c->nvic_en[1]))) { c->attn = 0; return 0; }
+	return run_attn (c, until);
+}
+static FORCE_INLINE di_t *dcache_q (cm33_t *c)
+{
+	cm33_sys_t *s = c->sys; void *p = (c->core & 1) ? s->dcache1 : s->dcache;
+	return p && s->code_pages ? (di_t *) p : dcache_for (c);
+}
+
 uint64_t cm33_run (cm33_t *c, uint64_t until)
 {
 	uint64_t start = c->cycles;
-	di_t *dc = dcache_for (c);
+	di_t *dc = dcache_q (c);
 	unsigned long long nsteps = 0;
 	uint32_t base = c->sys->ram_base, size = c->sys->ram_size;
 	int slow = !dc;
@@ -2458,7 +2542,7 @@ uint64_t cm33_run (cm33_t *c, uint64_t until)
 	 * sleep, a fault, a polling loop, an instruction of the full decoder; and at the start) */
 	c->attn = 1;
 	for (;;) {
-		if (c->attn) { int r = run_attn (c, until); if (r == 1) break; if (r == 2) continue; }
+		if (c->attn) { int r = run_attn_q (c, until); if (r == 1) break; if (r == 2) continue; }
 		if (c->cycles >= until) break;
 		/* the fast path: an instruction in RAM, not in an IT block - one call through its decoded entry */
 		do {

@@ -144,13 +144,23 @@ def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):
     return ['/bin/sh', script], script
 
 
+def clean_env():
+    """this process's environment without PyInstaller's markers. Inherited, they make the new exe (same path) take
+    itself for a child of this one and look for its Python DLL in this one's _MEI folder, gone by then: "Failed to
+    load Python DLL" (a tester, v1.2.5)"""
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(('_PYI_', '_MEI'))}
+    env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
+    return env
+
+
 def start(cmd):
     """the install script, detached: it outlives this process"""
     if IS_WIN:
         NEW_GROUP, NO_WINDOW = 0x00000200, 0x08000000   # (not DETACHED_PROCESS: cmd without a console ends at once;
-        subprocess.Popen(cmd, creationflags=NEW_GROUP | NO_WINDOW, close_fds=True)   #  it outlives the emulator anyway)
+        subprocess.Popen(cmd, creationflags=NEW_GROUP | NO_WINDOW, close_fds=True,   #  it outlives the emulator anyway)
+                         env=clean_env())
     else:
-        subprocess.Popen(cmd, start_new_session=True, close_fds=True,
+        subprocess.Popen(cmd, start_new_session=True, close_fds=True, env=clean_env(),
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

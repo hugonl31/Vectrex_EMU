@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.2.6
+- Auto update: the new version now starts by itself after updating
+
 ## v1.2.5
 - Custom overlays: black outside the shape, soft edges fade to black
 - Overlay on/off and its look are the same for every game

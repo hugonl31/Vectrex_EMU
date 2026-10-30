@@ -3,6 +3,16 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.6
+
+**Auto update: the restart works**
+* **The new version starts after an update** - on Windows the restart after Update now could fail with "Failed to
+  load Python DLL": the update script inherited the old program's PyInstaller settings, so the new program looked
+  for its files in the old one's temporary folder, already removed. The update itself was installed; only the
+  start failed. The script now starts with a clean environment. The fix is in the version that runs the update, so
+  coming from v1.2.5 or older the message can still show once: start Vectrex_EMU again by hand.
+* No core or online changes: online play with v1.2.5 works as before.
+
 ## v1.2.5
 
 **Overlays: soft edges, one look for all games**

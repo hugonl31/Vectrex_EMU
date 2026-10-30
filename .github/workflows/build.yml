@@ -11,7 +11,7 @@ on:
 
 jobs:
   mac:
-    runs-on: macos-14
+    runs-on: macos-15         # (macos-14 retired 2026-11-02; the app still targets 10.13+, set in build_mac.sh)
     steps:
       - uses: actions/checkout@v4
       - name: python.org Python 3.12 (universal2, with Tk)

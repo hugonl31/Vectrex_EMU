@@ -21,9 +21,42 @@ Install (Linode, next to vxrelay):
     WantedBy=multi-user.target
   systemctl daemon-reload && systemctl enable --now vxreport && ufw allow 7746/tcp comment 'Vectrex_EMU debug reports'
 Read: ls -lt /var/lib/vxreports | head; unzip -p /var/lib/vxreports/R-XXXXXX.zip system.txt
+
+Telegram (optional): each new report to the author's chat - a summary and the zip. The bot's token and the chat
+in /etc/vxreport.env (root only, never in git): TELEGRAM_TOKEN=... and TELEGRAM_CHAT=..., and in the unit
+EnvironmentFile=/etc/vxreport.env
 """
-import os, json, time, secrets, threading, zipfile, io
+import os, json, time, secrets, threading, zipfile, io, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+TG_TOKEN, TG_CHAT = os.environ.get('TELEGRAM_TOKEN', ''), os.environ.get('TELEGRAM_CHAT', '')
+SUMMARY = ('Vectrex_EMU', 'System', 'Processor', 'Graphics', 'Now', 'On mains power', 'Power mode', 'Game', 'Quality',
+           'Found')                                     # (system.txt rows for the message)
+
+
+def telegram(num, ver, data):
+    """the new report to the author's Telegram chat: its number, a few rows of system.txt, the zip (in a thread)"""
+    if not (TG_TOKEN and TG_CHAT):
+        return
+    try:
+        txt = zipfile.ZipFile(io.BytesIO(data)).read('system.txt').decode('utf-8', 'replace')
+    except Exception:   # noqa
+        txt = ''
+    rows = [ln.strip() for ln in txt.splitlines() if ln.strip().startswith(SUMMARY)][:12]
+    cap = ('New debug report %s (%s)\n' % (num, ver) + '\n'.join(r[:150] for r in rows))[:1000]
+    b = '----vx' + secrets.token_hex(8)
+    body = b''.join([
+        ('--%s\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n%s\r\n' % (b, TG_CHAT)).encode(),
+        ('--%s\r\nContent-Disposition: form-data; name="caption"\r\n\r\n' % b).encode() + cap.encode('utf-8') + b'\r\n',
+        ('--%s\r\nContent-Disposition: form-data; name="document"; filename="%s.zip"\r\n'
+         'Content-Type: application/zip\r\n\r\n' % (b, num)).encode() + data + b'\r\n',
+        ('--%s--\r\n' % b).encode()])
+    try:
+        req = urllib.request.Request('https://api.telegram.org/bot%s/sendDocument' % TG_TOKEN, data=body,
+                                     headers={'Content-Type': 'multipart/form-data; boundary=' + b})
+        urllib.request.urlopen(req, timeout=30).read()
+    except Exception as e:   # noqa: the report is stored anyway
+        print('telegram failed: %s' % type(e).__name__, flush=True)
 
 PORT = int(os.environ.get('VXREPORT_PORT', '7746'))
 DIR = os.environ.get('VXREPORT_DIR', os.environ.get('STATE_DIRECTORY', '/var/lib/vxreports'))
@@ -96,6 +129,7 @@ class H(BaseHTTPRequestHandler):
                 json.dump({'time': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(now)) + ' UTC', 'version': ver, 'size': n}, f)
             trim()
         self.reply(200, num)
+        threading.Thread(target=telegram, args=(num, ver, data), daemon=True).start()
 
     def log_message(self, fmt, *a):                      # (no IPs in the journal)
         pass

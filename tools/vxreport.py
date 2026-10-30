@@ -38,6 +38,11 @@ def telegram(num, ver, data):
     """the new report to the author's Telegram chat: its number, a few rows of system.txt, the zip (in a thread)"""
     if not (TG_TOKEN and TG_CHAT):
         return
+    try:                                                # (/debug off in the bot: silent - vxbot.py)
+        if not json.load(open('/var/lib/vxbot/state.json')).get('debug', True):
+            return
+    except (OSError, ValueError):
+        pass
     try:
         txt = zipfile.ZipFile(io.BytesIO(data)).read('system.txt').decode('utf-8', 'replace')
     except Exception:   # noqa

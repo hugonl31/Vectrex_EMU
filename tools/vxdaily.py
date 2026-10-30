@@ -57,6 +57,11 @@ def main():
     text = '\n'.join(lines)
     if os.environ.get('VXDAILY_PRINT'):
         print(text); return
+    try:                                                # (/daily off in the bot - vxbot.py)
+        if not json.load(open('/var/lib/vxbot/state.json')).get('daily', True):
+            return
+    except (OSError, ValueError):
+        pass
     tok, chat = os.environ.get('TELEGRAM_TOKEN', ''), os.environ.get('TELEGRAM_CHAT', '')
     if tok and chat:
         data = urllib.parse.urlencode({'chat_id': chat, 'text': text}).encode()

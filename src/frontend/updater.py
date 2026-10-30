@@ -229,6 +229,21 @@ def fetch_news(tag, user_agent):
         return ''
 
 
+NETVER_URL = 'https://raw.githubusercontent.com/hugonl31/Vectrex_EMU/%s/src/frontend/netplay.py'
+
+
+def fetch_netver(tag, user_agent):
+    """that release's online version (netplay.NET_VER): players connect only with the same one. None: not known"""
+    import re
+    try:
+        req = urllib.request.Request(NETVER_URL % tag, headers={'User-Agent': user_agent})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            m = re.search(r'^NET_VER\s*=\s*(\d+)', r.read().decode('utf-8', 'replace'), re.M)
+        return int(m.group(1)) if m else None
+    except Exception:   # noqa
+        return None
+
+
 def whats_new(text, mine, limit=7, always=False):
     """the short list for the message from WHATS_NEW.md: the lines of every version newer than this one (mine), newest
     first; at most limit lines, the last one then saying there is more. always: the newest version's even when it is

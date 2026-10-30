@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.4
+
+**Online: compatible or update needed**
+* The new-version message and the Online windows now say whether your version can still play online with the new
+  one: *Online compatible* (white) or *Update needed to play with it* (orange). Before, the Online windows always
+  said players on a newer version could not be joined - but v1.1.5 to v1.2.4 all play together. The emulator reads
+  the new version's online number (NET_VER) from GitHub; it changes only when a version can no longer play with the
+  one before.
+
 ## v1.2.3
 
 **More in the debug report**

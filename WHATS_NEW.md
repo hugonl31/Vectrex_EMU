@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.2.4
+- Update message shows if online play still works with the new version
+
 ## v1.2.3
 - Debug reports now include the program's own error log
 - Reports also show the PC model, memory, late frames and sound dropouts

@@ -5019,6 +5019,8 @@ class App:
             self.update_release = rel                       # (its downloads: the one-click update - updater.py)
             import updater
             self.update_news = updater.fetch_news(tag, 'Vectrex_EMU ' + mine)   # (its short list: WHATS_NEW.md)
+            self.update_net = updater.fetch_netver(tag, 'Vectrex_EMU ' + mine)  # (its online version: same as ours =
+                                                                                 #  still connects)
             a, b = ver_key(tag), ver_key(mine)
             if a and b and (a > b or os.environ.get('VX_UPDATE_FORCE')):   # (VX_UPDATE_FORCE: tests, any version)
                 self.update_latest = tag
@@ -5045,8 +5047,10 @@ class App:
             for line in news:
                 tk.Label(body, text=('  ' if line.startswith('...') else '• ') + line, fg=deck.G, bg=bg, font=(MONO, 9),
                          anchor='w').pack(fill='x', padx=14)
-        tk.Label(body, text='Online play needs both players on the same version.', fg=deck.G, bg=bg, font=f9,
-                 anchor='w').pack(fill='x', padx=12, pady=(8, 0))
+        ok = self.update_online_ok()                            # (online: still connects to the new version?)
+        if ok is not None:
+            tk.Label(body, text=('Online: compatible with %s.' if ok else 'Online: update needed to play with %s.')
+                     % new, fg=deck.G if ok else deck.WARN, bg=bg, font=f9, anchor='w').pack(fill='x', padx=12, pady=(8, 0))
         link = tk.Label(body, text=UPDATE_PAGE.replace('https://', ''), fg=deck.HI, bg=bg, font=(MONO, 10, 'underline'),
                         anchor='w', cursor='hand2')
         link.pack(fill='x', padx=12, pady=(6, 0))
@@ -5104,14 +5108,23 @@ class App:
         deck.place(t, 'update', self)
         try: dark_title(t)
         except Exception: pass   # noqa
+    def update_online_ok(self):
+        """True: this version still connects to the newest one online (the same netplay.NET_VER); False: it can't;
+        None: not known (GitHub not read)"""
+        import netplay
+        n = getattr(self, 'update_net', None)
+        return None if n is None else n == netplay.NET_VER
     def update_banner(self, t):
-        """in the online windows: a newer version is out (said there always - online, both need the same one)"""
+        """in the online windows: a newer version is out - white when this one still connects to it, orange when not"""
         new = getattr(self, 'update_latest', None)
         if not new:
             return
         import webbrowser
-        b = tk.Frame(t, bg=deck.BG, highlightthickness=1, highlightbackground=deck.WARN); b.pack(fill='x', padx=10, pady=(8, 0))
-        tk.Label(b, text="%s is out: players on it can't play with %s" % (new, app_version()), fg=deck.WARN, bg=deck.BG,
+        ok = self.update_online_ok()
+        col = deck.WARN if ok is False else deck.HI
+        b = tk.Frame(t, bg=deck.BG, highlightthickness=1, highlightbackground=col); b.pack(fill='x', padx=10, pady=(8, 0))
+        tk.Label(b, text=('%s is out. Update needed to play with it.' if ok is False else
+                          '%s is out. Online compatible.' if ok else '%s is out.') % new, fg=col, bg=deck.BG,
                  font=(MONO, 9), anchor='w').pack(side='left', padx=8, pady=4)
         deck._button(b, 'Get it', lambda: webbrowser.open(UPDATE_PAGE), self, small=True).pack(side='right', padx=6, pady=3)
     def net_note(self, rom):

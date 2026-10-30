@@ -3,6 +3,18 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.5
+
+**Overlays: soft edges, one look for all games**
+* **Custom overlays with a shaped edge** - an overlay whose border is clear (a PNG cut to a shape) gets black
+  outside its shape, as the Vectrex's bezel, and its outline a 2-pixel soft edge into that black. A soft edge
+  painted into the file (alpha rising towards the art) now fades to black too - before, it showed as a light,
+  washed-out band (the half-clear pixels counted as colour filter). Classic overlays, which cover the whole screen,
+  are unchanged.
+* **Overlay on/off and its look are the same for every game** - on/off, printed art brightness, filter strength,
+  room light on the overlay, parallax and glow are no longer saved per game; only where the overlay sits and its
+  size stay per game (and which overlay a game uses). Older per-game saves keep their other settings.
+
 ## v1.2.4
 
 **Online: compatible or update needed**

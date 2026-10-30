@@ -143,14 +143,72 @@ def load_png(path):
     return w, h, bytes(out)
 
 
+SOFT_EDGE = 0.06       # (a soft outer edge up to this share of the overlay's smaller side fades to black)
+EDGE_BLUR = 2.0        # (the outline of an overlay with a clear border: blurred this many of its pixels)
+
+
+def soft_edge(w, h, px, sheet=None):
+    """an overlay with a clear (alpha 0) area at its border - a custom overlay with a shaped or soft edge: that
+    outside is the Vectrex's black bezel, and the soft edge between it and the printed art (alpha 1-254, which
+    would otherwise count as colour filter) fades to black - printed, its colour times its alpha. Overlays
+    without a clear border (the classic ones) and filter areas away from the edge stay as they are"""
+    try:
+        import numpy as np
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return px
+    full = np.frombuffer(px, np.uint8).reshape(h, w, 4).copy()
+    x0 = max(0, int(round((w - (sheet or w)) / 2.0)))          # (only the part on the picture: a MiSTer plane's
+    a = full[:, x0:w - x0]; h, w = a.shape[:2]                  #  sides stay as they are)
+    al = a[..., 3]
+    clear = al == 0
+    if not (clear[0].any() or clear[-1].any() or clear[:, 0].any() or clear[:, -1].any()):
+        return px
+    m = Image.frombytes('L', (w, h), np.where(clear, 0, 255).astype(np.uint8).tobytes())   # (outside: the clear
+    for x, y in ([(x, 0) for x in range(w)] + [(x, h - 1) for x in range(w)] +            #  area joined to the
+                 [(0, y) for y in range(h)] + [(w - 1, y) for y in range(h)]):           #  border)
+        if m.getpixel((x, y)) == 0:
+            ImageDraw.floodfill(m, (x, y), 128)
+    out = np.frombuffer(m.tobytes(), np.uint8).reshape(h, w) == 128
+    n = max(2, int(SOFT_EDGE * min(w, h)))
+    part = (al > 0) & (al < 255)
+    al16 = al.astype(np.int16)
+    reach = out.copy()                                          # (the soft edge: half-clear pixels reached from the
+    for _ in range(n):                                          #  outside, each step to a neighbour with MORE alpha -
+        g = reach.copy()                                        #  a soft edge rises towards the art, a colour filter
+        for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):            #  is even and stays a filter)
+            src = np.roll(reach, d, (0, 1)); sal = np.roll(al16, d, (0, 1))
+            if d[0] == 1: src[0] = False
+            elif d[0] == -1: src[-1] = False
+            elif d[1] == 1: src[:, 0] = False
+            else: src[:, -1] = False
+            g |= src & part & (al16 > np.where(np.roll(out, d, (0, 1)), 0, sal))
+        if (g == reach).all():
+            break
+        reach = g
+    edge = reach & part
+    k = (al[edge].astype(np.float32) / 255.0)[:, None]
+    a[edge, :3] = (a[edge, :3] * k + 0.5).astype(np.uint8); a[edge, 3] = 255
+    a[out, :3] = 0; a[out, 3] = 255
+    if EDGE_BLUR > 0:                                           # (the overlay's outline blurred a little: a cut
+        from PIL import ImageFilter                             #  edge not razor sharp - it fades into the black)
+        inside = Image.frombytes('L', (w, h), np.where(out, 0, 255).astype(np.uint8).tobytes())
+        f = np.frombuffer(inside.filter(ImageFilter.GaussianBlur(EDGE_BLUR)).tobytes(), np.uint8).reshape(h, w)
+        zone = ~out & (f < 254)
+        k = (f[zone].astype(np.float32) / 255.0)[:, None]
+        a[zone, :3] = (a[zone, :3] * k + 0.5).astype(np.uint8); a[zone, 3] = 255
+    return full.tobytes()
+
+
 def load_overlay(path):
     """an overlay file, .art (MiSTer) or .png -> (width, height, rgba bytes, sheet width): the sheet width
     is the width (in its pixels) of the part that covers the picture - an .art plane's centre 846 columns
-    (at 1080 rows), a PNG sheet's whole width, a whole-plane PNG's (1360 x 1080) centre 846 columns"""
+    (at 1080 rows), a PNG sheet's whole width, a whole-plane PNG's (1360 x 1080) centre 846 columns. A clear
+    border and a soft edge fade to black (soft_edge)"""
     if path.lower().endswith('.png'):
         w, h, px = load_png(path)
         sheet = w * 846.0 / 1360 if abs(w / float(h) - 1360 / 1080.0) < 0.02 else w
     else:
         w, h, px = load(path)
         sheet = h * 846.0 / 1080
-    return w, h, px, sheet
+    return w, h, soft_edge(w, h, px, sheet), sheet

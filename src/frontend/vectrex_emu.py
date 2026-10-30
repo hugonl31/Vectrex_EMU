@@ -6533,13 +6533,17 @@ class App:
     def open_deck(self, e=None):
         """Tab: the control deck - opens, or closes when open"""
         return deck.open_deck(self)
+    GAME_FREE = ('art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'art_glow', 'art_glow_k')
+                                                                # (the same for every game, never a game's own: the
+                                                                #  overlay's look - its place and size are per game)
     def game_now(self):
         """this game's own settings, as they are now: the look and the controls"""
-        return dict(look={k: getattr(self.ren, k) for k in self.look_keys} if self.ren else {}, controls=self.inp.save())
+        return dict(look={k: getattr(self.ren, k) for k in self.look_keys if k not in self.GAME_FREE} if self.ren else {},
+                    controls=self.inp.save())
     def game_apply(self, s):
         old_gap(s.get('look', {}))
         for k, v in s.get('look', {}).items():
-            if k in self.look_keys:
+            if k in self.look_keys and k not in self.GAME_FREE:   # (older saves: their overlay on / off ignored)
                 setattr(self.ren, k, type(self.look_default[k])(v))
         if s.get('controls'):
             self.inp.load(s['controls']); self.inp.refresh_devices()

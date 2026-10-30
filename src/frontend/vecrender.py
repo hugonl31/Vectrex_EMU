@@ -2187,6 +2187,7 @@ class GLBloomRenderer(GLRenderer):
         gl = self.gl
         if not hasattr(self, 'float_ok'):
             gl.glGetString.restype = ctypes.c_char_p
+            self.gl_renderer = (gl.glGetString(0x1F01) or b'').decode(errors='replace')   # (the chip: App.gl_name)
             soft = b'Software' in (gl.glGetString(0x1F01) or b'')     # GL_RENDERER: Apple's software renderer
             if soft:                                                  #  reads them as garbage in the full picture
                 print('Apple software renderer: 8-bit images (the afterglow is shorter)')

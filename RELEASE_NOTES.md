@@ -3,6 +3,21 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.2
+
+**Why is it slow? The emulator tells you - and a debug report in one click**
+* **Running slower than real time** - when EMU RATE stays below 95 % for 5 seconds, a small window says so and
+  lists what it finds on this PC: running on battery, battery saver, a power-saving power mode, the picture drawn on
+  the built-in graphics chip while a faster one is in the PC, or the PiTrex / UVMC2 JIT blocked by a security tool -
+  each with what to do. Once per run, never online, and "Don't show this again" turns it off.
+* **Debug report** (Help > Debug report, or from that window) - one report with the program's version, the system,
+  graphics chip and monitor, the power settings, the speed of the last two minutes, the emulator core's log and the
+  settings. No ROMs, no files, no online key or player name, the home folder shown as `~`. **Send** puts it on the
+  author's server and gives you a report number (R-XXXXXX, copied to the clipboard) - just tell the author that
+  number. **Save as file** puts it in Downloads instead.
+* **No background throttling** - Windows 11 can treat a program as background work and run it on slow cores at low
+  clocks (EcoQoS), on laptops especially. The emulator and its core now ask Windows not to.
+
 ## v1.2.1
 
 **Faster UVMC2 and PiTrex, same results**

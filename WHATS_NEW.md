@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.2.2
+- Slower than real time? The emulator tells you why: battery, power mode
+- Debug report: one click sends it, you get a number for the author
+- Windows no longer slows the emulator down as background work
+
 ## v1.2.1
 - UVMC2 games and PiTrex programs run 10 to 30 % faster
 - PiTrex online play up to 30 % faster (Speedy real time on a Pi 5)

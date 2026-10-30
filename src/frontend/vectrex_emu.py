@@ -43,6 +43,7 @@ pctest.V = sys.modules[__name__]                # (Test this PC: the Quality pro
 import v4e
 import fatimg
 import links
+import perfcheck
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 # Steam Deck Game Mode (gamescope): one window is shown - a second one (the first-run setup) stays out of
@@ -1659,6 +1660,9 @@ class Core:
         self.p = subprocess.Popen([CORE, BIOS, rom, '--live', NUL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, bufsize=0,
                                   creationflags=0x08000000 if IS_WIN else 0)            # CREATE_NO_WINDOW
+        if IS_WIN:                                              # (not slowed down as background work: Windows 11 EcoQoS)
+            perfcheck.no_throttle(getattr(self.p, '_handle', None))
+        self.jit_blocked = None                                 # ('PiTrex' / 'UVMC2': its JIT got no executable memory)
         # the core's messages: a UVMC2 cartridge's problem ("UVMC2: ...") for the window; all of them in
         # cache/core_log.txt (new at every start, at most 4000 lines: what to send when something is wrong)
         self.msgs = []
@@ -1666,6 +1670,7 @@ class Core:
             os.makedirs(CACHE_DIR, exist_ok=True)
             log = open(os.path.join(CACHE_DIR, 'core_log.txt'), 'w', encoding='utf-8', errors='replace')
             log.write('%s  %s  %s\n' % (datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), os.path.basename(rom), platform.platform()))
+            log.flush()                                         # (in the file at once: a debug report reads it)
         except OSError:
             log = None
         self.threads = 1                                        # (a UVMC2: host threads in use, from the core)
@@ -1679,6 +1684,8 @@ class Core:
                         n += 1
                         try: log.write(t + '\n'); log.flush()
                         except (OSError, ValueError): pass
+                    if t.startswith(('PITREX: no JIT', 'UVMC2: no JIT')):
+                        self.jit_blocked = 'PiTrex' if t.startswith('PITREX') else 'UVMC2'
                     if t.startswith('PITREX: no JIT') and len(out) < 20:     # (the Pi's code interpreted: ~3x slower)
                         out.append("the PiTrex runs without its JIT on this PC (Windows did not give it executable "
                                    "memory - a security tool or Exploit protection?): slower")
@@ -2135,6 +2142,10 @@ class App:
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
         self.chat_sound = conf0.get('chat_sound', True)         # (a chime when the other player writes)
+        self.slow_skip = bool(conf0.get('slow_skip', False))     # (the slow-PC note: 'don't show again')
+        self.slow_n, self.slow_told = 0, False                  # (seconds below real time in a row; told this run)
+        self.speed_hist = collections.deque(maxlen=120)         # (the last 2 minutes: speed, CPU, GPU - the debug report)
+        perfcheck.no_throttle()                                 # (Windows 11: not slowed down as background work)
         self.update_skip = conf0.get('update_skip', '')         # (that version: not told again - 'don't remind me')
         self.update_latest = None                               # (the newer version found, or None)
         self.head_hist = {'CPU': [], 'GPU': []}                 # (their last 10 seconds)
@@ -2665,6 +2676,9 @@ class App:
             item(m, 'Cartridges, bank switching and saving...', '', lambda: self.help_window('carts'))
             m.add_separator()
             item(m, 'Copy system info', '', self.copy_system_info, "Your system and this program's version to the clipboard - for a GitHub issue.")
+            item(m, 'Debug report...', '', self.report_window, "When something runs wrong: one report with your system, the "
+                 "power settings, the speed of the last two minutes, the core's log and your settings (not your online key) - "
+                 "sent to the author's server for a report number, or saved as a file.")
             item(m, 'About this emulator...', '', lambda: self.help_window('accuracy'))
         if DARK_MENU:
             mb = darkmenu.DBar(self.root, font=(SANS, 10)); fill(mb)
@@ -6319,6 +6333,141 @@ class App:
                 ('Now', 'game %s, emulation %d %%, game %d fps, monitor %d Hz' % (self.rom_name, round(self.speed), round(self.fps), round(self.disp_fps))),
                 ('numpy', 'yes' if _np is not None else 'no')]
         return '\n'.join('%-12s %s' % r for r in rows)
+    def slow_watch(self):
+        """once a second: below real time (EMU RATE < 95 %) for 5 seconds in a row - the slow-PC note, once a run (not
+        online, paused, off, in a game's first seconds, or with 'don't show again')"""
+        cpu, gpu = self.headroom()
+        self.speed_hist.append((round(time.perf_counter(), 1), round(self.speed, 1),
+                                None if cpu is None else round(cpu, 2), None if gpu is None else round(gpu, 2)))
+        busy = (not self.run.power or self.run.paused or self.run.frames < 250 or getattr(self, 'net_game', None)
+                or getattr(self, 'browser', None))
+        self.slow_n = 0 if busy or self.speed >= 95 else self.slow_n + 1
+        if self.slow_n >= 5 and not self.slow_told and not self.slow_skip:
+            self.slow_told = True
+            self.root.after(0, self.slow_window)
+    def gl_name(self):
+        """the graphics chip that draws the picture (GL_RENDERER)"""
+        r = getattr(self.ren, 'gl_renderer', None)
+        if r:
+            return r
+        try:
+            gl = self.ren.gl; gl.glGetString.restype = ctypes.c_char_p
+            return (gl.glGetString(0x1F01) or b'').decode(errors='replace') or None
+        except Exception:   # noqa
+            return None
+    def slow_window(self):
+        """the emulation runs slower than real time: what this PC's settings show (on battery, the power mode, the
+        built-in graphics chip, the JIT blocked), what to do, and the debug report"""
+        if getattr(self, 'slow_win', None):
+            return
+        found = perfcheck.causes(self.gl_name(), getattr(self.core, 'jit_blocked', None))
+        t, body, foot, close = self._room_window('Running slower than real time', '', 'slow_win', banner=False)
+        f9, bg = (MONO, 10), deck.PANEL
+        tk.Label(body, text='EMU RATE has been below 95 %% for a while (%d %% now).' % self.speed_shown(), fg=deck.HI, bg=bg,
+                 font=f9, anchor='w').pack(fill='x', padx=12, pady=(10, 0))
+        if found:
+            tk.Label(body, text='Found on this PC:', fg=deck.HI, bg=bg, font=f9, anchor='w').pack(fill='x', padx=12, pady=(8, 0))
+            for what, fix in found:                             # (the bullet in a column of its own: wrapped lines
+                row = tk.Frame(body, bg=bg); row.pack(fill='x', padx=14, pady=(2, 0))   #  keep their indent)
+                tk.Label(row, text='\u2022', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='nw').pack(side='left', anchor='n')
+                col = tk.Frame(row, bg=bg); col.pack(side='left', fill='x', padx=(6, 0))
+                tk.Label(col, text=what, fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w', justify='left',
+                         wraplength=540).pack(fill='x')
+                tk.Label(col, text=fix, fg=deck.G, bg=bg, font=(MONO, 9), anchor='w', justify='left',
+                         wraplength=540).pack(fill='x')
+        else:
+            tk.Label(body, text="Nothing found in the power or graphics settings. A laptop maker's own\n"
+                     'quiet or silent mode can slow it down too. Lower Quality in Config may help.', fg=deck.G, bg=bg,
+                     font=(MONO, 9), anchor='w', justify='left').pack(fill='x', padx=12, pady=(8, 0))
+        tk.Label(body, text='Still slow? Send a debug report and give the author its number.', fg=deck.DIM, bg=bg,
+                 font=(MONO, 9), anchor='w').pack(fill='x', padx=12, pady=(8, 0))
+        quiet = tk.BooleanVar(value=False)
+        tk.Checkbutton(body, text="Don't show this again", variable=quiet, fg=deck.G, bg=bg, selectcolor=bg,
+                       activebackground=bg, activeforeground=deck.HI, font=(MONO, 9), anchor='w', highlightthickness=0,
+                       bd=0).pack(fill='x', padx=10, pady=(10, 10))
+        def done():
+            if quiet.get():
+                self.slow_skip = True; self.save_settings()
+            close()
+        def report():
+            done(); self.report_window()
+        deck._button(foot, 'Debug report...', report, self).pack(side='left')
+        deck._button(foot, 'OK', done, self, on=True).pack(side='right')
+        t.protocol('WM_DELETE_WINDOW', done); t.bind('<Escape>', lambda ev: done())
+        deck.place(t, 'slow', self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
+    def make_report(self, path):
+        """the debug report's zip at path (perfcheck.report)"""
+        t0 = self.speed_hist[0][0] if self.speed_hist else 0
+        hist = ['%7.1f s  speed %5.1f %%  CPU %s  GPU %s' % (t - t0, sp, '-' if c is None else '%d %%' % (c * 100),
+                '-' if g is None else '%d %%' % (g * 100)) for t, sp, c, g in self.speed_hist]
+        jb = getattr(self.core, 'jit_blocked', None)
+        extra = {'Game': os.path.basename(self.args.rom or '') or '(built-in)', 'Quality': self.current_profile(),
+                 'Full screen': self.full, 'G-Sync': self.vrr, 'Screen rate': getattr(self, 'rate', None),
+                 'JIT blocked': jb, 'Found': '; '.join(w for w, _ in perfcheck.causes(self.gl_name(), jb)) or 'nothing',
+                 'Speed, last two minutes (a line a second)': '\n' + '\n'.join(hist)}
+        return perfcheck.report(path, self.system_info(), self.settings_f, os.path.join(CACHE_DIR, 'core_log.txt'), extra)
+    def report_window(self):
+        """Help > Debug report: what goes in it; Send (to the author's server: a report number to give him) or Save
+        (a zip in Downloads)"""
+        if getattr(self, 'rep_win', None):
+            try: self.rep_win.lift(); return
+            except tk.TclError: pass
+        t, body, foot, close = self._room_window('Debug report', '', 'rep_win', banner=False)
+        f9, bg = (MONO, 10), deck.PANEL
+        tk.Label(body, text='For the author, when something runs wrong. It holds:', fg=deck.HI, bg=bg, font=f9,
+                 anchor='w').pack(fill='x', padx=12, pady=(10, 0))
+        for ln in ("this program's version, your system, graphics chip and monitor",
+                   'the power settings and the speed of the last two minutes',
+                   "the emulator core's log and your settings (not your online key)"):
+            tk.Label(body, text='\u2022 ' + ln, fg=deck.G, bg=bg, font=(MONO, 9), anchor='w').pack(fill='x', padx=14)
+        tk.Label(body, text='No ROMs, no files of yours, no name or address.', fg=deck.G, bg=bg, font=(MONO, 9),
+                 anchor='w').pack(fill='x', padx=12, pady=(6, 0))
+        status = tk.Label(body, text='Send: it goes to the author\'s server, you get a number to give the author.', fg=deck.DIM,
+                          bg=bg, font=(MONO, 9), anchor='w', justify='left', wraplength=560)
+        status.pack(fill='x', padx=12, pady=(8, 10))
+        busy = {'on': False}
+        def send():
+            if busy['on']:
+                return
+            busy['on'] = True; status.configure(text='sending...', fg=deck.HI)
+            path = os.path.join(CACHE_DIR, 'report_send.zip')
+            try:
+                os.makedirs(CACHE_DIR, exist_ok=True); self.make_report(path)
+            except Exception as e:   # noqa
+                busy['on'] = False; status.configure(text='The report could not be made: %s' % e, fg=deck.WARN); return
+            def work():
+                try:
+                    num = perfcheck.upload(path, app_version())
+                    def ok():
+                        status.configure(text='Sent. Your report number: %s\n(copied to the clipboard - give it to the author)'
+                                         % num, fg=deck.HI)
+                        self.root.clipboard_clear(); self.root.clipboard_append(num)
+                    self.root.after(0, ok)
+                except Exception as e:   # noqa
+                    busy['on'] = False
+                    self.root.after(0, lambda e=e: status.configure(text='Sending failed (%s). Save it as a file instead and '
+                                                                         'send that.' % e, fg=deck.WARN))
+            threading.Thread(target=work, daemon=True).start()
+        def save():
+            path = perfcheck.report_path()
+            try:
+                self.make_report(path)
+            except Exception as e:   # noqa
+                status.configure(text='The report could not be saved: %s' % e, fg=deck.WARN); return
+            status.configure(text='Saved: %s' % path, fg=deck.HI)
+            try:
+                if IS_WIN: subprocess.Popen(['explorer', '/select,', path])
+                else: subprocess.Popen(['open' if IS_MAC else 'xdg-open', os.path.dirname(path)])
+            except OSError:
+                pass
+        deck._button(foot, 'Send', send, self, on=True).pack(side='left')
+        deck._button(foot, 'Save as file', save, self).pack(side='left', padx=(6, 0))
+        deck._button(foot, 'Close', close, self).pack(side='right')
+        deck.place(t, 'report', self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
     def copy_system_info(self):
         """Help > Copy system info: on the clipboard, and shown - to paste into a GitHub issue"""
         text = self.system_info()
@@ -6895,6 +7044,7 @@ class App:
         d['update_check'] = getattr(self, 'update_check', True)
         d['chat_sound'] = getattr(self, 'chat_sound', True)
         d['update_skip'] = getattr(self, 'update_skip', '')
+        d['slow_skip'] = getattr(self, 'slow_skip', False)
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')
         own = hasattr(self, 'per_game') and self.rom_name in self.per_game   # (a game's own settings: its changes kept
@@ -7629,6 +7779,7 @@ class App:
             elif m0 and (not m or m[0] <= m0[0]) and self.run.power and not self.run.paused:
                 self.speed = 0.0                                # (no frame for a second: stalled)
             self.emu_mark0 = m
+            self.slow_watch()
             for name, v in zip(('CPU', 'GPU'), self.headroom()):    # (the OSD meters: a value a second, 10 seconds)
                 h = self.head_hist[name]
                 h.append(None if v is None or self.run.paused or not self.run.power else v)

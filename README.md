@@ -19,7 +19,7 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.2.1 - everything since v1.0.5
+## New in v1.2.2 - everything since v1.0.5
 
 <p align="center">
 <img src="docs/images/phosphor_model/v119_helicopter.gif" width="420" alt="Armor Attack's helicopter: the rotor blades flash one after another, the helicopter leaves a fading trail"><br>
@@ -30,6 +30,12 @@ photo, recording and measurement, and every call on how it should look, sound an
 <img src="docs/images/v1.1.7/head_tracking.gif" width="420" alt="Armor Attack with head tracking: the picture slides against the overlay as the head moves round"><br>
 <em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head moves (largest shift 4 mm here).</em>
 </p>
+
+**New in v1.2.2: why is it slow - and a debug report in one click**
+* **Running slower than real time?** A small window tells you what it finds on your PC - on battery, a power-saving
+  mode, the picture on the built-in graphics chip, the JIT blocked by a security tool - and what to do.
+* **Debug report** (Help > Debug report) - *Send* puts it on the author's server and gives you a short report
+  number to pass on; *Save as file* keeps it in Downloads. No ROMs, no files, no online key or player name.
 
 **New in v1.2.1: faster UVMC2 and PiTrex**
 * **UVMC2 games 10 to 19 % faster, PiTrex online play up to 30 % faster** - same pictures and same online
@@ -1122,8 +1128,11 @@ plugged back in. The keys only count while the emulator's window is in front.
 `system/settings.json` next to the program, so the folder is portable: copy it and the settings come along.
 If that folder cannot be written (e.g. under Program Files) they go to `%APPDATA%\Vectrex_EMU` (Windows),
 `~/Library/Application Support/Vectrex_EMU` (Mac) or `~/.config/Vectrex_EMU` (Linux). Nothing else is
-written: no logs, no recordings. **Help > Copy system info** copies the program's version, your system,
-graphics card and screen to the clipboard, for a GitHub issue.
+written: no recordings. **Help > Copy system info** copies the program's version, your system,
+graphics card and screen to the clipboard, for a GitHub issue. **Help > Debug report** makes one report for the
+author (version, system, power settings, the speed of the last two minutes, the core's log, the settings - no ROMs,
+no files, no online key or player name): **Send** puts it on the author's server (the meeting point's machine, TCP
+port 7746) and gives you a number like `R-7KQ4MZ` to pass on; **Save as file** puts the zip in Downloads.
 
 ### Overlays
 

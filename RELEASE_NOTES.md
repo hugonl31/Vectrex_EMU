@@ -3,6 +3,16 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.8
+
+**Full speed on busy screens**
+* **The release builds include numpy** - the downloads were built without it, so the emulator handled each frame's
+  lines and sound in plain Python. A busy screen, such as Vectorblade's entry in the PiTrex menu, then ran at
+  about 60 % with one CPU core full, late frames and sound dropouts. With numpy the same screen runs at 100 % with a
+  fifth of the CPU. Windows and Linux always have it now; the Mac app gets a merged Intel + Apple Silicon numpy
+  (built without it, as before, if that merge ever fails).
+* No core or online changes: online play with v1.2.7 works as before.
+
 ## v1.2.7
 
 **Updates keep your settings**

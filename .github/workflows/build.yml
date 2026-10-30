@@ -22,6 +22,14 @@ jobs:
           $PY -m venv venv
           venv/bin/python -m pip install -q --upgrade pip
           venv/bin/python -m pip install -q pyinstaller pyobjc-framework-Cocoa pysdl2 pysdl2-dll
+          # numpy (the lines and the sound in one go: without it PiTrex menus ran at 60 %): no universal2 wheel, so
+          # the arm64 and x86_64 ones merged into one; if that fails the app is built without it, as before
+          ( venv/bin/python -m pip install -q delocate &&
+            venv/bin/python -m pip download -q --only-binary=:all: --no-deps --python-version 3.12 --platform macosx_11_0_arm64 numpy -d npw &&
+            venv/bin/python -m pip download -q --only-binary=:all: --no-deps --python-version 3.12 --platform macosx_10_13_x86_64 numpy -d npw &&
+            venv/bin/delocate-merge npw/*arm64*.whl npw/*x86_64*.whl -w npu &&
+            venv/bin/python -m pip install -q npu/*.whl ) || echo "numpy: not included"
+          venv/bin/python -c "import numpy; print('numpy', numpy.__version__)" || true
           venv/bin/python -c "import tkinter, sdl2; print('Tk', tkinter.TkVersion)"
       - name: build
         run: PY=venv/bin/python sh build_mac.sh
@@ -79,7 +87,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q xvfb libgl1-mesa-dri libglx-mesa0 libxrandr2 x11-utils
-          python -m pip install -q pyinstaller pysdl2 pysdl2-dll
+          python -m pip install -q pyinstaller pysdl2 pysdl2-dll numpy   # (numpy: the lines and the sound in one go)
           python -c "import tkinter, sdl2; print('Tk', tkinter.TkVersion)"
       - name: build
         run: PY=python sh build_linux.sh
@@ -116,7 +124,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: PyInstaller
-        run: python -m pip install -q pyinstaller
+        run: python -m pip install -q pyinstaller numpy   # (numpy: the lines and the sound in one go - without it the PiTrex menu ran at 60 %)
       - name: build (the core with Visual C++, then the exe)
         shell: cmd
         run: |

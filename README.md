@@ -19,6 +19,18 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.3.0 - Robot Arena included, for free
+
+<p align="center">
+<img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/art/box_front.png" width="360" alt="Robot Arena box art">
+<img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/gif/guardian.gif" width="360" alt="Robot Arena with its overlay: the fighter takes on the Guardian">
+</p>
+
+**Robot Arena**, a new arena shooter for the Vectrex, now comes with the emulator, free and ready to play with
+its screen overlay. Written in 6809 assembly for the real console: two arenas, 70 levels, four bosses and twenty
+kinds of robot on a full 64 KB cartridge. Open the ROM browser (L) and pick **Robot Arena**. Updating from an
+older version adds it too. More about the game: [Robot_Arena](https://github.com/hugonl31/Robot_Arena).
+
 ## New in v1.2.5 - everything since v1.0.5
 
 <p align="center">

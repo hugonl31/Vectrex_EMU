@@ -5,10 +5,19 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.3.0
 
-**Robot Arena included**
-* **Robot Arena** (`roms/Robot Arena.bin`) - a new arena shooter for the Vectrex in 6809 assembly: 64 KB in two
-  banks, two arenas, 70 levels, four bosses. With its screen overlay (`overlays/Robot Arena.png`). Updating adds
-  both to an existing install. More about the game: [Robot_Arena](https://github.com/hugonl31/Robot_Arena).
+**Robot Arena is now included, for free**
+
+<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/art/box_front.png" width="420" alt="Robot Arena box art"></p>
+
+Robot Arena is a new arena shooter for the Vectrex, written in 6809 assembly for the real console: two arenas,
+70 levels, four bosses and twenty kinds of robot, filling a full 64 KB cartridge. It now comes with the emulator,
+together with its screen overlay, ready to play.
+
+<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/gif/guardian.gif" width="420" alt="Robot Arena with its overlay: the fighter takes on the Guardian"></p>
+
+* **Where:** `roms/Robot Arena.bin`, and its overlay `overlays/Robot Arena.png`. Pick it in the ROM browser (L).
+* **Updating** from an older version adds both to your install; nothing else is touched.
+* **More about the game**, the robots and the cartridge: [Robot_Arena](https://github.com/hugonl31/Robot_Arena).
 * No core or online changes: online play with v1.2.9 works as before.
 
 ## v1.2.9

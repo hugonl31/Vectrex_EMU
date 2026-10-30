@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.2.9
+- Debug report: a timeline of what happened, and a picture of the screen
+
 ## v1.2.8
 - Much faster: PiTrex menus and busy screens run at full speed again
 

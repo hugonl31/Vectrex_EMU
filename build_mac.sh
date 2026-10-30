@@ -13,9 +13,10 @@ mkdir -p build/sdllib
 cp "$("$PY" -c "import sdl2dll, os; print(os.path.join(sdl2dll.get_dllpath(), 'SDL2.framework', 'Versions', 'A', 'SDL2'))")" build/sdllib/libSDL2.dylib
 clang -O2 -w -ffp-contract=off -fgnu89-inline -arch arm64 -arch x86_64 -mmacosx-version-min=10.13 -o core/vectrex_core \
   src/core/vtest.c src/core/vecx.c src/core/e6809.c src/core/e8910.c src/core/cm33.c src/core/rp2350.c src/core/host.c src/core/arm11.c src/core/usbhost.c -lm -pthread
+"$PY" -c "import os;os.makedirs('build',exist_ok=True);open('build/BUILD_INFO','w').write(('GitHub '+os.environ['GITHUB_SHA'][:7]) if os.environ.get('GITHUB_ACTIONS') else 'local build')"   # (where it was built: the debug report)
 "$PY" -m PyInstaller --noconfirm --windowed --target-arch universal2 --name Vectrex_EMU \
   --osx-bundle-identifier io.github.hugonl31.vectrexemu --distpath dist-mac --workpath build/pyi-mac \
   --specpath build --paths src/frontend --exclude-module sdl2dll --exclude-module sdl2.test --exclude-module sdl2.examples --add-binary "$PWD/build/sdllib/libSDL2.dylib:sdllib" \
   --add-binary "$PWD/core/vectrex_core:core" --add-data "$PWD/sounds/on.wav:sounds" \
-  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" --add-data "$PWD/VERSION:." src/frontend/vectrex_emu.py
+  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" --add-data "$PWD/VERSION:." --add-data "$PWD/build/BUILD_INFO:." src/frontend/vectrex_emu.py
 echo built dist-mac/Vectrex_EMU.app

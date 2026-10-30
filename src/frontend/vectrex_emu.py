@@ -1122,6 +1122,17 @@ def app_version():
     return ''
 
 
+def build_info():
+    """where this program was built (BUILD_INFO, written by the build scripts): 'GitHub <commit>' or 'local build'"""
+    if not getattr(sys, 'frozen', False):
+        return 'from source'
+    try:
+        with open(os.path.join(RES, 'BUILD_INFO')) as f:
+            return f.read().strip()
+    except OSError:
+        return 'unknown (before v1.2.9)'
+
+
 def restore_after_update():
     """an update by v1.2.6 or older wrote fresh settings (only the overlay places, player name, SD folders and recent
     games) and kept the old file as settings_before_<this version>.json: the first start brings the rest back from it.
@@ -2194,6 +2205,10 @@ class App:
         self.slow_skip = bool(conf0.get('slow_skip', False))     # (the slow-PC note: 'don't show again')
         self.slow_n, self.slow_told = 0, False                  # (seconds below real time in a row; told this run)
         self.speed_hist = collections.deque(maxlen=120)         # (the last 2 minutes: speed, CPU, GPU - the debug report)
+        self.speed_long = collections.deque(maxlen=90)          # (15 minutes before that: 10-second averages)
+        self.events = collections.deque(maxlen=300)             # (what happened when: game, G-Sync, full screen ...)
+        self.hist_n = 0; self.hist_counts = (0, 0)
+        self.events.append((round(time.perf_counter(), 1), 'started: %s' % (os.path.basename(args.rom) if args.rom else '(built-in)')))
         perfcheck.no_throttle()                                 # (Windows 11: not slowed down as background work)
         self.update_skip = conf0.get('update_skip', '')         # (that version: not told again - 'don't remind me')
         self.update_latest = None                               # (the newer version found, or None)
@@ -2532,19 +2547,25 @@ class App:
         """Config > Display: the CPU and GPU meters in the on-screen display"""
         self.osd_meters = not getattr(self, 'osd_meters', True)
         self.save_settings()
-    def headroom(self):
+    def headroom(self, parts=False):
         """(CPU, GPU) - the share of each frame's time used, 0..1+ (None: not known yet). CPU: the busier of the
         emulation (its thread and the core, against the game frame's length) and the drawing thread (against a
-        picture's time); GPU: the graphics card's own time for a picture (GL_TIME_ELAPSED) against a picture's time"""
+        picture's time); GPU: the graphics card's own time for a picture (GL_TIME_ELAPSED) against a picture's time.
+        parts: (emulation, drawing, GPU) - the debug report's columns"""
         r = self.ren
         pics = 50.0 if self.vrr else max(1.0, getattr(self, 'hz', 60.0))   # (pictures a second wanted)
         emu = getattr(self.run, 'emu_share', None)
         draw = (r.cpu_ms * pics / 1000.0) if (r is not None and getattr(r, 'cpu_ms', None)
                                               and self.run.frames > 50) else None   # (a new game's first second: its
                                                                                       #  overlay and the tube's start loading)
-        cpu = max([v for v in (emu, draw) if v is not None], default=None)
         gpu = (r.gpu_ms * pics / 1000.0) if (r is not None and getattr(r, 'gpu_ms', None)) else None
+        if parts:
+            return emu, draw, gpu
+        cpu = max([v for v in (emu, draw) if v is not None], default=None)
         return cpu, gpu
+    def note_event(self, text):
+        """a line in the debug report's timeline"""
+        self.events.append((round(time.perf_counter(), 1), text))
     def toggle_fps(self, e=None):
         """Ctrl+F: the OSD (game fps, screen Hz, G-Sync, emulation speed, volume): full screen in the
         corner, in the window the row below the picture"""
@@ -6403,9 +6424,18 @@ class App:
     def slow_watch(self):
         """once a second: below real time (EMU RATE < 95 %) for 5 seconds in a row - the slow-PC note, once a run (not
         online, paused, off, in a game's first seconds, or with 'don't show again')"""
-        cpu, gpu = self.headroom()
-        self.speed_hist.append((round(time.perf_counter(), 1), round(self.speed, 1),
-                                None if cpu is None else round(cpu, 2), None if gpu is None else round(gpu, 2)))
+        emu, draw, gpu = self.headroom(parts=True)
+        late, drops = getattr(self.run, 'slow', 0) or 0, getattr(self.run.audio, 'underruns', 0) or 0
+        r2 = lambda v: None if v is None else round(v, 2)
+        self.speed_hist.append((round(time.perf_counter(), 1), round(self.speed, 1), r2(emu), r2(draw), r2(gpu),
+                                max(0, late - self.hist_counts[0]), max(0, drops - self.hist_counts[1])))
+        self.hist_counts = (late, drops)
+        self.hist_n += 1
+        if self.hist_n % 10 == 0:                               # (every 10 seconds: their average, kept longer)
+            last = list(self.speed_hist)[-10:]
+            avg = lambda i: (None if not [e[i] for e in last if e[i] is not None] else
+                             round(sum(e[i] for e in last if e[i] is not None) / len([e for e in last if e[i] is not None]), 2))
+            self.speed_long.append((last[0][0], avg(1), avg(2), avg(3), avg(4), sum(e[5] for e in last), sum(e[6] for e in last)))
         busy = (not self.run.power or self.run.paused or self.run.frames < 250 or getattr(self, 'net_game', None)
                 or getattr(self, 'browser', None))
         self.slow_n = 0 if busy or self.speed >= 95 else self.slow_n + 1
@@ -6466,33 +6496,65 @@ class App:
         except Exception: pass   # noqa
     def make_report(self, path):
         """the debug report's zip at path (perfcheck.report)"""
-        t0 = self.speed_hist[0][0] if self.speed_hist else 0
-        hist = ['%7.1f s  speed %5.1f %%  CPU %s  GPU %s' % (t - t0, sp, '-' if c is None else '%d %%' % (c * 100),
-                '-' if g is None else '%d %%' % (g * 100)) for t, sp, c, g in self.speed_hist]
+        short = list(self.speed_hist)
+        cut = short[0][0] if short else time.perf_counter()
+        long_ = [e for e in self.speed_long if e[0] < cut]     # (the averages before the per-second lines)
+        t0 = min([e[0] for e in long_ + short] + [ev[0] for ev in self.events if ev[0] >= (long_ or short or [(cut,)])[0][0] - 30] or [cut])
+        pc = lambda v: '   -' if v is None else '%3d%%' % round(v * 100)
+        row = lambda e, avg: ('%7.1f s %s speed %5.1f %%  emu %s  draw %s  GPU %s  late %3d  drops %3d' % (
+            e[0] - t0, '~' if avg else ' ', e[1] or 0, pc(e[2]), pc(e[3]), pc(e[4]), e[5], e[6]))
+        timeline = [(e[0], 0, row(e, True)) for e in long_] + [(e[0], 0, row(e, False)) for e in short]
+        start = (long_ or short or [(cut,)])[0][0]
+        timeline += [(t, -1, '%7.1f s   >> %s' % (t - t0, txt)) for t, txt in self.events if t >= start - 30]   # (and the start's)
+        timeline.sort()
+        hist = [ln for _, _, ln in timeline]
         jb = getattr(self.core, 'jit_blocked', None)
+        exe = os.path.abspath(sys.executable) if getattr(sys, 'frozen', False) else None
         extra = {'Game': os.path.basename(self.args.rom or '') or '(built-in)', 'Quality': self.current_profile(),
                  'Full screen': self.full, 'G-Sync': self.vrr, 'Screen rate': getattr(self, 'rate', None),
-                 'JIT blocked': jb, 'Found': '; '.join(w for w, _ in perfcheck.causes(self.gl_name(), jb)) or 'nothing',
+                 'JIT blocked': jb,
+                 'Found': '; '.join(w for w, _ in perfcheck.causes(self.gl_name(), jb, _np is None)) or 'nothing',
+                 'Build': build_info(), 'Libraries': perfcheck.versions(),
+                 'Windows graphics': '; '.join(perfcheck.gfx_settings(exe)) or '-',
                  'Running for': '%d min' % ((time.time() - T_START) / 60),
                  'Game frames': '%s, late %s' % (self.run.frames, getattr(self.run, 'slow', '?')),
                  'Sound': 'on %s, dropouts %s' % (getattr(self.run.audio, 'ok', '?'), getattr(self.run.audio, 'underruns', '?')),
                  'Core threads': getattr(self.core, 'threads', '?'),
-                 'Speed, last two minutes (a line a second)': '\n' + '\n'.join(hist)}
+                 'Speed (a line a second for the last 2 minutes; ~ before that: 10-second averages; emu: the '
+                 'emulation, draw: the drawing thread, GPU: the graphics card, each against its time; late frames and '
+                 'sound dropouts in that time; >> what happened)': '\n' + '\n'.join(hist)}
         return perfcheck.report(path, self.system_info(), self.settings_f, os.path.join(CACHE_DIR, 'core_log.txt'), extra,
-                                app_log=''.join(APP_LOG))
+                                app_log=''.join(APP_LOG), files={'screen.jpg': self.report_picture()})
+    def report_picture(self):
+        """the window's picture as a small JPEG (about 30-60 KB) for the debug report, or None"""
+        g = getattr(self.ren, 'grab', None)              # (read back from OpenGL when the report window opened -
+        if not g:                                       #  never a grab of the screen: other windows stay private)
+            return None
+        try:
+            from PIL import Image
+            import io
+            im = Image.frombytes('RGBA', (g[0], g[1]), g[2]).transpose(Image.FLIP_TOP_BOTTOM).convert('RGB')
+            im.thumbnail((640, 640))
+            b = io.BytesIO(); im.save(b, 'JPEG', quality=70)
+            return b.getvalue()
+        except Exception:   # noqa: no picture (a screen that can not be read)
+            return None
     def report_window(self):
         """Help > Debug report: what goes in it; Send (to the author's server: a report number to give him) or Save
         (a zip in Downloads)"""
         if getattr(self, 'rep_win', None):
             try: self.rep_win.lift(); return
             except tk.TclError: pass
+        if self.ren is not None:                        # (the picture for the report: the next one drawn)
+            self.ren.grab_req = True
         t, body, foot, close = self._room_window('Debug report', '', 'rep_win', banner=False)
         f9, bg = (MONO, 10), deck.PANEL
         tk.Label(body, text='For the author, when something runs wrong. It holds:', fg=deck.HI, bg=bg, font=f9,
                  anchor='w').pack(fill='x', padx=12, pady=(10, 0))
         for ln in ("this program's version, your system, graphics chip and monitor",
-                   'the power settings and the speed of the last two minutes',
-                   "the emulator core's log and your settings (not your online key)"):
+                   'the power and graphics settings, the speed of the last 17 minutes',
+                   "the emulator core's log and your settings (not your online key)",
+                   "a small picture of the emulator's screen (not your desktop)"):
             tk.Label(body, text='\u2022 ' + ln, fg=deck.G, bg=bg, font=(MONO, 9), anchor='w').pack(fill='x', padx=14)
         tk.Label(body, text='No ROMs, no files of yours, no name or address.', fg=deck.G, bg=bg, font=(MONO, 9),
                  anchor='w').pack(fill='x', padx=12, pady=(6, 0))
@@ -7898,6 +7960,32 @@ class App:
         print('render size', size, 'full screen', self.full)
         print('game frames %d, late %d, audio %s, underruns %d'
               % (self.run.frames, self.run.slow, self.audio.ok, self.audio.underruns))
+
+def _events():
+    """the debug report's timeline: these App methods, after they ran, add a line (note_event)"""
+    def wrap(name, desc):
+        fn = getattr(App, name, None)
+        if fn is None:
+            return
+        def w(self, *a, **k):
+            r = fn(self, *a, **k)
+            try:
+                if hasattr(self, 'events'):
+                    self.note_event(desc(self, a))
+            except Exception:   # noqa
+                pass
+            return r
+        w.__name__ = fn.__name__; w.__doc__ = fn.__doc__
+        setattr(App, name, w)
+    wrap('restart', lambda s, a: 'game: %s' % (os.path.basename(a[0]) if a and a[0] else '(built-in)'))
+    wrap('toggle_vrr', lambda s, a: 'G-Sync / FreeSync %s' % ('on' if s.vrr else 'off'))
+    wrap('toggle_full', lambda s, a: 'full screen %s' % ('on' if s.full else 'off'))
+    wrap('set_profile', lambda s, a: 'quality: %s' % (a[0] if a else '?'))
+    wrap('set_quality', lambda s, a: 'quality: %s' % (a[0] if a else '?'))
+    wrap('set_power', lambda s, a: 'power %s' % ('on' if a and a[0] else 'off'))
+    wrap('apply_rate', lambda s, a: 'screen: %.1f Hz, a picture every %d refresh(es)' % (getattr(s, 'hz', 0), getattr(s, 'vsync', 0)))
+_events()
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)

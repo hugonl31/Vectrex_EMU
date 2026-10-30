@@ -7,10 +7,11 @@ cd "$(dirname "$0")"
 PY=${PY:-python3}
 mkdir -p core build
 cc -O3 -flto -w -ffp-contract=off -fgnu89-inline -o core/vectrex_core src/core/vtest.c src/core/vecx.c src/core/e6809.c src/core/e8910.c src/core/cm33.c src/core/rp2350.c src/core/host.c src/core/arm11.c src/core/usbhost.c -lm -pthread
+"$PY" -c "import os;os.makedirs('build',exist_ok=True);open('build/BUILD_INFO','w').write(('GitHub '+os.environ['GITHUB_SHA'][:7]) if os.environ.get('GITHUB_ACTIONS') else 'local build')"   # (where it was built: the debug report)
 "$PY" -m PyInstaller.utils.cliutils.makespec --onefile --windowed --name Vectrex_EMU \
   --specpath build --paths src/frontend --collect-all sdl2dll --exclude-module sdl2.test --exclude-module sdl2.examples \
   --add-binary "$PWD/core/vectrex_core:core" --add-data "$PWD/sounds/on.wav:sounds" \
-  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" --add-data "$PWD/VERSION:." src/frontend/vectrex_emu.py
+  --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" --add-data "$PWD/VERSION:." --add-data "$PWD/build/BUILD_INFO:." src/frontend/vectrex_emu.py
 "$PY" tools/linux_spec.py build/Vectrex_EMU.spec        # (the system's libstdc++ / X / GL: GitHub issue 3)
 "$PY" -m PyInstaller --noconfirm --distpath dist-linux --workpath build/pyi-linux build/Vectrex_EMU.spec
 echo built dist-linux/Vectrex_EMU

@@ -131,10 +131,12 @@ def wrong_gpu(gl_name):
     return (gl_name, fast[0]) if fast else None
 
 
-def causes(gl_name=None, jit_blocked=None):
+def causes(gl_name=None, jit_blocked=None, no_numpy=False):
     """what may slow this PC down, as short lines for the window (worst first); [] when nothing is found"""
     out = []
     p = power()
+    if no_numpy:                                    # (the release builds before v1.2.8: busy screens at ~60 %)
+        out.append(('This build has no numpy: busy screens run slower', 'download the newest version'))
     if jit_blocked:
         out.append(('The %s runs without its JIT: a security tool or Exploit protection blocks it' % jit_blocked,
                     'allow Vectrex_EMU to run generated code (Exploit protection: Arbitrary code guard off for it)'))
@@ -150,6 +152,54 @@ def causes(gl_name=None, jit_blocked=None):
                     'Windows Settings > System > Display > Graphics: Vectrex_EMU on High performance' if IS_WIN else
                     'choose the faster graphics chip for Vectrex_EMU'))
     return out
+
+
+def gfx_settings(exe=None):
+    """Windows' own graphics settings that change the speed (as a line each), [] elsewhere: this program's GPU choice
+    (Settings > System > Display > Graphics), hardware-accelerated GPU scheduling, Game Mode"""
+    if not IS_WIN:
+        return []
+    import winreg
+    out = []
+    def val(root, key, name):
+        try:
+            with winreg.OpenKey(root, key) as k:
+                return winreg.QueryValueEx(k, name)[0]
+        except OSError:
+            return None
+    pref = val(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\DirectX\UserGpuPreferences', exe) if exe else None
+    g = None
+    if isinstance(pref, str) and 'GpuPreference=' in pref:
+        g = pref.split('GpuPreference=')[1].split(';')[0]
+    out.append('GPU choice for this program: %s' % {'0': 'let Windows decide', '1': 'power saving',
+                                                     '2': 'high performance'}.get(g, 'not set (Windows decides)'))
+    hags = val(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\GraphicsDrivers', 'HwSchMode')
+    out.append('Hardware-accelerated GPU scheduling: %s' % {2: 'on', 1: 'off'}.get(hags, 'not set'))
+    gm = val(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\GameBar', 'AutoGameModeEnabled')
+    out.append('Game Mode: %s' % ('off' if gm == 0 else 'on'))
+    return out
+
+
+def versions():
+    """the libraries' versions, one line"""
+    out = ['Python %s' % platform.python_version()]
+    try:
+        import numpy
+        out.append('numpy %s' % numpy.__version__)
+    except Exception:   # noqa
+        out.append('numpy none')
+    try:
+        import sdl2
+        v = sdl2.SDL_version(); sdl2.SDL_GetVersion(ctypes.byref(v))
+        out.append('SDL %d.%d.%d' % (v.major, v.minor, v.patch))
+    except Exception:   # noqa
+        pass
+    try:
+        import PIL
+        out.append('Pillow %s' % PIL.__version__)
+    except Exception:   # noqa
+        pass
+    return ', '.join(out)
 
 
 def _private(text):
@@ -203,7 +253,7 @@ def machine():
     return model, mem
 
 
-def report(path, info_text, settings_file=None, core_log=None, extra=None, app_log=None):
+def report(path, info_text, settings_file=None, core_log=None, extra=None, app_log=None, files=None):
     """the debug report: one zip to send - the system info, the power state, the speed history, the core's log,
     the settings (without the online key). Returns the path"""
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
@@ -231,6 +281,9 @@ def report(path, info_text, settings_file=None, core_log=None, extra=None, app_l
             except OSError: pass
         if app_log:
             z.writestr('app_log.txt', _private(app_log))
+        for name, data in (files or {}).items():        # (the picture: screen.jpg)
+            if data:
+                z.writestr(name, data)
     return path
 
 

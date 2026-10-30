@@ -3,6 +3,20 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.9
+
+**A fuller debug report (a few KB more)**
+* **The speed log splits the work** - emulation, drawing and graphics card each get their own column, plus late
+  frames and sound dropouts per second, so it shows at once which part falls behind and when.
+* **A timeline** - the game started, G-Sync, full screen, quality and screen rate changes appear between the speed
+  lines, at the second they happened.
+* **Longer history** - before the last two minutes (a line a second), up to 15 more minutes as 10-second averages.
+* **A small picture of the emulator's screen** (about 20 KB), read from its own image - never the desktop.
+* **More about the PC** - Windows' GPU choice for the program, hardware GPU scheduling, Game Mode; the versions of
+  Python, numpy and the other libraries; whether the program was built by GitHub or locally. A build without numpy
+  is named in the report's findings.
+* No core or online changes: online play with v1.2.8 works as before.
+
 ## v1.2.8
 
 **Full speed on busy screens**

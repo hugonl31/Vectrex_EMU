@@ -18,8 +18,10 @@ if not exist "%OUT%\overlays" mkdir "%OUT%\overlays"
 rem (the overlays that come with it: each copied in when it is missing)
 for %%f in (overlays\*.art overlays\CREDITS.md overlays\RENAMED.txt) do if not exist "%OUT%\overlays\%%~nxf" copy /y "%%f" "%OUT%\overlays\" >nul
 set D=%~dp0
+rem (where it was built: the debug report)
+%PY% -c "import os;os.makedirs('build',exist_ok=True);open('build/BUILD_INFO','w').write(('GitHub '+os.environ['GITHUB_SHA'][:7]) if os.environ.get('GITHUB_ACTIONS') else 'local build')" || exit /b 1
 %PY% -m PyInstaller --noconfirm --onefile --windowed --name Vectrex_EMU --distpath "%OUT%" --workpath build\pyi --specpath build --paths src\frontend ^
   --add-binary "%D%core\vectrex_core.exe;core" ^
-  --add-data "%D%sounds\on.wav;sounds" --add-data "%D%sounds\off.wav;sounds" --add-data "%D%icons\vectrex_emu.png;icons" --add-data "%D%VERSION;." ^
+  --add-data "%D%sounds\on.wav;sounds" --add-data "%D%sounds\off.wav;sounds" --add-data "%D%icons\vectrex_emu.png;icons" --add-data "%D%VERSION;." --add-data "%D%build\BUILD_INFO;." ^
   --icon "%D%icons\vectrex_emu.ico" src\frontend\vectrex_emu.py || exit /b 1
 echo built %OUT%\Vectrex_EMU.exe

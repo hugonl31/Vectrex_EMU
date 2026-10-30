@@ -148,6 +148,16 @@ class GLRenderer:
         self._gl_setup()
 
     def _swap(self):
+        if getattr(self, 'grab_req', False):            # (the debug report's picture: this one, read back before it
+            self.grab_req = False                       #  is shown - only the emulator's own image, never the screen)
+            try:
+                w, h = self.size
+                px = (ctypes.c_ubyte * (w * h * 4))()
+                self.gl.glReadPixels.argtypes = [ctypes.c_int] * 4 + [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
+                self.gl.glReadPixels(0, 0, w, h, GL_RGBA, 0x1401, px)
+                self.grab = (w, h, bytes(px))
+            except Exception:   # noqa
+                self.grab = None
         if IS_WIN:
             self.gdi.SwapBuffers(self.dc)
         else:

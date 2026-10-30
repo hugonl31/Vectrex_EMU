@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.2.3
+
+**More in the debug report**
+* **The program's own messages and errors** (app_log.txt) - the exe has no console, so an error in the picture or
+  the sound was never seen anywhere; the last ones are now in the report.
+* **The PC's model and memory, late frames, sound dropouts and how long it ran** - in the report's system.txt.
+  Still no ROMs, files, online key or player name; the home folder is shown as `~`.
+
 ## v1.2.2
 
 **Why is it slow? The emulator tells you - and a debug report in one click**

@@ -19,7 +19,7 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.2.2 - everything since v1.0.5
+## New in v1.2.3 - everything since v1.0.5
 
 <p align="center">
 <img src="docs/images/phosphor_model/v119_helicopter.gif" width="420" alt="Armor Attack's helicopter: the rotor blades flash one after another, the helicopter leaves a fading trail"><br>
@@ -30,6 +30,9 @@ photo, recording and measurement, and every call on how it should look, sound an
 <img src="docs/images/v1.1.7/head_tracking.gif" width="420" alt="Armor Attack with head tracking: the picture slides against the overlay as the head moves round"><br>
 <em>Head tracking: the playfield shifts behind the Armor Attack overlay as the head moves (largest shift 4 mm here).</em>
 </p>
+
+**New in v1.2.3: more in the debug report** - the program's own error log, the PC model and memory, late frames
+and sound dropouts.
 
 **New in v1.2.2: why is it slow - and a debug report in one click**
 * **Running slower than real time?** A small window tells you what it finds on your PC - on battery, a power-saving

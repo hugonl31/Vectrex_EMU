@@ -6,7 +6,7 @@ whether the meeting point and the report receiver run. Nothing is stored; IPs ar
 Install (Linode): cp vxdaily.py /usr/local/bin/ ; the token and chat in /etc/vxreport.env (as vxreport.py)
   /etc/systemd/system/vxdaily.service:  [Service] Type=oneshot EnvironmentFile=/etc/vxreport.env
                                          ExecStart=/usr/bin/python3 /usr/local/bin/vxdaily.py
-  /etc/systemd/system/vxdaily.timer:    [Timer] OnCalendar=*-*-* 09:00 Europe/Amsterdam  Persistent=true
+  /etc/systemd/system/vxdaily.timer:    [Timer] OnCalendar=*-*-* 11:00 Europe/Amsterdam  Persistent=true
                                          [Install] WantedBy=timers.target
   systemctl daemon-reload && systemctl enable --now vxdaily.timer
 Test: VXDAILY_PRINT=1 python3 /usr/local/bin/vxdaily.py (prints, sends nothing)

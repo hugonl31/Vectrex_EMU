@@ -161,7 +161,49 @@ def _private(text):
     return text
 
 
-def report(path, info_text, settings_file=None, core_log=None, extra=None):
+def machine():
+    """(the PC's maker and model, its memory in GB) - None where not known"""
+    model, mem = None, None
+    if IS_WIN:
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\BIOS') as k:
+                model = ' '.join(str(winreg.QueryValueEx(k, n)[0]).strip() for n in ('SystemManufacturer', 'SystemProductName'))
+        except OSError:
+            pass
+        class MS(ctypes.Structure):
+            _fields_ = [('dwLength', ctypes.c_ulong), ('dwMemoryLoad', ctypes.c_ulong), ('ullTotalPhys', ctypes.c_ulonglong),
+                        ('ullAvailPhys', ctypes.c_ulonglong), ('ullTotalPageFile', ctypes.c_ulonglong),
+                        ('ullAvailPageFile', ctypes.c_ulonglong), ('ullTotalVirtual', ctypes.c_ulonglong),
+                        ('ullAvailVirtual', ctypes.c_ulonglong), ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+        try:
+            m = MS(); m.dwLength = ctypes.sizeof(m)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+                mem = '%.0f GB (%.0f GB free)' % (m.ullTotalPhys / 2 ** 30, m.ullAvailPhys / 2 ** 30)
+        except Exception:   # noqa
+            pass
+    elif IS_MAC:
+        try:
+            import subprocess
+            model = subprocess.run(['sysctl', '-n', 'hw.model'], capture_output=True, text=True, timeout=2).stdout.strip() or None
+            mem = '%.0f GB' % (int(subprocess.run(['sysctl', '-n', 'hw.memsize'], capture_output=True, text=True, timeout=2).stdout) / 2 ** 30)
+        except Exception:   # noqa
+            pass
+    else:
+        try: model = open('/sys/firmware/devicetree/base/model').read().strip('\0 \n')   # (a Raspberry Pi)
+        except OSError:
+            try: model = (open('/sys/class/dmi/id/sys_vendor').read().strip() + ' ' + open('/sys/class/dmi/id/product_name').read().strip())
+            except OSError: pass
+        try:
+            for ln in open('/proc/meminfo'):
+                if ln.startswith('MemTotal'):
+                    mem = '%.0f GB' % (int(ln.split()[1]) / 2 ** 20); break
+        except OSError:
+            pass
+    return model, mem
+
+
+def report(path, info_text, settings_file=None, core_log=None, extra=None, app_log=None):
     """the debug report: one zip to send - the system info, the power state, the speed history, the core's log,
     the settings (without the online key). Returns the path"""
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
@@ -170,6 +212,7 @@ def report(path, info_text, settings_file=None, core_log=None, extra=None):
                  'Report made: %s' % datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                  'Platform: %s' % platform.platform(),
                  'Processors: %s' % os.cpu_count(),
+                 'Machine: %s' % (machine()[0] or '?'), 'Memory: %s' % (machine()[1] or '?'),
                  'On mains power: %s' % p['ac'], 'Battery saver: %s' % p['saver'], 'Power mode: %s' % p['mode'],
                  'Graphics chips: %s' % (', '.join(adapters()) or '?')]
         for k, v in (extra or {}).items():
@@ -186,6 +229,8 @@ def report(path, info_text, settings_file=None, core_log=None, extra=None):
         if core_log and os.path.isfile(core_log):
             try: z.writestr('core_log.txt', _private(open(core_log, encoding='utf-8', errors='replace').read()))
             except OSError: pass
+        if app_log:
+            z.writestr('app_log.txt', _private(app_log))
     return path
 
 

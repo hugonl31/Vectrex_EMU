@@ -31,6 +31,25 @@ import argparse, ctypes, ctypes.wintypes as W, json, math, os, queue, random, sh
 import sys, threading, time, datetime, collections, re, gc, platform
 import tkinter as tk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+APP_LOG = collections.deque(maxlen=3000)                # (the program's own messages and errors: the debug report's
+T_START = time.time()                                   #  app_log.txt - the exe has no console, they went nowhere)
+class _Tee:
+    def __init__(self, f):
+        self.f = f
+    def write(self, s):
+        if s:
+            APP_LOG.append(s)
+        if self.f is not None:
+            try: return self.f.write(s)
+            except Exception: pass   # noqa
+        return len(s or '')
+    def flush(self):
+        if self.f is not None:
+            try: self.f.flush()
+            except Exception: pass   # noqa
+    def __getattr__(self, k):
+        return getattr(self.f, k)
+sys.stdout, sys.stderr = _Tee(sys.stdout), _Tee(sys.stderr)
 import vecrender
 import vart
 import deck
@@ -6406,8 +6425,13 @@ class App:
         extra = {'Game': os.path.basename(self.args.rom or '') or '(built-in)', 'Quality': self.current_profile(),
                  'Full screen': self.full, 'G-Sync': self.vrr, 'Screen rate': getattr(self, 'rate', None),
                  'JIT blocked': jb, 'Found': '; '.join(w for w, _ in perfcheck.causes(self.gl_name(), jb)) or 'nothing',
+                 'Running for': '%d min' % ((time.time() - T_START) / 60),
+                 'Game frames': '%s, late %s' % (self.run.frames, getattr(self.run, 'slow', '?')),
+                 'Sound': 'on %s, dropouts %s' % (getattr(self.run.audio, 'ok', '?'), getattr(self.run.audio, 'underruns', '?')),
+                 'Core threads': getattr(self.core, 'threads', '?'),
                  'Speed, last two minutes (a line a second)': '\n' + '\n'.join(hist)}
-        return perfcheck.report(path, self.system_info(), self.settings_f, os.path.join(CACHE_DIR, 'core_log.txt'), extra)
+        return perfcheck.report(path, self.system_info(), self.settings_f, os.path.join(CACHE_DIR, 'core_log.txt'), extra,
+                                app_log=''.join(APP_LOG))
     def report_window(self):
         """Help > Debug report: what goes in it; Send (to the author's server: a report number to give him) or Save
         (a zip in Downloads)"""

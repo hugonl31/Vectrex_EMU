@@ -5,19 +5,19 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.3.0
 
-**Robot Arena is now included, for free**
+**Steel Siege is now included, for free**
 
-<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/art/box_front.png" width="420" alt="Robot Arena box art"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Steel_Siege/main/img/art/box_front.png" width="420" alt="Steel Siege box art"></p>
 
-Robot Arena is a new arena shooter for the Vectrex, written in 6809 assembly for the real console: two arenas,
+Steel Siege is a new arena shooter for the Vectrex, written in 6809 assembly for the real console: two arenas,
 70 levels, four bosses and twenty kinds of robot, filling a full 64 KB cartridge. It now comes with the emulator,
 together with its screen overlay, ready to play.
 
-<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/gif/guardian.gif" width="420" alt="Robot Arena with its overlay: the fighter takes on the Guardian"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Steel_Siege/main/img/gif/guardian.gif" width="420" alt="Steel Siege with its overlay: the fighter takes on the Guardian"></p>
 
-* **Where:** `roms/Robot Arena.bin`, and its overlay `overlays/Robot Arena.png`. Pick it in the ROM browser (L).
+* **Where:** `roms/Steel Siege.bin`, and its overlay `overlays/Steel Siege.png`. Pick it in the ROM browser (L).
 * **Updating** from an older version adds both to your install; nothing else is touched.
-* **More about the game**, the robots and the cartridge: [Robot_Arena](https://github.com/hugonl31/Robot_Arena).
+* **More about the game**, the robots and the cartridge: [Steel_Siege](https://github.com/hugonl31/Steel_Siege).
 * No core or online changes: online play with v1.2.9 works as before.
 
 ## v1.2.9

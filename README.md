@@ -19,17 +19,17 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
-## New in v1.3.0 - Robot Arena included, for free
+## New in v1.3.0 - Steel Siege included, for free
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/art/box_front.png" width="360" alt="Robot Arena box art">
-<img src="https://raw.githubusercontent.com/hugonl31/Robot_Arena/main/img/gif/guardian.gif" width="360" alt="Robot Arena with its overlay: the fighter takes on the Guardian">
+<img src="https://raw.githubusercontent.com/hugonl31/Steel_Siege/main/img/art/box_front.png" width="360" alt="Steel Siege box art">
+<img src="https://raw.githubusercontent.com/hugonl31/Steel_Siege/main/img/gif/guardian.gif" width="360" alt="Steel Siege with its overlay: the fighter takes on the Guardian">
 </p>
 
-**Robot Arena**, a new arena shooter for the Vectrex, now comes with the emulator, free and ready to play with
+**Steel Siege**, a new arena shooter for the Vectrex, now comes with the emulator, free and ready to play with
 its screen overlay. Written in 6809 assembly for the real console: two arenas, 70 levels, four bosses and twenty
-kinds of robot on a full 64 KB cartridge. Open the ROM browser (L) and pick **Robot Arena**. Updating from an
-older version adds it too. More about the game: [Robot_Arena](https://github.com/hugonl31/Robot_Arena).
+kinds of robot on a full 64 KB cartridge. Open the ROM browser (L) and pick **Steel Siege**. Updating from an
+older version adds it too. More about the game: [Steel_Siege](https://github.com/hugonl31/Steel_Siege).
 
 ## New in v1.2.5 - everything since v1.0.5
 
@@ -297,7 +297,7 @@ with a short note on what goes there:
 | Folder | |
 |---|---|
 | `system` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
-| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Robot Arena** ([Robot_Arena](https://github.com/hugonl31/Robot_Arena)) with its overlay |
+| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Steel Siege** ([Steel_Siege](https://github.com/hugonl31/Steel_Siege)) with its overlay |
 | `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
 More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), `pitrex`,
@@ -442,8 +442,8 @@ slider and see it at once, hold H to compare with how it was.
   demo and a vector movie player included
 * **The PiTrex**: the Raspberry Pi cartridge - its ARM11 (with a JIT for x86-64 and ARM64), the Pi's hardware
   and the SD card (a folder): its menu, the arcade emulators, Vectorblade, Elite and more
-* **Robot Arena included**: a new arena shooter for the Vectrex (64 KB, two arenas, 70 levels), with its
-  overlay ([Robot_Arena](https://github.com/hugonl31/Robot_Arena))
+* **Steel Siege included**: a new arena shooter for the Vectrex (64 KB, two arenas, 70 levels), with its
+  overlay ([Steel_Siege](https://github.com/hugonl31/Steel_Siege))
 * **One-click downloads** of the original games, free homebrew, the speech ROM and the PiTrex's SD card;
   65 overlays included
 * Every look and sound setting adjustable and explained in the built-in Help

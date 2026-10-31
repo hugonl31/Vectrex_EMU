@@ -5,7 +5,7 @@ newest on top, each line short enough for that small window (at most about 70 ch
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.3.0
-- Robot Arena is now included, free: a new game with its overlay
+- Steel Siege is now included, free: a new game with its overlay
 
 ## v1.2.9
 - Debug report: a timeline of what happened, and a picture of the screen

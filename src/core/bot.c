@@ -1,4 +1,4 @@
-/* bot.c - a simulated player for balancing Robot Arena (included by vtest.c).
+/* bot.c - a simulated player for balancing Steel Siege (included by vtest.c).
  *
  * Script command:  bot SYMFILE MAXFRAMES [SKILL]
  *   Plays from the current state until the level is cleared, the game is over, or MAXFRAMES pass.

@@ -1,7 +1,7 @@
 #include <ctype.h>
 /* vtest - headless scripted Vectrex test harness (vecx core, GPL).
  *
- * Models the Robot Arena cartridge: 64 KiB image, PB6 -> A15 with a pull-up
+ * Models the Steel Siege cartridge: 64 KiB image, PB6 -> A15 with a pull-up
  * (bank = DDRB.6 ? ORB.6 : 1).
  *
  * usage: vtest bios.bin cart.bin script.txt [outdir]

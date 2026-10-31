@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.3.1
+
+**Robot Arena is now Steel Siege**
+* **The included game has a new name** - `roms/Steel Siege.bin` with its overlay `overlays/Steel Siege.png`,
+  the same game with the new title on its screen and overlay. Updating adds both; a `Robot Arena.bin` from v1.3.0
+  stays where it is, so delete it (and `overlays/Robot Arena.png`) if you no longer want it.
+* More about the game: [Steel_Siege](https://github.com/hugonl31/Steel_Siege).
+* No core or online changes: online play with v1.3.0 and v1.2.9 works as before.
+
 ## v1.3.0
 
 **Steel Siege is now included, for free**

@@ -34,16 +34,6 @@ build workflow replaces that release (title = the version, marked Latest) with t
   slows the game down"; it does not). Now those seconds read "paused or switched off", pausing and going on are
   events in the report's timeline, and the meter starts afresh after a pause.
 
-**UVMC2 games: a calibration that matches the emulated Vectrex**
-* **The UVMC2's SD card now comes with `config/uvm2.cfg` (`zero 4`).** Every UVMC2 game built with its SDK reads this
-  file at start-up and applies it to every line it draws. Without it the SDK's compiled default (`zero 35`) was used,
-  which suits the console it was measured on but not the emulator's default unit: on that unit, swept text tilted and
-  broke into steps, and boxes came out skewed. Measured on Last Human's title (the slope of its text): 0.061 at 35,
-  0.010 at 8, 0.000 at 4. Only the `zero` field is set; the others keep the SDK's defaults.
-* Installs that already have their own `config/uvm2.cfg` (saved by the SDK's calibration screen: hold buttons 2 and 3
-  while a UVMC2 game starts) keep it: an update only adds the file when it is missing. Online, the card both players
-  share only holds files that are the same on both sides, so a different calibration can never desync a game.
-
 **The picture's shape: now on the Unit tab**
 * **Config > Unit > The picture's shape: yoke and tube** - the seven sliders from v1.4.5 (yoke skew, keystone X / Y,
   pincushion X / Y, linearity X / Y) moved from the Circuit tab to the Unit tab, next to the yoke's centring and

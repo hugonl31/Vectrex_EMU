@@ -8,7 +8,6 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - UVMC2 Fast and Dev modes for slower PCs (Config > Ports)
 - UVMC2 and PiTrex: whole pictures, no more missing or empty frames
 - Debug report: paused time no longer looks like a slow PC
-- UVMC2 games: straight text out of the box (matched calibration)
 - Picture-shape sliders moved to Config > Unit
 
 ## v1.4.6

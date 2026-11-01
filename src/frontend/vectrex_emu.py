@@ -63,6 +63,7 @@ import v4e
 import fatimg
 import links
 import perfcheck
+import recorder
 
 IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 # Steam Deck Game Mode (gamescope): one window is shown - a second one (the first-run setup) stays out of
@@ -240,9 +241,9 @@ DEFAULT_KEYS = {'p1': dict(up=[(0x26, 'Up')], down=[(0x28, 'Down')], left=[(0x25
                            half=[(0x10, 'Shift')]),
                 'p2': {k: [] for k in CTRL_INPUTS}}
 DEFAULT_DEADZONE = 0.2
-# keys the emulator keeps for itself (a player can not have them): F11, Esc, Page Up / Down, + - 0 9 (the
+# keys the emulator keeps for itself (a player can not have them): F11, F9 / F12 (Record), Esc, Page Up / Down, + - 0 9 (the
 # window size, the real size), P L O C (pause, the ROM browser, the overlay, the case) and everything with Ctrl
-RESERVED_VK = {0x7A: 'F11', 0x1B: 'Esc', 0x21: 'Page Up', 0x22: 'Page Down', 0x11: 'Ctrl', 0xA2: 'Ctrl', 0xA3: 'Ctrl',
+RESERVED_VK = {0x7A: 'F11', 0x78: 'F9', 0x7B: 'F12', 0x1B: 'Esc', 0x21: 'Page Up', 0x22: 'Page Down', 0x11: 'Ctrl', 0xA2: 'Ctrl', 0xA3: 'Ctrl',
                0xBB: '+', 0xBD: '-', 0x30: '0', 0x39: '9', 0x6B: 'Numpad +', 0x6D: 'Numpad -', 0x60: 'Numpad 0',
                0x69: 'Numpad 9', 0x50: 'P', 0x4C: 'L', 0x4F: 'O', 0x43: 'C'}
 
@@ -2121,7 +2122,9 @@ class App:
         self.skip_boot = bool(c0.get('skip_boot', False))       # power on straight into the cartridge
         self.p2_auto = bool(c0.get('p2_auto', True))            # port 2: the accessory a game needs, plugged in for it (port2_auto)
         self.inp = Input(ctl)
-        self.audio = Audio() if IS_WIN else osdep.Audio(RATE)
+        self.audio = recorder.AudioTap(Audio() if IS_WIN else osdep.Audio(RATE))   # (Record: the sound taken here too)
+        self.rec_opts = {k: c0.get(k, v) for k, v in recorder.DEFAULTS.items()}   # (Record: the folder, quality, sizes)
+        self.rec = None; self.snap_job = None
         self.speech = c0.get('speech', 'vecvoice' if c0.get('vecvoice') else 'off')   # (port 2: a speech accessory)
         if self.speech not in PORT2 or (self.speech in ('vecvoice', 'vecvox') and not sp_rom()):
             self.speech = 'off'
@@ -2370,6 +2373,8 @@ class App:
         self.setup_display()
         self.ultra_rate = None
         self.root.bind('<F11>', self.toggle_full)
+        self.root.bind('<F9>', self.toggle_rec)                # (Record: start / stop recording)
+        self.root.bind('<F12>', self.snapshot)                 # (Record: a big snapshot)
         self.root.bind('<Motion>', self.pointer_moved)
         self.screen.bind('<Motion>', self.mouse_moved, add='+')
         self.screen.bind('<Leave>', lambda e: self.mouse_moved(None), add='+')
@@ -2741,6 +2746,17 @@ class App:
             item(m, 'Online settings...', '', lambda: self.online_window(),
                  "The meeting point that introduces the two players, hosting without it (a LAN, a forwarded port), and the "
                  "online state in the on-screen display.")
+            m = Menu(mb, tearoff=0, postcommand=lambda: (refresh(), self.rec_menu_label())); mb.add_cascade(label='Record', menu=m)
+            item(m, 'Start recording', 'F9', self.toggle_rec,
+                 "A video of the game with its sound, as an MP4: F9 starts and stops it. A small red dot in the corner shows it "
+                 "is recording (it is not in the video). After Stop the video is saved in the background.")
+            self.rec_menu = (m, m.index('end'))
+            item(m, 'Snapshot', 'F12', self.snapshot,
+                 "A picture of the screen as a PNG, drawn again at up to four times the window's size (Recording settings).")
+            m.add_separator()
+            item(m, 'Open recordings folder', '', lambda: recorder.open_folder(self.rec_folder()))
+            item(m, 'Recording settings...', '', self.rec_window,
+                 "Where videos and snapshots go, the video quality and size, the snapshot size, the sound, the control deck.")
             if DARK_MENU:                                       # (Config: the Config window at once)
                 mb.add_command(label='Config', command=self.open_deck)
             m = Menu(mb, tearoff=0); mb.add_cascade(label='Help', menu=m)
@@ -6627,6 +6643,261 @@ class App:
         y = self.root.winfo_rooty() + (self.root.winfo_height() - t.winfo_reqheight()) // 3
         t.geometry('+%d+%d' % (max(0, x), max(0, y)))
         deck.reveal(t, lambda: deck.no_close_button(t)); t.focus_force()
+    # ---------------------------------------------------------------- Record: videos (F9) and snapshots (F12)
+    def rec_folder(self):
+        return self.rec_opts.get('rec_dir') or recorder.default_dir()
+    def rec_ff(self):
+        """the bundled ffmpeg, or None (said on screen)"""
+        ff = recorder.ffmpeg_path(ROOT, RES)
+        if not ff:
+            self.rec_say('NO FFMPEG FOUND', 'Recording needs ffmpeg: system/ffmpeg next to the program (it comes with it)')
+        return ff
+    def rec_say(self, short, long=None):
+        """a message: in the middle of the picture (never while recording: it would be in the video), and the title bar"""
+        if not self.rec:
+            self.flash(short.upper(), secs=2.5)
+        self.root.title('Vectrex - ' + (long or short))
+        if getattr(self, 'title_job', None):
+            self.root.after_cancel(self.title_job)
+        self.title_job = self.root.after(4000, self.title)
+    def rec_box(self, deck_on, size=None):
+        """the part recorded, OpenGL's way: (x, y from the bottom left, width, height), even sizes - the whole window, or
+        without the control deck below the picture (not on a turned screen: there the whole window). size: of R (a big
+        snapshot: the picture not turned yet), else the window"""
+        r = self.ren
+        rw, rh = size or r.real_size
+        bot = rh
+        if not deck_on and (size or not getattr(r, 'rot', 0)) and (self.knob_on or self.fps_on or self.cart_on):
+            pl, pt, pr, pb = self.pic_rect()
+            bot = int(min(rh, max(16, pb + vecrender.PAD_BOT * (pb - pt))))   # (the case's bottom: the strip starts there)
+        w, h = rw & ~1, bot & ~1
+        return (0, rh - h, w, h)
+    def rec_ok(self):
+        r = self.ren
+        if not (r and hasattr(r, '_rec_grab') and hasattr(r, 'real_size') and hasattr(r, 'map')):
+            self.rec_say('NEEDS THE OPENGL PICTURE', 'Recording needs the OpenGL picture')
+            return False
+        return True
+    def toggle_rec(self, e=None):
+        if self.rec:
+            self.stop_rec()
+        else:
+            self.start_rec()
+        return 'break'
+    def start_rec(self):
+        if self.rec or not self.rec_ok():
+            return
+        ff = self.rec_ff()
+        if not ff:
+            return
+        box = self.rec_box(self.rec_opts.get('rec_deck'))
+        try:
+            rec = recorder.Recording(ff, self.rec_folder(), box[2], box[3], dict(self.rec_opts), self.audio,
+                                     lambda path, msg: self.root.after(0, lambda: self.rec_done(path, msg)))
+        except Exception as e:   # noqa (the folder can not be made, ...)
+            self.rec_say('RECORDING COULD NOT START', 'Recording could not start: %s' % e)
+            return
+        self.flash_until = 0                                    # (no message in the first pictures)
+        self.rec = rec
+        self.ren.rec_box = box; self.ren.rec = rec; self.ren.rec_dot = True
+        self.root.title('Vectrex - recording (F9 stops)')
+        if getattr(self, 'title_job', None):
+            self.root.after_cancel(self.title_job)
+        self.title_job = self.root.after(2500, self.title)
+    def stop_rec(self, why=None):
+        rec, self.rec = self.rec, None
+        if not rec:
+            return
+        if self.ren:
+            self.ren.rec = None; self.ren.rec_dot = False
+        rec.stop()
+        self.rec_say(why or 'SAVING VIDEO', (why or 'Saving the video').capitalize() + ' - %d:%02d' % divmod(int(rec.seconds()), 60))
+    def rec_tick(self):
+        """each picture while recording: the window the same size still? (else stopped: a video has one size)"""
+        rec = self.rec
+        if not rec:
+            return
+        box = self.rec_box(rec.opts.get('rec_deck'))
+        if (box[2], box[3]) != (rec.w, rec.h) or rec.size_changed:
+            self.stop_rec('RECORDING STOPPED: NEW WINDOW SIZE')
+        elif rec.failed:
+            self.stop_rec('RECORDING STOPPED')
+        else:
+            self.ren.rec_box = box
+    def rec_done(self, path, msg):
+        """from the saving: progress (path False), saved (the file) or failed (None)"""
+        if path is False:
+            self.rec_say(msg.upper(), msg)
+        elif path:
+            self.rec_say('VIDEO SAVED', msg)
+        else:
+            self.rec_say('SAVING FAILED', msg)
+    def rec_menu_label(self):
+        m, i = getattr(self, 'rec_menu', (None, None))
+        if m is None:
+            return
+        try:
+            if self.rec:
+                m.entryconfigure(i, label='Stop recording (%d:%02d)' % divmod(int(self.rec.seconds()), 60))
+            else:
+                m.entryconfigure(i, label='Start recording')
+        except Exception:   # noqa
+            pass
+
+    def snapshot(self, e=None):
+        """F12: the screen as a PNG - drawn again at up to four times the window's size (a few pictures at that size
+        first: the phosphor lit again), then back"""
+        if self.snap_job or not self.rec_ok():
+            return 'break'
+        ff = self.rec_ff()
+        if not ff:
+            return 'break'
+        r = self.ren
+        rw, rh = r.real_size
+        opt = self.rec_opts.get('rec_snap', 'max')
+        k = {'window': 1.0, '2x': 2.0}.get(opt, min(4.0, recorder.SNAP_MAX_H / float(max(1, rh))))
+        try:
+            mx = ctypes.c_int(0); r.gl.glGetIntegerv(0x0D33, ctypes.byref(mx))     # (GL_MAX_TEXTURE_SIZE)
+            k = min(k, (mx.value or 8192) / float(max(rw, rh)))
+        except Exception:   # noqa
+            k = min(k, 8192 / float(max(rw, rh)))
+        k = min(k, math.sqrt(recorder.SNAP_MAX_PX / float(rw * rh)))
+        try:
+            os.makedirs(self.rec_folder(), exist_ok=True)
+        except OSError as e:
+            self.rec_say('SNAPSHOT FAILED', 'Snapshot failed: %s' % e); return 'break'
+        path = recorder.free_name(self.rec_folder(), '.png')
+        deck_on = self.rec_opts.get('rec_deck')
+        big = (k > 1.05 and getattr(r, 'R', None) and getattr(r, 'float_ok', False) and hasattr(r, '_win_wh')
+               and not self.rec)                                # (recording: the window's size - a video keeps its size)
+        if not big:
+            self.flash_until = 0                                # (no message in the snapshot)
+            if getattr(r, 'R', None) and r.out == r.R[1]:       # (the finished screen in R, not turned yet: read there)
+                self.snap_job = dict(kind='R', path=path, deck=deck_on, n=1)
+            else:
+                r.snap_out = None; r.snap_req = self.rec_box(deck_on)
+                self.snap_job = dict(kind='win', path=path, n=8)
+            return 'break'
+        ww, wh = r._win_wh
+        self.flash_until = 0                                    # (no message in the snapshot)
+        self.snap_job = dict(kind='big', path=path, deck=deck_on, n=10, win=(ww, wh), real=r.real_size,
+                             dither=getattr(r, 'dither_on', True), raw=getattr(r, 'last_raw', None))
+        r.dither_on = True                                      # (the picture in R: read from there)
+        r.resize(int(round(ww * k)), int(round(wh * k)))
+        r.real_size = self.snap_job['real']                     # (the window still shows it, smaller)
+        return 'break'
+    def snap_stalled(self):
+        """paused, or no game frame for a while: the phosphor is not lit by new frames"""
+        pr = getattr(self, 'presents', None)
+        return bool(self.run.paused or not pr or time.perf_counter() - pr[-1] > 0.05)
+    def snap_refeed(self, j):
+        """paused (or no new frame): the last game frame drawn again - a resize starts the phosphor dark - timed to
+        have ended at the phosphor's clock now (its lines all lit)"""
+        raw = j.get('raw')
+        if not raw or not self.snap_stalled():
+            return
+        r = self.ren
+        ln = raw[1] or 0.02
+        try:
+            r.add_frame(raw[0], (getattr(r, 'T_prev', None) or 0.0) - ln - 0.002, ln, raw[2])
+        except Exception as e:   # noqa
+            print('snapshot: frame not drawn again (%s)' % e)
+    def snap_tick(self):
+        """after each picture: the snapshot's next step"""
+        a = getattr(self, 'snap_after', None)
+        if a:
+            a['n'] -= 1
+            self.snap_refeed(a)
+            if a['n'] <= 0:
+                self.snap_after = None
+        j = self.snap_job
+        if not j:
+            return
+        r = self.ren
+        j['n'] -= 1
+        data = None
+        turn = None
+        if j['kind'] == 'win':
+            out = getattr(r, 'snap_out', None)
+            if not out and j['n'] > 0:
+                return
+            r.snap_out = None
+            if out and out[2]:
+                w, h, data = out
+        else:
+            if j['kind'] == 'big' and j['n'] > 0:
+                self.snap_refeed(j)                             # (the phosphor at the new size lit)
+                return
+            box = self.rec_box(j['deck'], r.size)
+            try:
+                data = r.read_px(r.R[1], box); w, h = box[2], box[3]
+            except Exception as e:   # noqa
+                print('snapshot: not read (%s)' % e)
+            if j['kind'] == 'big':
+                r.dither_on = j['dither']
+                r.resize(*j['win'])
+                if self.snap_stalled():                         # (paused: the picture lit again at the window's size)
+                    self.snap_after = dict(raw=j.get('raw'), n=4)
+            turn = getattr(r, 'rot', 0)
+        self.snap_job = None
+        if not data:
+            self.rec_say('SNAPSHOT FAILED', 'Snapshot failed: the picture could not be read'); return
+        ff, path = recorder.ffmpeg_path(ROOT, RES), j['path']
+        def work():
+            ok = recorder.save_png(ff, path, w, h, data, turn=turn)
+            sz = (h, w) if turn in (90, 270) else (w, h)
+            self.root.after(0, lambda: self.rec_say('SNAPSHOT SAVED' if ok else 'SNAPSHOT FAILED',
+                                                    'Snapshot saved: %s (%d x %d)' % (os.path.basename(path), sz[0], sz[1])
+                                                    if ok else 'Snapshot failed'))
+        threading.Thread(target=work, daemon=True).start()
+
+    def rec_window(self):
+        """Record > Recording settings: the folder, the video's quality and size, the snapshot's size, sound, the deck"""
+        if getattr(self, 'recset_win', None):
+            try: self.recset_win.lift(); return
+            except tk.TclError: pass
+        t, body, foot, close = self._room_window('Recording settings', 'Videos (F9) and snapshots (F12) go to one folder.',
+                                                 'recset_win', banner=False)
+        f9, bg = (MONO, 10), deck.PANEL
+        o = self.rec_opts
+        save = self.save_settings
+        r0 = tk.Frame(body, bg=bg); r0.pack(fill='x', padx=10, pady=(10, 4))
+        tk.Label(r0, text='Save to', fg=deck.G, bg=bg, font=f9, width=14, anchor='w').pack(side='left')
+        dir_l = tk.Label(r0, text='', fg=deck.HI, bg=bg, font=(MONO, 9), anchor='w'); dir_l.pack(side='left', fill='x', expand=True)
+        def show_dir():
+            d = self.rec_folder()
+            dir_l.configure(text=d if len(d) <= 44 else '...' + d[-41:])
+        show_dir()
+        def change():
+            from tkinter import filedialog
+            here = self.rec_folder()
+            d = filedialog.askdirectory(parent=t, initialdir=here if os.path.isdir(here) else os.path.expanduser('~'),
+                                        title='Folder for videos and snapshots')
+            if d:
+                o['rec_dir'] = os.path.normpath(d); show_dir(); save()
+        deck._button(r0, 'Change...', change, self, small=True).pack(side='right', padx=(6, 0))
+        def row_of(label, key, opts):
+            row = tk.Frame(body, bg=bg); row.pack(fill='x', padx=10, pady=4)
+            tk.Label(row, text=label, fg=deck.G, bg=bg, font=f9, width=14, anchor='w').pack(side='left')
+            bs = {}
+            def pick(v):
+                o[key] = v
+                for kk, b in bs.items():
+                    deck._paint(b, kk == v)
+                save()
+            for v, txt in opts:
+                b = deck._button(row, txt, lambda v=v: pick(v), self, on=o.get(key) == v, small=True)
+                b.pack(side='left', padx=(0, 6)); bs[v] = b
+        row_of('Video quality', 'rec_quality', [(k, v[0]) for k, v in recorder.QUALITY.items()])
+        row_of('Video size', 'rec_size', list(recorder.VSIZE.items()))
+        row_of('Snapshot size', 'rec_snap', list(recorder.SNAP.items()))
+        row_of('Sound', 'rec_sound', [(True, 'On'), (False, 'Off')])
+        row_of('Control deck', 'rec_deck', [(True, 'In it'), (False, 'Left out')])
+        tk.Label(body, text='Names: the date and time, e.g. %s.mp4' % recorder.stamp(), fg=deck.DIM, bg=bg,
+                 font=(MONO, 9), anchor='w').pack(fill='x', padx=10, pady=(6, 10))
+        deck._button(foot, 'Open folder', lambda: recorder.open_folder(self.rec_folder()), self).pack(side='left')
+        deck._button(foot, 'Close', close, self).pack(side='right')
+        deck.place(t, 'recset', self)
     def open_deck(self, e=None):
         """Tab: the control deck - opens, or closes when open"""
         return deck.open_deck(self)
@@ -7185,6 +7456,7 @@ class App:
         d['slow_skip'] = getattr(self, 'slow_skip', False)
         d['gsync'] = getattr(self, 'vrr', False)
         d['screen_rate'] = getattr(self, 'rate', '60')
+        d.update(getattr(self, 'rec_opts', {}))                # (Record: rec_dir, rec_quality, ...)
         own = hasattr(self, 'per_game') and self.rom_name in self.per_game   # (a game's own settings: its changes kept
         g = getattr(self, 'game_global', None) if own else None              #  for it, as the everyday ones are - the
         if own and self.ren and getattr(self, 'game_loaded', None) == self.rom_name:   #  owner, 2026-10-29: lost at a
@@ -7828,8 +8100,10 @@ class App:
             flush, self.flush = getattr(self, 'flush', False), False
             if flush:
                 self.sm_buf = []
+            self.rec_tick()                                     # (Record: the part recorded, the window's size)
             r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
             r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
+            self.snap_tick()
             if not getattr(self, 'gl_shown', False):            # (the first picture: OpenGL paints it all now)
                 self.gl_shown = True
                 self.screen.configure(bg='')

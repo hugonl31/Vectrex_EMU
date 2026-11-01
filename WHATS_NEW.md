@@ -4,6 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.4.0
+- Record menu: videos with sound (F9) and big snapshots (F12)
+- Saved as MP4 / PNG, named by date and time, in one folder
+
 ## v1.3.1
 - The included game Robot Arena is now called Steel Siege
 

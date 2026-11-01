@@ -24,4 +24,7 @@ rem (where it was built: the debug report)
   --add-binary "%D%core\vectrex_core.exe;core" ^
   --add-data "%D%sounds\on.wav;sounds" --add-data "%D%sounds\off.wav;sounds" --add-data "%D%icons\vectrex_emu.png;icons" --add-data "%D%VERSION;." --add-data "%D%build\BUILD_INFO;." ^
   --icon "%D%icons\vectrex_emu.ico" src\frontend\vectrex_emu.py || exit /b 1
+rem (ffmpeg for Record > videos and snapshots: next to the exe in system, not inside it - one 90 MB file unpacked
+rem  at every start would slow it down)
+if not exist "%OUT%\system\ffmpeg.exe" (%PY% tools\get_ffmpeg.py win "%OUT%\system\ffmpeg.exe" || exit /b 1)
 echo built %OUT%\Vectrex_EMU.exe

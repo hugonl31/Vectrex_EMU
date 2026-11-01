@@ -26,7 +26,7 @@ TOPICS = [
 ('h', 'Playing'),
 ('p', "Player 1 plays with the arrow keys and A S D F (buttons 1 to 4, in a row as on the controller; W A S D as a cross in Controls), Shift for a half push of the "
       "stick, or with a game controller; Controls > Keyboard and controllers sets both players up. Keys that run the "
-      "emulator: F11 full screen, Tab the Config window, Esc back / pause, P pause, L ROM browser, O overlay, C case, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
+      "emulator: F11 full screen, F9 record a video, F12 snapshot, Tab the Config window, Esc back / pause, P pause, L ROM browser, O overlay, C case, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
       "+ / - / 0 size, 9 Authentic size, Alt the menus."),
 ('more', 'The menus in full screen', "In full screen (F11) the menu bar is hidden: move the mouse to the top "
       "edge of the screen, or press Alt, and it appears over the picture - it goes again when the mouse moves "
@@ -195,6 +195,31 @@ TOPICS = [
          "if they ever differ, OUT OF SYNC shows and the chat says so). The host measures the round trip and sets an input delay that hides "
          "it (3 frames on a LAN, up to 12 far away). Most home routers let the two PCs talk directly once the meeting "
          "point has introduced them; when two strict routers will not, the meeting point relays the packets."),
+]),
+
+('record', 'Menu: Record', [
+('p', "Videos and pictures of the game, as the emulator draws them - its own picture and sound, never the desktop. "
+      "Both go to one folder (Videos/Vectrex_EMU unless you choose another), named by the date and time they were "
+      "made, for example 2026-10-31_21-45-12.mp4."),
+('item', 'Start recording (F9)', "Records the game with its sound; F9 again (or Stop recording, which shows how long "
+         "it has run) stops it. A small red dot in the window's top right corner shows that it is recording - the dot "
+         "is not in the video. While recording, the recorder's own messages go to the title bar, not "
+         "into the picture. The video is 50 pictures a second, the Vectrex's own rate. After Stop the MP4 is made in the "
+         "background (SAVING VIDEO, then VIDEO SAVED); the game plays on. A new window size stops the recording: a "
+         "video keeps one size."),
+('item', 'Snapshot (F12)', "The screen as a PNG, drawn again at up to four times the window's size (about 6000 "
+         "pixels tall) - the lines sharp at that size, not a stretched screenshot. The picture is drawn at that size "
+         "for a moment (about a fifth of a second), then back. Paused games work too."),
+('item', 'Open recordings folder', "The folder with your videos and snapshots."),
+('item', 'Recording settings...', "Save to: the folder. Video quality: Very high (the default), High or Smaller "
+         "files. Video size: the window's size or half. Snapshot size: the window's, 2x or 4x (about 6000 px). "
+         "Sound: in the video or not. Control deck: the strip below the picture in the video and the snapshot, or "
+         "left out (the default)."),
+('more', 'How it works', "Each picture is read back from the graphics card after it is drawn and before the red "
+         "dot, and sent to ffmpeg (it comes with the emulator, in the system folder; on the Mac inside the app) as a "
+         "nearly lossless working file next to the video. The sound is taken where the emulator hands it to the "
+         "sound card, lined up with the pictures by the clock. After Stop, ffmpeg turns both into an H.264 / AAC MP4 "
+         "that plays everywhere, at a low priority so the game is not slowed, and removes the working files."),
 ]),
 
 ('deck', 'The Config window', [

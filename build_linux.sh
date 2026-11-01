@@ -14,4 +14,6 @@ cc -O3 -flto -w -ffp-contract=off -fgnu89-inline -o core/vectrex_core src/core/v
   --add-data "$PWD/sounds/off.wav:sounds" --add-data "$PWD/icons/vectrex_emu.png:icons" --add-data "$PWD/VERSION:." --add-data "$PWD/build/BUILD_INFO:." src/frontend/vectrex_emu.py
 "$PY" tools/linux_spec.py build/Vectrex_EMU.spec        # (the system's libstdc++ / X / GL: GitHub issue 3)
 "$PY" -m PyInstaller --noconfirm --distpath dist-linux --workpath build/pyi-linux build/Vectrex_EMU.spec
+mkdir -p dist-linux/system                               # (Record: videos and snapshots - ffmpeg next to the program)
+[ -f dist-linux/system/ffmpeg ] || "$PY" tools/get_ffmpeg.py linux dist-linux/system/ffmpeg
 echo built dist-linux/Vectrex_EMU

@@ -19,6 +19,12 @@ with whatever is on screen.
 photo, recording and measurement, and every call on how it should look, sound and feel.<br>
 **Development assistant and programmer:** Claude (Anthropic).
 
+## New in v1.4.0 - record videos and snapshots
+
+**Record > Start recording (F9)** makes an MP4 of the game with its sound; **Snapshot (F12)** saves a PNG drawn at
+up to four times the window's size. Both go to one folder, named by the date and time. See
+[Recording videos and snapshots](#recording-videos-and-snapshots).
+
 ## New in v1.3.0 - Steel Siege included, for free
 
 <p align="center">
@@ -931,7 +937,7 @@ cartridges, bank switching and saving. The text lives in `src/frontend/help_text
 
 The menu bar is short and dark - **Vectrex** (cartridges and recent games, RESET, pause, volume, the controls
 and port 2, the setup), **View** (full screen, sizes, the overlay, the case, the control deck below the picture,
-quality, room light), **Config** (opens the Config window) and **Help**; options that are on have a tick, the
+quality, room light), **Record** (videos and snapshots, see [Recording](#recording-videos-and-snapshots)), **Config** (opens the Config window) and **Help**; options that are on have a tick, the
 few that also have a key show it. Alt (or F10) opens the menus from the keyboard, Alt + the underlined
 letter one of them. **View > Control deck** switches the whole strip below the picture - the OSD, P2 PORT,
 the cartridge, RESET and the volume knob - on or off at once: the window gets smaller by it.
@@ -1078,6 +1084,8 @@ Only what full screen needs has a key, so the rest of the keyboard is free for t
 | Key | |
 |---|---|
 | F11 | full screen on/off |
+| F9 | start / stop recording a video (MP4, with sound) |
+| F12 | snapshot: a PNG drawn at up to four times the window's size |
 | Esc | closes the ROM browser; in full screen: back to the window; in the window: pause (it never quits: close the window for that) |
 | Tab | the Config window (Tab or Esc closes it); hold H in it to compare with before |
 | L | the ROM browser (the Windows file dialog: Vectrex > Open ROM file) |
@@ -1091,7 +1099,7 @@ Only what full screen needs has a key, so the rest of the keyboard is free for t
 | 9 | real size: the picture as big as on a real Vectrex, in the window and in full screen (until + / - / 0) |
 | Ctrl+K | UVMC2 games: the keyboard types into the cartridge's USB port (Ctrl+K again gives it back) |
 
-These keys (and everything with Ctrl) cannot be given to a player: F11, Esc, Page Up / Down, + - 0 9, P L O.
+These keys (and everything with Ctrl) cannot be given to a player: F11, F9, F12, Esc, Page Up / Down, + - 0 9, P L O.
 Only Ctrl+E and Ctrl+R need Ctrl - they end the game.
 
 (The mouse pointer hides in full screen 2 s after it last moved.)
@@ -1449,6 +1457,26 @@ their line shows briefly in the picture too. Player 2 needs the same ROM in its 
 input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and
 through a simulated bad connection (40-60 ms each way, 10 % packet loss): identical pictures throughout.
 
+### Recording videos and snapshots
+
+**Record > Start recording** (**F9**) records the game with its sound as an MP4; F9 again stops it. A small red dot
+in the window's top right corner shows it is recording; it is drawn after each picture is taken, so it is never in
+the video. After Stop the video is finished in the background (SAVING VIDEO, then VIDEO SAVED) while you play on.
+**Record > Snapshot** (**F12**) saves the screen as a PNG, drawn again at up to four times the window's size (about
+6000 pixels tall): the lines are sharp at that size, not a stretched screenshot. Paused games can be snapshotted too.
+
+Both go to one folder, `Videos/Vectrex_EMU` (Mac: `Movies/Vectrex_EMU`) unless you pick another, named by the date
+and time: `2026-10-31_21-45-12.mp4`, `2026-10-31_21-46-03.png`. **Record > Recording settings** sets the folder,
+the video quality (Very high, High, Smaller files), the video size (the window's or half), the snapshot size (the
+window's, 2x or 4x), the sound on or off, and whether the control deck below the picture is in the video and the
+snapshot (left out by default).
+
+How it works: each picture is read back from the graphics card through pixel buffers (no waiting), 50 a second, and
+sent to ffmpeg as a nearly lossless working file; the sound is taken where the emulator hands it to the sound card
+and lined up with the pictures by the clock. After Stop, ffmpeg makes an H.264 / AAC MP4 at a low priority so the
+game is not slowed. ffmpeg comes with the emulator: `system/ffmpeg.exe` (Linux: `system/ffmpeg`, Mac: inside the
+app).
+
 ### Mac and Linux notes
 
 The same emulator, everything in this README applies. The BIOS and Mine Storm's overlay sit in the
@@ -1523,5 +1551,7 @@ license of the vecx emulator it is built on.
 * **The SP0256-AL2 ROM** is (c) Microchip Technology Inc., distributed by Joe Zbiciak with Microchip's
   permission; it is not part of this project.
 * **The Vectrex BIOS**: Smith Engineering allows it to be copied freely for non-commercial use.
+* **FFmpeg** (GPL) - the static FFmpeg 7 builds from the imageio-ffmpeg package make the videos and snapshots;
+  its source is at [ffmpeg.org](https://ffmpeg.org/download.html).
 
 Vectrex_EMU by Hugo Bokhorst, developed with Claude (Anthropic) as development assistant and programmer.

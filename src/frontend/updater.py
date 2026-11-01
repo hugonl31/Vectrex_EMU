@@ -74,7 +74,7 @@ def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):
                 if '/MacOS/' in p or f.endswith(('.so', '.dylib')) or 'vectrex_core' in f:
                     os.chmod(p, 0o755)
     elif not IS_WIN:
-        for f in (PROGRAM,):
+        for f in (PROGRAM, os.path.join('system', 'ffmpeg')):    # (and ffmpeg: Record)
             if os.path.exists(os.path.join(new, f)):
                 os.chmod(os.path.join(new, f), 0o755)
     if not os.path.exists(os.path.join(new, PROGRAM)):

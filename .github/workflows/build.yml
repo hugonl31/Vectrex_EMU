@@ -37,6 +37,7 @@ jobs:
         run: |
           lipo -info core/vectrex_core
           lipo -info dist-mac/Vectrex_EMU.app/Contents/MacOS/Vectrex_EMU
+          find dist-mac/Vectrex_EMU.app -name ffmpeg -type f -exec lipo -info {} \;
           find dist-mac/Vectrex_EMU.app -name 'libSDL2*' -exec lipo -info {} \;
       - name: Finder aliases in the roms folder
         run: venv/bin/python tools/alias_test.py
@@ -145,6 +146,7 @@ jobs:
           Copy-Item build/Vectrex_EMU/Vectrex_EMU.exe pkg/
           Copy-Item -Recurse system, overlays pkg/
           Copy-Item -Recurse -Force package/* pkg/
+          Copy-Item build/Vectrex_EMU/system/ffmpeg.exe pkg/system/   # (Record: videos and snapshots)
           Compress-Archive -Path pkg/* -DestinationPath Vectrex_EMU-windows.zip
       - uses: actions/upload-artifact@v4
         with:

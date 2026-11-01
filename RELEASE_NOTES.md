@@ -3,6 +3,24 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.0
+
+**Record: videos and snapshots**
+* **Record > Start recording (F9)** - records the game with its sound as an MP4; F9 again stops it. A small red
+  dot in the window's top right corner shows it is recording (it is not in the video). After Stop the video is
+  finished in the background while you play on (SAVING VIDEO, then VIDEO SAVED). 50 pictures a second, the
+  Vectrex's own rate, at the window's size.
+* **Record > Snapshot (F12)** - the screen as a PNG, drawn again at up to four times the window's size (about 6000
+  pixels tall): sharp lines, not a stretched screenshot. Paused games too.
+* **One folder** - `Videos/Vectrex_EMU` (Mac: `Movies/Vectrex_EMU`) unless you pick another, each file named by the
+  date and time, e.g. `2026-11-01_21-45-12.mp4`.
+* **Record > Recording settings** - the folder, video quality (Very high, High, Smaller files), video size (the
+  window's or half), snapshot size (window, 2x, 4x), sound on / off, and the control deck in or left out.
+* **ffmpeg comes with it** (GPL, as the emulator): `system/ffmpeg.exe` (Linux: `system/ffmpeg`, Mac: inside the
+  app). Updating adds it. The downloads are about 30 MB bigger.
+* F9 and F12 can no longer be given to a player.
+* No core or online changes: online play with v1.3.1 works as before.
+
 ## v1.3.1
 
 **Robot Arena is now Steel Siege**

@@ -158,10 +158,115 @@ class GLRenderer:
                 self.grab = (w, h, bytes(px))
             except Exception:   # noqa
                 self.grab = None
+        if getattr(self, 'snap_req', None):             # (Record > Snapshot at the window's size: this picture)
+            box, self.snap_req = self.snap_req, None
+            try:
+                self.snap_out = (box[2], box[3], self.read_px(0, box))
+            except Exception:   # noqa
+                self.snap_out = (0, 0, None)
+        rec = getattr(self, 'rec', None)                # (recording: the finished picture read back - before the dot)
+        if rec is not None or getattr(self, '_rec_pend', None):
+            try:
+                self._rec_grab(rec)
+            except Exception as e:   # noqa
+                print('recording: picture not read (%s)' % e); self._rec_pend = None
+        if getattr(self, 'rec_dot', False):
+            self._rec_dot()
         if IS_WIN:
             self.gdi.SwapBuffers(self.dc)
         else:
             self.ctxo.swap()
+
+    def read_px(self, fb, box):
+        """the pixels of framebuffer fb (0: the window) in box (x, y from the bottom left, w, h): bgra rows, bottom
+        row first"""
+        x, y, w, h = box
+        if getattr(self, 'BindFB', None):
+            self.BindFB(0x8D40, fb)
+        rp = self.gl.glReadPixels
+        rp.argtypes = [ctypes.c_int] * 4 + [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
+        self.gl.glPixelStorei(0x0D05, 4)                # (GL_PACK_ALIGNMENT)
+        px = ctypes.create_string_buffer(w * h * 4)
+        rp(x, y, w, h, 0x80E1, 0x1401, px)              # (GL_BGRA, unsigned bytes)
+        return px.raw
+
+    def _rec_grab(self, rec):
+        """one picture for the recording, each 1/50 s: read into a pixel buffer now, taken out of the other one (the
+        picture read before) - no waiting for the graphics card"""
+        now = time.perf_counter()
+        pend, self._rec_pend = getattr(self, '_rec_pend', None), None
+        gl = self.gl
+        PACK = 0x88EB
+        if not hasattr(self, '_pbo'):
+            try:
+                gen = self._proc('glGenBuffers', None, ctypes.c_int, ctypes.c_void_p)
+                self._pb_bind = self._proc('glBindBuffer', None, ctypes.c_uint, ctypes.c_uint)
+                self._pb_data = self._proc('glBufferData', None, ctypes.c_uint, ctypes.c_ssize_t, ctypes.c_void_p, ctypes.c_uint)
+                self._pb_map = self._proc('glMapBuffer', ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint)
+                self._pb_unmap = self._proc('glUnmapBuffer', ctypes.c_ubyte, ctypes.c_uint)
+                b = (ctypes.c_uint * 2)(); gen(2, b)
+                self._pbo, self._pbo_n, self._pbo_i = [b[0], b[1]], [0, 0], 0
+            except Exception as e:   # noqa
+                print('recording: no pixel buffers (%s): read directly' % e)
+                self._pbo = None
+        box = getattr(self, 'rec_box', None)
+        take = rec is not None and box is not None and rec.claim(now)
+        if self._pbo is None:
+            if take:
+                rec.put(now, self.read_px(0, box), box)
+            return
+        if getattr(self, 'BindFB', None):
+            self.BindFB(0x8D40, 0)
+        rp = gl.glReadPixels
+        rp.argtypes = [ctypes.c_int] * 4 + [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
+        gl.glPixelStorei(0x0D05, 4)
+        nxt = None
+        if take:
+            i = self._pbo_i; x, y, w, h = box; n = w * h * 4
+            self._pb_bind(PACK, self._pbo[i])
+            if self._pbo_n[i] != n:
+                self._pb_data(PACK, n, None, 0x88E5); self._pbo_n[i] = n      # (GL_STREAM_READ)
+            rp(x, y, w, h, 0x80E1, 0x1401, None)
+            nxt = (i, now, n, box); self._pbo_i = 1 - i
+        if pend:
+            j, t, n, pbox = pend
+            self._pb_bind(PACK, self._pbo[j])
+            p = self._pb_map(PACK, 0x88B8)                # (GL_READ_ONLY)
+            if p:
+                data = ctypes.string_at(p, n)
+                self._pb_unmap(PACK)
+                if rec is not None:
+                    rec.put(t, data, pbox)
+        self._pb_bind(PACK, 0)
+        self._rec_pend = nxt
+
+    def _rec_dot(self):
+        """recording: a small red dot in the window's top right corner - drawn after the picture was read back, so
+        never in the video"""
+        gl = self.gl
+        rw, rh = getattr(self, 'real_size', self.size)
+        if getattr(self, 'BindFB', None):
+            self.BindFB(0x8D40, 0)
+        if getattr(self, 'UseProgram', None):
+            self.UseProgram(0)
+        gl.glViewport(0, 0, rw, rh)
+        gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, rw, rh, 0, -1, 1)
+        gl.glMatrixMode(GL_MODELVIEW); gl.glPushMatrix(); gl.glLoadIdentity()
+        gl.glDisable(GL_TEXTURE_2D); gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        gl.glVertex2f.argtypes = [ctypes.c_float] * 2
+        r = max(4.0, min(rw, rh) * 0.008)
+        cx, cy = rw - 3.2 * r, 3.2 * r
+        for rr, a in ((r * 1.6, 0.25), (r, 1.0)):           # (a soft edge, then the dot)
+            gl.glColor4f(0.92, 0.12, 0.10, a)
+            gl.glBegin(6)                                   # (GL_TRIANGLE_FAN)
+            gl.glVertex2f(cx, cy)
+            for k in range(33):
+                ang = k * math.pi / 16
+                gl.glVertex2f(cx + rr * math.cos(ang), cy + rr * math.sin(ang))
+            gl.glEnd()
+        gl.glColor4f(1, 1, 1, 1)
+        gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW); gl.glPopMatrix()
+        gl.glViewport(0, 0, *self.size)
 
     def _proc(self, name, res, *args):
         """an OpenGL function beyond 1.1 (shaders, framebuffers)"""
@@ -3377,6 +3482,7 @@ class GLBloomRenderer(GLRenderer):
             self.len_prev = length
         if period:                                        # (the hold follows the game's frame period)
             self.periods = (getattr(self, 'periods', []) + [period])[-12:]
+        self.last_raw = (lines, length, period)            # (Record > Snapshot: drawn again at a bigger size)
         b = self._build(lines)
         self.last = b
         if b:

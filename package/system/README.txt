@@ -3,5 +3,7 @@ The Vectrex's own system files, and the emulator's settings:
                    copied freely for non-commercial use). The emulator needs it.
   al2.bin          the speech ROM for the VecVoice / VecVox speech modules - optional, a free download:
                    see README-speech.txt
+  ffmpeg.exe       FFmpeg (GPL, ffmpeg.org): Record makes its videos and snapshots with it (Linux: ffmpeg).
+                   Its source: https://ffmpeg.org/download.html
   settings.json    your settings (window, look, sound, controls, overlays, the last game), written by the
                    emulator. Delete it to start again from the defaults; copy it to take your settings along.

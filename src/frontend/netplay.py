@@ -54,12 +54,13 @@ RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
-NET_VER = 7                 # the online version: both sides must have the same. Raise it with every change to the
+NET_VER = 8                 # the online version: both sides must have the same. Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
                             # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z'); 4: taking a
                             # controller port (the input's flags: 0x10 port 1, 0x20 port 2); 5: the
                             # players' names (the hello carries the joiner's); 6: v1.1.0 - inputs kept after a drop, the PiTrex
                             # JIT fast between the same processor type; 7: v1.1.1 - the UVMC2's TRNG from the power-on seed
+                            # 8: the 6809 DAA keeps the carry of the addition before (BCD scores)
 PAUSE_ALIVE = 0.25          # (seconds between two 'still here' packets while the game is paused)
 PACE_DEAD = 0.5             # (frames: how far one side may be ahead of the other before it slows down)
 PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)

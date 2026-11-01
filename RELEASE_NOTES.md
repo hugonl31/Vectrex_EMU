@@ -3,6 +3,16 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.1
+
+**6809 fix: DAA keeps the carry**
+* **DAA (decimal adjust) now keeps the carry of the addition before it**, as on a real 6809. The core set the carry
+  only from the adjust itself, so e.g. 0x98 + 0x75 (= 0x0D, carry set) became 0x73 with no carry, and the ADCA on
+  the next BCD byte missed it: a score could lose 100, 10000, ... now and then. Found while porting Steel Siege to
+  the UVMC2, where the port and the emulator parted on one score addition in 41,860 frames.
+* **Online version 8**: games that add BCD scores can now run differently from older versions, so online play
+  needs v1.4.1 (or newer) on both sides; an older version shows "update needed".
+
 ## v1.4.0
 
 **Record: videos and snapshots**

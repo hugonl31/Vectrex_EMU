@@ -2388,7 +2388,8 @@ unsigned e6809_sstep (unsigned irq_i, unsigned irq_f)
 		set_cc (FLAG_N, test_n (reg_a));
 		set_cc (FLAG_Z, test_z8 (reg_a));
 		set_cc (FLAG_V, 0);
-		set_cc (FLAG_C, test_c (i0, i1, reg_a, 0));
+		/* a real 6809 keeps the carry of the ADD/ADC before: C = C_in OR the adjust carry */
+		set_cc (FLAG_C, get_cc (FLAG_C) | test_c (i0, i1, reg_a, 0));
 		cycles += 2;
 		break;
 	/* cwai */

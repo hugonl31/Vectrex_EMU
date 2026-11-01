@@ -257,6 +257,8 @@ def _card_dir(d, default):
     """a card folder from the settings: the default when unset, or when it names an old place that has moved"""
     if not d:
         return default
+    if str(d).startswith('/Users/runner/'):                # (the build machine's folder: Mac zips until v1.4.3
+        return default                                     #  shipped its test run's settings by mistake)
     if not os.path.isdir(d) and os.path.isdir(default) and \
             os.path.abspath(d) in [os.path.abspath(o) for o in OLD_CARDS.get(default, [])] + [os.path.abspath(os.path.join(ROOT, 'sd'))]:
         return default

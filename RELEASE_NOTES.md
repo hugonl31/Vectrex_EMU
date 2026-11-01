@@ -3,6 +3,16 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.4
+
+**Fix: Mac SD card folders**
+* **The Mac zips no longer carry a settings file.** Until v1.4.3 they shipped `system/settings.json` from the build
+  machine's own test run, whose UVMC2 and PiTrex SD card folders named a folder on that machine
+  (`/Users/runner/...`): on a new Mac install the UVMC2 games (Last Human's saves, Bad Apple, Doom) and the PiTrex
+  found no card. Installs that already have such a folder in their settings now use the default one next to the
+  program (`uvmc2`, `pitrex`).
+* No core or online changes: NET_VER stays 8.
+
 ## v1.4.3
 
 **Last Human: the UVMC2 edition is included, and a new ending line**

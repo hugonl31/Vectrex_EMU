@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.4.4
+- Mac: new installs find their UVMC2 and PiTrex SD card folders again
+
 ## v1.4.3
 - Last Human: a new closing line in the Arena 2 ending
 - Last Human UVMC2 edition included: cinematics, 2-player co-op

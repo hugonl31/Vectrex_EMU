@@ -67,6 +67,7 @@ jobs:
           ditto system pkg/system
           ditto overlays pkg/overlays
           ditto package pkg
+          rm -f pkg/system/settings.json pkg/Vectrex_EMU.conf             # (left by the test runs above: not shipped)
           ditto -c -k --sequesterRsrc pkg Vectrex_EMU-mac-app.zip
       - uses: actions/upload-artifact@v4
         with:

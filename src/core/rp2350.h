@@ -32,5 +32,7 @@ uint32_t rp2350_sig (rp2350_t *rp);
  * (-1 none running, 0 idle, 1 a write of *val to VIA register *reg) */
 void rp_fast_mode (rp2350_t *rp, int on);
 int rp_fast_take (rp2350_t *rp, unsigned *reg, unsigned *val);
-extern uint32_t rp_fast_pc;                  /* (the chip's state in one number: online play) */
+extern uint32_t rp_fast_pc;
+extern uint32_t rp_slice;
+int rp_fast_active (void);                  /* (the chip's state in one number: online play) */
 #endif

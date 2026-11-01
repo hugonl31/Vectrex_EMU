@@ -41,7 +41,8 @@ void uvm2_power_on (void)
 	}
 	const char *sd = getenv ("VT_UVM2_SD");
 	if (sd) rp_set_sd (uvm2, sd);
-	{ const char *f = getenv ("VT_UVM2_FAST"); if (f && f[0] == '1') rp_fast_mode (uvm2, 1); }
+	{ const char *f = getenv ("VT_UVM2_FAST"), *v = getenv ("VT_UVM2_DEV");
+	  if ((v && v[0] == '1') || (f && f[0] == '1')) rp_fast_mode (uvm2, 1); }
 	uvm2_fault_told = 0; uvm2_rd_valid = 0;
 }
 
@@ -59,7 +60,9 @@ int uvm2_open (const char *path)
 	const char *sd = getenv ("VT_UVM2_SD");
 	if (sd) rp_set_sd (uvm2, sd);
 	vt_uvm2 = 1;
-	{ const char *f = getenv ("VT_UVM2_FAST"); if (f && f[0] == '1') rp_fast_mode (uvm2, 1); }
+	{ const char *f = getenv ("VT_UVM2_FAST"), *v = getenv ("VT_UVM2_DEV"); extern int vt_dev;
+	  if (v && v[0] == '1') { vt_dev = 1; rp_fast_mode (uvm2, 1); }               /* (Dev: fast + an ideal beam, vecx.c) */
+	  else if (f && f[0] == '1') rp_fast_mode (uvm2, 1); }
 	return 0;
 }
 
@@ -88,6 +91,19 @@ static int uvm2_cycle (void)
 	  uvm2_frac += inc0; }
 	uint32_t per = uvm2_frac >> 8; uvm2_frac &= 255;
 	uint32_t h1 = per / 2, h2 = per - h1;
+	{ static uint32_t debt;                         /* (fast mode, a list being replayed: the chip's time in batches) */
+	  if (rp_fast_active ()) {
+		unsigned freg, fval; int ft = rp_fast_take (uvm2, &freg, &fval);
+		if (ft >= 0) {
+			debt += per;
+			if (debt >= 2048) { rp_slice = 512; rp_run (uvm2, debt); rp_slice = 64; debt = 0; }
+			if (ft == 1) { write8 (0xd000 | freg, (unsigned char) fval); uvm2_n_wr++; uvm2_n_via++; }
+			uvm2_n_halt++; uvm2_cycles++; uvm2_cycles_pub = uvm2_cycles;
+			return 1;
+		}
+	  }
+	  if (debt) { rp_slice = 512; rp_run (uvm2, debt); rp_slice = 64; debt = 0; }   /* (the rest, before core 1 goes on) */
+	}
 	/* E low: ~E high; the read data of the last period is still on the bus for a moment, then gone */
 	uvm2_drive (1);                                 /* (the read data held through E low: only where the chip does not drive) */
 	rp_run (uvm2, h1);
@@ -103,7 +119,7 @@ static int uvm2_cycle (void)
 	}
 	uvm2_drive (0);
 	rp_run (uvm2, h2);
-	{ unsigned freg, fval; int ft = rp_fast_take (uvm2, &freg, &fval);   /* (fast mode: the list's next period, not the pins) */
+	{ unsigned freg, fval; int ft = rp_fast_take (uvm2, &freg, &fval);   /* (fast mode: a replay that just began) */
 	  if (ft >= 0) {
 		if (ft == 1) { write8 (0xd000 | freg, (unsigned char) fval); uvm2_n_wr++; uvm2_n_via++; }
 		uvm2_n_halt++; uvm2_cycles++; uvm2_cycles_pub = uvm2_cycles;

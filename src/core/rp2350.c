@@ -362,8 +362,10 @@ static void sio_write (rp2350_t *rp, cm33_t *c, uint32_t off, uint32_t v)
 static int sm_tx_level (pio_sm_t *s) { return s->txn; }
 static int sm_tx_cap (pio_sm_t *s) { return (s->shiftctrl >> 30) & 1 ? 8 : (s->shiftctrl >> 31) & 1 ? 0 : 4; }
 static int sm_rx_cap (pio_sm_t *s) { return (s->shiftctrl >> 31) & 1 ? 8 : (s->shiftctrl >> 30) & 1 ? 0 : 4; }
+uint32_t rp_fast_pc;                     /* (fast UVMC2 mode: the list replay found; 0 = not yet / off) */
 static unsigned long long fm_writes;      /* (fast UVMC2 mode learning: the write words the PIOs were given) */
-static int sm_tx_push (pio_sm_t *s, uint32_t v) { if (s->txn >= sm_tx_cap (s)) return 0; if (v & 1) fm_writes++; s->tx[(s->txr + s->txn) & 7] = v; s->txn++; return 1; }
+static pio_sm_t *fm_stream;               /* (the state machine they went to: the bus stream) */
+static int sm_tx_push (pio_sm_t *s, uint32_t v) { if (s->txn >= sm_tx_cap (s)) return 0; if (v & 1) { fm_writes++; fm_stream = s; } s->tx[(s->txr + s->txn) & 7] = v; s->txn++; return 1; }
 static int dma_kick = 1;                        /* (something a DMA request may wait on changed) */
 /* (pio_fx: counts what a state machine did that the rest of the chip could see - FIFO, IRQ flags, the RX registers,
  * EXEC; pio_run_sm's loop skip needs none of it between two visits of the same state) */
@@ -1949,6 +1951,9 @@ static void rp_timing_print (void)
 	fprintf (stderr, "RP timing (VT_RPTIME): %llu slices; core0 %.1f%%, core1 %.1f%%, PIO + DMA %.1f%%, DMA + timers %.1f%% (of rp_run's time); instructions core0 %llu core1 %llu (interpreter only); %.0f TSC ticks per slice%c",
 	         rp_n_slices, 100.0 * rp_t_core[0] / a, 100.0 * rp_t_core[1] / a, 100.0 * rp_t_pio / a, 100.0 * rp_t_dma / a, cm33_steps[0], cm33_steps[8], a / (double) (rp_n_slices ? rp_n_slices : 1), 10);
 }
+static int fm_active;
+uint32_t rp_slice = 64;                  /* (the slice: 64 cycles; fast mode's replay batches: 512) */
+int rp_fast_active (void) { return fm_active; }
 void rp_run (rp2350_t *rp, uint32_t cycles)
 {
 	if (rp_timing < 0) { rp_timing = getenv ("VT_RPTIME") != NULL; if (rp_timing) atexit (rp_timing_print); }
@@ -1956,7 +1961,7 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 		uint64_t end = rp->now + cycles;
 		while (rp->now < end) {
 			unsigned long long t0 = RP_TSC (), t1, t2, t3;
-			uint64_t t = rp->now + 64; if (t > end) t = end;
+			uint64_t t = rp->now + rp_slice; if (t > end) t = end;
 			uint32_t dt = (uint32_t) (t - rp->now);
 			if (rp->th_enabled) th_manage (rp, t);
 			for (int k = 0; k < 2; k++) {
@@ -1973,7 +1978,7 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 			pl_on = 1; pl_ok = 0;
 			for (int k = 0; k < 3; k++)
 				for (int i = 0; i < 4; i++)
-					if ((rp->pio[k].ctrl >> i) & 1) pio_run_sm (rp, k, i, dt);
+					if ((rp->pio[k].ctrl >> i) & 1 && !(rp_fast_pc && &rp->pio[k].sm[i] == fm_stream && !fm_stream->txn)) pio_run_sm (rp, k, i, dt);
 			pl_on = 0; pl_ok = 0;
 			t2 = RP_TSC ();
 			dma_service (rp, 64);
@@ -1992,7 +1997,7 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 	uint64_t end = rp->now + cycles;
 	/* in pieces of at most 64 cycles: the cores, then the DMA and the PIO see what they did */
 	while (rp->now < end) {
-		uint64_t t = rp->now + 64; if (t > end) t = end;
+		uint64_t t = rp->now + rp_slice; if (t > end) t = end;
 		uint32_t dt = (uint32_t) (t - rp->now);
 		if (rp->th_enabled) th_manage (rp, t);
 		for (int k = 0; k < 2; k++) {
@@ -2012,7 +2017,8 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 		pl_on = 1; pl_ok = 0;                                    /* (the pin levels kept while the PIO runs: pin_levels) */
 		for (int k = 0; k < 3; k++)
 			for (int i = 0; i < 4; i++)
-				if ((rp->pio[k].ctrl >> i) & 1) pio_run_sm (rp, k, i, dt);
+				if ((rp->pio[k].ctrl >> i) & 1 && !(rp_fast_pc && &rp->pio[k].sm[i] == fm_stream && !fm_stream->txn))   /* (fast mode: the */
+					pio_run_sm (rp, k, i, dt);                       /*  stream idle - nothing reads its pins) */
 		pl_on = 0; pl_ok = 0;
 		dma_service (rp, 64);
 		rp->now = t;
@@ -2060,8 +2066,7 @@ extern int cm33_core1_nojit;
 typedef struct { uint32_t pc, r1; unsigned long long w0; int run; } fm_cand_t;
 static fm_cand_t fm_cand[256]; static int fm_ncand;
 static rp2350_t *fm_rp;
-static uint8_t *fm_list; static uint32_t fm_cap, fm_n, fm_i, fm_delay, fm_cycles; static int fm_active, fm_learning;
-uint32_t rp_fast_pc;                                     /* (the entry found: 0 = not yet / none) */
+static uint8_t *fm_list; static uint32_t fm_cap, fm_n, fm_i, fm_delay, fm_cycles; static int fm_learning;
 static void fm_found (uint32_t pc)
 {
 	rp_fast_pc = cm33_hle_pc = pc;

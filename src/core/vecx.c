@@ -813,7 +813,8 @@ void write8 (unsigned address, unsigned char data)
 
 				break;
 			case 0x2:
-				{ int b0 = cart_bank (); via_ddrb = data; ow_master ((via_ddrb & 0x40) && !(via_orb & 0x40)); if (cart_bank () != b0 && !vt_cart_mirror) { vt_bank_switches++; vt_bankchange (b0, cart_bank ()); } }
+				{ int b0 = cart_bank (); via_ddrb = data; if (vt_uvm2 && data == 0x9F) { extern void vt_u2_frame (void); vt_u2_frame (); }   /* (the SDK's list starts: a frame ends, vtest.c) */
+				   ow_master ((via_ddrb & 0x40) && !(via_orb & 0x40)); if (cart_bank () != b0 && !vt_cart_mirror) { vt_bank_switches++; vt_bankchange (b0, cart_bank ()); } }
 				break;
 			case 0x3:
 				via_ddra = data;
@@ -1447,9 +1448,38 @@ static einline int alg_in_same (const alg_in_t *a, const alg_in_t *b)
  * cycle that left all of the state as it found it, 64 times in a row (every history is then all the same value), with
  * the inputs unchanged since, would do the same again - it is only counted. The same results to the bit; VT_ALGSKIP=0:
  * off. (The whole state is compared only once the beam stands still, so a moving beam costs next to nothing extra.) */
+/* UVMC2 Dev mode (VT_UVM2_DEV, uvm2_cart.c): the analog side as an ideal machine - the integrators move by the DAC's
+ * distance from the middle each cycle while the ramp runs (X from the DAC, Y from its hold), the zero puts the beam in
+ * the middle at once, no drift, lag, offsets or reference charge; every lit stretch with one speed and brightness is one
+ * clean line. About a tenth of alg_sstep_full's work. Not the real picture: a development aid for slow PCs. */
+int vt_dev;
+static long dev_x0, dev_y0, dev_dx, dev_dy; static int dev_on; static unsigned char dev_c; static unsigned long long dev_t0;
+static unsigned dev_cyc;
+static void alg_sstep_dev (void)
+{
+	unsigned lit = ((via_acr & 0x10) ? via_cb2s : via_cb2h) && (alg_zsh & 0x7f) && !(alg_zsh & 0x80);
+	unsigned ramp = (via_acr & 0x80) ? via_t1pb7 : (via_orb & 0x80);       /* (0: running) */
+	if ((via_orb & 0x07) == 0x00) { alg_ysh = alg_xsh; alg_yshf = alg_xsh; }   /* (mux 0 on: Y's hold is the DAC at once) */
+	long dx = 0, dy = 0;
+	if (via_ca2 == 0) { dx = (ALG_MAX_X*ZS) / 2 - alg_curr_x; dy = (ALG_MAX_Y*ZS) / 2 - alg_curr_y; }
+	else if (ramp == 0) { dx = ((long) alg_xsh - 128) * ZS; dy = (128 - (long) alg_ysh) * ZS; }
+	if (dev_on && (!lit || dx != dev_dx || dy != dev_dy || (unsigned char) alg_zsh != dev_c)) {
+		alg_vector_cyc = dev_cyc; alg_vector_t0 = dev_t0;
+		alg_addline (dev_x0, dev_y0, alg_curr_x, alg_curr_y, dev_c);
+		dev_on = 0;
+	}
+	if (lit && !dev_on && ALG_IN (alg_curr_x, alg_curr_y)) {
+		dev_on = 1; dev_x0 = alg_curr_x; dev_y0 = alg_curr_y; dev_dx = dx; dev_dy = dy; dev_c = (unsigned char) alg_zsh;
+		dev_cyc = 0; dev_t0 = alg_cycles;
+	}
+	alg_curr_x += dx; alg_curr_y += dy;
+	if (dev_on) dev_cyc++;
+	alg_cycles++;
+}
 static einline void alg_sstep (void)
 {
 	static int on = -1, have; static alg_snap_t last;
+	if (vt_dev) { alg_sstep_dev (); return; }
 	if (on < 0) { const char *z = getenv ("VT_ALGSKIP"); on = z ? atoi (z) : 1; }
 	alg_quiet = 0;
 	if (!on || vt_imager || vt_lightpen || vt_beam_hook || vt_beam_mode > 0 || prot_on > 0) { alg_sstep_full (); return; }

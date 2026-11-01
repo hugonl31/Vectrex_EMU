@@ -5,6 +5,28 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.4.7
 
+**UVMC2 games: Fast and Dev modes for slower PCs**
+* **Config > Ports > Ultimate Vectrex Multicart 2 > Emulation** has three choices. **Exact (as the cartridge)** stays
+  the default: the cartridge's chip cycle for cycle, unchanged. **Fast (slower PCs)**: in games made with the UVMC2
+  SDK, the emulator replays each frame's drawing list itself instead of through the chip's PIO and DMA; the game, its
+  music and the controls run as before, and the picture is the same. **Dev (fastest, clean lines)**: Fast plus an
+  ideal Vectrex beam (no drift, lag or offsets, every stroke one clean line), for developing on weak PCs; not the
+  real picture. Both are opt-in; online play always runs Exact (starting a game online says so).
+* Time per frame against real time (under 1 = full speed), Galaga / Moon Cresta / VecDoom, Exact -> Fast -> Dev:
+  Ryzen 7 7840HS 0.52 / 0.66 / 0.71 -> 0.18 / 0.25 / 0.26 -> 0.15 / 0.22 / 0.23 (the same on two cores);
+  Raspberry Pi 5 1.27 / 1.52 / 1.65 -> 0.48 / 0.62 / 0.69 -> 0.38 / 0.53 / 0.58, so all three now run at full
+  speed on a Pi 5 in Fast and Dev. Centipede 0.3a is not built on the SDK's list replay and stays as it is.
+
+**UVMC2 and PiTrex: whole pictures**
+* **A UVMC2 game's picture was cut every 30000 cycles** while its frames last about 32000 to 55000: each picture sent
+  to the screen missed a moving slice. With afterglow off whole lines vanished at random moments (Last Human's roster
+  boxes, high score table, controls page); with afterglow on they showed as moving dark bands. A frame now ends where
+  the SDK starts its next list, as a 6809 game's ends at Wait_Recal.
+* **A PiTrex frame (30006 cycles) came out empty about every 1.7 seconds**, when the 30000 cut came just before its
+  own frame end. A PiTrex frame now ends only at its own timer restart.
+* Online: NET_VER 9 (the frames, and so when the inputs land, changed for UVMC2 and PiTrex games). 6809 games are
+  unchanged.
+
 **Debug report: paused time is marked as paused**
 * **The speed meter and the debug report no longer show a made-up speed while the game is paused or switched off.**
   Measured across a pause, the meter read about 40 % for every paused second and about 2 % right after it, and the

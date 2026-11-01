@@ -1084,7 +1084,7 @@ class Audio:
             self.w.waveOutClose(self.h)
 
 # the cartridge boards (Vectrex > Cartridge hardware): conf value -> menu label
-UVM2_MODES = {'exact': 'Exact (as the cartridge)', 'fast': 'Fast (slower PCs)'}   # (Config > Ports: set_uvm2_mode)
+UVM2_MODES = {'exact': 'Exact (as the cartridge)', 'fast': 'Fast (slower PCs)', 'dev': 'Dev (fastest, clean lines)'}   # (Config > Ports: set_uvm2_mode)
 CART_HW = {'auto': "Auto (by the ROM's size)", 'off': 'Off - bone stock, 32 KB',
            'pb6': '64 KB, PB6 bank switching', 'vb': 'Vectorblade / MiSTer flash, 4 x 48 KB',
            'hb512': '512 KB flash with bank latch (HB v2 board)', 'multi': '1 MB multi-cart (4 KB pages, latch at $7FFF)',
@@ -1745,8 +1745,9 @@ Lines.__hash__ = None
 
 
 class Core:
-    uvm2_mode = 'exact'                                 # (a UVMC2 game: 'exact' as the cartridge, or 'fast' - the SDK's list
-                                                        #  replayed natively, for slower PCs; set_uvm2_mode. Online: exact)
+    uvm2_mode = 'exact'                                 # (a UVMC2 game: 'exact' as the cartridge, 'fast' - the SDK's list
+                                                        #  replayed natively, for slower PCs, or 'dev' - fast plus an ideal
+                                                        #  beam drawing clean lines; set_uvm2_mode. Online: exact)
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
     net_jitfast = False                                 # (online, both PCs the same processor type: the PiTrex JIT fast)
     net_card = None                                     # (online play with a UVMC2 / PiTrex: (card folder, the files both
@@ -1800,6 +1801,8 @@ class Core:
             env.pop('VT_USBHID', None)                              # (no PC keyboard / mouse: not shared)
         if rom.lower().endswith('.um2') and not net and Core.uvm2_mode == 'fast':
             env['VT_UVM2_FAST'] = '1'                               # (Fast: core 1's list replay done natively, rp2350.c)
+        if rom.lower().endswith('.um2') and not net and Core.uvm2_mode == 'dev':
+            env['VT_UVM2_DEV'] = '1'                                # (Dev: fast + an ideal beam, clean lines, vecx.c)
         self.sd = None
         if (px_dir and rom.lower().endswith(('.img', '.pit'))) or (sd_dir and rom.lower().endswith('.um2')):
             try:
@@ -7437,7 +7440,8 @@ class App:
         """Config > Ports > UVMC2 emulation: Exact - the cartridge's chip as it is, cycle for cycle (the default; online
         play always); Fast - for slower PCs: games made with the uvmc2 SDK get their drawing list replayed by the
         emulator itself instead of through the chip's PIO and DMA, the rest (the game, its music, the controls) as
-        before. A UVMC2 game in the slot starts again with it."""
+        before; Dev - Fast plus an ideal Vectrex beam (no drift, lag or offsets: clean lines), the fastest, for
+        developing on weak PCs. A UVMC2 game in the slot starts again with it."""
         self.uvm2_mode = Core.uvm2_mode = mode
         self.save_settings()
         if (self.args.rom or '').lower().endswith('.um2'):

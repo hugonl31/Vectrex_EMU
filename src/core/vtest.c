@@ -100,6 +100,7 @@ void vt_line (long x0, long y0, long x1, long y1, unsigned char c, unsigned cyc,
 /* ---------- stats ---------- */
 static unsigned long long total_cycles;
 static unsigned long long frame_start_cycles;
+static unsigned long long last_busframe;  /* (a UVMC2's / PiTrex's own frame end: run_frame's budget) */
 static unsigned long frames;          /* Wait_Recal entries */
 static unsigned long long idle_cycles, idle_frame;
 static unsigned long long busy_max, busy_sum;
@@ -126,6 +127,22 @@ void vt_bankchange (int from, int to)
 	bankchg_log++;
 }
 
+/* a UVMC2 game made with its SDK starts every frame's list with DDRB = $9F (vecx.c): that frame is over, the whole
+ * picture, as at a 6809 game's Wait_Recal (the bus frame is ~32000-55000 cycles, not 30000) */
+void vt_u2_frame (void)
+{
+	if (total_cycles - frame_start_cycles < 15000) return;
+	extern unsigned long long alg_cycles, vt_frame_t0;
+	frame_start_cycles = total_cycles;
+	idle_frame = 0;
+	frames++;
+	memcpy (last, cur, sizeof (line_t) * ncur);
+	nlast = ncur; ncur = 0; beam_swap ();
+	frame_done = 1;
+	last_busframe = total_cycles;
+	vt_frame_t0 = alg_cycles;
+	{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }
+}
 void vt_step (unsigned icycles)
 {
 	unsigned pc = e6809_get_pc () & 0xFFFF;
@@ -184,6 +201,7 @@ void vt_step (unsigned icycles)
 			memcpy (last, cur, sizeof (line_t) * ncur);
 			nlast = ncur; ncur = 0; beam_swap ();
 			frame_done = 1;
+			{ extern int vt_uvm2, vt_pitrex; if (vt_uvm2 || vt_pitrex) last_busframe = total_cycles; }   /* (a PiTrex: its frame) */
 			vt_frame_t0 = alg_cycles;
 			{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }
 		}
@@ -356,7 +374,11 @@ static void run_frame (void)
 	 * A game without it (Mine Storm's warp) or a UVMC2 / PiTrex bus frame: frame_budget, as before */
 	long budget = frame_budget;
 	{ extern int vt_uvm2, vt_pitrex;
-	  if (!vt_uvm2 && !vt_pitrex && last_recal && total_cycles - last_recal < 100000) budget = 70000; }
+	  if (!vt_uvm2 && !vt_pitrex && last_recal && total_cycles - last_recal < 100000) budget = 70000;
+	  /* a UVMC2 game / a PiTrex that ends its own frames (vt_u2_frame, timer 2): the whole frame, as with Wait_Recal -
+	   * cut at 30000 a UVMC2 frame lost a moving slice of its picture, and a PiTrex's 30006-cycle frame came out empty
+	   * every ~85 frames */
+	  if ((vt_uvm2 || vt_pitrex) && last_busframe && total_cycles - last_busframe < 100000) budget = 70000; }
 	{ static int ht = -1; if (ht < 0) ht = getenv ("VT_HANGTRACE") != NULL;
 	  if (ht) { while (!frame_done && budget > 0) { fprintf (stderr, "chunk pc=%04X s=%X budget=%ld\n", e6809_get_pc () & 0xffff, e6809_get_s (), budget); emu_chunk (500); budget -= 500; } }
 	  else

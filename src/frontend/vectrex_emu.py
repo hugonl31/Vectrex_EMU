@@ -1084,7 +1084,7 @@ class Audio:
             self.w.waveOutClose(self.h)
 
 # the cartridge boards (Vectrex > Cartridge hardware): conf value -> menu label
-UVM2_MODES = {'exact': 'Exact (as the cartridge)', 'fast': 'Fast (slower PCs)', 'dev': 'Dev (fastest, clean lines)'}   # (Config > Ports: set_uvm2_mode)
+UVM2_MODES = {'exact': 'Exact (as the cartridge)', 'fast': 'Fast (slower PCs)', 'dev': 'Dev (clean lines)'}   # (Config > Ports: set_uvm2_mode)
 CART_HW = {'auto': "Auto (by the ROM's size)", 'off': 'Off - bone stock, 32 KB',
            'pb6': '64 KB, PB6 bank switching', 'vb': 'Vectorblade / MiSTer flash, 4 x 48 KB',
            'hb512': '512 KB flash with bank latch (HB v2 board)', 'multi': '1 MB multi-cart (4 KB pages, latch at $7FFF)',

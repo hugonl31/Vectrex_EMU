@@ -9,7 +9,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * **Config > Ports > Ultimate Vectrex Multicart 2 > Emulation** has three choices. **Exact (as the cartridge)** stays
   the default: the cartridge's chip cycle for cycle, unchanged. **Fast (slower PCs)**: in games made with the UVMC2
   SDK, the emulator replays each frame's drawing list itself instead of through the chip's PIO and DMA; the game, its
-  music and the controls run as before, and the picture is the same. **Dev (fastest, clean lines)**: Fast plus an
+  music and the controls run as before, and the picture is the same. **Dev (clean lines)**: the fastest, Fast plus an
   ideal Vectrex beam (no drift, lag or offsets, every stroke one clean line), for developing on weak PCs; not the
   real picture. Both are opt-in; online play always runs Exact (starting a game online says so).
 * Time per frame against real time (under 1 = full speed), Galaga / Moon Cresta / VecDoom, Exact -> Fast -> Dev:

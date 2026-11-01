@@ -1,9 +1,10 @@
 """The one-click update (the owner, 2026-10-29): the newest release's zip for this system downloaded and unpacked to a
 temporary folder; a small script waits for the emulator to close, puts the new program in place of the old one, adds
 the new release's files that are missing in system, overlays, roms and uvmc2 (the player's ROMs, overlays, SD cards and
-BIOS are never overwritten), keeps the settings as they are (since v1.2.7: the new version moves the ones the player
-never changed to its own defaults - vectrex_emu.new_defaults; a copy stays next to them as a backup) and starts the
-new version.
+BIOS are never overwritten - except the included game's ROM and overlay (BUNDLED): always replaced by the new
+release's, so every update brings its latest version; its saves are other files and stay), keeps the settings as
+they are (since v1.2.7: the new version moves the ones the player never changed to its own defaults -
+vectrex_emu.new_defaults; a copy stays next to them as a backup) and starts the new version.
 
 Not when run from the sources, nor when the program's folder cannot be written (Program Files): then the release page."""
 import json, os, shutil, subprocess, sys, tempfile, time, urllib.request, zipfile
@@ -12,6 +13,9 @@ IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 ASSET = 'Vectrex_EMU-windows.zip' if IS_WIN else 'Vectrex_EMU-mac-app.zip' if IS_MAC else 'Vectrex_EMU-linux-bin.zip'
 PROGRAM = 'Vectrex_EMU.exe' if IS_WIN else 'Vectrex_EMU.app' if IS_MAC else 'Vectrex_EMU'
 FOLDERS = ('system', 'overlays', 'roms', 'uvmc2', 'pitrex')     # (next to the program: only what is missing is added)
+BUNDLED = (('roms', 'Last Human.bin'), ('overlays', 'Last Human.png'))   # (the included game: always the new one -
+# the owner, 2026-11-01; only these files, never a save. Its earlier names' files and settings are moved over by the
+# new version itself at its start - vectrex_emu._rename_included_game: this script is the old version's)
 
 
 def can_update(root):
@@ -101,6 +105,9 @@ def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):
         for f in FOLDERS:                             # (/XC /XN /XO: only files that are not there yet)
             lines.append(r'if exist "%s" "%%S%%\robocopy.exe" "%s" "%s" /E /XC /XN /XO /NFL /NDL /NJH /NJS /NP >nul' % (
                 os.path.join(new, f), os.path.join(new, f), os.path.join(root, f)))
+        for d, f in BUNDLED:
+            lines.append('if exist "%s" copy /y "%s" "%s" >nul' % (
+                os.path.join(new, d, f), os.path.join(new, d, f), os.path.join(root, d, f)))
         if os.path.exists(settings_f):
             lines.append('copy /y "%s" "%s" >nul' % (settings_f, backup))
         lines += ['copy /y "%s" "%s" >nul' % (stf, settings_f), ':start',
@@ -127,6 +134,10 @@ def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):
         src = os.path.join(new, f)
         lines.append('[ -d %s ] && mkdir -p %s && cp -R -n %s/. %s/ 2>/dev/null' % (q(src), q(os.path.join(root, f)), q(src),
                                                                                    q(os.path.join(root, f))))
+    for d, f in BUNDLED:
+        src = os.path.join(new, d, f)
+        lines.append('[ -f %s ] && mkdir -p %s && cp -f %s %s' % (q(src), q(os.path.join(root, d)), q(src),
+                                                                q(os.path.join(root, d, f))))
     if os.path.exists(settings_f):
         lines.append('cp -f %s %s' % (q(settings_f), q(backup)))
     lines.append('cp -f %s %s' % (q(stf), q(settings_f)))

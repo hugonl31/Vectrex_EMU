@@ -3,12 +3,28 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.2
+
+**The included game is now called Last Human**
+* **New name, same game**: `roms/Last Human.bin` with its overlay `overlays/Last Human.png` (https://github.com/hugonl31/Last_Human).
+* **Robots now burst out of their cages in all directions** (the new cage escape in the game).
+
+**Updates bring the newest Last Human**
+* **The one-click update now replaces `roms/Last Human.bin` and `overlays/Last Human.png`** with the new release's,
+  so players always have the latest game; all other ROMs, overlays, SD cards and the BIOS are still only added when
+  missing, and no save file is touched (the install script is written by the version being updated: this works for
+  updates made from v1.4.2 on).
+* **The included game's earlier names are moved over at the first start**: once `roms/Last Human.bin` is there,
+  the old ROM and overlay files are removed, save files named after the game are renamed, and the game's own
+  settings (look, controls, overlay, its place and size, recent games) carry on under Last Human.
+* No core or online changes: NET_VER stays 8.
+
 ## v1.4.1
 
 **6809 fix: DAA keeps the carry**
 * **DAA (decimal adjust) now keeps the carry of the addition before it**, as on a real 6809. The core set the carry
   only from the adjust itself, so e.g. 0x98 + 0x75 (= 0x0D, carry set) became 0x73 with no carry, and the ADCA on
-  the next BCD byte missed it: a score could lose 100, 10000, ... now and then. Found while porting Steel Siege to
+  the next BCD byte missed it: a score could lose 100, 10000, ... now and then. Found while porting Last Human to
   the UVMC2, where the port and the emulator parted on one score addition in 41,860 frames.
 * **Online version 8**: games that add BCD scores can now run differently from older versions, so online play
   needs v1.4.1 (or newer) on both sides; an older version shows "update needed".
@@ -33,28 +49,28 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.3.1
 
-**Robot Arena is now Steel Siege**
-* **The included game has a new name** - `roms/Steel Siege.bin` with its overlay `overlays/Steel Siege.png`,
+**Robot Arena is now Last Human**
+* **The included game has a new name** - `roms/Last Human.bin` with its overlay `overlays/Last Human.png`,
   the same game with the new title on its screen and overlay. Updating adds both; a `Robot Arena.bin` from v1.3.0
   stays where it is, so delete it (and `overlays/Robot Arena.png`) if you no longer want it.
-* More about the game: [Steel_Siege](https://github.com/hugonl31/Steel_Siege).
+* More about the game: [Last_Human](https://github.com/hugonl31/Last_Human).
 * No core or online changes: online play with v1.3.0 and v1.2.9 works as before.
 
 ## v1.3.0
 
-**Steel Siege is now included, for free**
+**Last Human is now included, for free**
 
-<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Steel_Siege/main/img/art/box_front.png" width="420" alt="Steel Siege box art"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Last_Human/main/img/art/box_front.png" width="420" alt="Last Human box art"></p>
 
-Steel Siege is a new arena shooter for the Vectrex, written in 6809 assembly for the real console: two arenas,
+Last Human is a new arena shooter for the Vectrex, written in 6809 assembly for the real console: two arenas,
 70 levels, four bosses and twenty kinds of robot, filling a full 64 KB cartridge. It now comes with the emulator,
 together with its screen overlay, ready to play.
 
-<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Steel_Siege/main/img/gif/guardian.gif" width="420" alt="Steel Siege with its overlay: the fighter takes on the Guardian"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/hugonl31/Last_Human/main/img/gif/guardian.gif" width="420" alt="Last Human with its overlay: the fighter takes on the Guardian"></p>
 
-* **Where:** `roms/Steel Siege.bin`, and its overlay `overlays/Steel Siege.png`. Pick it in the ROM browser (L).
+* **Where:** `roms/Last Human.bin`, and its overlay `overlays/Last Human.png`. Pick it in the ROM browser (L).
 * **Updating** from an older version adds both to your install; nothing else is touched.
-* **More about the game**, the robots and the cartridge: [Steel_Siege](https://github.com/hugonl31/Steel_Siege).
+* **More about the game**, the robots and the cartridge: [Last_Human](https://github.com/hugonl31/Last_Human).
 * No core or online changes: online play with v1.2.9 works as before.
 
 ## v1.2.9

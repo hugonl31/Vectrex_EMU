@@ -155,6 +155,74 @@ def _move_old_settings():
                 pass
             return
 _move_old_settings()
+# The included game's earlier names (Robot Arena until v1.3.1, Steel Siege until v1.4.2): kept only to move a
+# player's files and settings over to the current name - the owner, 2026-11-01: no trace of the old names
+GAME_NAME = 'Last Human'
+GAME_OLD_NAMES = ('Steel Siege', 'Robot Arena')
+def _rename_included_game():
+    """once the current game's ROM is in roms (an update put it there): the old names' ROM and overlay removed, save
+    files named after them renamed, and every setting kept under an old name (per game: look, controls, overlay, its
+    place and size; recent games, the last cartridge) moved to the new one. Each start; nothing to do once moved"""
+    roms, arts = os.path.join(ROOT, 'roms'), os.path.join(ROOT, 'overlays')
+    if not os.path.isfile(os.path.join(roms, GAME_NAME + '.bin')):
+        return
+    new_art = os.path.isfile(os.path.join(arts, GAME_NAME + '.png'))
+    for old in GAME_OLD_NAMES:
+        for d in (roms, arts, os.path.join(SETTINGS_DIR, 'v4e')):   # (saves: e.g. "<name>.bin.ds2431", "<name>.sav")
+            try:
+                names = os.listdir(d)
+            except OSError:
+                continue
+            for f in names:
+                if not f.startswith(old + '.'):
+                    continue
+                p, low = os.path.join(d, f), f.lower()
+                try:
+                    if d == roms and low == old.lower() + '.bin':
+                        os.remove(p)                            # the old ROM
+                    elif d == arts and low == old.lower() + '.png':
+                        if new_art:                             # the old overlay (once the new one is there)
+                            os.remove(p)
+                    elif not os.path.exists(os.path.join(d, GAME_NAME + f[len(old):])):
+                        os.replace(p, os.path.join(d, GAME_NAME + f[len(old):]))   # a save: renamed
+                except OSError:
+                    pass
+    try:
+        txt = open(SETTINGS_F, encoding='utf-8').read()
+    except OSError:
+        return
+    if not any(o in txt for o in GAME_OLD_NAMES):
+        return
+    def path(s):                                    # (a path to an old-named file: the new-named one, if it is there)
+        b = os.path.basename(s)
+        for old in GAME_OLD_NAMES:
+            if b.startswith(old + '.'):
+                n = s[:len(s) - len(b)] + GAME_NAME + b[len(old):]
+                return n if os.path.isfile(n) else s
+        return s
+    def fix(v):
+        if isinstance(v, dict):
+            out = {}
+            for k, x in v.items():
+                if k in GAME_OLD_NAMES:                 # (a game's own settings, keyed by its name)
+                    if GAME_NAME in v or any(o in v for o in GAME_OLD_NAMES[:GAME_OLD_NAMES.index(k)]):
+                        continue                        # (the newest name's own win)
+                    k = GAME_NAME
+                elif isinstance(k, str):
+                    k = path(k)
+                out[k] = fix(x)
+            return out
+        if isinstance(v, list):
+            return [fix(x) for x in v]
+        return path(v) if isinstance(v, str) else v
+    try:
+        st = json.loads(txt)
+        new = fix(st)
+        if new != st:
+            json.dump(new, open(SETTINGS_F, 'w', encoding='utf-8'), indent=1)
+    except Exception:   # noqa
+        pass
+_rename_included_game()
 # Next to the program, every folder you put things in is one level down: roms, overlays, system (BIOS, speech ROM,
 # settings), uvmc2 (the UVMC2's SD card) and pitrex (the PiTrex's). 'cache' only holds working files: the SD card
 # images a UVMC2 or PiTrex game runs from, built from those folders at its start and copied back at its end.

@@ -13,9 +13,9 @@ IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 ASSET = 'Vectrex_EMU-windows.zip' if IS_WIN else 'Vectrex_EMU-mac-app.zip' if IS_MAC else 'Vectrex_EMU-linux-bin.zip'
 PROGRAM = 'Vectrex_EMU.exe' if IS_WIN else 'Vectrex_EMU.app' if IS_MAC else 'Vectrex_EMU'
 FOLDERS = ('system', 'overlays', 'roms', 'uvmc2', 'pitrex')     # (next to the program: only what is missing is added)
-BUNDLED = (('roms', 'Last Human.bin'), ('roms', 'Last Human (UVMC2).um2'),      # (the included game, both editions:
-           ('overlays', 'Last Human.png'))                                    #  always the new one - the UVMC2
-                                                                              #  edition back in v1.4.7) -
+BUNDLED = (('roms', 'Last Human.bin'),                                       # (the included game: always the new
+           ('overlays', 'Last Human.png'))                                    #  one - (its UVMC2 edition is out
+                                                                              #  until its text is fixed, v1.4.6) -
 # the owner, 2026-11-01; only these files, never a save. Its earlier names' files and settings are moved over by the
 # new version itself at its start - vectrex_emu._rename_included_game: this script is the old version's)
 

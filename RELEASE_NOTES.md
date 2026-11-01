@@ -5,12 +5,6 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.4.7
 
-**Last Human's UVMC2 edition is back**
-* `roms/Last Human (UVMC2).um2` is included again and refreshed by every update. Its text is level with evenly
-  spaced rows: the game now works around four drawing issues in the UVMC2 SDK it is built with (reported to the
-  SDK's author: https://github.com/tullulah/uvmc2-sdk/issues/1), and this version's whole-picture fix removes the
-  missing lines that came from the emulator. Its saves in uvmc2/lasthuman/ are kept.
-
 **UVMC2 games: Fast and Dev modes for slower PCs**
 * **Config > Ports > Ultimate Vectrex Multicart 2 > Emulation** has three choices. **Exact (as the cartridge)** stays
   the default: the cartridge's chip cycle for cycle, unchanged. **Fast (slower PCs)**: in games made with the UVMC2

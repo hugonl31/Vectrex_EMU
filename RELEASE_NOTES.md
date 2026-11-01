@@ -5,6 +5,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.4.5
 
+**UVMC2: busy games faster**
+* **UVMC2 games that keep the cartridge busy run up to 1.7x faster** (Centipede 0.3a: 1.72x): loops in which the
+  cartridge's PIO waits on a pin are skipped exactly. The emulation is unchanged, picture for picture.
+
 **Recording: REC where you can see it**
 * **No more red dot in the picture** - on a red overlay (Armor Attack, Polar Rescue, Space Wars...) it was lost.
   While recording, the title bar now shows `REC` and the time (e.g. `REC 1:06 - F9 stops`) the whole time, and the
@@ -22,6 +26,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
   published: the ranges come from the service manual's circuit, the specifications of comparable tubes and the
   physics. 0 everywhere = the owner's measured Vectrex, as before.
 * The picture only: the game itself is not changed, and the light pen still finds the spot it points at.
+* No online changes: online play with v1.4.4 still works.
 
 ## v1.4.4
 

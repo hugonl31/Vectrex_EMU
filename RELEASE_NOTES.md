@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.7
+
+**Debug report: paused time is marked as paused**
+* **The speed meter and the debug report no longer show a made-up speed while the game is paused or switched off.**
+  Measured across a pause, the meter read about 40 % for every paused second and about 2 % right after it, and the
+  report logged those numbers as if the game had run slowly (a report from a Surface Pro looked like "the 30 Hz mode
+  slows the game down"; it does not). Now those seconds read "paused or switched off", pausing and going on are
+  events in the report's timeline, and the meter starts afresh after a pause.
+
 ## v1.4.6
 
 **Last Human's UVMC2 edition is out for now**

@@ -6580,7 +6580,8 @@ class App:
                  + ', %.1f Hz, vsync every %d refresh(es)' % (self.hz, self.vsync) + (', full screen' if self.full else ', window')),
                 ('Picture', '%d x %d px' % tuple(self.ren.size) if self.ren and hasattr(self.ren, 'size') else 'Tk canvas'),
                 ('Quality', self.QUALITY_NAMES[self.current_profile()]),
-                ('Now', 'game %s, emulation %d %%, game %d fps, monitor %d Hz' % (self.rom_name, round(self.speed), round(self.fps), round(self.disp_fps))),
+                ('Now', 'game %s, emulation %s, game %d fps, monitor %d Hz' % (self.rom_name, 'paused' if self.run.paused else 'off' if not self.run.power
+                                                                                else '%d %%' % round(self.speed), round(self.fps), round(self.disp_fps))),
                 ('numpy', 'yes' if _np is not None else 'no')]
         return '\n'.join('%-12s %s' % r for r in rows)
     def slow_watch(self):
@@ -6589,7 +6590,9 @@ class App:
         emu, draw, gpu = self.headroom(parts=True)
         late, drops = getattr(self.run, 'slow', 0) or 0, getattr(self.run.audio, 'underruns', 0) or 0
         r2 = lambda v: None if v is None else round(v, 2)
-        self.speed_hist.append((round(time.perf_counter(), 1), round(self.speed, 1), r2(emu), r2(draw), r2(gpu),
+        idle = self.run.paused or not self.run.power             # (paused / off: no numbers - the report says so)
+        self.speed_hist.append((round(time.perf_counter(), 1), None if idle else round(self.speed, 1),
+                                *((None, None, None) if idle else (r2(emu), r2(draw), r2(gpu))),
                                 max(0, late - self.hist_counts[0]), max(0, drops - self.hist_counts[1])))
         self.hist_counts = (late, drops)
         self.hist_n += 1
@@ -6664,8 +6667,9 @@ class App:
         long_ = [e for e in self.speed_long if e[0] < cut]     # (the averages before the per-second lines)
         t0 = min([e[0] for e in long_ + short] + [ev[0] for ev in self.events if ev[0] >= (long_ or short or [(cut,)])[0][0] - 30] or [cut])
         pc = lambda v: '   -' if v is None else '%3d%%' % round(v * 100)
-        row = lambda e, avg: ('%7.1f s %s speed %5.1f %%  emu %s  draw %s  GPU %s  late %3d  drops %3d' % (
-            e[0] - t0, '~' if avg else ' ', e[1] or 0, pc(e[2]), pc(e[3]), pc(e[4]), e[5], e[6]))
+        row = lambda e, avg: ('%7.1f s %s paused or switched off' % (e[0] - t0, '~' if avg else ' ') if e[1] is None else
+                              '%7.1f s %s speed %5.1f %%  emu %s  draw %s  GPU %s  late %3d  drops %3d' % (
+            e[0] - t0, '~' if avg else ' ', e[1], pc(e[2]), pc(e[3]), pc(e[4]), e[5], e[6]))
         timeline = [(e[0], 0, row(e, True)) for e in long_] + [(e[0], 0, row(e, False)) for e in short]
         start = (long_ or short or [(cut,)])[0][0]
         timeline += [(t, -1, '%7.1f s   >> %s' % (t - t0, txt)) for t, txt in self.events if t >= start - 30]   # (and the start's)
@@ -8359,6 +8363,11 @@ class App:
             self.disp_fps = len(p) / (now - self.last_t)
             self.last_t, self.last_f, self.last_g = now, self.run.dframes, self.run.gframes
             m, m0 = self.run.emu_mark, getattr(self, 'emu_mark0', None)
+            if self.run.paused or not self.run.power:           # (paused or switched off: no speed to measure - kept
+                m = m0 = None                                   #  as it was, the debug report marks these seconds;
+                                                                #  the second after starts afresh. Measured across the
+                                                                #  pause it read 40 % for every paused second and 2 %
+                                                                #  after it: debug report R-GRUNGU, 2026-11-01)
             if self.run.frames < 50:                            # (a new game's first second: the core starting - and a
                 m = m0 = None; self.speed = 100.0               #  UVMC2's SD card - is not the emulation falling behind;
                                                                 #  measured from the second second on)
@@ -8432,6 +8441,7 @@ def _events():
     wrap('set_profile', lambda s, a: 'quality: %s' % (a[0] if a else '?'))
     wrap('set_quality', lambda s, a: 'quality: %s' % (a[0] if a else '?'))
     wrap('set_power', lambda s, a: 'power %s' % ('on' if a and a[0] else 'off'))
+    wrap('set_paused', lambda s, a: 'paused' if s.run.paused else 'going on')   # (the speed rows say 'paused' meanwhile)
     wrap('apply_rate', lambda s, a: 'screen: %.1f Hz, a picture every %d refresh(es)' % (getattr(s, 'hz', 0), getattr(s, 'vsync', 0)))
 _events()
 

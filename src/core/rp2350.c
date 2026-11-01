@@ -2118,4 +2118,6 @@ void rp_fast_mode (rp2350_t *rp, int on)
 	fm_rp = rp; fm_ncand = 0; fm_active = 0; rp->hle_hold = 0; rp_fast_pc = cm33_hle_pc = 0;
 	cm33_hle_hook = on ? fm_enter : NULL;
 	cm33_call_hook = on ? fm_call : NULL; cm33_core1_nojit = on; fm_learning = on;
+	if (on) rp_threads (rp, 0);   /* (Fast / Dev: one host thread - core 1's work is gone, and two threads waiting on each
+	                                 other cost more than they save: VecDoom 0.37 of real time on two, 0.22 on one) */
 }

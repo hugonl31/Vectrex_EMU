@@ -18,6 +18,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
   music and the controls run as before, and the picture is the same. **Dev (clean lines)**: the fastest, Fast plus an
   ideal Vectrex beam (no drift, lag or offsets, every stroke one clean line), for developing on weak PCs; not the
   real picture. Both are opt-in; online play always runs Exact (starting a game online says so).
+* The window's title shows the mode while a UVMC2 game runs in Fast or Dev (`[UVMC2 Fast mode]`), and a change in
+  Config restarts the game in the new mode at once. Fast and Dev run the chip on one host thread: with core 1's work
+  gone, two threads waiting on each other cost more than they saved (VecDoom in the app, the OSD's CPU meter:
+  Exact 0.78, Fast 0.53, Dev 0.32 of each frame's time on a Ryzen 7 9800X3D).
 * Time per frame against real time (under 1 = full speed), Galaga / Moon Cresta / VecDoom, Exact -> Fast -> Dev:
   Ryzen 7 7840HS 0.52 / 0.66 / 0.71 -> 0.18 / 0.25 / 0.26 -> 0.15 / 0.22 / 0.23 (the same on two cores);
   Raspberry Pi 5 1.27 / 1.52 / 1.65 -> 0.48 / 0.62 / 0.69 -> 0.38 / 0.53 / 0.58, so all three now run at full

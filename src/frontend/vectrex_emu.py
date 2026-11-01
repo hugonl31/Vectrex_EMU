@@ -2652,7 +2652,10 @@ class App:
 
     def title(self):
         rec = getattr(self, 'rec', None)                        # (recording: the whole time, with how long - the owner,
-        self.root.title('Vectrex - %s%s%s%s' % (self.rom_name, '  [PAUSED]' if self.run.paused else '',   #  2026-11-01)
+        um = (getattr(self, 'uvm2_mode', 'exact') != 'exact' and (self.args.rom or '').lower().endswith('.um2')
+              and Core.net_card is None)                      # (a UVMC2 game in Fast / Dev: said in the title - online: Exact)
+        self.root.title('Vectrex - %s%s%s%s%s' % (self.rom_name, '  [UVMC2 %s mode]' % self.uvm2_mode.capitalize() if um else '',
+                                                '  [PAUSED]' if self.run.paused else '',   #  2026-11-01)
                                                 '  ● REC %d:%02d - F9 stops' % divmod(int(rec.seconds()), 60) if rec else '',
                                                 '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
         self.title_t = int(rec.seconds()) if rec else -1
@@ -7447,6 +7450,7 @@ class App:
         if (self.args.rom or '').lower().endswith('.um2'):
             self.restart(self.args.rom)
         self.show_look('UVMC2 emulation: ' + UVM2_MODES[mode])
+        self.title()
     def toggle_um2 (self):
         self.show_um2 = not self.show_um2
         self.save_settings()

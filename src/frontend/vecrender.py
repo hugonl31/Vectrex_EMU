@@ -3931,7 +3931,7 @@ class GLBloomRenderer(GLRenderer):
 
     def _meters_thin(self, meters, x, y, x_end, k):
         """a low window's CPU and GPU meters: two thin lines under the OSD's text (CPU first), as wide as it - the share
-        filled in its colour (green below 70 %, orange to 90, red above) on a dim line"""
+        filled in its colour (green below 90 %, orange to 100, red above: over its time) on a dim line"""
         gl = self.gl
         th = max(1.0, 1.0 * k)
         for i, (name, pct, hist) in enumerate(meters):
@@ -3943,7 +3943,7 @@ class GLBloomRenderer(GLRenderer):
             gl.glEnd()
             if pct is not None:
                 f = max(0.0, min(1.0, pct / 100.0))
-                c = (0.40, 0.667, 0.533) if pct < 70 else (0.93, 0.60, 0.20) if pct <= 90 else (0.93, 0.33, 0.33)
+                c = (0.40, 0.667, 0.533) if pct < 90 else (0.93, 0.60, 0.20) if pct <= 100 else (0.93, 0.33, 0.33)
                 gl.glColor4f(c[0], c[1], c[2], 1.0)
                 gl.glBegin(0x0007)
                 for px, py in ((x, ty), (x + (x_end - x) * f, ty), (x + (x_end - x) * f, ty + th), (x, ty + th)):
@@ -3951,7 +3951,7 @@ class GLBloomRenderer(GLRenderer):
                 gl.glEnd()
 
     def _meters(self, meters, x, y, x_end, k):
-        """the OSD's CPU and GPU meters: a bar (green below 70 %, orange to 90, red above) with the last 10 seconds as
+        """the OSD's CPU and GPU meters: a bar (green below 90 %, orange to 100, red above: over its time) with the last 10 seconds as
         a line in it, and the share in figures - one per row below the OSD's text, smaller than it"""
         gl = self.gl
         gl.glLineWidth(max(1.0, k * 0.42))
@@ -3960,7 +3960,7 @@ class GLBloomRenderer(GLRenderer):
             return
         g = (0.40, 0.667, 0.533)
         def col(p):
-            return g if p < 70 else (0.93, 0.60, 0.20) if p <= 90 else (0.93, 0.33, 0.33)
+            return g if p < 90 else (0.93, 0.60, 0.20) if p <= 100 else (0.93, 0.33, 0.33)
         for i, (name, pct, hist) in enumerate(meters):
             ty = y + i * 9.0 * k
             self._text_row([(name, g)], x, ty, k)

@@ -170,8 +170,8 @@ class GLRenderer:
                 self._rec_grab(rec)
             except Exception as e:   # noqa
                 print('recording: picture not read (%s)' % e); self._rec_pend = None
-        if getattr(self, 'rec_dot', False):
-            self._rec_dot()
+        if getattr(self, 'rec_mark', None):                # (recording: REC below the picture - after the read-back)
+            self._rec_mark(self.rec_mark)
         if IS_WIN:
             self.gdi.SwapBuffers(self.dc)
         else:
@@ -240,9 +240,10 @@ class GLRenderer:
         self._pb_bind(PACK, 0)
         self._rec_pend = nxt
 
-    def _rec_dot(self):
-        """recording: a small red dot in the window's top right corner - drawn after the picture was read back, so
-        never in the video"""
+    def _rec_mark(self, m):
+        """recording: REC and the time in the strip below the picture (vectrex_emu.rec_state, rows as a hint) - drawn
+        after the picture was read back, so never in the video. In the turned picture's pixels, turned as the picture
+        (_turn_out) when the screen is turned"""
         gl = self.gl
         rw, rh = getattr(self, 'real_size', self.size)
         if getattr(self, 'BindFB', None):
@@ -252,19 +253,35 @@ class GLRenderer:
         gl.glViewport(0, 0, rw, rh)
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, rw, rh, 0, -1, 1)
         gl.glMatrixMode(GL_MODELVIEW); gl.glPushMatrix(); gl.glLoadIdentity()
+        rot = getattr(self, 'rot', 0)                     # (clockwise: the picture's (x, y) to the window's)
+        gl.glTranslatef.argtypes = [ctypes.c_float] * 3; gl.glRotatef.argtypes = [ctypes.c_float] * 4
+        if rot == 90:
+            gl.glTranslatef(rw, 0, 0); gl.glRotatef(90, 0, 0, 1)
+        elif rot == 180:
+            gl.glTranslatef(rw, rh, 0); gl.glRotatef(180, 0, 0, 1)
+        elif rot == 270:
+            gl.glTranslatef(0, rh, 0); gl.glRotatef(270, 0, 0, 1)
+        gl.glDisableClientState(GL_COLOR_ARRAY); gl.glDisableClientState(GL_VERTEX_ARRAY)
         gl.glDisable(GL_TEXTURE_2D); gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         gl.glVertex2f.argtypes = [ctypes.c_float] * 2
-        r = max(4.0, min(rw, rh) * 0.008)
-        cx, cy = rw - 3.2 * r, 3.2 * r
-        for rr, a in ((r * 1.6, 0.25), (r, 1.0)):           # (a soft edge, then the dot)
-            gl.glColor4f(0.92, 0.12, 0.10, a)
-            gl.glBegin(6)                                   # (GL_TRIANGLE_FAN)
-            gl.glVertex2f(cx, cy)
-            for k in range(33):
-                ang = k * math.pi / 16
-                gl.glVertex2f(cx + rr * math.cos(ang), cy + rr * math.sin(ang))
-            gl.glEnd()
+        y = m['cy']
+        for i, t in enumerate(m['rows']):
+            rk = m['k'] * m['ks'][i]
+            gl.glLineWidth(max(1.2, rk * 0.45))
+            x = m['cx'] - len(t) * 3.0 * rk
+            if i == 0 and m.get('dot'):                   # (a red dot before REC: the group stays centred)
+                d = 1.6 * 6.0 * rk; x += d / 2
+                cr, cx, cy = 2.4 * rk, x - d + 2.6 * rk, y + 3.0 * rk
+                gl.glColor4f(*m['cols'][0], 1.0)
+                gl.glBegin(6)                             # (GL_TRIANGLE_FAN)
+                gl.glVertex2f(cx, cy)
+                for n in range(33):
+                    gl.glVertex2f(cx + cr * math.cos(n * math.pi / 16), cy + cr * math.sin(n * math.pi / 16))
+                gl.glEnd()
+            self._text_row([(t, m['cols'][i])], x, y, rk)
+            y += 11.0 * rk
         gl.glColor4f(1, 1, 1, 1)
+        gl.glEnableClientState(GL_COLOR_ARRAY); gl.glEnableClientState(GL_VERTEX_ARRAY)
         gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW); gl.glPopMatrix()
         gl.glViewport(0, 0, *self.size)
 
@@ -963,14 +980,30 @@ def glass_flat(X, Y, g, np=None):
             out.append(R * (math.asin(tc) + (t - tc) * slope))
     return out[0], out[1]
 
-def tube_map(k, g=0.0):
+UW = ALG_MAX_X / float(ALG_MAX_Y)        # (half the canvas's width in half heights: the picture's side edge in u)
+def unit_warp(w, u, v):
+    """one Vectrex's picture shape (vectrex_emu.unit_warp: keystone, pincushion, linearity as fractions) on the ideal
+    picture (u, v: half heights round its centre, v down) - before the tube's own map; floats or numpy arrays.
+    Keystone: the width grows linearly down the picture (keyx = bottom against top), the height across it. Pincushion:
+    the corners pulled out, so the sides bow in (+), or barrel (-): pinx the share at the corners. Linearity: the slope
+    1 + linx at the right edge, 1 - linx at the left (one side stretched, the other squeezed), the same down"""
+    kx, ky, px, py, lx, ly = w
+    a, b = u / UW, v                                     # (-1..1 across and down)
+    U = u * (1.0 + 0.5 * kx * b) * (1.0 + px * b * b) + 0.5 * lx * UW * a * a
+    V = v * (1.0 + 0.5 * ky * a) * (1.0 + py * a * a) + 0.5 * ly * b * b
+    return U, V
+
+def tube_map(k, g=0.0, w=None):
     """the tube's map, emulator units -> emulator units (round the frame's centre at the canvas's middle): the
-    straight part plus k x the measured imperfections, then the glass's curve undone with strength g"""
+    straight part plus k x the measured imperfections, then the glass's curve undone with strength g. w: the unit's
+    own picture shape first (unit_warp)"""
     la, lb, lc, ld = TUBE_LIN
     X0, Y0, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
     imp = tubemap.imp
     def f(x, y):
         u = (x - X0) / U; v = (y - Y0) / U
+        if w:
+            u, v = unit_warp(w, u, v)
         dx, dy = imp(u, v) if k else (0.0, 0.0)
         X, Y = glass_flat(la * u + lb + k * dx, lc * v + ld + k * dy, g)
         return X0 + X * U, Y0 + Y * U
@@ -2876,8 +2909,9 @@ class GLBloomRenderer(GLRenderer):
         bend; each piece keeps its share of the beam's energy and its moment in the frame"""
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
         g = self.glass_undo()                            # (the glass's curve undone: Tube > Glass curvature)
-        if getattr(self, '_tube_k', None) != (k, g):     # (its own name: under _tube_f it hid the method _build_np
-            self._tube_k = (k, g); self._tube_fn = tube_map(k, g)  #  calls - after the first switch-on animation every frame
+        w = getattr(self, 'unit_warp', None)             # (this Vectrex's picture shape)
+        if getattr(self, '_tube_k', None) != (k, g, w):  # (its own name: under _tube_f it hid the method _build_np
+            self._tube_k = (k, g, w); self._tube_fn = tube_map(k, g, w)  #  calls - after the first switch-on animation every frame
         f = self._tube_fn                                  #  took this slow way: Vectorblade at 2 fps after a game change)
         ps, pdx, pdy = self.pic_adj()
         if (ps, pdx, pdy) != (1.0, 0.0, 0.0):
@@ -2887,7 +2921,7 @@ class GLBloomRenderer(GLRenderer):
         for li, ln in enumerate(lines):
             x0, y0, x1, y1 = ln[:4]
             L = sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
-            if L <= TUBE_SEG or (k <= 0 and g <= 0):     # (straight: the ends only)
+            if L <= TUBE_SEG or (k <= 0 and g <= 0 and not w):   # (straight: the ends only)
                 a = f(x0, y0); b = f(x1, y1) if L > 0 else a
                 out.append((a[0], a[1], b[0], b[1]) + tuple(ln[4:])); opens.append(joins[li] if joins else (4 if Renderer_rest(ln) else 0))
                 continue
@@ -2974,6 +3008,9 @@ class GLBloomRenderer(GLRenderer):
         la, lb, lc, ld = TUBE_LIN
         XM, YM, U = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0
         u = (np.asarray(x, dtype=np.float64) - XM) / U; v = (np.asarray(y, dtype=np.float64) - YM) / U
+        w = getattr(self, 'unit_warp', None)
+        if w:                                             # (this Vectrex's own picture shape: vectrex_emu.unit_warp)
+            u, v = unit_warp(w, u, v)
         X = la * u + lb; Y = lc * v + ld
         if k:
             dx, dy = tubemap.imp_np(np, u, v)
@@ -3079,7 +3116,8 @@ class GLBloomRenderer(GLRenderer):
         # the tube's map, long lines in pieces (_tube_lines)
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
         Ls = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
-        m = np.where((Ls > TUBE_SEG) & ((k > 0) | (self.glass_undo() > 0)), (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
+        bend = k > 0 or self.glass_undo() > 0 or bool(getattr(self, 'unit_warp', None))   # (the unit's shape bends lines too)
+        m = np.where((Ls > TUBE_SEG) & bend, (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
         n0 = len(L)
         idx = np.repeat(np.arange(n0), m)
         starts = np.cumsum(m) - m

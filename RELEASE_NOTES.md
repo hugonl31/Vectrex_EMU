@@ -3,6 +3,26 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.5
+
+**Recording: REC where you can see it**
+* **No more red dot in the picture** - on a red overlay (Armor Attack, Polar Rescue, Space Wars...) it was lost.
+  While recording, the title bar now shows `REC` and the time (e.g. `REC 1:06 - F9 stops`) the whole time, and the
+  control deck below the picture shows a red `REC` with the time where PAUSED goes. Neither is ever in the video,
+  also when the control deck is recorded.
+
+**Every Vectrex's own picture shape**
+* **Config > Circuit > The picture's shape: yoke and tube** - seven new sliders: yoke skew (the coils not quite at
+  right angles: the picture leans), keystone X / Y (the yoke not fully on the tube: a trapezoid), pincushion X / Y (the
+  edges bow a little more or less than on the owner's Vectrex) and linearity X / Y (the yoke off-centre: one side
+  stretched, the other squeezed). A real Vectrex has no circuit that corrects any of this, so no two pictures have
+  quite the same shape.
+* **Random unit and Cranky** now pick these too: a random unit up to about 0.4 deg skew, 0.6 % keystone, 0.4 %
+  bow and 1 % linearity; a cranky one up to about 1.2 deg, 2.5 %, 1.2 % and 3 %. No measurements of many units are
+  published: the ranges come from the service manual's circuit, the specifications of comparable tubes and the
+  physics. 0 everywhere = the owner's measured Vectrex, as before.
+* The picture only: the game itself is not changed, and the light pen still finds the spot it points at.
+
 ## v1.4.4
 
 **Fix: Mac SD card folders**

@@ -1469,9 +1469,20 @@ UNIT_PICTURE = (('sizex', None, 'R401 X size (the X deflection amplifier\'s inpu
                 ('ring', None, 'R526 HV ringing', -1.0, 1.0, _ring_fmt, None),
                 ('cenx', None, 'Centering X (the yoke\'s magnets)', -10.0, 10.0, '%+.1f %%', None),
                 ('ceny', None, 'Centering Y (the yoke\'s magnets)', -10.0, 10.0, '%+.1f %%', None),
-                ('rot', None, 'Yoke rotation', -5.0, 5.0, '%+.1f deg', None))
+                ('rot', None, 'Yoke rotation', -5.0, 5.0, '%+.1f deg', None),
+                # the picture's shape (2026-11-01): what makes one Vectrex's picture differ from the next one's - no pots,
+                # the parts as they came. 0 = as the owner's (the tube map is his tube's shape); see unit_warp
+                ('skew', None, 'Yoke skew (the coils not quite at right angles)', -3.0, 3.0, '%+.2f deg', None),
+                ('keyx', None, 'Keystone X (bottom wider than the top: +)', -5.0, 5.0, '%+.1f %%', None),
+                ('keyy', None, 'Keystone Y (right taller than the left: +)', -5.0, 5.0, '%+.1f %%', None),
+                ('pinx', None, 'Pincushion X (the sides bowed in: +, out: -)', -3.0, 3.0, '%+.1f %%', None),
+                ('piny', None, 'Pincushion Y (top and bottom bowed in: +, out: -)', -3.0, 3.0, '%+.1f %%', None),
+                ('linx', None, 'Linearity X (the right side stretched: +)', -6.0, 6.0, '%+.1f %%', None),
+                ('liny', None, 'Linearity Y (the bottom stretched: +)', -6.0, 6.0, '%+.1f %%', None))
 UNIT_PICTURE_KEYS = tuple(p[0] for p in UNIT_PICTURE)
-UNIT_FACTORY_PICTURE = dict(sizex=100.0, sizey=100.0, hv=HV_FACTORY, ring=0.0, cenx=0.0, ceny=0.0, rot=0.0)
+UNIT_SHAPE_KEYS = ('skew', 'keyx', 'keyy', 'pinx', 'piny', 'linx', 'liny')     # (Config > Circuit: THE PICTURE'S SHAPE)
+UNIT_FACTORY_PICTURE = dict(sizex=100.0, sizey=100.0, hv=HV_FACTORY, ring=0.0, cenx=0.0, ceny=0.0, rot=0.0,
+                            skew=0.0, keyx=0.0, keyy=0.0, pinx=0.0, piny=0.0, linx=0.0, liny=0.0)
 # Config's two tabs: Unit (what an owner turns: the knob, the size, the voltage, the yoke) and Circuit (the rest)
 UNIT_TAB_KEYS = ('knob', 'sizex', 'sizey', 'hv', 'cenx', 'ceny', 'rot')
 UNIT_PRESETS = {
@@ -1492,23 +1503,40 @@ def unit_picture(unit):
     sx, sy = float(u['sizex']) / 100.0 * stiff, float(u['sizey']) / 100.0 * stiff
     a = math.radians(float(u['rot']))
     tx, ty = float(u['cenx']) / 100.0 * ALG_MAX_Y, -float(u['ceny']) / 100.0 * ALG_MAX_Y   # (+: right, up - the canvas's y runs down)
+    sk = math.tan(math.radians(float(u['skew'])))       # (the Y coils turned against the X coils: up and down lean)
     light = (hv - 0.8) / (HV_FACTORY - 0.8)
-    xf = None if (abs(sx - 1.0) < 1e-9 and abs(sy - 1.0) < 1e-9 and a == 0.0 and tx == 0.0 and ty == 0.0) else (sx, sy, a, tx, ty)
+    xf = None if (abs(sx - 1.0) < 1e-9 and abs(sy - 1.0) < 1e-9 and a == 0.0 and tx == 0.0 and ty == 0.0 and sk == 0.0)         else (sx, sy, a, tx, ty, sk)
     return xf, light, stiff
+def unit_warp(unit):
+    """the picture's shape beyond the straight pots (Config > Circuit, 2026-11-01) - for the renderer's tube map
+    (vecrender._unit_warp), on the picture before the tube's own shape: (keyx, keyy, pinx, piny, linx, liny) as
+    fractions, or None. Where it comes from on a real Vectrex (no geometry correction anywhere in it):
+      keystone - the yoke not pushed fully onto the tube's bell, or set a little cocked; unequal coil halves
+      pincushion - the tube and yoke's own (the tube map has the owner's): each unit a little more or less, its
+                   yoke further from the bell, the yoke's corner magnets moved or lost
+      linearity - the yoke off-centre on the neck, the field not even across it: one side stretched, one squeezed
+    (skew - the coils not at right angles, and the X / Y crosstalk that looks the same - is in unit_picture)"""
+    u = dict(UNIT_FACTORY_PICTURE, **{k: v for k, v in (unit or {}).items() if k in UNIT_PICTURE_KEYS})
+    w = tuple(float(u[k]) / 100.0 for k in ('keyx', 'keyy', 'pinx', 'piny', 'linx', 'liny'))
+    return w if any(w) else None
 def picture_apply(xf, x, y):
     """the picture's pots on canvas points (numpy arrays or floats)"""
-    sx, sy, a, tx, ty = xf
+    sx, sy, a, tx, ty = xf[:5]
+    sk = xf[5] if len(xf) > 5 else 0.0
     cx, cy = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0
     u, v = (x - cx) * sx, (y - cy) * sy
+    u = u - sk * v                                      # (skew: the top leans right for +)
     c, s = math.cos(a), math.sin(a)
     return cx + c * u - s * v + tx, cy + s * u + c * v + ty
 def picture_undo(xf, x, y):
     """picture_apply's inverse (the light pen: where on the canvas the spot it sees came from)"""
-    sx, sy, a, tx, ty = xf
+    sx, sy, a, tx, ty = xf[:5]
+    sk = xf[5] if len(xf) > 5 else 0.0
     cx, cy = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0
     u, v = x - cx - tx, y - cy - ty
     c, s = math.cos(a), math.sin(a)
-    return cx + (c * u + s * v) / sx, cy + (-s * u + c * v) / sy
+    u, v = c * u + s * v, -s * u + c * v
+    return cx + (u + sk * v) / sx, cy + v / sy
 UNIT_NAMES = {'owner': "Owner's Vectrex (measured)", 'ideal': 'Ideal', 'cranky': 'Cranky', 'random': 'Random unit', 'custom': 'Custom'}
 def old_gap(look):
     """a look saved before 2026-10-25 with the old default line gap (12.3 cycles): the new default (7; the stop delay
@@ -1553,7 +1581,16 @@ UNIT_SPREAD = dict(
     ring=    (('s', 0.0, 0.15),        ('s', 0.15, 0.45)),
     cenx=    (('s', 0.0, 1.0),         ('s', 1.0, 2.5)),
     ceny=    (('s', 0.0, 1.0),         ('s', 1.0, 2.5)),
-    rot=     (('s', 0.0, 0.5),         ('s', 0.5, 1.3)))
+    rot=     (('s', 0.0, 0.5),         ('s', 0.5, 1.3)),
+    # the picture's shape (2026-11-01; no Vectrex measurements published - from the service manual's circuit, comparable
+    # tubes' specs (yoke orthogonality +-0.5 deg, keystone < 0.65 %, linearity < 5 %) and the physics; see unit_warp)
+    skew=    (('s', 0.0, 0.4),         ('s', 0.4, 1.2)),
+    keyx=    (('s', 0.0, 0.6),         ('s', 0.6, 2.5)),
+    keyy=    (('s', 0.0, 0.6),         ('s', 0.6, 2.5)),
+    pinx=    (('s', 0.0, 0.4),         ('s', 0.4, 1.2)),
+    piny=    (('s', 0.0, 0.4),         ('s', 0.4, 1.2)),
+    linx=    (('s', 0.0, 1.0),         ('s', 1.0, 3.0)),
+    liny=    (('s', 0.0, 1.0),         ('s', 1.0, 3.0)))
 UNIT_RANGE = dict({p[0]: (p[3], p[4]) for p in UNIT_PARAMS + UNIT_PICTURE}, gap=(4.0, 10.0))   # (the sliders' ends)
 def random_unit(cranky=False):
     """a believable other Vectrex (UNIT_SPREAD): slightly off, or cranky - further off, still usable. The brightness
@@ -2589,8 +2626,11 @@ class App:
             pass
 
     def title(self):
-        self.root.title('Vectrex - %s%s%s' % (self.rom_name, '  [PAUSED]' if self.run.paused else '',
-                                              '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
+        rec = getattr(self, 'rec', None)                        # (recording: the whole time, with how long - the owner,
+        self.root.title('Vectrex - %s%s%s%s' % (self.rom_name, '  [PAUSED]' if self.run.paused else '',   #  2026-11-01)
+                                                '  ● REC %d:%02d - F9 stops' % divmod(int(rec.seconds()), 60) if rec else '',
+                                                '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
+        self.title_t = int(rec.seconds()) if rec else -1
     def toggle_pause(self, e=None):
         self.set_paused(not self.run.paused)
         net = getattr(self, 'net', None)
@@ -2818,8 +2858,8 @@ class App:
                  "online state in the on-screen display.")
             m = Menu(mb, tearoff=0, postcommand=lambda: (refresh(), self.rec_menu_label())); mb.add_cascade(label='Record', menu=m)
             item(m, 'Start recording', 'F9', self.toggle_rec,
-                 "A video of the game with its sound, as an MP4: F9 starts and stops it. A small red dot in the corner shows it "
-                 "is recording (it is not in the video). After Stop the video is saved in the background.")
+                 "A video of the game with its sound, as an MP4: F9 starts and stops it. The title bar and the control deck show REC "
+                 "and the time while it records (never in the video). After Stop the video is saved in the background.")
             self.rec_menu = (m, m.index('end'))
             item(m, 'Snapshot', 'F12', self.snapshot,
                  "A picture of the screen as a PNG, drawn again at up to four times the window's size (Recording settings).")
@@ -3924,6 +3964,25 @@ class App:
         """PAUSED in the strip below the picture, between the OSD and P2 PORT (the owner, 2026-10-29): PAUSED big in
         orange, how to go on below it, the same room on both sides; up and down halfway between the frame's bottom
         edge and the bottom of the window (None without the strip: then in the picture)"""
+        return self.slot_state(['PAUSED', 'ESC/P TO RESUME'], [self.SPEED_COLORS[1][2], (0.40, 0.667, 0.533)])   # (PAUSED in the OSD's orange)
+    def rec_state(self):
+        """recording: REC and the time in the strip below the picture, where PAUSED goes (the owner, 2026-11-01: no
+        dot in the picture - on a red overlay it was not seen); drawn after the picture is taken for the video, so it
+        is never in it (vecrender._rec_mark). None without the strip or while paused (then PAUSED is there)"""
+        rec = self.rec
+        if not rec or self.run.paused:
+            return None
+        n = int(rec.seconds())
+        st = self.slot_state(['REC %d:%02d' % divmod(n, 60), 'F9 STOPS'], [self.SPEED_COLORS[2][2], (0.40, 0.667, 0.533)],
+                             widest=('REC 0:00', 1.6), small=0.55)   # (room for the dot; the size stays as the time grows)
+        if st:
+            st['dot'] = True
+        return st
+    def slot_state(self, rows, cols, widest=None, small=0.42):
+        """two rows in the strip below the picture, between the OSD and P2 PORT (the owner, 2026-10-29): the first big,
+        the second small below it, the same room on both sides; up and down halfway between the frame's bottom edge
+        and the bottom of the window (None without the strip). widest: (the widest first row, extra characters) - the
+        first row's size from that instead of the row itself"""
         if not (self.fps_on or self.cart_on or self.knob_on):
             return None
         pl, pt, pr, pb = self.pic_rect()
@@ -3940,13 +3999,12 @@ class App:
         ph = pb - pt
         fb = (pt + pb) / 2.0 + vecrender.FRAME_Y * ph / 2.0     # (the frame's bottom edge)
         wb = pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph   # (the window's bottom)
-        rows = ['PAUSED', 'ESC/P TO RESUME']
-        kp = 0.80 * room / (6.0 * len(rows[0]))                 # (PAUSED: most of the gap)
-        kn = min(0.42 * kp, 0.80 * room / (6.0 * len(rows[1])))
+        w0 = len(widest[0]) + widest[1] if widest else len(rows[0])
+        kp = 0.80 * room / (6.0 * w0)                           # (PAUSED: most of the gap)
+        kn = min(small * kp, 0.80 * room / (6.0 * len(rows[1])))
         hgt = 11.0 * kp + 6.0 * kn
         if hgt > 0.8 * (wb - fb):                               # (a low strip: smaller, to fit)
             f = 0.8 * (wb - fb) / hgt; kp *= f; kn *= f; hgt *= f
-        cols = [self.SPEED_COLORS[1][2], (0.40, 0.667, 0.533)]   # (PAUSED in the OSD's orange)
         return dict(rows=rows, ks=[1.0, kn / kp], cols=cols, cx=(left + right) / 2.0, cy=(fb + wb) / 2.0 - hgt / 2.0, k=kp)
     def imager_hint(self):
         """the 3D Imager's disc spinning up (the game draws nothing until it is at speed): a note in the middle of
@@ -4706,10 +4764,12 @@ class App:
         light and spot to the renderer"""
         xf, light, width = unit_picture(self.unit)
         core = getattr(self, 'core', None)
+        ideal = getattr(self.args, 'ideal', False)
         if core is not None:
-            core.picture = None if getattr(self.args, 'ideal', False) else xf
+            core.picture = None if ideal else xf
         if self.ren:
             self.ren.hv_light, self.ren.hv_width = light, width
+            self.ren.unit_warp = None if ideal else unit_warp(self.unit)   # (the picture's shape: in the tube map)
     def reset_unit(self, part=None):
         """Config's reset: the Unit tab (part 'unit': its rows, switched off at the start, the intro shown), the Circuit
         tab ('circuit': its rows) or all - the owner's measured Vectrex, the pots as the factory set them"""
@@ -6727,6 +6787,7 @@ class App:
         if not self.rec:
             self.flash(short.upper(), secs=2.5)
         self.root.title('Vectrex - ' + (long or short))
+        self.title_until = time.perf_counter() + 4.0            # (while recording: then the REC title again)
         if getattr(self, 'title_job', None):
             self.root.after_cancel(self.title_job)
         self.title_job = self.root.after(4000, self.title)
@@ -6769,17 +6830,17 @@ class App:
             return
         self.flash_until = 0                                    # (no message in the first pictures)
         self.rec = rec
-        self.ren.rec_box = box; self.ren.rec = rec; self.ren.rec_dot = True
-        self.root.title('Vectrex - recording (F9 stops)')
+        self.ren.rec_box = box; self.ren.rec = rec; self.ren.rec_mark = None
         if getattr(self, 'title_job', None):
-            self.root.after_cancel(self.title_job)
-        self.title_job = self.root.after(2500, self.title)
+            self.root.after_cancel(self.title_job); self.title_job = None
+        self.title_until = 0.0
+        self.title()
     def stop_rec(self, why=None):
         rec, self.rec = self.rec, None
         if not rec:
             return
         if self.ren:
-            self.ren.rec = None; self.ren.rec_dot = False
+            self.ren.rec = None; self.ren.rec_mark = None
         rec.stop()
         self.rec_say(why or 'SAVING VIDEO', (why or 'Saving the video').capitalize() + ' - %d:%02d' % divmod(int(rec.seconds()), 60))
     def rec_tick(self):
@@ -6794,6 +6855,9 @@ class App:
             self.stop_rec('RECORDING STOPPED')
         else:
             self.ren.rec_box = box
+            self.ren.rec_mark = self.rec_state()
+            if int(rec.seconds()) != getattr(self, 'title_t', -1) and time.perf_counter() >= getattr(self, 'title_until', 0.0):
+                self.title()                                    # (the time in the title bar, each second)
     def rec_done(self, path, msg):
         """from the saving: progress (path False), saved (the file) or failed (None)"""
         if path is False:

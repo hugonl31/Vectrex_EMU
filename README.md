@@ -1460,9 +1460,9 @@ through a simulated bad connection (40-60 ms each way, 10 % packet loss): identi
 
 ### Recording videos and snapshots
 
-**Record > Start recording** (**F9**) records the game with its sound as an MP4; F9 again stops it. A small red dot
-in the window's top right corner shows it is recording; it is drawn after each picture is taken, so it is never in
-the video. After Stop the video is finished in the background (SAVING VIDEO, then VIDEO SAVED) while you play on.
+**Record > Start recording** (**F9**) records the game with its sound as an MP4; F9 again stops it. While it records, the
+title bar shows REC and the time, and so does the control deck below the picture (in red where PAUSED goes); neither
+is ever in the video. After Stop the video is finished in the background (SAVING VIDEO, then VIDEO SAVED) while you play on.
 **Record > Snapshot** (**F12**) saves the screen as a PNG, drawn again at up to four times the window's size (about
 6000 pixels tall): the lines are sharp at that size, not a stretched screenshot. Paused games can be snapshotted too.
 

@@ -752,7 +752,8 @@ class Deck:
             cut = rest.index('zerotx')                          # (boxes: side by side when the screen is short)
             return ([('group', 'SERVICE TRIM POTS')] + [('unit', k) for k in pots + ('ring',)]
                     + [('group', 'ITS PARTS: ZERO REFERENCE, BEAM')] + [('unit', k) for k in rest[:cut]]
-                    + [('group', 'ITS PARTS: ZEROING, LAG, DAC')] + [('unit', k) for k in rest[cut:]] + [('unit', 'gap')])
+                    + [('group', 'ITS PARTS: ZEROING, LAG, DAC')] + [('unit', k) for k in rest[cut:]] + [('unit', 'gap')]
+                    + [('group', "THE PICTURE'S SHAPE: YOKE AND TUBE")] + [('unit', k) for k in V.UNIT_SHAPE_KEYS])
         if s == 'Display':
             rates = [('Matched to the monitor', lambda: not a.vrr and a.rate != 'max', lambda: a.set_screen('60')),
                      ("Monitor's full rate", lambda: not a.vrr and a.rate == 'max', lambda: a.set_screen('max')),

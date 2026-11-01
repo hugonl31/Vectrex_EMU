@@ -6,6 +6,8 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.4.5
 - UVMC2: Centipede and similar games run up to 1.7x faster
+- Recording shows REC and the time in the title bar and control deck
+- Random and Cranky units now differ in shape too: skew, keystone, bow
 
 ## v1.4.4
 - Mac: new installs find their UVMC2 and PiTrex SD card folders again

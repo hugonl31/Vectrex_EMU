@@ -202,8 +202,8 @@ TOPICS = [
       "Both go to one folder (Videos/Vectrex_EMU unless you choose another), named by the date and time they were "
       "made, for example 2026-10-31_21-45-12.mp4."),
 ('item', 'Start recording (F9)', "Records the game with its sound; F9 again (or Stop recording, which shows how long "
-         "it has run) stops it. A small red dot in the window's top right corner shows that it is recording - the dot "
-         "is not in the video. While recording, the recorder's own messages go to the title bar, not "
+         "it has run) stops it. While recording, the title bar shows REC and how long, and so does the "
+         "control deck below the picture (in red, where PAUSED goes) - neither is in the video. While recording, the recorder's own messages go to the title bar, not "
          "into the picture. The video is 50 pictures a second, the Vectrex's own rate. After Stop the MP4 is made in the "
          "background (SAVING VIDEO, then VIDEO SAVED); the game plays on. A new window size stops the recording: a "
          "video keeps one size."),
@@ -571,6 +571,15 @@ TOPICS = [
 ('item', 'Centering X / Centering Y', "Not a pot: the two ring magnets on the back of the yoke move the whole picture "
       "(+: right, up)."),
 ('item', 'Yoke rotation', "Not a pot: the yoke turned a little on the tube's neck tilts the whole picture."),
+('item', 'Yoke skew', "Not a pot: the yoke's two pairs of coils are not quite at right angles - the picture leans like a "
+      "parallelogram: squares become diamonds, upright lines lean while level lines stay level. 0 = as the owner's Vectrex."),
+('item', 'Keystone X / Keystone Y', "Not a pot: the yoke not pushed fully onto the tube, or set a little cocked - the "
+      "picture becomes a trapezoid: wider at the bottom than at the top (X), taller at the right than the left (Y)."),
+('item', 'Pincushion X / Pincushion Y', "Not a pot: no Vectrex corrects its tube's shape, so every picture bows a little "
+      "(the tube map is the owner's). Another Vectrex bows a little more (+: the corners pulled out, the edges curve in) "
+      "or less (-: towards a barrel) - its yoke further from the bell, its corner magnets moved."),
+('item', 'Linearity X / Linearity Y', "Not a pot: the yoke a little off-centre on the neck - one side of the picture "
+      "stretched, the other squeezed (the Test Cartridge's evenly spaced lines no longer are)."),
 ('item', 'Y hold settling', "How quickly the Y sample-and-hold reaches a new value (1 = at once)."),
 ('item', 'Beam switch-off delay', "How long the beam stays lit after a game blanks it: longer, and lines get tails."),
 ('item', 'Zeroing time X / Y', "How fast ZERO brings the beam back to the middle (an RC: the integrators' capacitors "
@@ -834,6 +843,27 @@ UNIT_CIRCUIT = {
     'ceny': "The yoke: two ring magnets on its back bend the beam a little before the coils - the whole picture moves. "
             "The service manual centres with these, never with R302. In % of the picture's height.",
     'rot': "The yoke: it is clamped on the tube's neck; turned a little, the whole picture tilts with it (+: clockwise).",
+    'skew': "The yoke: its X and Y coils are wound and placed by hand, to within about half a degree of square; one "
+            "LM379 drives both axes and their grounds meet on the power board, so a little of X shows in Y too - "
+            "the same lean. Real units: about +-0.5 deg, a cranky one 1 deg or more (+: the top leans right).",
+    'keyx': "The yoke: pushed fully onto the tube's bell it bends the beam evenly; set back or cocked, the field is "
+            "stronger at one end - one edge wider than the other. Comparable tubes allow about 0.6 %; a cranky "
+            "Vectrex 2-3 %.",
+    'keyy': "The yoke: pushed fully onto the tube's bell it bends the beam evenly; set back or cocked, the field is "
+            "stronger at one side - one side taller than the other. Comparable tubes allow about 0.6 %; a cranky "
+            "Vectrex 2-3 %.",
+    'pinx': "The tube and yoke: a flat-faced tube under a magnetic yoke bows the picture, and the Vectrex has no "
+            "circuit to correct it. Each unit bows a little differently: the yoke's distance from the bell, its small "
+            "corner magnets (moved or lost in the years). In % at the corners, against the owner's Vectrex.",
+    'piny': "The tube and yoke: a flat-faced tube under a magnetic yoke bows the picture, and the Vectrex has no "
+            "circuit to correct it. Each unit bows a little differently: the yoke's distance from the bell, its small "
+            "corner magnets (moved or lost in the years). In % at the corners, against the owner's Vectrex.",
+    'linx': "The yoke: the LM379 drives the coils with current feedback (R406, 0.22 ohm), so the amplifier itself is "
+            "straight - but a yoke a little off-centre on the neck bends the beam more on one side: the picture "
+            "stretched there, squeezed on the other. In % of the slope at the edges; real units about 1 %, cranky 3 %.",
+    'liny': "The yoke: the LM379 drives the coils with current feedback (R406, 0.22 ohm), so the amplifier itself is "
+            "straight - but a yoke a little off-centre on the neck bends the beam more at one end: the picture "
+            "stretched there, squeezed at the other. In % of the slope at the edges; real units about 1 %, cranky 3 %.",
     'ysettle': "The circuit: the Y speed is not fed straight in - the multiplexer charges a sample-and-hold "
                "capacitor, which needs a moment to reach a new value. A slow one: the start of a line after a change "
                "in Y speed is drawn at the old speed for a moment.",

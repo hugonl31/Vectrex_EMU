@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.6
+
+**Last Human's UVMC2 edition is out for now**
+* `roms/Last Human (UVMC2).um2` is no longer included, and updates no longer refresh it: some of its text came out
+  garbled or stepped on a real console's analog drift (a black line through the big title, stepped small lines).
+  It comes back once that is fixed. The copy that v1.4.3 to v1.4.5 put in roms is removed at the first start (only
+  that exact file); its saves in uvmc2/lasthuman/ stay. The 6809 Last Human is unchanged and still included.
+* No core or online changes: NET_VER stays 8.
+
 ## v1.4.5
 
 **UVMC2: Centipede 1.7x faster, Galaga a little (from two debug reports, thank you)**

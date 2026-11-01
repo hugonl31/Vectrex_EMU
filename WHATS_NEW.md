@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.4.6
+- Last Human UVMC2 edition out for now: back once its text is fixed
+
 ## v1.4.5
 - UVMC2 Centipede runs 1.7x faster (thank you for the debug reports)
 - UVMC2 Galaga a little faster; Galaga and Moon Cresta: more to come

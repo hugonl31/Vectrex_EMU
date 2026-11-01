@@ -223,6 +223,20 @@ def _rename_included_game():
     except Exception:   # noqa
         pass
 _rename_included_game()
+# The included game's UVMC2 edition (v1.4.3 to v1.4.5) is out until its text is fixed (the owner, 2026-11-01): the file
+# those versions put in roms is removed once - only that exact file (its checksum), never a player's other copy or
+# its saves (uvmc2/lasthuman/ stays)
+RETIRED_ROMS = {'Last Human (UVMC2).um2': 'cfac241a619e0436cf8a9de054429773'}
+def _retire_roms():
+    import hashlib
+    for f, md5 in RETIRED_ROMS.items():
+        p = os.path.join(ROOT, 'roms', f)
+        try:
+            if os.path.isfile(p) and hashlib.md5(open(p, 'rb').read()).hexdigest() == md5:
+                os.remove(p)
+        except OSError:
+            pass
+_retire_roms()
 # Next to the program, every folder you put things in is one level down: roms, overlays, system (BIOS, speech ROM,
 # settings), uvmc2 (the UVMC2's SD card) and pitrex (the PiTrex's). 'cache' only holds working files: the SD card
 # images a UVMC2 or PiTrex game runs from, built from those folders at its start and copied back at its end.

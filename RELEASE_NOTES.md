@@ -3,6 +3,17 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.3
+
+**Last Human: the UVMC2 edition is included, and a new ending line**
+* **`roms/Last Human (UVMC2).um2`** - the UVMC2 edition of Last Human (https://github.com/hugonl31/Last_Human,
+  release v1.2): the same game with story cinematics and 2-player co-op. Online, the other player is player 2 on
+  port 2. Its saves stay on the emulated SD card (`uvmc2/lasthuman/`), which updates never overwrite.
+* **`roms/Last Human.bin`** - a new closing line in the Arena 2 ending.
+* **Updates replace both editions** (and the overlay) with the newest, as the ROM and overlay since v1.4.2; saves
+  are kept.
+* No core or online changes: NET_VER stays 8.
+
 ## v1.4.2
 
 **The included game is now called Last Human**

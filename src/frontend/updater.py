@@ -1,7 +1,7 @@
 """The one-click update (the owner, 2026-10-29): the newest release's zip for this system downloaded and unpacked to a
 temporary folder; a small script waits for the emulator to close, puts the new program in place of the old one, adds
 the new release's files that are missing in system, overlays, roms and uvmc2 (the player's ROMs, overlays, SD cards and
-BIOS are never overwritten - except the included game's ROM and overlay (BUNDLED): always replaced by the new
+BIOS are never overwritten - except the included game's ROMs and overlay (BUNDLED): always replaced by the new
 release's, so every update brings its latest version; its saves are other files and stay), keeps the settings as
 they are (since v1.2.7: the new version moves the ones the player never changed to its own defaults -
 vectrex_emu.new_defaults; a copy stays next to them as a backup) and starts the new version.
@@ -13,7 +13,8 @@ IS_WIN, IS_MAC = sys.platform == 'win32', sys.platform == 'darwin'
 ASSET = 'Vectrex_EMU-windows.zip' if IS_WIN else 'Vectrex_EMU-mac-app.zip' if IS_MAC else 'Vectrex_EMU-linux-bin.zip'
 PROGRAM = 'Vectrex_EMU.exe' if IS_WIN else 'Vectrex_EMU.app' if IS_MAC else 'Vectrex_EMU'
 FOLDERS = ('system', 'overlays', 'roms', 'uvmc2', 'pitrex')     # (next to the program: only what is missing is added)
-BUNDLED = (('roms', 'Last Human.bin'), ('overlays', 'Last Human.png'))   # (the included game: always the new one -
+BUNDLED = (('roms', 'Last Human.bin'), ('roms', 'Last Human (UVMC2).um2'),      # (the included game, both editions:
+           ('overlays', 'Last Human.png'))                                    #  always the new one -
 # the owner, 2026-11-01; only these files, never a save. Its earlier names' files and settings are moved over by the
 # new version itself at its start - vectrex_emu._rename_included_game: this script is the old version's)
 

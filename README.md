@@ -74,7 +74,7 @@ and sound dropouts.
   that says so has an *Update now* button. The emulator downloads the new version for your system, closes, installs
   it over the old one and starts again. Your ROMs,
   overlays, SD cards and BIOS stay as they are (the new version only adds files that are missing - except the
-  included game, Last Human: every update replaces its ROM and overlay with the newest, its saves stay), and so do where
+  included game, Last Human: every update replaces its ROMs and overlay with the newest, its saves stay), and so do where
   your overlays sit and how large, your player name and your recent games; the other settings start fresh (the old
   ones are kept as `system/settings_before_<version>.json`). Not when it runs from the sources or from a folder it
   cannot write to (Program Files): then the message links to the download. From v1.2.0 on - versions before it still
@@ -304,7 +304,7 @@ with a short note on what goes there:
 | Folder | |
 |---|---|
 | `system` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
-| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Last Human** ([Last_Human](https://github.com/hugonl31/Last_Human)) with its overlay |
+| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Last Human** ([Last_Human](https://github.com/hugonl31/Last_Human)) with its overlay, plus its UVMC2 edition **Last Human (UVMC2)** (cinematics, 2-player co-op, online too) |
 | `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
 More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), `pitrex`,

@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.4.3
+- Last Human: a new closing line in the Arena 2 ending
+- Last Human UVMC2 edition included: cinematics, 2-player co-op
+- Its co-op also works online (the other player on port 2)
+
 ## v1.4.2
 - The included game is now called Last Human
 - Robots now burst out of their cages in all directions

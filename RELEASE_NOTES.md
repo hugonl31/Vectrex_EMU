@@ -12,6 +12,11 @@ build workflow replaces that release (title = the version, marked Latest) with t
   slows the game down"; it does not). Now those seconds read "paused or switched off", pausing and going on are
   events in the report's timeline, and the meter starts afresh after a pause.
 
+**The picture's shape: now on the Unit tab**
+* **Config > Unit > The picture's shape: yoke and tube** - the seven sliders from v1.4.5 (yoke skew, keystone X / Y,
+  pincushion X / Y, linearity X / Y) moved from the Circuit tab to the Unit tab, next to the yoke's centring and
+  rotation. The same settings, and Random unit and Cranky still pick them; the Unit tab's Reset now resets them too.
+
 ## v1.4.6
 
 **Last Human's UVMC2 edition is out for now**

@@ -744,7 +744,8 @@ class Deck:
                     ('group', 'STARTING UP'),
                     ('check', 'Start switched on', lambda: a.start_on, a.toggle_start_on, None, lambda: bool(a.start_on)),
                     ('check', 'Skip the Vectrex intro', lambda: a.skip_boot, a.toggle_skip_boot, None, lambda: bool(a.skip_boot)),
-                    ('group', 'THE PICTURE: KNOB, POTS AND YOKE')] + [('unit', k) for k in V.UNIT_TAB_KEYS]
+                    ('group', 'THE PICTURE: KNOB, POTS AND YOKE')] + [('unit', k) for k in V.UNIT_TAB_KEYS] + [
+                    ('group', "THE PICTURE'S SHAPE: YOKE AND TUBE")] + [('unit', k) for k in V.UNIT_SHAPE_KEYS]   # (the owner, 2026-11-01: on Unit)
         if s == 'Circuit':                                  # (the Vectrex unit: the service trimmers, the analog parts)
             keys = [p[0] for p in V.UNIT_PARAMS if p[0] not in V.UNIT_TAB_KEYS]
             pots = ('dacofs', 'drift_x', 'drift_y')
@@ -752,8 +753,7 @@ class Deck:
             cut = rest.index('zerotx')                          # (boxes: side by side when the screen is short)
             return ([('group', 'SERVICE TRIM POTS')] + [('unit', k) for k in pots + ('ring',)]
                     + [('group', 'ITS PARTS: ZERO REFERENCE, BEAM')] + [('unit', k) for k in rest[:cut]]
-                    + [('group', 'ITS PARTS: ZEROING, LAG, DAC')] + [('unit', k) for k in rest[cut:]] + [('unit', 'gap')]
-                    + [('group', "THE PICTURE'S SHAPE: YOKE AND TUBE")] + [('unit', k) for k in V.UNIT_SHAPE_KEYS])
+                    + [('group', 'ITS PARTS: ZEROING, LAG, DAC')] + [('unit', k) for k in rest[cut:]] + [('unit', 'gap')])
         if s == 'Display':
             rates = [('Matched to the monitor', lambda: not a.vrr and a.rate != 'max', lambda: a.set_screen('60')),
                      ("Monitor's full rate", lambda: not a.vrr and a.rate == 'max', lambda: a.set_screen('max')),

@@ -1494,7 +1494,7 @@ UNIT_PICTURE = (('sizex', None, 'R401 X size (the X deflection amplifier\'s inpu
                 ('linx', None, 'Linearity X (the right side stretched: +)', -6.0, 6.0, '%+.1f %%', None),
                 ('liny', None, 'Linearity Y (the bottom stretched: +)', -6.0, 6.0, '%+.1f %%', None))
 UNIT_PICTURE_KEYS = tuple(p[0] for p in UNIT_PICTURE)
-UNIT_SHAPE_KEYS = ('skew', 'keyx', 'keyy', 'pinx', 'piny', 'linx', 'liny')     # (Config > Circuit: THE PICTURE'S SHAPE)
+UNIT_SHAPE_KEYS = ('skew', 'keyx', 'keyy', 'pinx', 'piny', 'linx', 'liny')     # (Config > Unit: THE PICTURE'S SHAPE)
 UNIT_FACTORY_PICTURE = dict(sizex=100.0, sizey=100.0, hv=HV_FACTORY, ring=0.0, cenx=0.0, ceny=0.0, rot=0.0,
                             skew=0.0, keyx=0.0, keyy=0.0, pinx=0.0, piny=0.0, linx=0.0, liny=0.0)
 # Config's two tabs: Unit (what an owner turns: the knob, the size, the voltage, the yoke) and Circuit (the rest)
@@ -1522,7 +1522,7 @@ def unit_picture(unit):
     xf = None if (abs(sx - 1.0) < 1e-9 and abs(sy - 1.0) < 1e-9 and a == 0.0 and tx == 0.0 and ty == 0.0 and sk == 0.0)         else (sx, sy, a, tx, ty, sk)
     return xf, light, stiff
 def unit_warp(unit):
-    """the picture's shape beyond the straight pots (Config > Circuit, 2026-11-01) - for the renderer's tube map
+    """the picture's shape beyond the straight pots (Config > Unit, 2026-11-01) - for the renderer's tube map
     (vecrender._unit_warp), on the picture before the tube's own shape: (keyx, keyy, pinx, piny, linx, liny) as
     fractions, or None. Where it comes from on a real Vectrex (no geometry correction anywhere in it):
       keystone - the yoke not pushed fully onto the tube's bell, or set a little cocked; unequal coil halves
@@ -4793,7 +4793,7 @@ class App:
         if part is None:
             self.unit_preset('owner')
         else:
-            keys = [k for k in own if (k in UNIT_TAB_KEYS) == (part == 'unit')]
+            keys = [k for k in own if (k in UNIT_TAB_KEYS or k in UNIT_SHAPE_KEYS) == (part == 'unit')]   # (the shape: on Unit)
             for k in keys:
                 self.set_unit(k, own[k], self.unit_name)
             same = all(abs(float(self.unit.get(k, own[k])) - float(own[k])) < 1e-9 for k in own)

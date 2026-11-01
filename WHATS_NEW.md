@@ -6,6 +6,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.4.7
 - Debug report: paused time no longer looks like a slow PC
+- Picture-shape sliders moved to Config > Unit
 
 ## v1.4.6
 - Last Human UVMC2 edition out for now: back once its text is fixed

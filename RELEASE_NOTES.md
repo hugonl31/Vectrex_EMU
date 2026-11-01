@@ -26,6 +26,13 @@ build workflow replaces that release (title = the version, marked Latest) with t
   published: the ranges come from the service manual's circuit, the specifications of comparable tubes and the
   physics. 0 everywhere = the owner's measured Vectrex, as before.
 * The picture only: the game itself is not changed, and the light pen still finds the spot it points at.
+
+**Debug report: your email, if you like**
+* **Help > Debug report** has an optional email field: filled in, the address goes with the report, so the author
+  can tell you when a fix for it is out. Empty, the report is as before. The address is remembered for the next
+  report (in your settings; it is left out of the settings copy in the report). Also from the slow-PC window's
+  Debug report button.
+
 * No online changes: online play with v1.4.4 still works.
 
 ## v1.4.4

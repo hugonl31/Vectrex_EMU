@@ -62,7 +62,8 @@ and sound dropouts.
 * **Running slower than real time?** A small window tells you what it finds on your PC - on battery, a power-saving
   mode, the picture on the built-in graphics chip, the JIT blocked by a security tool - and what to do.
 * **Debug report** (Help > Debug report) - *Send* puts it on the author's server and gives you a short report
-  number to pass on; *Save as file* keeps it in Downloads. No ROMs, no files, no online key or player name.
+  number to pass on; *Save as file* keeps it in Downloads. No ROMs, no files, no online key or player name. Since
+  v1.4.5 you can add your email (optional, remembered for next time), so the author can tell you when a fix is out.
 
 **New in v1.2.1: faster UVMC2 and PiTrex**
 * **UVMC2 games 10 to 19 % faster, PiTrex online play up to 30 % faster** - same pictures and same online
@@ -1164,7 +1165,9 @@ written: no recordings. **Help > Copy system info** copies the program's version
 graphics card and screen to the clipboard, for a GitHub issue. **Help > Debug report** makes one report for the
 author (version, system, power settings, the speed of the last two minutes, the core's log, the settings - no ROMs,
 no files, no online key or player name): **Send** puts it on the author's server (the meeting point's machine, TCP
-port 7746) and gives you a number like `R-7KQ4MZ` to pass on; **Save as file** puts the zip in Downloads.
+port 7746) and gives you a number like `R-7KQ4MZ` to pass on; **Save as file** puts the zip in Downloads. The
+**email** field is optional: filled in, the address goes with the report (`contact.txt` in the zip, never in the
+settings copy) so the author can tell you when the fix is out; it is remembered for the next report.
 
 ### Overlays
 

@@ -2304,6 +2304,7 @@ class App:
         self.osd_meters = conf0.get('osd_meters', True)         # (the OSD's CPU and GPU meters: how much of each frame is used)
         self.net_server_s = conf0.get('net_server', '')         # (Online settings: the meeting point; '' = netplay.SERVER)
         self.gamer = conf0.get('gamer_name', '')                # (this player's name online: the game room, the chat)
+        self.report_email = str(conf0.get('report_email', '') or '')[:120]   # (Debug report: the user's email, optional)
         self.gamer_ok = bool(conf0.get('gamer_ok', False))      # (reserved at the meeting point for player_key)
         import netplay as _np
         if self.gamer and not _np.gamer_name(self.gamer):      # (a name from before names had 10 characters at most:
@@ -2879,7 +2880,8 @@ class App:
             item(m, 'Copy system info', '', self.copy_system_info, "Your system and this program's version to the clipboard - for a GitHub issue.")
             item(m, 'Debug report...', '', self.report_window, "When something runs wrong: one report with your system, the "
                  "power settings, the speed of the last two minutes, the core's log and your settings (not your online key) - "
-                 "sent to the author's server for a report number, or saved as a file.")
+                 "sent to the author's server for a report number, or saved as a file. Add your email (optional) and "
+                 "the author can tell you when a fix is out.")
             item(m, 'About this emulator...', '', lambda: self.help_window('accuracy'))
         if DARK_MENU:
             mb = darkmenu.DBar(self.root, font=(SANS, 10)); fill(mb)
@@ -6640,8 +6642,9 @@ class App:
         deck.place(t, 'slow', self)
         try: dark_title(t)
         except Exception: pass   # noqa
-    def make_report(self, path):
-        """the debug report's zip at path (perfcheck.report)"""
+    def make_report(self, path, email=''):
+        """the debug report's zip at path (perfcheck.report); email: the user's, optional - contact.txt in the zip (the
+        server shows it with the report, tools/vxreport.py)"""
         short = list(self.speed_hist)
         cut = short[0][0] if short else time.perf_counter()
         long_ = [e for e in self.speed_long if e[0] < cut]     # (the averages before the per-second lines)
@@ -6670,7 +6673,8 @@ class App:
                  'emulation, draw: the drawing thread, GPU: the graphics card, each against its time; late frames and '
                  'sound dropouts in that time; >> what happened)': '\n' + '\n'.join(hist)}
         return perfcheck.report(path, self.system_info(), self.settings_f, os.path.join(CACHE_DIR, 'core_log.txt'), extra,
-                                app_log=''.join(APP_LOG), files={'screen.jpg': self.report_picture()})
+                                app_log=''.join(APP_LOG), files=dict({'screen.jpg': self.report_picture()},
+                                                                     **({'contact.txt': (email + '\n').encode('utf-8')} if email else {})))
     def report_picture(self):
         """the window's picture as a small JPEG (about 30-60 KB) for the debug report, or None"""
         g = getattr(self.ren, 'grab', None)              # (read back from OpenGL when the report window opened -
@@ -6702,8 +6706,24 @@ class App:
                    "the emulator core's log and your settings (not your online key)",
                    "a small picture of the emulator's screen (not your desktop)"):
             tk.Label(body, text='\u2022 ' + ln, fg=deck.G, bg=bg, font=(MONO, 9), anchor='w').pack(fill='x', padx=14)
-        tk.Label(body, text='No ROMs, no files of yours, no name or address.', fg=deck.G, bg=bg, font=(MONO, 9),
-                 anchor='w').pack(fill='x', padx=12, pady=(6, 0))
+        tk.Label(body, text='No ROMs, no files of yours, no name - your email only if you add it.', fg=deck.G, bg=bg,
+                 font=(MONO, 9), anchor='w').pack(fill='x', padx=12, pady=(6, 0))
+        er = tk.Frame(body, bg=bg); er.pack(fill='x', padx=12, pady=(10, 0))   # (the owner, 2026-11-01: to tell them of a fix)
+        tk.Label(er, text='Your email (optional):', fg=deck.HI, bg=bg, font=f9, anchor='w').pack(side='left')
+        ev = tk.StringVar(value=getattr(self, 'report_email', ''))
+        tk.Entry(er, width=34, textvariable=ev, bg='#06100d', fg='#bfe', insertbackground='#bfe', font=f9, relief='flat',
+                 highlightthickness=1, highlightbackground=deck.EDGE, highlightcolor=deck.HI).pack(side='left', padx=(8, 0))
+        tk.Label(body, text='Optional: so the author can tell you when a fix is out.', fg=deck.DIM, bg=bg,
+                 font=(MONO, 9), anchor='w').pack(fill='x', padx=12, pady=(2, 0))
+        def email():
+            """the email typed (remembered for next time): '' for none, None when it does not look like one"""
+            e = ev.get().strip()
+            if e and not re.match(r'^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$', e) or len(e) > 120:
+                status.configure(text="That email does not look right - fix it or leave the field empty.", fg=deck.WARN)
+                return None
+            if e != getattr(self, 'report_email', ''):
+                self.report_email = e; self.save_settings()
+            return e
         status = tk.Label(body, text='Send: it goes to the author\'s server, you get a number to give the author.', fg=deck.DIM,
                           bg=bg, font=(MONO, 9), anchor='w', justify='left', wraplength=560)
         status.pack(fill='x', padx=12, pady=(8, 10))
@@ -6711,10 +6731,13 @@ class App:
         def send():
             if busy['on']:
                 return
+            em = email()
+            if em is None:
+                return
             busy['on'] = True; status.configure(text='sending...', fg=deck.HI)
             path = os.path.join(CACHE_DIR, 'report_send.zip')
             try:
-                os.makedirs(CACHE_DIR, exist_ok=True); self.make_report(path)
+                os.makedirs(CACHE_DIR, exist_ok=True); self.make_report(path, em)
             except Exception as e:   # noqa
                 busy['on'] = False; status.configure(text='The report could not be made: %s' % e, fg=deck.WARN); return
             def work():
@@ -6731,9 +6754,12 @@ class App:
                                                                          'send that.' % e, fg=deck.WARN))
             threading.Thread(target=work, daemon=True).start()
         def save():
+            em = email()
+            if em is None:
+                return
             path = perfcheck.report_path()
             try:
-                self.make_report(path)
+                self.make_report(path, em)
             except Exception as e:   # noqa
                 status.configure(text='The report could not be saved: %s' % e, fg=deck.WARN); return
             status.configure(text='Saved: %s' % path, fg=deck.HI)
@@ -7581,6 +7607,7 @@ class App:
         d['osd_meters'] = getattr(self, 'osd_meters', True)
         d['net_server'] = getattr(self, 'net_server_s', '')
         d['gamer_name'] = getattr(self, 'gamer', '')
+        d['report_email'] = getattr(self, 'report_email', '')
         d['gamer_ok'] = getattr(self, 'gamer_ok', False)
         d['player_key'] = getattr(self, 'player_key', '')
         d['net_osd'] = getattr(self, 'net_osd', True)

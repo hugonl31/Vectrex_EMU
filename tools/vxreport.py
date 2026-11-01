@@ -3,7 +3,8 @@
 
 POST /report  body: the report's zip (at most 2 MB)  header X-Vectrex-Version: the sender's version
   -> 200 text/plain 'R-XXXXXX' (the number the user gives the author), or 4xx/5xx with a short reason.
-Stored as DIR/R-XXXXXX.zip plus DIR/R-XXXXXX.json (time, version, size). The sender's IP is kept in memory only
+Stored as DIR/R-XXXXXX.zip plus DIR/R-XXXXXX.json (time, version, size, and email when the user gave one: contact.txt
+in the zip, v1.4.5 on - older reports have none). The sender's IP is kept in memory only
 for the rate limit (REPORTS_PER_DAY per IP), never written. The folder is kept under MAX_TOTAL (oldest go first).
 
 Install (Linode, next to vxrelay):
@@ -34,7 +35,17 @@ SUMMARY = ('Vectrex_EMU', 'System', 'Processor', 'Graphics', 'Now', 'On mains po
            'Found')                                     # (system.txt rows for the message)
 
 
-def telegram(num, ver, data):
+def contact(data):
+    """the email the user added (contact.txt in the zip, optional since v1.4.5): '' when none - printable, short"""
+    try:
+        t = zipfile.ZipFile(io.BytesIO(data)).read('contact.txt')[:200].decode('utf-8', 'replace').strip()
+    except Exception:   # noqa (no contact.txt: an older emulator, or none given)
+        return ''
+    t = ''.join(c for c in t.splitlines()[0] if c.isprintable())[:120] if t else ''
+    return t if '@' in t else ''
+
+
+def telegram(num, ver, data, email=''):
     """the new report to the author's Telegram chat: its number, a few rows of system.txt, the zip (in a thread)"""
     if not (TG_TOKEN and TG_CHAT):
         return
@@ -48,7 +59,8 @@ def telegram(num, ver, data):
     except Exception:   # noqa
         txt = ''
     rows = [ln.strip() for ln in txt.splitlines() if ln.strip().startswith(SUMMARY)][:12]
-    cap = ('New debug report %s (%s)\n' % (num, ver) + '\n'.join(r[:150] for r in rows))[:1000]
+    cap = ('New debug report %s (%s)\n' % (num, ver) + ('Email: %s\n' % email if email else 'Email: none given\n')
+           + '\n'.join(r[:150] for r in rows))[:1000]
     b = '----vx' + secrets.token_hex(8)
     body = b''.join([
         ('--%s\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n%s\r\n' % (b, TG_CHAT)).encode(),
@@ -126,15 +138,19 @@ class H(BaseHTTPRequestHandler):
         except Exception:   # noqa
             return self.reply(400, 'not a report')
         ver = ''.join(c for c in self.headers.get('X-Vectrex-Version', '?')[:20] if c.isalnum() or c in '.-_')
+        email = contact(data)
         with lock:
             num = new_number()
             with open(os.path.join(DIR, num + '.zip'), 'wb') as f:
                 f.write(data)
             with open(os.path.join(DIR, num + '.json'), 'w') as f:
-                json.dump({'time': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(now)) + ' UTC', 'version': ver, 'size': n}, f)
+                meta = {'time': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(now)) + ' UTC', 'version': ver, 'size': n}
+                if email:
+                    meta['email'] = email
+                json.dump(meta, f)
             trim()
         self.reply(200, num)
-        threading.Thread(target=telegram, args=(num, ver, data), daemon=True).start()
+        threading.Thread(target=telegram, args=(num, ver, data, email), daemon=True).start()
 
     def log_message(self, fmt, *a):                      # (no IPs in the journal)
         pass

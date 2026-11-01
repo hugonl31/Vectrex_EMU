@@ -7,7 +7,7 @@ Commands (only from TELEGRAM_CHAT, everyone else is ignored):
   /daily on|off    the daily summary (vxdaily.py, 11:00)
   /debug on|off    a message for every debug report (vxreport.py)
   /today           the daily summary now (last 24 hours)
-  /report R-XXXXXX that report's zip again
+  /report R-XXXXXX that report's zip again, with its time, version and the user's email (if given)
 Plus: a message when vxrelay or vxreport stops, and when it runs again.
 
 The switches live in STATE (world-readable: vxreport.py and vxdaily.py read them). Token and chat in
@@ -152,7 +152,12 @@ def command(text):
             return 'Use /report R-XXXXXX'
         f = os.path.join(REPORTS, num + '.zip')
         try:
-            out.put(('Report %s' % num, num + '.zip', open(f, 'rb').read())); return None
+            m = json.load(open(os.path.join(REPORTS, num + '.json')))
+        except (OSError, ValueError):
+            m = {}
+        cap = 'Report %s (%s, %s)\nEmail: %s' % (num, m.get('version', '?'), m.get('time', '?'), m.get('email') or 'none given')
+        try:
+            out.put((cap, num + '.zip', open(f, 'rb').read())); return None
         except OSError:
             return 'No report %s' % num
     return 'Unknown command. /status shows them all.'

@@ -271,7 +271,7 @@ def report(path, info_text, settings_file=None, core_log=None, extra=None, app_l
         if settings_file and os.path.isfile(settings_file):
             try:
                 d = json.load(open(settings_file, encoding='utf-8'))
-                for k in ('player_key', 'gamer_name'):  # (the online key and player name: private)
+                for k in ('player_key', 'gamer_name', 'report_email'):  # (the online key, player name, email: private)
                     d.pop(k, None)
                 z.writestr('settings.json', _private(json.dumps(d, indent=1)))
             except (OSError, ValueError):

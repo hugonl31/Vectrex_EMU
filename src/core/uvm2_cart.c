@@ -41,6 +41,7 @@ void uvm2_power_on (void)
 	}
 	const char *sd = getenv ("VT_UVM2_SD");
 	if (sd) rp_set_sd (uvm2, sd);
+	{ const char *f = getenv ("VT_UVM2_FAST"); if (f && f[0] == '1') rp_fast_mode (uvm2, 1); }
 	uvm2_fault_told = 0; uvm2_rd_valid = 0;
 }
 
@@ -58,6 +59,7 @@ int uvm2_open (const char *path)
 	const char *sd = getenv ("VT_UVM2_SD");
 	if (sd) rp_set_sd (uvm2, sd);
 	vt_uvm2 = 1;
+	{ const char *f = getenv ("VT_UVM2_FAST"); if (f && f[0] == '1') rp_fast_mode (uvm2, 1); }
 	return 0;
 }
 
@@ -101,6 +103,12 @@ static int uvm2_cycle (void)
 	}
 	uvm2_drive (0);
 	rp_run (uvm2, h2);
+	{ unsigned freg, fval; int ft = rp_fast_take (uvm2, &freg, &fval);   /* (fast mode: the list's next period, not the pins) */
+	  if (ft >= 0) {
+		if (ft == 1) { write8 (0xd000 | freg, (unsigned char) fval); uvm2_n_wr++; uvm2_n_via++; }
+		uvm2_n_halt++; uvm2_cycles++; uvm2_cycles_pub = uvm2_cycles;
+		return 1;
+	  } }
 	/* E falls: a write lands */
 	v = rp_pins (uvm2, &oe);
 	halted = ((oe >> 27) & 1) && !((v >> 27) & 1);

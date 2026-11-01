@@ -27,5 +27,10 @@ int rp_audio_take (rp2350_t *rp, int16_t *buf, int max_frames, int *rate);
 const char *rp_fault (rp2350_t *rp);
 /* an SD card image (a FAT file system, raw sectors) or NULL for none */
 void rp_set_sd (rp2350_t *rp, const char *image_path);
-uint32_t rp2350_sig (rp2350_t *rp);                  /* (the chip's state in one number: online play) */
+uint32_t rp2350_sig (rp2350_t *rp);
+/* the fast UVMC2 mode (opt-in): learn the SDK's list replay, then do it natively; rp_fast_take: one E period of it
+ * (-1 none running, 0 idle, 1 a write of *val to VIA register *reg) */
+void rp_fast_mode (rp2350_t *rp, int on);
+int rp_fast_take (rp2350_t *rp, unsigned *reg, unsigned *val);
+extern uint32_t rp_fast_pc;                  /* (the chip's state in one number: online play) */
 #endif

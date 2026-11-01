@@ -1084,6 +1084,7 @@ class Audio:
             self.w.waveOutClose(self.h)
 
 # the cartridge boards (Vectrex > Cartridge hardware): conf value -> menu label
+UVM2_MODES = {'exact': 'Exact (as the cartridge)', 'fast': 'Fast (slower PCs)'}   # (Config > Ports: set_uvm2_mode)
 CART_HW = {'auto': "Auto (by the ROM's size)", 'off': 'Off - bone stock, 32 KB',
            'pb6': '64 KB, PB6 bank switching', 'vb': 'Vectorblade / MiSTer flash, 4 x 48 KB',
            'hb512': '512 KB flash with bank latch (HB v2 board)', 'multi': '1 MB multi-cart (4 KB pages, latch at $7FFF)',
@@ -1744,6 +1745,8 @@ Lines.__hash__ = None
 
 
 class Core:
+    uvm2_mode = 'exact'                                 # (a UVMC2 game: 'exact' as the cartridge, or 'fast' - the SDK's list
+                                                        #  replayed natively, for slower PCs; set_uvm2_mode. Online: exact)
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
     net_jitfast = False                                 # (online, both PCs the same processor type: the PiTrex JIT fast)
     net_card = None                                     # (online play with a UVMC2 / PiTrex: (card folder, the files both
@@ -1795,6 +1798,8 @@ class Core:
                 env['VT_JIT'] = 'exact'                             #  - or, both the same processor type: at full speed, its
                                                                     #  blocks the same on both (half the speed when exact)
             env.pop('VT_USBHID', None)                              # (no PC keyboard / mouse: not shared)
+        if rom.lower().endswith('.um2') and not net and Core.uvm2_mode == 'fast':
+            env['VT_UVM2_FAST'] = '1'                               # (Fast: core 1's list replay done natively, rp2350.c)
         self.sd = None
         if (px_dir and rom.lower().endswith(('.img', '.pit'))) or (sd_dir and rom.lower().endswith('.um2')):
             try:
@@ -2239,6 +2244,8 @@ class App:
         self.sm_st = type('SmoothState', (), {})()     # (the alternate-halves check's memory)
         self.imager_note = bool(c0.get('imager_note', True))    # the 3D Imager: a note while its disc spins up
         self.usb_hid = bool(c0.get('usb_hid', True))            # a UVMC2 game: the PC's mouse (and keyboard: Ctrl+K) as its USB devices
+        self.uvm2_mode = c0.get('uvm2_mode', 'exact') if c0.get('uvm2_mode') in UVM2_MODES else 'exact'
+        Core.uvm2_mode = self.uvm2_mode                         # UVMC2 games: Exact (as the cartridge) or Fast (slower PCs)
         self.usb_typing = False; self.usb_btn = 0; self.usb_last = None; self.usb_down = []
         self.skip_boot = bool(c0.get('skip_boot', False))       # power on straight into the cartridge
         self.p2_auto = bool(c0.get('p2_auto', True))            # port 2: the accessory a game needs, plugged in for it (port2_auto)
@@ -5130,6 +5137,8 @@ class App:
         a = self.args
         if self.net_busy():
             self.net_flash('ONLINE: LEAVE THE GAME FIRST', secs=4); return
+        if getattr(self, 'uvm2_mode', 'exact') != 'exact':      # (online: UVMC2 games exact on both sides - Core sees to it)
+            self.show_look('online: UVMC2 games run in Exact mode')
         addr, port, server, code, game = None, netplay.PORT, None, None, None
         if role == 'host':
             port = direct_port or netplay.PORT
@@ -7403,6 +7412,7 @@ class App:
         self.sd_dir = SD_DEFAULT
         self.px_dir = PX_DEFAULT
         self.usb_hid = True
+        self.uvm2_mode = Core.uvm2_mode = 'exact'
         self.p2_auto = True; self.p2_games = {}
         again = self.cart_hw != 'auto' or getattr(self, 'speech_user', 'off') != 'off'
         self.cart_hw = 'auto'; self.speech_user = 'off'
@@ -7423,6 +7433,16 @@ class App:
         self.run.crt.jack_mode = mode
         self.save_settings()
         self.show_look('UVMC2 headphone jack: ' + {'clean': 'clean, full range', 'speaker': 'through the Vectrex speaker', 'off': 'off'}[mode])
+    def set_uvm2_mode(self, mode):
+        """Config > Ports > UVMC2 emulation: Exact - the cartridge's chip as it is, cycle for cycle (the default; online
+        play always); Fast - for slower PCs: games made with the uvmc2 SDK get their drawing list replayed by the
+        emulator itself instead of through the chip's PIO and DMA, the rest (the game, its music, the controls) as
+        before. A UVMC2 game in the slot starts again with it."""
+        self.uvm2_mode = Core.uvm2_mode = mode
+        self.save_settings()
+        if (self.args.rom or '').lower().endswith('.um2'):
+            self.restart(self.args.rom)
+        self.show_look('UVMC2 emulation: ' + UVM2_MODES[mode])
     def toggle_um2 (self):
         self.show_um2 = not self.show_um2
         self.save_settings()
@@ -7667,6 +7687,7 @@ class App:
         d['pad_shortcuts'] = getattr(self, 'pad_shortcuts', True)
         d['mouse_stick'] = getattr(self, 'mouse_stick', False)
         d['usb_hid'] = getattr(self, 'usb_hid', True)
+        d['uvm2_mode'] = getattr(self, 'uvm2_mode', 'exact')
         d['imager_note'] = getattr(self, 'imager_note', True)
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'

@@ -830,6 +830,9 @@ class Deck:
                                                   ('Off', lambda: C().jack_mode == 'off', lambda: a.set_jack('off'))], None,
                      lambda: snd('jack_mode')),
                     ('in', [('slider', 'jack_vol', lambda: C().jack_mode != 'off')]),
+                    ('choice', 'Emulation', [(lbl, (lambda k=k: getattr(a, 'uvm2_mode', 'exact') == k), (lambda k=k: a.set_uvm2_mode(k)))
+                                             for k, lbl in V.UVM2_MODES.items()], None,
+                     lambda: getattr(a, 'uvm2_mode', 'exact') != 'exact'),
                     ('buttons', [('Open UVMC2 game...', a.open_um2), ('Open the SD folder', a.open_sd_dir),
                                  ('Choose SD folder...', a.choose_sd_dir)], None),
                     ('note', lambda: 'SD folder: %s' % _rel(a.sd_dir)),

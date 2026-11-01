@@ -414,6 +414,12 @@ static void exc_return (cm33_t *c, uint32_t er)
 	c->cycles += 10;
 }
 
+/* (fast UVMC2 mode, rp2350.c: core 1's calls while it learns uvm2_exec; the entry it found - core 1 arriving there is
+ * handed over; core 1 kept off the JIT while learning, so every call is seen) */
+void (*cm33_call_hook) (cm33_t *c, uint32_t target);
+void (*cm33_hle_hook) (cm33_t *c);
+uint32_t cm33_hle_pc;
+int cm33_core1_nojit;
 /* a branch through a register (BX, BLX, a load to PC): interworking, exception return */
 static inline void bx_write_pc (cm33_t *c, uint32_t a, uint32_t ip)
 {
@@ -1671,6 +1677,7 @@ static void h_bx (cm33_t *c, const di_t *d, uint32_t ip)
 	if (d->op) c->r[14] = (ip + 2) | 1;
 	bx_write_pc (c, t, ip);
 	c->cycles++;
+	if (d->op && cm33_call_hook && (c->core & 1)) cm33_call_hook (c, t & ~1u);
 }
 static void h_ld_lit (cm33_t *c, const di_t *d, uint32_t ip)
 {
@@ -1805,7 +1812,7 @@ static void h_bcond (cm33_t *c, const di_t *d, uint32_t ip)
 	if (cond_pass (c, d->op)) { c->r[15] = d->imm; c->cycles++; if (d->imm == ip) c->sleeping = 1, c->attn = 1; }
 }
 static void h_b (cm33_t *c, const di_t *d, uint32_t ip) { c->r[15] = d->imm; c->cycles++; if (d->imm == ip) c->sleeping = 1, c->attn = 1; }
-static void h_bl (cm33_t *c, const di_t *d, uint32_t ip) { c->r[14] = (ip + 4) | 1; c->r[15] = d->imm; c->cycles++; }
+static void h_bl (cm33_t *c, const di_t *d, uint32_t ip) { c->r[14] = (ip + 4) | 1; c->r[15] = d->imm; c->cycles++; if (cm33_call_hook && (c->core & 1)) cm33_call_hook (c, d->imm); }
 
 /* ----- 32-bit handlers */
 /* data processing with a (pre-expanded) immediate: op = the opcode, f1 = S, f2 = the carry from the
@@ -2536,6 +2543,7 @@ uint64_t cm33_run (cm33_t *c, uint64_t until)
 	if (dc && mj_state >= 0) {
 		mj_core_t *J0 = &mj[c->core & 1];
 		if ((mj_state == 1 && J0->code && mj_cpu[c->core & 1] == c) || mj_setup_core (c)) J = J0;
+		if (cm33_core1_nojit && (c->core & 1)) J = NULL;              /* (fast UVMC2 mode learning: every call seen) */
 	}
 #endif
 	/* (attn: something happened the loop must look at - a peripheral read or write, the SCS, an exception, a
@@ -2547,6 +2555,7 @@ uint64_t cm33_run (cm33_t *c, uint64_t until)
 		/* the fast path: an instruction in RAM, not in an IT block - one call through its decoded entry */
 		do {
 			uint32_t ip = c->r[15], o = ip - base;
+			if (ip == cm33_hle_pc && (c->core & 1) && cm33_hle_hook) { cm33_hle_hook (c); goto hle_out; }   /* (fast UVMC2 mode) */
 			if (o + 4 > size || c->it || slow) { exec_slow (c, dc);
 #ifdef CM33_JIT
 				if (mj_stats > 0) { if (c->it) mj_st_it++; else mj_st_out++; }
@@ -2575,6 +2584,7 @@ uint64_t cm33_run (cm33_t *c, uint64_t until)
 			nsteps++;
 		} while (!c->attn && c->cycles < until);
 	}
+hle_out:
 #ifdef CM33_JIT
 slice_done:
 #endif
@@ -2582,4 +2592,12 @@ slice_done:
 	if (c->syst_csr & 1) systick (c, c->cycles - start);
 	cm33_steps[(c->core & 1) * 8] += nsteps;
 	return c->cycles - start;
+}
+
+/* (fast UVMC2 mode: the entry found - every compiled block thrown away, so none runs through it) */
+void cm33_jit_flush_all (void)
+{
+#ifdef CM33_JIT
+	for (int k = 0; k < 2; k++) if (mj[k].code) mj[k].flush_req = 1;
+#endif
 }

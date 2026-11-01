@@ -88,6 +88,7 @@ struct rp2350 {
 	uint32_t doorbell[2];
 	/* core 1 waiting in the bootrom for its launch (the FIFO handshake) */
 	int core1_parked, launch_i; uint32_t launch_seq[6];
+	int hle_hold;                           /* (fast UVMC2 mode: core 1 waits while its list is replayed) */
 	/* pins */
 	uint64_t ext_mask, ext_val;                      /* driven from outside */
 	uint8_t funcsel[NPINS];
@@ -361,7 +362,8 @@ static void sio_write (rp2350_t *rp, cm33_t *c, uint32_t off, uint32_t v)
 static int sm_tx_level (pio_sm_t *s) { return s->txn; }
 static int sm_tx_cap (pio_sm_t *s) { return (s->shiftctrl >> 30) & 1 ? 8 : (s->shiftctrl >> 31) & 1 ? 0 : 4; }
 static int sm_rx_cap (pio_sm_t *s) { return (s->shiftctrl >> 31) & 1 ? 8 : (s->shiftctrl >> 30) & 1 ? 0 : 4; }
-static int sm_tx_push (pio_sm_t *s, uint32_t v) { if (s->txn >= sm_tx_cap (s)) return 0; s->tx[(s->txr + s->txn) & 7] = v; s->txn++; return 1; }
+static unsigned long long fm_writes;      /* (fast UVMC2 mode learning: the write words the PIOs were given) */
+static int sm_tx_push (pio_sm_t *s, uint32_t v) { if (s->txn >= sm_tx_cap (s)) return 0; if (v & 1) fm_writes++; s->tx[(s->txr + s->txn) & 7] = v; s->txn++; return 1; }
 static int dma_kick = 1;                        /* (something a DMA request may wait on changed) */
 /* (pio_fx: counts what a state machine did that the rest of the chip could see - FIFO, IRQ flags, the RX registers,
  * EXEC; pio_run_sm's loop skip needs none of it between two visits of the same state) */
@@ -1961,7 +1963,7 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 				cm33_t *c = &rp->cpu[k];
 				unsigned long long c0 = RP_TSC ();
 				if (k == 0 && rp->th_on) continue;
-				if (k == 1 && rp->core1_parked) { c->cycles = t; continue; }
+				if (k == 1 && (rp->core1_parked || rp->hle_hold)) { c->cycles = t; continue; }
 				if (c->cycles < rp->now) c->cycles = rp->now;
 				core_slice (rp, c, t, 0);
 				rp_t_core[k] += RP_TSC () - c0;
@@ -1996,7 +1998,7 @@ void rp_run (rp2350_t *rp, uint32_t cycles)
 		for (int k = 0; k < 2; k++) {
 			cm33_t *c = &rp->cpu[k];
 			if (k == 0 && rp->th_on) continue;                         /* (core 0: on its own thread) */
-			if (k == 1 && rp->core1_parked) { c->cycles = t; continue; }
+			if (k == 1 && (rp->core1_parked || rp->hle_hold)) { c->cycles = t; continue; }
 			if (c->cycles < rp->now) c->cycles = rp->now;
 			if (c->wait_on && rp->log) {
 				static uint32_t seen[64]; static int ns; int k2; for (k2 = 0; k2 < ns; k2++) if (seen[k2] == c->r[15]) break;
@@ -2043,4 +2045,72 @@ uint32_t rp2350_sig (rp2350_t *rp)
 		for (int i = 0; i < 16; i++) h = (h ^ c->r[i]) * 16777619u;
 	}
 	return h;
+}
+
+
+/* ------------------------------------------------------------------ fast UVMC2 mode (opt-in; see uvm2_cart.c)
+ * learning: core 1's calls with their r0 / r1; the one whose r1 equals the PIO write words pushed until its next call,
+ * FM_LEARN times running, is the SDK's uvm2_exec (cmds, count). Then: core 1 arriving there is held, its list is read
+ * from the chip's memory and handed out one E period at a time (rp_fast_take), and core 1 returns with the cycles. */
+extern void (*cm33_call_hook) (cm33_t *c, uint32_t target);
+extern void (*cm33_hle_hook) (cm33_t *c);
+extern uint32_t cm33_hle_pc;
+extern int cm33_core1_nojit;
+#define FM_LEARN 20
+typedef struct { uint32_t pc, r1; unsigned long long w0; int run; } fm_cand_t;
+static fm_cand_t fm_cand[256]; static int fm_ncand;
+static rp2350_t *fm_rp;
+static uint8_t *fm_list; static uint32_t fm_cap, fm_n, fm_i, fm_delay, fm_cycles; static int fm_active, fm_learning;
+uint32_t rp_fast_pc;                                     /* (the entry found: 0 = not yet / none) */
+static void fm_found (uint32_t pc)
+{
+	rp_fast_pc = cm33_hle_pc = pc;
+	cm33_call_hook = NULL; cm33_core1_nojit = 0; fm_learning = 0;
+	{ extern void cm33_jit_flush_all (void); cm33_jit_flush_all (); }
+	fprintf (stderr, "UVMC2 fast mode: list replay found at %08X\n", pc);
+}
+static void fm_call (cm33_t *c, uint32_t pc)
+{
+	fm_cand_t *e = NULL;
+	for (int i = 0; i < fm_ncand; i++) if (fm_cand[i].pc == pc) { e = &fm_cand[i]; break; }
+	if (!e) { if (fm_ncand >= 256) return; e = &fm_cand[fm_ncand++]; e->pc = pc; e->r1 = 0; e->run = 0; e->w0 = fm_writes; }
+	else if (e->r1 && fm_writes - e->w0 == e->r1) { if (++e->run >= FM_LEARN) { uint32_t best = pc;
+		for (int i = 0; i < fm_ncand; i++) if (fm_cand[i].run >= FM_LEARN && fm_cand[i].pc < best) best = fm_cand[i].pc;   /* (a veneer and the function: the function, low in RAM) */
+		fm_found (best); return; } }
+	else e->run = 0;
+	e->r1 = c->r[1]; e->w0 = fm_writes;
+}
+static void fm_enter (cm33_t *c)                          /* core 1 at uvm2_exec (r0 = the list, r1 = its commands) */
+{
+	rp2350_t *rp = fm_rp;
+	uint32_t a = c->r[0], n = c->r[1];
+	if (n > 200000) n = 200000;
+	if (fm_cap < n * 3) { fm_cap = n * 3 + 1024; fm_list = (uint8_t *) realloc (fm_list, fm_cap); }
+	for (uint32_t i = 0; i < n * 3; i++) fm_list[i] = (uint8_t) bus_read (rp, NULL, a + i, 1);
+	fm_n = n; fm_i = 0; fm_delay = 0; fm_cycles = 0; fm_active = 1;
+	rp->hle_hold = 1;
+	c->attn = 1;
+}
+/* one E period of the replay: -1 = none running (the pins as usual), 0 = an idle period, 1 = a write to the VIA
+ * register *reg of *val. When the list is done core 1 goes on after the call with r0 = the cycles. */
+int rp_fast_take (rp2350_t *rp, unsigned *reg, unsigned *val)
+{
+	if (!fm_active) return -1;
+	if (fm_delay) { fm_delay--; fm_cycles++; return 0; }
+	if (fm_i >= fm_n) {                                  /* done: back from uvm2_exec */
+		cm33_t *c = &rp->cpu[1];
+		fm_active = 0; rp->hle_hold = 0;
+		c->r[0] = fm_cycles; c->r[15] = c->r[14] & ~1u; c->attn = 1;
+		return -1;
+	}
+	const uint8_t *b = fm_list + fm_i * 3; fm_i++;
+	uint32_t v = (uint32_t) b[0] | ((uint32_t) b[1] << 8) | ((uint32_t) b[2] << 16);
+	*reg = (v >> 8) & 15; *val = v & 0xff; fm_delay = v >> 12; fm_cycles++;
+	return 1;
+}
+void rp_fast_mode (rp2350_t *rp, int on)
+{
+	fm_rp = rp; fm_ncand = 0; fm_active = 0; rp->hle_hold = 0; rp_fast_pc = cm33_hle_pc = 0;
+	cm33_hle_hook = on ? fm_enter : NULL;
+	cm33_call_hook = on ? fm_call : NULL; cm33_core1_nojit = on; fm_learning = on;
 }

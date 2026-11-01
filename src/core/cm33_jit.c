@@ -1391,6 +1391,7 @@ static uint8_t *mj_compile (cm33_t *c, const di_t **ins, const uint32_t *ips, in
 #endif
 
 /* the block at ip: compiled now (or MJ_NONE: none starts here) */
+extern uint32_t cm33_hle_pc;
 static uint8_t *mj_translate_l (mj_core_t *J, cm33_t *c, di_t *dc, uint32_t ip0);
 static uint8_t *mj_translate (mj_core_t *J, cm33_t *c, di_t *dc, uint32_t ip0)
 {
@@ -1411,6 +1412,7 @@ static uint8_t *mj_translate_l (mj_core_t *J, cm33_t *c, di_t *dc, uint32_t ip0)
 	while (n < MJ_MAX) {
 		uint32_t o = ip - base;
 		if (o + 4 > size) break;
+		if (ip == cm33_hle_pc) break;                               /* (fast UVMC2 mode: the loop meets that entry) */
 		di_t *d = &dc[o >> 1];
 		if (d->fn == h_decode) decode_at (c, ip, d);
 		if (d->fn == GENERIC || d->fn == h_decode) break;

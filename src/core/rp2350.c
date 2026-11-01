@@ -363,8 +363,11 @@ static int sm_tx_cap (pio_sm_t *s) { return (s->shiftctrl >> 30) & 1 ? 8 : (s->s
 static int sm_rx_cap (pio_sm_t *s) { return (s->shiftctrl >> 31) & 1 ? 8 : (s->shiftctrl >> 30) & 1 ? 0 : 4; }
 static int sm_tx_push (pio_sm_t *s, uint32_t v) { if (s->txn >= sm_tx_cap (s)) return 0; s->tx[(s->txr + s->txn) & 7] = v; s->txn++; return 1; }
 static int dma_kick = 1;                        /* (something a DMA request may wait on changed) */
-static int sm_tx_pop (pio_sm_t *s, uint32_t *v) { if (!s->txn) return 0; dma_kick = 1; *v = s->tx[s->txr]; s->txr = (s->txr + 1) & 7; s->txn--; return 1; }
-static int sm_rx_push (pio_sm_t *s, uint32_t v) { if (s->rxn >= sm_rx_cap (s)) return 0; dma_kick = 1; s->rx[(s->rxr + s->rxn) & 7] = v; s->rxn++; return 1; }
+/* (pio_fx: counts what a state machine did that the rest of the chip could see - FIFO, IRQ flags, the RX registers,
+ * EXEC; pio_run_sm's loop skip needs none of it between two visits of the same state) */
+static unsigned pio_fx;
+static int sm_tx_pop (pio_sm_t *s, uint32_t *v) { if (!s->txn) return 0; dma_kick = 1; pio_fx++; *v = s->tx[s->txr]; s->txr = (s->txr + 1) & 7; s->txn--; return 1; }
+static int sm_rx_push (pio_sm_t *s, uint32_t v) { if (s->rxn >= sm_rx_cap (s)) return 0; dma_kick = 1; pio_fx++; s->rx[(s->rxr + s->rxn) & 7] = v; s->rxn++; return 1; }
 static int sm_rx_pop (pio_sm_t *s, uint32_t *v) { if (!s->rxn) return 0; *v = s->rx[s->rxr]; s->rxr = (s->rxr + 1) & 7; s->rxn--; return 1; }
 
 static uint32_t pio_pins_in (rp2350_t *rp, pio_t *p)
@@ -475,7 +478,7 @@ PIO_INLINE int pio_exec_k (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t in
 			unsigned n = idx & 7;
 			if ((idx & 0x18) == 0x10) n = (n & 4) | ((n + (unsigned) si) & 3);
 			lv = (int) ((p->irq >> n) & 1);
-			if (lv == (int) pol) { if (pol) p->irq &= ~(1u << n); return 0; }
+			if (lv == (int) pol) { if (pol) { p->irq &= ~(1u << n); pio_fx++; } return 0; }
 			return 1;
 		} else lv = (int) ((pio_pins_in (rp, p) >> ((((ex >> 24) & 31) + idx) & 31)) & 1);
 		if (lv != (int) pol) {
@@ -525,7 +528,7 @@ PIO_INLINE int pio_exec_k (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t in
 		case 4: pio_set_pins (p, pc & 31, (pc >> 20) & 63, v, 1); break;
 		case 5: R->pc = v & 31; *jumped = 1; break;
 		case 6: R->isr = v; R->isr_cnt = (int) n; break;
-		case 7: s->exec_pending = 1; s->exec_instr = v & 0xffff; break;
+		case 7: s->exec_pending = 1; s->exec_instr = v & 0xffff; pio_fx++; break;
 		}
 		if (((sh >> 17) & 1) && R->osr_cnt >= thresh) {
 			uint32_t w; if (POP (s, &w)) { R->osr = w; R->osr_cnt = 0; }
@@ -536,7 +539,7 @@ PIO_INLINE int pio_exec_k (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t in
 		if ((ins >> 4) & 1) {                                                  /* MOV to / from the RX FIFO (RP2350) */
 			unsigned idx = (ins >> 3) & 1 ? (ins & 3) : (R->y & 3);
 			if ((ins >> 7) & 1) R->osr = s->rx[idx & 3], R->osr_cnt = 0;
-			else s->rx[idx & 3] = R->isr;
+			else { s->rx[idx & 3] = R->isr; pio_fx++; }
 			break;
 		}
 		int ifx = (ins >> 6) & 1, blk = (ins >> 5) & 1;
@@ -578,7 +581,7 @@ PIO_INLINE int pio_exec_k (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t in
 		case 1: R->x = v; break;
 		case 2: R->y = v; break;
 		case 3: pio_set_pins (p, pc & 31, (pc >> 20) & 63, v, 1); break;
-		case 4: s->exec_pending = 1; s->exec_instr = v & 0xffff; break;
+		case 4: s->exec_pending = 1; s->exec_instr = v & 0xffff; pio_fx++; break;
 		case 5: R->pc = v & 31; *jumped = 1; break;
 		case 6: R->isr = v; R->isr_cnt = 0; break;
 		case 7: R->osr = v; R->osr_cnt = 0; break;
@@ -595,6 +598,7 @@ PIO_INLINE int pio_exec_k (rp2350_t *rp, pio_t *p, int pidx, int si, uint16_t in
 			if ((tp->irq >> n) & 1) return 1;
 			s->irq_wait = 0; break;
 		}
+		pio_fx++;
 		if (clr) tp->irq &= ~(1u << n);
 		else {
 			tp->irq |= 1u << n;
@@ -654,8 +658,32 @@ static void pio_run_sm (rp2350_t *rp, int pidx, int si, uint32_t cyc)
 	 * reads them; the wrap's two ends worked out once) */
 	uint32_t wt = (k.ex >> 12) & 31, wb = (k.ex >> 7) & 31;
 	unsigned long long nins = 0;
+	/* (2026-11-01, exact loop skip: a snapshot of the whole state at an instruction boundary; back at the same state with
+	 * no outside effect in between = the stretch repeats exactly, so whole repetitions are skipped. A bus driver that
+	 * spins on a pin - Ralf Kornmann's Centipede: 600 M instructions in 6 s - then costs a few steps per run) */
+	int sn_have = 0; pio_r_t sn = { 0 }; uint32_t sn_pins = 0, sn_dirs = 0, sn_left = 0, sn_last = 0; unsigned sn_fx = 0; unsigned long long sn_nins = 0;
+	int sn_txn = 0, sn_rxn = 0; uint32_t sn_irq[3] = { 0, 0, 0 };   /* (what the CPU on its own thread could change during a run) */
 	while (steps) {
 		if (R.delay) { uint32_t d = (uint32_t) R.delay < steps ? (uint32_t) R.delay : steps; R.delay -= (int) d; steps -= d; continue; }
+		uint32_t back = R.pc <= sn_last; sn_last = R.pc;          /* (a loop always steps back: only there is it looked for, and
+		                                                             the snapshot taken: a pc 0 start counts as one) */
+		if (back && !s->exec_pending && !s->irq_wait) {
+			if (sn_have && R.pc == sn.pc && R.x == sn.x && R.y == sn.y && R.isr == sn.isr && R.osr == sn.osr
+			    && R.isr_cnt == sn.isr_cnt && R.osr_cnt == sn.osr_cnt && p->pins == sn_pins && p->dirs == sn_dirs && pio_fx == sn_fx
+			    && s->txn == sn_txn && s->rxn == sn_rxn && rp->pio[0].irq == sn_irq[0] && rp->pio[1].irq == sn_irq[1] && rp->pio[2].irq == sn_irq[2]) {
+				uint32_t per = sn_left - steps;                    /* (steps one repetition takes) */
+				if (per && steps >= per) {
+					uint32_t reps = steps / per;
+					steps -= reps * per;
+					nins += (unsigned long long) reps * (nins - sn_nins);
+				}
+				sn_have = 0;
+				if (!steps) break;
+			} else if (!sn_have || nins - sn_nins > 64) {
+				sn_have = 1; sn = R; sn_pins = p->pins; sn_dirs = p->dirs; sn_fx = pio_fx; sn_left = steps; sn_nins = nins;
+				sn_txn = s->txn; sn_rxn = s->rxn; sn_irq[0] = rp->pio[0].irq; sn_irq[1] = rp->pio[1].irq; sn_irq[2] = rp->pio[2].irq;
+			}
+		}
 		steps--;
 		uint16_t ins; int from_exec = 0;
 		if (s->exec_pending) { ins = (uint16_t) s->exec_instr; s->exec_pending = 0; from_exec = 1; }

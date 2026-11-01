@@ -5,7 +5,8 @@ newest on top, each line short enough for that small window (at most about 70 ch
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.4.5
-- UVMC2: Centipede and similar games run up to 1.7x faster
+- UVMC2 Centipede runs 1.7x faster (thank you for the debug reports)
+- UVMC2 Galaga a little faster; Galaga and Moon Cresta: more to come
 - Recording shows REC and the time in the title bar and control deck
 - Random and Cranky units now differ in shape too: skew, keystone, bow
 - Debug report: add your email (optional) to hear when a fix is out

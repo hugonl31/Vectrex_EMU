@@ -5,9 +5,16 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.4.5
 
-**UVMC2: busy games faster**
-* **UVMC2 games that keep the cartridge busy run up to 1.7x faster** (Centipede 0.3a: 1.72x): loops in which the
-  cartridge's PIO waits on a pin are skipped exactly. The emulation is unchanged, picture for picture.
+**UVMC2: Centipede 1.7x faster, Galaga a little (from two debug reports, thank you)**
+* **Centipede 0.3a runs 1.72x faster.** Its cartridge program sets the Vectrex data bus direction in a tight loop,
+  every clock; the emulator now skips such loops exactly instead of stepping every cycle. On a fast desktop it went
+  from 79 % to full speed.
+* **Galaga v1.0: about 8 % faster.** Moon Cresta: unchanged so far. Both spend their time elsewhere in the
+  cartridge's emulation; a deeper speed-up for them is being worked on.
+* **The emulation is unchanged, picture for picture:** every line drawn, the online checksum and the cartridge's
+  memory were compared with v1.4.4 on the UVMC2 timing test, Centipede, Galaga, Moon Cresta, Last Human (UVMC2),
+  the UVMC2 Demo and Movie Player, VecDoom and Veccy Road: all the same. Games played on a real cartridge and in
+  the emulator behave alike, as before.
 
 **Recording: REC where you can see it**
 * **No more red dot in the picture** - on a red overlay (Armor Attack, Polar Rescue, Space Wars...) it was lost.

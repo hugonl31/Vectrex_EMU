@@ -8,8 +8,13 @@ processor's time to build its lines and to draw a picture, the graphics card's t
 query; without one: the time to finish, less the processor's), and the game thread's own work per frame (the sound,
 the frame read from the core). The game is paused meanwhile. One processor core does all the Python work (the game
 thread and the drawing share it), so its load is the sum: (game thread + lines) x 50 game frames + picture x the
-screen's refreshes a second. Full speed: under 75 % of the processor and of the graphics card."""
-import ctypes, math, os, platform, random, time
+screen's refreshes a second. Full speed: under 75 % of the processor and of the graphics card.
+
+UVMC2 games (uvm2_probe): the emulator's core runs a UVMC2 probe (system/uvm2_probe.um2: a heavy frame of lines and
+sweeps and game-like work, made from the UVMC2 timing test - tools/uvm2_probe) for a few seconds, as the app runs it, in
+Exact - then Fast and Dev only if needed - and the highest mode the heaviest UVMC2 games (VecDoom, Moon Cresta,
+Galaga) would run in under the same 75 % is chosen."""
+import ctypes, math, os, platform, random, subprocess, time
 import tkinter as tk
 
 V = None                                # (the app's module: set by vectrex_emu)
@@ -145,6 +150,63 @@ FEATURES = (('dither_on', False), ('bend_smooth', False), ('case_refl', 0.0), ('
             ('glass_on', False), ('curve_on', False), ('phos_scale', 0.5), ('half_rate', True))
 
 
+# the heaviest typical UVMC2 game against the probe (system/uvm2_probe.um2, tools/uvm2_probe), each mode's core time
+# per frame - the highest of VecDoom, Galaga and Moon Cresta (Moon Cresta, mostly), measured 2026-11-02: x86 on a
+# Ryzen 7 9800X3D (Windows) and a Ryzen 7 7840HS (Linux) - 1.29 / 1.54 / 1.58 on both; ARM on a Raspberry Pi 5
+UVM2_SCALE_X86 = (('exact', 1.29), ('fast', 1.54), ('dev', 1.58))
+UVM2_SCALE_ARM = (('exact', 1.20), ('fast', 1.29), ('dev', 1.32))
+UVM2_ENV = {'fast': 'VT_UVM2_FAST', 'dev': 'VT_UVM2_DEV'}
+
+
+def uvm2_probe(say=lambda s: None):
+    """the UVMC2 mode for this PC: dict(mode=, loads={mode: predicted share of the heaviest games}, fits=); None without
+    the probe (system/uvm2_probe.um2) or the core"""
+    dirs = list(getattr(V, 'SYS_DIRS', ())) + [os.path.join(V.ROOT, 'system'), os.path.join(V.ROOT, 'package', 'system')]
+    rom = next((os.path.join(d, 'uvm2_probe.um2') for d in dirs if os.path.isfile(os.path.join(d, 'uvm2_probe.um2'))), None)
+    if not rom or not os.path.isfile(V.CORE) or not V.BIOS:
+        return None
+    try:
+        os.makedirs(V.CACHE_DIR, exist_ok=True)
+        script = os.path.join(V.CACHE_DIR, 'uvm2_probe.txt')
+        with open(script, 'w') as f:
+            f.write('hitch 200' + chr(10))              # (200 frames, ~4 s: its median frame time against its length)
+    except OSError:
+        return None
+    loads = {}
+    arm = platform.machine().lower().startswith(('arm', 'aarch'))
+    for mode, k in (UVM2_SCALE_ARM if arm else UVM2_SCALE_X86):
+        say('measuring UVMC2 games (%s mode)...' % mode.capitalize())
+        env = dict(os.environ)
+        env['VT_THREADS'] = '1' if (os.cpu_count() or 1) >= 4 else '0'    # (as the app: Core)
+        if mode in UVM2_ENV:
+            env[UVM2_ENV[mode]] = '1'
+        try:
+            out = subprocess.run([V.CORE, V.BIOS, rom, script, V.CACHE_DIR], env=env, capture_output=True, timeout=90,
+                                 creationflags=0x08000000 if V.IS_WIN else 0).stdout.decode(errors='replace')
+            med = float(out.split('median ')[1].split()[0])
+        except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+            med = None
+        if med is None:
+            if not loads:
+                return None                             # (the core could not run it: nothing to choose)
+            continue
+        loads[mode] = med * k
+        if loads[mode] < FIT:
+            return dict(mode=mode, loads=loads, fits=True)
+    return dict(mode='dev', loads=loads, fits=False)
+
+
+def uvm2_line(u):
+    """Optimize's choice for UVMC2 games, in words"""
+    why = {'exact': 'this PC keeps up with the heaviest games', 'fast': 'this PC is too slow for Exact in the heaviest games',
+           'dev': 'this PC is too slow for Exact and Fast in the heaviest games'}[u['mode']]
+    if not u['fits']:                                   # (over 75 % even in Dev: full speed while under 100 %)
+        why += ('; Dev keeps up, with little to spare' if u['loads'].get('dev', 9) < 1.0 else
+                '; even Dev may run them a little slow')
+    pct = ', '.join('%s %d %%' % (m.capitalize(), round(100 * v)) for m, v in u['loads'].items())
+    return 'UVMC2 games: %s mode (%s; their predicted load: %s).' % (u['mode'].capitalize(), why, pct)
+
+
 def optimize(app, say=lambda s: None):
     """Optimize: every effect on (High), then - only if this PC can not keep full speed so - the effects that cost it
     most turned off one by one, until it can (each one's cost measured on its own first; those that cost nothing
@@ -192,9 +254,11 @@ def optimize(app, say=lambda s: None):
                 now = l
                 if fits(now):
                     break
+        uvm2 = uvm2_probe(say)                          # (the UVMC2 mode: the core on its own, the game still paused)
     finally:
         a.run.paused = was
-    return dict(vals=vals, off=off, before=before, after=now, fits=fits(now), cpu=cpu_name(), gpu=gpu_name(a), hz=hz)
+    return dict(vals=vals, off=off, before=before, after=now, fits=fits(now), cpu=cpu_name(), gpu=gpu_name(a), hz=hz,
+                uvm2=uvm2)
 
 
 def cpu_name():
@@ -223,6 +287,9 @@ def apply(app, rep):
     r = app.ren
     undo = {k: getattr(r, k) for k in rep['vals'] if hasattr(r, k)}
     undo['_base'] = getattr(app, 'quality_base', 'ultra'); undo['_opt'] = dict(getattr(app, 'quality_opt', {}))
+    if rep.get('uvm2'):                                 # (UVMC2 games: the mode chosen - from the next UVMC2 game start)
+        undo['_uvm2'] = getattr(app, 'uvm2_mode', 'exact')
+        app.uvm2_mode = V.Core.uvm2_mode = rep['uvm2']['mode']
     for k, v in rep['vals'].items():
         if hasattr(r, k):
             setattr(r, k, v)
@@ -252,6 +319,8 @@ def undo(app, before):
             setattr(r, k, v)
     if '_base' in before:
         app.quality_base = before['_base']; app.quality_opt = before.get('_opt', {})
+    if '_uvm2' in before:
+        app.uvm2_mode = V.Core.uvm2_mode = before['_uvm2']
     if '_rate' in before and before['_rate'] != app.rate:
         app.set_screen(before['_rate'])
     if '_smooth' in before and bool(before['_smooth']) != bool(app.smooth):
@@ -265,12 +334,14 @@ def undo(app, before):
 def result_lines(rep):
     """what Optimize did, as text"""
     pct = lambda l: 'processor %d %%, graphics %d %%' % (round(100 * l[0]), round(100 * (l[1] or 0.0)))
+    u = [uvm2_line(rep['uvm2'])] if rep.get('uvm2') else []
     if not rep['off']:
-        return ['This PC runs every effect at full speed.', 'Nothing was turned off.',
-                '(a heavy scene: %s)' % pct(rep['before'])]
+        return ['This PC runs every effect at full speed.', 'Nothing was turned off.'] + u + \
+               ['(a heavy scene: %s)' % pct(rep['before'])]
     rows = ['Turned off to keep this PC at full speed:']
     rows += ['  - %s  (saves %d %%)' % (OFF_NAMES[k], g) for k, g in rep['off']]
     rows.append('Everything else stays on. In Config the changes are marked ●.')
+    rows += u
     rows.append('(a heavy scene: before %s; now %s)' % (pct(rep['before']), pct(rep['after'])))
     if not rep['fits']:
         rows.append("Even so a heavy game may run a little slow: the screen at the monitor's own rate, Smooth motion off.")
@@ -318,7 +389,7 @@ def window(app, parent=None, on_done=None):
         st['undo'] = apply(a, rep)
         body.configure(text='\n'.join(result_lines(rep)))
         deck._button(bar, 'OK', close, a, on=True).pack(side='left')
-        if rep['off']:
+        if rep['off'] or (rep.get('uvm2') and st['undo'].get('_uvm2') != rep['uvm2']['mode']):
             deck._button(bar, 'Undo', lambda: (undo(a, st['undo']), st.pop('rep', None), close()), a).pack(side='left', padx=8)
         a.show_look('quality: optimized (%s)' % a.QUALITY_NAMES[a.current_profile()])
         a.flash('QUALITY OPTIMIZED', ('%d EFFECTS OFF' % len(rep['off'])) if rep['off'] else 'EVERY EFFECT ON', secs=3.0)

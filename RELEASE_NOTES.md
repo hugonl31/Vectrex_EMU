@@ -11,7 +11,20 @@ build workflow replaces that release (title = the version, marked Latest) with t
   SDK, the emulator replays each frame's drawing list itself instead of through the chip's PIO and DMA; the game, its
   music and the controls run as before, and the picture is the same. **Dev (clean lines)**: the fastest, Fast plus an
   ideal Vectrex beam (no drift, lag or offsets, every stroke one clean line), for developing on weak PCs; not the
-  real picture. Both are opt-in; online play always runs Exact (starting a game online says so).
+  real picture. Exact stays the default where Optimize has not run.
+* **Optimize** (View > Quality, the Config window, the first-start setup) now also picks the UVMC2 mode: the core
+  runs a UVMC2 test program (system/uvm2_probe.um2, not in the ROM list: a heavy frame made from our UVMC2 timing
+  test, source in tools/uvm2_probe) for a few seconds in Exact (then Fast and Dev only if needed), and the highest mode the
+  heaviest UVMC2 games (VecDoom, Moon Cresta, Galaga) would run in under 75 % of real time is chosen and shown with
+  the results, e.g. "UVMC2 games: Fast mode (this PC is too slow for Exact in the heaviest games)". It can be changed
+  after, as the quality choices. Nothing switches by itself while playing.
+* **Online**, both players' modes are compared before the game starts and both play in the lower of the two (Dev <
+  Fast < Exact): the slower PC decides. Both see who decided it, e.g. "Bob's PC is too slow for Exact, so UVMC2 games
+  run in Fast mode for this game". This is for that game only: the faster PC's own setting is never changed.
+  Fast and Dev give the same game on every PC (checked: x86 and ARM the same to the bit over 1500 frames; online,
+  Exact against Fast, Fast against Dev and Windows against Linux, 0 desyncs).
+* When a UVMC2 game runs slower than real time, the slow-PC window offers the next faster mode (one click, the game
+  starts again in it).
 * The window's title shows the mode while a UVMC2 game runs in Fast or Dev (`[UVMC2 Fast mode]`), and a change in
   Config restarts the game in the new mode at once. Fast and Dev run the chip on one host thread: with core 1's work
   gone, two threads waiting on each other cost more than they saved (VecDoom in the app, the OSD's CPU meter:
@@ -19,7 +32,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Time per frame against real time (under 1 = full speed), Galaga / Moon Cresta / VecDoom, Exact -> Fast -> Dev:
   Ryzen 7 7840HS 0.52 / 0.66 / 0.71 -> 0.18 / 0.25 / 0.26 -> 0.15 / 0.22 / 0.23 (the same on two cores);
   Raspberry Pi 5 1.27 / 1.52 / 1.65 -> 0.48 / 0.62 / 0.69 -> 0.38 / 0.53 / 0.58, so all three now run at full
-  speed on a Pi 5 in Fast and Dev. Centipede 0.3a is not built on the SDK's list replay and stays as it is.
+  speed on a Pi 5 in Fast and Dev (measured before the whole-frame fix below; with it, VecDoom on a Pi 5 measures
+  1.07 / 0.83 / 0.73). Centipede 0.3a is not built on the SDK's list replay and stays as it is.
 
 **UVMC2 and PiTrex: whole pictures**
 * **A UVMC2 game's picture was cut every 30000 cycles** while its frames last about 32000 to 55000: each picture sent

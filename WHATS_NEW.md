@@ -6,6 +6,9 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.4.7
 - UVMC2 Fast and Dev modes for slower PCs (Config > Ports)
+- Optimize picks the UVMC2 mode this PC keeps up with
+- Online UVMC2 games: the slower PC decides the mode, for that game
+- CPU / GPU meters turn orange only above 90 %
 - UVMC2 and PiTrex: whole pictures, no more missing or empty frames
 - Debug report: paused time no longer looks like a slow PC
 - Picture-shape sliders moved to Config > Unit

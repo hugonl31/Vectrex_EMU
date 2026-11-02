@@ -68,6 +68,21 @@ PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
 
 
 JIT_FAST = b'\x00jit:fast'   # (player 2's yes, with its accept: the same processor type - the PiTrex JIT at full speed)
+UVM2_TAG = b'\x00uvm2:'      # (player 2's yes: + the UVMC2 mode both play in - the lower of the two players')
+UVM2_RANK = ('exact', 'fast', 'dev')
+
+
+def uvm2_agree(a, b):
+    """the UVMC2 mode two players play in: the lower of the two (Dev < Fast < Exact - the slower PC decides)"""
+    r = lambda m: UVM2_RANK.index(m) if m in UVM2_RANK else 0
+    return UVM2_RANK[max(r(a), r(b))]
+
+
+def uvm2_from_accept(why):
+    """the agreed mode in player 2's accept, 'exact' if it names none"""
+    i = why.find(UVM2_TAG)
+    m = why[i + len(UVM2_TAG):].split(b'\x00')[0].decode(errors='replace') if i >= 0 else 'exact'
+    return m if m in UVM2_RANK else 'exact'
 
 
 def arch():
@@ -362,6 +377,7 @@ class NetPlay:
                         q = self._recv()
                         if q and q[0] == ord('A'):
                             game['jit_fast'] = JIT_FAST in q[1]   # (player 2 has the same processor type)
+                            game['uvm2_net'] = uvm2_from_accept(q[1])   # (the UVMC2 mode both play in)
                             return game
                         if q and q[0] == ord('N') and q[1] == VERSION_NO:
                             return 'version'

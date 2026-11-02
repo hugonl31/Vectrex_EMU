@@ -647,6 +647,20 @@ TOPICS = [
 ('item', 'UVMC2 games in the ROM list', "On: .um2 files in the roms folder appear in the ROM browser "
          "(marked UVMC2) and in Open ROM file."),
 ('item', 'Open UVMC2 game...', "A file dialog for .um2 files anywhere on your PC."),
+('item', 'Emulation', "How the UVMC2's chip is emulated. Exact (as the cartridge): the chip cycle for cycle, as a real "
+         "UVMC2 - the most work for the PC; pick it when you develop a game. Fast (slower PCs): the same picture, much less "
+         "work - the game's drawing list (games made with the UVMC2 SDK) is sent by the emulator instead of by the chip; "
+         "tiny timing differences. Dev (clean lines): the fastest - Fast with an ideal Vectrex beam, clean lines without "
+         "the real tube's drift and wobble; for weak PCs and for checking a game's drawing. Optimize picks the highest "
+         "this PC keeps up with in the heaviest games. A game not made with the SDK (Centipede) runs as Exact in every "
+         "mode. Changing it starts a UVMC2 game in the slot again. Online, both players use the lower of their two "
+         "modes for that game (the slower PC decides); your own setting stays."),
+('item', 'Exact', "UVMC2 emulation as the real cartridge, cycle for cycle: the most work for the PC. Pick it when you "
+         "develop a game."),
+('item', 'Fast', "UVMC2 emulation for slower PCs: the same picture, much less work (the emulator sends the game's drawing "
+         "list instead of the chip); tiny timing differences."),
+('item', 'Dev', "UVMC2 emulation, the fastest: Fast with an ideal beam - clean lines without the real tube's drift and "
+         "wobble. For weak PCs and for checking a game's drawing."),
 ('item', 'Headphone jack sound', "The UVMC2's own audio (its 3.5 mm jack, a 16-bit DAC at 32 kHz): clean and full "
          "range beside the Vectrex's sound (as a line out to an amplifier), through the Vectrex's own small speaker "
          "and its volume knob, or off. Games that use the Vectrex's sound chip are heard as always."),

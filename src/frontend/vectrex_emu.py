@@ -1750,6 +1750,7 @@ class Core:
                                                         #  beam drawing clean lines; set_uvm2_mode. Online: exact)
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
     net_jitfast = False                                 # (online, both PCs the same processor type: the PiTrex JIT fast)
+    net_uvm2 = 'exact'                                  # (online: the UVMC2 mode both play in - netplay.uvm2_agree)
     net_card = None                                     # (online play with a UVMC2 / PiTrex: (card folder, the files both
                                                         #  sides have the same) - the card both play from)
     def __init__(self, rom, ideal=False, cart_hw='auto', speech='off', sd_dir=None, px_dir=None, unit=None, usb=False):
@@ -1799,9 +1800,10 @@ class Core:
                 env['VT_JIT'] = 'exact'                             #  - or, both the same processor type: at full speed, its
                                                                     #  blocks the same on both (half the speed when exact)
             env.pop('VT_USBHID', None)                              # (no PC keyboard / mouse: not shared)
-        if rom.lower().endswith('.um2') and not net and Core.uvm2_mode == 'fast':
+        mode = Core.net_uvm2 if net else Core.uvm2_mode            # (online: the mode both players agreed on - the
+        if rom.lower().endswith('.um2') and mode == 'fast':        #  slower PC's; one thread there, as always online)
             env['VT_UVM2_FAST'] = '1'                               # (Fast: core 1's list replay done natively, rp2350.c)
-        if rom.lower().endswith('.um2') and not net and Core.uvm2_mode == 'dev':
+        if rom.lower().endswith('.um2') and mode == 'dev':
             env['VT_UVM2_DEV'] = '1'                                # (Dev: fast + an ideal beam, clean lines, vecx.c)
         self.sd = None
         if (px_dir and rom.lower().endswith(('.img', '.pit'))) or (sd_dir and rom.lower().endswith('.um2')):
@@ -2652,9 +2654,10 @@ class App:
 
     def title(self):
         rec = getattr(self, 'rec', None)                        # (recording: the whole time, with how long - the owner,
-        um = (getattr(self, 'uvm2_mode', 'exact') != 'exact' and (self.args.rom or '').lower().endswith('.um2')
-              and Core.net_card is None)                      # (a UVMC2 game in Fast / Dev: said in the title - online: Exact)
-        self.root.title('Vectrex - %s%s%s%s%s' % (self.rom_name, '  [UVMC2 %s mode]' % self.uvm2_mode.capitalize() if um else '',
+        g = getattr(self, 'net_game', None)
+        mode = (g.get('uvm2_net', 'exact') if g else getattr(self, 'uvm2_mode', 'exact'))   # (online: the agreed one)
+        um = mode != 'exact' and (self.args.rom or '').lower().endswith('.um2')   # (a UVMC2 game in Fast / Dev: in the title)
+        self.root.title('Vectrex - %s%s%s%s%s' % (self.rom_name, '  [UVMC2 %s mode]' % mode.capitalize() if um else '',
                                                 '  [PAUSED]' if self.run.paused else '',   #  2026-11-01)
                                                 '  ● REC %d:%02d - F9 stops' % divmod(int(rec.seconds()), 60) if rec else '',
                                                 '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
@@ -5122,6 +5125,22 @@ class App:
     def net_busy(self):
         """online now: connected, or waiting for the other player"""
         return bool(getattr(self, 'net_game', None) or getattr(self, 'net_pending', None))
+    def net_uvm2_note(self, rom, g):
+        """online, a UVMC2 game in Fast or Dev: who decided it (the slower PC) - for the chat; None in Exact"""
+        mine, used = getattr(self, 'uvm2_mode', 'exact'), g.get('uvm2_net', 'exact')
+        if not rom.lower().endswith('.um2') or used == 'exact':
+            return None
+        slow = 'Exact' if used == 'fast' else 'Exact and Fast'
+        if mine == used:                                    # (this PC's own setting decided it)
+            return ('Your PC is set to %s mode for UVMC2 games, so this game runs in %s mode for both players.'
+                    % (used.capitalize(), used.capitalize()))
+        who = getattr(self.net, 'peer_name', '') if getattr(self, 'net', None) else ''
+        who = ("%s's PC" % who) if who else "The other player's PC"
+        return ('%s is too slow for %s, so UVMC2 games run in %s mode for this game. Your own setting (%s) is kept: '
+                'it is back when you leave online play.' % (who, slow, used.capitalize(), mine.capitalize()))
+    def net_uvm2_rows(self, g):
+        """the same, short, for the picture"""
+        return ('ONLINE: UVMC2 IN %s MODE' % g.get('uvm2_net', 'exact').upper(), 'THE SLOWER PC DECIDES')
     def net_flash(self, *rows, secs=2.0):
         """an online message: in the picture, and the Online window's state line"""
         rows = [r.replace('ONLINE: ', '').replace('ONLINE ', '') for r in rows]
@@ -5143,8 +5162,6 @@ class App:
         a = self.args
         if self.net_busy():
             self.net_flash('ONLINE: LEAVE THE GAME FIRST', secs=4); return
-        if getattr(self, 'uvm2_mode', 'exact') != 'exact':      # (online: UVMC2 games exact on both sides - Core sees to it)
-            self.show_look('online: UVMC2 games run in Exact mode')
         addr, port, server, code, game = None, netplay.PORT, None, None, None
         if role == 'host':
             port = direct_port or netplay.PORT
@@ -5173,6 +5190,7 @@ class App:
         label = (target or '').strip().upper()
         if role == 'host':
             game['host_name'] = net.me_name                     # (the joiner's chat names the host)
+            game['uvm2'] = getattr(self, 'uvm2_mode', 'exact')  # (its UVMC2 mode: the joiner answers with the agreed one)
             net.offer, net.offer_rom = game, os.path.abspath(a.rom)
             net.game_info = dict(name=game['name'], md5=game['md5'], size=game['size'])
             if public:
@@ -5212,7 +5230,9 @@ class App:
                     dirs += [d for d in (self.px_dir, self.sd_dir) if d and os.path.isdir(d)]
                 rom = here or netplay.find_rom(g.get('md5'), g.get('size', -1), dirs)
                 g['jit_fast'] = bool(rom is not None and g.get('arch') and g.get('arch') == netplay.arch())
-                net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else ''))
+                g['uvm2_net'] = netplay.uvm2_agree(g.get('uvm2', 'exact'), getattr(self, 'uvm2_mode', 'exact'))
+                net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else '')
+                           + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
                                                                     # (the same processor type on both sides: the PiTrex JIT
                                                                     #  runs at full speed - its blocks fall the same on both)
                 if rom and g.get('card'):                           # (the host's card list: which files are the same here)
@@ -5553,10 +5573,15 @@ class App:
             Core.force_seed = g.get('seed')
             Core.net_card = (card[0], card[1]) if card else None
             Core.net_jitfast = bool(g.get('jit_fast'))
+            Core.net_uvm2 = g.get('uvm2_net', 'exact')          # (this game only: the Config setting stays as it is)
             try:
                 self.restart(rom)
             finally:
-                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'
+            um2 = self.net_uvm2_note(rom, g)
+            if um2:
+                self.chat_add('sys', um2)
+                self.root.after(4300, lambda t=um2: self.net_game and self.flash(*self.net_uvm2_rows(g), secs=6))
             if card and len(card[1]) < card[2]:                 # (the card both play from: the files both have)
                 self.chat_add('sys', "SD card: %d of the host's %d files are the same on both sides - the game sees only "
                               "those (a file that is missing shows as missing on both screens)." % (len(card[1]), card[2]))
@@ -6656,6 +6681,13 @@ class App:
             tk.Label(body, text="Nothing found in the power or graphics settings. A laptop maker's own\n"
                      'quiet or silent mode can slow it down too. Lower Quality in Config may help.', fg=deck.G, bg=bg,
                      font=(MONO, 9), anchor='w', justify='left').pack(fill='x', padx=12, pady=(8, 0))
+        nxt = None                                              # (a UVMC2 game, not online: a faster UVMC2 mode - on a click)
+        if (self.args.rom or '').lower().endswith('.um2') and not getattr(self, 'net_game', None):
+            nxt = {'exact': 'fast', 'fast': 'dev'}.get(getattr(self, 'uvm2_mode', 'exact'))
+        if nxt:
+            tk.Label(body, text=('This is a UVMC2 game: %s mode (Config > Ports > Emulation) runs it with much less work%s. '
+                                 'The game starts again with it.' % (nxt.capitalize(), ', in clean lines' if nxt == 'dev' else '')),
+                     fg=deck.HI, bg=bg, font=(MONO, 9), anchor='w', justify='left', wraplength=560).pack(fill='x', padx=12, pady=(8, 0))
         tk.Label(body, text='Still slow? Send a debug report and give the author its number.', fg=deck.DIM, bg=bg,
                  font=(MONO, 9), anchor='w').pack(fill='x', padx=12, pady=(8, 0))
         quiet = tk.BooleanVar(value=False)
@@ -6669,6 +6701,8 @@ class App:
         def report():
             done(); self.report_window()
         deck._button(foot, 'Debug report...', report, self).pack(side='left')
+        if nxt:
+            deck._button(foot, 'Use %s mode' % nxt.capitalize(), lambda: (done(), self.set_uvm2_mode(nxt)), self).pack(side='left', padx=8)
         deck._button(foot, 'OK', done, self, on=True).pack(side='right')
         t.protocol('WM_DELETE_WINDOW', done); t.bind('<Escape>', lambda ev: done())
         deck.place(t, 'slow', self)

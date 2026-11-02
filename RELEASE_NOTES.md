@@ -3,6 +3,13 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.1
+
+**Last Human**
+* Both editions: with Arena 2 chosen on the title (left / right once it is open), the robot page shows Arena 2's
+  robots - Splitter, Shield, Phaser, Sniper, Orbiter, Centipede - and the names sit centred over their boxes.
+* Online: v1.5.0 and v1.5.1 play together (NET_VER 9); Last Human online needs the same game version on both sides.
+
 ## v1.5.0
 
 **Online: a join that sometimes failed**

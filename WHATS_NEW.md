@@ -4,7 +4,7 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
-## v1.4.10
+## v1.5.0
 - Online: joining through the meeting point no longer fails now and then
 
 ## v1.4.9

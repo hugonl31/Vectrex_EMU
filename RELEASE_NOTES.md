@@ -3,14 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.4.10
+## v1.5.0
 
 **Online: a join that sometimes failed**
 * When the direct way between two PCs is blocked (some routers), the game goes through the meeting point's relay.
   The joining PC tried the relay only in the first seconds after the two were paired; if the host was not ready to
   answer then, the join gave up with "No game from the host" (about 1 in 5 such joins in our tests). It now keeps
   trying both ways until one answers: 12 of 12 relay-only joins connected. The packets are unchanged: v1.4.8 and
-  v1.4.9 still play with v1.4.10 (NET_VER 9).
+  v1.4.9 still play with v1.5.0 (NET_VER 9).
 
 ## v1.4.9
 

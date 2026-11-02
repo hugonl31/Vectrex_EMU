@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.4
+
+**Last Human (UVMC2 edition)**
+* The cinematics' text is drawn the same new way as the game's (whole bytes at the BIOS's 18-cycle cell, the
+  way that is clean on a real console). Its letters keep their gaps as before, and the lines now sit in the
+  middle of the screen (they were about two pixels left of centre).
+* Online: v1.5.4 plays with v1.5.0 to v1.5.3 (NET_VER 9); Last Human UVMC2 online needs the same game version on
+  both sides.
+
 ## v1.5.3
 
 **Last Human (UVMC2 edition)**

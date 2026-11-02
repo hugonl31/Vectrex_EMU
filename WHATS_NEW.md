@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.5.4
+- Last Human UVMC2: the cinematics' text in the new real-console way too, centred
+
 ## v1.5.3
 - Last Human UVMC2: text drawn the way that works on real consoles (was garbled on some)
 

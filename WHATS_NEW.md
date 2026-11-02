@@ -10,7 +10,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - Online UVMC2 games: the slower PC decides the mode, for that game
 - CPU / GPU meters turn orange only above 90 %
 - UVMC2 and PiTrex: whole pictures, no more missing or empty frames
-- Debug report: paused time no longer looks like a slow PC
+- Online play needs v1.4.7 on both sides
 - Picture-shape sliders moved to Config > Unit
 
 ## v1.4.6

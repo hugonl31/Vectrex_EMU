@@ -42,8 +42,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
   the SDK starts its next list, as a 6809 game's ends at Wait_Recal.
 * **A PiTrex frame (30006 cycles) came out empty about every 1.7 seconds**, when the 30000 cut came just before its
   own frame end. A PiTrex frame now ends only at its own timer restart.
-* Online: NET_VER 9 (the frames, and so when the inputs land, changed for UVMC2 and PiTrex games). 6809 games are
-  unchanged.
+* **Online play needs v1.4.7 on both sides** (NET_VER 9: the frames, and so when the inputs land, changed for
+  UVMC2 and PiTrex games); an older version shows "update needed". 6809 games play the same as before.
 
 **Debug report: paused time is marked as paused**
 * **The speed meter and the debug report no longer show a made-up speed while the game is paused or switched off.**

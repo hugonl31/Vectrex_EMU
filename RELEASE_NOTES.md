@@ -3,6 +3,25 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.8
+
+**Last Human's UVMC2 edition is back**
+* `roms/Last Human (UVMC2).um2` is included again and refreshed by every update. Its drawing is rewritten the
+  UVMC2 SDK's way: clean, level text, closed boxes and cages, the same robots and HUD as the 6809 version, title
+  and score screens centred, and no screen shown twice. Its saves in uvmc2/lasthuman/ are kept.
+* Both editions: the Architect now shows in his own cage before the final fight of Arena 2 (it showed four
+  copies of a robot).
+
+**RESET and port 2**
+* UVMC2 games: pressing RESET could crash the emulator or leave the screen black with the CPU load high. The
+  emulated cartridge chip now forgets everything about the old run (its fast code, caches and cores) on RESET;
+  checked by resetting in every kind of game (6809, UVMC2 Exact/Fast/Dev, PiTrex, with and without port 2
+  devices), many times in a row.
+* Changing the port 2 device (joystick, VecVox, VecVoice, 3D Imager, light pen) no longer restarts the game:
+  as on a real Vectrex, the new device is plugged in while the game runs.
+* If the emulator does crash, a window now offers to send a debug report (Help > Debug report), so the crash
+  can be fixed.
+
 ## v1.4.7
 
 **UVMC2 games: Fast and Dev modes for slower PCs**

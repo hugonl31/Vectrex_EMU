@@ -4,6 +4,13 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.4.8
+- Last Human UVMC2 edition back: clean text, closed boxes
+- Last Human: the Architect shows in his own cage before the last fight
+- UVMC2: RESET no longer crashes or freezes the emulator
+- A crash now offers to send a debug report
+- Port 2 devices can be changed while a game runs, as on a real Vectrex
+
 ## v1.4.7
 - UVMC2 Fast and Dev modes for slower PCs (Config > Ports)
 - Optimize picks the UVMC2 mode this PC keeps up with

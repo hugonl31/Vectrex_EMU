@@ -305,7 +305,7 @@ with a short note on what goes there:
 | Folder | |
 |---|---|
 | `system` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
-| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Last Human** ([Last_Human](https://github.com/hugonl31/Last_Human)) with its overlay |
+| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Last Human** ([Last_Human](https://github.com/hugonl31/Last_Human)) with its overlay, plus its UVMC2 edition **Last Human (UVMC2)** (cinematics, 2-player co-op) |
 | `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
 More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), `pitrex`,

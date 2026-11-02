@@ -3,6 +3,16 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.3
+
+**Last Human (UVMC2 edition)**
+* Text is drawn the way the UVMC2 beam test cartridge draws it, which came out clean on a real console: one byte of
+  the BIOS font per letter, with the BIOS's own 18-cycle letter cell. Until now the letters were packed into one
+  continuous bit stream that looked right in the emulator but lost pieces on a real Vectrex, even after
+  calibration (a player's photo). Lines, boxes and the game itself are unchanged.
+* Online: v1.5.3 plays with v1.5.0 to v1.5.2 (NET_VER 9); Last Human UVMC2 online needs the same game version on
+  both sides.
+
 ## v1.5.2
 
 **Last Human**

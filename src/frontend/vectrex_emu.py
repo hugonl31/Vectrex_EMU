@@ -1780,10 +1780,12 @@ class Core:
             env['VT_IMAGER'] = imager_disc(rom)                     # (the 3D Imager's goggles on port 2, imager.c)
         elif speech == 'lightpen':
             env['VT_LIGHTPEN'] = '1'                                # (the light pen on port 2: the mouse, imager.c)
-        elif speech != 'off' and sp_rom():
-            env['VT_VECVOICE'] = sp_rom()                           # (a speech accessory on port 2)
-            env['VT_SPEECHDEV'] = speech
+        if sp_rom():                                                # (the speech ROM loaded whenever it is there: a module
+            env['VT_VECVOICE'] = sp_rom()                           #  can be plugged in while the game runs - port2_live)
             env['VT_SPEECHOUT'] = '1'                               # (its sound on a channel of its own)
+            self.sp_loaded = True
+            if speech in ('vecvoice', 'vecvox'):
+                env['VT_SPEECHDEV'] = speech                        # (a speech accessory on port 2 now)
         # no input recording, no log: the core records to NUL, its messages are discarded
         env.update(V4E_ENV.get(rom, {}))                           # (a .v4e cartridge's save chip)
         # a UVMC2 game: its SD card is the folder sd_dir, as a FAT32 image (fatimg.py), copied back at the end
@@ -3873,7 +3875,8 @@ class App:
             self.save_settings()
         else:
             self.speech = self.speech_user = k                  # (auto off, or no cartridge: every game, as a real Vectrex)
-        self.restart(self.args.rom)
+        if not self.port2_live(k):                              # (as on a Vectrex: plugged in while the game runs - the
+            self.restart(self.args.rom)                         #  owner, 2026-11-02; else the old power cycle)
         dk = getattr(self, 'deck', None)                        # (Config open on Cartridge: the 3D Imager's rows come or go)
         if dk is not None and getattr(dk, 'strip', None) == 'Ports':
             try: dk.t.after_idle(lambda: dk.show('Ports'))
@@ -3881,6 +3884,24 @@ class App:
         self.show_look('port 2: %s' % PORT2[k].upper())
         self.flash('CONTROLLER PORT 2:', {'off': 'JOYSTICK', 'vecvoice': 'VECVOICE SPEECH', 'vecvox': 'VECVOX SPEECH',
                                           'imager': '3D IMAGER', 'lightpen': 'LIGHT PEN (THE MOUSE)'}[k])
+    def port2_live(self, k):
+        """controller port 2's device changed while the game runs (core vt_set_analog 27, p2_set): no power cycle.
+        False when the running core cannot (none, stopped, or one started before it could load the speech ROM)"""
+        core, run = getattr(self, 'core', None), getattr(self, 'run', None)
+        if core is None or run is None or run.error or not getattr(run, 'power', True):
+            return False
+        if k in ('vecvoice', 'vecvox') and not getattr(core, 'sp_loaded', False):
+            return False
+        code = {'off': 0, 'vecvox': 1, 'vecvoice': 2, 'lightpen': 6}.get(k)
+        if k == 'imager':
+            code = {'narrow': 3, 'mine': 4, 'coaster': 5}[imager_disc(self.args.rom)]
+        if code is None:
+            return False
+        core.set_analog(27, code)
+        run.crt.motor = k == 'imager'                           # (the 3D Imager: its motor's sound)
+        if k != 'lightpen':
+            self.pen_sent = None                                # (the pen's place: sent again when it is back)
+        return True
     def speech_rom_help(self):
         """a speech module chosen without the speech ROM: a small window saying where to get it and where it
         goes, with buttons for the download page and the system folder (styled as the Config window)"""

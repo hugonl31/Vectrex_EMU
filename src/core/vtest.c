@@ -490,8 +490,9 @@ int main (int argc, char **argv)
 	   * or with VT_SPEECHDEV=vecvox the VecVox (SpeakJet, spoken with the SP0256) */
 	  const char *dev = getenv ("VT_SPEECHDEV"), *z = getenv ("VT_VECVOICE");
 	  extern int sp_load (const char *); extern void sp_start (const char *);
-	  if (z && *z) { int e = sp_load (z);
-	                      if (!e) sp_start (dev);
+	  if (z && *z) { int e = sp_load (z);              /* (the ROM loaded whenever it is there: a module can be plugged
+	                                                    in while the game runs - VT_SPEECHDEV says one is in now) */
+	                      if (!e && dev && *dev) sp_start (dev);
 	                      else fprintf (stderr, "VecVoice: %s\n", e == -1 ? "no SP0256-AL2 ROM file" : "the file is not the SP0256-AL2 ROM"); } }
 	if (getenv ("VT_BANKLOG")) verbose_bank = 1;
 	if (getenv ("VT_BEAMTRACE")) { bcur = malloc (sizeof (beam_t) * MAXB); blast = malloc (sizeof (beam_t) * MAXB); vt_beam_hook = beam_take; }
@@ -525,6 +526,7 @@ int main (int argc, char **argv)
 		else if (!strcmp (cmd, "joy")) { int x = atoi (a1), y = atoi (a2); alg_jch0 = (unsigned) (x + 128); alg_jch1 = (unsigned) (y + 128); }
 		else if (!strcmp (cmd, "btn")) { int m = (int) strtol (a1, 0, 0); snd_regs[14] = 0xff & ~m; }
 		else if (!strcmp (cmd, "shot")) { snprintf (path, sizeof path, "%s/%s", outdir, a1); render_shot (path); }
+		else if (!strcmp (cmd, "analog")) { extern void vt_set_analog (int id, double v); vt_set_analog (atoi (a1), atof (a2)); }   /* analog ID V: a live setting, as --live sends it */
 		else if (!strcmp (cmd, "reset")) { extern void vecx_reset_button (void); vecx_reset_button (); }   /* the RESET button (RAM kept), as --live flags bit 2 */
 		else if (!strcmp (cmd, "poke")) {       /* poke ADDR VALUE (hex): set a RAM byte */
 			e6809_write8 ((unsigned) strtol (a1, 0, 16), (unsigned char) strtol (a2, 0, 16));

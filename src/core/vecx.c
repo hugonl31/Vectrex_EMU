@@ -36,6 +36,7 @@ static unsigned snd_ioa = 0xff;               /* the AY's port A output latch (r
 #define ALG_IN(x, y) ((x) >= -ALG_CLIP*ZS && (x) < (ALG_MAX_X + ALG_CLIP)*ZS && (y) >= -ALG_CLIP*ZS && (y) < (ALG_MAX_Y + ALG_CLIP)*ZS)
 extern int vt_imager; static void im_motor (int level); static unsigned long long im_pin_until;   /* (the 3D Imager, imager.c) */
 extern int vt_lightpen; static unsigned long long lp_pin_until; static void lp_set (int what, double v);   /* (the light pen, imager.c) */
+static void p2_set (int d);                 /* (port 2's device while running: after imager.c) */
 
 /* the via 6522 registers */
 
@@ -302,6 +303,7 @@ void vt_set_analog (int id, double v)
 	case 14: ofs_k = v < 0 ? 0 : v > 400 ? 400 : v; break;   /* (the reference's shift, cycles a DAC step) */
 	case 15: vt_lag_y = v < 0 ? -1 : v > 50 ? 50 : v; break;  /* (the Y deflection's lag; -1: as X) */
 	case 24: case 25: case 26: lp_set (id - 24, v); break;   /* (the light pen: x, y, touching - imager.c) */
+	case 27: p2_set ((int) (v + 0.5)); break;                 /* (controller port 2's device, while running: p2_set) */
 	case 16: case 17: case 18: case 19: case 20: case 21: case 22:   /* (the DAC's bit errors e0..e6, see dacv) */
 		if (dac_on < 0) dac_init ();
 		dac_e[id - 16] = v < -0.05 ? -0.05 : v > 0.05 ? 0.05 : v;
@@ -522,6 +524,29 @@ static einline void int_update (void)
 
 extern unsigned long long alg_cycles;
 #include "imager.c"                         /* the 3D Imager on port 2 (VT_IMAGER) */
+
+/* CONTROLLER PORT 2 CHANGED WHILE THE GAME RUNS (vt_set_analog 27), as on a Vectrex - no power cycle: 0 the joystick,
+ * 1 the VecVox, 2 the VecVoice, 3 / 4 / 5 the 3D Imager (Narrow Escape's, 3D Mine Storm's, Crazy Coaster's disc), 6 the
+ * light pen. The environment follows, so a later RESET or power-on keeps it (im_init / lp_init read it). */
+static void p2_env (const char *k, const char *v)
+{
+#ifdef _WIN32
+	_putenv_s (k, v ? v : "");
+#else
+	if (v) setenv (k, v, 1); else unsetenv (k);
+#endif
+}
+static void p2_set (int d)
+{
+	extern int vt_vecvoice, vt_sp_rom; extern void sp_start (const char *dev);
+	static const char *const DISC[] = { "narrow", "mine", "coaster" };
+	p2_env ("VT_IMAGER", d >= 3 && d <= 5 ? DISC[d - 3] : NULL);
+	p2_env ("VT_LIGHTPEN", d == 6 ? "1" : NULL);
+	p2_env ("VT_SPEECHDEV", d == 1 ? "vecvox" : d == 2 ? "vecvoice" : NULL);
+	im_init (); lp_init ();
+	vt_vecvoice = 0;
+	if ((d == 1 || d == 2) && vt_sp_rom) sp_start (d == 1 ? "vecvox" : "vecvoice");
+}
 
 static int vt_trial;                    /* (a dry run: no writes, VIA reads without side effects) */
 /* vt_trial 2: a tentative run - RAM writes go through (with an undo log), anything else (a VIA read, any other

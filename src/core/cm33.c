@@ -2594,6 +2594,17 @@ slice_done:
 	return c->cycles - start;
 }
 
+/* RESET: the chip is thrown away (rp_destroy). Whatever is kept about it here goes too - the cores holding an exclusive
+ * monitor, and the JIT's chip (its dispatcher and blocks built again for the next one, wherever it lands: at the same
+ * address its old state looked valid, 2026-11-02) */
+void cm33_forget (void)
+{
+	excl_cores[0] = excl_cores[1] = NULL; excl_any = 0;
+#ifdef CM33_JIT
+	for (int k = 0; k < 2; k++) { mj_cpu[k] = NULL; mj_ram_of[k] = mj_xram_of[k] = NULL; if (mj[k].code) mj[k].flush_req = 1; }
+#endif
+}
+
 /* (fast UVMC2 mode: the entry found - every compiled block thrown away, so none runs through it) */
 void cm33_jit_flush_all (void)
 {

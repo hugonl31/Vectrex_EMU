@@ -18,6 +18,7 @@
  */
 #include <stdint.h>
 
+int vt_sp_rom;                                 /* the AL2 ROM loaded (a speech module can be plugged in) */
 int vt_vecvoice;                                /* 1 = the VecVoice (SP0256), 2 = the VecVox (SpeakJet) */
 /* the VecVox speaks with this chip (speakjet.c): */
 static int sj_per;                              /* the SpeakJet's pitch as an SP0256 period (samples), 0 = the AL2's own */
@@ -71,6 +72,7 @@ int sp_load (const char *fn)
 	if (sp_crc32 (b, 2048) == 0xdf8de0b0u) for (int i = 0; i < 2048; i++) b[i] = sp_rev8 (b[i]);   /* (Joe Zbiciak's al2.bin) */
 	if (sp_crc32 (b, 2048) != 0xb504ac15u) return -2;                                                /* (MAME's sp0256-al2.bin) */
 	memcpy (sp_rom + 0x1000, b, 2048);
+	vt_sp_rom = 1;
 	return 0;
 }
 

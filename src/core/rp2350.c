@@ -1813,10 +1813,15 @@ rp2350_t *rp_create (void)
 	recompute_sys_hz (rp);
 	return rp;
 }
+static void fm_forget (void);
 void rp_destroy (rp2350_t *rp)
 {
 	if (!rp) return;
 	th_quit (rp); if (rp->sd) fclose (rp->sd);
+	{ extern void cm33_forget (void); cm33_forget (); }   /* (RESET: nothing kept about this chip - the next one may land
+	                                                 at this same address, where stale state looks valid) */
+	cd_ver++; cd_have = 0; cd_rp = NULL; pl_ok = 0; pl_on = 0; pl_rp = NULL;
+	fm_forget ();
 	if (getenv ("VT_TEST_POISON")) {             /* (tests: the old chip kept, filled with garbage - the new one lands elsewhere) */
 		memset (rp->psram, 0xCC, PSRAM_SIZE); memset (rp->sram, 0xCC, sizeof rp->sram); return;
 	}
@@ -2121,6 +2126,7 @@ int rp_fast_take (rp2350_t *rp, unsigned *reg, unsigned *val)
 	*reg = (v >> 8) & 15; *val = v & 0xff; fm_delay = v >> 12; fm_cycles++;
 	return 1;
 }
+static void fm_forget (void) { fm_stream = NULL; fm_rp = NULL; fm_active = 0; fm_ncand = 0; }   /* (RESET: rp_destroy) */
 void rp_fast_mode (rp2350_t *rp, int on)
 {
 	fm_rp = rp; fm_ncand = 0; fm_active = 0; rp->hle_hold = 0; rp_fast_pc = cm33_hle_pc = 0;

@@ -475,7 +475,8 @@ class NetPlay:
             return
         self.punch_last = now
         since = now - getattr(self, 'punch_t0', now)
-        if since < PUNCH_S + 1.0:
+        if since < PUNCH_S + 1.0 or not (self.last_direct or self.last_relayed):   # (nothing back yet: go on trying
+            #  both ways - the relayed hellos only in the window lost ~1 in 5 relay-only connections, 2026-11-02)
             for c in self.candidates:
                 if hello or self.role == 'join':
                     self._send(ord('H'), self._hello(), to=c)

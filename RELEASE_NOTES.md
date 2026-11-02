@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.4.9
+
+**Last Human**
+* UVMC2 edition, co-op: the cinematics show both ships while neither player is out of lives.
+* Both editions: in the ending, the ship climbs to the middle of the screen and shrinks into the distance, instead of
+  flying up through the closing text.
+* Online: v1.4.8 and v1.4.9 still play together (NET_VER 9); Last Human itself online needs the same game version on
+  both sides, so both players update.
+
 ## v1.4.8
 
 **Last Human's UVMC2 edition is back**

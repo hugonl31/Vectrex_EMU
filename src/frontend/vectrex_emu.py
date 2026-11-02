@@ -6841,6 +6841,35 @@ class App:
         deck.place(t, 'report', self)
         try: dark_title(t)
         except Exception: pass   # noqa
+    def crash_window(self):
+        """the emulation core stopped (a crash): say so, offer the debug report (its core log holds the crash) or
+        the game again (the owner, 2026-11-02: a crash should ask for a report)"""
+        if getattr(self, 'crash_win', None):
+            try: self.crash_win.lift(); return
+            except tk.TclError: pass
+        if self.full:
+            try: self.toggle_full()
+            except Exception: pass   # noqa (the window over the picture: out of full screen first)
+        rom = self.args.rom
+        game = os.path.splitext(os.path.basename(rom))[0] if rom else 'The game'
+        t, body, foot, close = self._room_window('The emulator stopped unexpectedly', '', 'crash_win', banner=False)
+        f9, bg = (MONO, 10), deck.PANEL
+        tk.Label(body, text='%s crashed the emulation core.' % game, fg=deck.HI, bg=bg, font=f9, anchor='w',
+                 wraplength=520, justify='left').pack(fill='x', padx=12, pady=(10, 0))
+        tk.Label(body, text='A debug report helps the author fix it.', fg=deck.G, bg=bg, font=f9,
+                 anchor='w').pack(fill='x', padx=12, pady=(4, 10))
+        def report():
+            close(); self.report_window()
+        def again():
+            close()
+            if rom and os.path.isfile(rom):
+                self.restart(rom)
+        deck._button(foot, 'Send debug report', report, self, on=True).pack(side='left')
+        deck._button(foot, 'Restart game', again, self).pack(side='left', padx=(6, 0))
+        deck._button(foot, 'Close', close, self).pack(side='right')
+        deck.place(t, 'crash', self)
+        try: dark_title(t)
+        except Exception: pass   # noqa
     def copy_system_info(self):
         """Help > Copy system info: on the clipboard, and shown - to paste into a GitHub issue"""
         text = self.system_info()
@@ -8241,6 +8270,9 @@ class App:
         if self.run.error:
             self.status.configure(text='ERROR: ' + self.run.error, fg='#f66'); self.status.pack(side='top', fill='x')
             self.show_bar()
+            if 'core stopped' in self.run.error and not getattr(self.run, 'crash_told', False):
+                self.run.crash_told = True                      # (once per run: the crash window)
+                self.root.after(0, self.crash_window)
             return
         if self.ren and hasattr(self.ren, 'present'):
             if bool(getattr(self.ren, 'half_rate', False)) != getattr(self, '_hr_applied', False):

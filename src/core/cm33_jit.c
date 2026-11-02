@@ -80,6 +80,7 @@ static void mj_unlock (void)
 	__atomic_store_n (&mj_lk, 0, __ATOMIC_RELEASE);
 #endif
 }
+static const void *mj_ram_of[2], *mj_xram_of[2];   /* (the chip the dispatcher was built for) */
 static int mj_state;                            /* 0 not set up, 1 on, -1 off */
 static cm33_t *mj_cpu[2];
 static int mj_mode;
@@ -168,8 +169,23 @@ static int mj_setup_core (cm33_t *c)
 	}
 	if (mj_state != 1) return 0;
 	mj_core_t *J = &mj[c->core & 1];
-	if (J->code) { mj_cpu[c->core & 1] = c; return 1; }
+	if (J->code) {
+		/* A NEW CHIP (the RESET button: rp_destroy + rp_create). The dispatcher has the old chip's SRAM and PSRAM
+		 * addresses built in and the blocks its code pages: run on, they read freed memory (an access violation
+		 * whenever the new chip lands somewhere else). Everything compiled goes, the dispatcher is built again. */
+		cm33_sys_t *s = c->sys;
+		if (mj_ram_of[c->core & 1] != s->ram || mj_xram_of[c->core & 1] != s->xram) {
+			memset (J->blk, 0, sizeof (uint8_t *) * J->nhalf);
+			memset (J->pages, 0, J->npages);
+			memset (J->incode, 0, J->nhalf);
+			J->flush_req = 0;
+			mj_stubs (J, c);
+			mj_ram_of[c->core & 1] = s->ram; mj_xram_of[c->core & 1] = s->xram;
+		}
+		mj_cpu[c->core & 1] = c; return 1;
+	}
 	cm33_sys_t *s = c->sys;
+	mj_ram_of[c->core & 1] = s->ram; mj_xram_of[c->core & 1] = s->xram;
 #ifdef _WIN32
 	J->code = (uint8_t *) VirtualAlloc (NULL, MJ_CODE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 #else

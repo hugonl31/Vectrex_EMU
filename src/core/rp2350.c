@@ -1813,7 +1813,15 @@ rp2350_t *rp_create (void)
 	recompute_sys_hz (rp);
 	return rp;
 }
-void rp_destroy (rp2350_t *rp) { if (!rp) return; th_quit (rp); if (rp->sd) fclose (rp->sd); free (rp->psram); free (rp->sys.dcache); free (rp->sys.dcache1); free (rp->sys.code_pages); free (rp); }
+void rp_destroy (rp2350_t *rp)
+{
+	if (!rp) return;
+	th_quit (rp); if (rp->sd) fclose (rp->sd);
+	if (getenv ("VT_TEST_POISON")) {             /* (tests: the old chip kept, filled with garbage - the new one lands elsewhere) */
+		memset (rp->psram, 0xCC, PSRAM_SIZE); memset (rp->sram, 0xCC, sizeof rp->sram); return;
+	}
+	free (rp->psram); free (rp->sys.dcache); free (rp->sys.dcache1); free (rp->sys.code_pages); free (rp);
+}
 
 int rp_load_um2 (rp2350_t *rp, const uint8_t *d, size_t n, char *err, size_t errn)
 {

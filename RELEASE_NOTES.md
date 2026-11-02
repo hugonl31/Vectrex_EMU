@@ -3,6 +3,24 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.2
+
+**Last Human**
+* Both editions start the way a real power-on does: the cartridge resets the VIA and the BIOS's variables itself
+  (the BIOS's Init_OS). Started from a multicart menu (a VecMulti), the game kept the menu's settings and went
+  blank for long stretches in the levels until RESET was pressed (a player's report).
+* UVMC2 edition: on a card with no calibration yet (config/uvm2.cfg), the SDK's calibration screen opens before
+  the title. Every console needs its own: with another console's values, or none, text and boxes can come out
+  wrong on a real Vectrex. Set ZERO until the text rows are straight, then button 4 saves it; later starts go
+  straight to the game, and buttons 2 + 3 held at launch still open it.
+
+**UVMC2 card**
+* `uvmc2/config/uvm2.cfg` now comes with the emulator: the calibration of the console it emulates, so UVMC2
+  games made with the SDK draw as calibrated, and Last Human does not open its calibration screen here. An
+  existing card keeps its own file.
+* Online: v1.5.2 plays with v1.5.0 and v1.5.1 (NET_VER 9); Last Human online needs the same game version on both
+  sides.
+
 ## v1.5.1
 
 **Last Human**

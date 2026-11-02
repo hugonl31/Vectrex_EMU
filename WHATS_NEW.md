@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.5.2
+- Last Human: no more long blank stretches when started from a multicart
+- Last Human UVMC2: the calibration screen opens on a card without one
+- The UVMC2 card comes with this emulator's calibration
+
 ## v1.5.1
 - Last Human: with Arena 2 chosen, the title shows Arena 2's robots
 

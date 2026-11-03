@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.5.6
+- Small BIOS text now as tall as on a real Vectrex (was too flat)
+
 ## v1.5.5
 - View > Always on top: the window stays above other programs
 

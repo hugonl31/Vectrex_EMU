@@ -3,6 +3,17 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.6
+
+**The Vectrex unit (Config > Circuit)**
+* The owner's Vectrex, measured again with photos of Last Human's title: the BIOS's small raster text was
+  35-40 % too flat in the emulator (its rows' tiny downward steps), which also made its lean look steeper. The
+  console profile now has a zero offset of 0.13 and an X drift of +0.13: small text is as tall as on the real
+  tube with the same lean, big text stays straight. The beam test, gap test and corner test pages are unchanged
+  apart from their small labels. If you never changed these two settings you get the new values; your own
+  settings stay. Reset to defaults now gives the new values.
+* Online: v1.5.6 plays with v1.5.0 to v1.5.5 (NET_VER 9, the core and online code unchanged).
+
 ## v1.5.5
 
 **Window**

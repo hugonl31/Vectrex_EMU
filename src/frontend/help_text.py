@@ -72,6 +72,7 @@ TOPICS = [
 ('p', "What you see: the window's size, the overlay, the case, the control deck below the picture, the quality "
       "and the room light."),
 ('item', 'Full screen (F11)', "The picture on the whole monitor at its full resolution (for example 4K)."),
+('item', 'Always on top', "The emulator's window stays above every other program's window, also when you click elsewhere (View menu)."),
 ('item', 'Bigger / Smaller / Fit screen', "The window size (+ / - / 0); Fit screen is as big as fits the "
          "desktop, above the task bar. In full screen: the picture size; Fit screen (0) as big as the screen allows."),
 ('item', 'Authentic (9)', "In the window and in full screen (until + / - / 0): as big as on a real Vectrex: the overlay 162 x 207 mm like the real sheets, worked out "

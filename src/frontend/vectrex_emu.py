@@ -2327,6 +2327,7 @@ class App:
         self.cart_on = conf0.get('cart', True)                # the cartridge pictogram: the ROM browser (L)
         self.browser = None
         self.fps_on = conf0.get('fps_counter', True)            # the OSD (Ctrl+F)
+        self.on_top = conf0.get('on_top', False)                # View > Always on top (the window above every other one)
         self.quality_base = conf0.get('quality_base', 'ultra')   # (the Quality profile chosen last: Custom's starting point;
         self.quality_opt = dict(conf0.get('quality_opt', {}) or {})   #  'optimized': Optimize's result, quality_opt)
         self.osd_meters = conf0.get('osd_meters', True)         # (the OSD's CPU and GPU meters: how much of each frame is used)
@@ -2509,6 +2510,8 @@ class App:
         self.setup_display()
         self.ultra_rate = None
         self.root.bind('<F11>', self.toggle_full)
+        if self.on_top:
+            self.root.after(300, self.apply_on_top)               # (View > Always on top, as saved)
         self.root.bind('<F9>', self.toggle_rec)                # (Record: start / stop recording)
         self.root.bind('<F12>', self.snapshot)                 # (Record: a big snapshot)
         self.root.bind('<Motion>', self.pointer_moved)
@@ -2714,6 +2717,29 @@ class App:
     def note_event(self, text):
         """a line in the debug report's timeline"""
         self.events.append((round(time.perf_counter(), 1), text))
+    def apply_on_top(self):
+        """View > Always on top: the main window above every other program's, and the emulator's own windows (ROM
+        browser, settings) above it while it is on - else they would open hidden behind it"""
+        try:
+            self.root.attributes('-topmost', bool(self.on_top))
+        except Exception:   # noqa
+            pass
+        if not getattr(self, '_on_top_bound', False):
+            self._on_top_bound = True
+            def mapped(e):
+                w = e.widget
+                if isinstance(w, tk.Toplevel) and w is not self.root:
+                    try:
+                        w.attributes('-topmost', bool(self.on_top))
+                    except Exception:   # noqa
+                        pass
+            self.root.bind_all('<Map>', mapped, add='+')
+    def toggle_on_top(self, e=None):
+        self.on_top = not self.on_top
+        self.apply_on_top()
+        self.note_event('always on top ' + ('on' if self.on_top else 'off'))
+        self.save_settings()
+        return 'break'
     def toggle_fps(self, e=None):
         """Ctrl+F: the OSD (game fps, screen Hz, G-Sync, emulation speed, volume): full screen in the
         corner, in the window the row below the picture"""
@@ -2809,6 +2835,8 @@ class App:
             item(m, 'Quit', '', self.quit)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='View', menu=m, underline=1)
             check(m, 'Full screen', 'F11', lambda: self.full, self.toggle_full)
+            check(m, 'Always on top', '', lambda: self.on_top, self.toggle_on_top,
+                  "The emulator's window stays above every other program's window, also when you click elsewhere.")
             item(m, 'Bigger', '+', lambda: self.zoom_step(1.1))
             item(m, 'Smaller', '-', lambda: self.zoom_step(1 / 1.1))
             item(m, 'Fit screen', '0', lambda: self.zoom_step(None), "The window as big as fits the desktop, above the task bar.")
@@ -7732,6 +7760,7 @@ class App:
             d['last_rom'] = self.args.rom or None               # (the cartridge in the slot: none = Mine Storm)
         d['recent'] = list(getattr(self, 'recent', []))
         d['fps_counter'] = getattr(self, 'fps_on', True)
+        d['on_top'] = bool(getattr(self, 'on_top', False))
         d['quality_base'] = getattr(self, 'quality_base', 'ultra')
         d['quality_opt'] = dict(getattr(self, 'quality_opt', {}))
         d['osd_meters'] = getattr(self, 'osd_meters', True)

@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.5
+
+**Window**
+* View > Always on top: the emulator's window stays above every other program's window, also when you click
+  elsewhere. The emulator's own windows (ROM browser, settings) open above it while it is on. The choice is
+  saved.
+* Online: v1.5.5 plays with v1.5.0 to v1.5.4 (NET_VER 9, the core and online code unchanged).
+
 ## v1.5.4
 
 **Last Human (UVMC2 edition)**

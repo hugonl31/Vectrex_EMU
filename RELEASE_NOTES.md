@@ -3,6 +3,19 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.7
+
+**Last Human v1.3.7 (both editions bundled)**
+* UVMC2 edition: the game's own 6809 drawing code now runs on the cartridge, so the console gets exactly the
+  register writes the 6809 cartridge makes, at the same cycles - text, boxes and shapes look as on the cartridge
+  (checked write for write against the 6809 build). It reads the console's own BIOS at start-up (no BIOS in the
+  file); where that read fails it draws the old way. Gameplay runs at a steady 50 frames a second.
+* UVMC2 edition: the game's own CALIBRATION screen follows the cartridge's (buttons 2 + 3 held at launch).
+* Both: the robot roster draws faster (cage sides in half the time), the arena's edges fit the overlay, the
+  robots' names sit above their cages, co-op lives and player 2's icons fixed.
+* Online: v1.5.7 plays with v1.5.0 to v1.5.6 (NET_VER 9, the core and online code unchanged); Last Human online
+  needs the same game version on both sides.
+
 ## v1.5.6
 
 **The Vectrex unit (Config > Circuit)**

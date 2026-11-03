@@ -4,6 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.5.7
+- Last Human v1.3.7: the UVMC2 edition draws exactly like the cartridge
+- Last Human: smoother roster page, arena fitted to the overlay, co-op HUD
+
 ## v1.5.6
 - Small BIOS text now as tall as on a real Vectrex (was too flat)
 

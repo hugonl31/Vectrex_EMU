@@ -2282,6 +2282,11 @@ class App:
         if self.unit.get('zerotx') == 12.0 and self.unit.get('zeroty') == 8.0:  # (ZERO's first default, a day: too slow -
             self.unit['zerotx'], self.unit['zeroty'] = UNIT_BEAM['zerotx'], UNIT_BEAM['zeroty']   #  Vectorblade broke)
         self.unit_name = c0.get('unit_name', 'owner') if c0.get('unit_name') in UNIT_NAMES else 'owner'
+        self.unit_fix = c0.get('unit_fix', 0)
+        if self.unit_fix < 1:                                   # (once, for everybody - the owner, 2026-11-04: the text fit's
+            for k in ('zofs', 'drift_x'):                       #  zero offset and X drift replace whatever was set; later
+                self.unit[k] = UNIT_PRESETS['owner'][k]         #  changes are the player's own again)
+            self.unit_fix = 1
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', False) if self.ren else False
@@ -7817,6 +7822,7 @@ class App:
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name
+            d['unit_fix'] = getattr(self, 'unit_fix', 1)
         d['ultra_rate'] = getattr(self, 'ultra_rate', None)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['p2_auto'] = getattr(self, 'p2_auto', True)

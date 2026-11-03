@@ -10,8 +10,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
   35-40 % too flat in the emulator (its rows' tiny downward steps), which also made its lean look steeper. The
   console profile now has a zero offset of 0.13 and an X drift of +0.13: small text is as tall as on the real
   tube with the same lean, big text stays straight. The beam test, gap test and corner test pages are unchanged
-  apart from their small labels. If you never changed these two settings you get the new values; your own
-  settings stay. Reset to defaults now gives the new values.
+  apart from their small labels. Everybody gets the new values once, whatever was set before (later changes
+  are yours again); Reset to defaults gives them too.
 * Online: v1.5.6 plays with v1.5.0 to v1.5.5 (NET_VER 9, the core and online code unchanged).
 
 ## v1.5.5

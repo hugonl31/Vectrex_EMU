@@ -3,8 +3,13 @@
  *
  * Two busy threads (the UVMC2's core 0 beside the rest, rp2350.c) run far slower when they share one physical
  * core (the two hardware threads of an SMT core compete for its units): measured on a Ryzen, 0.6x against 1.1x
- * of real time. So the pair is pinned to two different physical cores - the fastest kind on hybrid CPUs - and
+ * of real time. So each of the pair prefers a physical core of its own - the fastest kind on hybrid CPUs - and
  * not the first one (where the system's interrupts go).
+ *
+ * Preferred, not pinned to one processor: a hard pin left a thread waiting whenever another program (a browser,
+ * a second emulator) ran on that processor, while its partner spun - frames of up to 1.4 s, EMU RATE under 60 %
+ * (2026-11-04, Last Human UVMC2: two cores at once, 57-70 % of frames late pinned, none with the soft pin; one
+ * core alone as fast as pinned).
  *
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 #if defined(__linux__)
@@ -20,7 +25,7 @@
 #include <stdlib.h>
 
 /* the first hardware thread of each physical core, the fastest cores first (none for one core or an error) */
-static int cores (uint64_t *first, int max)
+static int cores (uint64_t *first, int max, int *nfast)
 {
 	DWORD len = 0;
 	GetLogicalProcessorInformationEx (RelationProcessorCore, NULL, &len);
@@ -45,17 +50,22 @@ static int cores (uint64_t *first, int max)
 			uint64_t t = first[j]; first[j] = first[j - 1]; first[j - 1] = t;
 			BYTE e = eff[j]; eff[j] = eff[j - 1]; eff[j - 1] = e;
 		}
+	*nfast = 0; while (*nfast < n && eff[*nfast] == eff[0]) (*nfast)++;
 	return n;
 }
 int host_pin (int which)
 {
-	static uint64_t first[64]; static int n = -1;
-	if (n < 0) n = cores (first, 64);
+	static uint64_t first[64]; static int n = -1, nfast;
+	if (n < 0) n = cores (first, 64, &nfast);
 	if (n < 3) return 0;                       /* (two cores or fewer: the system knows best) */
-	/* the fastest cores but the very first: which 0 and 1 on two different ones */
+	/* the fastest cores but the very first: which 0 and 1 each prefer a different one, may use any of them */
 	int k = 1 + (which & 1);
 	if (k >= n) return 0;
-	return SetThreadAffinityMask (GetCurrentThread (), (DWORD_PTR) first[k]) != 0;
+	uint64_t m = 0;
+	for (int i = 1; i < (nfast > k ? nfast : k + 1); i++) m |= first[i];
+	if (!SetThreadAffinityMask (GetCurrentThread (), (DWORD_PTR) m)) return 0;
+	DWORD ip = 0; while (ip < 63 && !((first[k] >> ip) & 1)) ip++;
+	return SetThreadIdealProcessor (GetCurrentThread (), ip) != (DWORD) -1;
 }
 
 #elif defined(__linux__) && !defined(__ANDROID__)   /* (Android's libc has no pthread_setaffinity_np: the system places threads) */
@@ -82,8 +92,9 @@ int host_pin (int which)
 	static int first[256]; static int n = -1;
 	if (n < 0) n = cores (first, 256);
 	if (n < 3) return 0;
-	int k = 1 + (which & 1);
-	cpu_set_t s; CPU_ZERO (&s); CPU_SET (first[k], &s);
+	(void) which;                              /* (no preferred-processor hint here: any core but the first) */
+	cpu_set_t s; CPU_ZERO (&s);
+	for (int i = 1; i < n; i++) CPU_SET (first[i], &s);
 	return pthread_setaffinity_np (pthread_self (), sizeof s, &s) == 0;
 }
 

@@ -1501,9 +1501,10 @@ UNIT_FACTORY_PICTURE = dict(sizex=100.0, sizey=100.0, hv=HV_FACTORY, ring=0.0, c
 # Config's two tabs: Unit (what an owner turns: the knob, the size, the voltage, the yoke) and Circuit (the rest)
 UNIT_TAB_KEYS = ('knob', 'sizex', 'sizey', 'hv', 'cenx', 'ceny', 'rot')
 UNIT_PRESETS = {
-    # (zofs / drift_x 2026-11-04: fitted to the owner's real-Vectrex photos of Last Human's title - the BIOS's small text
-    #  was 35-40 % too flat, its rows' tiny Y steps; now its height and lean match, the big text stays straight, ZERO REF 3 closes the ship)
-    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.13, drift_y=0.0, dacofs=0.0, zofs=0.13, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
+    # (zofs / drift_x: 0, a typical Vectrex. v1.5.6-v1.5.8 had 0.13 / +0.13, fitted to the owner's own console's BIOS text,
+    #  but long moves then land off on other consoles - a player's homebrew (DW2000) put its figures into the platform.
+    #  The owner, 2026-11-04: typical console as the default; he trims his own Vectrex to match)
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
                    **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
@@ -2292,9 +2293,9 @@ class App:
             self.unit['zerotx'], self.unit['zeroty'] = UNIT_BEAM['zerotx'], UNIT_BEAM['zeroty']   #  Vectorblade broke)
         self.unit_name = c0.get('unit_name', 'owner') if c0.get('unit_name') in UNIT_NAMES else 'owner'
         self.unit_fix = c0.get('unit_fix', 0)
-        if self.unit_fix < 1:                                   # (once, for everybody - the owner, 2026-11-04: the text fit's
-            for k in ('zofs', 'drift_x'):                       #  zero offset and X drift replace whatever was set; later
-                self.unit[k] = UNIT_PRESETS['owner'][k]         #  changes are the player's own again)
+        if self.unit_fix < 1:                                   # (once, for everybody (v1.5.6): zero offset and X drift take the
+            for k in ('zofs', 'drift_x'):                       #  defaults, whatever was set; later changes are the player's own.
+                self.unit[k] = UNIT_PRESETS['owner'][k]         #  v1.5.6's 0.13 values go back to 0 through new_defaults above)
             self.unit_fix = 1
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)

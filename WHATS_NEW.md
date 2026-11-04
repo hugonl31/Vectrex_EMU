@@ -4,6 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.5.9
+- Console defaults back to a typical Vectrex (zero offset and X drift 0)
+- UVMC2 games no longer stall when another program shares the CPU
+
 ## v1.5.8
 - Display > Run-ahead: a frame less input lag in many games (off by default)
 - Run-ahead: Windows only for now, 6809 games, never online

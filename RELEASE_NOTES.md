@@ -3,6 +3,21 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.9
+
+**Console defaults (Config > Circuit)**
+* Zero offset and X drift are 0 again, a typical Vectrex. v1.5.6 set them to 0.13 / +0.13 to fit the owner's own
+  console's small BIOS text, but on other consoles long moves then land off: a player's homebrew put its figures
+  into the platform. Settings still on 0.13 move to 0 by themselves; values a player chose stay. Owners whose
+  console draws like the owner's can set the two values themselves.
+
+**UVMC2 games and other programs**
+* The cartridge's two busy threads now prefer a fast core each instead of being pinned to one. A pinned thread
+  had to wait whenever another program (a browser, a second emulator) ran on its core while its partner spun:
+  frames of up to 1.4 s and EMU RATE under 60 %. With two UVMC2 games running at once, 57-70 % of frames were
+  late before, none now; one game alone runs as fast as before.
+* Online: v1.5.9 plays with v1.5.0 to v1.5.8 (NET_VER 9): the game output is identical to v1.5.8's.
+
 ## v1.5.8
 
 **Run-ahead (Display > Input lag)**

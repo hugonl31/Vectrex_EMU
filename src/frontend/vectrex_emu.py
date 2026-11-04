@@ -1869,6 +1869,7 @@ class Core:
         except OSError:
             log = None
         self.threads = 1                                        # (a UVMC2: host threads in use, from the core)
+        self.ra_ok = None                                       # (run-ahead: True / False once the core said, see Runner)
         self.sig = None                                         # (the last frame's picture, as a checksum)
         def drain(f=self.p.stderr, out=self.msgs, log=log):
             n = 0
@@ -1891,6 +1892,8 @@ class Core:
                         pass
                     elif (t.startswith('UVMC2:') or t.startswith('PITREX: the program stopped')) and len(out) < 20:
                         out.append(t.split(':', 1)[1].strip())          # (a PiTrex's own text, its UART, is not shown)
+                    elif t.startswith('STAT: runahead '):              # (run-ahead: 'ready' or 'unsupported' - live.c)
+                        self.ra_ok = t.split()[2] == 'ready'
                     elif t.startswith('STAT: threads '):               # (the core: its UVMC2 runs on 1 or 2 host threads)
                         try: self.threads = int(t.split()[2])
                         except (ValueError, IndexError): pass
@@ -2028,6 +2031,7 @@ PAUSE_HZ = 60.0                  # paused: the still picture is redrawn this oft
 
 class Runner(threading.Thread):
     beam_of = None                                      # (the app: is Tube > Beam trace on)
+    ra_of = None                                        # (the app: is Display > Run-ahead on)
     def __init__(self, core, inp, audio, inf):
         super().__init__(daemon=True)
         self.core, self.inp, self.audio = core, inp, audio
@@ -2127,6 +2131,10 @@ class Runner(threading.Thread):
                 bt = bool(self.beam_of()) if self.beam_of else False     # (Tube > Beam trace: the core's mode, see
                 if bt != getattr(self.core, 'beam_sent', None):          #  vecx.c bp_step - sent again to a new core)
                     self.core.set_analog(11, 1.0 if bt else 0.0); self.core.beam_sent = bt
+                ra = bool(self.ra_of()) if self.ra_of else False         # (Run-ahead: the core runs one frame ahead and
+                ra = ra and self.net is None                             #  shows that, live.c; never online - both
+                if ra != getattr(self.core, 'ra_sent', False):           #  machines run exactly the same frames)
+                    self.core.set_analog(0x7E, 1.0 if ra else 0.0); self.core.ra_sent = ra
                 t_cpu = time.perf_counter()
                 feed = None
                 if fl & 8 and fl & 16:                  # (power on, the intro skipped: the core runs ~0.8 s for this
@@ -2257,6 +2265,7 @@ class App:
         Core.uvm2_mode = self.uvm2_mode                         # UVMC2 games: Exact (as the cartridge) or Fast (slower PCs)
         self.usb_typing = False; self.usb_btn = 0; self.usb_last = None; self.usb_down = []
         self.skip_boot = bool(c0.get('skip_boot', False))       # power on straight into the cartridge
+        self.run_ahead = bool(c0.get('run_ahead', False))       # Display > Run-ahead: one game frame less input lag (live.c)
         self.p2_auto = bool(c0.get('p2_auto', True))            # port 2: the accessory a game needs, plugged in for it (port2_auto)
         self.inp = Input(ctl)
         self.audio = recorder.AudioTap(Audio() if IS_WIN else osdep.Audio(RATE))   # (Record: the sound taken here too)
@@ -2290,6 +2299,7 @@ class App:
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', False) if self.ren else False
+        self.run.ra_of = lambda: getattr(self, 'run_ahead', False)
         self.run.crt.jack = bool(args.rom and args.rom.lower().endswith('.um2'))   # (a UVMC2: its headphone jack)
         self.run.crt.motor = self.speech == 'imager'            # (the 3D Imager: its motor's sound)
         self.root = tk.Tk()
@@ -6306,6 +6316,23 @@ class App:
                                                                 #  from the next game on)
         self.save_settings()
         self.show_look('port 2: ' + ('the accessory a game needs, plugged in for it' if self.p2_auto else 'as chosen, always'))
+    def toggle_run_ahead(self):
+        """Display > Run-ahead: the core runs each game frame, then one more unseen with the same input, and shows that
+        one - the game's reaction to a press ~20 ms sooner, as on a real Vectrex (which draws while the game runs; an
+        emulator shows a frame once it is done). The game itself runs the same frames. Off online; 6809 games only"""
+        self.run_ahead = not getattr(self, 'run_ahead', False)
+        self.save_settings()
+        why = self.run_ahead_blocked()
+        self.show_look('run-ahead: ' + ('on (one game frame less input lag)' if self.run_ahead else 'off')
+                       + (' - not now: ' + why if self.run_ahead and why else ''))
+    def run_ahead_blocked(self):
+        """why run-ahead does not run now (None: it does)"""
+        if getattr(self.run, 'net', None) is not None:
+            return 'online play'
+        if getattr(self.core, 'ra_ok', None) is False:
+            r = (self.args.rom or '').lower()
+            return 'UVMC2 and PiTrex games' if r.endswith(('.um2', '.img', '.pit')) else 'this build of the core'
+        return None
     def toggle_skip_boot(self):
         self.skip_boot = not self.skip_boot
         self.save_settings()
@@ -6612,6 +6639,7 @@ class App:
             self.core.set_gap(self.ren.line_gap)
         run = Runner(self.core, self.inp, self.audio, False)
         run.beam_of = old.beam_of
+        run.ra_of = old.ra_of
         run.crt = old.crt; run.crt.overlay = []
         run.crt.jack = bool(rom and rom.lower().endswith('.um2'))
         run.crt.motor = self.speech == 'imager'
@@ -7732,6 +7760,7 @@ class App:
         self.osd_meters = True
         if not self.smooth:
             self.toggle_smooth()
+        self.run_ahead = False                          # (Run-ahead: off, its default)
         if self.ren:                                    # (the weak-graphics switches: the profile's)
             base = self.base_values()
             for k in ('phos_scale', 'half_rate', 'phos_full', 'line_half'):
@@ -7825,6 +7854,7 @@ class App:
             d['unit_fix'] = getattr(self, 'unit_fix', 1)
         d['ultra_rate'] = getattr(self, 'ultra_rate', None)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
+        d['run_ahead'] = getattr(self, 'run_ahead', False)
         d['p2_auto'] = getattr(self, 'p2_auto', True)
         d['knob'] = getattr(self, 'knob_on', True)
         d['cart'] = getattr(self, 'cart_on', True)

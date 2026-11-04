@@ -15,5 +15,8 @@ echo using %VCVARS%
 call "%VCVARS%" >nul || (echo Visual C++ could not be set up & exit /b 1)
 if not exist core mkdir core
 if not exist build mkdir build
-cl /nologo /O2 /GL /W0 /TC /Fobuild\ /Fe:core\vectrex_core.exe src\core\vtest.c src\core\vecx.c src\core\e6809.c src\core\e8910.c src\core\cm33.c src\core\rp2350.c src\core\host.c src\core\arm11.c src\core\usbhost.c || exit /b 1
+rem (src\core\state: vtest.c, vecx.c, e6809.c and e8910.c compiled with all their data in sections of their own, so
+rem  live.c can save and restore a running 6809 game whole: Display > Run-ahead. The Mac / Linux builds compile the
+rem  files themselves, without run-ahead)
+cl /nologo /O2 /GL /W0 /TC /DVX_STATES /Fobuild\ /Fe:core\vectrex_core.exe src\core\state\state_vtest.c src\core\state\state_vecx.c src\core\state\state_e6809.c src\core\state\state_e8910.c src\core\state\state_core.c src\core\cm33.c src\core\rp2350.c src\core\host.c src\core\arm11.c src\core\usbhost.c || exit /b 1
 echo built core\vectrex_core.exe

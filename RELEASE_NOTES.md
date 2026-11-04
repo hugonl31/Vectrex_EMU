@@ -3,6 +3,20 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.8
+
+**Run-ahead (Display > Input lag)**
+* New switch, off by default: each game frame is run, then one more unseen with the same input, and that one is
+  shown. Games that answer a press one frame late (Armor Attack, Vectorblade, Web Wars, 3D Mine Storm) now show
+  the answer ~20 ms sooner, nearer a real Vectrex, which draws while the game runs. Games that already answer in
+  the same frame (Mine Storm, Last Human, Berzerk) are unchanged. The game runs exactly the same frames and
+  sound (checked frame for frame on 8 games); the core does about twice the work (~2-4 ms a frame here).
+* How: the core's files are compiled with all their data in two sections of their own (src/core/state), so the
+  core can save and restore a running game whole (0.27 MB) - the same scheme as the EmuVR core's save states.
+* Windows builds, 6809 games only: off for UVMC2 and PiTrex games, and always off in online play.
+* Online: the core runs the same frames as before with run-ahead off (identical output on 8 games against
+  v1.5.7's core).
+
 ## v1.5.7
 
 **Last Human v1.3.7 (both editions bundled)**

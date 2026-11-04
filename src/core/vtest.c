@@ -481,8 +481,9 @@ int main (int argc, char **argv)
 		/* the flash's saved state (high scores, settings) - next to the ROM, the dump stays as it is */
 		static char sav[4096]; snprintf (sav, sizeof sav, "%s.sav", argv[2]); vt_flash_file = sav;
 		FILE *fs = fopen (sav, "rb");
-		if (fs) { static unsigned char tmp[524288]; size_t m = fread (tmp, 1, sizeof tmp, fs); fclose (fs);
-		          if (m == vt_cart_len) memcpy (cart, tmp, m); }
+		if (fs) { unsigned char *tmp = malloc (524288); size_t m = tmp ? fread (tmp, 1, 524288, fs) : 0; fclose (fs);   /* (on the heap: not in a save) */
+		          if (m == vt_cart_len) memcpy (cart, tmp, m);
+		          free (tmp); }
 	}
 	{ extern int vt_cart_mirror; vt_cart_mirror = !memcmp (cart, cart + 32768, 32768); }
 	{ extern int vt_speech_sep; vt_speech_sep = getenv ("VT_SPEECHOUT") != NULL; }
@@ -572,7 +573,7 @@ int main (int argc, char **argv)
 			printf ("sigrun %ld frames: %016llx cycles=%llu\n", k, (unsigned long long) h, (unsigned long long) total_cycles); fflush (stdout);
 		}
 		else if (!strcmp (cmd, "hitch")) {       /* hitch N: run N frames, each one's wall time against its own length (tests: stalls) */
-			long k = atol (a1); double worst = 0, sum = 0; long late = 0, late2 = 0; static double r[100000]; long nr = 0;
+			long k = atol (a1); double worst = 0, sum = 0; long late = 0, late2 = 0; double *r = malloc (100000 * sizeof (double)); long nr = 0;   /* (on the heap: not in a save) */
 			long fb0 = frame_budget; frame_budget = 30000;  /* (the frames as --live makes them for a UVMC2 / PiTrex: 50 a second) */
 			for (long i = 0; i < k; i++) {
 				unsigned long long c0 = total_cycles; double t0 = vt_wall ();
@@ -583,7 +584,7 @@ int main (int argc, char **argv)
 			frame_budget = fb0;
 			for (long i = 1; i < nr; i++) { double x = r[i]; long j = i - 1; while (j >= 0 && r[j] > x) { r[j + 1] = r[j]; j--; } r[j + 1] = x; }
 			printf ("hitch %ld frames: wall %.3f s, frame time / its length: median %.3f p99 %.3f max %.3f, over 1x %ld, over 2x %ld\n", k, sum,
-			        nr ? r[nr / 2] : 0, nr ? r[(nr * 99) / 100] : 0, worst, late, late2); fflush (stdout);
+			        nr ? r[nr / 2] : 0, nr ? r[(nr * 99) / 100] : 0, worst, late, late2); fflush (stdout); free (r);
 		}
 		else if (!strcmp (cmd, "memsig")) {      /* memsig: the cartridge computer's whole RAM in one hash (the RP2350's SRAM + PSRAM, the Pi's RAM) */
 			extern int vt_uvm2, vt_pitrex; extern uint64_t uvm2_memsig (void), pitrex_memsig (void);

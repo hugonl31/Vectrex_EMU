@@ -10,6 +10,7 @@
  *                     flags bit6 = 3 more bytes follow: the 2nd-player port (jx2+128, jy2+128, buttons
  *                     bit0..3 = player 2's buttons 1..4); without it player 2 is centred, no buttons
  *                     flags bit7 = quit
+ *                     settings id 0x7E (flags bit5): run-ahead, 1 = one game frame (0 = off): see ra_step
  *       out (stdout): "VF" u16 nlines u16 nsamples u32 frame start cycle (low 32 bits), u32 the state's checksum (the
  *                     console's RAM and cycle count, a UVMC2's / PiTrex's CPU state: online play compares it), then nlines x (u16 x0 y0 x1 y1 (+ 8000: LIVE_OFS), u8 bright, u16 beam energy on the line in 1/8 cycles, u16 start cycle in the frame),
  *                     then nsamples signed 16-bit PCM samples at 44100 Hz (little endian)
@@ -136,6 +137,57 @@ static void flash_save (int now)
 	vt_flash_dirty = 0; quiet = 0;
 }
 
+/* ---------- run-ahead ----------
+ * With it on, each message runs the game frame for real (its sound sent, its state kept), saves the whole state, runs
+ * one more frame unseen with the same input and sends that frame's picture (its sound dropped), then loads the state
+ * back. The picture shown is one game frame ahead of the game's state: the game's own frame of input delay is hidden,
+ * so a press shows ~20 ms sooner - closer to a real Vectrex, which draws while the game runs (an emulator shows each
+ * frame after it is done). The real frames, their sound, the recording and the state's checksum are the same as
+ * without it. Only 6809 games built with VX_STATES (build_core.bat): the core says "STAT: runahead ..." on stderr. */
+static int ra_want;                         /* (settings id 0x7E) */
+#ifdef VX_STATES
+size_t vxs_init (void); void vxs_exclude (const void *p, size_t n); void vxs_save (unsigned char *o); void vxs_load (const unsigned char *s);
+static unsigned char *ra_buf; static size_t ra_raw; static int ra_state = -1;   /* (-1: not set up, 0: none, 1: ready) */
+static int ra_ready (void)
+{
+	if (ra_state >= 0) return ra_state;
+	extern int vt_uvm2, vt_pitrex;
+	ra_state = 0;
+	if (vt_uvm2 || vt_pitrex) { fprintf (stderr, "STAT: runahead unsupported (UVMC2 / PiTrex)\n"); return 0; }
+	vxs_exclude (cur, sizeof cur); vxs_exclude (last, sizeof last); vxs_exclude (prof, sizeof prof);
+	vxs_exclude (acc, sizeof acc);                  /* (the lines: only their used part is saved; the profile, the shots'
+	                                                   picture: tests) */
+	ra_raw = vxs_init ();
+	ra_buf = malloc (ra_raw + 2 * sizeof cur + (bcur ? sizeof (beam_t) * MAXB : 0) + vt_cart_len);
+	if (!ra_buf) { fprintf (stderr, "STAT: runahead unsupported (memory)\n"); return 0; }
+	ra_state = 1;
+	fprintf (stderr, "STAT: runahead ready, %zu bytes a save\n", ra_raw);
+	return 1;
+}
+static void ra_save (void)
+{
+	unsigned char *o = ra_buf;
+	vxs_save (o); o += ra_raw;
+	memcpy (o, cur, sizeof (line_t) * ncur); o += sizeof (line_t) * ncur;    /* (ncur, nlast, nbcur: in the sections) */
+	memcpy (o, last, sizeof (line_t) * nlast); o += sizeof (line_t) * nlast;
+	if (bcur) { memcpy (o, bcur, sizeof (beam_t) * nbcur); o += sizeof (beam_t) * nbcur; }
+	if (vt_cart_len) memcpy (o, cart, vt_cart_len);                          /* (a flash cartridge: the game writes to it) */
+}
+static void ra_load (void)
+{
+	const unsigned char *s = ra_buf;
+	vxs_load (s); s += ra_raw;
+	memcpy (cur, s, sizeof (line_t) * ncur); s += sizeof (line_t) * ncur;
+	memcpy (last, s, sizeof (line_t) * nlast); s += sizeof (line_t) * nlast;
+	if (bcur) { memcpy (bcur, s, sizeof (beam_t) * nbcur); s += sizeof (beam_t) * nbcur; }
+	if (vt_cart_len) memcpy (cart, s, vt_cart_len);
+}
+#else
+static int ra_ready (void) { static int told; if (!told) { told = 1; fprintf (stderr, "STAT: runahead unsupported (this build)\n"); } return 0; }
+static void ra_save (void) { }
+static void ra_load (void) { }
+#endif
+
 static int live_main (const char *recfn, const char *symfn)
 {
 	FILE *rec = fopen (recfn, "wb");
@@ -145,7 +197,8 @@ static int live_main (const char *recfn, const char *symfn)
 	if (symfn && load_syms (symfn)) { opt_addr = SA (S_OPTIONS); gflags_addr = SA (S_GFLAGS); }
 	abuf_cap = 32768; abuf = malloc (abuf_cap);
 	{ extern int vt_uvm2, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2 || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
-	static unsigned char out[16 + 30000 * 14 + 2 + 32768];   /* (30000: the beam-trace mode's pieces; 14: a 3D Imager colour each) */
+	static unsigned char *out; if (!out) out = malloc (16 + 30000 * 14 + 2 + 32768);   /* (30000: the beam-trace mode's pieces; 14: a
+	                                                   3D Imager colour each. On the heap: not in a save, run-ahead) */
 	unsigned char m[8];
 	long nframes = 0;
 	unsigned long long piece0 = 0;
@@ -158,7 +211,8 @@ static int live_main (const char *recfn, const char *symfn)
 			if (fread (&cnt, 1, 1, stdin) != 1) break;
 			for (int k = 0; k < cnt; k++) {
 				if (fread (g, 1, 5, stdin) != 5) { cnt = 0; break; }
-				if (g[0] >= 0x80) vt_usb_report (g[0], g + 1);
+				if (g[0] == 0x7E) { memcpy (&f, g + 1, 4); ra_want = f > 0.5f; if (ra_want) ra_ready (); }   /* (run-ahead) */
+				else if (g[0] >= 0x80) vt_usb_report (g[0], g + 1);
 				else { memcpy (&f, g + 1, 4); vt_set_analog (g[0], f); }
 			}
 			m[3] &= ~0x20;                      /* (recordings keep their format) */
@@ -169,6 +223,17 @@ static int live_main (const char *recfn, const char *symfn)
 		abuf_n = 0;
 		{ extern unsigned long long vt_piece_t0; piece0 = vt_piece_t0; }   /* (this frame's lines count from its start) */
 		run_frame ();
+		uint32_t s;                                     /* the state's checksum (the real frame's, with run-ahead too) */
+		{ extern int vt_uvm2, vt_pitrex; extern uint32_t uvm2_sig (void), pitrex_sig (void);
+		  s = ram_sum () ^ (uint32_t) total_cycles * 2654435761u;
+		  if (vt_uvm2) s ^= uvm2_sig (); else if (vt_pitrex) s ^= pitrex_sig (); }
+		int ra = ra_want && ra_ready () == 1, abuf_real = abuf_n;
+		if (ra) {                                       /* run-ahead: the next frame unseen, its picture sent (see above) */
+			ra_save ();
+			{ extern unsigned long long vt_piece_t0; piece0 = vt_piece_t0; }
+			run_frame ();
+			abuf_n = abuf_real;                         /* (its sound dropped) */
+		}
 		int n = nlast > 30000 ? 30000 : nlast;
 		unsigned char *p = out;
 		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2; extern int vt_imager; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2 || vt_imager;   /* (bit 15: two channels -
@@ -177,10 +242,7 @@ static int live_main (const char *recfn, const char *symfn)
 		  *p++ = 'V'; *p++ = vt_imager ? 'C' : 'F'; put16 (p, n); p += 2;   /* ('VC': each line's colour follows the lines) */ put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
 		{ unsigned t = (unsigned) piece0;               /* the frame's start (absolute cycles): its lines' times count from it */
 		  put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
-		{ extern int vt_uvm2, vt_pitrex; extern uint32_t uvm2_sig (void), pitrex_sig (void);   /* the state's checksum */
-		  uint32_t s = ram_sum () ^ (uint32_t) total_cycles * 2654435761u;
-		  if (vt_uvm2) s ^= uvm2_sig (); else if (vt_pitrex) s ^= pitrex_sig ();
-		  put16 (p, s & 0xffff); put16 (p + 2, s >> 16); p += 4; }
+		put16 (p, s & 0xffff); put16 (p + 2, s >> 16); p += 4;   /* the state's checksum */
 		for (int i = 0; i < n; i++) {
 			line_t *l = &last[i];
 			/* (+ LIVE_OFS: the beam goes past the canvas, vecx.c ALG_CLIP; the frontend takes it off) */
@@ -196,6 +258,7 @@ static int live_main (const char *recfn, const char *symfn)
 		memcpy (p, abuf, abuf_n); p += abuf_n;
 		fwrite (out, 1, p - out, stdout_bin);
 		fflush (stdout_bin);
+		if (ra) ra_load ();                             /* (back to the real frame's end) */
 		flash_save (0);
 	}
 	flash_save (1);

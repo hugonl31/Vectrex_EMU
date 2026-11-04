@@ -734,9 +734,14 @@ TOPICS = [
          "finer steps and moving things update more often."),
 ('item', 'G-Sync / FreeSync', "One screen picture per game frame, with no tearing - needs such a monitor. "
          "At 50 frames a second the mains wobble stands still, as on a real Vectrex."),
+('item', 'Run-ahead (1 frame less)', "Less input lag: each game frame is run, then one more unseen with the same "
+         "input, and that one is shown - so in games that answer a press one frame late (Armor Attack, Vectorblade, "
+         "Web Wars) the answer shows about 20 ms sooner, nearer a real Vectrex, which draws while the game runs. Games "
+         "that answer within the same frame (Mine Storm) gain nothing. The game itself runs exactly the same frames and "
+         "sound; the emulation does twice the work. Off in online play, and for UVMC2 and PiTrex games. Off by default."),
 ('item', 'Reset display settings to default', "Fit screen (not Authentic; the monitor size as it "
          "reports it), not turned, the on-screen display, the knob and the cartridge on, the monitor's full "
-         "rate with smooth motion on."),
+         "rate with smooth motion on, run-ahead off."),
 ]),
 
 ('help_controls', 'Controllers', [

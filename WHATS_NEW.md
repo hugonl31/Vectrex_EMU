@@ -5,7 +5,8 @@ newest on top, each line short enough for that small window (at most about 70 ch
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.5.8
-- Display > Run-ahead: a frame less input lag in many 6809 games (Windows)
+- Display > Run-ahead: a frame less input lag in many games (off by default)
+- Run-ahead: Windows only for now, 6809 games, never online
 
 ## v1.5.7
 - Last Human v1.3.7: the UVMC2 edition draws exactly like the cartridge

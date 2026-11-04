@@ -14,8 +14,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * How: the core's files are compiled with all their data in two sections of their own (src/core/state), so the
   core can save and restore a running game whole (0.27 MB) - the same scheme as the EmuVR core's save states.
 * Windows builds, 6809 games only: off for UVMC2 and PiTrex games, and always off in online play.
-* Online: the core runs the same frames as before with run-ahead off (identical output on 8 games against
-  v1.5.7's core).
+* Online: v1.5.8 plays with v1.5.0 to v1.5.7 (NET_VER 9): with run-ahead off the core's output is identical
+  to v1.5.7's (8 games), and a v1.5.7 release exe played v1.5.8 online with 0 mismatches in 215 sync checks
+  (Last Human, Armor Attack). Run-ahead is switched off by itself while online.
 
 ## v1.5.7
 

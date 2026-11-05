@@ -4,6 +4,12 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.5.10
+- Last Human v1.3.8: the UVMC2 title runs at a steady 50 fps
+- Last Human: stick left/right sets difficulty, up/down the arena
+- Last Human: TEXT calibration straightens the small text
+- Last Human: co-op high scores marked 2P, no longer slow the page
+
 ## v1.5.9
 - Console defaults back to a typical Vectrex (zero offset and X drift 0)
 - UVMC2 games no longer stall when another program shares the CPU

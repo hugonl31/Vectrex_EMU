@@ -3,6 +3,20 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.5.10
+
+**Last Human v1.3.8 (both editions bundled)**
+* UVMC2 edition: the title runs at a steady 50 frames a second on every page (the pages were redrawn to fit a
+  Vectrex frame), so its music keeps its speed too.
+* Title: stick left/right sets the difficulty, up/down the arena (shown on a line with arrows).
+* TEXT calibration: a new calibration step straightens the small text; it defaults to straight on most
+  consoles.
+* High scores: co-op scores are marked 2P, and the page no longer slows down.
+* Checked: the UVMC2 edition plays exactly like the 6809 cartridge (173,700 frames, 0 differences) and makes the
+  same console writes at the same cycles (486,351 VIA writes).
+* Online: v1.5.10 plays with v1.5.0 to v1.5.9 (NET_VER 9, the core and online code unchanged); Last Human online
+  needs the same game version on both sides.
+
 ## v1.5.9
 
 **Console defaults (Config > Circuit)**

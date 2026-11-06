@@ -737,7 +737,8 @@ unsigned char read8 (unsigned address)
 	} else if (address < 0x8000) {
 		/* cartridge (none in the slot: nothing drives the bus) */
 
-		data = vt_nocart ? open_bus () : cart[(cart_bank () << 15) | address];
+		{ extern int vt_uvm2_intro; extern unsigned char uvm2_intro_read (unsigned);
+		  data = vt_uvm2_intro ? uvm2_intro_read (address) : vt_nocart ? open_bus () : cart[(cart_bank () << 15) | address]; }
 	} else {
 		data = open_bus ();                 /* $8000-$BFFF: nothing there */
 	}
@@ -988,7 +989,7 @@ void vecx_reset_button (void)
 	static unsigned char keep[1024];
 	unsigned page = vt_mc_page, ra = vt_hb_latch;      /* (the cartridges' latches are not reset by the button) */
 	memcpy (keep, ram, sizeof keep);
-	vecx_reset ();
+	{ extern int vt_reset_btn; vt_reset_btn = 1; vecx_reset (); vt_reset_btn = 0; }
 	memcpy (ram, keep, sizeof keep);
 	vt_mc_page = page; vt_hb_latch = ra;
 }
@@ -998,7 +999,7 @@ void vecx_reset (void)
 	alg_idle_n = 0; alg_quiet = 0;          /* (alg_sstep: from a full cycle again) */
 	im_init ();                             /* (the 3D Imager: its disc standing still) */
 	lp_init ();                             /* (the light pen) */
-	{ extern void uvm2_power_on (void); if (vt_uvm2) uvm2_power_on (); }
+	{ extern void uvm2_reset (void); extern int vt_uvm2_cart; if (vt_uvm2_cart) uvm2_reset (); }   /* (a UVMC2: the intro at power on, the game at RESET) */
 	{ extern void pitrex_power_on (void); if (vt_pitrex) pitrex_power_on (); }   /* (a PiTrex: its program starts afresh) */   /* (a UVMC2: the game starts afresh) */
 	{ extern unsigned char e6809_obus_idle; e6809_obus_idle = rom[0x1fff]; }   /* (the BIOS byte at $FFFF: the idle cycles' bus) */
 	vt_mc_page = 0; fl_step = fl_cmd = fl_id = 0;          /* (power-on: the multicart's menu page, the flash idle) */
@@ -1916,6 +1917,8 @@ void vecx_emu (long cycles)
 	}
 
 	while (cycles > 0) {
+		{ extern int vt_uvm2_go; extern void uvm2_intro_end (void);       /* (a UVMC2's intro is over: the chip takes the bus) */
+		  if (vt_uvm2_go) { uvm2_intro_end (); vecx_emu (cycles); return; } }
 		if (vt_wtime < 0) { const char *z = getenv ("VT_WRITETIME"); vt_wtime = z ? atoi (z) : 2; }
 		if (vt_wtime >= 2) {
 			/* reads and writes both in the instruction's last cycle, as on a 6809: a dry run gives

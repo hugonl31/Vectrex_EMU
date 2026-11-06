@@ -340,12 +340,12 @@ static void emu_chunk (long cyc)
 	int ns = psg_take (buf, 4096);
 	if (ns > 0) {
 		extern int vt_speech_sep, vt_vecvoice; extern int psg_take_speech (int16_t *buf, int max);
-		extern int vt_uvm2; extern int uvm2_jack44 (int16_t *, int);
+		extern int vt_uvm2, vt_uvm2_cart; extern int uvm2_jack44 (int16_t *, int);
 		extern int vt_imager;
-		if ((vt_speech_sep && vt_vecvoice) || vt_uvm2 || vt_imager) {     /* (two channels: the console, the speech module /
+		if ((vt_speech_sep && vt_vecvoice) || vt_uvm2_cart || vt_imager) {   /* (a UVMC2: two channels in its intro too, the jack silent) */     /* (two channels: the console, the speech module /
 		                                                                     the UVMC2's jack / the 3D Imager's motor) */
 			static int16_t sb[4096], st[8192];
-			if (vt_uvm2) uvm2_jack44 (sb, ns); else psg_take_speech (sb, ns);
+			if (vt_uvm2) uvm2_jack44 (sb, ns); else if (vt_uvm2_cart) memset (sb, 0, ns * sizeof sb[0]); else psg_take_speech (sb, ns);
 			for (int i = 0; i < ns; i++) { st[2 * i] = buf[i]; st[2 * i + 1] = sb[i]; }
 			if (wavf) { for (int i = 0; i < ns; i++) { int v = buf[i] + sb[i]; buf[i] = (int16_t) (v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
 			            fwrite (buf, 2, ns, wavf); wav_bytes += ns * 2; }

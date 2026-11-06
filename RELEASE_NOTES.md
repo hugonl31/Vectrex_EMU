@@ -3,7 +3,16 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.5.10
+## v1.6.0
+
+**UVMC2 power-on like a real Vectrex**
+* Switching on with a UVMC2 game now shows the Vectrex's own intro first: the VECTREX logo and its tune, then the
+  "(c) GCE" screen, then the game - as a real UVMC2 does before its menu hands over (no title line: the emulator has
+  no menu). "Skip the Vectrex intro" still goes straight into the game.
+* RESET during the intro starts the game at once; RESET during play starts the game again, as before.
+* Online: the version number went up (10), so both players need v1.6.0.
+
+(v1.6.0 also replaces v1.5.10, which was withdrawn: the numbers go from .9 to the next .0.)
 
 **Last Human v1.3.8 (both editions bundled)**
 * UVMC2 edition: the title runs at a steady 50 frames a second on every page (the pages were redrawn to fit a
@@ -14,8 +23,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * High scores: co-op scores are marked 2P, and the page no longer slows down.
 * Checked: the UVMC2 edition plays exactly like the 6809 cartridge (173,700 frames, 0 differences) and makes the
   same console writes at the same cycles (486,351 VIA writes).
-* Online: v1.5.10 plays with v1.5.0 to v1.5.9 (NET_VER 9, the core and online code unchanged); Last Human online
-  needs the same game version on both sides.
+* Online: Last Human needs the same game version on both sides.
 
 ## v1.5.9
 

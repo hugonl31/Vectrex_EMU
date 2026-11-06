@@ -4,7 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
-## v1.5.10
+## v1.6.0
+- UVMC2 games now power on through the Vectrex intro, like a real one
+- RESET in the intro or in play goes straight to the game's own start
+- Online: both players need v1.6.0
 - Last Human v1.3.8: the UVMC2 title runs at a steady 50 fps
 - Last Human: stick left/right sets difficulty, up/down the arena
 - Last Human: TEXT calibration straightens the small text

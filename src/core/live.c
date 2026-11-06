@@ -79,7 +79,8 @@ static int rds8 (unsigned a) { int v = rd8 (a); return v > 127 ? v - 256 : v; }
  * (The intro and the BIOS title screen last ~13 s.) At most 60 million cycles (40 s). */
 static void skip_boot (void)
 {
-	extern int vt_uvm2, vt_pitrex; if (vt_uvm2 || vt_pitrex) return;   /* (a UVMC2 game, a PiTrex: the 6809 never runs, no intro to skip) */
+	{ extern int vt_uvm2_intro; extern void uvm2_intro_end (void); if (vt_uvm2_intro) { uvm2_intro_end (); return; } }   /* (a UVMC2: straight into the game) */
+	extern int vt_uvm2, vt_pitrex; if (vt_uvm2 || vt_pitrex) return;   /* (a PiTrex: the 6809 never runs, no intro to skip) */
 	extern unsigned long long alg_cycles;
 	unsigned long long c0 = alg_cycles;
 	static int16_t drop[4096];
@@ -151,9 +152,9 @@ static unsigned char *ra_buf; static size_t ra_raw; static int ra_state = -1;   
 static int ra_ready (void)
 {
 	if (ra_state >= 0) return ra_state;
-	extern int vt_uvm2, vt_pitrex;
+	extern int vt_uvm2_cart, vt_pitrex;
 	ra_state = 0;
-	if (vt_uvm2 || vt_pitrex) { fprintf (stderr, "STAT: runahead unsupported (UVMC2 / PiTrex)\n"); return 0; }
+	if (vt_uvm2_cart || vt_pitrex) { fprintf (stderr, "STAT: runahead unsupported (UVMC2 / PiTrex)\n"); return 0; }
 	vxs_exclude (cur, sizeof cur); vxs_exclude (last, sizeof last); vxs_exclude (prof, sizeof prof);
 	vxs_exclude (acc, sizeof acc);                  /* (the lines: only their used part is saved; the profile, the shots'
 	                                                   picture: tests) */
@@ -196,7 +197,7 @@ static int live_main (const char *recfn, const char *symfn)
 	fwrite (REC_MAGIC, 1, 6, rec); fwrite (&sum, 4, 1, rec);
 	if (symfn && load_syms (symfn)) { opt_addr = SA (S_OPTIONS); gflags_addr = SA (S_GFLAGS); }
 	abuf_cap = 32768; abuf = malloc (abuf_cap);
-	{ extern int vt_uvm2, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2 || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
+	{ extern int vt_uvm2_cart, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2_cart || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
 	static unsigned char *out; if (!out) out = malloc (16 + 30000 * 14 + 2 + 32768);   /* (30000: the beam-trace mode's pieces; 14: a
 	                                                   3D Imager colour each. On the heap: not in a save, run-ahead) */
 	unsigned char m[8];
@@ -236,7 +237,7 @@ static int live_main (const char *recfn, const char *symfn)
 		}
 		int n = nlast > 30000 ? 30000 : nlast;
 		unsigned char *p = out;
-		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2; extern int vt_imager; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2 || vt_imager;   /* (bit 15: two channels -
+		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2_cart; extern int vt_imager; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2_cart || vt_imager;   /* (bit 15: two channels -
 		  the console and the speech module, interleaved) */
 		  extern int vt_imager;
 		  *p++ = 'V'; *p++ = vt_imager ? 'C' : 'F'; put16 (p, n); p += 2;   /* ('VC': each line's colour follows the lines) */ put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */

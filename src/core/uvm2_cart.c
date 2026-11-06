@@ -17,7 +17,11 @@
  * /HALT GP27, /NMI GP29, ~E GP31; the SD card GP34-39, the PT8211 audio DAC GP43-45. */
 #include "rp2350.h"
 
-int vt_uvm2;                                /* a .um2 game in the slot */
+int vt_uvm2;                                /* the chip drives the bus (a .um2 game in the slot, its intro over) */
+int vt_uvm2_cart;                           /* a .um2 game in the slot */
+int vt_uvm2_intro;                          /* power on: the Vectrex's own intro runs first */
+int vt_uvm2_go;                             /* the intro is over: the chip takes the bus (vecx_emu) */
+int vt_reset_btn;                           /* (vecx_reset: the console's reset button, not a power on) */
 static rp2350_t *uvm2;
 static uint32_t uvm2_frac;                  /* (system cycles per E period, 1/256 parts) */
 static uint64_t uvm2_ext;                   /* what the console drives (the data bus during a read) */
@@ -59,11 +63,40 @@ int uvm2_open (const char *path)
 	if (!uvm2 || rp_load_um2 (uvm2, buf, n, err, sizeof err)) { fprintf (stderr, "UVMC2: %s\n", uvm2 ? err : "no memory"); return -1; }
 	const char *sd = getenv ("VT_UVM2_SD");
 	if (sd) rp_set_sd (uvm2, sd);
-	vt_uvm2 = 1;
+	vt_uvm2 = 1; vt_uvm2_cart = 1;
 	{ const char *f = getenv ("VT_UVM2_FAST"), *v = getenv ("VT_UVM2_DEV"); extern int vt_dev;
 	  if (v && v[0] == '1') { vt_dev = 1; rp_fast_mode (uvm2, 1); }               /* (Dev: fast + an ideal beam, vecx.c) */
 	  else if (f && f[0] == '1') rp_fast_mode (uvm2, 1); }
 	return 0;
+}
+
+/* Power on: the Vectrex's intro first, as with the multicart's menu on a real UVMC2 - the VECTREX logo and its
+ * tune, no title - then the game takes the bus. The slot holds a header with no title lines until the BIOS
+ * jumps to the cartridge's code; that jump ends the intro. The console's reset button (and RESET during the
+ * intro) starts the game at once, as the SDK's reset does (docs 06, "The console's reset button"). */
+static const unsigned char uvm2_hdr[] = { 'g', ' ', 'G', 'C', 'E', ' ', 0x80, ' ', ' ', ' ', 0x80,   /* (no year: the BIOS
+                                          checks the first 6 bytes, then shows the copyright line up to $80 - "(c) GCE") */
+                                          0xfd, 0x0d,          /* (the usual tune) */
+                                          0x00 };              /* (no title lines) */
+#define UVM2_HDR_START ((unsigned) sizeof uvm2_hdr)
+unsigned char uvm2_intro_read (unsigned a)
+{
+	if (a < UVM2_HDR_START) return uvm2_hdr[a];
+	if (a == UVM2_HDR_START) { vt_uvm2_go = 1; return 0x20; }      /* (the BIOS jumps in: BRA *, the chip takes over) */
+	if (a == UVM2_HDR_START + 1) return 0xfe;
+	return 0xff;
+}
+/* vecx_reset: a power on runs the intro, the reset button (or no intro wanted) starts the game */
+void uvm2_reset (void)
+{
+	vt_uvm2_go = 0;
+	if (vt_reset_btn || (getenv ("VT_UVM2_INTRO") && getenv ("VT_UVM2_INTRO")[0] == '0')) {
+		vt_uvm2_intro = 0; vt_uvm2 = 1; uvm2_power_on ();
+	} else { vt_uvm2_intro = 1; vt_uvm2 = 0; }
+}
+void uvm2_intro_end (void)
+{
+	vt_uvm2_go = 0; vt_uvm2_intro = 0; vt_uvm2 = 1; uvm2_power_on ();
 }
 
 static void uvm2_drive (int clk)

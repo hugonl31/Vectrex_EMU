@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.1
+
+**Last Human v1.3.9 (both editions bundled)**
+* Calibrated for a standard Vectrex: the default ZERO REF and TEXT now give closed ship outlines and straight
+  text on a stock console (tested on a real Vectrex).
+* Checked: the UVMC2 edition still plays exactly like the 6809 cartridge (lockstep, 0 differences).
+* Only the bundled game changed: core and online code as v1.6.0. Online, Last Human needs the same game
+  version on both sides.
+
 ## v1.6.0
 
 **UVMC2 power-on like a real Vectrex**

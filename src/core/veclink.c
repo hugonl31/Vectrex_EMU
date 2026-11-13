@@ -40,7 +40,10 @@ typedef struct {
 	volatile uint32_t head;                 /* changes written */
 	volatile uint32_t alive;                /* 1 while the core runs; 0 when it ended */
 	volatile uint64_t beat;                 /* (bumped while it runs: a side that stops counting is gone) */
-	uint64_t pad[5];
+	volatile uint64_t park_t;               /* (slices, online: where it stopped at the end of slice park_k) */
+	volatile uint32_t park_k, cmd;          /* (cmd: slices begun - both consoles of a PC are given theirs together) */
+	volatile uint64_t start_t;              /* (where it stood when it began slice cmd) */
+	uint64_t pad[2];
 	struct { uint64_t t; uint32_t v; uint32_t pad; } ring[VL_RING];   /* (t, the 3 wires it drives: bits 0-2 = buttons 1-3) */
 } vl_side_t;
 typedef struct { volatile uint32_t magic; volatile uint32_t pad; uint64_t pad2[7]; vl_side_t s[2]; } vl_shm_t;
@@ -51,13 +54,28 @@ static int vl_me;                           /* 0 = A, 1 = B */
 static uint64_t vl_t0;                      /* alg_cycles when the link opened (B: less its head start) */
 static unsigned vl_drive = 7;               /* what this side drives now (1 = released) */
 static uint64_t vl_pub;
-static FILE *vl_dbg; static long vl_dbg_n;   /* (VT_VLDEBUG=file: the first events of this side) */                     /* (the last time published) */
+#ifndef _WIN32
+static FILE *vl_dbg;
+#endif
+static long vl_dbg_n;                       /* (VT_VLDEBUG=file: the first events of this side) */
+/* online (VT_VECLINK_SLICE=N): both consoles of a PC run the same N-cycle slices of the cable's clock, so neither ever
+ * needs the other beyond the slice both were given (each PC runs both consoles; only the controllers travel) */
+long vl_slice;                              /* N, 0 = the game's own frames (two windows on one PC) */
+static uint32_t vl_k;                       /* the slice running now (its end / N) */
 extern unsigned long long alg_cycles;
 
 static void vl_yield (void)
 {
 #ifdef _WIN32
 	SwitchToThread ();
+#else
+	sched_yield ();
+#endif
+}
+static void vl_sleep0 (void)
+{
+#ifdef _WIN32
+	Sleep (0);
 #else
 	sched_yield ();
 #endif
@@ -72,6 +90,19 @@ static double vl_now (void)
 #endif
 }
 
+#ifdef _WIN32
+static FILE *vl_dbg;
+static LONG WINAPI vl_crash (EXCEPTION_POINTERS *e)
+{
+	if (vl_dbg) {
+		HMODULE m = GetModuleHandleA (NULL);
+		fprintf (vl_dbg, "CRASH code %08lX at +%llX (pc6809 %04X)\n", e->ExceptionRecord->ExceptionCode,
+		         (unsigned long long) ((char *) e->ExceptionRecord->ExceptionAddress - (char *) m), e6809_get_pc () & 0xffff);
+		fflush (vl_dbg);
+	}
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
 /* the link from VT_VECLINK: map the file, mark this side alive, wait for the other, start both clocks */
 static void vl_open (void)
 {
@@ -99,6 +130,8 @@ static void vl_open (void)
 	s->alive = 0; s->head = 0; s->t = 0;
 	s->ring[0].t = 0; s->ring[0].v = 7; s->head = 1;
 	vl->magic = VL_MAGIC;
+	int was_running = o->alive && o->t > 100000;   /* (the other was already playing before this console came: decided
+	                                           now, before any waiting - a timing race otherwise) */
 	s->alive = 1;
 	double t0 = vl_now ();
 	while (!o->alive && vl_now () - t0 < 15.0) { s->beat++;
@@ -109,18 +142,27 @@ static void vl_open (void)
 #endif
 	}
 	vl_t0 = alg_cycles; vl_drive = 7; vl_pub = 0;
-	if (o->alive && o->t > 100000)          /* (the other console was already running - this one changed its game or
-		                                       was switched off and on: it joins at the other's time, as a console
-		                                       plugged into a running one) */
+	const char *zsl = getenv ("VT_VECLINK_SLICE");
+	if (was_running && !(zsl && atol (zsl) > 0))   /* (the other console was already running - this one changed its game
+		                                       or was switched off and on: it joins at the other's time, as a console
+		                                       plugged into a running one. Online - slices - both always start together) */
 		vl_t0 = alg_cycles - o->t;
 	else if (vl_me) {                            /* (two real consoles never start in the same cycle: B is switched on a few
 		                                       thousand cycles before A - from the power-on seed - or the two run the
 		                                       same code in step and both claim the link at once) */
-		const char *z2 = getenv ("VT_POWERSEED"); unsigned long sd = z2 ? strtoul (z2, 0, 10) : 12345;
-		vl_t0 -= 1000 + (sd * 2654435761u >> 7) % 20000;
+		const char *z2 = getenv ("VT_POWERSEED"); uint32_t sd = z2 ? (uint32_t) strtoul (z2, 0, 10) : 12345u;
+		vl_t0 -= 1000 + ((uint32_t) (sd * 2654435761u) >> 7) % 20000;   /* (32 bits on every system: online, the two PCs
+		                                           - Windows, Linux, macOS - must give B the same head start) */
 	}
 	vt_veclink = 1;
-	{ const char *d = getenv ("VT_VLDEBUG"); if (d) { char fn[1100]; snprintf (fn, sizeof fn, "%s.%c.txt", d, vl_me ? 'B' : 'A'); vl_dbg = fopen (fn, "w"); } }
+	{ const char *z3 = getenv ("VT_VECLINK_SLICE"); vl_slice = z3 ? atol (z3) : 0; }
+	s->park_k = 0xffffffffu; s->park_t = 0; s->cmd = 0; s->start_t = 0;   /* (park_k: never parked yet - slice 0 is
+	                                           the time before the first slice, the unseen intro) */
+	{ const char *d = getenv ("VT_VLDEBUG"); if (d) { char fn[1100]; snprintf (fn, sizeof fn, "%s.%c.txt", d, vl_me ? 'B' : 'A'); vl_dbg = fopen (fn, "w");
+#ifdef _WIN32
+	    if (vl_dbg) { setvbuf (vl_dbg, NULL, _IONBF, 0); SetUnhandledExceptionFilter (vl_crash); }
+#endif
+	  } }
 	fprintf (stderr, "VECLINK: side %c, %s\n", vl_me ? 'B' : 'A', o->alive ? "the other console is connected" : "waiting for the other console");
 }
 
@@ -156,7 +198,7 @@ static void vl_set (unsigned drive)
 #endif
 	s->head = h + 1;
 	vl_drive = drive;
-	if (vl_dbg && vl_dbg_n++ < 20000) fprintf (vl_dbg, "%llu set %u\n", (unsigned long long) t, drive);
+	if (vl_dbg && vl_dbg_n++ < 200000) fprintf (vl_dbg, "%llu set %u\n", (unsigned long long) t, drive);
 }
 
 /* the wires as this console reads them now: 3 bits, 0 = low. Waits for the other console to reach this cycle. */
@@ -170,11 +212,16 @@ static unsigned vl_wires (void)
 	if (o->alive) {
 		uint64_t beat = o->beat; double since = 0; unsigned spins = 0;
 		while (o->alive && o->t < t) {
-			if (++spins > 64) vl_yield ();
-			if ((spins & 1023) == 0) {        /* (the other stopped: paused, closed - its wires go high) */
+			if (vl_slice && o->park_k == vl_k && o->park_t < t) break;   /* (online: it stopped short of t at this
+			                                           slice's end - its wires stay as it left them until the next) */
+			if (++spins > 64) vl_yield ();          /* (the other is a moment behind: its own CPU core - waiting politely,
+			                                           a slower PC's other threads (the picture, the sound) need theirs) */
+			if ((spins & 255) == 0) vl_sleep0 ();
+			if (!vl_slice && (spins & 1023) == 0) {   /* (two windows: the other closed or hung - its wires go high; not
+				                                       online, where every PC must read the same) */
 				if (o->beat != beat) { beat = o->beat; since = 0; }
 				else if (!since) since = vl_now ();
-				else if (vl_now () - since > 0.5) break;
+				else if (vl_now () - since > 5.0) break;
 			}
 		}
 	}
@@ -184,7 +231,7 @@ static unsigned vl_wires (void)
 #else
 	__sync_synchronize ();
 #endif
-	if (o->alive && o->t >= t) {
+	if (o->alive && (o->t >= t || (vl_slice && o->park_k == vl_k))) {
 		uint32_t h = o->head;
 #if defined(_MSC_VER)
 		MemoryBarrier ();
@@ -195,10 +242,52 @@ static unsigned vl_wires (void)
 			if (o->ring[(k - 1) % VL_RING].t <= t) { v = o->ring[(k - 1) % VL_RING].v; break; }
 		}
 	}
-	if (vl_dbg && vl_dbg_n++ < 20000) fprintf (vl_dbg, "%llu read other=%u mine=%u other_t=%llu alive=%u\n", (unsigned long long) t, v, vl_drive, (unsigned long long) o->t, o->alive);
+	if (vl_dbg && vl_dbg_n++ < 200000) fprintf (vl_dbg, "%llu read other=%u mine=%u other_t=%llu alive=%u\n", (unsigned long long) t, v, vl_drive, (unsigned long long) o->t, o->alive);
 	return v & vl_drive;
 }
 
 /* (for live.c) */
 void vecx_veclink_open (void) { vl_open (); }
 void vecx_veclink_close (void) { vl_close (); }
+
+/* online slices (vtest.c run_frame): the end of the next slice in this console's alg_cycles, and the stop published */
+static uint32_t vl_cmd;                     /* (slices this console has begun) */
+unsigned long long vl_slice_begin (void)
+{
+	/* both consoles end this slice at the same cable time: the next N-mark past whichever of the two stands further
+	 * on (B's head start, or the unseen intro, can put them either side of a mark) - each waits for the other to have
+	 * begun this slice too, and both compute the same end, on both PCs */
+	vl_side_t *s = &vl->s[vl_me], *o = &vl->s[vl_me ^ 1];
+	uint64_t t = vl_time ();
+	s->start_t = t; s->t = t;
+#if defined(_MSC_VER)
+	MemoryBarrier ();
+#else
+	__sync_synchronize ();
+#endif
+	s->cmd = ++vl_cmd;
+	{ unsigned spins = 0; while (o->alive && o->cmd < vl_cmd) { if (++spins > 64) vl_yield (); if ((spins & 255) == 0) vl_sleep0 (); } }
+#if defined(_MSC_VER)
+	MemoryBarrier ();
+#else
+	__sync_synchronize ();
+#endif
+	uint64_t ot = (o->alive && o->cmd == vl_cmd) ? o->start_t : t, m = t > ot ? t : ot;
+	uint64_t end = (m / (uint64_t) vl_slice + 1) * (uint64_t) vl_slice;
+	vl_k = (uint32_t) (end / (uint64_t) vl_slice);
+	if (vl_dbg && vl_dbg_n++ < 200000) fprintf (vl_dbg, "%llu slice %u to %llu\n", (unsigned long long) t, vl_k, (unsigned long long) end);
+	return alg_cycles + (end - t);
+}
+void vl_slice_park (void)
+{
+	vl_side_t *s = &vl->s[vl_me];
+	uint64_t t = vl_time ();
+	s->park_t = t; s->t = t;
+#if defined(_MSC_VER)
+	MemoryBarrier ();
+#else
+	__sync_synchronize ();
+#endif
+	s->park_k = vl_k;
+	if (vl_dbg && vl_dbg_n++ < 200000) fprintf (vl_dbg, "%llu park %u\n", (unsigned long long) t, vl_k);
+}

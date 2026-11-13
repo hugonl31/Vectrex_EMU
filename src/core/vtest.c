@@ -106,6 +106,7 @@ static unsigned long long idle_cycles, idle_frame;
 static unsigned long long busy_max, busy_sum;
 static unsigned long frames_over;     /* frames whose busy time > 30000 */
 static int frame_done, in_wait;
+int vt_slice_frame;                         /* (online VecLink slices: a game frame ended in the last one) */
 int vt_t2w_new;                       /* cartridge code restarted timer 2 (vecx.c) */
 static unsigned long long last_recal; /* the last Wait_Recal (cycles) */
 static int crashed;
@@ -368,6 +369,25 @@ static void run_frame (void)
 		fwrite (m, 1, 4, recf);
 	}
 	frame_done = 0;
+	/* online VecLink: a slice of the cable's clock, not the game's frame - both consoles of a PC stop at the same
+	 * cable time (veclink.c) */
+	{ extern int vt_veclink; extern long vl_slice;
+	  if (vt_veclink && vl_slice > 0) {
+		extern unsigned long long alg_cycles, vl_slice_begin (void); extern void vl_slice_park (void); extern int vt_slice_frame;
+		unsigned long long end = vl_slice_begin (); int any = 0;
+		while (alg_cycles < end) { unsigned long long left = end - alg_cycles; emu_chunk (left > 500 ? 500 : (long) left); if (frame_done) any = 1; }
+		vl_slice_park ();
+		{ extern unsigned long long vt_frame_t0;
+		  if (!any && alg_cycles - vt_frame_t0 > 66000) {   /* (a game without Wait_Recal - Berzerk Arena: its frame cut here,
+			                                                as the budget does in the game's own frames) */
+			memcpy (last, cur, sizeof (line_t) * ncur); nlast = ncur; ncur = 0; beam_swap ();
+			vt_frame_t0 = alg_cycles;
+			{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }
+			any = 1;
+		  } }
+		vt_slice_frame = any;                       /* (a game frame ended in it: its picture is new - else nothing to send) */
+		return;
+	  } }
 	/* a game that calls Wait_Recal ends its frames itself (the BIOS's timer 2: at most 65535 cycles): the whole
 	 * frame, so its picture is never cut in two - a slow game (Armor Attack's helicopter, a 30 fps game) was cut
 	 * at frame_budget in the middle of its drawing, and the display could not tell its pictures apart (flicker).

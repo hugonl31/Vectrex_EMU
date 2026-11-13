@@ -1471,7 +1471,13 @@ again unplugs it and closes Vectrex B. Each window takes the controls while it i
 controls when they are set up). The two emulated consoles run in step to the CPU cycle where the cable is read, so the
 transfer (about 9600 baud on the button lines) behaves as on two real consoles - for testing your own VecLink code
 before trying it on real hardware. While the cable is in, port 2 is the cable's (no speech module, light pen or 3D
-Imager) and online play is off. VecLink over the internet is not there yet.
+Imager) and online play is off.
+
+**Online**: Online > *Host VecLink game...* plays a VecLink game with someone over the internet: you are Vectrex A,
+player 2 (Join a game, with the code) is Vectrex B, each with their own screen. Each PC runs both consoles - its
+player's in the window, the other unseen (no picture, no sound: about 1-2 ms of one CPU core a frame) - and only the
+controllers travel, as in any online game; the two consoles run in 20 ms slices of the cable's clock, so both PCs
+compute exactly the same pair (checked twice a second, Windows against Linux).
 
 ### Recording videos and snapshots
 

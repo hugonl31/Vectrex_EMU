@@ -15,7 +15,13 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Exact: the two consoles run in step to the CPU cycle wherever the cable is read - the transfer (~9600 baud on the
   button lines) behaves as on two real consoles. A console that changes its game joins the running one, as when a
   cartridge is swapped on one of two linked consoles. While the cable is in, port 2 is the cable's (no speech module,
-  light pen or 3D Imager) and online play is off. Over the internet: not yet.
+  light pen or 3D Imager) and online play is off.
+* Online > Host VecLink game: a VecLink game over the internet - you are Vectrex A, player 2 (Join a game, with the
+  code) Vectrex B, each with their own screen. Each PC runs both consoles (its player's in the window, the other one
+  unseen: no picture or sound, about 1-2 ms of one CPU core a frame); only the controllers travel, as in any online
+  game. The two consoles run in 20 ms slices of the cable's clock, agreed between them, so both PCs compute exactly the
+  same pair: tested Windows against Linux (this PC and a GEEKOM mini PC, 4000 frames, 160 sync checks, the same
+  checksums at the end) and in two app windows on one PC.
 * Checked: Alex Herbert's V2 example links and passes the stick from one console to the other; Berzerk Arena's link
   game starts on both consoles from either one's button.
 

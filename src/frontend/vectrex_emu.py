@@ -1785,6 +1785,8 @@ class Core:
                                                         #  beam drawing clean lines; set_uvm2_mode. Online: exact)
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
     veclink = None                                      # (the VecLink cable: (file, 'A' / 'B') - veclink.c; None: unplugged)
+    veclink_slice = 0                                   # (online VecLink: both consoles of the PC in 30000-cycle slices)
+    headless = False                                    # (online VecLink's other console: no picture sent)
     net_jitfast = False                                 # (online, both PCs the same processor type: the PiTrex JIT fast)
     net_uvm2 = 'exact'                                  # (online: the UVMC2 mode both play in - netplay.uvm2_agree)
     net_card = None                                     # (online play with a UVMC2 / PiTrex: (card folder, the files both
@@ -1815,6 +1817,10 @@ class Core:
         if Core.veclink:                                            # (the VecLink cable in port 2: nothing else there)
             env['VT_VECLINK'] = '%s,%s' % Core.veclink
             speech = 'off'
+            if Core.veclink_slice:
+                env['VT_VECLINK_SLICE'] = str(Core.veclink_slice)
+            if Core.headless:
+                env['VT_NOLINES'] = '1'
         if speech == 'imager':
             env['VT_IMAGER'] = imager_disc(rom)                     # (the 3D Imager's goggles on port 2, imager.c)
         elif speech == 'lightpen':
@@ -1967,6 +1973,10 @@ class Core:
         m[0] = buttons; m[1] += dx; m[2] += dy; m[3] += wheel
         self.usb_mouse = m
     def frame(self, jx, jy, btn, flags, p2=None):
+        self.frame_send(jx, jy, btn, flags, p2)
+        return self.frame_recv()
+    def frame_send(self, jx, jy, btn, flags, p2=None):
+        """the frame's command only (online VecLink: both consoles of the PC run their slice at once, then frame_recv)"""
         """one game frame: player 1's stick and buttons, the flags, player 2's (the 2nd port: flags bit 6),
         and settings that changed (flags bit 5: a count, then each an id byte and 4 bytes - a float for the
         Vectrex unit, or a UVMC2 USB keyboard / mouse report)"""
@@ -1991,6 +2001,7 @@ class Core:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags | 0x40, p2[0] + 128, p2[1] + 128, p2[2]]) + extra)
         else:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags]) + extra)
+    def frame_recv(self):
         tw = time.perf_counter()
         h = self._read(14)
         self.wait_s = time.perf_counter() - tw                  # (the core emulating the frame: its own process)
@@ -2073,6 +2084,9 @@ class Runner(threading.Thread):
         super().__init__(daemon=True)
         self.core, self.inp, self.audio = core, inp, audio
         self.inf = inf; self.paused = False; self.stop = False; self.demo = False
+        self.core2 = None                                       # (online VecLink: the other console, run here unseen)
+        self.vl_role = 'host'                                   # (which of the two this PC shows: host A, joiner B)
+        self.other_in = (0, 0, 0, 0)
         self.ports = None                                       # (online: which port each player's controller is in -
         self.port_req = 0                                       #  {'host': 1|2|0, 'join': ...}; a 'take port' asked here
         self.port_events = collections.deque()                  #  (0x10 / 0x20), and the takes seen, for the chat)
@@ -2158,8 +2172,14 @@ class Runner(threading.Thread):
                         self.net = None; self.net_lost = True
                     else:
                         a, b = got
-                        (jx, jy, btn), p2 = self.port_inputs(a, b)
-                        fl = (fl & ~4) | ((a[3] | b[3]) & 4)
+                        if self.core2 is not None:      # (online VecLink: a console each - its player's controls in
+                            own, other = (a, b) if self.vl_role == 'host' else (b, a)   #  port 1, port 2 is the cable;
+                            (jx, jy, btn), p2 = own[:3], None                            #  each player's RESET their own)
+                            fl = (fl & ~4) | (own[3] & 4)
+                            self.other_in = tuple(other[:3]) + ((other[3] & 4),)
+                        else:
+                            (jx, jy, btn), p2 = self.port_inputs(a, b)
+                            fl = (fl & ~4) | ((a[3] | b[3]) & 4)
                 hide = False
                 if fl & 8:                              # power on: the click now, the picture a frame later
                     self.audio.flush(); hide = True
@@ -2184,9 +2204,19 @@ class Runner(threading.Thread):
                             time.sleep(0.004)
                     feed = threading.Thread(target=fill, daemon=True); feed.start()
                 try:
+                    c2 = self.core2
+                    if c2 is not None:                  # (online VecLink: the other console's slice, at the same time)
+                        o = self.other_in
+                        c2.frame_send(o[0], o[1], o[2], (fl & ~4) | o[3])
                     lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
+                    sync = getattr(self.core, 'state_sum', 0)
+                    if c2 is not None:
+                        c2.frame_recv()                 # (its picture and sound: nobody's - VT_NOLINES, dropped)
+                        s2 = getattr(c2, 'state_sum', 0) & 0xffffffff
+                        a_sum, b_sum = (sync, s2) if self.vl_role == 'host' else (s2, sync)   # (the same order on both PCs)
+                        sync = (a_sum ^ ((b_sum << 7 | b_sum >> 25) & 0xffffffff)) & 0xffffffff
                     if self.net is not None:            # (online: the sync check - this frame's state against the other's)
-                        self.net.mark(self.net.f - 1, getattr(self.core, 'state_sum', 0))
+                        self.net.mark(self.net.f - 1, sync)
                 finally:
                     if feed:
                         done.set(); feed.join()
@@ -2667,6 +2697,7 @@ class App:
         if os.environ.get('VECTREX_TEST_KNOB'):                 # (test: turn the knob up after n ms)
             self.root.after(int(os.environ['VECTREX_TEST_KNOB']), lambda: self.set_volume(0.5))
         self.root.after(10, self.tick)
+        self.net_vl_want = bool(getattr(args, 'net_veclink', False))   # (--net-veclink: a VecLink game offered)
         if getattr(args, 'net_host', None) or getattr(args, 'net_join', None) or getattr(args, 'net_online', False):   # (online play: netplay.py)
             self.root.after(600, self.net_start)
         self.win_q = []                                         # (from the window procedure: dropped files, the close button)
@@ -2954,9 +2985,13 @@ class App:
                                 ('imager', 'Port 2: 3D Imager', "The 3D Imager goggles in port 2: its spinning colour disc makes 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster colourful (the disc spins up first).")):
                 check(m, lbl, '', lambda k=k: self.speech == k, lambda k=k: self.set_speech(k), tip)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Online', menu=m)
-            item(m, 'Host this game...', '', lambda: self.online_window('host'),
+            item(m, 'Host this game...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
                  "Play this game with someone over the internet: you are player 1. The Online window shows a five-letter code "
                  "to tell player 2 - no addresses, no router settings.")
+            item(m, 'Host VecLink game...', '', self.host_veclink,
+                 "Play a VecLink game (Berzerk Arena's LINK GAME, ...) with someone over the internet: you are Vectrex A, "
+                 "player 2 is Vectrex B, each with their own screen, the two consoles joined by the VecLink cable. Each PC "
+                 "runs both consoles (the other one unseen); only the controllers travel. Player 2 joins with the code.")
             item(m, 'Host public game...', '', self.public_host_window,
                  "Put this game in the game room under your gamer name: anyone can see it in Find players and join as "
                  "player 2.")
@@ -5248,18 +5283,24 @@ class App:
                 pass
         return netplay.SERVER
     # ---------------------------------------------------------------- VecLink: two consoles on one PC
+    def host_veclink(self):
+        """Online > Host VecLink game: hosting as usual, the game offered as a VecLink game (net_offer)"""
+        self.net_vl_want = True
+        self.online_window('host')
     def veclink_b(self):
         """this window is Vectrex B of a VecLink pair (started by the other with --veclink FILE,B)"""
         v = getattr(self.args, 'veclink', None)
         return bool(v) and v.rsplit(',', 1)[-1].upper() == 'B'
     def veclink_on(self):
-        return bool(Core.veclink)
+        return bool(Core.veclink) and not getattr(self, 'vl_online', False)
     def toggle_veclink(self):
         """Online > VecLink: a second Vectrex on this PC (a second window, Vectrex B) with the same game, its port 2 joined
         to this one's by Alex Herbert's VecLink cable (V2: buttons 1-3 and ground straight through, veclink.c) - for games
         made for two consoles (Berzerk Arena's LINK GAME) and for testing your own. Again: the cable out, Vectrex B closes."""
         if self.veclink_b():
             return self.flash('VECLINK: CHANGE IT IN', 'THE OTHER WINDOW (VECTREX A)', secs=3)
+        if getattr(self, 'vl_online', False):
+            return self.flash('ONLINE VECLINK GAME', 'ONLINE > LEAVE ENDS IT', secs=3)
         if self.veclink_on():
             self.veclink_stop()
             Core.veclink = None
@@ -5694,6 +5735,8 @@ class App:
             game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
         if game_turns(rom):
             game['turns'] = True                                # (the players take turns on port 1: a note)
+        if getattr(self, 'net_vl_want', False):
+            game['veclink'] = True                              # (online VecLink: a console each, joined by the cable)
         return game, self.net_note(rom)
     def net_offer_changed(self, net):
         """host, waiting for player 2: another cartridge - offered from now on (the game room lists it at once)"""
@@ -6071,7 +6114,8 @@ class App:
         return t, body, foot, close
     def public_host_window(self):
         """Online > Host public game: a gamer name, then this game in the meeting point's game room for anyone to join"""
-        if self.veclink_on():                                   # (the VecLink cable in: two consoles here, not online)
+        self.net_vl_want = False
+        if self.veclink_on() and not getattr(self, 'vl_online', False):   # (the VecLink cable in: two windows here, not online)
             return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
         import netplay
         if not self.name_ready(self.public_host_window):
@@ -6139,7 +6183,7 @@ class App:
         t.focus_set()
     def find_players_window(self):
         """Online > Find players: the game room's public games waiting for a player 2 - Join one"""
-        if self.veclink_on():                                   # (the VecLink cable in: two consoles here, not online)
+        if self.veclink_on() and not getattr(self, 'vl_online', False):   # (the VecLink cable in: two windows here, not online)
             return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
         import netplay
         if not self.name_ready(self.find_players_window):
@@ -6229,7 +6273,7 @@ class App:
     def online_window(self, what=None):
         """Online: host (a code for player 2), join (type the code), the state now, the settings. what: 'host' starts
         hosting this game at once, 'join' puts the cursor in the code box"""
-        if self.veclink_on():                                   # (the VecLink cable in: two consoles here, not online)
+        if self.veclink_on() and not getattr(self, 'vl_online', False):   # (the VecLink cable in: two windows here, not online)
             return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
         import netplay
         if not self.name_ready(lambda: self.online_window(what)):
@@ -6741,6 +6785,8 @@ class App:
         old = self.run
         old.stop = True; old.join(timeout=2)
         self.core.close()
+        if getattr(old, 'core2', None) is not None:             # (online VecLink: the other console too)
+            old.core2.close(); old.core2 = None
         for path, data in getattr(self, 'card_writes', []):     # (Reset UVMC2 calibration: written now - the game that
             try:                                                #  ran gave its card back above, with the old file)
                 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -6773,12 +6819,33 @@ class App:
         if ng or self.net_busy():
             self.speech = 'off'
         unit = dict(self.unit, dacofs=float(ng.get('dacofs', 0.0))) if ng else self.unit   # (online: the host's R302 -
+        core2 = None
+        if ng and ng.get('veclink'):                            # online VecLink: this PC runs both consoles - its player's in the
+            vlf = os.path.join(CACHE_DIR, 'veclink_net_%d.lnk' % os.getpid())   #  window (host A, joiner B), the other's
+            try:                                                                 #  unseen; only the controllers travel
+                os.makedirs(CACHE_DIR, exist_ok=True)
+                if os.path.exists(vlf): os.remove(vlf)
+            except OSError:
+                pass
+            mine = 'A' if getattr(self, 'net_role', 'host') == 'host' else 'B'
+            Core.veclink_slice = 30000
+            Core.veclink = (vlf, 'B' if mine == 'A' else 'A'); Core.headless = True
+            try:
+                core2 = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw), 'off', self.sd_dir, self.px_dir, unit, False)
+            finally:
+                Core.headless = False
+            Core.veclink = (vlf, mine)
+            self.vl_online = True
+        elif getattr(self, 'vl_online', False):                 # (the online VecLink game is over: the cable out)
+            Core.veclink = None; Core.veclink_slice = 0; self.vl_online = False
         self.core = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw) if ng else self.cart_hw, self.speech,   #  the rest
                          self.sd_dir, self.px_dir, unit, self.usb_hid)                                                  #  only moves the picture)
         self.usb_typing_off()
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)
         run = Runner(self.core, self.inp, self.audio, False)
+        if core2 is not None:
+            run.core2 = core2; run.vl_role = getattr(self, 'net_role', 'host')
         run.beam_of = old.beam_of
         run.ra_of = old.ra_of
         run.crt = old.crt; run.crt.overlay = []
@@ -8767,6 +8834,8 @@ class App:
         if self.ren:
             self.ren.close(); self.ren = None
         self.core.close()
+        if getattr(self.run, 'core2', None) is not None:        # (online VecLink: the other console)
+            self.run.core2.close()
         self.audio.close()
         self.root.destroy()
         p = list(self.presents)
@@ -8824,6 +8893,8 @@ def main():
                     help='online play (a prototype): join a game hosted at this address, or with the host\'s five-letter code, as player 2')
     ap.add_argument('--veclink', default=None, metavar='FILE,SIDE', help=argparse.SUPPRESS)        # (VecLink: Vectrex B,
     ap.add_argument('--veclink-partner', type=int, default=0, help=argparse.SUPPRESS)            #  started by Vectrex A)
+    ap.add_argument('--net-veclink', action='store_true',
+                    help='online play: host a VecLink game (two consoles joined by the VecLink cable, a screen each)')
     ap.add_argument('--net-online', action='store_true',
                     help='online play (a prototype): host this game through the meeting point - you get a code for player 2')
     args = ap.parse_args()

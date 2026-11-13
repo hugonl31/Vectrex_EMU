@@ -239,6 +239,11 @@ static int live_main (const char *recfn, const char *symfn)
 			abuf_n = abuf_real;                         /* (its sound dropped) */
 		}
 		int n = nlast > 30000 ? 30000 : nlast;
+		{ extern int vt_veclink, vt_slice_frame; extern long vl_slice; static int nolines = -1;
+		  if (nolines < 0) nolines = getenv ("VT_NOLINES") != NULL;
+		  if (nolines || (vt_veclink && vl_slice > 0 && !vt_slice_frame)) n = 0; }   /* (the console nobody watches -
+		                                           online VecLink's other one: no picture; a slice with no new game frame:
+		                                           nothing new to show, the last frame is not sent twice) */
 		unsigned char *p = out;
 		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2_cart; extern int vt_imager; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2_cart || vt_imager;   /* (bit 15: two channels -
 		  the console and the speech module, interleaved) */

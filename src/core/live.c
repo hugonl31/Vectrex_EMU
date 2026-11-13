@@ -155,6 +155,8 @@ static int ra_ready (void)
 	extern int vt_uvm2_cart, vt_pitrex;
 	ra_state = 0;
 	if (vt_uvm2_cart || vt_pitrex) { fprintf (stderr, "STAT: runahead unsupported (UVMC2 / PiTrex)\n"); return 0; }
+	{ extern int vt_veclink; if (vt_veclink) { fprintf (stderr, "STAT: runahead unsupported (VecLink)\n"); return 0; } }   /* (the
+	                                                   other console can not run a frame again with this one) */
 	vxs_exclude (cur, sizeof cur); vxs_exclude (last, sizeof last); vxs_exclude (prof, sizeof prof);
 	vxs_exclude (acc, sizeof acc);                  /* (the lines: only their used part is saved; the profile, the shots'
 	                                                   picture: tests) */
@@ -200,6 +202,7 @@ static int live_main (const char *recfn, const char *symfn)
 	{ extern int vt_uvm2_cart, vt_pitrex; frame_budget = getenv ("VT_FRAMEMAX") ? atol (getenv ("VT_FRAMEMAX")) : (vt_uvm2_cart || vt_pitrex) ? 30000 : 33000; }   /* (a UVMC2 game: its 50 Hz bus frame) */
 	static unsigned char *out; if (!out) out = malloc (16 + 30000 * 14 + 2 + 32768);   /* (30000: the beam-trace mode's pieces; 14: a
 	                                                   3D Imager colour each. On the heap: not in a save, run-ahead) */
+	{ extern void vecx_veclink_open (void); vecx_veclink_open (); }   /* (VT_VECLINK: the cable to another console, veclink.c) */
 	unsigned char m[8];
 	long nframes = 0;
 	unsigned long long piece0 = 0;
@@ -263,6 +266,7 @@ static int live_main (const char *recfn, const char *symfn)
 		flash_save (0);
 	}
 	flash_save (1);
+	{ extern void vecx_veclink_close (void); vecx_veclink_close (); }   /* (the cable: this console gone, its wires high) */
 	fclose (rec);
 	fprintf (stderr, "live: %ld frames, %08x RAM checksum\n", nframes, ram_sum ());
 	return 0;

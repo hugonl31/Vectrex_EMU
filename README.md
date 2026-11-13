@@ -1461,6 +1461,18 @@ their line shows briefly in the picture too. Player 2 needs the same ROM in its 
 input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and
 through a simulated bad connection (40-60 ms each way, 10 % packet loss): identical pictures throughout.
 
+### VecLink: two Vectrexes, one cable
+
+Alex Herbert's VecLink cable joins two Vectrex consoles through their controller port 2 (version 2 of the cable: pins
+1, 2, 3 and ground wired straight through). Games made for it run on two consoles, each with its own screen - Alex
+Herbert's **Berzerk Arena** (2005) in its LINK GAME, and his VecLink example in VIDE. Online > **VecLink: second
+Vectrex on this PC** starts a second window, Vectrex B, with the same game, and plugs the cable into both; choosing it
+again unplugs it and closes Vectrex B. Each window takes the controls while it is in front (Vectrex B uses player 2's
+controls when they are set up). The two emulated consoles run in step to the CPU cycle where the cable is read, so the
+transfer (about 9600 baud on the button lines) behaves as on two real consoles - for testing your own VecLink code
+before trying it on real hardware. While the cable is in, port 2 is the cable's (no speech module, light pen or 3D
+Imager) and online play is off. VecLink over the internet is not there yet.
+
 ### Recording videos and snapshots
 
 **Record > Start recording** (**F9**) records the game with its sound as an MP4; F9 again stops it. While it records, the

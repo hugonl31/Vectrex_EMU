@@ -388,6 +388,7 @@ class Input:
             self._u32.GetWindowThreadProcessId.argtypes = [W.HWND, ctypes.POINTER(W.DWORD)]
         self.focused = True
         self.block = False             # (the ROM browser is open: the game runs on without input)
+        self.pad_needs_focus = False   # (VecLink: controllers too only for the window in front)
         self.hold = None               # (player 1's buttons (mask) and stick kept from the game until let go: App.hold_until_released)
         self.mouse = None              # (jx, jy, buttons) from the mouse / touchpad when it steers player 1 (App)
         self.device = 'keyboard'
@@ -580,7 +581,8 @@ class Input:
             self.refresh_devices()
         jx = jy = 0.0; btn = 0; raw = None
         d = self.resolve(p)
-        st = self.pad_state(d)
+        st = self.pad_state(d) if (self.focused or not self.pad_needs_focus) else None   # (VecLink: two windows, a
+        #  console each - a controller steers the one in front, as the keys do)
         if st:
             m = self.map(d['id'])
             if m['mode'] == 'buttons':                  # (the stick on buttons: full deflection, or half)
@@ -1686,6 +1688,25 @@ def netplay_card_time():
     return netplay.CARD_TIME
 
 
+def pid_alive(pid):
+    """is the process pid still running (VecLink: Vectrex B watches Vectrex A)"""
+    if not pid:
+        return False
+    if IS_WIN:
+        h = ctypes.windll.kernel32.OpenProcess(0x00100000, False, int(pid))   # (SYNCHRONIZE)
+        if not h:
+            return False
+        try:
+            return ctypes.windll.kernel32.WaitForSingleObject(h, 0) == 0x102     # (WAIT_TIMEOUT: still running)
+        finally:
+            ctypes.windll.kernel32.CloseHandle(h)
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
 def ensure_sd_dir(d):
     """the UVMC2's SD card folder: made, with a short README, if it is not there yet (a new install: plug and play)"""
     try:
@@ -1763,6 +1784,7 @@ class Core:
                                                         #  replayed natively, for slower PCs, or 'dev' - fast plus an ideal
                                                         #  beam drawing clean lines; set_uvm2_mode. Online: exact)
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
+    veclink = None                                      # (the VecLink cable: (file, 'A' / 'B') - veclink.c; None: unplugged)
     net_jitfast = False                                 # (online, both PCs the same processor type: the PiTrex JIT fast)
     net_uvm2 = 'exact'                                  # (online: the UVMC2 mode both play in - netplay.uvm2_agree)
     net_card = None                                     # (online play with a UVMC2 / PiTrex: (card folder, the files both
@@ -1790,6 +1812,9 @@ class Core:
         #  state at every power-on; online play: the host's, the same on both sides)
         if Core.force_seed is not None:                             # (online: the 512K cartridge's latch powers up the same on
             env['VT_HBLATCH'] = str(Core.force_seed & 7)            #  both sides - otherwise from the clock, vecx.c)
+        if Core.veclink:                                            # (the VecLink cable in port 2: nothing else there)
+            env['VT_VECLINK'] = '%s,%s' % Core.veclink
+            speech = 'off'
         if speech == 'imager':
             env['VT_IMAGER'] = imager_disc(rom)                     # (the 3D Imager's goggles on port 2, imager.c)
         elif speech == 'lightpen':
@@ -2418,6 +2443,14 @@ class App:
                                                  (self.root.winfo_screenwidth() - self.W0) // 2))
         self.zoom = 1.0; self.full = False
         self.root.after(500, lambda: self.start_fit(geo))        # (once the frame and the menu bar are on screen)
+        if self.veclink_b():                                    # Vectrex B of a VecLink pair: its own controls - player 2's,
+            i = self.inp                                        #  when they are set up (two players at one PC), else the
+            if i.dev.get('p2', 'keyboard') != 'keyboard' or any(i.keys['p2'][k] for k in i.keys['p2']):   #  same as A's,
+                i.keys['p1'], i.keys['p2'] = i.keys['p2'], i.keys['p1']                                   #  for the window
+                i.dev['p1'], i.dev['p2'] = i.dev['p2'], i.dev['p1']                                       #  in front
+            i.pad_needs_focus = True
+            self.root.after(800, lambda: self.root.geometry('+%d+%d' % (self.root.winfo_x() + 60, self.root.winfo_y() + 60)))
+            self.root.after(1500, self.veclink_watch)
         self.ren = None; self.lines = []
         if not args.tk:
             try:
@@ -2495,7 +2528,8 @@ class App:
         for k in self.sound_keys:
             if k in saved:
                 setattr(self.run.crt, k, type(self.sound_default[k])(saved[k]))
-        if self.start_on or args.demo or not self.ren or IN_GAMESCOPE:   # (no OpenGL / Game Mode: on at start)
+        if self.start_on or args.demo or not self.ren or IN_GAMESCOPE or self.veclink_b():   # (no OpenGL / Game Mode: on
+        #  at start; Vectrex B of a VecLink pair: switched on with A)
             self.run.crt.volume = max(0.05, self.run.crt.volume)  # (on at start: the knob turned up)
         else:                                                   # off at start, like a Vectrex: the knob at
             self.run.crt.volume = 0.0                           #  its stop; turning it up switches it on
@@ -2692,7 +2726,7 @@ class App:
         g = getattr(self, 'net_game', None)
         mode = (g.get('uvm2_net', 'exact') if g else getattr(self, 'uvm2_mode', 'exact'))   # (online: the agreed one)
         um = mode != 'exact' and (self.args.rom or '').lower().endswith('.um2')   # (a UVMC2 game in Fast / Dev: in the title)
-        self.root.title('Vectrex - %s%s%s%s%s' % (self.rom_name, '  [UVMC2 %s mode]' % mode.capitalize() if um else '',
+        self.root.title('Vectrex%s - %s%s%s%s%s' % (' B (VecLink)' if self.veclink_b() else ' A (VecLink)' if self.veclink_on() else '', self.rom_name, '  [UVMC2 %s mode]' % mode.capitalize() if um else '',
                                                 '  [PAUSED]' if self.run.paused else '',   #  2026-11-01)
                                                 '  ● REC %d:%02d - F9 stops' % divmod(int(rec.seconds()), 60) if rec else '',
                                                 '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
@@ -2931,6 +2965,10 @@ class App:
                  "have the same ROM.")
             item(m, 'Find players...', '', self.find_players_window,
                  "The game room: the public games waiting for a player 2, with their gamer names - join one with a click.")
+            check(m, 'VecLink: second Vectrex on this PC', '', self.veclink_on, self.toggle_veclink,
+                  "A second Vectrex in its own window with the same game, its controller port 2 joined to this one's by a "
+                  "VecLink cable (Alex Herbert's, V2): for games made for two consoles - Berzerk Arena's LINK GAME - and for "
+                  "testing your own. Each window takes the controls while it is in front.")
             item(m, 'Chat...', 'Ctrl+T', self.chat_window,
                  "Write to the other player while you play: the Chat window (it also opens by itself when they write).")
             dep(m, lambda: bool(getattr(self, 'net_game', None)))
@@ -5209,6 +5247,74 @@ class App:
             except ValueError:
                 pass
         return netplay.SERVER
+    # ---------------------------------------------------------------- VecLink: two consoles on one PC
+    def veclink_b(self):
+        """this window is Vectrex B of a VecLink pair (started by the other with --veclink FILE,B)"""
+        v = getattr(self.args, 'veclink', None)
+        return bool(v) and v.rsplit(',', 1)[-1].upper() == 'B'
+    def veclink_on(self):
+        return bool(Core.veclink)
+    def toggle_veclink(self):
+        """Online > VecLink: a second Vectrex on this PC (a second window, Vectrex B) with the same game, its port 2 joined
+        to this one's by Alex Herbert's VecLink cable (V2: buttons 1-3 and ground straight through, veclink.c) - for games
+        made for two consoles (Berzerk Arena's LINK GAME) and for testing your own. Again: the cable out, Vectrex B closes."""
+        if self.veclink_b():
+            return self.flash('VECLINK: CHANGE IT IN', 'THE OTHER WINDOW (VECTREX A)', secs=3)
+        if self.veclink_on():
+            self.veclink_stop()
+            Core.veclink = None
+            self.inp.pad_needs_focus = False
+            self.restart(self.args.rom)
+            return self.flash('VECLINK: CABLE OUT', 'VECTREX B CLOSED', secs=3)
+        if self.net_busy():
+            return self.flash('VECLINK: NOT WHILE ONLINE', secs=3)
+        path = os.path.join(CACHE_DIR, 'veclink_%d.lnk' % os.getpid())
+        try:                                                    # (cables of earlier sessions: 1 MB each - one still in use
+            for old in os.listdir(CACHE_DIR):                   #  by another pair can not be removed, and is left)
+                if old.startswith('veclink_') and not old.startswith('veclink_%d.' % os.getpid()):
+                    try: os.remove(os.path.join(CACHE_DIR, old))
+                    except OSError: pass
+        except OSError:
+            pass
+        for f in (path, path + '.stop'):
+            try: os.remove(f)
+            except OSError: pass
+        cmd = [sys.executable] if getattr(sys, 'frozen', False) else [sys.executable, os.path.abspath(__file__)]
+        cmd += ([self.args.rom] if self.args.rom else []) + ['--veclink', path + ',B', '--veclink-partner', str(os.getpid())]
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            self.vl_proc = subprocess.Popen(cmd, cwd=ROOT)
+        except OSError as e:
+            return self.rom_error('VecLink: Vectrex B did not start: %s' % e)
+        Core.veclink = (path, 'A')
+        self.inp.pad_needs_focus = True
+        self.restart(self.args.rom)                             # (both consoles switched on together: the cable's clocks)
+        self.flash('VECLINK: CABLE IN', 'VECTREX B STARTS IN ITS OWN WINDOW', 'EACH WINDOW: ITS OWN CONTROLS', secs=5)
+        self.root.after(1000, self.veclink_watch)
+    def veclink_stop(self):
+        """Vectrex B closes (it watches for this file - a frozen program's own process, not killed)"""
+        if Core.veclink:
+            try:
+                open(Core.veclink[0] + '.stop', 'w').close()
+            except OSError:
+                pass
+        self.vl_proc = None
+    def veclink_watch(self):
+        """once a second while the cable is in. A: Vectrex B closed - the cable out (its wires idle already).
+        B: Vectrex A asked it to close, or A is gone - B closes."""
+        if not Core.veclink:
+            return
+        if self.veclink_b():
+            gone = os.path.exists(Core.veclink[0] + '.stop') or not pid_alive(getattr(self.args, 'veclink_partner', 0) or 0)
+            if gone:
+                return self.quit()
+        else:
+            pr = getattr(self, 'vl_proc', None)
+            if pr is not None and pr.poll() is not None:
+                Core.veclink = None; self.vl_proc = None
+                self.inp.pad_needs_focus = False
+                return self.flash('VECLINK: VECTREX B CLOSED', 'CABLE OUT', secs=4)
+        self.root.after(1000, self.veclink_watch)
     def net_busy(self):
         """online now: connected, or waiting for the other player"""
         return bool(getattr(self, 'net_game', None) or getattr(self, 'net_pending', None))
@@ -5965,6 +6071,8 @@ class App:
         return t, body, foot, close
     def public_host_window(self):
         """Online > Host public game: a gamer name, then this game in the meeting point's game room for anyone to join"""
+        if self.veclink_on():                                   # (the VecLink cable in: two consoles here, not online)
+            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
         import netplay
         if not self.name_ready(self.public_host_window):
             return
@@ -6031,6 +6139,8 @@ class App:
         t.focus_set()
     def find_players_window(self):
         """Online > Find players: the game room's public games waiting for a player 2 - Join one"""
+        if self.veclink_on():                                   # (the VecLink cable in: two consoles here, not online)
+            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
         import netplay
         if not self.name_ready(self.find_players_window):
             return
@@ -6119,6 +6229,8 @@ class App:
     def online_window(self, what=None):
         """Online: host (a code for player 2), join (type the code), the state now, the settings. what: 'host' starts
         hosting this game at once, 'join' puts the cursor in the code box"""
+        if self.veclink_on():                                   # (the VecLink cable in: two consoles here, not online)
+            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
         import netplay
         if not self.name_ready(lambda: self.online_window(what)):
             return
@@ -7847,6 +7959,8 @@ class App:
             self.restart(self.args.rom)
         self.show_look('Vectrex settings: the defaults')
     def save_settings(self):
+        if self.veclink_b():                                    # (Vectrex B: A's settings are the user's - not overwritten)
+            return
         try:
             d = json.load(open(self.settings_f))
         except Exception:           # noqa
@@ -8639,6 +8753,8 @@ class App:
 
     def quit(self):
         self.quitting = True
+        if self.veclink_on() and not self.veclink_b():          # (VecLink: Vectrex B closes with A)
+            self.veclink_stop()
         if getattr(self, 'net', None) is not None:              # (online: the other side told; a frame waiting for it ends)
             self.net.lost = True; self.net.close()
         self.run.stop = True
@@ -8706,9 +8822,13 @@ def main():
                     help='online play (a prototype): host this game for a second player (UDP port, default 7744)')
     ap.add_argument('--net-join', default=None, metavar='ADDRESS[:PORT]|CODE',
                     help='online play (a prototype): join a game hosted at this address, or with the host\'s five-letter code, as player 2')
+    ap.add_argument('--veclink', default=None, metavar='FILE,SIDE', help=argparse.SUPPRESS)        # (VecLink: Vectrex B,
+    ap.add_argument('--veclink-partner', type=int, default=0, help=argparse.SUPPRESS)            #  started by Vectrex A)
     ap.add_argument('--net-online', action='store_true',
                     help='online play (a prototype): host this game through the meeting point - you get a code for player 2')
     args = ap.parse_args()
+    if args.veclink and ',' in args.veclink:                   # (Vectrex B of a VecLink pair: its side of the cable)
+        Core.veclink = tuple(args.veclink.rsplit(',', 1))
     vecrender.set_dpi_aware()
     # 1 ms Windows timer resolution while playing (Tk's polling and the sleeps would otherwise wake
     # up on the 15.6 ms default tick, and frames would reach the screen unevenly: with G-Sync each

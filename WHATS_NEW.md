@@ -4,6 +4,12 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.6.3
+- Online > VecLink: a second Vectrex on this PC, joined by a VecLink cable
+- VecLink: Berzerk Arena's link game; test your own VecLink code
+- Fixed: VIA timer 1 started at $FFFF ran out at once
+- Online: both players need v1.6.3
+
 ## v1.6.2
 - Full screen: the strip below the picture lines up as in the window
 - A game loaded while the Vectrex is on skips the logo, as after RESET

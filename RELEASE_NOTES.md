@@ -3,6 +3,28 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.3
+
+**VecLink: two Vectrexes, one cable**
+* Online > VecLink: second Vectrex on this PC starts a second window, Vectrex B, with the same game, its controller
+  port 2 joined to this one's by Alex Herbert's VecLink cable (version 2: buttons 1-3 and ground straight through).
+  Games made for two consoles run with their own screen each: Berzerk Arena's LINK GAME (Alex Herbert, 2005), the
+  VecLink example in VIDE - and your own code, to test before two real consoles. Choosing it again unplugs the cable
+  and closes Vectrex B; each window takes the controls while it is in front (Vectrex B: player 2's controls when they
+  are set up).
+* Exact: the two consoles run in step to the CPU cycle wherever the cable is read - the transfer (~9600 baud on the
+  button lines) behaves as on two real consoles. A console that changes its game joins the running one, as when a
+  cartridge is swapped on one of two linked consoles. While the cable is in, port 2 is the cable's (no speech module,
+  light pen or 3D Imager) and online play is off. Over the internet: not yet.
+* Checked: Alex Herbert's V2 example links and passes the stick from one console to the other; Berzerk Arena's link
+  game starts on both consoles from either one's button.
+
+**Fixed**
+* The VIA's timer 1 started at $FFFF (the longest wait) ran out at once instead of after 65537 cycles - VecLink V2's
+  transfer timeout used it. No other tested game changed (the state frame for frame on Last Human, Armor Attack,
+  Vectorblade, Mine Storm, Berzerk, Clean Sweep).
+* Online: the version number went up (11) for this fix, so both players need v1.6.3.
+
 ## v1.6.2
 
 **Window and ROM browser**

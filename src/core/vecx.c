@@ -76,6 +76,7 @@ extern int vt_pitrex;                    /* (pitrex_cart.c) */
 #include "sp0256.c"
 #include "speakjet.c"
 #include "psg.c"
+#include "veclink.c"
 
 /* PB6 -> EPROM A15 (and the optional DS2431). 3.3K pull-up to VCC: when DDRB bit6 = input, the
  * line is high unless the DS2431 pulls it low. */
@@ -427,6 +428,8 @@ static einline void snd_update (void)
 			im_motor ((snd_regs[7] & 0x40) ? (int) (snd_ioa & 0x40) : 0x40);   /* (the 3D Imager's motor, imager.c) */
 		if (vt_vecvoice && (snd_select == 14 || snd_select == 7))
 			ser_set ((snd_regs[7] & 0x40) ? (snd_ioa >> 4) & 1 : 1, vx_cyc);   /* (the VecVoice's serial line) */
+		if (vt_veclink && (snd_select == 14 || snd_select == 7))
+			vl_set ((snd_regs[7] & 0x40) ? (snd_ioa >> 4) & 7 : 7);          /* (the VecLink cable: what this console drives) */
 
 		break;
 	case 0x18:
@@ -618,11 +621,16 @@ unsigned char read8 (unsigned address)
 					/* the snd chip is driving port a */
 
 					data = (unsigned char) snd_regs[snd_select];
-					if (vt_imager && snd_select == 14 && alg_cycles < im_pin_until)
+					if (vt_veclink && snd_select == 14) {             /* (the VecLink cable in port 2: its buttons 1-3 are the
+						                                               wires, as both consoles leave them; nothing else is
+						                                               plugged into port 2 then) */
+						data &= (unsigned char) ~((~vl_wires () & 7) << 4);
+						if (vl_dbg && vl_dbg_n++ < 20000) fprintf (vl_dbg, "  data %02X ddr %02X r7 %02X\n", data, via_ddra, snd_regs[7]);
+					} else if (vt_imager && snd_select == 14 && alg_cycles < im_pin_until)
 						data &= 0x7f;               /* (the 3D Imager's index hole passing: button 4 low) */
 					if (vt_lightpen && snd_select == 14 && alg_cycles < lp_pin_until)
 						data &= 0x7f;               /* (the light pen seeing the spot: button 4 low) */
-					if (vt_vecvoice && snd_select == 14) {
+					if (vt_vecvoice && snd_select == 14 && !vt_veclink) {
 						/* port 2's buttons: the speech accessory's ready line */
 						psg_advance (vx_cyc); ser_run (vx_cyc);
 						data = (unsigned char) ((data & 0xdf) | (speech_ready () ? 0x00 : 0x20));   /* (the ready line = button 2 (pin 2,
@@ -1117,10 +1125,13 @@ static einline void via_sstep0 (void)
 		t1_reloadnow = 0;
 		via_t1c = (via_t1lh << 8) | via_t1ll;
 	} else if (via_t1on) {
+		unsigned t1was = via_t1c;
 		via_t1c--;
 
-		if ((via_t1c & 0xffff) == 0xffff) {
-			/* counter just rolled over */
+		if (t1was == 0) {
+			/* counter just rolled over (from 0 - not when a start at $FFFF, $10000 with the extra cycle, first
+			 * counts down: that timer runs its 65537 cycles, as the 6522's does - VecLink V2's timeout, 2026-11-13) */
+			via_t1c &= 0xffff;
 
 			if (via_acr & 0x40) {
 				/* continuous interrupt mode */
@@ -1974,6 +1985,7 @@ void vecx_emu (long cycles)
 			}
 			vt_step (icycles);
 			vx_cyc += icycles;
+			vl_tick ();
 			cycles -= (long) icycles;
 			fcycles -= (long) icycles;
 			if (fcycles < 0) {
@@ -2002,6 +2014,7 @@ void vecx_emu (long cycles)
 
 		vt_step (icycles);
 		vx_cyc += icycles;
+		vl_tick ();
 		cycles -= (long) icycles;
 
 		fcycles -= (long) icycles;

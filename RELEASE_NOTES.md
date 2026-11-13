@@ -6,7 +6,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 ## v1.6.3
 
 **VecLink: two Vectrexes, one cable**
-* Controls > Port 2: VecLink test (2nd window) starts a second window, Vectrex B, with the same game, its controller
+* Online > Test VecLink on this PC starts a second window, Vectrex B, with the same game, its controller
   port 2 joined to this one's by Alex Herbert's VecLink cable (version 2: buttons 1-3 and ground straight through).
   Games made for two consoles run with their own screen each: Berzerk Arena's LINK GAME (Alex Herbert, 2005), the
   VecLink example in VIDE - and your own code, to test before two real consoles. Choosing it again unplugs the cable
@@ -43,6 +43,16 @@ build workflow replaces that release (title = the version, marked Latest) with t
   ROMs, overlays, SD cards, saves, calibrations and all settings are kept, the settings backed up as
   system/settings_before_<version>.json, only the program and the included Last Human replaced. Later changes
   nothing (the download is removed).
+
+**Menus and the strip below the picture**
+* Online menu: clearer names, grouped - Host with a code, Host public game, Host on local network (LAN), Host VecLink
+  game, Test VecLink on this PC | Join with a code, Find public games | Chat, Take port 1/2, Leave game | Online settings.
+* P2 PORT: a click still plugs in the next device; held, a menu of them all opens above it (Joystick, VecVox,
+  VecVoice, 3D Imager, Light pen, Port 2 settings) - slide to one and let go, or let go and click one.
+* VecLink has its own pictogram, the cable with a plug at each end: on P2 PORT (labelled VECLINK) while Test VecLink
+  on this PC is on, and on both ports, with the players' names, in an online or LAN VecLink game.
+* While the VecLink cable is in no other port 2 device can be chosen (said so), and a game's own accessory (a 3D
+  game's Imager...) is told unplugged; with the cable out it comes back.
 
 **Fixed**
 * The VIA's timer 1 started at $FFFF (the longest wait) ran out at once instead of after 65537 cycles - VecLink V2's

@@ -1163,6 +1163,7 @@ ART_ALIAS = {'mr. boston clean sweep': 'Clean Sweep'}
 ART_ADJ_DEFAULT = {'art_dx': 0.0, 'art_dy': 0.0, 'art_scale': 1.0}
 
 # controller port 2 (Vectrex > Controller port 2): conf value -> menu label
+P2_HOLD_MS = 350          # (the port 2 pictogram held this long: its menu - shorter: a click, the next device)
 PORT2 = {'off': 'Joystick', 'vecvoice': 'VecVoice speech (SP0256)', 'vecvox': 'VecVox speech (SpeakJet)',
          'imager': '3D Imager (colour goggles)', 'lightpen': 'Light pen (the mouse)'}
 
@@ -2984,10 +2985,6 @@ class App:
                                 ('lightpen', 'Port 2: Light pen', "The light pen in port 2, for Art Master, AnimAction and Melody Master: the mouse is the pen - point at the picture, hold the left button to touch the screen."),
                                 ('imager', 'Port 2: 3D Imager', "The 3D Imager goggles in port 2: its spinning colour disc makes 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster colourful (the disc spins up first).")):
                 check(m, lbl, '', lambda k=k: self.speech == k and not Core.veclink, lambda k=k: self.set_speech(k), tip)
-            check(m, 'Port 2: VecLink test (2nd window)', '', self.veclink_on, self.toggle_veclink,
-                  "Alex Herbert's VecLink cable (V2) in port 2, to a second Vectrex in its own window with the same game: for "
-                  "games made for two consoles - Berzerk Arena's LINK GAME - and for testing your own. Each window takes the "
-                  "controls while it is in front. Again: the cable out, the second Vectrex closes.")
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Online', menu=m)
             item(m, 'Host with a code...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
                  "Play this game with someone over the internet: you are player 1. The Online window shows a five-letter code "
@@ -3003,6 +3000,11 @@ class App:
                  "Play a VecLink game (Berzerk Arena's LINK GAME, ...) with someone over the internet: you are Vectrex A, "
                  "player 2 is Vectrex B, each with their own screen, the two consoles joined by the VecLink cable. Each PC "
                  "runs both consoles (the other one unseen); only the controllers travel. Player 2 joins with the code.")
+            check(m, 'Test VecLink on this PC', '', self.veclink_on, self.toggle_veclink,
+                  "A second Vectrex in its own window with the same game, its controller port 2 joined to this one's by "
+                  "Alex Herbert's VecLink cable (V2): to try games made for two consoles - Berzerk Arena's LINK GAME - and "
+                  "to test your own. Each window takes the controls while it is in front. Again: the cable out, the second "
+                  "Vectrex closes.")
             m.add_separator()
             item(m, 'Join with a code...', '', lambda: self.online_window('join'),
                  "Type the code player 1 tells you (or an address): you are player 2; the host's game starts here when you "
@@ -4005,7 +4007,7 @@ class App:
             return
         if Core.veclink:                                        # (the VecLink cable is in port 2: nothing else fits)
             self.flash('PORT 2: VECLINK CABLE IN', 'UNPLUG IT FIRST' if not self.veclink_b() else
-                       'UNPLUG IT IN VECTREX A', '(CONTROLS > PORT 2: VECLINK TEST)', secs=4)
+                       'UNPLUG IT IN VECTREX A', '(ONLINE > TEST VECLINK ON THIS PC)', secs=4)
             return
         if k in ('vecvoice', 'vecvox') and not sp_rom():
             self.speech_rom_help()
@@ -4229,8 +4231,15 @@ class App:
         if not (self.fps_on or self.cart_on or self.knob_on):  # (no strip below the picture: only the message)
             return None
         x, y, r = self.cart_geom()
-        return dict(cx=x - 3.6 * r, cy=y, r=r, kind=self.speech,
-                    label=self.port_label(2) if self.ports_shown() else 'P2 PORT')
+        return dict(cx=x - 3.6 * r, cy=y, r=r, kind='veclink' if Core.veclink or self.vl_net() else self.speech,
+                    label=self.port_label(2) if self.ports_shown() else 'VECLINK' if Core.veclink else 'P2 PORT')
+    def vl_net(self):
+        """an online (or LAN) VecLink game, played or offered: both ports show the VecLink cable, with the players'
+        names - the owner, 2026-11-13"""
+        if getattr(self, 'vl_online', False):
+            return True
+        return bool(getattr(self, 'net_pending', None) and getattr(self, 'net_role', '') == 'host'
+                    and getattr(self, 'net_vl_want', False) and not getattr(self, 'net_game', None))
     def ports_shown(self):
         """online (hosting, joining, playing): the two controller ports below the picture, each with who holds it"""
         return bool(getattr(self, 'net_game', None) or getattr(self, 'net_pending', None))
@@ -4262,7 +4271,7 @@ class App:
         x, y, r = self.cart_geom()
         kx, ky, kr, rx = self.knob_geom()                       # (in the middle between the cartridge and RESET - where
         cx = ((x + 1.3 * r) + (rx - 0.95 * kr)) / 2.0           #  nothing else is: the strip stays as it is)
-        return dict(cx=cx, cy=y, r=r, kind='off', label=self.port_label(1))
+        return dict(cx=cx, cy=y, r=r, kind='veclink' if self.vl_net() else 'off', label=self.port_label(1))
     def port_at(self, e):
         """which controller port pictogram the pointer is on: 1, 2 or None"""
         for k, st in ((1, self.port1_state()), (2, self.port2_state())):
@@ -4289,10 +4298,54 @@ class App:
             return True
         if k != 2:
             return False
+        self.p2_hold_end()                                      # (a click: the next device when let go; held: the menu -
+        self.p2_hold = {'xy': (e.x_root, e.y_root), 'menu': None}   #  the owner, 2026-11-13: tapping through all of
+        self.p2_hold['job'] = self.root.after(P2_HOLD_MS, self.port2_menu)   #  them was cumbersome)
+        return True
+    def port2_next(self):
+        """a click on the port 2 pictogram: the next device - joystick -> VecVox -> VecVoice -> 3D Imager -> light pen
+        -> joystick (without the speech ROM: joystick -> 3D Imager -> light pen -> joystick)"""
         nxt = {'off': 'vecvox', 'vecvox': 'vecvoice', 'vecvoice': 'imager', 'imager': 'lightpen', 'lightpen': 'off'}.get(self.speech, 'off')
         if nxt in ('vecvox', 'vecvoice') and not sp_rom():
             nxt = 'imager'                                      # (no speech ROM: the speech modules skipped)
         self.set_speech(nxt)
+    def port2_menu(self):
+        """the port 2 pictogram held: every device in a menu above it - slide to one and let go (or let go first,
+        then click one)"""
+        h = getattr(self, 'p2_hold', None)
+        if not h:
+            return
+        h['job'] = None
+        m = h['menu'] = darkmenu.DMenu(self.root)
+        m.bar = None
+        class On:                                               # (the check mark: what is in port 2 now)
+            def __init__(s, k): s.k = k
+            def get(s): return self.speech == s.k and not Core.veclink
+            def set(s, v): pass
+        for k in ('off', 'vecvox', 'vecvoice', 'imager', 'lightpen'):
+            name = {'off': 'Joystick', 'vecvox': 'VecVox speech', 'vecvoice': 'VecVoice speech', 'imager': '3D Imager',
+                    'lightpen': 'Light pen'}[k]
+            m.add_checkbutton(label=name, variable=On(k), command=lambda k=k: (setattr(self, 'p2_hold', None), self.set_speech(k)))
+        m.add_separator()
+        m.add_command(label='Port 2 settings...', command=lambda: (setattr(self, 'p2_hold', None), setattr(self, 'deck_strip', 'Ports'),
+                                                                  self.open_deck()))
+        x, y = h['xy']
+        m.post(x - 24, y - 14, self.root, above=True)
+    def p2_hold_end(self, e=None):
+        """the button let go after a press on the port 2 pictogram: before the menu - a click (the next device);
+        with the menu open - the row under the pointer, if any (else the menu stays, for a click)"""
+        h = getattr(self, 'p2_hold', None)
+        self.p2_hold = None
+        if not h:
+            return False
+        if h.get('job'):
+            self.root.after_cancel(h['job'])
+            if e is not None:
+                self.port2_next()
+            return True
+        m = h.get('menu')
+        if m is not None and e is not None:
+            m.drop_at(e.x_root, e.y_root)
         return True
     def osd_state(self):
         """the window's OSD: its two rows in the strip below the picture, left of the knob panel (full
@@ -4692,7 +4745,8 @@ class App:
         if rot and self.ren and hasattr(self.ren, 'real_size'):
             rw, rh = self.ren.real_size
             x, y = {90: (y, rw - x), 180: (rw - x, rh - y), 270: (rh - y, x)}[rot]
-        return type('E', (), dict(x=x, y=y, delta=getattr(e, 'delta', 0), widget=e.widget))
+        return type('E', (), dict(x=x, y=y, delta=getattr(e, 'delta', 0), widget=e.widget,
+                                  x_root=getattr(e, 'x_root', 0), y_root=getattr(e, 'y_root', 0)))
     def clickable(self, e):
         """the pointer over something in the strip below the picture that a click works: the volume knob, RESET,
         the cartridge (the ROM browser), the port 2 pictogram (the hand pointer)"""
@@ -4832,6 +4886,10 @@ class App:
         if e is None:
             self.knob_hover = self.hand_hover = False; self.port_hover = None
             return
+        h = getattr(self, 'p2_hold', None)                      # (the port 2 menu open while the button is held: the row
+        if h and h.get('menu') is not None and h['menu'].win is not None:   #  under the pointer lit)
+            h['menu'].motion(e)
+            return
         e = self.px_event(e)
         self.knob_hover = self.knob_hit(e) == 'knob'            # (the knob's label: the volume)
         self.port_hover = self.port_at(e) if self.ports_shown() else None   # (online, a port: TAKE PORT)
@@ -4859,6 +4917,8 @@ class App:
     def knob_release(self, e=None):
         """the knob let go: not turned - a click: switched off, it switches on; else the right half +5 %, the
         left half -5 %"""
+        if e is not None and getattr(self, 'p2_hold', None) and self.p2_hold_end(e):   # (the port 2 pictogram's press)
+            return 'break'
         d = getattr(self, 'kdrag', None)
         self.kdrag = None
         if not d or d['moved']:
@@ -5333,7 +5393,7 @@ class App:
     def veclink_on(self):
         return bool(Core.veclink) and not getattr(self, 'vl_online', False)
     def toggle_veclink(self):
-        """Controls > Port 2: VecLink - a second Vectrex on this PC (a second window, Vectrex B) with the same game, its port 2 joined
+        """Online > Test VecLink on this PC: a second Vectrex (a second window, Vectrex B) with the same game, its port 2 joined
         to this one's by Alex Herbert's VecLink cable (V2: buttons 1-3 and ground straight through, veclink.c) - for games
         made for two consoles (Berzerk Arena's LINK GAME) and for testing your own. Again: the cable out, Vectrex B closes."""
         if self.veclink_b():

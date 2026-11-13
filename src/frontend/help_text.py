@@ -116,14 +116,9 @@ TOPICS = [
          "while the disc spins up (about 13 seconds), then plays in colour - as on the real goggles. A note on the "
          "picture shows the disc's speed meanwhile, and the motor is heard: the disc's soft rush, swelling once every turn "
          "(Config > Ports: the motor sound, its volume, the note). Shown in colour; the two eyes' pictures "
-         "together (no 3D yet). Click the P2 PORT pictogram to plug it in - or just start the game: with the joystick in "
+         "together (no 3D yet). Click the P2 PORT pictogram to plug it in (or hold it: a menu of all port 2 devices - slide to one, let go) - or just start the game: with the joystick in "
          "port 2, a game that needs the goggles (the three 3D games, and Rocket Sledge, an unreleased one) gets them by "
          "itself, for that game only."),
-('item', 'Port 2: VecLink test (2nd window)', "Alex Herbert's VecLink cable (V2: buttons 1-3 and ground) in port 2, to a "
-         "second Vectrex that starts in its own window with the same game - for games made for two consoles (Berzerk "
-         "Arena's LINK GAME) and for testing your own VecLink code. Each window takes the controls while it is in front. "
-         "The cable takes port 2: no speech module, light pen or 3D Imager while it is in (a game that wants one is told "
-         "it is unplugged), and no online play. Choose it again: the cable out, the second Vectrex closes."),
 ('item', 'Port 2: Joystick / VecVoice / VecVox', "The second joystick, or a speech accessory plugged in there: the VecVoice "
          "(Richard Hutchinson; a GI SP0256-AL2 speech chip) or the VecVox (Alex Herbert; a SpeakJet chip). With the "
          "joystick in port 2 and the speech ROM in the system folder, a game that talks (Vectorblade, Berzerk Ultimate, "
@@ -172,6 +167,11 @@ TOPICS = [
 ('item', 'Host VecLink game...', "A VecLink game (Berzerk Arena's LINK GAME, ...) over the internet: you are Vectrex A, "
          "player 2 (Join with a code) is Vectrex B, each with their own screen. Each PC runs both consoles, the other one "
          "unseen; only the controllers travel. On a LAN: the Online window's VecLink game box, then Host on local network."),
+('item', 'Test VecLink on this PC', "Alex Herbert's VecLink cable (V2: buttons 1-3 and ground) in port 2, to a "
+         "second Vectrex that starts in its own window with the same game - to try games made for two consoles (Berzerk "
+         "Arena's LINK GAME) and to test your own VecLink code. Each window takes the controls while it is in front. "
+         "The cable takes port 2: no speech module, light pen or 3D Imager while it is in (a game that wants one is told "
+         "it is unplugged), and no online play. Choose it again: the cable out, the second Vectrex closes."),
 ('item', 'Find public games...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "
          "have waited and whether you have that game (by its contents, any file name, in your roms folder; 'other ver': an "
          "older or newer Vectrex_EMU, which can not join). Join starts it "

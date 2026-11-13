@@ -56,8 +56,8 @@ class DMenu:
             m = m.parent
         return m.bar
 
-    def post(self, x, y, owner):
-        """open at (x, y) on the screen"""
+    def post(self, x, y, owner, above=False):
+        """open at (x, y) on the screen (above: its bottom left corner there - a menu over the strip below the picture)"""
         if self.postcommand:
             try:
                 self.postcommand()
@@ -95,6 +95,8 @@ class DMenu:
         sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
         vx, vy = w.winfo_vrootx(), w.winfo_vrooty()
         ww, wh = w.winfo_reqwidth(), w.winfo_reqheight()
+        if above:
+            y = max(vy, y - wh)
         x = min(x, vx + max(sw, w.winfo_vrootwidth()) - ww)    # (kept on the screen)
         y = min(y, vy + max(sh, w.winfo_vrootheight()) - wh)
         w.geometry('+%d+%d' % (x, y))
@@ -108,6 +110,8 @@ class DMenu:
                           ('<Left>', lambda e: self.key_left())):
                 w.bind(k, f_)
             w.bind('<Motion>', self.motion)
+            w.bind('<ButtonRelease-1>', lambda e: self.drop_at(e.x_root, e.y_root))   # (pressed elsewhere, let go on a row:
+                                                                                     #  that row - press, slide, let go)
             for k in ('<KeyPress-Alt_L>', '<KeyPress-Alt_R>', '<F10>'):
                 w.bind(k, lambda e: (self.close_all(), 'break')[1])
             w.focus_force()
@@ -229,6 +233,20 @@ class DMenu:
         bar = self.root_bar()
         if bar is not None:
             bar.motion_over(x, y, self)
+
+    def drop_at(self, x, y):
+        """the button let go at the screen point (x, y): the row there chosen; True if there was one"""
+        if self.win is None:
+            return False
+        m = self.under(x, y)
+        if m is None:
+            return False
+        w = m.win.winfo_containing(x, y)
+        for i, cells in enumerate(m.rows):
+            if cells and w in cells:
+                m.choose(i)
+                return True
+        return False
 
     def click_out(self, e):
         x, y = e.x_root, e.y_root

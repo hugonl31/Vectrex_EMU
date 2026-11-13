@@ -183,7 +183,7 @@ sessions of 20 minutes, every ROM with random input, cross-machine games between
   3D Crazy Coaster in colour. The game drives the disc's motor and times its pictures from the disc's index hole,
   as on the real goggles - so the game waits in the dark while the disc spins up, then plays in colour. You hear
   the goggles' little electric motor whir up (its own volume in Config > Sound), and a note on the picture shows
-  the disc's speed meanwhile. Click the P2 PORT pictogram until it shows the goggles.
+  the disc's speed meanwhile. Click the P2 PORT pictogram until it shows the goggles (or hold it and pick 3D Imager).
 * **The light pen** - the mouse is GCE's light pen (the pointer turns into a small green pen): Art Master,
   AnimAction and Melody Master. The pen sees the real beam as it passes - Art Master's cursor follows it by its
   tracking circle, as on a real Vectrex. Left button = draw, right = straight line, middle = menu.
@@ -1250,7 +1250,8 @@ Technology Inc. Joe Zbiciak distributes it with Microchip's permission:
 
 What is in port 2 shows as a pictogram labelled P2 PORT in the strip below the picture, next to the cartridge -
 a Vectrex controller seen from above, the VecVox (a box with a speaker) or the VecVoice (a speaking head): **click it** to plug in the next one
-(joystick, VecVox, VecVoice, joystick...). Every switch is announced in the middle of the picture for two
+(joystick, VecVox, VecVoice, 3D Imager, light pen, joystick...), or **hold it**: a menu of them all opens above it - slide
+to one and let go. Every switch is announced in the middle of the picture for two
 seconds. The [controller shortcut](#controller-shortcuts) stick left + all four buttons switches between the
 VecVox and the joystick.
 
@@ -1304,7 +1305,7 @@ two games are on none of them; newer games may be missing too.
 ### The 3D Imager and the light pen
 
 GCE's two accessories for controller port 2 - click the P2 PORT pictogram below the picture (or Controls > Port 2)
-until it shows the one you want:
+until it shows the one you want, or hold it and pick one from its menu:
 
 * **The 3D Imager** (1983): goggles with a disc spinning in front of the eyes, half black, half red, green and blue
   filters. The game drives the disc's motor itself and times its pictures from a hole in the disc, so each line is
@@ -1471,8 +1472,8 @@ through a simulated bad connection (40-60 ms each way, 10 % packet loss): identi
 
 Alex Herbert's VecLink cable joins two Vectrex consoles through their controller port 2 (version 2 of the cable: pins
 1, 2, 3 and ground wired straight through). Games made for it run on two consoles, each with its own screen - Alex
-Herbert's **Berzerk Arena** (2005) in its LINK GAME, and his VecLink example in VIDE. Controls > **Port 2: VecLink
-test (2nd window)** starts a second window, Vectrex B, with the same game, and plugs the cable into both; choosing it
+Herbert's **Berzerk Arena** (2005) in its LINK GAME, and his VecLink example in VIDE. Online > **Test VecLink on
+this PC** starts a second window, Vectrex B, with the same game, and plugs the cable into both; choosing it
 again unplugs it and closes Vectrex B. Each window takes the controls while it is in front (Vectrex B uses player 2's
 controls when they are set up). The two emulated consoles run in step to the CPU cycle where the cable is read, so the
 transfer (about 9600 baud on the button lines) behaves as on two real consoles - for testing your own VecLink code

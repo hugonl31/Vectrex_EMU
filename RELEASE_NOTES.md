@@ -18,15 +18,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
   you hear, where a real Vectrex's reset clears them. A UVMC2 game, whose BIOS does not clear the chip again,
   could then play notes far too low - Last Human's title melody 256 periods low until the tune wrote that
   register itself (about 25 seconds). 6809 games were not affected (their BIOS clears the chip).
-* Last Human (UVMC2): its calibration screen now needs the same values as the 6809 cartridge (ZERO REF +02,
-  TEXT +00 out of the box). The UVMC2 edition draws with the 6809 cartridge's own drawing code, but the emulator
-  gave UVMC2 games a faster zero reference (for the SDK's short zero pulses), so it needed ZERO REF +32 and TEXT
-  -01 to look the same. Last Human now gets the console's own zero reference like the 6809 cartridge; other UVMC2
-  games are unchanged. A card that saved +32 / -01: button 1 on the calibration screen sets +02 / +00.
 * Config > Ports > Reset calibration (UVMC2): puts the UVMC2 calibration that comes with the emulator back on the
   SD card (config/uvm2.cfg), for a card whose calibration went wrong; the old file is kept as uvm2.cfg.bak.
-* Online: v1.6.2 plays with v1.6.1 (NET_VER 10): these changes touch only the sound and Last Human UVMC2's
-  picture, the games run the same (checked frame by frame).
+* Online: v1.6.2 plays with v1.6.1 (NET_VER 10): these changes touch only the sound, the games run the same (checked frame by frame).
 
 ## v1.6.1
 

@@ -9,7 +9,6 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - A game loaded while the Vectrex is on skips the logo, as after RESET
 - Buttons held while loading reach the game (Last Human: 2+3 = calibration)
 - Fixed: UVMC2 music too low after RESET or a ROM swap (Last Human)
-- Last Human UVMC2: same calibration values as the 6809 cartridge
 - Config > Ports: Reset UVMC2 calibration to the shipped one
 
 ## v1.6.1

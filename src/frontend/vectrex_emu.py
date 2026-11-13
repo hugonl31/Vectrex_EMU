@@ -1356,24 +1356,6 @@ def netplay_name(s):
     return netplay.gamer_name(s) or ''
 
 
-_UM2_6809 = {}
-def um2_6809_path(rom):
-    """a UVMC2 game that draws through the 6809 cartridge's own drawing code (the console gets the register writes the
-    6809 edition makes): Last Human, known by its save file on the card (any file name, any version)"""
-    if not rom.lower().endswith('.um2'):
-        return False
-    try:
-        key = (os.path.abspath(rom), os.path.getmtime(rom))
-    except OSError:
-        return False
-    if key not in _UM2_6809:
-        try:
-            with open(rom, 'rb') as f:
-                _UM2_6809[key] = b'lasthuman/lasthuman.sav' in f.read()
-        except OSError:
-            _UM2_6809[key] = False
-    return _UM2_6809[key]
-
 def port2_needed(rom):
     """what belongs in controller port 2 for a game, by the title in its header: the 3D Imager's games wait for the
     disc (a dark screen for ever without it - Rocket Sledge too, an unreleased 3D game); the light pen's need the
@@ -1796,12 +1778,11 @@ class Core:
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
             env['VT_ZEROTAU'] = '%.3f,%.3f' % (unit.get('zerotx', UNIT_BEAM['zerotx']), unit.get('zeroty', UNIT_BEAM['zeroty']))
             env['VT_DACBITS'] = ','.join('%.5f' % unit.get('dac%d' % b, 0.0) for b in range(4))
-        if not ideal and rom.lower().endswith(('.um2', '.img', '.pit')) and not um2_6809_path(rom):
+        if not ideal and rom.lower().endswith(('.um2', '.img', '.pit')):
             # (a UVMC2 / PiTrex drives the beam with short zero pulses: the slow reference model (0.38) leaves
             # their lines broken and slanted where the real console draws them clean - photo of Quake on a UVMC2.
-            # Not for a UVMC2 game that draws with the 6809 cartridge's own code - Last Human: with the unit's
-            # reference its calibration screen needs the same ZERO REF / TEXT as the 6809 cartridge, +02 / +00;
-            # without it +32 / -01 - the owner, 2026-11-13)
+            # Last Human's UVMC2 edition too: with the slow model its SDK-drawn screens (the UVMC2 calibration, the
+            # cinematics) came out wrong for the card's uvm2.cfg - the owner, 2026-11-13)
             env.pop('VT_ZREFK', None)
         # cartridge hardware: auto = the board by the ROM's size (64K PB6, Vectorblade's PB6 + IRQ with its
         # flash, the 512K latch flash, Sean Kelly's Multi-Cart latch), or one board by name; off = a

@@ -7,10 +7,10 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 ## v1.6.3
 - Online > Test VecLink on this PC: a 2nd Vectrex window, by cable
 - VecLink: Berzerk Arena's link game; test your own VecLink code
-- Online > Host VecLink game: two consoles over the internet, a screen each
-- Online > Host on local network (LAN): no internet; the game is listed
-- Online menu: clearer names, grouped (Host with a code, Join with a code)
-- P2 PORT: hold it for a menu of all port 2 devices; VecLink has its icon
+- Online > Host VecLink game: two consoles online, a screen each
+- Online > Host on local network (LAN): no internet, game listed
+- Online menu: clearer names, grouped
+- P2 PORT: hold it for a menu of all devices; VecLink has its icon
 - Update: faster download; asks before it installs, says what stays
 - Fixed: VIA timer 1 started at $FFFF ran out at once
 - Online: both players need v1.6.3

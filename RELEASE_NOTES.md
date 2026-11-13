@@ -25,6 +25,16 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Checked: Alex Herbert's V2 example links and passes the stick from one console to the other; Berzerk Arena's link
   game starts on both consoles from either one's button.
 
+**Online on a local network**
+* Online > Host on this network: hosting directly on UDP 7744, no meeting point and no internet needed, and the game
+  announced on the local network once a second (UDP 7743). On the other PC the Online window lists it under Games on
+  this network (name, host's player name, address; VecLink games marked) - one click joins. Typing the host's address
+  in the join box still works. Two PCs with one cable or a switch are enough (without a router Windows gives each an
+  automatic address after a minute; the announcement reaches those too). The Online window's VecLink game box makes a
+  LAN game a VecLink game.
+* Tested: two app instances on one PC (found, joined, 1056 frames, no desync); a Linux PC's announcement listed on
+  Windows.
+
 **Fixed**
 * The VIA's timer 1 started at $FFFF (the longest wait) ran out at once instead of after 65537 cycles - VecLink V2's
   transfer timeout used it. No other tested game changed (the state frame for frame on Last Human, Armor Attack,

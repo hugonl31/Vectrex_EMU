@@ -8,6 +8,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - Online > VecLink: a second Vectrex on this PC, joined by a VecLink cable
 - VecLink: Berzerk Arena's link game; test your own VecLink code
 - Online > Host VecLink game: two consoles over the internet, a screen each
+- Online > Host on this network: LAN play, no internet; the game is listed
 - Fixed: VIA timer 1 started at $FFFF ran out at once
 - Online: both players need v1.6.3
 

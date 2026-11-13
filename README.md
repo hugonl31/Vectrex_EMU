@@ -1451,6 +1451,12 @@ Vectrex_EMU.exe "roms\Armor Attack.bin" --net-online     the host: it shows a fi
 Vectrex_EMU.exe --net-join KRAVE                          player 2, with that code
 ```
 
+**On a local network** (home, LAN party, or two PCs with one cable or a switch - no internet needed): Online > *Host
+on this network...* hosts directly (UDP 7744) and announces the game on the network (UDP 7743, once a second); on the
+other PC the Online window lists it under *Games on this network* - one click joins. Or type the host's address in
+the join box. VecLink games too (the *VecLink game* box in the Online window). Windows asks once whether to allow
+Vectrex_EMU: allow it (on a network without a router, Windows calls it public - allow that too).
+
 The code goes through a small meeting-point server (`tools/vxrelay.py`), which puts the two PCs in touch directly
 (through most home routers without any settings) and relays the packets when that is not possible. Without the
 server: `--net-host` on the host (its router forwards UDP port 7744) and `--net-join ADDRESS` on the other side.

@@ -838,6 +838,113 @@ def list_games(server, timeout=2.0):
     return out
 
 
+# ---- the local network: a host announces itself, the Online window lists the games found (no meeting point, no code)
+LAN_PORT = 7743                                     # (UDP: the announcements; the game itself on PORT, direct)
+LAN_MAGIC = b'VXL1'
+LAN_EVERY = 1.0                                     # (seconds between two announcements)
+LAN_STALE = 3.5                                     # (a game not heard of for this long is gone from the list)
+
+
+def lan_addresses():
+    """this PC's IPv4 addresses on its networks (not loopback)"""
+    out = set()
+    try:
+        for fam, _, _, _, sa in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            if not sa[0].startswith('127.'):
+                out.add(sa[0])
+    except OSError:
+        pass
+    try:                                            # (the address the default route goes out of)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('10.255.255.255', 1)); out.add(s.getsockname()[0]); s.close()
+    except OSError:
+        pass
+    return sorted(a for a in out if not a.startswith('127.'))
+
+
+class LanBeacon(threading.Thread):
+    """a host waiting for player 2 on this network: its game announced once a second (broadcast, each network of this
+    PC) until stop() - what the Online window's 'Games on this network' list shows"""
+    def __init__(self, info):
+        super().__init__(daemon=True)
+        self.info = dict(info, nver=NET_VER)
+        self.halt = threading.Event()
+
+    def stop(self):
+        self.halt.set()
+
+    def run(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        except OSError:
+            return
+        data = LAN_MAGIC + json.dumps(self.info).encode('utf-8')
+        while not self.halt.is_set():
+            targets = {'255.255.255.255'}
+            for a in lan_addresses():                   # (each network's own broadcast address - a /24 is assumed: the
+                targets.add(a.rsplit('.', 1)[0] + '.255')   #  usual home network; 255.255.255.255 covers the rest)
+            for t in targets:
+                try:
+                    s.sendto(data, (t, LAN_PORT))
+                except OSError:
+                    pass
+            self.halt.wait(LAN_EVERY)
+        s.close()
+
+
+class LanListener(threading.Thread):
+    """the games announced on this network (LanBeacon): games() - [dict(addr, port, name, md5, size, gamer, veclink,
+    nver)], the newest first; several emulators on one PC can listen at once"""
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.halt = threading.Event()
+        self.found = {}
+        self.lock = threading.Lock()
+        self.ok = True
+
+    def stop(self):
+        self.halt.set()
+
+    def run(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('', LAN_PORT))
+            s.settimeout(0.25)
+        except OSError:
+            self.ok = False
+            return
+        mine = set(lan_addresses())
+        while not self.halt.is_set():
+            try:
+                data, (ip, _) = s.recvfrom(2048)
+            except socket.timeout:
+                continue
+            except OSError:
+                continue
+            if not data.startswith(LAN_MAGIC):
+                continue
+            try:
+                g = json.loads(data[len(LAN_MAGIC):].decode('utf-8'))
+                port = int(g.get('port', PORT))
+            except (ValueError, TypeError):
+                continue
+            g['addr'] = '127.0.0.1' if ip in mine else ip     # (a host on this same PC: reached on loopback)
+            g['port'] = port
+            g['seen'] = time.perf_counter()
+            with self.lock:
+                self.found['%s:%d' % (g['addr'], port)] = g
+        s.close()
+
+    def games(self):
+        now = time.perf_counter()
+        with self.lock:
+            for k in [k for k, g in self.found.items() if now - g['seen'] > LAN_STALE]:
+                del self.found[k]
+            return sorted(self.found.values(), key=lambda g: -g['seen'])
+
+
 def new_game(rom_path, settings):
     """the host's game: the ROM's identity and what must be the same on both sides"""
     return dict(md5=rom_md5(rom_path), size=os.path.getsize(rom_path), name=os.path.basename(rom_path),

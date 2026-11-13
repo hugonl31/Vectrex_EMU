@@ -2988,6 +2988,10 @@ class App:
             item(m, 'Host this game...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
                  "Play this game with someone over the internet: you are player 1. The Online window shows a five-letter code "
                  "to tell player 2 - no addresses, no router settings.")
+            item(m, 'Host on this network...', '', lambda: (setattr(self, 'net_vl_want', False), self.host_lan()),
+                 "Play with someone on the same local network (home, LAN party): no meeting point, no code, no internet - "
+                 "your game appears in their Online window under 'Games on this network'; one click joins. Or they type "
+                 "this PC's address.")
             item(m, 'Host VecLink game...', '', self.host_veclink,
                  "Play a VecLink game (Berzerk Arena's LINK GAME, ...) with someone over the internet: you are Vectrex A, "
                  "player 2 is Vectrex B, each with their own screen, the two consoles joined by the VecLink cable. Each PC "
@@ -5283,6 +5287,35 @@ class App:
                 pass
         return netplay.SERVER
     # ---------------------------------------------------------------- VecLink: two consoles on one PC
+    def lan_info(self, net, port):
+        """what a direct host announces on this network (netplay.LanBeacon): its game and how to reach it"""
+        g = net.offer or {}
+        return dict(name=g.get('name', ''), md5=g.get('md5', ''), size=g.get('size', 0), port=port,
+                    gamer=net.me_name or '', veclink=bool(g.get('veclink')))
+    def lan_announce(self, net, port):
+        """a direct host waiting for player 2: its game announced on the local network once a second (no meeting point,
+        no code - the Online window's 'Games on this network'), until player 2 came or the hosting ended"""
+        import netplay
+        old = getattr(self, 'net_beacon', None)
+        if old is not None:
+            old.stop()
+        b = self.net_beacon = netplay.LanBeacon(self.lan_info(net, port)); b.start()
+        def watch():
+            if getattr(self, 'net_pending', None) is not net or getattr(self, 'net_game', None) or net.lost:
+                b.stop(); return
+            b.info = dict(self.lan_info(net, port), nver=netplay.NET_VER)   # (the host changed its game: the new one)
+            self.root.after(1000, watch)
+        self.root.after(1000, watch)
+    def lan_join(self, g):
+        """a game from 'Games on this network': joined directly at its address"""
+        self.net_last_join = '%s:%d' % (g['addr'], g['port']); self.net_via_room = False
+        self.net_begin('join', target=self.net_last_join)
+    def host_lan(self):
+        """Online > Host on this network: hosting directly (UDP 7744), announced on the local network - player 2 picks it
+        from the list in their Online window, or types this PC's address; no meeting point, no internet needed"""
+        import netplay
+        self.online_window()
+        self.net_begin('host', direct_port=netplay.PORT)
     def host_veclink(self):
         """Online > Host VecLink game: hosting as usual, the game offered as a VecLink game (net_offer)"""
         self.net_vl_want = True
@@ -5444,6 +5477,7 @@ class App:
                 self.root.after(200, show_code)
             else:
                 self.flash('ONLINE: WAITING FOR PLAYER 2', 'UDP PORT %d' % port, secs=WAIT_MSG_S)
+                self.lan_announce(net, port)                    # (on this network: in every Online window's list)
         else:
             self.flash('ONLINE: JOINING', label, secs=600)
         self.net_result = None
@@ -6320,6 +6354,14 @@ class App:
                 self.root.clipboard_clear(); self.root.clipboard_append(c)
         copy_b = deck._button(r1, 'Copy', copy, self, small=True); copy_b.pack(side='left', padx=(6, 0))
         host_note = tk.Label(h, text='', fg=dim, bg=bg, font=f9, anchor='w'); host_note.pack(fill='x', pady=(4, 0))
+        r1b = tk.Frame(h, bg=bg); r1b.pack(fill='x', pady=(4, 0))
+        lan_host_b = deck._button(r1b, 'Host on this network', lambda: (self.net_begin('host', direct_port=netplay.PORT), sync()),
+                                  self, small=True)
+        lan_host_b.pack(side='left')
+        vlv = tk.BooleanVar(value=bool(getattr(self, 'net_vl_want', False)))
+        tk.Checkbutton(r1b, text='VecLink game (two consoles, a screen each)', variable=vlv,
+                       command=lambda: setattr(self, 'net_vl_want', vlv.get()), fg=g, bg=bg, selectcolor=bg,
+                       activebackground=bg, activeforeground=deck.HI, font=f9, highlightthickness=0, bd=0).pack(side='left', padx=(10, 0))
         # join
         j = box('JOIN: YOU ARE PLAYER 2')
         r2 = tk.Frame(j, bg=bg); r2.pack(fill='x')
@@ -6331,6 +6373,43 @@ class App:
             self.net_begin('join', target=self.net_last_join); sync()
         join_b = deck._button(r2, 'Join', join, self, on=True, small=True); join_b.pack(side='left', padx=(6, 0))
         je.bind('<Return>', lambda ev: join())
+        # the games announced on this network (a direct host: Online > Host on this network)
+        lanb = box('GAMES ON THIS NETWORK')
+        lan_rows = tk.Frame(lanb, bg=bg); lan_rows.pack(fill='x')
+        lan_l = netplay.LanListener(); lan_l.start()
+        lan_shown = [None]
+        def lan_refresh():
+            try:
+                if not t.winfo_exists():
+                    lan_l.stop(); return
+            except tk.TclError:
+                lan_l.stop(); return
+            games = lan_l.games()
+            key = [(g['addr'], g['port'], g.get('name'), g.get('gamer'), g.get('veclink'), g.get('nver')) for g in games]
+            if key != lan_shown[0]:
+                lan_shown[0] = key
+                for w in lan_rows.winfo_children():
+                    w.destroy()
+                if not lan_l.ok:
+                    tk.Label(lan_rows, text='(this PC can not listen on UDP %d - another program has it)' % netplay.LAN_PORT,
+                             fg=deck.WARN, bg=bg, font=f9, anchor='w').pack(fill='x')
+                elif not games:
+                    tk.Label(lan_rows, text='(none found yet: on the other PC, Online > Host on this network)', fg=dim, bg=bg,
+                             font=f9, anchor='w').pack(fill='x')
+                for g in games[:6]:
+                    row = tk.Frame(lan_rows, bg=bg); row.pack(fill='x', pady=(2, 0))
+                    nm = os.path.splitext(g.get('name') or '?')[0]
+                    txt = '%s%s  -  %s  %s:%d' % (nm, '  [VecLink]' if g.get('veclink') else '',
+                                                 g.get('gamer') or 'host', g['addr'], g['port'])
+                    if g.get('nver', netplay.NET_VER) != netplay.NET_VER:
+                        tk.Label(row, text=txt + '   (another emulator version)', fg=deck.WARN, bg=bg, font=f9,
+                                 anchor='w').pack(side='left')
+                    else:
+                        deck._button(row, 'Join', lambda g=g: (self.lan_join(g), sync()), self, small=True).pack(side='left')
+                        tk.Label(row, text='  ' + txt, fg=g_col, bg=bg, font=f9, anchor='w').pack(side='left')
+            t.after(1000, lan_refresh)
+        g_col = g
+        t.after(300, lan_refresh)
         # now
         n = box('NOW')
         now_l = tk.Label(n, text='', fg=g, bg=bg, font=f9, anchor='w', justify='left', wraplength=560); now_l.pack(fill='x')
@@ -6348,7 +6427,7 @@ class App:
         deck._button(r3, 'Default', lambda: (sv.set('%s:%d' % netplay.SERVER), server_set()), self, small=True).pack(side='left', padx=(6, 0))
         r4 = tk.Frame(st, bg=bg); r4.pack(fill='x', pady=(6, 0))
         tk.Label(r4, text='Without it (LAN, or a forwarded port): ', fg=dim, bg=bg, font=f9).pack(side='left')
-        direct_b = deck._button(r4, 'Host directly on UDP %d' % netplay.PORT,
+        direct_b = deck._button(r4, 'Host on this network (UDP %d)' % netplay.PORT,
                                 lambda: (self.net_begin('host', direct_port=netplay.PORT), sync()), self, small=True)
         direct_b.pack(side='left')
         ov = tk.BooleanVar(value=self.net_osd)
@@ -6387,6 +6466,9 @@ class App:
                          "any file name, in the roms folder)."),
                 (direct_b, "No meeting point: player 2 joins with your address (your LAN address, or your public one with "
                            "UDP %d forwarded to this PC)." % netplay.PORT),
+                (lan_host_b, "Host on the local network, no internet needed: your game shows in player 2's Online window "
+                             "under Games on this network (or they type your address). Tick VecLink game for a game made "
+                             "for two consoles."),
                 (se, "The server that introduces the two players and passes the game on when two routers will not "
                      "connect directly. Both players need the same one."))
         for w, txt in tips:

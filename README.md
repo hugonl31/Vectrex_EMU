@@ -124,7 +124,7 @@ and sound dropouts.
   with each other, and a **sync check** compares both machines twice a second
   ([Online play](#online-play-two-vectrex_emus-one-game)).
 * **The game room** - Online > **Host public game** puts your game in the meeting point's game room under your
-  player name; Online > **Find players** lists the games waiting for a player 2 (who, what, how long, whether you
+  player name; Online > **Find public games** lists the games waiting for a player 2 (who, what, how long, whether you
   have it), keeps itself up to date and joins with a click. The private five-letter code stays for friends.
 * **Your player name** - asked once, reserved for you at the meeting point, at most 10 characters.
 * **The ports below the picture** - online, **P1 PORT** appears right of the cartridge (as on a Vectrex: port 1
@@ -1442,8 +1442,8 @@ and the SD card.
 
 Two players, two PCs, one Vectrex: the host is player 1 and chooses the game, the other PC joins as player 2 and
 both switch on together. Only the controllers travel over the network (4 bytes a frame): the emulator is
-deterministic, so both machines compute the same game, to the bit. The **Online** menu does it all: *Host this
-game...* shows a five-letter code for player 2, who types it in *Join a game...*; the Online window also shows the
+deterministic, so both machines compute the same game, to the bit. The **Online** menu does it all: *Host with a
+code...* shows a five-letter code for player 2, who types it in *Join with a code...*; the Online window also shows the
 connection (round trip, input delay, direct or relayed) and its settings. From the command line:
 
 ```
@@ -1452,7 +1452,7 @@ Vectrex_EMU.exe --net-join KRAVE                          player 2, with that co
 ```
 
 **On a local network** (home, LAN party, or two PCs with one cable or a switch - no internet needed): Online > *Host
-on this network...* hosts directly (UDP 7744) and announces the game on the network (UDP 7743, once a second); on the
+on local network (LAN)...* hosts directly (UDP 7744) and announces the game on the network (UDP 7743, once a second); on the
 other PC the Online window lists it under *Games on this network* - one click joins. Or type the host's address in
 the join box. VecLink games too (the *VecLink game* box in the Online window). Windows asks once whether to allow
 Vectrex_EMU: allow it (on a network without a router, Windows calls it public - allow that too).
@@ -1461,7 +1461,7 @@ The code goes through a small meeting-point server (`tools/vxrelay.py`), which p
 (through most home routers without any settings) and relays the packets when that is not possible. Without the
 server: `--net-host` on the host (its router forwards UDP port 7744) and `--net-join ADDRESS` on the other side.
 **The game room**: Online > *Host public game* lists your game under your player name (asked once, reserved for you
-at the meeting point) for anyone to join; Online > *Find players* shows the games waiting for a player 2 and joins one with a click (the meeting point holds at most 100 waiting games). **Chat** (Online > Chat, Ctrl+T): write to the other player while you play - Enter sends, Esc gives the keyboard back
+at the meeting point) for anyone to join; Online > *Find public games* shows the games waiting for a player 2 and joins one with a click (the meeting point holds at most 100 waiting games). **Chat** (Online > Chat, Ctrl+T): write to the other player while you play - Enter sends, Esc gives the keyboard back
 to the game, and a controller plays on while you type. The window opens by itself when the other player writes, and
 their line shows briefly in the picture too. Player 2 needs the same ROM in its `roms` folder (found by checksum). **UVMC2 games and PiTrex programs** play online too: player 2 needs the same game file, and the two SD cards are compared file by file - the game runs from the files both have the same (nothing is copied between the PCs; the chat says when files differ). While online the UVMC2 runs on one PC thread and the PiTrex's JIT in its exact mode, so both PCs stay identical; the PC's keyboard and mouse do not reach the cartridge. Twice a second both sides compare a checksum of the whole emulated machine: ONLINE: OUT OF SYNC would show if they ever differed. The host measures the round trip and sets the
 input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and
@@ -1471,16 +1471,17 @@ through a simulated bad connection (40-60 ms each way, 10 % packet loss): identi
 
 Alex Herbert's VecLink cable joins two Vectrex consoles through their controller port 2 (version 2 of the cable: pins
 1, 2, 3 and ground wired straight through). Games made for it run on two consoles, each with its own screen - Alex
-Herbert's **Berzerk Arena** (2005) in its LINK GAME, and his VecLink example in VIDE. Online > **VecLink: second
-Vectrex on this PC** starts a second window, Vectrex B, with the same game, and plugs the cable into both; choosing it
+Herbert's **Berzerk Arena** (2005) in its LINK GAME, and his VecLink example in VIDE. Controls > **Port 2: VecLink
+test (2nd window)** starts a second window, Vectrex B, with the same game, and plugs the cable into both; choosing it
 again unplugs it and closes Vectrex B. Each window takes the controls while it is in front (Vectrex B uses player 2's
 controls when they are set up). The two emulated consoles run in step to the CPU cycle where the cable is read, so the
 transfer (about 9600 baud on the button lines) behaves as on two real consoles - for testing your own VecLink code
 before trying it on real hardware. While the cable is in, port 2 is the cable's (no speech module, light pen or 3D
-Imager) and online play is off.
+Imager: choosing one says the cable is in, and a game that wants one is told it is unplugged) and
+online play is off.
 
 **Online**: Online > *Host VecLink game...* plays a VecLink game with someone over the internet: you are Vectrex A,
-player 2 (Join a game, with the code) is Vectrex B, each with their own screen. Each PC runs both consoles - its
+player 2 (Join with a code) is Vectrex B, each with their own screen. Each PC runs both consoles - its
 player's in the window, the other unseen (no picture, no sound: about 1-2 ms of one CPU core a frame) - and only the
 controllers travel, as in any online game; the two consoles run in 20 ms slices of the cable's clock, so both PCs
 compute exactly the same pair (checked twice a second, Windows against Linux).

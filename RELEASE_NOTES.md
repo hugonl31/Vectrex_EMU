@@ -6,7 +6,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 ## v1.6.3
 
 **VecLink: two Vectrexes, one cable**
-* Online > VecLink: second Vectrex on this PC starts a second window, Vectrex B, with the same game, its controller
+* Controls > Port 2: VecLink test (2nd window) starts a second window, Vectrex B, with the same game, its controller
   port 2 joined to this one's by Alex Herbert's VecLink cable (version 2: buttons 1-3 and ground straight through).
   Games made for two consoles run with their own screen each: Berzerk Arena's LINK GAME (Alex Herbert, 2005), the
   VecLink example in VIDE - and your own code, to test before two real consoles. Choosing it again unplugs the cable
@@ -16,7 +16,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
   button lines) behaves as on two real consoles. A console that changes its game joins the running one, as when a
   cartridge is swapped on one of two linked consoles. While the cable is in, port 2 is the cable's (no speech module,
   light pen or 3D Imager) and online play is off.
-* Online > Host VecLink game: a VecLink game over the internet - you are Vectrex A, player 2 (Join a game, with the
+* Online > Host VecLink game: a VecLink game over the internet - you are Vectrex A, player 2 (Join with a code, with the
   code) Vectrex B, each with their own screen. Each PC runs both consoles (its player's in the window, the other one
   unseen: no picture or sound, about 1-2 ms of one CPU core a frame); only the controllers travel, as in any online
   game. The two consoles run in 20 ms slices of the cable's clock, agreed between them, so both PCs compute exactly the
@@ -26,7 +26,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
   game starts on both consoles from either one's button.
 
 **Online on a local network**
-* Online > Host on this network: hosting directly on UDP 7744, no meeting point and no internet needed, and the game
+* Online > Host on local network (LAN): hosting directly on UDP 7744, no meeting point and no internet needed, and the game
   announced on the local network once a second (UDP 7743). On the other PC the Online window lists it under Games on
   this network (name, host's player name, address; VecLink games marked) - one click joins. Typing the host's address
   in the join box still works. Two PCs with one cable or a switch are enough (without a router Windows gives each an

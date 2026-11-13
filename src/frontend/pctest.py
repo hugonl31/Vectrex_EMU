@@ -378,7 +378,7 @@ def window(app, parent=None, on_done=None):
             return
         if rep == 'online':
             body.configure(text='Not during an online game: Optimize pauses the game for a few seconds, which would '
-                                'stop it for both players. Leave the online game first (Online menu).')
+                                'stop it for both players. Leave the online game first (Online > Leave game).')
             deck._button(bar, 'OK', close, a, on=True).pack(side='left')
             return
         if rep is None:

@@ -2983,12 +2983,19 @@ class App:
                                 ('vecvox', 'Port 2: VecVox', "A speech module (SpeakJet chip) in port 2, for games that talk. Needs the speech ROM in the system folder."),
                                 ('lightpen', 'Port 2: Light pen', "The light pen in port 2, for Art Master, AnimAction and Melody Master: the mouse is the pen - point at the picture, hold the left button to touch the screen."),
                                 ('imager', 'Port 2: 3D Imager', "The 3D Imager goggles in port 2: its spinning colour disc makes 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster colourful (the disc spins up first).")):
-                check(m, lbl, '', lambda k=k: self.speech == k, lambda k=k: self.set_speech(k), tip)
+                check(m, lbl, '', lambda k=k: self.speech == k and not Core.veclink, lambda k=k: self.set_speech(k), tip)
+            check(m, 'Port 2: VecLink test (2nd window)', '', self.veclink_on, self.toggle_veclink,
+                  "Alex Herbert's VecLink cable (V2) in port 2, to a second Vectrex in its own window with the same game: for "
+                  "games made for two consoles - Berzerk Arena's LINK GAME - and for testing your own. Each window takes the "
+                  "controls while it is in front. Again: the cable out, the second Vectrex closes.")
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Online', menu=m)
-            item(m, 'Host this game...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
+            item(m, 'Host with a code...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
                  "Play this game with someone over the internet: you are player 1. The Online window shows a five-letter code "
                  "to tell player 2 - no addresses, no router settings.")
-            item(m, 'Host on this network...', '', lambda: (setattr(self, 'net_vl_want', False), self.host_lan()),
+            item(m, 'Host public game...', '', self.public_host_window,
+                 "Put this game in the game room under your gamer name: anyone can see it in Find public games and join as "
+                 "player 2.")
+            item(m, 'Host on local network (LAN)...', '', lambda: (setattr(self, 'net_vl_want', False), self.host_lan()),
                  "Play with someone on the same local network (home, LAN party): no meeting point, no code, no internet - "
                  "your game appears in their Online window under 'Games on this network'; one click joins. Or they type "
                  "this PC's address.")
@@ -2996,18 +3003,13 @@ class App:
                  "Play a VecLink game (Berzerk Arena's LINK GAME, ...) with someone over the internet: you are Vectrex A, "
                  "player 2 is Vectrex B, each with their own screen, the two consoles joined by the VecLink cable. Each PC "
                  "runs both consoles (the other one unseen); only the controllers travel. Player 2 joins with the code.")
-            item(m, 'Host public game...', '', self.public_host_window,
-                 "Put this game in the game room under your gamer name: anyone can see it in Find players and join as "
-                 "player 2.")
-            item(m, 'Join a game...', '', lambda: self.online_window('join'),
+            m.add_separator()
+            item(m, 'Join with a code...', '', lambda: self.online_window('join'),
                  "Type the code player 1 tells you (or an address): you are player 2; the host's game starts here when you "
                  "have the same ROM.")
-            item(m, 'Find players...', '', self.find_players_window,
+            item(m, 'Find public games...', '', self.find_players_window,
                  "The game room: the public games waiting for a player 2, with their gamer names - join one with a click.")
-            check(m, 'VecLink: second Vectrex on this PC', '', self.veclink_on, self.toggle_veclink,
-                  "A second Vectrex in its own window with the same game, its controller port 2 joined to this one's by a "
-                  "VecLink cable (Alex Herbert's, V2): for games made for two consoles - Berzerk Arena's LINK GAME - and for "
-                  "testing your own. Each window takes the controls while it is in front.")
+            m.add_separator()
             item(m, 'Chat...', 'Ctrl+T', self.chat_window,
                  "Write to the other player while you play: the Chat window (it also opens by itself when they write).")
             dep(m, lambda: bool(getattr(self, 'net_game', None)))
@@ -3018,7 +3020,7 @@ class App:
             item(m, 'Take port 2', '', lambda: self.take_port(2),
                  "Your controller into controller port 2 (the other player's out of it).")
             dep(m, lambda: bool(getattr(self, 'net_game', None)))
-            item(m, 'Leave the online game', '', self.net_leave, "The game goes on here alone; the other player is told.")
+            item(m, 'Leave game', '', self.net_leave, "Leave the online game: it goes on here alone; the other player is told.")
             dep(m, self.net_busy)
             m.add_separator()
             item(m, 'Online settings...', '', lambda: self.online_window(),
@@ -4000,6 +4002,10 @@ class App:
         if self.net_busy():                                     # (online - hosting, joining, waiting or playing: port 2
             self.net_flash('ONLINE: PORT 2 IS PLAYER 2', 'THE JOYSTICK STAYS IN',   #  is the other player's controller)
                            'UNTIL YOU LEAVE', secs=4)
+            return
+        if Core.veclink:                                        # (the VecLink cable is in port 2: nothing else fits)
+            self.flash('PORT 2: VECLINK CABLE IN', 'UNPLUG IT FIRST' if not self.veclink_b() else
+                       'UNPLUG IT IN VECTREX A', '(CONTROLS > PORT 2: VECLINK TEST)', secs=4)
             return
         if k in ('vecvoice', 'vecvox') and not sp_rom():
             self.speech_rom_help()
@@ -5311,7 +5317,7 @@ class App:
         self.net_last_join = '%s:%d' % (g['addr'], g['port']); self.net_via_room = False
         self.net_begin('join', target=self.net_last_join)
     def host_lan(self):
-        """Online > Host on this network: hosting directly (UDP 7744), announced on the local network - player 2 picks it
+        """Online > Host on local network (LAN): hosting directly (UDP 7744), announced on the local network - player 2 picks it
         from the list in their Online window, or types this PC's address; no meeting point, no internet needed"""
         import netplay
         self.online_window()
@@ -5327,7 +5333,7 @@ class App:
     def veclink_on(self):
         return bool(Core.veclink) and not getattr(self, 'vl_online', False)
     def toggle_veclink(self):
-        """Online > VecLink: a second Vectrex on this PC (a second window, Vectrex B) with the same game, its port 2 joined
+        """Controls > Port 2: VecLink - a second Vectrex on this PC (a second window, Vectrex B) with the same game, its port 2 joined
         to this one's by Alex Herbert's VecLink cable (V2: buttons 1-3 and ground straight through, veclink.c) - for games
         made for two consoles (Berzerk Arena's LINK GAME) and for testing your own. Again: the cable out, Vectrex B closes."""
         if self.veclink_b():
@@ -6224,7 +6230,7 @@ class App:
         msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
         show_slot()
         tk.Label(t, text="Your player name and the game show in everyone's Find players list until someone joins.\n"
-                         'A private game with a code stays in Host this game.', fg=deck.DIM, bg=deck.BG, font=(MONO, 9),
+                         'A private game: Online > Host with a code.', fg=deck.DIM, bg=deck.BG, font=(MONO, 9),
                  justify='left', anchor='w').pack(fill='x', padx=14, before=foot)
         state = {'net': None}
         def watch():
@@ -6271,7 +6277,7 @@ class App:
         if getattr(self, 'find_win', None):
             try: self.find_win.lift(); return
             except tk.TclError: pass
-        t, body, foot, close = self._room_window('Find players', 'Public games waiting for a player 2. You need the same game '
+        t, body, foot, close = self._room_window('Find public games', 'Public games waiting for a player 2. You need the same game '
                                                  'in your roms folder.', 'find_win')
         f9, bg = (MONO, 10), deck.PANEL
         grid = tk.Frame(body, bg=bg); grid.pack(fill='x', padx=10, pady=8)
@@ -6401,7 +6407,7 @@ class App:
         copy_b = deck._button(r1, 'Copy', copy, self, small=True); copy_b.pack(side='left', padx=(6, 0))
         host_note = tk.Label(h, text='', fg=dim, bg=bg, font=f9, anchor='w'); host_note.pack(fill='x', pady=(4, 0))
         r1b = tk.Frame(h, bg=bg); r1b.pack(fill='x', pady=(4, 0))
-        lan_host_b = deck._button(r1b, 'Host on this network', lambda: (self.net_begin('host', direct_port=netplay.PORT), sync()),
+        lan_host_b = deck._button(r1b, 'Host on local network', lambda: (self.net_begin('host', direct_port=netplay.PORT), sync()),
                                   self, small=True)
         lan_host_b.pack(side='left')
         vlv = tk.BooleanVar(value=bool(getattr(self, 'net_vl_want', False)))
@@ -6440,7 +6446,7 @@ class App:
                     tk.Label(lan_rows, text='(this PC can not listen on UDP %d - another program has it)' % netplay.LAN_PORT,
                              fg=deck.WARN, bg=bg, font=f9, anchor='w').pack(fill='x')
                 elif not games:
-                    tk.Label(lan_rows, text='(none found yet: on the other PC, Online > Host on this network)', fg=dim, bg=bg,
+                    tk.Label(lan_rows, text='(none found yet: on the other PC, Online > Host on local network)', fg=dim, bg=bg,
                              font=f9, anchor='w').pack(fill='x')
                 for g in games[:6]:
                     row = tk.Frame(lan_rows, bg=bg); row.pack(fill='x', pady=(2, 0))
@@ -6473,7 +6479,7 @@ class App:
         deck._button(r3, 'Default', lambda: (sv.set('%s:%d' % netplay.SERVER), server_set()), self, small=True).pack(side='left', padx=(6, 0))
         r4 = tk.Frame(st, bg=bg); r4.pack(fill='x', pady=(6, 0))
         tk.Label(r4, text='Without it (LAN, or a forwarded port): ', fg=dim, bg=bg, font=f9).pack(side='left')
-        direct_b = deck._button(r4, 'Host on this network (UDP %d)' % netplay.PORT,
+        direct_b = deck._button(r4, 'Host on local network (UDP %d)' % netplay.PORT,
                                 lambda: (self.net_begin('host', direct_port=netplay.PORT), sync()), self, small=True)
         direct_b.pack(side='left')
         ov = tk.BooleanVar(value=self.net_osd)
@@ -6937,7 +6943,8 @@ class App:
             self.root.after(0, lambda: self.net_offer_changed(pend))   # (a host waiting: this game offered now)
         was = self.speech
         self.speech = self.port2_auto(self.args.rom)
-        if self.speech != was and self.speech == port2_needed(self.args.rom) and not getattr(self, 'net_game', None)                 and not host_waiting:   # (plugged in
+        if self.speech != was and self.speech == port2_needed(self.args.rom) and not getattr(self, 'net_game', None) \
+                and not Core.veclink                 and not host_waiting:   # (plugged in
             #  for this game: said so)
             self.root.after(300, lambda k=self.speech: self.flash(
                 'THIS GAME TALKS' if k in ('vecvox', 'vecvoice') else 'THIS GAME NEEDS',
@@ -6945,6 +6952,11 @@ class App:
                 'PLUGGED INTO PORT 2', secs=3.0))
         ng = getattr(self, 'net_game', None)                    # (online: the host's cartridge hardware, port 2 a joystick)
         if ng or self.net_busy():
+            self.speech = 'off'
+        if Core.veclink and self.speech != 'off':               # (the VecLink cable in port 2: the game's accessory out -
+            dev = {'imager': 'THE 3D IMAGER', 'lightpen': 'THE LIGHT PEN', 'vecvox': 'VECVOX SPEECH',   #  said so)
+                   'vecvoice': 'VECVOICE SPEECH'}.get(self.speech, self.speech.upper())
+            self.root.after(300, lambda: self.flash('VECLINK CABLE IN PORT 2:', dev + ' UNPLUGGED', secs=4))
             self.speech = 'off'
         unit = dict(self.unit, dacofs=float(ng.get('dacofs', 0.0))) if ng else self.unit   # (online: the host's R302 -
         core2 = None

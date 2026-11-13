@@ -119,6 +119,11 @@ TOPICS = [
          "together (no 3D yet). Click the P2 PORT pictogram to plug it in - or just start the game: with the joystick in "
          "port 2, a game that needs the goggles (the three 3D games, and Rocket Sledge, an unreleased one) gets them by "
          "itself, for that game only."),
+('item', 'Port 2: VecLink test (2nd window)', "Alex Herbert's VecLink cable (V2: buttons 1-3 and ground) in port 2, to a "
+         "second Vectrex that starts in its own window with the same game - for games made for two consoles (Berzerk "
+         "Arena's LINK GAME) and for testing your own VecLink code. Each window takes the controls while it is in front. "
+         "The cable takes port 2: no speech module, light pen or 3D Imager while it is in (a game that wants one is told "
+         "it is unplugged), and no online play. Choose it again: the cable out, the second Vectrex closes."),
 ('item', 'Port 2: Joystick / VecVoice / VecVox', "The second joystick, or a speech accessory plugged in there: the VecVoice "
          "(Richard Hutchinson; a GI SP0256-AL2 speech chip) or the VecVox (Alex Herbert; a SpeakJet chip). With the "
          "joystick in port 2 and the speech ROM in the system folder, a game that talks (Vectorblade, Berzerk Ultimate, "
@@ -143,7 +148,7 @@ TOPICS = [
       "clock runs a little fast slows down by a hair, so neither has to wait for the other. P pauses the game for both "
       "players (P on either side goes on); the Vectrex stays switched on until you leave. A connection drop: both wait "
       "with a countdown (CONNECTION LOST); back within 30 seconds, the game goes on where it was. After that the host "
-      "waits for a player again and the joiner plays on alone, with Find players (or the Online window) open again. Port 2 is player 2's "
+      "waits for a player again and the joiner plays on alone, with Find public games (or the Online window) open again. Port 2 is player 2's "
       "joystick while you are online (hosting, joining or playing: it can not be changed until you leave). Any game can "
       "be played - both see the same picture - but player 2's controller only does something in a game for two: the "
       "games it knows for the 3D Imager or the light pen, the original games for one player, the ones for two at once "
@@ -155,17 +160,24 @@ TOPICS = [
       "both ports show who holds them (P1 PORT right of the cartridge, P2 PORT left): a click on a port takes it. "
       "A game that talks plays without its speech module. While you wait for player 2 you can "
       "change the cartridge: the new game is offered (and listed in the game room) at once."),
-('item', 'Host this game...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
+('item', 'Host with a code...', "Starts waiting for player 2 with the game in the slot now, and opens the Online window. "
          "The meeting point gives a five-letter code: tell it to player 2 (Copy puts it on the clipboard)."),
 ('item', 'Host public game...', "The game room: this game listed under your player name for anyone to see in Find "
-         "players and join as player 2. The listing ends when someone joins, or when you leave. Host this game stays the private way: a "
+         "public games and join as player 2. The listing ends when someone joins, or when you leave. Host with a code stays the private way: a "
          "code only the player you tell can use."),
-('item', 'Find players...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "
+('item', 'Host on local network (LAN)...', "Play on the same local network (home, LAN party, or two PCs with one cable "
+         "or a switch): no meeting point, no code, no internet. The game is announced on the network; the other PC's Online "
+         "window lists it under Games on this network - one click joins (or type this PC's address in the join box). "
+         "Windows asks once whether to allow Vectrex_EMU: allow it."),
+('item', 'Host VecLink game...', "A VecLink game (Berzerk Arena's LINK GAME, ...) over the internet: you are Vectrex A, "
+         "player 2 (Join with a code) is Vectrex B, each with their own screen. Each PC runs both consoles, the other one "
+         "unseen; only the controllers travel. On a LAN: the Online window's VecLink game box, then Host on local network."),
+('item', 'Find public games...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "
          "have waited and whether you have that game (by its contents, any file name, in your roms folder; 'other ver': an "
          "older or newer Vectrex_EMU, which can not join). Join starts it "
          "as with a code. The list keeps itself up to date while the window is open; the room holds at most 100 waiting "
          "games."),
-('item', 'Join a game...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
+('item', 'Join with a code...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
          "have the same ROM in your roms folder (found by its contents, whatever its file name)."),
 ('item', 'UVMC2 games and PiTrex programs', "They can be played online too. Both players need the same SD card "
          "files: the host's card is compared with player 2's, file by file, and the game runs from the files both have "
@@ -179,7 +191,7 @@ TOPICS = [
          "full screen too. Scrolled up, it stays where you read: a blinking 'new message' bar (a click: down to it). A "
          "soft chime when they write and the Chat window is not the one you are in (Online settings: on / off). Take "
          "port 1 / Take port 2: your controller into that port."),
-('item', 'Leave the online game', "The game goes on here alone; the other player is told. While still waiting: stops waiting."),
+('item', 'Leave game', "Leave the online game: it goes on here alone; the other player is told. While still waiting: stops waiting."),
 ('item', 'Your player name', "Asked once, the first time you open an online window: up to 10 of A-Z 0-9 _ -. "
          "The meeting point keeps it for you - a secret key in your settings makes it yours (only a scrambled copy of the "
          "key is kept there, no address) - so nobody else can take it; other players see it in the game room and the "

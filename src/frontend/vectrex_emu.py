@@ -1356,6 +1356,24 @@ def netplay_name(s):
     return netplay.gamer_name(s) or ''
 
 
+_UM2_6809 = {}
+def um2_6809_path(rom):
+    """a UVMC2 game that draws through the 6809 cartridge's own drawing code (the console gets the register writes the
+    6809 edition makes): Last Human, known by its save file on the card (any file name, any version)"""
+    if not rom.lower().endswith('.um2'):
+        return False
+    try:
+        key = (os.path.abspath(rom), os.path.getmtime(rom))
+    except OSError:
+        return False
+    if key not in _UM2_6809:
+        try:
+            with open(rom, 'rb') as f:
+                _UM2_6809[key] = b'lasthuman/lasthuman.sav' in f.read()
+        except OSError:
+            _UM2_6809[key] = False
+    return _UM2_6809[key]
+
 def port2_needed(rom):
     """what belongs in controller port 2 for a game, by the title in its header: the 3D Imager's games wait for the
     disc (a dark screen for ever without it - Rocket Sledge too, an unreleased 3D game); the light pen's need the
@@ -1697,6 +1715,13 @@ def ensure_sd_dir(d):
         pass
 
 
+# the UVMC2's calibration as it comes with the emulator (package/uvmc2/config/uvm2.cfg: the owner's, made on this
+# emulator's console, 2026-11-03) - Config > Ports > Reset UVMC2 calibration writes it back to the card. The SDK's
+# file: its lines, padded with spaces to 512 bytes (the last a newline)
+UVM2_CFG_DEFAULT = ('scale 160\nt1_tail_q8 752\nzero 34\nbright 80\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
+                    'neg_rate_y 0\ndrift_x 0\ndrift_y 0\naspect_q8 268\nwin_x 13500\nwin_y 14750\n').encode().ljust(511, b' ') + b'\n'
+
+
 def c1_setup_done(fn):
     try:
         return bool(json.load(open(fn)).get('setup_done'))
@@ -1771,9 +1796,12 @@ class Core:
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
             env['VT_ZEROTAU'] = '%.3f,%.3f' % (unit.get('zerotx', UNIT_BEAM['zerotx']), unit.get('zeroty', UNIT_BEAM['zeroty']))
             env['VT_DACBITS'] = ','.join('%.5f' % unit.get('dac%d' % b, 0.0) for b in range(4))
-        if not ideal and rom.lower().endswith(('.um2', '.img', '.pit')):
+        if not ideal and rom.lower().endswith(('.um2', '.img', '.pit')) and not um2_6809_path(rom):
             # (a UVMC2 / PiTrex drives the beam with short zero pulses: the slow reference model (0.38) leaves
-            # their lines broken and slanted where the real console draws them clean - photo of Quake on a UVMC2)
+            # their lines broken and slanted where the real console draws them clean - photo of Quake on a UVMC2.
+            # Not for a UVMC2 game that draws with the 6809 cartridge's own code - Last Human: with the unit's
+            # reference its calibration screen needs the same ZERO REF / TEXT as the 6809 cartridge, +02 / +00;
+            # without it +32 / -01 - the owner, 2026-11-13)
             env.pop('VT_ZREFK', None)
         # cartridge hardware: auto = the board by the ROM's size (64K PB6, Vectorblade's PB6 + IRQ with its
         # flash, the 512K latch flash, Sean Kelly's Multi-Cart latch), or one board by name; off = a
@@ -6622,6 +6650,14 @@ class App:
         old = self.run
         old.stop = True; old.join(timeout=2)
         self.core.close()
+        for path, data in getattr(self, 'card_writes', []):     # (Reset UVMC2 calibration: written now - the game that
+            try:                                                #  ran gave its card back above, with the old file)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, 'wb') as f:
+                    f.write(data)
+            except OSError as e:
+                self.rom_error('%s:\n%s' % (path, e))
+        self.card_writes = []
         self.save_settings()                                    # (the old game's own settings kept)
         self.art_adj_ready = False                              # (the overlay's position too, until the new one's is in)
         self.game_loaded = None                                 # (until the new one's settings are in: nothing of
@@ -7594,6 +7630,32 @@ class App:
             self.restart(self.args.rom)
         self.save_settings()
         self.show_look('add-on settings: the defaults')
+    def reset_uvm2_cal(self):
+        """Config > Ports > Reset UVMC2 calibration: the card's config/uvm2.cfg back to the calibration that comes with
+        the emulator (UVM2_CFG_DEFAULT) - for a file a calibration went wrong in. The old one is kept beside it
+        (uvm2.cfg.bak); a UVMC2 game in the slot starts again with it"""
+        path = os.path.join(self.sd_dir, 'config', 'uvm2.cfg')
+        if not deck.dialog('question', 'Reset UVMC2 calibration',
+                           'Put the UVMC2 calibration that comes with the emulator back on the SD card?' + chr(10) + chr(10) +
+                           path + chr(10) + chr(10) + 'The current file is kept as uvm2.cfg.bak.',
+                           parent=self.root, buttons=('Reset', 'Cancel')):
+            return
+        try:
+            if os.path.isfile(path):
+                shutil.copy2(path, path + '.bak')
+        except OSError:
+            pass
+        if (self.args.rom or '').lower().endswith('.um2'):      # (the game has the card: written when it gives it back)
+            self.card_writes = getattr(self, 'card_writes', []) + [(path, UVM2_CFG_DEFAULT)]
+            self.restart(self.args.rom)
+        else:
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, 'wb') as f:
+                    f.write(UVM2_CFG_DEFAULT)
+            except OSError as e:
+                return self.rom_error('%s:\n%s' % (path, e))
+        self.show_look('UVMC2 calibration: as it comes with the emulator')
     def toggle_motor_snd(self):
         self.run.crt.motor_on = not self.run.crt.motor_on
         self.save_settings()

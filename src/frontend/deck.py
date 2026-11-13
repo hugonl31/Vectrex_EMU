@@ -839,6 +839,7 @@ class Deck:
                      lambda: getattr(a, 'uvm2_mode', 'exact') != 'exact'),
                     ('buttons', [('Open UVMC2 game...', a.open_um2), ('Open the SD folder', a.open_sd_dir),
                                  ('Choose SD folder...', a.choose_sd_dir)], None),
+                    ('buttons', [('Reset calibration', a.reset_uvm2_cal)], None),   # (the card's uvm2.cfg: as shipped)
                     ('note', lambda: 'SD folder: %s' % _rel(a.sd_dir)),
                     ('group', 'PITREX'),
                     ('note', px_now),

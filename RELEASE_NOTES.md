@@ -10,8 +10,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
   port 2 joined to this one's by Alex Herbert's VecLink cable (version 2: buttons 1-3 and ground straight through).
   Games made for two consoles run with their own screen each: Berzerk Arena's LINK GAME (Alex Herbert, 2005), the
   VecLink example in VIDE - and your own code, to test before two real consoles. Choosing it again unplugs the cable
-  and closes Vectrex B; each window takes the controls while it is in front (Vectrex B: player 2's controls when they
-  are set up).
+  and closes Vectrex B. The two windows sit side by side (A left, B right, made smaller to fit when needed; A's window
+  goes back to its size and place when the cable is out). Two controllers: each window has its own - player 1's
+  drives A, player 2's drives B, both at once. One controller or the keyboard: the window in front; F8 brings the other
+  Vectrex to the front.
 * Exact: the two consoles run in step to the CPU cycle wherever the cable is read - the transfer (~9600 baud on the
   button lines) behaves as on two real consoles. A console that changes its game joins the running one, as when a
   cartridge is swapped on one of two linked consoles. While the cable is in, port 2 is the cable's (no speech module,

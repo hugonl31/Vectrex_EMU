@@ -169,7 +169,9 @@ TOPICS = [
          "unseen; only the controllers travel. On a LAN: the Online window's VecLink game box, then Host on local network."),
 ('item', 'Test VecLink on this PC', "Alex Herbert's VecLink cable (V2: buttons 1-3 and ground) in port 2, to a "
          "second Vectrex that starts in its own window with the same game - to try games made for two consoles (Berzerk "
-         "Arena's LINK GAME) and to test your own VecLink code. Each window takes the controls while it is in front. "
+         "Arena's LINK GAME) and to test your own VecLink code. The windows sit side by side (A left, B right; A's goes back "
+         "when the cable is out). Two controllers: each window its own (player 1's: A, player 2's: B), both at once. One "
+         "controller or the keyboard: the window in front - F8 brings the other one to the front. "
          "The cable takes port 2: no speech module, light pen or 3D Imager while it is in (a game that wants one is told "
          "it is unplugged), and no online play. Choose it again: the cable out, the second Vectrex closes."),
 ('item', 'Find public games...', "The game room: the public games waiting for a player 2 - the gamer, the game, how long they "

@@ -581,8 +581,9 @@ class Input:
             self.refresh_devices()
         jx = jy = 0.0; btn = 0; raw = None
         d = self.resolve(p)
-        st = self.pad_state(d) if (self.focused or not self.pad_needs_focus) else None   # (VecLink: two windows, a
-        #  console each - a controller steers the one in front, as the keys do)
+        st = self.pad_state(d) if (self.focused or not self.pad_needs_focus or self.split_pads()) else None
+        #  (VecLink: two windows, a console each - one controller steers the one in front, as the keys do; two
+        #  controllers: each window its own, in front or not - two players at once, the owner 2026-11-13)
         if st:
             m = self.map(d['id'])
             if m['mode'] == 'buttons':                  # (the stick on buttons: full deflection, or half)
@@ -612,13 +613,18 @@ class Input:
             if down(k): btn |= 1 << i
         c = lambda v: max(-128, min(127, int(round(v * 127))))
         return c(jx), c(jy), btn, raw
+    def split_pads(self):
+        """player 1 and player 2 each have a controller of their own, both connected"""
+        d1, d2 = self.resolve('p1'), self.resolve('p2')
+        return bool(d1 and d2 and d1['id'] != d2['id'])
     def read(self):
         """(jx, jy, buttons) of player 1 and of player 2"""
         if self.block:
             return (0, 0, 0), (0, 0, 0)
         self.update_focus()
-        a = self.read_player('p1'); b = self.read_player('p2')
-        if self.hold:                                           # (the button that loaded a game, held: not the game's yet;
+        a = self.read_player('p1')
+        b = (0, 0, 0, None) if self.pad_needs_focus else self.read_player('p2')   # (VecLink: port 2 is the cable -
+        if self.hold:                                                              #  player 2 plays in the other window)                                           # (the button that loaded a game, held: not the game's yet;
             mask, still = self.hold                             #  the other buttons are - 2 + 3 held at a load)
             a = (0 if still else a[0], 0 if still else a[1], a[2] & ~mask, a[3])
         self.device = 'pad' if a[3] else 'keyboard'
@@ -2480,8 +2486,9 @@ class App:
                 i.keys['p1'], i.keys['p2'] = i.keys['p2'], i.keys['p1']                                   #  for the window
                 i.dev['p1'], i.dev['p2'] = i.dev['p2'], i.dev['p1']                                       #  in front
             i.pad_needs_focus = True
-            self.root.after(800, lambda: self.root.geometry('+%d+%d' % (self.root.winfo_x() + 60, self.root.winfo_y() + 60)))
+            self.root.after(800, lambda: self.vl_place('B'))
             self.root.after(1500, self.veclink_watch)
+            self.root.after(500, self.vl_front_poll)
         self.ren = None; self.lines = []
         if not args.tk:
             try:
@@ -2609,6 +2616,7 @@ class App:
             self.root.after(300, self.apply_on_top)               # (View > Always on top, as saved)
         self.root.bind('<F9>', self.toggle_rec)                # (Record: start / stop recording)
         self.root.bind('<F12>', self.snapshot)                 # (Record: a big snapshot)
+        self.root.bind('<F8>', self.vl_other_front)            # (Test VecLink on this PC: the other Vectrex in front)
         self.root.bind('<Motion>', self.pointer_moved)
         self.screen.bind('<Motion>', self.mouse_moved, add='+')
         self.screen.bind('<Leave>', lambda e: self.mouse_moved(None), add='+')
@@ -3003,7 +3011,7 @@ class App:
             check(m, 'Test VecLink on this PC', '', self.veclink_on, self.toggle_veclink,
                   "A second Vectrex in its own window with the same game, its controller port 2 joined to this one's by "
                   "Alex Herbert's VecLink cable (V2): to try games made for two consoles - Berzerk Arena's LINK GAME - and "
-                  "to test your own. Each window takes the controls while it is in front. Again: the cable out, the second "
+                  "to test your own. Side by side; two controllers: one each; one controller or the keyboard: the window in front (F8: the other one). Again: the cable out, the second "
                   "Vectrex closes.")
             m.add_separator()
             item(m, 'Join with a code...', '', lambda: self.online_window('join'),
@@ -5407,6 +5415,7 @@ class App:
             self.veclink_stop()
             Core.veclink = None
             self.inp.pad_needs_focus = False
+            self.vl_restore()
             self.restart(self.args.rom)
             return self.flash('VECLINK: CABLE OUT', 'VECTREX B CLOSED', secs=3)
         if self.net_busy():
@@ -5432,8 +5441,69 @@ class App:
         Core.veclink = (path, 'A')
         self.inp.pad_needs_focus = True
         self.restart(self.args.rom)                             # (both consoles switched on together: the cable's clocks)
-        self.flash('VECLINK: CABLE IN', 'VECTREX B STARTS IN ITS OWN WINDOW', 'EACH WINDOW: ITS OWN CONTROLS', secs=5)
+        self.flash('VECLINK: CABLE IN', 'VECTREX B STARTS IN ITS OWN WINDOW',
+                   'TWO CONTROLLERS: ONE EACH' if self.inp.split_pads() else 'F8: THE OTHER VECTREX', secs=5)
+        if not self.full:
+            self.vl_saved = (self.zoom, self.root.geometry())  # (the window as it was: back when the cable is out)
+            self.vl_place('A')
         self.root.after(1000, self.veclink_watch)
+        self.root.after(500, self.vl_front_poll)
+    def vl_place(self, side):
+        """Test VecLink on this PC: the two windows side by side - A the left half of the desktop, B the right (made
+        smaller to fit when wider than half) - the owner, 2026-11-13"""
+        if self.full or not Core.veclink:
+            return
+        try:
+            l, t, r, b = self.desktop()
+            half = (r - l) // 2
+            fr = vecrender.frame_rect(self.root.winfo_id())
+            x, y, ow = self.root.winfo_x(), self.root.winfo_y(), self.root.winfo_width()
+            ex0, ex1 = (x - fr[0], fr[2] - (x + ow)) if fr else (8, 8)
+            if ow + ex0 + ex1 > half and ow > 1:
+                self.set_zoom(self.zoom * (half - ex0 - ex1) / float(ow))
+                self.root.update_idletasks()
+            ow = self.root.winfo_width()
+            nx = (l if side == 'A' else l + half) + ex0 + max(0, (half - ow - ex0 - ex1) // 2)
+            self.root.geometry('+%d+%d' % (nx, self.root.winfo_y()))
+        except Exception:   # noqa
+            pass
+    def vl_restore(self):
+        """the cable out: Vectrex A's window back to its size and place from before"""
+        sv = getattr(self, 'vl_saved', None); self.vl_saved = None
+        if sv and not self.full:
+            try:
+                self.set_zoom(sv[0]); self.root.geometry(sv[1])
+            except Exception:   # noqa
+                pass
+    def vl_other_front(self, e=None):
+        """F8 with Test VecLink on this PC: the other Vectrex's window in front (and with it the keyboard and a single
+        controller)"""
+        if not Core.veclink or getattr(self, 'vl_online', False):
+            return None
+        me = Core.veclink[1]
+        pid = getattr(self.args, 'veclink_partner', 0) if me == 'B' else getattr(getattr(self, 'vl_proc', None), 'pid', 0)
+        if IS_WIN and pid:
+            try: ctypes.windll.user32.AllowSetForegroundWindow(int(pid))   # (this program is in front: it may hand it on)
+            except Exception: pass   # noqa
+        try:
+            open(Core.veclink[0] + '.front' + ('A' if me == 'B' else 'B'), 'w').close()
+        except OSError:
+            pass
+        return 'break'
+    def vl_front_poll(self):
+        """every 0.1 s while the cable is in: the other window asked (F8) for this one to come to the front"""
+        if not Core.veclink or getattr(self, 'vl_online', False):
+            return
+        f = Core.veclink[0] + '.front' + Core.veclink[1]
+        if os.path.exists(f):
+            try: os.remove(f)
+            except OSError: pass
+            try:
+                self.root.deiconify(); self.root.lift(); self.root.focus_force()
+                self.screen.focus_set()
+            except tk.TclError:
+                pass
+        self.root.after(100, self.vl_front_poll)
     def veclink_stop(self):
         """Vectrex B closes (it watches for this file - a frozen program's own process, not killed)"""
         if Core.veclink:
@@ -5456,6 +5526,7 @@ class App:
             if pr is not None and pr.poll() is not None:
                 Core.veclink = None; self.vl_proc = None
                 self.inp.pad_needs_focus = False
+                self.vl_restore()
                 return self.flash('VECLINK: VECTREX B CLOSED', 'CABLE OUT', secs=4)
         self.root.after(1000, self.veclink_watch)
     def net_busy(self):
@@ -8237,7 +8308,7 @@ class App:
         except Exception:           # noqa
             d = {}
         if not self.full:
-            d['geometry'] = self.root.geometry()
+            d['geometry'] = (getattr(self, 'vl_saved', None) or (0, self.root.geometry()))[1]   # (VecLink side by side: the window from before)
         if not self.args.demo:
             d['last_rom'] = self.args.rom or None               # (the cartridge in the slot: none = Mine Storm)
         d['recent'] = list(getattr(self, 'recent', []))

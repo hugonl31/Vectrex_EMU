@@ -1474,8 +1474,10 @@ Alex Herbert's VecLink cable joins two Vectrex consoles through their controller
 1, 2, 3 and ground wired straight through). Games made for it run on two consoles, each with its own screen - Alex
 Herbert's **Berzerk Arena** (2005) in its LINK GAME, and his VecLink example in VIDE. Online > **Test VecLink on
 this PC** starts a second window, Vectrex B, with the same game, and plugs the cable into both; choosing it
-again unplugs it and closes Vectrex B. Each window takes the controls while it is in front (Vectrex B uses player 2's
-controls when they are set up). The two emulated consoles run in step to the CPU cycle where the cable is read, so the
+again unplugs it and closes Vectrex B. The two windows sit side by side (A left, B right; A's window goes back to its
+size and place when the cable is out). Two controllers: each window has its own - player 1's drives A, player 2's
+drives B, both at once. One controller or the keyboard: it drives the window in front - **F8** brings the other one
+to the front. The two emulated consoles run in step to the CPU cycle where the cable is read, so the
 transfer (about 9600 baud on the button lines) behaves as on two real consoles - for testing your own VecLink code
 before trying it on real hardware. While the cable is in, port 2 is the cable's (no speech module, light pen or 3D
 Imager: choosing one says the cable is in, and a game that wants one is told it is unplugged) and

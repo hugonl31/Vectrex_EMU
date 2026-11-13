@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.6.2
+- Full screen: the strip below the picture lines up as in the window
+- A UVMC2 game loaded while the Vectrex is on skips the Vectrex intro
+- Buttons held while loading reach the game (Last Human: 2+3 = calibration)
+
 ## v1.6.1
 - Last Human v1.3.9: calibrated for a standard Vectrex
 - Last Human: closed ship outlines and straight text on a stock console

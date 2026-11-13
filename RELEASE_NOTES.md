@@ -3,6 +3,18 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.2
+
+**Window and ROM browser**
+* Full screen: the OSD, P2 PORT, the cartridge, RESET and the knob now sit where they do in the window, only
+  bigger. The OSD's text was 20 % larger in full screen, which widened the strip and pushed its pieces outwards.
+* A UVMC2 game loaded while the Vectrex is already on (the ROM browser, Recent games) starts at once with its
+  own start-up, without the Vectrex intro again. Switching on still plays the intro.
+* Buttons held while a game is loaded reach the game: hold buttons 2 + 3 and load Last Human (UVMC2) to open its
+  calibration screen. Loading with the controller's button 4 keeps only that button (and the stick) from the
+  game until it is let go. At a cold power-on the buttons must be held until the intro has ended.
+* Online: core and online code as v1.6.1 (NET_VER 10).
+
 ## v1.6.1
 
 **Last Human v1.3.9 (both editions bundled)**

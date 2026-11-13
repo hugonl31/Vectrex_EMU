@@ -388,6 +388,7 @@ class Input:
             self._u32.GetWindowThreadProcessId.argtypes = [W.HWND, ctypes.POINTER(W.DWORD)]
         self.focused = True
         self.block = False             # (the ROM browser is open: the game runs on without input)
+        self.hold = None               # (player 1's buttons (mask) and stick kept from the game until let go: App.hold_until_released)
         self.mouse = None              # (jx, jy, buttons) from the mouse / touchpad when it steers player 1 (App)
         self.device = 'keyboard'
         self._names = {}
@@ -615,6 +616,9 @@ class Input:
             return (0, 0, 0), (0, 0, 0)
         self.update_focus()
         a = self.read_player('p1'); b = self.read_player('p2')
+        if self.hold:                                           # (the button that loaded a game, held: not the game's yet;
+            mask, still = self.hold                             #  the other buttons are - 2 + 3 held at a load)
+            a = (0 if still else a[0], 0 if still else a[1], a[2] & ~mask, a[3])
         self.device = 'pad' if a[3] else 'keyboard'
         ms = self.mouse                                         # (the mouse / touchpad as player 1's stick)
         if ms:
@@ -4212,7 +4216,9 @@ class App:
         top = cy - 1.8 * r                                      # (level with the RESET and OFF/ON labels)
         gl_ = (pl + pr) / 2 + (vecrender.GLASS_DX - vecrender.ART_AW) * ph / 2   # (from the overlay's left edge)
         rows = self.hud_text()
-        k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0
+        k = 0.3 * r / 6.0                                       # (full screen the same as the window: 20 % larger text there
+                                                                #  widened the strip and pushed its pieces outwards - the owner,
+                                                                #  2026-11-13)
         mrows = vecrender.METER_ROWS if getattr(self, 'osd_meters', True) else 0.0   # (the CPU / GPU meters below the rows)
         k = min(k, (pb + (vecrender.PAD_BOT + vecrender.KNOB_STRIP - 0.635 * vecrender.KNOB_R) * ph - top) / ((len(rows) + mrows) * 9.0))   # (more rows - a UVMC2: smaller, to fit)
         meters = None
@@ -4251,7 +4257,7 @@ class App:
             gl_ = right - max(len(t) for row in rows for t in [''.join(x for x, _ in row)]) * 6.0 * k
         w = max(len(''.join(t for t, _ in row)) for row in rows) * 6.0 * k
         return dict(area=(gl_, top, x1, bot), rows=rows, k=k, meters=meters, p2x=p2x, thin=thin, w=w)
-                    # (the text as high as the knob's labels; in full screen 20 % larger)
+                    # (the text as high as the knob's labels)
     # ---------------------------------------------------------------- the cartridge and the ROM browser
     def toggle_cart(self, e=None):
         """L: the cartridge pictogram below the picture (click it: the ROM browser)"""
@@ -4274,7 +4280,7 @@ class App:
         pl, pt, pr, pb = self.pic_rect()
         cx, cy, r, rx = self.knob_geom(raw=True)
         cxx, _, cr = self.cart_geom(raw=True)
-        k = (1.2 if self.full else 1.0) * 0.3 * r / 6.0
+        k = 0.3 * r / 6.0                                       # (as osd_state: the same in full screen)
         gap = (rx - 0.95 * r) - (cxx + 1.3 * cr)
         left = (cxx - 3.6 * cr - 1.1 * cr) - gap - OSD_CHARS * 6.0 * k   # (as osd_state places it)
         right = cx + 2.4 * r
@@ -4441,18 +4447,24 @@ class App:
                 self.close_browser()
                 return self.hold_until_released()
         self.root.after(30, lambda: self.browser_pad(bb))
-    def hold_until_released(self, t0=None):
-        """a controller button closed the ROM browser: the game gets no input until the button (and the stick)
-        is let go - button 4 would start the game just loaded at once (1.5 s at most)"""
+    def hold_until_released(self, t0=None, mask=None):
+        """a controller button closed the ROM browser: the game does not get that button (nor the stick) until it
+        is let go - button 4 would start the game just loaded at once (1.5 s at most). The other buttons reach the
+        game: held at the load they count as held at power on (Last Human: 2 + 3, its calibration)"""
         t0 = t0 or time.perf_counter()
         if self.browser:
+            self.inp.hold = None
             return
         jx, jy, btn, raw = self.inp.read_player('p1', kbd_dirs=False)
-        if (not btn and abs(jx) < 64 and abs(jy) < 64) or time.perf_counter() - t0 > 1.5:
-            self.inp.block = False
+        if mask is None:
+            mask = btn & 9                                      # (button 4 loads, button 1 closes)
+        stick = abs(jx) >= 64 or abs(jy) >= 64
+        if (not (btn & mask) and not stick) or time.perf_counter() - t0 > 1.5:
+            self.inp.hold = None
             return
-        self.inp.block = True
-        self.root.after(30, lambda: self.hold_until_released(t0))
+        self.inp.block = False
+        self.inp.hold = (btn & mask, stick)
+        self.root.after(30, lambda: self.hold_until_released(t0, btn & mask))
     def browser_watch(self, bb):
         """the ROM browser open: its folder looked at every second - ROMs copied in (or taken out) appear at
         once, the chosen one stays chosen (a user had to restart the program to see games just added)"""
@@ -6652,6 +6664,11 @@ class App:
             run.ports = {'host': 1, 'join': 2}                  # (one player a port, always: a resting stick drifts)
         if run.power:
             run.flags = self.power_flags()
+            if old.power and not ng and rom and rom.lower().endswith('.um2'):
+                run.flags |= 16                                 # (the Vectrex was on already: a UVMC2 game swapped in
+                                                                #  starts at once, its own start-up, no Vectrex intro
+                                                                #  again - the owner, 2026-11-13. Buttons 2 + 3 held at
+                                                                #  the load reach it then: Last Human's calibration)
         self.run = run
         self.lines = []; self.last_f = 0
         if self.ren:                                            # the old game's picture fades in the phosphor

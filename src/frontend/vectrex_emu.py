@@ -6336,7 +6336,7 @@ class App:
         """Online > Host public game: a gamer name, then this game in the meeting point's game room for anyone to join"""
         self.net_vl_want = False
         if self.veclink_on() and not getattr(self, 'vl_online', False):   # (the VecLink cable in: two windows here, not online)
-            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
+            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > TEST VECLINK ON THIS PC: OFF', secs=4)
         import netplay
         if not self.name_ready(self.public_host_window):
             return
@@ -6404,7 +6404,7 @@ class App:
     def find_players_window(self):
         """Online > Find players: the game room's public games waiting for a player 2 - Join one"""
         if self.veclink_on() and not getattr(self, 'vl_online', False):   # (the VecLink cable in: two windows here, not online)
-            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
+            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > TEST VECLINK ON THIS PC: OFF', secs=4)
         import netplay
         if not self.name_ready(self.find_players_window):
             return
@@ -6494,7 +6494,7 @@ class App:
         """Online: host (a code for player 2), join (type the code), the state now, the settings. what: 'host' starts
         hosting this game at once, 'join' puts the cursor in the code box"""
         if self.veclink_on() and not getattr(self, 'vl_online', False):   # (the VecLink cable in: two windows here, not online)
-            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > VECLINK TAKES IT OUT', secs=4)
+            return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > TEST VECLINK ON THIS PC: OFF', secs=4)
         import netplay
         if not self.name_ready(lambda: self.online_window(what)):
             return

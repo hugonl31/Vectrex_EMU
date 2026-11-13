@@ -41,18 +41,45 @@ def asset_url(release):
     return None
 
 
-def download(url, size, dest, progress, user_agent):
-    """the zip to dest; progress(done, total) now and then"""
-    req = urllib.request.Request(url, headers={'User-Agent': user_agent})
-    done = 0
-    with urllib.request.urlopen(req, timeout=30) as r, open(dest, 'wb') as f:
-        total = int(r.headers.get('Content-Length') or size or 0)
-        while True:
-            b = r.read(1 << 16)
-            if not b:
-                break
-            f.write(b); done += len(b)
-            progress(done, total)
+def download(url, size, dest, progress, user_agent, tries=8, slow=250e3, window=8.0):
+    """the zip to dest; progress(done, total) now and then. A download that stalls (nothing for 15 s), breaks off or
+    crawls (under `slow` bytes a second over `window` seconds) is picked up again where it stopped (an HTTP Range
+    request): a new connection usually gets another, faster server of GitHub's - a tester's update crawled, 2026-11-13"""
+    done, total, last = 0, int(size or 0), None
+    with open(dest, 'wb') as f:
+        for attempt in range(tries):
+            hd = {'User-Agent': user_agent}
+            if done:
+                hd['Range'] = 'bytes=%d-' % done
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers=hd), timeout=15) as r:
+                    if done and getattr(r, 'status', 200) != 206:   # (the server sent it all again: from the start)
+                        f.seek(0); f.truncate(); done = 0
+                    cr = r.headers.get('Content-Range') or ''
+                    if '/' in cr and cr.rsplit('/', 1)[1].strip().isdigit():
+                        total = int(cr.rsplit('/', 1)[1])
+                    elif not done and r.headers.get('Content-Length'):
+                        total = int(r.headers.get('Content-Length'))
+                    t0, d0, crawl = time.monotonic(), done, False
+                    while True:
+                        b = r.read(1 << 16)
+                        if not b:
+                            break
+                        f.write(b); done += len(b)
+                        progress(done, total)
+                        dt = time.monotonic() - t0
+                        if dt >= window:
+                            if (done - d0) / dt < slow and attempt < tries - 1 and total - done > (1 << 20):
+                                crawl = True; break               # (too slow: a new connection)
+                            t0, d0 = time.monotonic(), done
+                    if not crawl and (not total or done >= total):
+                        break
+                    last = OSError('too slow' if crawl else 'the connection ended early')
+            except (OSError, ValueError) as e:                     # (URLError, a timeout and a broken connection)
+                last = e
+                time.sleep(1)
+        else:
+            raise OSError('the download did not finish (%d of %d bytes: %s)' % (done, total, last))
     if total and done != total:
         raise OSError('the download ended early (%d of %d bytes)' % (done, total))
 

@@ -5580,9 +5580,16 @@ class App:
         tk.Checkbutton(body, text="Don't remind me until the next version", variable=quiet, fg=deck.G, bg=bg, selectcolor=bg,
                        activebackground=bg, activeforeground=deck.HI, font=(MONO, 9), anchor='w', highlightthickness=0,
                        bd=0).pack(fill='x', padx=10, pady=(10, 10))
+        busy = {'on': False, 'stop': False, 'ready': None}
+        def drop():                                     # (a finished download not installed: its files gone)
+            r = busy['ready']; busy['ready'] = None
+            for x in (r or ())[1:]:
+                try: shutil.rmtree(x) if os.path.isdir(x) else os.remove(x)
+                except OSError: pass   # noqa
         def done(open_page=False):
             if quiet.get():
                 self.update_skip = new; self.save_settings()
+            busy['stop'] = True; drop()
             close()
             if open_page:
                 webbrowser.open(UPDATE_PAGE)
@@ -5592,37 +5599,76 @@ class App:
         url = updater.asset_url(rel)
         if not why and not url:
             why = 'This release has no download for this system yet: try again a little later.'
-        status = tk.Label(body, text=why or 'Update now downloads it, closes the emulator, installs it and starts it again: '
-                          'your ROMs, overlays, SD cards and where the overlays sit stay; the other settings start fresh.',
+        status = tk.Label(body, text=why or 'Update now downloads it; then you are asked before it installs. Your ROMs, '
+                          'overlays, SD cards, saves and settings are kept.',
                           fg=deck.DIM if not why else deck.WARN, bg=bg, font=(MONO, 9), anchor='w', justify='left', wraplength=520)
         status.pack(fill='x', padx=12, pady=(0, 10))
-        busy = {'on': False}
+        def install():                                  # (after the download, asked in this window - the owner,
+            cmd = busy['ready'][0]; busy['ready'] = None   #  2026-11-13: no extra window that gets lost)
+            status.configure(text='Installing %s: the emulator closes and starts again...' % new, fg=deck.HI)
+            updater.start(cmd)
+            self.root.after(300, self.quit)
         def update_now():
-            if why or busy['on']:
+            if why:
+                return
+            if busy['ready']:
+                return install()
+            if busy['on']:
                 return
             busy['on'] = True
-            def say(text):
-                self.root.after(0, lambda: status.configure(text=text, fg=deck.HI))
+            upd_b.configure(state='disabled')
+            def say(text, fg=deck.HI):
+                def f():
+                    try: status.configure(text=text, fg=fg)
+                    except tk.TclError: pass   # noqa  (the window was closed)
+                self.root.after(0, f)
             def work():
+                folder = script = None
                 try:
                     folder = updater.work_folder(); z = os.path.join(folder, updater.ASSET)
-                    updater.download(url[0], url[1], z, lambda d, tot: say('downloading %s: %.1f of %.1f MB' % (
-                        new, d / 1e6, tot / 1e6)) if d % (1 << 20) < (1 << 16) else None, 'Vectrex_EMU ' + mine)
-                    say('unpacking...')
+                    sp = {'last': 0.0, 'pts': []}
+                    def prog(d, tot):                   # (a few times a second: MB, percent and the speed of the
+                        if busy['stop']:                #  last 3 seconds)
+                            raise RuntimeError('stopped')
+                        now = time.monotonic()
+                        sp['pts'].append((now, d))
+                        while len(sp['pts']) > 2 and now - sp['pts'][0][0] > 3: sp['pts'].pop(0)
+                        if now - sp['last'] < 0.25 and d != tot: return
+                        sp['last'] = now
+                        t0, d0 = sp['pts'][0]
+                        rate = (d - d0) / (now - t0) if now > t0 else 0
+                        say('Downloading %s: %.1f of %.1f MB%s, %.1f MB/s' % (new, d / 1e6, tot / 1e6,
+                            ' (%d%%)' % (100 * d // tot) if tot else '', rate / 1e6))
+                    updater.download(url[0], url[1], z, prog, 'Vectrex_EMU ' + mine)
+                    say('Unpacking...')
                     cmd, script = updater.prepare(z, ROOT, self.settings_f, os.getpid(), new, exe_path=os.path.abspath(sys.executable))
                 except Exception as e:   # noqa
                     busy['on'] = False
-                    self.root.after(0, lambda: status.configure(text='The update failed (%s): nothing was changed. '
-                                                                     'Open GitHub to download it.' % e, fg=deck.WARN))
+                    for x in (script, folder):
+                        try: x and (shutil.rmtree(x) if os.path.isdir(x) else os.remove(x))
+                        except OSError: pass   # noqa
+                    if not busy['stop']:
+                        say('The update failed (%s): nothing was changed. Open GitHub to download it.' % e, deck.WARN)
+                        self.root.after(0, lambda: upd_b.winfo_exists() and upd_b.configure(state='normal'))
                     return
-                def go():
-                    say('installing %s: the emulator closes and starts again' % new)
-                    updater.start(cmd)
-                    self.root.after(300, self.quit)
-                self.root.after(0, go)
+                def ready():
+                    busy['ready'] = (cmd, script, folder)
+                    if busy['stop'] or not upd_b.winfo_exists():
+                        return drop()
+                    status.configure(fg=deck.HI, text=(
+                        'Download complete. Install & restart closes the emulator, puts %s in its place and starts it '
+                        'again (a few seconds).\n'
+                        'Kept: your ROMs, overlays, SD cards, saves, calibrations and all your settings.\n'
+                        'Backed up: your settings, as system/settings_before_%s.json.\n'
+                        'Replaced: the program and the included game Last Human (ROMs and overlay; its saves stay). '
+                        'New files of the release are added.\n'
+                        'Later: nothing is changed.' % (new, new)))
+                    upd_b.configure(text='Install & restart', state='normal')
+                self.root.after(0, ready)
             threading.Thread(target=work, daemon=True).start()
+        upd_b = deck._button(foot, 'Update now', update_now, self, on=True)
         if not why:
-            deck._button(foot, 'Update now', update_now, self, on=True).pack(side='left')
+            upd_b.pack(side='left')
         deck._button(foot, 'Open GitHub', lambda: done(True), self, on=bool(why)).pack(side='left', padx=(6, 0))
         deck._button(foot, 'Later', done, self).pack(side='right')
         t.protocol('WM_DELETE_WINDOW', done); t.bind('<Escape>', lambda ev: done())

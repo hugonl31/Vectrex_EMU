@@ -35,6 +35,15 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Tested: two app instances on one PC (found, joined, 1056 frames, no desync); a Linux PC's announcement listed on
   Windows.
 
+**The one-click update**
+* A download that stalls (nothing for 15 s), breaks off or crawls (under 250 KB/s for 8 s) picks up where it stopped
+  over a new connection (an HTTP Range request) - usually a faster GitHub server. The window shows MB, percent and
+  speed.
+* When the download is complete the same window says what Install & restart does and what happens to your files:
+  ROMs, overlays, SD cards, saves, calibrations and all settings are kept, the settings backed up as
+  system/settings_before_<version>.json, only the program and the included Last Human replaced. Later changes
+  nothing (the download is removed).
+
 **Fixed**
 * The VIA's timer 1 started at $FFFF (the longest wait) ran out at once instead of after 65537 cycles - VecLink V2's
   transfer timeout used it. No other tested game changed (the state frame for frame on Last Human, Armor Attack,

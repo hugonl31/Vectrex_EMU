@@ -4260,7 +4260,7 @@ class App:
             ports = getattr(self.run, 'ports', None) or {}
             if ports.get(mine) != k:
                 return 'TAKE PORT'
-        me = (getattr(self, 'gamer', '') or 'YOU') if getattr(self, 'gamer_ok', False) else 'YOU'
+        me = (getattr(self, 'gamer', '') or 'YOU') if (getattr(self, 'gamer_ok', False) or getattr(self, 'gamer_local', False)) else 'YOU'
         net = getattr(self, 'net', None) or getattr(self, 'net_pending', None)
         peer = (getattr(net, 'peer_name', '') or 'PLAYER %d' % (2 if role == 'host' else 1)).upper()
         names = {'host': me if role == 'host' else peer, 'join': me if role == 'join' else peer}
@@ -5591,6 +5591,8 @@ class App:
             self.net_flash('ONLINE: THE NETWORK REFUSED', str(e)[:34].upper(), secs=8); return
         net.me_name = self.gamer if getattr(self, 'gamer_ok', False) else ''
         net.me_key = getattr(self, 'player_key', '') if net.me_name else ''
+        if not net.me_name and getattr(self, 'gamer_local', False) and server is None:   # (a direct game: the name
+            net.me_name = self.gamer                            #  used on this network only - no key, no meeting point)
         self.net_pending, self.net_role, self.net_direct = net, role, bool(direct_port)
         if self.speech != 'off' and a.rom:                      # (online: port 2 is the other player's - the joystick in)
             self.restart(a.rom)
@@ -5857,10 +5859,11 @@ class App:
                     'This is a game for one player: player 2 sees the same game, but their controller does nothing '
                     'in it. Choose another game to play together.')
         return None
-    def name_ready(self, then):
+    def name_ready(self, then, lan=False):
         """online: this player's name first (asked once, reserved at the meeting point) - True when it is there; else
-        the name window opens and then() follows it"""
-        if getattr(self, 'gamer', '') and getattr(self, 'gamer_ok', False):
+        the name window opens and then() follows it. lan: the Online window - a name used on this network only (the
+        meeting point did not answer: a LAN without internet) is enough there"""
+        if getattr(self, 'gamer', '') and (getattr(self, 'gamer_ok', False) or (lan and getattr(self, 'gamer_local', False))):
             return True
         self.name_window(then)
         return False
@@ -5917,8 +5920,21 @@ class App:
             elif res:
                 msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9 _ -')
             else:
-                msg.configure(text='The meeting point did not answer. Try again in a moment.')
+                msg.configure(text='The meeting point did not answer (no internet?). Try again in a moment - or, to play '
+                                   'on this network now, Use on this network.')
+                if not local_b.winfo_ismapped():
+                    local_b.pack(side='left', padx=(6, 0))
+        def local():                                            # (a LAN without internet - the owner, 2026-11-13: the name
+            name = netplay.gamer_name(nv.get())                 #  for this network, this session; reserved once the
+            if not name:                                        #  meeting point answers again)
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
+            self.gamer, self.gamer_local = name, True; self.save_settings()
+            close()
+            self.flash('YOUR PLAYER NAME:', name, 'ON THIS NETWORK', secs=3)
+            if then:
+                self.root.after(50, then)
         deck._button(foot, 'Take this name', take, self, on=True).pack(side='left')
+        local_b = deck._button(foot, 'Use on this network', local, self)
         deck._button(foot, 'Cancel', close, self).pack(side='right')
         e.bind('<Return>', lambda ev: take())
         deck.place(t, 'name', self)
@@ -6496,7 +6512,7 @@ class App:
         if self.veclink_on() and not getattr(self, 'vl_online', False):   # (the VecLink cable in: two windows here, not online)
             return self.flash('ONLINE: NOT WITH THE VECLINK CABLE IN', 'ONLINE > TEST VECLINK ON THIS PC: OFF', secs=4)
         import netplay
-        if not self.name_ready(lambda: self.online_window(what)):
+        if not self.name_ready(lambda: self.online_window(what), lan=True):
             return
         if what == 'host' and not self.net_busy():
             self.net_begin('host')
@@ -6629,7 +6645,8 @@ class App:
                        bd=0).pack(fill='x', pady=(4, 0))
         nr = tk.Frame(st, bg=bg); nr.pack(fill='x', pady=(6, 0))
         tk.Label(nr, text='Player name: ', fg=dim, bg=bg, font=f9).pack(side='left')
-        tk.Label(nr, text=self.gamer if self.gamer_ok else '(not chosen yet)', fg=deck.HI, bg=bg, font=f9).pack(side='left')
+        tk.Label(nr, text=self.gamer if self.gamer_ok else (self.gamer + ' (this network only)') if getattr(self, 'gamer_local', False)
+                 else '(not chosen yet)', fg=deck.HI, bg=bg, font=f9).pack(side='left')
         deck._button(nr, 'Change name', lambda: self.name_window(change=True), self, small=True).pack(side='left', padx=(8, 0))
         uv = tk.BooleanVar(value=self.update_check)
         upd_note = tk.Label(st, text='Online play needs everyone on the same version:\nwithout the check you may miss one.',

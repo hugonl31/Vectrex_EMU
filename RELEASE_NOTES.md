@@ -34,8 +34,11 @@ build workflow replaces that release (title = the version, marked Latest) with t
   in the join box still works. Two PCs with one cable or a switch are enough (without a router Windows gives each an
   automatic address after a minute; the announcement reaches those too). The Online window's VecLink game box makes a
   LAN game a VecLink game.
+* Names on a LAN: the joiner now sees the host's name too (it comes with the game; before: PLAYER 1). A player
+  without a name yet and no internet - a LAN on its own - was stuck at the name window (the meeting point reserves the
+  names): Use on this network takes the name for games on this network until it can be reserved.
 * Tested: two app instances on one PC (found, joined, 1056 frames, no desync); a Linux PC's announcement listed on
-  Windows.
+  Windows; names both ways with no meeting point.
 
 **The one-click update**
 * A download that stalls (nothing for 15 s), breaks off or crawls (under 250 KB/s for 8 s) picks up where it stopped

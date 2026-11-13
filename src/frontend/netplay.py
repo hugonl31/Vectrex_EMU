@@ -415,6 +415,8 @@ class NetPlay:
                             self._send(ord('N'), VERSION_NO); time.sleep(0.02)
                         return 'version'
                     self.delay = int(g.get('delay', DELAY))
+                    if not self.peer_name and g.get('host_name'):   # (a direct game - a LAN: the host's name comes with
+                        self.peer_name = gamer_name(str(g['host_name'])) or ''   #  its game, as the joiner's with its hello)
                     self.reset()
                     return g
                 elif p[0] == ord('V'):                  # (the host refused: another version)

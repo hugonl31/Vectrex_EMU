@@ -198,7 +198,8 @@ TOPICS = [
          "The meeting point keeps it for you - a secret key in your settings makes it yours (only a scrambled copy of the "
          "key is kept there, no address) - so nobody else can take it; other players see it in the game room and the "
          "chat. Online settings > Change name takes a new one and frees the old. A name unused for a year is free again; "
-         "settings lost, the name too (take a new one)."),
+         "settings lost, the name too (take a new one). No internet (a LAN on its own): the meeting point can not "
+         "answer - Use on this network takes the name for games on this network until it can be reserved."),
 ('item', 'Online settings...', "The meeting point (both players need the same one; Default puts back the emulator's own), "
          "hosting without it - on a LAN, or with UDP port 7744 forwarded to this PC - and the ONLINE row in the on-screen "
          "display (the round trip in milliseconds, RELAY when the meeting point passes the game on). Check GitHub for a "

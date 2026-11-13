@@ -7878,7 +7878,8 @@ class App:
         if not deck.dialog('question', 'Reset UVMC2 calibration',
                            'Put the UVMC2 calibration that comes with the emulator back on the SD card?' + chr(10) + chr(10) +
                            path + chr(10) + chr(10) + 'The current file is kept as uvm2.cfg.bak.',
-                           parent=self.root, buttons=('Reset', 'Cancel')):
+                           parent=self.root, yesno=True, buttons=('Reset', 'Cancel')):   # (Cancel, Esc and the
+            #  window's x leave the card's file as it is)
             return
         try:
             if os.path.isfile(path):

@@ -6,7 +6,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.6.2
 - Full screen: the strip below the picture lines up as in the window
-- A UVMC2 game loaded while the Vectrex is on skips the Vectrex intro
+- A game loaded while the Vectrex is on skips the logo, as after RESET
 - Buttons held while loading reach the game (Last Human: 2+3 = calibration)
 
 ## v1.6.1

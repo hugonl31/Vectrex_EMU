@@ -8,8 +8,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 **Window and ROM browser**
 * Full screen: the OSD, P2 PORT, the cartridge, RESET and the knob now sit where they do in the window, only
   bigger. The OSD's text was 20 % larger in full screen, which widened the strip and pushed its pieces outwards.
-* A UVMC2 game loaded while the Vectrex is already on (the ROM browser, Recent games) starts at once with its
-  own start-up, without the Vectrex intro again. Switching on still plays the intro.
+* A game loaded while the Vectrex is already on (the ROM browser, Recent games) starts as after RESET: the
+  BIOS's warm start, no VECTREX logo and tune again - a 6809 game shows its title screen at once, a UVMC2 game
+  its own start-up. Switching on still plays the whole intro.
 * Buttons held while a game is loaded reach the game: hold buttons 2 + 3 and load Last Human (UVMC2) to open its
   calibration screen. Loading with the controller's button 4 keeps only that button (and the stick) from the
   game until it is let go. At a cold power-on the buttons must be held until the intro has ended.

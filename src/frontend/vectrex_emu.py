@@ -2117,7 +2117,8 @@ class Runner(threading.Thread):
                     (jx, jy, btn), p2 = self.demo_input(), (0, 0, 0)
                 else:
                     (jx, jy, btn), p2 = self.inp.read()                 # (both players)
-                fl, self.flags = self.flags, 0
+                fl, self.flags = self.flags, getattr(self, 'then_flags', 0)
+                self.then_flags = 0                     # (a flag for the frame after: App.restart's RESET)
                 if self.net is not None:                # online: both players' input for this frame (the RESET button
                     req, self.port_req = self.port_req, 0              #  too: it reaches both machines on one frame;
                     got = self.net.exchange((jx, jy, btn, (fl & 4) | req))   #  so does a 'take port', 0x10 / 0x20)
@@ -6664,11 +6665,12 @@ class App:
             run.ports = {'host': 1, 'join': 2}                  # (one player a port, always: a resting stick drifts)
         if run.power:
             run.flags = self.power_flags()
-            if old.power and not ng and rom and rom.lower().endswith('.um2'):
-                run.flags |= 16                                 # (the Vectrex was on already: a UVMC2 game swapped in
-                                                                #  starts at once, its own start-up, no Vectrex intro
-                                                                #  again - the owner, 2026-11-13. Buttons 2 + 3 held at
-                                                                #  the load reach it then: Last Human's calibration)
+            if old.power and not ng:                            # (the Vectrex was on already: the new cartridge starts
+                run.flags = 8                                   #  as after RESET - the BIOS's warm start: a 6809 game's
+                run.then_flags = 4                              #  title screen at once, a UVMC2 game its own start-up;
+                                                                #  no VECTREX logo and tune again - the owner, 2026-11-13.
+                                                                #  Buttons 2 + 3 held at the load reach the game: Last
+                                                                #  Human's calibration)
         self.run = run
         self.lines = []; self.last_f = 0
         if self.ren:                                            # the old game's picture fades in the phosphor

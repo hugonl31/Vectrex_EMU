@@ -1024,6 +1024,10 @@ void vecx_reset (void)
 	for (r = 0; r < 16; r++) {
 		snd_regs[r] = 0;
 		e8910_write(r, 0);
+		psg_write (r, 0);                   /* (the sound the player hears: the AY's /RESET is the console's reset -
+		                                       every register 0. Without it a RESET kept the old periods: a UVMC2 game,
+		                                       whose BIOS does not clear the chip again, played its lead 256 periods
+		                                       too low until it wrote that register itself - the owner, 2026-11-13) */
 	}
 
 	/* input buttons */

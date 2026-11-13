@@ -8,6 +8,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - Full screen: the strip below the picture lines up as in the window
 - A game loaded while the Vectrex is on skips the logo, as after RESET
 - Buttons held while loading reach the game (Last Human: 2+3 = calibration)
+- Fixed: UVMC2 music too low after RESET or a ROM swap (Last Human)
 
 ## v1.6.1
 - Last Human v1.3.9: calibrated for a standard Vectrex

@@ -14,7 +14,12 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Buttons held while a game is loaded reach the game: hold buttons 2 + 3 and load Last Human (UVMC2) to open its
   calibration screen. Loading with the controller's button 4 keeps only that button (and the stick) from the
   game until it is let go. At a cold power-on the buttons must be held until the intro has ended.
-* Online: core and online code as v1.6.1 (NET_VER 10).
+* Fixed: after RESET (or a game loaded while the Vectrex is on) the sound chip kept its old registers in the part
+  you hear, where a real Vectrex's reset clears them. A UVMC2 game, whose BIOS does not clear the chip again,
+  could then play notes far too low - Last Human's title melody 256 periods low until the tune wrote that
+  register itself (about 25 seconds). 6809 games were not affected (their BIOS clears the chip).
+* Online: v1.6.2 plays with v1.6.1 (NET_VER 10): the fix changes only the sound, the games run the same (checked
+  frame by frame).
 
 ## v1.6.1
 

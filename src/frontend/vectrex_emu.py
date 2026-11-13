@@ -1778,13 +1778,10 @@ class Core:
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
             env['VT_ZEROTAU'] = '%.3f,%.3f' % (unit.get('zerotx', UNIT_BEAM['zerotx']), unit.get('zeroty', UNIT_BEAM['zeroty']))
             env['VT_DACBITS'] = ','.join('%.5f' % unit.get('dac%d' % b, 0.0) for b in range(4))
-        if not ideal and rom.lower().endswith(('.img', '.pit')):
-            # (a PiTrex drives the beam with short zero pulses: the slow reference model (0.38) left its lines broken.
-            # Not a UVMC2 any more (2026-11-13): the zero test cartridge on the owner's Vectrex (testcart/zero_test)
-            # draws both Last Human's zero and the UVMC2 SDK's sharp at 0-8, best at 3, as this model does - the fast
-            # model (0.597) only drew UVMC2 games clean with the SDK zero at 32-35, a value no real console wants;
-            # with the shipped calibration's zero 3 they draw clean with the console's own reference)
-            env.pop('VT_ZREFK', None)
+        # (every cartridge, the UVMC2 and the PiTrex too, with the console's own zero reference - VT_ZREFK as the unit
+        # sets it: until 2026-11-13 those two got a faster one (0.597) for their short zero pulses. The zero test
+        # cartridge (testcart/zero_test) on the owner's Vectrex drew Last Human's zero and the UVMC2 SDK's sharp at
+        # 0-8, best at 3, as this model does; the fast one needed 32-35, which no real console wants)
         # cartridge hardware: auto = the board by the ROM's size (64K PB6, Vectorblade's PB6 + IRQ with its
         # flash, the 512K latch flash, Sean Kelly's Multi-Cart latch), or one board by name; off = a
         # bone-stock Vectrex with a plain 32K cartridge

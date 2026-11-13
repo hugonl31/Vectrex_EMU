@@ -10,7 +10,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - Buttons held while loading reach the game (Last Human: 2+3 = calibration)
 - Fixed: UVMC2 music too low after RESET or a ROM swap (Last Human)
 - Config > Ports: Reset UVMC2 calibration to the shipped one
-- UVMC2 games: the zero reference of a real Vectrex (calibration zero 3)
+- UVMC2 and PiTrex: the zero reference of a real Vectrex (UVMC2 zero 3)
 - Last Human v1.4.0: ZERO REF +03 and TEXT +00 out of the box, both editions
 
 ## v1.6.1

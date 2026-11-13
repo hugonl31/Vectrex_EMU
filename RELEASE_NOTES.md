@@ -25,6 +25,15 @@ build workflow replaces that release (title = the version, marked Latest) with t
   0-8, best at 3 - the emulator's former UVMC2 model only drew clean with the SDK zero at 32-35, which no real
   console wants. The UVMC2 calibration that comes with the emulator has zero 3 now (was 34); a card calibrated
   before: Config > Ports > Reset calibration (UVMC2), or the UVMC2 calibration screen's ZERO to 3.
+**Last Human v1.4.0 (both editions bundled)**
+* The calibration screen starts at ZERO REF +03 and TEXT +00 on both editions: +03 is where the zero test
+  cartridge drew sharpest on the owner's real Vectrex (for Last Human's zero and the UVMC2 SDK's alike), and the
+  TEXT scale moved by one so +00 is straight (v1.3.9's -01). Saved calibrations stay as saved; button 1 on the
+  calibration screen gives the new defaults.
+* Checked: the UVMC2 edition still plays exactly like the 6809 cartridge (lockstep on every recorded run, 0
+  differences; the same VIA writes).
+* Online, Last Human needs the same game version on both sides.
+
 * Online: v1.6.2 plays with v1.6.1 (NET_VER 10): these changes touch only the sound and the picture, the games run the same (checked frame by frame).
 
 ## v1.6.1

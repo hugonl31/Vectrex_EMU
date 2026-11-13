@@ -4298,7 +4298,10 @@ class App:
             return True
         if k != 2:
             return False
-        self.p2_hold_end()                                      # (a click: the next device when let go; held: the menu -
+        if Core.veclink:                                        # (the VecLink cable in: no device to choose - it shows
+            self.set_speech('off')                              #  only while a VecLink game or test runs: said so)
+            return True
+        self.p2_hold_end()                                     # (a click: the next device when let go; held: the menu -
         self.p2_hold = {'xy': (e.x_root, e.y_root), 'menu': None}   #  the owner, 2026-11-13: tapping through all of
         self.p2_hold['job'] = self.root.after(P2_HOLD_MS, self.port2_menu)   #  them was cumbersome)
         return True

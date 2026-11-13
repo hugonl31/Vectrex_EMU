@@ -20,7 +20,12 @@ build workflow replaces that release (title = the version, marked Latest) with t
   register itself (about 25 seconds). 6809 games were not affected (their BIOS clears the chip).
 * Config > Ports > Reset calibration (UVMC2): puts the UVMC2 calibration that comes with the emulator back on the
   SD card (config/uvm2.cfg), for a card whose calibration went wrong; the old file is kept as uvm2.cfg.bak.
-* Online: v1.6.2 plays with v1.6.1 (NET_VER 10): these changes touch only the sound, the games run the same (checked frame by frame).
+* UVMC2 games now get the zero reference of a real Vectrex (as 6809 cartridges always did). The new zero test
+  cartridge (testcart/zero_test) on the owner's Vectrex: Last Human's zero and the UVMC2 SDK's both draw sharp at
+  0-8, best at 3 - the emulator's former UVMC2 model only drew clean with the SDK zero at 32-35, which no real
+  console wants. The UVMC2 calibration that comes with the emulator has zero 3 now (was 34); a card calibrated
+  before: Config > Ports > Reset calibration (UVMC2), or the UVMC2 calibration screen's ZERO to 3.
+* Online: v1.6.2 plays with v1.6.1 (NET_VER 10): these changes touch only the sound and the picture, the games run the same (checked frame by frame).
 
 ## v1.6.1
 

@@ -1698,9 +1698,9 @@ def ensure_sd_dir(d):
 
 
 # the UVMC2's calibration as it comes with the emulator (package/uvmc2/config/uvm2.cfg: the owner's, made on this
-# emulator's console, 2026-11-03) - Config > Ports > Reset UVMC2 calibration writes it back to the card. The SDK's
+# emulator's console, 2026-11-03; zero 3 since 2026-11-13: what a real Vectrex wants, the zero test cartridge) - Config > Ports > Reset UVMC2 calibration writes it back to the card. The SDK's
 # file: its lines, padded with spaces to 512 bytes (the last a newline)
-UVM2_CFG_DEFAULT = ('scale 160\nt1_tail_q8 752\nzero 34\nbright 80\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
+UVM2_CFG_DEFAULT = ('scale 160\nt1_tail_q8 752\nzero 3\nbright 80\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
                     'neg_rate_y 0\ndrift_x 0\ndrift_y 0\naspect_q8 268\nwin_x 13500\nwin_y 14750\n').encode().ljust(511, b' ') + b'\n'
 
 
@@ -1778,11 +1778,12 @@ class Core:
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
             env['VT_ZEROTAU'] = '%.3f,%.3f' % (unit.get('zerotx', UNIT_BEAM['zerotx']), unit.get('zeroty', UNIT_BEAM['zeroty']))
             env['VT_DACBITS'] = ','.join('%.5f' % unit.get('dac%d' % b, 0.0) for b in range(4))
-        if not ideal and rom.lower().endswith(('.um2', '.img', '.pit')):
-            # (a UVMC2 / PiTrex drives the beam with short zero pulses: the slow reference model (0.38) leaves
-            # their lines broken and slanted where the real console draws them clean - photo of Quake on a UVMC2.
-            # Last Human's UVMC2 edition too: with the slow model its SDK-drawn screens (the UVMC2 calibration, the
-            # cinematics) came out wrong for the card's uvm2.cfg - the owner, 2026-11-13)
+        if not ideal and rom.lower().endswith(('.img', '.pit')):
+            # (a PiTrex drives the beam with short zero pulses: the slow reference model (0.38) left its lines broken.
+            # Not a UVMC2 any more (2026-11-13): the zero test cartridge on the owner's Vectrex (testcart/zero_test)
+            # draws both Last Human's zero and the UVMC2 SDK's sharp at 0-8, best at 3, as this model does - the fast
+            # model (0.597) only drew UVMC2 games clean with the SDK zero at 32-35, a value no real console wants;
+            # with the shipped calibration's zero 3 they draw clean with the console's own reference)
             env.pop('VT_ZREFK', None)
         # cartridge hardware: auto = the board by the ROM's size (64K PB6, Vectorblade's PB6 + IRQ with its
         # flash, the 512K latch flash, Sean Kelly's Multi-Cart latch), or one board by name; off = a

@@ -4,6 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.6.4
+- Get games & extras: the items download side by side
+- Setup: the window grows with its rows (nothing cut off)
+
 ## v1.6.3
 - Online > Test VecLink on this PC: a 2nd Vectrex window, by cable
 - VecLink: Berzerk Arena's link game; test your own VecLink code

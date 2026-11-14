@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.4
+
+* Get games & extras: each item downloads on its own, side by side - another one can be started while one
+  is still coming in, and Download all fetches them all at once (the bar: their average). Only the item that is
+  downloading has its buttons off.
+* Setup: the window follows its rows - after Download everything missing the bottom (Keys and start, the buttons)
+  was cut off; it grows (or scrolls, on a screen too small for it).
+
 ## v1.6.3
 
 **VecLink: two Vectrexes, one cable**

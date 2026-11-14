@@ -1857,12 +1857,27 @@ def setup_window(app, first=True):
     t.update_idletasks()
     r = a.root
     x0, y0, x1, y1 = work_area(r)
-    bw, bh = body.winfo_reqwidth(), body.winfo_reqheight() + 4
-    room = (y1 - y0) - top.winfo_reqheight() - foot.winfo_reqheight() - int(60 * t.winfo_fpixels('1i') / 96.0)   # (the title bar, a margin)
-    if bh > room:                                       # (not all of it fits: the boxes scroll)
-        sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
-        bh = max(200, room)
-    cv.configure(width=bw, height=bh, scrollregion=(0, 0, bw, body.winfo_reqheight() + 4))
+    def fit(e=None):
+        """the window as big as the boxes (up to the desktop's height - then they scroll); again whenever they grow
+        or shrink - after Download everything missing the rows change and the bottom was cut off"""
+        bw, bh = body.winfo_reqwidth(), body.winfo_reqheight() + 4
+        room = (y1 - y0) - top.winfo_reqheight() - foot.winfo_reqheight() - int(60 * t.winfo_fpixels('1i') / 96.0)   # (the title bar, a margin)
+        if bh > room:                                   # (not all of it fits: the boxes scroll)
+            if not sbar.winfo_ismapped():
+                sbar.pack(side='right', fill='y', padx=(0, 3), pady=3)
+            bh = max(200, room)
+        elif sbar.winfo_ismapped():
+            sbar.pack_forget()
+        if (int(cv.cget('width')), int(cv.cget('height'))) != (bw, bh):
+            cv.configure(width=bw, height=bh)
+        cv.configure(scrollregion=(0, 0, bw, body.winfo_reqheight() + 4))
+        if e is not None:                               # (grown: kept on the desktop)
+            t.update_idletasks()
+            th = t.winfo_reqheight()
+            if t.winfo_rooty() + th > y1 - 40:
+                t.geometry('+%d+%d' % (t.winfo_rootx(), max(y0, y1 - th - 40)))
+    fit()
+    body.bind('<Configure>', fit)
     t.update_idletasks()
     tw, th = t.winfo_reqwidth(), t.winfo_reqheight()
     x = r.winfo_rootx() + max(0, (r.winfo_width() - tw) // 2)

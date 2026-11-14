@@ -427,9 +427,17 @@ def place(key, name, data, px_dir):
     return os.path.join(px_dir, *parts)
 
 
+_UNPACK = threading.RLock()             # (downloads run side by side; unpacking one at a time: _OWN is shared)
+
+
 def unpack(key, data, px_dir, name='download', depth=0):
     """a download (a zip - zips in it too, for the games - or one file named `name`) where the emulator looks:
     (files added, files kept)"""
+    with _UNPACK:
+        return _unpack(key, data, px_dir, name, depth)
+
+
+def _unpack(key, data, px_dir, name='download', depth=0):
     global _OWN
     if depth == 0 and key in ('games', 'homebrew'):
         _OWN = _owned()
@@ -446,7 +454,7 @@ def unpack(key, data, px_dir, name='download', depth=0):
             n = n[len(strip):] if strip and n.startswith(strip) else n
             d = z.read(info)
             if key in ('games', 'homebrew') and n.lower().endswith('.zip') and depth < 2:
-                a, k = unpack(key, d, px_dir, n, depth + 1)          # (a game in its own zip)
+                a, k = _unpack(key, d, px_dir, n, depth + 1)          # (a game in its own zip)
             else:
                 out = place(key, n, d, px_dir)
                 a = _write_new(out, d) if out else 0
@@ -523,8 +531,10 @@ def window(app, only=None, parent=None):
              fg=deck.DIM, bg=deck.TOPBG, font=f9, anchor='w').pack(fill='x', padx=14, pady=(0, 8))
     bx = tk.Frame(t, bg=deck.PANEL, highlightthickness=1, highlightbackground=deck.EDGE); bx.pack(fill='x', padx=10, pady=(8, 0))
     grid = tk.Frame(bx, bg=deck.PANEL); grid.pack(fill='x', padx=10, pady=6)
-    status, helps, buttons = {}, {}, []
-    st = dict(busy=False, frac=0.0, msgs={}, done=True, failed=set(), old_shown=False)
+    status, helps, item_b = {}, {}, {}
+    # each item downloads on its own, side by side (the owner, 2026-11-14: one at a time was slow on a fresh install):
+    # run - the items downloading now; frac - each one's share done (the bar: their average)
+    st = dict(run=set(), frac={}, msgs={}, failed=set(), old_shown=False, polling=False)
 
     def show_state(key, extra=''):
         ok, txt = state(key, a)
@@ -550,37 +560,38 @@ def window(app, only=None, parent=None):
         if fs:
             show_state(key, '  (%d added)' % added)
 
-    def run(keys):
-        for key in keys:
-            try:
-                st['frac'] = 0.0
-                added, kept = get_item(key, lambda d, n: st.update(frac=(d / n) if n else 0.0),
-                                       lambda m, key=key: st['msgs'].__setitem__(key, m), a.px_dir)
-                st['msgs'][key] = 'done: %d added' % added + (', %d kept' % kept if kept else '')
-            except Exception:   # noqa (no network, the sites changed: got by hand)
-                st['msgs'][key] = 'not found: get it yourself'
-                st['failed'].add(key)
-        st['done'] = True
+    def prog(key):
+        return lambda d, n: st['frac'].__setitem__(key, (d / n) if n else 0.0)
+
+    def run(key):
+        try:
+            added, kept = get_item(key, prog(key), lambda m: st['msgs'].__setitem__(key, m), a.px_dir)
+            st['msgs'][key] = 'done: %d added' % added + (', %d kept' % kept if kept else '')
+        except Exception:   # noqa (no network, the sites changed: got by hand)
+            st['msgs'][key] = 'not found: get it yourself'
+            st['failed'].add(key)
+        st['frac'][key] = 1.0
+        st['run'].discard(key)
 
     def use_old():
         """the PiTrex's files as they were last (the project's copy), until its sites have the new ones"""
-        if st['busy'] or not agreed(t):
+        if 'pitrex' in st['run'] or not agreed(t):
             return
         def go_old():
             try:
                 st['msgs']['pitrex'] = 'the older version...'
-                data = fetch(DRIVE_PITREX, lambda d, n: st.update(frac=(d / n) if n else 0.0))
+                data = fetch(DRIVE_PITREX, prog('pitrex'))
                 if not _usable('pitrex', data):
                     raise IOError('not a PiTrex SD card')
                 added, kept = unpack('pitrex', data, a.px_dir)
                 st['msgs']['pitrex'] = 'done: %d added (%s)' % (added, DRIVE_PITREX_NAME)
-                st['failed'].discard('pitrex')
             except Exception:   # noqa
                 st['msgs']['pitrex'] = 'not found: get it yourself'
-            st['done'] = True
-        begin()
+                st['failed'].add('pitrex')
+            st['frac']['pitrex'] = 1.0
+            st['run'].discard('pitrex')
+        begin(['pitrex'])
         threading.Thread(target=go_old, daemon=True).start()
-        poll()
 
     def poll():
         if not t.winfo_exists():
@@ -592,37 +603,42 @@ def window(app, only=None, parent=None):
                 show_state(k, '  (' + m + ')')
         for k in list(st['failed']):
             by_hand(k)
+        fr = list(st['frac'].values())
         cv.delete('all')
-        cv.create_rectangle(0, 0, 260 * st['frac'], 12, fill=deck.G, width=0)
-        if st['done']:
-            st['busy'] = False
-            for b in buttons:
-                b.configure(state='normal')
+        cv.create_rectangle(0, 0, 260 * (sum(fr) / len(fr) if fr else 0.0), 12, fill=deck.G, width=0)
+        for k, bs in item_b.items():                    # (an item's buttons: off only while it downloads)
+            for b in bs:
+                b.configure(state='disabled' if k in st['run'] else 'normal')
+        if not st['run']:
+            st['polling'] = False
             return
         t.after(100, poll)
 
-    def begin():
-        st.update(busy=True, done=False, frac=0.0, msgs={})
-        for b in buttons:
-            b.configure(state='disabled')
+    def begin(keys):
+        if not st['run']:                               # (a new round: the bar from empty)
+            st['frac'].clear()
+        for k in keys:
+            st['run'].add(k); st['frac'][k] = 0.0; st['msgs'].pop(k, None)
+            st['failed'].discard(k); helps[k].configure(text='')
+            for b in item_b[k]:
+                b.configure(state='disabled')
+        if not st['polling']:
+            st['polling'] = True
+            t.after(100, poll)
 
     def start(keys):
-        if st['busy'] or not keys:
+        keys = [k for k in keys if k not in st['run']]  # (one already downloading: left to finish)
+        if not keys:
             return
-        st['failed'] -= set(keys)
+        begin(keys)
         for k in keys:
-            helps[k].configure(text='')
-        begin()
-        threading.Thread(target=run, args=(keys,), daemon=True).start()
-        poll()
+            threading.Thread(target=run, args=(k,), daemon=True).start()
 
     def one(key):
-        if not st['busy'] and agreed(t):
+        if key not in st['run'] and agreed(t):
             start([key])
 
     def download_all():                                 # (all that is missing - else all)
-        if st['busy']:
-            return
         if not agreed(t):
             return
         keys = [k for k in (only or [s[0] for s in SOURCES]) if not state(k, a)[0]] or list(only or [s[0] for s in SOURCES])
@@ -637,9 +653,10 @@ def window(app, only=None, parent=None):
         s.grid(row=r, column=4, sticky='w', padx=(10, 0))
         status[key] = s
         b = deck._button(grid, 'Download', lambda k=key: one(k), a, small=True)
-        b.grid(row=r, column=5, sticky='e', padx=(6, 0)); buttons.append(b)
-        b = deck._button(grid, 'Add file...', lambda k=key: add_file(k), a, small=True)
-        b.grid(row=r, column=6, sticky='e', padx=(6, 0)); buttons.append(b)
+        b.grid(row=r, column=5, sticky='e', padx=(6, 0))
+        b2 = deck._button(grid, 'Add file...', lambda k=key: add_file(k), a, small=True)
+        b2.grid(row=r, column=6, sticky='e', padx=(6, 0))
+        item_b[key] = (b, b2)
         h = tk.Label(grid, text='', fg=deck.WARN, bg=deck.PANEL, font=f8, anchor='w', justify='left', wraplength=640, cursor='hand2')
         h.grid(row=r + 1, column=1, columnspan=5, sticky='w')
         h.bind('<Button-1>', lambda e, p=page: webbrowser.open(p))
@@ -651,7 +668,7 @@ def window(app, only=None, parent=None):
              anchor='w').pack(fill='x', padx=14, pady=(6, 2))
     bar = tk.Frame(t, bg=deck.BG); bar.pack(fill='x', padx=10, pady=10)
     go = deck._button(bar, 'Download all', download_all, a, on=True)
-    go.pack(side='left'); buttons.append(go)
+    go.pack(side='left')
     cv = tk.Canvas(bar, width=260, height=10, bg=deck.PANEL, highlightthickness=1, highlightbackground=deck.EDGE)
     cv.pack(side='left', padx=(12, 0))
     deck._button(bar, 'Close', t.destroy, a).pack(side='right')

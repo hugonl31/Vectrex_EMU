@@ -2354,7 +2354,7 @@ void retro_run (void)
 		  vt_set_analog (24, lx); vt_set_analog (25, ly); } vt_set_analog (26, trig ? 1.0 : 0.0);
 	}
 #ifndef VX_EMUVR
-	if (vx_paused) {                            /* (paused: no emulation, silence, the picture as it was - the deck says so) */
+	if (vx_paused || br_open) {                 /* (paused - or the ROM browser open: no emulation, silence, the picture as it was) */
 		static int16_t z[2 * 2048]; int want = (int) (44100.0 / opt_rate) + 1; if (want > 2048) want = 2048; audio_cb (z, (size_t) want);
 		frame_out (0, NULL, NULL, NULL); return; }
 #endif

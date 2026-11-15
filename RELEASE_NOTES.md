@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.5
+
+* Fixed: the room's light (on an overlay's clear colours and print, on the glass without an overlay) was added to the
+  picture as screen values, not as light - the faint light of the phosphor (the trail, the glow, the lines' soft
+  edges) looked stronger the more room light lay under it. The two are now added as light: the phosphor looks the same
+  on black, through an overlay and at any Room light.
+* The phosphor trail is 1.5x brighter: on black it now looks as it did through an overlay before.
+
 ## v1.6.4
 
 * Get games & extras: each item downloads on its own, side by side - another one can be started while one

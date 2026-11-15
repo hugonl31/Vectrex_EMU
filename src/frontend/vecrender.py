@@ -1291,7 +1291,8 @@ void main() {
                 add += lk * (m.g * (1.0 + 0.018 * gr) * vec3(0.95, 0.96, 1.0) + 0.88 * (0.98 * sharp + m.r) * LIGHTC);   // (m.g: the phosphor's light, roomlight.maps)
             }
         }
-        c = (c + add) * g;
+        c = sqrt(c * c + add * add) * g;                    // (the room's light added as light, gamma 2: the phosphor's
+                                                             //  faint light the same at any room light, 2026-11-15)
         if (cse > 0.5) c += plastic(gd, tgt);
     }
     gl_FragColor = vec4(c, 1.0);
@@ -1630,18 +1631,18 @@ void main() {
 """
 
 ART_SHADER = b"""
-uniform sampler2D tex;
-uniform float pass, tint, room, print_;
+uniform sampler2D tex, scr;
+uniform float tint, room, print_;
+uniform vec2 ssz;
 void main() {
     vec4 o = texture2D(tex, gl_TexCoord[0].st);
     float filt = step(0.004, o.a) * (1.0 - step(0.996, o.a)), opq = step(0.996, o.a);
     vec3 hue = o.rgb / max(max(max(o.r, o.g), o.b), 0.02);       // (the filter's colour at full strength)
-    if (pass < 0.5) {
-        vec3 m = mix(vec3(1.0), hue * 1.15, tint * filt) * (1.0 - opq);
-        gl_FragColor = vec4(0.5 * m, 1.0);
-    } else
-        gl_FragColor = vec4(o.rgb * (filt * room + opq * print_), 1.0);
-}
+    vec3 m = mix(vec3(1.0), hue * 1.15, tint * filt) * (1.0 - opq);
+    vec3 d = texture2D(scr, gl_FragCoord.xy / ssz).rgb * m;      // the picture through the sheet
+    vec3 L = o.rgb * (filt * room + opq * print_);               // the room's light on it
+    gl_FragColor = vec4(sqrt(d * d + L * L), 1.0);              // (added as light, gamma 2 - not as screen values: the
+}                                                                //  trail looks the same at any room light, 2026-11-15)
 """
 
 # ------------------------------------------------------------------ mains hum wobble
@@ -1702,6 +1703,8 @@ PHOS_HOLD = 0.021               # a lit spot is at full brightness at least this
                                 #  longer for a slower game: see hold())
 PHOS_HOLD_OFF = 0.021           # trail off: a spot holds until the game draws it again, then is gone
 PHOS_A = ((0.1404, 0.0454), (0.0582, 0.350))   # the measured afterglow (share, time constant s)
+TRAIL_K = 1.5                                   # its brightness on the screen (the owner, 2026-11-15: the trail on black as
+                                                #  it looked through an overlay - the light now added as light everywhere)
 # the afterglow joins up: a fading spot (older than the hold) spreads to its neighbours each display frame,
 # keeping PHOS_GROW of its brightness, so the copies a moving object leaves join into one smooth trail -
 # the owner (2026-10-14): Mine Storm's big mothership leaves "a singular trail, not a bunch of snapshots";
@@ -1769,7 +1772,7 @@ float bright(float f) {                     // a spot's brightness by its freshn
     return %.4f * exp(-t / %.4f) + %.4f * exp(-t / %.4f);
 }
 float lum(vec3 c) { return dot(c, vec3(0.3, 0.5, 0.2)); }
-""" % (PHOS_A[0][0], PHOS_A[0][1], PHOS_A[1][0], PHOS_A[1][1])
+""" % (PHOS_A[0][0] * TRAIL_K, PHOS_A[0][1], PHOS_A[1][0] * TRAIL_K, PHOS_A[1][1])
 # The phosphor in two layers (the owner, 2026-10-29: trails that overlap must add up, not cut each other):
 #  - the lit layer (P, UPDATE_SHADER): a spot at full brightness while the beam's flash is held (hold()) - its light and
 #    freshness e^-age. Past its hold it leaves this layer.
@@ -2195,7 +2198,7 @@ class GLBloomRenderer(GLRenderer):
         self.tprog = program(TONE_SHADER, 'tone')
         self.u_ttex = GetUniform(self.tprog, b'tex')
         self.aprog = program(ART_SHADER, 'overlay')
-        self.u_a = {k: GetUniform(self.aprog, k.encode()) for k in ('tex', 'pass', 'tint', 'room', 'print_')}
+        self.u_a = {k: GetUniform(self.aprog, k.encode()) for k in ('tex', 'scr', 'ssz', 'tint', 'room', 'print_')}
         try:                                                    # (the overlay's scratches; without them if the
             self.gprog = program_vf(SCR_GEN_VS, SCR_GEN_FS, 'scratch maker')    #  card can not)
             self.u_g = {k: GetUniform(self.gprog, k.encode()) for k in
@@ -2520,22 +2523,26 @@ class GLBloomRenderer(GLRenderer):
                 self._ov_light(2, x0, y0, x1, y1, 0.6 * ovl)
                 gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
                 self.BindFB(GL_FRAMEBUFFER, self.out)
+        if not scr:                                             # (the screen before the overlay: the sheet's shader reads it)
+            gl.glBindTexture(GL_TEXTURE_2D, self.S[0]); gl.glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h)
         gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, w, h, 0, -1, 1)
         gl.glMatrixMode(GL_MODELVIEW)
-        gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, self.art[0]); gl.glColor4f(1, 1, 1, 1)
-        gl.glEnable(GL_BLEND)
-        self.UseProgram(self.aprog); self.Uniform1i(self.u_a['tex'], 0)
+        gl.glEnable(GL_TEXTURE_2D); gl.glColor4f(1, 1, 1, 1)
+        self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, self.S[0]); self.ActiveTexture(0x84C0)
+        gl.glBindTexture(GL_TEXTURE_2D, self.art[0])
+        gl.glDisable(GL_BLEND)                                  # (one pass: the picture through the sheet and the room's
+        self.UseProgram(self.aprog); self.Uniform1i(self.u_a['tex'], 0)   #  light on it, added as light)
+        self.Uniform1i(self.u_a['scr'], 1); self.Uniform2f(self.u_a['ssz'], float(w), float(h))
         rl = room_light(self.art_room)                          # (the print lit by the room as well)
         self.Uniform1f(self.u_a['tint'], self.art_tint); self.Uniform1f(self.u_a['room'], rl)
         self.Uniform1f(self.u_a['print_'], self.art_print * (max(0.0, self.art_room) / ART_ROOM_MID) ** ART_PRINT_POW)
-        for ps, (sf, df) in ((0.0, (0x0306, 0x0300)), (1.0, (1, 1))):    # (DST_COLOR, SRC_COLOR / ONE, ONE)
-            self.Uniform1f(self.u_a['pass'], ps)
-            gl.glBlendFunc(sf, df)
-            gl.glBegin(GL_QUADS)
-            for (u, v), (x, y) in (((0, 0), (x0, y0)), ((1, 0), (x1, y0)), ((1, 1), (x1, y1)), ((0, 1), (x0, y1))):
-                gl.glTexCoord2f(u, v); gl.glVertex2f(x, y)
-            gl.glEnd()
+        gl.glBegin(GL_QUADS)
+        for (u, v), (x, y) in (((0, 0), (x0, y0)), ((1, 0), (x1, y0)), ((1, 1), (x1, y1)), ((0, 1), (x0, y1))):
+            gl.glTexCoord2f(u, v); gl.glVertex2f(x, y)
+        gl.glEnd()
         self.UseProgram(0)
+        self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, 0); self.ActiveTexture(0x84C0)
+        gl.glEnable(GL_BLEND)
         gl.glDisable(GL_TEXTURE_2D)
         if ovl > 0:                                             # (the room's light on the sheet)
             self._ov_light(0, x0, y0, x1, y1, ovl)
@@ -3764,7 +3771,7 @@ class GLBloomRenderer(GLRenderer):
                 self.ActiveTexture(0x84C3); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0])
             self.ActiveTexture(0x84C0)
             (fa, ta), (fs, tsl) = PHOS_A
-            self.Uniform2f(u['amp'], fa, fs); self.Uniform2f(u['tau'], ta * ts, tsl * ts)
+            self.Uniform2f(u['amp'], fa * TRAIL_K, fs * TRAIL_K); self.Uniform2f(u['tau'], ta * ts, tsl * ts)
             self.Uniform2f(u['kd'], *((1.0, 1.0) if od is not None else (math.exp(-dt / (ta * ts)), math.exp(-dt / (tsl * ts)))))
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)
             self.Uniform1f(u['mul'], od if od is not None else 1.0)

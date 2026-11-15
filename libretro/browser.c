@@ -1,9 +1,9 @@
 /* browser.c - Vectrex_EMU's libretro core: the ROM browser (the desktop's: vectrex_emu.py scan_roms / browser_pad,
  * vecrender.py _browser) over the picture - its dark panel, the title band, the list with the chosen row as a bar, the
  * scroll buttons, LOAD with the cartridge going into the slot, the keys in a foot band, in the desktop's stroke font.
- * Opened with the RetroPad's SELECT ("ROM browser" in Quick Menu > Controls, any button). The stick or d-pad chooses
+ * Opened with its button (Ports > ROM browser button: L3 by default; "ROM browser" in Quick Menu > Controls). The stick or d-pad chooses
  * (held: it repeats), left / right turns a page, button 4 (A) opens a folder or loads the game, button 1 (Y) or B goes
- * up a folder - where none is left it closes, as SELECT does. Touch: a row chooses, the chosen one again loads; the
+ * up a folder - where none is left it closes, as its button does. Touch: a row chooses, the chosen one again loads; the
  * buttons as drawn; outside the panel closes. The game runs on without input meanwhile. It starts in the folder the
  * game was loaded from. Drawn on the CPU into an image of the sheet's size (only when it changes), laid over the picture
  * on the GPU (gpu_phos.c) or into the CPU's frame. Included by libretro_vx.c before retro_run.
@@ -222,7 +222,7 @@ static void br_draw (void)
 		const float *a = LOAD_PTS[LOAD_LINES[L][0] + q2], *b = LOAD_PTS[LOAD_LINES[L][0] + q2 + 1];
 		br_line (ox + a[1] * s, oy - a[0] * s, ox + b[1] * s, oy - b[0] * s, w, c); }
 	  br_text ("LOAD", q[0] - 5.5f * 6 * k, (q[1] + q[3]) / 2 - 3 * k, k, c); }
-	{ static const char H[] = "STICK: CHOOSE / PAGE   BUTTON 4: OPEN/LOAD   BUTTON 1: BACK   SELECT: CLOSE";
+	{ static const char H[] = "STICK: CHOOSE / PAGE   BUTTON 4: OPEN/LOAD   BUTTON 1: BACK   L3: CLOSE";
 	  const float kh = fminf (k * 0.55f, (g->x1 - g->x0 - 1.2f * rh) / (6.0f * (sizeof H - 1)));   /* (it fits the panel) */
 	  br_text (H, g->x0 + 0.6f * rh, g->y1 - 0.85f * rh, kh, DIM); }
 	br_bx0 = (int) floorf (g->x0) - 2; br_by0 = (int) floorf (g->y0) - 2; br_bx1 = (int) ceilf (g->x1) + 2; br_by1 = (int) ceilf (g->y1) + 2; br_shown = 1;
@@ -237,11 +237,11 @@ static void br_blend_cpu (uint32_t *f, int pitch)
 		const unsigned r = ((s >> 16) & 255) + (((dv >> 16) & 255) * ia + 127) / 255, g = ((s >> 8) & 255) + (((dv >> 8) & 255) * ia + 127) / 255, b = (s & 255) + ((dv & 255) * ia + 127) / 255;
 		*d = (r > 255 ? 255u : r) << 16 | (g > 255 ? 255u : g) << 8 | (b > 255 ? 255u : b); }
 }
-/* each refresh, before the game's input: the browser's own (SELECT opens / closes it); 1: the game gets none */
+/* each refresh, before the game's input: the browser's own (its button opens / closes it); 1: the game gets none */
 static int br_input (void)
 {
 	if (opt_ov_btn == 2) return 0;                      /* (EmuVR: SELECT is the overlay's) */
-	const int sel = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT) != 0;
+	const int bb = btn_id ("vectrex_emu_btn_browser"), sel = bb >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) bb) != 0;   /* (Ports: L3 by default) */
 	static int sel_was;
 	if (sel && !sel_was) br_show (!br_open);
 	sel_was = sel;

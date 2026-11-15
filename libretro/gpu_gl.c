@@ -512,7 +512,7 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, frame);
 	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, 0); }
 	glBindFramebuffer_ (GL_FRAMEBUFFER, (GLuint) hwr.get_current_framebuffer ());
-	if (dk_on) { ow = TW; oh = TH; }                                     /* (the control deck: the block, deck.c) */
+	if (dk_on || dk_pop) { ow = TW; oh = TH; }                           /* (the control deck: the block, deck.c) */
 	const int dw = rot & 1 ? oh : ow, dh = rot & 1 ? ow : oh;
 	glViewport_ (0, 0, dw, dh);
 	if (dk_on) { glDisable_ (GL_SCISSOR_TEST); glClearColor_d_ (0, 0, 0, 1); glClear_d_ (0x4000); gpu_vp (BX, BY, BX + CW, BY + CH, rot, dw, dh); }
@@ -536,7 +536,7 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));
 	glDrawArrays_ (GL_TRIANGLES, 0, 3);
-	if (dk_on && dk_img && dk_prog) {                                   /* (the deck under the picture) */
+	if ((dk_on || dk_pop) && dk_img && dk_prog) {                       /* (the deck under the picture - the pop-up's over it) */
 		if (!dk_tex || dk_tw != dk_w || dk_th != dk_h) { if (!dk_tex) glGenTextures_ (1, &dk_tex); glBindTexture_ (GL_TEXTURE_2D, dk_tex);
 			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -544,7 +544,7 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 		glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, dk_tex);
 		if (dk_tgen != dk_gen) { glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, dk_w, dk_h, GL_RGBA, GL_UNSIGNED_BYTE, dk_img); dk_tgen = dk_gen; }
 		glUseProgram_ (dk_prog); glUniform1i_ (glGetUniformLocation_ (dk_prog, "t"), 0); glUniform1i_ (glGetUniformLocation_ (dk_prog, "rot"), rot);
-		gpu_vp (BX, BY + CH, BX + dk_w, BY + CH + dk_h, rot, dw, dh);
+		if (!dk_on) gpu_vp (0, dk_y, dk_w, dk_y + dk_h, rot, dw, dh); else gpu_vp (BX, BY + dk_y, BX + dk_w, BY + dk_y + dk_h, rot, dw, dh);
 		glEnable_d_ (GL_BLEND); glBlendFunc_d_ (1, 0x0303); glDrawArrays_ (GL_TRIANGLES, 0, 3); glDisable_ (GL_BLEND); }
 	glBindVertexArray_ (0); glUseProgram_ (0);
 	if (!gpu_novideo) video_cb (RETRO_HW_FRAME_BUFFER_VALID, (unsigned) dw, (unsigned) dh, 0);   /* (Optimize: drawn, not shown) */

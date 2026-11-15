@@ -217,6 +217,7 @@ static float opt_ov_tint = 1.0f, opt_ov_print = 1.0f; static int opt_ov_btn = 1,
  * x its square, the print x it, the bare glass grey x its cube); the trail's brightness with and without an overlay */
 static int opt_size = 800, opt_area = 0;
 uint32_t *dk_cb;
+static int dk_pop, dk_y, dk_shown;   /* (the pop-up deck: over the picture's bottom, dk_y its top in the block; shown now) */
 static int opt_deck, opt_shape, dk_on, DKH, TW, TH, BX, BY, dk_dirty_set = 1, vx_paused, geo_deck = -1, geo_shape = -1;   /* (the control deck:
                                                   deck.c - the output TW x TH, the picture at BX, BY, the deck DKH high below it) */
 static float vx_vol = 1.0f;                      /* (the volume knob: deck.c) */   /* (opt_area: 0 auto, 1 glass window, 2 overlay sheet) */
@@ -320,9 +321,9 @@ static int unit_addon;
 static const char *optv (const char *key);
 static int btn_id (const char *key)                /* (a function's RetroPad button, the option: -1 none) */
 {
-	static const char *const N[] = { "L", "R", "L2", "R2", "L3", "R3", NULL };
+	static const char *const N[] = { "L", "R", "L2", "R2", "L3", "R3", "SELECT", NULL };
 	static const int I[] = { RETRO_DEVICE_ID_JOYPAD_L, RETRO_DEVICE_ID_JOYPAD_R, RETRO_DEVICE_ID_JOYPAD_L2, RETRO_DEVICE_ID_JOYPAD_R2,
-		RETRO_DEVICE_ID_JOYPAD_L3, RETRO_DEVICE_ID_JOYPAD_R3 };
+		RETRO_DEVICE_ID_JOYPAD_L3, RETRO_DEVICE_ID_JOYPAD_R3, RETRO_DEVICE_ID_JOYPAD_SELECT };
 	const char *v = optv (key); for (int i = 0; N[i]; i++) if (!strcmp (v, N[i])) return I[i];
 	return -1;
 }
@@ -486,6 +487,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
 	{ "vectrex_emu_uvm2_mode", "ports", "UVMC2 mode", "Fast: the same game, less CPU. Exact: as the cartridge, cycle for cycle. Dev: fast, with an ideal beam.", "fast|exact|dev" },
 	{ "vectrex_emu_btn_reset", "ports", "RESET button", "A RetroPad button for the Vectrex's RESET button.", "off|L|R|L2|R2|L3|R3" },
+	{ "vectrex_emu_btn_browser", "ports", "ROM browser button", "A RetroPad button that opens and closes the ROM browser.", "L3|SELECT|off|L|R|L2|R2|R3" },
 	{ "vectrex_emu_btn_pause", "ports", "Pause button", "A RetroPad button that pauses and resumes the game.", "off|L|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_btn_eject", "ports", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_usb_hid", "ports", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
@@ -499,7 +501,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_area", "display", "Picture area",
 	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
 	  "auto|glass window|overlay sheet" },
-	{ "vectrex_emu_deck", "display", "Control deck", "Below the picture, as the desktop's: OSD, ports, cartridge, RESET, volume - mouse or touch.", "off|on" },
+	{ "vectrex_emu_deck", "display", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom or the arrow.", "off|full|slim|pop-up" },
 	{ "vectrex_emu_shape", "display", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
 	{ "vectrex_emu_rotate", "display", "Rotation (tate)", "Turns the picture for playing with the device held upright.",
 	  "off|90 (turn the device right)|270 (turn the device left)|180" },
@@ -669,7 +671,7 @@ static void read_options (void)
 	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off");
 	{ int z = atoi (optv ("vectrex_emu_size")); opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
-	opt_deck = opt_is ("vectrex_emu_deck", "on"); opt_shape = opt_is ("vectrex_emu_shape", "16:9");
+	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0; opt_shape = opt_is ("vectrex_emu_shape", "16:9");
 	opt_trail_k0 = opt_trail_k;                 /* (1.1: one trail brightness - the light added as light: no other one needed) */
 	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */
 	if (rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
@@ -751,7 +753,7 @@ static int area_glass (void)
 	return opt_glass;
 #else
 	extern int gpu_frame_shown (void);
-	return opt_area == 1 ? 1 : opt_area == 2 ? 0 : !opt_deck && !(ov && ov_on && !sheet_file) && !gpu_frame_shown ();
+	return opt_area == 1 ? 1 : opt_area == 2 ? 0 : !(opt_deck == 1 || opt_deck == 2) && !(ov && ov_on && !sheet_file) && !gpu_frame_shown ();
 #endif
 }
 /* one eye's frame (the sheet, ew x fh) and the area sent from it (cw x ch) - the RetroArch flavour: the area's side that
@@ -763,7 +765,8 @@ static void geom_calc (int glass, int *ew, int *fh, int *cw, int *ch)
 	*cw = glass ? (int) (*ew * 145.7 / 162.0 + 0.5) : *ew; *ch = glass ? (int) (*fh * 188.5 / 207.0 + 0.5) : *fh;
 #else
 	const int odd = opt_rot & 1; double k = opt_size / (glass ? (odd ? 145.7 : 188.5) : (odd ? 162.0 : 207.0));   /* (px per mm) */
-	if (opt_deck && !odd && !opt_shape && !glass) k /= 1.0 + 0.08134 / 0.924;   /* (4:3 with the deck: picture + deck = the screen's height) */
+	if ((opt_deck == 1 || opt_deck == 2) && !odd && !opt_shape && !glass) k /= 1.0 + (opt_deck == 2 ? 0.046 : 0.08134) / 0.924;   /* (4:3 with the deck:
+	                                              picture + deck = the screen's height) */
 	*ew = (int) (162.0 * k + 0.5); *fh = (int) (207.0 * k + 0.5);
 	*cw = glass ? (int) (145.7 * k + 0.5) : *ew; *ch = glass ? (int) (188.5 * k + 0.5) : *fh;
 	if (*ew > 4 * PW) { *ew = 4 * PW; if (*cw > *ew) *cw = *ew; }   /* (glow_blur's row: 4 x 624 at most) */
@@ -2055,8 +2058,10 @@ static void pic_setup (void)
 	FW = stereo ? EW * 2 : EW; CX0 = (EW - CW) / 2; CY0 = (FH - CH) / 2; OW = stereo ? CW * 2 : CW; OH = CH;
 	geo_glass = glass; geo_rot = opt_rot; geo_size = opt_size; geo_deck = opt_deck; geo_shape = opt_shape;
 	/* (the control deck: the picture and the deck one block, black bars to the screen's shape - deck.c) */
-	dk_on = opt_deck && !stereo; TW = OW; TH = OH; BX = BY = 0; DKH = 0;
-	if (dk_on) { DKH = (int) (0.08134 * FH / 0.924 + 0.5);
+	dk_on = (opt_deck == 1 || opt_deck == 2) && !stereo; dk_pop = opt_deck == 3 && !stereo; TW = OW; TH = OH; BX = BY = 0; DKH = 0;
+	if (dk_on || dk_pop) DKH = (int) ((opt_deck == 2 ? 0.046 : 0.08134) * FH / 0.924 + 0.5);   /* (slim: one low row) */
+	dk_y = dk_pop ? CH - DKH : CH; dk_dirty_set = 1;
+	if (dk_on) {
 		const double A = opt_shape ? 16.0 / 9.0 : 4.0 / 3.0, ab = (opt_rot & 1) ? 1.0 / A : A; const int bw = CW, bh = CH + DKH;
 		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
 		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
@@ -2220,7 +2225,7 @@ static void frame_out (int shot_now, const uint32_t **pic_o, int *pw_o, int *ph_
 		else video_cb (NULL, (unsigned) ((opt_rot & 1) ? OH : OW), (unsigned) ((opt_rot & 1) ? OW : OH), 0);
 	} else
 #endif
-	if (dk_on) {                                /* (the control deck: the block - bars, the picture, the deck - then turned) */
+	if (dk_on || dk_pop) {                      /* (the control deck: the block - bars, the picture, the deck - then turned) */
 		dk_compose (dk_cb, fb + (size_t) CY0 * Wd + CX0, (size_t) Wd);
 		const uint32_t *src = dk_cb; const size_t sp = (size_t) TW;
 		if (opt_rot) { const int W = TW, Hh = TH, odd = opt_rot & 1, dw = odd ? Hh : W, dh = odd ? W : Hh; int ty;
@@ -2822,7 +2827,8 @@ static void input_names (void)
 		if (p == 0) d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START, "Overlay off / on" };
 	}
 #ifndef VX_EMUVR
-	d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "ROM browser" };
+	{ const int b = btn_id ("vectrex_emu_btn_browser"); if (b >= 0) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) b, "ROM browser" };
+	  const int pz = btn_id ("vectrex_emu_btn_pause"); if (pz >= 0 && pz != b) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pz, "Pause" }; }
 	{ const int r = btn_id ("vectrex_emu_btn_reset"), e = btn_id ("vectrex_emu_btn_eject");   /* (none by default: Ports) */
 	  if (r >= 0) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) r, "RESET button" };
 	  if (e >= 0 && e != r) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) e, "Eject / reinsert the cartridge" }; }

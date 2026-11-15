@@ -21,8 +21,6 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 ## Next (the owner, 2026-11-15)
 
-- [ ] A slim control deck (one low row) and / or a pop-up one over the picture's bottom (the owner, 2026-11-15:
-      to discuss - Display > Control deck: off / full / slim / pop-up)
 - [ ] The control deck on the Nova: touch on the knob, the ports, the cartridge; 16:9 tate
 
 ## Low priority (the owner: ask first)
@@ -46,7 +44,8 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 - The ROM browser as the desktop's (SELECT, mappable; touch); RESET and eject / reinsert buttons (Ports: none by
   default, or L / R / L2 / R2 / L3 / R3)
 - The control deck as the desktop's (deck.c: OSD, PAUSED, P2 / P1 ports, cartridge, RESET, volume knob - the desktop's
-  geometry, checked against its screenshot), Display > Control deck (off) and Screen shape 4:3 / 16:9; a Pause button
+  geometry, checked against its screenshot), Display > Control deck (off / full / slim / pop-up) and Screen shape 4:3 / 16:9; a Pause button;
+  the ROM browser on L3 (Ports > ROM browser button)
 - RetroArch's keyboard (Game Focus) and mouse as the UVMC2's / PiTrex's USB devices (usbkm.c) - not tested with a
   real keyboard yet
 - The Vectrex unit (Unit / Circuit tabs): owner's, ideal, random and cranky units, the knob, the pots, the yoke, the

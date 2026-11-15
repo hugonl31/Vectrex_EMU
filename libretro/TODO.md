@@ -21,11 +21,9 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 ## Next (the owner, 2026-11-15)
 
-- [ ] 16:9 / 4:3 picture mode (4:3 default) and the desktop's control deck below the picture (on / off): OSD, pause,
-      the P2 port, the cartridge, P1 (for netplay later), RESET, the volume knob - clickable with RetroArch's mouse or
-      touch (the OSD opens nothing; the P2 port chooses the device, the cartridge opens the ROM browser); 4:3 the
-      picture smaller over the deck as the desktop, 16:9 the deck added below (tate: the picture unchanged); a pause
-      button (unmapped by default)
+- [ ] A slim control deck (one low row) and / or a pop-up one over the picture's bottom (the owner, 2026-11-15:
+      to discuss - Display > Control deck: off / full / slim / pop-up)
+- [ ] The control deck on the Nova: touch on the knob, the ports, the cartridge; 16:9 tate
 
 ## Low priority (the owner: ask first)
 
@@ -47,6 +45,8 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 - Quality profiles as the desktop's (PROFILE_OFF, switch for switch); Optimize (pctest.py) as the auto profile
 - The ROM browser as the desktop's (SELECT, mappable; touch); RESET and eject / reinsert buttons (Ports: none by
   default, or L / R / L2 / R2 / L3 / R3)
+- The control deck as the desktop's (deck.c: OSD, PAUSED, P2 / P1 ports, cartridge, RESET, volume knob - the desktop's
+  geometry, checked against its screenshot), Display > Control deck (off) and Screen shape 4:3 / 16:9; a Pause button
 - RetroArch's keyboard (Game Focus) and mouse as the UVMC2's / PiTrex's USB devices (usbkm.c) - not tested with a
   real keyboard yet
 - The Vectrex unit (Unit / Circuit tabs): owner's, ideal, random and cranky units, the knob, the pots, the yoke, the

@@ -215,7 +215,11 @@ static float opt_ov_tint = 1.0f, opt_ov_print = 1.0f; static int opt_ov_btn = 1,
  * the pixels on the screen's short side (the picture fills it exactly - integer scale 1x, the sharpest lines); the area
  * automatic (the whole sheet with an overlay, the glass window without); the room's light (vecrender.py: the filters
  * x its square, the print x it, the bare glass grey x its cube); the trail's brightness with and without an overlay */
-static int opt_size = 800, opt_area = 0;   /* (opt_area: 0 auto, 1 glass window, 2 overlay sheet) */
+static int opt_size = 800, opt_area = 0;
+uint32_t *dk_cb;
+static int opt_deck, opt_shape, dk_on, DKH, TW, TH, BX, BY, dk_dirty_set = 1, vx_paused, geo_deck = -1, geo_shape = -1;   /* (the control deck:
+                                                  deck.c - the output TW x TH, the picture at BX, BY, the deck DKH high below it) */
+static float vx_vol = 1.0f;                      /* (the volume knob: deck.c) */   /* (opt_area: 0 auto, 1 glass window, 2 overlay sheet) */
 static float opt_room = 1.0f, opt_trail_k0 = 1.5f, glass_grey;
 static int paint_all;
 /* (1.1: the quality profile - vecrender.py's tiers: Ultra, High, Medium, Low, Basic; auto: Ultra with the GPU, Medium on
@@ -310,6 +314,7 @@ static char g_bios[1600], g_dir[1024]; static const char *cart_file; static int 
 static void cart_swap (const char *path);
 static void emu_wait_ext (void);
 static int vx_ok (void);
+static int sp_ok, dk_p2;   /* (deck.c) */
 static char sw_next[1100], cur_game[1100]; static int sw_eject, ej_out; static int game_switch_now (const char *path);   /* (the game switch: below) */
 static int unit_addon;
 static const char *optv (const char *key);
@@ -481,6 +486,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
 	{ "vectrex_emu_uvm2_mode", "ports", "UVMC2 mode", "Fast: the same game, less CPU. Exact: as the cartridge, cycle for cycle. Dev: fast, with an ideal beam.", "fast|exact|dev" },
 	{ "vectrex_emu_btn_reset", "ports", "RESET button", "A RetroPad button for the Vectrex's RESET button.", "off|L|R|L2|R2|L3|R3" },
+	{ "vectrex_emu_btn_pause", "ports", "Pause button", "A RetroPad button that pauses and resumes the game.", "off|L|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_btn_eject", "ports", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_usb_hid", "ports", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 	{ "vectrex_emu_threaded", "ports", "Threaded emulation (UVMC2, PiTrex)", "Emulates while drawing: full speed on handhelds, one frame more input delay.", "on|off" },
@@ -493,6 +499,8 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_area", "display", "Picture area",
 	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
 	  "auto|glass window|overlay sheet" },
+	{ "vectrex_emu_deck", "display", "Control deck", "Below the picture, as the desktop's: OSD, ports, cartridge, RESET, volume - mouse or touch.", "off|on" },
+	{ "vectrex_emu_shape", "display", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
 	{ "vectrex_emu_rotate", "display", "Rotation (tate)", "Turns the picture for playing with the device held upright.",
 	  "off|90 (turn the device right)|270 (turn the device left)|180" },
 	{ "vectrex_emu_rate", "display", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
@@ -661,6 +669,7 @@ static void read_options (void)
 	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off");
 	{ int z = atoi (optv ("vectrex_emu_size")); opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
+	opt_deck = opt_is ("vectrex_emu_deck", "on"); opt_shape = opt_is ("vectrex_emu_shape", "16:9");
 	opt_trail_k0 = opt_trail_k;                 /* (1.1: one trail brightness - the light added as light: no other one needed) */
 	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */
 	if (rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
@@ -742,7 +751,7 @@ static int area_glass (void)
 	return opt_glass;
 #else
 	extern int gpu_frame_shown (void);
-	return opt_area == 1 ? 1 : opt_area == 2 ? 0 : !(ov && ov_on && !sheet_file) && !gpu_frame_shown ();
+	return opt_area == 1 ? 1 : opt_area == 2 ? 0 : !opt_deck && !(ov && ov_on && !sheet_file) && !gpu_frame_shown ();
 #endif
 }
 /* one eye's frame (the sheet, ew x fh) and the area sent from it (cw x ch) - the RetroArch flavour: the area's side that
@@ -753,7 +762,8 @@ static void geom_calc (int glass, int *ew, int *fh, int *cw, int *ch)
 	*ew = PW * opt_res; *fh = PH * opt_res;
 	*cw = glass ? (int) (*ew * 145.7 / 162.0 + 0.5) : *ew; *ch = glass ? (int) (*fh * 188.5 / 207.0 + 0.5) : *fh;
 #else
-	const int odd = opt_rot & 1; const double k = opt_size / (glass ? (odd ? 145.7 : 188.5) : (odd ? 162.0 : 207.0));   /* (px per mm) */
+	const int odd = opt_rot & 1; double k = opt_size / (glass ? (odd ? 145.7 : 188.5) : (odd ? 162.0 : 207.0));   /* (px per mm) */
+	if (opt_deck && !odd && !opt_shape && !glass) k /= 1.0 + 0.08134 / 0.924;   /* (4:3 with the deck: picture + deck = the screen's height) */
 	*ew = (int) (162.0 * k + 0.5); *fh = (int) (207.0 * k + 0.5);
 	*cw = glass ? (int) (145.7 * k + 0.5) : *ew; *ch = glass ? (int) (188.5 * k + 0.5) : *fh;
 	if (*ew > 4 * PW) { *ew = 4 * PW; if (*cw > *ew) *cw = *ew; }   /* (glow_blur's row: 4 x 624 at most) */
@@ -1008,7 +1018,11 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  if (spr[0]) { snprintf (e1, sizeof e1, "VT_VECVOICE=%s", spr); vx_putenv (e1); vx_putenv ("VT_SPEECHOUT=1"); }
 	  else { vx_putenv ("VT_VECVOICE="); vx_putenv ("VT_SPEECHOUT="); }
 	  vx_putenv (dev ? (strcmp (dev, "vecvox") ? "VT_SPEECHDEV=vecvoice" : "VT_SPEECHDEV=vecvox") : "VT_SPEECHDEV=");
-	  if (dev) fprintf (stderr, "[vectrex_emu] speech module in port 2: %s\n", dev); }
+	  if (dev) fprintf (stderr, "[vectrex_emu] speech module in port 2: %s\n", dev);
+#ifndef VX_EMUVR
+	  sp_ok = spr[0] != 0; dk_p2 = lightpen ? 4 : im_out ? 3 : dev ? (strcmp (dev, "vecvox") ? 2 : 1) : 0; dk_dirty_set = 1;
+#endif
+	}
 	/* (1.1: the desktop Vectrex_EMU's default Vectrex unit - vectrex_emu.py UNIT_PRESETS['owner'], the analog parts as
 	 *  measured on the owner's console; without them the core ran as an ideal machine: Last Human's calibration then
 	 *  needed ZERO REF +36. Read at the first reset) */
@@ -1552,7 +1566,7 @@ static void audio_out (void)
 		int fill0 = aq_fill (), n = pw_on ? (fill0 < want ? fill0 : want) : want; if (n > 8192) n = 8192;
 		if (!pw_on && want > n) n = want > 8192 ? 8192 : want;
 		for (int i = 0; i < n; i++) {
-			double v = 0; if (pw_on && aq_r != aq_w) { v = aq[2 * aq_r]; aq_r = (aq_r + 1) % AQ; }
+			double v = 0; if (pw_on && aq_r != aq_w) { v = aq[2 * aq_r] * vx_vol; aq_r = (aq_r + 1) % AQ; }
 			if (pw_play && pw_pos < pw_n_play && !vx_noaudio) v += pw_play[pw_pos++] * POWER_SND_GAIN;
 			int iv = (int) v; st[2 * i] = st[2 * i + 1] = (int16_t) (iv > 32767 ? 32767 : iv < -32768 ? -32768 : iv); }
 		if (pw_play && pw_pos >= pw_n_play) pw_play = NULL;
@@ -1562,7 +1576,7 @@ static void audio_out (void)
 	int fill = aq_fill ();
 	if (fill > want + 2048) want += (fill - want - 2048) / 32 + 1;   /* (the queue kept short: the sound in step) */
 	int n = fill < want ? fill : want; if (n > 8192) n = 8192;
-	for (int i = 0; i < n; i++) { st[2 * i] = aq[2 * aq_r]; st[2 * i + 1] = aq[2 * aq_r + 1]; aq_r = (aq_r + 1) % AQ; }
+	for (int i = 0; i < n; i++) { st[2 * i] = (int16_t) (aq[2 * aq_r] * vx_vol); st[2 * i + 1] = (int16_t) (aq[2 * aq_r + 1] * vx_vol); aq_r = (aq_r + 1) % AQ; }
 	if (n) audio_cb (st, n);
 	{ static FILE *lf; static int lo; const char *ln = getenv ("VXPOC_AQLOG");   /* (test: the queue per refresh) */
 	  if (ln && !lo) { lo = 1; lf = fopen (ln, "w"); }
@@ -2039,8 +2053,15 @@ static void pic_setup (void)
 	const int glass = area_glass (); geom_calc (glass, &EW, &FH, &CW, &CH);
 	S = (int) (FH / (double) PH + 0.5); if (S < 1) S = 1;   /* (the glow's cells: 2 x 2 per this many) */
 	FW = stereo ? EW * 2 : EW; CX0 = (EW - CW) / 2; CY0 = (FH - CH) / 2; OW = stereo ? CW * 2 : CW; OH = CH;
-	geo_glass = glass; geo_rot = opt_rot; geo_size = opt_size;
+	geo_glass = glass; geo_rot = opt_rot; geo_size = opt_size; geo_deck = opt_deck; geo_shape = opt_shape;
+	/* (the control deck: the picture and the deck one block, black bars to the screen's shape - deck.c) */
+	dk_on = opt_deck && !stereo; TW = OW; TH = OH; BX = BY = 0; DKH = 0;
+	if (dk_on) { DKH = (int) (0.08134 * FH / 0.924 + 0.5);
+		const double A = opt_shape ? 16.0 / 9.0 : 4.0 / 3.0, ab = (opt_rot & 1) ? 1.0 / A : A; const int bw = CW, bh = CH + DKH;
+		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
+		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
 	if ((size_t) OW * OH > rb_n) { free (rb); rb_n = (size_t) OW * OH; rb = malloc (rb_n * 4); }   /* (the turned picture) */
+	{ static size_t cbn; extern uint32_t *dk_cb; if ((size_t) OW * OH > cbn) { free (dk_cb); cbn = (size_t) OW * OH; dk_cb = malloc (cbn * 4); } }   /* (the deck's block) */
 	/* (the buffers at this picture's size: the lit light now and a refresh ago, the afterglow's two parts, one colour
 	 *  channel or three) */
 	{ extern int vt_imager; NC = vt_imager ? 3 : 1; }
@@ -2186,7 +2207,57 @@ static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save s
 #include "usbkm.c"
 #ifndef VX_EMUVR
 #include "browser.c"
+#include "deck.c"
 #endif
+/* the picture out: the GPU's, or the CPU's frame (with the control deck: its block) - turned (also a paused refresh's) */
+static void frame_out (int shot_now, const uint32_t **pic_o, int *pw_o, int *ph_o)
+{
+	const uint32_t *pic = ob; int pw = OW, ph = OH; const int Wd = FW;   /* (what is sent, and shot) */
+#ifndef VX_EMUVR
+	if (gpu_asked && !shot_now) {               /* (1.1: the GPU: up, turned, the glass and the case on top - or, the context not
+	                                               there yet, the last picture again) */
+		if (gpu_ok && Wd / EW == 1) gpu_present (ph_ok && ph_made && !stereo ? NULL : fb, FW, FH, Wd, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+		else video_cb (NULL, (unsigned) ((opt_rot & 1) ? OH : OW), (unsigned) ((opt_rot & 1) ? OW : OH), 0);
+	} else
+#endif
+	if (dk_on) {                                /* (the control deck: the block - bars, the picture, the deck - then turned) */
+		dk_compose (dk_cb, fb + (size_t) CY0 * Wd + CX0, (size_t) Wd);
+		const uint32_t *src = dk_cb; const size_t sp = (size_t) TW;
+		if (opt_rot) { const int W = TW, Hh = TH, odd = opt_rot & 1, dw = odd ? Hh : W, dh = odd ? W : Hh; int ty;
+			#pragma omp parallel for schedule(dynamic, 1)
+			for (ty = 0; ty < dh; ty += 32) for (int tx = 0; tx < dw; tx += 32) {
+				const int y1 = ty + 32 < dh ? ty + 32 : dh, x1 = tx + 32 < dw ? tx + 32 : dw;
+				for (int y = ty; y < y1; y++) { uint32_t *d = rb + (size_t) y * dw;
+					if (opt_rot == 1) for (int x = tx; x < x1; x++) d[x] = src[(size_t) x * sp + (W - 1 - y)];
+					else if (opt_rot == 2) for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - y) * sp + (W - 1 - x)];
+					else for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - x) * sp + y]; } }
+			pic = rb; pw = dw; ph = dh; }
+		else { pic = src; pw = TW; ph = TH; }
+		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
+	} else
+	if (Wd / EW == 1 && !shot_now && !opt_rot)  /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
+		video_cb (fb + (size_t) CY0 * Wd + CX0, CW, CH, (size_t) Wd * 4);
+	else {
+		const uint32_t *src; size_t sp;
+		if (Wd / EW == 1) { src = fb + (size_t) CY0 * Wd + CX0; sp = (size_t) Wd; }
+		else { for (int e = 0; e < Wd / EW; e++)   /* (the area sent: each eye's window) */
+				for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW + e * CW, fb + (size_t) (CY0 + y) * Wd + e * EW + CX0, (size_t) CW * 4);
+			src = ob; sp = (size_t) OW; }
+		if (opt_rot) {                         /* (1.0: turned here, 90 / 180 / 270 counter-clockwise - in tiles, cache-kind) */
+			const int W = OW, Hh = OH, odd = opt_rot & 1, dw = odd ? Hh : W, dh = odd ? W : Hh; int ty;
+			#pragma omp parallel for schedule(dynamic, 1)
+			for (ty = 0; ty < dh; ty += 32) for (int tx = 0; tx < dw; tx += 32) {
+				const int y1 = ty + 32 < dh ? ty + 32 : dh, x1 = tx + 32 < dw ? tx + 32 : dw;
+				for (int y = ty; y < y1; y++) { uint32_t *d = rb + (size_t) y * dw;
+					if (opt_rot == 1) for (int x = tx; x < x1; x++) d[x] = src[(size_t) x * sp + (W - 1 - y)];
+					else if (opt_rot == 2) for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - y) * sp + (W - 1 - x)];
+					else for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - x) * sp + y]; } }
+			pic = rb; pw = dw; ph = dh;
+		} else if (src != ob) { for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW, src + (size_t) y * sp, (size_t) CW * 4); }
+		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
+	}
+	if (pic_o) { *pic_o = pic; *pw_o = pw; *ph_o = ph; }
+}
 /* (test: VXPOC_SHOT=file.png at refresh VXPOC_FRAME (300) - counted over the shown refreshes) */
 static int shot_env = -1, shot_due; static const char *shot_path; static long shot_at, shot_fno;
 static int shot_pending (void)
@@ -2225,6 +2296,9 @@ void retro_run (void)
 #ifndef VX_EMUVR
 	if (br_input ()) { m[0] = m[1] = 128; m[2] = 0; }   /* (the ROM browser open, or just closed by a button: the game gets none) */
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
+	{ static int pz; const int pi_ = btn_id ("vectrex_emu_btn_pause"), p_ = pi_ >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pi_) != 0;
+	  if (p_ && !pz && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; } pz = p_; }
+	dk_pointer (); dk_tick (0);
 	{ static int l2, r2; const int ri = btn_id ("vectrex_emu_btn_reset"), ei = btn_id ("vectrex_emu_btn_eject");
 	  const int a = ri >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ri) != 0, b = ei >= 0 && ei != ri && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ei) != 0;
 	  if (a && !l2 && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button) */
@@ -2236,7 +2310,7 @@ void retro_run (void)
 	  sel_held = sel; }
 #ifndef VX_EMUVR
 	fx_apply ();
-	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size) { pic_setup (); geo_tell (); }
+	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape) { pic_setup (); geo_tell (); }
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }
 	opt_check ();                               /* (the Quality profile on auto: measured once per case - gpu_opt.c) */
 #endif
@@ -2258,9 +2332,15 @@ void retro_run (void)
 		double fx = (sx + 32768) / 65536.0, fy = (sy + 32768) / 65536.0;
 		{ const double ax = fx, ay = fy;      /* (the picture turned: back to its own way up) */
 		  if (opt_rot == 1) { fx = 1 - ay; fy = ax; } else if (opt_rot == 2) { fx = 1 - ax; fy = 1 - ay; } else if (opt_rot == 3) { fx = ay; fy = 1 - ax; } }
+		fx = (fx * TW - BX) / CW; fy = (fy * TH - BY) / CH;   /* (the deck's block: the picture within it) */
 		{ double lx, ly; tube_inv (SHEET_X0 + (CX0 + fx * CW) / EW * SHEET_W, SHEET_Y0 + (CY0 + fy * CH) / (double) FH * SHEET_H - par_dy (), &lx, &ly); if (up_xf) picture_undo (&lx, &ly);
 		  vt_set_analog (24, lx); vt_set_analog (25, ly); } vt_set_analog (26, trig ? 1.0 : 0.0);
 	}
+#ifndef VX_EMUVR
+	if (vx_paused) {                            /* (paused: no emulation, silence, the picture as it was - the deck says so) */
+		static int16_t z[2 * 2048]; int want = (int) (44100.0 / opt_rate) + 1; if (want > 2048) want = 2048; audio_cb (z, (size_t) want);
+		frame_out (0, NULL, NULL, NULL); return; }
+#endif
 	apply_input (m);
 	{ int av = 3; vx_noaudio = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 2); }
 	pw_poll (); pw_t += 1.0 / opt_rate;
@@ -2472,35 +2552,7 @@ void retro_run (void)
 		for (int y = br_by0 < 0 ? 0 : br_by0; y <= br_by1 && y < FH; y++) { if (br_bx0 < sp_f0[y]) sp_f0[y] = br_bx0 < 0 ? 0 : br_bx0; if (br_bx1 > sp_f1[y]) sp_f1[y] = br_bx1; } }
 #endif
 	const int shot_now = shot_pending ();
-	const uint32_t *pic = ob; int pw = OW, ph = OH;   /* (what is sent, and shot) */
-#ifndef VX_EMUVR
-	if (gpu_asked && !shot_now) {               /* (1.1: the GPU: up, turned, the glass and the case on top - or, the context not
-	                                               there yet, the last picture again) */
-		if (gpu_ok && Wd / EW == 1) gpu_present (fb, FW, FH, Wd, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
-		else video_cb (NULL, (unsigned) ((opt_rot & 1) ? OH : OW), (unsigned) ((opt_rot & 1) ? OW : OH), 0);
-	} else
-#endif
-	if (Wd / EW == 1 && !shot_now && !opt_rot)  /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
-		video_cb (fb + (size_t) CY0 * Wd + CX0, CW, CH, (size_t) Wd * 4);
-	else {
-		const uint32_t *src; size_t sp;
-		if (Wd / EW == 1) { src = fb + (size_t) CY0 * Wd + CX0; sp = (size_t) Wd; }
-		else { for (int e = 0; e < Wd / EW; e++)   /* (the area sent: each eye's window) */
-				for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW + e * CW, fb + (size_t) (CY0 + y) * Wd + e * EW + CX0, (size_t) CW * 4);
-			src = ob; sp = (size_t) OW; }
-		if (opt_rot) {                         /* (1.0: turned here, 90 / 180 / 270 counter-clockwise - in tiles, cache-kind) */
-			const int W = OW, Hh = OH, odd = opt_rot & 1, dw = odd ? Hh : W, dh = odd ? W : Hh; int ty;
-			#pragma omp parallel for schedule(dynamic, 1)
-			for (ty = 0; ty < dh; ty += 32) for (int tx = 0; tx < dw; tx += 32) {
-				const int y1 = ty + 32 < dh ? ty + 32 : dh, x1 = tx + 32 < dw ? tx + 32 : dw;
-				for (int y = ty; y < y1; y++) { uint32_t *d = rb + (size_t) y * dw;
-					if (opt_rot == 1) for (int x = tx; x < x1; x++) d[x] = src[(size_t) x * sp + (W - 1 - y)];
-					else if (opt_rot == 2) for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - y) * sp + (W - 1 - x)];
-					else for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - x) * sp + y]; } }
-			pic = rb; pw = dw; ph = dh;
-		} else if (src != ob) { for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW, src + (size_t) y * sp, (size_t) CW * 4); }
-		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
-	}
+	const uint32_t *pic; int pw, ph; frame_out (shot_now, &pic, &pw, &ph);
 	sheet_write ();
 	if (!asy) flash_save (0);                   /* (1.1: the flash cartridge's saves - live.c: a second after its last write) */
 	if (pf_on) { double pf5 = pf_now (); pf_t[0] += pf1 - pf0; pf_t[1] += pf2 - pf1; pf_t[2] += pf3 - pf2; pf_t[3] += pf4 - pf3; pf_t[4] += pf5 - pf4; pf_n++; }

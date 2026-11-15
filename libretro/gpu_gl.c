@@ -32,7 +32,8 @@ GLFN(void, glDeleteProgram, (GLuint)); GLFN(void, glUseProgram, (GLuint));
 GLFN(GLint, glGetUniformLocation, (GLuint, const GLchar *)); GLFN(void, glUniform1i, (GLint, GLint));
 GLFN(void, glUniform1f, (GLint, GLfloat)); GLFN(void, glUniform2f, (GLint, GLfloat, GLfloat));
 GLFN(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat)); GLFN(void, glUniform2i, (GLint, GLint, GLint)); GLFN(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat));
-GLFN(void, glBindFramebuffer, (GLenum, GLuint)); GLFN(void, glViewport, (GLint, GLint, GLsizei, GLsizei));
+GLFN(void, glBindFramebuffer, (GLenum, GLuint)); GLFN(void, glClearColor_d, (GLfloat, GLfloat, GLfloat, GLfloat)); GLFN(void, glClear_d, (GLbitfield));
+GLFN(void, glEnable_d, (GLenum)); GLFN(void, glBlendFunc_d, (GLenum, GLenum)); GLFN(void, glViewport, (GLint, GLint, GLsizei, GLsizei));
 GLFN(void, glDisable, (GLenum)); GLFN(void, glDrawArrays, (GLenum, GLint, GLsizei));
 GLFN(void, glGenVertexArrays, (GLsizei, GLuint *)); GLFN(void, glBindVertexArray, (GLuint));
 GLFN(void, glDeleteVertexArrays, (GLsizei, const GLuint *)); GLFN(GLenum, glGetError, (void));
@@ -66,6 +67,8 @@ GLFN(void, glDeleteVertexArrays, (GLsizei, const GLuint *)); GLFN(GLenum, glGetE
 #define GL_STENCIL_TEST 0x0B90
 
 static struct retro_hw_render_callback hwr; static int gpu_novideo;
+static uint32_t *dk_img; static int dk_gen, dk_w, dk_h;   /* (deck.c) */
+static GLuint dk_prog, dk_tex; static int dk_tgen = -1, dk_tw, dk_th;
 GLFN(const unsigned char *, glGetString, (GLenum));
 static void ph_reset (void); static void ph_lost (void); static int ph_ok; static GLuint ph_P;   /* (gpu_phos.c) */
 static int gpu_asked;                         /* (the frontend took the request: the picture goes through the GPU) */
@@ -420,7 +423,8 @@ static void gpu_reset (void)
 	GLLOAD (glCompileShader); GLLOAD (glGetShaderiv); GLLOAD (glGetShaderInfoLog); GLLOAD (glDeleteShader); GLLOAD (glCreateProgram);
 	GLLOAD (glAttachShader); GLLOAD (glLinkProgram); GLLOAD (glGetProgramiv); GLLOAD (glGetProgramInfoLog); GLLOAD (glDeleteProgram);
 	GLLOAD (glUseProgram); GLLOAD (glGetUniformLocation); GLLOAD (glUniform1i); GLLOAD (glUniform1f); GLLOAD (glUniform2f);
-	GLLOAD (glUniform3f); GLLOAD (glUniform2i); GLLOAD (glUniform4f); GLLOAD (glBindFramebuffer); GLLOAD (glViewport); GLLOAD (glDisable);
+	GLLOAD (glUniform3f); GLLOAD (glUniform2i); GLLOAD (glUniform4f); GLLOAD (glBindFramebuffer); glClearColor_d_ = (pf_glClearColor_d) hwr.get_proc_address ("glClearColor"); glClear_d_ = (pf_glClear_d) hwr.get_proc_address ("glClear");
+	glEnable_d_ = (pf_glEnable_d) hwr.get_proc_address ("glEnable"); glBlendFunc_d_ = (pf_glBlendFunc_d) hwr.get_proc_address ("glBlendFunc"); ok &= glClear_d_ && glClearColor_d_ && glEnable_d_ && glBlendFunc_d_; GLLOAD (glViewport); GLLOAD (glDisable);
 	GLLOAD (glDrawArrays); GLLOAD (glGenVertexArrays); GLLOAD (glBindVertexArray); GLLOAD (glDeleteVertexArrays); GLLOAD (glGetError);
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: the frontend lacks GL functions - the CPU's picture\n"); return; }
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\n" : "#version 330 core\n";
@@ -448,6 +452,13 @@ static void gpu_reset (void)
 	  if (im) { glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, im); stbi_image_free (im); g_smap_ok = 1; }
 	  else { static const unsigned char z[4] = { 0, 0, 0, 255 }; glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, z);
 	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p); } }
+	{ static const char *DKF = "in vec2 vuv; out vec4 fragc; uniform sampler2D t; uniform int rot;\n"
+		"void main() { vec2 a = vuv; vec2 q = rot == 1 ? vec2(a.y, 1.0 - a.x) : rot == 2 ? vec2(1.0 - a.x, 1.0 - a.y) : rot == 3 ? vec2(1.0 - a.y, a.x) : a;\n"
+		"  fragc = texture(t, vec2(q.x, 1.0 - q.y)).bgra; }\n";   /* (the deck's image: premultiplied, B G R A bytes) */
+	  const char *dv[2] = { hdr, GPU_VS }, *df[2] = { hdr, DKF };
+	  GLuint v2 = gpu_shader (GL_VERTEX_SHADER, dv, 2), f2 = gpu_shader (GL_FRAGMENT_SHADER, df, 2); dk_prog = 0;
+	  if (v2 && f2) { dk_prog = glCreateProgram_ (); glAttachShader_ (dk_prog, v2); glAttachShader_ (dk_prog, f2); glLinkProgram_ (dk_prog); }
+	  if (v2) glDeleteShader_ (v2); if (f2) glDeleteShader_ (f2); dk_tex = 0; dk_tgen = -1; }
 	gpu_ok = 1;
 	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */
 	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there%s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? ", the light too" : "");
@@ -473,6 +484,17 @@ static int gpu_request (void)
 	return 0;
 }
 
+static void gpu_vp (double x0, double y0, double x1, double y1, int rot, int dw, int dh)   /* (x, y down, of TW x TH) */
+{
+	const double qx0 = x0 / TW, qx1 = x1 / TW, qy0 = 1.0 - y1 / TH, qy1 = 1.0 - y0 / TH;   /* (q: y up) */
+	double ax0, ax1, ay0, ay1;
+	if (rot == 1) { ax0 = 1 - qy1; ax1 = 1 - qy0; ay0 = qx0; ay1 = qx1; }
+	else if (rot == 2) { ax0 = 1 - qx1; ax1 = 1 - qx0; ay0 = 1 - qy1; ay1 = 1 - qy0; }
+	else if (rot == 3) { ax0 = qy0; ax1 = qy1; ay0 = 1 - qx1; ay1 = 1 - qx0; }
+	else { ax0 = qx0; ax1 = qx1; ay0 = qy0; ay1 = qy1; }
+	const int vx = (int) floor (ax0 * dw + 0.5), vy = (int) floor (ay0 * dh + 0.5);
+	glViewport_ (vx, vy, (int) floor (ax1 * dw + 0.5) - vx, (int) floor (ay1 * dh + 0.5) - vy);
+}
 /* the picture: the frame (the whole sheet, XRGB, pitch in pixels) up, drawn into the frontend's framebuffer turned and
  * cut to the area sent (crop: the sheet's share, y up), with the glass and the case on top */
 static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float cx0, float cy0, float cx1, float cy1, int ow, int oh, int rot)
@@ -490,8 +512,10 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, frame);
 	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, 0); }
 	glBindFramebuffer_ (GL_FRAMEBUFFER, (GLuint) hwr.get_current_framebuffer ());
+	if (dk_on) { ow = TW; oh = TH; }                                     /* (the control deck: the block, deck.c) */
 	const int dw = rot & 1 ? oh : ow, dh = rot & 1 ? ow : oh;
 	glViewport_ (0, 0, dw, dh);
+	if (dk_on) { glDisable_ (GL_SCISSOR_TEST); glClearColor_d_ (0, 0, 0, 1); glClear_d_ (0x4000); gpu_vp (BX, BY, BX + CW, BY + CH, rot, dw, dh); }
 	glDisable_ (GL_BLEND); glDisable_ (GL_DEPTH_TEST); glDisable_ (GL_SCISSOR_TEST); glDisable_ (GL_CULL_FACE); glDisable_ (GL_STENCIL_TEST);
 	glUseProgram_ (g_prog); glBindVertexArray_ (g_vao);
 	glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, ptex); glUniform1i_ (g_u[U_TEX], 0);
@@ -512,6 +536,16 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));
 	glDrawArrays_ (GL_TRIANGLES, 0, 3);
+	if (dk_on && dk_img && dk_prog) {                                   /* (the deck under the picture) */
+		if (!dk_tex || dk_tw != dk_w || dk_th != dk_h) { if (!dk_tex) glGenTextures_ (1, &dk_tex); glBindTexture_ (GL_TEXTURE_2D, dk_tex);
+			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, dk_w, dk_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); dk_tw = dk_w; dk_th = dk_h; dk_tgen = -1; }
+		glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, dk_tex);
+		if (dk_tgen != dk_gen) { glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, dk_w, dk_h, GL_RGBA, GL_UNSIGNED_BYTE, dk_img); dk_tgen = dk_gen; }
+		glUseProgram_ (dk_prog); glUniform1i_ (glGetUniformLocation_ (dk_prog, "t"), 0); glUniform1i_ (glGetUniformLocation_ (dk_prog, "rot"), rot);
+		gpu_vp (BX, BY + CH, BX + dk_w, BY + CH + dk_h, rot, dw, dh);
+		glEnable_d_ (GL_BLEND); glBlendFunc_d_ (1, 0x0303); glDrawArrays_ (GL_TRIANGLES, 0, 3); glDisable_ (GL_BLEND); }
 	glBindVertexArray_ (0); glUseProgram_ (0);
 	if (!gpu_novideo) video_cb (RETRO_HW_FRAME_BUFFER_VALID, (unsigned) dw, (unsigned) dh, 0);   /* (Optimize: drawn, not shown) */
 }

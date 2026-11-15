@@ -1,0 +1,201 @@
+/* deck.c - Vectrex_EMU's libretro core: the control deck below the picture (the desktop's strip: vectrex_emu.py
+ * knob_geom, cart_geom, port2_state, port1_state, osd_state, strip_dx, slot_state, knob_click / knob_motion /
+ * knob_release, port2_next; vecrender.py _knob, _cart, _port2, _osd, _meters) - from left to right the OSD, PAUSED
+ * when paused, the P2 port, the cartridge, the P1 port, RESET and the volume knob, in the desktop's sizes (its units:
+ * the picture's height). Display > Control deck; Display > Screen shape: the picture and the deck one block, black
+ * bars to 4:3 or 16:9 (turned: 3:4 / 9:16). RetroArch's pointer (the mouse, or touch) works it as the desktop's mouse:
+ * the P2 port the next device, the cartridge the ROM browser, RESET, the knob turned round (down to 0 switches off;
+ * a click: +-5 %, switched off: on); the OSD opens nothing here. Drawn on the CPU when it changes, laid under the
+ * picture on the GPU (gpu_present) or in the CPU's frame. Included by libretro_vx.c after browser.c.
+ * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
+
+#define DK_G 0x66aa88u
+static size_t dk_n;   /* (dk_img, dk_w, dk_h, dk_gen: gpu_gl.c) */
+static double dk_r, dk_cy, dk_kx, dk_rx, dk_cx, dk_p2x, dk_p1x, dk_ox, dk_ok_, dk_M;   /* (the deck's places: its own pixels) */
+static int dk_p2 = 0, sp_ok;                     /* (port 2: 0 joystick, 1 VecVox, 2 VecVoice, 3 3D Imager, 4 light pen) */
+static double dk_reset_until, dk_t_osd; static int dk_hover_label;
+static char dk_osd[3][24]; static int dk_osd_col; static int dk_cpu = -1;
+static struct { int on; double a, x, y, acc, vol0; int moved, up; } dk_drag;
+static float vol_before_off = 1.0f;
+
+/* (the layout, at the picture's size: vectrex_emu.py knob_geom & co in the sheet's pixels, the strip centred) */
+static int dk_cols = 20, dk_thin; static double dk_ow;   /* (the OSD: its columns, thin meters, its width) */
+static int dk_wmax (int cols) { int w = cols; static const int NL_[3] = { 9, 8, 9 };
+	for (int i = 0; i < 3; i++) { const int L = NL_[i] + 1 + (int) strlen (dk_osd[i]); if (L > w) w = L; } return w; }
+static void dk_place (void)
+{
+	const double ph = FH / 0.924, r = 0.0253 * ph, M = 0.0038 * ph, top = M, bot = DKH;   /* (deck rows: 0 at the sheet's bottom) */
+	const double kx = EW - 2.4 * r, cx = EW / 2.0 + 1.8 * r, ks = 0.3 * r / 6.0;
+	const double rx = kx - 3.4 * r, p2 = cx - 3.6 * r, gap = (rx - 0.95 * r) - (cx + 1.3 * r);
+	/* strip_dx: the strip centred - the OSD always OSD_CHARS (20) wide at the knob's text size */
+	const double sl = (p2 - 1.1 * r) - gap - 20 * 6.0 * ks, sr = kx + 2.4 * r, sdx = EW / 2.0 - (sl + sr) / 2.0 - CX0;
+	/* osd_state: as high as the knob's labels; a low picture (k under OSD_KMIN 1.5): the desktop's low-window rule */
+	const double mrows = 0.25 + 2 * 0.7; double k = fmin (ks, (bot - top) / ((3 + mrows) * 9.0)), ox; int cols = 20, thin = 0;
+	if (k >= 1.5) ox = sl;
+	else { const double right = (p2 - 1.1 * r) - gap, room = 20 * 6.0 * k, kfit = (bot - top) / ((3 + mrows) * 9.0);
+		if (fmin (kfit, room / (17 * 6.0)) >= 1.5) k = 1.5;
+		else { thin = 1; k = fmin (1.5, fmin (room / (17 * 6.0), (bot - top) / (3 * 9.0 + 4.0))); }
+		cols = (int) (room / (6.0 * k)); cols = cols < 17 ? 17 : cols > 20 ? 20 : cols;
+		ox = right - dk_wmax (cols) * 6.0 * k; }
+	dk_r = r; dk_M = M; dk_cy = M + 1.8 * r; dk_kx = kx + sdx; dk_rx = rx + sdx; dk_cx = cx + sdx; dk_p2x = p2 + sdx;
+	dk_p1x = ((cx + 1.3 * r) + (rx - 0.95 * r)) / 2.0 + sdx; dk_ox = ox + sdx; dk_ok_ = k; dk_cols = cols; dk_thin = thin;
+	dk_ow = dk_wmax (cols) * 6.0 * k;
+}
+static void dk_circle (double x, double y, double rad, double w, unsigned c)
+{ for (int i = 0; i < 72; i++) { const double a0 = i * 5.0 * M_PI / 180, a1 = (i + 1) * 5.0 * M_PI / 180;
+	br_line ((float) (x + rad * sin (a0)), (float) (y - rad * cos (a0)), (float) (x + rad * sin (a1)), (float) (y - rad * cos (a1)), (float) w, c); } }
+static void dk_icon (const float (*P)[2], const unsigned short (*L)[2], int nl, double ox, double oy, double s, double w, unsigned c)
+{ for (int l = 0; l < nl; l++) for (int i = 0; i + 1 < L[l][1]; i++) { const float *a = P[L[l][0] + i], *b = P[L[l][0] + i + 1];
+	br_line ((float) (ox + (a[0] - 50) * s), (float) (oy + (a[1] - 50) * s), (float) (ox + (b[0] - 50) * s), (float) (oy + (b[1] - 50) * s), (float) w, c); } }
+static void dk_ctext (const char *t, double x, double ytop, double hgt, unsigned c)   /* (centred on x) */
+{ const double k = hgt / 6.0; br_text (t, (float) (x - (strlen (t) * 6 - 2) * k / 2.0), (float) ytop, (float) k, c); }
+#define NL(a) ((int) (sizeof a / sizeof a[0]))
+static void dk_draw (void)
+{
+	dk_w = CW; dk_h = DKH; if (dk_w < 1 || dk_h < 1) return;
+	const size_t n = (size_t) dk_w * dk_h;
+	if (n != dk_n) { free (dk_img); dk_img = malloc (n * 4); dk_n = n; }
+	if (!dk_img) return;
+	memset (dk_img, 0, n * 4); dr_img = dk_img; dr_w = dk_w; dr_h = dk_h; dk_gen++;
+	dk_place ();
+	const double r = dk_r, cy = dk_cy, w = r / 45.0 > 1.2 ? r / 45.0 : 1.2, lh = 0.30 * r;
+	/* the OSD (vecrender.py _osd, _meters): the frame rate, the screen's, the emulation's; the CPU meter */
+	{ const double k = dk_ok_, x = dk_ox, y = dk_M; static const char *const N[3] = { "INTERNAL:", "MONITOR:", "EMU RATE:" };
+	  for (int i = 0; i < 3; i++) { char row[40]; const int vl = (int) strlen (dk_osd[i]), pad = dk_wmax (dk_cols) - vl; snprintf (row, sizeof row, "%-*s", pad, N[i]);
+		const float xe = br_text (row, (float) x, (float) (y + i * 9.0 * k), (float) k, DK_G);
+		br_text (dk_osd[i], xe, (float) (y + i * 9.0 * k), (float) k, i == 2 ? (unsigned) dk_osd_col : DK_G); }
+	  const double km = k * 0.7, my = y + (3 + 0.25) * 9.0 * k, xe = x + dk_ow - k, bw = (xe - x) - 9 * 6.0 * km;
+	  if (dk_thin) for (int i = 0; i < 2; i++) {        /* (_meters_thin: two thin lines under the text) */
+		const double ty = y + 3 * 9.0 * k + (0.5 + i * 2.0) * k, th = fmax (1.0, k); const int pct = i == 0 ? dk_cpu : -1;
+		br_fill ((float) x, (float) ty, (float) xe, (float) (ty + th), DK_G, 0.30f);
+		if (pct >= 0) br_fill ((float) x, (float) ty, (float) (x + (xe - x) * fmin (1.0, pct / 100.0)), (float) (ty + th), pct < 90 ? DK_G : pct <= 100 ? 0xed9933u : 0xed5454u, 1); }
+	  else for (int i = 0; i < 2 && bw > 12 * km; i++) { const double ty = my + i * 9.0 * km; const int pct = i == 0 ? dk_cpu : -1;
+		br_text (i ? "GPU" : "CPU", (float) x, (float) ty, (float) km, DK_G);
+		const double bx0 = x + 4 * 6.0 * km; br_rect ((float) bx0, (float) ty, (float) (bx0 + bw), (float) (ty + 6 * km), DK_G, (float) fmax (1.0, km * 0.42));
+		const unsigned c = pct < 90 ? DK_G : pct <= 100 ? 0xed9933u : 0xed5454u;
+		if (pct > 0) br_fill ((float) (bx0 + km), (float) (ty + km), (float) (bx0 + km + (bw - 2 * km) * fmin (1.0, pct / 100.0)), (float) (ty + 5 * km), c, 0.75f);
+		char fig[8]; if (pct < 0) snprintf (fig, sizeof fig, "--"); else snprintf (fig, sizeof fig, "%d%%", pct > 999 ? 999 : pct);
+		br_text (fig, (float) (xe - (strlen (fig) * 6.0 - 1.0) * km), (float) ty, (float) km, pct < 0 ? DK_G : c); } }
+	/* PAUSED: between the OSD and the P2 port (slot_state) */
+	if (vx_paused) { const double left = dk_ox + dk_ow, right = dk_p2x - 1.1 * r, room = right - left;
+		if (room > 0) { static const char *const R2 = "PRESS PAUSE TO RESUME";
+			double kp = 0.80 * room / (6.0 * 6), kn = fmin (0.42 * kp, 0.80 * room / (6.0 * strlen (R2))), hgt = 11.0 * kp + 6.0 * kn;
+			const double fb = 0, wb = dk_h;   /* (the frame's bottom edge: the sheet's) */ if (hgt > 0.8 * (wb - fb)) { const double f = 0.8 * (wb - fb) / hgt; kp *= f; kn *= f; hgt *= f; }
+			const double y0 = (fb + wb) / 2.0 - hgt / 2.0, cx = (left + right) / 2.0;
+			dk_ctext ("PAUSED", cx, y0, 6 * kp, 0xed9933u); dk_ctext (R2, cx, y0 + 11.0 * kp, 6 * kn, DK_G); } }
+	/* the ports (_port2): port 2's device, port 1's joystick */
+	for (int pt = 2; pt >= 1; pt--) { const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x;
+		double s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1); const double oy = kind == 2 ? cy : cy - 0.12 * r, ox = cx + (kind == 2 ? 10 * s : 0);
+		if (kind == 2) dk_icon (PORT2_ICON_P, PORT2_ICON_L, NL (PORT2_ICON_L), ox, oy, s, w, DK_G);
+		else if (kind == 1) dk_icon (VOICE_ICON_P, VOICE_ICON_L, NL (VOICE_ICON_L), ox, oy, s, w, DK_G);
+		else if (kind == 3) dk_icon (IMAGER_ICON_P, IMAGER_ICON_L, NL (IMAGER_ICON_L), ox, oy, s, w, DK_G);
+		else if (kind == 4) dk_icon (LPEN_ICON_P, LPEN_ICON_L, NL (LPEN_ICON_L), ox, oy, s, w, DK_G);
+		else dk_icon (JOY_ICON_P, JOY_ICON_L, NL (JOY_ICON_L), ox, oy, s, w, DK_G);
+		const char *t = pt == 2 ? "P2 PORT" : "P1 PORT"; const double l2 = fmin (lh, 2.6 * r * 6.0 / (strlen (t) * 6 - 2));
+		dk_ctext (t, cx, cy - 1.5 * r - 0.30 * r, l2, DK_G); }
+	/* the cartridge (_cart): in the slot, or out (the load symbol) */
+	{ const double cx = dk_cx, s = 2.0 * r / 100.0;
+	  if (!ej_out) dk_icon (CART_ICON_P, CART_ICON_L, NL (CART_ICON_L), cx, cy, s, w, DK_G);
+	  else { const double s2 = 2.0 * r / 160.0, top = cy - r;
+		for (int l = 0; l < NL (LOAD_LINES); l++) for (int i = 0; i + 1 < LOAD_LINES[l][1]; i++) { const float *a = LOAD_PTS[LOAD_LINES[l][0] + i], *b = LOAD_PTS[LOAD_LINES[l][0] + i + 1];
+			const double dy = l >= 3 ? 0.0 : 0.0, sh = l >= 3 ? -60 * s2 + 60 * s2 : 0.0; (void) dy;
+			br_line ((float) (cx + (a[0] - 50) * s2), (float) (top + a[1] * s2 + sh), (float) (cx + (b[0] - 50) * s2), (float) (top + b[1] * s2 + sh), (float) w, DK_G); } }
+	  if (br_open) br_rect ((float) (cx - 52 * s), (float) (cy - 56 * s), (float) (cx + 52 * s), (float) (cy + 56 * s), DK_G, (float) w);
+	  dk_ctext ("CARTRIDGE", cx, cy - 1.5 * r - lh, lh, DK_G); }
+	/* the knob and RESET (_knob) */
+	{ const double cx = dk_kx, vol = pw_on ? vx_vol : 0.0;
+	  #define AT(x, y, rad, deg, ox, oy) do { const double a_ = (deg) * M_PI / 180; ox = (x) + (rad) * sin (a_); oy = (y) - (rad) * cos (a_); } while (0)
+	  dk_circle (cx, cy, r, w, DK_G); dk_circle (cx, cy, 0.6 * r, w, DK_G);
+	  for (int i = 0; i < 48; i++) { double x, y; AT (cx, cy, 0.645 * r, i * 7.5, x, y); br_fill ((float) (x - 0.6), (float) (y - 0.6), (float) (x + 0.6), (float) (y + 0.6), DK_G, 0.8f); }
+	  const double ang = -150.0 + 300.0 * vol; double tx, ty, bx, by, px, py; AT (cx, cy, 0.93 * r, ang, tx, ty); AT (cx, cy, 0.76 * r, ang, bx, by); AT (0.0, 0.0, 0.08 * r, ang + 90.0, px, py);
+	  br_line ((float) tx, (float) ty, (float) (bx + px), (float) (by + py), (float) w, DK_G); br_line ((float) (bx + px), (float) (by + py), (float) (bx - px), (float) (by - py), (float) w, DK_G);
+	  br_line ((float) (bx - px), (float) (by - py), (float) tx, (float) ty, (float) w, DK_G);
+	  char lab[16]; if (dk_hover_label) { if (pw_on) snprintf (lab, sizeof lab, "VOL %d%%", (int) (vx_vol * 100 + 0.5)); else snprintf (lab, sizeof lab, "OFF"); } else snprintf (lab, sizeof lab, "OFF/ON");
+	  dk_ctext (lab, cx, cy - 1.5 * r - lh, lh, DK_G);
+	  double ix[21], iy[21], ox_[21], oy_[21];
+	  for (int i = 0; i < 21; i++) { AT (cx, cy, 1.25 * r, 50 + i * 4.0, ix[i], iy[i]); AT (cx, cy, 1.25 * r + (0.03 + 0.17 * i / 20.0) * r, 50 + i * 4.0, ox_[i], oy_[i]); }
+	  for (int i = 0; i < 20; i++) { br_line ((float) ix[i], (float) iy[i], (float) ix[i + 1], (float) iy[i + 1], (float) w, DK_G); br_line ((float) ox_[i], (float) oy_[i], (float) ox_[i + 1], (float) oy_[i + 1], (float) w, DK_G); }
+	  br_line ((float) ix[0], (float) iy[0], (float) ox_[0], (float) oy_[0], (float) w, DK_G); br_line ((float) ix[20], (float) iy[20], (float) ox_[20], (float) oy_[20], (float) w, DK_G);
+	  dk_ctext ("VOL", cx + 1.6 * r + (3 * 6 - 2) * lh / 12.0, cy - lh / 2.0, lh, DK_G);
+	  dk_circle (dk_rx, cy, 0.95 * r, w, DK_G); dk_circle (dk_rx, cy, (vt_wall () < dk_reset_until ? 0.68 : 0.78) * r, w, DK_G);
+	  dk_ctext ("RESET", dk_rx, cy - 1.5 * r - lh, lh, DK_G);
+	  #undef AT
+	}
+}
+/* (the CPU's frame: the block in the output - bars black, the picture, the deck under it) */
+static void dk_compose (uint32_t *o, const uint32_t *pic, size_t pitch)
+{
+	memset (o, 0, (size_t) TW * TH * 4);
+	for (int y = 0; y < CH; y++) memcpy (o + (size_t) (BY + y) * TW + BX, pic + (size_t) y * pitch, (size_t) CW * 4);
+	if (!dk_img) return;
+	for (int y = 0; y < dk_h && BY + CH + y < TH; y++) for (int x = 0; x < dk_w && x < CW; x++) {
+		const uint32_t s = dk_img[(size_t) y * dk_w + x]; if (!(s >> 24)) continue;
+		o[(size_t) (BY + CH + y) * TW + BX + x] = s & 0xffffffu; }   /* (on black: the colour itself) */
+}
+/* (each refresh: the OSD's figures once a second; the deck drawn anew when anything on it changed) */
+static double dk_t0, dk_busy, dk_run0; static long dk_f0, dk_r0; static unsigned long long dk_e0; static long dk_runs;
+static void dk_tick (double busy)
+{
+	if (!dk_on) return;
+	(void) busy; dk_runs++;
+	{ static clock_t c0; const clock_t c = clock (); if (c0) dk_busy += (double) (c - c0) / CLOCKS_PER_SEC; c0 = c; }   /* (the processor: all the core's threads) */
+	const double now = vt_wall ();
+	if (dk_t0 == 0) { dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; snprintf (dk_osd[0], 24, "-- FPS"); snprintf (dk_osd[1], 24, "-- HZ"); snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; }
+	if (now - dk_t0 >= 1.0) { const double dt = now - dk_t0;
+		snprintf (dk_osd[0], 24, "%d FPS", (int) ((aq_frames - dk_f0) / dt + 0.5)); snprintf (dk_osd[1], 24, "%d HZ", (int) ((dk_runs - dk_r0) / dt + 0.5));
+		const double sp = (double) (run_t - dk_e0) / 1.5e6 / dt * 100.0;
+		if (vx_paused || !pw_on) { snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; dk_cpu = -1; }
+		else { snprintf (dk_osd[2], 24, "%d%%", sp >= 99.5 ? 100 : (int) sp); dk_osd_col = sp >= 97 ? DK_G : sp >= 80 ? 0xed9933u : 0xed5454u;
+			dk_cpu = (int) (100.0 * dk_busy / dt + 0.5); }
+		dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; dk_dirty_set = 1; }
+	if (dk_dirty_set || vt_wall () < dk_reset_until + 0.05) { dk_draw (); dk_dirty_set = 0; }
+}
+static void turn_volume (double d)
+{
+	if (!pw_on) { if (d <= 0) return; vx_vol = 0; pw_switch (1, 30); }
+	vx_vol += (float) d; if (vx_vol > 1) vx_vol = 1;
+	if (vx_vol <= 0.0005f) { vx_vol = 0; vol_before_off = 0.5f; pw_switch (0, 0); }   /* (down to 0: switched off, as the Vectrex) */
+	dk_dirty_set = 1;
+}
+static void power_up (void) { turn_volume (vol_before_off > 0 ? vol_before_off : 0.5); }
+/* (port 2: the next device - joystick, VecVox, VecVoice, 3D Imager, light pen; without the speech ROM no voices) */
+static void port2_next (void)
+{
+	int d = (dk_p2 + 1) % 5; if ((d == 1 || d == 2) && !sp_ok) d = 3;
+	extern void vt_set_analog (int id, double v); extern int vt_imager;
+	emu_wait_ext ();
+	vt_set_analog (27, d == 0 ? 0 : d == 1 ? 1 : d == 2 ? 2 : d == 3 ? 3 : 6);
+	lightpen = d == 4; dk_p2 = d; dk_dirty_set = 1;
+	{ const int st = vt_imager && opt_imager == 2; if (st != stereo || (vt_imager ? 3 : 1) != NC) { stereo = st; pic_setup (); geo_tell (); } }
+	fprintf (stderr, "[vectrex_emu] port 2: %s\n", (const char *const[]) { "joystick", "VecVox", "VecVoice", "3D Imager", "light pen" }[d]);
+}
+/* RetroArch's pointer (the mouse, touch) on the deck - and, switched off, on the picture: on */
+static int dk_prev_press;
+static void dk_pointer (void)
+{
+	if (!dk_on || br_open) { dk_prev_press = 0; dk_drag.on = 0; return; }
+	const int pr = input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0;
+	double fx = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X) + 32768) / 65536.0, fy = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y) + 32768) / 65536.0;
+	{ const double ax = fx, ay = fy; if (opt_rot == 1) { fx = 1 - ay; fy = ax; } else if (opt_rot == 2) { fx = 1 - ax; fy = 1 - ay; } else if (opt_rot == 3) { fx = ay; fy = 1 - ax; } }
+	const double x = fx * TW - BX, y = fy * TH - BY - CH, r = dk_r;   /* (the deck's own pixels: y 0 at the picture's bottom) */
+	if (pr && !dk_prev_press) {
+		if (hypot (x - dk_p2x, y - dk_cy) <= 1.3 * r) port2_next ();
+		else if (hypot (x - dk_cx, y - dk_cy) <= 1.3 * r) { br_show (1); dk_dirty_set = 1; }
+		else if (hypot (x - dk_rx, y - dk_cy) <= 1.0 * r) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; }
+		else if (hypot (x - dk_kx, y - dk_cy) <= 1.15 * r) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;
+			dk_drag.a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI; dk_hover_label = 1; dk_dirty_set = 1; }
+		else if (y < 0 && !pw_on) power_up ();
+		else if (vx_paused && x > dk_ox + dk_ow && x < dk_p2x - 1.1 * r && y >= 0) { vx_paused = 0; dk_dirty_set = 1; }
+	} else if (pr && dk_drag.on) {                   /* (turned round its centre, clockwise louder, one to one with its marker) */
+		if (!dk_drag.moved && hypot (x - dk_drag.x, y - dk_drag.y) >= fmax (3.0, 0.12 * r)) dk_drag.moved = 1;
+		const double a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI;
+		if (a < 1e8 && dk_drag.a < 1e8) { const double da = fmod (a - dk_drag.a + 540.0, 360.0) - 180.0; dk_drag.acc += da / 300.0;
+			if (fabs (dk_drag.acc) >= 0.005) { const double st = dk_drag.acc; dk_drag.acc = 0; turn_volume (st); } }
+		dk_drag.a = a;
+	} else if (!pr && dk_drag.on) {                  /* (let go: not turned - a click: +-5 %, switched off: on) */
+		dk_drag.on = 0; dk_hover_label = 0; dk_dirty_set = 1;
+		if (!dk_drag.moved) { if (vx_vol != dk_drag.vol0 && pw_on) vx_vol = (float) dk_drag.vol0;
+			if (!pw_on) power_up (); else turn_volume (dk_drag.up ? 0.05 : -0.05); }
+	}
+	dk_prev_press = pr;
+}

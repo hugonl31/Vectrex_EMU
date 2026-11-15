@@ -126,12 +126,12 @@ static void br_geom (void)
 	g.cl[0] = g.x1 - 0.6f * rh - b; g.cl[1] = g.y0 + 0.3f * rh; g.cl[2] = g.x1 - 0.6f * rh; g.cl[3] = g.cl[1] + b;
 	br_g = g;
 }
-static uint32_t br_rgb (unsigned c) { return c; }
+static uint32_t *dr_img; static int dr_w, dr_h;    /* (what br_over draws into: the browser's image, the deck's) */
 static void br_over (int x, int y, unsigned rgb, float a)   /* (premultiplied ARGB, the colour over what is there) */
 {
-	if (x < 0 || y < 0 || x >= FW || y >= FH || a <= 0) return;
+	if (x < 0 || y < 0 || x >= dr_w || y >= dr_h || a <= 0) return;
 	if (a > 1) a = 1;
-	uint32_t *p = br_img + (size_t) y * FW + x, d = *p; const float ia = 1 - a;
+	uint32_t *p = dr_img + (size_t) y * dr_w + x, d = *p; const float ia = 1 - a;
 	const unsigned r = (unsigned) (((rgb >> 16) & 255) * a + ((d >> 16) & 255) * ia + 0.5f), g = (unsigned) (((rgb >> 8) & 255) * a + ((d >> 8) & 255) * ia + 0.5f),
 	               b = (unsigned) ((rgb & 255) * a + (d & 255) * ia + 0.5f), A = (unsigned) (255 * a + (d >> 24) * ia + 0.5f);
 	*p = (A > 255 ? 255u : A) << 24 | (r > 255 ? 255u : r) << 16 | (g > 255 ? 255u : g) << 8 | (b > 255 ? 255u : b);
@@ -166,6 +166,7 @@ static void br_draw (void)
 	const size_t n = (size_t) FW * FH;
 	if (n != br_imgn) { free (br_img); br_img = calloc (n, 4); br_imgn = n; }
 	if (!br_img) return;
+	dr_img = br_img; dr_w = FW; dr_h = FH;
 	if (br_shown) for (int y = br_by0; y <= br_by1; y++) if (y >= 0 && y < FH) memset (br_img + (size_t) y * FW + (br_bx0 > 0 ? br_bx0 : 0), 0, (size_t) ((br_bx1 < FW ? br_bx1 : FW - 1) - (br_bx0 > 0 ? br_bx0 : 0) + 1) * 4);
 	br_shown = 0; br_dirty = 0; br_gen++;
 	if (!br_open) return;
@@ -275,7 +276,7 @@ static int br_input (void)
 		double fx = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X) + 32768) / 65536.0, fy = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y) + 32768) / 65536.0;
 		{ const double ax_ = fx, ay_ = fy;     /* (the picture turned: back to its own way up, as the light pen) */
 		  if (opt_rot == 1) { fx = 1 - ay_; fy = ax_; } else if (opt_rot == 2) { fx = 1 - ax_; fy = 1 - ay_; } else if (opt_rot == 3) { fx = ay_; fy = 1 - ax_; } }
-		const float x = (float) (CX0 + fx * CW), y = (float) (CY0 + fy * CH); const br_geo *g = &br_g;
+		const float x = (float) (CX0 + fx * TW - BX), y = (float) (CY0 + fy * TH - BY); const br_geo *g = &br_g;   /* (the deck's block: deck.c) */
 		#define IN(q) (x >= (q)[0] && x <= (q)[2] && y >= (q)[1] && y <= (q)[3])
 		if (x < g->x0 || x > g->x1 || y < g->y0 || y > g->y1 || IN (g->cl)) br_show (0);
 		else if (IN (g->up)) br_move (-BR_NVIS);

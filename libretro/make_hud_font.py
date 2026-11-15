@@ -12,7 +12,7 @@ g = {}
 exec(src[a:b], g)
 blk = src[c:d]
 keep = []
-for name in ('LOGO_ICON', '_TICKS', 'CART_ICON', 'LOAD_ICON'):   # (only the icons the load button needs)
+for name in ('LOGO_ICON', '_TICKS', 'CART_ICON', 'LOAD_ICON', 'JOY_ICON', 'VECLINK_ICON', 'PORT2_ICON', 'VOICE_ICON', 'IMAGER_ICON', 'LPEN_ICON'):   # (the deck's and the load button's)
     i = blk.index(name + ' = ')
     j = len(blk)
     for other in ('JOY_ICON', 'VECLINK_ICON', 'PORT2_ICON', 'VOICE_ICON', 'IMAGER_ICON', 'LPEN_ICON', 'CART_ICON', 'LOAD_ICON', '_TICKS', 'LOGO_ICON'):
@@ -40,5 +40,14 @@ out.append('static const float LOAD_PTS[%d][2] = {' % len(pts))
 out.append(',\n'.join('\t{ %s, %s }' % (F(u), F(v)) for u, v in pts) + ' };')
 out.append('static const unsigned short LOAD_LINES[%d][2] = {' % len(lines))
 out.append(',\n'.join('\t{ %d, %d }' % x for x in lines) + ' };')
+# the control deck's pictograms (vecrender.py _port2, _cart): each a list of polylines, 100 x 100 grid, y down
+for name in ('CART_ICON', 'JOY_ICON', 'PORT2_ICON', 'VOICE_ICON', 'IMAGER_ICON', 'LPEN_ICON', 'VECLINK_ICON'):
+    pts_, lines_ = [], []
+    for line in g[name]:
+        lines_.append((len(pts_), len(line))); pts_ += line
+    out.append('static const float %s_P[%d][2] = {' % (name, len(pts_)))
+    out.append(',\n'.join('\t{ %s, %s }' % (F(u), F(v)) for u, v in pts_) + ' };')
+    out.append('static const unsigned short %s_L[%d][2] = {' % (name, len(lines_)))
+    out.append(',\n'.join('\t{ %d, %d }' % x for x in lines_) + ' };')
 open(os.path.join(here, 'hud_font.h'), 'w', newline='\n').write('\n'.join(out) + '\n')
 print('hud_font.h: %d glyphs, %d strokes, load icon %d lines' % (sum(1 for x in idx if x[1]), len(segs), len(lines)))

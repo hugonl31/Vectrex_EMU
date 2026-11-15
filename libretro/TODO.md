@@ -28,12 +28,12 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
       default compared with vecrender.py / vectrex_emu.py
 - [ ] The overlay's effects on the GPU: scratches and damage, the plastic glow, the ceiling light on the overlay
 - [ ] The options grouped like the desktop's Config tabs (where RetroArch's submenus allow)
+
+## Low priority (the owner: ask first)
+
 - [ ] A ROM browser like the desktop's: on a button (L1?) or touch, its folder set in the options (else the folder the
       game was loaded from)
 - [ ] 16:9 mode: in tate the desktop's control strip (OSD) below the picture, clickable / touchable
-
-## Online
-
 - [ ] RetroArch netplay for two-player games (the other player as player 2): 6809 games have exact save states, which
       netplay needs; UVMC2 / PiTrex have none
 

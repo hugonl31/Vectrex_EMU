@@ -22,7 +22,7 @@ scp -q -P 8022 $P/system/vectrex_emu/bios.bin $NOVA:$SD/BIOS/vectrex_emu/
 tar -C $P/system/vectrex_emu/overlays -cf - . | ssh -o BatchMode=yes -p 8022 $NOVA "tar -C $SD/BIOS/vectrex_emu/overlays -xf - --skip-old-files --no-same-owner --no-same-permissions 2>/dev/null || true"
 ssh -o BatchMode=yes -p 8022 $NOVA "mkdir -p $SD/BIOS/vectrex_emu/gpu"
 scp -q -P 8022 $P/system/vectrex_emu/gpu/* $NOVA:$SD/BIOS/vectrex_emu/gpu/
-scp -q -P 8022 $P/vectrex_emu_libretro_android.so $P/vectrex_emu_libretro.info $P/INSTALL.txt $NOVA:/storage/emulated/0/Download/
+scp -q -P 8022 $P/vectrex_emu_libretro_android.so $P/vectrex_emu_libretro.info $P/INSTALL.txt $NOVA:$SD/Download/
 # (the info file also where RetroArch can read it, once its Core Info folder is set there - its own folder is app-private:
 #  the core list then shows "Vectrex_EMU" instead of the file's name)
 ssh -o BatchMode=yes -p 8022 $NOVA "mkdir -p /storage/emulated/0/RetroArch/info"
@@ -38,5 +38,5 @@ done
 [ -f ../build/Vectrex_EMU/system/sp0256-al2.bin ] && scp -q -P 8022 ../build/Vectrex_EMU/system/sp0256-al2.bin $NOVA:$SD/BIOS/vectrex_emu/
 [ -f ../build/Vectrex_EMU/pitrex/pitrex.img ] && scp -q -P 8022 ../build/Vectrex_EMU/pitrex/pitrex.img "$NOVA:$SD/ROMs/vectrex/PiTrex.img"
 for g in ../package/roms/*.um2; do [ -f "$g" ] && scp -q -P 8022 "$g" "$NOVA:$SD/ROMs/vectrex/"; done
-ssh -o BatchMode=yes -p 8022 $NOVA "ls -l /storage/emulated/0/Download/vectrex_emu_libretro_android.so; ls $SD/BIOS/vectrex_emu; ls $SD/BIOS/vectrex_emu/overlays | wc -l; ls $SD/ES-DE/custom_systems"
-echo "on the Nova: RetroArch > Load Core > Install or Restore a Core > Download > vectrex_emu_libretro_android.so"
+ssh -o BatchMode=yes -p 8022 $NOVA "ls -l $SD/Download/vectrex_emu_libretro_android.so; ls $SD/BIOS/vectrex_emu; ls $SD/BIOS/vectrex_emu/overlays | wc -l; ls $SD/ES-DE/custom_systems"
+echo "on the Nova: RetroArch > Load Core > Install or Restore a Core > the SD card's Download > vectrex_emu_libretro_android.so"

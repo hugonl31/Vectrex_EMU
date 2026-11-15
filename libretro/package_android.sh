@@ -47,3 +47,12 @@ if [ -n "$SHARE" ] && [ -d "$SHARE" ]; then
 	[ -f ../build/Vectrex_EMU/pitrex/pitrex.img ] && cp -u ../build/Vectrex_EMU/pitrex/pitrex.img "$SHARE/cards/ROMs/PiTrex.img"
 	cp -u ../package/roms/*.um2 "$SHARE/cards/ROMs/" 2>/dev/null || true
 fi
+# the Retroid Pocket Nova itself (the owner, 2026-11-15): the newest core in the SD card's Download folder - Windows'
+# scp (this PC's key, Termux's sshd); the Nova off or away: skipped (NOVA_DL= empty: skipped)
+NOVA=${NOVA:-u0_a117@10.0.2.221}
+NOVA_DL=${NOVA_DL-/storage/F929-FA97/Download}
+SCP=/mnt/c/Windows/System32/OpenSSH/scp.exe; command -v "$SCP" >/dev/null 2>&1 || SCP=scp
+if [ -n "$NOVA_DL" ]; then
+	if "$SCP" -q -o BatchMode=yes -o ConnectTimeout=8 -P 8022 dist/pkg/vectrex_emu_libretro_android.so dist/pkg/vectrex_emu_libretro.info "$NOVA:$NOVA_DL/" 2>/dev/null
+	then echo "copied to the Nova: $NOVA_DL"; else echo "the Nova not reached: not copied there"; fi
+fi

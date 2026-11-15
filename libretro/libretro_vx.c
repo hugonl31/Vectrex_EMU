@@ -2659,13 +2659,11 @@ static const char *speech_dev (const unsigned char *h, size_t hn, const char *pa
 	return NULL;
 }
 
-/* ---- v0.13: save states (see the header). The layout: a header, the two sections less the left-out buffers, a flash
- * cartridge's image, the lines in progress and the last frame's, the 3D Imager's eye buffers, the kept game frames */
-/* (2026-11-04: the sections' bookkeeping is Vectrex_EMU's own, src\core\state\state_core.c - one copy for the desktop's
- *  run-ahead and this core; vxs_init once, its ranges never move) */
-size_t vxs_init (void); void vxs_exclude (const void *p, size_t n); void vxs_save (unsigned char *o); void vxs_load (const unsigned char *s);
+/* ---- v0.13: save states (see the header). The layout: a header, the state's variables by name (vars_*.h), a flash
+ * cartridge's image, the lines in progress and the last frame's, the 3D Imager's eye buffers, the kept game frames -
+ * the same bytes on every system (vx_raw: the variables' bytes) */
 static size_t vx_raw, vx_size; static int vx_inited;
-#define VX_MAGIC 0x31345856u                /* "VX14" (1.1: the lines compact) */
+#define VX_MAGIC 0x35315856u                /* "VX15" (1.1: the lines compact; 1.2: the variables by name) */
 /* (the lines in a state: 26 bytes each, the same on every system - x0 y0 x1 y1 as 32 bits, the intensity, the colour, the
  *  cycles, the start - at most ST_L a frame (ST_E an eye): RetroArch's netplay keeps a ring of states and sends one to who
  *  joins; at 40000 lines of 48 bytes reserved for each list a state was 19 MB and the join failed, 2026-11-15. A 6809 game
@@ -2690,19 +2688,39 @@ static const unsigned char *get_lines (const unsigned char *i, line_t *L, int *n
 #define VX_FRAME_HDR (sizeof (int) * 3 + sizeof (double) + sizeof (unsigned long long))
 static int extern_cart_len (void) { extern size_t vt_cart_len; return (int) (vt_cart_len > sizeof cart ? sizeof cart : vt_cart_len); }
 static int vx_ok (void) { extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; return !vt_uvm2 && !vt_uvm2_cart && !vt_pitrex; }
+/* (2026-11-15: the variables by name, in one order, 'long' as 8 bytes - the same state on every system, so netplay joins
+ *  between Windows, Android and Linux. Before: the save-state sections whole, which each compiler lays out its own way.
+ *  The lists: vars_*.h, made by tools/gen_state_vars.py from both builds' symbols) */
+#include "vars_vx.h"
+void vxs_vars_vecx (void (*add) (void *, size_t, int)), vxs_vars_e6809 (void (*add) (void *, size_t, int)), vxs_vars_e8910 (void (*add) (void *, size_t, int));
+typedef struct { unsigned char *p; size_t n; int l; } vxv_t;
+static vxv_t *vxv; static int nvxv, cvxv;
+static void vxv_add (void *p, size_t n, int l)
+{
+	if (nvxv == cvxv) { cvxv = cvxv ? cvxv * 2 : 1024; vxv = realloc (vxv, sizeof (vxv_t) * cvxv); }
+	vxv[nvxv].p = p; vxv[nvxv].n = n; vxv[nvxv].l = l; nvxv++;
+	vx_raw += l ? n / sizeof (long) * 8 : n;
+}
+static unsigned char *vxv_save (unsigned char *o)
+{
+	for (int k = 0; k < nvxv; k++) { const vxv_t *v = &vxv[k];
+		if (!v->l) { memcpy (o, v->p, v->n); o += v->n; continue; }
+		for (size_t j = 0; j < v->n / sizeof (long); j++) { int64_t x = ((const long *) v->p)[j]; memcpy (o, &x, 8); o += 8; } }
+	return o;
+}
+static const unsigned char *vxv_load (const unsigned char *i)
+{
+	for (int k = 0; k < nvxv; k++) { const vxv_t *v = &vxv[k];
+		if (!v->l) { memcpy (v->p, i, v->n); i += v->n; continue; }
+		for (size_t j = 0; j < v->n / sizeof (long); j++) { int64_t x; memcpy (&x, i, 8); ((long *) v->p)[j] = (long) x; i += 8; } }
+	return i;
+}
 static void vx_state_init (void)
 {
-	if (!vx_inited) {                       /* (the lines in progress, the last frame's and the eye buffers: saved with their counts) */
-		vx_inited = 1;
-		vxs_exclude (prof, sizeof prof); vxs_exclude (acc, sizeof acc); vxs_exclude (cur, sizeof cur); vxs_exclude (last, sizeof last); vxs_exclude (eyeb, sizeof eyeb);
-		/* (the pointers and what belongs to this process alone: a state may be loaded by another - netplay's join) */
-		vxs_exclude (&bcur, sizeof bcur); vxs_exclude (&blast, sizeof blast); vxs_exclude (&wavf, sizeof wavf); vxs_exclude (&recf, sizeof recf);
-		vxs_exclude (&stdout_bin, sizeof stdout_bin); vxs_exclude (&abuf, sizeof abuf); vxs_exclude (&abuf_n, sizeof abuf_n); vxs_exclude (&abuf_cap, sizeof abuf_cap);
-		vxs_exclude (&vt_flash_file, sizeof vt_flash_file); vxs_exclude (syms, sizeof syms);
-#ifdef VX_STATES
-		vxs_exclude (&ra_buf, sizeof ra_buf);
-#endif
-		vx_raw = vxs_init ();
+	if (!vx_inited) {                       /* (the lines in progress, the last frame's and the eye buffers: saved apart, with their counts) */
+		vx_inited = 1; vx_raw = 0;
+		vxs_vars_vecx (vxv_add); vxs_vars_e6809 (vxv_add); vxs_vars_e8910 (vxv_add); vxs_vars_vx (vxv_add);
+		if (getenv ("VXPOC_STATESPEC")) for (int k = 0; k < nvxv; k++) fprintf (stderr, "[statespec] %d %zu %d%c", k, vxv[k].n, vxv[k].l, 10);   /* (test: each one's size here) */
 	}
 	vx_size = 16 + vx_raw + (size_t) extern_cart_len () + 2 * (4 + ST_L * LREC) + 2 * (4 + ST_E * LREC)
 	        + 2 * sizeof (int) + (NH + 1) * (VX_FRAME_HDR + 4 + ST_L * LREC + 6000 * sizeof (long long));
@@ -2729,7 +2747,7 @@ bool retro_serialize (void *d, size_t sz)
 	if (!vx_ok () || sz < vx_size) return false;
 	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), 0 };
 	PUT (h, 16);
-	vxs_save (o); o += vx_raw;
+	o = vxv_save (o);
 	PUT (cart, extern_cart_len ());
 	o = put_lines (o, cur, ncur, ST_L); o = put_lines (o, last, nlast, ST_L);
 	o = put_lines (o, eyeb[0], neye[0], ST_E); o = put_lines (o, eyeb[1], neye[1], ST_E);
@@ -2750,7 +2768,7 @@ bool retro_unserialize (const void *d, size_t sz)
 	if (h[0] != VX_MAGIC || h[1] != vx_raw || h[2] != (uint32_t) extern_cart_len ()) {
 		NDBG ("[netdbg] unserialize: header %08x %u %u, mine %08x %zu %ld - sz %zu\n", h[0], h[1], h[2], VX_MAGIC, vx_raw, (long) extern_cart_len (), sz); return false; }
 	{ static long n; if (++n % 60 == 1) NDBG ("[netdbg] unserialize #%ld ok sz %zu run %ld\n", n, sz, net_runs); }
-	vxs_load (i); i += vx_raw;
+	i = vxv_load (i);
 	GET (cart, extern_cart_len ());
 	{ int m; i = get_lines (i, cur, &m); ncur = m; i = get_lines (i, last, &m); nlast = m;   /* (the counts as saved: a list over the cap trimmed) */
 	  i = get_lines (i, eyeb[0], &m); neye[0] = m; i = get_lines (i, eyeb[1], &m); neye[1] = m; }

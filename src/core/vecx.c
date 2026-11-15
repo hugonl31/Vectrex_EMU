@@ -1442,6 +1442,10 @@ static unsigned zpos, bpos, hp;           /* (alg_sstep's histories: where the n
 static unsigned alg_idle_n;               /* (cycles in a row that changed nothing: see alg_sstep) */
 static unsigned long long alg_skipped;    /* (cycles the fast path took, for the stats) */
 static void alg_sstep_full (void);
+/* (alg_sstep_full's histories and remembered factors: at file scope, so a save state has them - RetroArch's netplay) */
+static unsigned char sd_zh[32], sd_bh[16], sd_hist[64];
+static double zt_tau = -1.0, zt_e[128];   /* (per intensity, remembered: see kexp) */
+static kmemo_t km_m2, km_m1, km_mzx, km_mzy, km_mlx, km_mly;
 double vt_alg_skipped (void) { return alg_cycles ? (double) alg_skipped / (double) alg_cycles : 0.0; }
 /* the analog side's state and inputs, as alg_sstep_full reads and leaves them (the settings are not here: a change of
  * one restarts the count, vt_set_analog) */
@@ -1518,15 +1522,17 @@ static void alg_sstep_dev (void)
 	if (dev_on) dev_cyc++;
 	alg_cycles++;
 }
+/* (alg_sstep's own: at file scope, so a save state has them - RetroArch's netplay, 2026-11-15) */
+static int ss_have; static alg_snap_t ss_last;
 static einline void alg_sstep (void)
 {
-	static int on = -1, have; static alg_snap_t last;
+	static int on = -1;
 	if (vt_dev) { alg_sstep_dev (); return; }
 	if (on < 0) { const char *z = getenv ("VT_ALGSKIP"); on = z ? atoi (z) : 1; }
 	alg_quiet = 0;
 	if (!on || vt_imager || vt_lightpen || vt_beam_hook || vt_beam_mode > 0 || prot_on > 0) { alg_sstep_full (); return; }
 	alg_in_t in; alg_inputs (&in);
-	int same_in = have && alg_in_same (&in, &alg_lin);
+	int same_in = ss_have && alg_in_same (&in, &alg_lin);
 	if (alg_idle_n >= 64 && same_in) {
 		alg_count ();
 		alg_quiet = 1;                          /* (ALG_STEP: on like this while nothing is written and the VIA's lines hold) */
@@ -1536,9 +1542,9 @@ static einline void alg_sstep (void)
 	alg_sstep_full ();
 	if (alg_curr_x == cx && alg_curr_y == cy && beam_vx == 0.0 && beam_vy == 0.0) {
 		alg_snap_t a; alg_snap (&a);
-		alg_idle_n = same_in && have > 1 && !memcmp (&a, &last, sizeof a) ? alg_idle_n + 1 : 0;
-		last = a; have = 2;
-	} else { alg_idle_n = 0; have = 1; }
+		alg_idle_n = same_in && ss_have > 1 && !memcmp (&a, &ss_last, sizeof a) ? alg_idle_n + 1 : 0;
+		ss_last = a; ss_have = 2;
+	} else { alg_idle_n = 0; ss_have = 1; }
 	alg_inputs (&alg_lin);
 }
 static void alg_sstep_full (void)
@@ -1565,13 +1571,13 @@ static void alg_sstep_full (void)
 	 * reach 98-98.5 %, within the photos' scatter). Measured 2026-10-26 (TODO.md, Clean Sweep): the real wall ends sit
 	 * ~0.4 cycle further along their sweeps, below this switch's whole-cycle step - a test switch, 0 (off) */
 	if (z_delay < 0) { const char *z = getenv ("VT_ZDELAY"); z_delay = z ? atoi (z) : 0; if (z_delay > 30) z_delay = 30; }
-	if (z_delay > 0) { static unsigned char zh[32];
-		zh[zpos++ & 31] = sig_blank ? 1 : 0;
-		sig_blank = zh[(zpos - 1 - z_delay) & 31]; }
-	{ static unsigned char bh[16]; int boff = (int) beam_off;
+	if (z_delay > 0) {
+		sd_zh[zpos++ & 31] = sig_blank ? 1 : 0;
+		sig_blank = sd_zh[(zpos - 1 - z_delay) & 31]; }
+	{ int boff = (int) beam_off;
 	  if (boff) {
-		bh[bpos++ & 15] = sig_blank ? 1 : 0;
-		for (int k = 1; k <= boff; k++) if (bh[(bpos - 1 - k) & 15]) sig_blank = 1;
+		sd_bh[bpos++ & 15] = sig_blank ? 1 : 0;
+		for (int k = 1; k <= boff; k++) if (sd_bh[(bpos - 1 - k) & 15]) sig_blank = 1;
 	  } }
 	/* VT_ZTAU=t: the beam switches on almost at once but fades out with a time constant of t cycles
 	 * at full intensity, shorter when dimmer (the owner's photos, 2026-10-08: at intensity 127 the
@@ -1581,7 +1587,6 @@ static void alg_sstep_full (void)
 		/* fast rise (0.7 cycles), the fall slows with the intensity: tau * (Z/127)^1.5 */
 		if (sig_blank) alg_zlev += (1.0 - alg_zlev) * 0.76;
 		else {
-			static double zt_tau = -1.0, zt_e[128];        /* (per intensity, remembered: see kexp) */
 			if (alg_ztau != zt_tau) {
 				zt_tau = alg_ztau;
 				for (int v = 0; v < 128; v++) {
@@ -1630,11 +1635,11 @@ static void alg_sstep_full (void)
 	if (vt_vlag > 0.05) {                               /* the speed, smoothed (see vt_vlag) */
 		if (!vlag_init) { vlag_init = 1; vlag_x = vlag_x1 = adx; vlag_y = vlag_y1 = ady; }
 		if (vlag_n == 2) {                              /* (two stages of tau / 2) */
-			static kmemo_t m2; double k = kexp (&m2, 2.0, vt_vlag);
+			double k = kexp (&km_m2, 2.0, vt_vlag);
 			vlag_x1 += (adx - vlag_x1) * k; vlag_y1 += (ady - vlag_y1) * k;
 			vlag_x += (vlag_x1 - vlag_x) * k; vlag_y += (vlag_y1 - vlag_y) * k;
 		} else {
-			static kmemo_t m1; double k = kexp (&m1, 1.0, vt_vlag);
+			double k = kexp (&km_m1, 1.0, vt_vlag);
 			vlag_x += (adx - vlag_x) * k; vlag_y += (ady - vlag_y) * k;
 		}
 		adx = (long) (vlag_x + (vlag_x >= 0 ? 0.5 : -0.5)); ady = (long) (vlag_y + (vlag_y >= 0 ? 0.5 : -0.5));
@@ -1652,14 +1657,14 @@ static void alg_sstep_full (void)
 	 * real Mine Storm (2026-10-12) - the ship's lines ~20 % short, the mothership's corners open now and
 	 * then (on the tube less visibly). */
 	double ramp_part = 1.0;                             /* (the last, fractional cycle of a stop delay) */
-	{ static unsigned char hist[64];
-	  hist[hp++ & 63] = (sig_ramp ? 1 : 0) | ((via_acr & 0x80) ? 2 : 0);
+	{
+	  sd_hist[hp++ & 63] = (sig_ramp ? 1 : 0) | ((via_acr & 0x80) ? 2 : 0);
 	  if (alg_rdly_on | alg_rdly_off) {
 		/* a RAMP pulse [a, b) moves the integrators during [a + on, b + off): 'on' whole cycles, 'off'
 		 * whole cycles plus a fraction (the last, partial cycle at that share of the speed). off may be
 		 * shorter than on. The stop delay follows what drove PB7 (h & 2: timer 1). */
-		#define RAMP_ACT(k) (!(hist[(hp - 1 - (k)) & 63] & 1))
-		unsigned act = 0, src = hist[(hp - 1 - alg_rdly_on) & 63] & 2;
+		#define RAMP_ACT(k) (!(sd_hist[(hp - 1 - (k)) & 63] & 1))
+		unsigned act = 0, src = sd_hist[(hp - 1 - alg_rdly_on) & 63] & 2;
 		unsigned oi = src ? alg_rdly_off_t1 : alg_rdly_off; double fr = src ? rdly_frac_t1 : rdly_frac;
 		if (oi >= alg_rdly_on) {
 			for (unsigned k = alg_rdly_on; k <= oi && !act; k++) if (RAMP_ACT (k)) act = 1;
@@ -1679,8 +1684,7 @@ static void alg_sstep_full (void)
 		 * the RAMP's input still flowing (see OFS_K) */
 		if (zero_tx > 0.05 || zero_ty > 0.05) {
 			int n = zero_n == 2 ? 2 : 1;                         /* (VT_ZERON=2: two stages, each tau / 2) */
-			static kmemo_t mzx, mzy;
-			double kx = zero_tx > 0.05 ? kexp (&mzx, (double) n, zero_tx) : 1.0, ky = zero_ty > 0.05 ? kexp (&mzy, (double) n, zero_ty) : 1.0;
+			double kx = zero_tx > 0.05 ? kexp (&km_mzx, (double) n, zero_tx) : 1.0, ky = zero_ty > 0.05 ? kexp (&km_mzy, (double) n, zero_ty) : 1.0;
 			long rx = sig_ramp == 0 ? (ramp_part < 1.0 ? (long) (adx * ramp_part) : adx) : 0;
 			long ry = sig_ramp == 0 ? (ramp_part < 1.0 ? (long) (ady * ramp_part) : ady) : 0;
 			double cx = (ALG_MAX_X*ZS) / 2, cy = (ALG_MAX_Y*ZS) / 2;
@@ -1819,9 +1823,8 @@ static void alg_sstep_full (void)
 	  double lx = vt_lag, ly = vt_lag_y >= 0 ? vt_lag_y : vt_lag;
 	  if (lx > 0.05 || ly > 0.05) {
 		int n = vt_lag_n == 2 ? 2 : 1;
-		static kmemo_t mlx, mly;
-		double kx = lx > 0.05 ? kexp (&mlx, (double) n, lx) : 1.0;   /* (each stage tau / n) */
-		double ky = ly > 0.05 ? kexp (&mly, (double) n, ly) : 1.0;
+		double kx = lx > 0.05 ? kexp (&km_mlx, (double) n, lx) : 1.0;   /* (each stage tau / n) */
+		double ky = ly > 0.05 ? kexp (&km_mly, (double) n, ly) : 1.0;
 		if (n == 2) {
 			beam_x1 += (tx - beam_x1) * kx; beam_y1 += (ty - beam_y1) * ky;
 			beam_x += (beam_x1 - beam_x) * kx; beam_y += (beam_y1 - beam_y) * ky;

@@ -60,24 +60,25 @@ static void ow_tx (const unsigned char *p, int n) { memcpy (ow_txbuf, p, n); ow_
 static void ow_rx (int func, int n) { ow_func = func; ow_cnt = n; ow_bit = 0; ow_byte = 0; ow_state = OW_RX; }
 
 /* a whole byte arrived from the master */
+/* (ow_got_byte's own: at file scope, so a save state has them - RetroArch's netplay, 2026-11-15) */
+static unsigned char ow_buf[16]; static int ow_n;
 static void ow_got_byte (unsigned char b)
 {
-	static unsigned char buf[16]; static int n;
 	switch (ow_func) {
 	case 0x100:                                   /* ROM command */
 		if (b == 0xCC) ow_rx (0x101, 1);
 		else if (b == 0x33) ow_tx (ow_rom, 8), ow_func = 0x102;
-		else if (b == 0x55) { n = 0; ow_rx (0x103, 8); }
+		else if (b == 0x55) { ow_n = 0; ow_rx (0x103, 8); }
 		else ow_state = OW_IDLE;
 		return;
 	case 0x103:                                   /* Match ROM: 8 bytes */
-		buf[n++] = b;
-		if (n < 8) { ow_rx (0x103, 8 - n); return; }
-		if (memcmp (buf, ow_rom, 8)) ow_state = OW_IDLE; else ow_rx (0x101, 1);
+		ow_buf[ow_n++] = b;
+		if (ow_n < 8) { ow_rx (0x103, 8 - ow_n); return; }
+		if (memcmp (ow_buf, ow_rom, 8)) ow_state = OW_IDLE; else ow_rx (0x101, 1);
 		return;
 	case 0x101:                                   /* memory function */
-		n = 0;
-		if (b == 0x0F || b == 0xAA || b == 0x55 || b == 0xF0) { buf[0] = b; }
+		ow_n = 0;
+		if (b == 0x0F || b == 0xAA || b == 0x55 || b == 0xF0) { ow_buf[0] = b; }
 		if (b == 0x0F || b == 0x55 || b == 0xF0) { ow_rx (0x200 | b, b == 0x55 ? 3 : 2); return; }
 		if (b == 0xAA) {
 			unsigned char out[11]; out[0] = ow_ta1; out[1] = ow_ta2; out[2] = ow_es;
@@ -87,19 +88,19 @@ static void ow_got_byte (unsigned char b)
 		ow_state = OW_IDLE;
 		return;
 	case 0x20F:                                   /* Write Scratchpad: TA1 TA2, then data */
-		buf[n++] = b;
-		if (n == 2) { ow_ta1 = buf[0]; ow_ta2 = buf[1]; ow_es = ow_ta1 & 7; ow_rx (0x30F, 8 - (ow_ta1 & 7)); n = 0; return; }
-		ow_rx (0x20F, 2 - n);
+		ow_buf[ow_n++] = b;
+		if (ow_n == 2) { ow_ta1 = ow_buf[0]; ow_ta2 = ow_buf[1]; ow_es = ow_ta1 & 7; ow_rx (0x30F, 8 - (ow_ta1 & 7)); ow_n = 0; return; }
+		ow_rx (0x20F, 2 - ow_n);
 		return;
 	case 0x30F:
-		ow_sp[(ow_ta1 & 7) + n] = b; ow_es = (ow_ta1 & 7) + n; n++;
-		if (n < 8 - (ow_ta1 & 7)) { ow_rx (0x30F, 1); return; }
+		ow_sp[(ow_ta1 & 7) + ow_n] = b; ow_es = (ow_ta1 & 7) + ow_n; ow_n++;
+		if (ow_n < 8 - (ow_ta1 & 7)) { ow_rx (0x30F, 1); return; }
 		ow_state = OW_IDLE;                       /* (CRC16 not modelled) */
 		return;
 	case 0x255:                                   /* Copy Scratchpad: TA1 TA2 ES */
-		buf[n++] = b;
-		if (n < 3) { ow_rx (0x255, 3 - n); return; }
-		if (buf[0] == ow_ta1 && buf[1] == ow_ta2 && buf[2] == ow_es && ow_ta1 < 128 && ow_ta2 == 0) {
+		ow_buf[ow_n++] = b;
+		if (ow_n < 3) { ow_rx (0x255, 3 - ow_n); return; }
+		if (ow_buf[0] == ow_ta1 && ow_buf[1] == ow_ta2 && ow_buf[2] == ow_es && ow_ta1 < 128 && ow_ta2 == 0) {
 			int a = ow_ta1 & ~7;
 			for (int i = 0; i <= (ow_es & 7); i++) ow_mem[a + i] = ow_sp[i];
 			ow_es |= 0x80;
@@ -110,10 +111,10 @@ static void ow_got_byte (unsigned char b)
 		} else ow_state = OW_IDLE;
 		return;
 	case 0x2F0:                                   /* Read Memory: TA1 TA2, then data to the end */
-		buf[n++] = b;
-		if (n < 2) { ow_rx (0x2F0, 1); return; }
+		ow_buf[ow_n++] = b;
+		if (ow_n < 2) { ow_rx (0x2F0, 1); return; }
 		{
-			int a = buf[0] | (buf[1] << 8);
+			int a = ow_buf[0] | (ow_buf[1] << 8);
 			int len = 0;
 			for (; a < 128 && len < 160; a++) ow_txbuf[len++] = ow_mem[a];
 			while (len < 160) ow_txbuf[len++] = 0xFF;

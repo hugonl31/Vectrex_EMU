@@ -21,3 +21,6 @@
 
 /* left out of a save: the registers' pointer (this process's address - a state may be loaded by another) */
 void vxs_excl_e8910 (void (*add) (const void *, size_t)) { add (&PSG.Regs, sizeof PSG.Regs); }
+
+/* the save state's variables by name (the RetroArch core: a state the same on every system - gen_state_vars.py) */
+#include "vars_e8910.h"

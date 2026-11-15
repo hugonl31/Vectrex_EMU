@@ -24,3 +24,6 @@ void vxs_excl_e6809 (void (*add) (const void *, size_t))
 {
 	add (rptr_xyus, sizeof rptr_xyus); add (&e6809_read8, sizeof e6809_read8); add (&e6809_write8, sizeof e6809_write8);
 }
+
+/* the save state's variables by name (the RetroArch core: a state the same on every system - gen_state_vars.py) */
+#include "vars_e6809.h"

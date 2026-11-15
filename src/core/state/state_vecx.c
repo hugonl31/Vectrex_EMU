@@ -32,3 +32,6 @@ void vxs_excl_vecx (void (*add) (const void *, size_t))
 	extern void vxs_excl_e6809 (void (*add) (const void *, size_t)), vxs_excl_e8910 (void (*add) (const void *, size_t));
 	vxs_excl_e6809 (add); vxs_excl_e8910 (add);
 }
+
+/* the save state's variables by name (the RetroArch core: a state the same on every system - gen_state_vars.py) */
+#include "vars_vecx.h"

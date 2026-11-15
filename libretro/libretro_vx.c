@@ -176,7 +176,7 @@ static void tube_inv (double X, double Y, double *x, double *y)   /* (the light 
 }
 static uint32_t *fb;
 static float *lacc[3], *shown[3];
-static double pf_t[6]; static long pf_n; static int pf_on = -1;
+static double pf_t[6], pf_g[3]; static long pf_n; static int pf_on = -1;
 /* v0.18 (overnight optimisation, 2026-11-05): each row's span that can hold light - the lines splatted into each lit
  * buffer, the afterglow, the 8-bit picture - so the phosphor pass skips the black (a Vectrex picture is mostly black)
  * and the rows / columns outside the glass window that is sent (no glow: nothing there is ever seen). Same pixels. */
@@ -207,6 +207,15 @@ static int opt_power = 1;                    /* (v0.15: the switch-on / switch-o
  * own hue at the tint strength, its opaque print lit by the room at the print brightness; the overlay's button; the
  * rotation (RetroArch turns the picture, the stick turned with it) */
 static float opt_ov_tint = 1.0f, opt_ov_print = 1.0f; static int opt_ov_btn = 1, opt_rot, opt_rot_stick = 1;
+/* (1.0, the owner's second test 2026-11-15) the picture turned by the core itself (RetroArch then sizes it right: its
+ * own rotation kept the upright picture's shape - squashed), the buttons turned with the stick; the picture's size as
+ * the pixels on the screen's short side (the picture fills it exactly - integer scale 1x, the sharpest lines); the area
+ * automatic (the whole sheet with an overlay, the glass window without); the room's light (vecrender.py: the filters
+ * x its square, the print x it, the bare glass grey x its cube); the trail's brightness with and without an overlay */
+static int opt_size = 800, opt_area = 0;   /* (opt_area: 0 auto, 1 glass window, 2 overlay sheet) */
+static float opt_room = 1.0f, opt_trail_k0 = 1.5f, glass_grey;
+static int paint_all;                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
+static int geo_glass = -1, geo_rot = -1, geo_size = -1; static unsigned av_maxw, av_maxh; static uint32_t *rb; static size_t rb_n;
 VXS_ON
 static int ov_on = 1, sel_held;          /* (v0.13: saved - SELECT's overlay switch is game-side input) */
 VXS_OFF
@@ -344,35 +353,90 @@ static struct retro_variable vars[] = {
 	{ NULL, NULL } };
 #else
 #define VX_RATE_DEF 60
-static struct retro_variable vars[] = {
-	{ "vectrex_emu_overlay", "Overlay (the game's own PNG from system/vectrex_emu/overlays); on|off" },
-	{ "vectrex_emu_ov_tint", "Overlay: tint strength (how much its clear colours colour the lines); 1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
-	{ "vectrex_emu_ov_print", "Overlay: printed art brightness (its opaque parts); 1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
-	{ "vectrex_emu_rotate", "Rotation (tate: the picture turned, the device held upright); off|90 (turn the device right)|270 (turn the device left)|180" },
-	{ "vectrex_emu_rotate_stick", "Rotation: the stick turned with the picture; on|off" },
-	{ "vectrex_emu_res", "Picture size (from the next game start); 1x 624x800|2x 1248x1600|3x 1872x2400" },
-	{ "vectrex_emu_area", "Picture area (from the next game start); glass window 145.7x188.5 mm|overlay sheet 162x207 mm" },
-	{ "vectrex_emu_rate", "Screen rate (50 Hz: the game's own; with RetroArch's Sync to Exact Content Framerate); 60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
-	{ "vectrex_emu_smooth", "Smooth motion (not at 50 Hz); on|off" },
-	{ "vectrex_emu_glow", "Phosphor glow (bloom); on|off|strong" },
-	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow); on|long (real Vectrex)|short|off" },
-	{ "vectrex_emu_trail_bright", "Phosphor trail brightness; 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
-	{ "vectrex_emu_brightness", "Brightness; 1x (measured)|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_beam", "Beam width; thin|medium|wide" },
-	{ "vectrex_emu_white", "White balance; 12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
-	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
-	{ "vectrex_emu_smooth_bends", "Smooth curves at bends; on|off" },
-	{ "vectrex_emu_corner_glow", "Corner glow; on|off" },
-	{ "vectrex_emu_corner_dots", "Corner dots (the beam resting); on|off" },
-	{ "vectrex_emu_dwell", "Dwell spots inside strokes; on|off" },
-	{ "vectrex_emu_speed_bright", "Fast sweeps fainter; on|off" },
-	{ "vectrex_emu_bending", "Brightness bending; on|off" },
-	{ "vectrex_emu_wobble", "Mains hum wobble; 50 Hz|60 Hz|off" },
-	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
-	{ "vectrex_emu_imager", "3D Imager; colour|off" },
-	{ "vectrex_emu_buzz", "Vectrex buzz; on|off" },
-	{ "vectrex_emu_speaker", "Vectrex speaker sound; on|off" },
-	{ NULL, NULL } };
+/* (1.0: the options in submenus - RetroArch's core options v2, its categories; older frontends get the same list flat,
+ *  each name led by its submenu's) */
+struct vx_opt { const char *key, *cat, *desc, *info, *vals; };
+static const struct vx_opt OPTS[] = {
+	{ "vectrex_emu_size", "picture", "Picture size",
+	  "The picture's height in screen pixels (in tate: its width). Set it to your screen's height and the picture fills it exactly - with RetroArch's Integer Scale on, the sharpest lines. Retroid Pocket 4:3 (1280x960): 960. 720p: 720. 1080p: 1080. 1440p: 1440. 4K: 2160. Larger costs more CPU.",
+	  "800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
+	{ "vectrex_emu_area", "picture", "Picture area",
+	  "Auto: the whole overlay sheet with an overlay on, the glass window without (the picture larger on the screen). Glass window: what a Vectrex shows behind its bezel (145.7 x 188.5 mm). Overlay sheet: the whole sheet (162 x 207 mm).",
+	  "auto|glass window|overlay sheet" },
+	{ "vectrex_emu_rotate", "picture", "Rotation (tate)",
+	  "The picture turned, for the device held upright: the picture fills the screen's long side.",
+	  "off|90 (turn the device right)|270 (turn the device left)|180" },
+	{ "vectrex_emu_rate", "picture", "Screen rate",
+	  "Refreshes a second. A Vectrex game runs at about 50; the core draws the tube's light for any rate. 50 Hz needs a 50 Hz screen (RetroArch: Sync to Exact Content Framerate). The Retroid Pocket Nova's screen: 60 or 120 Hz.",
+	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
+	{ "vectrex_emu_smooth", "picture", "Smooth motion", "The lines move between game frames as the beam drew them (not at 50 Hz).", "on|off" },
+	{ "vectrex_emu_overlay", "overlay", "Overlay",
+	  "The game's own overlay (system/vectrex_emu/overlays). START takes it off / puts it on - Quick Menu > Controls puts that on any button.", "on|off" },
+	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How much the overlay's clear colours colour the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
+	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
+	{ "vectrex_emu_room", "overlay", "Room light",
+	  "The room's light: on the overlay's clear colours and its print together - without an overlay, a faint grey on the glass (as Vectrex_EMU on the desktop). Off: a dark room.",
+	  "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture",
+	  "In tate: the stick and buttons 1 to 4 keep their places as you hold the device - up is up, button 1 the leftmost.", "on|off" },
+	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", NULL, "on|off|strong" },
+	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
+	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness with an overlay", NULL, "1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
+	{ "vectrex_emu_trail_bright_bare", "tube", "Phosphor trail brightness without an overlay",
+	  "On black the faint trail looks fainter than on an overlay's lit colour: 1.5x looks as the trail through an overlay at 1x.", "1.5x|0.5x|0.75x|1x|2x|3x|4x" },
+	{ "vectrex_emu_brightness", "tube", "Brightness", NULL, "1x (measured)|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_beam", "tube", "Beam width", NULL, "thin|medium|wide" },
+	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
+	{ "vectrex_emu_geometry", "tube", "Tube geometry", "The owner's measured tube: its slight curves.", "on|off" },
+	{ "vectrex_emu_smooth_bends", "tube", "Smooth curves at bends", NULL, "on|off" },
+	{ "vectrex_emu_corner_glow", "tube", "Corner glow", NULL, "on|off" },
+	{ "vectrex_emu_corner_dots", "tube", "Corner dots", "The beam resting at a corner: a brighter dot.", "on|off" },
+	{ "vectrex_emu_dwell", "tube", "Dwell spots inside strokes", NULL, "on|off" },
+	{ "vectrex_emu_speed_bright", "tube", "Fast sweeps fainter", NULL, "on|off" },
+	{ "vectrex_emu_bending", "tube", "Brightness bending", NULL, "on|off" },
+	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", NULL, "50 Hz|60 Hz|off" },
+	{ "vectrex_emu_power_fx", "system", "Switching on / off", "The tube warming up, the switch-off zap and their sounds.", "on|off" },
+	{ "vectrex_emu_imager", "system", "3D Imager", "The 3D Imager's games in colour (the colour wheel) or plain.", "colour|off" },
+	{ "vectrex_emu_buzz", "sound", "Vectrex buzz", NULL, "on|off" },
+	{ "vectrex_emu_speaker", "sound", "Vectrex speaker sound", NULL, "on|off" },
+	{ NULL, NULL, NULL, NULL, NULL } };
+static const char *const OPT_CATS[][3] = {
+	{ "picture", "Picture", "Size (to fit your screen exactly), area, rotation (tate), screen rate" },
+	{ "overlay", "Overlay", "The game's overlay: tint, printed art, room light" },
+	{ "tube", "Tube", "The phosphor and the tube: glow, trail, brightness, beam, colour" },
+	{ "controls", "Controls", "The controls in tate (the Overlay button: Quick Menu > Controls)" },
+	{ "system", "System", "Switching on / off, the 3D Imager" },
+	{ "sound", "Sound", "The buzz, the speaker" } };
+#define NOPT (sizeof OPTS / sizeof OPTS[0])
+static struct retro_variable vars[NOPT];
+/* (libretro.h's core options v2 - not in this core's older header: the same layout) */
+struct vx_opt_value { const char *value, *label; };
+struct vx_opt_cat { const char *key, *desc, *info; };
+struct vx_opt_def { const char *key, *desc, *desc_categorized, *info, *info_categorized, *category_key; struct vx_opt_value values[128]; const char *default_value; };
+struct vx_opts_v2 { struct vx_opt_cat *categories; struct vx_opt_def *definitions; };
+static void opts_set (retro_environment_t cb)
+{
+	static char vbuf[16384]; static struct vx_opt_def defs[NOPT]; static struct vx_opt_cat cats[7]; size_t u = 0;
+	for (size_t i = 0; OPTS[i].key; i++) {          /* (the flat list: "Submenu: name; values") */
+		const char *cn = ""; for (int c = 0; c < 6; c++) if (!strcmp (OPT_CATS[c][0], OPTS[i].cat)) cn = OPT_CATS[c][1];
+		vars[i].key = OPTS[i].key; vars[i].value = vbuf + u;
+		u += (size_t) snprintf (vbuf + u, sizeof vbuf - u, "%s: %s; %s", cn, OPTS[i].desc, OPTS[i].vals) + 1; }
+	unsigned ver = 0;
+	if (!cb (52 /* GET_CORE_OPTIONS_VERSION */, &ver) || ver < 2) { cb (RETRO_ENVIRONMENT_SET_VARIABLES, vars); return; }
+	for (int c = 0; c < 6; c++) cats[c] = (struct vx_opt_cat) { OPT_CATS[c][0], OPT_CATS[c][1], OPT_CATS[c][2] };
+	for (size_t i = 0; OPTS[i].key; i++) {
+		struct vx_opt_def *d = &defs[i]; memset (d, 0, sizeof *d);
+		d->key = OPTS[i].key; d->category_key = OPTS[i].cat;
+		/* (the name with its submenu, for a frontend that shows no submenus; the name alone inside one) */
+		{ char *dn = vbuf + u; const char *v = vars[i].value; size_t L = (size_t) (strchr (v, ';') - v);
+		  memcpy (dn, v, L); dn[L] = 0; u += L + 1; d->desc = dn; }
+		d->desc_categorized = OPTS[i].desc; d->info = OPTS[i].info; d->info_categorized = OPTS[i].info;
+		char *q = vbuf + u; u += (size_t) snprintf (q, sizeof vbuf - u, "%s", OPTS[i].vals) + 1;
+		int n = 0; for (char *t = q; t && n < 127; ) { char *b = strchr (t, '|'); if (b) *b = 0; d->values[n++].value = t; t = b ? b + 1 : NULL; }
+		d->default_value = d->values[0].value; }
+	struct vx_opts_v2 o = { cats, defs };
+	cb (67 /* SET_CORE_OPTIONS_V2 */, &o);
+}
 #endif
 
 static int opt_is (const char *key, const char *val)
@@ -431,6 +495,7 @@ static void read_options (void)
 	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
+	opt_trail_k0 = opt_trail_k;                 /* (EmuVR: one trail brightness; the RetroArch flavour reads its own below) */
 	{ int was = opt_overlay_seen; opt_overlay_seen = opt_overlay; if (was != opt_overlay) ov_on = opt_overlay; }   /* (only when the option itself changed:
 	                                              a change of another option keeps the button's choice) */
 #ifdef VX_EMUVR
@@ -439,11 +504,18 @@ static void read_options (void)
 	opt_ov_btn = 1;                             /* (the RetroPad's START, named "Overlay off / on": RetroArch's Controls menu
 	                                               puts it on any button - the owner, 2026-11-15) */
 	{ float t = (float) optx ("vectrex_emu_ov_tint", 1), pr = (float) optx ("vectrex_emu_ov_print", 1);
-	  if (t != opt_ov_tint || pr != opt_ov_print) { opt_ov_tint = t; opt_ov_print = pr; ov_made = 0; } }
-	{ int r = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
+	  const char *rv = optv ("vectrex_emu_room"); float rm = !strncmp (rv, "off", 3) ? 0.0f : rv[0] ? (float) atof (rv) : 1.0f;
+	  if (!(rm >= 0 && rm <= 4)) rm = 1.0f;
+	  if (t != opt_ov_tint || pr != opt_ov_print || rm != opt_room) { opt_ov_tint = t; opt_ov_print = pr; opt_room = rm; ov_made = 0; }
+	  /* (vecrender.py: the bare glass grey x the light level - (room / twice the default) cubed, 1 at most) */
+	  { float ll = rm / 2.0f; ll = ll > 1 ? 1 : ll; glass_grey = 0.20f * ll * ll * ll; } }
+	/* (the core turns the picture itself: RetroArch's own rotation kept the upright picture's shape on the screen) */
+	opt_rot = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
 	        : opt_is ("vectrex_emu_rotate", "270 (turn the device left)") ? 3 : 0;
-	  if (r != opt_rot) { opt_rot = r; unsigned rr = (unsigned) r; env_cb (RETRO_ENVIRONMENT_SET_ROTATION, &rr); } }
 	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off");
+	{ int z = atoi (optv ("vectrex_emu_size")); opt_size = z >= 240 && z <= 2400 ? z : 800; }
+	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
+	{ const char *v = optv ("vectrex_emu_trail_bright_bare"); double k = v[0] ? atof (v) : 1.5; opt_trail_k0 = k >= 0.25 && k <= 4.0 ? (float) k : 1.5f; }
 	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */
 	if (rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
 	  int r = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : VX_RATE_DEF; r = r >= 30 && r <= 360 ? r : VX_RATE_DEF;
@@ -454,7 +526,11 @@ static void read_options (void)
 void retro_set_environment (retro_environment_t cb)
 {
 	env_cb = cb;
+#ifdef VX_EMUVR
 	cb (RETRO_ENVIRONMENT_SET_VARIABLES, vars);
+#else
+	opts_set (cb);
+#endif
 	bool nogame = false; cb (RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &nogame);
 }
 void retro_set_video_refresh (retro_video_refresh_t cb) { video_cb = cb; }
@@ -509,17 +585,60 @@ void retro_get_system_info (struct retro_system_info *i)
 #ifdef VX_EMUVR
 	i->library_version = "0.36";
 #else
-	i->library_version = "1.0";                 /* (the RetroArch flavour's own line: libretro_port_plan.md 5.6) */
+	i->library_version = "1.1";                 /* (the RetroArch flavour's own line: libretro_port_plan.md 5.6) */
 #endif
 	i->valid_extensions = "vec|bin|gam|um2"; i->need_fullpath = true; i->block_extract = false;
 }
-void retro_get_system_av_info (struct retro_system_av_info *a)
+/* the picture: the glass window or the whole sheet (opt_area; auto: the sheet while an overlay is painted in) */
+static int area_glass (void)
+{
+#ifdef VX_EMUVR
+	return opt_glass;
+#else
+	return opt_area == 1 ? 1 : opt_area == 2 ? 0 : !(ov && ov_on && !sheet_file);
+#endif
+}
+/* one eye's frame (the sheet, ew x fh) and the area sent from it (cw x ch) - the RetroArch flavour: the area's side that
+ * lies along the screen's short side (its height; turned 90 / 270: its width) opt_size pixels exactly */
+static void geom_calc (int glass, int *ew, int *fh, int *cw, int *ch)
+{
+#ifdef VX_EMUVR
+	*ew = PW * opt_res; *fh = PH * opt_res;
+	*cw = glass ? (int) (*ew * 145.7 / 162.0 + 0.5) : *ew; *ch = glass ? (int) (*fh * 188.5 / 207.0 + 0.5) : *fh;
+#else
+	const int odd = opt_rot & 1; const double k = opt_size / (glass ? (odd ? 145.7 : 188.5) : (odd ? 162.0 : 207.0));   /* (px per mm) */
+	*ew = (int) (162.0 * k + 0.5); *fh = (int) (207.0 * k + 0.5);
+	*cw = glass ? (int) (145.7 * k + 0.5) : *ew; *ch = glass ? (int) (188.5 * k + 0.5) : *fh;
+	if (*ew > 4 * PW) { *ew = 4 * PW; if (*cw > *ew) *cw = *ew; }   /* (glow_blur's row: 4 x 624 at most) */
+#endif
+}
+static void av_fill (struct retro_system_av_info *a)
 {
 	memset (a, 0, sizeof *a);
+#ifdef VX_EMUVR
 	a->geometry.base_width = OW ? OW : PW; a->geometry.base_height = OH ? OH : PH;
 	a->geometry.max_width = OW ? OW : PW * 2; a->geometry.max_height = OH ? OH : PH;
 	a->geometry.aspect_ratio = (float) (stereo ? 2.0 * PW / PH : (double) PW / PH);
+#else
+	const int odd = opt_rot & 1, ow = OW ? OW : PW, oh = OH ? OH : PH;
+	a->geometry.base_width = odd ? oh : ow; a->geometry.base_height = odd ? ow : oh;   /* (as sent: turned) */
+	a->geometry.aspect_ratio = (float) a->geometry.base_width / (float) a->geometry.base_height;   /* (square pixels) */
+	unsigned m = 0;                             /* (the largest either area gives, either way round: a toggle needs no new video) */
+	for (int gl = 0; gl < 2; gl++) { int ew, fh, cw, ch; geom_calc (gl, &ew, &fh, &cw, &ch);
+		unsigned w = (unsigned) (stereo ? 2 * cw : cw); if (w > m) m = w; if ((unsigned) ch > m) m = (unsigned) ch; }
+	if (a->geometry.base_width > m) m = a->geometry.base_width; if (a->geometry.base_height > m) m = a->geometry.base_height;
+	a->geometry.max_width = a->geometry.max_height = m;
+#endif
 	a->timing.fps = (double) opt_rate; a->timing.sample_rate = 44100.0;
+}
+void retro_get_system_av_info (struct retro_system_av_info *a) { av_fill (a); av_maxw = a->geometry.max_width; av_maxh = a->geometry.max_height; }
+/* (a new size, area or rotation while a game runs: RetroArch told - a new picture size within the one announced, else
+ *  the video set up anew) */
+static void geo_tell (void)
+{
+	struct retro_system_av_info av; av_fill (&av);
+	if (av.geometry.max_width > av_maxw || av.geometry.max_height > av_maxh) retro_get_system_av_info (&av), env_cb (RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
+	else env_cb (RETRO_ENVIRONMENT_SET_GEOMETRY, &av.geometry);
 }
 void retro_set_controller_port_device (unsigned p, unsigned d) { (void) p; (void) d; }
 void retro_reset (void) { extern void vecx_reset_button (void); vecx_reset_button (); }
@@ -620,6 +739,7 @@ void retro_unload_game (void)
 	  if (f) { fprintf (f, "shown %ld hidden %ld%c", vx_shown, vx_hidden, 10); fclose (f); } }
 	if (pf_on > 0 && pf_n) fprintf (stderr, "[vectrex_emu] per shown refresh (%ld): input %.3f, emulator %.3f, lines %.3f, phosphor + picture %.3f, sending %.3f ms%c",
 		pf_n, pf_t[0] / pf_n * 1e3, pf_t[1] / pf_n * 1e3, pf_t[2] / pf_n * 1e3, pf_t[3] / pf_n * 1e3, pf_t[4] / pf_n * 1e3, 10);
+	if (pf_on > 0 && pf_n) fprintf (stderr, "[vectrex_emu]   of which: lines + afterglow %.3f, glow blur %.3f, glow added + picture %.3f ms%c", pf_g[0] / pf_n * 1e3, pf_g[1] / pf_n * 1e3, pf_g[2] / pf_n * 1e3, 10);
 	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0; sheet_write ();
 }
 unsigned retro_get_region (void) { return RETRO_REGION_PAL; }
@@ -689,8 +809,15 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 		if (opt_rot == 1) { gx = y; gy = -x; } else if (opt_rot == 2) { gx = -x; gy = -y; } else if (opt_rot == 3) { gx = -y; gy = x; }
 		x = gx < -128 ? -128 : gx > 127 ? 127 : gx; y = gy < -128 ? -128 : gy > 127 ? 127 : gy; }
 	*jx = (unsigned char) (x + 128); *jy = (unsigned char) (y + 128);
-	*bt = (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y) ? 1 : 0) | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X) ? 2 : 0)
-	    | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B) ? 4 : 0) | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A) ? 8 : 0) | ub;
+	/* the buttons 1 2 3 4: left, top, bottom, right of the face buttons as held (Y X B A; the device turned right for a
+	 * picture turned 90: B Y A X - the bottom one is then the leftmost) */
+	static const unsigned BT[4][4] = { { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A },
+		{ RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_X },
+		{ RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_Y },
+		{ RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_B } };
+	const unsigned *bm = BT[opt_rot_stick && opt_rot > 0 && opt_rot < 4 ? opt_rot : 0];
+	*bt = (input_cb (port, RETRO_DEVICE_JOYPAD, 0, bm[0]) ? 1 : 0) | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, bm[1]) ? 2 : 0)
+	    | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, bm[2]) ? 4 : 0) | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, bm[3]) ? 8 : 0) | ub;
 }
 
 /* ---- the beam (v0.9: Vectrex_EMU's line renderer, vecrender.py _build_np and CAPSULE_SHADER, on the CPU).
@@ -1156,6 +1283,15 @@ static float edge_mask (int x, int y)
 #define OV_ROOM 0.0648f                     /* (vecrender.py: the room's light on the filters - an evening room, the owner's) */
 #define OV_PRINT (0.36f * 0.0648f / 0.075f) /* (the print's brightness at that room light: art_print x (room / ART_ROOM_MID)) */
 static float *ov_lm; static size_t ov_lm_n;
+static int *ov_tx, *ov_ty, ov_tk[5];       /* (each picture column's overlay column, each row's first overlay pixel) */
+static void ov_tabs (void)
+{
+	if (ov_tk[0] == FW && ov_tk[1] == FH && ov_tk[2] == ovw && ov_tk[3] == ovh && ov_tk[4] == EW) return;
+	free (ov_tx); free (ov_ty); ov_tx = malloc (FW * sizeof (int)); ov_ty = malloc (FH * sizeof (int));
+	for (int x = 0; x < FW; x++) ov_tx[x] = (x % EW) * ovw / EW;
+	for (int y = 0; y < FH; y++) ov_ty[y] = (y * ovh / FH) * ovw;
+	ov_tk[0] = FW; ov_tk[1] = FH; ov_tk[2] = ovw; ov_tk[3] = ovh; ov_tk[4] = EW;
+}
 static void ov_make (void)
 {
 	size_t n = (size_t) ovw * ovh;
@@ -1169,14 +1305,15 @@ static void ov_make (void)
 			float hue = c[k] / mx, t = opt_ov_tint * filt; if (t > 1) t = 1;   /* (mix: past 1x the hue itself, deeper) */
 			float mm = (1.0f + (hue * 1.15f - 1.0f) * t) * (1.0f - opq);
 			if (opt_ov_tint > 1.0f && filt > 0) mm *= powf (hue < 1e-3f ? 1e-3f : hue, opt_ov_tint - 1.0f);
-			m[k] = mm * OV_LINE_GAIN; m[3 + k] = c[k] * (filt * OV_ROOM + opq * OV_PRINT * opt_ov_print);
+			m[k] = mm * OV_LINE_GAIN; m[3 + k] = c[k] * (filt * OV_ROOM * opt_room * opt_room + opq * OV_PRINT * opt_ov_print * opt_room);   /* (the room light:
+			                                         vecrender.py room_light, the filters x its square, the print x it) */
 		}
 	}
 	ov_made = 1;
 }
 static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
 {
-	if (r <= 0 && g <= 0 && b <= 0 && !(ov && ov_on && !sheet_file)) return 0;   /* (empty: black - unless an overlay is painted in) */
+	if (r <= 0 && g <= 0 && b <= 0 && !paint_all) return 0;   /* (empty: black - unless an overlay is painted in, or the glass grey) */
 	if (opt_bright != 1.0f) { r *= opt_bright; g *= opt_bright; b *= opt_bright; }   /* (v0.18: the brightness option, before the knee) */
 	if (wb_on) { float m = r > g ? (r > b ? r : b) : (g > b ? g : b), sm = (m - 0.35f) / 0.55f; sm = sm < 0 ? 0 : sm > 1 ? 1 : sm; sm = sm * sm * (3 - 2 * sm);
 		r *= wb_g[0] + (wb_c[0] - wb_g[0]) * sm; g *= wb_g[1] + (wb_c[1] - wb_g[1]) * sm; b *= wb_g[2] + (wb_c[2] - wb_g[2]) * sm; }
@@ -1186,11 +1323,13 @@ static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
 	                                         filter's hue (x tint), none through its opaque print; the print and the filters
 	                                         lit by the room (the print x its brightness) - per overlay pixel in ov_lm / ov_la */
 		if (!ov_made) ov_make ();
-		int ex = x % EW, ox = ex * ovw / EW, oy = y * ovh / FH; const float *m = ov_lm + ((size_t) oy * ovw + ox) * 6;
+		const float *m = ov_lm + ((size_t) ov_ty[y] + ov_tx[x]) * 6;   /* (the overlay's pixel: tables - no divisions per pixel) */
 		float lum = (r + g + b) / 3.0f;
 		r = lum * m[0] + m[3]; g = lum * m[1] + m[4]; b = lum * m[2] + m[5];
 	}
-	else { r *= OV_LINE_GAIN; g *= OV_LINE_GAIN; b *= OV_LINE_GAIN; }   /* (no overlay: as bright as through an overlay's
+	else { r *= OV_LINE_GAIN; g *= OV_LINE_GAIN; b *= OV_LINE_GAIN;
+		if (glass_grey > 0) { r += glass_grey * 0.92f; g += glass_grey * 0.95f; b += glass_grey; } }   /* (the bare glass in the room's
+	                                         light: vecrender.py GLASS_GREY, its cold grey) */   /* (no overlay: as bright as through an overlay's
 	                                         clear part - the owner on the Nova, 2026-11-15: with the overlay the trail
 	                                         was right, without it hardly visible) */
 	{ static FILE *hf; static int hn, hon = -1; static unsigned hist[64];   /* (test: the brightness before the knee, VXPOC_RAWHIST) */
@@ -1511,6 +1650,34 @@ static long sm_runs, sm_mixed;   /* (test: refreshes, those between two frames) 
            /* (the emulated time this refresh has to reach, cycles) */
 static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
+/* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
+ * the afterglow's two parts, one colour channel or three - all dark again */
+static void pic_setup (void)
+{
+	const int glass = area_glass (); geom_calc (glass, &EW, &FH, &CW, &CH);
+	S = (int) (FH / (double) PH + 0.5); if (S < 1) S = 1;   /* (the glow's cells: 2 x 2 per this many) */
+	FW = stereo ? EW * 2 : EW; CX0 = (EW - CW) / 2; CY0 = (FH - CH) / 2; OW = stereo ? CW * 2 : CW; OH = CH;
+	geo_glass = glass; geo_rot = opt_rot; geo_size = opt_size;
+	if ((size_t) OW * OH > rb_n) { free (rb); rb_n = (size_t) OW * OH; rb = malloc (rb_n * 4); }   /* (the turned picture) */
+	/* (the buffers at this picture's size: the lit light now and a refresh ago, the afterglow's two parts, one colour
+	 *  channel or three) */
+	{ extern int vt_imager; NC = vt_imager ? 3 : 1; }
+	{ const size_t NP = (size_t) FW * FH; static size_t had; static int hadc;
+	  if (NP != had || NC != hadc) {
+		free (ob); free (fb);
+		for (int c = 0; c < 3; c++) { if (c < hadc) { free (pb[0][c]); free (pb[1][c]); free (g1b[c]); free (g2b[c]); free (shown[c]); } }
+		ob = malloc (NP * 4); fb = malloc (NP * 4);
+		for (int c = 0; c < 3; c++) {
+			if (c < NC) { pb[0][c] = calloc (NP, 4); pb[1][c] = calloc (NP, 4); g1b[c] = calloc (NP, 4); g2b[c] = calloc (NP, 4); shown[c] = calloc (NP, 4); }
+			else { pb[0][c] = pb[0][0]; pb[1][c] = pb[1][0]; g1b[c] = g1b[0]; g2b[c] = g2b[0]; shown[c] = shown[0]; } }
+		had = NP; hadc = NC;
+		for (int k = 0; k < 2; k++) { free (sp_l0[k]); free (sp_l1[k]); sp_l0[k] = malloc (FH * sizeof (int)); sp_l1[k] = malloc (FH * sizeof (int)); }
+		free (sp_g0); free (sp_g1); free (sp_f0); free (sp_f1);
+		sp_g0 = malloc (FH * sizeof (int)); sp_g1 = malloc (FH * sizeof (int)); sp_f0 = malloc (FH * sizeof (int)); sp_f1 = malloc (FH * sizeof (int));
+		spans_reset (FH, 1);
+	  } else { for (int c = 0; c < NC; c++) { memset (pb[0][c], 0, NP * 4); memset (pb[1][c], 0, NP * 4); memset (g1b[c], 0, NP * 4); memset (g2b[c], 0, NP * 4); }
+	           spans_reset (FH, 1); } }
+}
 /* (test: VXPOC_PROF=1 - where a refresh's time goes, printed at the game's end) */
 static double pf_now (void) { return vt_wall (); }   /* (vtest.c: the wall clock, every system) */
 void retro_run (void)
@@ -1525,6 +1692,11 @@ void retro_run (void)
 	{ int sel = opt_ov_btn ? input_cb (0, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START) : 0;   /* START (or SELECT): the overlay off / on */
 	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_on = !ov_on;   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
 	  sel_held = sel; }
+#ifndef VX_EMUVR
+	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size) { pic_setup (); geo_tell (); }
+#endif
+	paint_all = !sheet_file && ((ov && ov_on) || glass_grey > 0);
+	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }   /* (before the drawing threads) */
 	/* v0.27: RetroArch's run-ahead runs the core a few frames ahead and then puts its state back - a cartridge swap or a
 	 * reset taken in one of those frames was put back with it. They are taken only in the frame that stays: the first after
 	 * a state load (or any, without run-ahead: no load for a while) */
@@ -1536,6 +1708,8 @@ void retro_run (void)
 		int trig = input_cb (p, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER);
 		int sx = input_cb (p, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X), sy = input_cb (p, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y);
 		double fx = (sx + 32768) / 65536.0, fy = (sy + 32768) / 65536.0;
+		{ const double ax = fx, ay = fy;      /* (the picture turned: back to its own way up) */
+		  if (opt_rot == 1) { fx = 1 - ay; fy = ax; } else if (opt_rot == 2) { fx = 1 - ax; fy = 1 - ay; } else if (opt_rot == 3) { fx = ay; fy = 1 - ax; } }
 		{ double lx, ly; tube_inv (SHEET_X0 + (CX0 + fx * CW) / EW * SHEET_W, SHEET_Y0 + (CY0 + fy * CH) / (double) FH * SHEET_H, &lx, &ly);
 		  vt_set_analog (24, lx); vt_set_analog (25, ly); } vt_set_analog (26, trig ? 1.0 : 0.0);
 	}
@@ -1639,10 +1813,11 @@ void retro_run (void)
 	const int *pl0 = sp_l0[cb ^ 1], *pl1 = sp_l1[cb ^ 1];
 	const int NB = 64, BH = (H + NB - 1) / NB;
 	const int glow = opt_glow, after = opt_after;
-	const int painted = ov && ov_on && !sheet_file;            /* (the overlay painted in: every pixel has colour) */
+	const int painted = paint_all;             /* (the overlay painted in, or the glass grey: every pixel has colour) */
 	const int ry0 = glow ? 0 : CY0, ry1 = glow ? H - 1 : CY0 + CH - 1;   /* (no glow: only the window's rows are sent) */
 	const int cx0 = glow ? 0 : CX0, cx1 = glow ? Wd - 1 : (FW - EW) + CX0 + CW - 1;
-	const float a1 = 0.1404f * opt_trail_k, a2 = 0.0582f * opt_trail_k,   /* (v0.16: x the trail brightness option) */
+	const float tk = ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0;   /* (1.0: its own without an overlay) */
+	const float a1 = 0.1404f * tk, a2 = 0.0582f * tk,   /* (v0.16: x the trail brightness option) */
 	             ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;   /* (the trail's time scale: Vectrex_EMU's 0.6, a real Vectrex 1.0) */
 	const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2), e1 = a1 * kd1, e2 = a2 * kd2;
 	int bi;
@@ -1696,8 +1871,9 @@ void retro_run (void)
 			if (glow) { sp_f0[y] = 0; sp_f1[y] = 1 << 29; } else { sp_f0[y] = nf0; sp_f1[y] = nf1; }
 		}
 	}
+	double pgA = pf_on ? pf_now () : 0, pgB = pgA;   /* (test: the bands, the glow's blur, its adding) */
 	if (glow) {                                /* the phosphor glow, added before the knee (glow_blur) */
-		glow_blur (shown);
+		glow_blur (shown); if (pf_on) pgB = pf_now ();
 		static int *bx0; static float *bxw; static int bxn;      /* (the bilinear step up: each column's cells, per eye) */
 		if (bxn != Wd) { free (bx0); free (bxw); bx0 = malloc (Wd * sizeof (int)); bxw = malloc (Wd * sizeof (float)); bxn = Wd; }
 		for (int x = 0; x < Wd; x++) { const int e = x / EW; float f = ((x - e * EW) + 0.5f) / GD - 0.5f; if (f < 0) f = 0;
@@ -1705,7 +1881,7 @@ void retro_run (void)
 		const float gk = GLOW_K * (glow == 2 ? 2.0f : 1.0f);
 		const float t0 = gk * GLOW_TINT[0], t1 = gk * GLOW_TINT[1], t2 = gk * GLOW_TINT[2];
 		/* (no overlay painted in: a pixel whose light rounds to 0 is black at once - the same as pixel_out gives) */
-		const int painted = ov && ov_on && !sheet_file; const float thr = 0.5f / (255.0f * 1.6f);
+		const int painted = paint_all; const float thr = 0.5f / (255.0f * 1.6f);
 		const int nc = NC; float *const s0 = shown[0], *const s1 = shown[1], *const s2 = shown[2]; uint32_t *const fo = fb;
 		int yy;
 		#pragma omp parallel for schedule(static)
@@ -1728,24 +1904,40 @@ void retro_run (void)
 	}
 	(void) NP;
 	double pf4 = pf_on ? pf_now () : 0;
+	if (pf_on) { pf_g[0] += pgA - pf3; pf_g[1] += pgB - pgA; pf_g[2] += pf4 - pgB; }
 	static int shot_env = -1; static const char *shot_path; static long shot_at;
 	if (shot_env < 0) { shot_path = getenv ("VXPOC_SHOT"); shot_at = atol (getenv ("VXPOC_FRAME") ? getenv ("VXPOC_FRAME") : "300"); shot_env = shot_path != NULL; }
 	static long fno; fno++;
 	const int shot_now = shot_env && fno == shot_at;
-	if (Wd / EW == 1 && !shot_now)             /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
+	const uint32_t *pic = ob; int pw = OW, ph = OH;   /* (what is sent, and shot) */
+	if (Wd / EW == 1 && !shot_now && !opt_rot)  /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
 		video_cb (fb + (size_t) CY0 * Wd + CX0, CW, CH, (size_t) Wd * 4);
 	else {
-		for (int e = 0; e < Wd / EW; e++)          /* (the area sent: each eye's window) */
-			for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW + e * CW, fb + (size_t) (CY0 + y) * Wd + e * EW + CX0, (size_t) CW * 4);
-		video_cb (ob, OW, OH, OW * 4);
+		const uint32_t *src; size_t sp;
+		if (Wd / EW == 1) { src = fb + (size_t) CY0 * Wd + CX0; sp = (size_t) Wd; }
+		else { for (int e = 0; e < Wd / EW; e++)   /* (the area sent: each eye's window) */
+				for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW + e * CW, fb + (size_t) (CY0 + y) * Wd + e * EW + CX0, (size_t) CW * 4);
+			src = ob; sp = (size_t) OW; }
+		if (opt_rot) {                         /* (1.0: turned here, 90 / 180 / 270 counter-clockwise - in tiles, cache-kind) */
+			const int W = OW, Hh = OH, odd = opt_rot & 1, dw = odd ? Hh : W, dh = odd ? W : Hh; int ty;
+			#pragma omp parallel for schedule(static)
+			for (ty = 0; ty < dh; ty += 32) for (int tx = 0; tx < dw; tx += 32) {
+				const int y1 = ty + 32 < dh ? ty + 32 : dh, x1 = tx + 32 < dw ? tx + 32 : dw;
+				for (int y = ty; y < y1; y++) { uint32_t *d = rb + (size_t) y * dw;
+					if (opt_rot == 1) for (int x = tx; x < x1; x++) d[x] = src[(size_t) x * sp + (W - 1 - y)];
+					else if (opt_rot == 2) for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - y) * sp + (W - 1 - x)];
+					else for (int x = tx; x < x1; x++) d[x] = src[(size_t) (Hh - 1 - x) * sp + y]; } }
+			pic = rb; pw = dw; ph = dh;
+		} else if (src != ob) { for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW, src + (size_t) y * sp, (size_t) CW * 4); }
+		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
 	}
 	sheet_write ();
 	if (pf_on) { double pf5 = pf_now (); pf_t[0] += pf1 - pf0; pf_t[1] += pf2 - pf1; pf_t[2] += pf3 - pf2; pf_t[3] += pf4 - pf3; pf_t[4] += pf5 - pf4; pf_n++; }
 	{ const char *sh = shot_path;   /* (test: the picture at refresh N as a PNG) */
 	  if (shot_now) {
-		unsigned char *rgb = malloc ((size_t) OW * OH * 3);
-		for (size_t i = 0; i < (size_t) OW * OH; i++) { rgb[3 * i] = (unsigned char) (ob[i] >> 16); rgb[3 * i + 1] = (unsigned char) (ob[i] >> 8); rgb[3 * i + 2] = (unsigned char) ob[i]; }
-		write_png (sh, rgb, OW, OH); free (rgb); fprintf (stderr, "[vectrex_emu] shot %s %dx%d, %d lines, %d pieces drawn; smooth motion: %ld of %ld refreshes between two frames\n", sh, OW, OH, nlast, npl, sm_mixed, sm_runs); } }
+		unsigned char *rgb = malloc ((size_t) pw * ph * 3);
+		for (size_t i = 0; i < (size_t) pw * ph; i++) { rgb[3 * i] = (unsigned char) (pic[i] >> 16); rgb[3 * i + 1] = (unsigned char) (pic[i] >> 8); rgb[3 * i + 2] = (unsigned char) pic[i]; }
+		write_png (sh, rgb, pw, ph); free (rgb); fprintf (stderr, "[vectrex_emu] shot %s %dx%d, %d lines, %d pieces drawn; smooth motion: %ld of %ld refreshes between two frames\n", sh, pw, ph, nlast, npl, sm_mixed, sm_runs); } }
 	audio_out ();
 }
 
@@ -1896,7 +2088,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	 *  not start: the BIOS, the overlay found, the speech module) */
 	if (sys) { char lp[1100]; snprintf (lp, sizeof lp, "%s/vectrex_emu/vectrex_emu.log", sys); FILE *lf = fopen (lp, "w");
 		if (lf) { fflush (stderr); dup2 (fileno (lf), 2); fclose (lf); setvbuf (stderr, NULL, _IONBF, 0);
-			fprintf (stderr, "[vectrex_emu] core 1.0, game %s\n", g && g->path ? g->path : "(none)"); } }
+			fprintf (stderr, "[vectrex_emu] core 1.1, game %s\n", g && g->path ? g->path : "(none)"); } }
 #endif
 	enum retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!env_cb (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf)) return false;
@@ -1928,7 +2120,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	if (!bios[0]) { fprintf (stderr, "[vectrex_emu] no BIOS (bios.bin in the system folder)\n"); return false; }
 	snprintf (g_bios, sizeof g_bios, "%s", bios); snprintf (g_sys, sizeof g_sys, "%s", sys ? sys : ""); snprintf (g_dir, sizeof g_dir, "%s", dir);
 	{ const char *ce = getenv ("VECTREX_CART"); cart_file = ce && *ce ? ce : NULL; cart_seq = -1; }
-	rate_set = 0; opt_rot = -1;                 /* (each game: the screen rate read anew, the rotation told again) */
+	rate_set = 0;                               /* (each game: the screen rate read anew) */
 	read_options ();
 	game_env (g->path, sys, dir);
 	/* (an empty script: vtest's main loads, resets and returns - the emulator stays set up) */
@@ -1948,28 +2140,8 @@ bool retro_load_game (const struct retro_game_info *g)
 	abuf_cap = 65536; abuf = malloc (abuf_cap);
 	{ extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; frame_budget = (vt_uvm2 || vt_uvm2_cart || vt_pitrex) ? 30000 : 33000; }
 	{ extern int vt_imager; stereo = vt_imager && opt_imager == 2; }
-	S = opt_res; EW = PW * S; FW = stereo ? EW * 2 : EW; FH = PH * S;
-	CW = opt_glass ? (int) (EW * 145.7 / 162.0 + 0.5) : EW; CH = opt_glass ? (int) (FH * 188.5 / 207.0 + 0.5) : FH;
-	CX0 = (EW - CW) / 2; CY0 = (FH - CH) / 2; OW = stereo ? CW * 2 : CW; OH = CH;
 	rate_set = 1;
-	/* (the buffers at this picture's size: the lit light now and a refresh ago, the afterglow's two parts, one colour
-	 *  channel or three) */
-	{ extern int vt_imager; NC = vt_imager ? 3 : 1; }
-	{ const size_t NP = (size_t) FW * FH; static size_t had; static int hadc;
-	  if (NP != had || NC != hadc) {
-		free (ob); free (fb);
-		for (int c = 0; c < 3; c++) { if (c < hadc) { free (pb[0][c]); free (pb[1][c]); free (g1b[c]); free (g2b[c]); free (shown[c]); } }
-		ob = malloc (NP * 4); fb = malloc (NP * 4);
-		for (int c = 0; c < 3; c++) {
-			if (c < NC) { pb[0][c] = calloc (NP, 4); pb[1][c] = calloc (NP, 4); g1b[c] = calloc (NP, 4); g2b[c] = calloc (NP, 4); shown[c] = calloc (NP, 4); }
-			else { pb[0][c] = pb[0][0]; pb[1][c] = pb[1][0]; g1b[c] = g1b[0]; g2b[c] = g2b[0]; shown[c] = shown[0]; } }
-		had = NP; hadc = NC;
-		for (int k = 0; k < 2; k++) { free (sp_l0[k]); free (sp_l1[k]); sp_l0[k] = malloc (FH * sizeof (int)); sp_l1[k] = malloc (FH * sizeof (int)); }
-		free (sp_g0); free (sp_g1); free (sp_f0); free (sp_f1);
-		sp_g0 = malloc (FH * sizeof (int)); sp_g1 = malloc (FH * sizeof (int)); sp_f0 = malloc (FH * sizeof (int)); sp_f1 = malloc (FH * sizeof (int));
-		spans_reset (FH, 1);
-	  } else { for (int c = 0; c < NC; c++) { memset (pb[0][c], 0, NP * 4); memset (pb[1][c], 0, NP * 4); memset (g1b[c], 0, NP * 4); memset (g2b[c], 0, NP * 4); }
-	           spans_reset (FH, 1); } }
+	pic_setup ();
 	for (int k = 0; k < GTAB + 1; k++) gtab[k] = (float) exp (-(double) k * GX / GTAB);
 	for (int z = 0; z < 128; z++) zk_tab[z] = pow (TUBE_LIGHT[z], 1 / 2.2);
 	run_t = 0; run_frac = 0; load_f = -1; while (nh) frame_pop (); aq_r = aq_w = 0; aq_frac = 0;
@@ -1985,5 +2157,6 @@ bool retro_load_game (const struct retro_game_info *g)
 	char od[1600];
 	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, g->path); }
 	if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", dir); try_overlay_dir (od, g->path); }
+	if (area_glass () != geo_glass) pic_setup ();   /* (the overlay found: the area it asks for, before RetroArch asks the size) */
 	return true;
 }

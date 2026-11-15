@@ -15,9 +15,11 @@ load a core from a file.
    Main Menu > Load Core > Install or Restore a Core > pick the file. RetroArch copies it into its own cores folder,
    which is where ES-DE looks for it.
 
-2. The info file (optional: without it the core still runs, under its file name)
-   RetroArch: Settings > Directory > Core Info shows the folder. Copy vectrex_emu_libretro.info into it.
-   (If Online Updater > Update Core Info Files is run later, it is left alone.)
+2. The info file (optional: without it the core still runs, but the core list shows its file name)
+   On Android RetroArch's own Core Info folder is private (no other app can copy into it). Once:
+     Settings > Directory > Core Info: pick /storage/emulated/0/RetroArch/info (make the folder first),
+     Main Menu > Online Updater > Update Core Info Files (all the other cores' info files into it),
+     then copy vectrex_emu_libretro.info into it. The core list then shows "Vectrex_EMU".
 
 3. The BIOS, overlays and sounds
    RetroArch: Settings > Directory > System/BIOS shows the system folder (often /storage/emulated/0/RetroArch/system).
@@ -37,11 +39,15 @@ Controls (RetroArch's RetroPad)
    Stick or d-pad: the joystick.  Y X B A: Vectrex buttons 1 2 3 4 (left to right, as on the controller).
    START: the overlay off / on - any other button: Quick Menu > Controls > Port 1 Controls > Overlay off / on.
    Port 2: a second pad.
-   Tate (the device held upright): Core Options > Rotation; the stick turns with the picture.
+   Tate (the device held upright): Core Options > Picture > Rotation; the stick and buttons 1-4 turn with it
+   (Controls > Controls turned with the picture).
 
-Settings: Quick Menu > Core Options (picture size, glow, trail, overlay tint and print brightness, rotation, screen rate).
-   50 Hz (the game's own rate): Screen rate 50 Hz, with RetroArch's Settings > Video > Synchronization >
-   Sync to Exact Content Framerate on.
-   If a game runs slow: Phosphor glow off, then Smooth motion off, Picture size 1x.
+Settings: Quick Menu > Core Options, in submenus: Picture, Overlay, Tube, Controls, System, Sound.
+   Sharpest lines: Picture > Picture size = your screen's height in pixels (Retroid Pocket 4:3: 960; 1080p: 1080;
+   4K: 2160), with RetroArch's Settings > Video > Scaling > Integer Scale on - the picture then fills the screen exactly,
+   one core pixel per screen pixel (also in tate). Bilinear Filtering off.
+   Picture area auto: the whole overlay with an overlay on, the glass window (a larger picture) without.
+   50 Hz (the game's own rate) needs a screen that can run at 50 Hz (Sync to Exact Content Framerate on).
+   If a game runs slow: the device's performance mode up, Phosphor glow off, a smaller Picture size.
 
 Trouble: the core writes <system>/vectrex_emu/vectrex_emu.log on every game start (the BIOS and overlay it found).

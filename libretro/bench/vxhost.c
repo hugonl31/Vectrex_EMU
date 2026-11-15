@@ -76,11 +76,11 @@ int main (int argc, char **argv)
 	void (*retro_set_environment) (retro_environment_t), (*retro_set_video_refresh) (retro_video_refresh_t),
 	     (*retro_set_audio_sample) (retro_audio_sample_t), (*retro_set_audio_sample_batch) (retro_audio_sample_batch_t),
 	     (*retro_set_input_poll) (retro_input_poll_t), (*retro_set_input_state) (retro_input_state_t), (*retro_init) (void),
-	     (*retro_run) (void), (*retro_get_system_av_info) (struct retro_system_av_info *);
+	     (*retro_run) (void), (*retro_unload_game) (void), (*retro_get_system_av_info) (struct retro_system_av_info *);
 	bool (*retro_load_game) (const struct retro_game_info *), (*retro_serialize) (void *, size_t), (*retro_unserialize) (const void *, size_t);
 	size_t (*retro_serialize_size) (void);
 	SYM (retro_set_environment) SYM (retro_set_video_refresh) SYM (retro_set_audio_sample) SYM (retro_set_audio_sample_batch)
-	SYM (retro_set_input_poll) SYM (retro_set_input_state) SYM (retro_init) SYM (retro_run) SYM (retro_get_system_av_info)
+	SYM (retro_set_input_poll) SYM (retro_set_input_state) SYM (retro_init) SYM (retro_run) SYM (retro_unload_game) SYM (retro_get_system_av_info)
 	SYM (retro_load_game) SYM (retro_serialize) SYM (retro_unserialize) SYM (retro_serialize_size)
 	retro_set_environment (env); retro_set_video_refresh (video); retro_set_audio_sample (sample); retro_set_audio_sample_batch (audio);
 	retro_set_input_poll (poll); retro_set_input_state (input); retro_init ();
@@ -96,6 +96,7 @@ int main (int argc, char **argv)
 			if (fno >= warm && d > worst) worst = d; }
 		double avg = (now () - t0) / n * 1e3;
 		printf ("%.3f ms per frame on average, worst %.2f ms (%d frames; %.0f Hz needs %.2f ms)\n", avg, worst * 1e3, n, av.timing.fps, 1e3 / av.timing.fps);
+		fflush (stdout); retro_unload_game ();   /* (VXPOC_PROF=1: the core's own breakdown - Android: in its log) */
 	} else if (!strcmp (argv[4], "shot")) {
 		int n = atoi (argv[5]);
 		for (fno = 0; fno < n; fno++) retro_run ();

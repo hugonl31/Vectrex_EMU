@@ -139,7 +139,7 @@ int main (int argc, char **argv)
 	if (!strcmp (argv[4], "bench")) {
 		int n = argc > 5 ? atoi (argv[5]) : 1200, warm = 120; double t0 = 0, worst = 0;
 		for (fno = 0; fno < n + warm; fno++) {
-			double a = now (); retro_run (); double d = now () - a;
+			double a = now (); retro_run (); double d = now () - a; { static FILE *tf; static int ti = -1; if (ti < 0) { const char *z = getenv ("VXH_TRACE"); tf = z ? fopen (z, "w") : NULL; ti = 1; } if (tf) fprintf (tf, "%ld %.3f\n", fno, d * 1e3); }   /* (VXH_TRACE: each refresh's time) */
 			if (fno == warm) t0 = a;
 			if (fno >= warm && d > worst) worst = d; }
 		double avg = (now () - t0) / n * 1e3;

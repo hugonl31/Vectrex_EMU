@@ -297,6 +297,9 @@ static char tmpdir[1024];
  * RetroArch for UVMC2 / PiTrex / flash / 3D Imager games. */
 static char g_bios[1600], g_dir[1024]; static const char *cart_file; static int cart_seq = -1, cart_poll_n;
 static void cart_swap (const char *path);
+static void emu_wait_ext (void);
+static int vx_ok (void);
+static int opt_async = 1, emu_primed;   /* (1.1: Threaded emulation - UVMC2 / PiTrex, see emu_start) */
 static int unser_seen, runs_since_unser;   /* (v0.27: run-ahead - see retro_run) */
 static void cart_poll (void)
 {
@@ -409,7 +412,8 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_skip_intro", "system", "Skip the Vectrex intro", "Games start straight away (next game start).", "off|on" },
 	{ "vectrex_emu_cart_hw", "system", "Cartridge hardware", "Auto: by the ROM's size (next game start).",
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
-	{ "vectrex_emu_uvm2_mode", "system", "UVMC2 mode", "Exact: as the cartridge. Fast: less CPU. Dev: fast, with an ideal beam.", "exact|fast|dev" },
+	{ "vectrex_emu_threaded", "system", "Threaded emulation (UVMC2, PiTrex)", "Emulates while drawing: full speed on handhelds, one frame more input delay.", "on|off" },
+	{ "vectrex_emu_uvm2_mode", "system", "UVMC2 mode", "Fast: the same game, less CPU. Exact: as the cartridge, cycle for cycle. Dev: fast, with an ideal beam.", "fast|exact|dev" },
 	{ "vectrex_emu_power_fx", "system", "Switching on / off", "Tube warm-up and switch-off effects.", "on|off" },
 	{ "vectrex_emu_imager", "system", "3D Imager", NULL, "colour|off" },
 	{ "vectrex_emu_buzz", "sound", "Vectrex buzz", NULL, "on|off" },
@@ -524,6 +528,7 @@ static void read_options (void)
 	raw_glass = TRI ("vectrex_emu_glass_edge"); raw_ceiling = TRI ("vectrex_emu_ceiling"); raw_case = TRI ("vectrex_emu_case");
 	raw_crefl = TRI ("vectrex_emu_case_refl"); raw_cwear = TRI ("vectrex_emu_case_wear");
 	opt_room_glass = opt_is ("vectrex_emu_room_glass", "on");
+	opt_async = !opt_is ("vectrex_emu_threaded", "off");
 	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
@@ -674,7 +679,7 @@ static void geo_tell (void)
 	else env_cb (RETRO_ENVIRONMENT_SET_GEOMETRY, &av.geometry);
 }
 void retro_set_controller_port_device (unsigned p, unsigned d) { (void) p; (void) d; }
-void retro_reset (void) { extern void vecx_reset_button (void); vecx_reset_button (); }
+void retro_reset (void) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 
 /* ---- the overlay by the game's name (vectrex_emu.py find_overlay: the name, its base without (...), its letters) */
 static void base_of (const char *s, char *out, size_t n)
@@ -883,9 +888,13 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  else if (!strncmp (ch, "off", 3)) snprintf (e, sizeof e, "VT_CARTHW=0");
 	  else { int k = 0; while (ch[k] && ch[k] != ' ' && k < 20) k++; snprintf (e, sizeof e, "VT_CARTHW=%.*s", k, ch); }
 	  vx_putenv (e); }
-	{ const char *um = optv ("vectrex_emu_uvm2_mode");
+	{ const char *um = optv ("vectrex_emu_uvm2_mode"); if (!um[0]) um = "fast";
 	  vx_putenv (!strcmp (um, "fast") ? "VT_UVM2_FAST=1" : "VT_UVM2_FAST="); vx_putenv (!strcmp (um, "dev") ? "VT_UVM2_DEV=1" : "VT_UVM2_DEV="); }
-	{ const char *x = strrchr (path, '.'); vx_putenv (x && !vx_stricmp (x, ".um2") && vx_ncpu () >= 4 ? "VT_THREADS=1" : "VT_THREADS="); }
+	{ const char *x = strrchr (path, '.'); int on = x && !vx_stricmp (x, ".um2") && vx_ncpu () >= 4 && !opt_async;   /* (with Threaded
+	                                              emulation the emulation has a thread already: the UVMC2's core 0 lock-step thread
+	                                              beside it and the drawing ran slower - the Nova, 2026-11-15: 7.9 ms a refresh without, 8.9 with) */
+	  { const char *t = getenv ("VX_UVM2_THREADS"); if (t) on = on && atoi (t) > 0; }   /* (test: the UVMC2's core 0 thread off) */
+	  vx_putenv (on ? "VT_THREADS=1" : "VT_THREADS="); }
 	/* (1.1: Last Human's save chip - a DS2431 on PB6: its calibration, difficulty and high scores - in RetroArch's saves
 	 *  folder; a save next to the ROM (the desktop's) is the start) */
 	{ static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };
@@ -910,6 +919,7 @@ static long vx_hidden, vx_shown;          /* (test: refreshes run hidden / shown
 static void pw_stamp_path (char *o, size_t n) { snprintf (o, n, "%s" SEP "vectrex_emu_power_off.txt", tmp_dir ()); }
 void retro_unload_game (void)
 {
+	emu_wait_ext (); emu_primed = 0;
 	flash_save (1);                             /* (1.1: the flash cartridge's last writes) */
 	{ char sp[1100]; pw_stamp_path (sp, sizeof sp); FILE *f = fopen (sp, "w"); if (f) { fprintf (f, "%lld", (long long) time (NULL)); fclose (f); } }
 	{ const char *lp = getenv ("VXPOC_RALOG"); FILE *f = lp ? fopen (lp, "a") : NULL;   /* (test: was run-ahead on?) */
@@ -1902,12 +1912,91 @@ int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet
 #else
 int gpu_frame_shown (void) { return 0; }
 #endif
+/* (1.1) the emulation on a thread of its own (UVMC2 / PiTrex games - the option Threaded emulation): retro_run waits
+ * for the refresh it shows, builds its lines, sends its sound, starts the next refresh's emulation and draws while that
+ * runs. The picture is one refresh behind the input (17 ms); what reads or changes the emulator waits first (emu_wait) */
+static volatile int emu_busy;
+static void emu_loop (void);
+/* (one thread kept for the whole game: a new one each refresh started on a little core every time) */
+#ifdef _WIN32
+static HANDLE emu_th, emu_go, emu_done;
+static DWORD WINAPI emu_main (LPVOID p)
+{
+	(void) p;
+	for (;;) { WaitForSingleObject (emu_go, INFINITE); emu_loop (); SetEvent (emu_done); }
+	return 0;
+}
+static int emu_make (void)
+{
+	if (emu_th) return 1;
+	emu_go = CreateEvent (NULL, FALSE, FALSE, NULL); emu_done = CreateEvent (NULL, FALSE, FALSE, NULL);
+	emu_th = emu_go && emu_done ? CreateThread (NULL, 0, emu_main, NULL, 0, NULL) : NULL;
+	return emu_th != NULL;
+}
+static void emu_kick (void) { SetEvent (emu_go); }
+static void emu_join (void) { WaitForSingleObject (emu_done, INFINITE); }
+#else
+#include <pthread.h>
+static pthread_t emu_th; static int emu_made, emu_req, emu_fin;
+static pthread_mutex_t emu_mx = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t emu_cv = PTHREAD_COND_INITIALIZER;
+static void *emu_main (void *p)
+{
+	(void) p;
+	for (;;) {
+		pthread_mutex_lock (&emu_mx); while (!emu_req) pthread_cond_wait (&emu_cv, &emu_mx); emu_req = 0; pthread_mutex_unlock (&emu_mx);
+		emu_loop ();
+		pthread_mutex_lock (&emu_mx); emu_fin = 1; pthread_cond_broadcast (&emu_cv); pthread_mutex_unlock (&emu_mx);
+	}
+	return NULL;
+}
+static int emu_make (void)
+{
+	if (emu_made) return 1;
+	if (pthread_create (&emu_th, NULL, emu_main, NULL)) return 0;
+	pthread_detach (emu_th); emu_made = 1; return 1;
+}
+static void emu_kick (void) { pthread_mutex_lock (&emu_mx); emu_fin = 0; emu_req = 1; pthread_cond_broadcast (&emu_cv); pthread_mutex_unlock (&emu_mx); }
+static void emu_join (void) { pthread_mutex_lock (&emu_mx); while (!emu_fin) pthread_cond_wait (&emu_cv, &emu_mx); pthread_mutex_unlock (&emu_mx); }
+#endif
+static void run_t_next (void)               /* (the emulated time this refresh has to reach: one refresh on) */
+{
+	if (!run_t) run_t = total_cycles;
+	run_t += (unsigned long long) (1.5e6 / opt_rate + 0.5);
+	run_frac += 1.5e6 / opt_rate - (double) (unsigned long long) (1.5e6 / opt_rate + 0.5);
+	if (run_frac >= 1) { run_t++; run_frac -= 1; } else if (run_frac <= -1) { run_t--; run_frac += 1; }
+	if (!pw_on) run_t = total_cycles;
+}
+static void emu_loop (void)                 /* (game frames until the emulated time has reached run_t) */
+{
+	extern int vt_imager;
+	for (int k = 0; total_cycles < run_t && k < 8; k++) {
+		extern unsigned long long vt_piece_t0;
+		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
+		abuf_n = 0;
+		run_frame ();
+		frame_push (p0);
+		if (vt_imager) eyes_take ();
+		audio_frame ();
+	}
+	if (total_cycles + 3000000 < run_t) run_t = total_cycles;   /* (far behind - a stall: on from here) */
+}
+static void emu_wait (void) { if (!emu_busy) return; emu_join (); emu_busy = 0; }
+static void emu_start (void)
+{
+	run_t_next ();
+	if (emu_make ()) { emu_busy = 1; emu_kick (); }
+	else emu_loop ();                       /* (no thread: here, as before) */
+}
+static int emu_threaded (void) { return opt_async && !vx_ok (); }
+static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save states, no run-ahead) */
 /* (test: VXPOC_PROF=1 - where a refresh's time goes, printed at the game's end) */
 static double pf_now (void) { return vt_wall (); }   /* (vtest.c: the wall clock, every system) */
 void retro_run (void)
 {
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
+	emu_wait ();                                /* (1.1: the refresh to show, emulated meanwhile - UVMC2 / PiTrex) */
+	const int asy = emu_threaded (), primed = asy && emu_primed;
 	bool upd = false;
 	if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &upd) && upd) read_options ();
 	poll_cb ();
@@ -1945,22 +2034,8 @@ void retro_run (void)
 	/* the emulator: game frames until the emulated time has reached this refresh's (none while switched off) */
 	extern int vt_imager;
 	const double dt = 1.0 / opt_rate;
-	if (!run_t) run_t = total_cycles;
-	run_t += (unsigned long long) (1.5e6 / opt_rate + 0.5);
-	{ run_frac += 1.5e6 / opt_rate - (double) (unsigned long long) (1.5e6 / opt_rate + 0.5);
-	  if (run_frac >= 1) { run_t++; run_frac -= 1; } else if (run_frac <= -1) { run_t--; run_frac += 1; } }
-	if (!pw_on) run_t = total_cycles;
 	if (pf_on) pf1 = pf_now ();
-	for (int k = 0; total_cycles < run_t && k < 8; k++) {
-		extern unsigned long long vt_piece_t0;
-		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
-		abuf_n = 0;
-		run_frame ();
-		frame_push (p0);
-		if (vt_imager) eyes_take ();
-		audio_frame ();
-	}
-	if (total_cycles + 3000000 < run_t) run_t = total_cycles;   /* (far behind - a stall: on from here) */
+	if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; }   /* (threaded: done meanwhile, on its own thread) */
 	if (pf_on) pf2 = pf_now ();
 	{ int av = 3; vx_nobuild = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1); }
 	/* the picture: which lines, from which game frames */
@@ -2028,8 +2103,10 @@ void retro_run (void)
 	}
 	/* v0.13: a refresh RetroArch does not show (run-ahead's hidden runs: the video off) draws no picture - after the
 	 * choice of frames above, which keeps the kept frames' list the same whether a refresh is shown or not */
-	{ int av = 3; if (env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1)) { vx_hidden++; audio_out (); return; } }
+	{ int av = 3; if (env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1)) { vx_hidden++; audio_out (); if (asy) { flash_save (0); emu_start (); } return; } }
 	vx_shown++;
+	if (asy) { audio_out (); flash_save (0); emu_start (); }   /* (threaded: this refresh's sound out, the next one's emulation
+	                                              started - the drawing below reads only the pieces built above) */
 	if (pf_on) pf3 = pf_now ();
 	/* the bands: the lines, the phosphor, then (no glow) the knee and the 8-bit picture - each band on its own core */
 	const int Wd = FW, H = FH; const size_t NP = (size_t) Wd * H;
@@ -2167,14 +2244,14 @@ void retro_run (void)
 		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
 	}
 	sheet_write ();
-	flash_save (0);                             /* (1.1: the flash cartridge's saves - live.c: a second after its last write) */
+	if (!asy) flash_save (0);                   /* (1.1: the flash cartridge's saves - live.c: a second after its last write) */
 	if (pf_on) { double pf5 = pf_now (); pf_t[0] += pf1 - pf0; pf_t[1] += pf2 - pf1; pf_t[2] += pf3 - pf2; pf_t[3] += pf4 - pf3; pf_t[4] += pf5 - pf4; pf_n++; }
 	{ const char *sh = shot_path;   /* (test: the picture at refresh N as a PNG) */
 	  if (shot_now) {
 		unsigned char *rgb = malloc ((size_t) pw * ph * 3);
 		for (size_t i = 0; i < (size_t) pw * ph; i++) { rgb[3 * i] = (unsigned char) (pic[i] >> 16); rgb[3 * i + 1] = (unsigned char) (pic[i] >> 8); rgb[3 * i + 2] = (unsigned char) pic[i]; }
 		write_png (sh, rgb, pw, ph); free (rgb); fprintf (stderr, "[vectrex_emu] shot %s %dx%d, %d lines, %d pieces drawn; smooth motion: %ld of %ld refreshes between two frames\n", sh, pw, ph, nlast, npl, sm_mixed, sm_runs); } }
-	audio_out ();
+	if (!asy) audio_out ();
 }
 
 /* ---- the speech module (v0.11, vectrex_emu.py port2_needed): the games that talk get a VecVoice or VecVox in port 2,
@@ -2246,6 +2323,7 @@ static unsigned char *put_frame (unsigned char *o, const gframe *f)
 }
 bool retro_serialize (void *d, size_t sz)
 {
+	emu_wait_ext ();
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	if (!vx_ok () || sz < vx_size) return false;
 	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), 0 };
@@ -2262,6 +2340,7 @@ bool retro_serialize (void *d, size_t sz)
 }
 bool retro_unserialize (const void *d, size_t sz)
 {
+	emu_wait_ext ();
 	unser_seen = 1; runs_since_unser = 0;
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	const unsigned char *i = d; uint32_t h[4];
@@ -2300,6 +2379,7 @@ static int try_overlay_dir (const char *dir, const char *rom);
 static void frame_pop (void);
 static void cart_swap (const char *path)
 {
+	emu_wait_ext (); emu_primed = 0;
 	extern int vt_vb, vt_hb512, vt_multicart; extern int vtest_main (int, char **);
 	const char *ovname = path; path = v4e_open (path); if (!path) return;
 	vt_vb = 0; vt_hb512 = 0; vt_multicart = 0;           /* (the last cartridge's boards out: vtest main only sets them) */
@@ -2319,6 +2399,7 @@ static void cart_swap (const char *path)
 }
 bool retro_load_game (const struct retro_game_info *g)
 {
+	emu_wait_ext (); emu_primed = 0;
 	boot_id = VX_TICKS () | 1;   /* (v0.25: a new game booted) */
 	if (!g || !g->path) return false;
 	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);

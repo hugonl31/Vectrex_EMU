@@ -33,6 +33,8 @@ for f in ../cache/pitrex_sd.img ../cache/uvmc2_sd.img; do
 	if ssh -o BatchMode=yes -p 8022 $NOVA "test -s $SD/BIOS/vectrex_emu/$b"; then echo "$b: on the Nova already (its saves kept)"
 	else echo "sending $b"; scp -q -P 8022 "$f" $NOVA:$SD/BIOS/vectrex_emu/; fi
 done
+# the speech ROM (VecVoice / VecVox games) from the desktop install, when there - the owner's own copy, not in the package
+[ -f ../build/Vectrex_EMU/system/sp0256-al2.bin ] && scp -q -P 8022 ../build/Vectrex_EMU/system/sp0256-al2.bin $NOVA:$SD/BIOS/vectrex_emu/
 [ -f ../build/Vectrex_EMU/pitrex/pitrex.img ] && scp -q -P 8022 ../build/Vectrex_EMU/pitrex/pitrex.img "$NOVA:$SD/ROMs/vectrex/PiTrex.img"
 for g in ../package/roms/*.um2; do [ -f "$g" ] && scp -q -P 8022 "$g" "$NOVA:$SD/ROMs/vectrex/"; done
 ssh -o BatchMode=yes -p 8022 $NOVA "ls -l /storage/emulated/0/Download/vectrex_emu_libretro_android.so; ls $SD/BIOS/vectrex_emu; ls $SD/BIOS/vectrex_emu/overlays | wc -l; ls $SD/ES-DE/custom_systems"

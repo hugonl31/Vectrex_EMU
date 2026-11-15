@@ -371,69 +371,71 @@ static struct retro_variable vars[] = {
  *  each name led by its submenu's) */
 struct vx_opt { const char *key, *cat, *desc, *info, *vals; };
 static const struct vx_opt OPTS[] = {
-	{ "vectrex_emu_size", "picture", "Picture size",
-	  "Set to your screen's height for the sharpest lines (with Integer Scale on). Retroid Pocket 4:3: 960, 1080p: 1080, 4K: 2160.",
-	  "800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
-	{ "vectrex_emu_area", "picture", "Picture area",
-	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
-	  "auto|glass window|overlay sheet" },
-	{ "vectrex_emu_rotate", "picture", "Rotation (tate)", "Turns the picture for playing with the device held upright.",
-	  "off|90 (turn the device right)|270 (turn the device left)|180" },
-	{ "vectrex_emu_rate", "picture", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
-	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
-	{ "vectrex_emu_smooth", "picture", "Smooth motion", "Lines move smoothly between game frames.", "auto|on|off" },
-	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's overlay. START switches it (any button: Quick Menu > Controls).", "on|off" },
-	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How strongly the overlay colours the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
-	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
-	{ "vectrex_emu_room", "overlay", "Room light", "Lights the overlay.", "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_room_glass", "glass", "Room light on the glass and the case", "Off: pure black without an overlay.", "off|on" },
-	{ "vectrex_emu_glass_edge", "glass", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
-	{ "vectrex_emu_ceiling", "glass", "Ceiling light reflection", "A ceiling light mirrored in the glass: its strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_lamp_x", "glass", "Lamp position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
-	{ "vectrex_emu_lamp_y", "glass", "Lamp position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
-	{ "vectrex_emu_case", "glass", "Plastic case", "The case round the glass, without an overlay.", "auto|on|off" },
-	{ "vectrex_emu_case_refl", "glass", "Case reflections", "The lines mirrored in the case's walls: their strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_case_wear", "glass", "Case scratches and wear", NULL, "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_port2", "controls", "Port 2 device (next game start)", "Auto: the game's own (3D Imager, light pen, VecVoice, VecVox).",
-	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
-	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
 	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", NULL, "auto|on|strong|off" },
 	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
-	{ "vectrex_emu_brightness", "tube", "Brightness", NULL, "1x (measured)|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_beam", "tube", "Beam width", NULL, "thin|medium|wide" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
+	{ "vectrex_emu_brightness", "tube", "Brightness", NULL, "1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "on|off" },
+	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
 	{ "vectrex_emu_smooth_bends", "tube", "Smooth curves at bends", NULL, "auto|on|off" },
 	{ "vectrex_emu_corner_glow", "tube", "Corner glow", NULL, "on|off" },
 	{ "vectrex_emu_corner_dots", "tube", "Corner dots", NULL, "on|off" },
+	{ "vectrex_emu_beam", "tube", "Beam width", NULL, "thin|medium|wide" },
 	{ "vectrex_emu_dwell", "tube", "Dwell spots inside strokes", NULL, "on|off" },
 	{ "vectrex_emu_speed_bright", "tube", "Fast sweeps fainter", NULL, "on|off" },
-	{ "vectrex_emu_bending", "tube", "Brightness bending", NULL, "on|off" },
 	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", NULL, "50 Hz|60 Hz|off" },
-	{ "vectrex_emu_profile", "system", "Quality profile",
-	  "Sets the options left on auto. Ultra: all effects. Low: for small handhelds. Auto: Ultra with the GPU, else Medium.",
-	  "auto|ultra|high|medium|low|basic" },
-	{ "vectrex_emu_renderer", "system", "Renderer (next game start)", "GPU adds the glass and case effects (video driver gl / glcore).",
-	  "auto|GPU|CPU only" },
-	{ "vectrex_emu_skip_intro", "system", "Skip the Vectrex intro", "Games start straight away (next game start).", "off|on" },
-	{ "vectrex_emu_cart_hw", "system", "Cartridge hardware", "Auto: by the ROM's size (next game start).",
+	{ "vectrex_emu_bending", "tube", "Brightness bending", NULL, "on|off" },
+	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's overlay. START switches it (any button: Quick Menu > Controls).", "on|off" },
+	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How strongly the overlay colours the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
+	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
+	{ "vectrex_emu_case", "case", "Plastic case", "The case round the glass, without an overlay.", "auto|on|off" },
+	{ "vectrex_emu_case_refl", "case", "Case reflections", "The lines mirrored in the case's walls: their strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_case_wear", "case", "Case scratches and wear", NULL, "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_room", "room", "Room light", "Lights the overlay.", "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_room_glass", "room", "Room light on the glass and the case", "Off: pure black without an overlay.", "off|on" },
+	{ "vectrex_emu_ceiling", "room", "Ceiling light reflection", "A ceiling light mirrored in the glass: its strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_lamp_x", "room", "Lamp position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
+	{ "vectrex_emu_lamp_y", "room", "Lamp position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
+	{ "vectrex_emu_skip_intro", "unit", "Skip the Vectrex intro", "Games start straight away (next game start).", "off|on" },
+	{ "vectrex_emu_port2", "ports", "Port 2 device (next game start)", "Auto: the game's own (3D Imager, light pen, VecVoice, VecVox).",
+	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
+	{ "vectrex_emu_imager", "ports", "3D Imager", NULL, "colour|off" },
+	{ "vectrex_emu_cart_hw", "ports", "Cartridge hardware", "Auto: by the ROM's size (next game start).",
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
-	{ "vectrex_emu_threaded", "system", "Threaded emulation (UVMC2, PiTrex)", "Emulates while drawing: full speed on handhelds, one frame more input delay.", "on|off" },
-	{ "vectrex_emu_uvm2_mode", "system", "UVMC2 mode", "Fast: the same game, less CPU. Exact: as the cartridge, cycle for cycle. Dev: fast, with an ideal beam.", "fast|exact|dev" },
-	{ "vectrex_emu_power_fx", "system", "Switching on / off", "Tube warm-up and switch-off effects.", "on|off" },
-	{ "vectrex_emu_imager", "system", "3D Imager", NULL, "colour|off" },
+	{ "vectrex_emu_uvm2_mode", "ports", "UVMC2 mode", "Fast: the same game, less CPU. Exact: as the cartridge, cycle for cycle. Dev: fast, with an ideal beam.", "fast|exact|dev" },
+	{ "vectrex_emu_threaded", "ports", "Threaded emulation (UVMC2, PiTrex)", "Emulates while drawing: full speed on handhelds, one frame more input delay.", "on|off" },
+	{ "vectrex_emu_rotate_stick", "ports", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
 	{ "vectrex_emu_buzz", "sound", "Vectrex buzz", NULL, "on|off" },
 	{ "vectrex_emu_speaker", "sound", "Vectrex speaker sound", NULL, "on|off" },
+	{ "vectrex_emu_size", "display", "Picture size",
+	  "Set to your screen's height for the sharpest lines (with Integer Scale on). Retroid Pocket 4:3: 960, 1080p: 1080, 4K: 2160.",
+	  "800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
+	{ "vectrex_emu_area", "display", "Picture area",
+	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
+	  "auto|glass window|overlay sheet" },
+	{ "vectrex_emu_rotate", "display", "Rotation (tate)", "Turns the picture for playing with the device held upright.",
+	  "off|90 (turn the device right)|270 (turn the device left)|180" },
+	{ "vectrex_emu_rate", "display", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
+	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
+	{ "vectrex_emu_smooth", "display", "Smooth motion", "Lines move smoothly between game frames.", "auto|on|off" },
+	{ "vectrex_emu_profile", "display", "Quality profile",
+	  "Sets the options left on auto. Ultra: all effects. Low: for small handhelds. Auto: Ultra with the GPU, else Medium.",
+	  "auto|ultra|high|medium|low|basic" },
+	{ "vectrex_emu_renderer", "display", "Renderer (next game start)", "GPU adds the glass and case effects (video driver gl / glcore).",
+	  "auto|GPU|CPU only" },
+	{ "vectrex_emu_power_fx", "display", "Switching on / off", "Tube warm-up and switch-off effects.", "on|off" },
 	{ NULL, NULL, NULL, NULL, NULL } };
-static const char *const OPT_CATS[][3] = {
-	{ "picture", "Picture", "Size, area, rotation, screen rate" },
-	{ "overlay", "Overlay", "Overlay, tint, printed art, room light" },
-	{ "tube", "Tube", "Glow, trail, brightness, beam, colour" },
-	{ "glass", "Glass and case", "GPU renderer effects" },
-	{ "controls", "Controls", "Controls in tate" },
-	{ "system", "System", "Quality profile, renderer, switching on / off, 3D Imager" },
-	{ "sound", "Sound", "Buzz, speaker" } };
+static const char *const OPT_CATS[][3] = {   /* (the desktop's Config tabs, in its order - Head is not here) */
+	{ "tube", "Tube", "Phosphor, shape and glass, glow and beam, signal" },
+	{ "overlay", "Overlay", "The sheet: tint, print" },
+	{ "case", "Case", "The plastic round the glass" },
+	{ "room", "Room light", "The room, the ceiling light" },
+	{ "unit", "Unit", "Which Vectrex, starting up" },
+	{ "circuit", "Circuit", "Trim pots, its parts" },
+	{ "ports", "Ports", "Port 2, the cartridge slot, UVMC2, PiTrex" },
+	{ "sound", "Sound", "The Vectrex's sound" },
+	{ "display", "Display", "The screen, its rate, size and rotation, quality" } };
 #define NOPT (sizeof OPTS / sizeof OPTS[0])
 static struct retro_variable vars[NOPT];
 /* (libretro.h's core options v2 - not in this core's older header: the same layout) */
@@ -443,14 +445,14 @@ struct vx_opt_def { const char *key, *desc, *desc_categorized, *info, *info_cate
 struct vx_opts_v2 { struct vx_opt_cat *categories; struct vx_opt_def *definitions; };
 static void opts_set (retro_environment_t cb)
 {
-	static char vbuf[16384]; static struct vx_opt_def defs[NOPT]; static struct vx_opt_cat cats[8]; size_t u = 0;
+	static char vbuf[16384]; static struct vx_opt_def defs[NOPT]; static struct vx_opt_cat cats[10]; size_t u = 0;
 	for (size_t i = 0; OPTS[i].key; i++) {          /* (the flat list: "Submenu: name; values") */
-		const char *cn = ""; for (int c = 0; c < 7; c++) if (!strcmp (OPT_CATS[c][0], OPTS[i].cat)) cn = OPT_CATS[c][1];
+		const char *cn = ""; for (int c = 0; c < 9; c++) if (!strcmp (OPT_CATS[c][0], OPTS[i].cat)) cn = OPT_CATS[c][1];
 		vars[i].key = OPTS[i].key; vars[i].value = vbuf + u;
 		u += (size_t) snprintf (vbuf + u, sizeof vbuf - u, "%s: %s; %s", cn, OPTS[i].desc, OPTS[i].vals) + 1; }
 	unsigned ver = 0;
 	if (!cb (52 /* GET_CORE_OPTIONS_VERSION */, &ver) || ver < 2) { cb (RETRO_ENVIRONMENT_SET_VARIABLES, vars); return; }
-	for (int c = 0; c < 7; c++) cats[c] = (struct vx_opt_cat) { OPT_CATS[c][0], OPT_CATS[c][1], OPT_CATS[c][2] };
+	for (int c = 0; c < 9; c++) cats[c] = (struct vx_opt_cat) { OPT_CATS[c][0], OPT_CATS[c][1], OPT_CATS[c][2] };
 	for (size_t i = 0; OPTS[i].key; i++) {
 		struct vx_opt_def *d = &defs[i]; memset (d, 0, sizeof *d);
 		d->key = OPTS[i].key; d->category_key = OPTS[i].cat;

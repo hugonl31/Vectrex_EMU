@@ -16,11 +16,7 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 ## In progress (the owner, 2026-11-15: do them all; the full look and UVMC2 at full speed on the Nova)
 
-- [ ] Quality profiles exactly as the desktop's (vecrender.py PROFILE_OFF: Ultra, High, Medium, Low, Basic - the same
-      switches, the phosphor at 0.75 / 0.5 size, half rate), every option's default and wording as the desktop's
-- [ ] An optimizer like the desktop's: measures the device and picks the profile / settings
-- [ ] The Vectrex unit (Config > Unit / Circuit): the brightness knob, size, high voltage, centring, the yoke's
-      rotation, the picture's shape; Random unit and Cranky
+- [ ] Every option's default and wording compared with the desktop's once more
 - [ ] README for the public release: the optional files - `sp0256-al2.bin` (speech), the 3D Imager needs none
 
 ## Next (the owner, 2026-11-15)
@@ -47,6 +43,9 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
   parallax; the Nova at 960 px: the full Ultra look 3.3 ms a picture (Medium 1.0), Last Human (UVMC2) at full speed
 - Port 2 device in the options, the light pen by touch; the room light's strengths and the lamp's position
 - The options in submenus as the desktop's Config tabs
+- Quality profiles as the desktop's (PROFILE_OFF, switch for switch); Optimize (pctest.py) as the auto profile
+- The Vectrex unit (Unit / Circuit tabs): owner's, ideal, random and cranky units, the knob, the pots, the yoke, the
+  picture's shape, the circuit's parts (unit.c)
 - SD cards as folders, as the desktop (fatimg.py in C: sdcard.c) - the UVMC2's text past the left edge was an old dev
   uvm2.cfg (zero 35) on the Nova's card image
 - Overlays as the desktop has them: MiSTer .art and PNG (vart.py in C: overlay_art.c)

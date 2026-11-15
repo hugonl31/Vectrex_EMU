@@ -152,10 +152,12 @@ static void vx_putenv (const char *s)       /* (as Windows' _putenv: "NAME=" tak
 #endif
 #define TUBE_SEG 1200.0                     /* (lines longer than this, emulator units, are bent in pieces) */
 static int opt_geom = 1;
+#include "unit.c"
 static void tube_pt (double x, double y, double *X, double *Y)
 {
 	const double XM = ALG_MAX_X / 2.0, YM = ALG_MAX_Y / 2.0;
-	const double u = (x - XM) / TU, v = (y - YM) / TU;
+	double u = (x - XM) / TU, v = (y - YM) / TU;
+	if (uw_on) unit_wp (&u, &v);                 /* (this Vectrex's own picture shape: unit.c) */
 	double Xu = LIN_A * u + LIN_B, Yv = LIN_C * v + LIN_D;
 	if (opt_geom) {
 		const double SU = (TM_NU - 1) / (TM_U1 - TM_U0), SV = (TM_NV - 1) / (TM_V1 - TM_V0);
@@ -308,6 +310,13 @@ static char g_bios[1600], g_dir[1024]; static const char *cart_file; static int 
 static void cart_swap (const char *path);
 static void emu_wait_ext (void);
 static int vx_ok (void);
+static int unit_addon;
+static const char *optv (const char *key);
+static const char *unit_preset (void)               /* (the Unit option: owner, ideal, random N, cranky N) */
+{
+	const char *u = optv ("vectrex_emu_unit");
+	return !strncmp (u, "ideal", 5) ? "ideal" : !strncmp (u, "random", 6) || !strncmp (u, "cranky", 6) ? u : "owner";
+}
 static int opt_async = 1, emu_primed;   /* (1.1: Threaded emulation - UVMC2 / PiTrex, see emu_start) */
 static int unser_seen, runs_since_unser;   /* (v0.27: run-ahead - see retro_run) */
 static void cart_poll (void)
@@ -417,7 +426,41 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_ceiling_ov", "room", "Ceiling light on the overlay", "Its reflection on the sheet: strength (GPU).", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_lamp_x", "room", "Lamp position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
 	{ "vectrex_emu_lamp_y", "room", "Lamp position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
+	{ "vectrex_emu_unit", "unit", "Unit", "Which Vectrex: the owner's (measured), an ideal one, a random or a cranky one (each number its own).", "owner's Vectrex (measured)|ideal|random 1|random 2|random 3|random 4|random 5|random 6|random 7|random 8|random 9|random 10|cranky 1|cranky 2|cranky 3|cranky 4|cranky 5|cranky 6|cranky 7|cranky 8|cranky 9|cranky 10" },
 	{ "vectrex_emu_skip_intro", "unit", "Skip the Vectrex intro", "Games start straight away (next game start).", "off|on" },
+	{ "vectrex_emu_unit_knob", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_sizex", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_sizey", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_hv", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_cenx", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_ceny", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_rot", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_skew", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_keyx", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_keyy", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_pinx", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_piny", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_linx", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_liny", "unit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_dacofs", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_drift_x", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_drift_y", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_ring", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_zhold", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_zcal", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_zofs", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_ysettle", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_beamoff", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_zerotx", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_zeroty", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_ofsk", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_lagx", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_lagy", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_dac0", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_dac1", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_dac2", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_dac3", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_gap", "circuit", NULL, NULL, "@" },
 	{ "vectrex_emu_port2", "ports", "Port 2 device (next game start)", "Auto: the game's own (3D Imager, light pen, VecVoice, VecVox).",
 	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
 	{ "vectrex_emu_imager", "ports", "3D Imager", NULL, "colour|off" },
@@ -451,8 +494,8 @@ static const char *const OPT_CATS[][3] = {   /* (the desktop's Config tabs, in i
 	{ "overlay", "Overlay", "The sheet: tint, print, plastic and scratches" },
 	{ "case", "Case", "The plastic round the glass" },
 	{ "room", "Room light", "The room, the ceiling light" },
-	{ "unit", "Unit", "Which Vectrex, starting up" },
-	{ "circuit", "Circuit", "Trim pots, its parts" },
+	{ "unit", "Unit", "Which Vectrex, starting up; the knob, the pots and the yoke; the picture's shape" },
+	{ "circuit", "Circuit", "The service trim pots; its parts: zero reference, beam, zeroing, lag, DAC" },
 	{ "ports", "Ports", "Port 2, the cartridge slot, UVMC2, PiTrex" },
 	{ "sound", "Sound", "The Vectrex's sound" },
 	{ "display", "Display", "The screen, its rate, size and rotation, quality" } };
@@ -465,11 +508,17 @@ struct vx_opt_def { const char *key, *desc, *desc_categorized, *info, *info_cate
 struct vx_opts_v2 { struct vx_opt_cat *categories; struct vx_opt_def *definitions; };
 static void opts_set (retro_environment_t cb)
 {
-	static char vbuf[16384]; static struct vx_opt_def defs[NOPT]; static struct vx_opt_cat cats[10]; size_t u = 0;
+	static char vbuf[262144]; static struct vx_opt_def defs[NOPT]; static struct vx_opt_cat cats[10]; size_t u = 0;
+	static const char *vals[NOPT], *desc[NOPT], *info[NOPT];
+	for (size_t i = 0; OPTS[i].key; i++) {          /* (the Vectrex unit's rows: their names and values from unit.c) */
+		vals[i] = OPTS[i].vals; desc[i] = OPTS[i].desc; info[i] = OPTS[i].info;
+		if (OPTS[i].vals[0] == '@') { const unit_par *p = &UNIT_P[unit_idx (OPTS[i].key + 17)];
+			vals[i] = vbuf + u; u += unit_vals (p, vbuf + u, sizeof vbuf - u) + 1; desc[i] = p->label;
+			char *f = vbuf + u; u += (size_t) snprintf (f, sizeof vbuf - u, "%s%sAuto: the Unit's.", p->info ? p->info : "", p->info ? " " : "") + 1; info[i] = f; } }
 	for (size_t i = 0; OPTS[i].key; i++) {          /* (the flat list: "Submenu: name; values") */
 		const char *cn = ""; for (int c = 0; c < 9; c++) if (!strcmp (OPT_CATS[c][0], OPTS[i].cat)) cn = OPT_CATS[c][1];
 		vars[i].key = OPTS[i].key; vars[i].value = vbuf + u;
-		u += (size_t) snprintf (vbuf + u, sizeof vbuf - u, "%s: %s; %s", cn, OPTS[i].desc, OPTS[i].vals) + 1; }
+		u += (size_t) snprintf (vbuf + u, sizeof vbuf - u, "%s: %s; %s", cn, desc[i], vals[i]) + 1; }
 	unsigned ver = 0;
 	if (!cb (52 /* GET_CORE_OPTIONS_VERSION */, &ver) || ver < 2) { cb (RETRO_ENVIRONMENT_SET_VARIABLES, vars); return; }
 	for (int c = 0; c < 9; c++) cats[c] = (struct vx_opt_cat) { OPT_CATS[c][0], OPT_CATS[c][1], OPT_CATS[c][2] };
@@ -479,8 +528,8 @@ static void opts_set (retro_environment_t cb)
 		/* (the name with its submenu, for a frontend that shows no submenus; the name alone inside one) */
 		{ char *dn = vbuf + u; const char *v = vars[i].value; size_t L = (size_t) (strchr (v, ';') - v);
 		  memcpy (dn, v, L); dn[L] = 0; u += L + 1; d->desc = dn; }
-		d->desc_categorized = OPTS[i].desc; d->info = OPTS[i].info; d->info_categorized = OPTS[i].info;
-		char *q = vbuf + u; u += (size_t) snprintf (q, sizeof vbuf - u, "%s", OPTS[i].vals) + 1;
+		d->desc_categorized = desc[i]; d->info = info[i]; d->info_categorized = info[i];
+		char *q = vbuf + u; u += (size_t) snprintf (q, sizeof vbuf - u, "%s", vals[i]) + 1;
 		int n = 0; for (char *t = q; t && n < 127; ) { char *b = strchr (t, '|'); if (b) *b = 0; d->values[n++].value = t; t = b ? b + 1 : NULL; }
 		d->default_value = d->values[0].value; }
 	struct vx_opts_v2 o = { cats, defs };
@@ -571,6 +620,7 @@ static void read_options (void)
 	  if (!strcmp (ly, "27%")) g_lamp_y = 0.273f; }
 #endif
 	raw_groom = TRI ("vectrex_emu_room_glass"); opt_room_glass = raw_groom > 0;
+	if (unit_known) { unit_make (unit_preset (), optv); if (vx_ok ()) { emu_wait_ext (); unit_live (unit_addon); } }   /* (the unit, while running) */
 	opt_async = !opt_is ("vectrex_emu_threaded", "off");
 	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
 	white_make ();
@@ -945,10 +995,9 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	/* (1.1: the desktop Vectrex_EMU's default Vectrex unit - vectrex_emu.py UNIT_PRESETS['owner'], the analog parts as
 	 *  measured on the owner's console; without them the core ran as an ideal machine: Last Human's calibration then
 	 *  needed ZERO REF +36. Read at the first reset) */
-	{ static const char *const UNIT[] = { "VT_ZREFK=0.38", "VT_CALSHIFT=2.9", "VT_ZOFS=0.0000", "VT_YSHK=0.7000", "VT_BEAMOFF=0.5000",
-		"VT_BRIGHT=0.0000", "VT_OFSK=166.0000", "VT_DEFLAG=6.0000", "VT_DEFLAGY=6.0000", "VT_DACOFS=0.0000", "VT_HWOFS=0.0000,0.0000",
-		"VT_ZEROTAU=4.500,3.300", "VT_DACBITS=0.01700,0.00690,-0.00890,-0.00140", NULL };
-	  for (int k = 0; UNIT[k]; k++) vx_putenv (UNIT[k]); }
+	{ const char *e = strrchr (path, '.');
+	  unit_addon = e && (!vx_stricmp (e, ".um2") || !vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit"));
+	  unit_make (unit_preset (), optv); unit_env (unit_addon); }   /* (unit.c: the desktop's Config > Unit / Circuit) */
 	/* (1.1, as the desktop's Core: the cartridge hardware - auto by the ROM's size, off a plain 32 KB, or a board; a UVMC2's
 	 *  mode; its core 0 on a host thread of its own with 4 or more processors) */
 	{ const char *ch = optv ("vectrex_emu_cart_hw"); static char e[64];
@@ -1836,6 +1885,8 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 {
 	extern int vt_imager;
 	if (vx_nobuild) return npl;
+	if (up_xf) for (int i = 0; i < n; i++) { picture_apply (&L[i].x0, &L[i].y0); picture_apply (&L[i].x1, &L[i].y1); }   /* (unit.c: the
+	                                                    picture's pots and the yoke, after the integrators) */
 	if (opt_dwell && n > 1) n = dwell_rests (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
 	if (opt_sbend && n > 1) n = smooth_bends (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
 	if (opt_geom && n) n = tube_split (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
@@ -1866,7 +1917,8 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 	const int n0 = npl;
 	for (int i = 0; i < n && npl < NW; i++) {
 		const wline *l = &L[i];
-		int z = l->b & 127; if (!z) continue;           /* (intensity 0: dark) */
+		int z = l->b & 127; const int web = (l->b & 255) == 128;   /* (the blanked beam: drawn while the knob is up) */
+		if (!z && !(web && up_kb > 0)) continue;         /* (intensity 0: dark) */
 		double x0, y0, x1, y1; tube_pt (l->x0, l->y0, &x0, &y0); tube_pt (l->x1, l->y1, &x1, &y1);
 		if (zl[i]) { x0 = x1; y0 = y1; }                /* (a resting spot: where the spot came to rest) */
 		x0 = cxm + (x0 - cxm) * gs; x1 = cxm + (x1 - cxm) * gs; y0 = cym + (y0 - cym) * gs; y1 = cym + (y1 - cym) * gs;
@@ -1875,9 +1927,13 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			if (zl[i]) { ax = bx; ay = by; } x0 += ax; y0 += ay; x1 += bx; y1 += by; }
 		x0 = (x0 - SHEET_X0) * sx + esh; x1 = (x1 - SHEET_X0) * sx + esh; y0 = (y0 - SHEET_Y0 + par) * sy; y1 = (y1 - SHEET_Y0 + par) * sy;
 		/* the brightness and width (game px, FWHM) */
-		const double zi = z / 127.0, cyc = l->cyc; double zk = zk_tab[z];
+		const double zi = z / 127.0 + up_kb, cyc = l->cyc;   /* (the drive: the intensity + the brightness knob's bias) */
+		if (zi <= 0) continue;
+		double zk = zk_tab[z];
+		if (up_kb != 0) { double d = zi * 127.0; d = d > 127 ? 127 : d; const int ii = d >= 126 ? 126 : (int) d;   /* (vecrender.py tube_light) */
+			zk = pow (TUBE_LIGHT[ii] + (TUBE_LIGHT[ii + 1] - TUBE_LIGHT[ii]) * (d - ii), 1 / 2.2); }
 		const double zw = zi >= BEAM_LOWZ ? 1.0 : BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ;
-		double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * pw_width, kk; int dot = 0;
+		double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * pw_width * up_width, kk; int dot = 0;   /* (up_width: R525's stiffer beam) */
 		const double lp = sqrt ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 		if (halo[i]) {
 			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
@@ -1898,8 +1954,8 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
 				kk *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
 		}
-		kk *= zk * BEAM_PEAK * PHOS_GAIN * pw_gain;
-		if (l->b & 128) kk *= BEAM_FADE;
+		kk *= zk * BEAM_PEAK * PHOS_GAIN * pw_gain * up_light;   /* (up_light: the high voltage's light, unit.c) */
+		if ((l->b & 128) && !web) kk *= BEAM_FADE;
 		double sg = fw * gp / 2.355 * bk, sw = sg < 0.5 ? 0.5 : sg;   /* (at least half a pixel: a thinner spot as wide, its light kept) */
 		kk *= dot ? (sg / sw) * (sg / sw) : sg / sw;
 		if (kk < 1e-4) continue;
@@ -2158,7 +2214,7 @@ void retro_run (void)
 		double fx = (sx + 32768) / 65536.0, fy = (sy + 32768) / 65536.0;
 		{ const double ax = fx, ay = fy;      /* (the picture turned: back to its own way up) */
 		  if (opt_rot == 1) { fx = 1 - ay; fy = ax; } else if (opt_rot == 2) { fx = 1 - ax; fy = 1 - ay; } else if (opt_rot == 3) { fx = ay; fy = 1 - ax; } }
-		{ double lx, ly; tube_inv (SHEET_X0 + (CX0 + fx * CW) / EW * SHEET_W, SHEET_Y0 + (CY0 + fy * CH) / (double) FH * SHEET_H - par_dy (), &lx, &ly);
+		{ double lx, ly; tube_inv (SHEET_X0 + (CX0 + fx * CW) / EW * SHEET_W, SHEET_Y0 + (CY0 + fy * CH) / (double) FH * SHEET_H - par_dy (), &lx, &ly); if (up_xf) picture_undo (&lx, &ly);
 		  vt_set_analog (24, lx); vt_set_analog (25, ly); } vt_set_analog (26, trig ? 1.0 : 0.0);
 	}
 	apply_input (m);

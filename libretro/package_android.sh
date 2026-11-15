@@ -11,6 +11,13 @@ cp vectrex_emu_libretro_android.so vectrex_emu_libretro.info dist/pkg/
 cp ../system/bios.bin dist/pkg/system/vectrex_emu/   # (the switch-on / off sounds are built into the core)
 cp "$OVERLAYS"/*.art "$OVERLAYS"/CREDITS.md dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null; cp "$OVERLAYS"/*.png dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null || true
 mkdir -p dist/pkg/system/vectrex_emu/gpu; cp gpu/case_scratch.png gpu/glass_light.bin dist/pkg/system/vectrex_emu/gpu/   # (the GPU path: make_gpu_assets.py)
+# what the desktop release has as well (its package folder): Last Human's overlay, the UVMC2's SD card folder (its
+# config, Bad Apple - Malban's, with his permission), the included games (Last Human, its UVMC2 edition, the UVMC2 demo
+# and movie player) and the BIOS / speech notes
+cp ../package/overlays/*.png dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null || true
+cp -r ../package/uvmc2 dist/pkg/system/vectrex_emu/
+cp ../package/system/README.txt ../package/system/README-speech.txt dist/pkg/system/vectrex_emu/
+mkdir -p dist/pkg/roms; cp ../package/roms/*.bin ../package/roms/*.um2 ../package/roms/README.txt dist/pkg/roms/
 cp -r android/ES-DE dist/pkg/
 cp android/INSTALL.txt dist/pkg/
 rm -f dist/Vectrex_EMU_RetroArch_Android.zip

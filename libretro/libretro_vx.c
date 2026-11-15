@@ -111,6 +111,7 @@ VXS_OFF
 #else
 #define SEP "/"
 #include <strings.h>
+#include <sys/stat.h>
 #include <dirent.h>
 #include <dlfcn.h>
 #define vx_stricmp strcasecmp
@@ -405,6 +406,10 @@ static const struct vx_opt OPTS[] = {
 	  "auto|ultra|high|medium|low|basic" },
 	{ "vectrex_emu_renderer", "system", "Renderer (next game start)", "GPU adds the glass and case effects (video driver gl / glcore).",
 	  "auto|GPU|CPU only" },
+	{ "vectrex_emu_skip_intro", "system", "Skip the Vectrex intro", "Games start straight away (next game start).", "off|on" },
+	{ "vectrex_emu_cart_hw", "system", "Cartridge hardware", "Auto: by the ROM's size (next game start).",
+	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
+	{ "vectrex_emu_uvm2_mode", "system", "UVMC2 mode", "Exact: as the cartridge. Fast: less CPU. Dev: fast, with an ideal beam.", "exact|fast|dev" },
 	{ "vectrex_emu_power_fx", "system", "Switching on / off", "Tube warm-up and switch-off effects.", "on|off" },
 	{ "vectrex_emu_imager", "system", "3D Imager", NULL, "colour|off" },
 	{ "vectrex_emu_buzz", "sound", "Vectrex buzz", NULL, "on|off" },
@@ -614,7 +619,7 @@ void retro_get_system_info (struct retro_system_info *i)
 #else
 	i->library_version = "1.1";                 /* (the RetroArch flavour's own line: libretro_port_plan.md 5.6) */
 #endif
-	i->valid_extensions = "vec|bin|gam|um2|img|pit"; i->need_fullpath = true; i->block_extract = false;
+	i->valid_extensions = "vec|bin|gam|um2|img|pit|v4e"; i->need_fullpath = true; i->block_extract = false;
 }
 /* the picture: the glass window or the whole sheet (opt_area; auto: the sheet while an overlay is painted in) */
 static int area_glass (void)
@@ -728,6 +733,22 @@ static int memmem_title (const unsigned char *h, size_t n, const char *t);
 static const char *speech_dev (const unsigned char *h, size_t n, const char *path);
 /* the game's set-up from its title: port 2 (the 3D Imager, the light pen), the speech module - for a load and (v0.23)
  * a cartridge swapped while running; returns whether it is a 3D Imager game */
+static void vx_mkdir (const char *d)
+{
+#ifdef _WIN32
+	extern int _mkdir (const char *); _mkdir (d);
+#else
+	mkdir (d, 0777);
+#endif
+}
+static int vx_ncpu (void)
+{
+#ifdef _WIN32
+	SYSTEM_INFO si; GetSystemInfo (&si); return (int) si.dwNumberOfProcessors;
+#else
+	return (int) sysconf (_SC_NPROCESSORS_ONLN);
+#endif
+}
 /* (1.1) a save's file: RetroArch's saves folder (else the game's), <game file><ext>; a save next to the ROM and none
  * there yet: copied over as the start */
 static void save_path (const char *rom, const char *ext, char *out, size_t n)
@@ -754,6 +775,73 @@ static void flash_to_saves (const char *rom)
 	         if (m == vt_cart_len) memcpy (cart, tmp, m);
 	         free (tmp); }
 	vt_flash_file = fs; fprintf (stderr, "[vectrex_emu] flash saves %s\n", fs);
+}
+/* (1.1) VecFever's .v4e cartridges (vectrex_emu.py v4e_rom, v4e.py): unpacked into <saves>/vectrex_emu_v4e/<name>.bin,
+ * the plain image the core runs (its saves beside the others); type 4 has a DS2431 save chip */
+static int v4e_ds;
+static uint32_t crc32_up (uint32_t c, const unsigned char *p, size_t n)
+{ c = ~c; while (n--) { c ^= *p++; for (int k = 0; k < 8; k++) c = c & 1 ? (c >> 1) ^ 0xEDB88320u : c >> 1; } return ~c; }
+static long v4e_bank (const unsigned char *s, size_t n, unsigned char *o)   /* (send2vf's dzip: -> the bytes out, -1 damaged) */
+{
+	size_t i = 0; long m = 0;
+	while (i < n) {
+		unsigned b = s[i];
+		if (b < 0x80) { long k = 128 - (long) b; if (i + 1 + (size_t) k > n || m + k > 0x8000) return -1; memcpy (o + m, s + i + 1, (size_t) k); m += k; i += 1 + (size_t) k; continue; }
+		if (i + 1 >= n) return -1;
+		unsigned c = s[i + 1]; long off, len;
+		if (c < 0x80) { off = (long) b - 256; len = 128 - (long) c; i += 2; }
+		else { if (i + 2 >= n) return -1; unsigned d = s[i + 2]; off = (long) (((b & 0x7f) << 7) | (c & 0x7f)) - 16384; len = d >= 128 ? 384 - (long) d : 128 - (long) d; i += 3; }
+		long p = m + off; if (p < 0 || m + len > 0x8000) return -1;
+		for (long k = 0; k < len; k++) o[m + k] = o[p + k];
+		m += len; }
+	return m;
+}
+static const char *v4e_open (const char *path)          /* (the image to run; NULL: not loadable - said why) */
+{
+	static char out[1900]; v4e_ds = 0;
+	const char *e = strrchr (path, '.'); if (!e || vx_stricmp (e, ".v4e")) return path;
+	FILE *f = fopen (path, "rb"); if (!f) return NULL;
+	fseek (f, 0, SEEK_END); long n = ftell (f); fseek (f, 0, SEEK_SET);
+	unsigned char *d = n > 8 && n < (8L << 20) ? malloc ((size_t) n) : NULL, *rom = malloc (64 * 0x8000 + 0x10000);
+	const char *bad = NULL; long rn = 0; int ct = -1;
+	if (!d || !rom || fread (d, 1, (size_t) n, f) != (size_t) n) bad = "unreadable";
+	fclose (f);
+	if (!bad && memcmp (d, "V4EB", 4)) bad = "not a VecFever .v4e file";
+	int nb = 0;
+	if (!bad) { ct = d[4] << 8 | d[5]; nb = d[6] << 8 | d[7];
+		if (nb < 1 || nb > 64 || n < 8 + 6 * nb) bad = "a damaged header";
+		else if (ct != 0 && ct != 3 && ct != 4 && ct != 5 && ct != 8 && ct != 10) bad = "a cartridge type this emulator does not have"; }
+	long pos = 8 + 6L * nb;
+	for (int k = 0; !bad && k < nb; k++) {
+		const unsigned char *h = d + 8 + 6 * k; uint32_t crc = (uint32_t) h[0] << 24 | h[1] << 16 | h[2] << 8 | h[3]; long sz = h[4] << 8 | h[5];
+		if (pos + sz > n) { bad = "a bank cut short"; break; }
+		if (crc32_up (0x56344542u, d + pos, (size_t) sz) != crc) { bad = "a wrong checksum (a damaged file)"; break; }
+		long m = sz == 0x8000 ? (memcpy (rom + rn, d + pos, 0x8000), 0x8000) : v4e_bank (d + pos, (size_t) sz, rom + rn);
+		if (m < 0) { bad = "a damaged bank"; break; }
+		rn += m; pos += sz; }
+	unsigned char *img = NULL; long in = rn;
+	if (!bad && ct == 8) {                                  /* (2 x 48 KB, banks by PB6: the IRQ line does not switch) */
+		if (rn != 3 * 0x8000) bad = "a 2 x 48 KB cartridge of the wrong size";
+		else { img = malloc (4 * 0x10000); for (int q = 0; q < 4; q++) { unsigned char *b0 = img + q * 0x10000; int k = q & 1;
+			memcpy (b0, rom + k * 0x8000, 0x8000); memcpy (b0 + 0x8000, rom + 0x10000 + k * 0x4000, 0x4000); memset (b0 + 0xC000, 0xff, 0x4000); } in = 4 * 0x10000; } }
+	else if (!bad && ct == 10) {                            /* (4 x 48 KB, Vectorblade: PB6 and IRQ - send2vf's upper halves put back) */
+		if (rn != 6 * 0x8000) bad = "a 4 x 48 KB cartridge of the wrong size";
+		else { static const int HI[4] = { 0x0000, 0x8000, 0x4000, 0xC000 }; img = malloc (4 * 0x10000);
+			for (int q = 0; q < 4; q++) { unsigned char *b0 = img + q * 0x10000;
+				memcpy (b0, rom + q * 0x8000, 0x8000); memcpy (b0 + 0x8000, rom + 4 * 0x8000 + HI[q], 0x4000); memset (b0 + 0xC000, 0xff, 0x4000); }
+			in = 4 * 0x10000; } }
+	if (!bad) {
+		const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
+		char dd[1700]; snprintf (dd, sizeof dd, "%s" SEP "vectrex_emu_v4e", sv && *sv ? sv : g_dir); vx_mkdir (dd);
+		const char *b = path; for (const char *q = path; *q; q++) if (*q == '/' || *q == '\\') b = q + 1;
+		char nm[600]; snprintf (nm, sizeof nm, "%s", b); { char *x = strrchr (nm, '.'); if (x) *x = 0; }
+		snprintf (out, sizeof out, "%s" SEP "%s.bin", dd, nm);
+		FILE *o = fopen (out, "wb"); if (o) { fwrite (img ? img : rom, 1, (size_t) in, o); fclose (o); } else bad = "the image could not be written";
+		v4e_ds = ct == 4; }
+	free (d); free (rom); free (img);
+	if (bad) { fprintf (stderr, "[vectrex_emu] %s: %s\n", path, bad); return NULL; }
+	fprintf (stderr, "[vectrex_emu] VecFever .v4e (type %d) unpacked: %s\n", ct, out);
+	return out;
 }
 static int game_env (const char *path, const char *sys, const char *dir)
 {
@@ -788,11 +876,21 @@ static int game_env (const char *path, const char *sys, const char *dir)
 		"VT_BRIGHT=0.0000", "VT_OFSK=166.0000", "VT_DEFLAG=6.0000", "VT_DEFLAGY=6.0000", "VT_DACOFS=0.0000", "VT_HWOFS=0.0000,0.0000",
 		"VT_ZEROTAU=4.500,3.300", "VT_DACBITS=0.01700,0.00690,-0.00890,-0.00140", NULL };
 	  for (int k = 0; UNIT[k]; k++) vx_putenv (UNIT[k]); }
+	/* (1.1, as the desktop's Core: the cartridge hardware - auto by the ROM's size, off a plain 32 KB, or a board; a UVMC2's
+	 *  mode; its core 0 on a host thread of its own with 4 or more processors) */
+	{ const char *ch = optv ("vectrex_emu_cart_hw"); static char e[64];
+	  if (!ch[0] || !strncmp (ch, "auto", 4)) snprintf (e, sizeof e, "VT_CARTHW=1");
+	  else if (!strncmp (ch, "off", 3)) snprintf (e, sizeof e, "VT_CARTHW=0");
+	  else { int k = 0; while (ch[k] && ch[k] != ' ' && k < 20) k++; snprintf (e, sizeof e, "VT_CARTHW=%.*s", k, ch); }
+	  vx_putenv (e); }
+	{ const char *um = optv ("vectrex_emu_uvm2_mode");
+	  vx_putenv (!strcmp (um, "fast") ? "VT_UVM2_FAST=1" : "VT_UVM2_FAST="); vx_putenv (!strcmp (um, "dev") ? "VT_UVM2_DEV=1" : "VT_UVM2_DEV="); }
+	{ const char *x = strrchr (path, '.'); vx_putenv (x && !vx_stricmp (x, ".um2") && vx_ncpu () >= 4 ? "VT_THREADS=1" : "VT_THREADS="); }
 	/* (1.1: Last Human's save chip - a DS2431 on PB6: its calibration, difficulty and high scores - in RetroArch's saves
 	 *  folder; a save next to the ROM (the desktop's) is the start) */
 	{ static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };
 	  { FILE *c = fopen (path, "rb"); if (c) { if (fread (h, 1, 96, c)) {} fclose (c); } }
-	  if (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN")) save_path (path, ".ds2431", ds, sizeof ds);
+	  if (v4e_ds || (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN"))) save_path (path, ".ds2431", ds, sizeof ds);
 	  { static char e[1950]; snprintf (e, sizeof e, "VT_DS2431=%s", ds); vx_putenv (e); }
 	  extern void vt_ds2431_reload (void); vt_ds2431_reload ();
 	  if (ds[0]) fprintf (stderr, "[vectrex_emu] save chip %s\n", ds); }
@@ -2203,6 +2301,7 @@ static void frame_pop (void);
 static void cart_swap (const char *path)
 {
 	extern int vt_vb, vt_hb512, vt_multicart; extern int vtest_main (int, char **);
+	const char *ovname = path; path = v4e_open (path); if (!path) return;
 	vt_vb = 0; vt_hb512 = 0; vt_multicart = 0;           /* (the last cartridge's boards out: vtest main only sets them) */
 	game_env (path, g_sys[0] ? g_sys : NULL, g_dir);
 	char scr[1600]; snprintf (scr, sizeof scr, "%s" SEP "vectrex_emu_empty.txt", tmpdir);
@@ -2214,8 +2313,8 @@ static void cart_swap (const char *path)
 	fprintf (stderr, "[vectrex_emu] cartridge swapped: %s (%s)\n", path, rc == 2 ? "FAILED" : "running");
 	while (nh) frame_pop (); aq_r = aq_w = 0;
 	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0;
-	{ char od[1600]; if (g_sys[0]) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", g_sys); try_overlay_dir (od, path); }
-	  if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", g_dir); try_overlay_dir (od, path); } }
+	{ char od[1600]; if (g_sys[0]) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", g_sys); try_overlay_dir (od, ovname); }
+	  if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", g_dir); try_overlay_dir (od, ovname); } }
 	boot_id = VX_TICKS () | 1; sheet_written = -1; sheet_write ();
 }
 bool retro_load_game (const struct retro_game_info *g)
@@ -2262,7 +2361,9 @@ bool retro_load_game (const struct retro_game_info *g)
 	{ const char *ce = getenv ("VECTREX_CART"); cart_file = ce && *ce ? ce : NULL; cart_seq = -1; }
 	rate_set = 0;                               /* (each game: the screen rate read anew) */
 	read_options ();
-	game_env (g->path, sys, dir);
+	const char *gp = v4e_open (g->path);           /* (a .v4e: its unpacked image) */
+	if (!gp) return false;
+	game_env (gp, sys, dir);
 	/* (an empty script: vtest's main loads, resets and returns - the emulator stays set up) */
 	/* (2026-11-15: the first of the system folder, RetroArch's save folder and the game's folder that can be written -
 	 *  Android's storage rules may keep one of them read-only) */
@@ -2273,11 +2374,11 @@ bool retro_load_game (const struct retro_game_info *g)
 		snprintf (tmpdir, sizeof tmpdir, "%s", cand[k]); snprintf (scr, sizeof scr, "%s" SEP "vectrex_emu_empty.txt", tmpdir);
 		f = fopen (scr, "w"); } }
 	if (!f) { fprintf (stderr, "[vectrex_emu] no folder to write in (system, saves, the game's)\n"); return false; } fclose (f);
-	char *argv[] = { "vx", bios, (char *) g->path, scr, tmpdir, NULL };
+	char *argv[] = { "vx", bios, (char *) gp, scr, tmpdir, NULL };
 	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
 	int rc = vtest_main (5, argv);
 	remove (scr);
-	if (rc != 2) flash_to_saves (g->path);
+	if (rc != 2) flash_to_saves (gp);
 	if (rc == 2) { fprintf (stderr, "[vectrex_emu] the game could not be loaded: %s\n", g->path); return false; }
 	abuf_cap = 65536; abuf = malloc (abuf_cap);
 	{ extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; frame_budget = (vt_uvm2 || vt_uvm2_cart || vt_pitrex) ? 30000 : 33000; }
@@ -2295,6 +2396,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	  if (!pw_snd_on && sys) { pw_snd_on = pw_wav (sys, "on.wav", &pw_n_on); pw_snd_off = pw_wav (sys, "off.wav", &pw_n_off); }
 	  pw_rng = (unsigned) time (NULL) * 2654435761u; pw_file = getenv ("VECTREX_POWER"); pw_seq_seen = -1; pw_poll_n = 0;
 	  pw_on = 0; pw_switch (1, off_for); pw_poll (); pw_poll_n = 0; }
+	if (opt_is ("vectrex_emu_skip_intro", "on")) skip_boot ();   /* (1.1: as the desktop's Skip the intro - the BIOS run unseen) */
 	auto_load ();
 	char od[1600];
 	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, g->path); }

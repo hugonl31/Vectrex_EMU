@@ -18,7 +18,8 @@ else
 	scp -q -P 8022 $P/ES-DE/custom_systems/es_systems.xml $NOVA:$SD/ES-DE/custom_systems/
 fi
 scp -q -P 8022 $P/system/vectrex_emu/bios.bin $P/system/vectrex_emu/on.wav $P/system/vectrex_emu/off.wav $NOVA:$SD/BIOS/vectrex_emu/
-scp -q -P 8022 $P/system/vectrex_emu/overlays/*.png $NOVA:$SD/BIOS/vectrex_emu/overlays/
+# (the overlays: only those the Nova lacks - sync_nova.sh puts the desktop build's own there, which stay)
+tar -C $P/system/vectrex_emu/overlays -cf - . | ssh -o BatchMode=yes -p 8022 $NOVA "tar -C $SD/BIOS/vectrex_emu/overlays -xf - --skip-old-files --no-same-owner --no-same-permissions 2>/dev/null || true"
 ssh -o BatchMode=yes -p 8022 $NOVA "mkdir -p $SD/BIOS/vectrex_emu/gpu"
 scp -q -P 8022 $P/system/vectrex_emu/gpu/* $NOVA:$SD/BIOS/vectrex_emu/gpu/
 scp -q -P 8022 $P/vectrex_emu_libretro_android.so $P/vectrex_emu_libretro.info $P/INSTALL.txt $NOVA:/storage/emulated/0/Download/

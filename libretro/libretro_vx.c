@@ -700,20 +700,27 @@ static void letters (const char *s, char *out, size_t n)
 	size_t k = 0; for (; *s && k + 1 < n; s++) if (isalnum ((unsigned char) *s)) out[k++] = (char) tolower ((unsigned char) *s);
 	out[k] = 0;
 }
+#ifndef VX_EMUVR
+#include "overlay_art.c"                    /* (1.1: the desktop's overlays as they are - MiSTer .art and PNG, vart.py) */
+#define OV_EXT(x) ((x) && (!vx_stricmp (x, ".png") || !vx_stricmp (x, ".art")))
+#else
+#define OV_EXT(x) ((x) && !vx_stricmp (x, ".png"))   /* (EmuVR: the mod hangs the PNG itself) */
+#endif
 static int try_overlay_dir (const char *dir, const char *rom)
 {
 	char want[512], wantl[512]; base_of (rom, want, sizeof want); letters (want, wantl, sizeof wantl);
 	char best[1600] = ""; int bestk = 0; size_t bestlen = 99999;
 #ifdef _WIN32
-	char pat[1200]; snprintf (pat, sizeof pat, "%s\\*.png", dir);
+	char pat[1200]; snprintf (pat, sizeof pat, "%s\\*.*", dir);
 	WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA (pat, &fd);
 	if (h == INVALID_HANDLE_VALUE) return 0;
-	do { const char *fn = fd.cFileName;
+	do { const char *fn = fd.cFileName, *x = strrchr (fn, '.');
+		if (!OV_EXT (x)) continue;
 #else
 	DIR *dh = opendir (dir); struct dirent *de;
 	if (!dh) return 0;
 	while ((de = readdir (dh))) { const char *fn = de->d_name, *x = strrchr (fn, '.');
-		if (!x || vx_stricmp (x, ".png")) continue;
+		if (!OV_EXT (x)) continue;
 #endif
 		char b[512], bl[512]; base_of (fn, b, sizeof b); letters (b, bl, sizeof bl);
 		char full[512]; snprintf (full, sizeof full, "%s", fn); char *e = strrchr (full, '.'); if (e) *e = 0;
@@ -728,7 +735,12 @@ static int try_overlay_dir (const char *dir, const char *rom)
 	closedir (dh);
 #endif
 	if (!bestk) return 0;
-	int n; ov = stbi_load (best, &ovw, &ovh, &n, 4); snprintf (ov_path, sizeof ov_path, "%s", best); ov_made = 0;
+#ifdef VX_EMUVR
+	int n; ov = stbi_load (best, &ovw, &ovh, &n, 4);
+#else
+	ov = ov_file_load (best, &ovw, &ovh);       /* (as the desktop: .art or .png, cut to the sheet, its soft edge) */
+#endif
+	snprintf (ov_path, sizeof ov_path, "%s", best); ov_made = 0;
 	fprintf (stderr, "[vectrex_emu] overlay %s\n", best);
 	return ov != NULL;
 }

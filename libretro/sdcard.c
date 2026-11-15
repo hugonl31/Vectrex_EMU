@@ -225,6 +225,7 @@ static void sdc_mkdirs (const char *path)                  /* (every folder of p
 	char p[2048]; snprintf (p, sizeof p, "%s", path);
 	for (char *q = p + 1; *q; q++) if (*q == '/' || *q == '\\') { char c = *q; *q = 0; vx_mkdir (p); *q = c; }
 }
+static long long sdc_older_than;                     /* (> 0: only files in the folder older than this - the card - are replaced) */
 static int sdc_back_walk (sdc_rd *r, uint32_t cl, const char *folder, const char *rel, int depth)
 {
 	if (depth > 32) return 0;
@@ -254,7 +255,10 @@ static int sdc_back_walk (sdc_rd *r, uint32_t cl, const char *folder, const char
 		long long got = 0; unsigned char *blob = first >= 2 && size ? sdc_chain (r, first, size, &got) : NULL;
 		char dst[2400]; snprintf (dst, sizeof dst, "%s" SEP "%s", folder, r2);
 		int same = 0; FILE *o = fopen (dst, "rb");
-		if (o) { fseek (o, 0, SEEK_END); long long os_ = ftell (o);
+		if (o && sdc_older_than > 0) { sdc_st st; if (!sdc_stat (dst, &st) && (long long) st.st_mtime > sdc_older_than) same = 1; }   /* (the folder's
+		                                              copy is newer than the card: put there since - it stays) */
+		if (same) { fclose (o); o = NULL; }
+		if (!same && o) { fseek (o, 0, SEEK_END); long long os_ = ftell (o);
 			if (os_ == got) { unsigned char *ob = malloc ((size_t) (got ? got : 1)); fseek (o, 0, SEEK_SET);
 				same = ob && (got == 0 || fread (ob, 1, (size_t) got, o) == (size_t) got) && (got == 0 || !memcmp (ob, blob, (size_t) got)); free (ob); }
 			fclose (o); }
@@ -280,7 +284,10 @@ static int sdc_sync_back (const char *img, const char *folder)
 /* ---- a game's card: the image built from its folder (only when the folder changed), the last run's writes first */
 static int sdc_prepare (const char *folder, const char *img)
 {
-	sdc_sync_back (img, folder);                          /* (a game that did not end cleanly: what it wrote, kept) */
+	/* (a game that did not end cleanly: what it wrote, kept - not over files put in the folder since) */
+	{ sdc_st st; sdc_older_than = sdc_stat (img, &st) ? 0 : (long long) st.st_mtime;
+	  if (sdc_older_than) sdc_sync_back (img, folder);
+	  sdc_older_than = 0; }
 	char man[1900], cur[1900]; snprintf (man, sizeof man, "%s.list", img); snprintf (cur, sizeof cur, "%s.new", man);
 	FILE *c = fopen (cur, "wb"); if (c) { sdc_tree (folder, c, ""); fclose (c); }
 	int same = 0; FILE *a = fopen (man, "rb"), *b = fopen (cur, "rb"), *t = fopen (img, "rb");

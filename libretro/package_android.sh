@@ -1,15 +1,15 @@
 #!/bin/sh
 # The Android package: the core, its info file, system/vectrex_emu (the BIOS, the overlays as PNG, the power sounds),
 # ES-DE's custom system file and the install notes -> dist/Vectrex_EMU_RetroArch_Android.zip. The overlay PNGs come
-# from OVERLAYS (default: the EmuVR project's PNG set); they are not in the repository.
+# from OVERLAYS (default: the repository's own, as the desktop release has them - MiSTer .art, the core reads them).
 set -e
 cd "$(dirname "$0")"
-OVERLAYS=${OVERLAYS:-../../Vectrex_EMU_EmuVR/overlays}
+OVERLAYS=${OVERLAYS:-../overlays}
 sh build_libretro.sh android
 rm -rf dist/pkg; mkdir -p dist/pkg/system/vectrex_emu/overlays
 cp vectrex_emu_libretro_android.so vectrex_emu_libretro.info dist/pkg/
 cp ../system/bios.bin ../sounds/on.wav ../sounds/off.wav dist/pkg/system/vectrex_emu/
-cp "$OVERLAYS"/*.png dist/pkg/system/vectrex_emu/overlays/
+cp "$OVERLAYS"/*.art "$OVERLAYS"/CREDITS.md dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null; cp "$OVERLAYS"/*.png dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null || true
 mkdir -p dist/pkg/system/vectrex_emu/gpu; cp gpu/case_scratch.png gpu/glass_light.bin dist/pkg/system/vectrex_emu/gpu/   # (the GPU path: make_gpu_assets.py)
 cp -r android/ES-DE dist/pkg/
 cp android/INSTALL.txt dist/pkg/

@@ -524,7 +524,7 @@ void pitrex_power_on (void)
 	memcpy (px_ram + 0x8000, px_image, px_image_n);
 	px_sys.rd = px_rd; px_sys.wr = px_wr; px_sys.ram = px_ram; px_sys.ram_size = PX_RAM;
 	px_cpu.sys = &px_sys;
-	arm11_reset (&px_cpu, 0x8000); arm11_invalidate (&px_cpu); px_target = 0;
+	arm11_reset (&px_cpu, 0x8000); arm11_jit_reconf (); arm11_invalidate (&px_cpu); px_target = 0;
 	px_cpu.r[0] = 0; px_cpu.r[1] = 0xc42; px_cpu.r[2] = 0x100;                /* (as the firmware starts a kernel) */
 	memset (px_fsel, 0, sizeof px_fsel); px_out[0] = px_out[1] = 0; px_fsel_changed ();
 	px_rdy = 1; px_pending = 0; px_hold = 0; px_rdata = 0xff; px_frac = 0;

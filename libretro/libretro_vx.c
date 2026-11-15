@@ -327,7 +327,8 @@ static int sp_ok, dk_p2;   /* (deck.c) */
  *  RetroArch gives a save - GET_SAVESTATE_CONTEXT 72, ROLLBACK_NETPLAY 3; while it runs, nothing one side does alone may
  *  change the emulation: the ROM browser, eject, RESET, pause, the deck's power and port 2, the USB pad read directly) */
 static long net_seen = -1000000, net_runs;
-static int net_on (void) { return net_runs - net_seen < 180; }
+static int ls_state, ls_reset_req;          /* (netls.c: a UVMC2 / PiTrex game online in lockstep - the same holds then) */
+static int net_on (void) { return net_runs - net_seen < 180 || ls_state; }
 static void net_mark (void) { int c = 0; if (env_cb (72 | 0x10000, &c) && c == 3) net_seen = net_runs; }
 static char sw_next[1100], cur_game[1100]; static int sw_eject, ej_out; static int game_switch_now (const char *path);   /* (the game switch: below) */
 static int unit_addon;
@@ -848,7 +849,8 @@ static void geo_tell (void)
 	else env_cb (RETRO_ENVIRONMENT_SET_GEOMETRY, &av.geometry);
 }
 void retro_set_controller_port_device (unsigned p, unsigned d) { (void) p; (void) d; }
-void retro_reset (void) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
+void retro_reset (void) { if (ls_state == 2) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
+	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 
 /* ---- the overlay by the game's name (vectrex_emu.py find_overlay: the name, its base without (...), its letters) */
 static void base_of (const char *s, char *out, size_t n)
@@ -1032,6 +1034,7 @@ static const char *v4e_open (const char *path)          /* (the image to run; NU
 	fprintf (stderr, "[vectrex_emu] VecFever .v4e (type %d) unpacked: %s\n", ct, out);
 	return out;
 }
+#include "netls.c"                          /* (2026-11-16: UVMC2 / PiTrex games online - lockstep, the desktop's way) */
 static int game_env (const char *path, const char *sys, const char *dir)
 {
 	int im_out = 0;
@@ -1111,11 +1114,18 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  if (px || um) { /* (1.1, as the desktop: the card is a folder - <system>/vectrex_emu/uvmc2 or pitrex - built into an image in
 	                     RetroArch's saves folder before the game and what the game wrote copied back after it) */
 		char fo[1800]; snprintf (fo, sizeof fo, "%s" SEP "vectrex_emu" SEP "%s", sys ? sys : dir, px ? "pitrex" : "uvmc2"); sdc_st st;
+		if (ls_cfg_on) vx_mkdir (fo);          /* (online: a card on both sides, empty without the folder - one side with it, one without, ran apart) */
 		if (!sdc_stat (fo, &st) && (st.st_mode & S_IFMT) == S_IFDIR) {
 			const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
 			char cd[1700]; snprintf (cd, sizeof cd, "%s" SEP "vectrex_emu_cards", sv && *sv ? sv : dir); vx_mkdir (cd);
-			snprintf (sd_img, sizeof sd_img, "%s" SEP "%s", cd, px ? "pitrex_sd.img" : "uvmc2_sd.img");
-			if (sdc_prepare (fo, sd_img)) { static char e[2000]; snprintf (sd_folder, sizeof sd_folder, "%s", fo);
+			snprintf (sd_img, sizeof sd_img, "%s" SEP "%s%s", cd, ls_cfg_on ? (ls_me ? "online_p2_" : "online_p1_") : "", px ? "pitrex_sd.img" : "uvmc2_sd.img");
+			if (ls_cfg_on) {                      /* (online, netls.c: the files both have alike, one fixed time - the same card on both
+			                                         sides; nothing written back) */
+				snprintf (sdc_root, sizeof sdc_root, "%s", fo); int ok = sdc_build (fo, sd_img); sdc_root[0] = 0;
+				if (ok) { static char e[2000]; snprintf (e, sizeof e, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", sd_img); vx_putenv (e); }
+				else sd_img[0] = 0;
+				fprintf (stderr, "[vectrex_emu] online SD card %s: %d files%s\n", sd_img, sdc_nonly, ok ? "" : " - FAILED"); }
+			else if (sdc_prepare (fo, sd_img)) { static char e[2000]; snprintf (sd_folder, sizeof sd_folder, "%s", fo);
 				snprintf (e, sizeof e, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", sd_img); vx_putenv (e); }
 			else sd_img[0] = 0; } }
 	  if ((px || um) && !sd_folder[0]) { static char sd[1800]; const char *nm = px ? "pitrex_sd.img" : "uvmc2_sd.img"; const char *dd[] = { dir, sys, NULL }; sd[0] = 0;
@@ -1123,6 +1133,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 			FILE *t = fopen (q, "rb"); if (t) { fclose (t); snprintf (sd, sizeof sd, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", q); } }
 		if (sd[0]) { vx_putenv (sd); fprintf (stderr, "[vectrex_emu] SD card %s\n", strchr (sd, '=') + 1); }
 		else fprintf (stderr, "[vectrex_emu] no SD card (%s in <system>/vectrex_emu)\n", nm); } }
+	netls_env ();                               /* (online in lockstep: the host's settings - netls.c) */
 	return im_out;
 }
 
@@ -2239,8 +2250,12 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 	for (int k = 0; total_cycles < run_t && k < 8; k++) {
 		extern unsigned long long vt_piece_t0;
 		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
+		if (ls_state == 2) { unsigned char lm[8];   /* (online in lockstep: a game frame only with both players' input for it) */
+			if (!netls_frame (lm)) { run_t = total_cycles; break; }
+			apply_input (lm); }
 		abuf_n = 0;
 		run_frame ();
+		if (ls_state == 2) netls_after ();
 		frame_push (p0);
 		if (vt_imager) eyes_take ();
 		audio_frame ();
@@ -2254,7 +2269,7 @@ static void emu_start (void)
 	if (emu_make ()) { emu_busy = 1; emu_kick (); }
 	else emu_loop ();                       /* (no thread: here, as before) */
 }
-static int emu_threaded (void) { return opt_async && !vx_ok (); }
+static int emu_threaded (void) { return opt_async && !vx_ok () && ls_state != 2; }   /* (lockstep: here - RetroArch's network is called from this thread) */
 static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save states, no run-ahead) */
 #include "usbkm.c"
 #ifndef VX_EMUVR
@@ -2348,6 +2363,8 @@ void retro_run (void)
 	poll_cb ();
 	unsigned char m[8] = { 128, 128, 0, 0x40, 128, 128, 0, 0 };
 	pad (0, &m[0], &m[1], &m[2]); pad (1, &m[4], &m[5], &m[6]);
+	ls_pad[0] = m[0]; ls_pad[1] = m[1]; ls_pad[2] = m[2];   /* (online in lockstep: this side's controller - netls.c) */
+	netls_solo_tick ();
 #ifndef VX_EMUVR
 	if (br_input (m)) { m[0] = m[1] = 128; m[2] = 0; }   /* (the browser reads player 1 as the game does: turned in tate) */   /* (the ROM browser open, or just closed by a button: the game gets none) */
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
@@ -2870,7 +2887,7 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	  if (!pw_snd_on) { pw_snd_on = pw_wav (sys, "on.wav", &pw_n_on); pw_snd_off = pw_wav (sys, "off.wav", &pw_n_off); }
 	  pw_rng = (unsigned) time (NULL) * 2654435761u; pw_file = getenv ("VECTREX_POWER"); pw_seq_seen = -1; pw_poll_n = 0;
 	  pw_on = 0; pw_switch (1, off_for); pw_poll (); pw_poll_n = 0; }
-	if (opt_is ("vectrex_emu_skip_intro", "on")) skip_boot ();   /* (1.1: as the desktop's Skip the intro - the BIOS run unseen) */
+	if (ls_cfg_on ? ls_intro_skip : opt_is ("vectrex_emu_skip_intro", "on")) skip_boot ();   /* (1.1: as the desktop's Skip the intro - the BIOS run unseen) */
 	auto_load ();
 	char od[1600];
 	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, gpath); }
@@ -2963,6 +2980,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	if (!env_cb (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf)) return false;
 	input_names ();
 	snprintf (cur_game, sizeof cur_game, "%s", g->path); ej_out = 0;
+	netls_load (g->path);                       /* (a UVMC2 / PiTrex game: online in lockstep - netls.c) */
 #ifndef VX_EMUVR
 	snprintf (br_game, sizeof br_game, "%s", g->path); br_dir[0] = 0;
 #endif

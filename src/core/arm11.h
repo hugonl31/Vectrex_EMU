@@ -54,6 +54,7 @@ struct arm11 {
 void arm11_reset (arm11_t *c, uint32_t pc);              /* SVC mode, interrupts off, ARM state, at pc */
 uint64_t arm11_run (arm11_t *c, uint64_t until);         /* run until cycles reaches until (or it halts / sleeps) */
 uint32_t arm11_cpsr (const arm11_t *c);
+void arm11_jit_reconf (void);                            /* VT_JIT read again (a power-on): a change drops the code */
 void arm11_invalidate (arm11_t *c);                      /* RAM changed behind its back: drop the translated code */
 void arm11_jit_stats (void);
 int arm11_trial (const arm11_t *c, uint32_t addr, uint32_t v);   /* the waiting loop's round with addr reading v: 1 it leaves, 0 it goes round, -1 unknown */

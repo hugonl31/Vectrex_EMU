@@ -1008,6 +1008,20 @@ static int jit_try (arm11_t *c, uint64_t until)
 	return 1;
 }
 void arm11_invalidate (arm11_t *c) { (void) c; jit_flush (); }
+/* each power-on: VT_JIT read again (2026-11-16: the RetroArch core switches a PiTrex game to exact for online play in the
+ * same process - the code made fast before was used on, and two systems' fast code differs). A change: the code dropped */
+void arm11_jit_reconf (void)
+{
+	const char *z = getenv ("VT_JIT"); const int off = z && (z[0] == '0' || !strcmp (z, "off")), ex = z && !strcmp (z, "exact");
+	if (!jit_state) return;                               /* (not set up yet: jit_setup reads it) */
+	if (jit_state == -1) { if (!off && jcode) { jit_state = 1; jit_flush (); } else if (!off) jit_state = 0; }
+	else if (off) { jit_flush (); jit_state = -1; return; }
+	if (jit_state != 1 || ex == jit_exact) return;
+	jit_flush (); jit_exact = ex; jit_maxn = JMAX; jit_xshort = JIT_XSHORT;
+	if (ex) { const char *q = getenv ("VT_JITXMAX"); jit_maxn = q ? atoi (q) : JIT_XMAX; if (jit_maxn < 1 || jit_maxn > JMAX) jit_maxn = JMAX;
+	         q = getenv ("VT_JITXSHORT"); if (q) jit_xshort = atoi (q); if (jit_xshort < 0 || jit_xshort > JMAX) jit_xshort = 0; }
+	fprintf (stderr, "PITREX: JIT now %s\n", ex ? "exact" : "fast");
+}
 void arm11_jit_map (const char *fn)          /* (for profiling: each block's code address and ARM address) */
 {
 	FILE *f = fopen (fn, "wb"); if (!f || jit_state != 1) { if (f) fclose (f); return; }
@@ -1031,6 +1045,7 @@ void arm11_jit_stats (void)
 }
 #else
 void arm11_invalidate (arm11_t *c) { (void) c; }
+void arm11_jit_reconf (void) {}
 void arm11_jit_stats (void) {}
 void arm11_jit_map (const char *fn) { (void) fn; }
 #endif

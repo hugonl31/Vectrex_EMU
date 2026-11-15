@@ -23,6 +23,20 @@ typedef struct stat sdc_st;
 typedef struct { char name[256]; int dir; long long size; long long mtime; } sdc_ent;
 
 static int sdc_cmp (const void *a, const void *b) { return vx_stricmp (((const sdc_ent *) a)->name, ((const sdc_ent *) b)->name); }
+/* (netplay, netls.c: a card the same on both sides, as the desktop's fatimg.build (only, fixed_time) - only the files both
+ *  have alike (their paths below the card's folder, '/' between), every time and the volume's serial one fixed time) */
+static char **sdc_only; static int sdc_nonly; static long long sdc_fixed; static char sdc_root[1800];
+static int sdc_keep (const char *path, int dir)
+{
+	if (!sdc_only) return 1;
+	size_t rl = strlen (sdc_root); if (strncmp (path, sdc_root, rl)) return 0;
+	char rel[1100]; snprintf (rel, sizeof rel, "%s", path + rl + (path[rl] ? 1 : 0)); for (char *q = rel; *q; q++) if (*q == '\\') *q = '/';
+	size_t n = strlen (rel);
+	for (int i = 0; i < sdc_nonly; i++) { const char *o = sdc_only[i];
+		if (!dir && !strcmp (o, rel)) return 1;
+		if (dir && !strncmp (o, rel, n) && o[n] == '/') return 1; }
+	return 0;
+}
 static int sdc_list (const char *path, sdc_ent **out)        /* (the folder's entries, sorted as fatimg: by name, any case) */
 {
 	int n = 0, cap = 0; sdc_ent *v = NULL; *out = NULL;
@@ -37,6 +51,7 @@ static int sdc_list (const char *path, sdc_ent **out)        /* (the folder's en
 #endif
 		if (!strcmp (nm, ".") || !strcmp (nm, "..") || strlen (nm) > 255) continue;
 		char p[2048]; snprintf (p, sizeof p, "%s" SEP "%s", path, nm); sdc_st st; if (sdc_stat (p, &st)) continue;
+		if (!sdc_keep (p, (st.st_mode & S_IFMT) == S_IFDIR)) continue;
 		if (n == cap) { cap = cap ? cap * 2 : 32; v = realloc (v, (size_t) cap * sizeof *v); }
 		snprintf (v[n].name, sizeof v[n].name, "%s", nm); v[n].dir = (st.st_mode & S_IFMT) == S_IFDIR;
 		v[n].size = v[n].dir ? 0 : (long long) st.st_size; v[n].mtime = (long long) st.st_mtime; n++;
@@ -111,7 +126,8 @@ static int sdc_lfn (const char *nm, const unsigned char s11[11], unsigned char *
 }
 static void sdc_entry (unsigned char *e, const unsigned char s11[11], int attr, uint32_t cl, uint32_t size, long long mt)
 {
-	time_t tt = (time_t) mt; struct tm *lt = localtime (&tt); int y = lt ? lt->tm_year + 1900 : 1980; if (y < 1980) y = 1980;
+	time_t tt = (time_t) (sdc_fixed ? sdc_fixed : mt); struct tm *lt = sdc_fixed ? gmtime (&tt) : localtime (&tt);   /* (fixed: the same on
+	                                              both sides, whatever their time zones) */ int y = lt ? lt->tm_year + 1900 : 1980; if (y < 1980) y = 1980;
 	unsigned t = lt ? (unsigned) (lt->tm_hour << 11 | lt->tm_min << 5 | lt->tm_sec / 2) : 0, d = lt ? (unsigned) ((y - 1980) << 9 | (lt->tm_mon + 1) << 5 | lt->tm_mday) : 0x21;
 	memcpy (e, s11, 11); e[11] = (unsigned char) attr; e[12] = e[13] = 0;
 	e[14] = (unsigned char) t; e[15] = (unsigned char) (t >> 8); e[16] = (unsigned char) d; e[17] = (unsigned char) (d >> 8); e[18] = e[16]; e[19] = e[17];
@@ -193,7 +209,7 @@ static int sdc_build (const char *folder, const char *img)
 #define W32(p, o, v) (W16 (p, o, (v) & 0xffff), W16 (p, (o) + 2, (uint32_t) (v) >> 16))
 	W16 (bs, 11, SDC_SECTOR); bs[13] = (unsigned char) spc; W16 (bs, 14, reserved); bs[16] = (unsigned char) nfats; bs[21] = 0xF8;
 	W16 (bs, 24, 63); W16 (bs, 26, 255); W32 (bs, 32, total); W32 (bs, 36, fatsz); W32 (bs, 44, 2); W16 (bs, 48, 1); W16 (bs, 50, 6);
-	bs[64] = 0x80; bs[66] = 0x29; W32 (bs, 67, (uint32_t) time (NULL)); memcpy (bs + 71, "VECTREX SD FAT32   ", 19); bs[510] = 0x55; bs[511] = 0xAA;
+	bs[64] = 0x80; bs[66] = 0x29; W32 (bs, 67, (uint32_t) (sdc_fixed ? sdc_fixed : time (NULL))); memcpy (bs + 71, "VECTREX SD FAT32   ", 19); bs[510] = 0x55; bs[511] = 0xAA;
 	W32 (fsi, 0, 0x41615252u); W32 (fsi, 484, 0x61417272u); W32 (fsi, 488, m.nclus - (m.next - 2)); W32 (fsi, 492, m.next); W32 (fsi, 508, 0xAA550000u);
 	fseek (m.f, 0, SEEK_SET); fwrite (bs, 1, SDC_SECTOR, m.f); fwrite (fsi, 1, SDC_SECTOR, m.f);
 	fseek (m.f, 6 * SDC_SECTOR, SEEK_SET); fwrite (bs, 1, SDC_SECTOR, m.f); fwrite (fsi, 1, SDC_SECTOR, m.f);

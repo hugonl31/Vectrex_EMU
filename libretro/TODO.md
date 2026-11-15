@@ -28,12 +28,12 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 - [x] 6809 games: RetroArch's own netplay (rollback with save states); one side alone changes nothing (the browser,
       eject, RESET, pause, the deck's power and port 2); simulated in vxhost netsim - the states the same
 - [x] Two RetroArch instances on the PC: the join works and stays (the state held pointers; fixed 2026-11-15)
-- [ ] Between systems (the PC hosting, the Nova joining): the state is the memory as each compiler lays it out
-      (Windows and Android differ) - a portable state (each variable by name and size) is needed
+- [x] Between systems: the state by variable name (vars_*.h, VX15) - Windows <-> Nova byte-identical, 7 games
+- [ ] The real test: the PC hosting, the Nova joining (a 6809 game, a UVMC2 game, PiTrex) - the owner
 - [ ] Two Android devices (the same build: should work as on the PC)
-- [ ] UVMC2 / PiTrex: lockstep as the desktop's online play (netplay.py) through RetroArch's netpacket interface - no
-      save states needed; both sides agree on one UVMC2 mode, the slowest side's (exact / fast / dev: the faster one
-      drops to it for the game - the desktop's netplay.uvm2_agree)
+- [x] UVMC2 / PiTrex: lockstep (netls.c, RetroArch's netpacket interface), the desktop's agreements (the mode,
+      the JIT, the seed, R302, the card's common files); PC <-> PC tested; Windows <-> Nova the same (solo test)
+- [ ] UVMC2 save states / run-ahead (its whole RP2350: possible, big work); PiTrex: not (256 MB RAM)
 
 ## Low priority (the owner: ask first)
 

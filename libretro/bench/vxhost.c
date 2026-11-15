@@ -15,6 +15,29 @@
 #include <stdint.h>
 #include <time.h>
 #include "../libretro.h"
+/* (VXH_GPU=1, Android: the core's GPU path - an OpenGL ES 3 context of our own (EGL, no window), its framebuffer read
+ *  back for a shot; build with -lEGL -lGLESv3 -DVXH_EGL) */
+#ifdef VXH_EGL
+#include <EGL/egl.h>
+#include <GLES3/gl3.h>
+static struct retro_hw_render_callback hw; static int hw_on; static GLuint hw_fbo, hw_tex; static uint32_t *hw_pix;
+static uintptr_t hw_fb (void) { return hw_fbo; }
+static retro_proc_address_t hw_proc (const char *s) { retro_proc_address_t f = (retro_proc_address_t) eglGetProcAddress (s); if (!f) f = (retro_proc_address_t) dlsym (RTLD_DEFAULT, s); return f; }
+static int hw_setup (unsigned w, unsigned h)
+{
+	EGLDisplay d = eglGetDisplay (EGL_DEFAULT_DISPLAY); if (!eglInitialize (d, NULL, NULL)) return 0;
+	const EGLint ca[] = { EGL_RENDERABLE_TYPE, 0x40 /* ES3 */, EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_NONE };
+	EGLConfig cfg; EGLint n = 0; if (!eglChooseConfig (d, ca, &cfg, 1, &n) || n < 1) return 0;
+	const EGLint sa[] = { EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE }; EGLSurface su = eglCreatePbufferSurface (d, cfg, sa);
+	eglBindAPI (EGL_OPENGL_ES_API); const EGLint xa[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+	EGLContext c = eglCreateContext (d, cfg, EGL_NO_CONTEXT, xa); if (c == EGL_NO_CONTEXT || !eglMakeCurrent (d, su, su, c)) return 0;
+	glGenTextures (1, &hw_tex); glBindTexture (GL_TEXTURE_2D, hw_tex); glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glGenFramebuffers (1, &hw_fbo); glBindFramebuffer (GL_FRAMEBUFFER, hw_fbo); glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hw_tex, 0);
+	fprintf (stderr, "vxhost: EGL %s, framebuffer %ux%u\n", (const char *) glGetString (GL_RENDERER), w, h);
+	hw_pix = malloc ((size_t) w * h * 4);
+	return glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+}
+#endif
 
 static const char *sysdir;
 static struct { char key[64], val[96]; } opt[64]; static int nopt;
@@ -47,10 +70,31 @@ static bool env (unsigned cmd, void *data)
 	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = false; return true;
 	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: *(int *) data = hidden ? 2 : 3; return true;
 	case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME: return true;
+#ifdef VXH_EGL
+	case RETRO_ENVIRONMENT_SET_HW_RENDER: {
+		struct retro_hw_render_callback *c = data; const char *g = getenv ("VXH_GPU");
+		if (!g || *g != '1' || c->context_type != RETRO_HW_CONTEXT_OPENGLES3) return false;
+		c->get_current_framebuffer = hw_fb; c->get_proc_address = hw_proc; hw = *c; hw_on = 1; return true; }
+	case RETRO_ENVIRONMENT_SET_GEOMETRY: return true;
+#endif
 	default: return false;
 	}
 }
-static void video (const void *d, unsigned w, unsigned h, size_t pitch) { if (d) { frame = d; fw = w; fh = h; fpitch = pitch; } }
+static int read_back;                           /* (shot: the GPU's picture read back at this refresh) */
+static void video (const void *d, unsigned w, unsigned h, size_t pitch)
+{
+#ifdef VXH_EGL
+	if (d == RETRO_HW_FRAME_BUFFER_VALID) {
+		if (getenv ("VXH_FINISH")) glFinish ();     /* (bench: the GPU's time counted) */
+		if (!read_back) return;
+		glBindFramebuffer (GL_FRAMEBUFFER, hw_fbo); unsigned char *b = malloc ((size_t) w * h * 4);
+		glReadPixels (0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, b);
+		for (unsigned y = 0; y < h; y++) for (unsigned x = 0; x < w; x++) { const unsigned char *q = b + ((size_t) (h - 1 - y) * w + x) * 4;
+			hw_pix[(size_t) y * w + x] = (uint32_t) q[0] << 16 | (uint32_t) q[1] << 8 | q[2]; }
+		free (b); frame = hw_pix; fw = w; fh = h; fpitch = (size_t) w * 4; return; }
+#endif
+	if (d) { frame = d; fw = w; fh = h; fpitch = pitch; }
+}
 static void sample (int16_t l, int16_t r) { (void) l; (void) r; }
 static size_t audio (const int16_t *d, size_t n) { audio_hash = fnv (audio_hash, d, n * 4); audio_n += n; return n; }
 static void poll (void) {}
@@ -87,6 +131,9 @@ int main (int argc, char **argv)
 	struct retro_game_info gi = { argv[3], NULL, 0, NULL };
 	if (!retro_load_game (&gi)) { fprintf (stderr, "load failed\n"); return 2; }
 	struct retro_system_av_info av; retro_get_system_av_info (&av);
+#ifdef VXH_EGL
+	if (hw_on) { if (!hw_setup (av.geometry.max_width, av.geometry.max_height)) { fprintf (stderr, "vxhost: no EGL context\n"); return 2; } hw.context_reset (); }
+#endif
 	fprintf (stderr, "picture %ux%u, %.0f Hz\n", av.geometry.base_width, av.geometry.base_height, av.timing.fps);
 	if (!strcmp (argv[4], "bench")) {
 		int n = argc > 5 ? atoi (argv[5]) : 1200, warm = 120; double t0 = 0, worst = 0;
@@ -99,7 +146,7 @@ int main (int argc, char **argv)
 		fflush (stdout); retro_unload_game ();   /* (VXPOC_PROF=1: the core's own breakdown - Android: in its log) */
 	} else if (!strcmp (argv[4], "shot")) {
 		int n = atoi (argv[5]);
-		for (fno = 0; fno < n; fno++) retro_run ();
+		for (fno = 0; fno < n; fno++) { read_back = fno == n - 1; retro_run (); }
 		FILE *f = fopen (argv[6], "wb"); fprintf (f, "P6\n%u %u\n255\n", fw, fh);
 		for (unsigned y = 0; y < fh; y++) for (unsigned x = 0; x < fw; x++) {
 			uint32_t p = ((const uint32_t *) ((const char *) frame + y * fpitch))[x]; unsigned char c[3] = { p >> 16, p >> 8, p };

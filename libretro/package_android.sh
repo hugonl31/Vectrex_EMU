@@ -10,6 +10,7 @@ rm -rf dist/pkg; mkdir -p dist/pkg/system/vectrex_emu/overlays
 cp vectrex_emu_libretro_android.so vectrex_emu_libretro.info dist/pkg/
 cp ../system/bios.bin ../sounds/on.wav ../sounds/off.wav dist/pkg/system/vectrex_emu/
 cp "$OVERLAYS"/*.png dist/pkg/system/vectrex_emu/overlays/
+mkdir -p dist/pkg/system/vectrex_emu/gpu; cp gpu/case_scratch.png gpu/glass_light.bin dist/pkg/system/vectrex_emu/gpu/   # (the GPU path: make_gpu_assets.py)
 cp -r android/ES-DE dist/pkg/
 cp android/INSTALL.txt dist/pkg/
 rm -f dist/Vectrex_EMU_RetroArch_Android.zip

@@ -51,5 +51,9 @@ Settings: Quick Menu > Core Options, in submenus: Picture, Overlay, Tube, Contro
    Picture area auto: the whole overlay with an overlay on, the glass window (a larger picture) without.
    50 Hz (the game's own rate) needs a screen that can run at 50 Hz (Sync to Exact Content Framerate on).
    If a game runs slow: the device's performance mode up, Phosphor glow off, a smaller Picture size.
+   The GPU renderer (System > Renderer: auto) finishes the picture on the graphics chip: the tube's glass, the ceiling
+   light reflected in it, the plastic case round it (Glass and case). It needs RetroArch's video driver gl / glcore
+   (RetroArch switches to it for this core by itself); where it cannot, the core draws as before, on the CPU.
+   System > Quality profile: Ultra (all) .. Basic (the least) for the options left on auto - Low for small handhelds.
 
 Trouble: the core writes <system>/vectrex_emu/vectrex_emu.log on every game start (the BIOS and overlay it found).

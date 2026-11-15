@@ -214,7 +214,12 @@ static float opt_ov_tint = 1.0f, opt_ov_print = 1.0f; static int opt_ov_btn = 1,
  * x its square, the print x it, the bare glass grey x its cube); the trail's brightness with and without an overlay */
 static int opt_size = 800, opt_area = 0;   /* (opt_area: 0 auto, 1 glass window, 2 overlay sheet) */
 static float opt_room = 1.0f, opt_trail_k0 = 1.5f, glass_grey;
-static int paint_all;                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
+static int paint_all;
+/* (1.1: the quality profile - vecrender.py's tiers: Ultra, High, Medium, Low, Basic; auto: Ultra with the GPU, Medium on
+ *  the CPU only) and what the options set to auto take from it; the GPU renderer asked for */
+static int opt_profile, opt_renderer, raw_glow = -1, raw_smooth = -1, raw_sbend = -1, raw_glass = -1, raw_ceiling = -1,
+           raw_case = -1, raw_crefl = -1, raw_cwear = -1, opt_room_glass;
+static float glass_grey_v;                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
 static int geo_glass = -1, geo_rot = -1, geo_size = -1; static unsigned av_maxw, av_maxh; static uint32_t *rb; static size_t rb_n;
 VXS_ON
 static int ov_on = 1, sel_held;          /* (v0.13: saved - SELECT's overlay switch is game-side input) */
@@ -361,7 +366,7 @@ static const struct vx_opt OPTS[] = {
 	  "The picture's height in screen pixels (in tate: its width). Set it to your screen's height and the picture fills it exactly - with RetroArch's Integer Scale on, the sharpest lines. Retroid Pocket 4:3 (1280x960): 960. 720p: 720. 1080p: 1080. 1440p: 1440. 4K: 2160. Larger costs more CPU.",
 	  "800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
 	{ "vectrex_emu_area", "picture", "Picture area",
-	  "Auto: the whole overlay sheet with an overlay on, the glass window without (the picture larger on the screen). Glass window: what a Vectrex shows behind its bezel (145.7 x 188.5 mm). Overlay sheet: the whole sheet (162 x 207 mm).",
+	  "Auto: the whole overlay sheet while an overlay, the case or the glass's edge is shown, else the glass window (the picture larger on the screen). Glass window: what a Vectrex shows behind its bezel (145.7 x 188.5 mm). Overlay sheet: the whole sheet (162 x 207 mm).",
 	  "auto|glass window|overlay sheet" },
 	{ "vectrex_emu_rotate", "picture", "Rotation (tate)",
 	  "The picture turned, for the device held upright: the picture fills the screen's long side.",
@@ -369,7 +374,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_rate", "picture", "Screen rate",
 	  "Refreshes a second. A Vectrex game runs at about 50; the core draws the tube's light for any rate. 50 Hz needs a 50 Hz screen (RetroArch: Sync to Exact Content Framerate). The Retroid Pocket Nova's screen: 60 or 120 Hz.",
 	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
-	{ "vectrex_emu_smooth", "picture", "Smooth motion", "The lines move between game frames as the beam drew them (not at 50 Hz).", "on|off" },
+	{ "vectrex_emu_smooth", "picture", "Smooth motion", "The lines move between game frames as the beam drew them (not at 50 Hz). Auto: the quality profile's.", "auto|on|off" },
 	{ "vectrex_emu_overlay", "overlay", "Overlay",
 	  "The game's own overlay (system/vectrex_emu/overlays). START takes it off / puts it on - Quick Menu > Controls puts that on any button.", "on|off" },
 	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How much the overlay's clear colours colour the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
@@ -377,11 +382,16 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_room", "overlay", "Room light",
 	  "The room's light on the overlay: its clear colours and its print together. Off: a dark room.",
 	  "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_room_glass", "overlay", "Room light on the bare glass",
-	  "Without an overlay: the room's light makes the glass a faint grey (as on the desktop Vectrex_EMU). Off: pure black without an overlay - the room light then lights only the overlay.", "off|on" },
+	{ "vectrex_emu_room_glass", "glass", "Room light on the glass and the case",
+	  "Without an overlay: the room's light makes the glass a faint grey and lights the case (as on the desktop Vectrex_EMU). Off: pure black without an overlay - the room light then lights only the overlay.", "off|on" },
+	{ "vectrex_emu_glass_edge", "glass", "Glass edge", "The tube's glass ends in its real rounded outline, softly (GPU). Auto: the quality profile's.", "auto|on|off" },
+	{ "vectrex_emu_ceiling", "glass", "Ceiling light reflected in the glass", "An office ceiling light mirrored in the glass, its glow on the phosphor behind it (GPU; its strength follows the room light).", "auto|on|off" },
+	{ "vectrex_emu_case", "glass", "Plastic case", "The Vectrex's case round the glass, without an overlay: its glossy walls and matte front (GPU).", "auto|on|off" },
+	{ "vectrex_emu_case_refl", "glass", "Case: the vectors mirrored in it", "The lines reflected in the case's glossy walls (GPU).", "auto|on|off" },
+	{ "vectrex_emu_case_wear", "glass", "Case: scratches and wear", "Fine scratches on the walls that catch the tube's light, the front's rubbed band (GPU).", "auto|on|off" },
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture",
 	  "In tate: the stick and buttons 1 to 4 keep their places as you hold the device - up is up, button 1 the leftmost.", "on|off" },
-	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", NULL, "on|off|strong" },
+	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", "Auto: the quality profile's.", "auto|on|strong|off" },
 	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness with an overlay", NULL, "1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
 	{ "vectrex_emu_trail_bright_bare", "tube", "Phosphor trail brightness without an overlay",
@@ -390,13 +400,19 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_beam", "tube", "Beam width", NULL, "thin|medium|wide" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "The owner's measured tube: its slight curves.", "on|off" },
-	{ "vectrex_emu_smooth_bends", "tube", "Smooth curves at bends", NULL, "on|off" },
+	{ "vectrex_emu_smooth_bends", "tube", "Smooth curves at bends", "Auto: the quality profile's.", "auto|on|off" },
 	{ "vectrex_emu_corner_glow", "tube", "Corner glow", NULL, "on|off" },
 	{ "vectrex_emu_corner_dots", "tube", "Corner dots", "The beam resting at a corner: a brighter dot.", "on|off" },
 	{ "vectrex_emu_dwell", "tube", "Dwell spots inside strokes", NULL, "on|off" },
 	{ "vectrex_emu_speed_bright", "tube", "Fast sweeps fainter", NULL, "on|off" },
 	{ "vectrex_emu_bending", "tube", "Brightness bending", NULL, "on|off" },
 	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", NULL, "50 Hz|60 Hz|off" },
+	{ "vectrex_emu_profile", "system", "Quality profile",
+	  "What the options set to auto do. Ultra: everything (the GPU's glass, ceiling light, case and its reflections; glow). High: no ceiling light. Medium: no glass edge, no case reflections. Low: no glow either (small handhelds, e.g. RGB30). Basic: the least (no case, no smooth motion). Auto: Ultra with the GPU, Medium on the CPU only.",
+	  "auto|ultra|high|medium|low|basic" },
+	{ "vectrex_emu_renderer", "system", "Renderer (from the next game start)",
+	  "GPU: the picture finished on the graphics chip (OpenGL / OpenGL ES 3) - the glass, the ceiling light, the case. CPU only: as before, no GPU effects (any video driver). Auto: the GPU when RetroArch's video driver is gl / glcore.",
+	  "auto|GPU|CPU only" },
 	{ "vectrex_emu_power_fx", "system", "Switching on / off", "The tube warming up, the switch-off zap and their sounds.", "on|off" },
 	{ "vectrex_emu_imager", "system", "3D Imager", "The 3D Imager's games in colour (the colour wheel) or plain.", "colour|off" },
 	{ "vectrex_emu_buzz", "sound", "Vectrex buzz", NULL, "on|off" },
@@ -406,8 +422,9 @@ static const char *const OPT_CATS[][3] = {
 	{ "picture", "Picture", "Size (to fit your screen exactly), area, rotation (tate), screen rate" },
 	{ "overlay", "Overlay", "The game's overlay: tint, printed art, room light" },
 	{ "tube", "Tube", "The phosphor and the tube: glow, trail, brightness, beam, colour" },
+	{ "glass", "Glass and case", "The tube's glass and the plastic case round it (GPU renderer)" },
 	{ "controls", "Controls", "The controls in tate (the Overlay button: Quick Menu > Controls)" },
-	{ "system", "System", "Switching on / off, the 3D Imager" },
+	{ "system", "System", "Quality profile, renderer, switching on / off, the 3D Imager" },
 	{ "sound", "Sound", "The buzz, the speaker" } };
 #define NOPT (sizeof OPTS / sizeof OPTS[0])
 static struct retro_variable vars[NOPT];
@@ -418,14 +435,14 @@ struct vx_opt_def { const char *key, *desc, *desc_categorized, *info, *info_cate
 struct vx_opts_v2 { struct vx_opt_cat *categories; struct vx_opt_def *definitions; };
 static void opts_set (retro_environment_t cb)
 {
-	static char vbuf[16384]; static struct vx_opt_def defs[NOPT]; static struct vx_opt_cat cats[7]; size_t u = 0;
+	static char vbuf[16384]; static struct vx_opt_def defs[NOPT]; static struct vx_opt_cat cats[8]; size_t u = 0;
 	for (size_t i = 0; OPTS[i].key; i++) {          /* (the flat list: "Submenu: name; values") */
-		const char *cn = ""; for (int c = 0; c < 6; c++) if (!strcmp (OPT_CATS[c][0], OPTS[i].cat)) cn = OPT_CATS[c][1];
+		const char *cn = ""; for (int c = 0; c < 7; c++) if (!strcmp (OPT_CATS[c][0], OPTS[i].cat)) cn = OPT_CATS[c][1];
 		vars[i].key = OPTS[i].key; vars[i].value = vbuf + u;
 		u += (size_t) snprintf (vbuf + u, sizeof vbuf - u, "%s: %s; %s", cn, OPTS[i].desc, OPTS[i].vals) + 1; }
 	unsigned ver = 0;
 	if (!cb (52 /* GET_CORE_OPTIONS_VERSION */, &ver) || ver < 2) { cb (RETRO_ENVIRONMENT_SET_VARIABLES, vars); return; }
-	for (int c = 0; c < 6; c++) cats[c] = (struct vx_opt_cat) { OPT_CATS[c][0], OPT_CATS[c][1], OPT_CATS[c][2] };
+	for (int c = 0; c < 7; c++) cats[c] = (struct vx_opt_cat) { OPT_CATS[c][0], OPT_CATS[c][1], OPT_CATS[c][2] };
 	for (size_t i = 0; OPTS[i].key; i++) {
 		struct vx_opt_def *d = &defs[i]; memset (d, 0, sizeof *d);
 		d->key = OPTS[i].key; d->category_key = OPTS[i].cat;
@@ -472,19 +489,28 @@ static void read_look (void)
 }
 static void read_options (void)
 {
-	read_look ();
+#ifdef VX_EMUVR
+	read_look ();   /* (the EmuVR mod's look: its options only there) */
+#endif
 	if (!rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
 	  int r = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : VX_RATE_DEF; opt_rate = r >= 30 && r <= 360 ? r : VX_RATE_DEF; }
 	opt_overlay = opt_is ("vectrex_emu_overlay", "on");   /* (v0.25: off by default) */
 	opt_imager = opt_is ("vectrex_emu_imager", "off") ? 0 : opt_is ("vectrex_emu_imager", "colour") ? 1 : 2;
+#ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
+#endif
 	opt_glow = opt_is ("vectrex_emu_glow", "on") ? 1 : opt_is ("vectrex_emu_glow", "strong") ? 2 : 0;
+	raw_glow = opt_is ("vectrex_emu_glow", "auto") ? -1 : opt_glow;
 	opt_sigma = opt_is ("vectrex_emu_beam", "wide") ? 1.1 : opt_is ("vectrex_emu_beam", "medium") ? 0.8 : 0.55;
+#ifdef VX_EMUVR
 	opt_res = opt_is ("vectrex_emu_res", "4x 2496x3200") ? 4 : opt_is ("vectrex_emu_res", "3x 1872x2400") ? 3 : opt_is ("vectrex_emu_res", "2x 1248x1600") ? 2 : 1;
+#endif
 	opt_wob = opt_is ("vectrex_emu_wobble", "off") ? 0 : opt_is ("vectrex_emu_wobble", "60 Hz") ? 60 : 50;
 	opt_buzz = !opt_is ("vectrex_emu_buzz", "off"); opt_spk = !opt_is ("vectrex_emu_speaker", "off");
+#ifdef VX_EMUVR
 	{ struct retro_variable v = { "vectrex_emu_eye_shift", NULL }; opt_shift = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : 0; }
+#endif
 	opt_after = !opt_is ("vectrex_emu_afterglow", "off");
 	opt_trail = opt_is ("vectrex_emu_afterglow", "long (real Vectrex)") ? 1.0f : opt_is ("vectrex_emu_afterglow", "short") ? 0.3f : 0.6f;
 	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
@@ -492,8 +518,15 @@ static void read_options (void)
 	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
 	  opt_bright = k >= 1.0 && k <= 2.0 ? (float) k : 1.0f; }
 	opt_dots = !opt_is ("vectrex_emu_corner_dots", "off"); opt_dwell = !opt_is ("vectrex_emu_dwell", "off"); opt_speedb = !opt_is ("vectrex_emu_speed_bright", "off");
-	opt_smooth = !opt_is ("vectrex_emu_smooth", "off"); opt_halo = !opt_is ("vectrex_emu_corner_glow", "off"); opt_bend = !opt_is ("vectrex_emu_bending", "off");
+	opt_smooth = !opt_is ("vectrex_emu_smooth", "off"); raw_smooth = opt_is ("vectrex_emu_smooth", "auto") ? -1 : opt_smooth; opt_halo = !opt_is ("vectrex_emu_corner_glow", "off"); opt_bend = !opt_is ("vectrex_emu_bending", "off");
 	opt_geom = !opt_is ("vectrex_emu_geometry", "off"); opt_sbend = opt_is ("vectrex_emu_smooth_bends", "on");
+	raw_sbend = opt_is ("vectrex_emu_smooth_bends", "auto") ? -1 : opt_sbend;
+	{ const char *pv = optv ("vectrex_emu_profile"); opt_profile = !strcmp (pv, "ultra") ? 1 : !strcmp (pv, "high") ? 2 : !strcmp (pv, "medium") ? 3
+	                                                             : !strcmp (pv, "low") ? 4 : !strcmp (pv, "basic") ? 5 : 0; }
+#define TRI(k) (opt_is (k, "on") ? 1 : opt_is (k, "off") ? 0 : -1)
+	raw_glass = TRI ("vectrex_emu_glass_edge"); raw_ceiling = TRI ("vectrex_emu_ceiling"); raw_case = TRI ("vectrex_emu_case");
+	raw_crefl = TRI ("vectrex_emu_case_refl"); raw_cwear = TRI ("vectrex_emu_case_wear");
+	opt_room_glass = opt_is ("vectrex_emu_room_glass", "on");
 	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
@@ -510,7 +543,7 @@ static void read_options (void)
 	  if (!(rm >= 0 && rm <= 4)) rm = 1.0f;
 	  if (t != opt_ov_tint || pr != opt_ov_print || rm != opt_room) { opt_ov_tint = t; opt_ov_print = pr; opt_room = rm; ov_made = 0; }
 	  /* (vecrender.py: the bare glass grey x the light level - (room / twice the default) cubed, 1 at most) */
-	  { float ll = rm / 2.0f; ll = ll > 1 ? 1 : ll; glass_grey = opt_is ("vectrex_emu_room_glass", "on") ? 0.20f * ll * ll * ll : 0.0f; } }
+	  { float ll = rm / 2.0f; ll = ll > 1 ? 1 : ll; glass_grey_v = opt_is ("vectrex_emu_room_glass", "on") ? 0.20f * ll * ll * ll : 0.0f; glass_grey = glass_grey_v; } }
 	/* (the core turns the picture itself: RetroArch's own rotation kept the upright picture's shape on the screen) */
 	opt_rot = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
 	        : opt_is ("vectrex_emu_rotate", "270 (turn the device left)") ? 3 : 0;
@@ -597,7 +630,8 @@ static int area_glass (void)
 #ifdef VX_EMUVR
 	return opt_glass;
 #else
-	return opt_area == 1 ? 1 : opt_area == 2 ? 0 : !(ov && ov_on && !sheet_file);
+	extern int gpu_frame_shown (void);
+	return opt_area == 1 ? 1 : opt_area == 2 ? 0 : !(ov && ov_on && !sheet_file) && !gpu_frame_shown ();
 #endif
 }
 /* one eye's frame (the sheet, ew x fh) and the area sent from it (cw x ch) - the RetroArch flavour: the area's side that
@@ -1709,6 +1743,29 @@ static void pic_setup (void)
 	  } else { for (int c = 0; c < NC; c++) { memset (pb[0][c], 0, NP * 4); memset (pb[1][c], 0, NP * 4); memset (g1b[c], 0, NP * 4); memset (g2b[c], 0, NP * 4); }
 	           spans_reset (FH, 1); } }
 }
+#ifndef VX_EMUVR
+#include "gpu_gl.c"
+/* the profile's choices (Ultra, High, Medium, Low, Basic) for the options left on auto */
+static void fx_apply (void)
+{
+	static const unsigned char T[5][8] = {   /* glow, smooth bends, smooth motion, glass edge, ceiling light, case, its reflections, its wear */
+		{ 1, 1, 1, 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 0, 1, 1, 1 }, { 1, 1, 1, 0, 0, 1, 0, 1 }, { 0, 1, 1, 0, 0, 1, 0, 1 }, { 0, 0, 0, 0, 0, 0, 0, 0 } };
+	const int pr = opt_profile ? opt_profile - 1 : gpu_ok ? 0 : 2; const unsigned char *t = T[pr];
+	opt_glow = raw_glow >= 0 ? raw_glow : t[0]; opt_sbend = raw_sbend >= 0 ? raw_sbend : t[1]; opt_smooth = raw_smooth >= 0 ? raw_smooth : t[2];
+	const int g = gpu_ok && !stereo;
+	gfx.glass = g && (raw_glass >= 0 ? raw_glass : t[3]); gfx.ceiling = g && (raw_ceiling >= 0 ? raw_ceiling : t[4]);
+	gfx.cse = g && (raw_case >= 0 ? raw_case : t[5]);
+	const float ll3 = glass_grey_v / 0.20f;                     /* (the light level: (room / twice the default) cubed) */
+	{ float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll; gfx.lk = gfx.ceiling ? ll * ll * ll : 0.0f; }
+	gfx.grey = g ? glass_grey_v : 0.0f; gfx.croom = opt_room_glass ? ll3 : 0.0f;
+	gfx.crefl = (raw_crefl >= 0 ? raw_crefl : t[6]) ? 1.0f : 0.0f; gfx.cwear = (raw_cwear >= 0 ? raw_cwear : t[7]) ? 1.0f : 0.0f;
+	glass_grey = g ? 0.0f : glass_grey_v;                       /* (the GPU draws the glass's grey itself) */
+	gfx.fx = g && !(ov && ov_on && !sheet_file) && (gfx.glass || gfx.cse || gfx.lk > 0 || gfx.grey > 0);
+}
+int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
+#else
+int gpu_frame_shown (void) { return 0; }
+#endif
 /* (test: VXPOC_PROF=1 - where a refresh's time goes, printed at the game's end) */
 static double pf_now (void) { return vt_wall (); }   /* (vtest.c: the wall clock, every system) */
 void retro_run (void)
@@ -1724,6 +1781,7 @@ void retro_run (void)
 	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_on = !ov_on;   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
 	  sel_held = sel; }
 #ifndef VX_EMUVR
+	fx_apply ();
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size) { pic_setup (); geo_tell (); }
 #endif
 	paint_all = !sheet_file && ((ov && ov_on) || glass_grey > 0);
@@ -1944,6 +2002,13 @@ void retro_run (void)
 	static long fno; fno++;
 	const int shot_now = shot_env && fno == shot_at;
 	const uint32_t *pic = ob; int pw = OW, ph = OH;   /* (what is sent, and shot) */
+#ifndef VX_EMUVR
+	if (gpu_asked && !shot_now) {               /* (1.1: the GPU: up, turned, the glass and the case on top - or, the context not
+	                                               there yet, the last picture again) */
+		if (gpu_ok && Wd / EW == 1) gpu_present (fb, FW, FH, Wd, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+		else video_cb (NULL, (unsigned) ((opt_rot & 1) ? OH : OW), (unsigned) ((opt_rot & 1) ? OW : OH), 0);
+	} else
+#endif
 	if (Wd / EW == 1 && !shot_now && !opt_rot)  /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
 		video_cb (fb + (size_t) CY0 * Wd + CX0, CW, CH, (size_t) Wd * 4);
 	else {
@@ -2191,6 +2256,10 @@ bool retro_load_game (const struct retro_game_info *g)
 	char od[1600];
 	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, g->path); }
 	if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", dir); try_overlay_dir (od, g->path); }
+#ifndef VX_EMUVR
+	{ const char *rv = optv ("vectrex_emu_renderer"); opt_renderer = !strcmp (rv, "CPU only") ? 2 : !strcmp (rv, "GPU") ? 1 : 0;
+	  gpu_asked = opt_renderer != 2 ? gpu_request () : 0; if (!gpu_asked) gpu_ok = 0; }   /* (each game: RetroArch sets the context up after this) */
+#endif
 	if (area_glass () != geo_glass) pic_setup ();   /* (the overlay found: the area it asks for, before RetroArch asks the size) */
 	return true;
 }

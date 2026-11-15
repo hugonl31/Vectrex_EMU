@@ -19,6 +19,8 @@ else
 fi
 scp -q -P 8022 $P/system/vectrex_emu/bios.bin $P/system/vectrex_emu/on.wav $P/system/vectrex_emu/off.wav $NOVA:$SD/BIOS/vectrex_emu/
 scp -q -P 8022 $P/system/vectrex_emu/overlays/*.png $NOVA:$SD/BIOS/vectrex_emu/overlays/
+ssh -o BatchMode=yes -p 8022 $NOVA "mkdir -p $SD/BIOS/vectrex_emu/gpu"
+scp -q -P 8022 $P/system/vectrex_emu/gpu/* $NOVA:$SD/BIOS/vectrex_emu/gpu/
 scp -q -P 8022 $P/vectrex_emu_libretro_android.so $P/vectrex_emu_libretro.info $P/INSTALL.txt $NOVA:/storage/emulated/0/Download/
 # (the info file also where RetroArch can read it, once its Core Info folder is set there - its own folder is app-private:
 #  the core list then shows "Vectrex_EMU" instead of the file's name)

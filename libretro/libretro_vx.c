@@ -225,7 +225,9 @@ static float g_lamp_x, g_lamp_y;                 /* (the lamp's position: gpu_gl
 #endif
 /* what the overlay shows on the GPU (gpu_ovfx.c; fx_apply: the options and the profile) */
 static struct { float glow, ovl, wear, fine, medium, large, scrib, glint, reach; int scr, seed; } ovfx;
-static float k_ovl = -1, k_ovglow = -1; static int raw_scr = -1, opt_par = 1;   /* (the overlay's ceiling light, plastic glow, scratches, parallax) */
+static float k_ovl = -1, k_ovglow = -1; static int raw_scr = -1, opt_par = 1, raw_par = -1, raw_geom = -1, raw_passes = -1, raw_dith = -1, raw_groom = -1;
+static int fx_passes = 2, fx_dith = 1, fx_half, fx_lh; static float fx_ps = 1.0f;   /* (the profile's: the glow passes, dither, phosphor scale,
+                                                                          half rate, the lines at the phosphor's size - GPU) */   /* (the overlay's ceiling light, plastic glow, scratches, parallax) */
 static float glass_grey_v, k_ceiling = -1, k_crefl = -1, k_cwear = -1;   /* (the strengths: -1 auto - the profile's on / off at 1x) */                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
 static int geo_glass = -1, geo_rot = -1, geo_size = -1; static unsigned av_maxw, av_maxh; static uint32_t *rb; static size_t rb_n;
 VXS_ON
@@ -379,9 +381,11 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_brightness", "tube", "Brightness", NULL, "1x (measured)|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "on|off" },
+	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "auto|on|off" },
 	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
 	{ "vectrex_emu_smooth_bends", "tube", "Smooth curves at bends", NULL, "auto|on|off" },
+	{ "vectrex_emu_passes", "tube", "Second glow pass", "A wider glow (GPU).", "auto|on|off" },
+	{ "vectrex_emu_dither", "tube", "Dither", "No bands in soft glows (GPU).", "auto|on|off" },
 	{ "vectrex_emu_corner_glow", "tube", "Corner glow", NULL, "on|off" },
 	{ "vectrex_emu_corner_dots", "tube", "Corner dots", NULL, "on|off" },
 	{ "vectrex_emu_beam", "tube", "Beam width", NULL, "thin|medium|wide" },
@@ -392,7 +396,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's overlay. START switches it (any button: Quick Menu > Controls).", "on|off" },
 	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How strongly the overlay colours the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
 	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
-	{ "vectrex_emu_parallax", "overlay", "Parallax", "The picture a little higher than the sheet, as seen from the usual height.", "on|off" },
+	{ "vectrex_emu_parallax", "overlay", "Parallax", "The picture a little higher than the sheet, as seen from the usual height.", "auto|on|off" },
 	{ "vectrex_emu_ov_glow", "overlay", "Plastic glow", "The plastic spreads the light softly around bright lines (GPU).", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_scratches", "overlay", "Scratches", "The sheet's scratches catch the light (GPU).", "auto|on|off" },
 	{ "vectrex_emu_scr_wear", "overlay", "Scratches: wear", "How much the sheet was handled (all of them).", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
@@ -407,7 +411,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_case_refl", "case", "Case reflections", "The lines mirrored in the case's walls: their strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_case_wear", "case", "Case scratches and wear", NULL, "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_room", "room", "Room light", "Lights the overlay.", "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_room_glass", "room", "Room light on the glass and the case", "Off: pure black without an overlay.", "off|on" },
+	{ "vectrex_emu_room_glass", "room", "Glass catches room light", "The bare glass grey in the room's light (no overlay). Off: pure black.", "auto|on|off" },
 	{ "vectrex_emu_ceiling", "room", "Ceiling light reflection", "A ceiling light mirrored in the glass: its strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_ceiling_ov", "room", "Ceiling light on the overlay", "Its reflection on the sheet: strength (GPU).", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_lamp_x", "room", "Lamp position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
@@ -512,6 +516,7 @@ static void read_look (void)
 	light_f = light_g / light_p;   /* (v0.35: the trail's level on screen: x light / dots level) */
 	{ char *lp = strstr (look, " light="); if (lp) snprintf (lp, sizeof look - (lp - look), " light=%g faint=%g tube=%g crefl=%g cwear=%g", light_g, light_f, optn ("vectrex_emu_tube_grey", 0.32), optx ("vectrex_emu_case_refl", 1), optx ("vectrex_emu_case_wear", 1)); }
 }
+#define TRI(k) (opt_is (k, "on") ? 1 : opt_is (k, "off") ? 0 : -1)
 static void read_options (void)
 {
 #ifdef VX_EMUVR
@@ -544,15 +549,15 @@ static void read_options (void)
 	  opt_bright = k >= 1.0 && k <= 2.0 ? (float) k : 1.0f; }
 	opt_dots = !opt_is ("vectrex_emu_corner_dots", "off"); opt_dwell = !opt_is ("vectrex_emu_dwell", "off"); opt_speedb = !opt_is ("vectrex_emu_speed_bright", "off");
 	opt_smooth = !opt_is ("vectrex_emu_smooth", "off"); raw_smooth = opt_is ("vectrex_emu_smooth", "auto") ? -1 : opt_smooth; opt_halo = !opt_is ("vectrex_emu_corner_glow", "off"); opt_bend = !opt_is ("vectrex_emu_bending", "off");
-	opt_geom = !opt_is ("vectrex_emu_geometry", "off"); opt_sbend = opt_is ("vectrex_emu_smooth_bends", "on");
+	raw_geom = TRI ("vectrex_emu_geometry"); opt_geom = raw_geom != 0;
+	raw_passes = TRI ("vectrex_emu_passes"); raw_dith = TRI ("vectrex_emu_dither"); opt_sbend = opt_is ("vectrex_emu_smooth_bends", "on");
 	raw_sbend = opt_is ("vectrex_emu_smooth_bends", "auto") ? -1 : opt_sbend;
 	{ const char *pv = optv ("vectrex_emu_profile"); opt_profile = !strcmp (pv, "ultra") ? 1 : !strcmp (pv, "high") ? 2 : !strcmp (pv, "medium") ? 3
 	                                                             : !strcmp (pv, "low") ? 4 : !strcmp (pv, "basic") ? 5 : 0; }
-#define TRI(k) (opt_is (k, "on") ? 1 : opt_is (k, "off") ? 0 : -1)
 	raw_glass = TRI ("vectrex_emu_glass_edge"); raw_case = TRI ("vectrex_emu_case");
 #define STR(k) (opt_is (k, "auto") || !optv (k)[0] ? -1.0f : (float) atof (optv (k)))   /* (a strength: auto -1, else 0..2) */
 	k_ovl = STR ("vectrex_emu_ceiling_ov"); k_ovglow = STR ("vectrex_emu_ov_glow"); raw_scr = TRI ("vectrex_emu_scratches");
-	opt_par = !opt_is ("vectrex_emu_parallax", "off");
+	raw_par = TRI ("vectrex_emu_parallax"); opt_par = raw_par != 0;
 	{ float *const d[7] = { &ovfx.wear, &ovfx.fine, &ovfx.medium, &ovfx.large, &ovfx.scrib, &ovfx.glint, &ovfx.reach };
 	  static const char *const kk[7] = { "vectrex_emu_scr_wear", "vectrex_emu_scr_fine", "vectrex_emu_scr_medium", "vectrex_emu_scr_damage",
 		"vectrex_emu_scr_scrib", "vectrex_emu_scr_glint", "vectrex_emu_scr_reach" };
@@ -564,7 +569,7 @@ static void read_options (void)
 	{ const char *lx = optv ("vectrex_emu_lamp_x"), *ly = optv ("vectrex_emu_lamp_y"); g_lamp_x = lx[0] ? (float) atof (lx) / 100.0f : 0.0f; g_lamp_y = ly[0] ? (float) atof (ly) / 100.0f : 0.273f;
 	  if (!strcmp (ly, "27%")) g_lamp_y = 0.273f; }
 #endif
-	opt_room_glass = opt_is ("vectrex_emu_room_glass", "on");
+	raw_groom = TRI ("vectrex_emu_room_glass"); opt_room_glass = raw_groom > 0;
 	opt_async = !opt_is ("vectrex_emu_threaded", "off");
 	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
 	white_make ();
@@ -582,7 +587,7 @@ static void read_options (void)
 	  if (!(rm >= 0 && rm <= 4)) rm = 1.0f;
 	  if (t != opt_ov_tint || pr != opt_ov_print || rm != opt_room) { opt_ov_tint = t; opt_ov_print = pr; opt_room = rm; ov_made = 0; }
 	  /* (vecrender.py: the bare glass grey x the light level - (room / twice the default) cubed, 1 at most) */
-	  { float ll = rm / 2.0f; ll = ll > 1 ? 1 : ll; glass_grey_v = opt_is ("vectrex_emu_room_glass", "on") ? 0.20f * ll * ll * ll : 0.0f; glass_grey = glass_grey_v; } }
+	  { float ll = rm / 2.0f; ll = ll > 1 ? 1 : ll; glass_grey_v = 0.20f * ll * ll * ll; glass_grey = opt_room_glass ? glass_grey_v : 0.0f; }   /* (fx_apply: whether it shows) */ }
 	/* (the core turns the picture itself: RetroArch's own rotation kept the upright picture's shape on the screen) */
 	opt_rot = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
 	        : opt_is ("vectrex_emu_rotate", "270 (turn the device left)") ? 3 : 0;
@@ -1980,27 +1985,38 @@ static void pic_setup (void)
 /* the profile's choices (Ultra, High, Medium, Low, Basic) for the options left on auto */
 static void fx_apply (void)
 {
-	static const unsigned char T[5][11] = {   /* glow, smooth bends, smooth motion, glass edge, ceiling light, case, its reflections, its
-	                                             wear; the ceiling light on the overlay, the plastic glow, the scratches (vecrender.py
-	                                             PROFILE_OFF: High without the room's reflections, Medium on without the overlay's) */
-		{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1 }, { 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0 }, { 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0 },
-		{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } };
-	const int pr = opt_profile ? opt_profile - 1 : gpu_ok ? 0 : 2; const unsigned char *t = T[pr];
-	opt_glow = raw_glow >= 0 ? raw_glow : t[0]; opt_sbend = raw_sbend >= 0 ? raw_sbend : t[1]; opt_smooth = raw_smooth >= 0 ? raw_smooth : t[2];
-	const int g = gpu_ok && !stereo;
-	gfx.glass = g && (raw_glass >= 0 ? raw_glass : t[3]); gfx.ceiling = g && (raw_ceiling >= 0 ? raw_ceiling : t[4]);
-	gfx.cse = g && (raw_case >= 0 ? raw_case : t[5]);
-	const float ll3 = glass_grey_v / 0.20f;                     /* (the light level: (room / twice the default) cubed) */
-	{ float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll; gfx.lk = gfx.ceiling ? ll * ll * ll * (k_ceiling > 0 ? k_ceiling : 1.0f) : 0.0f; }
-	gfx.grey = g ? glass_grey_v : 0.0f; gfx.croom = opt_room_glass ? ll3 : 0.0f;
-	gfx.crefl = (raw_crefl >= 0 ? raw_crefl : t[6]) ? (k_crefl > 0 ? k_crefl : 1.0f) : 0.0f;
-	gfx.cwear = (raw_cwear >= 0 ? raw_cwear : t[7]) ? (k_cwear > 0 ? k_cwear : 1.0f) : 0.0f;
-	glass_grey = g ? 0.0f : glass_grey_v;                       /* (the GPU draws the glass's grey itself) */
+	/* the GPU: vecrender.py PROFILE_OFF, switch for switch - Ultra all; High without the room's reflections (on the glass,
+	 * the overlay, the glass's grey) and with one glow pass; Medium also without the tube's curve, the glass edge, the
+	 * overlay's scratches and plastic glow, the case's reflections and the dither, the phosphor at 0.75 x; Low the
+	 * phosphor at half size and 30 pictures a second; Basic the lines at the phosphor's size too */
+	static const struct { unsigned char passes, curve, glass, groom, light, lov, aglow, scr, par, crefl, sbend, dith, half, lh; float ps; } P[5] = {
+		{ 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1.0f }, { 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1.0f },
+		{ 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0.75f }, { 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0.5f },
+		{ 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0.5f } };
+	/* the CPU alone (no GPU): its own costs - the glow, the bends' smoothing, smooth motion (Medium by default) */
+	static const unsigned char T[5][3] = { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 1, 1 }, { 0, 1, 1 }, { 0, 0, 0 } };
+	const int g = gpu_ok && !stereo, gl = g && ph_ok;
+	const int pr = opt_profile ? opt_profile - 1 : gpu_ok ? 0 : 2;
+	const unsigned char *t = T[pr];
+	#define PICK(raw, v) ((raw) >= 0 ? (raw) : (v))
+	opt_glow = PICK (raw_glow, gl ? 1 : t[0]); opt_sbend = PICK (raw_sbend, gl ? P[pr].sbend : t[1]); opt_smooth = PICK (raw_smooth, gl ? 1 : t[2]);
+	opt_geom = PICK (raw_geom, P[pr].curve); opt_par = PICK (raw_par, P[pr].par);
+	fx_passes = PICK (raw_passes, P[pr].passes >= 2) ? 2 : 1; fx_dith = gl && PICK (raw_dith, P[pr].dith);
+	fx_ps = gl ? P[pr].ps : 1.0f; fx_half = gl && P[pr].half; fx_lh = gl && P[pr].lh;
+	gfx.glass = g && PICK (raw_glass, P[pr].glass); gfx.ceiling = g && (raw_ceiling >= 0 ? raw_ceiling : P[pr].light);
+	gfx.cse = g && PICK (raw_case, 1);
+	const int groom = PICK (raw_groom, P[pr].groom);
+	float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll; const float ll3 = ll * ll * ll;   /* (vecrender.py light_level) */
+	gfx.lk = gfx.ceiling ? ll3 * (k_ceiling > 0 ? k_ceiling : 1.0f) : 0.0f;
+	gfx.grey = g && groom ? glass_grey_v : 0.0f; gfx.croom = groom ? ll3 : 0.0f;
+	gfx.crefl = PICK (raw_crefl, P[pr].crefl) ? (k_crefl > 0 ? k_crefl : 1.0f) : 0.0f;
+	gfx.cwear = PICK (raw_cwear, 1) ? (k_cwear > 0 ? k_cwear : 1.0f) : 0.0f;
+	glass_grey = !g && groom ? glass_grey_v : 0.0f;              /* (the GPU draws the glass's grey itself) */
 	gfx.fx = g && !(ov && ov_on && !sheet_file) && (gfx.glass || gfx.cse || gfx.lk > 0 || gfx.grey > 0);
-	{ const int go = g && ph_ok; float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll;   /* (the overlay's: vecrender.py light_level) */
-	  ovfx.ovl = go && (k_ovl >= 0 ? k_ovl > 0 : t[8]) ? ll * ll * ll * (k_ovl > 0 ? k_ovl : 1.0f) : 0.0f;
-	  ovfx.glow = go && (k_ovglow >= 0 ? k_ovglow > 0 : t[9]) ? (k_ovglow > 0 ? k_ovglow : 1.0f) : 0.0f;
-	  ovfx.scr = go && (raw_scr >= 0 ? raw_scr : t[10]); }
+	ovfx.ovl = gl && (k_ovl >= 0 ? k_ovl > 0 : P[pr].lov) ? ll3 * (k_ovl > 0 ? k_ovl : 1.0f) : 0.0f;
+	ovfx.glow = gl && (k_ovglow >= 0 ? k_ovglow > 0 : P[pr].aglow) ? (k_ovglow > 0 ? k_ovglow : 1.0f) : 0.0f;
+	ovfx.scr = gl && PICK (raw_scr, P[pr].scr);
+	#undef PICK
 }
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
 #else
@@ -2224,8 +2240,16 @@ void retro_run (void)
 #ifndef VX_EMUVR
 	/* (1.1: the light on the GPU - gpu_phos.c; the CPU's bands below otherwise) */
 	const int gph = gpu_asked && gpu_ok && ph_ok && !stereo && !sheet_file;
+	static int half_skip; static double half_dt;
+	if (gph && fx_half && (half_skip ^= 1) && ph_made && !shot_due) {   /* (Low: 30 pictures a second - this one the last again) */
+		half_dt += dt;
+		gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+		sheet_write (); if (!asy) flash_save (0); if (!asy) audio_out ();
+		return;
+	}
 	if (gph) {
-		if (ph_frame (npl, dt, opt_glow, opt_after, shot_pending ())) {
+		const double pdt = dt + half_dt; half_dt = 0;
+		if (ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ())) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
 			gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
 			shot_write ();

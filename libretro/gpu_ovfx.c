@@ -144,7 +144,8 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	                                               passes), the knee - written B G R as PH_FS_OUT) */
 	"uniform sampler2D L, ovm, ova, art, A, B, C, M, F, V1, V2;\n"
 	"uniform float glint, room, scrk, scron, a2, a4, gk, glow, ref, ovl, wear, pxo;\n"
-	"uniform vec4 pen, rlp; uniform vec2 rpt[6]; uniform vec3 lpos, pic; out vec4 fragc;\n"
+	"uniform vec4 pen, rlp; uniform vec2 rpt[6]; uniform vec3 lpos, pic; uniform float dith; out vec4 fragc;\n"
+	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"float lum(vec3 c) { return max(max(c.r, c.g), c.b); }\n"
 	"vec3 knee(vec3 c) { return mix(c, 0.75 + 0.25 * (1.0 - exp(-(c - 0.75) * 4.0)), step(0.75, c)); }\n"
 	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb;\n"
@@ -186,7 +187,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    float cut = smoothstep(pen.x, pen.y, cc.z);\n"
 	"    e += cut * pen.z * (0.5 * near + 0.8 * mid + 0.6 * far) * (vec3(1.0) - trans * 0.5) + cut * room * 0.5;\n"
 	"    c += e; }\n"
-	"  fragc = vec4(knee(c).bgr, 1.0); }\n";
+	"  fragc = vec4((knee(c) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ox_prog (const char *vsrc, const char *a, const char *b)
 {
@@ -369,7 +370,7 @@ static int ox_draw (int glow, double dt)
 	glUniform4f_ (ph_ul (ox_sheet, "pen"), 0.45f, 0.85f, 1.5f, 0.0f);
 	glUniform4f_ (ph_ul (ox_sheet, "rlp"), 0.0f, 0.0f, hh, scr ? ovfx.ovl : 0.0f);
 	glUniform3f_ (ph_ul (ox_sheet, "lpos"), fxp, fyp, 0.42f); glUniform3f_ (ph_ul (ox_sheet, "pic"), FW / 2.0f, FH / 2.0f, hh);
-	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180));
+	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0);
 	if (scr && ovfx.ovl > 0) {                                     /* (roomlight.flat_points: the light's area as six points) */
 		static float key_x = -1, key_y = -1, pts[12];
 		if (key_x != g_lamp_x || key_y != g_lamp_y) { key_x = g_lamp_x; key_y = g_lamp_y; rl_flat_points (g_lamp_x, g_lamp_y, pts); }

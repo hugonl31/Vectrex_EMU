@@ -26,8 +26,9 @@ GLFN(void, glFinish, (void)); GLFN(void, glInvalidateFramebuffer, (GLenum, GLsiz
 #define GL_ONE 1
 #define GL_NEAREST 0x2600
 
-static GLuint ph_cap, ph_upd, ph_down, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
+static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
+static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1;
 static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
 static float *ph_buf; static size_t ph_bufn;
 
@@ -50,11 +51,11 @@ static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gauss
 	"  if (vc1.w > 0.5 && dot(p, vc1.xy) > vc1.z) discard;\n"
 	"  fragc = vec4(vrc.yzw * exp(-d2 * vk), 0.0); }\n";
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
-	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec3 f = texelFetch(fc, ip, 0).rgb;\n"
+	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = texture(fc, uv).rgb;\n"
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, 1.0); return; }\n"
-	"  vec3 p = texelFetch(fp, ip, 0).rgb, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
+	"  vec3 p = texture(fp, uv).rgb, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
 	"  float cap = pv && lp > 1.0 ? 1.0 / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
 	"  g1 += l * e1; g2 += l * e2;\n"
@@ -62,6 +63,11 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  g1 = mix(g1, max(g1 - f * a1, 0.0), lit); g2 = mix(g2, max(g2 - f * a2, 0.0), lit);\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
 	"  o1 = vec4(g1, 1.0); o2 = vec4(g2, 1.0); os = vec4(f + g1 + g2, 1.0); }\n";
+static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
+	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; out vec4 fragc;\n"
+	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = texture(fc, uv).rgb;\n"
+	"  if (after != 0) o += texture(g1t, uv).rgb + texture(g2t, uv).rgb;\n"
+	"  fragc = vec4(o, 1.0); }\n";
 static const char *PH_FS_DOWN =                 /* (glow_blur: 2 S x 2 S pixels to a cell, 1 3 3 1 by groups of S) */
 	"uniform sampler2D src; uniform int s, gd; uniform ivec2 lim; out vec4 fragc;\n"
 	"void main() { ivec2 c = ivec2(gl_FragCoord.xy); vec3 a = vec3(0.0); int nf = 4 * s;\n"
@@ -76,7 +82,8 @@ static const char *PH_FS_BLUR =                 /* (the Gaussian, one way: gtw) 
 	"  fragc = vec4(a, 1.0); }\n";
 static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gpu_present reads the CPU's XRGB bytes) */
 	"uniform sampler2D s, gt, ovm, ova; uniform int glow, ovon, wbon; uniform vec3 tint, wbg, wbc; uniform float bright, grey;\n"
-	"uniform vec2 gsz; out vec4 fragc;\n"
+	"uniform vec2 gsz; uniform float dith; out vec4 fragc;\n"
+	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"vec3 knee(vec3 c) { return mix(c, 0.75 + 0.25 * (1.0 - exp(-(c - 0.75) * 4.0)), step(0.75, c)); }\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec3 o = texelFetch(s, ip, 0).rgb;\n"
 	"  if (glow != 0) o += tint * texture(gt, gl_FragCoord.xy / gsz).rgb;\n"
@@ -85,7 +92,7 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"  if (ovon != 0) { vec2 u = gl_FragCoord.xy / vec2(textureSize(s, 0)); vec3 m = texture(ovm, u).rgb, la = texture(ova, u).rgb;\n"
 	"    vec3 l = dot(o, vec3(1.0 / 3.0)) * m; o = sqrt(l * l + la * la); }\n"
 	"  else { o *= 1.6; if (grey > 0.0) { vec3 g = grey * vec3(0.92, 0.95, 1.0); o = sqrt(o * o + g * g); } }\n"
-	"  fragc = vec4(knee(o).bgr, 1.0); }\n";
+	"  fragc = vec4((knee(o) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ph_prog (const char *vsrc, const char *fsrc)
 {
@@ -127,8 +134,8 @@ static void ph_reset (void)
 	glInvalidateFramebuffer_ = (pf_glInvalidateFramebuffer) hwr.get_proc_address ("glInvalidateFramebuffer");   /* (optional: GL 4.3 / ES 3) */
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: no instancing / framebuffers - the light on the CPU\n"); return; }
 	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
-	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_out = ph_prog (GPU_VS, PH_FS_OUT);
-	if (!ph_cap || !ph_upd || !ph_down || !ph_blur || !ph_out) return;
+	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP);
+	if (!ph_cap || !ph_upd || !ph_down || !ph_blur || !ph_out || !ph_comp) return;
 	glGenBuffers_ (1, &ph_vbo); glGenVertexArrays_ (1, &ph_vao); glGenFramebuffers_ (1, &ph_fbo);
 	glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
 	for (int i = 0; i < 6; i++) { glEnableVertexAttribArray_ ((GLuint) i);
@@ -184,17 +191,19 @@ static void ph_size (void)
 		GLuint t[13] = { ph_F[0], ph_F[1], ph_G1[0], ph_G1[1], ph_G2[0], ph_G2[1], ph_S, ph_B[0], ph_B[1], ph_P, 0, 0, 0 };
 		glDeleteTextures_ (10, t); }
 	const int gd = 2 * S; ph_gw = FW / gd; ph_gh = FH / gd; if (ph_gw < 2) ph_gw = 2; if (ph_gh < 2) ph_gh = 2;
+	ph_pw = (int) (FW * fx_ps + 0.5); ph_ph = (int) (FH * fx_ps + 0.5); if (ph_pw < 2) ph_pw = 2; if (ph_ph < 2) ph_ph = 2;
+	ph_fw = fx_lh ? ph_pw : FW; ph_fh = fx_lh ? ph_ph : FH; ph_ps_made = fx_ps; ph_lh_made = fx_lh;
 	for (int k = 0; k < 2; k++) {
-		ph_F[k] = ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL);
-		ph_G1[k] = ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL);
-		ph_G2[k] = ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL);
+		ph_F[k] = ph_tex (ph_fw, ph_fh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
+		ph_G1[k] = ph_tex (ph_pw, ph_ph, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
+		ph_G2[k] = ph_tex (ph_pw, ph_ph, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
 		ph_B[k] = ph_tex (ph_gw, ph_gh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL); }
 	ph_S = ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL);
 	ph_P = ph_tex (FW, FH, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, NULL);
 	ph_made = 1; ph_w = FW; ph_h = FH;
 	glClearColor_ (0, 0, 0, 0);
 	GLuint all[7] = { ph_F[0], ph_F[1], ph_G1[0], ph_G1[1], ph_G2[0], ph_G2[1], ph_S };
-	for (int k = 0; k < 7; k++) { ph_target (all[k], 0, 0, FW, FH);
+	for (int k = 0; k < 7; k++) { ph_target (all[k], 0, 0, k < 2 ? ph_fw : k < 6 ? ph_pw : FW, k < 2 ? ph_fh : k < 6 ? ph_ph : FH);
 		if (glCheckFramebufferStatus_ (GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 			fprintf (stderr, "[vectrex_emu] GPU: no float images to draw into - the light on the CPU\n"); ph_ok = 0; return; }
 		glClear_ (GL_COLOR_BUFFER_BIT); }
@@ -216,7 +225,8 @@ static void ph_overlay (void)
 static int ph_frame (int npl, double dt, int glow, int after, int shot)
 {
 	if (!ph_ok) return 0;
-	if (FW != ph_w || FH != ph_h || !ph_made) { ph_size (); if (!ph_ok) return 0; }
+	if (FW != ph_w || FH != ph_h || !ph_made || fx_ps != ph_ps_made || fx_lh != ph_lh_made) { ph_size (); if (!ph_ok) return 0; }
+	const int scaled = ph_pw != FW || ph_ph != FH || ph_fw != FW; const float ls = (float) ph_fw / FW;   /* (the lines' scale: Basic) */
 	const int cur = ph_i, prv = ph_i ^ 1; ph_i ^= 1;
 	/* the pieces: 24 floats each */
 	if ((size_t) npl * 24 > ph_bufn) { free (ph_buf); ph_bufn = (size_t) npl * 24 + 4096; ph_buf = malloc (ph_bufn * sizeof (float)); }
@@ -225,13 +235,16 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		o[4] = q->x0 + ox; o[5] = q->y0; o[6] = q->x1 + ox; o[7] = q->y1;
 		o[8] = q->n0x; o[9] = q->n0y; o[10] = q->c0 + q->n0x * ox; o[11] = (q->cut & 1) ? 1.0f : 0.0f;
 		o[12] = q->n1x; o[13] = q->n1y; o[14] = q->c1 + q->n1x * ox; o[15] = (q->cut & 2) ? 1.0f : 0.0f;
-		o[16] = q->R; o[17] = q->r; o[18] = q->g; o[19] = q->b; o[20] = q->k2; o[21] = o[22] = o[23] = 0; }
+		o[16] = q->R; o[17] = q->r; o[18] = q->g; o[19] = q->b; o[20] = q->k2; o[21] = o[22] = o[23] = 0;
+		if (ls != 1.0f) { for (int i = 0; i < 8; i++) o[i] *= ls; o[10] *= ls; o[14] *= ls;
+			float sw = sqrtf (0.5f / q->k2) * ls; if (sw < 0.5f) { o[17] *= sw / 0.5f; o[18] *= sw / 0.5f; o[19] *= sw / 0.5f; sw = 0.5f; }
+			o[16] = sw * 3.0f; o[20] = 0.5f / (sw * sw); } }
 	glDisable_ (GL_DEPTH_TEST); glDisable_ (GL_SCISSOR_TEST); glDisable_ (GL_CULL_FACE); glDisable_ (GL_STENCIL_TEST);
 	/* the fresh light */
-	ph_target (ph_F[cur], 0, 0, FW, FH); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
+	ph_target (ph_F[cur], 0, 0, ph_fw, ph_fh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
 	if (npl) {
 		glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
-		glUseProgram_ (ph_cap); glUniform2f_ (ph_ul (ph_cap, "sz"), (float) FW, (float) FH);
+		glUseProgram_ (ph_cap); glUniform2f_ (ph_ul (ph_cap, "sz"), (float) ph_fw, (float) ph_fh);
 		glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
 		glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) npl * 24 * sizeof (float)), ph_buf, GL_STREAM_DRAW);
 		glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, npl);
@@ -242,16 +255,20 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	{ const float tk = ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0;
 	  const float a1 = 0.1404f * tk, a2 = 0.0582f * tk, ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
-	  ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH); glUseProgram_ (ph_upd);
+	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
+	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);
 	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
 	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "e1", a1 * kd1); PU1F (ph_upd, "e2", a2 * kd2);
 	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
-	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
+	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
+		ph_bind (ph_comp, "fc", 0, ph_F[cur]); ph_bind (ph_comp, "g1t", 1, ph_G1[cur]); ph_bind (ph_comp, "g2t", 2, ph_G2[cur]);
+		PU1I (ph_comp, "after", after); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {
 		const int gd = 2 * S, nf = 2 * gd; double vd = 0;
 		for (int i = 0; i < nf; i++) { static const float k4[4] = { 1, 3, 3, 1 }; double w = k4[i / S] / (8.0 * S), p = i - 2 * S + 0.5; vd += w * p * p; }
-		const double sg = GLOW_WSIG * FH / (0.924 * GLOW_WPH), vu = gd * gd / 6.0, v = sg * sg - vd - vu;
+		const double sg = (fx_passes >= 2 ? GLOW_WSIG : 7.182) * FH / (0.924 * GLOW_WPH), vu = gd * gd / 6.0, v = sg * sg - vd - vu;
 		const double sc = sqrt (v > 0.0625 * gd * gd ? v : 0.0625 * gd * gd) / gd;
 		int n = (int) ceil (3.0 * sc); if (n > 31) n = 31; float w[63]; double t = 0;
 		for (int k = -n; k <= n; k++) { w[k + n] = (float) exp (-0.5 * k * k / (sc * sc)); t += w[k + n]; }
@@ -274,7 +291,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  PU1I (ph_out, "glow", glow); PU1I (ph_out, "ovon", ovon && ph_ovm); PU1I (ph_out, "wbon", wb_on);
 	  glUniform3f_ (ph_ul (ph_out, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
 	  glUniform3f_ (ph_ul (ph_out, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (ph_ul (ph_out, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
-	  PU1F (ph_out, "bright", opt_bright); PU1F (ph_out, "grey", glass_grey);
+	  PU1F (ph_out, "bright", opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0);
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:

@@ -705,6 +705,11 @@ void retro_set_environment (retro_environment_t cb)
 	opts_set (cb);
 #endif
 	bool nogame = false; cb (RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &nogame);
+	/* (2026-11-16: the controller types - RetroArch's netplay sends only what the port's type has: the plain RetroPad no
+	 *  sticks (the owner's Nova: d-pad only online). The Vectrex controller is the RetroPad with its sticks) */
+	{ static const struct retro_controller_description t[] = { { "Vectrex controller", RETRO_DEVICE_ANALOG }, { "RetroPad (d-pad only)", RETRO_DEVICE_JOYPAD } };
+	  static const struct retro_controller_info ci[] = { { t, 2 }, { t, 2 }, { NULL, 0 } };
+	  cb (RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void *) ci); }
 }
 void retro_set_video_refresh (retro_video_refresh_t cb) { video_cb = cb; }
 void retro_set_audio_sample (retro_audio_sample_t cb) { (void) cb; }

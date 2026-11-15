@@ -1190,6 +1190,9 @@ static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
 		float lum = (r + g + b) / 3.0f;
 		r = lum * m[0] + m[3]; g = lum * m[1] + m[4]; b = lum * m[2] + m[5];
 	}
+	else { r *= OV_LINE_GAIN; g *= OV_LINE_GAIN; b *= OV_LINE_GAIN; }   /* (no overlay: as bright as through an overlay's
+	                                         clear part - the owner on the Nova, 2026-11-15: with the overlay the trail
+	                                         was right, without it hardly visible) */
 	{ static FILE *hf; static int hn, hon = -1; static unsigned hist[64];   /* (test: the brightness before the knee, VXPOC_RAWHIST) */
 	  if (hon < 0) hon = getenv ("VXPOC_RAWHIST") != NULL;
 	  if (hon) { float mm = r > g ? (r > b ? r : b) : (g > b ? g : b); if (mm > 0.02f) { int bi = (int) (mm * 16); hist[bi > 63 ? 63 : bi]++; }

@@ -31,7 +31,7 @@ GLFN(void, glGetProgramiv, (GLuint, GLenum, GLint *)); GLFN(void, glGetProgramIn
 GLFN(void, glDeleteProgram, (GLuint)); GLFN(void, glUseProgram, (GLuint));
 GLFN(GLint, glGetUniformLocation, (GLuint, const GLchar *)); GLFN(void, glUniform1i, (GLint, GLint));
 GLFN(void, glUniform1f, (GLint, GLfloat)); GLFN(void, glUniform2f, (GLint, GLfloat, GLfloat));
-GLFN(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat)); GLFN(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat));
+GLFN(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat)); GLFN(void, glUniform2i, (GLint, GLint, GLint)); GLFN(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat));
 GLFN(void, glBindFramebuffer, (GLenum, GLuint)); GLFN(void, glViewport, (GLint, GLint, GLsizei, GLsizei));
 GLFN(void, glDisable, (GLenum)); GLFN(void, glDrawArrays, (GLenum, GLint, GLsizei));
 GLFN(void, glGenVertexArrays, (GLsizei, GLuint *)); GLFN(void, glBindVertexArray, (GLuint));
@@ -66,6 +66,7 @@ GLFN(void, glDeleteVertexArrays, (GLsizei, const GLuint *)); GLFN(GLenum, glGetE
 #define GL_STENCIL_TEST 0x0B90
 
 static struct retro_hw_render_callback hwr;
+static void ph_reset (void); static void ph_lost (void); static int ph_ok; static GLuint ph_P;   /* (gpu_phos.c) */
 static int gpu_asked;                         /* (the frontend took the request: the picture goes through the GPU) */
 static int gpu_ok;                            /* (the context is there and the program built) */
 static int gpu_es;                            /* (OpenGL ES) */
@@ -402,7 +403,7 @@ static void gpu_reset (void)
 	GLLOAD (glCompileShader); GLLOAD (glGetShaderiv); GLLOAD (glGetShaderInfoLog); GLLOAD (glDeleteShader); GLLOAD (glCreateProgram);
 	GLLOAD (glAttachShader); GLLOAD (glLinkProgram); GLLOAD (glGetProgramiv); GLLOAD (glGetProgramInfoLog); GLLOAD (glDeleteProgram);
 	GLLOAD (glUseProgram); GLLOAD (glGetUniformLocation); GLLOAD (glUniform1i); GLLOAD (glUniform1f); GLLOAD (glUniform2f);
-	GLLOAD (glUniform3f); GLLOAD (glUniform4f); GLLOAD (glBindFramebuffer); GLLOAD (glViewport); GLLOAD (glDisable);
+	GLLOAD (glUniform3f); GLLOAD (glUniform2i); GLLOAD (glUniform4f); GLLOAD (glBindFramebuffer); GLLOAD (glViewport); GLLOAD (glDisable);
 	GLLOAD (glDrawArrays); GLLOAD (glGenVertexArrays); GLLOAD (glBindVertexArray); GLLOAD (glDeleteVertexArrays); GLLOAD (glGetError);
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: the frontend lacks GL functions - the CPU's picture\n"); return; }
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\n" : "#version 330 core\n";
@@ -431,9 +432,10 @@ static void gpu_reset (void)
 	  else { static const unsigned char z[4] = { 0, 0, 0, 255 }; glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, z);
 	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p); } }
 	gpu_ok = 1;
-	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3");
+	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */
+	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there%s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? ", the light too" : "");
 }
-static void gpu_destroy (void) { gpu_ok = 0; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
+static void gpu_destroy (void) { ph_lost (); gpu_ok = 0; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
 
 /* asked for at a game's start (RetroArch sets the context up after it): OpenGL ES 3 on Android, else OpenGL 3.3 core
  * (and ES 3 where that is all there is) */
@@ -463,17 +465,19 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 		if (rg) { rl_maps (g_lamp_x, g_lamp_y, rg); glBindTexture_ (GL_TEXTURE_2D, g_lmap);
 			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, GPU_LMAP_W, GPU_LMAP_H, 0, GL_RG, GL_FLOAT, rg); free (rg); g_lmap_ok = 1; }
 		rl_light_pos (g_lamp_x, g_lamp_y, g_lpos, g_lc); g_lamp_done_x = g_lamp_x; g_lamp_done_y = g_lamp_y; }
-	glBindTexture_ (GL_TEXTURE_2D, g_tex);
+	GLuint ptex = g_tex;
+	if (!frame) ptex = ph_P;                                          /* (the light made on the GPU: gpu_phos.c) */
+	else { glBindTexture_ (GL_TEXTURE_2D, g_tex);
 	if (fw != g_tw || fh != g_th) { glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, fw, fh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); g_tw = fw; g_th = fh; }
 	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, pitch);
 	glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, frame);
-	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, 0);
+	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, 0); }
 	glBindFramebuffer_ (GL_FRAMEBUFFER, (GLuint) hwr.get_current_framebuffer ());
 	const int dw = rot & 1 ? oh : ow, dh = rot & 1 ? ow : oh;
 	glViewport_ (0, 0, dw, dh);
 	glDisable_ (GL_BLEND); glDisable_ (GL_DEPTH_TEST); glDisable_ (GL_SCISSOR_TEST); glDisable_ (GL_CULL_FACE); glDisable_ (GL_STENCIL_TEST);
 	glUseProgram_ (g_prog); glBindVertexArray_ (g_vao);
-	glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, g_tex); glUniform1i_ (g_u[U_TEX], 0);
+	glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, ptex); glUniform1i_ (g_u[U_TEX], 0);
 	glActiveTexture_ (GL_TEXTURE0 + 1); glBindTexture_ (GL_TEXTURE_2D, g_lmap); glUniform1i_ (g_u[U_LMAP], 1);
 	glActiveTexture_ (GL_TEXTURE0 + 2); glBindTexture_ (GL_TEXTURE_2D, g_smap); glUniform1i_ (g_u[U_SMAP], 2);
 	glActiveTexture_ (GL_TEXTURE0);

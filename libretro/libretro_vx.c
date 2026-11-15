@@ -1528,7 +1528,7 @@ static float edge_mask (int x, int y)
 #define OV_LINE_GAIN 1.6f                   /* (the lines under an overlay, as before: x 1.6 - the sheet's gain) */
 #define OV_ROOM 0.0648f                     /* (vecrender.py: the room's light on the filters - an evening room, the owner's) */
 #define OV_PRINT (0.36f * 0.0648f / 0.075f) /* (the print's brightness at that room light: art_print x (room / ART_ROOM_MID)) */
-static float *ov_lm; static size_t ov_lm_n;
+static float *ov_lm; static size_t ov_lm_n; static int ov_gen;   /* (ov_gen: made again - the GPU takes it anew) */
 static int *ov_tx, *ov_ty, ov_tk[5];       /* (each picture column's overlay column, each row's first overlay pixel) */
 static void ov_tabs (void)
 {
@@ -1555,7 +1555,7 @@ static void ov_make (void)
 			                                         vecrender.py room_light, the filters x its square, the print x it) */
 		}
 	}
-	ov_made = 1;
+	ov_made = 1; ov_gen++;
 }
 #if defined(__GNUC__) || defined(__clang__)
 #define VX_INLINE static inline __attribute__((always_inline))
@@ -1950,6 +1950,7 @@ static void pic_setup (void)
 }
 #ifndef VX_EMUVR
 #include "gpu_gl.c"
+#include "gpu_phos.c"
 /* the profile's choices (Ultra, High, Medium, Low, Basic) for the options left on auto */
 static void fx_apply (void)
 {
@@ -2049,6 +2050,21 @@ static void emu_start (void)
 }
 static int emu_threaded (void) { return opt_async && !vx_ok (); }
 static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save states, no run-ahead) */
+/* (test: VXPOC_SHOT=file.png at refresh VXPOC_FRAME (300) - counted over the shown refreshes) */
+static int shot_env = -1, shot_due; static const char *shot_path; static long shot_at, shot_fno;
+static int shot_pending (void)
+{
+	if (shot_env < 0) { shot_path = getenv ("VXPOC_SHOT"); shot_at = atol (getenv ("VXPOC_FRAME") ? getenv ("VXPOC_FRAME") : "300"); shot_env = shot_path != NULL; }
+	shot_fno++; shot_due = shot_env && shot_fno == shot_at; return shot_due;
+}
+static void shot_write (void)                /* (the GPU's picture, read back into fb: its window, not turned) */
+{
+	if (!shot_due) return;
+	unsigned char *rgb = malloc ((size_t) CW * CH * 3);
+	for (int y = 0; y < CH; y++) for (int x = 0; x < CW; x++) { const uint32_t v = fb[(size_t) (CY0 + y) * FW + CX0 + x]; unsigned char *o = rgb + ((size_t) y * CW + x) * 3;
+		o[0] = (unsigned char) (v >> 16); o[1] = (unsigned char) (v >> 8); o[2] = (unsigned char) v; }
+	write_png (shot_path, rgb, CW, CH); free (rgb); fprintf (stderr, "[vectrex_emu] shot %s %dx%d (GPU)\n", shot_path, CW, CH);
+}
 /* (test: VXPOC_PROF=1 - where a refresh's time goes, printed at the game's end) */
 static double pf_now (void) { return vt_wall (); }   /* (vtest.c: the wall clock, every system) */
 void retro_run (void)
@@ -2172,6 +2188,22 @@ void retro_run (void)
 	if (pf_on) pf3 = pf_now ();
 	/* the bands: the lines, the phosphor, then (no glow) the knee and the 8-bit picture - each band on its own core */
 	const int Wd = FW, H = FH; const size_t NP = (size_t) Wd * H;
+#ifndef VX_EMUVR
+	/* (1.1: the light on the GPU - gpu_phos.c; the CPU's bands below otherwise) */
+	const int gph = gpu_asked && gpu_ok && ph_ok && !stereo && !sheet_file;
+	if (gph) {
+		if (ph_frame (npl, dt, opt_glow, opt_after, shot_pending ())) {
+			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
+			gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+			shot_write ();
+			sheet_write ();
+			if (!asy) flash_save (0);
+			if (pf_on) { double pf5 = pf_now (); pf_t[0] += pf1 - pf0; pf_t[1] += pf2 - pf1; pf_t[2] += pf3 - pf2; pf_t[3] += pf5 - pf3; pf_n++; }
+			if (!asy) audio_out ();
+			return;
+		}
+	}
+#endif
 	const int cb = pbi; float **cur = pb[pbi], **prv = pb[pbi ^ 1]; pbi ^= 1;
 	for (int c = 0; c < 3; c++) lacc[c] = cur[c];
 	cur_l0 = sp_l0[cb]; cur_l1 = sp_l1[cb];
@@ -2272,10 +2304,7 @@ void retro_run (void)
 	(void) NP;
 	double pf4 = pf_on ? pf_now () : 0;
 	if (pf_on) { pf_g[0] += pgA - pf3; pf_g[1] += pgB - pgA; pf_g[2] += pf4 - pgB; }
-	static int shot_env = -1; static const char *shot_path; static long shot_at;
-	if (shot_env < 0) { shot_path = getenv ("VXPOC_SHOT"); shot_at = atol (getenv ("VXPOC_FRAME") ? getenv ("VXPOC_FRAME") : "300"); shot_env = shot_path != NULL; }
-	static long fno; fno++;
-	const int shot_now = shot_env && fno == shot_at;
+	const int shot_now = shot_pending ();
 	const uint32_t *pic = ob; int pw = OW, ph = OH;   /* (what is sent, and shot) */
 #ifndef VX_EMUVR
 	if (gpu_asked && !shot_now) {               /* (1.1: the GPU: up, turned, the glass and the case on top - or, the context not

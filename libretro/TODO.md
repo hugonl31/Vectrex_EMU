@@ -39,14 +39,14 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 ## Smaller
 
-- [ ] SD cards from a folder, as the desktop (its FAT builder, fatimg.py, in C) - now: ready-made images in
-      `system/vectrex_emu`
-- [ ] A UVMC2 test screen's text reaches past the left edge of the picture (seen 2026-11-15) - check against the desktop
-- [ ] EmuVR: build from the shared `libretro/libretro_vx.c` (`/DVX_EMUVR`; it compiles)
-- [ ] GitHub workflow: actions on Node.js 20 (deprecated) - newer action versions
-- [ ] Old exe backups in `build/Vectrex_EMU` (`Vectrex_EMU.exe.before_*`) cleaned up
 
 ## Done (2026-11-15)
+
+- SD cards as folders, as the desktop (fatimg.py in C: sdcard.c) - the UVMC2's text past the left edge was an old dev
+  uvm2.cfg (zero 35) on the Nova's card image
+- Overlays as the desktop has them: MiSTer .art and PNG (vart.py in C: overlay_art.c)
+- sync_nova.sh: the local desktop build's ROMs, overlays, cards and saves onto the Nova
+- EmuVR built from the shared libretro_vx.c (poc_core/build.bat); GitHub workflow on Node.js 24; old exe backups removed
 
 - Skip the Vectrex intro (System); Reset to defaults: RetroArch's own Quick Menu > Core Options > Reset Options
 - UVMC2 / PiTrex at full speed on the Nova: Threaded emulation (emulates while drawing), UVMC2 mode Fast by default

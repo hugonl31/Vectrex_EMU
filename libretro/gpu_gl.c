@@ -66,7 +66,7 @@ GLFN(void, glDeleteVertexArrays, (GLsizei, const GLuint *)); GLFN(GLenum, glGetE
 #define GL_CULL_FACE 0x0B44
 #define GL_STENCIL_TEST 0x0B90
 
-static struct retro_hw_render_callback hwr; static int gpu_novideo;
+static struct retro_hw_render_callback hwr; static int gpu_novideo; static void scr_detect (void);
 static uint32_t *dk_img; static int dk_gen, dk_w, dk_h;   /* (deck.c) */
 static GLuint dk_prog, dk_tex; static int dk_tgen = -1, dk_tw, dk_th;
 GLFN(const unsigned char *, glGetString, (GLenum));
@@ -460,11 +460,45 @@ static void gpu_reset (void)
 	  if (v2 && f2) { dk_prog = glCreateProgram_ (); glAttachShader_ (dk_prog, v2); glAttachShader_ (dk_prog, f2); glLinkProgram_ (dk_prog); }
 	  if (v2) glDeleteShader_ (v2); if (f2) glDeleteShader_ (f2); dk_tex = 0; dk_tgen = -1; }
 	gpu_ok = 1;
+	scr_detect ();                                    /* (Picture size auto: the screen's size) */
 	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */
 	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there%s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? ", the light too" : "");
 }
 static void gpu_destroy (void) { ph_lost (); gpu_ok = 0; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
 
+/* (the screen's size, for Picture size auto: RetroArch's window as its graphics context has it - EGL's surface
+ *  (Android, Linux), Windows: the window's monitor - its short side kept in the saves folder for the next start) */
+#if defined(_WIN32)
+#if defined(_MSC_VER)
+#pragma comment(lib, "user32.lib")
+#endif
+static int scr_query (int *w, int *h)
+{
+	HMODULE gl = GetModuleHandleA ("opengl32.dll"); if (!gl) return 0;
+	HDC (WINAPI *cur) (void) = (HDC (WINAPI *) (void)) GetProcAddress (gl, "wglGetCurrentDC"); if (!cur) return 0;
+	HDC dc = cur (); HWND wn = dc ? WindowFromDC (dc) : NULL; if (!wn) return 0;
+	MONITORINFO mi; mi.cbSize = sizeof mi; if (!GetMonitorInfoA (MonitorFromWindow (wn, MONITOR_DEFAULTTONEAREST), &mi)) return 0;
+	*w = mi.rcMonitor.right - mi.rcMonitor.left; *h = mi.rcMonitor.bottom - mi.rcMonitor.top; return 1;
+}
+#else
+#include <dlfcn.h>
+static int scr_query (int *w, int *h)
+{
+	void *e = dlopen ("libEGL.so", RTLD_NOW | RTLD_NOLOAD); if (!e) e = dlopen ("libEGL.so.1", RTLD_NOW | RTLD_NOLOAD); if (!e) return 0;
+	void *(*gd) (void) = (void *(*) (void)) dlsym (e, "eglGetCurrentDisplay"); void *(*gs) (int) = (void *(*) (int)) dlsym (e, "eglGetCurrentSurface");
+	unsigned (*qs) (void *, void *, int, int *) = (unsigned (*) (void *, void *, int, int *)) dlsym (e, "eglQuerySurface");
+	if (!gd || !gs || !qs) return 0;
+	void *d = gd (), *sf = gs (0x3059 /* EGL_DRAW */); if (!d || !sf) return 0;
+	return qs (d, sf, 0x3057 /* EGL_WIDTH */, w) && qs (d, sf, 0x3056 /* EGL_HEIGHT */, h) && *w > 0 && *h > 0;
+}
+#endif
+static void scr_detect (void)
+{
+	int w = 0, h = 0; if (!scr_query (&w, &h)) return;
+	const int sh = w < h ? w : h; if (sh < 240 || sh > 4320) return;
+	fprintf (stderr, "[vectrex_emu] screen %dx%d\n", w, h);
+	if (sh != scr_short) { scr_short = sh; scr_new = 1; char f[1200]; scr_file (f, sizeof f); FILE *t = f[0] ? fopen (f, "w") : NULL; if (t) { fprintf (t, "%d\n", sh); fclose (t); } }
+}
 /* asked for at a game's start (RetroArch sets the context up after it): OpenGL ES 3 on Android, else OpenGL 3.3 core
  * (and ES 3 where that is all there is) */
 static int gpu_request (void)

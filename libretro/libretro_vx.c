@@ -216,6 +216,13 @@ static float opt_ov_tint = 1.0f, opt_ov_print = 1.0f; static int opt_ov_btn = 1,
  * automatic (the whole sheet with an overlay, the glass window without); the room's light (vecrender.py: the filters
  * x its square, the print x it, the bare glass grey x its cube); the trail's brightness with and without an overlay */
 static int opt_size = 800, opt_area = 0;
+static int size_auto = 1, scr_short, scr_new;   /* (Picture size auto: the screen's short side - measured at the GPU's start) */
+static const char *optv (const char *key);
+static void scr_file (char *o, size_t n)
+{ const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv); if (sv && *sv) snprintf (o, n, "%s" SEP "vectrex_emu_screen.txt", sv); else o[0] = 0; }
+static void scr_load (void)
+{ char f[1200]; scr_file (f, sizeof f); FILE *t = f[0] ? fopen (f, "r") : NULL; int v = 0; if (t) { if (fscanf (t, "%d", &v) != 1) v = 0; fclose (t); }
+  if (v >= 240 && v <= 4320) scr_short = v; }
 uint32_t *dk_cb;
 static int dk_pop, dk_y, dk_shown;   /* (the pop-up deck: over the picture's bottom, dk_y its top in the block; shown now) */
 static int opt_deck, opt_shape, dk_on, DKH, TW, TH, BX, BY, dk_dirty_set = 1, vx_paused, geo_deck = -1, geo_shape = -1;   /* (the control deck:
@@ -496,15 +503,15 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_buzz", "audio", "Vectrex buzz", NULL, "on|off" },
 	{ "vectrex_emu_speaker", "audio", "Vectrex speaker sound", NULL, "on|off" },
 	{ "vectrex_emu_size", "video", "Picture size",
-	  "Set to your screen's height for the sharpest lines (with Integer Scale on). Retroid Pocket 4:3: 960, 1080p: 1080, 4K: 2160.",
-	  "800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
+	  "Auto: the screen's height, as RetroArch shows it (the sharpest lines, with Integer Scale on). Or a height of its own.",
+	  "auto|800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
 	{ "vectrex_emu_area", "video", "Picture area",
 	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
 	  "auto|glass window|overlay sheet" },
 	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom or the arrow.", "off|full|slim|pop-up" },
 	{ "vectrex_emu_shape", "video", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
 	{ "vectrex_emu_rotate", "video", "Rotation (tate)", "Turns the picture for playing with the device held upright.",
-	  "off|90 (turn the device right)|270 (turn the device left)|180" },
+	  "90 (turn the device right)|off|270 (turn the device left)|180" },
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
 	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
 	{ "vectrex_emu_smooth", "video", "Smooth motion", "Lines move smoothly between game frames.", "auto|on|off" },
@@ -669,7 +676,9 @@ static void read_options (void)
 	opt_rot = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
 	        : opt_is ("vectrex_emu_rotate", "270 (turn the device left)") ? 3 : 0;
 	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off");
-	{ int z = atoi (optv ("vectrex_emu_size")); opt_size = z >= 240 && z <= 2400 ? z : 800; }
+	{ const char *zv = optv ("vectrex_emu_size"); int z = atoi (zv); size_auto = !zv[0] || !strcmp (zv, "auto");
+	  if (size_auto) { if (!scr_short) scr_load (); z = scr_short; }   /* (the screen's short side: gpu_gl.c scr_detect, kept) */
+	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
 	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0; opt_shape = opt_is ("vectrex_emu_shape", "16:9");
 	opt_trail_k0 = opt_trail_k;                 /* (1.1: one trail brightness - the light added as light: no other one needed) */
@@ -2225,6 +2234,7 @@ static void frame_out (int shot_now, const uint32_t **pic_o, int *pw_o, int *ph_
 		else video_cb (NULL, (unsigned) ((opt_rot & 1) ? OH : OW), (unsigned) ((opt_rot & 1) ? OW : OH), 0);
 	} else
 #endif
+#ifndef VX_EMUVR
 	if (dk_on || dk_pop) {                      /* (the control deck: the block - bars, the picture, the deck - then turned) */
 		dk_compose (dk_cb, fb + (size_t) CY0 * Wd + CX0, (size_t) Wd);
 		const uint32_t *src = dk_cb; const size_t sp = (size_t) TW;
@@ -2240,6 +2250,7 @@ static void frame_out (int shot_now, const uint32_t **pic_o, int *pw_o, int *ph_
 		else { pic = src; pw = TW; ph = TH; }
 		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
 	} else
+#endif
 	if (Wd / EW == 1 && !shot_now && !opt_rot)  /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
 		video_cb (fb + (size_t) CY0 * Wd + CX0, CW, CH, (size_t) Wd * 4);
 	else {
@@ -2315,6 +2326,7 @@ void retro_run (void)
 	  sel_held = sel; }
 #ifndef VX_EMUVR
 	fx_apply ();
+	if (scr_new) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape) { pic_setup (); geo_tell (); }
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }
 	opt_check ();                               /* (the Quality profile on auto: measured once per case - gpu_opt.c) */

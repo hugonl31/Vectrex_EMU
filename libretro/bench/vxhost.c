@@ -28,7 +28,8 @@ static int hw_setup (unsigned w, unsigned h)
 	EGLDisplay d = eglGetDisplay (EGL_DEFAULT_DISPLAY); if (!eglInitialize (d, NULL, NULL)) return 0;
 	const EGLint ca[] = { EGL_RENDERABLE_TYPE, 0x40 /* ES3 */, EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_NONE };
 	EGLConfig cfg; EGLint n = 0; if (!eglChooseConfig (d, ca, &cfg, 1, &n) || n < 1) return 0;
-	const EGLint sa[] = { EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE }; EGLSurface su = eglCreatePbufferSurface (d, cfg, sa);
+	int sw_ = 16, sh_ = 16; if (getenv ("VXH_SCREEN")) sscanf (getenv ("VXH_SCREEN"), "%dx%d", &sw_, &sh_);   /* (VXH_SCREEN=WxH: the window's size, as a screen) */
+	const EGLint sa[] = { EGL_WIDTH, sw_, EGL_HEIGHT, sh_, EGL_NONE }; EGLSurface su = eglCreatePbufferSurface (d, cfg, sa);
 	eglBindAPI (EGL_OPENGL_ES_API); const EGLint xa[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
 	EGLContext c = eglCreateContext (d, cfg, EGL_NO_CONTEXT, xa); if (c == EGL_NO_CONTEXT || !eglMakeCurrent (d, su, su, c)) return 0;
 	glGenTextures (1, &hw_tex); glBindTexture (GL_TEXTURE_2D, hw_tex); glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);

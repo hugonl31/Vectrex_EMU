@@ -285,6 +285,106 @@ static const char *GPU_FS_B =
 	"    fragc = vec4(c, 1.0);\n"
 	"}\n";
 
+/* ---- the room's light at a lamp position (roomlight.py: place, ceiling, reflp, pattern, centre, blur, maps;
+ * casemodel.light_pos) - the light map made here, for any position */
+#define RL_HZ 0.80
+#define RL_CH 2.4
+#define RL_FIX_W 0.30
+#define RL_FIX_L 1.2
+#define RL_GLASS_SIZE 0.48
+#define RL_GLASS_CURV 0.2
+#define RL_INNER_CURV 1.1
+#define RL_INNER_ENL 2.1
+#define RL_INNER_PINCH 0.42
+#define RL_INNER_OFF 0.21
+#define RL_REF_AW 0.7114            /* (vecrender GLASS_REF_AW, GLASS_N: the outline the maps are made for) */
+#define RL_GN 7.17
+static void rl_place (double x, double y, double *gx, double *gy)
+{ const double dx = 1.48 * x, dy = -0.21 + 0.77 * y; *gx = -0.74 + dx; *gy = -1.12 + dy; }
+static double rl_ceiling (double px, double py)
+{
+	const double den = RL_HZ - py; if (den < 0.05) return 0.0;
+	const double D = RL_CH / den, D0 = RL_CH / RL_HZ, X = px * D / 2.0, Zr = D0 - D, ca = cos (GPU_LANG), sa = sin (GPU_LANG);
+	const double Xr = ca * X - sa * Zr, Z = sa * X + ca * Zr;
+	if (fabs (Xr) >= RL_FIX_W || fabs (Z) >= RL_FIX_L) return 0.0;
+	double fall = pow (D0 / D, 0.7); fall = (fall < 0.75 ? 0.75 : fall > 1.25 ? 1.25 : fall) / 1.25;
+	if (fabs (Xr) > RL_FIX_W - 0.05 || fabs (Z) > RL_FIX_L - 0.05) return 0.12 * fall;
+	const double cx = (Xr + RL_FIX_W) / (2 * RL_FIX_W) * 2, cz = (Z + RL_FIX_L) / (2 * RL_FIX_L) * 9, fx = cx - floor (cx), fz = cz - floor (cz);
+	if (fabs (fx - 0.5) > 0.44 || fabs (fz - 0.5) > 0.42) return 0.18 * fall;
+	double t = 1 - fabs (fx - 0.5) * 2; return (0.85 + 0.15 * pow (t > 0 ? t : 0, 0.6)) * fall;
+}
+static void rl_reflp (double u, double v, double curv, double *ox, double *oy)
+{
+	double nx = curv * u, ny = curv * v, nz = 1.0, L = sqrt (nx * nx + ny * ny + nz * nz); nx /= L; ny /= L; nz /= L;
+	const double dn = -nz, rx = -2 * dn * nx, ry = -2 * dn * ny, rz = -1 - 2 * dn * nz;
+	*ox = u * 0.9 + rx / rz; *oy = v * 0.9 + ry / rz;
+}
+static double rl_pattern (double u, double v, double lx, double ly, double size, double curv)
+{ double px, py; rl_reflp (u, v, curv, &px, &py); return rl_ceiling ((px - lx) / size, (py - ly) / size); }
+static void rl_centre (double lx, double ly, double curv, double *ou, double *ov)
+{
+	double u = lx / 0.9, v = ly / 0.9;
+	for (int k = 0; k < 12; k++) {
+		double px, py, ax, ay, bx, by; const double e = 1e-4;
+		rl_reflp (u, v, curv, &px, &py); rl_reflp (u + e, v, curv, &ax, &ay); rl_reflp (u, v + e, curv, &bx, &by);
+		const double j11 = (ax - px) / e, j21 = (ay - py) / e, j12 = (bx - px) / e, j22 = (by - py) / e, det = j11 * j22 - j12 * j21;
+		const double rx = px - lx, ry = py - ly; u -= (j22 * rx - j12 * ry) / det; v -= (-j21 * rx + j11 * ry) / det; }
+	*ou = u; *ov = v;
+}
+static void rl_box (const double *a, double *out, int w, int h, int r, int horiz)
+{
+	const int n = 2 * r + 1; double *acc = malloc (sizeof (double) * (size_t) ((horiz ? w : h) + 1));
+	if (horiz) for (int y = 0; y < h; y++) { double s = 0; acc[0] = 0; for (int x = 0; x < w; x++) { s += a[y * w + x]; acc[x + 1] = s; }
+		for (int x = 0; x < w; x++) { int hi = x + r + 1 < w ? x + r + 1 : w, lo = x - r > 0 ? x - r : 0; out[y * w + x] = (acc[hi] - acc[lo]) / n; } }
+	else for (int x = 0; x < w; x++) { double s = 0; acc[0] = 0; for (int y = 0; y < h; y++) { s += a[y * w + x]; acc[y + 1] = s; }
+		for (int y = 0; y < h; y++) { int hi = y + r + 1 < h ? y + r + 1 : h, lo = y - r > 0 ? y - r : 0; out[y * w + x] = (acc[hi] - acc[lo]) / n; } }
+	free (acc);
+}
+static void rl_blur (const double *a, double *out, int w, int h, double sigma)
+{
+	memcpy (out, a, sizeof (double) * (size_t) w * h); if (sigma < 0.3) return;
+	int r = (int) floor ((sqrt (12 * sigma * sigma / 3 + 1) - 1) / 2 + 0.5); if (r < 1) r = 1;
+	double *t = malloc (sizeof (double) * (size_t) w * h);
+	for (int k = 0; k < 3; k++) { rl_box (out, t, w, h, r, 1); rl_box (t, out, w, h, r, 0); }
+	free (t);
+}
+/* the R / G map (R: the glass's own soft light round the reflection, G: the light on the phosphor layer behind it) for
+ * the lamp at (x, y) - roomlight.maps(x, y, GLASS_REF_AW, GLASS_N); interleaved RG, top row first */
+static void rl_maps (double x, double y, float *rg)
+{
+	const int w = GPU_LMAP_W, h = GPU_LMAP_H, n = w * h; double lx, ly; rl_place (x, y, &lx, &ly);
+	const double U0 = GPU_LMR[0], U1 = GPU_LMR[1], V0 = GPU_LMR[2], V1 = GPU_LMR[3], TEXEL_PX = (V1 - V0) / h * 917.0;
+	double *us = malloc (sizeof (double) * w), *vs = malloc (sizeof (double) * h), *Gp = malloc (sizeof (double) * n), *I = malloc (sizeof (double) * n);
+	double *b1 = malloc (sizeof (double) * n), *b2 = malloc (sizeof (double) * n), *b3 = malloc (sizeof (double) * n);
+	for (int i = 0; i < w; i++) us[i] = U0 + (i + 0.5) * (U1 - U0) / w;
+	for (int j = 0; j < h; j++) vs[j] = V0 + (j + 0.5) * (V1 - V0) / h;
+	for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) Gp[j * w + i] = rl_pattern (us[i], vs[j], lx, ly, RL_GLASS_SIZE, RL_GLASS_CURV);
+	rl_blur (Gp, b1, w, h, 8 / TEXEL_PX); rl_blur (Gp, b2, w, h, 25 / TEXEL_PX); rl_blur (Gp, b3, w, h, 40 / TEXEL_PX);
+	for (int k = 0; k < n; k++) rg[2 * k] = (float) (0.12 * b1[k] + 0.06 * b2[k] + 0.02 * b3[k]);
+	/* the phosphor layer: the fixture in the more curved inner surface, enlarged, very blurry, moved inwards by the glass */
+	double ug, vg; rl_centre (lx, ly, RL_GLASS_CURV, &ug, &vg);
+	double tot = 0, cu = 0, cv = 0; for (int k = 0; k < n; k++) { tot += Gp[k]; cu += Gp[k] * us[k % w]; cv += Gp[k] * vs[k / w]; }
+	if (tot <= 0) tot = 1.0; cu /= tot; cv /= tot;
+	double cuu = 0, cvv = 0, cuv = 0; for (int k = 0; k < n; k++) { const double du = us[k % w] - cu, dv = vs[k / w] - cv; cuu += Gp[k] * du * du; cvv += Gp[k] * dv * dv; cuv += Gp[k] * du * dv; }
+	const double th = 0.5 * atan2 (2 * cuv, cuu - cvv), ca = cos (th), sa = sin (th);
+	for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
+		double u = us[i], v = vs[j];
+		const double r_ = pow (pow (fabs (u / RL_REF_AW), RL_GN) + pow (fabs (v), RL_GN), 1.0 / RL_GN), n_ = fmax (1e-6, hypot (u, v));
+		const double o_ = RL_INNER_OFF * pow (fmin (1.0, r_), 2); u += o_ * u / n_; v += o_ * v / n_;
+		const double du = u - cu, dv = v - cv, a_ = (ca * du + sa * dv) / (RL_INNER_ENL * RL_INNER_PINCH), b_ = (-sa * du + ca * dv) / RL_INNER_ENL;
+		I[j * w + i] = rl_pattern (cu + ca * a_ - sa * b_, cv + sa * a_ + ca * b_, lx, ly, RL_GLASS_SIZE, RL_GLASS_CURV); }
+	rl_blur (I, b1, w, h, 80 / TEXEL_PX); rl_blur (I, b2, w, h, 150 / TEXEL_PX); rl_blur (I, b3, w, h, 260 / TEXEL_PX);
+	for (int k = 0; k < n; k++) rg[2 * k + 1] = (float) (0.286 * (1.1 * b1[k] + 0.6 * b2[k] + 0.2 * b3[k]));
+	(void) ug; (void) vg;
+	free (us); free (vs); free (Gp); free (I); free (b1); free (b2); free (b3);
+}
+static void rl_light_pos (double x, double y, float lpos[3], float lc[3])   /* (the shader's lpos and lc for the lamp at x, y) */
+{
+	double gx, gy; rl_place (x, y, &gx, &gy); lpos[0] = (float) gx; lpos[1] = (float) gy; lpos[2] = (float) RL_GLASS_SIZE;
+	double a = 0.49 * gx, b = -0.49 * gy, c = 1.0, nn = sqrt (a * a + b * b + c * c);   /* (casemodel.light_pos: 236 cm away) */
+	lc[0] = (float) (236.0 * a / nn); lc[1] = (float) (236.0 * b / nn); lc[2] = (float) (236.0 * c / nn);
+}
+static float g_lamp_x = 0.0f, g_lamp_y = 0.273f, g_lamp_done_x = -1, g_lamp_done_y = -1, g_lpos[3], g_lc[3];
 static void (*gpu_log) (const char *);
 static GLuint gpu_shader (GLenum type, const char *const *src, int n)
 {
@@ -323,19 +423,13 @@ static void gpu_reset (void)
 	/* the data from the desktop's models (make_gpu_assets.py): <system>/vectrex_emu/gpu - without them, no ceiling light /
 	 * no scratches (the rest is drawn) */
 	char p[1700]; g_lmap_ok = g_smap_ok = 0;
-	{ snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "gpu" SEP "glass_light.bin", g_sys); FILE *fl = fopen (p, "rb");
-	  const int n = GPU_LMAP_W * GPU_LMAP_H; float *rg = fl ? malloc ((size_t) n * 8) : NULL, *a = fl ? malloc ((size_t) n * 8) : NULL;
-	  if (fl && rg && a && fread (a, 4, (size_t) n * 2, fl) == (size_t) n * 2) {
-		for (int i = 0; i < n; i++) { rg[2 * i] = a[i]; rg[2 * i + 1] = a[n + i]; }
-		glBindTexture_ (GL_TEXTURE_2D, g_lmap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, GPU_LMAP_W, GPU_LMAP_H, 0, GL_RG, GL_FLOAT, rg); g_lmap_ok = 1; }
-	  else fprintf (stderr, "[vectrex_emu] GPU: no %s - no ceiling light\n", p);
-	  if (fl) fclose (fl); free (rg); free (a); }
+	g_lamp_done_x = g_lamp_done_y = -1;               /* (the light map: made at the first picture, for the lamp's position) */
+	{ static const float z[2] = { 0, 0 }; glBindTexture_ (GL_TEXTURE_2D, g_lmap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, 1, 1, 0, GL_RG, GL_FLOAT, z); }
 	{ snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "gpu" SEP "case_scratch.png", g_sys); int w, h, n;
 	  unsigned char *im = stbi_load (p, &w, &h, &n, 4);
 	  if (im) { glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, im); stbi_image_free (im); g_smap_ok = 1; }
 	  else { static const unsigned char z[4] = { 0, 0, 0, 255 }; glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, z);
 	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p); } }
-	if (!g_lmap_ok) { static const float z[2] = { 0, 0 }; glBindTexture_ (GL_TEXTURE_2D, g_lmap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, 1, 1, 0, GL_RG, GL_FLOAT, z); }
 	gpu_ok = 1;
 	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3");
 }
@@ -364,6 +458,11 @@ static int gpu_request (void)
  * cut to the area sent (crop: the sheet's share, y up), with the glass and the case on top */
 static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float cx0, float cy0, float cx1, float cy1, int ow, int oh, int rot)
 {
+	if (g_lamp_x != g_lamp_done_x || g_lamp_y != g_lamp_done_y) {   /* (the lamp moved, or the first picture: its light map) */
+		float *rg = malloc (sizeof (float) * 2 * GPU_LMAP_W * GPU_LMAP_H);
+		if (rg) { rl_maps (g_lamp_x, g_lamp_y, rg); glBindTexture_ (GL_TEXTURE_2D, g_lmap);
+			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, GPU_LMAP_W, GPU_LMAP_H, 0, GL_RG, GL_FLOAT, rg); free (rg); g_lmap_ok = 1; }
+		rl_light_pos (g_lamp_x, g_lamp_y, g_lpos, g_lc); g_lamp_done_x = g_lamp_x; g_lamp_done_y = g_lamp_y; }
 	glBindTexture_ (GL_TEXTURE_2D, g_tex);
 	if (fw != g_tw || fh != g_th) { glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, fw, fh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); g_tw = fw; g_th = fh; }
 	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, pitch);
@@ -385,10 +484,10 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform1f_ (g_u[U_PXS], pxs); glUniform1f_ (g_u[U_BSCALE], 1834.0f * pxs / 2.0f / 3.2f);
 	glUniform1f_ (g_u[U_GLASS], (float) gfx.glass); glUniform1f_ (g_u[U_EDGE], GPU_EDGE); glUniform1f_ (g_u[U_GREY], gfx.grey);
 	glUniform1f_ (g_u[U_LK], g_lmap_ok ? gfx.lk : 0.0f);
-	glUniform3f_ (g_u[U_LPOS], GPU_LPOS[0], GPU_LPOS[1], GPU_LPOS[2]); glUniform4f_ (g_u[U_LMR], GPU_LMR[0], GPU_LMR[1], GPU_LMR[2], GPU_LMR[3]);
+	glUniform3f_ (g_u[U_LPOS], g_lpos[0], g_lpos[1], g_lpos[2]); glUniform4f_ (g_u[U_LMR], GPU_LMR[0], GPU_LMR[1], GPU_LMR[2], GPU_LMR[3]);
 	glUniform2f_ (g_u[U_GSC], GPU_GSC[0], GPU_GSC[1]);
 	glUniform1f_ (g_u[U_CSE], (float) gfx.cse); glUniform1f_ (g_u[U_CROOM], gfx.croom); glUniform1f_ (g_u[U_CREFL], gfx.crefl);
-	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); glUniform3f_ (g_u[U_LC], GPU_LC[0], GPU_LC[1], GPU_LC[2]);   /* (the light turns with the picture in tate: the screen is turned) */
+	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); glUniform3f_ (g_u[U_LC], g_lc[0], g_lc[1], g_lc[2]);   /* (the light turns with the picture in tate: the screen is turned) */
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));
 	glDrawArrays_ (GL_TRIANGLES, 0, 3);

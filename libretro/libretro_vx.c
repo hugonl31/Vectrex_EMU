@@ -220,7 +220,10 @@ static int paint_all;
  *  the CPU only) and what the options set to auto take from it; the GPU renderer asked for */
 static int opt_profile, opt_renderer, raw_glow = -1, raw_smooth = -1, raw_sbend = -1, raw_glass = -1, raw_ceiling = -1,
            raw_case = -1, raw_crefl = -1, raw_cwear = -1, opt_room_glass;
-static float glass_grey_v;                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
+#ifndef VX_EMUVR
+static float g_lamp_x, g_lamp_y;                 /* (the lamp's position: gpu_gl.c) */
+#endif
+static float glass_grey_v, k_ceiling = -1, k_crefl = -1, k_cwear = -1;   /* (the strengths: -1 auto - the profile's on / off at 1x) */                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
 static int geo_glass = -1, geo_rot = -1, geo_size = -1; static unsigned av_maxw, av_maxh; static uint32_t *rb; static size_t rb_n;
 VXS_ON
 static int ov_on = 1, sel_held;          /* (v0.13: saved - SELECT's overlay switch is game-side input) */
@@ -385,10 +388,14 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_room", "overlay", "Room light", "Lights the overlay.", "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_room_glass", "glass", "Room light on the glass and the case", "Off: pure black without an overlay.", "off|on" },
 	{ "vectrex_emu_glass_edge", "glass", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
-	{ "vectrex_emu_ceiling", "glass", "Ceiling light reflection", "A ceiling light mirrored in the glass.", "auto|on|off" },
+	{ "vectrex_emu_ceiling", "glass", "Ceiling light reflection", "A ceiling light mirrored in the glass: its strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_lamp_x", "glass", "Lamp position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
+	{ "vectrex_emu_lamp_y", "glass", "Lamp position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
 	{ "vectrex_emu_case", "glass", "Plastic case", "The case round the glass, without an overlay.", "auto|on|off" },
-	{ "vectrex_emu_case_refl", "glass", "Case reflections", "The lines mirrored in the case's walls.", "auto|on|off" },
-	{ "vectrex_emu_case_wear", "glass", "Case scratches and wear", NULL, "auto|on|off" },
+	{ "vectrex_emu_case_refl", "glass", "Case reflections", "The lines mirrored in the case's walls: their strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_case_wear", "glass", "Case scratches and wear", NULL, "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_port2", "controls", "Port 2 device (next game start)", "Auto: the game's own (3D Imager, light pen, VecVoice, VecVox).",
+	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
 	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", NULL, "auto|on|strong|off" },
 	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
@@ -525,8 +532,14 @@ static void read_options (void)
 	{ const char *pv = optv ("vectrex_emu_profile"); opt_profile = !strcmp (pv, "ultra") ? 1 : !strcmp (pv, "high") ? 2 : !strcmp (pv, "medium") ? 3
 	                                                             : !strcmp (pv, "low") ? 4 : !strcmp (pv, "basic") ? 5 : 0; }
 #define TRI(k) (opt_is (k, "on") ? 1 : opt_is (k, "off") ? 0 : -1)
-	raw_glass = TRI ("vectrex_emu_glass_edge"); raw_ceiling = TRI ("vectrex_emu_ceiling"); raw_case = TRI ("vectrex_emu_case");
-	raw_crefl = TRI ("vectrex_emu_case_refl"); raw_cwear = TRI ("vectrex_emu_case_wear");
+	raw_glass = TRI ("vectrex_emu_glass_edge"); raw_case = TRI ("vectrex_emu_case");
+#define STR(k) (opt_is (k, "auto") || !optv (k)[0] ? -1.0f : (float) atof (optv (k)))   /* (a strength: auto -1, else 0..2) */
+	k_ceiling = STR ("vectrex_emu_ceiling"); k_crefl = STR ("vectrex_emu_case_refl"); k_cwear = STR ("vectrex_emu_case_wear");
+	raw_ceiling = k_ceiling < 0 ? -1 : k_ceiling > 0; raw_crefl = k_crefl < 0 ? -1 : k_crefl > 0; raw_cwear = k_cwear < 0 ? -1 : k_cwear > 0;
+#ifndef VX_EMUVR
+	{ const char *lx = optv ("vectrex_emu_lamp_x"), *ly = optv ("vectrex_emu_lamp_y"); g_lamp_x = lx[0] ? (float) atof (lx) / 100.0f : 0.0f; g_lamp_y = ly[0] ? (float) atof (ly) / 100.0f : 0.273f;
+	  if (!strcmp (ly, "27%")) g_lamp_y = 0.273f; }
+#endif
 	opt_room_glass = opt_is ("vectrex_emu_room_glass", "on");
 	opt_async = !opt_is ("vectrex_emu_threaded", "off");
 	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
@@ -872,6 +885,17 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  else vx_putenv ("VT_IMAGER=");
 	  im_out = im;
 	  lightpen = (memmem_title (h, 96, "ART") && memmem_title (h, 96, "MASTER")) || memmem_title (h, 96, "MELODY") || memmem_title (h, 96, "ANIMACTION");
+	  /* (1.1, the desktop's Config > Ports: port 2's device - auto (the game's own, above), none, or one by name) */
+	  const char *p2 = optv ("vectrex_emu_port2"); int p2_none = !strcmp (p2, "none"), p2_im = !strcmp (p2, "3D Imager"), p2_lp = !strcmp (p2, "light pen");
+	  const char *p2_sp = !strcmp (p2, "VecVoice") ? "vecvoice" : !strcmp (p2, "VecVox") ? "vecvox" : NULL;
+	  if (p2_none || p2_lp || p2_sp) { im = 0; vx_putenv ("VT_IMAGER="); }
+	  if (p2_im && !im) { const char *b = path; for (const char *q = path; *q; q++) if (*q == '/' || *q == '\\') b = q + 1;   /* (the disc by
+	                                              the name, as the desktop's imager_disc) */
+		char lb[512]; snprintf (lb, sizeof lb, "%s", b); for (char *q = lb; *q; q++) *q = (char) tolower ((unsigned char) *q);
+		im = 1; vx_putenv (strstr (lb, "mine") && strstr (lb, "3d") ? "VT_IMAGER=mine" : strstr (lb, "coaster") ? "VT_IMAGER=coaster" : "VT_IMAGER=narrow"); }
+	  if (p2_none || p2_im || p2_sp) lightpen = 0;
+	  if (p2_lp) lightpen = 1;
+	  im_out = im;
 	  vx_putenv (lightpen ? "VT_LIGHTPEN=1" : "VT_LIGHTPEN=");
 	  /* v0.11: the speech ROM (sp0256-al2.bin or al2.bin, in <system>/vectrex_emu, the system folder or next to the game)
 	   * loaded whenever it is there, the module's sound on a channel of its own (vectrex_emu.py Core: VT_VECVOICE,
@@ -883,7 +907,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  for (int d = 0; spd[d] && !spr[0]; d++) for (int k = 0; spn[k] && !spr[0]; k++) {
 		char p[1700]; snprintf (p, sizeof p, "%s" SEP "%s", spd[d], spn[k]);
 		FILE *t = fopen (p, "rb"); if (t) { fclose (t); strcpy (spr, p); } }
-	  const char *dev = spr[0] && !im && !lightpen ? speech_dev (h, sizeof h, path) : NULL;
+	  const char *dev = p2_none ? NULL : p2_sp ? (spr[0] ? p2_sp : NULL) : spr[0] && !im && !lightpen ? speech_dev (h, sizeof h, path) : NULL;
 	  if (spr[0]) { snprintf (e1, sizeof e1, "VT_VECVOICE=%s", spr); vx_putenv (e1); vx_putenv ("VT_SPEECHOUT=1"); }
 	  else { vx_putenv ("VT_VECVOICE="); vx_putenv ("VT_SPEECHOUT="); }
 	  vx_putenv (dev ? (strcmp (dev, "vecvox") ? "VT_SPEECHDEV=vecvoice" : "VT_SPEECHDEV=vecvox") : "VT_SPEECHDEV=");
@@ -1935,9 +1959,10 @@ static void fx_apply (void)
 	gfx.glass = g && (raw_glass >= 0 ? raw_glass : t[3]); gfx.ceiling = g && (raw_ceiling >= 0 ? raw_ceiling : t[4]);
 	gfx.cse = g && (raw_case >= 0 ? raw_case : t[5]);
 	const float ll3 = glass_grey_v / 0.20f;                     /* (the light level: (room / twice the default) cubed) */
-	{ float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll; gfx.lk = gfx.ceiling ? ll * ll * ll : 0.0f; }
+	{ float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll; gfx.lk = gfx.ceiling ? ll * ll * ll * (k_ceiling > 0 ? k_ceiling : 1.0f) : 0.0f; }
 	gfx.grey = g ? glass_grey_v : 0.0f; gfx.croom = opt_room_glass ? ll3 : 0.0f;
-	gfx.crefl = (raw_crefl >= 0 ? raw_crefl : t[6]) ? 1.0f : 0.0f; gfx.cwear = (raw_cwear >= 0 ? raw_cwear : t[7]) ? 1.0f : 0.0f;
+	gfx.crefl = (raw_crefl >= 0 ? raw_crefl : t[6]) ? (k_crefl > 0 ? k_crefl : 1.0f) : 0.0f;
+	gfx.cwear = (raw_cwear >= 0 ? raw_cwear : t[7]) ? (k_cwear > 0 ? k_cwear : 1.0f) : 0.0f;
 	glass_grey = g ? 0.0f : glass_grey_v;                       /* (the GPU draws the glass's grey itself) */
 	gfx.fx = g && !(ov && ov_on && !sheet_file) && (gfx.glass || gfx.cse || gfx.lk > 0 || gfx.grey > 0);
 }
@@ -2055,6 +2080,8 @@ void retro_run (void)
 		unsigned p = input_cb (1, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER) ? 1 : 0;
 		int trig = input_cb (p, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER);
 		int sx = input_cb (p, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X), sy = input_cb (p, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y);
+		if (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED)) {   /* (1.1: a finger on the touch screen: the pen there) */
+			sx = input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X); sy = input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y); trig = 1; }
 		double fx = (sx + 32768) / 65536.0, fy = (sy + 32768) / 65536.0;
 		{ const double ax = fx, ay = fy;      /* (the picture turned: back to its own way up) */
 		  if (opt_rot == 1) { fx = 1 - ay; fy = ax; } else if (opt_rot == 2) { fx = 1 - ax; fy = 1 - ay; } else if (opt_rot == 3) { fx = ay; fy = 1 - ax; } }

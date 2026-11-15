@@ -23,10 +23,17 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 - [ ] The control deck on the Nova: touch on the knob, the ports, the cartridge; 16:9 tate
 
+## Netplay (the owner, 2026-11-15)
+
+- [x] 6809 games: RetroArch's own netplay (rollback with save states); one side alone changes nothing (the browser,
+      eject, RESET, pause, the deck's power and port 2); simulated in vxhost netsim - the states the same
+- [ ] Tested between two RetroArch installs (the PC hosting, the Nova joining)
+- [ ] UVMC2 / PiTrex: lockstep as the desktop's online play (netplay.py) through RetroArch's netpacket interface - no
+      save states needed; both sides agree on one UVMC2 mode, the slowest side's (exact / fast / dev: the faster one
+      drops to it for the game - the desktop's netplay.uvm2_agree)
+
 ## Low priority (the owner: ask first)
 
-- [ ] RetroArch netplay for two-player games (the other player as player 2): 6809 games have exact save states, which
-      netplay needs; UVMC2 / PiTrex have none
 
 ## The desktop, from the core's work
 

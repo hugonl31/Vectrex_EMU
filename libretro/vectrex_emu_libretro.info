@@ -1,7 +1,7 @@
 # Software Information
 display_name = "Vectrex_EMU"
 authors = "Hugo Bokhorst"
-supported_extensions = "bin|vec|gam|um2"
+supported_extensions = "bin|vec|gam|um2|img|pit"
 corename = "Vectrex_EMU"
 license = "GPLv3"
 permissions = ""

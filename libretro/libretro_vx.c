@@ -375,8 +375,10 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How much the overlay's clear colours colour the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
 	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
 	{ "vectrex_emu_room", "overlay", "Room light",
-	  "The room's light: on the overlay's clear colours and its print together - without an overlay, a faint grey on the glass (as Vectrex_EMU on the desktop). Off: a dark room.",
+	  "The room's light on the overlay: its clear colours and its print together. Off: a dark room.",
 	  "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_room_glass", "overlay", "Room light on the bare glass",
+	  "Without an overlay: the room's light makes the glass a faint grey (as on the desktop Vectrex_EMU). Off: pure black without an overlay - the room light then lights only the overlay.", "off|on" },
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture",
 	  "In tate: the stick and buttons 1 to 4 keep their places as you hold the device - up is up, button 1 the leftmost.", "on|off" },
 	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", NULL, "on|off|strong" },
@@ -508,7 +510,7 @@ static void read_options (void)
 	  if (!(rm >= 0 && rm <= 4)) rm = 1.0f;
 	  if (t != opt_ov_tint || pr != opt_ov_print || rm != opt_room) { opt_ov_tint = t; opt_ov_print = pr; opt_room = rm; ov_made = 0; }
 	  /* (vecrender.py: the bare glass grey x the light level - (room / twice the default) cubed, 1 at most) */
-	  { float ll = rm / 2.0f; ll = ll > 1 ? 1 : ll; glass_grey = 0.20f * ll * ll * ll; } }
+	  { float ll = rm / 2.0f; ll = ll > 1 ? 1 : ll; glass_grey = opt_is ("vectrex_emu_room_glass", "on") ? 0.20f * ll * ll * ll : 0.0f; } }
 	/* (the core turns the picture itself: RetroArch's own rotation kept the upright picture's shape on the screen) */
 	opt_rot = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
 	        : opt_is ("vectrex_emu_rotate", "270 (turn the device left)") ? 3 : 0;
@@ -587,7 +589,7 @@ void retro_get_system_info (struct retro_system_info *i)
 #else
 	i->library_version = "1.1";                 /* (the RetroArch flavour's own line: libretro_port_plan.md 5.6) */
 #endif
-	i->valid_extensions = "vec|bin|gam|um2"; i->need_fullpath = true; i->block_extract = false;
+	i->valid_extensions = "vec|bin|gam|um2|img|pit"; i->need_fullpath = true; i->block_extract = false;
 }
 /* the picture: the glass window or the whole sheet (opt_area; auto: the sheet while an overlay is painted in) */
 static int area_glass (void)
@@ -726,6 +728,14 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  else { vx_putenv ("VT_VECVOICE="); vx_putenv ("VT_SPEECHOUT="); }
 	  vx_putenv (dev ? (strcmp (dev, "vecvox") ? "VT_SPEECHDEV=vecvoice" : "VT_SPEECHDEV=vecvox") : "VT_SPEECHDEV=");
 	  if (dev) fprintf (stderr, "[vectrex_emu] speech module in port 2: %s\n", dev); }
+	/* (1.1: the SD card of a PiTrex program (.img / .pit) or a UVMC2 game (.um2) - a FAT image, next to the game or in
+	 *  <system>/vectrex_emu: pitrex_sd.img / uvmc2_sd.img, as the desktop Vectrex_EMU builds them from its card folders) */
+	{ const char *e = strrchr (path, '.'); int px = e && (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")), um = e && !vx_stricmp (e, ".um2");
+	  if (px || um) { static char sd[1800]; const char *nm = px ? "pitrex_sd.img" : "uvmc2_sd.img"; const char *dd[] = { dir, sys, NULL }; sd[0] = 0;
+		for (int d = 0; dd[d] && !sd[0]; d++) { char q[1700]; snprintf (q, sizeof q, d ? "%s" SEP "vectrex_emu" SEP "%s" : "%s" SEP "%s", dd[d], nm);
+			FILE *t = fopen (q, "rb"); if (t) { fclose (t); snprintf (sd, sizeof sd, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", q); } }
+		if (sd[0]) { vx_putenv (sd); fprintf (stderr, "[vectrex_emu] SD card %s\n", strchr (sd, '=') + 1); }
+		else fprintf (stderr, "[vectrex_emu] no SD card (%s in <system>/vectrex_emu)\n", nm); } }
 	return im_out;
 }
 

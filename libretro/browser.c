@@ -19,7 +19,8 @@
 typedef struct { char name[200]; char path[1100]; char kind; } br_ent;   /* (kind: u BACK, d folder, r ROM, m UVMC2, p PiTrex) */
 static br_ent *br_e; static int br_n, br_cap, br_sel, br_top, br_open, br_dirty = 1, br_hold, br_prev_ok;
 static char br_dir[1100], br_game[1100];
-static unsigned br_prevb; static double br_t_next; static int br_dprev, br_prevtouch;
+static unsigned br_prevb; static double br_t_next; static int br_dprev, br_prevtouch, br_ate;   /* (br_ate: a touch used here - the deck ignores it) */
+static double br_t_toggle = -1;                   /* (opened / closed then: a touch toggles it again only 0.3 s later) */
 static uint32_t *br_img; static size_t br_imgn; static int br_bx0, br_by0, br_bx1, br_by1, br_shown, br_gen;
 static double br_hold_t;
 #define BR_NVIS 14
@@ -88,7 +89,7 @@ static void br_move (int d)
 }
 static void br_show (int on)
 {
-	br_open = on; br_dirty = 1; br_prev_ok = 0;
+	br_open = on; br_dirty = 1; br_prev_ok = 0; br_t_toggle = vt_wall ();
 	if (on) { char d[1100], cur[1100]; snprintf (cur, sizeof cur, "%s", br_game); br_parent (cur, d, sizeof d);
 		br_scan (br_dir[0] ? br_dir : d[0] ? d : ".", br_dir[0] ? NULL : cur); }
 }
@@ -273,7 +274,11 @@ static int br_input (const unsigned char *m)
 	else if (nw & 1) br_back ();                          /* (button 1) */
 	/* touch: a row, the buttons; outside: closed */
 	const int tp = input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0;
-	if (tp && !br_prevtouch && br_open) {
+	static double br_t_tap = -1;
+	if (tp && !br_prevtouch && br_open) br_ate = 1;
+	if (tp && !br_prevtouch && br_open && vt_wall () - br_t_tap >= 0.25 && vt_wall () - br_t_toggle >= 0.3) {   /* (debounced: a touch screen's
+		                                                    bounce is no second tap - none within 0.25 s, none 0.3 s after it opened) */
+		br_t_tap = vt_wall ();
 		double fx = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X) + 32768) / 65536.0, fy = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y) + 32768) / 65536.0;
 		{ const double ax_ = fx, ay_ = fy;     /* (the picture turned: back to its own way up, as the light pen) */
 		  if (opt_rot == 1) { fx = 1 - ay_; fy = ax_; } else if (opt_rot == 2) { fx = 1 - ax_; fy = 1 - ay_; } else if (opt_rot == 3) { fx = ay_; fy = 1 - ax_; } }

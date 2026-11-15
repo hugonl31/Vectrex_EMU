@@ -223,11 +223,14 @@ static void port2_next (void)
 static int dk_prev_press;
 static void dk_pointer (void)
 {
-	if ((!dk_on && !dk_pop) || br_open) { dk_prev_press = 0; dk_drag.on = 0; return; }
 	const int pr = input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0;
+	if ((!dk_on && !dk_pop) || br_open || br_ate) { dk_prev_press = pr; dk_drag.on = 0; br_ate = 0; return; }   /* (a touch that closes the
+	                                                    browser - on the cartridge, as the desktop's click - does not open it again) */
 	double fx = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X) + 32768) / 65536.0, fy = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y) + 32768) / 65536.0;
 	{ const double ax = fx, ay = fy; if (opt_rot == 1) { fx = 1 - ay; fy = ax; } else if (opt_rot == 2) { fx = 1 - ax; fy = 1 - ay; } else if (opt_rot == 3) { fx = ay; fy = 1 - ax; } }
 	const double x = fx * TW - BX, y = fy * TH - BY - dk_y, r = dk_r;   /* (the deck's own pixels: y 0 at its top) */
+	{ static double t_press = -1;                       /* (debounced: a touch screen's bounce is no second press - none within 0.25 s) */
+	  if (pr && !dk_prev_press) { if (vt_wall () - t_press < 0.25) { dk_prev_press = pr; return; } t_press = vt_wall (); } }
 	if (dk_pop && pr && !dk_prev_press) {               /* (the pop-up: a touch on the picture's bottom shows it, elsewhere hides it) */
 		if (!dk_shown) { if (y >= 0) { dk_pop_until = vt_wall () + 5.0; dk_shown = 1; dk_dirty_set = 1; dk_prev_press = pr; return; } }
 		else if (y < 0) { dk_pop_until = 0; dk_prev_press = pr; return; }
@@ -243,7 +246,7 @@ static void dk_pointer (void)
 	                                                    emulation on one side) */
 	if (pr && !dk_prev_press) {
 		if (zone == 1) port2_next ();
-		else if (zone == 2) { br_show (1); dk_dirty_set = 1; }
+		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }
 		else if (zone == 3) { }                         /* (P1: for online play, later) */
 		else if (zone == 4) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; }
 		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;

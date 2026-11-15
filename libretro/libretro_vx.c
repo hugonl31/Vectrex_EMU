@@ -313,6 +313,18 @@ static int vx_ok (void);
 static char sw_next[1100], cur_game[1100]; static int sw_eject, ej_out; static int game_switch_now (const char *path);   /* (the game switch: below) */
 static int unit_addon;
 static const char *optv (const char *key);
+static int btn_id (const char *key)                /* (a function's RetroPad button, the option: -1 none) */
+{
+	static const char *const N[] = { "L", "R", "L2", "R2", "L3", "R3", NULL };
+	static const int I[] = { RETRO_DEVICE_ID_JOYPAD_L, RETRO_DEVICE_ID_JOYPAD_R, RETRO_DEVICE_ID_JOYPAD_L2, RETRO_DEVICE_ID_JOYPAD_R2,
+		RETRO_DEVICE_ID_JOYPAD_L3, RETRO_DEVICE_ID_JOYPAD_R3 };
+	const char *v = optv (key); for (int i = 0; N[i]; i++) if (!strcmp (v, N[i])) return I[i];
+	return -1;
+}
+static void input_names (void);
+static int km_on, km_dirty, km_n, km_btn; static unsigned char km_mods;   /* (usbkm.c) */
+static void RETRO_CALLCONV km_key (bool down, unsigned keycode, uint32_t character, uint16_t mods);
+static const char *optv (const char *key);
 static const char *unit_preset (void)               /* (the Unit option: owner, ideal, random N, cranky N) */
 {
 	const char *u = optv ("vectrex_emu_unit");
@@ -468,6 +480,9 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_cart_hw", "ports", "Cartridge hardware", "Auto: by the ROM's size (next game start).",
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
 	{ "vectrex_emu_uvm2_mode", "ports", "UVMC2 mode", "Fast: the same game, less CPU. Exact: as the cartridge, cycle for cycle. Dev: fast, with an ideal beam.", "fast|exact|dev" },
+	{ "vectrex_emu_btn_reset", "ports", "RESET button", "A RetroPad button for the Vectrex's RESET button.", "off|L|R|L2|R2|L3|R3" },
+	{ "vectrex_emu_btn_eject", "ports", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
+	{ "vectrex_emu_usb_hid", "ports", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 	{ "vectrex_emu_threaded", "ports", "Threaded emulation (UVMC2, PiTrex)", "Emulates while drawing: full speed on handhelds, one frame more input delay.", "on|off" },
 	{ "vectrex_emu_rotate_stick", "ports", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
 	{ "vectrex_emu_buzz", "sound", "Vectrex buzz", NULL, "on|off" },
@@ -999,7 +1014,10 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	 *  needed ZERO REF +36. Read at the first reset) */
 	{ const char *e = strrchr (path, '.');
 	  unit_addon = e && (!vx_stricmp (e, ".um2") || !vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit"));
-	  unit_make (unit_preset (), optv); unit_env (unit_addon); }   /* (unit.c: the desktop's Config > Unit / Circuit) */
+	  unit_make (unit_preset (), optv); unit_env (unit_addon);
+	  km_on = unit_addon && !opt_is ("vectrex_emu_usb_hid", "off"); km_n = 0; km_mods = 0; km_dirty = km_on; km_btn = -1;
+	  vx_putenv (km_on ? "VT_USBHID=1" : "VT_USBHID=");   /* (the desktop's usb_hid: a UVMC2 / PiTrex gets the keyboard and mouse) */
+	  if (km_on) { static struct retro_keyboard_callback kc = { km_key }; env_cb (RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kc); } }   /* (unit.c: the desktop's Config > Unit / Circuit) */
 	/* (1.1, as the desktop's Core: the cartridge hardware - auto by the ROM's size, off a plain 32 KB, or a board; a UVMC2's
 	 *  mode; its core 0 on a host thread of its own with 4 or more processors) */
 	{ const char *ch = optv ("vectrex_emu_cart_hw"); static char e[64];
@@ -2161,6 +2179,7 @@ static void emu_start (void)
 }
 static int emu_threaded (void) { return opt_async && !vx_ok (); }
 static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save states, no run-ahead) */
+#include "usbkm.c"
 #ifndef VX_EMUVR
 #include "browser.c"
 #endif
@@ -2186,6 +2205,7 @@ void retro_run (void)
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
 	emu_wait ();                                /* (1.1: the refresh to show, emulated meanwhile - UVMC2 / PiTrex) */
+	km_send ();                                 /* (RetroArch's keyboard and mouse to a UVMC2 / PiTrex: usbkm.c) */
 	if (sw_next[0]) { char p[1100]; snprintf (p, sizeof p, "%s", sw_next); sw_next[0] = 0;   /* (the ROM browser's / eject's game) */
 		if (game_switch_now (p)) { if (sw_eject == 1) ej_out = 1; else { ej_out = 0; snprintf (cur_game, sizeof cur_game, "%s", p); }
 #ifndef VX_EMUVR
@@ -2194,14 +2214,15 @@ void retro_run (void)
 		} sw_eject = 0; }
 	const int asy = emu_threaded (), primed = asy && emu_primed;
 	bool upd = false;
-	if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &upd) && upd) read_options ();
+	if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &upd) && upd) { read_options (); input_names (); }
 	poll_cb ();
 	unsigned char m[8] = { 128, 128, 0, 0x40, 128, 128, 0, 0 };
 	pad (0, &m[0], &m[1], &m[2]); pad (1, &m[4], &m[5], &m[6]);
 #ifndef VX_EMUVR
 	if (br_input ()) { m[0] = m[1] = 128; m[2] = 0; }   /* (the ROM browser open, or just closed by a button: the game gets none) */
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
-	{ static int l2, r2; const int a = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) != 0, b = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2) != 0;
+	{ static int l2, r2; const int ri = btn_id ("vectrex_emu_btn_reset"), ei = btn_id ("vectrex_emu_btn_eject");
+	  const int a = ri >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ri) != 0, b = ei >= 0 && ei != ri && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ei) != 0;
 	  if (a && !l2 && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button) */
 	  if (b && !r2 && !br_open) eject_toggle ();
 	  l2 = a; r2 = b; }
@@ -2726,6 +2747,31 @@ static void eject_toggle (void)
 		game_switch (p); sw_eject = 1;
 	} else if (ej_last[0]) { game_switch (ej_last); sw_eject = 2; }
 }
+static void input_names (void)
+{
+	  static struct retro_input_descriptor d[2 * 11 + 8]; int n = 0;
+	for (unsigned p = 0; p < 2; p++) {
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 1" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 2" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 3" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 4" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick up (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick down (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick left (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick right (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Joystick X" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Joystick Y" };
+		if (p == 0) d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START, "Overlay off / on" };
+	}
+#ifndef VX_EMUVR
+	d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "ROM browser" };
+	{ const int r = btn_id ("vectrex_emu_btn_reset"), e = btn_id ("vectrex_emu_btn_eject");   /* (none by default: Ports) */
+	  if (r >= 0) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) r, "RESET button" };
+	  if (e >= 0 && e != r) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) e, "Eject / reinsert the cartridge" }; }
+#endif
+	d[n] = (struct retro_input_descriptor) { 0 }; env_cb (RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, d);
+}
+
 bool retro_load_game (const struct retro_game_info *g)
 {
 	emu_wait_ext (); emu_primed = 0;
@@ -2741,27 +2787,7 @@ bool retro_load_game (const struct retro_game_info *g)
 #endif
 	enum retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!env_cb (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf)) return false;
-	{ /* v0.16: the controls named, so RetroArch's Quick Menu > Controls shows and remaps them (owner 2026-11-04) */
-	  static struct retro_input_descriptor d[2 * 11 + 4]; int n = 0;
-	  for (unsigned p = 0; p < 2; p++) {
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 1" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 2" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 3" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 4" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick up (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick down (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick left (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick right (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Joystick X" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Joystick Y" };
-		if (p == 0) d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START, "Overlay off / on" };
-	  }
-#ifndef VX_EMUVR
-	  d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "ROM browser" };
-	  d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "RESET button" };
-	  d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Eject / reinsert the cartridge" };
-#endif
-	  d[n] = (struct retro_input_descriptor) { 0 }; env_cb (RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, d); }
+	input_names ();
 	snprintf (cur_game, sizeof cur_game, "%s", g->path); ej_out = 0;
 #ifndef VX_EMUVR
 	snprintf (br_game, sizeof br_game, "%s", g->path); br_dir[0] = 0;

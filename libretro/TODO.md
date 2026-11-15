@@ -21,11 +21,14 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 ## Next (the owner, 2026-11-15)
 
-- [ ] RetroArch's keyboard and mouse (game focus mode) as the UVMC2's / PiTrex's USB device
+- [ ] 16:9 / 4:3 picture mode (4:3 default) and the desktop's control deck below the picture (on / off): OSD, pause,
+      the P2 port, the cartridge, P1 (for netplay later), RESET, the volume knob - clickable with RetroArch's mouse or
+      touch (the OSD opens nothing; the P2 port chooses the device, the cartridge opens the ROM browser); 4:3 the
+      picture smaller over the deck as the desktop, 16:9 the deck added below (tate: the picture unchanged); a pause
+      button (unmapped by default)
 
 ## Low priority (the owner: ask first)
 
-- [ ] 16:9 mode: in tate the desktop's control strip (OSD) below the picture, clickable / touchable
 - [ ] RetroArch netplay for two-player games (the other player as player 2): 6809 games have exact save states, which
       netplay needs; UVMC2 / PiTrex have none
 
@@ -42,7 +45,10 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 - Port 2 device in the options, the light pen by touch; the room light's strengths and the lamp's position
 - The options in submenus as the desktop's Config tabs
 - Quality profiles as the desktop's (PROFILE_OFF, switch for switch); Optimize (pctest.py) as the auto profile
-- The ROM browser as the desktop's (SELECT, mappable; touch), the RESET button (L2) and eject / reinsert (R2)
+- The ROM browser as the desktop's (SELECT, mappable; touch); RESET and eject / reinsert buttons (Ports: none by
+  default, or L / R / L2 / R2 / L3 / R3)
+- RetroArch's keyboard (Game Focus) and mouse as the UVMC2's / PiTrex's USB devices (usbkm.c) - not tested with a
+  real keyboard yet
 - The Vectrex unit (Unit / Circuit tabs): owner's, ideal, random and cranky units, the knob, the pots, the yoke, the
   picture's shape, the circuit's parts (unit.c)
 - SD cards as folders, as the desktop (fatimg.py in C: sdcard.c) - the UVMC2's text past the left edge was an old dev

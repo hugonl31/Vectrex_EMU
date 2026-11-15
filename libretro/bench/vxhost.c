@@ -109,6 +109,15 @@ static void poll (void) {}
 static int16_t input (unsigned port, unsigned dev, unsigned idx, unsigned id)
 {
 	if (port) return 0;
+	if (dev == RETRO_DEVICE_POINTER) {   /* (VXH_TOUCH=frame:x:y:frames,...: a finger there, x y 0..1 over the frame) */
+		static int nt = -1; static long tf[16], tl[16]; static double tx[16], ty[16];
+		if (nt < 0) { nt = 0; const char *e = getenv ("VXH_TOUCH"); char b[512]; snprintf (b, sizeof b, "%s", e ? e : "");
+			for (char *t = strtok (b, ","); t && nt < 16; t = strtok (NULL, ",")) { long f, l = 3; double x, y; if (sscanf (t, "%ld:%lf:%lf:%ld", &f, &x, &y, &l) >= 3) { tf[nt] = f; tx[nt] = x; ty[nt] = y; tl[nt] = l; nt++; } } }
+		for (int k = 0; k < nt; k++) if (fno >= tf[k] && fno < tf[k] + tl[k]) {
+			if (id == RETRO_DEVICE_ID_POINTER_PRESSED) return 1;
+			if (id == RETRO_DEVICE_ID_POINTER_X) return (int16_t) (tx[k] * 65535 - 32768);
+			if (id == RETRO_DEVICE_ID_POINTER_Y) return (int16_t) (ty[k] * 65535 - 32768); }
+		return 0; }
 	{ static int np = -1; static long pf[64], pl[64]; static unsigned pid[64];   /* (VXH_PRESS=frame:id:frames,...: these buttons only) */
 	  if (np < 0) { np = 0; const char *e = getenv ("VXH_PRESS"); char b[1024]; snprintf (b, sizeof b, "%s", e ? e : "");
 		for (char *t = strtok (b, ","); t && np < 64; t = strtok (NULL, ",")) { long f, l = 1; unsigned i; if (sscanf (t, "%ld:%u:%ld", &f, &i, &l) >= 2) { pf[np] = f; pid[np] = i; pl[np] = l; np++; } }

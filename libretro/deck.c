@@ -60,7 +60,7 @@ static void dk_draw_slim (void)
 	{ const double k = fmax (1.0, dk_h * 0.30 / 6.0), xr = dk_ox + dk_ow; char t[32]; unsigned c = DK_G;
 	  if (vx_paused) { snprintf (t, sizeof t, "PAUSED"); c = 0xed9933u; } else { snprintf (t, sizeof t, "EMU %s", dk_osd[2]); c = (unsigned) dk_osd_col; }
 	  br_text (t, (float) (xr - (strlen (t) * 6.0 - 1.0) * k), (float) (cy - 3 * k), (float) k, c); }
-	for (int pt = 2; pt >= 1; pt--) { const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x, s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1);
+	for (int pt = 2; pt >= 2; pt--) {   /* (P1: only online, as the desktop's port1_state - not yet here) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x, s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1);
 		const double oy = cy, ox = cx + (kind == 2 ? 10 * s : 0);
 		if (kind == 2) dk_icon (PORT2_ICON_P, PORT2_ICON_L, NL (PORT2_ICON_L), ox, oy, s, w, DK_G);
 		else if (kind == 1) dk_icon (VOICE_ICON_P, VOICE_ICON_L, NL (VOICE_ICON_L), ox, oy, s, w, DK_G);
@@ -128,7 +128,7 @@ static void dk_draw (void)
 			const double y0 = (fb + wb) / 2.0 - hgt / 2.0, cx = (left + right) / 2.0;
 			dk_ctext ("PAUSED", cx, y0, 6 * kp, 0xed9933u); dk_ctext (R2, cx, y0 + 11.0 * kp, 6 * kn, DK_G); } }
 	/* the ports (_port2): port 2's device, port 1's joystick */
-	for (int pt = 2; pt >= 1; pt--) { const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x;
+	for (int pt = 2; pt >= 2; pt--) {   /* (P1: only online, as the desktop's port1_state - not yet here) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x;
 		double s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1); const double oy = kind == 2 ? cy : cy - 0.12 * r, ox = cx + (kind == 2 ? 10 * s : 0);
 		if (kind == 2) dk_icon (PORT2_ICON_P, PORT2_ICON_L, NL (PORT2_ICON_L), ox, oy, s, w, DK_G);
 		else if (kind == 1) dk_icon (VOICE_ICON_P, VOICE_ICON_L, NL (VOICE_ICON_L), ox, oy, s, w, DK_G);
@@ -231,11 +231,18 @@ static void dk_pointer (void)
 		else if (y < 0) { dk_pop_until = 0; dk_prev_press = pr; return; }
 		else dk_pop_until = vt_wall () + 5.0; }
 	if (dk_pop && !dk_shown) { dk_prev_press = pr; return; }
+	/* (a finger: the piece nearest across the deck - each up to halfway to its neighbours, the deck's whole height; the
+	 *  desktop's circles were too small to hit on a handheld's screen, the owner 2026-11-15) */
+	int zone = 0;
+	if (y >= 0 && y <= dk_h) { const double X[5] = { dk_p2x, dk_cx, -1e9, dk_rx, dk_kx }; double best = 1e9;   /* (P1: not shown) */
+		for (int i = 0; i < 5; i++) { const double d = fabs (x - X[i]); if (d < best) { best = d; zone = i + 1; } }
+		if (best > 2.2 * r) zone = 0; }
 	if (pr && !dk_prev_press) {
-		if (hypot (x - dk_p2x, y - dk_cy) <= 1.3 * r) port2_next ();
-		else if (hypot (x - dk_cx, y - dk_cy) <= 1.3 * r) { br_show (1); dk_dirty_set = 1; }
-		else if (hypot (x - dk_rx, y - dk_cy) <= 1.0 * r) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; }
-		else if (hypot (x - dk_kx, y - dk_cy) <= 1.15 * r) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;
+		if (zone == 1) port2_next ();
+		else if (zone == 2) { br_show (1); dk_dirty_set = 1; }
+		else if (zone == 3) { }                         /* (P1: for online play, later) */
+		else if (zone == 4) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; }
+		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;
 			dk_drag.a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI; dk_hover_label = 1; dk_dirty_set = 1; }
 		else if (y < 0 && !pw_on) power_up ();
 		else if (vx_paused && x > dk_ox + dk_ow && x < dk_p2x - 1.1 * r && y >= 0) { vx_paused = 0; dk_dirty_set = 1; }

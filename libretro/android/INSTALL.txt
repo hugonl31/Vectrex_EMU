@@ -1,7 +1,7 @@
 Vectrex_EMU core for RetroArch on Android (arm64) - with ES-DE
 ==============================================================
 
-What is in this zip
+What is here (the zip, or the Google Drive folder: the same files, unpacked)
   vectrex_emu_libretro_android.so      the core
   vectrex_emu_libretro.info            its name and details for RetroArch
   system/vectrex_emu/                  the BIOS, the overlays (PNG), the switch-on / switch-off sounds

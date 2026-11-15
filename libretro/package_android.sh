@@ -21,3 +21,13 @@ for d, _, fs in os.walk('.'):
         z.write(os.path.join(d, f), os.path.relpath(os.path.join(d, f), '.'))
 ")
 ls -l dist/Vectrex_EMU_RetroArch_Android.zip
+# the owner's shared folder (Google Drive, for the Retroid Pocket Nova): the newest build there, unpacked - each file
+# copied as it is to its place on the device (SHARE= empty: skipped)
+SHARE=${SHARE-"/mnt/g/Google Drive/#Sharing/Vectrex/Android_Core"}
+if [ -n "$SHARE" ] && [ -d "$SHARE" ]; then
+	rm -rf "$SHARE/system" "$SHARE/ES-DE"
+	cp -r dist/pkg/. "$SHARE/"
+	date '+built %Y-%m-%d %H:%M' > "$SHARE/BUILD.txt"
+	git log -1 --format='commit %h %s' >> "$SHARE/BUILD.txt" 2>/dev/null || true
+	echo "copied to $SHARE"
+fi

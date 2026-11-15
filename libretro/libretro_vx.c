@@ -2565,7 +2565,8 @@ void retro_run (void)
 	double pf4 = pf_on ? pf_now () : 0;
 	if (pf_on) { pf_g[0] += pgA - pf3; pf_g[1] += pgB - pgA; pf_g[2] += pf4 - pgB; }
 #ifndef VX_EMUVR
-	if (br_shown) { br_blend_cpu (fb, FW);            /* (the ROM browser over the CPU's picture; those pixels painted anew next time) */
+	if (br_shown && !(gpu_asked && gpu_ok)) { br_blend_cpu (fb, FW);   /* (the ROM browser over the CPU's picture - the GPU draws it in front of the
+	                                              case itself; those pixels painted anew next time) */
 		for (int y = br_by0 < 0 ? 0 : br_by0; y <= br_by1 && y < FH; y++) { if (br_bx0 < sp_f0[y]) sp_f0[y] = br_bx0 < 0 ? 0 : br_bx0; if (br_bx1 > sp_f1[y]) sp_f1[y] = br_bx1; } }
 #endif
 	const int shot_now = shot_pending ();

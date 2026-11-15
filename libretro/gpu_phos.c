@@ -298,14 +298,6 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:
-	if (br_shown && br_img) {                         /* (the ROM browser over it: browser.c) */
-		if (!ph_uit || ph_uiw != FW || ph_uih != FH) { if (ph_uit) glDeleteTextures_ (1, &ph_uit);
-			ph_uit = ph_tex (FW, FH, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST, NULL); ph_uiw = FW; ph_uih = FH; ph_uigen = -1; }
-		if (ph_uigen != br_gen) { glBindTexture_ (GL_TEXTURE_2D, ph_uit); glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, FW, FH, GL_RGBA, GL_UNSIGNED_BYTE, br_img); ph_uigen = br_gen; }
-		ph_keep = 1; ph_target (ph_P, 0, 0, FW, FH); ph_keep = 0;   /* (drawn over the picture: kept) */
-		glUseProgram_ (ph_ui); ph_bind (ph_ui, "t", 0, ph_uit);
-		glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, 0x0303 /* ONE_MINUS_SRC_ALPHA */); glDrawArrays_ (GL_TRIANGLES, 0, 3); glDisable_ (GL_BLEND);
-	}
 	glActiveTexture_ (GL_TEXTURE0);
 	if (shot) glReadPixels_ (0, 0, FW, FH, GL_RGBA, GL_UNSIGNED_BYTE, fb);   /* (test: the picture back, B G R A = the CPU's XRGB) */
 	glBindVertexArray_ (0); glUseProgram_ (0); glBindFramebuffer_ (GL_FRAMEBUFFER, 0);

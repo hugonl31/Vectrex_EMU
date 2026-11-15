@@ -69,6 +69,7 @@ GLFN(void, glDeleteVertexArrays, (GLsizei, const GLuint *)); GLFN(GLenum, glGetE
 static struct retro_hw_render_callback hwr; static int gpu_novideo; static void scr_detect (void);
 static uint32_t *dk_img; static int dk_gen, dk_w, dk_h;   /* (deck.c) */
 static GLuint dk_prog, dk_tex; static int dk_tgen = -1, dk_tw, dk_th;
+static uint32_t *br_img; static int br_shown, br_gen; static GLuint br_tex; static int br_tgen = -1, br_tw, br_th;   /* (browser.c: the ROM browser's panel) */
 GLFN(const unsigned char *, glGetString, (GLenum));
 static void ph_reset (void); static void ph_lost (void); static int ph_ok; static GLuint ph_P;   /* (gpu_phos.c) */
 static int gpu_asked;                         /* (the frontend took the request: the picture goes through the GPU) */
@@ -452,9 +453,10 @@ static void gpu_reset (void)
 	  if (im) { glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, im); stbi_image_free (im); g_smap_ok = 1; }
 	  else { static const unsigned char z[4] = { 0, 0, 0, 255 }; glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, z);
 	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p); } }
-	{ static const char *DKF = "in vec2 vuv; out vec4 fragc; uniform sampler2D t; uniform int rot;\n"
+	{ static const char *DKF = "in vec2 vuv; out vec4 fragc; uniform sampler2D t; uniform int rot; uniform vec4 crop;\n"
 		"void main() { vec2 a = vuv; vec2 q = rot == 1 ? vec2(a.y, 1.0 - a.x) : rot == 2 ? vec2(1.0 - a.x, 1.0 - a.y) : rot == 3 ? vec2(1.0 - a.y, a.x) : a;\n"
-		"  fragc = texture(t, vec2(q.x, 1.0 - q.y)).bgra; }\n";   /* (the deck's image: premultiplied, B G R A bytes) */
+		"  vec2 p = crop.xy + q * (crop.zw - crop.xy);\n"
+		"  fragc = texture(t, vec2(p.x, 1.0 - p.y)).bgra; }\n";   /* (crop: the image's part, y up - the browser's: the picture's) */   /* (the deck's image: premultiplied, B G R A bytes) */
 	  const char *dv[2] = { hdr, GPU_VS }, *df[2] = { hdr, DKF };
 	  GLuint v2 = gpu_shader (GL_VERTEX_SHADER, dv, 2), f2 = gpu_shader (GL_FRAGMENT_SHADER, df, 2); dk_prog = 0;
 	  if (v2 && f2) { dk_prog = glCreateProgram_ (); glAttachShader_ (dk_prog, v2); glAttachShader_ (dk_prog, f2); glLinkProgram_ (dk_prog); }
@@ -578,7 +580,19 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 		glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, dk_tex);
 		if (dk_tgen != dk_gen) { glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, dk_w, dk_h, GL_RGBA, GL_UNSIGNED_BYTE, dk_img); dk_tgen = dk_gen; }
 		glUseProgram_ (dk_prog); glUniform1i_ (glGetUniformLocation_ (dk_prog, "t"), 0); glUniform1i_ (glGetUniformLocation_ (dk_prog, "rot"), rot);
+		glUniform4f_ (glGetUniformLocation_ (dk_prog, "crop"), 0, 0, 1, 1);
 		if (!dk_on) gpu_vp (0, dk_y, dk_w, dk_y + dk_h, rot, dw, dh); else gpu_vp (BX, BY + dk_y, BX + dk_w, BY + dk_y + dk_h, rot, dw, dh);
+		glEnable_d_ (GL_BLEND); glBlendFunc_d_ (1, 0x0303); glDrawArrays_ (GL_TRIANGLES, 0, 3); glDisable_ (GL_BLEND); }
+	if (br_shown && br_img && dk_prog) {                                /* (the ROM browser: in front of the glass and the case) */
+		if (!br_tex || br_tw != fw || br_th != fh) { if (!br_tex) glGenTextures_ (1, &br_tex); glBindTexture_ (GL_TEXTURE_2D, br_tex);
+			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, fw, fh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); br_tw = fw; br_th = fh; br_tgen = -1; }
+		glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, br_tex);
+		if (br_tgen != br_gen) { glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, br_img); br_tgen = br_gen; }
+		glUseProgram_ (dk_prog); glUniform1i_ (glGetUniformLocation_ (dk_prog, "t"), 0); glUniform1i_ (glGetUniformLocation_ (dk_prog, "rot"), rot);
+		glUniform4f_ (glGetUniformLocation_ (dk_prog, "crop"), cx0, cy0, cx1, cy1);
+		if (dk_on || dk_pop) gpu_vp (BX, BY, BX + CW, BY + CH, rot, dw, dh); else glViewport_ (0, 0, dw, dh);
 		glEnable_d_ (GL_BLEND); glBlendFunc_d_ (1, 0x0303); glDrawArrays_ (GL_TRIANGLES, 0, 3); glDisable_ (GL_BLEND); }
 	glBindVertexArray_ (0); glUseProgram_ (0);
 	if (!gpu_novideo) video_cb (RETRO_HW_FRAME_BUFFER_VALID, (unsigned) dw, (unsigned) dh, 0);   /* (Optimize: drawn, not shown) */

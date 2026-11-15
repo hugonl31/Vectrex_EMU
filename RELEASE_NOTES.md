@@ -3,11 +3,6 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.6.6
-
-* Last Human keeps its calibration, difficulty, high scores and Arena 2 through a restart: the cartridge's DS2431 save
-  chip is there, kept as `<rom>.ds2431` next to the ROM (not online: both players start alike).
-
 ## v1.6.5
 
 * Fixed: the room's light (on an overlay's clear colours and print, on the glass without an overlay) was added to the
@@ -15,6 +10,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
   edges) looked stronger the more room light lay under it. The two are now added as light: the phosphor looks the same
   on black, through an overlay and at any Room light.
 * The phosphor trail is 1.5x brighter: on black it now looks as it did through an overlay before.
+* Last Human keeps its calibration, difficulty, high scores and Arena 2 through a restart: the cartridge's DS2431 save
+  chip is there, kept as `<rom>.ds2431` next to the ROM (not online: both players start alike).
 
 ## v1.6.4
 

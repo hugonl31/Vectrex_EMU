@@ -18,3 +18,6 @@
 #else
 #pragma clang section data="" bss=""
 #endif
+
+/* left out of a save: the registers' pointer (this process's address - a state may be loaded by another) */
+void vxs_excl_e8910 (void (*add) (const void *, size_t)) { add (&PSG.Regs, sizeof PSG.Regs); }

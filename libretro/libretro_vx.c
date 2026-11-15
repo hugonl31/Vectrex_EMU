@@ -717,8 +717,40 @@ unsigned retro_api_version (void) { return RETRO_API_VERSION; }
 __declspec(dllimport) int __stdcall GetModuleHandleExA (unsigned long, const char *, void **);
 __declspec(dllimport) int __stdcall SetEnvironmentVariableA (const char *, const char *);
 #endif
+#if defined(_WIN32)
+#include <dbghelp.h>
+/* (test: VXPOC_CRASHLOG=file - a crash's address in the core written there: the module's base, the offset) */
+static LONG WINAPI vx_crash (EXCEPTION_POINTERS *ep)
+{
+	const char *f = getenv ("VXPOC_CRASHLOG"); FILE *o = f ? fopen (f, "a") : NULL;
+	if (o) { HMODULE m = NULL; GetModuleHandleExA (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) ep->ExceptionRecord->ExceptionAddress, &m);
+		char mn[260] = ""; if (m) GetModuleFileNameA (m, mn, sizeof mn);
+		fprintf (o, "code %08lx at %p module %s offset %llx\n", (unsigned long) ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress, mn,
+		         (unsigned long long) ((char *) ep->ExceptionRecord->ExceptionAddress - (char *) m));
+		/* (the callers: dbghelp's StackWalk64 from the fault's context) */
+		HMODULE dh = LoadLibraryA ("dbghelp.dll");
+		typedef BOOL (WINAPI *SW) (DWORD, HANDLE, HANDLE, LPSTACKFRAME64, PVOID, PREAD_PROCESS_MEMORY_ROUTINE64, PFUNCTION_TABLE_ACCESS_ROUTINE64, PGET_MODULE_BASE_ROUTINE64, PTRANSLATE_ADDRESS_ROUTINE64);
+		typedef BOOL (WINAPI *SI) (HANDLE, PCSTR, BOOL);
+		SW sw = dh ? (SW) GetProcAddress (dh, "StackWalk64") : NULL; SI si = dh ? (SI) GetProcAddress (dh, "SymInitialize") : NULL;
+		PFUNCTION_TABLE_ACCESS_ROUTINE64 fta = dh ? (PFUNCTION_TABLE_ACCESS_ROUTINE64) GetProcAddress (dh, "SymFunctionTableAccess64") : NULL;
+		PGET_MODULE_BASE_ROUTINE64 gmb = dh ? (PGET_MODULE_BASE_ROUTINE64) GetProcAddress (dh, "SymGetModuleBase64") : NULL;
+		if (sw && si && fta && gmb) { HANDLE pr = GetCurrentProcess (); si (pr, NULL, TRUE);
+			CONTEXT cx = *ep->ContextRecord; STACKFRAME64 sf; memset (&sf, 0, sizeof sf);
+			sf.AddrPC.Offset = cx.Rip; sf.AddrPC.Mode = AddrModeFlat; sf.AddrFrame.Offset = cx.Rbp; sf.AddrFrame.Mode = AddrModeFlat; sf.AddrStack.Offset = cx.Rsp; sf.AddrStack.Mode = AddrModeFlat;
+			for (int k = 0; k < 16 && sw (IMAGE_FILE_MACHINE_AMD64, pr, GetCurrentThread (), &sf, &cx, NULL, fta, gmb, NULL); k++) {
+				HMODULE mm = NULL; GetModuleHandleExA (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) (uintptr_t) sf.AddrPC.Offset, &mm);
+				char n2[260] = ""; if (mm) GetModuleFileNameA (mm, n2, sizeof n2); const char *b = strrchr (n2, '\\');
+				fprintf (o, "  %s +%llx\n", b ? b + 1 : n2, (unsigned long long) (sf.AddrPC.Offset - (uintptr_t) mm)); } }
+		fclose (o); }
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
 void retro_init (void)
 {
+#if defined(_WIN32)
+	if (getenv ("VXPOC_CRASHLOG")) AddVectoredExceptionHandler (1, vx_crash);
+	if (getenv ("VXPOC_STDERR")) { freopen (getenv ("VXPOC_STDERR"), "a", stderr); setvbuf (stderr, NULL, _IONBF, 0); }   /* (test: the core's messages to a file) */
+#endif
 	const char *e = getenv ("VECTREX_SHEET"); sheet_file = e && *e ? e : NULL;
 	e = getenv ("VECTREX_OVERLAY"); ovl_file = e && *e ? e : NULL;
 #ifndef _WIN32
@@ -2633,7 +2665,28 @@ static const char *speech_dev (const unsigned char *h, size_t hn, const char *pa
  *  run-ahead and this core; vxs_init once, its ranges never move) */
 size_t vxs_init (void); void vxs_exclude (const void *p, size_t n); void vxs_save (unsigned char *o); void vxs_load (const unsigned char *s);
 static size_t vx_raw, vx_size; static int vx_inited;
-#define VX_MAGIC 0x31335856u                /* "VX13" */
+#define VX_MAGIC 0x31345856u                /* "VX14" (1.1: the lines compact) */
+/* (the lines in a state: 26 bytes each, the same on every system - x0 y0 x1 y1 as 32 bits, the intensity, the colour, the
+ *  cycles, the start - at most ST_L a frame (ST_E an eye): RetroArch's netplay keeps a ring of states and sends one to who
+ *  joins; at 40000 lines of 48 bytes reserved for each list a state was 19 MB and the join failed, 2026-11-15. A 6809 game
+ *  draws a few thousand at most; more would trim only the picture after a load, never the game) */
+#define ST_L 6000
+#define ST_E 3000
+#define LREC 26
+static unsigned char *put_lines (unsigned char *o, const line_t *L, int n, int cap)
+{
+	int32_t m = n < cap ? n : cap; memcpy (o, &m, 4); o += 4;
+	for (int i = 0; i < m; i++) { const line_t *l = &L[i]; int32_t v[4] = { (int32_t) l->x0, (int32_t) l->y0, (int32_t) l->x1, (int32_t) l->y1 };
+		uint32_t c2[2] = { l->cyc, l->t0 }; memcpy (o, v, 16); o[16] = l->c; o[17] = l->rgb; memcpy (o + 18, c2, 8); o += LREC; }
+	return o;
+}
+static const unsigned char *get_lines (const unsigned char *i, line_t *L, int *n)
+{
+	int32_t m; memcpy (&m, i, 4); i += 4; if (m < 0) m = 0;
+	for (int k = 0; k < m; k++) { line_t *l = &L[k]; int32_t v[4]; uint32_t c2[2]; memcpy (v, i, 16); memcpy (c2, i + 18, 8);
+		l->x0 = v[0]; l->y0 = v[1]; l->x1 = v[2]; l->y1 = v[3]; l->c = i[16]; l->rgb = i[17]; l->cyc = c2[0]; l->t0 = c2[1]; i += LREC; }
+	*n = m; return i;
+}
 #define VX_FRAME_HDR (sizeof (int) * 3 + sizeof (double) + sizeof (unsigned long long))
 static int extern_cart_len (void) { extern size_t vt_cart_len; return (int) (vt_cart_len > sizeof cart ? sizeof cart : vt_cart_len); }
 static int vx_ok (void) { extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; return !vt_uvm2 && !vt_uvm2_cart && !vt_pitrex; }
@@ -2642,10 +2695,17 @@ static void vx_state_init (void)
 	if (!vx_inited) {                       /* (the lines in progress, the last frame's and the eye buffers: saved with their counts) */
 		vx_inited = 1;
 		vxs_exclude (prof, sizeof prof); vxs_exclude (acc, sizeof acc); vxs_exclude (cur, sizeof cur); vxs_exclude (last, sizeof last); vxs_exclude (eyeb, sizeof eyeb);
+		/* (the pointers and what belongs to this process alone: a state may be loaded by another - netplay's join) */
+		vxs_exclude (&bcur, sizeof bcur); vxs_exclude (&blast, sizeof blast); vxs_exclude (&wavf, sizeof wavf); vxs_exclude (&recf, sizeof recf);
+		vxs_exclude (&stdout_bin, sizeof stdout_bin); vxs_exclude (&abuf, sizeof abuf); vxs_exclude (&abuf_n, sizeof abuf_n); vxs_exclude (&abuf_cap, sizeof abuf_cap);
+		vxs_exclude (&vt_flash_file, sizeof vt_flash_file); vxs_exclude (syms, sizeof syms);
+#ifdef VX_STATES
+		vxs_exclude (&ra_buf, sizeof ra_buf);
+#endif
 		vx_raw = vxs_init ();
 	}
-	vx_size = 16 + vx_raw + (size_t) extern_cart_len () + 2 * MAXL * sizeof (line_t) + 2 * (MAXL / 4) * sizeof (line_t)
-	        + 2 * sizeof (int) + (NH + 1) * (VX_FRAME_HDR + MAXL * sizeof (line_t) + 6000 * sizeof (long long));
+	vx_size = 16 + vx_raw + (size_t) extern_cart_len () + 2 * (4 + ST_L * LREC) + 2 * (4 + ST_E * LREC)
+	        + 2 * sizeof (int) + (NH + 1) * (VX_FRAME_HDR + 4 + ST_L * LREC + 6000 * sizeof (long long));
 	if (getenv ("VXPOC_STATELOG")) fprintf (stderr, "[vectrex_emu] save state: %zu bytes of sections, at most %zu bytes%c", vx_raw, vx_size, 10);
 }
 size_t retro_serialize_size (void) { if (!vx_ok ()) return 0; if (!vx_size) vx_state_init (); return vx_size; }
@@ -2654,21 +2714,25 @@ size_t retro_serialize_size (void) { if (!vx_ok ()) return 0; if (!vx_size) vx_s
 static unsigned char *put_frame (unsigned char *o, const gframe *f)
 {
 	int nk = f->nk > 0 ? f->nk : 0;
-	PUT (&f->n, sizeof (int)); PUT (&f->nk, sizeof (int)); PUT (&f->alt, sizeof (int)); PUT (&f->t, sizeof (double)); PUT (&f->p0, sizeof (unsigned long long));
-	PUT (f->L, sizeof (line_t) * f->n); PUT (f->keys, sizeof (long long) * nk);
+	if (nk > 6000) nk = 6000;
+	PUT (&f->n, sizeof (int)); PUT (&nk, sizeof (int)); PUT (&f->alt, sizeof (int)); PUT (&f->t, sizeof (double)); PUT (&f->p0, sizeof (unsigned long long));
+	o = put_lines (o, f->L, f->n, ST_L); PUT (f->keys, sizeof (long long) * nk);
 	return o;
 }
+static int net_dbg = -1;
+#define NDBG(...) do { if (net_dbg < 0) net_dbg = getenv ("VXPOC_NETDBG") != NULL; if (net_dbg) fprintf (stderr, __VA_ARGS__); } while (0)
 bool retro_serialize (void *d, size_t sz)
 {
 	emu_wait_ext (); net_mark ();
+	{ static long n; if (++n % 120 == 1) NDBG ("[netdbg] serialize #%ld sz %zu vx_size %zu run %ld\n", n, sz, vx_size, net_runs); }
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	if (!vx_ok () || sz < vx_size) return false;
 	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), 0 };
 	PUT (h, 16);
 	vxs_save (o); o += vx_raw;
 	PUT (cart, extern_cart_len ());
-	PUT (cur, sizeof (line_t) * ncur); PUT (last, sizeof (line_t) * nlast);
-	PUT (eyeb[0], sizeof (line_t) * neye[0]); PUT (eyeb[1], sizeof (line_t) * neye[1]);
+	o = put_lines (o, cur, ncur, ST_L); o = put_lines (o, last, nlast, ST_L);
+	o = put_lines (o, eyeb[0], neye[0], ST_E); o = put_lines (o, eyeb[1], neye[1], ST_E);
 	PUT (&nh, sizeof (int)); PUT (&have_prev, sizeof (int));
 	if (have_prev) o = put_frame (o, &prevf);
 	for (int k = 0; k < nh; k++) o = put_frame (o, &hist[k]);
@@ -2681,13 +2745,15 @@ bool retro_unserialize (const void *d, size_t sz)
 	unser_seen = 1; runs_since_unser = 0;
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	const unsigned char *i = d; uint32_t h[4];
-	if (!vx_ok () || sz < 16) return false;
+	if (!vx_ok () || sz < 16) { NDBG ("[netdbg] unserialize: no (ok %d sz %zu)\n", vx_ok (), sz); return false; }
 	GET (h, 16);
-	if (h[0] != VX_MAGIC || h[1] != vx_raw || h[2] != (uint32_t) extern_cart_len ()) return false;
+	if (h[0] != VX_MAGIC || h[1] != vx_raw || h[2] != (uint32_t) extern_cart_len ()) {
+		NDBG ("[netdbg] unserialize: header %08x %u %u, mine %08x %zu %ld - sz %zu\n", h[0], h[1], h[2], VX_MAGIC, vx_raw, (long) extern_cart_len (), sz); return false; }
+	{ static long n; if (++n % 60 == 1) NDBG ("[netdbg] unserialize #%ld ok sz %zu run %ld\n", n, sz, net_runs); }
 	vxs_load (i); i += vx_raw;
 	GET (cart, extern_cart_len ());
-	GET (cur, sizeof (line_t) * ncur); GET (last, sizeof (line_t) * nlast);   /* (ncur, nlast, neye: back from the sections) */
-	GET (eyeb[0], sizeof (line_t) * neye[0]); GET (eyeb[1], sizeof (line_t) * neye[1]);
+	{ int m; i = get_lines (i, cur, &m); ncur = m; i = get_lines (i, last, &m); nlast = m;   /* (the counts as saved: a list over the cap trimmed) */
+	  i = get_lines (i, eyeb[0], &m); neye[0] = m; i = get_lines (i, eyeb[1], &m); neye[1] = m; }
 	/* the kept game frames: their buffers reused (the ones held now and the spare), more made if needed */
 	gframe pool[NH + 3]; int np = 0;
 	for (int k = 0; k < nh; k++) pool[np++] = hist[k];
@@ -2700,8 +2766,8 @@ bool retro_unserialize (const void *d, size_t sz)
 	for (int k = 0; k < nd; k++) {
 		gframe f;
 		if (np) f = pool[--np]; else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
-		GET (&f.n, sizeof (int)); GET (&f.nk, sizeof (int)); GET (&f.alt, sizeof (int)); GET (&f.t, sizeof (double)); GET (&f.p0, sizeof (unsigned long long));
-		GET (f.L, sizeof (line_t) * f.n); GET (f.keys, sizeof (long long) * (f.nk > 0 ? f.nk : 0));
+		int fn; GET (&fn, sizeof (int)); GET (&f.nk, sizeof (int)); GET (&f.alt, sizeof (int)); GET (&f.t, sizeof (double)); GET (&f.p0, sizeof (unsigned long long));
+		i = get_lines (i, f.L, &f.n); (void) fn; GET (f.keys, sizeof (long long) * (f.nk > 0 ? f.nk : 0));
 		*dst[k] = f;
 	}
 	nh = n_h; have_prev = n_p;

@@ -21,9 +21,14 @@
 
 /* the big buffers that are not the running game's state, left out of a save: the display's own vector lists (vecx's
  * drawing, not read back), the cartridge image (saved apart, only for a flash cartridge that writes to it), the UVMC2 /
- * PiTrex images (those games have no run-ahead) and the speech ROM */
+ * PiTrex images (those games have no run-ahead) and the speech ROM. Left out too: the pointers - they hold this
+ * process's addresses, and a state may be loaded by another (RetroArch's netplay sends one to who joins) */
 void vxs_excl_vecx (void (*add) (const void *, size_t))
 {
 	add (vectors_set, sizeof vectors_set); add (vector_hash, sizeof vector_hash); add (cart, sizeof cart);
 	add (uvm2_image, sizeof uvm2_image); add (px_image, sizeof px_image); add (sp_rom, sizeof sp_rom);
+	add (&vx_ram, sizeof vx_ram); add (&vt_beam_hook, sizeof vt_beam_hook); add (&vectors_draw, sizeof vectors_draw);
+	add (&vectors_erse, sizeof vectors_erse); add (&vl, sizeof vl); add (&vl_dbg, sizeof vl_dbg); add (&uvm2, sizeof uvm2);
+	extern void vxs_excl_e6809 (void (*add) (const void *, size_t)), vxs_excl_e8910 (void (*add) (const void *, size_t));
+	vxs_excl_e6809 (add); vxs_excl_e8910 (add);
 }

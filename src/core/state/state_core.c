@@ -40,7 +40,7 @@ extern unsigned char __start_vxb[] __attribute__((weak, visibility ("hidden"))),
 #endif
 
 typedef struct { unsigned char *p; size_t n; } vxs_rng;
-#define VXS_MAX 48
+#define VXS_MAX 96
 static vxs_rng ex[VXS_MAX], cp[VXS_MAX]; static int nex, ncp; static size_t raw;
 
 void vxs_exclude (const void *p, size_t n)

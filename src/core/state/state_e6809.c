@@ -18,3 +18,9 @@
 #else
 #pragma clang section data="" bss=""
 #endif
+
+/* left out of a save: the pointers (this process's addresses - a state may be loaded by another) */
+void vxs_excl_e6809 (void (*add) (const void *, size_t))
+{
+	add (rptr_xyus, sizeof rptr_xyus); add (&e6809_read8, sizeof e6809_read8); add (&e6809_write8, sizeof e6809_write8);
+}

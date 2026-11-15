@@ -4,7 +4,7 @@
  * - the glass's rounded edge, the ceiling light reflected in the glass, the glass in the room's light, the plastic case
  * round the glass with the vectors mirrored in its glossy walls, its scratches and its matte front (casemodel). With an
  * overlay painted in the case is hidden (as on the desktop: the sheet covers it) and the picture passes through.
- * The picture is also turned here (tate) - no CPU copy.
+ * The picture is also turned here (tate) - no CPU copy - the room's light with it (the screen is turned).
  *
  * No GL headers: the few functions it uses come from the frontend (get_proc_address), the same on every system.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
@@ -210,8 +210,7 @@ static const char *GPU_FS_B =
 	"        float bl = 0.0;\n"
 	"        if (lk > 0.0) {\n"
 	"            vec2 eq = tgt - n * dpos / U;\n"
-	"            eq = rot == 1 ? vec2(eq.y, -eq.x) : rot == 2 ? -eq : rot == 3 ? vec2(-eq.y, eq.x) : eq;\n"
-	"            vec2 eqn = eq / ((rot == 1 || rot == 3) ? gsc.yx : gsc);\n"
+	"            vec2 eqn = eq / gsc;\n"
 	"            vec2 mq = vec2((eqn.x - lmr.x) / (lmr.y - lmr.x), (eqn.y - lmr.z) / (lmr.w - lmr.z));\n"
 	"            float mr = texture(lmap, mq).r * mfade(mq);\n"
 	"            bl = lk * mr * (0.03 * exp(-dpos / 55.0) * (0.25 + 0.75 * pow(top, 0.7)) + 0.035 * exp(-dpos / 16.5) * pow(top, 0.7));\n"
@@ -269,8 +268,7 @@ static const char *GPU_FS_B =
 	"            g = smoothstep(0.0, 1.0, clamp((1.0 - r) / edge, 0.0, 1.0));\n"
 	"        } else g = sdG(gd) < 0.0 ? 1.0 : 0.0;\n"                       /* (the case needs the glass's outline: a hard edge) */
 	"        vec3 add = vec3(0.0);\n"
-	"        vec2 vt = rot == 1 ? vec2(tgt.y, -tgt.x) : rot == 2 ? -tgt : rot == 3 ? vec2(-tgt.y, tgt.x) : tgt;\n"   /* (the room stays: as the viewer sees it) */
-	"        vec2 tq = vt / ((rot == 1 || rot == 3) ? gsc.yx : gsc);\n"
+	"        vec2 tq = tgt / gsc;\n"
 	"        if (grey > 0.0 || lk > 0.0) {\n"
 	"            float gr = bumps(gl_FragCoord.xy * bscale);\n"
 	"            add += grey * (1.0 - 0.25 * tq.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);\n"
@@ -390,9 +388,7 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform3f_ (g_u[U_LPOS], GPU_LPOS[0], GPU_LPOS[1], GPU_LPOS[2]); glUniform4f_ (g_u[U_LMR], GPU_LMR[0], GPU_LMR[1], GPU_LMR[2], GPU_LMR[3]);
 	glUniform2f_ (g_u[U_GSC], GPU_GSC[0], GPU_GSC[1]);
 	glUniform1f_ (g_u[U_CSE], (float) gfx.cse); glUniform1f_ (g_u[U_CROOM], gfx.croom); glUniform1f_ (g_u[U_CREFL], gfx.crefl);
-	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); { float lx = GPU_LC[0], ly = GPU_LC[1];   /* (the ceiling light stays above the viewer: in the turned picture's own frame) */
-	  if (rot == 1) { lx = GPU_LC[1]; ly = -GPU_LC[0]; } else if (rot == 2) { lx = -GPU_LC[0]; ly = -GPU_LC[1]; } else if (rot == 3) { lx = -GPU_LC[1]; ly = GPU_LC[0]; }
-	  glUniform3f_ (g_u[U_LC], lx, ly, GPU_LC[2]); }
+	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); glUniform3f_ (g_u[U_LC], GPU_LC[0], GPU_LC[1], GPU_LC[2]);   /* (the light turns with the picture in tate: the screen is turned) */
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));
 	glDrawArrays_ (GL_TRIANGLES, 0, 3);

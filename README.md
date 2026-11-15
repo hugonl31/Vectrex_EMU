@@ -530,7 +530,8 @@ the light frame by frame: the glow drops to ~15 % at once, then fades over about
 curves. The emulator lights the phosphor at the exact moment the beam passes each spot and lets it fade
 along that measured curve, sixty times a second, whatever frame rate the game runs at. A moving object
 leaves a real trail, not a stack of copies - checked against Mine Storm's big mothership, which on the
-real tube leaves one smooth trail.
+real tube leaves one smooth trail. On screen the trail is shown 1.5x as bright as measured (since v1.6.5): a
+monitor in a lit room shows faint light weaker than the tube does.
 
 <p align="center">
 <img src="docs/images/real_phosphor_decay.png" width="400" alt="the mothership's fading trail on a real Vectrex">
@@ -833,7 +834,8 @@ The logic behind each part:
 * **One room light for everything.** **Room light > Room light** (the same slider as the overlay's) sets how
   bright the room is. The reflections follow it steeply (its cube): in the default evening room they are
   barely there, in daylight they are clear - as with a real screen, which you hardly notice reflecting
-  anything until the lights are on.
+  anything until the lights are on. The room's light adds to the phosphor's as light (since v1.6.5), so the
+  trail and the glow look the same at any room light, with or without an overlay.
 * **The glass reflection.** For every point on the screen the shader works out, as a mirror would, which
   point of the ceiling you see there: the viewing angle across the glass plus the tilt of its surface (the
   glass is a gentle dome, so the reflection is a little curved and smaller than the lamp). The lamp is drawn

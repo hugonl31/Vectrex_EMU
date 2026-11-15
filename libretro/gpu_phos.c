@@ -15,8 +15,8 @@ GLFN(void, glDrawArraysInstanced, (GLenum, GLint, GLsizei, GLsizei));
 GLFN(void, glGenFramebuffers, (GLsizei, GLuint *)); GLFN(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint));
 GLFN(GLenum, glCheckFramebufferStatus, (GLenum)); GLFN(void, glDrawBuffers, (GLsizei, const GLenum *));
 GLFN(void, glEnable, (GLenum)); GLFN(void, glBlendFunc, (GLenum, GLenum)); GLFN(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat));
-GLFN(void, glClear, (GLbitfield)); GLFN(void, glUniform1fv, (GLint, GLsizei, const GLfloat *));
-GLFN(void, glReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *));
+GLFN(void, glClear, (GLbitfield)); GLFN(void, glUniform1fv, (GLint, GLsizei, const GLfloat *)); GLFN(void, glUniform2fv, (GLint, GLsizei, const GLfloat *)); GLFN(void, glUniform4fv, (GLint, GLsizei, const GLfloat *));
+GLFN(void, glFinish, (void)); GLFN(void, glInvalidateFramebuffer, (GLenum, GLsizei, const GLenum *)); GLFN(void, glDeleteFramebuffers, (GLsizei, const GLuint *)); GLFN(void, glReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *));
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_STREAM_DRAW 0x88E0
 #define GL_RGBA16F 0x881A
@@ -27,8 +27,8 @@ GLFN(void, glReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *
 #define GL_NEAREST 0x2600
 
 static GLuint ph_cap, ph_upd, ph_down, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
-static GLuint ph_F[2], ph_G1[2], ph_G2[2], ph_S, ph_B[2], ph_ovm, ph_ova;   /* (ph_P: gpu_gl.c) */
-static int ph_w, ph_h, ph_gw, ph_gh, ph_i, ph_ovgen = -1, ph_made;
+static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
+static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
 static float *ph_buf; static size_t ph_bufn;
 
 static const char *PH_VS_CAP =                  /* (a piece: its box, in picture px - y down, as the CPU's rows) */
@@ -99,15 +99,32 @@ static GLuint ph_prog (const char *vsrc, const char *fsrc)
 	if (!lk) { char log[2048] = ""; glGetProgramInfoLog_ (p, sizeof log, NULL, log); fprintf (stderr, "[vectrex_emu] GPU: link: %s\n", log); return 0; }
 	return p;
 }
+/* (a uniform's location, kept: the name looked up once per program - by the name's address, the names are literals;
+ *  each lookup cost the Nova's driver a good part of the overlay's 15 ms, 2026-11-15) */
+static struct { GLuint p; const char *n; GLint l; } ph_uc[512]; static int ph_nuc;
+static GLint ph_ul (GLuint p, const char *n)
+{
+	unsigned h = ((unsigned) p * 2654435761u ^ (unsigned) (size_t) n * 40503u) & 511;
+	for (int k = 0; k < 512; k++, h = (h + 1) & 511) {
+		if (ph_uc[h].n == n && ph_uc[h].p == p) return ph_uc[h].l;
+		if (!ph_uc[h].n) { ph_uc[h].p = p; ph_uc[h].n = n; ph_uc[h].l = glGetUniformLocation_ (p, n); ph_nuc++; return ph_uc[h].l; } }
+	return glGetUniformLocation_ (p, n);
+}
+static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint filt, const void *data);
+static void ph_target (GLuint t0, GLuint t1, GLuint t2, int w, int h); static void ph_fb_flush (void);
+static void ph_bind (GLuint prog, const char *name, int unit, GLuint tex);
+static int ph_gw, ph_gh; static GLuint ph_S, ph_B[2], ph_ovm, ph_ova;
+#include "gpu_ovfx.c"
 /* (gpu_reset's end: the functions, the programs) */
 static void ph_reset (void)
 {
-	int ok = 1; ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0;
+	int ok = 1; memset (ph_uc, 0, sizeof ph_uc); ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0;
 	if (getenv ("VX_GPUPHOS") && !atoi (getenv ("VX_GPUPHOS"))) { fprintf (stderr, "[vectrex_emu] GPU: the light on the CPU (VX_GPUPHOS=0)\n"); return; }
 	GLLOAD (glGenBuffers); GLLOAD (glBindBuffer); GLLOAD (glBufferData); GLLOAD (glVertexAttribPointer); GLLOAD (glEnableVertexAttribArray);
 	GLLOAD (glVertexAttribDivisor); GLLOAD (glDrawArraysInstanced); GLLOAD (glGenFramebuffers); GLLOAD (glFramebufferTexture2D);
 	GLLOAD (glCheckFramebufferStatus); GLLOAD (glDrawBuffers); GLLOAD (glEnable); GLLOAD (glBlendFunc); GLLOAD (glClearColor);
-	GLLOAD (glClear); GLLOAD (glUniform1fv); GLLOAD (glReadPixels);
+	GLLOAD (glClear); GLLOAD (glUniform1fv); GLLOAD (glUniform2fv); GLLOAD (glUniform4fv); GLLOAD (glReadPixels); GLLOAD (glDeleteFramebuffers); GLLOAD (glFinish);
+	glInvalidateFramebuffer_ = (pf_glInvalidateFramebuffer) hwr.get_proc_address ("glInvalidateFramebuffer");   /* (optional: GL 4.3 / ES 3) */
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: no instancing / framebuffers - the light on the CPU\n"); return; }
 	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
 	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_out = ph_prog (GPU_VS, PH_FS_OUT);
@@ -119,8 +136,10 @@ static void ph_reset (void)
 		glVertexAttribDivisor_ ((GLuint) i, 1); }
 	glBindVertexArray_ (0); glBindBuffer_ (GL_ARRAY_BUFFER, 0);
 	ph_ok = 1;
+	ox_reset ();                                       /* (the overlay's effects: gpu_ovfx.c) */
 }
-static void ph_lost (void) { ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; }   /* (the context gone: its objects with it) */
+static int ph_nfb;
+static void ph_lost (void) { memset (ph_uc, 0, sizeof ph_uc); ox_lost (); ph_nfb = 0; ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; }   /* (the context gone: its objects with it) */
 static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint filt, const void *data)
 {
 	GLuint t; glGenTextures_ (1, &t); glBindTexture_ (GL_TEXTURE_2D, t);
@@ -129,24 +148,38 @@ static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint f
 	glTexImage2D_ (GL_TEXTURE_2D, 0, ifmt, w, h, 0, fmt, type, data);
 	return t;
 }
+/* (each target its own framebuffer, made once: one framebuffer's images changed pass after pass stalled the Nova's
+ *  driver - the overlay's passes 9 ms, 2026-11-15) */
+static struct { GLuint t0, t1, t2, fbo; } ph_fbs[64];
+static void ph_fb_flush (void) { for (int i = 0; i < ph_nfb; i++) glDeleteFramebuffers_ (1, &ph_fbs[i].fbo); ph_nfb = 0; }
 static void ph_target (GLuint t0, GLuint t1, GLuint t2, int w, int h)
 {
 	static const GLenum db[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT0 + 1, GL_COLOR_ATTACHMENT0 + 2 };
-	glBindFramebuffer_ (GL_FRAMEBUFFER, ph_fbo);
-	glFramebufferTexture2D_ (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t0, 0);
-	glFramebufferTexture2D_ (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + 1, GL_TEXTURE_2D, t1, 0);
-	glFramebufferTexture2D_ (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + 2, GL_TEXTURE_2D, t2, 0);
-	glDrawBuffers_ (t2 ? 3 : t1 ? 2 : 1, db); glViewport_ (0, 0, w, h);
+	int i = 0; while (i < ph_nfb && !(ph_fbs[i].t0 == t0 && ph_fbs[i].t1 == t1 && ph_fbs[i].t2 == t2)) i++;
+	if (i == ph_nfb) {
+		if (ph_nfb == 64) ph_fb_flush (), i = 0;
+		GLuint f; glGenFramebuffers_ (1, &f); glBindFramebuffer_ (GL_FRAMEBUFFER, f);
+		glFramebufferTexture2D_ (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t0, 0);
+		if (t1) glFramebufferTexture2D_ (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + 1, GL_TEXTURE_2D, t1, 0);
+		if (t2) glFramebufferTexture2D_ (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + 2, GL_TEXTURE_2D, t2, 0);
+		glDrawBuffers_ (t2 ? 3 : t1 ? 2 : 1, db);
+		ph_fbs[i].t0 = t0; ph_fbs[i].t1 = t1; ph_fbs[i].t2 = t2; ph_fbs[i].fbo = f; ph_nfb = i + 1;
+	} else glBindFramebuffer_ (GL_FRAMEBUFFER, ph_fbs[i].fbo);
+	glViewport_ (0, 0, w, h);
+	/* (every pass writes all of its target: its old contents not needed - a tiled GPU (Adreno, Mali, the Pi's V3D) then
+	 *  does not load them into its tile memory first) */
+	if (glInvalidateFramebuffer_) glInvalidateFramebuffer_ (GL_FRAMEBUFFER, t2 ? 3 : t1 ? 2 : 1, db);
 }
 static void ph_bind (GLuint prog, const char *name, int unit, GLuint tex)
 {
-	glActiveTexture_ (GL_TEXTURE0 + unit); glBindTexture_ (GL_TEXTURE_2D, tex); glUniform1i_ (glGetUniformLocation_ (prog, name), unit);
+	glActiveTexture_ (GL_TEXTURE0 + unit); glBindTexture_ (GL_TEXTURE_2D, tex); glUniform1i_ (ph_ul (prog, name), unit);
 }
-#define PU1F(p, n, v) glUniform1f_ (glGetUniformLocation_ (p, n), (v))
-#define PU1I(p, n, v) glUniform1i_ (glGetUniformLocation_ (p, n), (v))
+#define PU1F(p, n, v) glUniform1f_ (ph_ul (p, n), (v))
+#define PU1I(p, n, v) glUniform1i_ (ph_ul (p, n), (v))
 /* (the images at the picture's size: new, dark) */
 static void ph_size (void)
 {
+	ph_fb_flush ();
 	if (ph_made) {
 		GLuint t[13] = { ph_F[0], ph_F[1], ph_G1[0], ph_G1[1], ph_G2[0], ph_G2[1], ph_S, ph_B[0], ph_B[1], ph_P, 0, 0, 0 };
 		glDeleteTextures_ (10, t); }
@@ -198,7 +231,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	ph_target (ph_F[cur], 0, 0, FW, FH); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
 	if (npl) {
 		glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
-		glUseProgram_ (ph_cap); glUniform2f_ (glGetUniformLocation_ (ph_cap, "sz"), (float) FW, (float) FH);
+		glUseProgram_ (ph_cap); glUniform2f_ (ph_ul (ph_cap, "sz"), (float) FW, (float) FH);
 		glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
 		glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) npl * 24 * sizeof (float)), ph_buf, GL_STREAM_DRAW);
 		glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, npl);
@@ -224,25 +257,27 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		for (int k = -n; k <= n; k++) { w[k + n] = (float) exp (-0.5 * k * k / (sc * sc)); t += w[k + n]; }
 		for (int k = 0; k <= 2 * n; k++) w[k] = (float) (w[k] / t);
 		ph_target (ph_B[0], 0, 0, ph_gw, ph_gh); glUseProgram_ (ph_down); ph_bind (ph_down, "src", 0, ph_S);
-		PU1I (ph_down, "s", S); PU1I (ph_down, "gd", gd); glUniform2i_ (glGetUniformLocation_ (ph_down, "lim"), FW - 1, FH - 1);
+		PU1I (ph_down, "s", S); PU1I (ph_down, "gd", gd); glUniform2i_ (ph_ul (ph_down, "lim"), FW - 1, FH - 1);
 		glDrawArrays_ (GL_TRIANGLES, 0, 3);
-		glUseProgram_ (ph_blur); glUniform1fv_ (glGetUniformLocation_ (ph_blur, "w"), 2 * n + 1, w); PU1I (ph_blur, "n", n);
-		glUniform2i_ (glGetUniformLocation_ (ph_blur, "lim"), ph_gw - 1, ph_gh - 1);
+		glUseProgram_ (ph_blur); glUniform1fv_ (ph_ul (ph_blur, "w"), 2 * n + 1, w); PU1I (ph_blur, "n", n);
+		glUniform2i_ (ph_ul (ph_blur, "lim"), ph_gw - 1, ph_gh - 1);
 		for (int pass = 0; pass < 2; pass++) {
 			ph_target (ph_B[pass ^ 1], 0, 0, ph_gw, ph_gh); ph_bind (ph_blur, "src", 0, ph_B[pass]);
-			glUniform2i_ (glGetUniformLocation_ (ph_blur, "dir"), pass ? 0 : 1, pass ? 1 : 0); glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+			glUniform2i_ (ph_ul (ph_blur, "dir"), pass ? 0 : 1, pass ? 1 : 0); glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 	}
-	/* the screen's values */
+	/* the screen's values: through the sheet with its effects (gpu_ovfx.c), or as PH_FS_OUT */
 	{ const int ovon = ov && ov_on && !sheet_file && ov_lm; if (ovon) ph_overlay ();
+	  if (ovon && ph_ovm && ox_draw (glow, dt)) goto done;
 	  ph_target (ph_P, 0, 0, FW, FH); glUseProgram_ (ph_out);
 	  ph_bind (ph_out, "s", 0, ph_S); ph_bind (ph_out, "gt", 1, ph_B[0]); ph_bind (ph_out, "ovm", 2, ph_ovm); ph_bind (ph_out, "ova", 3, ph_ova);
 	  const float gk = GLOW_K * (glow == 2 ? 2.0f : 1.0f);
 	  PU1I (ph_out, "glow", glow); PU1I (ph_out, "ovon", ovon && ph_ovm); PU1I (ph_out, "wbon", wb_on);
-	  glUniform3f_ (glGetUniformLocation_ (ph_out, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
-	  glUniform3f_ (glGetUniformLocation_ (ph_out, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (glGetUniformLocation_ (ph_out, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
+	  glUniform3f_ (ph_ul (ph_out, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
+	  glUniform3f_ (ph_ul (ph_out, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (ph_ul (ph_out, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
 	  PU1F (ph_out, "bright", opt_bright); PU1F (ph_out, "grey", glass_grey);
-	  glUniform2f_ (glGetUniformLocation_ (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
+	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+done:
 	glActiveTexture_ (GL_TEXTURE0);
 	if (shot) glReadPixels_ (0, 0, FW, FH, GL_RGBA, GL_UNSIGNED_BYTE, fb);   /* (test: the picture back, B G R A = the CPU's XRGB) */
 	glBindVertexArray_ (0); glUseProgram_ (0); glBindFramebuffer_ (GL_FRAMEBUFFER, 0);

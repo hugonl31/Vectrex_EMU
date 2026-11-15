@@ -223,6 +223,9 @@ static int opt_profile, opt_renderer, raw_glow = -1, raw_smooth = -1, raw_sbend 
 #ifndef VX_EMUVR
 static float g_lamp_x, g_lamp_y;                 /* (the lamp's position: gpu_gl.c) */
 #endif
+/* what the overlay shows on the GPU (gpu_ovfx.c; fx_apply: the options and the profile) */
+static struct { float glow, ovl, wear, fine, medium, large, scrib, glint, reach; int scr, seed; } ovfx;
+static float k_ovl = -1, k_ovglow = -1; static int raw_scr = -1, opt_par = 1;   /* (the overlay's ceiling light, plastic glow, scratches, parallax) */
 static float glass_grey_v, k_ceiling = -1, k_crefl = -1, k_cwear = -1;   /* (the strengths: -1 auto - the profile's on / off at 1x) */                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
 static int geo_glass = -1, geo_rot = -1, geo_size = -1; static unsigned av_maxw, av_maxh; static uint32_t *rb; static size_t rb_n;
 VXS_ON
@@ -389,12 +392,24 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's overlay. START switches it (any button: Quick Menu > Controls).", "on|off" },
 	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How strongly the overlay colours the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
 	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
+	{ "vectrex_emu_parallax", "overlay", "Parallax", "The picture a little higher than the sheet, as seen from the usual height.", "on|off" },
+	{ "vectrex_emu_ov_glow", "overlay", "Plastic glow", "The plastic spreads the light softly around bright lines (GPU).", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scratches", "overlay", "Scratches", "The sheet's scratches catch the light (GPU).", "auto|on|off" },
+	{ "vectrex_emu_scr_wear", "overlay", "Scratches: wear", "How much the sheet was handled (all of them).", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_fine", "overlay", "Fine scratches", "Steps 1-3: the matte buff.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_medium", "overlay", "Medium scratches", "Steps 4-7.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_damage", "overlay", "Damage", "Steps 8-10: deep, through the colour.", "0.1x|0x|0.25x|0.5x|0.75x|1x|1.5x|2x" },
+	{ "vectrex_emu_scr_scrib", "overlay", "Scratches: scribbles", "The share of curly ones.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_glint", "overlay", "Scratches: glint strength", NULL, "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_reach", "overlay", "Scratches: glint reach", "Low: close to the lines. High: farther out.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_seed", "overlay", "Scratch pattern", "Another random set of scratches.", "1|2|3|4|5|6|7|8|9|10" },
 	{ "vectrex_emu_case", "case", "Plastic case", "The case round the glass, without an overlay.", "auto|on|off" },
 	{ "vectrex_emu_case_refl", "case", "Case reflections", "The lines mirrored in the case's walls: their strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_case_wear", "case", "Case scratches and wear", NULL, "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_room", "room", "Room light", "Lights the overlay.", "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_room_glass", "room", "Room light on the glass and the case", "Off: pure black without an overlay.", "off|on" },
 	{ "vectrex_emu_ceiling", "room", "Ceiling light reflection", "A ceiling light mirrored in the glass: its strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_ceiling_ov", "room", "Ceiling light on the overlay", "Its reflection on the sheet: strength (GPU).", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_lamp_x", "room", "Lamp position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
 	{ "vectrex_emu_lamp_y", "room", "Lamp position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
 	{ "vectrex_emu_skip_intro", "unit", "Skip the Vectrex intro", "Games start straight away (next game start).", "off|on" },
@@ -428,7 +443,7 @@ static const struct vx_opt OPTS[] = {
 	{ NULL, NULL, NULL, NULL, NULL } };
 static const char *const OPT_CATS[][3] = {   /* (the desktop's Config tabs, in its order - Head is not here) */
 	{ "tube", "Tube", "Phosphor, shape and glass, glow and beam, signal" },
-	{ "overlay", "Overlay", "The sheet: tint, print" },
+	{ "overlay", "Overlay", "The sheet: tint, print, plastic and scratches" },
 	{ "case", "Case", "The plastic round the glass" },
 	{ "room", "Room light", "The room, the ceiling light" },
 	{ "unit", "Unit", "Which Vectrex, starting up" },
@@ -536,6 +551,13 @@ static void read_options (void)
 #define TRI(k) (opt_is (k, "on") ? 1 : opt_is (k, "off") ? 0 : -1)
 	raw_glass = TRI ("vectrex_emu_glass_edge"); raw_case = TRI ("vectrex_emu_case");
 #define STR(k) (opt_is (k, "auto") || !optv (k)[0] ? -1.0f : (float) atof (optv (k)))   /* (a strength: auto -1, else 0..2) */
+	k_ovl = STR ("vectrex_emu_ceiling_ov"); k_ovglow = STR ("vectrex_emu_ov_glow"); raw_scr = TRI ("vectrex_emu_scratches");
+	opt_par = !opt_is ("vectrex_emu_parallax", "off");
+	{ float *const d[7] = { &ovfx.wear, &ovfx.fine, &ovfx.medium, &ovfx.large, &ovfx.scrib, &ovfx.glint, &ovfx.reach };
+	  static const char *const kk[7] = { "vectrex_emu_scr_wear", "vectrex_emu_scr_fine", "vectrex_emu_scr_medium", "vectrex_emu_scr_damage",
+		"vectrex_emu_scr_scrib", "vectrex_emu_scr_glint", "vectrex_emu_scr_reach" };
+	  for (int i = 0; i < 7; i++) { float v = (float) optx (kk[i], i == 3 ? 0.1 : 1.0); *d[i] = v >= 0 && v <= 2 ? v : (i == 3 ? 0.1f : 1.0f); }
+	  int sd = atoi (optv ("vectrex_emu_scr_seed")); ovfx.seed = sd >= 1 && sd <= 10 ? sd : 1; }
 	k_ceiling = STR ("vectrex_emu_ceiling"); k_crefl = STR ("vectrex_emu_case_refl"); k_cwear = STR ("vectrex_emu_case_wear");
 	raw_ceiling = k_ceiling < 0 ? -1 : k_ceiling > 0; raw_crefl = k_crefl < 0 ? -1 : k_crefl > 0; raw_cwear = k_cwear < 0 ? -1 : k_cwear > 0;
 #ifndef VX_EMUVR
@@ -1526,7 +1548,7 @@ static float edge_mask (int x, int y)
 	return y >= 0 && y < FH ? emask[(size_t) y * EW + ex] : 0;
 }
 #define OV_LINE_GAIN 1.6f                   /* (the lines under an overlay, as before: x 1.6 - the sheet's gain) */
-#define OV_ROOM 0.0648f                     /* (vecrender.py: the room's light on the filters - an evening room, the owner's) */
+#define OV_ROOM (0.0648f * 0.0648f / 0.075f)   /* (vecrender.py room_light at the default: the room's light on the filters - an evening room) */
 #define OV_PRINT (0.36f * 0.0648f / 0.075f) /* (the print's brightness at that room light: art_print x (room / ART_ROOM_MID)) */
 static float *ov_lm; static size_t ov_lm_n; static int ov_gen;   /* (ov_gen: made again - the GPU takes it anew) */
 static int *ov_tx, *ov_ty, ov_tk[5];       /* (each picture column's overlay column, each row's first overlay pixel) */
@@ -1800,6 +1822,9 @@ static int tube_split (const wline *L, int n, wline *o)
 	}
 	return m;
 }
+#define ART_PARALLAX 0.008
+static double par_dy (void)                  /* (vecrender.py par_dy: the overlay's parallax, emulator units - up) */
+{ return opt_par && ov && ov_on && !sheet_file ? -ART_PARALLAX * 0.924 * ALG_MAX_Y : 0.0; }
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
 static int build_lines (wline *L, int n, int to, double esh, int npl)
 {
@@ -1830,6 +1855,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 	const double sx = EW / SHEET_W, sy = FH / SHEET_H, gp = GAME_PX * sy, bk = opt_sigma / 0.689;   /* (px per game px;
 	                                                    the beam width option: "thin" = 0.55 px at 1x for intensity 127) */
 	const double cxm = ALG_MAX_X / 2.0, cym = ALG_MAX_Y / 2.0;
+	const double par = par_dy ();
 	const double gs = (opt_bend && load_f > 0) ? 1.0 + 0.6 * load_f * 10.0 / 128.0 : 1.0;   /* (bending: grow) */
 	const int n0 = npl;
 	for (int i = 0; i < n && npl < NW; i++) {
@@ -1841,7 +1867,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		if (pw_sx != 1.0) { x0 = cxm + (x0 - cxm) * pw_sx; x1 = cxm + (x1 - cxm) * pw_sx; y0 = cym + (y0 - cym) * pw_sx; y1 = cym + (y1 - cym) * pw_sx; }
 		if (opt_wob) { double ax, ay, bx, by; hum_at (l->t, opt_wob, &ax, &ay); hum_at (l->t + l->cyc, opt_wob, &bx, &by);
 			if (zl[i]) { ax = bx; ay = by; } x0 += ax; y0 += ay; x1 += bx; y1 += by; }
-		x0 = (x0 - SHEET_X0) * sx + esh; x1 = (x1 - SHEET_X0) * sx + esh; y0 = (y0 - SHEET_Y0) * sy; y1 = (y1 - SHEET_Y0) * sy;
+		x0 = (x0 - SHEET_X0) * sx + esh; x1 = (x1 - SHEET_X0) * sx + esh; y0 = (y0 - SHEET_Y0 + par) * sy; y1 = (y1 - SHEET_Y0 + par) * sy;
 		/* the brightness and width (game px, FWHM) */
 		const double zi = z / 127.0, cyc = l->cyc; double zk = zk_tab[z];
 		const double zw = zi >= BEAM_LOWZ ? 1.0 : BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ;
@@ -1954,8 +1980,11 @@ static void pic_setup (void)
 /* the profile's choices (Ultra, High, Medium, Low, Basic) for the options left on auto */
 static void fx_apply (void)
 {
-	static const unsigned char T[5][8] = {   /* glow, smooth bends, smooth motion, glass edge, ceiling light, case, its reflections, its wear */
-		{ 1, 1, 1, 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 0, 1, 1, 1 }, { 1, 1, 1, 0, 0, 1, 0, 1 }, { 0, 1, 1, 0, 0, 1, 0, 1 }, { 0, 0, 0, 0, 0, 0, 0, 0 } };
+	static const unsigned char T[5][11] = {   /* glow, smooth bends, smooth motion, glass edge, ceiling light, case, its reflections, its
+	                                             wear; the ceiling light on the overlay, the plastic glow, the scratches (vecrender.py
+	                                             PROFILE_OFF: High without the room's reflections, Medium on without the overlay's) */
+		{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1 }, { 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0 }, { 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0 },
+		{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } };
 	const int pr = opt_profile ? opt_profile - 1 : gpu_ok ? 0 : 2; const unsigned char *t = T[pr];
 	opt_glow = raw_glow >= 0 ? raw_glow : t[0]; opt_sbend = raw_sbend >= 0 ? raw_sbend : t[1]; opt_smooth = raw_smooth >= 0 ? raw_smooth : t[2];
 	const int g = gpu_ok && !stereo;
@@ -1968,6 +1997,10 @@ static void fx_apply (void)
 	gfx.cwear = (raw_cwear >= 0 ? raw_cwear : t[7]) ? (k_cwear > 0 ? k_cwear : 1.0f) : 0.0f;
 	glass_grey = g ? 0.0f : glass_grey_v;                       /* (the GPU draws the glass's grey itself) */
 	gfx.fx = g && !(ov && ov_on && !sheet_file) && (gfx.glass || gfx.cse || gfx.lk > 0 || gfx.grey > 0);
+	{ const int go = g && ph_ok; float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll;   /* (the overlay's: vecrender.py light_level) */
+	  ovfx.ovl = go && (k_ovl >= 0 ? k_ovl > 0 : t[8]) ? ll * ll * ll * (k_ovl > 0 ? k_ovl : 1.0f) : 0.0f;
+	  ovfx.glow = go && (k_ovglow >= 0 ? k_ovglow > 0 : t[9]) ? (k_ovglow > 0 ? k_ovglow : 1.0f) : 0.0f;
+	  ovfx.scr = go && (raw_scr >= 0 ? raw_scr : t[10]); }
 }
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
 #else
@@ -2103,7 +2136,7 @@ void retro_run (void)
 		double fx = (sx + 32768) / 65536.0, fy = (sy + 32768) / 65536.0;
 		{ const double ax = fx, ay = fy;      /* (the picture turned: back to its own way up) */
 		  if (opt_rot == 1) { fx = 1 - ay; fy = ax; } else if (opt_rot == 2) { fx = 1 - ax; fy = 1 - ay; } else if (opt_rot == 3) { fx = ay; fy = 1 - ax; } }
-		{ double lx, ly; tube_inv (SHEET_X0 + (CX0 + fx * CW) / EW * SHEET_W, SHEET_Y0 + (CY0 + fy * CH) / (double) FH * SHEET_H, &lx, &ly);
+		{ double lx, ly; tube_inv (SHEET_X0 + (CX0 + fx * CW) / EW * SHEET_W, SHEET_Y0 + (CY0 + fy * CH) / (double) FH * SHEET_H - par_dy (), &lx, &ly);
 		  vt_set_analog (24, lx); vt_set_analog (25, ly); } vt_set_analog (26, trig ? 1.0 : 0.0);
 	}
 	apply_input (m);

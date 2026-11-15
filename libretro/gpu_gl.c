@@ -314,6 +314,22 @@ static double rl_ceiling (double px, double py)
 	if (fabs (fx - 0.5) > 0.44 || fabs (fz - 0.5) > 0.42) return 0.18 * fall;
 	double t = 1 - fabs (fx - 0.5) * 2; return (0.85 + 0.15 * pow (t > 0 ? t : 0, 0.6)) * fall;
 }
+/* (roomlight.flat_points: the light's reflection on a flat overlay as six points over its area - half picture heights) */
+static void rl_flat_points (double x, double y, float out[12])
+{
+	const double dx = 1.48 * x, dy = -0.21 + 0.77 * y, fx = -0.44 + 0.6 * dx, fy = -0.72 + 0.6 * dy, cu0 = fx / 0.9, cv0 = fy / 0.9;
+	double su = 0, sv = 0, suu = 0, svv = 0, suv = 0; int n = 0;
+	for (int j = -30; j <= 30; j++) for (int i = -30; i <= 30; i++) { const double u = cu0 + i * 0.012, v = cv0 + j * 0.012;
+		if (rl_ceiling ((u * 0.9 - fx) / 0.42, (v * 0.9 - fy) / 0.42) > 0.3) { su += u; sv += v; suu += u * u; svv += v * v; suv += u * v; n++; } }
+	if (n < 3) { for (int k = 0; k < 6; k++) { out[2 * k] = (float) cu0; out[2 * k + 1] = (float) cv0; } return; }
+	const double mu = su / n, mv = sv / n, cuu = suu / n - mu * mu, cvv = svv / n - mv * mv, cuv = suv / n - mu * mv;
+	const double th = 0.5 * atan2 (2 * cuv, cuu - cvv), ca = cos (th), sa = sin (th);
+	double a = ca * ca * cuu + 2 * ca * sa * cuv + sa * sa * cvv, b = sa * sa * cuu - 2 * ca * sa * cuv + ca * ca * cvv;
+	const double sl = sqrt (a > 1e-8 ? a : 1e-8), ss = sqrt (b > 1e-8 ? b : 1e-8);
+	static const double kl[4] = { -1.5, -0.5, 0.5, 1.5 }, ks[2] = { -1.0, 1.0 };
+	for (int k = 0; k < 4; k++) { out[2 * k] = (float) (mu + ca * kl[k] * sl); out[2 * k + 1] = (float) (mv + sa * kl[k] * sl); }
+	for (int k = 0; k < 2; k++) { out[8 + 2 * k] = (float) (mu - sa * ks[k] * ss); out[9 + 2 * k] = (float) (mv + ca * ks[k] * ss); }
+}
 static void rl_reflp (double u, double v, double curv, double *ox, double *oy)
 {
 	double nx = curv * u, ny = curv * v, nz = 1.0, L = sqrt (nx * nx + ny * ny + nz * nz); nx /= L; ny /= L; nz /= L;

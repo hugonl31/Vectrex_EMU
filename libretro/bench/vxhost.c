@@ -40,7 +40,7 @@ static int hw_setup (unsigned w, unsigned h)
 #endif
 
 static const char *sysdir;
-static struct { char key[64], val[96]; } opt[64]; static int nopt;
+static struct { char key[64], val[96]; } opt[256]; static int nopt;
 static int hidden;                              /* (a run-ahead style hidden refresh: no video) */
 static const uint32_t *frame; static unsigned fw, fh; static size_t fpitch;
 static uint64_t audio_hash, audio_n;
@@ -55,7 +55,7 @@ static bool env (unsigned cmd, void *data)
 	case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: return *(enum retro_pixel_format *) data == RETRO_PIXEL_FORMAT_XRGB8888;
 	case RETRO_ENVIRONMENT_SET_VARIABLES: {
 		const struct retro_variable *v = data;
-		for (; v->key && nopt < 64; v++) {
+		for (; v->key && nopt < 256; v++) {
 			const char *d = strchr (v->value, ';'); d = d ? d + 1 : v->value; while (*d == ' ') d++;
 			const char *e = strchr (d, '|'); size_t n = e ? (size_t) (e - d) : strlen (d);
 			snprintf (opt[nopt].key, sizeof opt[nopt].key, "%s", v->key); snprintf (opt[nopt].val, sizeof opt[nopt].val, "%.*s", (int) n, d); nopt++; }
@@ -86,7 +86,13 @@ static void video (const void *d, unsigned w, unsigned h, size_t pitch)
 {
 #ifdef VXH_EGL
 	if (d == RETRO_HW_FRAME_BUFFER_VALID) {
-		if (getenv ("VXH_FINISH")) glFinish ();     /* (bench: the GPU's time counted) */
+		{ static int nf = -1; static GLsync fq[8]; static long fi;   /* (bench: the GPU's time counted - VXH_FINISH=N: at most N
+		                                                    frames in flight, as a swap chain; 1 (or set): each frame waited for) */
+		  if (nf < 0) nf = getenv ("VXH_FINISH") ? (atoi (getenv ("VXH_FINISH")) > 0 ? atoi (getenv ("VXH_FINISH")) : 1) : 0;
+		  if (nf > 7) nf = 7;
+		  if (nf == 1) glFinish ();
+		  else if (nf > 1) { GLsync *q = &fq[fi % nf]; if (*q) { glClientWaitSync (*q, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull); glDeleteSync (*q); }
+			*q = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0); glFlush (); fi++; } }
 		if (!read_back) return;
 		glBindFramebuffer (GL_FRAMEBUFFER, hw_fbo); unsigned char *b = malloc ((size_t) w * h * 4);
 		glReadPixels (0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, b);

@@ -37,3 +37,4 @@ system/al2.bin
 /libretro/dist/
 /libretro/*.so
 /libretro/bench/vxhost
+/libretro/bench/vxhost_android

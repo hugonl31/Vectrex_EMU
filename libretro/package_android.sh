@@ -8,7 +8,7 @@ OVERLAYS=${OVERLAYS:-../overlays}
 sh build_libretro.sh android
 rm -rf dist/pkg; mkdir -p dist/pkg/system/vectrex_emu/overlays
 cp vectrex_emu_libretro_android.so vectrex_emu_libretro.info dist/pkg/
-cp ../system/bios.bin ../sounds/on.wav ../sounds/off.wav dist/pkg/system/vectrex_emu/
+cp ../system/bios.bin dist/pkg/system/vectrex_emu/   # (the switch-on / off sounds are built into the core)
 cp "$OVERLAYS"/*.art "$OVERLAYS"/CREDITS.md dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null; cp "$OVERLAYS"/*.png dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null || true
 mkdir -p dist/pkg/system/vectrex_emu/gpu; cp gpu/case_scratch.png gpu/glass_light.bin dist/pkg/system/vectrex_emu/gpu/   # (the GPU path: make_gpu_assets.py)
 cp -r android/ES-DE dist/pkg/

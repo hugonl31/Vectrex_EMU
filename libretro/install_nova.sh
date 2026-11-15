@@ -17,7 +17,7 @@ if ssh -o BatchMode=yes -p 8022 $NOVA "test -s $SD/ES-DE/custom_systems/es_syste
 else
 	scp -q -P 8022 $P/ES-DE/custom_systems/es_systems.xml $NOVA:$SD/ES-DE/custom_systems/
 fi
-scp -q -P 8022 $P/system/vectrex_emu/bios.bin $P/system/vectrex_emu/on.wav $P/system/vectrex_emu/off.wav $NOVA:$SD/BIOS/vectrex_emu/
+scp -q -P 8022 $P/system/vectrex_emu/bios.bin $NOVA:$SD/BIOS/vectrex_emu/
 # (the overlays: only those the Nova lacks - sync_nova.sh puts the desktop build's own there, which stay)
 tar -C $P/system/vectrex_emu/overlays -cf - . | ssh -o BatchMode=yes -p 8022 $NOVA "tar -C $SD/BIOS/vectrex_emu/overlays -xf - --skip-old-files --no-same-owner --no-same-permissions 2>/dev/null || true"
 ssh -o BatchMode=yes -p 8022 $NOVA "mkdir -p $SD/BIOS/vectrex_emu/gpu"

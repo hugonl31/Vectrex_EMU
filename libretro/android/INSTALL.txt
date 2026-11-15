@@ -21,12 +21,11 @@ load a core from a file.
      Main Menu > Online Updater > Update Core Info Files (all the other cores' info files into it),
      then copy vectrex_emu_libretro.info into it. The core list then shows "Vectrex_EMU".
 
-3. The BIOS, overlays and sounds
+3. The BIOS and overlays
    RetroArch: Settings > Directory > System/BIOS shows the system folder (often /storage/emulated/0/RetroArch/system).
    Copy the vectrex_emu folder from this zip's system folder into it, so you get
        <system>/vectrex_emu/bios.bin
-       <system>/vectrex_emu/overlays/*.png
-       <system>/vectrex_emu/on.wav, off.wav
+       <system>/vectrex_emu/overlays/*.art (or .png)
    Speech games (VecVox / VecVoice): put sp0256-al2.bin (or al2.bin) in <system>/vectrex_emu too. Not included.
    Overlays are found by the game's file name (Armor Attack.bin -> overlays/Armor Attack.png).
    PiTrex and UVMC2: their SD card folders (cards/system/vectrex_emu: pitrex, uvmc2) into <system>/vectrex_emu - the

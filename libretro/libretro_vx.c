@@ -1362,20 +1362,27 @@ static int16_t *pw_snd_on, *pw_snd_off, *pw_play; static int pw_n_on, pw_n_off, 
 #define POWER_SND_GAIN 1.6                  /* (vectrex_emu.py: the recordings 60 % louder, the owner 2026-10-08) */
 #define CRT_COLLAPSE 0.05
 static double pw_rand (void) { pw_rng = pw_rng * 1664525u + 1013904223u; return (pw_rng >> 8) / 16777216.0; }
+#include "sound_tab.h"                      /* (1.1: the sounds built in, as the desktop's exe has them) */
+static int16_t *pw_wav_mem (const unsigned char *b, long L, int *n);
 static int16_t *pw_wav (const char *dir, const char *name, int *n)   /* (16-bit mono; the silence before it skipped) */
 {
 	char fn[1700]; snprintf (fn, sizeof fn, "%s" SEP "vectrex_emu" SEP "%s", dir, name); *n = 0;
-	FILE *f = fopen (fn, "rb"); if (!f) return NULL;
+	FILE *f = dir ? fopen (fn, "rb") : NULL;
+	if (!f) return !strcmp (name, "on.wav") ? pw_wav_mem (SND_ON, (long) sizeof SND_ON, n) : pw_wav_mem (SND_OFF, (long) sizeof SND_OFF, n);   /* (no file: the built-in one) */
 	fseek (f, 0, SEEK_END); long L = ftell (f); fseek (f, 0, SEEK_SET);
 	unsigned char *b = malloc (L); if (!b || fread (b, 1, L, f) != (size_t) L) { fclose (f); free (b); return NULL; } fclose (f);
-	long i = 12; int16_t *o = NULL;
+	int16_t *o = pw_wav_mem (b, L, n); free (b); return o;
+}
+static int16_t *pw_wav_mem (const unsigned char *b, long L, int *n)
+{
+	long i = 12; int16_t *o = NULL; *n = 0;
 	while (i + 8 <= L) { uint32_t cl = b[i + 4] | b[i + 5] << 8 | b[i + 6] << 16 | (uint32_t) b[i + 7] << 24;
 		if (!memcmp (b + i, "data", 4)) { long m = (long) (cl > (uint32_t) (L - i - 8) ? L - i - 8 : cl) / 2; const int16_t *d = (const int16_t *) (b + i + 8);
 			int pk = 1; for (long k = 0; k < m; k++) { int a = d[k] < 0 ? -d[k] : d[k]; if (a > pk) pk = a; }
 			long k0 = 0; while (k0 < m && (d[k0] < 0 ? -d[k0] : d[k0]) <= pk * 0.05) k0++; k0 = k0 > 88 ? k0 - 88 : 0;
 			o = malloc ((m - k0) * 2); memcpy (o, d + k0, (m - k0) * 2); *n = (int) (m - k0); break; }
 		i += 8 + cl + (cl & 1); }
-	free (b); return o;
+	return o;
 }
 static void pw_sound (int on) { pw_play = on ? pw_snd_on : pw_snd_off; pw_n_play = on ? pw_n_on : pw_n_off; pw_pos = 0; }
 /* the zap (vectrex_emu.py crt_off): one smooth freehand stroke, 6 in 10 5-8 cm long, 3 in 10 2-5 cm, 1 in 10 a squiggle
@@ -2500,7 +2507,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	{ char sp[1100]; double off_for = 1e9; pw_stamp_path (sp, sizeof sp); FILE *f = fopen (sp, "r"); long long ts;
 	  if (f) { if (fscanf (f, "%lld", &ts) == 1) off_for = (double) (time (NULL) - ts); fclose (f); }
 	  if (off_for < 0) off_for = 0;
-	  if (!pw_snd_on && sys) { pw_snd_on = pw_wav (sys, "on.wav", &pw_n_on); pw_snd_off = pw_wav (sys, "off.wav", &pw_n_off); }
+	  if (!pw_snd_on) { pw_snd_on = pw_wav (sys, "on.wav", &pw_n_on); pw_snd_off = pw_wav (sys, "off.wav", &pw_n_off); }
 	  pw_rng = (unsigned) time (NULL) * 2654435761u; pw_file = getenv ("VECTREX_POWER"); pw_seq_seen = -1; pw_poll_n = 0;
 	  pw_on = 0; pw_switch (1, off_for); pw_poll (); pw_poll_n = 0; }
 	if (opt_is ("vectrex_emu_skip_intro", "on")) skip_boot ();   /* (1.1: as the desktop's Skip the intro - the BIOS run unseen) */

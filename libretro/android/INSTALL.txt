@@ -35,9 +35,13 @@ load a core from a file.
 
 Controls (RetroArch's RetroPad)
    Stick or d-pad: the joystick.  Y X B A: Vectrex buttons 1 2 3 4 (left to right, as on the controller).
-   SELECT: the overlay off / on.  Port 2: a second pad.
+   START: the overlay off / on - any other button: Quick Menu > Controls > Port 1 Controls > Overlay off / on.
+   Port 2: a second pad.
+   Tate (the device held upright): Core Options > Rotation; the stick turns with the picture.
 
-Settings: Quick Menu > Core Options (picture size, glow, trail, overlay, screen rate...).
+Settings: Quick Menu > Core Options (picture size, glow, trail, overlay tint and print brightness, rotation, screen rate).
+   50 Hz (the game's own rate): Screen rate 50 Hz, with RetroArch's Settings > Video > Synchronization >
+   Sync to Exact Content Framerate on.
    If a game runs slow: Phosphor glow off, then Smooth motion off, Picture size 1x.
 
 Trouble: the core writes <system>/vectrex_emu/vectrex_emu.log on every game start (the BIOS and overlay it found).

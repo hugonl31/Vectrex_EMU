@@ -203,6 +203,10 @@ static int opt_rate = 60, opt_smooth = 1, opt_halo = 1, opt_bend = 1, opt_dwell 
 static int opt_dots = 1, opt_speedb = 1; static float opt_trail = 0.6f, opt_trail_k = 1.0f, opt_bright = 1.0f;   /* (v0.10: every look switchable, for slower PCs) */
 static int opt_sbend = 0; static double opt_white = 12000;   /* (v0.14; opt_geom with the tube map above) */
 static int opt_power = 1;                    /* (v0.15: the switch-on / switch-off effects) */
+/* (1.0, 2026-11-15) the overlay as Vectrex_EMU's (vecrender.py ART_SHADER): its clear filters colour the lines in their
+ * own hue at the tint strength, its opaque print lit by the room at the print brightness; the overlay's button; the
+ * rotation (RetroArch turns the picture, the stick turned with it) */
+static float opt_ov_tint = 1.0f, opt_ov_print = 1.0f; static int opt_ov_btn = 1, opt_rot, opt_rot_stick = 1;
 VXS_ON
 static int ov_on = 1, sel_held;          /* (v0.13: saved - SELECT's overlay switch is game-side input) */
 VXS_OFF
@@ -341,10 +345,14 @@ static struct retro_variable vars[] = {
 #else
 #define VX_RATE_DEF 60
 static struct retro_variable vars[] = {
-	{ "vectrex_emu_overlay", "Overlay (the game's own PNG from system/vectrex_emu/overlays - SELECT takes it off / puts it on); on|off" },
+	{ "vectrex_emu_overlay", "Overlay (the game's own PNG from system/vectrex_emu/overlays); on|off" },
+	{ "vectrex_emu_ov_tint", "Overlay: tint strength (how much its clear colours colour the lines); 1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
+	{ "vectrex_emu_ov_print", "Overlay: printed art brightness (its opaque parts); 1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
+	{ "vectrex_emu_rotate", "Rotation (tate: the picture turned, the device held upright); off|90 (turn the device right)|270 (turn the device left)|180" },
+	{ "vectrex_emu_rotate_stick", "Rotation: the stick turned with the picture; on|off" },
 	{ "vectrex_emu_res", "Picture size (from the next game start); 1x 624x800|2x 1248x1600|3x 1872x2400" },
 	{ "vectrex_emu_area", "Picture area (from the next game start); glass window 145.7x188.5 mm|overlay sheet 162x207 mm" },
-	{ "vectrex_emu_rate", "Screen rate (from the next game start); 60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
+	{ "vectrex_emu_rate", "Screen rate (50 Hz: the game's own; with RetroArch's Sync to Exact Content Framerate); 60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
 	{ "vectrex_emu_smooth", "Smooth motion (not at 50 Hz); on|off" },
 	{ "vectrex_emu_glow", "Phosphor glow (bloom); on|off|strong" },
 	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow); on|long (real Vectrex)|short|off" },
@@ -372,8 +380,10 @@ static int opt_is (const char *key, const char *val)
 	struct retro_variable v = { key, NULL };
 	return env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value && !strcmp (v.value, val);
 }
-static int rate_set;                        /* (the screen rate: read once, at the game's start - RetroArch keeps the
-                                               rate it was told) */
+static int rate_set;                        /* (the screen rate: read at each game's start - RetroArch keeps the rate it
+                                               was told; the RetroArch flavour tells it a new one too) */
+static int opt_overlay_seen = -1, ov_made;
+void retro_get_system_av_info (struct retro_system_av_info *a);
 static void white_make (void);
 static float light_g = 2.0f, light_f = 1.2f, light_p = 4.0f;   /* (v0.32: the screen light in EmuVR and its faint parts, see pixel_out) */
 /* v0.26 (owner 2026-11-06): the overlay's scratches and plastic glow as Vectrex_EMU's sliders (the EmuVR look by
@@ -421,7 +431,24 @@ static void read_options (void)
 	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
-	ov_on = opt_overlay;
+	{ int was = opt_overlay_seen; opt_overlay_seen = opt_overlay; if (was != opt_overlay) ov_on = opt_overlay; }   /* (only when the option itself changed:
+	                                              a change of another option keeps the button's choice) */
+#ifdef VX_EMUVR
+	opt_ov_btn = 2;                             /* (EmuVR: SELECT, as before) */
+#else
+	opt_ov_btn = 1;                             /* (the RetroPad's START, named "Overlay off / on": RetroArch's Controls menu
+	                                               puts it on any button - the owner, 2026-11-15) */
+	{ float t = (float) optx ("vectrex_emu_ov_tint", 1), pr = (float) optx ("vectrex_emu_ov_print", 1);
+	  if (t != opt_ov_tint || pr != opt_ov_print) { opt_ov_tint = t; opt_ov_print = pr; ov_made = 0; } }
+	{ int r = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
+	        : opt_is ("vectrex_emu_rotate", "270 (turn the device left)") ? 3 : 0;
+	  if (r != opt_rot) { opt_rot = r; unsigned rr = (unsigned) r; env_cb (RETRO_ENVIRONMENT_SET_ROTATION, &rr); } }
+	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off");
+	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */
+	if (rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
+	  int r = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : VX_RATE_DEF; r = r >= 30 && r <= 360 ? r : VX_RATE_DEF;
+	  if (r != opt_rate) { opt_rate = r; struct retro_system_av_info av; retro_get_system_av_info (&av); env_cb (RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av); } }
+#endif
 }
 
 void retro_set_environment (retro_environment_t cb)
@@ -544,7 +571,7 @@ static int try_overlay_dir (const char *dir, const char *rom)
 	closedir (dh);
 #endif
 	if (!bestk) return 0;
-	int n; ov = stbi_load (best, &ovw, &ovh, &n, 4); snprintf (ov_path, sizeof ov_path, "%s", best);
+	int n; ov = stbi_load (best, &ovw, &ovh, &n, 4); snprintf (ov_path, sizeof ov_path, "%s", best); ov_made = 0;
 	fprintf (stderr, "[vectrex_emu] overlay %s\n", best);
 	return ov != NULL;
 }
@@ -655,6 +682,12 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 	if (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN)) y = -127;
 	unsigned ub = 0; int ux = 0, uy = 0;
 	if (port == 0 && usb_pad (&ux, &uy, &ub)) { if (ux) x = ux; if (uy) y = uy; }   /* (the Vectrex USB Controller, player 1) */
+	if (opt_rot_stick && opt_rot > 0) {          /* (the picture turned 90 / 180 / 270 counter-clockwise, the device turned
+	                                                the other way to hold it upright: the stick's up is then the picture's
+	                                                right (90), down (180), left (270)) */
+		int gx = x, gy = y;
+		if (opt_rot == 1) { gx = y; gy = -x; } else if (opt_rot == 2) { gx = -x; gy = -y; } else if (opt_rot == 3) { gx = -y; gy = x; }
+		x = gx < -128 ? -128 : gx > 127 ? 127 : gx; y = gy < -128 ? -128 : gy > 127 ? 127 : gy; }
 	*jx = (unsigned char) (x + 128); *jy = (unsigned char) (y + 128);
 	*bt = (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y) ? 1 : 0) | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X) ? 2 : 0)
 	    | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B) ? 4 : 0) | (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A) ? 8 : 0) | ub;
@@ -1119,6 +1152,28 @@ static float edge_mask (int x, int y)
 	}
 	return y >= 0 && y < FH ? emask[(size_t) y * EW + ex] : 0;
 }
+#define OV_LINE_GAIN 1.6f                   /* (the lines under an overlay, as before: x 1.6 - the sheet's gain) */
+#define OV_ROOM 0.0648f                     /* (vecrender.py: the room's light on the filters - an evening room, the owner's) */
+#define OV_PRINT (0.36f * 0.0648f / 0.075f) /* (the print's brightness at that room light: art_print x (room / ART_ROOM_MID)) */
+static float *ov_lm; static size_t ov_lm_n;
+static void ov_make (void)
+{
+	size_t n = (size_t) ovw * ovh;
+	if (n != ov_lm_n) { free (ov_lm); ov_lm = malloc (n * 6 * sizeof (float)); ov_lm_n = ov_lm ? n : 0; }
+	if (!ov_lm) return;
+	for (size_t i = 0; i < n; i++) {
+		const unsigned char *o = ov + i * 4; float a = o[3] / 255.0f, c[3] = { o[0] / 255.0f, o[1] / 255.0f, o[2] / 255.0f }, *m = ov_lm + i * 6;
+		float filt = a >= 0.004f && a < 0.996f ? 1.0f : 0.0f, opq = a >= 0.996f ? 1.0f : 0.0f;
+		float mx = c[0] > c[1] ? (c[0] > c[2] ? c[0] : c[2]) : (c[1] > c[2] ? c[1] : c[2]); if (mx < 0.02f) mx = 0.02f;
+		for (int k = 0; k < 3; k++) {
+			float hue = c[k] / mx, t = opt_ov_tint * filt; if (t > 1) t = 1;   /* (mix: past 1x the hue itself, deeper) */
+			float mm = (1.0f + (hue * 1.15f - 1.0f) * t) * (1.0f - opq);
+			if (opt_ov_tint > 1.0f && filt > 0) mm *= powf (hue < 1e-3f ? 1e-3f : hue, opt_ov_tint - 1.0f);
+			m[k] = mm * OV_LINE_GAIN; m[3 + k] = c[k] * (filt * OV_ROOM + opq * OV_PRINT * opt_ov_print);
+		}
+	}
+	ov_made = 1;
+}
 static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
 {
 	if (r <= 0 && g <= 0 && b <= 0 && !(ov && ov_on && !sheet_file)) return 0;   /* (empty: black - unless an overlay is painted in) */
@@ -1127,10 +1182,13 @@ static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
 		r *= wb_g[0] + (wb_c[0] - wb_g[0]) * sm; g *= wb_g[1] + (wb_c[1] - wb_g[1]) * sm; b *= wb_g[2] + (wb_c[2] - wb_g[2]) * sm; }
 	if (sheet_file) { }   /* (v0.35: an overlay's x1.6 is the mod's now - on the screen's light, not clipped here) */   /* (a sheet tints them in EmuVR: the same gain; v0.29: in EmuVR
 	                                     *  the core never paints the overlay in - owner: colour left on the lines with no overlay on) */
-	else if (ov && ov_on) {               /* the overlay: the lines take its colour where it is clear, its print shows faintly */
-		int ex = x % EW, ox = ex * ovw / EW, oy = y * ovh / FH; const unsigned char *o = ov + ((size_t) oy * ovw + ox) * 4;
-		float a = o[3] / 255.0f, cr = o[0] / 255.0f, cg = o[1] / 255.0f, cb = o[2] / 255.0f, lum = (r + g + b) / 3.0f;
-		r = lum * (1 - a + a * cr) * 1.6f + a * cr * 0.10f; g = lum * (1 - a + a * cg) * 1.6f + a * cg * 0.10f; b = lum * (1 - a + a * cb) * 1.6f + a * cb * 0.10f;
+	else if (ov && ov_on) {               /* the overlay (vecrender.py ART_SHADER): the lines through its clear filters in the
+	                                         filter's hue (x tint), none through its opaque print; the print and the filters
+	                                         lit by the room (the print x its brightness) - per overlay pixel in ov_lm / ov_la */
+		if (!ov_made) ov_make ();
+		int ex = x % EW, ox = ex * ovw / EW, oy = y * ovh / FH; const float *m = ov_lm + ((size_t) oy * ovw + ox) * 6;
+		float lum = (r + g + b) / 3.0f;
+		r = lum * m[0] + m[3]; g = lum * m[1] + m[4]; b = lum * m[2] + m[5];
 	}
 	{ static FILE *hf; static int hn, hon = -1; static unsigned hist[64];   /* (test: the brightness before the knee, VXPOC_RAWHIST) */
 	  if (hon < 0) hon = getenv ("VXPOC_RAWHIST") != NULL;
@@ -1461,7 +1519,7 @@ void retro_run (void)
 	poll_cb ();
 	unsigned char m[8] = { 128, 128, 0, 0x40, 128, 128, 0, 0 };
 	pad (0, &m[0], &m[1], &m[2]); pad (1, &m[4], &m[5], &m[6]);
-	{ int sel = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT);   /* SELECT: the overlay off / on */
+	{ int sel = opt_ov_btn ? input_cb (0, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START) : 0;   /* START (or SELECT): the overlay off / on */
 	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_on = !ov_on;   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
 	  sel_held = sel; }
 	/* v0.27: RetroArch's run-ahead runs the core a few frames ahead and then puts its state back - a cartridge swap or a
@@ -1852,7 +1910,7 @@ bool retro_load_game (const struct retro_game_info *g)
 		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick right (full)" };
 		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Joystick X" };
 		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Joystick Y" };
-		if (p == 0) d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Overlay off / on" };
+		if (p == 0) d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START, "Overlay off / on" };
 	  }
 	  d[n] = (struct retro_input_descriptor) { 0 }; env_cb (RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, d); }
 	char dir[1024]; snprintf (dir, sizeof dir, "%s", g->path);
@@ -1867,6 +1925,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	if (!bios[0]) { fprintf (stderr, "[vectrex_emu] no BIOS (bios.bin in the system folder)\n"); return false; }
 	snprintf (g_bios, sizeof g_bios, "%s", bios); snprintf (g_sys, sizeof g_sys, "%s", sys ? sys : ""); snprintf (g_dir, sizeof g_dir, "%s", dir);
 	{ const char *ce = getenv ("VECTREX_CART"); cart_file = ce && *ce ? ce : NULL; cart_seq = -1; }
+	rate_set = 0; opt_rot = -1;                 /* (each game: the screen rate read anew, the rotation told again) */
 	read_options ();
 	game_env (g->path, sys, dir);
 	/* (an empty script: vtest's main loads, resets and returns - the emulator stays set up) */

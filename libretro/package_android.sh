@@ -17,7 +17,7 @@ mkdir -p dist/pkg/system/vectrex_emu/gpu; cp gpu/case_scratch.png gpu/glass_ligh
 cp ../package/overlays/*.png dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null || true
 cp -r ../package/uvmc2 dist/pkg/system/vectrex_emu/
 cp ../package/system/README-speech.txt dist/pkg/system/vectrex_emu/   # (README.txt: the desktop's - ffmpeg, settings.json)
-mkdir -p dist/pkg/roms; cp ../package/roms/*.bin ../package/roms/*.um2 ../package/roms/README.txt dist/pkg/roms/
+mkdir -p dist/pkg/roms; cp ../package/roms/*.bin ../package/roms/*.um2 dist/pkg/roms/   # (its README: the desktop's ROM browser and folders)
 cp -r android/ES-DE dist/pkg/
 cp android/INSTALL.txt dist/pkg/
 rm -f dist/Vectrex_EMU_RetroArch_Android.zip

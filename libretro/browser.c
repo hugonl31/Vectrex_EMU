@@ -241,6 +241,7 @@ static void br_blend_cpu (uint32_t *f, int pitch)
 static int br_input (const unsigned char *m)
 {
 	if (opt_ov_btn == 2) return 0;                      /* (EmuVR: SELECT is the overlay's) */
+	if (net_on ()) { if (br_open) br_show (0); return 0; }   /* (netplay: another game on one side only - not here) */
 	const int bb = btn_id ("vectrex_emu_btn_browser"), sel = bb >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) bb) != 0;
 	if (!br_open) br_prevtouch = input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0;   /* (a touch that opened it - the deck's
 	                                                    cartridge - is not a tap in it: it closed again at once) */   /* (Ports: L3 by default) */

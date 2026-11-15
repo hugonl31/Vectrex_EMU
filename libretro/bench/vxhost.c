@@ -42,7 +42,9 @@ static int hw_setup (unsigned w, unsigned h)
 
 static const char *sysdir;
 static struct { char key[64], val[96]; } opt[256]; static int nopt;
-static int hidden;                              /* (a run-ahead style hidden refresh: no video) */
+static int hidden;
+/* (netsim: both players' inputs, made up per frame; ns_in the frame's - port 0 and port 1: buttons (RetroPad bits), x, y) */
+static int ns_on, ns_ctx; static unsigned ns_b[2]; static int ns_x[2], ns_y[2];                              /* (a run-ahead style hidden refresh: no video) */
 static const uint32_t *frame; static unsigned fw, fh; static size_t fpitch;
 static uint64_t audio_hash, audio_n;
 static long fno;
@@ -71,6 +73,7 @@ static bool env (unsigned cmd, void *data)
 		return false; }
 	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = false; return true;
 	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: *(int *) data = hidden ? 2 : 3; return true;
+	case 72 | 0x10000: if (!ns_on) return false; *(int *) data = ns_ctx; return true;   /* (GET_SAVESTATE_CONTEXT: netsim - ROLLBACK_NETPLAY) */
 	case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME: return true;
 #ifdef VXH_EGL
 	case RETRO_ENVIRONMENT_SET_HW_RENDER: {
@@ -108,6 +111,10 @@ static size_t audio (const int16_t *d, size_t n) { audio_hash = fnv (audio_hash,
 static void poll (void) {}
 static int16_t input (unsigned port, unsigned dev, unsigned idx, unsigned id)
 {
+	if (ns_on) { if (port > 1) return 0;
+		if (dev == RETRO_DEVICE_JOYPAD) return (ns_b[port] >> id) & 1;
+		if (dev == RETRO_DEVICE_ANALOG && idx == RETRO_DEVICE_INDEX_ANALOG_LEFT) return (int16_t) (id == RETRO_DEVICE_ID_ANALOG_X ? ns_x[port] : ns_y[port]);
+		return 0; }
 	if (port) return 0;
 	if (dev == RETRO_DEVICE_POINTER) {   /* (VXH_TOUCH=frame:x:y:frames,...: a finger there, x y 0..1 over the frame) */
 		static int nt = -1; static long tf[16], tl[16]; static double tx[16], ty[16];
@@ -182,6 +189,51 @@ int main (int argc, char **argv)
 			uint32_t p = ((const uint32_t *) ((const char *) frame + y * fpitch))[x]; unsigned char c[3] = { p >> 16, p >> 8, p };
 			fwrite (c, 1, 3, f); }
 		fclose (f); printf ("%s %ux%u\n", argv[6], fw, fh);
+	} else if (!strcmp (argv[4], "netsim")) {
+		/* RetroArch's netplay, simulated: player 2's input arrives D frames late; until then the last one known is used, the
+		 * frame run with it and the state saved before it; when the real input differs, the state of that frame is loaded and
+		 * the frames since run again (unseen), as netplay does. At the end the state must be the very one of a straight run
+		 * with the real inputs: netsim N D */
+		const int N = argc > 5 ? atoi (argv[5]) : 900, D = argc > 6 ? atoi (argv[6]) : 4;
+		size_t sz = retro_serialize_size (); if (!sz) { printf ("no save states for this game\n"); return 3; }
+		unsigned *B[2]; int *X[2], *Y[2];
+		for (int p_ = 0; p_ < 2; p_++) { B[p_] = calloc (N, sizeof (unsigned)); X[p_] = calloc (N, sizeof (int)); Y[p_] = calloc (N, sizeof (int)); }
+		unsigned r = 12345;
+		for (int p_ = 0; p_ < 2; p_++) { unsigned b = 0; int x = 0, y = 0;
+			for (int f = 0; f < N; f++) { r = r * 1664525u + 1013904223u;   /* (held for a while, then changed: a player's hand) */
+				if ((r >> 24) < 40) { b = (r >> 8) & ((1u << 0) | (1u << 1) | (1u << 8) | (1u << 9)); x = (int) ((r >> 4) % 3) * 32767 - 32767; y = (int) ((r >> 12) % 3) * 32767 - 32767; }
+				B[p_][f] = b; X[p_][f] = x; Y[p_][f] = y; } }
+		ns_on = 1; ns_ctx = 3;
+		for (fno = 0; fno < 200; fno++) retro_run ();       /* (the game started: the same for both runs) */
+		unsigned char *s0 = malloc (sz), *sa = malloc (sz), *sb = malloc (sz), **st = malloc (sizeof (char *) * (D + 2));
+		const int RS = D + 2; for (int f = 0; f < RS; f++) st[f] = malloc (sz);   /* (a ring: a rollback goes back D frames at most - a state is ~19 MB) */
+		retro_serialize (s0, sz); const long f0 = fno;
+		#define SETIN(f, rb, rx, ry) do { ns_b[0] = B[0][f]; ns_x[0] = X[0][f]; ns_y[0] = Y[0][f]; ns_b[1] = (rb); ns_x[1] = (rx); ns_y[1] = (ry); } while (0)
+		/* the straight run: the real inputs */
+		for (int f = 0; f < N; f++) { SETIN (f, B[1][f], X[1][f], Y[1][f]); fno = f0 + f; retro_run (); }
+		retro_serialize (sa, sz);
+		/* netplay: predicted, rolled back */
+		retro_unserialize (s0, sz);
+		unsigned *ub = calloc (N, sizeof (unsigned)); int *ux = calloc (N, sizeof (int)), *uy = calloc (N, sizeof (int)), rollbacks = 0, replayed = 0;
+		for (int t = 0; t < N; t++) {
+			const int fa = t - D;                           /* (player 2's input of frame fa arrives now) */
+			if (fa >= 0 && (ub[fa] != B[1][fa] || ux[fa] != X[1][fa] || uy[fa] != Y[1][fa])) {
+				retro_unserialize (st[fa % RS], sz); rollbacks++; hidden = 1;
+				for (int g = fa; g < t; g++) { const int k = g <= fa ? g : fa;
+					ub[g] = B[1][k]; ux[g] = X[1][k]; uy[g] = Y[1][k];
+					retro_serialize (st[g % RS], sz); SETIN (g, ub[g], ux[g], uy[g]); fno = f0 + g; retro_run (); replayed++; }
+				hidden = 0; }
+			const int k = fa >= 0 ? fa : -1;                /* (the guess: the last input known) */
+			ub[t] = k >= 0 ? B[1][k] : 0; ux[t] = k >= 0 ? X[1][k] : 0; uy[t] = k >= 0 ? Y[1][k] : 0;
+			retro_serialize (st[t % RS], sz); SETIN (t, ub[t], ux[t], uy[t]); fno = f0 + t; retro_run (); }
+		{ int fa = N - D; if (fa < 0) fa = 0;                  /* (the last inputs arrive: the rest corrected) */
+		  retro_unserialize (st[fa % RS], sz); hidden = 1;
+		  for (int g = fa; g < N; g++) { SETIN (g, B[1][g], X[1][g], Y[1][g]); fno = f0 + g; retro_run (); replayed++; }
+		  hidden = 0; }
+		retro_serialize (sb, sz);
+		size_t nd = 0; long first = -1; for (size_t i = 0; i < sz; i++) if (sa[i] != sb[i]) { if (first < 0) first = (long) i; nd++; }
+		printf ("netsim %d frames, player 2 %d frames late: %d rollbacks, %d frames run again; the state %s (%zu bytes differ, first at %ld)\n",
+		        N, D, rollbacks, replayed, nd ? "DIFFERS" : "the same", nd, first);
 	} else if (!strcmp (argv[4], "state")) {
 		/* save at 400, run 300 on (some refreshes hidden, as run-ahead does), save again; load the first and run the same
 		 * 300: the second save and the sound must come out the same, byte for byte */

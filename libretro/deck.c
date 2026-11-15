@@ -60,7 +60,7 @@ static void dk_draw_slim (void)
 	{ const double k = fmax (1.0, dk_h * 0.30 / 6.0), xr = dk_ox + dk_ow; char t[32]; unsigned c = DK_G;
 	  if (vx_paused) { snprintf (t, sizeof t, "PAUSED"); c = 0xed9933u; } else { snprintf (t, sizeof t, "EMU %s", dk_osd[2]); c = (unsigned) dk_osd_col; }
 	  br_text (t, (float) (xr - (strlen (t) * 6.0 - 1.0) * k), (float) (cy - 3 * k), (float) k, c); }
-	for (int pt = 2; pt >= 2; pt--) {   /* (P1: only online, as the desktop's port1_state - not yet here) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x, s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1);
+	for (int pt = 2; pt >= (net_on () ? 1 : 2); pt--) {   /* (P1: only online, as the desktop's port1_state - netplay) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x, s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1);
 		const double oy = cy, ox = cx + (kind == 2 ? 10 * s : 0);
 		if (kind == 2) dk_icon (PORT2_ICON_P, PORT2_ICON_L, NL (PORT2_ICON_L), ox, oy, s, w, DK_G);
 		else if (kind == 1) dk_icon (VOICE_ICON_P, VOICE_ICON_L, NL (VOICE_ICON_L), ox, oy, s, w, DK_G);
@@ -128,7 +128,7 @@ static void dk_draw (void)
 			const double y0 = (fb + wb) / 2.0 - hgt / 2.0, cx = (left + right) / 2.0;
 			dk_ctext ("PAUSED", cx, y0, 6 * kp, 0xed9933u); dk_ctext (R2, cx, y0 + 11.0 * kp, 6 * kn, DK_G); } }
 	/* the ports (_port2): port 2's device, port 1's joystick */
-	for (int pt = 2; pt >= 2; pt--) {   /* (P1: only online, as the desktop's port1_state - not yet here) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x;
+	for (int pt = 2; pt >= (net_on () ? 1 : 2); pt--) {   /* (P1: only online, as the desktop's port1_state - netplay) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x;
 		double s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1); const double oy = kind == 2 ? cy : cy - 0.12 * r, ox = cx + (kind == 2 ? 10 * s : 0);
 		if (kind == 2) dk_icon (PORT2_ICON_P, PORT2_ICON_L, NL (PORT2_ICON_L), ox, oy, s, w, DK_G);
 		else if (kind == 1) dk_icon (VOICE_ICON_P, VOICE_ICON_L, NL (VOICE_ICON_L), ox, oy, s, w, DK_G);
@@ -184,6 +184,7 @@ static void dk_tick (double busy)
 {
 	if (!dk_on && !dk_pop) return;
 	(void) busy; dk_runs++;
+	{ static int nw = -1; const int n = net_on (); if (n != nw) { nw = n; dk_dirty_set = 1; } }
 	if (dk_pop) { const int want = vx_paused || dk_drag.on || vt_wall () < dk_pop_until;   /* (the pop-up: a while after a touch, while paused) */
 		if (want != dk_shown) { dk_shown = want; dk_dirty_set = 1; } }
 	{ static clock_t c0; const clock_t c = clock (); if (c0) dk_busy += (double) (c - c0) / CLOCKS_PER_SEC; c0 = c; }   /* (the processor: all the core's threads) */
@@ -200,8 +201,9 @@ static void dk_tick (double busy)
 }
 static void turn_volume (double d)
 {
-	if (!pw_on) { if (d <= 0) return; vx_vol = 0; pw_switch (1, 30); }
+	if (!pw_on) { if (d <= 0 || net_on ()) return; vx_vol = 0; pw_switch (1, 30); }
 	vx_vol += (float) d; if (vx_vol > 1) vx_vol = 1;
+	if (net_on () && vx_vol < 0.01f) vx_vol = 0.01f;   /* (netplay: not switched off - that would be one side only) */
 	if (vx_vol <= 0.0005f) { vx_vol = 0; vol_before_off = 0.5f; pw_switch (0, 0); }   /* (down to 0: switched off, as the Vectrex) */
 	dk_dirty_set = 1;
 }
@@ -234,9 +236,11 @@ static void dk_pointer (void)
 	/* (a finger: the piece nearest across the deck - each up to halfway to its neighbours, the deck's whole height; the
 	 *  desktop's circles were too small to hit on a handheld's screen, the owner 2026-11-15) */
 	int zone = 0;
-	if (y >= 0 && y <= dk_h) { const double X[5] = { dk_p2x, dk_cx, -1e9, dk_rx, dk_kx }; double best = 1e9;   /* (P1: not shown) */
+	if (y >= 0 && y <= dk_h) { const double X[5] = { dk_p2x, dk_cx, net_on () ? dk_p1x : -1e9, dk_rx, dk_kx }; double best = 1e9;   /* (P1: online only) */
 		for (int i = 0; i < 5; i++) { const double d = fabs (x - X[i]); if (d < best) { best = d; zone = i + 1; } }
 		if (best > 2.2 * r) zone = 0; }
+	if (net_on () && pr && !dk_prev_press && zone != 5) { dk_prev_press = pr; return; }   /* (netplay: only the volume - the rest changes the
+	                                                    emulation on one side) */
 	if (pr && !dk_prev_press) {
 		if (zone == 1) port2_next ();
 		else if (zone == 2) { br_show (1); dk_dirty_set = 1; }
@@ -244,7 +248,7 @@ static void dk_pointer (void)
 		else if (zone == 4) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; }
 		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;
 			dk_drag.a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI; dk_hover_label = 1; dk_dirty_set = 1; }
-		else if (y < 0 && !pw_on) power_up ();
+		else if (y < 0 && !pw_on && !net_on ()) power_up ();
 		else if (vx_paused && x > dk_ox + dk_ow && x < dk_p2x - 1.1 * r && y >= 0) { vx_paused = 0; dk_dirty_set = 1; }
 	} else if (pr && dk_drag.on) {                   /* (turned round its centre, clockwise louder, one to one with its marker) */
 		if (!dk_drag.moved && hypot (x - dk_drag.x, y - dk_drag.y) >= fmax (3.0, 0.12 * r)) dk_drag.moved = 1;

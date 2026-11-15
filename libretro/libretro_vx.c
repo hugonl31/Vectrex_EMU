@@ -323,6 +323,12 @@ static void cart_swap (const char *path);
 static void emu_wait_ext (void);
 static int vx_ok (void);
 static int sp_ok, dk_p2;   /* (deck.c) */
+/* (RetroArch's netplay: one Vectrex on both machines, kept the same by rewinding with save states. Seen by the reason
+ *  RetroArch gives a save - GET_SAVESTATE_CONTEXT 72, ROLLBACK_NETPLAY 3; while it runs, nothing one side does alone may
+ *  change the emulation: the ROM browser, eject, RESET, pause, the deck's power and port 2, the USB pad read directly) */
+static long net_seen = -1000000, net_runs;
+static int net_on (void) { return net_runs - net_seen < 180; }
+static void net_mark (void) { int c = 0; if (env_cb (72 | 0x10000, &c) && c == 3) net_seen = net_runs; }
 static char sw_next[1100], cur_game[1100]; static int sw_eject, ej_out; static int game_switch_now (const char *path);   /* (the game switch: below) */
 static int unit_addon;
 static const char *optv (const char *key);
@@ -1167,7 +1173,7 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 	if (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP)) y = 127;
 	if (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN)) y = -127;
 	unsigned ub = 0; int ux = 0, uy = 0;
-	if (port == 0 && usb_pad (&ux, &uy, &ub)) { if (ux) x = ux; if (uy) y = uy; }   /* (the Vectrex USB Controller, player 1) */
+	if (port == 0 && !net_on () && usb_pad (&ux, &uy, &ub)) { if (ux) x = ux; if (uy) y = uy; }   /* (not in netplay: RetroArch's input only) */   /* (the Vectrex USB Controller, player 1) */
 	if (opt_rot_stick && opt_rot > 0) {          /* (the picture turned 90 / 180 / 270 counter-clockwise, the device turned
 	                                                the other way to hold it upright: the stick's up is then the picture's
 	                                                right (90), down (180), left (270)) */
@@ -2296,6 +2302,7 @@ void retro_run (void)
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
 	emu_wait ();                                /* (1.1: the refresh to show, emulated meanwhile - UVMC2 / PiTrex) */
+	net_runs++;
 	km_send ();                                 /* (RetroArch's keyboard and mouse to a UVMC2 / PiTrex: usbkm.c) */
 	if (sw_next[0]) { char p[1100]; snprintf (p, sizeof p, "%s", sw_next); sw_next[0] = 0;   /* (the ROM browser's / eject's game) */
 		if (game_switch_now (p)) { if (sw_eject == 1) ej_out = 1; else { ej_out = 0; snprintf (cur_game, sizeof cur_game, "%s", p); }
@@ -2313,12 +2320,14 @@ void retro_run (void)
 	if (br_input (m)) { m[0] = m[1] = 128; m[2] = 0; }   /* (the browser reads player 1 as the game does: turned in tate) */   /* (the ROM browser open, or just closed by a button: the game gets none) */
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
 	{ static int pz; const int pi_ = btn_id ("vectrex_emu_btn_pause"), p_ = pi_ >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pi_) != 0;
-	  if (p_ && !pz && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; } pz = p_; }
+	  if (p_ && !pz && !br_open && !net_on ()) { vx_paused = !vx_paused; dk_dirty_set = 1; } pz = p_;
+	  if (net_on () && vx_paused) { vx_paused = 0; dk_dirty_set = 1; } }   /* (netplay: RetroArch's own pause) */
 	dk_pointer (); dk_tick (0);
 	{ static int l2, r2; const int ri = btn_id ("vectrex_emu_btn_reset"), ei = btn_id ("vectrex_emu_btn_eject");
 	  const int a = ri >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ri) != 0, b = ei >= 0 && ei != ri && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ei) != 0;
-	  if (a && !l2 && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button) */
-	  if (b && !r2 && !br_open) eject_toggle ();
+	  if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button;
+	                                              netplay: RetroArch's own Reset, sent to both) */
+	  if (b && !r2 && !br_open && !net_on ()) eject_toggle ();
 	  l2 = a; r2 = b; }
 #endif
 	{ int sel = opt_ov_btn ? input_cb (0, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START) : 0;   /* START (or SELECT): the overlay off / on */
@@ -2651,7 +2660,7 @@ static unsigned char *put_frame (unsigned char *o, const gframe *f)
 }
 bool retro_serialize (void *d, size_t sz)
 {
-	emu_wait_ext ();
+	emu_wait_ext (); net_mark ();
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	if (!vx_ok () || sz < vx_size) return false;
 	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), 0 };
@@ -2668,7 +2677,7 @@ bool retro_serialize (void *d, size_t sz)
 }
 bool retro_unserialize (const void *d, size_t sz)
 {
-	emu_wait_ext ();
+	emu_wait_ext (); net_mark ();
 	unser_seen = 1; runs_since_unser = 0;
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	const unsigned char *i = d; uint32_t h[4];

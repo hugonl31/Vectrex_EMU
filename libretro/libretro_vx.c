@@ -313,6 +313,7 @@ static void cart_poll (void)
  * The first value of each is its default. */
 #ifdef VX_EMUVR
 #define VX_RATE_DEF 90
+#define VX_TRAIL_DEF 1.0
 static struct retro_variable vars[] = {
 	{ "vectrex_emu_overlay", "Automatic overlay (the game's own put on at each game - SELECT takes it off / puts it on); off|on" },
 	{ "vectrex_emu_screen_light", "Screen light in EmuVR (all of the picture alike - the trail ends up at this / the dots level); 2.4x|1x|1.5x|2x|2.8x|3x|4x" },
@@ -358,6 +359,7 @@ static struct retro_variable vars[] = {
 	{ NULL, NULL } };
 #else
 #define VX_RATE_DEF 60
+#define VX_TRAIL_DEF 1.5                    /* (the trail: the owner's 1.5x on black - now the same everywhere) */
 /* (1.0: the options in submenus - RetroArch's core options v2, its categories; older frontends get the same list flat,
  *  each name led by its submenu's) */
 struct vx_opt { const char *key, *cat, *desc, *info, *vals; };
@@ -393,9 +395,8 @@ static const struct vx_opt OPTS[] = {
 	  "In tate: the stick and buttons 1 to 4 keep their places as you hold the device - up is up, button 1 the leftmost.", "on|off" },
 	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", "Auto: the quality profile's.", "auto|on|strong|off" },
 	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
-	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness with an overlay", NULL, "1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
-	{ "vectrex_emu_trail_bright_bare", "tube", "Phosphor trail brightness without an overlay",
-	  "On black the faint trail looks fainter than on an overlay's lit colour: 1.5x looks as the trail through an overlay at 1x.", "1.5x|0.5x|0.75x|1x|2x|3x|4x" },
+	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness",
+	  "The afterglow's strength - the same on black, through an overlay and at any room light (its light is the phosphor's, added to the room's as light).", "1.5x|0.5x|0.75x|1x|1.25x|2x|3x|4x" },
 	{ "vectrex_emu_brightness", "tube", "Brightness", NULL, "1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_beam", "tube", "Beam width", NULL, "thin|medium|wide" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
@@ -513,8 +514,8 @@ static void read_options (void)
 #endif
 	opt_after = !opt_is ("vectrex_emu_afterglow", "off");
 	opt_trail = opt_is ("vectrex_emu_afterglow", "long (real Vectrex)") ? 1.0f : opt_is ("vectrex_emu_afterglow", "short") ? 0.3f : 0.6f;
-	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
-	  opt_trail_k = k >= 0.25 && k <= 4.0 ? (float) k : 1.0f; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
+	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : VX_TRAIL_DEF;
+	  opt_trail_k = k >= 0.25 && k <= 4.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
 	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
 	  opt_bright = k >= 1.0 && k <= 2.0 ? (float) k : 1.0f; }
 	opt_dots = !opt_is ("vectrex_emu_corner_dots", "off"); opt_dwell = !opt_is ("vectrex_emu_dwell", "off"); opt_speedb = !opt_is ("vectrex_emu_speed_bright", "off");
@@ -550,7 +551,7 @@ static void read_options (void)
 	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off");
 	{ int z = atoi (optv ("vectrex_emu_size")); opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
-	{ const char *v = optv ("vectrex_emu_trail_bright_bare"); double k = v[0] ? atof (v) : 1.5; opt_trail_k0 = k >= 0.25 && k <= 4.0 ? (float) k : 1.5f; }
+	opt_trail_k0 = opt_trail_k;                 /* (1.1: one trail brightness - the light added as light: no other one needed) */
 	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */
 	if (rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
 	  int r = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : VX_RATE_DEF; r = r >= 30 && r <= 360 ? r : VX_RATE_DEF;
@@ -1375,10 +1376,13 @@ VX_INLINE uint32_t pixel_out (float r, float g, float b, int x, int y)
 		if (!ov_made) ov_make ();
 		const float *m = ov_lm + ((size_t) ov_ty[y] + ov_tx[x]) * 6;   /* (the overlay's pixel: tables - no divisions per pixel) */
 		float lum = (r + g + b) * (1.0f / 3.0f);
-		r = lum * m[0] + m[3]; g = lum * m[1] + m[4]; b = lum * m[2] + m[5];
+		r = lum * m[0]; g = lum * m[1]; b = lum * m[2];   /* (1.1: the lines' light and the lit overlay added as light, not as
+		                                         screen values - the trail looks the same at any room light: gamma 2) */
+		r = sqrtf (r * r + m[3] * m[3]); g = sqrtf (g * g + m[4] * m[4]); b = sqrtf (b * b + m[5] * m[5]);
 	}
 	else { r *= OV_LINE_GAIN; g *= OV_LINE_GAIN; b *= OV_LINE_GAIN;
-		if (glass_grey > 0) { r += glass_grey * 0.92f; g += glass_grey * 0.95f; b += glass_grey; } }   /* (the bare glass in the room's
+		if (glass_grey > 0) { const float gr = glass_grey * 0.92f, gg = glass_grey * 0.95f, gb = glass_grey;   /* (added as light, as above) */
+			r = sqrtf (r * r + gr * gr); g = sqrtf (g * g + gg * gg); b = sqrtf (b * b + gb * gb); } }   /* (the bare glass in the room's
 	                                         light: vecrender.py GLASS_GREY, its cold grey) */   /* (no overlay: as bright as through an overlay's
 	                                         clear part - the owner on the Nova, 2026-11-15: with the overlay the trail
 	                                         was right, without it hardly visible) */

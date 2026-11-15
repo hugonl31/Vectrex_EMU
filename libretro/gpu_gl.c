@@ -279,7 +279,7 @@ static const char *GPU_FS_B =
 	"                add += lk * (m.g * (1.0 + 0.018 * gr) * vec3(0.95, 0.96, 1.0) + 0.88 * (0.98 * sharp + m.r) * LIGHTC);\n"
 	"            }\n"
 	"        }\n"
-	"        c = (c + add) * g;\n"
+	"        c = sqrt(c * c + add * add) * g;\n"
 	"        if (cse > 0.5) c += sdG(gd) > -3.0 * pxs ? plastic(gd, tgt) : vec3((hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0);\n"
 	"    }\n"
 	"    fragc = vec4(c, 1.0);\n"

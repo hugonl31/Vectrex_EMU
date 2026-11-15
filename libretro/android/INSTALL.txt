@@ -1,0 +1,43 @@
+Vectrex_EMU core for RetroArch on Android (arm64) - with ES-DE
+==============================================================
+
+What is in this zip
+  vectrex_emu_libretro_android.so      the core
+  vectrex_emu_libretro.info            its name and details for RetroArch
+  system/vectrex_emu/                  the BIOS, the overlays (PNG), the switch-on / switch-off sounds
+  ES-DE/custom_systems/es_systems.xml  ES-DE: Vectrex_EMU as the Vectrex system's emulator
+
+You need the RetroArch from retroarch.com (or F-Droid), not the Google Play one: the Play Store version cannot
+load a core from a file.
+
+1. The core
+   Copy vectrex_emu_libretro_android.so to the device (Downloads is fine). In RetroArch:
+   Main Menu > Load Core > Install or Restore a Core > pick the file. RetroArch copies it into its own cores folder,
+   which is where ES-DE looks for it.
+
+2. The info file (optional: without it the core still runs, under its file name)
+   RetroArch: Settings > Directory > Core Info shows the folder. Copy vectrex_emu_libretro.info into it.
+   (If Online Updater > Update Core Info Files is run later, it is left alone.)
+
+3. The BIOS, overlays and sounds
+   RetroArch: Settings > Directory > System/BIOS shows the system folder (often /storage/emulated/0/RetroArch/system).
+   Copy the vectrex_emu folder from this zip's system folder into it, so you get
+       <system>/vectrex_emu/bios.bin
+       <system>/vectrex_emu/overlays/*.png
+       <system>/vectrex_emu/on.wav, off.wav
+   Speech games (VecVox / VecVoice): put sp0256-al2.bin (or al2.bin) in <system>/vectrex_emu too. Not included.
+   Overlays are found by the game's file name (Armor Attack.bin -> overlays/Armor Attack.png).
+
+4. ES-DE
+   Copy ES-DE/custom_systems/es_systems.xml into ES-DE's own custom_systems folder on the device
+   (ES-DE/custom_systems; if one is there already, copy only its <system> part in). Restart ES-DE.
+   The Vectrex system then starts games with Vectrex_EMU; vecx stays available as an alternative emulator.
+
+Controls (RetroArch's RetroPad)
+   Stick or d-pad: the joystick.  Y X B A: Vectrex buttons 1 2 3 4 (left to right, as on the controller).
+   SELECT: the overlay off / on.  Port 2: a second pad.
+
+Settings: Quick Menu > Core Options (picture size, glow, trail, overlay, screen rate...).
+   If a game runs slow: Phosphor glow off, then Smooth motion off, Picture size 1x.
+
+Trouble: the core writes <system>/vectrex_emu/vectrex_emu.log on every game start (the BIOS and overlay it found).

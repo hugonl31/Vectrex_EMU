@@ -1,0 +1,129 @@
+/* vxhost.c - a minimal libretro front end to test Vectrex_EMU's core without RetroArch (Linux / WSL; Android: Termux).
+ *
+ *   vxhost <core.so> <system dir> <game> bench <frames>        ms per retro_run (after a warm-up), as RetroArch runs it
+ *   vxhost <core.so> <system dir> <game> shot <frame> <out.ppm> the picture at that refresh
+ *   vxhost <core.so> <system dir> <game> state                 save, run on, load, run on again: the same state and sound?
+ *
+ * The options are the core's defaults (each one's first value, as RetroArch starts); VXH_OPT="key=value,key=value"
+ * overrides some. The input is scripted (the same in every run): button 1 now and then, the stick swept.
+ * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <time.h>
+#include "../libretro.h"
+
+static const char *sysdir;
+static struct { char key[64], val[96]; } opt[64]; static int nopt;
+static int hidden;                              /* (a run-ahead style hidden refresh: no video) */
+static const uint32_t *frame; static unsigned fw, fh; static size_t fpitch;
+static uint64_t audio_hash, audio_n;
+static long fno;
+
+static uint64_t fnv (uint64_t h, const void *p, size_t n) { const unsigned char *b = p; while (n--) { h ^= *b++; h *= 1099511628211ull; } return h; }
+static bool env (unsigned cmd, void *data)
+{
+	switch (cmd) {
+	case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: *(const char **) data = sysdir; return true;
+	case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: return *(enum retro_pixel_format *) data == RETRO_PIXEL_FORMAT_XRGB8888;
+	case RETRO_ENVIRONMENT_SET_VARIABLES: {
+		const struct retro_variable *v = data;
+		for (; v->key && nopt < 64; v++) {
+			const char *d = strchr (v->value, ';'); d = d ? d + 1 : v->value; while (*d == ' ') d++;
+			const char *e = strchr (d, '|'); size_t n = e ? (size_t) (e - d) : strlen (d);
+			snprintf (opt[nopt].key, sizeof opt[nopt].key, "%s", v->key); snprintf (opt[nopt].val, sizeof opt[nopt].val, "%.*s", (int) n, d); nopt++; }
+		const char *o = getenv ("VXH_OPT");             /* (overrides) */
+		if (o) { char buf[2048]; snprintf (buf, sizeof buf, "%s", o);
+			for (char *t = strtok (buf, ","); t; t = strtok (NULL, ",")) { char *eq = strchr (t, '='); if (!eq) continue; *eq = 0;
+				for (int i = 0; i < nopt; i++) if (!strcmp (opt[i].key, t)) snprintf (opt[i].val, sizeof opt[i].val, "%s", eq + 1); } }
+		return true; }
+	case RETRO_ENVIRONMENT_GET_VARIABLE: {
+		struct retro_variable *v = data; v->value = NULL;
+		for (int i = 0; i < nopt; i++) if (!strcmp (opt[i].key, v->key)) { v->value = opt[i].val; return true; }
+		return false; }
+	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = false; return true;
+	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: *(int *) data = hidden ? 2 : 3; return true;
+	case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME: return true;
+	default: return false;
+	}
+}
+static void video (const void *d, unsigned w, unsigned h, size_t pitch) { if (d) { frame = d; fw = w; fh = h; fpitch = pitch; } }
+static void sample (int16_t l, int16_t r) { (void) l; (void) r; }
+static size_t audio (const int16_t *d, size_t n) { audio_hash = fnv (audio_hash, d, n * 4); audio_n += n; return n; }
+static void poll (void) {}
+static int16_t input (unsigned port, unsigned dev, unsigned idx, unsigned id)
+{
+	if (port) return 0;
+	if (dev == RETRO_DEVICE_JOYPAD) {
+		if (id == RETRO_DEVICE_ID_JOYPAD_Y) return (fno / 40) % 3 == 1;     /* (button 1: start the game, then fire) */
+		if (id == RETRO_DEVICE_ID_JOYPAD_RIGHT) return (fno / 90) % 4 == 2;
+		if (id == RETRO_DEVICE_ID_JOYPAD_LEFT) return (fno / 90) % 4 == 0 && fno > 200;
+		return 0; }
+	if (dev == RETRO_DEVICE_ANALOG && idx == RETRO_DEVICE_INDEX_ANALOG_LEFT && id == RETRO_DEVICE_ID_ANALOG_Y) return (int16_t) (((fno / 70) % 3 - 1) * 20000);
+	return 0;
+}
+static double now (void) { struct timespec t; clock_gettime (CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
+
+#define SYM(n) n = dlsym (h, #n); if (!n) { fprintf (stderr, "no %s\n", #n); return 1; }
+int main (int argc, char **argv)
+{
+	if (argc < 5) { fprintf (stderr, "vxhost core.so sysdir game bench N | shot N out.ppm | state\n"); return 1; }
+	sysdir = argv[2];
+	void *h = dlopen (argv[1], RTLD_NOW); if (!h) { fprintf (stderr, "%s\n", dlerror ()); return 1; }
+	void (*retro_set_environment) (retro_environment_t), (*retro_set_video_refresh) (retro_video_refresh_t),
+	     (*retro_set_audio_sample) (retro_audio_sample_t), (*retro_set_audio_sample_batch) (retro_audio_sample_batch_t),
+	     (*retro_set_input_poll) (retro_input_poll_t), (*retro_set_input_state) (retro_input_state_t), (*retro_init) (void),
+	     (*retro_run) (void), (*retro_get_system_av_info) (struct retro_system_av_info *);
+	bool (*retro_load_game) (const struct retro_game_info *), (*retro_serialize) (void *, size_t), (*retro_unserialize) (const void *, size_t);
+	size_t (*retro_serialize_size) (void);
+	SYM (retro_set_environment) SYM (retro_set_video_refresh) SYM (retro_set_audio_sample) SYM (retro_set_audio_sample_batch)
+	SYM (retro_set_input_poll) SYM (retro_set_input_state) SYM (retro_init) SYM (retro_run) SYM (retro_get_system_av_info)
+	SYM (retro_load_game) SYM (retro_serialize) SYM (retro_unserialize) SYM (retro_serialize_size)
+	retro_set_environment (env); retro_set_video_refresh (video); retro_set_audio_sample (sample); retro_set_audio_sample_batch (audio);
+	retro_set_input_poll (poll); retro_set_input_state (input); retro_init ();
+	struct retro_game_info gi = { argv[3], NULL, 0, NULL };
+	if (!retro_load_game (&gi)) { fprintf (stderr, "load failed\n"); return 2; }
+	struct retro_system_av_info av; retro_get_system_av_info (&av);
+	fprintf (stderr, "picture %ux%u, %.0f Hz\n", av.geometry.base_width, av.geometry.base_height, av.timing.fps);
+	if (!strcmp (argv[4], "bench")) {
+		int n = argc > 5 ? atoi (argv[5]) : 1200, warm = 120; double t0 = 0, worst = 0;
+		for (fno = 0; fno < n + warm; fno++) {
+			double a = now (); retro_run (); double d = now () - a;
+			if (fno == warm) t0 = a;
+			if (fno >= warm && d > worst) worst = d; }
+		double avg = (now () - t0) / n * 1e3;
+		printf ("%.3f ms per frame on average, worst %.2f ms (%d frames; %.0f Hz needs %.2f ms)\n", avg, worst * 1e3, n, av.timing.fps, 1e3 / av.timing.fps);
+	} else if (!strcmp (argv[4], "shot")) {
+		int n = atoi (argv[5]);
+		for (fno = 0; fno < n; fno++) retro_run ();
+		FILE *f = fopen (argv[6], "wb"); fprintf (f, "P6\n%u %u\n255\n", fw, fh);
+		for (unsigned y = 0; y < fh; y++) for (unsigned x = 0; x < fw; x++) {
+			uint32_t p = ((const uint32_t *) ((const char *) frame + y * fpitch))[x]; unsigned char c[3] = { p >> 16, p >> 8, p };
+			fwrite (c, 1, 3, f); }
+		fclose (f); printf ("%s %ux%u\n", argv[6], fw, fh);
+	} else if (!strcmp (argv[4], "state")) {
+		/* save at 400, run 300 on (some refreshes hidden, as run-ahead does), save again; load the first and run the same
+		 * 300: the second save and the sound must come out the same, byte for byte */
+		for (fno = 0; fno < 400; fno++) retro_run ();
+		size_t sz = retro_serialize_size (); if (!sz) { printf ("no save states for this game\n"); return 3; }
+		unsigned char *s0 = malloc (sz), *s1 = malloc (sz), *s2 = malloc (sz);
+		if (!retro_serialize (s0, sz)) { printf ("serialize failed\n"); return 3; }
+		audio_hash = 0; audio_n = 0;
+		for (int k = 0; k < 300; k++, fno++) { hidden = (k % 3) == 1; retro_run (); }
+		hidden = 0; uint64_t ah1 = audio_hash, an1 = audio_n; retro_serialize (s1, sz);
+		fno -= 300;
+		if (!retro_unserialize (s0, sz)) { printf ("unserialize failed\n"); return 3; }
+		audio_hash = 0; audio_n = 0;
+		for (int k = 0; k < 300; k++, fno++) { hidden = (k % 3) == 1; retro_run (); }
+		hidden = 0; retro_serialize (s2, sz);
+		size_t diff = 0, first = (size_t) -1; for (size_t i = 0; i < sz; i++) if (s1[i] != s2[i]) { diff++; if (first == (size_t) -1) first = i; }
+		printf ("state %zu bytes; after the same 300 refreshes: %s (%zu bytes differ, first at %zd); sound %s (%llu / %llu samples)\n",
+			sz, diff ? "DIFFERENT" : "the same", diff, (ssize_t) first, ah1 == audio_hash && an1 == audio_n ? "the same" : "DIFFERENT",
+			(unsigned long long) an1, (unsigned long long) audio_n);
+		return diff || ah1 != audio_hash ? 4 : 0;
+	}
+	return 0;
+}

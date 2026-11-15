@@ -8,12 +8,10 @@
  * that the linker keeps apart. (The same scheme as the EmuVR core's save states, 2026-11-04.)
  *
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
-#ifndef _MSC_VER
-#error "the save-state sections need Visual C++"
-#endif
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_MSC_VER)
 #pragma data_seg(".vxd$a")
 static char vxd_a = 1;
 #pragma data_seg(".vxd$z")
@@ -24,6 +22,22 @@ static char vxb_a;
 #pragma bss_seg(".vxb$z")
 static char vxb_z;
 #pragma bss_seg()
+#define VXD_A ((unsigned char *) &vxd_a)
+#define VXD_Z ((unsigned char *) &vxd_z + 1)
+#define VXB_A ((unsigned char *) &vxb_a)
+#define VXB_Z ((unsigned char *) &vxb_z + 1)
+#elif defined(__clang__)
+/* clang (the libretro core: Android, Linux): the sections vxd / vxb - ELF names without a dot, so the linker bounds each
+ * with __start_ / __stop_ (Mach-O would need section$start$ names: not built yet) */
+extern unsigned char __start_vxd[] __attribute__((weak, visibility ("hidden"))), __stop_vxd[] __attribute__((weak, visibility ("hidden")));
+extern unsigned char __start_vxb[] __attribute__((weak, visibility ("hidden"))), __stop_vxb[] __attribute__((weak, visibility ("hidden")));
+#define VXD_A __start_vxd
+#define VXD_Z __stop_vxd
+#define VXB_A __start_vxb
+#define VXB_Z __stop_vxb
+#else
+#error "the save-state sections need Visual C++ or clang"
+#endif
 
 typedef struct { unsigned char *p; size_t n; } vxs_rng;
 #define VXS_MAX 48
@@ -52,8 +66,8 @@ size_t vxs_init (void)
 	vxs_excl_vecx (vxs_exclude);
 	qsort (ex, nex, sizeof (vxs_rng), rng_cmp);
 	ncp = 0;
-	cut ((unsigned char *) &vxd_a, (unsigned char *) &vxd_z + 1);
-	cut ((unsigned char *) &vxb_a, (unsigned char *) &vxb_z + 1);
+	if (VXD_A && VXD_Z > VXD_A) cut (VXD_A, VXD_Z);
+	if (VXB_A && VXB_Z > VXB_A) cut (VXB_A, VXB_Z);
 	raw = 0; for (int i = 0; i < ncp; i++) raw += cp[i].n;
 	return raw;
 }

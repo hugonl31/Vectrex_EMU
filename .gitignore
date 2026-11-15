@@ -31,3 +31,9 @@ system/al2.bin
 /TODO.md
 /cache/
 /uvmc2/
+
+# the libretro core (libretro/): builds, test builds, the Android package
+/libretro/obj/
+/libretro/dist/
+/libretro/*.so
+/libretro/bench/vxhost

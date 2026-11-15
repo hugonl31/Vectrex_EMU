@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!-- ES-DE (Android): the Vectrex system with Vectrex_EMU's RetroArch core as its first (default) emulator; vecx and
+     MAME4droid stay as alternatives (per game: Edit this game's metadata > Alternative emulator; for all: Other settings >
+     Alternative emulators). Put this file in ES-DE/custom_systems/ (next to ES-DE's own folders on the device). If that
+     folder already has an es_systems.xml, copy only the <system> below into it. ES-DE's command format: its own
+     resources/systems/android/es_systems.xml (vecx entry), 2026-11-15. -->
+<systemList>
+    <system>
+        <name>vectrex</name>
+        <fullname>GCE Vectrex</fullname>
+        <path>%ROMPATH%/vectrex</path>
+        <extension>.bin .BIN .gam .GAM .vc .VC .vec .VEC .um2 .UM2 .7z .7Z .zip .ZIP</extension>
+        <command label="Vectrex_EMU">%EMULATOR_RETROARCH% %EXTRA_CONFIGFILE%=%EXTERNALDATA%/Android/data/%ANDROIDPACKAGE%/files/retroarch.cfg %EXTRA_LIBRETRO%=%INTERNALDATA%/%ANDROIDPACKAGE%/cores/vectrex_emu_libretro_android.so %EXTRA_ROM%=%ROM%</command>
+        <command label="vecx">%EMULATOR_RETROARCH% %EXTRA_CONFIGFILE%=%EXTERNALDATA%/Android/data/%ANDROIDPACKAGE%/files/retroarch.cfg %EXTRA_LIBRETRO%=%INTERNALDATA%/%ANDROIDPACKAGE%/cores/vecx_libretro_android.so %EXTRA_ROM%=%ROM%</command>
+        <command label="MAME4droid Current (Standalone)">%EMULATOR_MAME4DROID-CURRENT% %ACTION%=android.intent.action.VIEW %EXTRA_cli_params%="-rompath '%GAMEDIRRAW%;%ROMPATHRAW%/vectrex' -cart '%ROMRAW%'" %DATA%=vectrex</command>
+        <platform>vectrex</platform>
+        <theme>vectrex</theme>
+    </system>
+</systemList>

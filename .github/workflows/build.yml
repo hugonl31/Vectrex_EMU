@@ -13,7 +13,7 @@ jobs:
   mac:
     runs-on: macos-15         # (macos-14 retired 2026-11-02; the app still targets 10.13+, set in build_mac.sh)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: python.org Python 3.12 (universal2, with Tk)
         run: |
           curl -sSLo py.pkg https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg
@@ -69,7 +69,7 @@ jobs:
           ditto package pkg
           rm -f pkg/system/settings.json pkg/Vectrex_EMU.conf             # (left by the test runs above: not shipped)
           ditto -c -k --sequesterRsrc pkg Vectrex_EMU-mac-app.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mac
           path: |
@@ -81,8 +81,8 @@ jobs:
   linux:
     runs-on: ubuntu-22.04          # (an older glibc: runs on most distributions)
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: packages
@@ -109,7 +109,7 @@ jobs:
           rm -f dist-linux/Vectrex_EMU.conf dist-linux/system/settings.json
           cp -r package/. dist-linux/
           cd dist-linux && zip -q -r ../Vectrex_EMU-linux-bin.zip Vectrex_EMU system roms overlays uvmc2   # (the program, system, roms, overlays, the UVMC2 card)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: |
@@ -121,8 +121,8 @@ jobs:
   windows:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: PyInstaller
@@ -149,7 +149,7 @@ jobs:
           Copy-Item -Recurse -Force package/* pkg/
           Copy-Item build/Vectrex_EMU/system/ffmpeg.exe pkg/system/   # (Record: videos and snapshots)
           Compress-Archive -Path pkg/* -DestinationPath Vectrex_EMU-windows.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: |
@@ -163,10 +163,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: repo
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
       - name: replace the release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -993,7 +993,7 @@ static void glow_blur (float **src)
 	}
 	for (int c = 0; c < NC; c++) {
 		const float *a = src[c]; int y;
-		#pragma omp parallel for schedule(static)
+		#pragma omp parallel for schedule(dynamic, 8)
 		for (y = 0; y < FH; y++) for (int e = 0; e < ne; e++) {     /* down, across (each eye on its own) */
 			const float *row = a + (size_t) y * FW + e * EW; float *o = glh + (size_t) y * GCW + e * GEW;
 			float pad[4 * PW + 16];                                  /* (the row, its ends repeated: S each side) */
@@ -1002,13 +1002,13 @@ static void glow_blur (float **src)
 			for (int j = 0; j < GEW; j++) { float s = 0; const float *p = pad + j * GD;
 				for (int i = 0; i < NF; i++) s += gdw[i] * p[i];
 				o[j] = s; } }
-		#pragma omp parallel for schedule(static)
+		#pragma omp parallel for schedule(dynamic, 4)
 		for (y = 0; y < GCH; y++) {                                  /* down, up and down */
 			float *o = glt + (size_t) y * GCW; const int y0 = y * GD - S;
 			for (int x = 0; x < GCW; x++) o[x] = 0;
 			for (int i = 0; i < NF; i++) { int yy = y0 + i; yy = yy < 0 ? 0 : yy > FH - 1 ? FH - 1 : yy;
 				const float *r = glh + (size_t) yy * GCW, w = gdw[i]; for (int x = 0; x < GCW; x++) o[x] += w * r[x]; } }
-		#pragma omp parallel for schedule(static)
+		#pragma omp parallel for schedule(dynamic, 4)
 		for (y = 0; y < GCH; y++) for (int e = 0; e < ne; e++) {    /* the Gaussian, across */
 			const float *r = glt + (size_t) y * GCW + e * GEW; float *o = glu + (size_t) y * GCW + e * GEW;
 			float pad[PW + 80];                                      /* (the row, its ends repeated: GTN each side) */
@@ -1016,7 +1016,7 @@ static void glow_blur (float **src)
 			memcpy (pad + GTN, r, (size_t) GEW * 4);
 			for (int x = 0; x < GEW; x++) o[x] = 0;
 			for (int k = 0; k <= 2 * GTN; k++) { const float w = gtw[k], *p = pad + k; for (int x = 0; x < GEW; x++) o[x] += w * p[x]; } }
-		#pragma omp parallel for schedule(static)
+		#pragma omp parallel for schedule(dynamic, 4)
 		for (y = 0; y < GCH; y++) {                                  /* and up and down */
 			float *o = glc[c] + (size_t) y * GCW;
 			for (int x = 0; x < GCW; x++) o[x] = 0;
@@ -1311,11 +1311,17 @@ static void ov_make (void)
 	}
 	ov_made = 1;
 }
-static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
+#if defined(__GNUC__) || defined(__clang__)
+#define VX_INLINE static inline __attribute__((always_inline))
+#else
+#define VX_INLINE static __forceinline
+#endif
+/* (1.1: always inlined into the drawing loops, no divisions - the Nova's profile, 2026-11-15: 62 % of a refresh was here) */
+VX_INLINE uint32_t pixel_out (float r, float g, float b, int x, int y)
 {
 	if (r <= 0 && g <= 0 && b <= 0 && !paint_all) return 0;   /* (empty: black - unless an overlay is painted in, or the glass grey) */
 	if (opt_bright != 1.0f) { r *= opt_bright; g *= opt_bright; b *= opt_bright; }   /* (v0.18: the brightness option, before the knee) */
-	if (wb_on) { float m = r > g ? (r > b ? r : b) : (g > b ? g : b), sm = (m - 0.35f) / 0.55f; sm = sm < 0 ? 0 : sm > 1 ? 1 : sm; sm = sm * sm * (3 - 2 * sm);
+	if (wb_on) { float m = r > g ? (r > b ? r : b) : (g > b ? g : b), sm = (m - 0.35f) * (1.0f / 0.55f); sm = sm < 0 ? 0 : sm > 1 ? 1 : sm; sm = sm * sm * (3 - 2 * sm);
 		r *= wb_g[0] + (wb_c[0] - wb_g[0]) * sm; g *= wb_g[1] + (wb_c[1] - wb_g[1]) * sm; b *= wb_g[2] + (wb_c[2] - wb_g[2]) * sm; }
 	if (sheet_file) { }   /* (v0.35: an overlay's x1.6 is the mod's now - on the screen's light, not clipped here) */   /* (a sheet tints them in EmuVR: the same gain; v0.29: in EmuVR
 	                                     *  the core never paints the overlay in - owner: colour left on the lines with no overlay on) */
@@ -1324,7 +1330,7 @@ static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
 	                                         lit by the room (the print x its brightness) - per overlay pixel in ov_lm / ov_la */
 		if (!ov_made) ov_make ();
 		const float *m = ov_lm + ((size_t) ov_ty[y] + ov_tx[x]) * 6;   /* (the overlay's pixel: tables - no divisions per pixel) */
-		float lum = (r + g + b) / 3.0f;
+		float lum = (r + g + b) * (1.0f / 3.0f);
 		r = lum * m[0] + m[3]; g = lum * m[1] + m[4]; b = lum * m[2] + m[5];
 	}
 	else { r *= OV_LINE_GAIN; g *= OV_LINE_GAIN; b *= OV_LINE_GAIN;
@@ -1347,11 +1353,26 @@ static inline uint32_t pixel_out (float r, float g, float b, int x, int y)
 		return (uint32_t) (R0 << 16 | G0 << 8 | B0);
 	}
 	/* (a soft knee near white: vecrender clips at 1; the lines ~0.95, the corner dots and crossings white) */
-	r = r < 0.75f ? r : 0.75f + 0.25f * (1 - expf (-(r - 0.75f) / 0.25f));
-	g = g < 0.75f ? g : 0.75f + 0.25f * (1 - expf (-(g - 0.75f) / 0.25f));
-	b = b < 0.75f ? b : 0.75f + 0.25f * (1 - expf (-(b - 0.75f) / 0.25f));
+	r = r < 0.75f ? r : 0.75f + 0.25f * (1 - expf (-(r - 0.75f) * 4.0f));
+	g = g < 0.75f ? g : 0.75f + 0.25f * (1 - expf (-(g - 0.75f) * 4.0f));
+	b = b < 0.75f ? b : 0.75f + 0.25f * (1 - expf (-(b - 0.75f) * 4.0f));
 	int R = (int) (r * 255 + 0.5f), G = (int) (g * 255 + 0.5f), B = (int) (b * 255 + 0.5f);
 	return (uint32_t) ((R > 255 ? 255 : R) << 16 | (G > 255 ? 255 : G) << 8 | (B > 255 ? 255 : B));
+}
+
+/* (1.1, the Nova's profile: the colour of a pixel no light reaches - the overlay lit by the room, or the glass grey - made
+ * once for the whole picture whenever it can change, then copied: most of a Vectrex picture is dark) */
+static uint32_t *bgimg; static size_t bg_n; static float bg_key[12]; static const void *bg_ov;
+static void bg_make (void)
+{
+	const float k[12] = { (float) FW, (float) FH, (float) EW, (float) (ov && ov_on), opt_room, opt_ov_print, opt_ov_tint, glass_grey, opt_bright,
+		(float) opt_white, (float) ov_made, (float) ovw };
+	const size_t n = (size_t) FW * FH;
+	if (n == bg_n && bg_ov == (const void *) ov && !memcmp (k, bg_key, sizeof k)) return;
+	if (n != bg_n) { free (bgimg); bgimg = malloc (n * 4); bg_n = n; }
+	memcpy (bg_key, k, sizeof k); bg_ov = ov; int y;
+	#pragma omp parallel for schedule(static)
+	for (y = 0; y < FH; y++) for (int x = 0; x < FW; x++) bgimg[(size_t) y * FW + x] = pixel_out (0, 0, 0, x, y);
 }
 
 /* ---- the game frames, kept for Smooth motion (vectrex_emu.py smooth_frame): each with the time it was complete
@@ -1697,6 +1718,7 @@ void retro_run (void)
 #endif
 	paint_all = !sheet_file && ((ov && ov_on) || glass_grey > 0);
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }   /* (before the drawing threads) */
+	if (paint_all) bg_make ();
 	/* v0.27: RetroArch's run-ahead runs the core a few frames ahead and then puts its state back - a cartridge swap or a
 	 * reset taken in one of those frames was put back with it. They are taken only in the frame that stays: the first after
 	 * a state load (or any, without run-ahead: no load for a while) */
@@ -1863,7 +1885,7 @@ void retro_run (void)
 					if (gl) { if (x < ng0) ng0 = x; ng1 = x; }
 				}
 				if (glow) { for (int c = 0; c < NC; c++) shown[c][i] = o[c]; continue; }
-				if (!any && !painted) { frow[x] = 0; continue; }
+				if (!any) { frow[x] = painted ? bgimg[i] : 0; continue; }   /* (no light: black, or the background made once) */
 				frow[x] = NC == 3 ? pixel_out (o[0], o[1], o[2], x, y) : pixel_out (o[0], o[0], o[0], x, y);
 				if (x < nf0) nf0 = x; nf1 = x;
 			}
@@ -1881,10 +1903,12 @@ void retro_run (void)
 		const float gk = GLOW_K * (glow == 2 ? 2.0f : 1.0f);
 		const float t0 = gk * GLOW_TINT[0], t1 = gk * GLOW_TINT[1], t2 = gk * GLOW_TINT[2];
 		/* (no overlay painted in: a pixel whose light rounds to 0 is black at once - the same as pixel_out gives) */
-		const int painted = paint_all; const float thr = 0.5f / (255.0f * 1.6f);
+		const int painted = paint_all; float thr = 0.5f / (255.0f * 1.6f);
+		if (painted) thr /= 1.2f * (opt_bright > 1 ? opt_bright : 1);   /* (painted: below this the light changes no level of the
+		                                                   background - the overlay's tint up to x 1.15, the brightness) */
 		const int nc = NC; float *const s0 = shown[0], *const s1 = shown[1], *const s2 = shown[2]; uint32_t *const fo = fb;
 		int yy;
-		#pragma omp parallel for schedule(static)
+		#pragma omp parallel for schedule(dynamic, 8)
 		for (yy = 0; yy < H; yy++) {
 			float fy = (yy + 0.5f) / GD - 0.5f; if (fy < 0) fy = 0; int j = (int) fy; if (j > GCH - 2) j = GCH - 2;
 			float wy = fy - j; if (wy > 1) wy = 1;
@@ -1898,7 +1922,7 @@ void retro_run (void)
 				if (nc == 3) { const float G1 = cr[1][k] + (cr[1][k + 1] - cr[1][k]) * wx, G2 = cr[2][k] + (cr[2][k + 1] - cr[2][k]) * wx;
 					r = s0[i] + t0 * G0; g = s1[i] + t1 * G1; b = s2[i] + t2 * G2; }
 				else { const float o = s0[i]; r = o + t0 * G0; g = o + t1 * G0; b = o + t2 * G0; }
-				if (!painted && r < thr && g < thr && b < thr) { fo[i] = 0; continue; }
+				if (r < thr && g < thr && b < thr) { fo[i] = painted ? bgimg[i] : 0; continue; }
 				fo[i] = pixel_out (r, g, b, x, yy); }
 		}
 	}
@@ -1920,7 +1944,7 @@ void retro_run (void)
 			src = ob; sp = (size_t) OW; }
 		if (opt_rot) {                         /* (1.0: turned here, 90 / 180 / 270 counter-clockwise - in tiles, cache-kind) */
 			const int W = OW, Hh = OH, odd = opt_rot & 1, dw = odd ? Hh : W, dh = odd ? W : Hh; int ty;
-			#pragma omp parallel for schedule(static)
+			#pragma omp parallel for schedule(dynamic, 1)
 			for (ty = 0; ty < dh; ty += 32) for (int tx = 0; tx < dw; tx += 32) {
 				const int y1 = ty + 32 < dh ? ty + 32 : dh, x1 = tx + 32 < dw ? tx + 32 : dw;
 				for (int y = ty; y < y1; y++) { uint32_t *d = rb + (size_t) y * dw;

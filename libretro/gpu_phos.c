@@ -26,6 +26,7 @@ GLFN(void, glFinish, (void)); GLFN(void, glInvalidateFramebuffer, (GLenum, GLsiz
 #define GL_ONE 1
 #define GL_NEAREST 0x2600
 
+static uint32_t *br_img; static int br_shown, br_gen; static GLuint ph_ui, ph_uit; static int ph_uigen = -1, ph_uiw, ph_uih;   /* (browser.c) */
 static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
 static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1;
@@ -68,6 +69,8 @@ static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phos
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = texture(fc, uv).rgb;\n"
 	"  if (after != 0) o += texture(g1t, uv).rgb + texture(g2t, uv).rgb;\n"
 	"  fragc = vec4(o, 1.0); }\n";
+static const char *PH_FS_UI =                   /* (the ROM browser's panel: premultiplied, over the picture) */
+	"uniform sampler2D t; out vec4 fragc; void main() { fragc = texelFetch(t, ivec2(gl_FragCoord.xy), 0); }\n";
 static const char *PH_FS_DOWN =                 /* (glow_blur: 2 S x 2 S pixels to a cell, 1 3 3 1 by groups of S) */
 	"uniform sampler2D src; uniform int s, gd; uniform ivec2 lim; out vec4 fragc;\n"
 	"void main() { ivec2 c = ivec2(gl_FragCoord.xy); vec3 a = vec3(0.0); int nf = 4 * s;\n"
@@ -134,7 +137,7 @@ static void ph_reset (void)
 	glInvalidateFramebuffer_ = (pf_glInvalidateFramebuffer) hwr.get_proc_address ("glInvalidateFramebuffer");   /* (optional: GL 4.3 / ES 3) */
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: no instancing / framebuffers - the light on the CPU\n"); return; }
 	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
-	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP);
+	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP); ph_ui = ph_prog (GPU_VS, PH_FS_UI); ph_uit = 0; ph_uigen = -1;
 	if (!ph_cap || !ph_upd || !ph_down || !ph_blur || !ph_out || !ph_comp) return;
 	glGenBuffers_ (1, &ph_vbo); glGenVertexArrays_ (1, &ph_vao); glGenFramebuffers_ (1, &ph_fbo);
 	glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
@@ -157,7 +160,7 @@ static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint f
 }
 /* (each target its own framebuffer, made once: one framebuffer's images changed pass after pass stalled the Nova's
  *  driver - the overlay's passes 9 ms, 2026-11-15) */
-static struct { GLuint t0, t1, t2, fbo; } ph_fbs[64];
+static struct { GLuint t0, t1, t2, fbo; } ph_fbs[64]; static int ph_keep;   /* (ph_keep: a pass drawn over what is there) */
 static void ph_fb_flush (void) { for (int i = 0; i < ph_nfb; i++) glDeleteFramebuffers_ (1, &ph_fbs[i].fbo); ph_nfb = 0; }
 static void ph_target (GLuint t0, GLuint t1, GLuint t2, int w, int h)
 {
@@ -175,7 +178,7 @@ static void ph_target (GLuint t0, GLuint t1, GLuint t2, int w, int h)
 	glViewport_ (0, 0, w, h);
 	/* (every pass writes all of its target: its old contents not needed - a tiled GPU (Adreno, Mali, the Pi's V3D) then
 	 *  does not load them into its tile memory first) */
-	if (glInvalidateFramebuffer_) glInvalidateFramebuffer_ (GL_FRAMEBUFFER, t2 ? 3 : t1 ? 2 : 1, db);
+	if (glInvalidateFramebuffer_ && !ph_keep) glInvalidateFramebuffer_ (GL_FRAMEBUFFER, t2 ? 3 : t1 ? 2 : 1, db);
 }
 static void ph_bind (GLuint prog, const char *name, int unit, GLuint tex)
 {
@@ -295,6 +298,14 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:
+	if (br_shown && br_img) {                         /* (the ROM browser over it: browser.c) */
+		if (!ph_uit || ph_uiw != FW || ph_uih != FH) { if (ph_uit) glDeleteTextures_ (1, &ph_uit);
+			ph_uit = ph_tex (FW, FH, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST, NULL); ph_uiw = FW; ph_uih = FH; ph_uigen = -1; }
+		if (ph_uigen != br_gen) { glBindTexture_ (GL_TEXTURE_2D, ph_uit); glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, FW, FH, GL_RGBA, GL_UNSIGNED_BYTE, br_img); ph_uigen = br_gen; }
+		ph_keep = 1; ph_target (ph_P, 0, 0, FW, FH); ph_keep = 0;   /* (drawn over the picture: kept) */
+		glUseProgram_ (ph_ui); ph_bind (ph_ui, "t", 0, ph_uit);
+		glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, 0x0303 /* ONE_MINUS_SRC_ALPHA */); glDrawArrays_ (GL_TRIANGLES, 0, 3); glDisable_ (GL_BLEND);
+	}
 	glActiveTexture_ (GL_TEXTURE0);
 	if (shot) glReadPixels_ (0, 0, FW, FH, GL_RGBA, GL_UNSIGNED_BYTE, fb);   /* (test: the picture back, B G R A = the CPU's XRGB) */
 	glBindVertexArray_ (0); glUseProgram_ (0); glBindFramebuffer_ (GL_FRAMEBUFFER, 0);

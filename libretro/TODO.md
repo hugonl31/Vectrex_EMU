@@ -21,8 +21,6 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 ## Next (the owner, 2026-11-15)
 
-- [ ] A ROM browser like the desktop's, opened by a mapped button (or touch); its folder set in the options (else the
-      folder the game was loaded from)
 - [ ] RetroArch's keyboard and mouse (game focus mode) as the UVMC2's / PiTrex's USB device
 
 ## Low priority (the owner: ask first)
@@ -44,6 +42,7 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 - Port 2 device in the options, the light pen by touch; the room light's strengths and the lamp's position
 - The options in submenus as the desktop's Config tabs
 - Quality profiles as the desktop's (PROFILE_OFF, switch for switch); Optimize (pctest.py) as the auto profile
+- The ROM browser as the desktop's (SELECT, mappable; touch), the RESET button (L2) and eject / reinsert (R2)
 - The Vectrex unit (Unit / Circuit tabs): owner's, ideal, random and cranky units, the knob, the pots, the yoke, the
   picture's shape, the circuit's parts (unit.c)
 - SD cards as folders, as the desktop (fatimg.py in C: sdcard.c) - the UVMC2's text past the left edge was an old dev

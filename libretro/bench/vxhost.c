@@ -108,6 +108,11 @@ static void poll (void) {}
 static int16_t input (unsigned port, unsigned dev, unsigned idx, unsigned id)
 {
 	if (port) return 0;
+	{ static int np = -1; static long pf[64], pl[64]; static unsigned pid[64];   /* (VXH_PRESS=frame:id:frames,...: these buttons only) */
+	  if (np < 0) { np = 0; const char *e = getenv ("VXH_PRESS"); char b[1024]; snprintf (b, sizeof b, "%s", e ? e : "");
+		for (char *t = strtok (b, ","); t && np < 64; t = strtok (NULL, ",")) { long f, l = 1; unsigned i; if (sscanf (t, "%ld:%u:%ld", &f, &i, &l) >= 2) { pf[np] = f; pid[np] = i; pl[np] = l; np++; } }
+		if (!e) np = -2; }
+	  if (np >= 0) { if (dev != RETRO_DEVICE_JOYPAD) return 0; for (int k = 0; k < np; k++) if (pid[k] == id && fno >= pf[k] && fno < pf[k] + pl[k]) return 1; return 0; } }
 	if (dev == RETRO_DEVICE_JOYPAD) {
 		if (id == RETRO_DEVICE_ID_JOYPAD_Y) return (fno / 40) % 3 == 1;     /* (button 1: start the game, then fire) */
 		if (id == RETRO_DEVICE_ID_JOYPAD_RIGHT) return (fno / 90) % 4 == 2;

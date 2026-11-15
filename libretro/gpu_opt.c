@@ -49,7 +49,9 @@ static double opt_time (const prow *v, wline *sc, int n, int frames)
 	fx_force = v; fx_apply ();
 	const double dt = 1.0 / opt_rate; double t0 = 0;
 	gpu_novideo = 1;
+	double tw = vt_wall ();
 	for (int f = -3; f < frames; f++) {
+		if (f == -1 && vt_wall () - tw < 0.3) f = -2;   /* (warming up at least 0.3 s: the GPU's clock up first) */
 		if (f == 0) { glFinish_ (); t0 = vt_wall (); }
 		memcpy (W1, sc, sizeof (wline) * n);
 		const int np = build_lines (W1, n, 0, 0, 0);

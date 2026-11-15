@@ -310,6 +310,7 @@ static char g_bios[1600], g_dir[1024]; static const char *cart_file; static int 
 static void cart_swap (const char *path);
 static void emu_wait_ext (void);
 static int vx_ok (void);
+static char sw_next[1100], cur_game[1100]; static int sw_eject, ej_out; static int game_switch_now (const char *path);   /* (the game switch: below) */
 static int unit_addon;
 static const char *optv (const char *key);
 static const char *unit_preset (void)               /* (the Unit option: owner, ideal, random N, cranky N) */
@@ -839,6 +840,7 @@ static int try_overlay_dir (const char *dir, const char *rom)
 }
 
 bool retro_load_game (const struct retro_game_info *g);   /* (at the end: it sets up the picture's buffers) */
+static bool game_open (const char *gpath, const char *sys, int first);
 static int memmem_title (const unsigned char *h, size_t n, const char *t);
 static const char *speech_dev (const unsigned char *h, size_t n, const char *path);
 /* the game's set-up from its title: port 2 (the 3D Imager, the light pen), the speech module - for a load and (v0.23)
@@ -2159,6 +2161,9 @@ static void emu_start (void)
 }
 static int emu_threaded (void) { return opt_async && !vx_ok (); }
 static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save states, no run-ahead) */
+#ifndef VX_EMUVR
+#include "browser.c"
+#endif
 /* (test: VXPOC_SHOT=file.png at refresh VXPOC_FRAME (300) - counted over the shown refreshes) */
 static int shot_env = -1, shot_due; static const char *shot_path; static long shot_at, shot_fno;
 static int shot_pending (void)
@@ -2181,12 +2186,26 @@ void retro_run (void)
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
 	emu_wait ();                                /* (1.1: the refresh to show, emulated meanwhile - UVMC2 / PiTrex) */
+	if (sw_next[0]) { char p[1100]; snprintf (p, sizeof p, "%s", sw_next); sw_next[0] = 0;   /* (the ROM browser's / eject's game) */
+		if (game_switch_now (p)) { if (sw_eject == 1) ej_out = 1; else { ej_out = 0; snprintf (cur_game, sizeof cur_game, "%s", p); }
+#ifndef VX_EMUVR
+			if (sw_eject != 1) snprintf (br_game, sizeof br_game, "%s", p);
+#endif
+		} sw_eject = 0; }
 	const int asy = emu_threaded (), primed = asy && emu_primed;
 	bool upd = false;
 	if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &upd) && upd) read_options ();
 	poll_cb ();
 	unsigned char m[8] = { 128, 128, 0, 0x40, 128, 128, 0, 0 };
 	pad (0, &m[0], &m[1], &m[2]); pad (1, &m[4], &m[5], &m[6]);
+#ifndef VX_EMUVR
+	if (br_input ()) { m[0] = m[1] = 128; m[2] = 0; }   /* (the ROM browser open, or just closed by a button: the game gets none) */
+	if (br_dirty || (br_open && !br_shown)) br_draw ();
+	{ static int l2, r2; const int a = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) != 0, b = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2) != 0;
+	  if (a && !l2 && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button) */
+	  if (b && !r2 && !br_open) eject_toggle ();
+	  l2 = a; r2 = b; }
+#endif
 	{ int sel = opt_ov_btn ? input_cb (0, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START) : 0;   /* START (or SELECT): the overlay off / on */
 	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_on = !ov_on;   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
 	  sel_held = sel; }
@@ -2423,6 +2442,10 @@ void retro_run (void)
 	(void) NP;
 	double pf4 = pf_on ? pf_now () : 0;
 	if (pf_on) { pf_g[0] += pgA - pf3; pf_g[1] += pgB - pgA; pf_g[2] += pf4 - pgB; }
+#ifndef VX_EMUVR
+	if (br_shown) { br_blend_cpu (fb, FW);            /* (the ROM browser over the CPU's picture; those pixels painted anew next time) */
+		for (int y = br_by0 < 0 ? 0 : br_by0; y <= br_by1 && y < FH; y++) { if (br_bx0 < sp_f0[y]) sp_f0[y] = br_bx0 < 0 ? 0 : br_bx0; if (br_bx1 > sp_f1[y]) sp_f1[y] = br_bx1; } }
+#endif
 	const int shot_now = shot_pending ();
 	const uint32_t *pic = ob; int pw = OW, ph = OH;   /* (what is sent, and shot) */
 #ifndef VX_EMUVR
@@ -2607,38 +2630,10 @@ static void cart_swap (const char *path)
 	  if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", g_dir); try_overlay_dir (od, ovname); } }
 	boot_id = VX_TICKS () | 1; sheet_written = -1; sheet_write ();
 }
-bool retro_load_game (const struct retro_game_info *g)
+/* a game started: the common part of RetroArch's load and the ROM browser's (first: RetroArch's own - the GPU asked for) */
+static bool game_open (const char *gpath, const char *sys, int first)
 {
-	emu_wait_ext (); emu_primed = 0;
-	boot_id = VX_TICKS () | 1;   /* (v0.25: a new game booted) */
-	if (!g || !g->path) return false;
-	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
-#ifdef __ANDROID__
-	/* (Android: stderr goes nowhere - the core's messages to <system>/vectrex_emu/vectrex_emu.log, for a game that will
-	 *  not start: the BIOS, the overlay found, the speech module) */
-	if (sys) { char lp[1100]; snprintf (lp, sizeof lp, "%s/vectrex_emu/vectrex_emu.log", sys); FILE *lf = fopen (lp, "w");
-		if (lf) { fflush (stderr); dup2 (fileno (lf), 2); fclose (lf); setvbuf (stderr, NULL, _IONBF, 0);
-			fprintf (stderr, "[vectrex_emu] core 1.1, game %s\n", g && g->path ? g->path : "(none)"); } }
-#endif
-	enum retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;
-	if (!env_cb (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf)) return false;
-	{ /* v0.16: the controls named, so RetroArch's Quick Menu > Controls shows and remaps them (owner 2026-11-04) */
-	  static struct retro_input_descriptor d[2 * 11 + 1]; int n = 0;
-	  for (unsigned p = 0; p < 2; p++) {
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 1" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 2" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 3" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 4" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick up (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick down (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick left (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick right (full)" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Joystick X" };
-		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Joystick Y" };
-		if (p == 0) d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START, "Overlay off / on" };
-	  }
-	  d[n] = (struct retro_input_descriptor) { 0 }; env_cb (RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, d); }
-	char dir[1024]; snprintf (dir, sizeof dir, "%s", g->path);
+	char dir[1024]; snprintf (dir, sizeof dir, "%s", gpath);
 	{ char *s = strrchr (dir, '\\'), *t = strrchr (dir, '/'); if (t > s) s = t; if (s) *s = 0; else strcpy (dir, "."); }
 	/* the BIOS (8 KB): in the system folder, or next to the game (EmuVR keeps it there) */
 	char bios[1600] = "";
@@ -2650,9 +2645,9 @@ bool retro_load_game (const struct retro_game_info *g)
 	if (!bios[0]) { fprintf (stderr, "[vectrex_emu] no BIOS (bios.bin in the system folder)\n"); return false; }
 	snprintf (g_bios, sizeof g_bios, "%s", bios); snprintf (g_sys, sizeof g_sys, "%s", sys ? sys : ""); snprintf (g_dir, sizeof g_dir, "%s", dir);
 	{ const char *ce = getenv ("VECTREX_CART"); cart_file = ce && *ce ? ce : NULL; cart_seq = -1; }
-	rate_set = 0;                               /* (each game: the screen rate read anew) */
+	if (first) rate_set = 0;                    /* (each game: the screen rate read anew - not a game the browser loads) */
 	read_options ();
-	const char *gp = v4e_open (g->path);           /* (a .v4e: its unpacked image) */
+	const char *gp = v4e_open (gpath);           /* (a .v4e: its unpacked image) */
 	if (!gp) return false;
 	game_env (gp, sys, dir);
 	/* (an empty script: vtest's main loads, resets and returns - the emulator stays set up) */
@@ -2670,8 +2665,8 @@ bool retro_load_game (const struct retro_game_info *g)
 	int rc = vtest_main (5, argv);
 	remove (scr);
 	if (rc != 2) flash_to_saves (gp);
-	if (rc == 2) { fprintf (stderr, "[vectrex_emu] the game could not be loaded: %s\n", g->path); return false; }
-	abuf_cap = 65536; abuf = malloc (abuf_cap);
+	if (rc == 2) { fprintf (stderr, "[vectrex_emu] the game could not be loaded: %s\n", gpath); return false; }
+	if (!abuf) { abuf_cap = 65536; abuf = malloc (abuf_cap); }
 	{ extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; frame_budget = (vt_uvm2 || vt_uvm2_cart || vt_pitrex) ? 30000 : 33000; }
 	{ extern int vt_imager; stereo = vt_imager && opt_imager == 2; }
 	rate_set = 1;
@@ -2690,12 +2685,86 @@ bool retro_load_game (const struct retro_game_info *g)
 	if (opt_is ("vectrex_emu_skip_intro", "on")) skip_boot ();   /* (1.1: as the desktop's Skip the intro - the BIOS run unseen) */
 	auto_load ();
 	char od[1600];
-	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, g->path); }
-	if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", dir); try_overlay_dir (od, g->path); }
+	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, gpath); }
+	if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", dir); try_overlay_dir (od, gpath); }
 #ifndef VX_EMUVR
-	{ const char *rv = optv ("vectrex_emu_renderer"); opt_renderer = !strcmp (rv, "CPU only") ? 2 : !strcmp (rv, "GPU") ? 1 : 0;
+	if (first) { const char *rv = optv ("vectrex_emu_renderer"); opt_renderer = !strcmp (rv, "CPU only") ? 2 : !strcmp (rv, "GPU") ? 1 : 0;
 	  gpu_asked = opt_renderer != 2 ? gpu_request () : 0; if (!gpu_asked) gpu_ok = 0; }   /* (each game: RetroArch sets the context up after this) */
 #endif
 	if (area_glass () != geo_glass) pic_setup ();   /* (the overlay found: the area it asks for, before RetroArch asks the size) */
 	return true;
+}
+/* (the ROM browser, eject: another game in the slot while running - the card and the flash written back first, as
+ *  at the end of a game; RetroArch's own content stays what it loaded) */
+static char ej_last[1100]; static int ej_out;
+static char sw_next[1100]; static int sw_eject;          /* (a switch asked for: done at the next refresh's start - see retro_run) */
+static int game_switch_now (const char *path);
+static int game_switch (const char *path) { snprintf (sw_next, sizeof sw_next, "%s", path); return 1; }
+static int game_switch_now (const char *path)
+{
+	emu_wait_ext (); emu_primed = 0;
+	if (sd_img[0] && sd_folder[0]) sdc_sync_back (sd_img, sd_folder);
+	flash_save (1);
+	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0; ov_made = 0; ov_on = opt_overlay;   /* (the last game's overlay off) */
+	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
+	if (!game_open (path, sys, 0)) { fprintf (stderr, "[vectrex_emu] could not load %s\n", path);
+		struct retro_message msg = { "Vectrex_EMU: this game could not be loaded", 180 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &msg); return 0; }
+#ifndef VX_EMUVR
+	ph_made = 0;                                /* (the phosphor dark: a new game) */
+#endif
+	struct retro_system_av_info av; retro_get_system_av_info (&av); env_cb (RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
+	fprintf (stderr, "[vectrex_emu] now in the slot: %s\n", path);
+	return 1;
+}
+static char cur_game[1100];
+/* (the desktop's eject: the cartridge out - the Vectrex plays Mine Storm; again: the same one back in) */
+static void eject_toggle (void)
+{
+	if (!ej_out) {
+		snprintf (ej_last, sizeof ej_last, "%s", cur_game);
+		char p[1200]; snprintf (p, sizeof p, "%s" SEP "Mine Storm.bin", tmpdir); FILE *f = fopen (p, "wb"); if (f) fclose (f);   /* (no cartridge: empty) */
+		game_switch (p); sw_eject = 1;
+	} else if (ej_last[0]) { game_switch (ej_last); sw_eject = 2; }
+}
+bool retro_load_game (const struct retro_game_info *g)
+{
+	emu_wait_ext (); emu_primed = 0;
+	boot_id = VX_TICKS () | 1;   /* (v0.25: a new game booted) */
+	if (!g || !g->path) return false;
+	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
+#ifdef __ANDROID__
+	/* (Android: stderr goes nowhere - the core's messages to <system>/vectrex_emu/vectrex_emu.log, for a game that will
+	 *  not start: the BIOS, the overlay found, the speech module) */
+	if (sys) { char lp[1100]; snprintf (lp, sizeof lp, "%s/vectrex_emu/vectrex_emu.log", sys); FILE *lf = fopen (lp, "w");
+		if (lf) { fflush (stderr); dup2 (fileno (lf), 2); fclose (lf); setvbuf (stderr, NULL, _IONBF, 0);
+			fprintf (stderr, "[vectrex_emu] core 1.1, game %s\n", g && g->path ? g->path : "(none)"); } }
+#endif
+	enum retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;
+	if (!env_cb (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf)) return false;
+	{ /* v0.16: the controls named, so RetroArch's Quick Menu > Controls shows and remaps them (owner 2026-11-04) */
+	  static struct retro_input_descriptor d[2 * 11 + 4]; int n = 0;
+	  for (unsigned p = 0; p < 2; p++) {
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 1" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 2" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 3" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 4" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick up (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick down (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick left (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick right (full)" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Joystick X" };
+		d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Joystick Y" };
+		if (p == 0) d[n++] = (struct retro_input_descriptor) { p, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START, "Overlay off / on" };
+	  }
+#ifndef VX_EMUVR
+	  d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "ROM browser" };
+	  d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "RESET button" };
+	  d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Eject / reinsert the cartridge" };
+#endif
+	  d[n] = (struct retro_input_descriptor) { 0 }; env_cb (RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, d); }
+	snprintf (cur_game, sizeof cur_game, "%s", g->path); ej_out = 0;
+#ifndef VX_EMUVR
+	snprintf (br_game, sizeof br_game, "%s", g->path); br_dir[0] = 0;
+#endif
+	return game_open (g->path, sys, 1);
 }

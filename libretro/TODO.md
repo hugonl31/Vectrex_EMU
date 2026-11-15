@@ -14,31 +14,37 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 - [ ] START for the overlay remapped in Quick Menu > Controls; tate (Rotation 90 / 270)
 - [ ] VecVoice / VecVox games talk (sp0256-al2.bin is on the Nova now)
 
-## Ports and controllers (bigger: agree first)
+## In progress (the owner, 2026-11-15: do them all)
 
+Ports and input
 - [ ] Port 2 device chosen in the core's options, as the desktop's Config > Ports: auto (by the game, as now: the
-      3D Imager, the light pen, VecVoice / VecVox) or one device by name; UVMC2 / PiTrex shown there as on the desktop
-- [ ] Touch screen: the light pen by touch (and the ROM browser, below)
-- [ ] The PC keyboard and mouse as the UVMC2's / PiTrex's USB device: RetroArch's keyboard and mouse
+      3D Imager, the light pen, VecVoice / VecVox) or one device by name
+- [ ] Touch screen: the light pen by touch
 - [ ] README for the public release: the optional files - `sp0256-al2.bin` (speech), the 3D Imager needs none
 
-## The desktop's look and menus (bigger: agree first)
+The room light
+- [ ] Strengths, as the desktop's sliders: the reflection on the glass, on the overlay, the case's reflections and wear
+- [ ] The lamp's position (roomlight.maps in C: the light map made in the core)
 
-- [ ] The Ultra profile's defaults the desktop's Ultra look: the tube, the overlay, the room light, the glow - every
-      default compared with vecrender.py / vectrex_emu.py
-- [ ] The overlay's effects on the GPU: scratches and damage, the plastic glow, the ceiling light on the overlay
+The Vectrex unit (the desktop's Config > Unit / Circuit)
+- [ ] The brightness knob, the size X / Y, the high voltage, centring X / Y, the yoke's rotation, the picture's shape
+      (skew, keystone, pincushion, linearity); Random unit and Cranky
+
+The look
+- [ ] The overlay's effects on the GPU: scratches, wear and damage, the plastic glow, the ceiling light on the
+      overlay and its plastic brightening around it
+- [ ] The overlay's parallax
+- [ ] The Ultra profile's defaults the desktop's Ultra look: every default compared with vecrender.py / vectrex_emu.py
 - [ ] The options grouped like the desktop's Config tabs (where RetroArch's submenus allow)
 
 ## Low priority (the owner: ask first)
 
+- [ ] The PC keyboard and mouse as the UVMC2's / PiTrex's USB device: RetroArch's keyboard and mouse
 - [ ] A ROM browser like the desktop's: on a button (L1?) or touch, its folder set in the options (else the folder the
       game was loaded from)
 - [ ] 16:9 mode: in tate the desktop's control strip (OSD) below the picture, clickable / touchable
 - [ ] RetroArch netplay for two-player games (the other player as player 2): 6809 games have exact save states, which
       netplay needs; UVMC2 / PiTrex have none
-
-## Smaller
-
 
 ## Done (2026-11-15)
 

@@ -754,6 +754,8 @@ static int vx_ncpu (void)
 	return (int) sysconf (_SC_NPROCESSORS_ONLN);
 #endif
 }
+#include "sdcard.c"                         /* (1.1: a folder as the UVMC2's / PiTrex's SD card - the desktop's fatimg.py) */
+static char sd_img[1900], sd_folder[1800];     /* (the card in use: its image, its folder - written back at the end) */
 /* (1.1) a save's file: RetroArch's saves folder (else the game's), <game file><ext>; a save next to the ROM and none
  * there yet: copied over as the start */
 static void save_path (const char *rom, const char *ext, char *out, size_t n)
@@ -906,7 +908,18 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	/* (1.1: the SD card of a PiTrex program (.img / .pit) or a UVMC2 game (.um2) - a FAT image, next to the game or in
 	 *  <system>/vectrex_emu: pitrex_sd.img / uvmc2_sd.img, as the desktop Vectrex_EMU builds them from its card folders) */
 	{ const char *e = strrchr (path, '.'); int px = e && (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")), um = e && !vx_stricmp (e, ".um2");
-	  if (px || um) { static char sd[1800]; const char *nm = px ? "pitrex_sd.img" : "uvmc2_sd.img"; const char *dd[] = { dir, sys, NULL }; sd[0] = 0;
+	  sd_img[0] = sd_folder[0] = 0;
+	  if (px || um) { /* (1.1, as the desktop: the card is a folder - <system>/vectrex_emu/uvmc2 or pitrex - built into an image in
+	                     RetroArch's saves folder before the game and what the game wrote copied back after it) */
+		char fo[1800]; snprintf (fo, sizeof fo, "%s" SEP "vectrex_emu" SEP "%s", sys ? sys : dir, px ? "pitrex" : "uvmc2"); sdc_st st;
+		if (!sdc_stat (fo, &st) && (st.st_mode & S_IFMT) == S_IFDIR) {
+			const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
+			char cd[1700]; snprintf (cd, sizeof cd, "%s" SEP "vectrex_emu_cards", sv && *sv ? sv : dir); vx_mkdir (cd);
+			snprintf (sd_img, sizeof sd_img, "%s" SEP "%s", cd, px ? "pitrex_sd.img" : "uvmc2_sd.img");
+			if (sdc_prepare (fo, sd_img)) { static char e[2000]; snprintf (sd_folder, sizeof sd_folder, "%s", fo);
+				snprintf (e, sizeof e, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", sd_img); vx_putenv (e); }
+			else sd_img[0] = 0; } }
+	  if ((px || um) && !sd_folder[0]) { static char sd[1800]; const char *nm = px ? "pitrex_sd.img" : "uvmc2_sd.img"; const char *dd[] = { dir, sys, NULL }; sd[0] = 0;
 		for (int d = 0; dd[d] && !sd[0]; d++) { char q[1700]; snprintf (q, sizeof q, d ? "%s" SEP "vectrex_emu" SEP "%s" : "%s" SEP "%s", dd[d], nm);
 			FILE *t = fopen (q, "rb"); if (t) { fclose (t); snprintf (sd, sizeof sd, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", q); } }
 		if (sd[0]) { vx_putenv (sd); fprintf (stderr, "[vectrex_emu] SD card %s\n", strchr (sd, '=') + 1); }
@@ -920,6 +933,7 @@ static void pw_stamp_path (char *o, size_t n) { snprintf (o, n, "%s" SEP "vectre
 void retro_unload_game (void)
 {
 	emu_wait_ext (); emu_primed = 0;
+	if (sd_img[0] && sd_folder[0]) sdc_sync_back (sd_img, sd_folder);   /* (1.1: what the game wrote on its card, into the folder) */
 	flash_save (1);                             /* (1.1: the flash cartridge's last writes) */
 	{ char sp[1100]; pw_stamp_path (sp, sizeof sp); FILE *f = fopen (sp, "w"); if (f) { fprintf (f, "%lld", (long long) time (NULL)); fclose (f); } }
 	{ const char *lp = getenv ("VXPOC_RALOG"); FILE *f = lp ? fopen (lp, "a") : NULL;   /* (test: was run-ahead on?) */

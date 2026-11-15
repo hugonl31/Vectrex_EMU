@@ -31,10 +31,12 @@ if [ -n "$SHARE" ] && [ -d "$SHARE" ]; then
 	date '+built %Y-%m-%d %H:%M' > "$SHARE/BUILD.txt"
 	git log -1 --format='commit %h %s' >> "$SHARE/BUILD.txt" 2>/dev/null || true
 	echo "copied to $SHARE"
-	# the PiTrex and UVMC2 SD cards (FAT images the desktop Vectrex_EMU builds in its cache folder, 285 MB each), the
-	# PiTrex loader and the UVMC2 games: in cards/, only when changed (not in the zip)
+	# the PiTrex and UVMC2 SD cards as folders (the core builds the card from them, as the desktop): the release's UVMC2
+	# folder, the desktop install's PiTrex folder; the PiTrex loader and the UVMC2 games - in cards/, not in the zip
 	mkdir -p "$SHARE/cards/system/vectrex_emu" "$SHARE/cards/ROMs"
-	for f in ../cache/pitrex_sd.img ../cache/uvmc2_sd.img; do [ -f "$f" ] && cp -u "$f" "$SHARE/cards/system/vectrex_emu/"; done
+	rm -f "$SHARE/cards/system/vectrex_emu/pitrex_sd.img" "$SHARE/cards/system/vectrex_emu/uvmc2_sd.img"
+	cp -ru ../package/uvmc2 "$SHARE/cards/system/vectrex_emu/"
+	[ -d ../build/Vectrex_EMU/pitrex ] && cp -ru ../build/Vectrex_EMU/pitrex "$SHARE/cards/system/vectrex_emu/"
 	[ -f ../build/Vectrex_EMU/pitrex/pitrex.img ] && cp -u ../build/Vectrex_EMU/pitrex/pitrex.img "$SHARE/cards/ROMs/PiTrex.img"
 	cp -u ../package/roms/*.um2 "$SHARE/cards/ROMs/" 2>/dev/null || true
 fi

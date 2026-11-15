@@ -29,8 +29,9 @@ load a core from a file.
        <system>/vectrex_emu/on.wav, off.wav
    Speech games (VecVox / VecVoice): put sp0256-al2.bin (or al2.bin) in <system>/vectrex_emu too. Not included.
    Overlays are found by the game's file name (Armor Attack.bin -> overlays/Armor Attack.png).
-   PiTrex and UVMC2: their SD cards (cards/system/vectrex_emu: pitrex_sd.img, uvmc2_sd.img) into <system>/vectrex_emu,
-   the PiTrex loader (cards/ROMs/PiTrex.img - its menu starts the PiTrex programs) and the .um2 games with the games.
+   PiTrex and UVMC2: their SD card folders (cards/system/vectrex_emu: pitrex, uvmc2) into <system>/vectrex_emu - the
+   core makes each card from its folder and puts what the games save back into it; the PiTrex loader
+   (cards/ROMs/PiTrex.img - its menu starts the PiTrex programs) and the .um2 games with the games.
 
 4. ES-DE
    Copy ES-DE/custom_systems/es_systems.xml into ES-DE's own custom_systems folder on the device

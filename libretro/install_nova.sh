@@ -26,12 +26,12 @@ scp -q -P 8022 $P/vectrex_emu_libretro_android.so $P/vectrex_emu_libretro.info $
 #  the core list then shows "Vectrex_EMU" instead of the file's name)
 ssh -o BatchMode=yes -p 8022 $NOVA "mkdir -p /storage/emulated/0/RetroArch/info"
 scp -q -P 8022 $P/vectrex_emu_libretro.info $NOVA:/storage/emulated/0/RetroArch/info/
-# the PiTrex and UVMC2 SD cards: only when the Nova has none - the games save on them (UVMC2 high scores, settings):
-# a card sent again would lose those
-for f in ../cache/pitrex_sd.img ../cache/uvmc2_sd.img; do
-	[ -f "$f" ] || continue; b=$(basename "$f")
-	if ssh -o BatchMode=yes -p 8022 $NOVA "test -s $SD/BIOS/vectrex_emu/$b"; then echo "$b: on the Nova already (its saves kept)"
-	else echo "sending $b"; scp -q -P 8022 "$f" $NOVA:$SD/BIOS/vectrex_emu/; fi
+# the PiTrex and UVMC2 SD cards as folders (the core builds each card from its folder and copies the games' writes
+# back): only when the Nova has none - the games' saves are in them
+for d in ../package/uvmc2 ../build/Vectrex_EMU/pitrex; do
+	[ -d "$d" ] || continue; b=$(basename "$d")
+	if ssh -o BatchMode=yes -p 8022 $NOVA "test -d $SD/BIOS/vectrex_emu/$b"; then echo "$b: on the Nova already (its saves kept)"
+	else echo "sending $b"; scp -q -r -P 8022 "$d" $NOVA:$SD/BIOS/vectrex_emu/; fi
 done
 # the speech ROM (VecVoice / VecVox games) from the desktop install, when there - the owner's own copy, not in the package
 [ -f ../build/Vectrex_EMU/system/sp0256-al2.bin ] && scp -q -P 8022 ../build/Vectrex_EMU/system/sp0256-al2.bin $NOVA:$SD/BIOS/vectrex_emu/

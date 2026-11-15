@@ -20,7 +20,10 @@ for %%f in (overlays\*.art overlays\CREDITS.md overlays\RENAMED.txt) do if not e
 set D=%~dp0
 rem (where it was built: the debug report)
 %PY% -c "import os;os.makedirs('build',exist_ok=True);open('build/BUILD_INFO','w').write(('GitHub '+os.environ['GITHUB_SHA'][:7]) if os.environ.get('GITHUB_ACTIONS') else 'local build')" || exit /b 1
+rem (left out: libraries this PC may have that the release build does not - GitHub builds with only pyinstaller and
+rem  numpy, and the code uses Pillow only when it is there - so a local exe holds what the release holds)
 %PY% -m PyInstaller --noconfirm --onefile --windowed --name Vectrex_EMU --distpath "%OUT%" --workpath build\pyi --specpath build --paths src\frontend ^
+  --exclude-module PIL --exclude-module yaml --exclude-module psutil --exclude-module charset_normalizer --exclude-module requests ^
   --add-binary "%D%core\vectrex_core.exe;core" ^
   --add-data "%D%sounds\on.wav;sounds" --add-data "%D%sounds\off.wav;sounds" --add-data "%D%icons\vectrex_emu.png;icons" --add-data "%D%VERSION;." --add-data "%D%build\BUILD_INFO;." ^
   --icon "%D%icons\vectrex_emu.ico" src\frontend\vectrex_emu.py || exit /b 1

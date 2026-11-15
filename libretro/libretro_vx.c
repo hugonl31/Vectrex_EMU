@@ -2788,6 +2788,10 @@ static int game_switch_now (const char *path)
 	if (sd_img[0] && sd_folder[0]) sdc_sync_back (sd_img, sd_folder);
 	flash_save (1);
 	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0; ov_made = 0; ov_on = opt_overlay;   /* (the last game's overlay off) */
+	{ extern int vt_vb, vt_hb512, vt_multicart, vt_uvm2, vt_uvm2_cart, vt_pitrex; extern const char *vt_flash_file;   /* (the last cartridge's
+	                                              boards and modes out: vtest's main only sets them - Vectorblade then Scramble ran Scramble on
+	                                              Vectorblade's board: Mine Storm, the owner 2026-11-15) */
+	  extern int vt_uvm2_intro, vt_uvm2_go; vt_vb = vt_hb512 = vt_multicart = 0; vt_uvm2 = vt_uvm2_cart = vt_uvm2_intro = vt_uvm2_go = vt_pitrex = 0; vt_flash_file = NULL; }
 	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
 	if (!game_open (path, sys, 0)) { fprintf (stderr, "[vectrex_emu] could not load %s\n", path);
 		struct retro_message msg = { "Vectrex_EMU: this game could not be loaded", 180 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &msg); return 0; }

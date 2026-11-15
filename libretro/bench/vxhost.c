@@ -147,10 +147,18 @@ int main (int argc, char **argv)
 	if (hw_on) { if (!hw_setup (av.geometry.max_width, av.geometry.max_height)) { fprintf (stderr, "vxhost: no EGL context\n"); return 2; } hw.context_reset (); }
 #endif
 	fprintf (stderr, "picture %ux%u, %.0f Hz\n", av.geometry.base_width, av.geometry.base_height, av.timing.fps);
+	/* (VXH_RUNAHEAD=1: each refresh as RetroArch's run-ahead of one frame, one instance - the frame run unseen, the state
+	 *  saved, the next frame run and shown, the state put back) */
+	static void *ra_buf; static size_t ra_sz; const int ra = getenv ("VXH_RUNAHEAD") != NULL;
+	#define RUN() do { if (ra) { if (!ra_buf) { ra_sz = retro_serialize_size (); ra_buf = malloc (ra_sz ? ra_sz : 1); } \
+		hidden = 1; retro_run (); hidden = 0; if (ra_sz && retro_serialize (ra_buf, ra_sz)) { retro_run (); retro_unserialize (ra_buf, ra_sz); } else retro_run (); } \
+		else retro_run (); \
+		{ static long rsf = -2; if (rsf == -2) rsf = getenv ("VXH_RESET") ? atol (getenv ("VXH_RESET")) : -1; \
+		  if (fno == rsf) { void (*rr) (void) = (void (*) (void)) dlsym (h, "retro_reset"); if (rr) { rr (); fprintf (stderr, "vxhost: retro_reset at %ld\n", fno); } } } } while (0)
 	if (!strcmp (argv[4], "bench")) {
 		int n = argc > 5 ? atoi (argv[5]) : 1200, warm = 120; double t0 = 0, worst = 0;
 		for (fno = 0; fno < n + warm; fno++) {
-			double a = now (); retro_run (); double d = now () - a; { static FILE *tf; static int ti = -1; if (ti < 0) { const char *z = getenv ("VXH_TRACE"); tf = z ? fopen (z, "w") : NULL; ti = 1; } if (tf) fprintf (tf, "%ld %.3f\n", fno, d * 1e3); }   /* (VXH_TRACE: each refresh's time) */
+			double a = now (); RUN (); double d = now () - a; { static FILE *tf; static int ti = -1; if (ti < 0) { const char *z = getenv ("VXH_TRACE"); tf = z ? fopen (z, "w") : NULL; ti = 1; } if (tf) fprintf (tf, "%ld %.3f\n", fno, d * 1e3); }   /* (VXH_TRACE: each refresh's time) */
 			if (fno == warm) t0 = a;
 			if (fno >= warm && d > worst) worst = d; }
 		double avg = (now () - t0) / n * 1e3;
@@ -158,7 +166,7 @@ int main (int argc, char **argv)
 		fflush (stdout); retro_unload_game ();   /* (VXPOC_PROF=1: the core's own breakdown - Android: in its log) */
 	} else if (!strcmp (argv[4], "shot")) {
 		int n = atoi (argv[5]);
-		for (fno = 0; fno < n; fno++) { read_back = fno == n - 1; retro_run (); }
+		for (fno = 0; fno < n; fno++) { read_back = fno == n - 1; RUN (); }
 		FILE *f = fopen (argv[6], "wb"); fprintf (f, "P6\n%u %u\n255\n", fw, fh);
 		for (unsigned y = 0; y < fh; y++) for (unsigned x = 0; x < fw; x++) {
 			uint32_t p = ((const uint32_t *) ((const char *) frame + y * fpitch))[x]; unsigned char c[3] = { p >> 16, p >> 8, p };

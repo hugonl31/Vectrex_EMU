@@ -51,6 +51,7 @@ static bool env (unsigned cmd, void *data)
 {
 	switch (cmd) {
 	case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: *(const char **) data = sysdir; return true;
+	case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: *(const char **) data = getenv ("VXH_SAVEDIR"); return getenv ("VXH_SAVEDIR") != NULL;   /* (saves: a folder of their own) */
 	case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: return *(enum retro_pixel_format *) data == RETRO_PIXEL_FORMAT_XRGB8888;
 	case RETRO_ENVIRONMENT_SET_VARIABLES: {
 		const struct retro_variable *v = data;

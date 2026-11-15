@@ -728,6 +728,33 @@ static int memmem_title (const unsigned char *h, size_t n, const char *t);
 static const char *speech_dev (const unsigned char *h, size_t n, const char *path);
 /* the game's set-up from its title: port 2 (the 3D Imager, the light pen), the speech module - for a load and (v0.23)
  * a cartridge swapped while running; returns whether it is a 3D Imager game */
+/* (1.1) a save's file: RetroArch's saves folder (else the game's), <game file><ext>; a save next to the ROM and none
+ * there yet: copied over as the start */
+static void save_path (const char *rom, const char *ext, char *out, size_t n)
+{
+	const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
+	const char *b = rom; for (const char *q = rom; *q; q++) if (*q == '/' || *q == '\\') b = q + 1;
+	if (sv && *sv) snprintf (out, n, "%s" SEP "%s%s", sv, b, ext); else snprintf (out, n, "%s%s", rom, ext);
+	FILE *t = fopen (out, "rb"); if (t) { fclose (t); return; }
+	char old[1900]; snprintf (old, sizeof old, "%s%s", rom, ext);
+	FILE *a = fopen (old, "rb"); if (!a) return;
+	FILE *c = fopen (out, "wb"); char buf[16384]; size_t k;
+	if (c) { while ((k = fread (buf, 1, sizeof buf, a)) > 0) fwrite (buf, 1, k, c); fclose (c); fprintf (stderr, "[vectrex_emu] save %s: from %s\n", out, old); }
+	fclose (a);
+}
+/* (1.1) a flash cartridge (Vectorblade, the 512K cartridge): its saves in RetroArch's saves folder - vtest loaded the
+ * ROM folder's; this one, when there, is the newer. Written a second after the game last wrote (live.c flash_save) */
+static void flash_to_saves (const char *rom)
+{
+	extern const char *vt_flash_file; extern size_t vt_cart_len; static char fs[1900];
+	if (!vt_flash_file) return;
+	save_path (rom, ".sav", fs, sizeof fs);
+	FILE *f = fopen (fs, "rb");
+	if (f) { unsigned char *tmp = malloc (vt_cart_len); size_t m = tmp ? fread (tmp, 1, vt_cart_len, f) : 0; fclose (f);
+	         if (m == vt_cart_len) memcpy (cart, tmp, m);
+	         free (tmp); }
+	vt_flash_file = fs; fprintf (stderr, "[vectrex_emu] flash saves %s\n", fs);
+}
 static int game_env (const char *path, const char *sys, const char *dir)
 {
 	int im_out = 0;
@@ -754,6 +781,21 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  else { vx_putenv ("VT_VECVOICE="); vx_putenv ("VT_SPEECHOUT="); }
 	  vx_putenv (dev ? (strcmp (dev, "vecvox") ? "VT_SPEECHDEV=vecvoice" : "VT_SPEECHDEV=vecvox") : "VT_SPEECHDEV=");
 	  if (dev) fprintf (stderr, "[vectrex_emu] speech module in port 2: %s\n", dev); }
+	/* (1.1: the desktop Vectrex_EMU's default Vectrex unit - vectrex_emu.py UNIT_PRESETS['owner'], the analog parts as
+	 *  measured on the owner's console; without them the core ran as an ideal machine: Last Human's calibration then
+	 *  needed ZERO REF +36. Read at the first reset) */
+	{ static const char *const UNIT[] = { "VT_ZREFK=0.38", "VT_CALSHIFT=2.9", "VT_ZOFS=0.0000", "VT_YSHK=0.7000", "VT_BEAMOFF=0.5000",
+		"VT_BRIGHT=0.0000", "VT_OFSK=166.0000", "VT_DEFLAG=6.0000", "VT_DEFLAGY=6.0000", "VT_DACOFS=0.0000", "VT_HWOFS=0.0000,0.0000",
+		"VT_ZEROTAU=4.500,3.300", "VT_DACBITS=0.01700,0.00690,-0.00890,-0.00140", NULL };
+	  for (int k = 0; UNIT[k]; k++) vx_putenv (UNIT[k]); }
+	/* (1.1: Last Human's save chip - a DS2431 on PB6: its calibration, difficulty and high scores - in RetroArch's saves
+	 *  folder; a save next to the ROM (the desktop's) is the start) */
+	{ static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };
+	  { FILE *c = fopen (path, "rb"); if (c) { if (fread (h, 1, 96, c)) {} fclose (c); } }
+	  if (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN")) save_path (path, ".ds2431", ds, sizeof ds);
+	  { static char e[1950]; snprintf (e, sizeof e, "VT_DS2431=%s", ds); vx_putenv (e); }
+	  extern void vt_ds2431_reload (void); vt_ds2431_reload ();
+	  if (ds[0]) fprintf (stderr, "[vectrex_emu] save chip %s\n", ds); }
 	/* (1.1: the SD card of a PiTrex program (.img / .pit) or a UVMC2 game (.um2) - a FAT image, next to the game or in
 	 *  <system>/vectrex_emu: pitrex_sd.img / uvmc2_sd.img, as the desktop Vectrex_EMU builds them from its card folders) */
 	{ const char *e = strrchr (path, '.'); int px = e && (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")), um = e && !vx_stricmp (e, ".um2");
@@ -770,6 +812,7 @@ static long vx_hidden, vx_shown;          /* (test: refreshes run hidden / shown
 static void pw_stamp_path (char *o, size_t n) { snprintf (o, n, "%s" SEP "vectrex_emu_power_off.txt", tmp_dir ()); }
 void retro_unload_game (void)
 {
+	flash_save (1);                             /* (1.1: the flash cartridge's last writes) */
 	{ char sp[1100]; pw_stamp_path (sp, sizeof sp); FILE *f = fopen (sp, "w"); if (f) { fprintf (f, "%lld", (long long) time (NULL)); fclose (f); } }
 	{ const char *lp = getenv ("VXPOC_RALOG"); FILE *f = lp ? fopen (lp, "a") : NULL;   /* (test: was run-ahead on?) */
 	  if (f) { fprintf (f, "shown %ld hidden %ld%c", vx_shown, vx_hidden, 10); fclose (f); } }
@@ -2026,6 +2069,7 @@ void retro_run (void)
 		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
 	}
 	sheet_write ();
+	flash_save (0);                             /* (1.1: the flash cartridge's saves - live.c: a second after its last write) */
 	if (pf_on) { double pf5 = pf_now (); pf_t[0] += pf1 - pf0; pf_t[1] += pf2 - pf1; pf_t[2] += pf3 - pf2; pf_t[3] += pf4 - pf3; pf_t[4] += pf5 - pf4; pf_n++; }
 	{ const char *sh = shot_path;   /* (test: the picture at refresh N as a PNG) */
 	  if (shot_now) {
@@ -2164,7 +2208,9 @@ static void cart_swap (const char *path)
 	char scr[1600]; snprintf (scr, sizeof scr, "%s" SEP "vectrex_emu_empty.txt", tmpdir);
 	FILE *f = fopen (scr, "w"); if (f) fclose (f);
 	char *argv[] = { "vx", g_bios, (char *) path, scr, tmpdir, NULL };
+	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
 	int rc = vtest_main (5, argv); remove (scr);
+	if (rc != 2) flash_to_saves (path);
 	fprintf (stderr, "[vectrex_emu] cartridge swapped: %s (%s)\n", path, rc == 2 ? "FAILED" : "running");
 	while (nh) frame_pop (); aq_r = aq_w = 0;
 	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0;
@@ -2228,8 +2274,10 @@ bool retro_load_game (const struct retro_game_info *g)
 		f = fopen (scr, "w"); } }
 	if (!f) { fprintf (stderr, "[vectrex_emu] no folder to write in (system, saves, the game's)\n"); return false; } fclose (f);
 	char *argv[] = { "vx", bios, (char *) g->path, scr, tmpdir, NULL };
+	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
 	int rc = vtest_main (5, argv);
 	remove (scr);
+	if (rc != 2) flash_to_saves (g->path);
 	if (rc == 2) { fprintf (stderr, "[vectrex_emu] the game could not be loaded: %s\n", g->path); return false; }
 	abuf_cap = 65536; abuf = malloc (abuf_cap);
 	{ extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; frame_budget = (vt_uvm2 || vt_uvm2_cart || vt_pitrex) ? 30000 : 33000; }

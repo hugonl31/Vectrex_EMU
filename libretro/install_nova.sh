@@ -26,13 +26,13 @@ scp -q -P 8022 $P/vectrex_emu_libretro_android.so $P/vectrex_emu_libretro.info $
 #  the core list then shows "Vectrex_EMU" instead of the file's name)
 ssh -o BatchMode=yes -p 8022 $NOVA "mkdir -p /storage/emulated/0/RetroArch/info"
 scp -q -P 8022 $P/vectrex_emu_libretro.info $NOVA:/storage/emulated/0/RetroArch/info/
-# the PiTrex and UVMC2 SD cards (when changed: their size or time) and the PiTrex loader / UVMC2 games in the ROM folder
+# the PiTrex and UVMC2 SD cards: only when the Nova has none - the games save on them (UVMC2 high scores, settings):
+# a card sent again would lose those
 for f in ../cache/pitrex_sd.img ../cache/uvmc2_sd.img; do
-	[ -f "$f" ] || continue; b=$(basename "$f"); here=$(stat -c %s "$f")
-	there=$(ssh -o BatchMode=yes -p 8022 $NOVA "stat -c %s $SD/BIOS/vectrex_emu/$b 2>/dev/null || echo 0")
-	if [ "$here" != "$there" ] || [ "$f" -nt dist/.cards_sent ]; then echo "sending $b"; scp -q -P 8022 "$f" $NOVA:$SD/BIOS/vectrex_emu/; fi
+	[ -f "$f" ] || continue; b=$(basename "$f")
+	if ssh -o BatchMode=yes -p 8022 $NOVA "test -s $SD/BIOS/vectrex_emu/$b"; then echo "$b: on the Nova already (its saves kept)"
+	else echo "sending $b"; scp -q -P 8022 "$f" $NOVA:$SD/BIOS/vectrex_emu/; fi
 done
-touch dist/.cards_sent
 [ -f ../build/Vectrex_EMU/pitrex/pitrex.img ] && scp -q -P 8022 ../build/Vectrex_EMU/pitrex/pitrex.img "$NOVA:$SD/ROMs/vectrex/PiTrex.img"
 for g in ../package/roms/*.um2; do [ -f "$g" ] && scp -q -P 8022 "$g" "$NOVA:$SD/ROMs/vectrex/"; done
 ssh -o BatchMode=yes -p 8022 $NOVA "ls -l /storage/emulated/0/Download/vectrex_emu_libretro_android.so; ls $SD/BIOS/vectrex_emu; ls $SD/BIOS/vectrex_emu/overlays | wc -l; ls $SD/ES-DE/custom_systems"

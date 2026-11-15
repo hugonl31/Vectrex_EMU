@@ -71,6 +71,7 @@ static unsigned via_cb2s;  /* version of cb2 controlled by the shift register */
 
 unsigned e6809_get_pc (void);
 #include "ds2431.c"
+void vt_ds2431_reload (void) { ow_init (); }   /* (a new game in a core that stays loaded: its own save chip, or none) */
 extern int vt_uvm2;                      /* (uvm2_cart.c) */
 extern int vt_pitrex;                    /* (pitrex_cart.c) */
 #include "sp0256.c"

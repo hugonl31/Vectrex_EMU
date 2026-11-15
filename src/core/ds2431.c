@@ -40,6 +40,7 @@ static unsigned char ow_crc8 (const unsigned char *p, int n)
 static void ow_init (void)
 {
 	const char *f = getenv ("VT_DS2431");
+	ow_on = 0;                                    /* (again for each game: the libretro core stays loaded - vt_ds2431_reload) */
 	if (!f || !*f) return;
 	ow_on = 1;
 	snprintf (ow_file, sizeof ow_file, "%s", f);

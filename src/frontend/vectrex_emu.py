@@ -1408,6 +1408,17 @@ def imager_disc(rom):
 # VecFever .v4e files (v4e.py): unpacked into the folder 'v4e' next to the settings, where the game's save (the
 # flash's .sav, a DS2431's memory) is kept too; the core runs the plain image
 V4E_ENV = {}                            # the unpacked image -> extra settings for the core (the DS2431)
+
+def last_human_rom(rom):
+    """Last Human (the 6809 cartridge: its title lines LAST / HUMAN) - it keeps its saves in a DS2431 on PB6"""
+    if not rom.lower().endswith(('.bin', '.vec', '.gam')):
+        return False
+    try:
+        with open(rom, 'rb') as f:
+            h = f.read(96)
+    except OSError:
+        return False
+    return h[:5] == b'g GCE' and b'LAST\x80' in h and b'HUMAN\x80' in h
 _v4e_done = {}                          # the .v4e file -> ((size, mtime), the unpacked image)
 def v4e_rom(path):
     """a .v4e file -> the unpacked ROM image's path; ValueError (a message) when it cannot run here"""
@@ -1840,6 +1851,8 @@ class Core:
                 env['VT_SPEECHDEV'] = speech                        # (a speech accessory on port 2 now)
         # no input recording, no log: the core records to NUL, its messages are discarded
         env.update(V4E_ENV.get(rom, {}))                           # (a .v4e cartridge's save chip)
+        if 'VT_DS2431' not in env and Core.force_seed is None and last_human_rom(rom):   # (Last Human's save chip: its
+            env['VT_DS2431'] = rom + '.ds2431'                     #  calibration and high scores; not online - both start alike)
         # a UVMC2 game: its SD card is the folder sd_dir, as a FAT32 image (fatimg.py), copied back at the end
         # a UVMC2 game: its core 0 on a host thread of its own when that pays (the core decides: both cores busy);
         # only with 4 or more processors (the window and the sound need one too)

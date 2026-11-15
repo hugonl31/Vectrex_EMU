@@ -65,7 +65,8 @@ GLFN(void, glDeleteVertexArrays, (GLsizei, const GLuint *)); GLFN(GLenum, glGetE
 #define GL_CULL_FACE 0x0B44
 #define GL_STENCIL_TEST 0x0B90
 
-static struct retro_hw_render_callback hwr;
+static struct retro_hw_render_callback hwr; static int gpu_novideo;
+GLFN(const unsigned char *, glGetString, (GLenum));
 static void ph_reset (void); static void ph_lost (void); static int ph_ok; static GLuint ph_P;   /* (gpu_phos.c) */
 static int gpu_asked;                         /* (the frontend took the request: the picture goes through the GPU) */
 static int gpu_ok;                            /* (the context is there and the program built) */
@@ -512,5 +513,5 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));
 	glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	glBindVertexArray_ (0); glUseProgram_ (0);
-	video_cb (RETRO_HW_FRAME_BUFFER_VALID, (unsigned) dw, (unsigned) dh, 0);
+	if (!gpu_novideo) video_cb (RETRO_HW_FRAME_BUFFER_VALID, (unsigned) dw, (unsigned) dh, 0);   /* (Optimize: drawn, not shown) */
 }

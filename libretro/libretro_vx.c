@@ -226,6 +226,7 @@ static float g_lamp_x, g_lamp_y;                 /* (the lamp's position: gpu_gl
 /* what the overlay shows on the GPU (gpu_ovfx.c; fx_apply: the options and the profile) */
 static struct { float glow, ovl, wear, fine, medium, large, scrib, glint, reach; int scr, seed; } ovfx;
 static float k_ovl = -1, k_ovglow = -1; static int raw_scr = -1, opt_par = 1, raw_par = -1, raw_geom = -1, raw_passes = -1, raw_dith = -1, raw_groom = -1;
+typedef struct { unsigned char passes, curve, glass, groom, light, lov, aglow, scr, par, crefl, sbend, dith, half, lh; float ps; } prow;   /* (a profile's switches) */
 static int fx_passes = 2, fx_dith = 1, fx_half, fx_lh; static float fx_ps = 1.0f;   /* (the profile's: the glow passes, dither, phosphor scale,
                                                                           half rate, the lines at the phosphor's size - GPU) */   /* (the overlay's ceiling light, plastic glow, scratches, parallax) */
 static float glass_grey_v, k_ceiling = -1, k_crefl = -1, k_cwear = -1;   /* (the strengths: -1 auto - the profile's on / off at 1x) */                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
@@ -439,7 +440,7 @@ static const struct vx_opt OPTS[] = {
 	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
 	{ "vectrex_emu_smooth", "display", "Smooth motion", "Lines move smoothly between game frames.", "auto|on|off" },
 	{ "vectrex_emu_profile", "display", "Quality profile",
-	  "Sets the options left on auto. Ultra: all effects. Low: for small handhelds. Auto: Ultra with the GPU, else Medium.",
+	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|ultra|high|medium|low|basic" },
 	{ "vectrex_emu_renderer", "display", "Renderer (next game start)", "GPU adds the glass and case effects (video driver gl / glcore).",
 	  "auto|GPU|CPU only" },
@@ -1983,41 +1984,44 @@ static void pic_setup (void)
 #include "gpu_gl.c"
 #include "gpu_phos.c"
 /* the profile's choices (Ultra, High, Medium, Low, Basic) for the options left on auto */
+static const prow FX_PROFILES[5] = {   /* (vecrender.py PROFILE_OFF: Ultra, High, Medium, Low, Basic) */
+	{ 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1.0f }, { 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1.0f },
+	{ 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0.75f }, { 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0.5f },
+	{ 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0.5f } };
+static prow opt_row; static int opt_row_ok; static const prow *fx_force;   /* (Optimize's result: gpu_opt.c; a measurement's row) */
 static void fx_apply (void)
 {
 	/* the GPU: vecrender.py PROFILE_OFF, switch for switch - Ultra all; High without the room's reflections (on the glass,
 	 * the overlay, the glass's grey) and with one glow pass; Medium also without the tube's curve, the glass edge, the
 	 * overlay's scratches and plastic glow, the case's reflections and the dither, the phosphor at 0.75 x; Low the
 	 * phosphor at half size and 30 pictures a second; Basic the lines at the phosphor's size too */
-	static const struct { unsigned char passes, curve, glass, groom, light, lov, aglow, scr, par, crefl, sbend, dith, half, lh; float ps; } P[5] = {
-		{ 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1.0f }, { 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1.0f },
-		{ 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0.75f }, { 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0.5f },
-		{ 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0.5f } };
 	/* the CPU alone (no GPU): its own costs - the glow, the bends' smoothing, smooth motion (Medium by default) */
 	static const unsigned char T[5][3] = { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 1, 1 }, { 0, 1, 1 }, { 0, 0, 0 } };
 	const int g = gpu_ok && !stereo, gl = g && ph_ok;
 	const int pr = opt_profile ? opt_profile - 1 : gpu_ok ? 0 : 2;
 	const unsigned char *t = T[pr];
+	const prow *const R = fx_force ? fx_force : !opt_profile && gl && opt_row_ok ? &opt_row : &FX_PROFILES[pr];
 	#define PICK(raw, v) ((raw) >= 0 ? (raw) : (v))
-	opt_glow = PICK (raw_glow, gl ? 1 : t[0]); opt_sbend = PICK (raw_sbend, gl ? P[pr].sbend : t[1]); opt_smooth = PICK (raw_smooth, gl ? 1 : t[2]);
-	opt_geom = PICK (raw_geom, P[pr].curve); opt_par = PICK (raw_par, P[pr].par);
-	fx_passes = PICK (raw_passes, P[pr].passes >= 2) ? 2 : 1; fx_dith = gl && PICK (raw_dith, P[pr].dith);
-	fx_ps = gl ? P[pr].ps : 1.0f; fx_half = gl && P[pr].half; fx_lh = gl && P[pr].lh;
-	gfx.glass = g && PICK (raw_glass, P[pr].glass); gfx.ceiling = g && (raw_ceiling >= 0 ? raw_ceiling : P[pr].light);
+	opt_glow = PICK (raw_glow, gl ? 1 : t[0]); opt_sbend = PICK (raw_sbend, gl ? R->sbend : t[1]); opt_smooth = PICK (raw_smooth, gl ? 1 : t[2]);
+	opt_geom = PICK (raw_geom, R->curve); opt_par = PICK (raw_par, R->par);
+	fx_passes = PICK (raw_passes, R->passes >= 2) ? 2 : 1; fx_dith = gl && PICK (raw_dith, R->dith);
+	fx_ps = gl ? R->ps : 1.0f; fx_half = gl && R->half; fx_lh = gl && R->lh;
+	gfx.glass = g && PICK (raw_glass, R->glass); gfx.ceiling = g && (raw_ceiling >= 0 ? raw_ceiling : R->light);
 	gfx.cse = g && PICK (raw_case, 1);
-	const int groom = PICK (raw_groom, P[pr].groom);
+	const int groom = PICK (raw_groom, R->groom);
 	float ll = opt_room / 2.0f; ll = ll > 1 ? 1 : ll; const float ll3 = ll * ll * ll;   /* (vecrender.py light_level) */
 	gfx.lk = gfx.ceiling ? ll3 * (k_ceiling > 0 ? k_ceiling : 1.0f) : 0.0f;
 	gfx.grey = g && groom ? glass_grey_v : 0.0f; gfx.croom = groom ? ll3 : 0.0f;
-	gfx.crefl = PICK (raw_crefl, P[pr].crefl) ? (k_crefl > 0 ? k_crefl : 1.0f) : 0.0f;
+	gfx.crefl = PICK (raw_crefl, R->crefl) ? (k_crefl > 0 ? k_crefl : 1.0f) : 0.0f;
 	gfx.cwear = PICK (raw_cwear, 1) ? (k_cwear > 0 ? k_cwear : 1.0f) : 0.0f;
 	glass_grey = !g && groom ? glass_grey_v : 0.0f;              /* (the GPU draws the glass's grey itself) */
 	gfx.fx = g && !(ov && ov_on && !sheet_file) && (gfx.glass || gfx.cse || gfx.lk > 0 || gfx.grey > 0);
-	ovfx.ovl = gl && (k_ovl >= 0 ? k_ovl > 0 : P[pr].lov) ? ll3 * (k_ovl > 0 ? k_ovl : 1.0f) : 0.0f;
-	ovfx.glow = gl && (k_ovglow >= 0 ? k_ovglow > 0 : P[pr].aglow) ? (k_ovglow > 0 ? k_ovglow : 1.0f) : 0.0f;
-	ovfx.scr = gl && PICK (raw_scr, P[pr].scr);
+	ovfx.ovl = gl && (k_ovl >= 0 ? k_ovl > 0 : R->lov) ? ll3 * (k_ovl > 0 ? k_ovl : 1.0f) : 0.0f;
+	ovfx.glow = gl && (k_ovglow >= 0 ? k_ovglow > 0 : R->aglow) ? (k_ovglow > 0 ? k_ovglow : 1.0f) : 0.0f;
+	ovfx.scr = gl && PICK (raw_scr, R->scr);
 	#undef PICK
 }
+#include "gpu_opt.c"
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
 #else
 int gpu_frame_shown (void) { return 0; }
@@ -2133,6 +2137,8 @@ void retro_run (void)
 #ifndef VX_EMUVR
 	fx_apply ();
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size) { pic_setup (); geo_tell (); }
+	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }
+	opt_check ();                               /* (the Quality profile on auto: measured once per case - gpu_opt.c) */
 #endif
 	paint_all = !sheet_file && ((ov && ov_on) || glass_grey > 0);
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }   /* (before the drawing threads) */

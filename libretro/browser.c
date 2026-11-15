@@ -2,7 +2,7 @@
  * vecrender.py _browser) over the picture - its dark panel, the title band, the list with the chosen row as a bar, the
  * scroll buttons, LOAD with the cartridge going into the slot, the keys in a foot band, in the desktop's stroke font.
  * Opened with its button (Ports > ROM browser button: L3 by default; "ROM browser" in Quick Menu > Controls). The stick or d-pad chooses
- * (held: it repeats), left / right turns a page, button 4 (A) opens a folder or loads the game, button 1 (Y) or B goes
+ * (held: it repeats), left / right turns a page, button 4 opens a folder or loads the game, button 1 goes
  * up a folder - where none is left it closes, as its button does. Touch: a row chooses, the chosen one again loads; the
  * buttons as drawn; outside the panel closes. The game runs on without input meanwhile. It starts in the folder the
  * game was loaded from. Drawn on the CPU into an image of the sheet's size (only when it changes), laid over the picture
@@ -238,7 +238,7 @@ static void br_blend_cpu (uint32_t *f, int pitch)
 		*d = (r > 255 ? 255u : r) << 16 | (g > 255 ? 255u : g) << 8 | (b > 255 ? 255u : b); }
 }
 /* each refresh, before the game's input: the browser's own (its button opens / closes it); 1: the game gets none */
-static int br_input (void)
+static int br_input (const unsigned char *m)
 {
 	if (opt_ov_btn == 2) return 0;                      /* (EmuVR: SELECT is the overlay's) */
 	const int bb = btn_id ("vectrex_emu_btn_browser"), sel = bb >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) bb) != 0;   /* (Ports: L3 by default) */
@@ -247,19 +247,17 @@ static int br_input (void)
 	sel_was = sel;
 	if (!br_open) {
 		if (br_hold) {                                  /* (closed by a button: the game gets the buttons and the stick only once let go) */
-			int any = 0; static const unsigned K[] = { RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_UP,
-				RETRO_DEVICE_ID_JOYPAD_DOWN, RETRO_DEVICE_ID_JOYPAD_LEFT, RETRO_DEVICE_ID_JOYPAD_RIGHT };
-			for (int i = 0; i < 7; i++) any |= input_cb (0, RETRO_DEVICE_JOYPAD, 0, K[i]) != 0;
+			const int any = (m[2] & 15) || abs ((int) m[0] - 128) >= 64 || abs ((int) m[1] - 128) >= 64;
 			if (!any || vt_wall () - br_hold_t > 1.5) br_hold = 0;
 			return br_hold;
 		}
 		return 0;
 	}
-	unsigned b = 0; for (unsigned id = 0; id < 16; id++) if (input_cb (0, RETRO_DEVICE_JOYPAD, 0, id)) b |= 1u << id;
-	const int ax = input_cb (0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X), ay = input_cb (0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
-	int dy = (b >> RETRO_DEVICE_ID_JOYPAD_DOWN & 1) - (b >> RETRO_DEVICE_ID_JOYPAD_UP & 1), dx = (b >> RETRO_DEVICE_ID_JOYPAD_RIGHT & 1) - (b >> RETRO_DEVICE_ID_JOYPAD_LEFT & 1);
-	if (!dy && !dx) { dy = ay > 16000 ? 1 : ay < -16000 ? -1 : 0; dx = ax > 16000 ? 1 : ax < -16000 ? -1 : 0; }
-	if (dx && dy) { if (abs (ay) >= abs (ax)) dx = 0; else dy = 0; }
+	/* player 1 as the game reads it (pad: the stick, the d-pad, the right stick; turned with the picture in tate):
+	 * up / down chooses, left / right turns a page, button 4 opens or loads, button 1 goes back */
+	const unsigned b = m[2]; const int jx = (int) m[0] - 128, jy = (int) m[1] - 128;
+	int dy = jy > 64 ? -1 : jy < -64 ? 1 : 0, dx = jx > 64 ? 1 : jx < -64 ? -1 : 0;
+	if (dx && dy) { if (abs (jy) >= abs (jx)) dx = 0; else dy = 0; }
 	const int d = dy ? dy : dx * 100; const double now = vt_wall ();
 	if (!br_prev_ok) { br_prevb = b; br_dprev = d; br_t_next = now + 0.8; br_prev_ok = 1; }   /* (held when it opened: no step yet) */
 	if (d) { int step = 0;
@@ -268,8 +266,8 @@ static int br_input (void)
 		if (step) br_move (dy ? dy : dx * BR_NVIS); }
 	else br_dprev = 0;
 	const unsigned nw = b & ~br_prevb; br_prevb = b;
-	if (nw & (1u << RETRO_DEVICE_ID_JOYPAD_A)) br_activate ();
-	else if (nw & ((1u << RETRO_DEVICE_ID_JOYPAD_Y) | (1u << RETRO_DEVICE_ID_JOYPAD_B))) br_back ();
+	if (nw & 8) br_activate ();                           /* (button 4) */
+	else if (nw & 1) br_back ();                          /* (button 1) */
 	/* touch: a row, the buttons; outside: closed */
 	const int tp = input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0;
 	if (tp && !br_prevtouch && br_open) {

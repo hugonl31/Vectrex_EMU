@@ -2299,7 +2299,7 @@ void retro_run (void)
 	unsigned char m[8] = { 128, 128, 0, 0x40, 128, 128, 0, 0 };
 	pad (0, &m[0], &m[1], &m[2]); pad (1, &m[4], &m[5], &m[6]);
 #ifndef VX_EMUVR
-	if (br_input ()) { m[0] = m[1] = 128; m[2] = 0; }   /* (the ROM browser open, or just closed by a button: the game gets none) */
+	if (br_input (m)) { m[0] = m[1] = 128; m[2] = 0; }   /* (the browser reads player 1 as the game does: turned in tate) */   /* (the ROM browser open, or just closed by a button: the game gets none) */
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
 	{ static int pz; const int pi_ = btn_id ("vectrex_emu_btn_pause"), p_ = pi_ >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pi_) != 0;
 	  if (p_ && !pz && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; } pz = p_; }
@@ -2353,7 +2353,7 @@ void retro_run (void)
 	extern int vt_imager;
 	const double dt = 1.0 / opt_rate;
 	if (pf_on) pf1 = pf_now ();
-	if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; }   /* (threaded: done meanwhile, on its own thread) */
+	if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; }
 	if (pf_on) pf2 = pf_now ();
 	{ int av = 3; vx_nobuild = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1); }
 	/* the picture: which lines, from which game frames */

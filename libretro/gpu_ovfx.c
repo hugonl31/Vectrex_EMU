@@ -24,7 +24,7 @@ static const double SCR_BASE[3] = { 1.8145, 1.202, 0.5043 };
 
 static GLuint ox_gen, ox_light, ox_down, ox_q1, ox_hh, ox_hv, ox_blur, ox_sheet, ox_tvbo, ox_tvao;
 static GLuint ox_L, ox_Q0, ox_Q1[2], ox_B[3], ox_H[3], ox_V[2], ox_S[3], ox_art; static int ox_qw, ox_qh, ox_w, ox_h, ox_q1i, ox_scr_ok;
-static char ox_key[2048]; static const unsigned char *ox_artsrc; static double ox_t_prev = -1;
+static char ox_key[2048]; static const unsigned char *ox_artsrc; static int ox_artgen = -1; static double ox_t_prev = -1;
 static double scr_hmean, scr_hmax, scr_a2, scr_a4;
 
 static const char *OX_CEIL =                    /* (LIGHT_GLSL: the fixture seen in perspective) */
@@ -301,8 +301,10 @@ static int ox_draw (int glow, double dt)
 	const int scr = ovfx.scr, pglow = ovfx.glow > 0, ovl = ovfx.ovl > 0;
 	if (!scr && !pglow && !ovl) return 0;
 	if (FW != ox_w || FH != ox_h) ox_size ();
-	if (ox_artsrc != ov) { if (ox_art) glDeleteTextures_ (1, &ox_art);
-		ox_art = ph_tex (ovw, ovh, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, ov); ox_artsrc = ov; ox_key[0] = 0; ox_scr_ok = 0; }
+	if (ox_artsrc != ov || ox_artgen != ov_gen) { if (ox_art) glDeleteTextures_ (1, &ox_art);   /* (ov_gen too: another game's overlay can
+		                                       *  come at the same address - the last one's art stayed, Armor Attack's walls under
+		                                       *  Scramble, the Nova 2026-11-16) */
+		ox_art = ph_tex (ovw, ovh, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, ov); ox_artsrc = ov; ox_artgen = ov_gen; ox_key[0] = 0; ox_scr_ok = 0; }
 	if (scr) ox_scratches (); OXT (0);
 	const double kpx = FH / (0.924 * 1970.0);               /* (core px per px of the owner's window) */
 	const float hh = (float) (FH / (2 * 0.924));             /* (half the picture's height, px: the room light's unit) */

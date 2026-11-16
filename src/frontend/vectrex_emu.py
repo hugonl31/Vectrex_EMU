@@ -4163,7 +4163,11 @@ class App:
         return cx, cy, r, cx - 3.4 * r
     def hint_state(self):
         """a line or two in the middle of the picture when it needs saying: paused (how to go on)"""
-        if self.browser or not (self.ren and hasattr(self.ren, 'map')):
+        if not (self.ren and hasattr(self.ren, 'map')):
+            return None
+        if self.browser:                                        # (the ROM browser open: paused - PAUSED alone in the strip,
+            if self.run.paused and self.run.power:              #  the owner 2026-11-16)
+                return self.slot_state(['PAUSED', ' '], [self.SPEED_COLORS[1][2], (0.40, 0.667, 0.533)], widest=('PAUSED', 0))
             return None
         if self.run.paused and self.run.power:              # (switched off: dark, as a real Vectrex - the knob)
             st = self.pause_state()
@@ -4559,8 +4563,11 @@ class App:
             d, stack = ctx[0], list(ctx[1])                     # (where it was loaded from: an alias's folder too)
         elif cur and os.path.abspath(os.path.dirname(cur)).lower().startswith(os.path.abspath(top).lower()):
             d = os.path.dirname(cur)
-        self.browser = dict(roms=[], sel=0, top=0, dir=top, stack=stack)     # (the game runs on, without input, until a
-        self.inp.block = True                                   #  ROM is loaded)
+        self.browser = dict(roms=[], sel=0, top=0, dir=top, stack=stack)     # (the game paused until the browser closes -
+        self.inp.block = True                                   #  the owner 2026-11-16, as the RetroArch core; online it runs on:
+        self.browser_paused = False                             #  a pause there is both players')
+        if self.run.power and not self.run.paused and not getattr(self, 'net_game', None):
+            self.set_paused(True); self.browser_paused = True
         self.browser_dir(d, sel)
         b = self.browser
         if last and len(last) > 3 and os.path.abspath(d) == os.path.abspath(last[0]) and b['roms']:
@@ -4658,6 +4665,8 @@ class App:
             self.browse_last = (b['dir'], [x for x in b.get('stack', []) if isinstance(x, str)], sel, b.get('top', 0))
         self.browser = None
         self.inp.block = False
+        if getattr(self, 'browser_paused', False):              # (paused by the browser: on again)
+            self.browser_paused = False; self.set_paused(False)
     def browser_geom(self):
         """the browser's box over the picture, its list rows and the plug"""
         pl, pt, pr, pb = self.pic_rect()
@@ -9069,8 +9078,9 @@ class App:
         the volume shows on the knob and on the status line when it is turned)"""
         g = (0.40, 0.667, 0.533)
         idle = self.run.paused or not self.run.power or self.run.frames < 50   # (a new game's first second: --)
+        rate = ('0%' if self.run.paused and self.run.power else '--') if idle else '%d%%' % self.speed_shown()   # (paused: 0 %, green)
         vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('MONITOR', '%d HZ' % round(self.disp_fps), g),
-                ('EMU RATE', '--' if idle else '%d%%' % self.speed_shown(), g if idle else self.speed_color(2))]
+                ('EMU RATE', rate, g if idle else self.speed_color(2))]
         # (the same rows for every system - a UVMC2 or a PiTrex too: the CPU / GPU meters below them tell the load)
         if getattr(self, 'net_osd', True) and self.net_busy():  # (online: the other player's state)
             ng, net = getattr(self, 'net_game', None), getattr(self, 'net', None)
@@ -9116,7 +9126,7 @@ class App:
             idle = self.run.paused or not self.run.power
             self.num_a.configure(text='%d FPS  %d HZ  G-SYNC %s  ' % (round(self.fps), round(self.disp_fps),
                                                                       'ON' if self.vrr else 'OFF'))
-            self.num_speed.configure(text='--' if idle else '%d%%' % self.speed_shown(),
+            self.num_speed.configure(text=('0%' if self.run.paused and self.run.power else '--') if idle else '%d%%' % self.speed_shown(),
                                      fg='#6a8' if idle else self.speed_color(1))
             vol = '' if self.knob_on else ('  VOL %d%%' % round(self.run.crt.volume * 100) if self.run.power else '  OFF')
             self.num_b.configure(text=vol)

@@ -13,6 +13,14 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Last Human keeps its calibration, difficulty, high scores and Arena 2 through a restart: the cartridge's DS2431 save
   chip is there, kept as `<rom>.ds2431` next to the ROM (not online: both players start alike).
 
+**The RetroArch core** (`Vectrex_EMU_RetroArch_*.zip`: Windows, Linux x64 and arm64, Android, macOS)
+* The emulator, the tube's look (on the GPU), overlays, the Vectrex unit, UVMC2 and PiTrex as a RetroArch core,
+  with a ROM browser, a control deck and tate mode for handhelds. Each zip has RetroArch's folders (cores, info,
+  system) and INSTALL.txt.
+* Netplay: 6809 games through RetroArch's own (rollback - Windows, Android and Linux play together), UVMC2 and
+  PiTrex games in lockstep as the desktop's online play. For the sticks the host sets Port 1 and Port 2 to
+  "Vectrex controller" (Max Users 2). The macOS core is not tested yet.
+
 ## v1.6.4
 
 * Get games & extras: each item downloads on its own, side by side - another one can be started while one

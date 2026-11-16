@@ -92,6 +92,9 @@ static unsigned VX_TICKS (void) { struct timespec t; clock_gettime (CLOCK_MONOTO
 #if defined(_MSC_VER)
 #define VXS_ON __pragma (data_seg (".vxd$m")) __pragma (bss_seg (".vxb$m"))
 #define VXS_OFF __pragma (data_seg ()) __pragma (bss_seg ())
+#elif defined(__clang__) && defined(__APPLE__)        /* (Mach-O: a segment and a section) */
+#define VXS_ON _Pragma ("clang section data=\"__DATA,vxd\" bss=\"__DATA,vxb\"")
+#define VXS_OFF _Pragma ("clang section data=\"\" bss=\"\"")
 #elif defined(__clang__)
 #define VXS_ON _Pragma ("clang section data=\"vxd\" bss=\"vxb\"")
 #define VXS_OFF _Pragma ("clang section data=\"\" bss=\"\"")
@@ -779,7 +782,12 @@ void retro_init (void)
 	 * 2026-11-05 on 16 threads, 8 draw as fast as 16 (0.79 against 0.77 ms) at half the CPU (0.51 against 1.10 cores) */
 	{ char nt[16]; if (!GetEnvironmentVariableA ("OMP_NUM_THREADS", nt, sizeof nt)) {
 		SYSTEM_INFO si; GetSystemInfo (&si); int n = (int) si.dwNumberOfProcessors / 2; n = n < 2 ? 2 : n > 8 ? 8 : n;
-		omp_set_num_threads (n); } }
+#ifdef _OPENMP                                   /* (the release core is built without: build_libretro_win.bat) */
+		omp_set_num_threads (n);
+#else
+		(void) n;
+#endif
+	} }
 	{ const char *lp = getenv ("VXPOC_OMPLOG"); FILE *f = lp ? fopen (lp, "a") : NULL;   /* (test: is vcomp already there?) */
 	  if (f) { char v[64] = ""; GetEnvironmentVariableA ("OMP_WAIT_POLICY", v, sizeof v);
 	           fprintf (f, "retro_init: OMP_WAIT_POLICY=%s, vcomp loaded %d%c", v, GetModuleHandleA ("vcomp140.dll") != NULL, 10); fclose (f); } }

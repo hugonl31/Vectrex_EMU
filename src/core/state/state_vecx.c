@@ -6,6 +6,8 @@
 #if defined(_MSC_VER)
 #pragma data_seg(".vxd$m")
 #pragma bss_seg(".vxb$m")
+#elif defined(__clang__) && defined(__APPLE__)   /* (Mach-O: a segment and a section - state_core.c bounds them) */
+#pragma clang section data="__DATA,vxd" bss="__DATA,vxb"
 #elif defined(__clang__)                /* (clang: the sections vxd / vxb, bounded by the linker's __start_ / __stop_) */
 #pragma clang section data="vxd" bss="vxb"
 #else

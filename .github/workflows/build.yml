@@ -157,8 +157,49 @@ jobs:
             win-*.log
           if-no-files-found: warn
 
+  retroarch:                       # the RetroArch core, one zip per system (libretro/: build scripts, package_retroarch.py)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { sys: windows-x64, os: windows-2022, zip: Windows-x64 }
+          - { sys: linux-x64, os: ubuntu-22.04, zip: Linux-x64 }
+          - { sys: linux-arm64, os: ubuntu-22.04-arm, zip: Linux-arm64 }     # (Raspberry Pi 4 / 5, 64-bit)
+          - { sys: android-arm64, os: ubuntu-22.04, zip: Android-arm64 }
+          - { sys: macos, os: macos-15, zip: macOS }                          # (Intel and Apple Silicon in one)
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: build (Linux, macOS)
+        if: startsWith(matrix.sys, 'linux') || matrix.sys == 'macos'
+        run: |
+          command -v clang >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q clang; }
+          sh libretro/build_libretro.sh native
+      - name: build (Android, the runner's NDK)
+        if: matrix.sys == 'android-arm64'
+        run: ANDROID_NDK=$ANDROID_NDK_LATEST_HOME sh libretro/build_libretro.sh android
+      - name: build (Windows, Visual C++)
+        if: matrix.sys == 'windows-x64'
+        shell: cmd
+        run: call libretro\build_libretro_win.bat || exit /b 1
+      - name: pack
+        shell: bash
+        run: |
+          case "${{ matrix.sys }}" in windows-x64) f=vectrex_emu_libretro.dll;; macos) f=vectrex_emu_libretro.dylib;;
+            android-arm64) f=vectrex_emu_libretro_android.so;; *) f=vectrex_emu_libretro.so;; esac
+          python libretro/package_retroarch.py "${{ matrix.sys }}" "libretro/$f" "Vectrex_EMU_RetroArch_${{ matrix.zip }}.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: retroarch-${{ matrix.sys }}
+          path: Vectrex_EMU_RetroArch_*.zip
+
   release:                         # the build replaces the release named in VERSION (marked Latest)
-    needs: [mac, linux, windows]
+    needs: [mac, linux, windows, retroarch]
+    # (the desktop's three must be there; a RetroArch core that did not build is left out, the rest go up)
+    if: ${{ !cancelled() && needs.mac.result == 'success' && needs.linux.result == 'success' && needs.windows.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -177,4 +218,4 @@ jobs:
           gh release delete latest-build --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
           gh release delete "$VER" --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
           gh release create "$VER" -R "$GITHUB_REPOSITORY" --latest --target "$GITHUB_SHA" \
-            --title "$VER" --notes-file notes.md windows/*.zip mac/*.zip linux/*.zip   # (the checks' logs and pictures stay with the run)
+            --title "$VER" --notes-file notes.md windows/*.zip mac/*.zip linux/*.zip retroarch-*/*.zip   # (the checks' logs and pictures stay with the run)

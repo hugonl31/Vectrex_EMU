@@ -36,5 +36,9 @@ system/al2.bin
 /libretro/obj/
 /libretro/dist/
 /libretro/*.so
+/libretro/*.dll
+/libretro/*.dylib
+/libretro/obj_win/
+/libretro/*.obj
 /libretro/bench/vxhost
 /libretro/bench/vxhost_android

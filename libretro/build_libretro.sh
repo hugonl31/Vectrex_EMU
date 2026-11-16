@@ -28,5 +28,18 @@ linux)
 	for f in $SRC; do o=obj/$(basename $f .c).o; $BIN/clang --target=x86_64-linux-gnu $FLAGS ${OMP:+-fopenmp} -c $f -o $o; done
 	gcc -shared -o $OUT obj/*.o $EXPORTS -lm -ldl -lpthread ${OMP:+-lgomp}
 	;;
+native)
+	# (the release cores: this system's own clang - Linux x86-64 / arm64 (Raspberry Pi 4 / 5, 64-bit), macOS (Intel and
+	#  Apple Silicon in one); no OpenMP, so the core needs nothing the system does not have)
+	CC=${CC:-clang}
+	if [ "$(uname)" = Darwin ]; then
+		OUT=vectrex_emu_libretro.dylib
+		$CC $FLAGS -arch arm64 -arch x86_64 -mmacosx-version-min=10.13 -dynamiclib -o $OUT $SRC -Wl,-exported_symbol,_retro_* -lm
+	else
+		OUT=vectrex_emu_libretro.so
+		$CC $FLAGS -shared -o $OUT $SRC $EXPORTS -lm -ldl -lpthread
+		strip --strip-unneeded $OUT 2>/dev/null || true
+	fi
+	;;
 esac
 ls -l $OUT

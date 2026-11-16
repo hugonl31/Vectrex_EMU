@@ -1,0 +1,34 @@
+Vectrex_EMU core for RetroArch - Windows, Linux, macOS
+=====================================================
+
+What is here (laid out as RetroArch's own folders)
+  cores/      the core: vectrex_emu_libretro.dll (Windows), .so (Linux), .dylib (macOS)
+  info/       vectrex_emu_libretro.info - its name and details for RetroArch
+  system/     vectrex_emu/: the BIOS (Mine Storm built in), the overlays, the UVMC2's SD card folder
+  roms/       Last Human, its UVMC2 edition, the UVMC2 demo and movie player - put them with your games
+
+1. Copy the three folders cores, info and system into RetroArch's folders of those names
+   (Settings > Directory shows where they are: Cores, Core Info, System/BIOS). You then have
+       <cores>/vectrex_emu_libretro.*
+       <info>/vectrex_emu_libretro.info
+       <system>/vectrex_emu/bios.bin   (and overlays/, gpu/, uvmc2/)
+2. Load Content > a Vectrex game (.bin, .vec, .um2 ...) > Vectrex_EMU.
+   Speech games (VecVox / VecVoice): put sp0256-al2.bin in <system>/vectrex_emu too. Not included.
+   PiTrex: a pitrex folder (its SD card) in <system>/vectrex_emu, and the PiTrex loader (PiTrex.img) with the games.
+
+Controls (RetroArch's RetroPad)
+   Stick or d-pad: the joystick.  Y X B A: Vectrex buttons 1 2 3 4.  START: the overlay off / on.  L3: the ROM browser.
+   Port 2: a second pad.
+
+Netplay
+   6809 games: RetroArch's own netplay. For the sticks the HOST sets Port 1 and Port 2 to "Vectrex controller":
+   Settings > Input > Max Users 2, then Quick Menu > Controls > Port 1 / Port 2 Controls > Device Type,
+   and Manage Remap Files > Save Core Remap File. Both sides need this core and the same game file.
+   UVMC2 / PiTrex games: load the game through RetroArch (not the core's ROM browser); it starts again when player 2
+   joins. Both play in the slower side's UVMC2 mode.
+
+Settings: Quick Menu > Core Options (Video, Controls, Overlay, Audio, Tube, Case & Room light, System, Vectrex Unit,
+   Vectrex Circuit). The GPU look (the tube's glass, the ceiling light, the case) needs the video driver gl or glcore.
+
+Trouble: RetroArch's log (Settings > Logging) says which core and game it loaded; the core needs
+   <system>/vectrex_emu/bios.bin.

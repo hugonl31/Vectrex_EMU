@@ -14,7 +14,12 @@ Plan and background: `Vectrex_EMU_EmuVR/libretro_port_plan.md`.
 sh build_libretro.sh android     # vectrex_emu_libretro_android.so (arm64-v8a, Android 9+)
 sh build_libretro.sh linux       # vectrex_emu_libretro.so (x86-64 test build)
 sh package_android.sh            # dist/Vectrex_EMU_RetroArch_Android.zip (core, info, BIOS, overlays, ES-DE, INSTALL.txt)
+sh build_libretro.sh native      # this system's clang: Linux x86-64 / arm64 (.so), macOS universal (.dylib)
+build_libretro_win.bat           # Windows x64 with Visual C++ (vectrex_emu_libretro.dll, no OpenMP: no runtime DLLs)
+python package_retroarch.py <system> <core> <zip>   # a zip as RetroArch's folders (cores, info, system) + INSTALL.txt
 ```
+
+The release (GitHub Actions, `.github/workflows/build.yml`, job `retroarch`) builds and packs all five.
 
 ## Test without RetroArch
 

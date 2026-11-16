@@ -26,9 +26,17 @@ static char vxb_z;
 #define VXD_Z ((unsigned char *) &vxd_z + 1)
 #define VXB_A ((unsigned char *) &vxb_a)
 #define VXB_Z ((unsigned char *) &vxb_z + 1)
+#elif defined(__clang__) && defined(__APPLE__)
+/* (clang on macOS, the RetroArch core: Mach-O bounds a section with section$start$ / section$end$ names) */
+extern unsigned char vxd_s[] __asm ("section$start$__DATA$vxd"), vxd_e[] __asm ("section$end$__DATA$vxd");
+extern unsigned char vxb_s[] __asm ("section$start$__DATA$vxb"), vxb_e[] __asm ("section$end$__DATA$vxb");
+#define VXD_A vxd_s
+#define VXD_Z vxd_e
+#define VXB_A vxb_s
+#define VXB_Z vxb_e
 #elif defined(__clang__)
 /* clang (the libretro core: Android, Linux): the sections vxd / vxb - ELF names without a dot, so the linker bounds each
- * with __start_ / __stop_ (Mach-O would need section$start$ names: not built yet) */
+ * with __start_ / __stop_ */
 extern unsigned char __start_vxd[] __attribute__((weak, visibility ("hidden"))), __stop_vxd[] __attribute__((weak, visibility ("hidden")));
 extern unsigned char __start_vxb[] __attribute__((weak, visibility ("hidden"))), __stop_vxb[] __attribute__((weak, visibility ("hidden")));
 #define VXD_A __start_vxd

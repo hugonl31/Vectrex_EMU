@@ -1097,6 +1097,7 @@ Only what full screen needs has a key, so the rest of the keyboard is free for t
 | Ctrl+E | eject the cartridge (Mine Storm) |
 | Ctrl+R | the RESET button (RAM kept: the BIOS warm-starts the cartridge, no intro) |
 | P | pause |
+| Space (held) | fast forward: the game 4x as fast, without sound (not online, linked or while recording; a player who has Space as a control keeps it) |
 | Page Up / Page Down | the volume knob in 5 % steps - and, as on the Vectrex, the power switch: turned down to 0 % it clicks off (the tube fades to black), turned up from 0 % it switches on (a cold start, also for carts that ignore RESET), with the real power-off / power-on sounds. While turning it scratches like a worn potentiometer; now and then it stops on a dead spot: the game goes silent, the buzz goes on - turn it again. |
 | Ctrl+Page Up / Ctrl+Page Down | the speech module's own volume (VecVoice / VecVox) in 5 % steps, 0 - 200 % (100 % = the MiSTer core's Normal level) |
 | + / - / 0 | window size / start size (as big as fits the desktop, above the task bar); in full screen: the picture size |

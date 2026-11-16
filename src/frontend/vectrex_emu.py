@@ -330,6 +330,9 @@ DEFAULT_DEADZONE = 0.2
 RESERVED_VK = {0x7A: 'F11', 0x78: 'F9', 0x7B: 'F12', 0x1B: 'Esc', 0x21: 'Page Up', 0x22: 'Page Down', 0x11: 'Ctrl', 0xA2: 'Ctrl', 0xA3: 'Ctrl',
                0xBB: '+', 0xBD: '-', 0x30: '0', 0x39: '9', 0x6B: 'Numpad +', 0x6D: 'Numpad -', 0x60: 'Numpad 0',
                0x69: 'Numpad 9', 0x50: 'P', 0x4C: 'L', 0x4F: 'O', 0x43: 'C'}
+FAST_FORWARD = 4        # Space held: the game this many times as fast (sound off, every 4th frame shown - the picture as bright
+FF_VK = 0x20            #  as at normal speed); not online, linked or recording - a user's wish, 2026-11-16. A player who
+                        #  has Space as a control keeps it (no fast forward then)
 
 # the real Vectrex picture's height (the tube's window behind the overlay), for Display > Real size
 REAL_PIC_MM = 207.0     # (the overlay sheet: 162 x 207 mm, the owner measured; the picture is as tall as the sheet)
@@ -2100,6 +2103,7 @@ PAUSE_HZ = 60.0                  # paused: the still picture is redrawn this oft
 class Runner(threading.Thread):
     beam_of = None                                      # (the app: is Tube > Beam trace on)
     ra_of = None                                        # (the app: is Display > Run-ahead on)
+    ff_of = None                                        # (the app: fast forward now - Space held, see FAST_FORWARD)
     def __init__(self, core, inp, audio, inf):
         super().__init__(daemon=True)
         self.core, self.inp, self.audio = core, inp, audio
@@ -2213,6 +2217,11 @@ class Runner(threading.Thread):
                 ra = ra and self.net is None                             #  shows that, live.c; never online - both
                 if ra != getattr(self.core, 'ra_sent', False):           #  machines run exactly the same frames)
                     self.core.set_analog(0x7E, 1.0 if ra else 0.0); self.core.ra_sent = ra
+                ff = bool(self.ff_of()) if self.ff_of else False         # (fast forward: Space held - never online or
+                ff = ff and self.net is None and self.core2 is None and not fl & 8   #  linked: both run in step)
+                if ff != getattr(self, 'ff_was', False):
+                    self.ff_was = ff
+                    if ff: self.audio.flush()           # (its sound: none, the queue emptied at once)
                 t_cpu = time.perf_counter()
                 feed = None
                 if fl & 8 and fl & 16:                  # (power on, the intro skipped: the core runs ~0.8 s for this
@@ -2269,9 +2278,14 @@ class Runner(threading.Thread):
                             self.pend[0].np = _np.concatenate([pa, pb])
                         self.pend[3] += self.latest_len
                     if self.pend[3] >= 0.015:
-                        self.queue.append(tuple(self.pend)); self.pend = None   # (t_next: its start)
-                        self.dframes += 1
-                self.audio.play(self.crt.process(pcm, lines, speech, getattr(self.core, 'arr', None)))
+                        if ff and self.frames % FAST_FORWARD:           # (fast forward: every 4th frame shown - 4 in
+                            self.pend = None                            #  the phosphor at once lit it 4 times as much)
+                        else:
+                            self.queue.append(tuple(self.pend)); self.pend = None   # (t_next: its start)
+                            self.dframes += 1
+                snd = self.crt.process(pcm, lines, speech, getattr(self.core, 'arr', None))
+                if not ff:
+                    self.audio.play(snd)
                 ms = 1000.0 * (time.perf_counter() - t_cpu - getattr(self.core, 'wait_s', 0.0))   # (this thread's own
                 self.cpu_ms = ms if self.cpu_ms is None else 0.9 * self.cpu_ms + 0.1 * ms            #  work for a frame)
                 sh = (time.perf_counter() - t_cpu) / (max(len(pcm) // 2, 1) / RATE)       # (the OSD's CPU meter: the share of
@@ -2282,7 +2296,7 @@ class Runner(threading.Thread):
                 self.emu_time += max(len(pcm) // 2, 1) / RATE           # (the speed meter, see emu_mark)
                 # pace by emulated time (this frame's samples = its length in CPU cycles): real time
                 # is the clock; the sound queue (40 ms head start) only caps runaway buffering
-                t_next += max(len(pcm) // 2, 1) / RATE
+                t_next += max(len(pcm) // 2, 1) / RATE / (FAST_FORWARD if ff else 1)
                 if self.net is not None:                # (online: the PC ahead of the other slows a little - no waits)
                     t_next += self.net.pace_s()
                 now = time.perf_counter()
@@ -2388,6 +2402,7 @@ class App:
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', False) if self.ren else False
         self.run.ra_of = lambda: getattr(self, 'run_ahead', False)
+        self.run.ff_of = self.ff_wanted
         self.run.crt.jack = bool(args.rom and args.rom.lower().endswith('.um2'))   # (a UVMC2: its headphone jack)
         self.run.crt.motor = self.speech == 'imager'            # (the 3D Imager: its motor's sound)
         self.root = tk.Tk()
@@ -2770,7 +2785,8 @@ class App:
         except Exception:       # noqa
             pass
         try:                                                    # bring it in front of everything once
-            self.root.attributes('-topmost', True); self.root.after(300, lambda: self.root.attributes('-topmost', False))
+            self.root.attributes('-topmost', True)              # (then back to View > Always on top - it went off here at
+            self.root.after(300, lambda: self.root.attributes('-topmost', bool(getattr(self, 'on_top', False))))   #  every start: a user, 2026-11-16)
         except tk.TclError:
             pass
 
@@ -2834,6 +2850,17 @@ class App:
     def note_event(self, text):
         """a line in the debug report's timeline"""
         self.events.append((round(time.perf_counter(), 1), text))
+    def ff_wanted(self):
+        """fast forward this frame (the emulation thread asks): Space held, not in the ROM browser, not recording, no
+        VecLink cable - and Space no player's control (then it is theirs)"""
+        try:
+            if not self.inp.keydown(FF_VK) or self.inp.block or getattr(self, 'rec', None) is not None:
+                return False
+            if getattr(Core, 'veclink', None) is not None:      # (VecLink: the other console runs in step)
+                return False
+            return not any(x[0] == FF_VK for p in list(self.inp.keys.values()) for ks in list(p.values()) for x in ks)
+        except Exception:   # noqa (the mapping changed meanwhile: not this frame)
+            return False
     def apply_on_top(self):
         """View > Always on top: the main window above every other program's, and the emulator's own windows (ROM
         browser, settings) above it while it is on - else they would open hidden behind it"""
@@ -7161,6 +7188,7 @@ class App:
             run.core2 = core2; run.vl_role = getattr(self, 'net_role', 'host')
         run.beam_of = old.beam_of
         run.ra_of = old.ra_of
+        run.ff_of = old.ff_of
         run.crt = old.crt; run.crt.overlay = []
         run.crt.jack = bool(rom and rom.lower().endswith('.um2'))
         run.crt.motor = self.speech == 'imager'
@@ -9092,7 +9120,7 @@ class App:
                                                                 #  OSD_CHARS wide: the OSD never changes width)
         return [[(n + ':' + ' ' * (width - len(n) - 1 - len(v)), g), (v, c)] for n, v, c in vals]
     def speed_shown(self):
-        return 100 if self.speed >= 99.5 else int(self.speed)
+        return 100 if 99.5 <= self.speed < 150 else int(self.speed)   # (fast forward: the real figure, ~400 %)
 
     def status_line(self):
         now = time.perf_counter()

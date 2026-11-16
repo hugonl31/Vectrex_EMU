@@ -4,6 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.6.7
+- Fast forward: hold Space, the game runs 4x as fast (no sound)
+- Fixed: Always on top, as saved, did not work after a start
+
 ## v1.6.6
 - ROM browser pauses the game while it is open (PAUSED)
 - Paused: EMU RATE shows 0% in green (was -- or a red 0%)

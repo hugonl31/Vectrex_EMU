@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.7
+
+* Fast forward: hold Space and the game runs 4x as fast, without sound; EMU RATE shows about 400 %. Every 4th frame
+  is shown, so the picture stays as bright as at normal speed. Not online, with a VecLink cable or while recording
+  (both consoles, or the video, run at normal speed). A player who has Space as a control keeps it - then Space plays.
+* Fixed: View > Always on top, saved on, did not work after a start (the window came to the front once at the start
+  and that switched it off again) - it took switching it off and on. Thanks to David for the report.
+
 ## v1.6.6
 
 * The ROM browser pauses the game while it is open: PAUSED shows in the strip below the picture, and closing the

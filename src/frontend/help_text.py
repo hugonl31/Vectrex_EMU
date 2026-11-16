@@ -26,7 +26,7 @@ TOPICS = [
 ('h', 'Playing'),
 ('p', "Player 1 plays with the arrow keys and A S D F (buttons 1 to 4, in a row as on the controller; W A S D as a cross in Controls), Shift for a half push of the "
       "stick, or with a game controller; Controls > Keyboard and controllers sets both players up. Keys that run the "
-      "emulator: F11 full screen, F9 record a video, F12 snapshot, Tab the Config window, Esc back / pause, P pause, L ROM browser, O overlay, C case, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
+      "emulator: F11 full screen, F9 record a video, F12 snapshot, Tab the Config window, Esc back / pause, P pause, Space (held) fast forward, L ROM browser, O overlay, C case, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
       "+ / - / 0 size, 9 Authentic size, Alt the menus."),
 ('more', 'The menus in full screen', "In full screen (F11) the menu bar is hidden: move the mouse to the top "
       "edge of the screen, or press Alt, and it appears over the picture - it goes again when the mouse moves "

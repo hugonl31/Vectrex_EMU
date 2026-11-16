@@ -122,11 +122,11 @@ static void dk_draw (void)
 		br_text (fig, (float) (xe - (strlen (fig) * 6.0 - 1.0) * km), (float) ty, (float) km, pct < 0 ? DK_G : c); } }
 	/* PAUSED: between the OSD and the P2 port (slot_state) */
 	if (vx_paused || br_open) { const double left = dk_ox + dk_ow, right = dk_p2x - 1.1 * r, room = right - left;   /* (the ROM browser open: paused too) */
-		if (room > 0) { const char *const R2 = br_open ? "CLOSE THE BROWSER TO RESUME" : "PRESS PAUSE TO RESUME";
+		if (room > 0) { static const char *const R2 = "PRESS PAUSE TO RESUME";   /* (the browser open: PAUSED alone) */
 			double kp = 0.80 * room / (6.0 * 6), kn = fmin (0.42 * kp, 0.80 * room / (6.0 * strlen (R2))), hgt = 11.0 * kp + 6.0 * kn;
 			const double fb = 0, wb = dk_h;   /* (the frame's bottom edge: the sheet's) */ if (hgt > 0.8 * (wb - fb)) { const double f = 0.8 * (wb - fb) / hgt; kp *= f; kn *= f; hgt *= f; }
 			const double y0 = (fb + wb) / 2.0 - hgt / 2.0, cx = (left + right) / 2.0;
-			dk_ctext ("PAUSED", cx, y0, 6 * kp, 0xed9933u); dk_ctext (R2, cx, y0 + 11.0 * kp, 6 * kn, DK_G); } }
+			dk_ctext ("PAUSED", cx, y0, 6 * kp, 0xed9933u); if (!br_open) dk_ctext (R2, cx, y0 + 11.0 * kp, 6 * kn, DK_G); } }
 	/* the ports (_port2): port 2's device, port 1's joystick */
 	for (int pt = 2; pt >= (net_on () ? 1 : 2); pt--) {   /* (P1: only online, as the desktop's port1_state - netplay) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x;
 		double s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1); const double oy = kind == 2 ? cy : cy - 0.12 * r, ox = cx + (kind == 2 ? 10 * s : 0);

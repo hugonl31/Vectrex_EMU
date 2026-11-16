@@ -767,6 +767,10 @@ void retro_init (void)
 	 *  but two of the cores draw (2 to 4: a phone's big cores; the rest for RetroArch and the system), and the core stays loaded -
 	 *  RetroArch unloading it while OpenMP's threads live would crash, as on Windows (v0.16)) */
 	if (!getenv ("OMP_WAIT_POLICY")) setenv ("OMP_WAIT_POLICY", "PASSIVE", 1);
+	/* (2026-11-16: OpenMP not to bind its threads to cores: Android moves an app between core sets itself (foreground,
+	 *  background), and where the cores are hidden - an emulator's ARM translation - OpenMP's start failed an assertion
+	 *  and ended RetroArch) */
+	if (!getenv ("KMP_AFFINITY")) setenv ("KMP_AFFINITY", "disabled", 1);
 #ifdef _OPENMP
 	if (!getenv ("OMP_NUM_THREADS")) { long n = sysconf (_SC_NPROCESSORS_ONLN) - 2; omp_set_num_threads ((int) (n < 2 ? 2 : n > 4 ? 4 : n)); }   /* (the Retroid Pocket Nova, 2026-11-15: 1 thread 23 ms, 2 12.2, 3 8.4, 4 7.2, 6 8.4 - the small cores slow it) */
 #endif

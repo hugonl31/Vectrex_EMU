@@ -460,7 +460,9 @@ static void gpu_reset (void)
 	  const char *dv[2] = { hdr, GPU_VS }, *df[2] = { hdr, DKF };
 	  GLuint v2 = gpu_shader (GL_VERTEX_SHADER, dv, 2), f2 = gpu_shader (GL_FRAGMENT_SHADER, df, 2); dk_prog = 0;
 	  if (v2 && f2) { dk_prog = glCreateProgram_ (); glAttachShader_ (dk_prog, v2); glAttachShader_ (dk_prog, f2); glLinkProgram_ (dk_prog); }
-	  if (v2) glDeleteShader_ (v2); if (f2) glDeleteShader_ (f2); dk_tex = 0; dk_tgen = -1; }
+	  if (v2) glDeleteShader_ (v2); if (f2) glDeleteShader_ (f2); dk_tex = 0; dk_tgen = -1;
+	  br_tex = 0; br_tgen = -1; }   /* (2026-11-16: the browser's too - a new context (Android: back from the background) has its own
+	                                  *  names; the old one could be another texture of ours by now - the Nova's crash on load from the browser) */
 	gpu_ok = 1;
 	scr_detect ();                                    /* (Picture size auto: the screen's size) */
 	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */

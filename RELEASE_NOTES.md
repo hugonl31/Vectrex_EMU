@@ -22,6 +22,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Fixed: on Android, loading a game from the ROM browser could crash RetroArch after it had been in the background
   (its graphics are made anew then; the browser's picture kept the old one's name). A game switch also no longer
   makes RetroArch set its video up anew.
+* Fixed: after a game switch from the ROM browser the last game's overlay could show faintly under the new one
+  (Armor Attack's walls under Scramble's overlay) - its texture was made anew only when the overlay came at another
+  memory address.
 * Android: a crash or a hang (no refresh for 3 s) is written into the core's log (`system/vectrex_emu/vectrex_emu.log`)
   with where it happened.
 

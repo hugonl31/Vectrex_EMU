@@ -11,6 +11,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - RetroArch: RESET on L1 and Pause on L2 by default
 - Fixed: RetroArch hung after a game switch with run-ahead on
 - Fixed: RetroArch on Android crashed loading from the browser
+- Fixed: RetroArch kept the last game's overlay faintly after a switch
 
 ## v1.6.5
 - Last Human keeps its calibration and high scores (save chip)

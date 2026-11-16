@@ -866,6 +866,30 @@ static void geo_tell (void)
  *  in netplay; the Vectrex controller (the RetroPad with its sticks) is the type for it, 2026-11-16) */
 static unsigned port_dev[2] = { RETRO_DEVICE_ANALOG, RETRO_DEVICE_ANALOG };
 void retro_set_controller_port_device (unsigned p, unsigned d) { if (p < 2) port_dev[p] = d; }
+#ifndef VX_EMUVR
+/* (the first start, in tate - the default: why the picture lies on its side, said once; a mark in RetroArch's saves
+ *  folder keeps it from coming again. The owner, 2026-11-16) */
+struct vx_message_ext { const char *msg; unsigned duration, priority; int level, target, type; int8_t progress; };   /* (libretro.h's
+                                                    retro_message_ext, SET_MESSAGE_EXT 60 - newer than this copy of the header) */
+static void say_long (const char *m, unsigned ms)
+{
+	struct vx_message_ext x = { m, ms, 3, 1, 0, 0, -1 };   /* (info, on screen and in the log, a notification) */
+	if (!env_cb (60, &x)) { struct retro_message o = { m, ms * 60 / 1000 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &o); }
+}
+static void tate_note (void)
+{
+	static int done; if (done || net_runs < 30) return;   /* (half a second in: the picture is there) */
+	done = 1; if (!opt_rot) return;
+	const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
+	char p[1200]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu_tate_told.txt", sv && *sv ? sv : tmpdir);
+	FILE *f = fopen (p, "r"); if (f) { fclose (f); return; }
+	say_long (opt_rot == 2 ? "Tate mode: the picture is turned upside down - turn the device round. The controls turn with it."
+	                       : opt_rot == 1 ? "Tate mode: hold the device upright, turned right. The controls turn with it."
+	                                      : "Tate mode: hold the device upright, turned left. The controls turn with it.", 9000);
+	say_long ("A normal screen: Quick Menu > Core Options > Video > Rotation (tate) > off", 9000);
+	f = fopen (p, "w"); if (f) { fputs ("the tate note was shown\n", f); fclose (f); }
+}
+#endif
 void retro_reset (void) { if (ls_state == 2) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
 	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 
@@ -2382,6 +2406,9 @@ void retro_run (void)
 	poll_cb ();
 	unsigned char m[8] = { 128, 128, 0, 0x40, 128, 128, 0, 0 };
 	pad (0, &m[0], &m[1], &m[2]); pad (1, &m[4], &m[5], &m[6]);
+#ifndef VX_EMUVR
+	tate_note ();
+#endif
 	{ static int told; const int rb = net_runs - net_seen < 180;   /* (RetroArch's netplay with a RetroPad port: said once) */
 	  if (rb && !told && ((port_dev[0] & RETRO_DEVICE_MASK) == RETRO_DEVICE_JOYPAD || (port_dev[1] & RETRO_DEVICE_MASK) == RETRO_DEVICE_JOYPAD)) {
 		struct retro_message msg = { "Netplay: for the sticks, Port 1 and Port 2 as Vectrex controller (Controls)", 480 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &msg); told = 1; }

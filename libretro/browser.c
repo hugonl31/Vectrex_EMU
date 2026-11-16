@@ -91,7 +91,7 @@ static void br_show (int on)
 {
 	br_open = on; br_dirty = 1; br_prev_ok = 0; br_t_toggle = vt_wall (); fprintf (stderr, "[vectrex_emu] ROM browser %s\n", on ? "open" : "closed");
 	if (on) { char d[1100], cur[1100]; snprintf (cur, sizeof cur, "%s", br_game); br_parent (cur, d, sizeof d);
-		br_scan (br_dir[0] ? br_dir : d[0] ? d : ".", br_dir[0] ? NULL : cur); }
+		br_scan (d[0] ? d : br_dir[0] ? br_dir : ".", cur); }   /* (each time: the running game's folder, the game chosen) */
 }
 static int game_switch (const char *path); static void eject_toggle (void); static char cur_game[1100]; static int ej_out;
 static void br_activate (void)                     /* (button 4 / the plug: a folder opened, a game loaded) */

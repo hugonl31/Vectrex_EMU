@@ -418,7 +418,7 @@ static GLuint gpu_shader (GLenum type, const char *const *src, int n)
 #define GLLOAD(n) (n##_ = (pf_##n) hwr.get_proc_address (#n), ok &= n##_ != NULL)
 static void gpu_reset (void)
 {
-	int ok = 1; gpu_ok = 0;
+	int ok = 1; gpu_ok = 0; fprintf (stderr, "[vectrex_emu] GPU: context reset\n");   /* (a hang there: the log says so) */
 	GLLOAD (glGenTextures); GLLOAD (glDeleteTextures); GLLOAD (glBindTexture); GLLOAD (glActiveTexture); GLLOAD (glTexImage2D);
 	GLLOAD (glTexSubImage2D); GLLOAD (glTexParameteri); GLLOAD (glPixelStorei); GLLOAD (glCreateShader); GLLOAD (glShaderSource);
 	GLLOAD (glCompileShader); GLLOAD (glGetShaderiv); GLLOAD (glGetShaderInfoLog); GLLOAD (glDeleteShader); GLLOAD (glCreateProgram);
@@ -468,7 +468,7 @@ static void gpu_reset (void)
 	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */
 	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there%s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? ", the light too" : "");
 }
-static void gpu_destroy (void) { ph_lost (); gpu_ok = 0; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
+static void gpu_destroy (void) { fprintf (stderr, "[vectrex_emu] GPU: context destroyed\n"); ph_lost (); gpu_ok = 0; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
 
 /* (the screen's size, for Picture size auto: RetroArch's window as its graphics context has it - EGL's surface
  *  (Android, Linux), Windows: the window's monitor - its short side kept in the saves folder for the next start) */

@@ -2976,7 +2976,8 @@ static int game_switch_now (const char *path)
 #ifndef VX_EMUVR
 	ph_made = 0;                                /* (the phosphor dark: a new game) */
 #endif
-	struct retro_system_av_info av; retro_get_system_av_info (&av); env_cb (RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
+	geo_tell ();   /* (2026-11-16: the new size only - SET_SYSTEM_AV_INFO set RetroArch's video up anew on each switch, and on the
+	                *  Nova that stopped there: Pole Position to Scramble from the browser, RetroArch hung) */
 	fprintf (stderr, "[vectrex_emu] now in the slot: %s\n", path);
 	return 1;
 }

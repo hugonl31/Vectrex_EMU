@@ -2957,6 +2957,7 @@ static int game_switch_now (const char *path);
 static int game_switch (const char *path) { snprintf (sw_next, sizeof sw_next, "%s", path); return 1; }
 static int game_switch_now (const char *path)
 {
+	fprintf (stderr, "[vectrex_emu] switching to %s (from %s)\n", path, cur_game);   /* (a crash on a switch: its log says which) */
 	emu_wait_ext (); emu_primed = 0;
 	if (sd_img[0] && sd_folder[0]) sdc_sync_back (sd_img, sd_folder);
 	flash_save (1);
@@ -3013,6 +3014,38 @@ static void input_names (void)
 	d[n] = (struct retro_input_descriptor) { 0 }; env_cb (RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, d);
 }
 
+#ifdef __ANDROID__
+/* (Android: a crash written into the log - the signal, the address, the calls with their places in this core - so a crash
+ *  on a handheld can be found from its log; then the crash goes on as before. 2026-11-16) */
+#include <signal.h>
+#include <unwind.h>
+static struct sigaction crash_old[32];
+typedef struct { void **a; int n, max; } crash_bt;
+static _Unwind_Reason_Code crash_step (struct _Unwind_Context *c, void *p)
+{
+	crash_bt *b = p; void *ip = (void *) _Unwind_GetIP (c);
+	if (ip && b->n < b->max) b->a[b->n++] = ip;
+	return b->n < b->max ? _URC_NO_REASON : _URC_END_OF_STACK;
+}
+static void crash_handler (int sig, siginfo_t *si, void *uc)
+{
+	char l[300]; Dl_info me; dladdr ((void *) crash_handler, &me);
+	int n = snprintf (l, sizeof l, "\n[vectrex_emu] CRASH: signal %d at address %p (core base %p)\n", sig, si ? si->si_addr : NULL, me.dli_fbase);
+	write (2, l, (size_t) n);
+	void *a[32]; crash_bt b = { a, 0, 32 }; _Unwind_Backtrace (crash_step, &b);
+	for (int i = 0; i < b.n; i++) { Dl_info d; const char *lib = "?"; void *base = NULL;
+		if (dladdr (a[i], &d) && d.dli_fname) { lib = strrchr (d.dli_fname, '/') ? strrchr (d.dli_fname, '/') + 1 : d.dli_fname; base = d.dli_fbase; }
+		n = snprintf (l, sizeof l, "  #%d %s +0x%lx %s\n", i, lib, (unsigned long) ((char *) a[i] - (char *) base), d.dli_sname ? d.dli_sname : ""); write (2, l, (size_t) n); }
+	sigaction (sig, &crash_old[sig], NULL); raise (sig);   /* (then as before: RetroArch's own handling) */
+}
+static void crash_install (void)
+{
+	static int done; if (done) return; done = 1;
+	struct sigaction sa; memset (&sa, 0, sizeof sa); sa.sa_sigaction = crash_handler; sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+	const int sigs[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT };
+	for (int i = 0; i < 5; i++) sigaction (sigs[i], &sa, &crash_old[sigs[i]]);
+}
+#endif
 bool retro_load_game (const struct retro_game_info *g)
 {
 	emu_wait_ext (); emu_primed = 0;
@@ -3025,6 +3058,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	if (sys) { char lp[1100]; snprintf (lp, sizeof lp, "%s/vectrex_emu/vectrex_emu.log", sys); FILE *lf = fopen (lp, "w");
 		if (lf) { fflush (stderr); dup2 (fileno (lf), 2); fclose (lf); setvbuf (stderr, NULL, _IONBF, 0);
 			fprintf (stderr, "[vectrex_emu] core 1.1, game %s\n", g && g->path ? g->path : "(none)"); } }
+	crash_install ();
 #endif
 	enum retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!env_cb (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf)) return false;

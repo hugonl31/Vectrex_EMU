@@ -89,7 +89,7 @@ static void br_move (int d)
 }
 static void br_show (int on)
 {
-	br_open = on; br_dirty = 1; br_prev_ok = 0; br_t_toggle = vt_wall ();
+	br_open = on; br_dirty = 1; br_prev_ok = 0; br_t_toggle = vt_wall (); fprintf (stderr, "[vectrex_emu] ROM browser %s\n", on ? "open" : "closed");
 	if (on) { char d[1100], cur[1100]; snprintf (cur, sizeof cur, "%s", br_game); br_parent (cur, d, sizeof d);
 		br_scan (br_dir[0] ? br_dir : d[0] ? d : ".", br_dir[0] ? NULL : cur); }
 }

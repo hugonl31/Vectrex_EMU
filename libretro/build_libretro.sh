@@ -21,6 +21,7 @@ android)
 	OUT=vectrex_emu_libretro_android.so
 	# (OpenMP: the drawing in bands on the big cores; libomp linked in statically, the core pinned - see retro_init)
 	$CC $FLAGS -fopenmp -static-openmp -shared -o $OUT $SRC $EXPORTS -lm -llog -ldl -Wl,-z,max-page-size=16384
+	cp $OUT obj/vectrex_emu_libretro_android.sym.so   # (with its symbols: a crash log's offsets to function names, llvm-addr2line)
 	$BIN/llvm-strip --strip-unneeded $OUT
 	;;
 linux)

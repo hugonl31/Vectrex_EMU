@@ -1906,16 +1906,20 @@ static void wd_start (void) { static int on = -1; if (on < 0) { on = getenv ("VT
 #else
 static void wd_start (void) {}
 #define WD_STAGE(n) ((void) 0)
-/* (the CPU running code in the I/O area ($D000-$D7FF: the VIA) - lost: the last 64 instructions into the log, 3 times
- *  at most. The Nova, 2026-11-16: after a switch from the browser Scramble stopped at $D010, one note held) */
-static unsigned wd_ring[64][2]; static unsigned wd_ri; static int wd_io_said;
+/* (the CPU running code in the I/O area ($D000-$D7FF: the VIA) - lost: the last 4096 instructions (address / stack) and
+ *  the controls into the log, once. The Nova, 2026-11-16: after a switch from the browser Scramble stopped at $D010, one
+ *  note held) */
+static unsigned wd_ring[4096][2]; static unsigned wd_ri; static int wd_io_said;
 static void wd_io (unsigned pc)
 {
-	if (wd_io_said >= 3) return; wd_io_said++;
-	fprintf (stderr, "[vectrex_emu] the CPU in the I/O area at PC=%04X; the instructions before (their addresses):\n", pc);
-	for (unsigned i = 0; i < 64; i++) { unsigned k = (wd_ri + i) & 63; fprintf (stderr, " %04X%s", wd_ring[k][0], (i & 15) == 15 ? "\n" : ""); }
+	if (wd_io_said) return; wd_io_said = 1;
+	extern unsigned alg_jch0, alg_jch1, alg_jch2, alg_jch3;
+	fprintf (stderr, "[vectrex_emu] the CPU in the I/O area at PC=%04X; sticks %u %u %u %u, buttons %02X; the instructions before (address/stack):\n",
+	         pc, alg_jch0, alg_jch1, alg_jch2, alg_jch3, snd_regs[14]);
+	for (unsigned i = 0; i < 4096; i++) { unsigned k = (wd_ri + i) & 4095; fprintf (stderr, " %04X/%04X%s", wd_ring[k][0], wd_ring[k][1], (i & 7) == 7 ? "\n" : ""); }
+	fprintf (stderr, "\n[vectrex_emu] (end of the trace)\n");
 }
-#define WD_INS(pc, op) do { wd_ring[wd_ri][0] = (pc); wd_ri = (wd_ri + 1) & 63; if (((pc) & 0xF800) == 0xD000) wd_io (pc); } while (0)   /* (op not read: a read of the VIA changes it) */
+#define WD_INS(pc, op) do { wd_ring[wd_ri][0] = (pc); wd_ring[wd_ri][1] = st[3] & 0xffff; wd_ri = (wd_ri + 1) & 4095; if (((pc) & 0xF800) == 0xD000) wd_io (pc); } while (0)   /* (op not read: a read of the VIA changes it) */
 #endif
 
 void vecx_emu (long cycles)

@@ -2822,13 +2822,16 @@ static unsigned char *put_frame (unsigned char *o, const gframe *f)
 }
 static int net_dbg = -1;
 #define NDBG(...) do { if (net_dbg < 0) net_dbg = getenv ("VXPOC_NETDBG") != NULL; if (net_dbg) fprintf (stderr, __VA_ARGS__); } while (0)
+/* (the cartridge in the slot, in each save state: its first 64K as loaded - the image, $FF after its end) */
+static uint32_t cart_id;
+static void cart_id_set (void) { uint32_t h = 2166136261u; for (int k = 0; k < 65536; k++) h = (h ^ cart[k]) * 16777619u; cart_id = h | 1; }
 bool retro_serialize (void *d, size_t sz)
 {
 	emu_wait_ext (); net_mark ();
 	{ static long n; if (++n % 120 == 1) NDBG ("[netdbg] serialize #%ld sz %zu vx_size %zu run %ld\n", n, sz, vx_size, net_runs); }
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	if (!vx_ok () || sz < vx_size) return false;
-	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), 0 };
+	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), cart_id };
 	PUT (h, 16);
 	o = vxv_save (o);
 	PUT (cart, extern_cart_len ());
@@ -2850,6 +2853,12 @@ bool retro_unserialize (const void *d, size_t sz)
 	GET (h, 16);
 	if (h[0] != VX_MAGIC || h[1] != vx_raw || h[2] != (uint32_t) extern_cart_len ()) {
 		NDBG ("[netdbg] unserialize: header %08x %u %u, mine %08x %zu %ld - sz %zu\n", h[0], h[1], h[2], VX_MAGIC, vx_raw, (long) extern_cart_len (), sz); return false; }
+	if (h[3] && h[3] != cart_id) {   /* (another cartridge's state - from before a switch: run-ahead loads the state of the frame
+	                                  *  before, and the browser's switch came in that frame; loaded, the new game ran on with the
+	                                  *  old one's CPU and RAM - the Nova's Scramble after Pole Position, hung. Not loaded: this one
+	                                  *  runs on; RetroArch's run-ahead on as before. 2026-11-16) */
+		static int said; if (!said++) fprintf (stderr, "[vectrex_emu] a save state of another cartridge: not loaded\n");
+		return true; }
 	{ static long n; if (++n % 60 == 1) NDBG ("[netdbg] unserialize #%ld ok sz %zu run %ld\n", n, sz, net_runs); }
 	i = vxv_load (i);
 	GET (cart, extern_cart_len ());
@@ -2892,7 +2901,7 @@ static void cart_swap (const char *path)
 	FILE *f = fopen (scr, "w"); if (f) fclose (f);
 	char *argv[] = { "vx", g_bios, (char *) path, scr, tmpdir, NULL };
 	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
-	int rc = vtest_main (5, argv); remove (scr);
+	int rc = vtest_main (5, argv); remove (scr); cart_id_set ();
 	if (rc != 2) flash_to_saves (path);
 	fprintf (stderr, "[vectrex_emu] cartridge swapped: %s (%s)\n", path, rc == 2 ? "FAILED" : "running");
 	while (nh) frame_pop (); aq_r = aq_w = 0;
@@ -2934,7 +2943,7 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	char *argv[] = { "vx", bios, (char *) gp, scr, tmpdir, NULL };
 	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
 	int rc = vtest_main (5, argv);
-	remove (scr);
+	remove (scr); cart_id_set ();
 	if (rc != 2) flash_to_saves (gp);
 	if (rc == 2) { fprintf (stderr, "[vectrex_emu] the game could not be loaded: %s\n", gpath); return false; }
 	if (!abuf) { abuf_cap = 65536; abuf = malloc (abuf_cap); }

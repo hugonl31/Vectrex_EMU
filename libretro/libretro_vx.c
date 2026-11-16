@@ -325,13 +325,6 @@ static char g_bios[1600], g_dir[1024]; static const char *cart_file; static int 
 static void cart_swap (const char *path);
 static void emu_wait_ext (void);
 static int vx_ok (void);
-static int sw_trace;   /* (after a game switch: 10 s of the CPU's place in the log, once a second - the Nova's hang, 2026-11-16) */
-static void sw_trace_run (void)
-{
-	if (sw_trace <= 0) return;
-	if ((--sw_trace) % 60 == 0) { extern unsigned e6809_get_pc (void); extern unsigned long long alg_cycles;
-		fprintf (stderr, "[vectrex_emu] after the switch: %d s, PC $%04X, cycles %llu\n", 10 - sw_trace / 60, e6809_get_pc () & 0xFFFF, alg_cycles); }
-}
 static volatile unsigned wd_runs;   /* (Android's watchdog: the refreshes run - see wd_start) */
 static void wd_start (void), wd_stop (void), wd_thr_set (void);
 static int sp_ok, dk_p2;   /* (deck.c) */
@@ -2406,7 +2399,6 @@ void retro_run (void)
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
 	wd_runs++; wd_thr_set ();
-	sw_trace_run ();
 	emu_wait ();                                /* (1.1: the refresh to show, emulated meanwhile - UVMC2 / PiTrex) */
 	net_runs++;
 	km_send ();                                 /* (RetroArch's keyboard and mouse to a UVMC2 / PiTrex: usbkm.c) */
@@ -3000,8 +2992,6 @@ static int game_switch_now (const char *path)
 	geo_tell ();   /* (2026-11-16: the new size only - SET_SYSTEM_AV_INFO set RetroArch's video up anew on each switch, and on the
 	                *  Nova that stopped there: Pole Position to Scramble from the browser, RetroArch hung) */
 	fprintf (stderr, "[vectrex_emu] now in the slot: %s\n", path);
-	{ extern unsigned char cart[]; extern unsigned e6809_get_pc (void); unsigned h = 2166136261u; for (int i = 0; i < 65536; i++) h = (h ^ cart[i]) * 16777619u;
-	  fprintf (stderr, "[vectrex_emu] the cartridge: 64K sum %08X, PC $%04X\n", h, e6809_get_pc () & 0xFFFF); sw_trace = 600; }
 	return 1;
 }
 static char cur_game[1100];

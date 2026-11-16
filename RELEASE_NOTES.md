@@ -3,6 +3,28 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.6
+
+* The ROM browser pauses the game while it is open: PAUSED shows in the strip below the picture, and closing the
+  browser goes on where the game was (it ran on unseen before). Online the game runs on - a pause there is both
+  players'.
+* Paused, EMU RATE shows 0 % in green - it showed -- (or, with the RetroArch core's browser open, a red 0 %, as if
+  the emulation could not keep up).
+
+**The RetroArch core**
+* The ROM browser opens on the running game each time - its folder, the game chosen - even after it was closed in
+  another folder.
+* With the ROM browser open the control deck says PAUSED, EMU RATE 0 % in green.
+* The buttons by default: RESET on L1, Pause on L2 (Quick Menu > Core Options > Controls).
+* Fixed: with RetroArch's run-ahead on, a game switched in from the ROM browser could stop at once with one note
+  held (Pole Position, then Scramble): run-ahead loads the state of the frame before, and that was the old game's.
+  Each save state now names its cartridge; another cartridge's state is not loaded.
+* Fixed: on Android, loading a game from the ROM browser could crash RetroArch after it had been in the background
+  (its graphics are made anew then; the browser's picture kept the old one's name). A game switch also no longer
+  makes RetroArch set its video up anew.
+* Android: a crash or a hang (no refresh for 3 s) is written into the core's log (`system/vectrex_emu/vectrex_emu.log`)
+  with where it happened.
+
 ## v1.6.5
 
 * Fixed: the room's light (on an overlay's clear colours and print, on the glass without an overlay) was added to the

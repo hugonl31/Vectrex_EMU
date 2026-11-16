@@ -4,6 +4,14 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.6.6
+- ROM browser pauses the game while it is open (PAUSED)
+- Paused: EMU RATE shows 0% in green (was -- or a red 0%)
+- RetroArch: the ROM browser always opens on the running game
+- RetroArch: RESET on L1 and Pause on L2 by default
+- Fixed: RetroArch hung after a game switch with run-ahead on
+- Fixed: RetroArch on Android crashed loading from the browser
+
 ## v1.6.5
 - Last Human keeps its calibration and high scores (save chip)
 - Fixed: room light made the trail and glow look brighter

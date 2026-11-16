@@ -19,6 +19,7 @@ cp -r ../package/uvmc2 dist/pkg/system/vectrex_emu/
 cp ../package/system/README-speech.txt dist/pkg/system/vectrex_emu/   # (README.txt: the desktop's - ffmpeg, settings.json)
 mkdir -p dist/pkg/roms; cp ../package/roms/*.bin ../package/roms/*.um2 dist/pkg/roms/   # (its README: the desktop's ROM browser and folders)
 cp -r android/ES-DE dist/pkg/
+cp -r retroarch_config dist/pkg/config   # (this core: Max Users 2, ports 1 and 2 the Vectrex controller)
 cp android/INSTALL.txt dist/pkg/
 rm -f dist/Vectrex_EMU_RetroArch_Android.zip
 (cd dist/pkg && python3 -c "

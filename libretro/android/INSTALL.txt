@@ -8,6 +8,8 @@ What is here (the zip, or the Google Drive folder: the same files, unpacked)
   roms/                                Last Human, its UVMC2 edition, the UVMC2 demo and movie player - put them
                                        with your games
   ES-DE/custom_systems/es_systems.xml  ES-DE: Vectrex_EMU as the Vectrex system's emulator
+  config/                              this core's settings for RetroArch: Max Users 2, ports 1 and 2 as
+                                       "Vectrex controller" (the sticks in netplay)
 
 You need the RetroArch from retroarch.com (or F-Droid), not the Google Play one: the Play Store version cannot
 load a core from a file.
@@ -33,6 +35,12 @@ load a core from a file.
    PiTrex and UVMC2: their SD card folders (cards/system/vectrex_emu: pitrex, uvmc2) into <system>/vectrex_emu - the
    core makes each card from its folder and puts what the games save back into it; the PiTrex loader
    (cards/ROMs/PiTrex.img - its menu starts the PiTrex programs) and the .um2 games with the games.
+
+3b. The controller (the sticks in netplay)
+   Copy the config folder's two files into RetroArch's config folder (often /storage/emulated/0/RetroArch/config):
+       config/Vectrex_EMU/Vectrex_EMU.cfg              Max Users 2 for this core
+       config/remaps/Vectrex_EMU/Vectrex_EMU.rmp       ports 1 and 2: "Vectrex controller"
+   (Already have files of those names? Add their lines to yours.)
 
 4. ES-DE
    Copy ES-DE/custom_systems/es_systems.xml into ES-DE's own custom_systems folder on the device

@@ -861,7 +861,11 @@ static void geo_tell (void)
 	if (av.geometry.max_width > av_maxw || av.geometry.max_height > av_maxh) retro_get_system_av_info (&av), env_cb (RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
 	else env_cb (RETRO_ENVIRONMENT_SET_GEOMETRY, &av.geometry);
 }
-void retro_set_controller_port_device (unsigned p, unsigned d) { (void) p; (void) d; }
+/* (each port's type, as RetroArch sets it: in its netplay a plain RetroPad port carries no sticks - and asked for them,
+ *  RetroArch answers with player 1's: player 2's ship then followed player 1's stick. Such a port's sticks are not read
+ *  in netplay; the Vectrex controller (the RetroPad with its sticks) is the type for it, 2026-11-16) */
+static unsigned port_dev[2] = { RETRO_DEVICE_ANALOG, RETRO_DEVICE_ANALOG };
+void retro_set_controller_port_device (unsigned p, unsigned d) { if (p < 2) port_dev[p] = d; }
 void retro_reset (void) { if (ls_state == 2) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
 	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 
@@ -1217,10 +1221,12 @@ static int usb_pad (int *x, int *y, unsigned *b) { (void) x; (void) y; (void) b;
 /* the player's controller: stick (analog, else the d-pad) and the four buttons (Y X B A = 1 2 3 4, left to right) */
 static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned char *bt)
 {
-	int x = input_cb (port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X) / 256;
-	int y = -input_cb (port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y) / 256;
+	const int sticks = !(net_runs - net_seen < 180 && (port_dev[port & 1] & RETRO_DEVICE_MASK) == RETRO_DEVICE_JOYPAD);   /* (RetroArch's netplay:
+	                                                    a RetroPad port has none - see port_dev) */
+	int x = sticks ? input_cb (port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X) / 256 : 0;
+	int y = sticks ? -input_cb (port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y) / 256 : 0;
 	/* (the right stick: the same - held in tate it is the one under the thumb; the stronger of the two) */
-	{ const int rx = input_cb (port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X) / 256,
+	if (sticks) { const int rx = input_cb (port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X) / 256,
 	            ry = -input_cb (port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y) / 256;
 	  if (rx * rx + ry * ry > x * x + y * y) { x = rx; y = ry; } }
 	if (x > 127) x = 127; if (y > 127) y = 127; if (x < -128) x = -128; if (y < -128) y = -128;
@@ -2376,6 +2382,10 @@ void retro_run (void)
 	poll_cb ();
 	unsigned char m[8] = { 128, 128, 0, 0x40, 128, 128, 0, 0 };
 	pad (0, &m[0], &m[1], &m[2]); pad (1, &m[4], &m[5], &m[6]);
+	{ static int told; const int rb = net_runs - net_seen < 180;   /* (RetroArch's netplay with a RetroPad port: said once) */
+	  if (rb && !told && ((port_dev[0] & RETRO_DEVICE_MASK) == RETRO_DEVICE_JOYPAD || (port_dev[1] & RETRO_DEVICE_MASK) == RETRO_DEVICE_JOYPAD)) {
+		struct retro_message msg = { "Netplay: for the sticks, Port 1 and Port 2 as Vectrex controller (Controls)", 480 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &msg); told = 1; }
+	  if (!rb) told = 0; }
 	ls_pad[0] = m[0]; ls_pad[1] = m[1]; ls_pad[2] = m[2];   /* (online in lockstep: this side's controller - netls.c) */
 	netls_solo_tick ();
 #ifndef VX_EMUVR

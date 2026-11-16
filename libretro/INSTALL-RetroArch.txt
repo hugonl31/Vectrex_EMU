@@ -5,13 +5,17 @@ What is here (laid out as RetroArch's own folders)
   cores/      the core: vectrex_emu_libretro.dll (Windows), .so (Linux), .dylib (macOS)
   info/       vectrex_emu_libretro.info - its name and details for RetroArch
   system/     vectrex_emu/: the BIOS (Mine Storm built in), the overlays, the UVMC2's SD card folder
+  config/     this core's settings for RetroArch: Max Users 2, ports 1 and 2 as "Vectrex controller" (the sticks
+              in netplay)
   roms/       Last Human, its UVMC2 edition, the UVMC2 demo and movie player - put them with your games
 
-1. Copy the three folders cores, info and system into RetroArch's folders of those names
-   (Settings > Directory shows where they are: Cores, Core Info, System/BIOS). You then have
+1. Copy the folders cores, info, system and config into RetroArch's folders of those names
+   (Settings > Directory shows where they are: Cores, Core Info, System/BIOS, Configuration). You then have
        <cores>/vectrex_emu_libretro.*
        <info>/vectrex_emu_libretro.info
        <system>/vectrex_emu/bios.bin   (and overlays/, gpu/, uvmc2/)
+       <config>/Vectrex_EMU/Vectrex_EMU.cfg, <config>/remaps/Vectrex_EMU/Vectrex_EMU.rmp
+   (Already have files of those names? Add their lines to yours.)
 2. Load Content > a Vectrex game (.bin, .vec, .um2 ...) > Vectrex_EMU.
    Speech games (VecVox / VecVoice): put sp0256-al2.bin in <system>/vectrex_emu too. Not included.
    PiTrex: a pitrex folder (its SD card) in <system>/vectrex_emu, and the PiTrex loader (PiTrex.img) with the games.
@@ -21,9 +25,9 @@ Controls (RetroArch's RetroPad)
    Port 2: a second pad.
 
 Netplay
-   6809 games: RetroArch's own netplay. For the sticks the HOST sets Port 1 and Port 2 to "Vectrex controller":
-   Settings > Input > Max Users 2, then Quick Menu > Controls > Port 1 / Port 2 Controls > Device Type,
-   and Manage Remap Files > Save Core Remap File. Both sides need this core and the same game file.
+   6809 games: RetroArch's own netplay. The sticks need ports 1 and 2 as "Vectrex controller" on the HOST - the
+   config folder sets that. By hand: Settings > Input > Max Users 2, Quick Menu > Controls > Port 1 / Port 2
+   Controls > Device Type, Manage Remap Files > Save Core Remap File. Both sides need this core and the same game.
    UVMC2 / PiTrex games: load the game through RetroArch (not the core's ROM browser); it starts again when player 2
    joins. Both play in the slower side's UVMC2 mode.
 

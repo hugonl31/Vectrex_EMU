@@ -4,15 +4,7 @@ The aim: the core behaves like the desktop Vectrex_EMU (the same ROMs, cartridge
 same look), with files where RetroArch expects them (BIOS and data in `system/vectrex_emu`, saves in RetroArch's saves
 folder, the ROM folder only read). Small items get done as they come up; bigger ones are agreed first.
 
-## To test on the Nova (the owner)
-
-- [ ] Last Human (.bin): ZERO REF 3 / TEXT 0 look right by default (the desktop's Vectrex unit, not an ideal machine)
-- [ ] Last Human (.bin): its calibration and high scores kept after a restart (the DS2431 save chip)
-- [ ] Vectorblade: its scores kept (the flash written to the saves folder)
-- [ ] Last Human (UVMC2), PiTrex: full speed (Threaded emulation on, UVMC2 mode Fast)
-- [ ] The GPU path in RetroArch itself: the glass, the ceiling light, the case
-- [ ] START for the overlay remapped in Quick Menu > Controls; tate (Rotation 90 / 270)
-- [ ] VecVoice / VecVox games talk (sp0256-al2.bin is on the Nova now)
+## Tested on the Nova (the owner, 2026-11-16): all of it
 
 ## In progress (the owner, 2026-11-15: do them all; the full look and UVMC2 at full speed on the Nova)
 
@@ -21,7 +13,7 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
 
 ## Next (the owner, 2026-11-15)
 
-- [ ] The control deck on the Nova: touch on the knob, the ports, the cartridge; 16:9 tate
+- [x] The control deck on the Nova: touch on the knob, the ports, the cartridge; 16:9 tate
 
 ## Netplay (the owner, 2026-11-15)
 
@@ -29,11 +21,11 @@ folder, the ROM folder only read). Small items get done as they come up; bigger 
       eject, RESET, pause, the deck's power and port 2); simulated in vxhost netsim - the states the same
 - [x] Two RetroArch instances on the PC: the join works and stays (the state held pointers; fixed 2026-11-15)
 - [x] Between systems: the state by variable name (vars_*.h, VX15) - Windows <-> Nova byte-identical, 7 games
-- [ ] The real test: the PC hosting, the Nova joining (a 6809 game, a UVMC2 game, PiTrex) - the owner
-- [ ] Two Android devices (the same build: should work as on the PC)
+- [x] The real test: the PC hosting, the Nova joining - works (the owner, 2026-11-16); the sticks need both ports
+      as Vectrex controller on the host (Max Users 2)
+- [x] Two Android devices (the owner, 2026-11-16)
 - [x] UVMC2 / PiTrex: lockstep (netls.c, RetroArch's netpacket interface), the desktop's agreements (the mode,
       the JIT, the seed, R302, the card's common files); PC <-> PC tested; Windows <-> Nova the same (solo test)
-- [ ] UVMC2 save states / run-ahead (its whole RP2350: possible, big work); PiTrex: not (256 MB RAM)
 
 ## Low priority (the owner: ask first)
 

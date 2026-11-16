@@ -32,7 +32,22 @@ The system dir holds `vectrex_emu/bios.bin` (and `overlays/*.png`, `on.wav`, `of
 
 The emulator's files are compiled with their data in sections of their own (`src/core/state/state_*.c`): Visual C++
 `data_seg` / `bss_seg`, clang `#pragma clang section` (ELF sections `vxd` / `vxb`, bounded by `__start_` / `__stop_`).
-6809 games have save states (run-ahead, rewind); UVMC2 / PiTrex games have none.
+6809 games have save states (run-ahead, rewind, netplay): each variable by name in one order (`vars_*.h`, made by
+`tools/gen_state_vars.py`), so a state is the same on Windows, Android and Linux. UVMC2 / PiTrex games have none.
+
+## Netplay
+
+- 6809 games: RetroArch's own netplay. For the sticks, the host sets Port 1 and Port 2 to **Vectrex controller**
+  (Settings > Input > Max Users 2 first; Quick Menu > Controls > Port N Controls > Device Type; save the core remap).
+- UVMC2 / PiTrex games: lockstep, as the desktop's online play (`netls.c`): load the game through RetroArch, not the
+  ROM browser; it starts again when player 2 joins. Both play in the slower side's UVMC2 mode; the SD card holds only
+  the files both have alike.
+- Both sides need the same core and the same game file.
+
+## Optional files (in `system/vectrex_emu`)
+
+- `sp0256-al2.bin` - the speech chip's ROM, for VecVoice / VecVox games
+- `uvmc2/`, `pitrex/` - the UVMC2's and PiTrex's SD card folders
 
 ## Files
 
@@ -40,4 +55,5 @@ The emulator's files are compiled with their data in sections of their own (`src
 - `libretro.h`, `stb_image.h` - third-party headers (libretro API: MIT; stb_image: public domain / MIT)
 - `tubemap_tab.h`, `glass_cut_lut.h` - the measured tube and the glass's edge (generated tables)
 - `vectrex_emu_libretro.info` - RetroArch's core info
+- `netls.c` - UVMC2 / PiTrex netplay (lockstep); `vars_vx.h`, `tools/gen_state_vars.py` - the portable save state
 - `android/` - ES-DE's custom system file and the install notes for the package

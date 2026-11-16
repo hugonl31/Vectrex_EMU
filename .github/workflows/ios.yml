@@ -1,0 +1,51 @@
+# RetroArch for iOS (iPhone / iPad) with the Vectrex_EMU core built in: RetroArch's own source (the version the
+# Retroid Nova runs), the core as one of its frameworks (iOS loads no cores from outside the app), its info file in
+# RetroArch's assets. Runs on the ios branch or by hand - not on main (that is build.yml: the releases).
+# Out: RetroArch-VectrexEMU-unsigned.ipa (not signed yet: the TestFlight upload comes with the developer account)
+# and Vectrex_EMU_RetroArch_iOS.zip (system, roms, info, config - copied into RetroArch's folder with the Files app).
+name: ios
+on:
+  push:
+    branches: [ios]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: vx
+      - name: RetroArch's source (v1.22.2)
+        run: git clone -q --depth 1 --branch v1.22.2 https://github.com/libretro/RetroArch.git ra
+      - name: the core for iOS (arm64, no JIT)
+        run: |
+          sh vx/libretro/build_libretro.sh ios
+          cp vx/libretro/vectrex_emu_libretro_ios.dylib ra/pkg/apple/iOS/modules/
+          lipo -info vx/libretro/vectrex_emu_libretro_ios.dylib
+      - name: its info file in RetroArch's assets
+        run: |
+          mkdir -p add/info && cp vx/libretro/vectrex_emu_libretro.info add/info/
+          (cd add && zip -q ../ra/pkg/apple/assets.zip info/vectrex_emu_libretro.info)
+          unzip -l ra/pkg/apple/assets.zip | grep vectrex
+      - name: RetroArch for iOS (unsigned)
+        run: |
+          set -o pipefail
+          cd ra
+          xcodebuild -workspace pkg/apple/RetroArch.xcworkspace -destination generic/platform=iOS -config Release \
+            -scheme "RetroArch iOS Release" -xcconfig pkg/apple/GitHubCI.xcconfig \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" \
+            -derivedDataPath build 2>&1 | grep -E 'error:|warning: .*vectrex|BUILD (SUCCEEDED|FAILED)|Making framework' || true
+          APP=$(find build/Build/Products -maxdepth 2 -name '*.app' -type d | head -1)
+          echo "app: $APP"; test -n "$APP"
+          ls "$APP/Frameworks" | grep -i vectrex
+          mkdir -p Payload && cp -R "$APP" Payload/ && zip -qry ../RetroArch-VectrexEMU-unsigned.ipa Payload
+      - name: the core's files for RetroArch's folder
+        run: python3 vx/libretro/package_retroarch.py ios-arm64 vx/libretro/vectrex_emu_libretro_ios.dylib Vectrex_EMU_RetroArch_iOS.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios
+          path: |
+            RetroArch-VectrexEMU-unsigned.ipa
+            Vectrex_EMU_RetroArch_iOS.zip

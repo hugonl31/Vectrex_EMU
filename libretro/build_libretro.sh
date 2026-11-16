@@ -3,6 +3,7 @@
 # Linux x86-64 (a test build: the bench and the save-state test run it on this PC, under WSL).
 #   sh build_libretro.sh android      -> vectrex_emu_libretro_android.so   (arm64-v8a, Android 9+ / API 28)
 #   sh build_libretro.sh linux        -> vectrex_emu_libretro.so           (x86-64, glibc; links with the system's gcc)
+#   sh build_libretro.sh ios          -> vectrex_emu_libretro_ios.dylib    (iPhone / iPad arm64, on a Mac: Xcode's clang)
 # NDK: $ANDROID_NDK (default ~/android-ndk-r27c). Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md.
 set -e
 cd "$(dirname "$0")"
@@ -28,6 +29,15 @@ linux)
 	OUT=vectrex_emu_libretro.so
 	for f in $SRC; do o=obj/$(basename $f .c).o; $BIN/clang --target=x86_64-linux-gnu $FLAGS ${OMP:+-fopenmp} -c $f -o $o; done
 	gcc -shared -o $OUT obj/*.o $EXPORTS -lm -ldl -lpthread ${OMP:+-lgomp}
+	;;
+ios)
+	# (iPhone / iPad, arm64, iOS 13+: RetroArch for iOS takes it as a framework - .github/workflows/ios.yml. iOS gives an
+	#  app no executable memory: the UVMC2's and the PiTrex's JITs out, their interpreters run - measured 2026-11-17 on
+	#  the PC: VecDoom 68 % of a frame, a PiTrex arcade game 98 %; no OpenMP, as the macOS core)
+	SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+	OUT=vectrex_emu_libretro_ios.dylib
+	${CC:-clang} $FLAGS -target arm64-apple-ios13.0 -isysroot "$SDK" -DCM33_NO_JIT -DARM11_NO_JIT -dynamiclib \
+		-install_name @rpath/$OUT -o $OUT $SRC -Wl,-exported_symbol,_retro_* -lm
 	;;
 native)
 	# (the release cores: this system's own clang - Linux x86-64 / arm64 (Raspberry Pi 4 / 5, 64-bit), macOS (Intel and

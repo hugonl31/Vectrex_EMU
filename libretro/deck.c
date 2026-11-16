@@ -58,7 +58,7 @@ static void dk_draw_slim (void)
 	dk_place ();
 	const double r = 0.36 * dk_h, cy = dk_h / 2.0, w = fmax (1.0, r / 30.0); dk_r = r; dk_cy = cy;
 	{ const double k = fmax (1.0, dk_h * 0.30 / 6.0), xr = dk_ox + dk_ow; char t[32]; unsigned c = DK_G;
-	  if (vx_paused) { snprintf (t, sizeof t, "PAUSED"); c = 0xed9933u; } else { snprintf (t, sizeof t, "EMU %s", dk_osd[2]); c = (unsigned) dk_osd_col; }
+	  if (vx_paused || br_open) { snprintf (t, sizeof t, "PAUSED"); c = 0xed9933u; } else { snprintf (t, sizeof t, "EMU %s", dk_osd[2]); c = (unsigned) dk_osd_col; }
 	  br_text (t, (float) (xr - (strlen (t) * 6.0 - 1.0) * k), (float) (cy - 3 * k), (float) k, c); }
 	for (int pt = 2; pt >= (net_on () ? 1 : 2); pt--) {   /* (P1: only online, as the desktop's port1_state - netplay) */ const int kind = pt == 2 ? dk_p2 : 0; const double cx = pt == 2 ? dk_p2x : dk_p1x, s = 2.0 * r / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1);
 		const double oy = cy, ox = cx + (kind == 2 ? 10 * s : 0);
@@ -121,8 +121,8 @@ static void dk_draw (void)
 		char fig[8]; if (pct < 0) snprintf (fig, sizeof fig, "--"); else snprintf (fig, sizeof fig, "%d%%", pct > 999 ? 999 : pct);
 		br_text (fig, (float) (xe - (strlen (fig) * 6.0 - 1.0) * km), (float) ty, (float) km, pct < 0 ? DK_G : c); } }
 	/* PAUSED: between the OSD and the P2 port (slot_state) */
-	if (vx_paused) { const double left = dk_ox + dk_ow, right = dk_p2x - 1.1 * r, room = right - left;
-		if (room > 0) { static const char *const R2 = "PRESS PAUSE TO RESUME";
+	if (vx_paused || br_open) { const double left = dk_ox + dk_ow, right = dk_p2x - 1.1 * r, room = right - left;   /* (the ROM browser open: paused too) */
+		if (room > 0) { const char *const R2 = br_open ? "CLOSE THE BROWSER TO RESUME" : "PRESS PAUSE TO RESUME";
 			double kp = 0.80 * room / (6.0 * 6), kn = fmin (0.42 * kp, 0.80 * room / (6.0 * strlen (R2))), hgt = 11.0 * kp + 6.0 * kn;
 			const double fb = 0, wb = dk_h;   /* (the frame's bottom edge: the sheet's) */ if (hgt > 0.8 * (wb - fb)) { const double f = 0.8 * (wb - fb) / hgt; kp *= f; kn *= f; hgt *= f; }
 			const double y0 = (fb + wb) / 2.0 - hgt / 2.0, cx = (left + right) / 2.0;
@@ -185,6 +185,9 @@ static void dk_tick (double busy)
 	if (!dk_on && !dk_pop) return;
 	(void) busy; dk_runs++;
 	{ static int nw = -1; const int n = net_on (); if (n != nw) { nw = n; dk_dirty_set = 1; } }
+	{ static int hw = -1; const int h = vx_paused || br_open;   /* (paused, or the ROM browser open: EMU RATE 0%, not red - at once) */
+	  if (h != hw) { hw = h; dk_dirty_set = 1; if (h && pw_on) { snprintf (dk_osd[2], 24, "0%%"); dk_osd_col = DK_G; }
+		if (dk_t0 != 0) { dk_t0 = vt_wall (); dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; } } }   /* (the rate measured anew: the stop not in it) */
 	if (dk_pop) { const int want = vx_paused || dk_drag.on || vt_wall () < dk_pop_until;   /* (the pop-up: a while after a touch, while paused) */
 		if (want != dk_shown) { dk_shown = want; dk_dirty_set = 1; } }
 	{ static clock_t c0; const clock_t c = clock (); if (c0) dk_busy += (double) (c - c0) / CLOCKS_PER_SEC; c0 = c; }   /* (the processor: all the core's threads) */
@@ -193,7 +196,8 @@ static void dk_tick (double busy)
 	if (now - dk_t0 >= 1.0) { const double dt = now - dk_t0;
 		snprintf (dk_osd[0], 24, "%d FPS", (int) ((aq_frames - dk_f0) / dt + 0.5)); snprintf (dk_osd[1], 24, "%d HZ", (int) ((dk_runs - dk_r0) / dt + 0.5));
 		const double sp = (double) (run_t - dk_e0) / 1.5e6 / dt * 100.0;
-		if (vx_paused || !pw_on) { snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; dk_cpu = -1; }
+		if (!pw_on) { snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; dk_cpu = -1; }
+		else if (vx_paused || br_open) { snprintf (dk_osd[2], 24, "0%%"); dk_osd_col = DK_G; dk_cpu = -1; }   /* (stopped on purpose: not red) */
 		else { snprintf (dk_osd[2], 24, "%d%%", sp >= 99.5 ? 100 : (int) sp); dk_osd_col = sp >= 97 ? DK_G : sp >= 80 ? 0xed9933u : 0xed5454u;
 			dk_cpu = (int) (100.0 * dk_busy / dt + 0.5); }
 		dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; dk_dirty_set = 1; }

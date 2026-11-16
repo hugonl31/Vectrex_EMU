@@ -450,9 +450,9 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_renderer", "video", "Renderer (next game start)", "GPU adds the glass and case effects (video driver gl / glcore).",
 	  "auto|GPU|CPU only" },
 	{ "vectrex_emu_power_fx", "video", "Switching on / off", "Tube warm-up and switch-off effects.", "on|off" },
-	{ "vectrex_emu_btn_reset", "controls", "RESET button", "A RetroPad button for the Vectrex's RESET button.", "off|L|R|L2|R2|L3|R3" },
+	{ "vectrex_emu_btn_reset", "controls", "RESET button", "A RetroPad button for the Vectrex's RESET button.", "L|off|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_btn_browser", "controls", "ROM browser button", "A RetroPad button that opens and closes the ROM browser.", "L3|SELECT|off|L|R|L2|R2|R3" },
-	{ "vectrex_emu_btn_pause", "controls", "Pause button", "A RetroPad button that pauses and resumes the game.", "off|L|R|L2|R2|L3|R3" },
+	{ "vectrex_emu_btn_pause", "controls", "Pause button", "A RetroPad button that pauses and resumes the game.", "L2|off|L|R|R2|L3|R3" },
 	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_usb_hid", "controls", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
@@ -3035,7 +3035,7 @@ static void input_names (void)
 #ifndef VX_EMUVR
 	{ const int b = btn_id ("vectrex_emu_btn_browser"); if (b >= 0) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) b, "ROM browser" };
 	  const int pz = btn_id ("vectrex_emu_btn_pause"); if (pz >= 0 && pz != b) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pz, "Pause" }; }
-	{ const int r = btn_id ("vectrex_emu_btn_reset"), e = btn_id ("vectrex_emu_btn_eject");   /* (none by default: Ports) */
+	{ const int r = btn_id ("vectrex_emu_btn_reset"), e = btn_id ("vectrex_emu_btn_eject");   /* (RESET: L1 by default, eject none) */
 	  if (r >= 0) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) r, "RESET button" };
 	  if (e >= 0 && e != r) d[n++] = (struct retro_input_descriptor) { 0, RETRO_DEVICE_JOYPAD, 0, (unsigned) e, "Eject / reinsert the cartridge" }; }
 #endif

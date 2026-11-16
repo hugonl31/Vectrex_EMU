@@ -325,6 +325,8 @@ static char g_bios[1600], g_dir[1024]; static const char *cart_file; static int 
 static void cart_swap (const char *path);
 static void emu_wait_ext (void);
 static int vx_ok (void);
+static volatile unsigned wd_runs;   /* (Android's watchdog: the refreshes run - see wd_start) */
+static void wd_start (void), wd_stop (void), wd_thr_set (void);
 static int sp_ok, dk_p2;   /* (deck.c) */
 /* (RetroArch's netplay: one Vectrex on both machines, kept the same by rewinding with save states. Seen by the reason
  *  RetroArch gives a save - GET_SAVESTATE_CONTEXT 72, ROLLBACK_NETPLAY 3; while it runs, nothing one side does alone may
@@ -1187,6 +1189,7 @@ static long vx_hidden, vx_shown;          /* (test: refreshes run hidden / shown
 static void pw_stamp_path (char *o, size_t n) { snprintf (o, n, "%s" SEP "vectrex_emu_power_off.txt", tmp_dir ()); }
 void retro_unload_game (void)
 {
+	wd_stop ();
 	emu_wait_ext (); emu_primed = 0;
 	if (sd_img[0] && sd_folder[0]) sdc_sync_back (sd_img, sd_folder);   /* (1.1: what the game wrote on its card, into the folder) */
 	flash_save (1);                             /* (1.1: the flash cartridge's last writes) */
@@ -2395,6 +2398,7 @@ void retro_run (void)
 {
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
+	wd_runs++; wd_thr_set ();
 	emu_wait ();                                /* (1.1: the refresh to show, emulated meanwhile - UVMC2 / PiTrex) */
 	net_runs++;
 	km_send ();                                 /* (RetroArch's keyboard and mouse to a UVMC2 / PiTrex: usbkm.c) */
@@ -3050,6 +3054,40 @@ static void crash_install (void)
 	const int sigs[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT };
 	for (int i = 0; i < 5; i++) sigaction (sigs[i], &sa, &crash_old[sigs[i]]);
 }
+/* (a hang: the refreshes stopped 3 s - the thread that ran the last one shows where it is, its calls into the log, as a
+ *  crash's; inside the core or in RetroArch. Once a stop, 8 at most. The Nova, 2026-11-16: a switch from the browser hung) */
+static pthread_t wd_th, wd_run_th; static volatile int wd_quit, wd_have_run, wd_dumps;
+static void wd_thr_set (void) { wd_run_th = pthread_self (); wd_have_run = 1; }   /* (each refresh: its thread) */
+static void wd_sig (int sig, siginfo_t *si, void *uc)
+{
+	char l[300]; Dl_info me; dladdr ((void *) wd_sig, &me);
+	int n = snprintf (l, sizeof l, "[vectrex_emu] WATCHDOG: no refresh for 3 s - the thread that ran them (core base %p):\n", me.dli_fbase);
+	write (2, l, (size_t) n);
+	void *a[40]; crash_bt b = { a, 0, 40 }; _Unwind_Backtrace (crash_step, &b);
+	for (int i = 0; i < b.n; i++) { Dl_info d; const char *lib = "?"; void *base = NULL; d.dli_sname = NULL;
+		if (dladdr (a[i], &d) && d.dli_fname) { lib = strrchr (d.dli_fname, '/') ? strrchr (d.dli_fname, '/') + 1 : d.dli_fname; base = d.dli_fbase; }
+		n = snprintf (l, sizeof l, "  #%d %s +0x%lx %s\n", i, lib, (unsigned long) ((char *) a[i] - (char *) base), d.dli_sname ? d.dli_sname : ""); write (2, l, (size_t) n); }
+}
+static void *wd_main (void *u)
+{
+	unsigned last = wd_runs; int still = 0, told = 0;
+	while (!wd_quit) {
+		struct timespec t = { 0, 250000000 }; nanosleep (&t, NULL);
+		if (wd_runs != last) { last = wd_runs; still = 0; told = 0; continue; }
+		if (++still == 12 && !told && wd_dumps < 8 && wd_have_run) { told = 1; wd_dumps++; int e = pthread_kill (wd_run_th, SIGUSR2);
+			if (e) fprintf (stderr, "[vectrex_emu] WATCHDOG: no refresh for 3 s (the thread not reached: %d)\n", e); }
+	}
+	return NULL;
+}
+static void wd_start (void)
+{
+	if (wd_th) return;
+	struct sigaction sa; memset (&sa, 0, sizeof sa); sa.sa_sigaction = wd_sig; sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESTART; sigaction (SIGUSR2, &sa, NULL);
+	wd_quit = 0; if (pthread_create (&wd_th, NULL, wd_main, NULL)) wd_th = 0; else fprintf (stderr, "[vectrex_emu] watchdog on\n");
+}
+static void wd_stop (void) { if (wd_th) { wd_quit = 1; pthread_join (wd_th, NULL); wd_th = 0; } }   /* (before RetroArch unloads the core) */
+#else
+static void wd_start (void) {} static void wd_stop (void) {} static void wd_thr_set (void) {}
 #endif
 bool retro_load_game (const struct retro_game_info *g)
 {
@@ -3063,7 +3101,7 @@ bool retro_load_game (const struct retro_game_info *g)
 	if (sys) { char lp[1100]; snprintf (lp, sizeof lp, "%s/vectrex_emu/vectrex_emu.log", sys); FILE *lf = fopen (lp, "w");
 		if (lf) { fflush (stderr); dup2 (fileno (lf), 2); fclose (lf); setvbuf (stderr, NULL, _IONBF, 0);
 			fprintf (stderr, "[vectrex_emu] core 1.1, game %s\n", g && g->path ? g->path : "(none)"); } }
-	crash_install ();
+	crash_install (); wd_start ();
 #endif
 	enum retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!env_cb (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf)) return false;

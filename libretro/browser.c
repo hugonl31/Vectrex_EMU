@@ -223,8 +223,9 @@ static void br_draw (void)
 		const float *a = LOAD_PTS[LOAD_LINES[L][0] + q2], *b = LOAD_PTS[LOAD_LINES[L][0] + q2 + 1];
 		br_line (ox + a[1] * s, oy - a[0] * s, ox + b[1] * s, oy - b[0] * s, w, c); }
 	  br_text ("LOAD", q[0] - 5.5f * 6 * k, (q[1] + q[3]) / 2 - 3 * k, k, c); }
-	{ static const char H[] = "STICK: CHOOSE / PAGE   BUTTON 4: OPEN/LOAD   BUTTON 1: BACK   L3: CLOSE";
-	  const float kh = fminf (k * 0.55f, (g->x1 - g->x0 - 1.2f * rh) / (6.0f * (sizeof H - 1)));   /* (it fits the panel) */
+	{ char H[96]; const char *bn = optv ("vectrex_emu_btn_browser");   /* (the button as set in Controls - L3 by default; off: the X) */
+	  snprintf (H, sizeof H, "STICK: CHOOSE / PAGE   BUTTON 4: OPEN/LOAD   BUTTON 1: BACK   %s: CLOSE", !bn[0] ? "L3" : !strcmp (bn, "off") ? "X" : bn);
+	  const float kh = fminf (k * 0.55f, (g->x1 - g->x0 - 1.2f * rh) / (6.0f * (float) strlen (H)));   /* (it fits the panel) */
 	  br_text (H, g->x0 + 0.6f * rh, g->y1 - 0.85f * rh, kh, DIM); }
 	br_bx0 = (int) floorf (g->x0) - 2; br_by0 = (int) floorf (g->y0) - 2; br_bx1 = (int) ceilf (g->x1) + 2; br_by1 = (int) ceilf (g->y1) + 2; br_shown = 1;
 }

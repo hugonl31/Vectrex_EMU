@@ -1906,7 +1906,16 @@ static void wd_start (void) { static int on = -1; if (on < 0) { on = getenv ("VT
 #else
 static void wd_start (void) {}
 #define WD_STAGE(n) ((void) 0)
-#define WD_INS(pc, op) ((void) 0)
+/* (the CPU running code in the I/O area ($D000-$D7FF: the VIA) - lost: the last 64 instructions into the log, 3 times
+ *  at most. The Nova, 2026-11-16: after a switch from the browser Scramble stopped at $D010, one note held) */
+static unsigned wd_ring[64][2]; static unsigned wd_ri; static int wd_io_said;
+static void wd_io (unsigned pc)
+{
+	if (wd_io_said >= 3) return; wd_io_said++;
+	fprintf (stderr, "[vectrex_emu] the CPU in the I/O area at PC=%04X; the instructions before (their addresses):\n", pc);
+	for (unsigned i = 0; i < 64; i++) { unsigned k = (wd_ri + i) & 63; fprintf (stderr, " %04X%s", wd_ring[k][0], (i & 15) == 15 ? "\n" : ""); }
+}
+#define WD_INS(pc, op) do { wd_ring[wd_ri][0] = (pc); wd_ri = (wd_ri + 1) & 63; if (((pc) & 0xF800) == 0xD000) wd_io (pc); } while (0)   /* (op not read: a read of the VIA changes it) */
 #endif
 
 void vecx_emu (long cycles)

@@ -32,7 +32,7 @@ static int hw_setup (unsigned w, unsigned h)
 	const EGLint sa[] = { EGL_WIDTH, sw_, EGL_HEIGHT, sh_, EGL_NONE }; EGLSurface su = eglCreatePbufferSurface (d, cfg, sa);
 	eglBindAPI (EGL_OPENGL_ES_API); const EGLint xa[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
 	EGLContext c = eglCreateContext (d, cfg, EGL_NO_CONTEXT, xa); if (c == EGL_NO_CONTEXT || !eglMakeCurrent (d, su, su, c)) return 0;
-	glGenTextures (1, &hw_tex); glBindTexture (GL_TEXTURE_2D, hw_tex); glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glGenTextures (1, &hw_tex); glBindTexture (GL_TEXTURE_2D, hw_tex); if (w < 2048) w = 2048; if (h < 2048) h = 2048;   /* (room for the picture grown to the screen) */ glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	glGenFramebuffers (1, &hw_fbo); glBindFramebuffer (GL_FRAMEBUFFER, hw_fbo); glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hw_tex, 0);
 	fprintf (stderr, "vxhost: EGL %s, framebuffer %ux%u\n", (const char *) glGetString (GL_RENDERER), w, h);
 	hw_pix = malloc ((size_t) w * h * 4);
@@ -98,6 +98,7 @@ static void video (const void *d, unsigned w, unsigned h, size_t pitch)
 		  else if (nf > 1) { GLsync *q = &fq[fi % nf]; if (*q) { glClientWaitSync (*q, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull); glDeleteSync (*q); }
 			*q = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0); glFlush (); fi++; } }
 		if (!read_back) return;
+		{ static size_t cap; if ((size_t) w * h > cap) { cap = (size_t) w * h; hw_pix = realloc (hw_pix, cap * 4); } }   /* (the picture grown to the screen's size) */
 		glBindFramebuffer (GL_FRAMEBUFFER, hw_fbo); unsigned char *b = malloc ((size_t) w * h * 4);
 		glReadPixels (0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, b);
 		for (unsigned y = 0; y < h; y++) for (unsigned x = 0; x < w; x++) { const unsigned char *q = b + ((size_t) (h - 1 - y) * w + x) * 4;
@@ -164,6 +165,10 @@ int main (int argc, char **argv)
 	if (hw_on) { if (!hw_setup (av.geometry.max_width, av.geometry.max_height)) { fprintf (stderr, "vxhost: no EGL context\n"); return 2; } hw.context_reset (); }
 #endif
 	fprintf (stderr, "picture %ux%u, %.0f Hz\n", av.geometry.base_width, av.geometry.base_height, av.timing.fps);
+	/* (VXH_LOAD=file: start from a save state - the core's own data, RetroArch's RZIP / RASTATE wrapping taken off first) */
+	if (getenv ("VXH_LOAD")) { FILE *f = fopen (getenv ("VXH_LOAD"), "rb"); if (!f) { fprintf (stderr, "no state\n"); return 2; }
+		fseek (f, 0, SEEK_END); long n = ftell (f); fseek (f, 0, SEEK_SET); void *b = malloc (n); if (fread (b, 1, n, f) != (size_t) n) {} fclose (f);
+		fprintf (stderr, "vxhost: state %ld bytes: %s\n", n, retro_unserialize (b, n) ? "loaded" : "NOT loaded"); free (b); }
 	/* (VXH_RUNAHEAD=1: each refresh as RetroArch's run-ahead of one frame, one instance - the frame run unseen, the state
 	 *  saved, the next frame run and shown, the state put back) */
 	static void *ra_buf; static size_t ra_sz; const int ra = getenv ("VXH_RUNAHEAD") != NULL;
@@ -175,6 +180,8 @@ int main (int argc, char **argv)
 	if (!strcmp (argv[4], "bench")) {
 		int n = argc > 5 ? atoi (argv[5]) : 1200, warm = 120; double t0 = 0, worst = 0;
 		for (fno = 0; fno < n + warm; fno++) {
+			if (getenv ("VXH_PACE")) { static double nx; if (!nx) nx = now (); nx += 1.0 / 60; double w = nx - now ();   /* (VXH_PACE: 60 refreshes a second, as a screen) */
+				if (w > 0) { struct timespec ts = { 0, (long) (w * 1e9) }; nanosleep (&ts, NULL); } }
 			double a = now (); RUN (); double d = now () - a; { static FILE *tf; static int ti = -1; if (ti < 0) { const char *z = getenv ("VXH_TRACE"); tf = z ? fopen (z, "w") : NULL; ti = 1; } if (tf) fprintf (tf, "%ld %.3f\n", fno, d * 1e3); }   /* (VXH_TRACE: each refresh's time) */
 			if (fno == warm) t0 = a;
 			if (fno >= warm && d > worst) worst = d; }
@@ -183,7 +190,18 @@ int main (int argc, char **argv)
 		fflush (stdout); retro_unload_game ();   /* (VXPOC_PROF=1: the core's own breakdown - Android: in its log) */
 	} else if (!strcmp (argv[4], "shot")) {
 		int n = atoi (argv[5]);
-		for (fno = 0; fno < n; fno++) { read_back = fno == n - 1; RUN (); }
+		/* (VXH_SHOTS=k: the last k refreshes each, out_0.ppm .. out_<k-1>.ppm) */
+		const int k = getenv ("VXH_SHOTS") ? atoi (getenv ("VXH_SHOTS")) : 0;
+		for (fno = 0; fno < n; fno++) { read_back = fno >= n - (k > 0 ? k : 1);
+			if (getenv ("VXH_PACE")) { static double nx; if (!nx) nx = now (); nx += 1.0 / 60; double w = nx - now ();
+				if (w > 0) { struct timespec ts = { 0, (long) (w * 1e9) }; nanosleep (&ts, NULL); } }
+			RUN ();
+			if (k > 0 && fno >= n - k) { char nm[600]; snprintf (nm, sizeof nm, "%.*s_%ld.ppm", (int) (strlen (argv[6]) - 4), argv[6], fno - (n - k));
+				FILE *g = fopen (nm, "wb"); fprintf (g, "P6\n%u %u\n255\n", fw, fh);
+				for (unsigned y = 0; y < fh; y++) for (unsigned x = 0; x < fw; x++) {
+					uint32_t p = ((const uint32_t *) ((const char *) frame + y * fpitch))[x]; unsigned char c[3] = { p >> 16, p >> 8, p }; fwrite (c, 1, 3, g); }
+				fclose (g); } }
+		if (k > 0) { retro_unload_game (); return 0; }
 		FILE *f = fopen (argv[6], "wb"); fprintf (f, "P6\n%u %u\n255\n", fw, fh);
 		for (unsigned y = 0; y < fh; y++) for (unsigned x = 0; x < fw; x++) {
 			uint32_t p = ((const uint32_t *) ((const char *) frame + y * fpitch))[x]; unsigned char c[3] = { p >> 16, p >> 8, p };

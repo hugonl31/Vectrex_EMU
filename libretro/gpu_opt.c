@@ -18,7 +18,7 @@ static int opt_scene (wline *L, int max)
 	unsigned r = 7; int n = 0; double t = 0;
 	#define RND() ((r = r * 1664525u + 1013904223u) >> 8) / 16777216.0
 	#define PIECE(p1, p2, p3, p4, p5, p6) do { if (n < max) { wline *wl_ = &L[n++]; wl_->x0 = (p1); wl_->y0 = (p2); wl_->x1 = (p3); wl_->y1 = (p4); \
-		wl_->cyc = (p6); wl_->t = t; wl_->b = (p5); wl_->rgb = 7; } t += (p6); } while (0)
+		wl_->cyc = (p6); wl_->t = t; wl_->b = (p5); wl_->rgb = 7; wl_->wq = 255; } t += (p6); } while (0)
 	const double mx = ALG_MAX_X, my = ALG_MAX_Y;
 	for (int i = 0; i < 60; i++) {                       /* circles of joined pieces, a rest where each starts */
 		const double cx = (0.2 + 0.6 * RND ()) * mx, cy = (0.2 + 0.6 * RND ()) * my, rr = 600 + 2400 * RND ();

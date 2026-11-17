@@ -205,6 +205,7 @@ static retro_input_poll_t poll_cb;
 static retro_input_state_t input_cb;
 static int opt_overlay = 0, opt_imager = 2, opt_swap = 0, opt_glow = 0, opt_after = 1;
 static int opt_res = 1, opt_wob = 50, opt_buzz = 1, opt_spk = 1, opt_shift = 0; static double opt_sigma = 0.55;
+static int opt_fill;   /* (Fill skipped lines: off - as a real Vectrex) */
 static int opt_rate = 60, opt_smooth = 1, opt_halo = 1, opt_bend = 1, opt_dwell = 1;   /* (v0.9) */
 static int opt_dots = 1, opt_speedb = 1; static float opt_trail = 0.6f, opt_trail_k = 1.0f, opt_bright = 1.0f;   /* (v0.10: every look switchable, for slower PCs) */
 static int opt_sbend = 0; static double opt_white = 12000;   /* (v0.14; opt_geom with the tube map above) */
@@ -400,6 +401,7 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_res", "Picture size (from the next game start); 1x 624x800|2x 1248x1600|3x 1872x2400|4x 2496x3200" },
 	{ "vectrex_emu_rate", "Screen rate (from the next game start); 90 Hz|72 Hz|80 Hz|120 Hz|144 Hz|60 Hz|50 Hz (game)" },
 	{ "vectrex_emu_smooth", "Smooth motion (not at 50 Hz); on|off" },
+	{ "vectrex_emu_fill", "Fill skipped lines (not as a real Vectrex); off|on" },
 	{ "vectrex_emu_corner_glow", "Corner glow; on|off" },
 	{ "vectrex_emu_bending", "Brightness bending; on|off" },
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
@@ -437,6 +439,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
 	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
 	{ "vectrex_emu_smooth", "video", "Smooth motion", "Lines move smoothly between game frames.", "auto|on|off" },
+	{ "vectrex_emu_fill", "video", "Fill skipped lines", "A line a game leaves out of a frame stays lit until the game draws it again. Steadier than a real Vectrex: Vectrexians skips a row of aliens each frame, a real tube shows it dimmer for a moment.", "off|on" },
 	{ "vectrex_emu_area", "video", "Picture area",
 	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
 	  "auto|glass window|overlay sheet" },
@@ -643,6 +646,7 @@ static void read_options (void)
 	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
 	  opt_bright = k >= 1.0 && k <= 2.0 ? (float) k : 1.0f; }
 	opt_dots = !opt_is ("vectrex_emu_corner_dots", "off"); opt_dwell = !opt_is ("vectrex_emu_dwell", "off"); opt_speedb = !opt_is ("vectrex_emu_speed_bright", "off");
+	opt_fill = opt_is ("vectrex_emu_fill", "on");
 	opt_smooth = !opt_is ("vectrex_emu_smooth", "off"); raw_smooth = opt_is ("vectrex_emu_smooth", "auto") ? -1 : opt_smooth; opt_halo = !opt_is ("vectrex_emu_corner_glow", "off"); opt_bend = !opt_is ("vectrex_emu_bending", "off");
 	raw_geom = TRI ("vectrex_emu_geometry"); opt_geom = raw_geom != 0;
 	raw_passes = TRI ("vectrex_emu_passes"); raw_dith = TRI ("vectrex_emu_dither"); opt_sbend = opt_is ("vectrex_emu_smooth_bends", "on");
@@ -897,7 +901,7 @@ static void tate_note (void)
 }
 #endif
 void retro_reset (void) { if (ls_state == 2) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
-	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
+	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET: RetroArch (its reset)\n"); }
 
 /* ---- the overlay by the game's name (vectrex_emu.py find_overlay: the name, its base without (...), its letters) */
 static void base_of (const char *s, char *out, size_t n)
@@ -1339,7 +1343,7 @@ static const double TUBE_LIGHT[] = {
 static double zk_tab[128];              /* the tube's light for each intensity, as a display value (^(1 / 2.2)) */
 
 /* the lines being built: the frame's (or two frames' mixed: Smooth motion), with the resting spots and halos added */
-typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb; } wline;   /* (b: intensity | 128 fade
+typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; } wline;   /* (b: intensity | 128 fade
                                                                                          | 256 halo | 512 dwell) */
 #define NW (MAXL * 3)
 static wline W1[NW], W2[NW];
@@ -1666,7 +1670,7 @@ static void pw_make_streak (void)
 	double dx = fmax (0.0, bx0 - mnx) - fmax (0.0, mxx - bx1), dy = fmax (0.0, by0 - mny) - fmax (0.0, mxy - by1);
 	for (int i = 0; i < n; i++) {           /* (intensity 90, 40 cycles x 8 energy each: vectrex_emu.py's streak pieces) */
 		wline *w = &pw_streak[i]; w->x0 = px[i] + dx; w->y0 = py[i] + dy; w->x1 = px[i + 1] + dx; w->y1 = py[i + 1] + dy;
-		w->cyc = 40 / 8.0; w->t = i * (40 / 8.0); w->b = 90; w->rgb = 7; }
+		w->cyc = 40 / 8.0; w->t = i * (40 / 8.0); w->b = 90; w->rgb = 7; w->wq = 255; }
 	pw_nstreak = n;
 }
 static void audio_out (void)
@@ -1855,6 +1859,10 @@ static void bg_make (void)
  * halves on alternate frames (vecrender.py frame_alternates) */
 #define NH 6
 typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; } gframe;
+#define SHORT_PIECE 0.015
+#define HOLD_SLOW 1.1                     /* (the hold below for a game this much slower than the screen: Vectrexians 45 fps at 60 Hz) */
+#define HOLD_GRACE 2.0                    /* (a line not found again: lit this many of its frames - one may leave it out) */
+#define HOLD_LIFE 0.15                    /* (vecrender.py HOLD_MAX: a line no frame draws again goes out after this) */
 static gframe hist[NH]; static int nh; static gframe prevf; static int have_prev;
 VXS_ON
 static double load_f = -1;              /* (brightness bending: the beam's load, smoothed) */
@@ -1885,6 +1893,21 @@ static void frame_pop (void);
 static void frame_push (unsigned long long p0)
 {
 	gframe f;
+	/* (a piece shorter than SHORT_PIECE joins the next one, as the desktop's frame queue does (vectrex_emu.py, "pieces
+	 *  shorter than 15 ms"): a game that calls Wait_Recal twice in one frame - Last Human in arena 2 with many shots -
+	 *  made a short frame with nothing drawn, and the refreshes that showed it were black, ~0.1 s, the Nova 2026-11-17) */
+	{ extern int vt_imager, vt_uvm2, vt_pitrex;   /* (a UVMC2 / PiTrex ends its frames itself, on its bus: not joined -
+	                                              VecDoom's 66 a second were all joined, 2 ms a refresh on the Nova) */
+	  if (nh && !vt_imager && !vt_uvm2 && !vt_pitrex) {
+		gframe *h = &hist[nh - 1]; const double pt = nh > 1 ? hist[nh - 2].t : have_prev ? prevf.t : -1;
+		if (pt >= 0 && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
+			const unsigned sh = (unsigned) (p0 - h->p0);
+			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
+			h->n += nlast; h->t = total_cycles / 1.5e6; frame_keys (h);
+			{ const gframe *f1 = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL, *f2 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL);
+			  double o1 = f1 ? frame_overlap (h, f1) : -1, o2 = f2 ? frame_overlap (h, f2) : -1;
+			  h->alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
+			return; } } }
 	if (nh == NH) frame_pop ();
 	if (spare.L) { f = spare; spare.L = NULL; }
 	else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
@@ -1902,6 +1925,111 @@ static void frame_pop (void)                /* (the oldest frame becomes the one
 {
 	if (have_prev) { if (spare.L) { free (prevf.L); free (prevf.keys); } else spare = prevf; }
 	prevf = hist[0]; have_prev = 1; memmove (hist, hist + 1, sizeof (gframe) * (nh - 1)); nh--;
+}
+/* (as the desktop's renderer (vecrender.py hold): each line lit from the moment the beam drew it until the game draws
+ *  its frame again - two frames on for a picture in halves, the newest frame's lines until the next one (at most
+ *  HOLD_LIFE: a stalled game fades) - and a refresh's light each line's share of the refresh, up to T, it was lit. A game
+ *  that leaves things out of some frames (Vectrexians: aliens, rows, the ship, its 45 frames a second at 60 Hz) showed
+ *  one frame per refresh: what a frame left out was dark for one or two whole refreshes, a hard flicker the desktop does
+ *  not have - the Nova, 2026-11-17) */
+static int wl_from (wline *o, int m, const line_t *L, int n, const line_t *B, double alpha);
+/* (the hold's grid: for each cell of HOLD_CELL emulator units, when a later frame next draws there - the beam's path is
+ *  cut into pieces differently in each frame (8 to 32 cycles), so a line is found again by its place, not its piece) */
+#define HOLD_CELL 128
+#define HGW 448
+static double hgt[HGW * HGW]; static unsigned hgg[HGW * HGW], hgen;
+static int hold_cell (long x, long y) { const long cx = (x + 4096) / HOLD_CELL, cy = (y + 4096) / HOLD_CELL;
+	return cx < 0 || cy < 0 || cx >= HGW || cy >= HGW ? -1 : (int) (cy * HGW + cx); }
+static double hold_find (const line_t *l, double after)   /* (the earliest later drawing on or next to the line's middle, else -1) */
+{
+	const long mx = (l->x0 + l->x1) / 2, my = (l->y0 + l->y1) / 2; double best = -1;
+	for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { const int c = hold_cell (mx + ox * HOLD_CELL, my + oy * HOLD_CELL);
+		if (c >= 0 && hgg[c] == hgen && hgt[c] > after && (best < 0 || hgt[c] < best)) best = hgt[c]; }
+	return best;
+}
+static void hold_put (const line_t *l, double tau)          /* (the cells along the line: drawn at tau) */
+{
+	const double dx = l->x1 - l->x0, dy = l->y1 - l->y0; const int k = 1 + (int) (sqrt (dx * dx + dy * dy) / (HOLD_CELL / 2));
+	for (int i = 0; i <= k; i++) { const int c = hold_cell (l->x0 + (long) (dx * i / k), l->y0 + (long) (dy * i / k));
+		if (c < 0) continue;
+		if (hgg[c] != hgen || tau < hgt[c]) { hgg[c] = hgen; hgt[c] = tau; } }
+}
+/* (as the desktop's renderer (vecrender.py hold): each line lit from the moment the beam drew it until the game draws it
+ *  again - found in a later frame (hold_find): a still line stays lit through a frame that left it out, a moved one
+ *  hands over to its new copy as that is drawn, and the light never doubles where two copies overlap; a line not drawn
+ *  again goes out after its own frame's length; the newest frame's lines until the next frame, at most HOLD_LIFE - and
+ *  a refresh's light each line's share of the refresh, up to T, it was lit. A game that leaves things out of some
+ *  frames (Vectrexians: aliens, rows, the ship; its 45 frames a second at 60 Hz) showed one frame per refresh: what a
+ *  frame left out was dark for one or two whole refreshes, a hard flicker the desktop does not have - the Nova,
+ *  2026-11-17) */
+/* (each frame's lines' ends - when each is drawn again - worked out once, as each later frame arrives, not again every
+ *  refresh; kept by the frame's contents (hold_id), so run-ahead's rewind finds them again - and with the later frames
+ *  they were worked out against: run-ahead runs a frame ahead with this moment's input and then again with the next
+ *  one's, and a frame that came out different starts its matching again (VecDoom 4 ms a refresh less on the Nova; ends
+ *  matched against a frame thrown away let Vectrexians' aliens flicker again) */
+#define HOLD_EC 16
+#define HOLD_AP 8
+static struct { unsigned long long id; int n, cap, nap; unsigned long long ap[HOLD_AP]; float *end; unsigned use; } hec[HOLD_EC]; static unsigned hec_use;
+static unsigned long long hold_id (const gframe *f)
+{
+	unsigned long long h = 1469598103934665603ull ^ f->p0 ^ ((unsigned long long) f->n << 40);
+	for (int j = 0; j < f->n; j += 3) { const line_t *l = &f->L[j];
+		h = (h ^ (unsigned long long) (l->x0 * 31 + l->y0 * 977 + l->x1 * 7 + l->y1 + l->t0 * 13 + l->c)) * 1099511628211ull; }
+	return h;
+}
+static int hold_entry (const gframe *f, unsigned long long id)
+{
+	int lru = 0;
+	for (int i = 0; i < HOLD_EC; i++) { if (hec[i].end && hec[i].id == id && hec[i].n == f->n) { hec[i].use = ++hec_use; return i; }
+		if (hec[i].use < hec[lru].use) lru = i; }
+	if (hec[lru].cap < f->n) { free (hec[lru].end); hec[lru].cap = f->n > 1024 ? f->n : 1024; hec[lru].end = malloc (sizeof (float) * hec[lru].cap); }
+	if (!hec[lru].end) { hec[lru].cap = 0; return -1; }
+	hec[lru].id = id; hec[lru].n = f->n; hec[lru].nap = 0; hec[lru].use = ++hec_use;
+	for (int j = 0; j < f->n; j++) hec[lru].end[j] = -1;
+	return lru;
+}
+static int hold_lines (double T, double dt)
+{
+	(void) dt;
+	const gframe *F[NH + 1]; double S[NH + 1]; int E[NH + 1], nf = 0; unsigned long long ID[NH + 1];
+	if (have_prev) { F[nf] = &prevf; S[nf] = nh ? 2 * prevf.t - hist[0].t : prevf.t - 0.02; nf++; }
+	for (int i = 0; i < nh; i++) { F[nf] = &hist[i]; S[nf] = i ? hist[i - 1].t : have_prev ? prevf.t : hist[i].t - 0.02; nf++; }
+	{ static int fill_was = -1; if (opt_fill != fill_was) { fill_was = opt_fill; for (int i = 0; i < HOLD_EC; i++) hec[i].id = 0; } }   /* (the option changed: matched again) */
+	for (int k = 0; k < nf; k++) { ID[k] = hold_id (F[k]); E[k] = hold_entry (F[k], ID[k]); }
+	/* (each frame's lines matched against the later frames in order - those already done skipped, a different one
+	 *  than before: matched again from the start) */
+	int grid_of = -1;
+	for (int k = 0; k < nf - 1; k++) { if (E[k] < 0) continue;
+		int m = 0, ok = 1;
+		for (int j = k + 1; j < nf && ok; j++) { if (m < hec[E[k]].nap && hec[E[k]].ap[m] == ID[j]) m++; else if (m < hec[E[k]].nap) ok = 0; }
+		if (!ok) { hec[E[k]].nap = 0; for (int q = 0; q < F[k]->n; q++) hec[E[k]].end[q] = -1; }
+	}
+	for (int j = 1; j < nf; j++) {
+		for (int k = 0; k < j; k++) { if (E[k] < 0 || (!opt_fill && j != k + 1)) continue;   /* (off: the next frame only) */
+			int done = 0; for (int a = 0; a < hec[E[k]].nap; a++) if (hec[E[k]].ap[a] == ID[j]) done = 1;
+			if (done) continue;
+			if (grid_of != j) { if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; }
+				for (int q = 0; q < F[j]->n; q++) if (F[j]->L[q].c & 127) hold_put (&F[j]->L[q], S[j] + F[j]->L[q].t0 / 1.5e6);
+				grid_of = j; }
+			float *en = hec[E[k]].end; const gframe *f = F[k];
+			for (int q = 0; q < f->n; q++) { if (en[q] >= 0) continue; const double tau = S[k] + f->L[q].t0 / 1.5e6;
+				const double e = hold_find (&f->L[q], tau); if (e > tau) en[q] = (float) (e - S[k]); }   /* (kept from the frame's start) */
+			if (hec[E[k]].nap < HOLD_AP) hec[E[k]].ap[hec[E[k]].nap++] = ID[j]; }
+	}
+	int n = 0;
+	for (int k = 0; k < nf; k++) {
+		const gframe *f = F[k]; const double s = S[k], len = f->t - s; const float *en = E[k] >= 0 ? hec[E[k]].end : NULL;
+		if (s > T || (k < nf - 1 && s + HOLD_LIFE + len < T)) continue;   /* (none of its lines lit now) */
+		for (int j = 0; j < f->n; j++) { const line_t *l = &f->L[j]; const double tau = s + l->t0 / 1.5e6;
+			if (tau > T || tau + HOLD_LIFE <= T) continue;   /* (not lit at this refresh's moment) */
+			double e = en && en[j] >= 0 ? s + en[j] : -1;
+			if (e < tau) e = k == nf - 1 ? tau + HOLD_LIFE : tau + (opt_fill ? HOLD_GRACE : 1.0) * len;   /* (not drawn again: on, through one
+			                                              frame left out; off, out after its frame - as a real tube) */
+			if (e > tau + HOLD_LIFE) e = tau + HOLD_LIFE;
+			if (e <= T) continue;                  /* (drawn again by now, or gone out) */
+			n = wl_from (W1, n, l, 1, NULL, 0); }
+	}
+	return n;
 }
 static void pw_switch (int on, double off_for)
 {
@@ -1946,7 +2074,7 @@ static int wl_from (wline *o, int m, const line_t *L, int n, const line_t *B, do
 		const line_t *l = &L[i]; wline *w = &o[m++];
 		w->x0 = l->x0; w->y0 = l->y0; w->x1 = l->x1; w->y1 = l->y1;
 		if (B) { w->x0 += (B[i].x0 - l->x0) * alpha; w->y0 += (B[i].y0 - l->y0) * alpha; w->x1 += (B[i].x1 - l->x1) * alpha; w->y1 += (B[i].y1 - l->y1) * alpha; }
-		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb;
+		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb; w->wq = 255;
 	}
 	return m;
 }
@@ -2103,7 +2231,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
 				kk *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
 		}
-		kk *= zk * BEAM_PEAK * PHOS_GAIN * pw_gain * up_light;   /* (up_light: the high voltage's light, unit.c) */
+		kk *= zk * BEAM_PEAK * PHOS_GAIN * pw_gain * up_light * (L[i].wq / 255.0);   /* (up_light: the high voltage's light, unit.c) */
 		if ((l->b & 128) && !web) kk *= BEAM_FADE;
 		double sg = fw * gp / 2.355 * bk, sw = sg < 0.5 ? 0.5 : sg;   /* (at least half a pixel: a thinner spot as wide, its light kept) */
 		kk *= dot ? (sg / sw) * (sg / sw) : sg / sw;
@@ -2405,7 +2533,7 @@ void retro_run (void)
 	if (sw_next[0]) { char p[1100]; snprintf (p, sizeof p, "%s", sw_next); sw_next[0] = 0;   /* (the ROM browser's / eject's game) */
 		if (game_switch_now (p)) { if (sw_eject == 1) ej_out = 1; else { ej_out = 0; snprintf (cur_game, sizeof cur_game, "%s", p); }
 #ifndef VX_EMUVR
-			if (sw_eject != 1) snprintf (br_game, sizeof br_game, "%s", p);
+			if (sw_eject != 1) { snprintf (br_game, sizeof br_game, "%s", p); br_rec_note (p); }
 #endif
 		} sw_eject = 0; }
 	const int asy = emu_threaded (), primed = asy && emu_primed;
@@ -2432,7 +2560,7 @@ void retro_run (void)
 	dk_pointer (); dk_tick (0);
 	{ static int l2, r2; const int ri = btn_id ("vectrex_emu_btn_reset"), ei = btn_id ("vectrex_emu_btn_eject");
 	  const int a = ri >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ri) != 0, b = ei >= 0 && ei != ri && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ei) != 0;
-	  if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button;
+	  if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET: the RESET button (%s)\n", optv ("vectrex_emu_btn_reset")); }   /* (the RESET button;
 	                                              netplay: RetroArch's own Reset, sent to both) */
 	  if (b && !r2 && !br_open && !net_on ()) eject_toggle ();
 	  l2 = a; r2 = b; }
@@ -2493,7 +2621,7 @@ void retro_run (void)
 		if (pw_t < 0.5 && pw_bulge > 0) pw_sx = 1.0 + pw_bulge * sin (M_PI * pw_t / 0.5) * (1.0 - pw_t / 0.5) * 2.0; }
 	if (!pw_on) {                              /* (switched off: the zap once, or the picture collapsing; then only the afterglow) */
 		if (opt_power && pw_mode == 0 && pw_zap_done != pw_events && !vx_nobuild) {
-			pw_zap_done = pw_events; pw_gain = 1.2; memcpy (W1, pw_streak, sizeof (wline) * pw_nstreak);
+			pw_zap_done = pw_events; pw_gain = 1.2; memcpy (W1, pw_streak, sizeof (wline) * pw_nstreak); for (int i = 0; i < pw_nstreak; i++) W1[i].wq = 255;
 			npl = build_lines (W1, pw_nstreak, 0, 0, npl);
 		} else if (opt_power && pw_mode == 1 && pw_t < CRT_COLLAPSE + 1.0 / opt_rate && nh) {
 			double pp = fmin (1.0, pw_t / CRT_COLLAPSE); pw_sx = 1.0 - 0.7 * pp; pw_width = 1.0 / pow (pw_sx, 0.15); pw_gain = 0.15 + 0.85 * pp * pp;
@@ -2516,13 +2644,20 @@ void retro_run (void)
 		}
 	} else if (nh) {
 		int n = 0;
+		const double hper = nh > 1 ? (hist[nh - 1].t - hist[0].t) / (nh - 1) : 0;
+		const int slow = nh > 1 && hper > HOLD_SLOW * dt;   /* (a game slower than the screen: hold_lines) */
 		if (opt_smooth && opt_rate != 50) {
+			/* (Smooth motion, as the desktop's: one game frame and one refresh back, the frames a and b round that moment -
+			 *  their lines in between where the two match line for line; where they do not, a slow game's lines as held
+			 *  (hold_lines) at the same moment) */
 			double per = nh > 1 ? (hist[nh - 1].t - hist[0].t) / (nh - 1) : 0.02;
 			per = per < 0.01 ? 0.01 : per > 0.1 ? 0.1 : per;
-			double D = now - per - dt;
-			while (nh > 2 && hist[1].t <= D) frame_pop ();
+			const double D = now - per - dt;
 			if (D < hist[0].t - 0.25) while (nh > 1) frame_pop ();
-			const gframe *a = &hist[0], *b = nh > 1 && hist[1].t > a->t ? &hist[1] : NULL;
+			if (!slow) while (nh > 2 && hist[1].t <= D) frame_pop ();   /* (the frames before D: only a slow game's hold keeps them) */
+			int ia = 0; while (ia + 1 < nh && hist[ia + 1].t <= D) ia++;
+			const gframe *a = &hist[ia], *b = ia + 1 < nh && hist[ia + 1].t > a->t ? &hist[ia + 1] : NULL;
+			const gframe *pa = ia ? &hist[ia - 1] : have_prev ? &prevf : NULL;
 			double alpha = b ? (D - a->t) / (b->t - a->t) : 0; alpha = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
 			const line_t *B = NULL;
 			if (b && alpha > 0 && b->n == a->n) {
@@ -2533,16 +2668,20 @@ void retro_run (void)
 				if (ok) B = b->L;
 			}
 			sm_runs++; if (B) sm_mixed++;
-			if (a->alt && have_prev) n = wl_from (W1, n, prevf.L, prevf.n, NULL, 0);   /* (a picture in halves: both) */
-			n = wl_from (W1, n, a->L, a->n, B, alpha);
+			if (slow && !B) n = vx_nobuild ? 0 : hold_lines (D, dt);   /* (run-ahead's hidden runs: no picture, no hold) */
+			else {
+				if (a->alt && pa) n = wl_from (W1, n, pa->L, pa->n, NULL, 0);   /* (a picture in halves: both) */
+				n = wl_from (W1, n, a->L, a->n, B, alpha); }
 			/* (the hum at the nearest real frame's moment: the beam draws only when the game draws) */
 			ft0 = (b && alpha >= 0.5) ? b->p0 : a->p0;
+		} else if (slow) {
+			n = vx_nobuild ? 0 : hold_lines (now, dt); ft0 = hist[nh - 1].p0;
 		} else {
 			const gframe *a = &hist[nh - 1];
 			if (a->alt) { const gframe *p = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL; if (p) n = wl_from (W1, n, p->L, p->n, NULL, 0); }
 			n = wl_from (W1, n, a->L, a->n, NULL, 0);
-			ft0 = a->p0;
-			while (nh > 3) frame_pop ();
+			ft0 = hist[nh - 1].p0;
+			while (nh > 4) frame_pop ();
 		}
 		if (opt_wob) hum_coeffs (ft0 / 1.5e6, opt_wob);
 		npl = build_lines (W1, n, 0, 0, npl);
@@ -2560,6 +2699,7 @@ void retro_run (void)
 	/* (1.1: the light on the GPU - gpu_phos.c; the CPU's bands below otherwise) */
 	const int gph = gpu_asked && gpu_ok && ph_ok && !stereo && !sheet_file;
 	static int half_skip; static double half_dt;
+	if (gph) gq_begin ();                      /* (the GPU meter: this picture's GPU time, the light and the glass) */
 	if (gph && fx_half && (half_skip ^= 1) && ph_made && !shot_due) {   /* (Low: 30 pictures a second - this one the last again) */
 		half_dt += dt;
 		gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
@@ -3119,6 +3259,8 @@ bool retro_load_game (const struct retro_game_info *g)
 	netls_load (g->path);                       /* (a UVMC2 / PiTrex game: online in lockstep - netls.c) */
 #ifndef VX_EMUVR
 	snprintf (br_game, sizeof br_game, "%s", g->path); br_dir[0] = 0;
+	if (!br_root[0]) br_parent (g->path, br_root, sizeof br_root);   /* (the ROM browser's top: Recent and the PiTrex there) */
+	br_rec_note (g->path);
 #endif
 	return game_open (g->path, sys, 1);
 }

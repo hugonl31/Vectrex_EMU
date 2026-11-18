@@ -254,9 +254,13 @@ static void dk_pointer (void)
 	/* (port 2: only a symbol - its device is chosen in the core options; RESET: only the button's upper half, the side of
 	 *  its word, away from the screen's edge - a thumb slipping off the right stick switched port 2 and reset Last Human,
 	 *  the Nova 2026-11-18) */
+	{ static int held, done; static double ht;   /* (RESET: held 0.4 s there; moved off before then: nothing) */
+	  const int on = zone == 4 && y <= dk_cy && hypot (x - dk_rx, y - dk_cy) <= 0.8 * r;
+	  if (pr && !dk_prev_press && on) { held = 1; ht = vt_wall (); done = 0; }
+	  else if (!pr || !on) held = 0;
+	  else if (held && !done && vt_wall () - ht >= 0.4) { extern void vecx_reset_button (void); done = 1; emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
 	if (pr && !dk_prev_press) {
-		if (zone == 1) { }
-		else if (zone == 4) { if (y <= dk_cy && hypot (x - dk_rx, y - dk_cy) <= 0.8 * r) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
+		if (zone == 1 || zone == 4) { }
 		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }
 		else if (zone == 3) { }                         /* (P1: for online play, later) */
 		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;

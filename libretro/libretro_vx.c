@@ -932,10 +932,7 @@ static void tate_note (void)
 	const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
 	char p[1200]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu_tate_told.txt", sv && *sv ? sv : tmpdir);
 	FILE *f = fopen (p, "r"); if (f) { fclose (f); return; }
-	say_long (opt_rot == 2 ? "Tate mode: the picture is turned upside down - turn the device round. The controls turn with it."
-	                       : opt_rot == 1 ? "Tate mode: hold the device upright, turned right. The controls turn with it."
-	                                      : "Tate mode: hold the device upright, turned left. The controls turn with it.", 6000);
-	say_long ("A normal screen: Quick Menu > Core Options > Video > Rotation (tate) > off", 6000);
+	fprintf (stderr, "[vectrex_emu] tate mode %d: the controls turn with the picture\n", opt_rot);   /* (the log only: the player chose it) */
 	f = fopen (p, "w"); if (f) { fputs ("the tate note was shown\n", f); fclose (f); }
 }
 #endif

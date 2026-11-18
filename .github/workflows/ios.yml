@@ -34,6 +34,11 @@ jobs:
       - name: everything ready to play in RetroArch's assets (unpacked into its folder after each install or update)
         run: |
           python3 vx/libretro/ios_bundle.py vx/libretro/vectrex_emu_libretro_ios.dylib add
+          # (the on-screen gamepad the core's settings switch on: RetroArch's neo-retropad)
+          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/libretro/common-overlays.git co
+          (cd co && git sparse-checkout set gamepads/neo-retropad)
+          mkdir -p add/overlays/gamepads && cp -R co/gamepads/neo-retropad add/overlays/gamepads/
+          ls add/overlays/gamepads/neo-retropad/neo-retropad.cfg; cat add/config/Vectrex_EMU/Vectrex_EMU.cfg
           (cd add && zip -qr ../ra/pkg/apple/assets.zip .)
           unzip -l ra/pkg/apple/assets.zip | grep -c -i -E 'roms/|vectrex_emu' ; du -sh add ra/pkg/apple/assets.zip
           # (RetroArch unpacks its assets.zip when the app's build number changes - but reads it as "n || 1", always 1:

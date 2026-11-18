@@ -65,3 +65,10 @@ os.makedirs(os.path.join(out, 'playlists'), exist_ok=True)
 with open(os.path.join(out, 'playlists', 'Vectrex_EMU.lpl'), 'w', encoding='utf-8') as f:
     json.dump(pl, f, indent=2)
 print('playlist: %d games' % len(items))
+
+# the on-screen gamepad (RetroArch's neo-retropad, in overlays/gamepads - the workflow adds it): on with this core,
+# hidden while a controller is connected - an iPhone / iPad has no buttons of its own
+with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', encoding='utf-8') as f:
+    f.write('input_overlay_enable = "true"\n'
+            'input_overlay = "~/Documents/RetroArch/overlays/gamepads/neo-retropad/neo-retropad.cfg"\n'
+            'input_overlay_hide_when_gamepad_connected = "true"\n')

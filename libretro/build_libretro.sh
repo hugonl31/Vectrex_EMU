@@ -37,7 +37,7 @@ ios)
 	SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 	OUT=vectrex_emu_libretro_ios.dylib
 	${CC:-clang} $FLAGS -target arm64-apple-ios13.0 -isysroot "$SDK" -DCM33_NO_JIT -DARM11_NO_JIT -dynamiclib \
-		-install_name @rpath/$OUT -o $OUT $SRC -Wl,-exported_symbol,_retro_* -lm
+		-install_name @rpath/$OUT -o $OUT $SRC -Wl,-exported_symbol,_retro_* -lm -lobjc   # (objc: the screen's size, UIScreen - gpu_gl.c)
 	;;
 native)
 	# (the release cores: this system's own clang - Linux x86-64 / arm64 (Raspberry Pi 4 / 5, 64-bit), macOS (Intel and

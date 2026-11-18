@@ -1,9 +1,9 @@
-# RetroArch for iOS (iPhone / iPad) with the Vectrex_EMU core built in: RetroArch's own source (the version the
-# Retroid Nova runs), the core as one of its frameworks (iOS loads no cores from outside the app), its info file in
-# RetroArch's assets. Runs on the ios branch or by hand - not on main (that is build.yml: the releases).
-# Out: the app signed and uploaded to App Store Connect (TestFlight) as Vectrex_EMU, com.hugob.vectrexemu - Apple's
-# cloud signing with the App Store Connect API key (secrets ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID) -
-# and Vectrex_EMU_RetroArch_iOS.zip (system, roms, info, config - copied into RetroArch's folder with the Files app).
+# Vectrex_EMU for iPhone and iPad - our own app around the core (ios/; the plan and its screens: the mockup canvas).
+# The RetroArch-based test app this replaces is kept on the branch ios-retroarch. Runs on the ios branch or by hand.
+# The app is code only: the private test builds fetch their games, overlays, BIOS, UVMC2 and PiTrex once from the
+# project's server (tools/ios_pack.py) and send their logs there live - both with the IOS_LOG_TOKEN secret.
+# Out: the app signed with Apple's cloud signing (the App Store Connect API key: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8,
+# APPLE_TEAM_ID) and uploaded to TestFlight as Vectrex_EMU, com.hugob.vectrexemu; the symbols kept with the run.
 name: ios
 on:
   push:
@@ -12,58 +12,27 @@ on:
 
 jobs:
   ios:
-    runs-on: macos-15-intel   # (2026-11-18: GitHub's Apple Silicon macOS runners were often busy - jobs not started at all;
-                              #  the Intel ones started at once, Xcode 26 on them too; the app is built for iOS arm64 either way)
-    timeout-minutes: 90
+    runs-on: macos-15-intel   # (2026-11-18: GitHub's Apple Silicon macOS runners were often busy; the Intel ones started
+                              #  at once, Xcode 26 on them too; the app is built for iOS arm64 either way)
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
           path: vx
       - name: Xcode 26 (App Store Connect takes only apps built with the iOS 26 SDK or later)
         run: |
-          ls -d /Applications/Xcode*.app
           X=$(ls -d /Applications/Xcode_2[6-9]*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
           test -n "$X" || { echo "no Xcode 26 on this runner"; exit 1; }
           sudo xcode-select -s "$X/Contents/Developer"; xcodebuild -version
-          # (RetroArch's Metal shaders: Xcode 26 has its Metal compiler as a separate download - the Intel image lacks it)
-          xcrun -f metal >/dev/null 2>&1 && xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
-      - name: RetroArch's source (v1.22.2)
-        run: git clone -q --depth 1 --branch v1.22.2 https://github.com/libretro/RetroArch.git ra
-      - name: the core for iOS (arm64, no JIT)
+      - name: the Xcode project (XcodeGen), the icon, the test build's token
         env:
-          VX_LOG_TOKEN: ${{ secrets.IOS_LOG_TOKEN }}   # (the owner's private test build: its logs to the project's server)
+          VX_LOG_TOKEN: ${{ secrets.IOS_LOG_TOKEN }}
         run: |
-          sh vx/libretro/build_libretro.sh ios
-          cp vx/libretro/vectrex_emu_libretro_ios.dylib ra/pkg/apple/iOS/modules/
-          lipo -info vx/libretro/vectrex_emu_libretro_ios.dylib
-      - name: everything ready to play in RetroArch's assets (unpacked into its folder after each install or update)
-        env:
-          VX_LOG_TOKEN: ${{ secrets.IOS_LOG_TOKEN }}   # (the owner's extra ROMs from the project's server)
-        run: |
-          python3 vx/libretro/ios_bundle.py vx/libretro/vectrex_emu_libretro_ios.dylib add
-          # (RetroArch's menu icons, all of them: its source's assets.zip has only some - the iPad's Ozone menu drew the
-          #  rest as white blocks. From retroarch-assets, as its App Store build does; the Vectrex_EMU playlist gets
-          #  RetroArch's own Vectrex icons)
-          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/libretro/retroarch-assets.git rassets
-          (cd rassets && git sparse-checkout set glui ozone rgui xmb/monochrome)
-          mkdir -p add/assets/xmb && cp -R rassets/glui rassets/ozone rassets/rgui add/assets/ && cp -R rassets/xmb/monochrome add/assets/xmb/
-          # (Ozone - the iPad's menu, if chosen - takes its icons from xmb/monochrome/png, not ozone/png/icons)
-          for I in add/assets/ozone/png/icons add/assets/xmb/monochrome/png; do
-            cp "$I/GCE - Vectrex.png" "$I/Vectrex_EMU.png"; cp "$I/GCE - Vectrex-content.png" "$I/Vectrex_EMU-content.png"
-            echo "$I: $(ls "$I" | wc -l) icons"; done
-          # (the on-screen gamepad the core's settings switch on: RetroArch's neo-retropad)
-          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/libretro/common-overlays.git co
-          (cd co && git sparse-checkout set gamepads/neo-retropad)
-          mkdir -p add/overlays/gamepads && cp -R co/gamepads/neo-retropad add/overlays/gamepads/
-          ls add/overlays/gamepads/neo-retropad/neo-retropad.cfg; cat add/config/Vectrex_EMU/Vectrex_EMU.cfg
-          (cd add && zip -qr ../ra/pkg/apple/assets.zip .)
-          unzip -l ra/pkg/apple/assets.zip | grep -c -i -E 'roms/|vectrex_emu' ; du -sh add ra/pkg/apple/assets.zip
-          # (RetroArch's own source: its assets unpacked after every update; the on-screen gamepad hidden while a
-          #  keyboard is connected too - ios_patch_ra.py)
-          python3 vx/libretro/ios_patch_ra.py ra
-          # (the app's icon: ours, not RetroArch's - one 1024 x 1024 picture, iOS makes the other sizes)
-          cp vx/icons/ios_icon_1024.png "ra/pkg/apple/iOS/Resources/Icons.xcassets/Default.appiconset/Icon-83.5-3.png"
-      - name: RetroArch for iOS, signed and uploaded to TestFlight
+          brew install xcodegen >/dev/null 2>&1 || brew install xcodegen
+          [ -n "$VX_LOG_TOKEN" ] && printf '#define VX_LOG_TOKEN "%s"\n' "$VX_LOG_TOKEN" > vx/ios/App/vx_token.h
+          cp vx/icons/ios_icon_1024.png vx/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png
+          cd vx/ios && xcodegen generate
+      - name: Vectrex_EMU for iOS, signed and uploaded to TestFlight
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -74,20 +43,14 @@ jobs:
           KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"; printf '%s\n' "$ASC_KEY_P8" > "$KEY"
           AUTH="-allowProvisioningUpdates -authenticationKeyPath $KEY -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
           VER=$(tr -d 'v\r\n ' < vx/VERSION)
-          cd ra
-          # (the home screen's name; RetroArch's own iCloud, Siri and app group entitlements left out - ours has none)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Vectrex_EMU" pkg/apple/iOS/Info.plist
-          # (archived unsigned; the export signs it all - app, widget, the core's framework - with Apple's cloud
-          #  signing, so no certificate is kept here)
-          xcodebuild archive -workspace pkg/apple/RetroArch.xcworkspace -destination generic/platform=iOS -config Release \
-            -scheme "RetroArch iOS Release" -xcconfig pkg/apple/GitHubCI.xcconfig -archivePath "$RUNNER_TEMP/VX.xcarchive" \
-            IOS_BUNDLE_IDENTIFIER=com.hugob.vectrexemu IOS_CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=$TEAM \
-            MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER RA_IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+          cd vx/ios
+          # (archived unsigned; the export signs it with Apple's cloud signing, so no certificate is kept here)
+          xcodebuild archive -project VectrexEMU.xcodeproj -scheme VectrexEMU -destination generic/platform=iOS -configuration Release \
+            -archivePath "$RUNNER_TEMP/VX.xcarchive" DEVELOPMENT_TEAM=$TEAM MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- \
-            > "$RUNNER_TEMP/archive.log" 2>&1 || { grep -B8 -A3 -E 'error:|FAILED|failed with' "$RUNNER_TEMP/archive.log" | tail -120; exit 1; }
-          # (RetroArch's make-frameworks.sh signs the cores itself: '-', ad hoc, needs no keychain - the export signs them again)
-          grep -E 'ARCHIVE SUCCEEDED|Making framework' "$RUNNER_TEMP/archive.log"
-          ls "$RUNNER_TEMP/VX.xcarchive/Products/Applications/"*/Frameworks | grep -i vectrex
+            > "$RUNNER_TEMP/archive.log" 2>&1 || { grep -B4 -A3 -E 'error:|FAILED|failed with' "$RUNNER_TEMP/archive.log" | tail -150; exit 1; }
+          grep -E 'ARCHIVE SUCCEEDED' "$RUNNER_TEMP/archive.log"
+          grep -c 'warning:' "$RUNNER_TEMP/archive.log" || true
           cat > "$RUNNER_TEMP/export.plist" <<PL
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -102,19 +65,10 @@ jobs:
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/VX.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
             -exportPath "$RUNNER_TEMP/export" $AUTH 2>&1 | tail -40
           rm -f "$KEY"
-          # (the symbols, for a crash report: the dSYMs and the app's binary, its UUID - kept with the run)
+          # (the symbols, for a crash report: the dSYM and the app's binary - kept with the run)
           mkdir -p "$GITHUB_WORKSPACE/symbols"; cp -R "$RUNNER_TEMP/VX.xcarchive/dSYMs" "$GITHUB_WORKSPACE/symbols/" 2>/dev/null || true
-          A=$(ls -d "$RUNNER_TEMP/VX.xcarchive/Products/Applications/"*.app); cp "$A/RetroArch" "$GITHUB_WORKSPACE/symbols/"
-          cp -R "$A/Frameworks/vectrex.emu.libretro.framework" "$GITHUB_WORKSPACE/symbols/"
-          dwarfdump --uuid "$GITHUB_WORKSPACE/symbols/RetroArch" "$GITHUB_WORKSPACE/symbols/dSYMs/"*.dSYM 2>/dev/null | head -8
+          A=$(ls -d "$RUNNER_TEMP/VX.xcarchive/Products/Applications/"*.app); cp "$A/Vectrex_EMU" "$GITHUB_WORKSPACE/symbols/"; du -sh "$A"
       - uses: actions/upload-artifact@v7
         with:
           name: ios-symbols
           path: symbols
-      - name: the core's files for RetroArch's folder
-        run: python3 vx/libretro/package_retroarch.py ios-arm64 vx/libretro/vectrex_emu_libretro_ios.dylib Vectrex_EMU_RetroArch_iOS.zip
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ios
-          path: |
-            Vectrex_EMU_RetroArch_iOS.zip

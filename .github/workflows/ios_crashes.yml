@@ -1,0 +1,50 @@
+# The TestFlight crash reports testers sent (App Store Connect API: betaFeedbackCrashSubmissions, their crash logs) and
+# the feedback with screenshots - fetched into the run's artifact "ios-crashes". Runs on a push to the branch ios-diag.
+name: ios-crashes
+on:
+  push:
+    branches: [ios-diag]
+  workflow_dispatch:
+
+jobs:
+  crashes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the reports
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          pip install -q pyjwt cryptography
+          mkdir -p out
+          python3 - <<'PY'
+          import jwt, time, json, os, urllib.request, urllib.parse
+          now = int(time.time())
+          tok = jwt.encode({'iss': os.environ['ASC_ISSUER_ID'], 'iat': now, 'exp': now + 1100, 'aud': 'appstoreconnect-v1'},
+                           os.environ['ASC_KEY_P8'], algorithm='ES256', headers={'kid': os.environ['ASC_KEY_ID']})
+          def get(path):
+              rq = urllib.request.Request('https://api.appstoreconnect.apple.com' + path, headers={'Authorization': 'Bearer ' + tok})
+              try:
+                  return json.load(urllib.request.urlopen(rq, timeout=60))
+              except urllib.error.HTTPError as e:
+                  print(path, e.code, e.read()[:400]); return {}
+          apps = get('/v1/apps?' + urllib.parse.urlencode({'filter[bundleId]': 'com.hugob.vectrexemu'})).get('data', [])
+          aid = apps[0]['id']; print('app', aid)
+          subs = get('/v1/apps/%s/betaFeedbackCrashSubmissions?limit=10&sort=-createdDate' % aid).get('data', [])
+          print(len(subs), 'crash submissions')
+          for s in subs:
+              a = s['attributes']; sid = s['id']
+              print(sid, a.get('createdDate'), a.get('buildBundleId'), a.get('appPlatform'), a.get('deviceModel'), a.get('osVersion'), repr(a.get('comment')))
+              open('out/%s_%s.json' % (a.get('createdDate', '')[:19].replace(':', ''), sid), 'w').write(json.dumps(s, indent=1))
+              log = get('/v1/betaFeedbackCrashSubmissions/%s/crashLog' % sid).get('data', {}).get('attributes', {}).get('logText', '')
+              open('out/%s_%s.crash.txt' % (a.get('createdDate', '')[:19].replace(':', ''), sid), 'w').write(log or '(no log)')
+          shots = get('/v1/apps/%s/betaFeedbackScreenshotSubmissions?limit=5&sort=-createdDate' % aid).get('data', [])
+          for s in shots:
+              open('out/shot_%s.json' % s['id'], 'w').write(json.dumps(s, indent=1))
+          PY
+          ls -la out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios-crashes
+          path: out

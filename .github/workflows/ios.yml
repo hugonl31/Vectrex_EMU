@@ -98,6 +98,15 @@ jobs:
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/VX.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
             -exportPath "$RUNNER_TEMP/export" $AUTH 2>&1 | tail -40
           rm -f "$KEY"
+          # (the symbols, for a crash report: the dSYMs and the app's binary, its UUID - kept with the run)
+          mkdir -p "$GITHUB_WORKSPACE/symbols"; cp -R "$RUNNER_TEMP/VX.xcarchive/dSYMs" "$GITHUB_WORKSPACE/symbols/" 2>/dev/null || true
+          A=$(ls -d "$RUNNER_TEMP/VX.xcarchive/Products/Applications/"*.app); cp "$A/RetroArch" "$GITHUB_WORKSPACE/symbols/"
+          cp -R "$A/Frameworks/vectrex.emu.libretro.framework" "$GITHUB_WORKSPACE/symbols/"
+          dwarfdump --uuid "$GITHUB_WORKSPACE/symbols/RetroArch" "$GITHUB_WORKSPACE/symbols/dSYMs/"*.dSYM 2>/dev/null | head -8
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios-symbols
+          path: symbols
       - name: the core's files for RetroArch's folder
         run: python3 vx/libretro/package_retroarch.py ios-arm64 vx/libretro/vectrex_emu_libretro_ios.dylib Vectrex_EMU_RetroArch_iOS.zip
       - uses: actions/upload-artifact@v7

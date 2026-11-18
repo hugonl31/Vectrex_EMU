@@ -138,6 +138,7 @@ static void br_scan (const char *d, const char *select)
 		const int at = br_n && br_e[0].kind == 'u' ? 1 : 0; char px[1200]; br_px_boot (px, sizeof px);
 		if (!br_exists (px)) snprintf (px, sizeof px, "%s" SEP "pitrex.img", d);   /* (none in the SD card folder: the one here) */
 		if (br_exists (px)) br_insert (at, "PiTrex", px, 'x');
+		else br_insert (at, "PiTrex", ":getpitrex", 'x');   /* (not on this device: fetched from Malban's site - pxfetch.c) */
 		br_rec_load (); int any = 0; for (int i = 0; i < br_nrec; i++) any |= br_exists (br_rec[i]);
 		if (any) br_insert (at, "Recent", ":recent", 'c'); }
 	br_sel = br_n > 1 && br_e[0].kind == 'u' ? 1 : 0; br_top = 0;
@@ -166,6 +167,7 @@ static void br_activate (void)                     /* (button 4 / the plug: a fo
 	br_ent *e = &br_e[br_sel];
 	if (e->kind == 'u') { char was[1100]; snprintf (was, sizeof was, "%s", br_dir); br_scan (e->path, was); return; }
 	if (e->kind == 'd' || e->kind == 'c') { br_scan (e->path, NULL); return; }
+	if (!strcmp (e->path, ":getpitrex")) { const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys); px_start (sys); br_dirty = 1; return; }
 	char p[1100]; snprintf (p, sizeof p, "%s", e->path);
 	snprintf (br_from, sizeof br_from, "%s", br_dir); snprintf (br_from_game, sizeof br_from_game, "%s", p);
 	br_show (0); br_hold = 1; br_hold_t = vt_wall ();
@@ -272,8 +274,12 @@ static void br_draw (void)
 		const float y = g->lst[1] + i * rh; const br_ent *e = &br_e[j]; const int icon = e->kind == 'u' || e->kind == 'd' || e->kind == 'c' || e->kind == 'x';
 		const unsigned c = e->kind == 'm' ? (j == br_sel ? UMH : UM) : e->kind == 'p' ? (j == br_sel ? PXH : PX) : j == br_sel ? HI : GRN;
 		if (j == br_sel) br_fill (g->lst[0] + 0.6f * k, y + 0.08f * rh, g->lst[2] - 2.2f * 6 * k, y + 0.97f * rh, SEL, 1);
-		char t[220]; const int room = cols - (icon ? 4 : 0);
-		if ((int) strlen (e->name) <= room) snprintf (t, sizeof t, "%s", e->name); else snprintf (t, sizeof t, "%.*s..", room > 2 ? room - 2 : 0, e->name);
+		char t[220], nm[200]; const int room = cols - (icon ? 4 : 0);
+		if (!strcmp (e->path, ":getpitrex"))          /* (the PiTrex not here yet: getting it, how far) */
+			snprintf (nm, sizeof nm, px_st == 1 ? "PiTrex: getting it %d%%" : px_st == 2 ? "PiTrex: unpacking %d%%" : px_st == 4 ? "PiTrex: failed, again?"
+			          : "PiTrex: get it (190 MB)", px_pct);
+		else snprintf (nm, sizeof nm, "%s", e->name);
+		if ((int) strlen (nm) <= room) snprintf (t, sizeof t, "%s", nm); else snprintf (t, sizeof t, "%.*s..", room > 2 ? room - 2 : 0, nm);
 		br_text (t, g->lst[0] + 1.5f * k + (2 + (icon ? 4 : 0)) * 6 * k, y + 0.3f * rh, k, c);
 		if (icon) { const float ix = g->lst[0] + 1.5f * k + 2 * 6 * k, iy = y + 0.3f * rh, w = fmaxf (1.0f, k * 0.42f);
 			#define P(a, b) ix + (a) * k, iy + (b) * k

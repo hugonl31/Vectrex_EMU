@@ -114,7 +114,7 @@ static void vxa_opts_set (const struct retro_variable *v)
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
 	int r = vxa_opt_find ("vectrex_emu_rate");
 	if (r >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_rate"])
-		snprintf (vxa_opt[r].val, sizeof vxa_opt[r].val, "%s", UIScreen.mainScreen.maximumFramesPerSecond >= 120 ? "120 Hz" : "60 Hz");
+		snprintf (vxa_opt[r].val, sizeof vxa_opt[r].val, "%s", "60 Hz");   /* (OpenGL ES showed only 60 pictures a second on ProMotion: 120 with Metal, the HDR step) */
 	vlog ("core options: %d (rate %s)", vxa_nopt, r >= 0 ? vxa_opt[r].val : "?");
 }
 
@@ -353,6 +353,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 }
 
 /* ---------------------------------------------------------------- the view: OpenGL ES, the touch controls, messages */
+#define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
 @end
 @implementation VXGLView
@@ -426,7 +427,7 @@ static void vxa_toast (NSString *s, double secs)
 - (void) viewDidLayoutSubviews
 {
 	[super viewDidLayoutSubviews];
-	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44); }
+	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = b.size.width > b.size.height ? CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44) : CGRectMake (b.size.width - s0.right - 54, s0.top + (VXA_TOPROW - 44) / 2, 44, 44); }
 	_status.frame = CGRectMake (24, b.size.height / 2 - 60, b.size.width - 48, 80); _prog.frame = CGRectMake (40, b.size.height / 2 + 30, b.size.width - 80, 4);
 	if (_ctx) { [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer]; }
 	[self layoutControls];
@@ -512,6 +513,7 @@ static void vxa_toast (NSString *s, double secs)
 	_status.text = @"";
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
+	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
 	retro_set_environment (vxa_env); vxa_set_callbacks ();
 	retro_init ();
 	NSString *game = [NSUserDefaults.standardUserDefaults stringForKey:@"lastGame"];
@@ -537,10 +539,11 @@ static void vxa_toast (NSString *s, double secs)
 	if (!_have) return;
 	glBindFramebuffer (GL_READ_FRAMEBUFFER, vxa_cfbo); glBindFramebuffer (GL_DRAW_FRAMEBUFFER, _dfbo);
 	glDisable (GL_SCISSOR_TEST); glColorMask (1, 1, 1, 1); glViewport (0, 0, _dw, _dh); glClearColor (0, 0, 0, 1); glClear (GL_COLOR_BUFFER_BIT);
-	/* (fit the picture, its own pixels if it fits: upright at the top of the safe area, sideways in the middle) */
+	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
+	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
-	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
-	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = v.width > v.height ? s.top * sc + (ah - h) / 2 : s.top * sc;
+	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - (v.width > v.height ? 0 : VXA_TOPROW + 150)) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
+	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = v.width > v.height ? s.top * sc + (ah - h) / 2 : (s.top + VXA_TOPROW) * sc;
 	int y0 = (int) (_dh - top - h + 0.5);                      /* (GL: from the bottom) */
 	int sy0 = 0, sy1 = (int) _fh; if (!vxa_hw.bottom_left_origin) { sy0 = (int) _fh; sy1 = 0; }
 	glBlitFramebuffer (0, sy0, (GLint) _fw, sy1, (GLint) x, y0, (GLint) (x + w), (GLint) (y0 + h), GL_COLOR_BUFFER_BIT, k == 1.0 ? GL_NEAREST : GL_LINEAR);
@@ -645,7 +648,7 @@ static void vxa_set_opt (int i, NSString *v)
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; CGRect pic = _pic;
 	CGRect zl, zr;
 	if (v.width > v.height) { zl = CGRectMake (s.left, s.top, CGRectGetMinX (pic) - s.left, v.height - s.top - s.bottom); zr = CGRectMake (CGRectGetMaxX (pic), s.top, v.width - s.right - CGRectGetMaxX (pic), zl.size.height); }
-	else { double top = CGRectGetMaxY (pic) + 60; if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (room for the deck's row; too little: over the picture's foot) */
+	else { double top = CGRectGetMaxY (pic); if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (the deck is in the picture now) */
 		zl = CGRectMake (s.left, top, v.width / 2, v.height - s.bottom - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	_stickZone = zl;
 	double r = fmin (zr.size.width / 4.6, 38), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);

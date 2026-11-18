@@ -115,6 +115,16 @@ class H(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(b)
 
     def do_GET(self):
+        if self.path == '/iosextra':           # (the owner's private iOS test build, at its build: the owner's own extra
+            # ROMs - DIR/iosextra/extra_roms.zip, put there by hand; the same token as /ioslog)
+            if not IOSLOG_TOKEN or not secrets.compare_digest(self.headers.get('X-Vectrex-Token', ''), IOSLOG_TOKEN):
+                return self.reply(403, 'no')
+            p = os.path.join(DIR, 'iosextra', 'extra_roms.zip')
+            if not os.path.isfile(p):
+                return self.reply(404, 'none')
+            b = open(p, 'rb').read()
+            self.send_response(200); self.send_header('Content-Type', 'application/zip'); self.send_header('Content-Length', str(len(b)))
+            self.end_headers(); self.wfile.write(b); return
         self.reply(200, 'Vectrex_EMU debug reports: use Help > Debug report in the emulator.\n')
 
     def do_POST(self):

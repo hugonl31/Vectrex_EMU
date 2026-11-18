@@ -67,7 +67,13 @@ patch('configuration.c', '#define MENU_DEFAULT_DRIVER (ios_running_on_ipad() ? M
 # RetroArch's own log, always, to a file (Documents/RetroArch/logs): what the menu loads, from where - for testing
 patch('configuration.c', '         else\n            verbosity_disable();\n      }\n   }\n}\n',
       '         else\n            verbosity_disable();\n      }\n   }\n'
-      '   verbosity_enable(); configuration_set_bool(settings, settings->bools.log_to_file, true);   /* (Vectrex_EMU iOS: a log for testing) */\n}\n')
+      '   verbosity_enable(); configuration_set_bool(settings, settings->bools.log_to_file, true);   /* (Vectrex_EMU iOS: a log for testing) */\n'
+      # (and RetroArch's routine notices off at every start: the core's settings and controls loaded, a controller set
+      #  up, the display's rate - only noise at each game start; a controller that could not be set up still shows)
+      '   settings->bools.notification_show_config_override_load = false; settings->bools.notification_show_remap_load = false;\n'
+      '   settings->bools.notification_show_autoconfig = false; settings->bools.notification_show_set_initial_disk = false;\n'
+      '   settings->bools.notification_show_refresh_rate = false; settings->bools.notification_show_cheats_applied = false;\n'
+      '   settings->bools.notification_show_patch_applied = false;\n}\n')
 patch('menu/drivers/ozone.c', '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n',
       '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n   RARCH_LOG("[Ozone] icons from: %s\\n", ozone->icons_path);   /* (Vectrex_EMU iOS) */\n')
 

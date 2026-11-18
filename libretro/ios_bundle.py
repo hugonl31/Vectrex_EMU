@@ -72,3 +72,17 @@ with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', en
     f.write('input_overlay_enable = "true"\n'
             'input_overlay = "~/Documents/RetroArch/overlays/gamepads/neo-retropad/neo-retropad.cfg"\n'
             'input_overlay_hide_when_gamepad_connected = "true"\n')
+
+# a keyboard (the iPad's Magic Keyboard): the desktop's keys - the arrows the stick, A S D F buttons 1-4 (Y X B A, the
+# core's), P pause (L2), L the ROM browser (L3), O the overlay (SELECT), R RESET (L; the desktop's Ctrl+R - RetroArch
+# binds no Ctrl), Space held fast forward; RetroArch's own keys on these letters off (F fullscreen, L fast forward,
+# P its pause, R rewind, O movie recording)
+with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', encoding='utf-8') as f:
+    for k, v in (('input_player1_up', 'up'), ('input_player1_down', 'down'), ('input_player1_left', 'left'),
+                 ('input_player1_right', 'right'), ('input_player1_y', 'a'), ('input_player1_x', 's'),
+                 ('input_player1_b', 'd'), ('input_player1_a', 'f'), ('input_player1_l2', 'p'), ('input_player1_l3', 'l'),
+                 ('input_player1_select', 'o'), ('input_player1_l', 'r'), ('input_player1_r', 'nul'),
+                 ('input_hold_fast_forward', 'space'), ('input_toggle_fast_forward', 'nul'), ('input_toggle_fullscreen', 'nul'),
+                 ('input_pause_toggle', 'nul'), ('input_rewind', 'nul'), ('input_movie_record_toggle', 'nul'),
+                 ('input_frame_advance', 'nul'), ('input_reset', 'nul')):
+        f.write('%s = "%s"\n' % (k, v))

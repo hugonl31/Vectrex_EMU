@@ -1,7 +1,7 @@
 """ios_bundle.py - everything the iOS app (a private TestFlight build, the owner's own) unpacks into its RetroArch folder
 (Documents/RetroArch) on the first start after each install or update, ready to play as the desktop app:
   system/vectrex_emu/   the BIOS, the overlays, the GPU path's pictures, the UVMC2's SD card folder, the speech ROM (the
-                        PiTrex's SD card, pitrex/, is not in the app: put there once, every update keeps it)
+                        PiTrex's SD card, pitrex/, as the PC and the Nova have it - the owner's calibration with it)
   roms/                 Last Human, its UVMC2 edition, the UVMC2 demo and movie player, the GCE games, the free homebrew
   info/ config/         the core's info file; its override (Max Users 2) and remap (ports 1 and 2 the Vectrex controller)
   playlists/Vectrex_EMU.lpl   every game, linked to the core built into the app
@@ -58,6 +58,17 @@ if tok:
         print('extra ROMs: %d' % len(names), flush=True)
     except Exception as e:
         print('extra ROMs: none (%s)' % e, flush=True)
+    # the PiTrex's SD card files as the PC and the Nova have them - its firmware and the owner's calibration
+    # (vectrexInterface.ini); the core's own "PiTrex: get it" fetches Malban's newest with his stock settings
+    try:
+        rq = urllib.request.Request('http://172.233.60.40:7746/iosextra/pitrex', headers={'X-Vectrex-Token': tok})
+        with zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(rq, timeout=300).read())) as z:
+            names = [n for n in z.namelist() if not n.endswith('/') and '..' not in n and not n.startswith('/')]
+            for n in names:
+                z.extract(n, os.path.join(sv, 'pitrex'))
+        print('PiTrex: %d files' % len(names), flush=True)
+    except Exception as e:
+        print('PiTrex: none (%s)' % e, flush=True)
 
 # the playlist: every game in roms (its folders too), and the PiTrex
 CORE = ':/Frameworks/vectrex.emu.libretro.framework'

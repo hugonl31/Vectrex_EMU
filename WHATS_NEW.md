@@ -11,6 +11,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - RetroArch: no black flashes in Last Human with many shots
 - RetroArch: GPU meter; EMU RATE steady at 100% when keeping up
 - RetroArch browser: Recent and PiTrex at the top, as on the PC
+- RetroArch deck: no accidental RESET or port 2 change by touch
 
 ## v1.6.7
 - Fast forward: hold Space, the game runs 4x as fast (no sound)

@@ -26,8 +26,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * The ROM browser as on the PC: Recent (the last ten games played) and the PiTrex at the top of the first folder,
   the UVMC2 and PITREX tints named in its title band, and it opens again in the folder a game was loaded from - the
   PiTrex's too, not its SD card folder.
-* The core's log (`system/vectrex_emu/vectrex_emu.log`) says where a reset came from (the RESET button, the deck,
-  RetroArch) and when the Vectrex restarts.
+* The control deck on a touch screen: P2 PORT only shows the port 2 device (chosen in the core options), and RESET
+  works on a short hold of its upper half, near its word. A thumb slipping off the right stick no longer switches
+  port 2 or resets the game.
 
 ## v1.6.7
 

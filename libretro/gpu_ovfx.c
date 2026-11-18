@@ -120,20 +120,27 @@ static const char *OX_FS_BLUR =                 /* (BLUR_SHADER) */
 	"  fragc = c; }\n";
 static const char *OX_FS_HH =                   /* (SCR_HARM_H, its three parts at once: the taps' weights made on the CPU -
 	                                               w1 / w2: g, u g, u^2 g, u^3 g of sigma 1 / 2, w4: u^4 g of both; every st-th
-	                                               cell - a large picture - each counting for st) */
+	                                               cell - a large picture - each the mean of its st cells: one cell alone left a
+	                                               grid of st cells over the plastic glow, the iPad 2026-11-18) */
 	"uniform sampler2D src; uniform int n, st; uniform vec4 w1[65], w2[65]; uniform vec2 w4[65];\n"
 	"layout(location = 0) out vec4 o0; layout(location = 1) out vec4 o1; layout(location = 2) out vec4 o2;\n"
-	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy), lim = textureSize(src, 0) - 1; vec4 a = vec4(0.0), b = vec4(0.0); vec2 c = vec2(0.0);\n"
-	"  for (int i = -n; i <= n; i++) { vec3 t = texelFetch(src, ivec2(clamp(ip.x + i * st, 0, lim.x), ip.y), 0).rgb; float l = max(max(t.r, t.g), t.b);\n"
+	"void main() { vec2 sz = vec2(textureSize(src, 0)); float y = gl_FragCoord.y / sz.y, hl = float(st / 2); vec4 a = vec4(0.0), b = vec4(0.0); vec2 c = vec2(0.0);\n"
+	"  for (int i = -n; i <= n; i++) { float l0 = gl_FragCoord.x + float(i * st) - hl; vec3 t = vec3(0.0);\n"
+	"    for (int k = 0; k + 1 < st; k += 2) t += 2.0 * texture(src, vec2((l0 + float(k) + 0.5) / sz.x, y)).rgb;\n"
+	"    if (st - 2 * (st / 2) != 0) t += texture(src, vec2((l0 + float(st - 1)) / sz.x, y)).rgb;\n"
+	"    t /= float(st); float l = max(max(t.r, t.g), t.b);\n"
 	"    a += l * w1[i + n]; b += l * w2[i + n]; c += l * w4[i + n]; }\n"
 	"  o0 = a; o1 = b; o2 = vec4(c, 0.0, 0.0); }\n";
 static const char *OX_FS_HV =                   /* (SCR_HARM_V, both parts at once; the core's rows run down: v = +j / sigma, y
 	                                               down as there; qa / qb: g, g v, g v^2, g v^3 of sigma 1 / 2 x its norm, q4: g v^4) */
 	"uniform sampler2D H1, H2, H3; uniform int n, st; uniform vec4 qa[65], qb[65]; uniform vec2 q4[65]; uniform float gn2;\n"
 	"layout(location = 0) out vec4 o0; layout(location = 1) out vec4 o1;\n"
-	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy), lim = textureSize(H1, 0) - 1; vec4 r0 = vec4(0.0); vec2 r1 = vec2(0.0);\n"
-	"  for (int j = -n; j <= n; j++) { ivec2 q = ivec2(ip.x, clamp(ip.y + j * st, 0, lim.y));\n"
-	"    vec4 a = texelFetch(H1, q, 0), b = texelFetch(H2, q, 0); vec2 c = texelFetch(H3, q, 0).xy;\n"
+	"void main() { vec2 sz = vec2(textureSize(H1, 0)); float x = gl_FragCoord.x / sz.x, hl = float(st / 2); vec4 r0 = vec4(0.0); vec2 r1 = vec2(0.0);\n"
+	"  for (int j = -n; j <= n; j++) { float l0 = gl_FragCoord.y + float(j * st) - hl; vec4 a = vec4(0.0), b = vec4(0.0); vec2 c = vec2(0.0);\n"
+	"    for (int k = 0; k + 1 < st; k += 2) { vec2 q = vec2(x, (l0 + float(k) + 0.5) / sz.y);\n"
+	"      a += 2.0 * texture(H1, q); b += 2.0 * texture(H2, q); c += 2.0 * texture(H3, q).xy; }\n"
+	"    if (st - 2 * (st / 2) != 0) { vec2 q = vec2(x, (l0 + float(st - 1)) / sz.y); a += texture(H1, q); b += texture(H2, q); c += texture(H3, q).xy; }\n"
+	"    a /= float(st); b /= float(st); c /= float(st);\n"
 	"    vec4 A = qa[j + n], B = qb[j + n]; vec2 F = q4[j + n];\n"
 	"    r0 += vec4(c.x * A.x + 2.0 * a.z * A.z + a.x * F.x, c.x * A.x - a.x * F.x, 2.0 * (a.w * A.y + a.y * A.w), c.x * A.x - 6.0 * a.z * A.z + a.x * F.x);\n"
 	"    r0 += vec4(c.y * B.x + 2.0 * b.z * B.z + b.x * F.y, c.y * B.x - b.x * F.y, 2.0 * (b.w * B.y + b.y * B.w), c.y * B.x - 6.0 * b.z * B.z + b.x * F.y);\n"
@@ -244,7 +251,7 @@ static void ox_size (void)
 	ox_Q0 = ph_tex (ox_qw, ox_qh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
 	for (int k = 0; k < 2; k++) ox_Q1[k] = ph_tex (ox_qw, ox_qh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
 	for (int k = 0; k < 3; k++) { ox_B[k] = ph_tex (ox_qw, ox_qh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
-		ox_H[k] = ph_tex (ox_qw, ox_qh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL); }
+		ox_H[k] = ph_tex (ox_qw, ox_qh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL); }
 	for (int k = 0; k < 2; k++) ox_V[k] = ph_tex (ox_qw, ox_qh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
 	for (int k = 0; k < 2; k++) { ph_target (ox_Q1[k], 0, 0, ox_qw, ox_qh); glClear_ (GL_COLOR_BUFFER_BIT); }
 	ox_w = FW; ox_h = FH; ox_t_prev = -1;

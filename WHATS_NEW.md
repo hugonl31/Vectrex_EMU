@@ -12,6 +12,10 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - RetroArch: GPU meter; EMU RATE steady at 100% when keeping up
 - RetroArch browser: Recent and PiTrex at the top, as on the PC
 - RetroArch deck: no accidental RESET or port 2 change by touch
+- New icon: a render of our 3D Vectrex model
+- RetroArch: the PiTrex files fetched from the ROM browser
+- RetroArch: Keyboard as on the PC option (arrows, A W S D, P L O)
+- RetroArch: the sharpest picture on upright screens too
 
 ## v1.6.7
 - Fast forward: hold Space, the game runs 4x as fast (no sound)

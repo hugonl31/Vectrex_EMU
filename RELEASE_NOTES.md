@@ -29,6 +29,14 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * The control deck on a touch screen: P2 PORT only shows the port 2 device (chosen in the core options), and RESET
   works on a short hold of its upper half, near its word. A thumb slipping off the right stick no longer switches
   port 2 or resets the game.
+* A new icon: a render of our 3D Vectrex model (the one from the VR version), black with its grey screen.
+* The ROM browser: when the PiTrex's SD card files are not there, "PiTrex: get it" at the top fetches them from
+  Malban's site (his newest, about 190 MB) and unpacks them into the core's folder - the progress on the entry.
+* Controls > Keyboard as on the PC (off by default; on for iPhone / iPad): the arrows the stick (Shift: half), A W S D
+  buttons 1-4, P pause, L the ROM browser, O the overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down the volume knob,
+  Ctrl+K typing to a UVMC2 / PiTrex. Turn off RetroArch's own keyboard binds for the letters it uses.
+* Picture size auto: the biggest picture that fits the screen as it stands - an upright phone or tablet now gets its
+  full width's sharpness too (a wide screen as before), measured again when the rotation changes.
 
 ## v1.6.7
 

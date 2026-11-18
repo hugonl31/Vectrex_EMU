@@ -29,8 +29,8 @@ def mat(name, col, rough, spec=0.5, bump=0.0):
 
 lin = lambda c: (c / 12.92) if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 plastic = mat('black plastic', (0.010, 0.010, 0.011), 0.42, 0.5, 0.0)
-# the VECTREX label above the screen: its letters only, from the VR body's texture (body_albedo_gloss.png - the letters
-# at x 3250..3310, y 3290..3545 of 4096; bright blue there), on the black plastic everywhere else
+# the strip above the screen - its band, the red dots, the MB badge, VECTREX - from the VR body's texture
+# (body_albedo_gloss.png, x 3252..3308, y 2885..3890 of 4096), on the black plastic everywhere else
 _pt = plastic.node_tree; _pb = _pt.nodes['Principled BSDF']
 _lt = _pt.nodes.new('ShaderNodeTexImage'); _lt.image = bpy.data.images.load('G:/AI/Vectrex_EMU_EmuVR/remodel/round/body_albedo_gloss.png')
 _uv = _pt.nodes.new('ShaderNodeUVMap'); _sx = _pt.nodes.new('ShaderNodeSeparateXYZ'); _pt.links.new(_uv.outputs['UV'], _sx.inputs['Vector'])
@@ -41,12 +41,12 @@ def _range(src, lo, hi):
     b_ = _pt.nodes.new('ShaderNodeMath'); b_.operation = 'LESS_THAN'; b_.inputs[1].default_value = hi; _pt.links.new(src, b_.inputs[0])
     c_ = _pt.nodes.new('ShaderNodeMath'); c_.operation = 'MULTIPLY'; _pt.links.new(a_.outputs[0], c_.inputs[0]); _pt.links.new(b_.outputs[0], c_.inputs[1])
     return c_.outputs[0]
-_inu = _range(_sx.outputs['X'], 3250 / 4096, 3310 / 4096); _inv_ = _range(_sx.outputs['Y'], 1 - 3545 / 4096, 1 - 3290 / 4096)
+_inu = _range(_sx.outputs['X'], 3252 / 4096, 3308 / 4096); _inv_ = _range(_sx.outputs['Y'], 1 - 3890 / 4096, 1 - 2885 / 4096)
 _box = _pt.nodes.new('ShaderNodeMath'); _box.operation = 'MULTIPLY'; _pt.links.new(_inu, _box.inputs[0]); _pt.links.new(_inv_, _box.inputs[1])
 _sc = _pt.nodes.new('ShaderNodeSeparateColor'); _pt.links.new(_lt.outputs['Color'], _sc.inputs['Color'])
 _key = _pt.nodes.new('ShaderNodeMapRange'); _key.inputs['From Min'].default_value = 0.06; _key.inputs['From Max'].default_value = 0.25
 _pt.links.new(_sc.outputs['Blue'], _key.inputs['Value'])     # (the letters: bright blue; the strip round them stays black)
-_fac = _pt.nodes.new('ShaderNodeMath'); _fac.operation = 'MULTIPLY'; _pt.links.new(_box.outputs[0], _fac.inputs[0]); _pt.links.new(_key.outputs['Result'], _fac.inputs[1])
+_fac = _box   # (the whole strip as it is: its band, the red dots, the MB badge, VECTREX)
 _mx = _pt.nodes.new('ShaderNodeMix'); _mx.data_type = 'RGBA'; _mx.inputs['A'].default_value = (0.010, 0.010, 0.011, 1)
 _pt.links.new(_fac.outputs[0], _mx.inputs['Factor']); _pt.links.new(_lt.outputs['Color'], _mx.inputs['B']); _pt.links.new(_mx.outputs['Result'], _pb.inputs['Base Color'])
 

@@ -484,6 +484,21 @@ static int scr_query (int *w, int *h)
 	MONITORINFO mi; mi.cbSize = sizeof mi; if (!GetMonitorInfoA (MonitorFromWindow (wn, MONITOR_DEFAULTTONEAREST), &mi)) return 0;
 	*w = mi.rcMonitor.right - mi.rcMonitor.left; *h = mi.rcMonitor.bottom - mi.rcMonitor.top; return 1;
 }
+#elif VX_IOS
+/* (iPhone / iPad: UIScreen - its pixels (nativeBounds, always upright), turned as the screen stands now (bounds, in points)) */
+#include <objc/runtime.h>
+#include <objc/message.h>
+typedef struct { double x, y, w, h; } vx_rect;
+static int scr_query (int *w, int *h)
+{
+	Class c = objc_getClass ("UIScreen"); if (!c) return 0;
+	id s = ((id (*) (id, SEL)) objc_msgSend) ((id) c, sel_registerName ("mainScreen")); if (!s) return 0;
+	const vx_rect n = ((vx_rect (*) (id, SEL)) objc_msgSend) (s, sel_registerName ("nativeBounds"));
+	const vx_rect b = ((vx_rect (*) (id, SEL)) objc_msgSend) (s, sel_registerName ("bounds"));
+	if (n.w < 1 || n.h < 1) return 0;
+	const int land = b.w > b.h; *w = (int) (land ? n.h : n.w); *h = (int) (land ? n.w : n.h);
+	return 1;
+}
 #else
 #include <dlfcn.h>
 static int scr_query (int *w, int *h)
@@ -499,7 +514,10 @@ static int scr_query (int *w, int *h)
 static void scr_detect (void)
 {
 	int w = 0, h = 0; if (!scr_query (&w, &h)) return;
-	const int sh = w < h ? w : h; if (sh < 240 || sh > 4320) return;
+	/* (the picture's height on the screen as big as fits: the screen's height, or less where its width is the limit - an
+	 *  upright phone; a wide screen: its short side, as before. Turned 90 / 270: the picture lies the other way) */
+	const double a = (opt_rot & 1) ? 207.0 / 162.0 : 162.0 / 207.0;   /* (its width / height as it stands on the screen) */
+	const int sh = (int) (h < w / a ? h : w / a); if (sh < 240 || sh > 4320) return;
 	fprintf (stderr, "[vectrex_emu] screen %dx%d\n", w, h);
 	if (sh != scr_short) { scr_short = sh; scr_new = 1; char f[1200]; scr_file (f, sizeof f); FILE *t = f[0] ? fopen (f, "w") : NULL; if (t) { fprintf (t, "%d\n", sh); fclose (t); } }
 }

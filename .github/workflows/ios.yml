@@ -25,6 +25,8 @@ jobs:
           X=$(ls -d /Applications/Xcode_2[6-9]*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
           test -n "$X" || { echo "no Xcode 26 on this runner"; exit 1; }
           sudo xcode-select -s "$X/Contents/Developer"; xcodebuild -version
+          # (RetroArch's Metal shaders: Xcode 26 has its Metal compiler as a separate download - the Intel image lacks it)
+          xcrun -f metal >/dev/null 2>&1 && xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
       - name: RetroArch's source (v1.22.2)
         run: git clone -q --depth 1 --branch v1.22.2 https://github.com/libretro/RetroArch.git ra
       - name: the core for iOS (arm64, no JIT)

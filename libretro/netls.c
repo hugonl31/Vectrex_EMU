@@ -62,6 +62,7 @@ static char **ls_only; static int ls_nonly;            /* (the files both have a
 static unsigned char *ls_hello; static size_t ls_hello_n, ls_hello_cap;   /* (the host: the joiner's hello, in pieces) */
 static int ls_peer_ok; static unsigned char *ls_hello_wait; static size_t ls_hello_wait_n;   /* (the host: a hello before RetroArch lets player 2 play - answered then) */
 
+static void ls_log (const char *s) { fprintf (stderr, "[vectrex_emu] netplay: %s\n", s); }   /* (what the player did: the log only) */
 static void ls_say (const char *s, int frames) { struct retro_message m = { s, (unsigned) frames }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &m); fprintf (stderr, "[vectrex_emu] netplay: %s\n", s); }
 static const char *ls_arch (void)
 {
@@ -127,7 +128,7 @@ static void ls_hello_send (void)                        /* (who joins: its mode,
 	long long gs; uint32_t gc = ls_game_crc (&gs); put32 (b + k, gc); put32 (b + k + 4, (uint32_t) gs); k += 8;
 	k += ls_files_out (b + k, ls_card, ls_ncard);
 	ls_big ('H', b, k); free (b);
-	ls_say ("joined - waiting for the host's game", 180);
+	ls_log ("joined - waiting for the host's game");
 }
 
 /* ---- both: the game switched on with the agreed settings, in step from frame 0 */
@@ -146,7 +147,7 @@ static void ls_begin (void)
 	const char *e = strrchr (cur_game, '.'); const int um = e && !vx_stricmp (e, ".um2");
 	char m[160]; snprintf (m, sizeof m, "playing online as player %d%s%s%s", ls_me + 1, um ? (ls_mode == 2 ? " - UVMC2 mode Dev" : ls_mode == 1 ? " - UVMC2 mode Fast" : " - UVMC2 mode Exact") : "",
 	                       um || ls_jitfast ? "" : " - PiTrex exact (two processor types)", ls_nonly ? " - SD card: the files both have" : "");
-	ls_say (m, 300);
+	ls_log (m);
 }
 static int ls_have_file (const char *rel, long long size, uint32_t crc)
 {
@@ -232,7 +233,7 @@ static void ls_on_check (const unsigned char *b, size_t n) { if (n >= 8 && get32
 static void RETRO_CALLCONV ls_start (uint16_t id, retro_netpacket_send_t s, retro_netpacket_poll_receive_t r)
 {
 	ls_send = s; ls_rx = r; ls_state = 0; ls_hello_n = 0;
-	if (id == 0) { ls_role = 1; ls_peer = 0xFFFF; ls_peer_ok = 0; ls_say ("hosting - the game starts again when player 2 joins", 240); }
+	if (id == 0) { ls_role = 1; ls_peer = 0xFFFF; ls_peer_ok = 0; ls_log ("hosting - the game starts again when player 2 joins"); }
 	else { ls_role = 2; ls_state = 1; ls_hello_send (); }
 }
 static void RETRO_CALLCONV ls_receive (const void *buf, size_t len, uint16_t id)
@@ -256,7 +257,7 @@ static void RETRO_CALLCONV ls_receive (const void *buf, size_t len, uint16_t id)
 	case 'X': ls_state = 0; ls_cfg_on = 0; ls_say ("the other side left", 240); break;
 	}
 }
-static void RETRO_CALLCONV ls_stop (void) { ls_send = NULL; ls_rx = NULL; ls_role = 0; ls_cfg_on = 0; if (ls_state) ls_say ("netplay ended - playing alone", 180); ls_state = 0; }
+static void RETRO_CALLCONV ls_stop (void) { ls_send = NULL; ls_rx = NULL; ls_role = 0; ls_cfg_on = 0; if (ls_state) ls_log ("netplay ended - playing alone"); ls_state = 0; }
 static bool RETRO_CALLCONV ls_connected (uint16_t id)
 {
 	if (getenv ("VXPOC_NETDBG")) fprintf (stderr, "[netls] connected %u (peer %u)\n", (unsigned) id, (unsigned) ls_peer);

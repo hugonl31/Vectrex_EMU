@@ -25,7 +25,8 @@ for f in glob.glob(os.path.join(R, 'overlays', '*.art')) + glob.glob(os.path.joi
 for f in ('case_scratch.png', 'glass_light.bin'): shutil.copy(os.path.join(H, 'gpu', f), os.path.join(sv, 'gpu'))
 shutil.copytree(os.path.join(R, 'package', 'uvmc2'), os.path.join(sv, 'uvmc2'))
 shutil.copy(os.path.join(R, 'package', 'system', 'README-speech.txt'), sv)
-# (RetroArch's config folder: this core's override - Max Users 2 - and its remap - ports 1 and 2 the Vectrex controller,
+# (RetroArch's config folder: this core's override - Max Users 2, RetroArch's routine notices off (the override and
+#  remap loaded, a controller set up, the display's rate) - and its remap - ports 1 and 2 the Vectrex controller,
 #  the RetroPad with its sticks: netplay sends a port's sticks only with that type)
 shutil.copytree(os.path.join(H, 'retroarch_config'), os.path.join(tmp, 'config'))
 for f in glob.glob(os.path.join(R, 'package', 'roms', '*.bin')) + glob.glob(os.path.join(R, 'package', 'roms', '*.um2')):

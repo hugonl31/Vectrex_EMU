@@ -298,21 +298,17 @@ static const char *tmp_dir (void)           /* (Windows: TEMP; Android: no TEMP 
 	const char *t = getenv ("TEMP"); if (!t || !*t) t = getenv ("TMPDIR"); if (!t || !*t) t = g_sys[0] ? g_sys : ".";
 	return t;
 }
-static void auto_path (char *o, size_t n)       /* (the overlay on / off kept: EmuVR's sheet file beside it; RetroArch the saves
-                                                folder - it stuck through nothing: a game switch, an eject, a new start) */
-{
-	if (sheet_file) { snprintf (o, n, "%s" SEP "vectrex_emu_auto_overlay.txt", tmp_dir ()); return; }
-	const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv); if (sv && *sv) snprintf (o, n, "%s" SEP "vectrex_emu_overlay_on.txt", sv); else o[0] = 0;
-}
+static void auto_path (char *o, size_t n) { snprintf (o, n, "%s" SEP "vectrex_emu_auto_overlay.txt", tmp_dir ()); }   /* (EmuVR's sheet
+                                                file: the overlay on / off kept beside it; RetroArch keeps it as the option) */
 static void auto_keep (void)
 {
-	if (ov_on == auto_saved || !opt_overlay) return; auto_saved = ov_on;
-	char p[1100]; auto_path (p, sizeof p); FILE *f = p[0] ? fopen (p, "w") : NULL; if (f) { fprintf (f, "%d\n", ov_on); fclose (f); }
+	if (!sheet_file || ov_on == auto_saved) return; auto_saved = ov_on;
+	char p[1100]; auto_path (p, sizeof p); FILE *f = fopen (p, "w"); if (f) { fprintf (f, "%d\n", ov_on); fclose (f); }
 }
 static void auto_load (void)
 {
-	if (!opt_overlay) return;
-	char p[1100]; auto_path (p, sizeof p); FILE *f = p[0] ? fopen (p, "r") : NULL; int v;
+	if (!sheet_file || !opt_overlay) return;
+	char p[1100]; auto_path (p, sizeof p); FILE *f = fopen (p, "r"); int v;
 	if (f) { if (fscanf (f, "%d", &v) == 1) ov_on = v != 0; fclose (f); }
 	auto_saved = ov_on;
 }
@@ -920,6 +916,15 @@ static void say_long (const char *m, unsigned ms)
 	struct vx_message_ext x = { m, ms, 3, 1, 0, 0, -1 };   /* (info, on screen and in the log, a notification) */
 	if (!env_cb (60, &x)) { struct retro_message o = { m, ms * 60 / 1000 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &o); }
 }
+static void ov_flip (const char *by)            /* (the overlay on / off by hand: the option Overlay itself, one switch - RetroArch
+                                                keeps it, its menu shows it; a separate on / off kept apart from it showed nothing
+                                                with the option on, iPhone 2026-11-18) */
+{
+	ov_on = !ov_on;
+	{ struct retro_variable v = { "vectrex_emu_overlay", ov_on ? "on" : "off" };   /* (RETRO_ENVIRONMENT_SET_VARIABLE: RetroArch 1.17 on) */
+	  if (env_cb (70, &v)) { opt_overlay = opt_overlay_seen = ov_on; } }
+	fprintf (stderr, "[vectrex_emu] overlay %s (%s)\n", ov_on ? "on" : "off", by);   /* (the log only: no message on screen) */
+}
 static void tate_note (void)
 {
 	static int done; if (done || net_runs < 30) return;   /* (half a second in: the picture is there) */
@@ -927,10 +932,7 @@ static void tate_note (void)
 	const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
 	char p[1200]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu_tate_told.txt", sv && *sv ? sv : tmpdir);
 	FILE *f = fopen (p, "r"); if (f) { fclose (f); return; }
-	say_long (opt_rot == 2 ? "Tate mode: the picture is turned upside down - turn the device round. The controls turn with it."
-	                       : opt_rot == 1 ? "Tate mode: hold the device upright, turned right. The controls turn with it."
-	                                      : "Tate mode: hold the device upright, turned left. The controls turn with it.", 6000);
-	say_long ("A normal screen: Quick Menu > Core Options > Video > Rotation (tate) > off", 6000);
+	fprintf (stderr, "[vectrex_emu] tate mode %d: the controls turn with the picture\n", opt_rot);   /* (the log only: the player chose it) */
 	f = fopen (p, "w"); if (f) { fputs ("the tate note was shown\n", f); fclose (f); }
 }
 #endif
@@ -2338,7 +2340,6 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
 /* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
  * the afterglow's two parts, one colour channel or three - all dark again */
-extern double vt_wall (void); static double pic_said_t = -1;   /* (the picture's size changed then: told once it has settled) */
 static void pic_setup (void)
 {
 	const int glass = area_glass (); geom_calc (glass, &EW, &FH, &CW, &CH);
@@ -2358,7 +2359,7 @@ static void pic_setup (void)
 		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
 		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
 #ifndef VX_EMUVR
-	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH; pic_said_t = vt_wall ();   /* (shown once it has settled: retro_run) */
+	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH;   /* (the log only) */
 		fprintf (stderr, "[vectrex_emu] Picture %d x %d - screen %d x %d\n", OW, OH, scr_w, scr_h); } }
 #endif
 	if ((size_t) OW * OH > rb_n) { free (rb); rb_n = (size_t) OW * OH; rb = malloc (rb_n * 4); }   /* (the turned picture) */
@@ -2640,21 +2641,18 @@ void retro_run (void)
 			if (e & KE_PAUSE && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; }
 			if (e & KE_RESET && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 			if (e & KE_EJECT && !br_open) eject_toggle ();
-			if (e & KE_OVERLAY && ovl_manual != 1 && opt_overlay) ov_on = !ov_on; }
+			if (e & KE_OVERLAY && ovl_manual != 1 && (opt_overlay || !sheet_file)) ov_flip ("O"); }
 		if (e & KE_VOLUP) turn_volume (0.05);
 		if (e & KE_VOLDN) turn_volume (-0.05); }
 #endif
 	{ int sel = opt_ov_btn ? input_cb (0, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START) : 0;   /* START (or SELECT): the overlay off / on */
-	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_on = !ov_on;   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
+	  if (sel && !sel_held && ovl_manual != 1 && (opt_overlay || !sheet_file)) ov_flip (opt_ov_btn == 2 ? "SELECT" : "START");   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
 	  sel_held = sel; }
 #ifndef VX_EMUVR
 	fx_apply ();
 	{ static int lr = -1, ld = -1; static double ts; const double now = vt_wall ();   /* (Picture size auto again: the rotation or
 	                                              the deck changed; on an iPhone / iPad also the device turned - looked at once a second) */
 	  if (opt_rot != lr || opt_deck != ld || (VX_IOS && now - ts > 1.0)) { lr = opt_rot; ld = opt_deck; ts = now; if (gpu_ok) scr_detect (); } }
-	if (pic_said_t >= 0 && scr_w > 0 && scr_h > 0 && vt_wall () - pic_said_t > 1.5) { char m[120]; pic_said_t = -1;   /* (the size it settled on,
-	                                              *  not each step on the way: at a start, a turn) */
-		snprintf (m, sizeof m, "Picture %d x %d - screen %d x %d", OW, OH, scr_w, scr_h); say_long (m, 3000); }
 	if (scr_new) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape
 	    || (dk_on && (scr_w != geo_sw || scr_h != geo_sh))) { pic_setup (); geo_tell (); }   /* (with the deck: the screen turned - its shape) */

@@ -91,7 +91,7 @@ static double vxa_mem_mb (void)
 
 /* ---------------------------------------------------------------- the core's settings (its option list, v0 style) */
 #define VXA_NOPT 256
-static struct { char key[64]; char val[160]; char def[160]; char vals[1200]; } vxa_opt[VXA_NOPT]; static int vxa_nopt, vxa_opt_dirty;
+static struct { char key[64]; char val[160]; char def[160]; char vals[1200]; char desc[160]; } vxa_opt[VXA_NOPT]; static int vxa_nopt, vxa_opt_dirty;
 static int vxa_opt_find (const char *k) { for (int i = 0; i < vxa_nopt; i++) if (!strcmp (vxa_opt[i].key, k)) return i; return -1; }
 static void vxa_opt_store (int i)
 {
@@ -102,12 +102,15 @@ static void vxa_opts_set (const struct retro_variable *v)
 	vxa_nopt = 0;
 	for (; v && v->key && vxa_nopt < VXA_NOPT; v++) {
 		const char *s = v->value ? strstr (v->value, "; ") : NULL; if (!s) continue; s += 2;
-		int i = vxa_nopt++; snprintf (vxa_opt[i].key, sizeof vxa_opt[i].key, "%s", v->key); snprintf (vxa_opt[i].vals, sizeof vxa_opt[i].vals, "%s", s);
+		int i = vxa_nopt++; snprintf (vxa_opt[i].key, sizeof vxa_opt[i].key, "%s", v->key); snprintf (vxa_opt[i].vals, sizeof vxa_opt[i].vals, "%s", s); snprintf (vxa_opt[i].desc, sizeof vxa_opt[i].desc, "%.*s", (int) (s - 2 - v->value), v->value);
 		const char *bar = strchr (s, '|'); size_t n = bar ? (size_t) (bar - s) : strlen (s); if (n >= sizeof vxa_opt[i].def) n = sizeof vxa_opt[i].def - 1;
 		memcpy (vxa_opt[i].def, s, n); vxa_opt[i].def[n] = 0; snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", vxa_opt[i].def);
 		NSString *sv = [[NSUserDefaults standardUserDefaults] stringForKey:[NSString stringWithFormat:@"opt.%s", v->key]];
 		if (sv) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", sv.UTF8String);
 	}
+	/* (this app's own defaults: the control deck below the picture - its cartridge opens the ROM browser, RESET, the knob) */
+	int dk = vxa_opt_find ("vectrex_emu_deck");
+	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "full");
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
 	int r = vxa_opt_find ("vectrex_emu_rate");
 	if (r >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_rate"])
@@ -379,7 +382,7 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
-	UILabel *_status; UIProgressView *_prog;
+	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
 - (BOOL) prefersStatusBarHidden { return YES; }
@@ -405,6 +408,14 @@ static void vxa_toast (NSString *s, double secs)
 	vxa_toast_l = [UILabel new]; vxa_toast_l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium]; vxa_toast_l.textColor = [UIColor colorWithRed:0x88 / 255.0 green:0xcc / 255.0 blue:0xbb / 255.0 alpha:1];
 	vxa_toast_l.backgroundColor = [UIColor colorWithRed:0x0b / 255.0 green:0x15 / 255.0 blue:0x11 / 255.0 alpha:0.92]; vxa_toast_l.layer.cornerRadius = 8; vxa_toast_l.layer.masksToBounds = YES; vxa_toast_l.alpha = 0;
 	[self.view addSubview:vxa_toast_l];
+	_menuBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+	[_menuBtn setImage:[UIImage systemImageNamed:@"line.3.horizontal"] forState:UIControlStateNormal]; _menuBtn.tintColor = [UIColor colorWithRed:0x88 / 255.0 green:0xcc / 255.0 blue:0xbb / 255.0 alpha:1];
+	_menuBtn.backgroundColor = [UIColor colorWithRed:0x0b / 255.0 green:0x15 / 255.0 blue:0x11 / 255.0 alpha:0.75]; _menuBtn.layer.cornerRadius = 22;
+	_menuBtn.layer.borderWidth = 1; _menuBtn.layer.borderColor = [UIColor colorWithRed:0x2f / 255.0 green:0x55 / 255.0 blue:0x44 / 255.0 alpha:1].CGColor;
+	_menuBtn.accessibilityLabel = @"Menu"; _menuBtn.showsMenuAsPrimaryAction = YES; _menuBtn.hidden = YES;
+	__weak VXGameVC *ws = self;
+	_menuBtn.menu = [UIMenu menuWithChildren:@[ [UIDeferredMenuElement elementWithUncachedProvider:^(void (^done) (NSArray<UIMenuElement *> *)) { done (@[ [ws buildMenu] ]); }] ]];
+	[self.view addSubview:_menuBtn];
 	_status = [UILabel new]; _status.textColor = g; _status.font = [UIFont systemFontOfSize:15]; _status.numberOfLines = 0; _status.textAlignment = NSTextAlignmentCenter; [self.view addSubview:_status];
 	_prog = [UIProgressView new]; _prog.progressTintColor = g; _prog.trackTintColor = [UIColor colorWithRed:0x16 / 255.0 green:0x30 / 255.0 blue:0x2a / 255.0 alpha:1]; _prog.hidden = YES; [self.view addSubview:_prog];
 	NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
@@ -415,7 +426,8 @@ static void vxa_toast (NSString *s, double secs)
 - (void) viewDidLayoutSubviews
 {
 	[super viewDidLayoutSubviews];
-	CGRect b = self.view.bounds; _status.frame = CGRectMake (24, b.size.height / 2 - 60, b.size.width - 48, 80); _prog.frame = CGRectMake (40, b.size.height / 2 + 30, b.size.width - 80, 4);
+	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44); }
+	_status.frame = CGRectMake (24, b.size.height / 2 - 60, b.size.width - 48, 80); _prog.frame = CGRectMake (40, b.size.height / 2 + 30, b.size.width - 80, 4);
 	if (_ctx) { [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer]; }
 	[self layoutControls];
 	UIEdgeInsets s = self.view.safeAreaInsets;
@@ -517,7 +529,7 @@ static void vxa_toast (NSString *s, double secs)
 	vxa_audio_start (vxa_av.timing.sample_rate);
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
-	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1;
+	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; _menuBtn.hidden = NO;
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 }
 - (void) present
@@ -555,6 +567,57 @@ static void vxa_toast (NSString *s, double secs)
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
 			(unsigned long) GCController.controllers.count, GCKeyboard.coalescedKeyboard != nil);
 		_runs = _presents = _late = _ticks = 0; vxa_under = vxa_drop = 0; }
+}
+/* the menu (step 1's stopgap until the native screens of step 2): the PC's keys for the actions the core knows, every
+ * core setting as a pull-down with its value ticked */
+static void vxa_press (unsigned k, int ctrl)
+{
+	vlog ("menu: key %u%s", k, ctrl ? " with Ctrl" : "");
+	if (ctrl) { vxa_kb[RETROK_LCTRL] = 1; if (vxa_kbcb) vxa_kbcb (true, RETROK_LCTRL, 0, RETROKMOD_CTRL); }
+	vxa_kb[k] = 1; if (vxa_kbcb) vxa_kbcb (true, k, k < 128 ? k : 0, ctrl ? RETROKMOD_CTRL : 0);
+	dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.12 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{
+		vxa_kb[k] = 0; if (vxa_kbcb) vxa_kbcb (false, k, 0, ctrl ? RETROKMOD_CTRL : 0);
+		if (ctrl) { vxa_kb[RETROK_LCTRL] = 0; if (vxa_kbcb) vxa_kbcb (false, RETROK_LCTRL, 0, 0); } });
+}
+static void vxa_set_opt (int i, NSString *v)
+{
+	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v.UTF8String); vxa_opt_store (i); vxa_opt_dirty = 1;
+	vlog ("menu: %s = %s", vxa_opt[i].key, vxa_opt[i].val);
+}
+- (UIMenu *) optionMenu:(int)i title:(NSString *)title
+{
+	NSMutableArray *acts = [NSMutableArray array];
+	for (NSString *v in [@(vxa_opt[i].vals) componentsSeparatedByString:@"|"]) {
+		UIAction *a = [UIAction actionWithTitle:v image:nil identifier:nil handler:^(UIAction *x) { (void) x; vxa_set_opt (i, v); }];
+		if (!strcmp (vxa_opt[i].val, v.UTF8String)) a.state = UIMenuElementStateOn;
+		[acts addObject:a]; }
+	UIMenu *m = [UIMenu menuWithTitle:title children:acts];
+	if (@available (iOS 15.0, *)) m.subtitle = @(vxa_opt[i].val);
+	return m;
+}
+- (UIMenu *) buildMenu
+{
+	vlog ("menu opened");
+	UIAction *(^act) (NSString *, NSString *, void (^) (void)) = ^UIAction * (NSString *t, NSString *img, void (^f) (void)) {
+		return [UIAction actionWithTitle:t image:[UIImage systemImageNamed:img] identifier:nil handler:^(UIAction *x) { (void) x; f (); }]; };
+	NSMutableArray *top = [NSMutableArray arrayWithArray:@[
+		act (@"Games", @"square.grid.2x2", ^{ vxa_press (RETROK_l, 0); }),
+		act (@"RESET", @"arrow.counterclockwise", ^{ vxa_press (RETROK_r, 1); }),
+		act (@"Eject / insert cartridge", @"eject", ^{ vxa_press (RETROK_e, 1); }),
+		act (@"Pause", @"pause", ^{ vxa_press (RETROK_p, 0); }),
+		act (@"Overlay on / off", @"square.on.square", ^{ vxa_press (RETROK_o, 0); }) ]];
+	int dk = vxa_opt_find ("vectrex_emu_deck"); if (dk >= 0) [top addObject:[self optionMenu:dk title:@"Control deck"]];
+	/* (every setting, grouped by the part before the colon of its name: "Overlay: plastic glow" under Overlay) */
+	NSMutableDictionary<NSString *, NSMutableArray *> *groups = [NSMutableDictionary dictionary]; NSMutableArray *order = [NSMutableArray array];
+	for (int i = 0; i < vxa_nopt; i++) {
+		NSString *d = @(vxa_opt[i].desc); NSRange c = [d rangeOfString:@": "];
+		NSString *g = c.location != NSNotFound ? [d substringToIndex:c.location] : @"General", *t = c.location != NSNotFound ? [d substringFromIndex:c.location + 2] : d;
+		if (!groups[g]) { groups[g] = [NSMutableArray array]; [order addObject:g]; }
+		[groups[g] addObject:[self optionMenu:i title:t]]; }
+	NSMutableArray *all = [NSMutableArray array];
+	for (NSString *g in order) [all addObject:[UIMenu menuWithTitle:g children:groups[g]]];
+	[top addObject:[UIMenu menuWithTitle:@"All settings" image:[UIImage systemImageNamed:@"slider.horizontal.3"] identifier:nil options:0 children:all]];
+	return [UIMenu menuWithTitle:@"Vectrex_EMU" children:top];
 }
 - (void) setRunning:(int)on
 {

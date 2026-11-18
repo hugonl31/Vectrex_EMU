@@ -86,5 +86,8 @@ with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', en
                  ('input_toggle_fullscreen', 'nul'), ('input_pause_toggle', 'nul'), ('input_rewind', 'nul'),
                  ('input_movie_record_toggle', 'nul'), ('input_hold_slowmotion', 'nul'), ('input_frame_advance', 'nul'),
                  ('input_reset', 'nul'), ('input_shader_next', 'nul'), ('input_shader_prev', 'nul'),
-                 ('input_netplay_game_watch', 'nul'), ('input_volume_up', 'nul'), ('input_volume_down', 'nul')):
+                 ('input_netplay_game_watch', 'nul'), ('input_volume_up', 'nul'), ('input_volume_down', 'nul'),
+                 # (a controller - the owner's 8BitDo: Select held + the top face button, RetroArch's menu. iOS numbers the
+                 #  buttons by place: Select 2, the top one RetroPad X 9; the keyboard's shortcuts stay without Select)
+                 ('input_enable_hotkey_btn', '2'), ('input_menu_toggle_btn', '9')):
         f.write('%s = "%s"\n' % (k, v))

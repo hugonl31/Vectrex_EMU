@@ -1,0 +1,60 @@
+# Vectrex_EMU for iPhone and iPad - our own app around the core (no RetroArch). XcodeGen makes the Xcode project from
+# this file on the build machine (.github/workflows/ios.yml, the ios branch). The core's C files are compiled into the
+# app as RetroArch's core build does (libretro/build_libretro.sh ios); App/ is the app.
+# Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md.
+name: VectrexEMU
+options:
+  deploymentTarget:
+    iOS: "15.0"
+settings:
+  base:
+    MARKETING_VERSION: "1.6.8"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  VectrexEMU:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes: ["vx_token.h"]
+      - path: Assets.xcassets
+      - path: ../libretro/libretro_vx.c
+        compilerFlags: &core "-w -ffp-contract=off -fgnu89-inline -DVX_RETROARCH -DCM33_NO_JIT -DARM11_NO_JIT -DVX_DBG_LOG_S=2.0 -DVX_DBG_STATUS_S=5.0 -include vx_token.h"
+      - path: ../src/core/state/state_vecx.c
+        compilerFlags: *core
+      - path: ../src/core/state/state_e6809.c
+        compilerFlags: *core
+      - path: ../src/core/state/state_e8910.c
+        compilerFlags: *core
+      - path: ../src/core/state/state_core.c
+        compilerFlags: *core
+      - path: ../src/core/cm33.c
+        compilerFlags: *core
+      - path: ../src/core/rp2350.c
+        compilerFlags: *core
+      - path: ../src/core/host.c
+        compilerFlags: *core
+      - path: ../src/core/arm11.c
+        compilerFlags: *core
+      - path: ../src/core/usbhost.c
+        compilerFlags: *core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hugob.vectrexemu
+        PRODUCT_NAME: Vectrex_EMU
+        INFOPLIST_FILE: App/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        HEADER_SEARCH_PATHS: ["$(SRCROOT)/App", "$(SRCROOT)/../libretro", "$(SRCROOT)/../src/core"]
+        GCC_OPTIMIZATION_LEVEL: "3"
+        CLANG_ENABLE_OBJC_ARC: YES
+        OTHER_LDFLAGS: ["-weak_framework", "MetricKit"]
+        ENABLE_BITCODE: NO
+        ARCHS: arm64
+    dependencies:
+      - sdk: OpenGLES.framework
+      - sdk: GameController.framework
+      - sdk: AVFoundation.framework
+      - sdk: QuartzCore.framework
+      - sdk: libz.tbd
+    scheme: {}

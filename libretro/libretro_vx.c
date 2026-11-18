@@ -2495,6 +2495,7 @@ static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save s
 #include "pxfetch.c"                        /* (2026-11-18: the PiTrex's files fetched by the core - the browser's "PiTrex: get it") */
 #include "browser.c"
 #include "deck.c"
+#include "dbgsend.c"                       /* (2026-11-18: the private iOS test build's logs, status, screenshots, crash reports to the server) */
 #endif
 /* the picture out: the GPU's, or the CPU's frame (with the control deck: its block) - turned (also a paused refresh's) */
 static void frame_out (int shot_now, const uint32_t **pic_o, int *pw_o, int *ph_o)
@@ -2602,6 +2603,7 @@ void retro_run (void)
 		if (r & 1 && br_open) { char px[1200]; br_px_boot (px, sizeof px); br_scan (br_dir, px); }
 		br_dirty = 1; }
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
+	dbg_tick ();
 	{ static int pz; const int pi_ = btn_id ("vectrex_emu_btn_pause"), p_ = pi_ >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pi_) != 0;
 	  if (p_ && !pz && !br_open && !net_on ()) { vx_paused = !vx_paused; dk_dirty_set = 1; } pz = p_;
 	  if (net_on () && vx_paused) { vx_paused = 0; dk_dirty_set = 1; } }   /* (netplay: RetroArch's own pause) */
@@ -3306,6 +3308,9 @@ bool retro_load_game (const struct retro_game_info *g)
 	boot_id = VX_TICKS () | 1;   /* (v0.25: a new game booted) */
 	if (!g || !g->path) return false;
 	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
+#ifndef VX_EMUVR
+	dbg_start (sys);                            /* (the private iOS test build: the previous session's log, before it is written anew) */
+#endif
 #if defined(__ANDROID__) || VX_IOS
 	/* (Android, iPhone / iPad: stderr goes nowhere - the core's messages to <system>/vectrex_emu/vectrex_emu.log, for a
 	 *  game that will not start: the BIOS, the overlay found, the speech module, the GPU path) */

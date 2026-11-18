@@ -80,6 +80,9 @@ DIR = os.environ.get('VXREPORT_DIR', os.environ.get('STATE_DIRECTORY', '/var/lib
 MAX_SIZE = 2 * 1024 * 1024
 MAX_TOTAL = 500 * 1024 * 1024
 REPORTS_PER_DAY = 10
+IOSLOG_TOKEN = os.environ.get('IOSLOG_TOKEN', '')       # (/ioslog: the owner's iOS test build only - off when unset)
+IOS_MAX = 16 * 1024 * 1024                             # (a screenshot at an iPad's size)
+IOS_TOTAL = 500 * 1024 * 1024
 ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'              # (no 0/O, 1/I: easy to read out)
 lock = threading.Lock()
 recent = {}                                             # ip -> [times] (memory only)
@@ -115,6 +118,8 @@ class H(BaseHTTPRequestHandler):
         self.reply(200, 'Vectrex_EMU debug reports: use Help > Debug report in the emulator.\n')
 
     def do_POST(self):
+        if self.path == '/ioslog':
+            return self.ioslog()
         if self.path != '/report':
             return self.reply(404, 'not here')
         try:
@@ -151,6 +156,32 @@ class H(BaseHTTPRequestHandler):
             trim()
         self.reply(200, num)
         threading.Thread(target=telegram, args=(num, ver, data, email), daemon=True).start()
+
+    def ioslog(self):
+        """the owner's private iOS test build: its logs as text (POST /ioslog, header X-Vectrex-Token = IOSLOG_TOKEN
+        from /etc/vxreport.env) -> DIR/ios/<time>-<kind>.txt; no daily limit, no Telegram, the folder under IOS_TOTAL"""
+        if not IOSLOG_TOKEN or not secrets.compare_digest(self.headers.get('X-Vectrex-Token', ''), IOSLOG_TOKEN):
+            return self.reply(403, 'no')
+        try:
+            n = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            n = 0
+        if n <= 0 or n > IOS_MAX:
+            return self.reply(413, 'too big')
+        data = self.rfile.read(n)
+        kind = ''.join(c for c in self.headers.get('X-Vectrex-Kind', 'log')[:64] if c.isalnum() or c in '-_') or 'log'
+        ext = self.headers.get('X-Vectrex-Ext', 'txt')
+        ext = ext if ext in ('txt', 'png', 'json') else 'txt'   # (logs and the status, screenshots, iOS crash reports)
+        d = os.path.join(DIR, 'ios'); os.makedirs(d, exist_ok=True)
+        with lock:
+            name = time.strftime('%Y%m%d-%H%M%S', time.gmtime()) + '-' + secrets.token_hex(2) + '-' + kind + '.' + ext
+            with open(os.path.join(d, name), 'wb') as f:
+                f.write(data)
+            fs = sorted((os.path.getmtime(os.path.join(d, x)), os.path.join(d, x)) for x in os.listdir(d))
+            total = sum(os.path.getsize(p) for _, p in fs)
+            while fs and total > IOS_TOTAL:
+                _, p = fs.pop(0); total -= os.path.getsize(p); os.remove(p)
+        self.reply(200, name)
 
     def log_message(self, fmt, *a):                      # (no IPs in the journal)
         pass

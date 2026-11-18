@@ -99,7 +99,8 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 
 static GLuint ph_prog (const char *vsrc, const char *fsrc)
 {
-	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\n" : "#version 330 core\n";
+	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: lowp by
+	                                              default in ES - Apple's GPUs then read the glow's faint half-floats in coarse steps, banded) */
 	const char *vs[2] = { hdr, vsrc }, *fs[2] = { hdr, fsrc };
 	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 2);
 	if (!v || !f) return 0;

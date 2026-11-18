@@ -428,7 +428,7 @@ static void gpu_reset (void)
 	glEnable_d_ = (pf_glEnable_d) hwr.get_proc_address ("glEnable"); glBlendFunc_d_ = (pf_glBlendFunc_d) hwr.get_proc_address ("glBlendFunc"); ok &= glClear_d_ && glClearColor_d_ && glEnable_d_ && glBlendFunc_d_; GLLOAD (glViewport); GLLOAD (glDisable);
 	GLLOAD (glDrawArrays); GLLOAD (glGenVertexArrays); GLLOAD (glBindVertexArray); GLLOAD (glDeleteVertexArrays); GLLOAD (glGetError);
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: the frontend lacks GL functions - the CPU's picture\n"); return; }
-	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\n" : "#version 330 core\n";
+	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: see gpu_phos.c) */
 	const char *vs[2] = { hdr, GPU_VS }, *fs[3] = { hdr, GPU_FS_A, GPU_FS_B };
 	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 3);
 	if (!v || !f) return;

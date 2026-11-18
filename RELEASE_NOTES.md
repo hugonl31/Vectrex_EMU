@@ -29,7 +29,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * The control deck on a touch screen: P2 PORT only shows the port 2 device (chosen in the core options), and RESET
   works on a short hold of its upper half, near its word. A thumb slipping off the right stick no longer switches
   port 2 or resets the game.
-* A new icon: a render of our 3D Vectrex model (the one from the VR version), black with its grey screen.
+* A new icon: a render of our new 3D Vectrex model - black plastic, the grey glass tube, the Vectrex logo strip - on an
+  off-white tile with rounded corners (Windows, macOS, Linux and the iOS app alike).
 * The ROM browser: when the PiTrex's SD card files are not there, "PiTrex: get it" at the top fetches them from
   Malban's site (his newest, about 190 MB) and unpacks them into the core's folder - the progress on the entry.
 * Controls > Keyboard as on the PC (off by default; on for iPhone / iPad): the arrows the stick (Shift: half), A W S D

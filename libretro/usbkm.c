@@ -28,9 +28,39 @@ static int km_mod (unsigned k)                   /* (HID_MODS) */
 	switch (k) { case RETROK_LCTRL: return 1; case RETROK_LSHIFT: return 2; case RETROK_LALT: return 4; case RETROK_LSUPER: return 8;
 	case RETROK_RCTRL: return 16; case RETROK_RSHIFT: return 32; case RETROK_RALT: return 64; case RETROK_RSUPER: return 128; default: return 0; }
 }
+/* (the desktop's keys - vectrex_emu.py DEFAULT_KEYS and its shortcuts: the arrows the stick, Shift half of it, A W S D
+ *  buttons 1-4 as a cross; P pause, L the ROM browser, O the overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down the
+ *  volume knob; in the browser Enter loads, Backspace goes back, Esc closes. A key held repeating: once) */
+static void kb_desk (bool down, unsigned k)
+{
+	static unsigned char was[RETROK_LAST]; if (k >= RETROK_LAST) return;
+	const int rep = down && was[k]; was[k] = down;
+	unsigned bit = 0;
+	switch (k) { case RETROK_UP: bit = KB_UP; break; case RETROK_DOWN: bit = KB_DOWN; break; case RETROK_LEFT: bit = KB_LEFT; break;
+	case RETROK_RIGHT: bit = KB_RIGHT; break; case RETROK_a: bit = KB_B1; break; case RETROK_w: bit = KB_B2; break; case RETROK_s: bit = KB_B3; break;
+	case RETROK_d: bit = KB_B4; break; case RETROK_LSHIFT: case RETROK_RSHIFT: bit = KB_SHIFT; break;
+	case RETROK_RETURN: case RETROK_KP_ENTER: bit = KB_ENTER; break; case RETROK_BACKSPACE: bit = KB_BACK; break;
+	case RETROK_LCTRL: case RETROK_RCTRL: bit = KB_CTRL; break; default: break; }
+	if (bit) kb_held = down ? kb_held | bit : kb_held & ~bit;
+	if (!down || rep) return;
+	if (kb_held & KB_CTRL) { if (k == RETROK_e) kb_ev |= KE_EJECT; else if (k == RETROK_r) kb_ev |= KE_RESET; return; }
+	switch (k) { case RETROK_p: kb_ev |= KE_PAUSE; break; case RETROK_l: kb_ev |= KE_BROWSER; break; case RETROK_o: kb_ev |= KE_OVERLAY; break;
+	case RETROK_PAGEUP: kb_ev |= KE_VOLUP; break; case RETROK_PAGEDOWN: kb_ev |= KE_VOLDN; break; case RETROK_ESCAPE: kb_ev |= KE_ESC; break;
+	default: break; }
+}
 static void RETRO_CALLCONV km_key (bool down, unsigned keycode, uint32_t character, uint16_t mods)
 {
 	(void) character; (void) mods;
+	if (kb_on) {                                  /* (the desktop's keys; Ctrl+K: typing to a UVMC2 / PiTrex and back, as the desktop) */
+		if (keycode == RETROK_LCTRL || keycode == RETROK_RCTRL) kb_held = down ? kb_held | KB_CTRL : kb_held & ~KB_CTRL;
+		if (down && keycode == RETROK_k && (kb_held & KB_CTRL) && km_on) {
+			km_typing = !km_typing; km_n = 0; km_mods = 0; km_dirty = 1; kb_held &= KB_CTRL;
+#ifndef VX_EMUVR
+			say_long (km_typing ? "Typing: the keys go to the cartridge (Ctrl+K: back to the game's keys)" : "The game's keys again (Ctrl+K: typing)", 3000);
+#endif
+			return; }
+		if (!km_typing) { kb_desk (down, keycode); return; }
+	}
 	if (!km_on) return;
 	const int m = km_mod (keycode);
 	if (m) { km_mods = (unsigned char) (down ? km_mods | m : km_mods & ~m); km_dirty = 1; return; }

@@ -1303,6 +1303,16 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 	if (port == 0 && !net_on () && usb_pad (&ux, &uy, &ub)) { if (ux) x = ux; if (uy) y = uy; }   /* (not in netplay: RetroArch's input only) */   /* (the Vectrex USB Controller, player 1) */
 	if (port == 0 && kb_on && !net_on ()) {         /* (the desktop's keys: the arrows the stick - Shift half -, A W S D buttons 1-4;
 	                                                    in the ROM browser Enter loads and Backspace goes back, its buttons 4 and 1) */
+		{ static const unsigned bits[] = { KB_UP, KB_DOWN, KB_LEFT, KB_RIGHT, KB_B1, KB_B2, KB_B3, KB_B4, KB_SHIFT };   /* (a key held that
+		                                              *  RetroArch says is up - its release lost (iPad, up and down at once: the stick
+		                                              *  stayed down, 2026-11-18): let go after 3 refreshes; trusted once RetroArch has
+		                                              *  shown a held key down) */
+		  static const unsigned keys[] = { RETROK_UP, RETROK_DOWN, RETROK_LEFT, RETROK_RIGHT, RETROK_a, RETROK_w, RETROK_s, RETROK_d, RETROK_LSHIFT };
+		  static int trust; static unsigned char miss[9];
+		  for (int i = 0; i < 9; i++) { if (!(kb_held & bits[i])) { miss[i] = 0; continue; }
+			int dn = input_cb (0, RETRO_DEVICE_KEYBOARD, 0, keys[i]) != 0; if (i == 8) dn = dn || input_cb (0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT);
+			if (dn) { trust = 1; miss[i] = 0; } else if (trust && ++miss[i] >= 3) { kb_held &= ~bits[i]; miss[i] = 0;
+				fprintf (stderr, "[vectrex_emu] key %u held but up: let go\n", keys[i]); } } }
 		const unsigned k = kb_held; const int s = k & KB_SHIFT ? 64 : 127;
 		if (k & KB_LEFT) x = -s; if (k & KB_RIGHT) x = s; if (k & KB_UP) y = s; if (k & KB_DOWN) y = -s;
 		ub |= (k & KB_B1 ? 1u : 0) | (k & KB_B2 ? 2u : 0) | (k & KB_B3 ? 4u : 0) | (k & KB_B4 ? 8u : 0);
@@ -2323,6 +2333,7 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
 /* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
  * the afterglow's two parts, one colour channel or three - all dark again */
+extern double vt_wall (void); static double pic_said_t = -1;   /* (the picture's size changed then: told once it has settled) */
 static void pic_setup (void)
 {
 	const int glass = area_glass (); geom_calc (glass, &EW, &FH, &CW, &CH);
@@ -2342,8 +2353,8 @@ static void pic_setup (void)
 		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
 		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
 #ifndef VX_EMUVR
-	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH; char m[120];   /* (for now, to check the sizes: the picture's, the screen's) */
-		snprintf (m, sizeof m, "Picture %d x %d - screen %d x %d", OW, OH, scr_w, scr_h); say_long (m, 4000); fprintf (stderr, "[vectrex_emu] %s\n", m); } }
+	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH; pic_said_t = vt_wall ();   /* (shown once it has settled: retro_run) */
+		fprintf (stderr, "[vectrex_emu] Picture %d x %d - screen %d x %d\n", OW, OH, scr_w, scr_h); } }
 #endif
 	if ((size_t) OW * OH > rb_n) { free (rb); rb_n = (size_t) OW * OH; rb = malloc (rb_n * 4); }   /* (the turned picture) */
 	{ static size_t cbn; extern uint32_t *dk_cb; if ((size_t) OW * OH > cbn) { free (dk_cb); cbn = (size_t) OW * OH; dk_cb = malloc (cbn * 4); } }   /* (the deck's block) */
@@ -2636,6 +2647,9 @@ void retro_run (void)
 	{ static int lr = -1, ld = -1; static double ts; const double now = vt_wall ();   /* (Picture size auto again: the rotation or
 	                                              the deck changed; on an iPhone / iPad also the device turned - looked at once a second) */
 	  if (opt_rot != lr || opt_deck != ld || (VX_IOS && now - ts > 1.0)) { lr = opt_rot; ld = opt_deck; ts = now; if (gpu_ok) scr_detect (); } }
+	if (pic_said_t >= 0 && scr_w > 0 && scr_h > 0 && vt_wall () - pic_said_t > 1.5) { char m[120]; pic_said_t = -1;   /* (the size it settled on,
+	                                              *  not each step on the way: at a start, a turn) */
+		snprintf (m, sizeof m, "Picture %d x %d - screen %d x %d", OW, OH, scr_w, scr_h); say_long (m, 3000); }
 	if (scr_new) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape
 	    || (dk_on && (scr_w != geo_sw || scr_h != geo_sh))) { pic_setup (); geo_tell (); }   /* (with the deck: the screen turned - its shape) */

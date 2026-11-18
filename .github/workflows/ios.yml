@@ -18,6 +18,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: vx
+      - name: Xcode 26 (App Store Connect takes only apps built with the iOS 26 SDK or later)
+        run: |
+          ls -d /Applications/Xcode*.app
+          X=$(ls -d /Applications/Xcode_2[6-9]*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          test -n "$X" || { echo "no Xcode 26 on this runner"; exit 1; }
+          sudo xcode-select -s "$X/Contents/Developer"; xcodebuild -version
       - name: RetroArch's source (v1.22.2)
         run: git clone -q --depth 1 --branch v1.22.2 https://github.com/libretro/RetroArch.git ra
       - name: the core for iOS (arm64, no JIT)
@@ -49,7 +55,7 @@ jobs:
           xcodebuild archive -workspace pkg/apple/RetroArch.xcworkspace -destination generic/platform=iOS -config Release \
             -scheme "RetroArch iOS Release" -xcconfig pkg/apple/GitHubCI.xcconfig -archivePath "$RUNNER_TEMP/VX.xcarchive" \
             IOS_BUNDLE_IDENTIFIER=com.hugob.vectrexemu IOS_CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=$TEAM \
-            MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
+            MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER RA_IPHONEOS_DEPLOYMENT_TARGET=13.0 \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- \
             > "$RUNNER_TEMP/archive.log" 2>&1 || { grep -B8 -A3 -E 'error:|FAILED|failed with' "$RUNNER_TEMP/archive.log" | tail -120; exit 1; }
           # (RetroArch's make-frameworks.sh signs the cores itself: '-', ad hoc, needs no keychain - the export signs them again)

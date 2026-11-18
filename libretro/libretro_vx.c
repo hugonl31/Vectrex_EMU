@@ -2338,6 +2338,10 @@ static void pic_setup (void)
 		const double ab = scr_w > 0 && scr_h > scr_w && !(opt_rot & 1) ? (double) scr_w / scr_h : (opt_rot & 1) ? 1.0 / A : A;
 		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
 		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
+#ifndef VX_EMUVR
+	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH; char m[120];   /* (for now, to check the sizes: the picture's, the screen's) */
+		snprintf (m, sizeof m, "Picture %d x %d - screen %d x %d", OW, OH, scr_w, scr_h); say_long (m, 4000); fprintf (stderr, "[vectrex_emu] %s\n", m); } }
+#endif
 	if ((size_t) OW * OH > rb_n) { free (rb); rb_n = (size_t) OW * OH; rb = malloc (rb_n * 4); }   /* (the turned picture) */
 	{ static size_t cbn; extern uint32_t *dk_cb; if ((size_t) OW * OH > cbn) { free (dk_cb); cbn = (size_t) OW * OH; dk_cb = malloc (cbn * 4); } }   /* (the deck's block) */
 	/* (the buffers at this picture's size: the lit light now and a refresh ago, the afterglow's two parts, one colour

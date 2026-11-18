@@ -9,6 +9,16 @@
  * No GL headers: the few functions it uses come from the frontend (get_proc_address), the same on every system.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 #include "gpu_tab.h"
+/* (txb: a filtered read of a half-float texture - the glow, the afterglow, the overlay's maps, the glass's light map. On an
+ *  iPhone / iPad bilinear by hand: there the GPU read them as nearest - the glow in steps, stripes; elsewhere the GPU's) */
+#if VX_IOS
+#define GL_BL "vec4 txb(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)), L = textureSize(t, 0) - 1;\n" \
+	"  vec2 f = g - floor(g);\n" \
+	"  return mix(mix(texelFetch(t, clamp(i, ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), L), 0), f.x),\n" \
+	"             mix(texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), L), 0), f.x), f.y); }\n"
+#else
+#define GL_BL "#define txb texture\n"
+#endif
 
 typedef unsigned int GLuint; typedef int GLint; typedef unsigned int GLenum; typedef int GLsizei; typedef float GLfloat;
 typedef char GLchar; typedef unsigned char GLboolean; typedef unsigned int GLbitfield;
@@ -218,7 +228,7 @@ static const char *GPU_FS_B =
 	"            vec2 eq = tgt - n * dpos / U;\n"
 	"            vec2 eqn = eq / gsc;\n"
 	"            vec2 mq = vec2((eqn.x - lmr.x) / (lmr.y - lmr.x), (eqn.y - lmr.z) / (lmr.w - lmr.z));\n"
-	"            float mr = texture(lmap, mq).r * mfade(mq);\n"
+	"            float mr = txb(lmap, mq).r * mfade(mq);\n"
 	"            bl = lk * mr * (0.03 * exp(-dpos / 55.0) * (0.25 + 0.75 * pow(top, 0.7)) + 0.035 * exp(-dpos / 16.5) * pow(top, 0.7));\n"
 	"        }\n"
 	"        vec2 sq = vec2((gd.x - smr.x) / (smr.y - smr.x), (gd.y - smr.z) / (smr.w - smr.z));\n"   /* (the map: top row first) */
@@ -280,7 +290,7 @@ static const char *GPU_FS_B =
 	"            add += grey * (1.0 - 0.25 * tq.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);\n"
 	"            if (lk > 0.0) {\n"
 	"                vec2 mc = vec2((tq.x - lmr.x) / (lmr.y - lmr.x), (tq.y - lmr.z) / (lmr.w - lmr.z));\n"
-	"                vec4 m = texture(lmap, mc) * mfade(mc);\n"
+	"                vec4 m = txb(lmap, mc) * mfade(mc);\n"
 	"                float sharp = ceiling((reflp(tq, 0.2) - lpos.xy) / lpos.z, 0.012);\n"
 	"                add += lk * (m.g * (1.0 + 0.018 * gr) * vec3(0.95, 0.96, 1.0) + 0.88 * (0.98 * sharp + m.r) * LIGHTC);\n"
 	"            }\n"
@@ -429,8 +439,8 @@ static void gpu_reset (void)
 	GLLOAD (glDrawArrays); GLLOAD (glGenVertexArrays); GLLOAD (glBindVertexArray); GLLOAD (glDeleteVertexArrays); GLLOAD (glGetError);
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: the frontend lacks GL functions - the CPU's picture\n"); return; }
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: see gpu_phos.c) */
-	const char *vs[2] = { hdr, GPU_VS }, *fs[3] = { hdr, GPU_FS_A, GPU_FS_B };
-	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 3);
+	const char *vs[2] = { hdr, GPU_VS }, *fs[4] = { hdr, GL_BL, GPU_FS_A, GPU_FS_B };
+	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 4);
 	if (!v || !f) return;
 	g_prog = glCreateProgram_ (); glAttachShader_ (g_prog, v); glAttachShader_ (g_prog, f); glLinkProgram_ (g_prog);
 	glDeleteShader_ (v); glDeleteShader_ (f);

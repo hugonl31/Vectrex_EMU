@@ -58,3 +58,15 @@ patch('input/drivers/cocoa_input.m', '&& (id == RARCH_GAME_FOCUS_TOGGLE || !keyb
       '&& (id == RARCH_GAME_FOCUS_TOGGLE || id == RARCH_MENU_TOGGLE || !keyboard_mapping_blocked)')
 patch('input/input_driver.c', '      block_hotkey[RARCH_GAME_FOCUS_TOGGLE] = false;\n',
       '      block_hotkey[RARCH_GAME_FOCUS_TOGGLE] = false;\n      block_hotkey[RARCH_MENU_TOGGLE] = false;\n')
+
+# the iPad's menu as the iPhone's: MaterialUI (its icons all in the bundled set; Ozone's - the iPad's default - are
+# taken from xmb/monochrome, the workflow adds those too)
+patch('configuration.c', '#define MENU_DEFAULT_DRIVER (ios_running_on_ipad() ? MENU_OZONE : MENU_MATERIALUI)',
+      '#define MENU_DEFAULT_DRIVER MENU_MATERIALUI')
+
+# RetroArch's own log, always, to a file (Documents/RetroArch/logs): what the menu loads, from where - for testing
+patch('configuration.c', '         else\n            verbosity_disable();\n      }\n   }\n}\n',
+      '         else\n            verbosity_disable();\n      }\n   }\n'
+      '   verbosity_enable(); configuration_set_bool(settings, settings->bools.log_to_file, true);   /* (Vectrex_EMU iOS: a log for testing) */\n}\n')
+patch('menu/drivers/ozone.c', '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n',
+      '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n   RARCH_LOG("[Ozone] icons from: %s\n", ozone->icons_path);   /* (Vectrex_EMU iOS) */\n')

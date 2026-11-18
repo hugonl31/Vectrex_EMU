@@ -31,11 +31,17 @@ jobs:
           sh vx/libretro/build_libretro.sh ios
           cp vx/libretro/vectrex_emu_libretro_ios.dylib ra/pkg/apple/iOS/modules/
           lipo -info vx/libretro/vectrex_emu_libretro_ios.dylib
-      - name: its info file in RetroArch's assets
+      - name: everything ready to play in RetroArch's assets (unpacked into its folder after each install or update)
         run: |
-          mkdir -p add/info && cp vx/libretro/vectrex_emu_libretro.info add/info/
-          (cd add && zip -q ../ra/pkg/apple/assets.zip info/vectrex_emu_libretro.info)
-          unzip -l ra/pkg/apple/assets.zip | grep vectrex
+          python3 vx/libretro/ios_bundle.py vx/libretro/vectrex_emu_libretro_ios.dylib add
+          (cd add && zip -qr ../ra/pkg/apple/assets.zip .)
+          unzip -l ra/pkg/apple/assets.zip | grep -c -i -E 'roms/|vectrex_emu' ; du -sh add ra/pkg/apple/assets.zip
+          # (RetroArch unpacks its assets.zip when the app's build number changes - but reads it as "n || 1", always 1:
+          #  only the first install did. Its real number: every TestFlight update unpacks it all again)
+          f=ra/frontend/drivers/platform_darwin.m
+          grep -q 'integerValue] || 1;' $f
+          sed -i '' 's/NSInteger bundleVersion = \[bundleVersionString integerValue\] || 1;/NSInteger bundleVersion = MAX([bundleVersionString integerValue], 1);/' $f
+          grep -n 'NSInteger bundleVersion' $f
       - name: RetroArch for iOS, signed and uploaded to TestFlight
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -55,7 +61,7 @@ jobs:
           xcodebuild archive -workspace pkg/apple/RetroArch.xcworkspace -destination generic/platform=iOS -config Release \
             -scheme "RetroArch iOS Release" -xcconfig pkg/apple/GitHubCI.xcconfig -archivePath "$RUNNER_TEMP/VX.xcarchive" \
             IOS_BUNDLE_IDENTIFIER=com.hugob.vectrexemu IOS_CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=$TEAM \
-            MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER RA_IPHONEOS_DEPLOYMENT_TARGET=13.0 \
+            MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER RA_IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- \
             > "$RUNNER_TEMP/archive.log" 2>&1 || { grep -B8 -A3 -E 'error:|FAILED|failed with' "$RUNNER_TEMP/archive.log" | tail -120; exit 1; }
           # (RetroArch's make-frameworks.sh signs the cores itself: '-', ad hoc, needs no keychain - the export signs them again)

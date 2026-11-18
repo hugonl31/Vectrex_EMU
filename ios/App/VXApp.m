@@ -23,16 +23,65 @@
 #include "libretro.h"
 #include "vx_token.h"
 
-/* ---------------------------------------------------------------- the log (into the core's, sent live) */
+/* ---------------------------------------------------------------- the log: the app's own, sent live from the first
+ * second (the core's sender starts only with a game - build 39 crashed before, unseen), kept in Documents/applog.txt; a
+ * crash writes its call stack there and the next start sends it */
+#include <execinfo.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <unistd.h>
 static NSMutableArray<NSString *> *vxa_early; static int vxa_loaded;
+static NSMutableString *vxa_pend; static int vxa_lfd = -1; static char vxa_sess[8];
+static void vxa_post (NSString *kind, NSData *d)
+{
+#ifdef VX_LOG_TOKEN
+	if (!d.length) return;
+	NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/ioslog"]];
+	rq.HTTPMethod = @"POST"; rq.HTTPBody = d; rq.timeoutInterval = 15;
+	[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"]; [rq setValue:[NSString stringWithFormat:@"%s-%@", vxa_sess, kind] forHTTPHeaderField:@"X-Vectrex-Kind"];
+	[rq setValue:@"txt" forHTTPHeaderField:@"X-Vectrex-Ext"];
+	[[NSURLSession.sharedSession dataTaskWithRequest:rq] resume];
+#else
+	(void) kind; (void) d;
+#endif
+}
+static void vxa_flush_log (void)
+{
+	NSString *s; @synchronized (vxa_pend) { s = [vxa_pend copy]; [vxa_pend setString:@""]; }
+	if (s.length) vxa_post (@"app-log", [s dataUsingEncoding:NSUTF8StringEncoding]);
+}
+static void vxa_crash_sig (int sig)
+{
+	if (vxa_lfd >= 0) {
+		char m[64]; int n = snprintf (m, sizeof m, "\n*** CRASH: signal %d - the call stack:\n", sig); write (vxa_lfd, m, (size_t) n);
+		void *bt[64]; int k = backtrace (bt, 64); backtrace_symbols_fd (bt, k, vxa_lfd); fsync (vxa_lfd); }
+	signal (sig, SIG_DFL); raise (sig);
+}
+static void vxa_crash_exc (NSException *e)
+{
+	if (vxa_lfd >= 0) { NSString *s = [NSString stringWithFormat:@"\n*** CRASH: %@: %@\n%@\n", e.name, e.reason, [e.callStackSymbols componentsJoinedByString:@"\n"]];
+		const char *c = s.UTF8String; write (vxa_lfd, c, strlen (c)); fsync (vxa_lfd); }
+}
+static void vxa_log_start (void)
+{
+	vxa_pend = [NSMutableString new]; snprintf (vxa_sess, sizeof vxa_sess, "a%04x", arc4random_uniform (0x10000));
+	NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+	NSString *p = [docs stringByAppendingPathComponent:@"applog.txt"];
+	NSData *prev = [NSData dataWithContentsOfFile:p]; if (prev.length) vxa_post (@"app-previous-log", prev);   /* (the last run's, its crash with it) */
+	vxa_lfd = open (p.fileSystemRepresentation, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	NSSetUncaughtExceptionHandler (vxa_crash_exc);
+	int sigs[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP }; for (int i = 0; i < 6; i++) signal (sigs[i], vxa_crash_sig);
+	[NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) { (void) t; vxa_flush_log (); }];
+}
 static void vlog (const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 static void vlog (const char *fmt, ...)
 {
 	char b[1200]; va_list a; va_start (a, fmt); vsnprintf (b, sizeof b, fmt, a); va_end (a);
 	struct timeval tv; gettimeofday (&tv, NULL); struct tm tm; localtime_r (&tv.tv_sec, &tm);
 	char line[1300]; snprintf (line, sizeof line, "[app %02d:%02d:%02d.%03d] %s\n", tm.tm_hour, tm.tm_min, tm.tm_sec, (int) (tv.tv_usec / 1000), b);
-	if (!vxa_loaded) { if (!vxa_early) vxa_early = [NSMutableArray new]; [vxa_early addObject:@(line)]; }   /* (before the core's log exists) */
-	fputs (line, stderr);
+	if (vxa_lfd >= 0) write (vxa_lfd, line, strlen (line));
+	if (vxa_pend) @synchronized (vxa_pend) { [vxa_pend appendString:@(line)]; }
+	(void) vxa_early; (void) vxa_loaded;
 }
 static double vxa_mem_mb (void)
 {
@@ -430,14 +479,13 @@ static void vxa_toast (NSString *s, double secs)
 		vlog ("pack %s: %d files unpacked in %.1f s%s", ver.UTF8String, files, CACurrentMediaTime() - t1, ok ? " - NOT WHOLE" : "");
 		dispatch_async (dispatch_get_main_queue (), ^{ self->_prog.hidden = YES; [self startCore]; });
 	}];
-	[t addObserver:self forKeyPath:@"countOfBytesReceived" options:0 context:NULL]; [t resume];
+	[t resume];
+	[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *tm) {   /* (the progress bar; every 10 % in the log) */
+		double p = t.countOfBytesExpectedToReceive > 0 ? (double) t.countOfBytesReceived / t.countOfBytesExpectedToReceive : 0;
+		self->_prog.progress = (float) p; static int lastp = -1; int pc = (int) (p * 10);
+		if (pc != lastp) { lastp = pc; vlog ("pack: %d %% (%.1f MB)", pc * 10, t.countOfBytesReceived / 1e6); }
+		if (t.state != NSURLSessionTaskStateRunning) [tm invalidate]; }];
 #endif
-}
-- (void) observeValueForKeyPath:(NSString *)k ofObject:(id)o change:(NSDictionary *)c context:(void *)x
-{
-	NSURLSessionTask *t = o; double p = t.countOfBytesExpectedToReceive > 0 ? (double) t.countOfBytesReceived / t.countOfBytesExpectedToReceive : 0;
-	dispatch_async (dispatch_get_main_queue (), ^{ self->_prog.progress = (float) p; });
-	if (t.state != NSURLSessionTaskStateRunning) { @try { [t removeObserver:self forKeyPath:@"countOfBytesReceived"]; } @catch (id ex) {} }
 }
 - (void) makeDisplayBuffer
 {
@@ -620,6 +668,7 @@ void vxa_set_callbacks (void)
 @implementation VXAppDelegate
 - (BOOL) application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
 {
+	vxa_log_start (); vlog ("app start");
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;
 }

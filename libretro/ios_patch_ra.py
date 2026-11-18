@@ -74,3 +74,9 @@ patch('menu/drivers/ozone.c', '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZO
 # RetroArch's log a new file each run (logs/retroarch__<time>.log): a crashed run's log not written over at the next
 # start - the core sends each one's new lines to the project's server (dbgsend.c)
 patch('config.def.h', '#define DEFAULT_LOG_TO_FILE_TIMESTAMP false', '#define DEFAULT_LOG_TO_FILE_TIMESTAMP true')
+
+# a game started from the playlist while another runs: iOS keeps the core's framework loaded after RetroArch unloads it,
+# so its functions are still to be found - RetroArch's check for a core linked into the app then refused to load it and
+# crashed ("Serious problem ... already linked"). That check is for static builds; the iOS app has its core as a framework
+patch('runloop.c', '#if !(defined(__WINRT__) || defined(WINAPI_FAMILY) && WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP)\n   if (dylib_proc(NULL, "retro_init"))',
+      '#if !(defined(__WINRT__) || defined(WINAPI_FAMILY) && WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP) && !defined(IOS)\n   if (dylib_proc(NULL, "retro_init"))')

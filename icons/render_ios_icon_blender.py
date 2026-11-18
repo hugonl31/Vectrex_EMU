@@ -7,7 +7,7 @@ Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md."""
 import bpy, math, os, sys
 D = os.path.dirname(os.path.abspath(__file__))
 AZ = float(os.environ.get('AZ', '28')); EL = float(os.environ.get('EL', '14')); RES = int(os.environ.get('RES', '1024'))
-SAMPLES = int(os.environ.get('SAMPLES', '160')); KEY = float(os.environ.get('KEY', '12')); OUT = os.environ.get('OUT', 'render.png')
+SAMPLES = int(os.environ.get('SAMPLES', '160')); KEY = float(os.environ.get('KEY', '12')); FRONT = float(os.environ.get('FRONT', '3.0')); OUT = os.environ.get('OUT', 'render.png')
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
 bpy.ops.wm.obj_import(filepath='G:/AI/Vectrex_EMU_EmuVR/vr_version_export/vectrex_vr_rounded.obj', global_scale=0.001,
@@ -53,6 +53,8 @@ area('key', (-0.9, -1.1, 1.2), KEY, 1.4)
 area('fill', (1.2, -0.8, 0.5), KEY * 0.25, 1.2)
 area('rim', (0.3, 1.0, 1.0), KEY * 1.6, 1.0)
 area('top', (0.0, 0.0, 1.5), KEY * 0.2, 1.4)
+area('front', (1.0, -1.35, 0.07), KEY * FRONT, 0.7, (0.04, -0.05, 0.05))   # (low - under the hood's overhang -, from the front right: the control panel - power,
+                                                    #  volume, the ports - and the cartridge port on the right side)
 w = bpy.data.worlds.new('w'); w.use_nodes = True; w.node_tree.nodes['Background'].inputs['Color'].default_value = (0.8, 0.8, 0.82, 1)
 w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.03; sc.world = w
 # the camera: AZ degrees to the right of straight ahead, EL above

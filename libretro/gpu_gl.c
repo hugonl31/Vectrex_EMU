@@ -514,6 +514,7 @@ static int scr_query (int *w, int *h)
 static void scr_detect (void)
 {
 	int w = 0, h = 0; if (!scr_query (&w, &h)) return;
+	scr_w = w; scr_h = h;                       /* (as it stands: the deck's block takes an upright screen's shape) */
 	/* (the picture's height on the screen as big as fits: the screen's height, or less where its width is the limit - an
 	 *  upright phone; a wide screen: its short side, as before. Turned 90 / 270: the picture lies the other way) */
 	const double a = (opt_rot & 1) ? 207.0 / 162.0 : 162.0 / 207.0;   /* (its width / height as it stands on the screen) */

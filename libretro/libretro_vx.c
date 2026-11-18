@@ -459,7 +459,11 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_btn_reset", "controls", "RESET button", "A RetroPad button for the Vectrex's RESET button.", "L|off|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_btn_browser", "controls", "ROM browser button", "A RetroPad button that opens and closes the ROM browser.", "L3|SELECT|off|L|R|L2|R2|R3" },
 	{ "vectrex_emu_btn_pause", "controls", "Pause button", "A RetroPad button that pauses and resumes the game.", "L2|off|L|R|R2|L3|R3" },
+#if VX_IOS                                          /* (an iPhone / iPad: R - the keyboard's E, the desktop's Ctrl+E) */
+	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "R|off|L|L2|R2|L3|R3" },
+#else
 	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
+#endif
 	{ "vectrex_emu_usb_hid", "controls", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
 	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's overlay. START switches it (any button: Quick Menu > Controls).", "on|off" },

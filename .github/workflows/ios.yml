@@ -44,6 +44,8 @@ jobs:
           # (RetroArch's own source: its assets unpacked after every update; the on-screen gamepad hidden while a
           #  keyboard is connected too - ios_patch_ra.py)
           python3 vx/libretro/ios_patch_ra.py ra
+          # (the app's icon: ours, not RetroArch's - one 1024 x 1024 picture, iOS makes the other sizes)
+          cp vx/icons/ios_icon_1024.png "ra/pkg/apple/iOS/Resources/Icons.xcassets/Default.appiconset/Icon-83.5-3.png"
       - name: RetroArch for iOS, signed and uploaded to TestFlight
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}

@@ -2618,6 +2618,9 @@ void retro_run (void)
 	  sel_held = sel; }
 #ifndef VX_EMUVR
 	fx_apply ();
+	{ static int lr = -1; static double ts; const double now = vt_wall ();   /* (Picture size auto again: the rotation changed; on an
+	                                              iPhone / iPad also the device turned - looked at once a second) */
+	  if (opt_rot != lr || (VX_IOS && now - ts > 1.0)) { lr = opt_rot; ts = now; if (gpu_ok) scr_detect (); } }
 	if (scr_new) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape) { pic_setup (); geo_tell (); }
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }

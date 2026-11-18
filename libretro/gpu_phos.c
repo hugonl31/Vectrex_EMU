@@ -54,9 +54,9 @@ static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gauss
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
-	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = texture(fc, uv).rgb;\n"
+	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, 1.0); return; }\n"
-	"  vec3 p = texture(fp, uv).rgb, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
+	"  vec3 p = txb(fp, uv).rgb, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
 	"  float cap = pv && lp > 1.0 ? 1.0 / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
 	"  g1 += l * e1; g2 += l * e2;\n"
@@ -66,8 +66,8 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  o1 = vec4(g1, 1.0); o2 = vec4(g2, 1.0); os = vec4(f + g1 + g2, 1.0); }\n";
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
 	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; out vec4 fragc;\n"
-	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = texture(fc, uv).rgb;\n"
-	"  if (after != 0) o += texture(g1t, uv).rgb + texture(g2t, uv).rgb;\n"
+	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"
+	"  if (after != 0) o += txb(g1t, uv).rgb + txb(g2t, uv).rgb;\n"
 	"  fragc = vec4(o, 1.0); }\n";
 static const char *PH_FS_UI =                   /* (the ROM browser's panel: premultiplied, over the picture) */
 	"uniform sampler2D t; out vec4 fragc; void main() { fragc = texelFetch(t, ivec2(gl_FragCoord.xy), 0); }\n";
@@ -89,10 +89,10 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"vec3 knee(vec3 c) { return mix(c, 0.75 + 0.25 * (1.0 - exp(-(c - 0.75) * 4.0)), step(0.75, c)); }\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec3 o = texelFetch(s, ip, 0).rgb;\n"
-	"  if (glow != 0) o += tint * texture(gt, gl_FragCoord.xy / gsz).rgb;\n"
+	"  if (glow != 0) o += tint * txb(gt, gl_FragCoord.xy / gsz).rgb;\n"
 	"  o = max(o, 0.0) * bright;\n"
 	"  if (wbon != 0) o *= mix(wbg, wbc, smoothstep(0.35, 0.9, max(o.r, max(o.g, o.b))));\n"
-	"  if (ovon != 0) { vec2 u = gl_FragCoord.xy / vec2(textureSize(s, 0)); vec3 m = texture(ovm, u).rgb, la = texture(ova, u).rgb;\n"
+	"  if (ovon != 0) { vec2 u = gl_FragCoord.xy / vec2(textureSize(s, 0)); vec3 m = txb(ovm, u).rgb, la = txb(ova, u).rgb;\n"
 	"    vec3 l = dot(o, vec3(1.0 / 3.0)) * m; o = sqrt(l * l + la * la); }\n"
 	"  else { o *= 1.6; if (grey > 0.0) { vec3 g = grey * vec3(0.92, 0.95, 1.0); o = sqrt(o * o + g * g); } }\n"
 	"  fragc = vec4((knee(o) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
@@ -101,8 +101,8 @@ static GLuint ph_prog (const char *vsrc, const char *fsrc)
 {
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: lowp by
 	                                              default in ES - Apple's GPUs then read the glow's faint half-floats in coarse steps, banded) */
-	const char *vs[2] = { hdr, vsrc }, *fs[2] = { hdr, fsrc };
-	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 2);
+	const char *vs[2] = { hdr, vsrc }, *fs[3] = { hdr, GL_BL, fsrc };
+	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 3);
 	if (!v || !f) return 0;
 	GLuint p = glCreateProgram_ (); glAttachShader_ (p, v); glAttachShader_ (p, f); glLinkProgram_ (p);
 	glDeleteShader_ (v); glDeleteShader_ (f);

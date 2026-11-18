@@ -145,14 +145,19 @@ static void dbg_start (const char *sys)
 	dbg_logoff = 0;
 }
 /* each refresh: every 10 s the logs' new lines and new screenshots, every 15 s the status */
+#ifndef VX_DBG_LOG_S                            /* (the log and the status how often: the RetroArch build 10 / 15 s, the
+                                                own app 2 / 5 s - its build sets them) */
+#define VX_DBG_LOG_S 10.0
+#define VX_DBG_STATUS_S 15.0
+#endif
 static void dbg_tick (void)
 {
 	static double t10, t15; const double now = vt_wall (); if (!dbg_root[0]) return;
-	if (now - t10 >= 10.0) { t10 = now;
+	if (now - t10 >= VX_DBG_LOG_S) { t10 = now;
 		fflush (stderr); size_t n; unsigned char *b = dbg_read (dbg_log, dbg_logoff, &n);
 		if (b) { dbg_post ("core-log", "txt", b, n); dbg_logoff += (long) n; free (b); }
 		dbg_scan ("logs", ".log", "retroarch-log", 1); dbg_scan ("screenshots", ".png", "screenshot", 0); }
-	if (now - t15 >= 15.0) { t15 = now;
+	if (now - t15 >= VX_DBG_STATUS_S) { t15 = now;
 		char s[1400]; const int sn = snprintf (s, sizeof s,
 			"build %s  core 1.1\nscreen %d x %d  picture %d x %d  frame %d x %d  rot %d  deck %d\n%s | %s | %s  CPU %d%%  GPU %d%%\n"
 			"paused %d  power %d  overlay %d  imager %d  stereo %d  game %s\n",

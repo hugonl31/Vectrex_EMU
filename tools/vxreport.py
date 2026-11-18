@@ -115,17 +115,25 @@ class H(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(b)
 
     def do_GET(self):
-        if self.path in ('/iosextra', '/iosextra/pitrex'):   # (the owner's private iOS test build, at its build: the
-            # owner's own extra ROMs - DIR/iosextra/extra_roms.zip - and the PiTrex's SD card files as the PC and the Nova
-            # have them, with its calibration - pitrex.zip; put there by hand; the same token as /ioslog)
+        IOSX = {'/iosextra': 'extra_roms.zip', '/iosextra/pitrex': 'pitrex.zip', '/iosextra/pack': 'pack.tgz',
+                '/iosextra/packver': 'pack.ver'}
+        if self.path in IOSX:                  # (the owner's private iOS test builds: the owner's own extra ROMs and the
+            # PiTrex's files as the PC has them, at the RetroArch build's build; the test app's content pack - everything
+            # the PC has, tools/ios_pack.py - and its version, at the app's start; put there by hand; the /ioslog token)
             if not IOSLOG_TOKEN or not secrets.compare_digest(self.headers.get('X-Vectrex-Token', ''), IOSLOG_TOKEN):
                 return self.reply(403, 'no')
-            p = os.path.join(DIR, 'iosextra', 'pitrex.zip' if self.path.endswith('/pitrex') else 'extra_roms.zip')
+            p = os.path.join(DIR, 'iosextra', IOSX[self.path])
             if not os.path.isfile(p):
                 return self.reply(404, 'none')
-            b = open(p, 'rb').read()
-            self.send_response(200); self.send_header('Content-Type', 'application/zip'); self.send_header('Content-Length', str(len(b)))
-            self.end_headers(); self.wfile.write(b); return
+            self.send_response(200); self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Length', str(os.path.getsize(p))); self.end_headers()
+            with open(p, 'rb') as f:               # (streamed: the pack is ~130 MB)
+                while True:
+                    b = f.read(1 << 20)
+                    if not b:
+                        break
+                    self.wfile.write(b)
+            return
         self.reply(200, 'Vectrex_EMU debug reports: use Help > Debug report in the emulator.\n')
 
     def do_POST(self):

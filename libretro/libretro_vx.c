@@ -920,6 +920,16 @@ static void say_long (const char *m, unsigned ms)
 	struct vx_message_ext x = { m, ms, 3, 1, 0, 0, -1 };   /* (info, on screen and in the log, a notification) */
 	if (!env_cb (60, &x)) { struct retro_message o = { m, ms * 60 / 1000 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &o); }
 }
+static void ov_flip (const char *by)            /* (the overlay on / off by hand - it stays so for every game: said, so a
+                                                START pressed to start a game is not a mystery) */
+{
+	ov_on = !ov_on; char m[80]; snprintf (m, sizeof m, "Overlay %s (%s: %s)", ov_on ? "on" : "off", by, ov_on ? "off" : "on again");
+#ifndef VX_EMUVR
+	say_long (m, 2500);                         /* (the log too) */
+#else
+	fprintf (stderr, "[vectrex_emu] %s\n", m);
+#endif
+}
 static void tate_note (void)
 {
 	static int done; if (done || net_runs < 30) return;   /* (half a second in: the picture is there) */
@@ -2640,12 +2650,12 @@ void retro_run (void)
 			if (e & KE_PAUSE && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; }
 			if (e & KE_RESET && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 			if (e & KE_EJECT && !br_open) eject_toggle ();
-			if (e & KE_OVERLAY && ovl_manual != 1 && opt_overlay) ov_on = !ov_on; }
+			if (e & KE_OVERLAY && ovl_manual != 1 && opt_overlay) ov_flip ("O"); }
 		if (e & KE_VOLUP) turn_volume (0.05);
 		if (e & KE_VOLDN) turn_volume (-0.05); }
 #endif
 	{ int sel = opt_ov_btn ? input_cb (0, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START) : 0;   /* START (or SELECT): the overlay off / on */
-	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_on = !ov_on;   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
+	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_flip (opt_ov_btn == 2 ? "SELECT" : "START");   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */
 	  sel_held = sel; }
 #ifndef VX_EMUVR
 	fx_apply ();

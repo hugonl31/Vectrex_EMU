@@ -514,7 +514,8 @@ int main (int argc, char **argv)
 	  if (z && *z) { int e = sp_load (z);              /* (the ROM loaded whenever it is there: a module can be plugged
 	                                                    in while the game runs - VT_SPEECHDEV says one is in now) */
 	                      if (!e && dev && *dev) sp_start (dev);
-	                      else fprintf (stderr, "VecVoice: %s\n", e == -1 ? "no SP0256-AL2 ROM file" : "the file is not the SP0256-AL2 ROM"); } }
+	                      else if (e) fprintf (stderr, "VecVoice: %s\n", e == -1 ? "no SP0256-AL2 ROM file" : "the file is not the SP0256-AL2 ROM"); } }   /* (loaded, no
+	                                                    module plugged in: nothing to say - it said the ROM was wrong) */
 	if (getenv ("VT_BANKLOG")) verbose_bank = 1;
 	if (getenv ("VT_BEAMTRACE")) { bcur = malloc (sizeof (beam_t) * MAXB); blast = malloc (sizeof (beam_t) * MAXB); vt_beam_hook = beam_take; }
 	{ extern long vt_text_shift; extern double vt_text_shift_w; if (getenv ("VT_TEXTSHIFT")) vt_text_shift = atol (getenv ("VT_TEXTSHIFT")); if (getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = atof (getenv ("VT_TEXTSHIFTW")); }

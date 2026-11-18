@@ -262,11 +262,18 @@ static void dk_pointer (void)
 		if (best > 2.2 * r) zone = 0; }
 	if (net_on () && pr && !dk_prev_press && zone != 5) { dk_prev_press = pr; return; }   /* (netplay: only the volume - the rest changes the
 	                                                    emulation on one side) */
+	/* (port 2 and RESET: held 0.5 s, a tap does nothing - a thumb slipping off the right stick switched port 2 eight
+	 *  times in Last Human, the Nova 2026-11-18; moved off the piece before then: nothing) */
+	{ static int hz, done; static double ht;
+	  if (pr && !dk_prev_press && (zone == 1 || zone == 4)) { hz = zone; ht = vt_wall (); done = 0; }
+	  else if (!pr || zone != hz) hz = 0;
+	  else if (hz && !done && vt_wall () - ht >= 0.5) { done = 1;
+		if (hz == 1) port2_next ();
+		else { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET: the deck's RESET held\n"); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } } }
 	if (pr && !dk_prev_press) {
-		if (zone == 1) port2_next ();
+		if (zone == 1 || zone == 4) { }
 		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }
 		else if (zone == 3) { }                         /* (P1: for online play, later) */
-		else if (zone == 4) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET: the deck's RESET touched\n"); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; }
 		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;
 			dk_drag.a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI; dk_hover_label = 1; dk_dirty_set = 1; }
 		else if (y < 0 && !pw_on && !net_on ()) power_up ();

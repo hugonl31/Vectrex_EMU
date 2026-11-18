@@ -89,7 +89,7 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"vec3 knee(vec3 c) { return mix(c, 0.75 + 0.25 * (1.0 - exp(-(c - 0.75) * 4.0)), step(0.75, c)); }\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec3 o = texelFetch(s, ip, 0).rgb;\n"
-	"  if (glow != 0) o += tint * txb(gt, gl_FragCoord.xy / gsz).rgb;\n"
+	"  if (glow != 0) o += tint * txc(gt, gl_FragCoord.xy / gsz).rgb;\n"
 	"  o = max(o, 0.0) * bright;\n"
 	"  if (wbon != 0) o *= mix(wbg, wbc, smoothstep(0.35, 0.9, max(o.r, max(o.g, o.b))));\n"
 	"  if (ovon != 0) { vec2 u = gl_FragCoord.xy / vec2(textureSize(s, 0)); vec3 m = txb(ovm, u).rgb, la = txb(ova, u).rgb;\n"

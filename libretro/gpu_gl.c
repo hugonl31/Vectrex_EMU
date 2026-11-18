@@ -15,9 +15,18 @@
 #define GL_BL "vec4 txb(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)), L = textureSize(t, 0) - 1;\n" \
 	"  vec2 f = g - floor(g);\n" \
 	"  return mix(mix(texelFetch(t, clamp(i, ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), L), 0), f.x),\n" \
-	"             mix(texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), L), 0), f.x), f.y); }\n"
+	"             mix(texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), L), 0), f.x), f.y); }\n" \
+	/* (txc: the glow's cells spread smoothly - a cubic B-spline, 4 x 4 cells: bilinear left a crease at each cell, at an \
+	 *  iPad's resolution 6 px apart - stripes along the lines, rings round a spot, seen in a dim glow) */ \
+	"vec4 bsw(float t) { float s = 1.0 - t; return vec4(s * s * s, 4.0 - 6.0 * t * t + 3.0 * t * t * t, 1.0 + 3.0 * t + 3.0 * t * t - 3.0 * t * t * t, t * t * t) / 6.0; }\n" \
+	"vec4 txc(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)) - 1, L = textureSize(t, 0) - 1;\n" \
+	"  vec2 f = g - floor(g); vec4 wx = bsw(f.x), wy = bsw(f.y); vec4 a = vec4(0.0);\n" \
+	"  for (int y = 0; y < 4; y++) { vec4 r = vec4(0.0);\n" \
+	"    for (int x = 0; x < 4; x++) r += wx[x] * texelFetch(t, clamp(i + ivec2(x, y), ivec2(0), L), 0);\n" \
+	"    a += wy[y] * r; }\n" \
+	"  return a; }\n"
 #else
-#define GL_BL "#define txb texture\n"
+#define GL_BL "#define txb texture\n#define txc texture\n"
 #endif
 
 typedef unsigned int GLuint; typedef int GLint; typedef unsigned int GLenum; typedef int GLsizei; typedef float GLfloat;

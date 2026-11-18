@@ -2571,6 +2571,9 @@ void retro_run (void)
 	wd_runs++; wd_thr_set ();
 	emu_wait ();                                /* (1.1: the refresh to show, emulated meanwhile - UVMC2 / PiTrex) */
 	net_runs++;
+	{ static long ts_at = -2; static char ts_to[1100];   /* (test: VX_TEST_SWITCH="refresh:game" - the browser's switch at that refresh) */
+	  if (ts_at == -2) { const char *e = getenv ("VX_TEST_SWITCH"); ts_at = -1; if (e && sscanf (e, "%ld:%1099[^\n]", &ts_at, ts_to) != 2) ts_at = -1; }
+	  if (ts_at > 0 && (long) net_runs == ts_at) game_switch (ts_to); }
 	km_send ();                                 /* (RetroArch's keyboard and mouse to a UVMC2 / PiTrex: usbkm.c) */
 	if (sw_next[0]) { char p[1100]; snprintf (p, sizeof p, "%s", sw_next); sw_next[0] = 0;   /* (the ROM browser's / eject's game) */
 		if (game_switch_now (p)) { if (sw_eject == 1) ej_out = 1; else { ej_out = 0; snprintf (cur_game, sizeof cur_game, "%s", p); }

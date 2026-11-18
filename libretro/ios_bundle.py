@@ -73,21 +73,18 @@ with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', en
             'input_overlay = "~/Documents/RetroArch/overlays/gamepads/neo-retropad/neo-retropad.cfg"\n'
             'input_overlay_hide_when_gamepad_connected = "true"\n')
 
-# a keyboard (the iPad's Magic Keyboard): the desktop's keys - the arrows the stick, A W S D buttons 1-4 as a cross
-# (left, top, bottom, right: Y X B A, the core's), L the ROM browser (L3), P pause (L2), O the overlay (SELECT), R RESET
-# (L) and E eject (R) - the desktop's Ctrl+R / Ctrl+E: RetroArch binds no Ctrl -, Space held fast forward, Page Up /
-# Down the volume, F12 a snapshot, Esc RetroArch's menu; the window size keys none (the screen's own). RetroArch's
-# own keys on these letters off (F fullscreen, L fast forward, P its pause, R rewind, O movie recording, H reset)
+# a keyboard (the iPad's Magic Keyboard): the core reads it itself, as the desktop (its option Keyboard as on the PC,
+# on here) - so RetroArch maps no key to the RetroPad (a controller keeps RetroArch's own mapping, untouched) and its
+# own keys stay only where the core has none: ` Game Focus (every key to the core, Space and M too), M RetroArch's
+# menu (the iPad's keyboard has no Esc or F keys), Space held fast forward, F12 a snapshot. Its other keys on letters
+# the core uses off (P its pause, L / Space fast forward, O movie recording, E slow motion, R rewind, K frame advance)
 with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', encoding='utf-8') as f:
-    for k, v in (('input_player1_up', 'up'), ('input_player1_down', 'down'), ('input_player1_left', 'left'),
-                 ('input_player1_right', 'right'), ('input_player1_y', 'a'), ('input_player1_x', 'w'),
-                 ('input_player1_b', 's'), ('input_player1_a', 'd'), ('input_player1_l3', 'l'), ('input_player1_l2', 'p'),
-                 ('input_player1_select', 'o'), ('input_player1_l', 'r'), ('input_player1_r', 'e'),
-                 ('input_player1_start', 'enter'), ('input_player1_r2', 'nul'), ('input_player1_r3', 'nul'),
-                 ('input_hold_fast_forward', 'space'), ('input_toggle_fast_forward', 'nul'),
-                 ('input_volume_up', 'pageup'), ('input_volume_down', 'pagedown'), ('input_screenshot', 'f12'),
-                 ('input_menu_toggle', 'escape'), ('input_exit_emulator', 'nul'), ('input_toggle_fullscreen', 'nul'),
-                 ('input_pause_toggle', 'nul'), ('input_rewind', 'nul'), ('input_movie_record_toggle', 'nul'),
-                 ('input_frame_advance', 'nul'), ('input_reset', 'nul'), ('input_shader_next', 'nul'),
-                 ('input_shader_prev', 'nul'), ('input_netplay_game_watch', 'nul')):
+    for b in ('up', 'down', 'left', 'right', 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'l3', 'r3', 'select', 'start'):
+        f.write('input_player1_%s = "nul"\n' % b)
+    for k, v in (('input_game_focus_toggle', 'tilde'), ('input_menu_toggle', 'm'), ('input_hold_fast_forward', 'space'),
+                 ('input_toggle_fast_forward', 'nul'), ('input_screenshot', 'f12'), ('input_exit_emulator', 'nul'),
+                 ('input_toggle_fullscreen', 'nul'), ('input_pause_toggle', 'nul'), ('input_rewind', 'nul'),
+                 ('input_movie_record_toggle', 'nul'), ('input_hold_slowmotion', 'nul'), ('input_frame_advance', 'nul'),
+                 ('input_reset', 'nul'), ('input_shader_next', 'nul'), ('input_shader_prev', 'nul'),
+                 ('input_netplay_game_watch', 'nul'), ('input_volume_up', 'nul'), ('input_volume_down', 'nul')):
         f.write('%s = "%s"\n' % (k, v))

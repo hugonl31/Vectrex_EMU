@@ -45,6 +45,20 @@ if os.path.exists(sp):
     shutil.move(sp, os.path.join(sv, 'al2.bin'))
 print('GCE games %d of %d, homebrew %d of %d' % (getter.games_have() + getter.homebrew_have()))
 
+# the owner's own extra ROMs (the private test build only: from the project's server with its token - none, no matter)
+tok = os.environ.get('VX_LOG_TOKEN', '')
+if tok:
+    import io, urllib.request
+    try:
+        rq = urllib.request.Request('http://172.233.60.40:7746/iosextra', headers={'X-Vectrex-Token': tok})
+        with zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(rq, timeout=60).read())) as z:
+            names = [n for n in z.namelist() if not n.endswith('/') and '..' not in n and not n.startswith('/')]
+            for n in names:
+                z.extract(n, os.path.join(out, 'roms'))
+        print('extra ROMs: %d' % len(names), flush=True)
+    except Exception as e:
+        print('extra ROMs: none (%s)' % e, flush=True)
+
 # the playlist: every game in roms (its folders too), and the PiTrex
 CORE = ':/Frameworks/vectrex.emu.libretro.framework'
 items = []

@@ -37,6 +37,8 @@ jobs:
           cp vx/libretro/vectrex_emu_libretro_ios.dylib ra/pkg/apple/iOS/modules/
           lipo -info vx/libretro/vectrex_emu_libretro_ios.dylib
       - name: everything ready to play in RetroArch's assets (unpacked into its folder after each install or update)
+        env:
+          VX_LOG_TOKEN: ${{ secrets.IOS_LOG_TOKEN }}   # (the owner's extra ROMs from the project's server)
         run: |
           python3 vx/libretro/ios_bundle.py vx/libretro/vectrex_emu_libretro_ios.dylib add
           # (RetroArch's menu icons, all of them: its source's assets.zip has only some - the iPad's Ozone menu drew the

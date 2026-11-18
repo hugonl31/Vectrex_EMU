@@ -69,4 +69,4 @@ patch('configuration.c', '         else\n            verbosity_disable();\n     
       '         else\n            verbosity_disable();\n      }\n   }\n'
       '   verbosity_enable(); configuration_set_bool(settings, settings->bools.log_to_file, true);   /* (Vectrex_EMU iOS: a log for testing) */\n}\n')
 patch('menu/drivers/ozone.c', '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n',
-      '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n   RARCH_LOG("[Ozone] icons from: %s\n", ozone->icons_path);   /* (Vectrex_EMU iOS) */\n')
+      '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n   RARCH_LOG("[Ozone] icons from: %s\\n", ozone->icons_path);   /* (Vectrex_EMU iOS) */\n')

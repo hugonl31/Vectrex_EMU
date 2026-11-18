@@ -30,6 +30,8 @@ jobs:
       - name: RetroArch's source (v1.22.2)
         run: git clone -q --depth 1 --branch v1.22.2 https://github.com/libretro/RetroArch.git ra
       - name: the core for iOS (arm64, no JIT)
+        env:
+          VX_LOG_TOKEN: ${{ secrets.IOS_LOG_TOKEN }}   # (the owner's private test build: its logs to the project's server)
         run: |
           sh vx/libretro/build_libretro.sh ios
           cp vx/libretro/vectrex_emu_libretro_ios.dylib ra/pkg/apple/iOS/modules/

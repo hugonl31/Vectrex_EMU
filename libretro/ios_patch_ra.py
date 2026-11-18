@@ -70,3 +70,7 @@ patch('configuration.c', '         else\n            verbosity_disable();\n     
       '   verbosity_enable(); configuration_set_bool(settings, settings->bools.log_to_file, true);   /* (Vectrex_EMU iOS: a log for testing) */\n}\n')
 patch('menu/drivers/ozone.c', '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n',
       '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n   RARCH_LOG("[Ozone] icons from: %s\\n", ozone->icons_path);   /* (Vectrex_EMU iOS) */\n')
+
+# RetroArch's log a new file each run (logs/retroarch__<time>.log): a crashed run's log not written over at the next
+# start - the core sends each one's new lines to the project's server (dbgsend.c)
+patch('config.def.h', '#define DEFAULT_LOG_TO_FILE_TIMESTAMP false', '#define DEFAULT_LOG_TO_FILE_TIMESTAMP true')

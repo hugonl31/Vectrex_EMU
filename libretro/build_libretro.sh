@@ -36,7 +36,10 @@ ios)
 	#  the PC: VecDoom 68 % of a frame, a PiTrex arcade game 98 %; no OpenMP, as the macOS core)
 	SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 	OUT=vectrex_emu_libretro_ios.dylib
-	${CC:-clang} $FLAGS -target arm64-apple-ios13.0 -isysroot "$SDK" -DCM33_NO_JIT -DARM11_NO_JIT -dynamiclib \
+	# (VX_LOG_TOKEN set - the owner's private test build only: its logs, status, screenshots, crash reports to the
+	#  project's server, dbgsend.c; MetricKit for iOS's crash reports)
+	LOGF=""; [ -n "$VX_LOG_TOKEN" ] && LOGF="-DVX_LOG_TOKEN=\"$VX_LOG_TOKEN\" -weak_framework MetricKit"
+	${CC:-clang} $FLAGS $LOGF -target arm64-apple-ios13.0 -isysroot "$SDK" -DCM33_NO_JIT -DARM11_NO_JIT -dynamiclib \
 		-install_name @rpath/$OUT -o $OUT $SRC -Wl,-exported_symbol,_retro_* -lm -lobjc   # (objc: the screen's size, UIScreen - gpu_gl.c)
 	;;
 native)

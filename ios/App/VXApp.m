@@ -426,7 +426,7 @@ static void vxa_toast (NSString *s, double secs)
 	[super viewDidAppear:a]; if (_started) return; _started = 1;
 	struct utsname u; uname (&u); UIScreen *sc = UIScreen.mainScreen;
 	vlog ("Vectrex_EMU %s (%s) on %s, iOS %s; screen %.0f x %.0f pt, %.0f x %.0f px, scale %.2f, up to %ld Hz; memory %.0f MB",
-		[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"], [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] UTF8String],
+		[[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] UTF8String], [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] UTF8String],
 		u.machine, UIDevice.currentDevice.systemVersion.UTF8String, sc.bounds.size.width, sc.bounds.size.height, sc.nativeBounds.size.width, sc.nativeBounds.size.height,
 		sc.nativeScale, (long) sc.maximumFramesPerSecond, NSProcessInfo.processInfo.physicalMemory / 1048576.0);
 	NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject;

@@ -49,6 +49,7 @@ targets:
         GCC_OPTIMIZATION_LEVEL: "3"
         CLANG_ENABLE_OBJC_ARC: YES
         OTHER_LDFLAGS: ["-weak_framework", "MetricKit"]
+        OTHER_CFLAGS: ["-Werror=format"]   # (a wrong argument to vlog's format stops the build: build 39 crashed on one)
         ENABLE_BITCODE: NO
         ARCHS: arm64
     dependencies:

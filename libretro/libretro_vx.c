@@ -355,6 +355,13 @@ static int btn_id (const char *key)                /* (a function's RetroPad but
 }
 static void input_names (void);
 static int km_on, km_dirty, km_n, km_btn; static unsigned char km_mods;   /* (usbkm.c) */
+/* (2026-11-18: the keyboard as the desktop's - Controls > Keyboard as on the PC: held keys and pressed shortcuts, from
+ *  RetroArch's keyboard callback, used at the next refresh; Ctrl+K: the keys to a UVMC2 / PiTrex instead, as the desktop) */
+enum { KB_UP = 1, KB_DOWN = 2, KB_LEFT = 4, KB_RIGHT = 8, KB_B1 = 16, KB_B2 = 32, KB_B3 = 64, KB_B4 = 128, KB_SHIFT = 256,
+       KB_ENTER = 512, KB_BACK = 1024, KB_CTRL = 2048 };
+enum { KE_PAUSE = 1, KE_BROWSER = 2, KE_OVERLAY = 4, KE_RESET = 8, KE_EJECT = 16, KE_VOLUP = 32, KE_VOLDN = 64, KE_ESC = 128 };
+static int kb_on, km_typing; static volatile unsigned kb_held, kb_ev;
+static int br_open;                                 /* (browser.c) */
 static void RETRO_CALLCONV km_key (bool down, unsigned keycode, uint32_t character, uint16_t mods);
 static const char *optv (const char *key);
 static const char *unit_preset (void)               /* (the Unit option: owner, ideal, random N, cranky N) */
@@ -465,7 +472,13 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
 #endif
 	{ "vectrex_emu_usb_hid", "controls", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
+#if VX_IOS                                          /* (an iPhone / iPad: a controller does not turn with the screen) */
+	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "off|on" },
+	{ "vectrex_emu_keys", "controls", "Keyboard as on the PC", "Arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L ROM browser, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+K typing to a UVMC2 / PiTrex.", "on|off" },
+#else
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
+	{ "vectrex_emu_keys", "controls", "Keyboard as on the PC", "Arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L ROM browser, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+K typing to a UVMC2 / PiTrex.", "off|on" },
+#endif
 	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's overlay. START switches it (any button: Quick Menu > Controls).", "on|off" },
 	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How strongly the overlay colours the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
 	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
@@ -705,7 +718,7 @@ static void read_options (void)
 	/* (the core turns the picture itself: RetroArch's own rotation kept the upright picture's shape on the screen) */
 	opt_rot = opt_is ("vectrex_emu_rotate", "90 (turn the device right)") ? 1 : opt_is ("vectrex_emu_rotate", "180") ? 2
 	        : opt_is ("vectrex_emu_rotate", "270 (turn the device left)") ? 3 : 0;
-	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off");
+	opt_rot_stick = !opt_is ("vectrex_emu_rotate_stick", "off"); kb_on = opt_is ("vectrex_emu_keys", "on");
 	{ const char *zv = optv ("vectrex_emu_size"); int z = atoi (zv); size_auto = !zv[0] || !strcmp (zv, "auto");
 	  if (size_auto) { if (!scr_short) scr_load (); z = scr_short; }   /* (the screen's short side: gpu_gl.c scr_detect, kept) */
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
@@ -1149,7 +1162,8 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  unit_make (unit_preset (), optv); unit_env (unit_addon);
 	  km_on = unit_addon && !opt_is ("vectrex_emu_usb_hid", "off"); km_n = 0; km_mods = 0; km_dirty = km_on; km_btn = -1;
 	  vx_putenv (km_on ? "VT_USBHID=1" : "VT_USBHID=");   /* (the desktop's usb_hid: a UVMC2 / PiTrex gets the keyboard and mouse) */
-	  if (km_on) { static struct retro_keyboard_callback kc = { km_key }; env_cb (RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kc); } }   /* (unit.c: the desktop's Config > Unit / Circuit) */
+	  km_typing = 0; kb_held = 0; kb_ev = 0;
+	  if (km_on || kb_on) { static struct retro_keyboard_callback kc = { km_key }; env_cb (RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kc); } }   /* (unit.c: the desktop's Config > Unit / Circuit) */
 	/* (1.1, as the desktop's Core: the cartridge hardware - auto by the ROM's size, off a plain 32 KB, or a board; a UVMC2's
 	 *  mode; its core 0 on a host thread of its own with 4 or more processors) */
 	{ const char *ch = optv ("vectrex_emu_cart_hw"); static char e[64];
@@ -1285,6 +1299,12 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 	if (input_cb (port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN)) y = -127;
 	unsigned ub = 0; int ux = 0, uy = 0;
 	if (port == 0 && !net_on () && usb_pad (&ux, &uy, &ub)) { if (ux) x = ux; if (uy) y = uy; }   /* (not in netplay: RetroArch's input only) */   /* (the Vectrex USB Controller, player 1) */
+	if (port == 0 && kb_on && !net_on ()) {         /* (the desktop's keys: the arrows the stick - Shift half -, A W S D buttons 1-4;
+	                                                    in the ROM browser Enter loads and Backspace goes back, its buttons 4 and 1) */
+		const unsigned k = kb_held; const int s = k & KB_SHIFT ? 64 : 127;
+		if (k & KB_LEFT) x = -s; if (k & KB_RIGHT) x = s; if (k & KB_UP) y = s; if (k & KB_DOWN) y = -s;
+		ub |= (k & KB_B1 ? 1u : 0) | (k & KB_B2 ? 2u : 0) | (k & KB_B3 ? 4u : 0) | (k & KB_B4 ? 8u : 0);
+		if (br_open) ub |= (k & KB_ENTER ? 8u : 0) | (k & KB_BACK ? 1u : 0); }
 	if (opt_rot_stick && opt_rot > 0) {          /* (the picture turned 90 / 180 / 270 counter-clockwise, the device turned
 	                                                the other way to hold it upright: the stick's up is then the picture's
 	                                                right (90), down (180), left (270)) */
@@ -2582,6 +2602,16 @@ void retro_run (void)
 	                                              netplay: RetroArch's own Reset, sent to both) */
 	  if (b && !r2 && !br_open && !net_on ()) eject_toggle ();
 	  l2 = a; r2 = b; }
+	if (kb_ev) { const unsigned e = kb_ev; kb_ev = 0;   /* (the desktop's shortcut keys - usbkm.c kb_desk; netplay: none, as the buttons) */
+		if (!net_on ()) {
+			if (e & KE_BROWSER) br_show (!br_open);
+			if (e & KE_ESC && br_open) br_show (0);
+			if (e & KE_PAUSE && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; }
+			if (e & KE_RESET && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
+			if (e & KE_EJECT && !br_open) eject_toggle ();
+			if (e & KE_OVERLAY && ovl_manual != 1 && opt_overlay) ov_on = !ov_on; }
+		if (e & KE_VOLUP) turn_volume (0.05);
+		if (e & KE_VOLDN) turn_volume (-0.05); }
 #endif
 	{ int sel = opt_ov_btn ? input_cb (0, RETRO_DEVICE_JOYPAD, 0, opt_ov_btn == 2 ? RETRO_DEVICE_ID_JOYPAD_SELECT : RETRO_DEVICE_ID_JOYPAD_START) : 0;   /* START (or SELECT): the overlay off / on */
 	  if (sel && !sel_held && ovl_manual != 1 && opt_overlay) ov_on = !ov_on;   /* (v0.25: the automatic overlay on / off; a hand-placed one stays) */   /* (v0.20: a hand-placed one comes off first) */

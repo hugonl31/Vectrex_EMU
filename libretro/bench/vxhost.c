@@ -176,7 +176,15 @@ int main (int argc, char **argv)
 		hidden = 1; retro_run (); hidden = 0; if (ra_sz && retro_serialize (ra_buf, ra_sz)) { retro_run (); retro_unserialize (ra_buf, ra_sz); } else retro_run (); } \
 		else retro_run (); \
 		{ static long rsf = -2; if (rsf == -2) rsf = getenv ("VXH_RESET") ? atol (getenv ("VXH_RESET")) : -1; \
-		  if (fno == rsf) { void (*rr) (void) = (void (*) (void)) dlsym (h, "retro_reset"); if (rr) { rr (); fprintf (stderr, "vxhost: retro_reset at %ld\n", fno); } } } } while (0)
+		  if (fno == rsf) { void (*rr) (void) = (void (*) (void)) dlsym (h, "retro_reset"); if (rr) { rr (); fprintf (stderr, "vxhost: retro_reset at %ld\n", fno); } } } \
+		{ static long rlf = -2; static char rlp[1100]; if (rlf == -2) { const char *z = getenv ("VXH_RELOAD"); rlf = -1; if (z && sscanf (z, "%ld:%1099[^\n]", &rlf, rlp) != 2) rlf = -1; } \
+		  if (fno == rlf) { void (*dn) (void) = (void (*) (void)) dlsym (h, "retro_deinit");   /* (VXH_RELOAD=refresh:game - RetroArch on iOS: \
+		                                                    the core unloaded but still in memory, started again with another game) */ \
+			retro_unload_game (); if (dn) dn (); fprintf (stderr, "vxhost: core unloaded at %ld, started again with %s\n", fno, rlp); \
+			retro_set_environment (env); retro_set_video_refresh (video); retro_set_audio_sample (sample); retro_set_audio_sample_batch (audio); \
+			retro_set_input_poll (poll); retro_set_input_state (input); retro_init (); \
+			static struct retro_game_info g2; g2.path = rlp; if (!retro_load_game (&g2)) fprintf (stderr, "vxhost: reload FAILED\n"); \
+			retro_get_system_av_info (&av); fprintf (stderr, "vxhost: picture now %ux%u\n", av.geometry.base_width, av.geometry.base_height); } } } while (0)
 	if (!strcmp (argv[4], "bench")) {
 		int n = argc > 5 ? atoi (argv[5]) : 1200, warm = 120; double t0 = 0, worst = 0;
 		for (fno = 0; fno < n + warm; fno++) {

@@ -80,6 +80,8 @@ static void dbg_scan (const char *sub, const char *ending, const char *kind, int
 	struct dirent *e; int sent = 0;
 	while ((e = readdir (dd)) && sent < 3) {
 		const char *f = e->d_name; const size_t fl = strlen (f), el = strlen (ending);
+		if (e->d_type == DT_DIR && f[0] != '.' && !strchr (sub, '/')) {   /* (one level down: screenshots sorted into folders) */
+			char s2[600]; snprintf (s2, sizeof s2, "%s/%s", sub, f); dbg_scan (s2, ending, kind, grow); continue; }
 		if (f[0] == '.' || fl < el || strcasecmp (f + fl - el, ending)) continue;
 		char p[1500], key[600]; snprintf (p, sizeof p, "%s/%s", d, f); snprintf (key, sizeof key, "%s/%s", sub, f);
 		struct stat st; if (stat (p, &st)) continue;

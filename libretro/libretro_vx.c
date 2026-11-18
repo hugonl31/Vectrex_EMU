@@ -3303,12 +3303,14 @@ bool retro_load_game (const struct retro_game_info *g)
 	boot_id = VX_TICKS () | 1;   /* (v0.25: a new game booted) */
 	if (!g || !g->path) return false;
 	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
-#ifdef __ANDROID__
-	/* (Android: stderr goes nowhere - the core's messages to <system>/vectrex_emu/vectrex_emu.log, for a game that will
-	 *  not start: the BIOS, the overlay found, the speech module) */
+#if defined(__ANDROID__) || VX_IOS
+	/* (Android, iPhone / iPad: stderr goes nowhere - the core's messages to <system>/vectrex_emu/vectrex_emu.log, for a
+	 *  game that will not start: the BIOS, the overlay found, the speech module, the GPU path) */
 	if (sys) { char lp[1100]; snprintf (lp, sizeof lp, "%s/vectrex_emu/vectrex_emu.log", sys); FILE *lf = fopen (lp, "w");
 		if (lf) { fflush (stderr); dup2 (fileno (lf), 2); fclose (lf); setvbuf (stderr, NULL, _IONBF, 0);
 			fprintf (stderr, "[vectrex_emu] core 1.1, game %s\n", g && g->path ? g->path : "(none)"); } }
+#endif
+#ifdef __ANDROID__
 	crash_install (); wd_start ();
 #endif
 	enum retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;

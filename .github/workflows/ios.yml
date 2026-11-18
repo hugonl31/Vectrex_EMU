@@ -50,8 +50,10 @@ jobs:
             -scheme "RetroArch iOS Release" -xcconfig pkg/apple/GitHubCI.xcconfig -archivePath "$RUNNER_TEMP/VX.xcarchive" \
             IOS_BUNDLE_IDENTIFIER=com.hugob.vectrexemu IOS_CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=$TEAM \
             MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            2>&1 | grep -E 'error:|warning: .*vectrex|ARCHIVE (SUCCEEDED|FAILED)|Making framework'
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- \
+            > "$RUNNER_TEMP/archive.log" 2>&1 || { grep -B8 -A3 -E 'error:|FAILED|failed with' "$RUNNER_TEMP/archive.log" | tail -120; exit 1; }
+          # (RetroArch's make-frameworks.sh signs the cores itself: '-', ad hoc, needs no keychain - the export signs them again)
+          grep -E 'ARCHIVE SUCCEEDED|Making framework' "$RUNNER_TEMP/archive.log"
           ls "$RUNNER_TEMP/VX.xcarchive/Products/Applications/"*/Frameworks | grep -i vectrex
           cat > "$RUNNER_TEMP/export.plist" <<PL
           <?xml version="1.0" encoding="UTF-8"?>

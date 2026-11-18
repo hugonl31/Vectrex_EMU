@@ -76,7 +76,7 @@ patch('configuration.c', '      if (config_get_bool(conf, bool_settings[i].ident
       '   settings->bools.notification_show_config_override_load = false; settings->bools.notification_show_remap_load = false;   /* (Vectrex_EMU iOS) */\n'
       '   settings->bools.notification_show_autoconfig = false; settings->bools.notification_show_set_initial_disk = false;\n'
       '   settings->bools.notification_show_refresh_rate = false; settings->bools.notification_show_cheats_applied = false;\n'
-      '   settings->bools.notification_show_patch_applied = false;\n')
+      '   settings->bools.notification_show_patch_applied = false; settings->bools.run_ahead_hide_warnings = true;\n')
 patch('menu/drivers/ozone.c', '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n',
       '         APPLICATION_SPECIAL_DIRECTORY_ASSETS_OZONE_ICONS);\n   RARCH_LOG("[Ozone] icons from: %s\\n", ozone->icons_path);   /* (Vectrex_EMU iOS) */\n')
 

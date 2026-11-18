@@ -298,16 +298,21 @@ static const char *tmp_dir (void)           /* (Windows: TEMP; Android: no TEMP 
 	const char *t = getenv ("TEMP"); if (!t || !*t) t = getenv ("TMPDIR"); if (!t || !*t) t = g_sys[0] ? g_sys : ".";
 	return t;
 }
-static void auto_path (char *o, size_t n) { snprintf (o, n, "%s" SEP "vectrex_emu_auto_overlay.txt", tmp_dir ()); }
+static void auto_path (char *o, size_t n)       /* (the overlay on / off kept: EmuVR's sheet file beside it; RetroArch the saves
+                                                folder - it stuck through nothing: a game switch, an eject, a new start) */
+{
+	if (sheet_file) { snprintf (o, n, "%s" SEP "vectrex_emu_auto_overlay.txt", tmp_dir ()); return; }
+	const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv); if (sv && *sv) snprintf (o, n, "%s" SEP "vectrex_emu_overlay_on.txt", sv); else o[0] = 0;
+}
 static void auto_keep (void)
 {
-	if (!sheet_file || ov_on == auto_saved) return; auto_saved = ov_on;
-	char p[1100]; auto_path (p, sizeof p); FILE *f = fopen (p, "w"); if (f) { fprintf (f, "%d\n", ov_on); fclose (f); }
+	if (ov_on == auto_saved || !opt_overlay) return; auto_saved = ov_on;
+	char p[1100]; auto_path (p, sizeof p); FILE *f = p[0] ? fopen (p, "w") : NULL; if (f) { fprintf (f, "%d\n", ov_on); fclose (f); }
 }
 static void auto_load (void)
 {
-	if (!sheet_file || !opt_overlay) return;
-	char p[1100]; auto_path (p, sizeof p); FILE *f = fopen (p, "r"); int v;
+	if (!opt_overlay) return;
+	char p[1100]; auto_path (p, sizeof p); FILE *f = p[0] ? fopen (p, "r") : NULL; int v;
 	if (f) { if (fscanf (f, "%d", &v) == 1) ov_on = v != 0; fclose (f); }
 	auto_saved = ov_on;
 }
@@ -3199,7 +3204,7 @@ static int game_switch_now (const char *path)
 	emu_wait_ext (); emu_primed = 0;
 	if (sd_img[0] && sd_folder[0]) sdc_sync_back (sd_img, sd_folder);
 	flash_save (1);
-	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0; ov_made = 0; ov_on = opt_overlay;   /* (the last game's overlay off) */
+	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0; ov_made = 0;   /* (the last game's overlay out; on / off stays as the player set it - an eject turned it on again) */
 	{ extern int vt_vb, vt_hb512, vt_multicart, vt_uvm2, vt_uvm2_cart, vt_pitrex; extern const char *vt_flash_file;   /* (the last cartridge's
 	                                              boards and modes out: vtest's main only sets them - Vectorblade then Scramble ran Scramble on
 	                                              Vectorblade's board: Mine Storm, the owner 2026-11-15) */

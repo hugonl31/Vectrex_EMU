@@ -4,7 +4,7 @@
  * when paused, the P2 port, the cartridge, the P1 port, RESET and the volume knob, in the desktop's sizes (its units:
  * the picture's height). Display > Control deck; Display > Screen shape: the picture and the deck one block, black
  * bars to 4:3 or 16:9 (turned: 3:4 / 9:16). RetroArch's pointer (the mouse, or touch) works it as the desktop's mouse:
- * the P2 port the next device, the cartridge the ROM browser, RESET, the knob turned round (down to 0 switches off;
+ * the P2 port only shows its device (the core options choose it), the cartridge the ROM browser, RESET (its upper half), the knob turned round (down to 0 switches off;
  * a click: +-5 %, switched off: on); the OSD opens nothing here. Drawn on the CPU when it changes, laid under the
  * picture on the GPU (gpu_present) or in the CPU's frame. Included by libretro_vx.c after browser.c.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
@@ -14,7 +14,7 @@ static size_t dk_n;   /* (dk_img, dk_w, dk_h, dk_gen: gpu_gl.c) */
 static double dk_r, dk_cy, dk_kx, dk_rx, dk_cx, dk_p2x, dk_p1x, dk_ox, dk_ok_, dk_M;   /* (the deck's places: its own pixels) */
 static int dk_p2 = 0, sp_ok;                     /* (port 2: 0 joystick, 1 VecVox, 2 VecVoice, 3 3D Imager, 4 light pen) */
 static double dk_reset_until, dk_t_osd; static int dk_hover_label;
-static char dk_osd[3][24]; static int dk_osd_col; static int dk_cpu = -1;
+static char dk_osd[3][24]; static int dk_osd_col; static int dk_cpu = -1, dk_gpu = -1;
 static struct { int on; double a, x, y, acc, vol0; int moved, up; } dk_drag;
 static float vol_before_off = 1.0f;
 
@@ -110,10 +110,10 @@ static void dk_draw (void)
 		br_text (dk_osd[i], xe, (float) (y + i * 9.0 * k), (float) k, i == 2 ? (unsigned) dk_osd_col : DK_G); }
 	  const double km = k * 0.7, my = y + (3 + 0.25) * 9.0 * k, xe = x + dk_ow - k, bw = (xe - x) - 9 * 6.0 * km;
 	  if (dk_thin) for (int i = 0; i < 2; i++) {        /* (_meters_thin: two thin lines under the text) */
-		const double ty = y + 3 * 9.0 * k + (0.5 + i * 2.0) * k, th = fmax (1.0, k); const int pct = i == 0 ? dk_cpu : -1;
+		const double ty = y + 3 * 9.0 * k + (0.5 + i * 2.0) * k, th = fmax (1.0, k); const int pct = i == 0 ? dk_cpu : dk_gpu;
 		br_fill ((float) x, (float) ty, (float) xe, (float) (ty + th), DK_G, 0.30f);
 		if (pct >= 0) br_fill ((float) x, (float) ty, (float) (x + (xe - x) * fmin (1.0, pct / 100.0)), (float) (ty + th), pct < 90 ? DK_G : pct <= 100 ? 0xed9933u : 0xed5454u, 1); }
-	  else for (int i = 0; i < 2 && bw > 12 * km; i++) { const double ty = my + i * 9.0 * km; const int pct = i == 0 ? dk_cpu : -1;
+	  else for (int i = 0; i < 2 && bw > 12 * km; i++) { const double ty = my + i * 9.0 * km; const int pct = i == 0 ? dk_cpu : dk_gpu;
 		br_text (i ? "GPU" : "CPU", (float) x, (float) ty, (float) km, DK_G);
 		const double bx0 = x + 4 * 6.0 * km; br_rect ((float) bx0, (float) ty, (float) (bx0 + bw), (float) (ty + 6 * km), DK_G, (float) fmax (1.0, km * 0.42));
 		const unsigned c = pct < 90 ? DK_G : pct <= 100 ? 0xed9933u : 0xed5454u;
@@ -180,14 +180,23 @@ static void dk_compose (uint32_t *o, const uint32_t *pic, size_t pitch)
 }
 /* (each refresh: the OSD's figures once a second; the deck drawn anew when anything on it changed) */
 static double dk_t0, dk_busy, dk_run0; static long dk_f0, dk_r0; static unsigned long long dk_e0; static long dk_runs;
+/* (EMU RATE over the last DK_RW seconds, updated each second: one second's figure wobbled 98..101 % with the moment
+ *  RetroArch calls the core (a few ms either way) - and 100 % only while no refresh came late: a missed refresh is the
+ *  system not keeping up, and shows at once) */
+#define DK_RW 4
+static double dk_rw_e[DK_RW], dk_rw_t[DK_RW]; static int dk_rw_m[DK_RW], dk_rw_n, dk_rw_i, dk_miss; static double dk_lastshown;
+static void dk_rate_reset (void) { dk_rw_n = 0; dk_rw_i = 0; dk_miss = 0; dk_lastshown = 0; }
 static void dk_tick (double busy)
 {
 	if (!dk_on && !dk_pop) return;
-	(void) busy; dk_runs++;
+	(void) busy;
+	{ int av = 3; if (!env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) || (av & 1)) { dk_runs++;
+		const double w = vt_wall (); if (dk_lastshown > 0 && w - dk_lastshown > 1.5 / opt_rate) dk_miss++; dk_lastshown = w; } }   /* (MONITOR: the refreshes
+	                                              shown - run-ahead's hidden runs not counted: 120 Hz on a 60 Hz screen) */
 	{ static int nw = -1; const int n = net_on (); if (n != nw) { nw = n; dk_dirty_set = 1; } }
 	{ static int hw = -1; const int h = vx_paused || br_open;   /* (paused, or the ROM browser open: EMU RATE 0%, not red - at once) */
 	  if (h != hw) { hw = h; dk_dirty_set = 1; if (h && pw_on) { snprintf (dk_osd[2], 24, "0%%"); dk_osd_col = DK_G; }
-		if (dk_t0 != 0) { dk_t0 = vt_wall (); dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; } } }   /* (the rate measured anew: the stop not in it) */
+		if (dk_t0 != 0) { dk_t0 = vt_wall (); dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; } dk_rate_reset (); } }   /* (the rate measured anew: the stop not in it) */
 	if (dk_pop) { const int want = vx_paused || dk_drag.on || vt_wall () < dk_pop_until;   /* (the pop-up: a while after a touch, while paused) */
 		if (want != dk_shown) { dk_shown = want; dk_dirty_set = 1; } }
 	{ static clock_t c0; const clock_t c = clock (); if (c0) dk_busy += (double) (c - c0) / CLOCKS_PER_SEC; c0 = c; }   /* (the processor: all the core's threads) */
@@ -195,12 +204,17 @@ static void dk_tick (double busy)
 	if (dk_t0 == 0) { dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; snprintf (dk_osd[0], 24, "-- FPS"); snprintf (dk_osd[1], 24, "-- HZ"); snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; }
 	if (now - dk_t0 >= 1.0) { const double dt = now - dk_t0;
 		snprintf (dk_osd[0], 24, "%d FPS", (int) ((aq_frames - dk_f0) / dt + 0.5)); snprintf (dk_osd[1], 24, "%d HZ", (int) ((dk_runs - dk_r0) / dt + 0.5));
-		const double sp = (double) (run_t - dk_e0) / 1.5e6 / dt * 100.0;
-		if (!pw_on) { snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; dk_cpu = -1; }
-		else if (vx_paused || br_open) { snprintf (dk_osd[2], 24, "0%%"); dk_osd_col = DK_G; dk_cpu = -1; }   /* (stopped on purpose: not red) */
+		dk_rw_e[dk_rw_i] = (double) (run_t - dk_e0) / 1.5e6; dk_rw_t[dk_rw_i] = dt; dk_rw_m[dk_rw_i] = dk_miss; dk_miss = 0;
+		dk_rw_i = (dk_rw_i + 1) % DK_RW; if (dk_rw_n < DK_RW) dk_rw_n++;
+		double se = 0, st = 0; int sm = 0; for (int i = 0; i < dk_rw_n; i++) { se += dk_rw_e[i]; st += dk_rw_t[i]; sm += dk_rw_m[i]; }
+		double sp = se / st * 100.0;
+		if (!sm && sp >= 97 && sp < 103) sp = 100;              /* (every refresh on time: keeping up - the rest is the timing's wobble) */
+		if (!pw_on) { snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; dk_cpu = dk_gpu = -1; }
+		else if (vx_paused || br_open) { snprintf (dk_osd[2], 24, "0%%"); dk_osd_col = DK_G; dk_cpu = dk_gpu = -1; }   /* (stopped on purpose: not red) */
 		else { snprintf (dk_osd[2], 24, "%d%%", sp >= 99.5 ? 100 : (int) sp); dk_osd_col = sp >= 97 ? DK_G : sp >= 80 ? 0xed9933u : 0xed5454u;
-			dk_cpu = (int) (100.0 * dk_busy / dt + 0.5); }
-		dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; dk_dirty_set = 1; }
+			dk_cpu = (int) (100.0 * dk_busy / dt + 0.5);
+			dk_gpu = gq_ok > 0 && gq_n ? (int) (gq_sum_ms / 10.0 / dt + 0.5) : -1; }   /* (the GPU's busy share of the second: its time per picture, summed) */
+		dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; gq_sum_ms = 0; gq_n = 0; dk_dirty_set = 1; }
 	if (dk_dirty_set || vt_wall () < dk_reset_until + 0.05) { dk_draw (); dk_dirty_set = 0; }
 }
 static void turn_volume (double d)
@@ -212,17 +226,6 @@ static void turn_volume (double d)
 	dk_dirty_set = 1;
 }
 static void power_up (void) { turn_volume (vol_before_off > 0 ? vol_before_off : 0.5); }
-/* (port 2: the next device - joystick, VecVox, VecVoice, 3D Imager, light pen; without the speech ROM no voices) */
-static void port2_next (void)
-{
-	int d = (dk_p2 + 1) % 5; if ((d == 1 || d == 2) && !sp_ok) d = 3;
-	extern void vt_set_analog (int id, double v); extern int vt_imager;
-	emu_wait_ext ();
-	vt_set_analog (27, d == 0 ? 0 : d == 1 ? 1 : d == 2 ? 2 : d == 3 ? 3 : 6);
-	lightpen = d == 4; dk_p2 = d; dk_dirty_set = 1;
-	{ const int st = vt_imager && opt_imager == 2; if (st != stereo || (vt_imager ? 3 : 1) != NC) { stereo = st; pic_setup (); geo_tell (); } }
-	fprintf (stderr, "[vectrex_emu] port 2: %s\n", (const char *const[]) { "joystick", "VecVox", "VecVoice", "3D Imager", "light pen" }[d]);
-}
 /* RetroArch's pointer (the mouse, touch) on the deck - and, switched off, on the picture: on */
 static int dk_prev_press;
 static void dk_pointer (void)
@@ -248,11 +251,18 @@ static void dk_pointer (void)
 		if (best > 2.2 * r) zone = 0; }
 	if (net_on () && pr && !dk_prev_press && zone != 5) { dk_prev_press = pr; return; }   /* (netplay: only the volume - the rest changes the
 	                                                    emulation on one side) */
+	/* (port 2: only a symbol - its device is chosen in the core options; RESET: only the button's upper half, the side of
+	 *  its word, away from the screen's edge - a thumb slipping off the right stick switched port 2 and reset Last Human,
+	 *  the Nova 2026-11-18) */
+	{ static int held, done; static double ht;   /* (RESET: held 0.2 s there; moved off before then: nothing) */
+	  const int on = zone == 4 && y <= dk_cy + 0.4 * r && fabs (x - dk_rx) <= 1.3 * r;   /* (the button's upper half up to its word, wider) */
+	  if (pr && !dk_prev_press && on) { held = 1; ht = vt_wall (); done = 0; }
+	  else if (!pr || !on) held = 0;
+	  else if (held && !done && vt_wall () - ht >= 0.2) { extern void vecx_reset_button (void); done = 1; emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
 	if (pr && !dk_prev_press) {
-		if (zone == 1) port2_next ();
+		if (zone == 1 || zone == 4) { }
 		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }
 		else if (zone == 3) { }                         /* (P1: for online play, later) */
-		else if (zone == 4) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; }
 		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;
 			dk_drag.a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI; dk_hover_label = 1; dk_dirty_set = 1; }
 		else if (y < 0 && !pw_on && !net_on ()) power_up ();

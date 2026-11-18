@@ -3,6 +3,33 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.8
+
+* Last Human, the newest builds of both editions: 16 shots (above 8 at half rate, as the game draws them), shield
+  bots that turn slower, centipedes that start in cages, and misaligned vectors with many shots fixed - with the
+  owner's list of ten changes.
+
+**The RetroArch core**
+* A game slower than the screen no longer flickers: Vectrexians (45 frames a second on a 60 Hz screen) showed one
+  game frame per refresh, and what a frame left out went dark for one or two whole refreshes. Now each line stays lit
+  until the game draws it again - as the PC version's phosphor holds it - with Smooth motion on or off.
+* New: Core Options > Video > Fill skipped lines (off by default). Some games leave lines out of a frame on purpose -
+  Vectrexians skips one row of aliens each frame, Last Human half its shots when more than 8 are flying. A real
+  Vectrex shows those dimmer for a moment, and so does the core by default; on, they stay lit until drawn again.
+* Fixed: Last Human could flash black for a tenth of a second with many shots: a game that ends its frame twice in
+  a row made a very short empty frame, shown on its own. Pieces shorter than 15 ms now join the next one, as on the
+  PC.
+* The control deck: a GPU meter (the graphics chip's own time for each picture, as on the PC). EMU RATE is measured
+  over the last 4 seconds and shows a steady 100 % while every refresh comes on time - it wobbled 98..101 % before,
+  and it still drops at once when the system falls behind. MONITOR no longer counts run-ahead's hidden runs (it said
+  120 Hz on a 60 Hz screen).
+* The ROM browser as on the PC: Recent (the last ten games played) and the PiTrex at the top of the first folder,
+  the UVMC2 and PITREX tints named in its title band, and it opens again in the folder a game was loaded from - the
+  PiTrex's too, not its SD card folder.
+* The control deck on a touch screen: P2 PORT only shows the port 2 device (chosen in the core options), and RESET
+  works on a short hold of its upper half, near its word. A thumb slipping off the right stick no longer switches
+  port 2 or resets the game.
+
 ## v1.6.7
 
 * Fast forward: hold Space and the game runs 4x as fast, without sound; EMU RATE shows about 400 %. Every 4th frame

@@ -73,7 +73,7 @@ static uint32_t *br_img; static int br_shown, br_gen; static GLuint br_tex; stat
 GLFN(const unsigned char *, glGetString, (GLenum));
 static void ph_reset (void); static void ph_lost (void); static int ph_ok; static GLuint ph_P;   /* (gpu_phos.c) */
 static int gpu_asked;                         /* (the frontend took the request: the picture goes through the GPU) */
-static int gpu_ok;                            /* (the context is there and the program built) */
+static int gpu_ok; static int gq_cur = -1, gq_ok = -1;   /* (the GPU meter's queries: below gpu_present) */                            /* (the context is there and the program built) */
 static int gpu_es;                            /* (OpenGL ES) */
 static GLuint g_prog, g_tex, g_lmap, g_smap, g_vao; static int g_tw, g_th, g_lmap_ok, g_smap_ok;
 enum { U_TEX, U_LMAP, U_SMAP, U_ROT, U_CROP, U_NORM, U_PXS, U_BSCALE, U_FX, U_GLASS, U_EDGE, U_GREY, U_LK, U_LPOS, U_LMR,
@@ -418,7 +418,7 @@ static GLuint gpu_shader (GLenum type, const char *const *src, int n)
 #define GLLOAD(n) (n##_ = (pf_##n) hwr.get_proc_address (#n), ok &= n##_ != NULL)
 static void gpu_reset (void)
 {
-	int ok = 1; gpu_ok = 0; fprintf (stderr, "[vectrex_emu] GPU: context reset\n");   /* (a hang there: the log says so) */
+	int ok = 1; gpu_ok = 0; fprintf (stderr, "[vectrex_emu] GPU: context reset\n"); gq_ok = -1; gq_cur = -1;   /* (a hang there: the log says so) */
 	GLLOAD (glGenTextures); GLLOAD (glDeleteTextures); GLLOAD (glBindTexture); GLLOAD (glActiveTexture); GLLOAD (glTexImage2D);
 	GLLOAD (glTexSubImage2D); GLLOAD (glTexParameteri); GLLOAD (glPixelStorei); GLLOAD (glCreateShader); GLLOAD (glShaderSource);
 	GLLOAD (glCompileShader); GLLOAD (glGetShaderiv); GLLOAD (glGetShaderInfoLog); GLLOAD (glDeleteShader); GLLOAD (glCreateProgram);
@@ -468,7 +468,7 @@ static void gpu_reset (void)
 	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */
 	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there%s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? ", the light too" : "");
 }
-static void gpu_destroy (void) { fprintf (stderr, "[vectrex_emu] GPU: context destroyed\n"); ph_lost (); gpu_ok = 0; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
+static void gpu_destroy (void) { fprintf (stderr, "[vectrex_emu] GPU: context destroyed\n"); ph_lost (); gpu_ok = 0; gq_ok = -1; gq_cur = -1; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
 
 /* (the screen's size, for Picture size auto: RetroArch's window as its graphics context has it - EGL's surface
  *  (Android, Linux), Windows: the window's monitor - its short side kept in the saves folder for the next start) */
@@ -535,8 +535,52 @@ static void gpu_vp (double x0, double y0, double x1, double y1, int rot, int dw,
 }
 /* the picture: the frame (the whole sheet, XRGB, pitch in pixels) up, drawn into the frontend's framebuffer turned and
  * cut to the area sent (crop: the sheet's share, y up), with the glass and the case on top */
+/* (the GPU's own time for each picture, as the desktop's OSD meter (vecrender.py _gpu_begin): GL_TIME_ELAPSED queries -
+ *  GL_EXT_disjoint_timer_query on Android / iOS, core in desktop GL 3.3 - read a few pictures later, so nothing waits
+ *  for them; the deck's GPU bar is their sum over a second) */
+typedef void (GLAPIENTRY *pf_gq_gen) (GLsizei, GLuint *); typedef void (GLAPIENTRY *pf_gq_beg) (GLenum, GLuint);
+typedef void (GLAPIENTRY *pf_gq_end) (GLenum); typedef void (GLAPIENTRY *pf_gq_iv) (GLuint, GLenum, GLuint *);
+typedef void (GLAPIENTRY *pf_gq_u64) (GLuint, GLenum, unsigned long long *);
+static pf_gq_gen gq_gen; static pf_gq_beg gq_beg; static pf_gq_end gq_endf; static pf_gq_iv gq_iv; static pf_gq_u64 gq_u64;
+#define GQ_N 8
+static GLuint gq_id[GQ_N]; static int gq_busy[GQ_N], gq_next; static double gq_sum_ms; static long gq_n;
+static void *gq_proc (const char *a, const char *b) { void *f = (void *) hwr.get_proc_address (a); return f ? f : b ? (void *) hwr.get_proc_address (b) : NULL; }
+static void gq_setup (void)
+{
+	gq_ok = 0; gq_cur = -1; for (int i = 0; i < GQ_N; i++) gq_busy[i] = 0;
+	if (!glGetString_) glGetString_ = (pf_glGetString) hwr.get_proc_address ("glGetString");
+	const char *ex = glGetString_ ? (const char *) glGetString_ (0x1F03) : NULL;   /* (GL_EXTENSIONS) */
+	if (gpu_es && !(ex && strstr (ex, "GL_EXT_disjoint_timer_query"))) { fprintf (stderr, "[vectrex_emu] GPU: no timer queries - no GPU meter\n"); return; }
+	gq_gen = (pf_gq_gen) gq_proc ("glGenQueriesEXT", "glGenQueries"); gq_beg = (pf_gq_beg) gq_proc ("glBeginQueryEXT", "glBeginQuery");
+	gq_endf = (pf_gq_end) gq_proc ("glEndQueryEXT", "glEndQuery"); gq_iv = (pf_gq_iv) gq_proc ("glGetQueryObjectuivEXT", "glGetQueryObjectuiv");
+	gq_u64 = (pf_gq_u64) gq_proc ("glGetQueryObjectui64vEXT", "glGetQueryObjectui64v");
+	if (!gq_gen || !gq_beg || !gq_endf || !gq_iv || !gq_u64) return;
+	gq_gen (GQ_N, gq_id); gq_ok = 1;
+}
+static void gq_poll (void)                      /* (the finished queries, oldest first: their times added up) */
+{
+	for (int k = 0; k < GQ_N; k++) { const int i = (gq_next + k) % GQ_N; if (!gq_busy[i]) continue;
+		GLuint av = 0; gq_iv (gq_id[i], 0x8867, &av);   /* (GL_QUERY_RESULT_AVAILABLE) */
+		if (!av) break;
+		unsigned long long ns = 0; gq_u64 (gq_id[i], 0x8866, &ns);   /* (GL_QUERY_RESULT) */
+		gq_sum_ms += ns / 1e6; gq_n++; gq_busy[i] = 0; }
+}
+static void gq_begin (void)
+{
+	if (gq_ok < 0) gq_setup ();
+	if (gq_ok <= 0 || gq_cur >= 0 || gpu_novideo) return;
+	gq_poll ();
+	if (gq_busy[gq_next]) return;                   /* (all in flight: this picture not measured) */
+	gq_beg (0x88BF, gq_id[gq_next]); gq_cur = gq_next;   /* (GL_TIME_ELAPSED) */
+}
+static void gq_end (void)
+{
+	if (gq_cur < 0) return;
+	gq_endf (0x88BF); gq_busy[gq_cur] = 1; gq_next = (gq_cur + 1) % GQ_N; gq_cur = -1;
+}
 static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float cx0, float cy0, float cx1, float cy1, int ow, int oh, int rot)
 {
+	gq_begin ();                                 /* (a no-op while the picture's query runs) */
 	if (g_lamp_x != g_lamp_done_x || g_lamp_y != g_lamp_done_y) {   /* (the lamp moved, or the first picture: its light map) */
 		float *rg = malloc (sizeof (float) * 2 * GPU_LMAP_W * GPU_LMAP_H);
 		if (rg) { rl_maps (g_lamp_x, g_lamp_y, rg); glBindTexture_ (GL_TEXTURE_2D, g_lmap);
@@ -597,5 +641,6 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 		if (dk_on || dk_pop) gpu_vp (BX, BY, BX + CW, BY + CH, rot, dw, dh); else glViewport_ (0, 0, dw, dh);
 		glEnable_d_ (GL_BLEND); glBlendFunc_d_ (1, 0x0303); glDrawArrays_ (GL_TRIANGLES, 0, 3); glDisable_ (GL_BLEND); }
 	glBindVertexArray_ (0); glUseProgram_ (0);
+	gq_end ();
 	if (!gpu_novideo) video_cb (RETRO_HW_FRAME_BUFFER_VALID, (unsigned) dw, (unsigned) dh, 0);   /* (Optimize: drawn, not shown) */
 }

@@ -4,6 +4,15 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.6.8
+- Last Human: 16 shots, slower shield bots, centipede cages, fixes
+- RetroArch: slow games (Vectrexians) no longer flicker
+- RetroArch: Fill skipped lines option (off: as a real Vectrex)
+- RetroArch: no black flashes in Last Human with many shots
+- RetroArch: GPU meter; EMU RATE steady at 100% when keeping up
+- RetroArch browser: Recent and PiTrex at the top, as on the PC
+- RetroArch deck: no accidental RESET or port 2 change by touch
+
 ## v1.6.7
 - Fast forward: hold Space, the game runs 4x as fast (no sound)
 - Fixed: Always on top, as saved, did not work after a start

@@ -16,9 +16,11 @@
 #include <sys/stat.h>
 #endif
 
-typedef struct { char name[200]; char path[1100]; char kind; } br_ent;   /* (kind: u BACK, d folder, r ROM, m UVMC2, p PiTrex) */
+typedef struct { char name[200]; char path[1100]; char kind; } br_ent;   /* (kind: u BACK, d folder, r ROM, m UVMC2, p PiTrex program,
+                                                    c Recent, x the PiTrex - its loader) */
 static br_ent *br_e; static int br_n, br_cap, br_sel, br_top, br_open, br_dirty = 1, br_hold, br_prev_ok;
 static char br_dir[1100], br_game[1100];
+static char br_from[1100], br_from_game[1100];   /* (the folder a game was loaded from in the browser - the PiTrex's: not its SD card) */
 static unsigned br_prevb; static double br_t_next; static int br_dprev, br_prevtouch, br_ate;   /* (br_ate: a touch used here - the deck ignores it) */
 static double br_t_toggle = -1;                   /* (opened / closed then: a touch toggles it again only 0.3 s later) */
 static uint32_t *br_img; static size_t br_imgn; static int br_bx0, br_by0, br_bx1, br_by1, br_shown, br_gen;
@@ -38,12 +40,58 @@ static void br_add (const char *name, const char *path, char kind)
 static char br_kind (const char *f)              /* (a ROM's kind by its extension, 0: not one) */
 {
 	{ size_t L = strlen (f); if (L > 7 && !vx_stricmp (f + L - 7, "_sd.img")) return 0; }   /* (an SD card's image: not a game) */
+	if (!vx_stricmp (f, "pitrex.img")) return 0;   /* (the PiTrex's loader: the PiTrex at the top, once) */
 	const char *e = strrchr (f, '.'); if (!e) return 0;
 	static const char *const R[] = { ".bin", ".vec", ".gam", ".rom", ".v4e", NULL };
 	for (int i = 0; R[i]; i++) if (!vx_stricmp (e, R[i])) return 'r';
 	if (!vx_stricmp (e, ".um2")) return 'm';
 	if (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")) return 'p';
 	return 0;
+}
+/* (as the desktop's scan_roms: at the top of the folder the first game came from (br_root) - Recent, the last ten games
+ *  played (the newest first, kept in RetroArch's saves folder), and the PiTrex, when its SD card folder has its loader) */
+static char br_root[1100], br_rec[10][1100]; static int br_nrec = -1;
+static void br_rec_file (char *o, size_t n)
+{
+	const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv);
+	if (sv && *sv) snprintf (o, n, "%s" SEP "vectrex_emu_recent.txt", sv); else o[0] = 0;
+}
+static void br_rec_load (void)
+{
+	if (br_nrec >= 0) return;
+	br_nrec = 0; char fn[1200]; br_rec_file (fn, sizeof fn); FILE *f = fn[0] ? fopen (fn, "rb") : NULL;
+	if (!f) return;
+	char l[1200]; while (br_nrec < 10 && fgets (l, sizeof l, f)) { size_t L = strlen (l); while (L && (l[L - 1] == '\n' || l[L - 1] == '\r')) l[--L] = 0;
+		if (L) snprintf (br_rec[br_nrec++], sizeof br_rec[0], "%s", l); }
+	fclose (f);
+}
+static void br_rec_note (const char *g)              /* (a game started: the first in Recent) */
+{
+	if (!g || !g[0]) return;
+	br_rec_load ();
+	char keep[10][1100]; int n = 0;
+	for (int i = 0; i < br_nrec && n < 9; i++) if (strcmp (br_rec[i], g)) snprintf (keep[n++], sizeof keep[0], "%s", br_rec[i]);
+	snprintf (br_rec[0], sizeof br_rec[0], "%s", g); for (int i = 0; i < n; i++) snprintf (br_rec[i + 1], sizeof br_rec[0], "%s", keep[i]);
+	br_nrec = n + 1;
+	char fn[1200]; br_rec_file (fn, sizeof fn); FILE *f = fn[0] ? fopen (fn, "wb") : NULL;
+	if (f) { for (int i = 0; i < br_nrec; i++) fprintf (f, "%s\n", br_rec[i]); fclose (f); }
+}
+static int br_exists (const char *p) { FILE *f = fopen (p, "rb"); if (f) fclose (f); return f != NULL; }
+static void br_px_boot (char *o, size_t n)           /* (the PiTrex's loader in its SD card folder) */
+{
+	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
+	snprintf (o, n, "%s" SEP "vectrex_emu" SEP "pitrex" SEP "pitrex.img", sys && *sys ? sys : ".");
+}
+static int br_same (const char *a, const char *b)   /* (one folder, a trailing separator or not) */
+{
+	size_t la = strlen (a), lb = strlen (b);
+	while (la > 1 && (a[la - 1] == '/' || a[la - 1] == '\\')) la--; while (lb > 1 && (b[lb - 1] == '/' || b[lb - 1] == '\\')) lb--;
+	return la == lb && !strncmp (a, b, la);
+}
+static void br_insert (int at, const char *name, const char *path, char kind)
+{
+	br_add (name, path, kind); const br_ent e = br_e[br_n - 1];
+	memmove (&br_e[at + 1], &br_e[at], sizeof (br_ent) * (size_t) (br_n - 1 - at)); br_e[at] = e;
 }
 static void br_parent (const char *d, char *o, size_t n)
 {
@@ -56,6 +104,17 @@ static void br_parent (const char *d, char *o, size_t n)
 static void br_scan (const char *d, const char *select)
 {
 	br_n = 0; snprintf (br_dir, sizeof br_dir, "%s", d);
+	if (!strcmp (d, ":recent")) {                    /* (Recent: BACK, the last games played - the newest first) */
+		br_add ("BACK", br_root, 'u'); br_rec_load ();
+		for (int i = 0; i < br_nrec; i++) { if (!br_exists (br_rec[i])) continue;
+			const char *f = br_rec[i], *s = strrchr (f, '/'), *t = strrchr (f, '\\'); if (t > s) s = t; f = s ? s + 1 : f;
+			if (!vx_stricmp (f, "pitrex.img")) { br_add ("PiTrex", br_rec[i], 'x'); continue; }
+			char nm[200]; snprintf (nm, sizeof nm, "%s", f); char *x = strrchr (nm, '.'); if (x) *x = 0;
+			const char k = br_kind (f); br_add (nm, br_rec[i], k ? k : 'r'); }
+		br_sel = br_n > 1 ? 1 : 0; br_top = 0;
+		if (select) for (int i = 0; i < br_n; i++) if (!strcmp (br_e[i].path, select)) br_sel = i;
+		br_dirty = 1; return;
+	}
 	char up[1100]; br_parent (d, up, sizeof up);
 	if (up[0] && strcmp (up, d)) br_add ("BACK", up, 'u');
 #ifdef _WIN32
@@ -75,6 +134,12 @@ static void br_scan (const char *d, const char *select)
 	  closedir (dd); }
 #endif
 	if (br_n > 1) qsort (br_e, (size_t) br_n, sizeof (br_ent), br_cmp);
+	if (br_root[0] && br_same (d, br_root)) {         /* (the top: Recent, then the PiTrex - after BACK) */
+		const int at = br_n && br_e[0].kind == 'u' ? 1 : 0; char px[1200]; br_px_boot (px, sizeof px);
+		if (!br_exists (px)) snprintf (px, sizeof px, "%s" SEP "pitrex.img", d);   /* (none in the SD card folder: the one here) */
+		if (br_exists (px)) br_insert (at, "PiTrex", px, 'x');
+		br_rec_load (); int any = 0; for (int i = 0; i < br_nrec; i++) any |= br_exists (br_rec[i]);
+		if (any) br_insert (at, "Recent", ":recent", 'c'); }
 	br_sel = br_n > 1 && br_e[0].kind == 'u' ? 1 : 0; br_top = 0;
 	if (select) for (int i = 0; i < br_n; i++) if (!strcmp (br_e[i].path, select)) br_sel = i;
 	if (br_sel >= BR_NVIS) br_top = br_sel - 3;
@@ -91,6 +156,7 @@ static void br_show (int on)
 {
 	br_open = on; br_dirty = 1; br_prev_ok = 0; br_t_toggle = vt_wall (); fprintf (stderr, "[vectrex_emu] ROM browser %s\n", on ? "open" : "closed");
 	if (on) { char d[1100], cur[1100]; snprintf (cur, sizeof cur, "%s", br_game); br_parent (cur, d, sizeof d);
+		if (br_from[0] && !strcmp (br_from_game, cur)) { br_scan (br_from, cur); return; }   /* (loaded from the browser: where it was chosen) */
 		br_scan (d[0] ? d : br_dir[0] ? br_dir : ".", cur); }   /* (each time: the running game's folder, the game chosen) */
 }
 static int game_switch (const char *path); static void eject_toggle (void); static char cur_game[1100]; static int ej_out;
@@ -99,8 +165,9 @@ static void br_activate (void)                     /* (button 4 / the plug: a fo
 	if (!br_n) return;
 	br_ent *e = &br_e[br_sel];
 	if (e->kind == 'u') { char was[1100]; snprintf (was, sizeof was, "%s", br_dir); br_scan (e->path, was); return; }
-	if (e->kind == 'd') { br_scan (e->path, NULL); return; }
+	if (e->kind == 'd' || e->kind == 'c') { br_scan (e->path, NULL); return; }
 	char p[1100]; snprintf (p, sizeof p, "%s", e->path);
+	snprintf (br_from, sizeof br_from, "%s", br_dir); snprintf (br_from_game, sizeof br_from_game, "%s", p);
 	br_show (0); br_hold = 1; br_hold_t = vt_wall ();
 	game_switch (p);                                  /* (at the next refresh's start: libretro_vx.c) */
 }
@@ -185,16 +252,24 @@ static void br_draw (void)
 	  for (int i = 0; i < 2; i++) { size_t L = strlen (a); while (L > 1 && (a[L - 1] == '/' || a[L - 1] == '\\')) a[--L] = 0;
 		char *s = strrchr (a, '/'), *s2 = strrchr (a, '\\'); if (s2 > s) s = s2; snprintf (nm[i], sizeof nm[i], "%s", s ? s + 1 : a); if (s) *s = 0; else break; }
 	  int games = 0; for (int i = 0; i < br_n; i++) games += br_e[i].kind == 'r' || br_e[i].kind == 'm' || br_e[i].kind == 'p';
-	  if (nm[1][0]) snprintf (t, sizeof t, "%s / %s  (%d)", nm[1], nm[0], games); else snprintf (t, sizeof t, "%s  (%d)", nm[0], games);
+		  if (!strcmp (br_dir, ":recent")) { char r[1100], rn[200]; snprintf (r, sizeof r, "%s", br_root); size_t L = strlen (r); while (L > 1 && (r[L - 1] == '/' || r[L - 1] == '\\')) r[--L] = 0;
+			const char *s = strrchr (r, '/'), *s2 = strrchr (r, '\\'); if (s2 > s) s = s2; snprintf (rn, sizeof rn, "%s", s ? s + 1 : r);
+			snprintf (t, sizeof t, "%s / RECENT  (%d)", rn, games); }
+		  else if (nm[1][0]) snprintf (t, sizeof t, "%s / %s  (%d)", nm[1], nm[0], games); else snprintf (t, sizeof t, "%s  (%d)", nm[0], games);
 	  const int cols = (int) ((g->cl[0] - g->x0 - 4 * 6 * k) / (6 * k)); if ((int) strlen (t) > cols && cols > 3) { memmove (t + 2, t + strlen (t) - cols + 2, (size_t) cols - 1); t[0] = t[1] = '.'; }
-	  br_text (t, g->x0 + 4 * k, g->y0 + 0.6f * rh, k, HI); }
+		  br_text (t, g->x0 + 4 * k, g->y0 + 0.6f * rh, k, HI);
+		  /* (UVMC2 games and PiTrex programs in the list: their names in their tints at the band's right, as the desktop) */
+		  int has_m = 0, has_p = 0; for (int i = 0; i < br_n; i++) { has_m |= br_e[i].kind == 'm'; has_p |= br_e[i].kind == 'p'; }
+		  const float kl = k * 0.62f; float lxr = g->cl[0] - 1.2f * 6 * k;
+		  if (has_p) { lxr -= 6 * 6 * kl; br_text ("PITREX", lxr, g->y0 + 0.6f * rh + (k - kl) * 3, kl, PX); lxr -= 2.5f * 6 * kl; }
+		  if (has_m) { lxr -= 5 * 6 * kl; br_text ("UVMC2", lxr, g->y0 + 0.6f * rh + (k - kl) * 3, kl, UM); } }
 	/* the list */
 	br_fill (g->lst[0], g->lst[1], g->lst[2], g->lst[3], BODY, 1); br_rect (g->lst[0], g->lst[1], g->lst[2], g->lst[3], EDGE2, lw);
 	const int cols = (int) ((g->lst[2] - g->lst[0] - 4 * 6 * k) / (6 * k));
 	if (!br_n) br_text ("NO ROMS IN THIS FOLDER.", g->lst[0] + 6 * k, g->lst[1] + 0.3f * rh, k, GRN);
 	for (int i = 0; i < BR_NVIS; i++) {
 		const int j = br_top + i; if (j >= br_n) break;
-		const float y = g->lst[1] + i * rh; const br_ent *e = &br_e[j]; const int icon = e->kind == 'u' || e->kind == 'd';
+		const float y = g->lst[1] + i * rh; const br_ent *e = &br_e[j]; const int icon = e->kind == 'u' || e->kind == 'd' || e->kind == 'c' || e->kind == 'x';
 		const unsigned c = e->kind == 'm' ? (j == br_sel ? UMH : UM) : e->kind == 'p' ? (j == br_sel ? PXH : PX) : j == br_sel ? HI : GRN;
 		if (j == br_sel) br_fill (g->lst[0] + 0.6f * k, y + 0.08f * rh, g->lst[2] - 2.2f * 6 * k, y + 0.97f * rh, SEL, 1);
 		char t[220]; const int room = cols - (icon ? 4 : 0);
@@ -204,6 +279,16 @@ static void br_draw (void)
 			#define P(a, b) ix + (a) * k, iy + (b) * k
 			if (e->kind == 'd') { const float pt[8][2] = { { 0, 6 }, { 0, 1 }, { 1, 0 }, { 4, 0 }, { 5, 1 }, { 10, 1 }, { 10, 6 }, { 0, 6 } };
 				for (int q = 0; q < 7; q++) br_line (P (pt[q][0], pt[q][1]), P (pt[q + 1][0], pt[q + 1][1]), w, c); }
+			else if (e->kind == 'c') {                  /* (Recent: a clock) */
+				for (int q = 0; q < 16; q++) { const float a0 = 6.2831853f * q / 16, a1 = 6.2831853f * (q + 1) / 16;
+					br_line (P (5 + 3.0f * cosf (a0), 3 + 3.0f * sinf (a0)), P (5 + 3.0f * cosf (a1), 3 + 3.0f * sinf (a1)), w, c); }
+				br_line (P (5, 3), P (5, 1), w, c); br_line (P (5, 3), P (6.6f, 3.9f), w, c); }
+			else if (e->kind == 'x') {                  /* (the PiTrex: a raspberry) */
+				for (int q = 0; q < 14; q++) { const float a0 = 6.2831853f * q / 14, a1 = 6.2831853f * (q + 1) / 14;
+					br_line (P (5 + 2.6f * cosf (a0), 3.6f + 2.4f * sinf (a0)), P (5 + 2.6f * cosf (a1), 3.6f + 2.4f * sinf (a1)), w, c); }
+				static const float L[6][4] = { { 5, 1.2f, 2.8f, -0.2f }, { 5, 1.2f, 7.2f, -0.2f }, { 2.8f, -0.2f, 4.2f, 0.6f }, { 7.2f, -0.2f, 5.8f, 0.6f },
+				                               { 3.6f, 3.4f, 6.4f, 3.4f }, { 5, 1.6f, 5, 5.6f } };
+				for (int q = 0; q < 6; q++) br_line (P (L[q][0], L[q][1]), P (L[q][2], L[q][3]), w, c); }
 			else { br_line (P (10, 3), P (0, 3), w, c); br_line (P (0, 3), P (3, 0), w, c); br_line (P (0, 3), P (3, 6), w, c); }
 			#undef P
 		} }

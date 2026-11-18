@@ -12,7 +12,8 @@ on:
 
 jobs:
   ios:
-    runs-on: macos-15
+    runs-on: macos-15-intel   # (2026-11-18: GitHub's Apple Silicon macOS runners were often busy - jobs not started at all;
+                              #  the Intel ones started at once, Xcode 26 on them too; the app is built for iOS arm64 either way)
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
@@ -34,6 +35,14 @@ jobs:
       - name: everything ready to play in RetroArch's assets (unpacked into its folder after each install or update)
         run: |
           python3 vx/libretro/ios_bundle.py vx/libretro/vectrex_emu_libretro_ios.dylib add
+          # (RetroArch's menu icons, all of them: its source's assets.zip has only some - the iPad's Ozone menu drew the
+          #  rest as white blocks. From retroarch-assets, as its App Store build does; the Vectrex_EMU playlist gets
+          #  RetroArch's own Vectrex icons)
+          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/libretro/retroarch-assets.git rassets
+          (cd rassets && git sparse-checkout set glui ozone rgui)
+          mkdir -p add/assets && cp -R rassets/glui rassets/ozone rassets/rgui add/assets/
+          I=add/assets/ozone/png/icons; cp "$I/GCE - Vectrex.png" "$I/Vectrex_EMU.png"; cp "$I/GCE - Vectrex-content.png" "$I/Vectrex_EMU-content.png"
+          ls "$I" | wc -l; ls "$I" | grep -i vectrex
           # (the on-screen gamepad the core's settings switch on: RetroArch's neo-retropad)
           git clone -q --depth 1 --filter=blob:none --sparse https://github.com/libretro/common-overlays.git co
           (cd co && git sparse-checkout set gamepads/neo-retropad)

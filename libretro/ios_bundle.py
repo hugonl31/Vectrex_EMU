@@ -56,6 +56,8 @@ for dp, dn, fn in os.walk(rd):
             rel = os.path.relpath(os.path.join(dp, f), out).replace(os.sep, '/')
             items.append((s, rel))
 items.append(('PiTrex', 'system/vectrex_emu/pitrex/pitrex.img'))   # (there once its folder is)
+if not any(l == 'VecDoom' for l, _ in items):   # (VecDoom: put on the device by hand once - its WADs, Doom's own, are not ours
+    items.append(('VecDoom', 'roms/VecDoom.um2'))   #  to ship: roms/VecDoom.um2, system/vectrex_emu/uvmc2/doom/*.WAD)
 items.sort(key=lambda i: i[0].lower())
 pl = {'version': '1.5', 'default_core_path': CORE, 'default_core_name': 'Vectrex_EMU', 'label_display_mode': 0,
       'right_thumbnail_mode': 0, 'left_thumbnail_mode': 0, 'sort_mode': 0,

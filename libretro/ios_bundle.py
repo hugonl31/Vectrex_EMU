@@ -87,7 +87,13 @@ with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', en
                  ('input_movie_record_toggle', 'nul'), ('input_hold_slowmotion', 'nul'), ('input_frame_advance', 'nul'),
                  ('input_reset', 'nul'), ('input_shader_next', 'nul'), ('input_shader_prev', 'nul'),
                  ('input_netplay_game_watch', 'nul'), ('input_volume_up', 'nul'), ('input_volume_down', 'nul'),
-                 # (a controller - the owner's 8BitDo: Select held + the top face button, RetroArch's menu. iOS numbers the
-                 #  buttons by place: Select 2, the top one RetroPad X 9; the keyboard's shortcuts stay without Select)
-                 ('input_enable_hotkey_btn', '2'), ('input_menu_toggle_btn', '9')):
+                 # (a controller - the owner's 8BitDo: Select held is RetroArch's hotkey, with the top face button its menu,
+                 #  L1 load state, R1 save state, up / down the state slot, the right button pause, the left one the FPS, the
+                 #  bottom one reset, R2 held fast forward. iOS numbers the buttons by place: B (bottom) 0, Y (left) 1,
+                 #  Select 2, up 4, down 5, A (right) 8, X (top) 9, L1 10, R1 11, R2 13; the keyboard's own shortcuts
+                 #  work without Select)
+                 ('input_enable_hotkey_btn', '2'), ('input_menu_toggle_btn', '9'), ('input_load_state_btn', '10'),
+                 ('input_save_state_btn', '11'), ('input_state_slot_increase_btn', '4'), ('input_state_slot_decrease_btn', '5'),
+                 ('input_pause_toggle_btn', '8'), ('input_fps_toggle_btn', '1'), ('input_reset_btn', '0'),
+                 ('input_hold_fast_forward_btn', '13')):
         f.write('%s = "%s"\n' % (k, v))

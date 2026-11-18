@@ -254,11 +254,11 @@ static void dk_pointer (void)
 	/* (port 2: only a symbol - its device is chosen in the core options; RESET: only the button's upper half, the side of
 	 *  its word, away from the screen's edge - a thumb slipping off the right stick switched port 2 and reset Last Human,
 	 *  the Nova 2026-11-18) */
-	{ static int held, done; static double ht;   /* (RESET: held 0.4 s there; moved off before then: nothing) */
+	{ static int held, done; static double ht;   /* (RESET: held 0.2 s there; moved off before then: nothing) */
 	  const int on = zone == 4 && y <= dk_cy + 0.1 * r && fabs (x - dk_rx) <= 1.3 * r;   /* (the button's upper half up to its word, wider) */
 	  if (pr && !dk_prev_press && on) { held = 1; ht = vt_wall (); done = 0; }
 	  else if (!pr || !on) held = 0;
-	  else if (held && !done && vt_wall () - ht >= 0.4) { extern void vecx_reset_button (void); done = 1; emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
+	  else if (held && !done && vt_wall () - ht >= 0.2) { extern void vecx_reset_button (void); done = 1; emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
 	if (pr && !dk_prev_press) {
 		if (zone == 1 || zone == 4) { }
 		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }

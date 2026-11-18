@@ -901,7 +901,7 @@ static void tate_note (void)
 }
 #endif
 void retro_reset (void) { if (ls_state == 2) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
-	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET: RetroArch (its reset)\n"); }
+	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 
 /* ---- the overlay by the game's name (vectrex_emu.py find_overlay: the name, its base without (...), its letters) */
 static void base_of (const char *s, char *out, size_t n)
@@ -2560,7 +2560,7 @@ void retro_run (void)
 	dk_pointer (); dk_tick (0);
 	{ static int l2, r2; const int ri = btn_id ("vectrex_emu_btn_reset"), ei = btn_id ("vectrex_emu_btn_eject");
 	  const int a = ri >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ri) != 0, b = ei >= 0 && ei != ri && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ei) != 0;
-	  if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET: the RESET button (%s)\n", optv ("vectrex_emu_btn_reset")); }   /* (the RESET button;
+	  if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button;
 	                                              netplay: RetroArch's own Reset, sent to both) */
 	  if (b && !r2 && !br_open && !net_on ()) eject_toggle ();
 	  l2 = a; r2 = b; }

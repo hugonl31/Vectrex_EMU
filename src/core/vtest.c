@@ -123,12 +123,6 @@ void vt_bankchange (int from, int to)
 {
 	unsigned pc0 = e6809_get_pc () & 0xFFFF;
 	if (pc0 >= 0x100 && pc0 < common_base) { if (!bad_switches) bad_switch_pc = pc0; bad_switches++; }
-	{ static int nlog;                          /* (in the log: a bank change made by code outside the area both banks share - the
-	                                              code switched away from under itself; at most 100. Last Human 2026-11-17: back to
-	                                              its title in play. Those from the shared code - its bank calls, the save chip's
-	                                              signalling on PB6 - are as meant) */
-	  if (pc0 >= 0x100 && pc0 < common_base && nlog < 100) { nlog++;
-		fprintf (stderr, "[vectrex_emu] bank %d -> %d at PC %04X, %.2f s - outside the code both banks share\n", from, to, pc0, total_cycles / 1.5e6); } }
 	if (verbose_bank && bankchg_log < 50)
 		printf ("  bank %d -> %d at PC=%04X cyc=%llu\n", from, to, e6809_get_pc (), total_cycles);
 	bankchg_log++;
@@ -154,10 +148,6 @@ void vt_step (unsigned icycles)
 {
 	unsigned pc = e6809_get_pc () & 0xFFFF;
 	total_cycles += icycles;
-	if (pc == 0xF004) {                         /* (just past the BIOS's first instruction, LDS at $F000: a reset - or a game that
-	                                              jumped there itself; in the log) */
-		static unsigned long long last; if (total_cycles - last > 150000) fprintf (stderr, "[vectrex_emu] the Vectrex restarted ($F000) at %.2f s of its time\n", total_cycles / 1.5e6);
-		last = total_cycles; }
 	if (prof_on) {
 		if (pc < 0xC000) prof[vt_cur_bank () & 3][pc] += icycles;
 		else prof[4][pc] += icycles;

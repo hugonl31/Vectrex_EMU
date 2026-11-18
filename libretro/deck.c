@@ -4,7 +4,7 @@
  * when paused, the P2 port, the cartridge, the P1 port, RESET and the volume knob, in the desktop's sizes (its units:
  * the picture's height). Display > Control deck; Display > Screen shape: the picture and the deck one block, black
  * bars to 4:3 or 16:9 (turned: 3:4 / 9:16). RetroArch's pointer (the mouse, or touch) works it as the desktop's mouse:
- * the P2 port the next device, the cartridge the ROM browser, RESET, the knob turned round (down to 0 switches off;
+ * the P2 port only shows its device (the core options choose it), the cartridge the ROM browser, RESET (its upper half), the knob turned round (down to 0 switches off;
  * a click: +-5 %, switched off: on); the OSD opens nothing here. Drawn on the CPU when it changes, laid under the
  * picture on the GPU (gpu_present) or in the CPU's frame. Included by libretro_vx.c after browser.c.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
@@ -226,17 +226,6 @@ static void turn_volume (double d)
 	dk_dirty_set = 1;
 }
 static void power_up (void) { turn_volume (vol_before_off > 0 ? vol_before_off : 0.5); }
-/* (port 2: the next device - joystick, VecVox, VecVoice, 3D Imager, light pen; without the speech ROM no voices) */
-static void port2_next (void)
-{
-	int d = (dk_p2 + 1) % 5; if ((d == 1 || d == 2) && !sp_ok) d = 3;
-	extern void vt_set_analog (int id, double v); extern int vt_imager;
-	emu_wait_ext ();
-	vt_set_analog (27, d == 0 ? 0 : d == 1 ? 1 : d == 2 ? 2 : d == 3 ? 3 : 6);
-	lightpen = d == 4; dk_p2 = d; dk_dirty_set = 1;
-	{ const int st = vt_imager && opt_imager == 2; if (st != stereo || (vt_imager ? 3 : 1) != NC) { stereo = st; pic_setup (); geo_tell (); } }
-	fprintf (stderr, "[vectrex_emu] port 2: %s\n", (const char *const[]) { "joystick", "VecVox", "VecVoice", "3D Imager", "light pen" }[d]);
-}
 /* RetroArch's pointer (the mouse, touch) on the deck - and, switched off, on the picture: on */
 static int dk_prev_press;
 static void dk_pointer (void)
@@ -262,16 +251,12 @@ static void dk_pointer (void)
 		if (best > 2.2 * r) zone = 0; }
 	if (net_on () && pr && !dk_prev_press && zone != 5) { dk_prev_press = pr; return; }   /* (netplay: only the volume - the rest changes the
 	                                                    emulation on one side) */
-	/* (port 2 and RESET: held 0.5 s, a tap does nothing - a thumb slipping off the right stick switched port 2 eight
-	 *  times in Last Human, the Nova 2026-11-18; moved off the piece before then: nothing) */
-	{ static int hz, done; static double ht;
-	  if (pr && !dk_prev_press && (zone == 1 || zone == 4)) { hz = zone; ht = vt_wall (); done = 0; }
-	  else if (!pr || zone != hz) hz = 0;
-	  else if (hz && !done && vt_wall () - ht >= 0.5) { done = 1;
-		if (hz == 1) port2_next ();
-		else { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET: the deck's RESET held\n"); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } } }
+	/* (port 2: only a symbol - its device is chosen in the core options; RESET: only the button's upper half, the side of
+	 *  its word, away from the screen's edge - a thumb slipping off the right stick switched port 2 and reset Last Human,
+	 *  the Nova 2026-11-18) */
 	if (pr && !dk_prev_press) {
-		if (zone == 1 || zone == 4) { }
+		if (zone == 1) { }
+		else if (zone == 4) { if (y <= dk_cy && hypot (x - dk_rx, y - dk_cy) <= 0.8 * r) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
 		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }
 		else if (zone == 3) { }                         /* (P1: for online play, later) */
 		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;

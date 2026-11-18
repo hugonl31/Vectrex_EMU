@@ -75,13 +75,13 @@ with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', en
 
 # a keyboard (the iPad's Magic Keyboard): the core reads it itself, as the desktop (its option Keyboard as on the PC,
 # on here) - so RetroArch maps no key to the RetroPad (a controller keeps RetroArch's own mapping, untouched) and its
-# own keys stay only where the core has none: ` Game Focus (every key to the core, Space and F1 too), F1 RetroArch's
-# menu (its own key; Apple's Magic Keyboard: fn + F1), Space held fast forward, F12 a snapshot. Its other keys on letters
+# own keys stay only where the core has none: ` Game Focus (every key to the core but M), M RetroArch's menu in and out
+# of Game Focus (ios_patch_ra.py; Apple's Magic Keyboard gives no F1), Space held fast forward, F12 a snapshot. Its other keys on letters
 # the core uses off (P its pause, L / Space fast forward, O movie recording, E slow motion, R rewind, K frame advance)
 with open(os.path.join(out, 'config', 'Vectrex_EMU', 'Vectrex_EMU.cfg'), 'a', encoding='utf-8') as f:
     for b in ('up', 'down', 'left', 'right', 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'l3', 'r3', 'select', 'start'):
         f.write('input_player1_%s = "nul"\n' % b)
-    for k, v in (('input_game_focus_toggle', 'tilde'), ('input_menu_toggle', 'f1'), ('input_hold_fast_forward', 'space'),
+    for k, v in (('input_game_focus_toggle', 'tilde'), ('input_menu_toggle', 'm'), ('input_hold_fast_forward', 'space'),
                  ('input_toggle_fast_forward', 'nul'), ('input_screenshot', 'f12'), ('input_exit_emulator', 'nul'),
                  ('input_toggle_fullscreen', 'nul'), ('input_pause_toggle', 'nul'), ('input_rewind', 'nul'),
                  ('input_movie_record_toggle', 'nul'), ('input_hold_slowmotion', 'nul'), ('input_frame_advance', 'nul'),

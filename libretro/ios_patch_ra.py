@@ -51,3 +51,10 @@ patch('input/input_driver.c', 'hide = hide || (input_config_get_device_name(0) !
 patch('runloop.c', '#include "runloop.h"\n', '#include "runloop.h"\n#include "vx_kb.h"\n')
 patch('runloop.c', 'bool controller_connected             = (input_config_get_device_name(0) != NULL);',
       'bool controller_connected             = (input_config_get_device_name(0) != NULL) || vx_kb_connected();')
+
+# RetroArch's menu key in Game Focus too (M - the owner's wish: the Magic Keyboard gives no F1): Game Focus lets only
+# its own toggle key through; the menu's now as well
+patch('input/drivers/cocoa_input.m', '&& (id == RARCH_GAME_FOCUS_TOGGLE || !keyboard_mapping_blocked)',
+      '&& (id == RARCH_GAME_FOCUS_TOGGLE || id == RARCH_MENU_TOGGLE || !keyboard_mapping_blocked)')
+patch('input/input_driver.c', '      block_hotkey[RARCH_GAME_FOCUS_TOGGLE] = false;\n',
+      '      block_hotkey[RARCH_GAME_FOCUS_TOGGLE] = false;\n      block_hotkey[RARCH_MENU_TOGGLE] = false;\n')

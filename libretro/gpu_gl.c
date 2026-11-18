@@ -536,7 +536,11 @@ static void scr_detect (void)
 	scr_w = w; scr_h = h;                       /* (as it stands: the deck's block takes an upright screen's shape) */
 	/* (the picture's height on the screen as big as fits: the screen's height, or less where its width is the limit - an
 	 *  upright phone; a wide screen: its short side, as before. Turned 90 / 270: the picture lies the other way) */
-	const double a = (opt_rot & 1) ? 207.0 / 162.0 : 162.0 / 207.0;   /* (its width / height as it stands on the screen) */
+	double a = (opt_rot & 1) ? 207.0 / 162.0 : 162.0 / 207.0;   /* (its width / height as it stands on the screen) */
+	/* (the deck below the picture - full or slim, 4:3, not turned: the size is the picture and the deck together
+	 *  (geom_calc), so the block - narrower for the deck - fits; an upright iPad then gets its frame at the screen's
+	 *  own 1640 x 2360, 1:1 - it was 1507 x 2169, stretched 9 %, the lines softer and stepped) */
+	if ((opt_deck == 1 || opt_deck == 2) && !(opt_rot & 1) && !opt_shape) a /= 1.0 + (opt_deck == 2 ? 0.046 : 0.08134) / 0.924;
 	const int sh = (int) (h < w / a ? h : w / a); if (sh < 240 || sh > 4320) return;
 	{ static int lw, lh; if (w != lw || h != lh) { lw = w; lh = h; fprintf (stderr, "[vectrex_emu] screen %dx%d\n", w, h); } }   /* (a change only: it is looked at each second) */
 	if (sh != scr_short) { scr_short = sh; scr_new = 1; char f[1200]; scr_file (f, sizeof f); FILE *t = f[0] ? fopen (f, "w") : NULL; if (t) { fprintf (t, "%d\n", sh); fclose (t); } }

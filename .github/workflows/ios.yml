@@ -1,7 +1,8 @@
 # RetroArch for iOS (iPhone / iPad) with the Vectrex_EMU core built in: RetroArch's own source (the version the
 # Retroid Nova runs), the core as one of its frameworks (iOS loads no cores from outside the app), its info file in
 # RetroArch's assets. Runs on the ios branch or by hand - not on main (that is build.yml: the releases).
-# Out: RetroArch-VectrexEMU-unsigned.ipa (not signed yet: the TestFlight upload comes with the developer account)
+# Out: the app signed and uploaded to App Store Connect (TestFlight) as Vectrex_EMU, com.hugob.vectrexemu - Apple's
+# cloud signing with the App Store Connect API key (secrets ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID) -
 # and Vectrex_EMU_RetroArch_iOS.zip (system, roms, info, config - copied into RetroArch's folder with the Files app).
 name: ios
 on:
@@ -29,23 +30,47 @@ jobs:
           mkdir -p add/info && cp vx/libretro/vectrex_emu_libretro.info add/info/
           (cd add && zip -q ../ra/pkg/apple/assets.zip info/vectrex_emu_libretro.info)
           unzip -l ra/pkg/apple/assets.zip | grep vectrex
-      - name: RetroArch for iOS (unsigned)
+      - name: RetroArch for iOS, signed and uploaded to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"; printf '%s\n' "$ASC_KEY_P8" > "$KEY"
+          AUTH="-allowProvisioningUpdates -authenticationKeyPath $KEY -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
+          VER=$(tr -d 'v\r\n ' < vx/VERSION)
           cd ra
-          xcodebuild -workspace pkg/apple/RetroArch.xcworkspace -destination generic/platform=iOS -config Release \
-            -scheme "RetroArch iOS Release" -xcconfig pkg/apple/GitHubCI.xcconfig \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" \
-            -derivedDataPath build 2>&1 | grep -E 'error:|warning: .*vectrex|BUILD (SUCCEEDED|FAILED)|Making framework' || true
-          APP=$(find build/Build/Products -maxdepth 2 -name '*.app' -type d | head -1)
-          echo "app: $APP"; test -n "$APP"
-          ls "$APP/Frameworks" | grep -i vectrex
-          mkdir -p Payload && cp -R "$APP" Payload/ && zip -qry ../RetroArch-VectrexEMU-unsigned.ipa Payload
+          # (the home screen's name; RetroArch's own iCloud, Siri and app group entitlements left out - ours has none)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Vectrex_EMU" pkg/apple/iOS/Info.plist
+          # (archived unsigned; the export signs it all - app, widget, the core's framework - with Apple's cloud
+          #  signing, so no certificate is kept here)
+          xcodebuild archive -workspace pkg/apple/RetroArch.xcworkspace -destination generic/platform=iOS -config Release \
+            -scheme "RetroArch iOS Release" -xcconfig pkg/apple/GitHubCI.xcconfig -archivePath "$RUNNER_TEMP/VX.xcarchive" \
+            IOS_BUNDLE_IDENTIFIER=com.hugob.vectrexemu IOS_CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=$TEAM \
+            MARKETING_VERSION=$VER CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            2>&1 | grep -E 'error:|warning: .*vectrex|ARCHIVE (SUCCEEDED|FAILED)|Making framework'
+          ls "$RUNNER_TEMP/VX.xcarchive/Products/Applications/"*/Frameworks | grep -i vectrex
+          cat > "$RUNNER_TEMP/export.plist" <<PL
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PL
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/VX.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -exportPath "$RUNNER_TEMP/export" $AUTH 2>&1 | tail -40
+          rm -f "$KEY"
       - name: the core's files for RetroArch's folder
         run: python3 vx/libretro/package_retroarch.py ios-arm64 vx/libretro/vectrex_emu_libretro_ios.dylib Vectrex_EMU_RetroArch_iOS.zip
       - uses: actions/upload-artifact@v7
         with:
           name: ios
           path: |
-            RetroArch-VectrexEMU-unsigned.ipa
             Vectrex_EMU_RetroArch_iOS.zip

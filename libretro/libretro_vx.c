@@ -226,7 +226,7 @@ static float opt_ov_tint = 1.0f, opt_ov_print = 1.0f; static int opt_ov_btn = 1,
  * automatic (the whole sheet with an overlay, the glass window without); the room's light (vecrender.py: the filters
  * x its square, the print x it, the bare glass grey x its cube); the trail's brightness with and without an overlay */
 static int opt_size = 800, opt_area = 0;
-static int size_auto = 1, scr_short, scr_new;   /* (Picture size auto: the screen's short side - measured at the GPU's start) */
+static int size_auto = 1, scr_short, scr_new, scr_w, scr_h, geo_sw = -1, geo_sh = -1;   /* (scr_w / scr_h: the screen as it stands, 0 unknown) */   /* (Picture size auto: the screen's short side - measured at the GPU's start) */
 static const char *optv (const char *key);
 static void scr_file (char *o, size_t n)
 { const char *sv = NULL; env_cb (RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sv); if (sv && *sv) snprintf (o, n, "%s" SEP "vectrex_emu_screen.txt", sv); else o[0] = 0; }
@@ -2326,13 +2326,16 @@ static void pic_setup (void)
 	const int glass = area_glass (); geom_calc (glass, &EW, &FH, &CW, &CH);
 	S = (int) (FH / (double) PH + 0.5); if (S < 1) S = 1;   /* (the glow's cells: 2 x 2 per this many) */
 	FW = stereo ? EW * 2 : EW; CX0 = (EW - CW) / 2; CY0 = (FH - CH) / 2; OW = stereo ? CW * 2 : CW; OH = CH;
-	geo_glass = glass; geo_rot = opt_rot; geo_size = opt_size; geo_deck = opt_deck; geo_shape = opt_shape;
+	geo_glass = glass; geo_rot = opt_rot; geo_size = opt_size; geo_deck = opt_deck; geo_shape = opt_shape; geo_sw = scr_w; geo_sh = scr_h;
 	/* (the control deck: the picture and the deck one block, black bars to the screen's shape - deck.c) */
 	dk_on = (opt_deck == 1 || opt_deck == 2) && !stereo; dk_pop = opt_deck == 3 && !stereo; TW = OW; TH = OH; BX = BY = 0; DKH = 0;
 	if (dk_on || dk_pop) DKH = (int) ((opt_deck == 2 ? 0.046 : 0.08134) * FH / 0.924 + 0.5);   /* (slim: one low row) */
 	dk_y = dk_pop ? CH - DKH : CH; dk_dirty_set = 1;
 	if (dk_on) {
-		const double A = opt_shape ? 16.0 / 9.0 : 4.0 / 3.0, ab = (opt_rot & 1) ? 1.0 / A : A; const int bw = CW, bh = CH + DKH;
+		const double A = opt_shape ? 16.0 / 9.0 : 4.0 / 3.0; const int bw = CW, bh = CH + DKH;
+		/* (an upright screen - a phone, a tablet held upright - the picture not turned: the block in the screen's own
+		 *  shape, the deck below the picture; the 4:3 / 16:9 shapes are wide ones - an iPad showed the block small) */
+		const double ab = scr_w > 0 && scr_h > scr_w && !(opt_rot & 1) ? (double) scr_w / scr_h : (opt_rot & 1) ? 1.0 / A : A;
 		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
 		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
 	if ((size_t) OW * OH > rb_n) { free (rb); rb_n = (size_t) OW * OH; rb = malloc (rb_n * 4); }   /* (the turned picture) */
@@ -2622,7 +2625,8 @@ void retro_run (void)
 	                                              iPhone / iPad also the device turned - looked at once a second) */
 	  if (opt_rot != lr || (VX_IOS && now - ts > 1.0)) { lr = opt_rot; ts = now; if (gpu_ok) scr_detect (); } }
 	if (scr_new) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
-	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape) { pic_setup (); geo_tell (); }
+	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape
+	    || (dk_on && (scr_w != geo_sw || scr_h != geo_sh))) { pic_setup (); geo_tell (); }   /* (with the deck: the screen turned - its shape) */
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }
 	opt_check ();                               /* (the Quality profile on auto: measured once per case - gpu_opt.c) */
 #endif

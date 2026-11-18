@@ -70,7 +70,7 @@ static void opt_file (char *o, size_t n)
 }
 static void opt_say (const char *m, unsigned frames)
 {
-	struct retro_message msg = { m, frames }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &msg); fprintf (stderr, "[vectrex_emu] %s\n", m);
+	(void) frames; fprintf (stderr, "[vectrex_emu] %s\n", m);   /* (the log only: no message on screen - only what is needed shows) */
 }
 static const char *const OPT_OFF_NAMES[14] = { "dither", "bend smoothing", "case reflections", "parallax", "glass in room light",
 	"light on the overlay", "light on the glass", "the second glow pass", "plastic glow", "scratches", "glass edge", "tube curve",

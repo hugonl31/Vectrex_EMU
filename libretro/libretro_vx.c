@@ -918,18 +918,12 @@ static void say_long (const char *m, unsigned ms)
 }
 static void ov_flip (const char *by)            /* (the overlay on / off by hand: the option Overlay itself, one switch - RetroArch
                                                 keeps it, its menu shows it; a separate on / off kept apart from it showed nothing
-                                                with the option on, iPhone 2026-11-18. Said, so a START pressed to start a game is
-                                                not a mystery) */
+                                                with the option on, iPhone 2026-11-18) */
 {
 	ov_on = !ov_on;
 	{ struct retro_variable v = { "vectrex_emu_overlay", ov_on ? "on" : "off" };   /* (RETRO_ENVIRONMENT_SET_VARIABLE: RetroArch 1.17 on) */
 	  if (env_cb (70, &v)) { opt_overlay = opt_overlay_seen = ov_on; } }
- char m[80]; snprintf (m, sizeof m, "Overlay %s (%s: %s)", ov_on ? "on" : "off", by, ov_on ? "off" : "on again");
-#ifndef VX_EMUVR
-	say_long (m, 2500);                         /* (the log too) */
-#else
-	fprintf (stderr, "[vectrex_emu] %s\n", m);
-#endif
+	fprintf (stderr, "[vectrex_emu] overlay %s (%s)\n", ov_on ? "on" : "off", by);   /* (the log only: no message on screen) */
 }
 static void tate_note (void)
 {
@@ -2349,7 +2343,6 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
 /* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
  * the afterglow's two parts, one colour channel or three - all dark again */
-extern double vt_wall (void); static double pic_said_t = -1;   /* (the picture's size changed then: told once it has settled) */
 static void pic_setup (void)
 {
 	const int glass = area_glass (); geom_calc (glass, &EW, &FH, &CW, &CH);
@@ -2369,7 +2362,7 @@ static void pic_setup (void)
 		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
 		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
 #ifndef VX_EMUVR
-	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH; pic_said_t = vt_wall ();   /* (shown once it has settled: retro_run) */
+	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH;   /* (the log only) */
 		fprintf (stderr, "[vectrex_emu] Picture %d x %d - screen %d x %d\n", OW, OH, scr_w, scr_h); } }
 #endif
 	if ((size_t) OW * OH > rb_n) { free (rb); rb_n = (size_t) OW * OH; rb = malloc (rb_n * 4); }   /* (the turned picture) */
@@ -2663,9 +2656,6 @@ void retro_run (void)
 	{ static int lr = -1, ld = -1; static double ts; const double now = vt_wall ();   /* (Picture size auto again: the rotation or
 	                                              the deck changed; on an iPhone / iPad also the device turned - looked at once a second) */
 	  if (opt_rot != lr || opt_deck != ld || (VX_IOS && now - ts > 1.0)) { lr = opt_rot; ld = opt_deck; ts = now; if (gpu_ok) scr_detect (); } }
-	if (pic_said_t >= 0 && scr_w > 0 && scr_h > 0 && vt_wall () - pic_said_t > 1.5) { char m[120]; pic_said_t = -1;   /* (the size it settled on,
-	                                              *  not each step on the way: at a start, a turn) */
-		snprintf (m, sizeof m, "Picture %d x %d - screen %d x %d", OW, OH, scr_w, scr_h); say_long (m, 3000); }
 	if (scr_new) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape
 	    || (dk_on && (scr_w != geo_sw || scr_h != geo_sh))) { pic_setup (); geo_tell (); }   /* (with the deck: the screen turned - its shape) */

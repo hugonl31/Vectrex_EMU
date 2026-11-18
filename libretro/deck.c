@@ -191,7 +191,12 @@ static void dk_tick (double busy)
 	if (!dk_on && !dk_pop) return;
 	(void) busy;
 	{ int av = 3; if (!env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) || (av & 1)) { dk_runs++;
-		const double w = vt_wall (); if (dk_lastshown > 0 && w - dk_lastshown > 1.5 / opt_rate) dk_miss++; dk_lastshown = w; } }   /* (MONITOR: the refreshes
+		const double w = vt_wall (), gap = dk_lastshown > 0 ? w - dk_lastshown : 0;
+		if (gap > 0.3) { dk_t0 = w; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; dk_rate_reset (); }   /* (a stop - a game
+		                                          loading, RetroArch's menu: not the emulation's speed - the rate measured anew
+		                                          from here; it showed below 100 % for seconds after Last Human's start) */
+		else if (gap > 1.5 / opt_rate) dk_miss++;
+		dk_lastshown = w; } }   /* (MONITOR: the refreshes
 	                                              shown - run-ahead's hidden runs not counted: 120 Hz on a 60 Hz screen) */
 	{ static int nw = -1; const int n = net_on (); if (n != nw) { nw = n; dk_dirty_set = 1; } }
 	{ static int hw = -1; const int h = vx_paused || br_open;   /* (paused, or the ROM browser open: EMU RATE 0%, not red - at once) */

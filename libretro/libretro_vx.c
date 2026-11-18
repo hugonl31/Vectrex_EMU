@@ -1,6 +1,12 @@
 #ifndef _WIN32
 #define _GNU_SOURCE                             /* (dladdr: the core pins itself, see retro_init) */
 #endif
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#define VX_IOS TARGET_OS_IPHONE                 /* (iOS / iPadOS: the RetroArch app for iPhone and iPad) */
+#else
+#define VX_IOS 0
+#endif
 #ifdef _WIN32
 __declspec(dllimport) unsigned long __stdcall GetTickCount (void);   /* (v0.25: the boot token) */
 #define VX_TICKS() ((unsigned) GetTickCount ())
@@ -430,7 +436,11 @@ static const struct vx_opt OPTS[] = {
 	  "Auto: the screen's height, as RetroArch shows it (the sharpest lines, with Integer Scale on). Or a height of its own.",
 	  "auto|800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
 	{ "vectrex_emu_rotate", "video", "Rotation (tate)", "Turns the picture for playing with the device held upright.",
+#if VX_IOS                                          /* (an iPhone / iPad: its screen upright already - the picture as it is) */
+	  "off|90 (turn the device right)|270 (turn the device left)|180" },
+#else
 	  "90 (turn the device right)|off|270 (turn the device left)|180" },
+#endif
 	{ "vectrex_emu_profile", "video", "Quality profile",
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|ultra|high|medium|low|basic" },
@@ -2451,6 +2461,7 @@ static int emu_threaded (void) { return opt_async && !vx_ok () && ls_state != 2;
 static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save states, no run-ahead) */
 #include "usbkm.c"
 #ifndef VX_EMUVR
+#include "pxfetch.c"                        /* (2026-11-18: the PiTrex's files fetched by the core - the browser's "PiTrex: get it") */
 #include "browser.c"
 #include "deck.c"
 #endif
@@ -2553,6 +2564,9 @@ void retro_run (void)
 	netls_solo_tick ();
 #ifndef VX_EMUVR
 	if (br_input (m)) { m[0] = m[1] = 128; m[2] = 0; }   /* (the browser reads player 1 as the game does: turned in tate) */   /* (the ROM browser open, or just closed by a button: the game gets none) */
+	if (px_redo) { const int r = px_redo; px_redo = 0;   /* (the PiTrex's download: its progress; done - the list again, it chosen) */
+		if (r & 1 && br_open) { char px[1200]; br_px_boot (px, sizeof px); br_scan (br_dir, px); }
+		br_dirty = 1; }
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
 	{ static int pz; const int pi_ = btn_id ("vectrex_emu_btn_pause"), p_ = pi_ >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pi_) != 0;
 	  if (p_ && !pz && !br_open && !net_on ()) { vx_paused = !vx_paused; dk_dirty_set = 1; } pz = p_;

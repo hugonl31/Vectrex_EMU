@@ -35,12 +35,18 @@ static void kb_desk (bool down, unsigned k)
 {
 	static unsigned char was[RETROK_LAST]; if (k >= RETROK_LAST) return;
 	const int rep = down && was[k]; was[k] = down;
+#if defined(VX_LOG_TOKEN)
+	const int was_rep_ = rep;
+#endif
 	unsigned bit = 0;
 	switch (k) { case RETROK_UP: bit = KB_UP; break; case RETROK_DOWN: bit = KB_DOWN; break; case RETROK_LEFT: bit = KB_LEFT; break;
 	case RETROK_RIGHT: bit = KB_RIGHT; break; case RETROK_a: bit = KB_B1; break; case RETROK_w: bit = KB_B2; break; case RETROK_s: bit = KB_B3; break;
 	case RETROK_d: bit = KB_B4; break; case RETROK_LSHIFT: case RETROK_RSHIFT: bit = KB_SHIFT; break;
 	case RETROK_RETURN: case RETROK_KP_ENTER: bit = KB_ENTER; break; case RETROK_BACKSPACE: bit = KB_BACK; break;
 	case RETROK_LCTRL: case RETROK_RCTRL: bit = KB_CTRL; break; default: break; }
+#if defined(VX_LOG_TOKEN)
+	if (bit && bit != KB_CTRL && !(down && was_rep_)) fprintf (stderr, "[vectrex_emu] key %u %s\n", k, down ? "down" : "up");   /* (the iOS test build) */
+#endif
 	if (bit) kb_held = down ? kb_held | bit : kb_held & ~bit;
 	if (!down || rep) return;
 	if (kb_held & KB_CTRL) { if (k == RETROK_e) kb_ev |= KE_EJECT; else if (k == RETROK_r) kb_ev |= KE_RESET; return; }

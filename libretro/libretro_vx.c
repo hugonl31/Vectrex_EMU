@@ -1303,6 +1303,16 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 	if (port == 0 && !net_on () && usb_pad (&ux, &uy, &ub)) { if (ux) x = ux; if (uy) y = uy; }   /* (not in netplay: RetroArch's input only) */   /* (the Vectrex USB Controller, player 1) */
 	if (port == 0 && kb_on && !net_on ()) {         /* (the desktop's keys: the arrows the stick - Shift half -, A W S D buttons 1-4;
 	                                                    in the ROM browser Enter loads and Backspace goes back, its buttons 4 and 1) */
+		{ static const unsigned bits[] = { KB_UP, KB_DOWN, KB_LEFT, KB_RIGHT, KB_B1, KB_B2, KB_B3, KB_B4, KB_SHIFT };   /* (a key held that
+		                                              *  RetroArch says is up - its release lost (iPad, up and down at once: the stick
+		                                              *  stayed down, 2026-11-18): let go after 3 refreshes; trusted once RetroArch has
+		                                              *  shown a held key down) */
+		  static const unsigned keys[] = { RETROK_UP, RETROK_DOWN, RETROK_LEFT, RETROK_RIGHT, RETROK_a, RETROK_w, RETROK_s, RETROK_d, RETROK_LSHIFT };
+		  static int trust; static unsigned char miss[9];
+		  for (int i = 0; i < 9; i++) { if (!(kb_held & bits[i])) { miss[i] = 0; continue; }
+			int dn = input_cb (0, RETRO_DEVICE_KEYBOARD, 0, keys[i]) != 0; if (i == 8) dn = dn || input_cb (0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT);
+			if (dn) { trust = 1; miss[i] = 0; } else if (trust && ++miss[i] >= 3) { kb_held &= ~bits[i]; miss[i] = 0;
+				fprintf (stderr, "[vectrex_emu] key %u held but up: let go\n", keys[i]); } } }
 		const unsigned k = kb_held; const int s = k & KB_SHIFT ? 64 : 127;
 		if (k & KB_LEFT) x = -s; if (k & KB_RIGHT) x = s; if (k & KB_UP) y = s; if (k & KB_DOWN) y = -s;
 		ub |= (k & KB_B1 ? 1u : 0) | (k & KB_B2 ? 2u : 0) | (k & KB_B3 ? 4u : 0) | (k & KB_B4 ? 8u : 0);

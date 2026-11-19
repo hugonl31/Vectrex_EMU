@@ -60,3 +60,6 @@ void ulog (NSString *s);               /* into the app's live log */
 + (UIView *) deckFor:(UIViewController *)vc;                  /* (the native control deck, below the picture) */
 + (void) showChoice:(int)i from:(UIViewController *)vc;
 @end
+@interface VXUI (Controls)
++ (void) showControlsFrom:(UIViewController *)vc;
+@end

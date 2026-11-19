@@ -294,8 +294,12 @@ static void vxa_read_pad (GCController *c, vxa_pad *p)
 	float lx = g.leftThumbstick.xAxis.value, ly = g.leftThumbstick.yAxis.value;
 	uint32_t b = 0;
 #define VB(cond, id) if (cond) b |= 1u << (id)
-	VB (g.buttonA.pressed, RETRO_DEVICE_ID_JOYPAD_B); VB (g.buttonX.pressed, RETRO_DEVICE_ID_JOYPAD_Y);
-	VB (g.buttonB.pressed, RETRO_DEVICE_ID_JOYPAD_A); VB (g.buttonY.pressed, RETRO_DEVICE_ID_JOYPAD_X);
+	{ /* (Vectrex buttons 1-4 - the core's RetroPad Y X B A - on the buttons the player chose; the default as the
+	   *  Vectrex controller's row on a modern pad's diamond: 1 left, 2 top, 3 bottom, 4 right) */
+	  const BOOL phys[8] = { g.buttonA.pressed, g.buttonB.pressed, g.buttonX.pressed, g.buttonY.pressed, g.leftShoulder.pressed, g.rightShoulder.pressed, g.leftTrigger.pressed, g.rightTrigger.pressed };
+	  static const int vid[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A }, def[4] = { 2, 3, 0, 1 };
+	  for (int k = 0; k < 4; k++) { NSNumber *m = [NSUserDefaults.standardUserDefaults objectForKey:[NSString stringWithFormat:@"map.%d", k + 1]];
+		int src = m ? m.intValue : def[k]; if (src >= 0 && src < 8 && phys[src]) b |= 1u << vid[k]; } }
 	VB (g.buttonOptions.pressed, RETRO_DEVICE_ID_JOYPAD_SELECT); VB (g.buttonMenu.pressed, RETRO_DEVICE_ID_JOYPAD_START);
 	VB (g.leftShoulder.pressed, RETRO_DEVICE_ID_JOYPAD_L); VB (g.rightShoulder.pressed, RETRO_DEVICE_ID_JOYPAD_R);
 	VB (g.leftTrigger.pressed, RETRO_DEVICE_ID_JOYPAD_L2); VB (g.rightTrigger.pressed, RETRO_DEVICE_ID_JOYPAD_R2);
@@ -553,7 +557,7 @@ static void vxa_toast (NSString *s, double secs)
 	unsigned _fw, _fh; int _have;                                   /* (the last picture from the core) */
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
-	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
+	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
 	long _runs, _presents, _late, _ticks; double _stat_t;
@@ -849,6 +853,7 @@ static void vxa_set_opt (int i, NSString *v)
 	return [UIMenu menuWithTitle:@"Vectrex_EMU" children:top];
 }
 - (void) openMenu { [VXUI showGameMenuFrom:self]; }
+- (void) controlsChanged { [self layoutControls]; _pic = CGRectZero; }
 - (BOOL) deckShown                              /* (the native deck: upright, the setting Control deck not off) */
 {
 	CGSize v = self.view.bounds.size; if (v.width > v.height || !_link) return NO;
@@ -890,15 +895,19 @@ static void vxa_set_opt (int i, NSString *v)
  * controller and no keyboard is connected; below the picture upright, beside it sideways */
 - (void) layoutControls
 {
-	BOOL show = GCController.controllers.count == 0 && GCKeyboard.coalescedKeyboard == nil && _running;
+	NSUserDefaults *ud = NSUserDefaults.standardUserDefaults; NSString *mode = [ud stringForKey:@"touch.show"] ?: @"auto";
+	BOOL show = _running && ([mode isEqualToString:@"always"] || ([mode isEqualToString:@"auto"] && GCController.controllers.count == 0 && GCKeyboard.coalescedKeyboard == nil));
+	const double tsize = [ud objectForKey:@"touch.size"] ? [ud doubleForKey:@"touch.size"] : 1.0; _ctl.alpha = [ud objectForKey:@"touch.alpha"] ? [ud doubleForKey:@"touch.alpha"] : 1.0;
+	_stickR = 60 * tsize;
 	_ctl.hidden = !show; if (!show) return;
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; CGRect pic = _pic;
 	CGRect zl, zr;
 	if (v.width > v.height) { zl = CGRectMake (s.left, s.top, CGRectGetMinX (pic) - s.left, v.height - s.top - s.bottom); zr = CGRectMake (CGRectGetMaxX (pic), s.top, v.width - s.right - CGRectGetMaxX (pic), zl.size.height); }
 	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0); if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (the deck is in the picture now) */
 		zl = CGRectMake (s.left, top, v.width / 2, v.height - s.bottom - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
+	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
 	_stickZone = zl;
-	double r = fmin (zr.size.width / 4.6, 38), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
+	double r = fmin (zr.size.width / 4.6, 38 * tsize), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
 	for (int i = 0; i < 4; i++) {
 		double bx = cx + (i % 2 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2);
 		_btnR[i] = CGRectMake (bx - r, by - r, 2 * r, 2 * r);
@@ -908,8 +917,8 @@ static void vxa_set_opt (int i, NSString *v)
 }
 - (void) drawStick:(CGPoint)knob
 {
-	double R = 60; _stickBase.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (_stickC.x - R, _stickC.y - R, 2 * R, 2 * R)].CGPath;
-	_stickKnob.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (knob.x - 26, knob.y - 26, 52, 52)].CGPath;
+	double R = _stickR > 0 ? _stickR : 60; _stickBase.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (_stickC.x - R, _stickC.y - R, 2 * R, 2 * R)].CGPath;
+	double kr = R * 0.43; _stickKnob.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (knob.x - kr, knob.y - kr, 2 * kr, 2 * kr)].CGPath;
 }
 - (void) touchesBegan:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e
 {
@@ -938,7 +947,7 @@ static void vxa_set_opt (int i, NSString *v)
 		CGPoint p = [t locationInView:self.view];
 		if (t == _ptrT) [self pointerAt:p on:1];
 		if (t == _stickT) {
-			double dx = p.x - _stickC.x, dy = p.y - _stickC.y, R = 60, d = hypot (dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
+			double dx = p.x - _stickC.x, dy = p.y - _stickC.y, R = _stickR > 0 ? _stickR : 60, d = hypot (dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
 			[self drawStick:CGPointMake (_stickC.x + dx, _stickC.y + dy)];
 			double ax = dx / R, ay = dy / R; uint32_t b = vxa_tpad.btn & ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP);
 			if (ay < -0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_UP; if (ay > 0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;

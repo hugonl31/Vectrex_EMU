@@ -16,7 +16,10 @@ final class Input {
 	static final int B = 0, Y = 1, SELECT = 2, START = 3, UP = 4, DOWN = 5, LEFT = 6, RIGHT = 7, A = 8, X = 9, L = 10, R = 11, L2 = 12, R2 = 13, L3 = 14, R3 = 15;
 	static final String[] PHYS = { "A (bottom)", "B (right)", "X (left)", "Y (top)", "L1", "R1", "L2", "R2" };
 	static final int[] PHYS_KEY = { KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_BUTTON_L2, KeyEvent.KEYCODE_BUTTON_R2 };
-	static final int[] DEF = { 2, 3, 0, 1 };                    /* (Vectrex 1-4 on: X, Y, A, B) */
+	static final int[] DEF = { 2, 3, 0, 1 };                    /* (Vectrex 1-4 on: X, Y, A, B - the buttons' places on an Xbox-style pad: left, top, bottom, right) */
+	static final int[] DEF_N = { 3, 2, 1, 0 };                  /* (a Nintendo-style pad - the Retroid's own: Y left, X top, B bottom, A right - the same places, the 8BitDo's) */
+	static boolean nintendo;                                    /* (the pad last pressed is one) */
+	static boolean nintendoPad (InputDevice d) { String n = d != null ? d.getName ().toLowerCase (java.util.Locale.ROOT) : ""; return n.contains ("retroid") || n.contains ("nintendo") || n.contains ("pro controller") || n.contains ("joy-con"); }
 	static final int[] VID = { Y, X, B, A };                    /* (Vectrex 1-4: the RetroPad's) */
 	static final ArrayList<Integer> devs = new ArrayList<> ();  /* (the controllers seen, in order: ports 1, 2) */
 	static final int[] btn = new int[2], hat = new int[2], trig = new int[2]; static final int[][] ax = new int[2][4];
@@ -34,7 +37,7 @@ final class Input {
 		b &= ~((1 << UP) | (1 << DOWN) | (1 << LEFT) | (1 << RIGHT));
 		if (t[1] < 0) b |= 1 << UP; if (t[1] > 0) b |= 1 << DOWN; if (t[0] < 0) b |= 1 << LEFT; if (t[0] > 0) b |= 1 << RIGHT; return b;
 	}
-	static int phys (int vec) { return Main.me.prefs.getInt ("map." + (vec + 1), DEF[vec]); }
+	static int phys (int vec) { return Main.me.prefs.getInt ("map." + (vec + 1), (nintendo ? DEF_N : DEF)[vec]); }
 	static boolean isPad (InputDevice d) { if (d == null || d.isVirtual ()) return false; int s = d.getSources ();
 		return (s & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD || (s & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK; }
 	static int pads () { int n = 0; for (int id : InputDevice.getDeviceIds ()) if (isPad (InputDevice.getDevice (id))) n++; return n; }
@@ -65,6 +68,7 @@ final class Input {
 		InputDevice d = e.getDevice (); final int code = e.getKeyCode (), act = e.getAction ();
 		if (act == KeyEvent.ACTION_MULTIPLE) return false;
 		final boolean down = act == KeyEvent.ACTION_DOWN, pad = isPad (d) || KeyEvent.isGamepadButton (code);
+		if (pad) nintendo = nintendoPad (d);
 		if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE) return false;
 		if (pad) {
 			if (!m.stack.isEmpty ()) return screenKey (m, e, code, down);

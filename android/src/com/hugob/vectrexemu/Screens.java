@@ -188,7 +188,7 @@ final class Screens {
 			p.row ("Vectrex button " + (v + 1), Input.PHYS[Input.phys (v)], () -> {
 				String[] vals = new String[8]; for (int j = 0; j < 8; j++) vals[j] = String.valueOf (j);
 				pick (m, "Vectrex button " + (k + 1), vals, Input.PHYS, String.valueOf (Input.phys (k)), s -> { m.prefs.edit ().putInt ("map." + (k + 1), Integer.parseInt (s)).apply (); m.pop (); controls (m); }); }); }
-		p.row ("As the Vectrex controller (default)", "1 X, 2 Y, 3 A, 4 B", () -> { for (int j = 1; j <= 4; j++) m.prefs.edit ().remove ("map." + j).apply (); m.pop (); controls (m); });
+		p.row ("As the Vectrex controller (default)", Input.nintendo ? "1 Y, 2 X, 3 B, 4 A (this pad's labels)" : "1 X, 2 Y, 3 A, 4 B", () -> { for (int j = 1; j <= 4; j++) m.prefs.edit ().remove ("map." + j).apply (); m.pop (); controls (m); });
 		m.push (p);
 	}
 	/* a line of text typed in (chat, a code, an address) */

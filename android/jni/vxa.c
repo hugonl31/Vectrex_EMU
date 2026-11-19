@@ -507,7 +507,7 @@ static void *vxa_main (void *u)
 	vxa_audio_start (vxa_av.timing.sample_rate);
 	vxa_perf_hint (vxa_av.timing.fps);
 	vxa_ok = 1;
-	double last = 0, acc = 0, stat_t = vxa_now (), t_run = 0, t_max = 0; long runs = 0, pres = 0, ticks = 0, late = 0; int was_running = 1;
+	double last = 0, acc = 0, stat_t = vxa_now (), t_run = 0, t_max = 0, t_cpu = 0; long runs = 0, pres = 0, ticks = 0, late = 0; int was_running = 1;
 	while (!vxa_quit) {
 		vxa_surface_update ();
 		vxa_cmd_run ();
@@ -529,7 +529,9 @@ static void *vxa_main (void *u)
 		vxa_hdr_update ();
 		if (!vxa_holding) {
 			const double t0 = vxa_now ();
+			struct timespec c0, c1; clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c0);
 			for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); runs++; vxa_since_load++; }
+			clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c1); t_cpu += (c1.tv_sec - c0.tv_sec) + (c1.tv_nsec - c0.tv_nsec) * 1e-9;   /* (the thread's own processor time: waiting for the GPU is not) */
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;
 			if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); vxa_browser = 1; } }
 		vxa_present (); pres++;
@@ -538,9 +540,9 @@ static void *vxa_main (void *u)
 		eglSwapBuffers (vxa_dpy, vxa_surf);
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
-			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (longest %.1f), %ld late of %ld, sound %.0f ms, %u dry, %u dropped%s",
-				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, t_max * 1000, late, ticks, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
-			runs = pres = ticks = late = 0; t_run = t_max = 0; vxa_under = vxa_drop = 0; }
+			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld, sound %.0f ms, %u dry, %u dropped%s",
+				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
+			runs = pres = ticks = late = 0; t_run = t_max = t_cpu = 0; vxa_under = vxa_drop = 0; }
 	}
 	vlog ("the core ends"); if (vxa_as) { AAudioStream_requestStop (vxa_as); AAudioStream_close (vxa_as); vxa_as = NULL; }
 	retro_unload_game (); retro_deinit ();

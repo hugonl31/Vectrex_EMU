@@ -12,7 +12,8 @@ static UIButton *VB (NSString *title, NSString *sym, BOOL on, void (^f) (void))
 	UIButtonConfiguration *c = [UIButtonConfiguration plainButtonConfiguration];
 	c.title = title; c.image = sym ? [UIImage systemImageNamed:sym withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:15 weight:UIImageSymbolWeightMedium]] : nil;
 	c.imagePlacement = NSDirectionalRectEdgeTop; c.imagePadding = 4; c.baseForegroundColor = on ? VX_HI2 : VX_HI;
-	c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (sym ? 11 : 15, UIFontWeightSemibold); return m; };
+	c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (sym ? 10 : 15, UIFontWeightSemibold); return m; };
+	if (sym) { c.contentInsets = NSDirectionalEdgeInsetsMake (6, 2, 6, 2); c.titleLineBreakMode = NSLineBreakByClipping; }   /* (OVERLAY on one line in a narrow cell) */
 	c.background.backgroundColor = on ? VX_SEL : VX_PANEL; c.background.strokeColor = on ? VX_EDGE2 : VX_EDGE; c.background.strokeWidth = 1; c.background.cornerRadius = 12;
 	UIButton *b = [UIButton buttonWithConfiguration:c primaryAction:[UIAction actionWithHandler:^(UIAction *a) { (void) a; ulog ([NSString stringWithFormat:@"tap %@", title]); f (); }]];
 	b.accessibilityLabel = title; return b;

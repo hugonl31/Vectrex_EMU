@@ -658,7 +658,13 @@ static void nv_tick (void)
 			const int g = nv_ping_got < 8 ? nv_ping_got : 8; double t[8]; for (int i = 0; i < g; i++) t[i] = nv_ping_t[i];
 			for (int i = 0; i < g; i++) for (int j = i + 1; j < g; j++) if (t[j] > t[i]) { const double x = t[i]; t[i] = t[j]; t[j] = x; }
 			nv_rtt = g >= 4 ? t[1] : g ? t[0] : 0.3;             /* (no answer at all: a slow path assumed, not a fast one) */
-			nv_delay = (int) (nv_rtt * 25.0 + 0.999) + 2 + (nv_relay ? 2 : 0); if (nv_delay < 3) nv_delay = 3; if (nv_delay > 12) nv_delay = 12;   /* (relayed: 2 frames more - its way varies more) */
+			nv_delay = (int) (nv_rtt * 25.0 + 0.999) + 2 + (nv_relay ? 2 : 0); if (nv_delay < 3) nv_delay = 3;
+			{ const int p2p = nv_have_peer && nv_peer.sin_addr.s_addr == htonl (0x7f000001u);   /* (the player through the iOS app's bridge: Apple's
+			                                                 peer-to-peer Wi-Fi - fast, but it stops a few hundred ms now and then while the radio
+			                                                 visits the ordinary Wi-Fi: 28 ms, slowest 343, 3 frames - both games stood and raced, the
+			                                                 iPad / iPhone 2026-11-19. Room for its pauses: 6 frames, 8 when one answer was slow) */
+			  if (p2p) { const int f = nv_ping_max > 0.15 ? 8 : 6; if (nv_delay < f) nv_delay = f; } }
+			if (nv_delay > 12) nv_delay = 12;   /* (relayed: 2 frames more - its way varies more) */
 			nv_make_game (); char m[160]; snprintf (m, sizeof m, "round trip %.0f ms (slowest %.0f, %d of %d answered)%s: %d frames of input delay", nv_rtt * 1000, nv_ping_max * 1000, nv_ping_got, nv_ping_i, nv_relay ? ", relayed" : "", nv_delay); nv_log (m); } }
 	if (nv_role == 1 && nv_phase == NV_WAIT && nv_rtt >= 0 && now - nv_g_sent > 0.05) { nv_g_sent = now; nv_send ('G', nv_game, strlen (nv_game)); }
 	if (nv_role == 1 && nv_phase == NV_AGREED && nv_card && !nv_card_done && nv_czn && now - nv_t_card > 0.004) {   /* (the host: its card list, piece by piece) */

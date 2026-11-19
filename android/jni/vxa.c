@@ -454,6 +454,41 @@ static int vxa_state_file (int save, int slot)
 /* ---------------------------------------------------------------- the core's thread: start, then a refresh each vsync */
 static pthread_t vxa_th; static volatile int vxa_quit, vxa_running = 1, vxa_started, vxa_ok;
 static char vxa_game0[1100]; static volatile int vxa_browser;     /* (the core's ROM browser asked for: the library instead) */
+static volatile int vxa_stat_rps, vxa_stat_pps, vxa_stat_ms;
+extern int vx_app_noshape, vx_app_osd_on;
+/* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
+ * slow cores took 15-16 ms of a 16.7 ms refresh for Armor Attack (the iPad: 4); RetroArch's game thread is kept on the
+ * fast ones. The cores near the top clock speed; the threads the core starts from here (UVMC2 / PiTrex, the drawing) follow */
+static int vxa_tid;
+static cpu_set_t vxa_top_set; static int vxa_top_ok;   /* (the fastest cores: the emulation thread's - UVMC2 / PiTrex) */
+static void vxa_fast_cores (void)
+{
+	long mx[64]; int n = 0; long top = 0;
+	for (int c = 0; c < 64; c++) { char p[96]; snprintf (p, sizeof p, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
+		FILE *f = fopen (p, "r"); if (!f) { mx[c] = 0; if (c > 15) break; continue; } long v = 0; if (fscanf (f, "%ld", &v) != 1) v = 0; fclose (f); mx[c] = v; n = c + 1; if (v > top) top = v; }
+	if (!top || n < 2) { vlog ("cores: their speeds unknown - left to Android"); return; }
+	cpu_set_t set; CPU_ZERO (&set); int k = 0; char list[200] = ""; size_t o = 0;
+	for (int c = 0; c < n; c++) if (mx[c] >= top * 3 / 4) { CPU_SET (c, &set); k++; o += (size_t) snprintf (list + o, o < sizeof list ? sizeof list - o : 0, "%s%d", o ? "," : "", c); }
+	CPU_ZERO (&vxa_top_set); for (int c = 0; c < n; c++) if (mx[c] == top) CPU_SET (c, &vxa_top_set); vxa_top_ok = 1;
+	const int r = sched_setaffinity (0, sizeof set, &set);
+	vlog ("cores: the game's thread on %d fast ones (%s, up to %ld MHz)%s", k, list, top / 1000, r ? " - not allowed" : "");
+}
+/* (Android 13+: the game thread says how long each refresh's work took - the clocks follow) */
+static int vxa_emu_tid; static double vxa_hint_fps;
+typedef void *(*vxa_ph_mgr_t) (void); typedef void *(*vxa_ph_new_t) (void *, const int32_t *, size_t, int64_t); typedef int (*vxa_ph_rep_t) (void *, int64_t);
+static void *vxa_hint; static vxa_ph_rep_t vxa_ph_rep;
+static void vxa_perf_hint (double fps)
+{
+	vxa_hint_fps = fps;
+	void *l = dlopen ("libandroid.so", RTLD_NOW); if (!l) return;
+	vxa_ph_mgr_t mg = (vxa_ph_mgr_t) dlsym (l, "APerformanceHint_getManager"); vxa_ph_new_t mk = (vxa_ph_new_t) dlsym (l, "APerformanceHint_createSession");
+	vxa_ph_rep = (vxa_ph_rep_t) dlsym (l, "APerformanceHint_reportActualWorkDuration");
+	if (!mg || !mk || !vxa_ph_rep) { vlog ("performance hints: not on this Android"); return; }
+	void *m = mg (); int32_t t[2] = { vxa_tid, vxa_emu_tid }; const int nt = vxa_emu_tid ? 2 : 1;
+	if (vxa_hint) { void (*cl) (void *) = (void (*) (void *)) dlsym (l, "APerformanceHint_closeSession"); if (cl) cl (vxa_hint); vxa_hint = NULL; }
+	vxa_hint = m ? mk (m, t, nt, (int64_t) (1e9 / (fps > 0 ? fps : 60))) : NULL;
+	vlog ("performance hints: %s%s", vxa_hint ? "on" : "not given", nt > 1 ? " (the emulation thread too)" : "");
+}
 /* the app's busiest threads over the last stat period (/proc/self/task: user+system ticks) - what loads the processor */
 #include <dirent.h>
 #define VXA_TH 96
@@ -468,7 +503,11 @@ static void vxa_threads (double secs)
 		char *o = strchr (b, '('), *c = strrchr (b, ')'); if (!o || !c) continue;
 		int l = (int) (c - o - 1); if (l > 19) l = 19; memcpy (nm[n], o + 1, l); nm[n][l] = 0;
 		long ut = 0, st = 0; if (sscanf (c + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld", &ut, &st) != 2) continue;
-		id[n] = atoi (de->d_name); tk[n] = ut + st; n++; }
+		id[n] = atoi (de->d_name); tk[n] = ut + st;
+		if (!strcmp (nm[n], "vx-emu") && id[n] != vxa_emu_tid) { vxa_emu_tid = id[n];   /* (the emulation's own thread: on the fastest core, in the hints) */
+			const int e = vxa_top_ok ? sched_setaffinity (vxa_emu_tid, sizeof vxa_top_set, &vxa_top_set) : -1;
+			vlog ("cores: the emulation thread on the fastest%s", e ? " - not allowed" : ""); if (vxa_hint) vxa_perf_hint (vxa_hint_fps); }
+		n++; }
 	closedir (d);
 	long dl[VXA_TH]; for (int i = 0; i < n; i++) { dl[i] = 0; for (int j = 0; j < vxa_th_n; j++) if (vxa_th_id[j] == id[i]) { dl[i] = tk[i] - vxa_th_t[j]; break; } all += dl[i]; }
 	const int first = vxa_th_n == 0; vxa_th_n = n; memcpy (vxa_th_id, id, n * sizeof *id); memcpy (vxa_th_t, tk, n * sizeof *tk);
@@ -477,35 +516,6 @@ static void vxa_threads (double secs)
 	for (int m = 0; m < 6; m++) { int bi = -1; for (int i = 0; i < n; i++) if (dl[i] > 0 && (bi < 0 || dl[i] > dl[bi])) bi = i; if (bi < 0) break;
 		k += snprintf (out + k, sizeof out - k, ", %s %.0f%%", nm[bi], dl[bi] / hz / secs * 100); dl[bi] = 0; if (k >= (int) sizeof out - 30) break; }
 	vlog ("%s", out);
-}
-static volatile int vxa_stat_rps, vxa_stat_pps, vxa_stat_ms;
-extern int vx_app_noshape, vx_app_osd_on;
-/* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
- * slow cores took 15-16 ms of a 16.7 ms refresh for Armor Attack (the iPad: 4); RetroArch's game thread is kept on the
- * fast ones. The cores near the top clock speed; the threads the core starts from here (UVMC2 / PiTrex, the drawing) follow */
-static int vxa_tid;
-static void vxa_fast_cores (void)
-{
-	long mx[64]; int n = 0; long top = 0;
-	for (int c = 0; c < 64; c++) { char p[96]; snprintf (p, sizeof p, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
-		FILE *f = fopen (p, "r"); if (!f) { mx[c] = 0; if (c > 15) break; continue; } long v = 0; if (fscanf (f, "%ld", &v) != 1) v = 0; fclose (f); mx[c] = v; n = c + 1; if (v > top) top = v; }
-	if (!top || n < 2) { vlog ("cores: their speeds unknown - left to Android"); return; }
-	cpu_set_t set; CPU_ZERO (&set); int k = 0; char list[200] = ""; size_t o = 0;
-	for (int c = 0; c < n; c++) if (mx[c] >= top * 3 / 4) { CPU_SET (c, &set); k++; o += (size_t) snprintf (list + o, o < sizeof list ? sizeof list - o : 0, "%s%d", o ? "," : "", c); }
-	const int r = sched_setaffinity (0, sizeof set, &set);
-	vlog ("cores: the game's thread on %d fast ones (%s, up to %ld MHz)%s", k, list, top / 1000, r ? " - not allowed" : "");
-}
-/* (Android 13+: the game thread says how long each refresh's work took - the clocks follow) */
-typedef void *(*vxa_ph_mgr_t) (void); typedef void *(*vxa_ph_new_t) (void *, const int32_t *, size_t, int64_t); typedef int (*vxa_ph_rep_t) (void *, int64_t);
-static void *vxa_hint; static vxa_ph_rep_t vxa_ph_rep;
-static void vxa_perf_hint (double fps)
-{
-	void *l = dlopen ("libandroid.so", RTLD_NOW); if (!l) return;
-	vxa_ph_mgr_t mg = (vxa_ph_mgr_t) dlsym (l, "APerformanceHint_getManager"); vxa_ph_new_t mk = (vxa_ph_new_t) dlsym (l, "APerformanceHint_createSession");
-	vxa_ph_rep = (vxa_ph_rep_t) dlsym (l, "APerformanceHint_reportActualWorkDuration");
-	if (!mg || !mk || !vxa_ph_rep) { vlog ("performance hints: not on this Android"); return; }
-	void *m = mg (); int32_t t = vxa_tid; vxa_hint = m ? mk (m, &t, 1, (int64_t) (1e9 / (fps > 0 ? fps : 60))) : NULL;
-	vlog ("performance hints: %s", vxa_hint ? "on" : "not given");
 }
 static void *vxa_main (void *u)
 {

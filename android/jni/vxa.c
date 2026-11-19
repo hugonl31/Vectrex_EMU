@@ -234,8 +234,10 @@ static void vxa_present (void)
 	const double aw = vxa_aw > 0 ? vxa_aw : vxa_sw, ah = vxa_ah > 0 ? vxa_ah : vxa_sh, ax = vxa_aw > 0 ? vxa_ax : 0, ay = vxa_ah > 0 ? vxa_ay : 0;
 	const double k = fmin (1.0, fmin (aw / vxa_fw, ah / vxa_fh)), w = vxa_fw * k, h = vxa_fh * k, x = ax + (aw - w) / 2, top = vxa_top_align ? ay : ay + (ah - h) / 2;
 	{ const double fit = fmin (ah, aw * vxa_fh / vxa_fw), r = fit / vxa_fh;   /* (the core draws the picture at the size there is room for: 1:1) */
-	  if (fabs (r - 1) > 0.01 && vxa_snap_n < 0 && !vxa_snap_fixed) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) vxa_fh) * r);
-		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, vxa_fh, want); vx_app_pich = want; } } }
+	  static unsigned asked_fh;                         /* (asked once per picture size: the core's answer waited for - a fixed size never comes) */
+	  if (fabs (r - 1) > 0.01 && vxa_snap_n < 0 && !vxa_snap_fixed && vxa_fh != asked_fh) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) vxa_fh) * r);
+		if (want > 2400) want = 2400;
+		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, vxa_fh, want); vx_app_pich = want; asked_fh = vxa_fh; } } }
 	if (fabs (x - vxa_px) > 0.5 || fabs (top - vxa_py) > 0.5 || fabs (w - vxa_pw) > 0.5 || fabs (h - vxa_ph) > 0.5) {
 		vxa_px = (float) x; vxa_py = (float) top; vxa_pw = (float) w; vxa_ph = (float) h;
 		vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f (%s)", vxa_fw, vxa_fh, x, top, w, h, k == 1.0 ? "1:1" : "scaled"); }

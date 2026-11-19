@@ -117,11 +117,11 @@ final class Screens {
 		p.row ("Touch controls: opacity", pct (m.prefs.getFloat ("touch.alpha", 1f)), () -> pickF (m, "Touch controls: opacity", "touch.alpha", new float[] { 0.25f, 0.5f, 0.75f, 1f }, 1f));
 		p.row ("Left-handed", m.prefs.getBoolean ("touch.lefty", false) ? "On: the stick on the right" : "Off", () -> { m.prefs.edit ().putBoolean ("touch.lefty", !m.prefs.getBoolean ("touch.lefty", false)).apply (); m.layout (); reopenSettings (m); });
 		p.row ("Controller buttons", "The Vectrex's buttons 1-4 on your controller", () -> controls (m));
-		p.row ("Top bar (upright)", m.barAuto () ? "Hides itself: tap the top to show it" : "Always shown", () -> { m.prefs.edit ().putString ("app.topbar", m.barAuto () ? "fixed" : "auto").apply (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); });
+		p.row ("Top bar (upright)", m.barAuto () ? "Hides itself: tap the top to show it" : "Always shown", () -> { m.prefs.edit ().putString ("app.topbar", m.barAuto () ? "fixed" : "auto").apply (); m.showBar (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); });
 		if (m.hdrCan) p.row ("HDR brightness", pct (m.prefs.getFloat ("app.hdr", 1f)) + " of the screen's headroom (" + String.format (java.util.Locale.ROOT, "%.1fx", m.hdrRoom) + ")" + (VX.hdrActive () != 0 ? "" : " - not active"),
 			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
 		else p.row ("HDR", m.hdrScreen ? "Off on this Android version (HDR needs Android 14 or newer)" : "This screen shows no HDR", null);
-		if (Pack.token (m) != null) p.row ("Downloads", "The games, box art, cartridges, UVMC2, PiTrex", () -> { m.pop (); Pack.choose (m, false); });
+		p.row ("Downloads", Pack.token (m) != null ? "The games, box art, cartridges, UVMC2, PiTrex" : "Not in this build (no server key)", () -> { if (Pack.token (m) == null) { m.toast ("This build has no server key: no downloads", 2.5); return; } m.pop (); Pack.choose (m, false); });
 		{ int n = 0; for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) n++; final int changed = n;
 		  LinearLayout r = p.row ("Reset all settings", n > 0 ? n + " changed - all back to their defaults (a long press on one: that one)" : "All at their defaults", () -> {
 			if (changed == 0) { m.toast ("All settings are at their defaults", 2); return; }

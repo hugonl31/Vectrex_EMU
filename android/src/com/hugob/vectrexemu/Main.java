@@ -191,16 +191,22 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	@Override protected void onDestroy () { super.onDestroy (); Adhoc.stop (this); log ("the app ends"); }
 	@Override public void onRequestPermissionsResult (int code, String[] perms, int[] res) { if (code == 7) Adhoc.onPermission (this, res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED); }
 
+	/* a 4:3-ish screen (the Nova's 1280 x 960): upright, the picture takes all its width - the bar hides itself, the deck pops up */
+	boolean squarish ()
+	{
+		android.util.DisplayMetrics dm = new android.util.DisplayMetrics (); getWindowManager ().getDefaultDisplay ().getRealMetrics (dm);
+		return Math.max (dm.widthPixels, dm.heightPixels) < 1.45f * Math.min (dm.widthPixels, dm.heightPixels);
+	}
 	String defaults ()
 	{
 		/* (this app's own, as the iOS app's: the deck below the picture, the picture upright as the screen stands, the keys
 		 *  as on the PC, the screen's own rate) */
 		int hz = curHz >= 143 ? 144 : curHz >= 119 ? 120 : curHz >= 89 ? 90 : curHz >= 71 ? 72 : 60;   /* (the screen's rate now: the Nova "up to 120" ran at 60 - 120 Hz ran the emulator twice a refresh, 15.6 of 16.7 ms) */
-		return "vectrex_emu_deck=full\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
+		return "vectrex_emu_deck=" + (squarish () ? "pop-up" : "full") + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
 	}
 	void startCore ()
 	{
-		if (started) return; started = true; findContent ();
+		if (started) return; started = true; findContent (); showBar ();   /* (the bar hiding itself: shown a while at the start) */
 		String g = prefs.getString ("lastGame", ""); if (g.isEmpty () || !new File (g).exists ()) g = firstGame ();
 		log ("starting with " + g);
 		VX.start (sysDir.getAbsolutePath (), savesDir.getAbsolutePath (), g, defaults ());
@@ -249,7 +255,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		String m = prefs.getString ("touch.show", "auto");
 		return m.equals ("always") || (m.equals ("auto") && Input.pads () == 0);
 	}
-	boolean barAuto () { return prefs.getString ("app.topbar", "fixed").equals ("auto"); }
+	boolean barAuto () { return prefs.getString ("app.topbar", squarish () ? "auto" : "fixed").equals ("auto"); }
 	void layout ()
 	{
 		int W = root.getWidth (), H = root.getHeight (); if (W <= 0 || H <= 0) { root.post (this::layout); return; }
@@ -258,7 +264,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		  final boolean natPortrait = (r % 2 == 0) == (H > W); final int rel = (r - (natPortrait ? 1 : 0) + 4) % 4;
 		  if (rel != Input.rot) { Input.rot = rel; log ("screen turned: rotation " + r * 90 + ", the controls turned " + rel * 90); } }
 		boolean touch = started && touchShown (); boolean tablet = Math.min (W, H) / getResources ().getDisplayMetrics ().density >= 600;
-		final int dm = deckMode (); final int dh = dm == 1 ? (int) dp (58) : dm == 2 ? (int) dp (40) : 0;   /* (the deck below the picture: its room) */
+		final int dm = deckMode (); final int dh = dm == 1 ? (int) dp (58) : dm == 2 ? (int) dp (40) : dm == 3 ? (int) dp (14) : 0;   /* (the pop-up: its tab's room)*/   /* (the deck below the picture: its room) */
 		int row = land || barAuto () ? 0 : (int) dp (56), keep = (land || tablet || !touch ? 0 : (int) dp (150)) + dh;
 		int x = insL, y = insTop + row, w = W - insL - insR, hh = H - insTop - insBot - row - keep;
 		VX.setRoom (x, y, w, hh, !land);
@@ -287,7 +293,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		FrameLayout.LayoutParams l = (FrameLayout.LayoutParams) deck.getLayoutParams ();
 		if (l.topMargin != top || l.height != h || l.leftMargin != insL || l.rightMargin != insR) { l.topMargin = top; l.height = h; l.leftMargin = insL; l.rightMargin = insR; l.gravity = android.view.Gravity.TOP; deck.setLayoutParams (l); }
 		deck.mode = dm == 1 ? 1 : 2;
-		boolean show = dm != 3 || System.currentTimeMillis () < popUntil || !stack.isEmpty ();
+		boolean show = dm != 3 || System.currentTimeMillis () < popUntil || !stack.isEmpty () || deck.paused != 0;   /* (the pop-up: a while after a touch, while paused) */
 		deck.setVisibility (show ? View.VISIBLE : View.GONE);
 		popTab.setVisibility (dm == 3 && !show ? View.VISIBLE : View.GONE);
 		if (dm == 3) { FrameLayout.LayoutParams t = (FrameLayout.LayoutParams) popTab.getLayoutParams (); t.gravity = android.view.Gravity.TOP;
@@ -312,10 +318,11 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (VX.takeBrowser () && stack.isEmpty ()) Library.show (this);
 		Online.tick (this);
 		Input.poll (this);
-		if (barAuto () && bar.getAlpha () > 0 && System.currentTimeMillis () > barUntil) bar.animate ().alpha (0).setDuration (400);
+		if (barAuto () && !barHidden && System.currentTimeMillis () > barUntil) { barHidden = true; bar.animate ().alpha (0).setDuration (400); }
 	}
-	long barUntil;
-	void showBar () { if (barAuto ()) { bar.animate ().alpha (1).setDuration (150); barUntil = System.currentTimeMillis () + 3000; } }
+	long barUntil; boolean barHidden;
+	void showBar () { if (barAuto ()) { if (barHidden) log ("top bar shown"); barHidden = false; bar.animate ().cancel (); bar.animate ().alpha (1).setDuration (150); barUntil = System.currentTimeMillis () + 3000; }
+		else { barHidden = false; bar.setAlpha (1); } }
 
 	/* ---------------------------------------------------------------- the screens over the game */
 	void hold (boolean on) { VX.setHold (on); if (Online.playing) VX.net (4, on ? 1 : 0); }
@@ -356,12 +363,19 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	LinearLayout quickBar ()
 	{
 		LinearLayout b = new LinearLayout (this); b.setOrientation (LinearLayout.HORIZONTAL);
-		String[][] it = { { "GAMES", "games" }, { "SAVE", "save" }, { "LOAD", "load" }, { "OVERLAY", "overlay" }, { "ROOM", "room" }, { "MENU", "menu" } };
-		for (String[] x : it) {
-			TextView t = text (x[0], 11, HI, true); t.setGravity (Gravity.CENTER); t.setBackground (round (PANEL, EDGE, dp (10))); t.setMaxLines (1);
-			t.setAutoSizeTextTypeUniformWithConfiguration (7, 11, 1, TypedValue.COMPLEX_UNIT_SP);   /* (the words fit a narrow screen)*/
+		String[][] it = { { "GAMES", "games", "10" }, { "SAVE", "save", "11" }, { "LOAD", "load", "12" }, { "OVERLAY", "overlay", "13" }, { "ROOM", "room", "14" }, { "MENU", "menu", "15" } };
+		for (String[] x : it) {                                    /* (as the iOS app's: the icon above the word) */
+			final String w = x[0]; final int ic = Integer.parseInt (x[2]);
+			View t = new View (this) { final Paint tp = new Paint (Paint.ANTI_ALIAS_FLAG);
+				@Override protected void onDraw (Canvas c) { if (deck == null) return; float d = dp (1), cx = getWidth () / 2f;
+					deck.icon (c, ic, cx, getHeight () * 0.36f, 15 * d, HI);
+					tp.setColor (HI); tp.setTypeface (Typeface.DEFAULT_BOLD); tp.setTextAlign (Paint.Align.CENTER); tp.setTextSize (10 * d);
+					float tw = tp.measureText (w), room = getWidth () - 6 * d; if (tw > room) tp.setTextSize (10 * d * room / tw);
+					c.drawText (w, cx, getHeight () - 7 * d, tp); } };
+			t.setBackground (round (PANEL, EDGE, dp (12))); t.setContentDescription (w); t.setFocusable (false);
 			LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (0, -1, 1); lp.leftMargin = lp.rightMargin = (int) dp (3); b.addView (t, lp);
-			final String a = x[1]; t.setOnClickListener (v -> { v.performHapticFeedback (HapticFeedbackConstants.VIRTUAL_KEY); quick (a); }); }
+			final String a = x[1]; t.setOnClickListener (v -> { if (barHidden) { showBar (); return; }   /* (the faded bar: a tap shows it, presses nothing) */
+				v.performHapticFeedback (HapticFeedbackConstants.VIRTUAL_KEY); showBar (); quick (a); }); }
 		return b;
 	}
 	void quick (String a)

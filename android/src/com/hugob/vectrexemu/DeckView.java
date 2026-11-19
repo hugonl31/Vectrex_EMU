@@ -168,6 +168,20 @@ final class DeckView extends View {
 		case 8: { p.moveTo (cx - h * 0.8f, cy - h * 0.3f); p.lineTo (cx - h * 0.4f, cy - h * 0.3f); p.lineTo (cx + h * 0.1f, cy - h * 0.75f); p.lineTo (cx + h * 0.1f, cy + h * 0.75f);   /* (a speaker) */
 			p.lineTo (cx - h * 0.4f, cy + h * 0.3f); p.lineTo (cx - h * 0.8f, cy + h * 0.3f); p.close (); c.drawPath (p, ln);
 			c.drawArc (new RectF (cx - h * 0.1f, cy - h * 0.45f, cx + h * 0.6f, cy + h * 0.45f), -50, 100, false, ln); break; }
+		case 10: { float g = h * 0.12f, q = (s - g) / 2 - h * 0.1f;                  /* (GAMES: a grid) */
+			for (int i = 0; i < 4; i++) { float x0 = cx - h * 0.9f + (i % 2) * (q + g), y0 = cy - h * 0.9f + (i / 2) * (q + g); c.drawRoundRect (new RectF (x0, y0, x0 + q, y0 + q), q * 0.22f, q * 0.22f, ln); } break; }
+		case 11: case 12: {                                         /* (SAVE: an arrow into the tray; LOAD: out of it) */
+			p.moveTo (cx - h * 0.85f, cy + h * 0.15f); p.lineTo (cx - h * 0.85f, cy + h * 0.85f); p.lineTo (cx + h * 0.85f, cy + h * 0.85f); p.lineTo (cx + h * 0.85f, cy + h * 0.15f); c.drawPath (p, ln);
+			c.drawLine (cx, cy - h * 0.95f, cx, cy + h * 0.45f, ln); Path a = new Path ();
+			if (k == 11) { a.moveTo (cx - h * 0.4f, cy + h * 0.05f); a.lineTo (cx, cy + h * 0.45f); a.lineTo (cx + h * 0.4f, cy + h * 0.05f); }
+			else { a.moveTo (cx - h * 0.4f, cy - h * 0.55f); a.lineTo (cx, cy - h * 0.95f); a.lineTo (cx + h * 0.4f, cy - h * 0.55f); }
+			c.drawPath (a, ln); break; }
+		case 13: { c.drawRoundRect (new RectF (cx - h * 0.95f, cy - h * 0.35f, cx + h * 0.45f, cy + h * 0.75f), h * 0.15f, h * 0.15f, ln);   /* (OVERLAY: two sheets) */
+			p.moveTo (cx - h * 0.55f, cy - h * 0.35f); p.lineTo (cx - h * 0.55f, cy - h * 0.75f); p.lineTo (cx + h * 0.95f, cy - h * 0.75f); p.lineTo (cx + h * 0.95f, cy + h * 0.35f); p.lineTo (cx + h * 0.45f, cy + h * 0.35f); c.drawPath (p, ln); break; }
+		case 14: { RectF b = new RectF (cx - h * 0.6f, cy - h * 0.95f, cx + h * 0.6f, cy + h * 0.25f); c.drawArc (b, 135, 270, false, ln);   /* (ROOM: a light bulb) */
+			c.drawLine (cx - h * 0.42f, cy + h * 0.12f, cx - h * 0.3f, cy + h * 0.45f, ln); c.drawLine (cx + h * 0.42f, cy + h * 0.12f, cx + h * 0.3f, cy + h * 0.45f, ln);
+			c.drawLine (cx - h * 0.3f, cy + h * 0.55f, cx + h * 0.3f, cy + h * 0.55f, ln); c.drawLine (cx - h * 0.2f, cy + h * 0.8f, cx + h * 0.2f, cy + h * 0.8f, ln); break; }
+		case 15: { for (int i = -1; i <= 1; i++) c.drawLine (cx - h * 0.8f, cy + i * h * 0.55f, cx + h * 0.8f, cy + i * h * 0.55f, ln); break; }   /* (MENU: three lines) */
 		case 9: { c.drawArc (new RectF (cx - h * 0.75f, cy - h * 0.7f, cx + h * 0.75f, cy + h * 0.8f), -50, 280, false, ln); c.drawLine (cx, cy - h * 0.85f, cx, cy, ln); break; }   /* (power) */
 		}
 	}

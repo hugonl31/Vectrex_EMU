@@ -31,6 +31,19 @@ final class Input {
 		if (p < 0 || p > 1 || !builtIn[p] || rot == 0) return new int[] { x, y };
 		return rot == 1 ? new int[] { -y, x } : rot == 2 ? new int[] { -x, -y } : new int[] { y, -x };
 	}
+	/* a handheld's face buttons turned with it: the Vectrex's 1-4 by their place as the player now sees them - left, top,
+	 * bottom, right - whichever button is there (the player's own map in Settings is left as it is) */
+	static int turnButton (int p, int code, int b)
+	{
+		if (p < 0 || p > 1 || !builtIn[p] || rot == 0 || b < 0) return b;
+		for (int v = 1; v <= 4; v++) if (Main.me.prefs.contains ("map." + v)) return b;
+		final int[] place = nintendo ? new int[] { KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_A }
+		                             : new int[] { KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B };   /* (left, top, bottom, right) */
+		final int[][] vec = { { -1, 0 }, { 0, -1 }, { 0, 1 }, { 1, 0 } };
+		for (int k = 0; k < 4; k++) if (place[k] == code) { int[] t = turn (p, vec[k][0], vec[k][1]);
+			for (int j = 0; j < 4; j++) if (vec[j][0] == t[0] && vec[j][1] == t[1]) return VID[j]; }
+		return b;
+	}
 	static int turnBits (int p, int b)
 	{
 		int x = ((b >> RIGHT) & 1) - ((b >> LEFT) & 1), y = ((b >> DOWN) & 1) - ((b >> UP) & 1); int[] t = turn (p, x, y);
@@ -85,7 +98,7 @@ final class Input {
 			if (!m.stack.isEmpty ()) return screenKey (m, e, code, down);
 			if (!m.started) return false;
 			int p = port (e.getDeviceId ()); if (p < 0) return true;
-			int b = pbit (code); if (b < 0) { if (code == KeyEvent.KEYCODE_BUTTON_MODE && down && e.getRepeatCount () == 0) Screens.gameMenu (m); return true; }
+			int b = turnButton (p, code, pbit (code)); if (b < 0) { if (code == KeyEvent.KEYCODE_BUTTON_MODE && down && e.getRepeatCount () == 0) Screens.gameMenu (m); return true; }
 			if (e.getRepeatCount () > 0) return true;
 			if (down) Main.log ("in key " + KeyEvent.keyCodeToString (code) + " (" + (d != null ? d.getName () : "?") + ")");
 			int was = btn[p]; if (down) btn[p] |= 1 << b; else btn[p] &= ~(1 << b);

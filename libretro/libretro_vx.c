@@ -1122,6 +1122,7 @@ static const char *v4e_open (const char *path)          /* (the image to run; NU
 	return out;
 }
 #include "netls.c"                          /* (2026-11-16: UVMC2 / PiTrex games online - lockstep, the desktop's way) */
+#include "netvx.c"                          /* (online play the desktop's way, for the own iOS app: vx_net_*) */
 static int game_env (const char *path, const char *sys, const char *dir)
 {
 	int im_out = 0;
@@ -2513,12 +2514,12 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 	for (int k = 0; total_cycles < run_t && k < 8; k++) {
 		extern unsigned long long vt_piece_t0;
 		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
-		if (ls_state == 2) { unsigned char lm[8];   /* (online in lockstep: a game frame only with both players' input for it) */
-			if (!netls_frame (lm)) { run_t = total_cycles; break; }
+		if (ls_state == 2 || netvx_playing ()) { unsigned char lm[8];   /* (online in lockstep: a game frame only with both players' input for it) */
+			if (!(ls_state == 2 ? netls_frame (lm) : netvx_frame (lm))) { run_t = total_cycles; break; }
 			apply_input (lm); }
 		abuf_n = 0;
 		run_frame ();
-		if (ls_state == 2) netls_after ();
+		if (ls_state == 2) netls_after (); else if (netvx_playing ()) netvx_after ();
 		frame_push (p0);
 		if (vt_imager) eyes_take ();
 		audio_frame ();

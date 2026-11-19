@@ -490,7 +490,7 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
-	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar;
+	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome; int _firstPack;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -526,8 +526,8 @@ static void vxa_toast (NSString *s, double secs)
 	(void) ws; [_menuBtn addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
 	_bar = [VXUI quickBarFor:self]; _bar.hidden = YES; [self.view addSubview:_bar];
 	[self.view addSubview:_menuBtn];
-	_status = [UILabel new]; _status.textColor = g; _status.font = [UIFont systemFontOfSize:15]; _status.numberOfLines = 0; _status.textAlignment = NSTextAlignmentCenter; [self.view addSubview:_status];
-	_prog = [UIProgressView new]; _prog.progressTintColor = g; _prog.trackTintColor = [UIColor colorWithRed:0x16 / 255.0 green:0x30 / 255.0 blue:0x2a / 255.0 alpha:1]; _prog.hidden = YES; [self.view addSubview:_prog];
+	(void) g; _welcome = [VXUI welcomeView]; _welcome.frame = self.view.bounds; _welcome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+	[self.view addSubview:_welcome]; _status = [_welcome viewWithTag:11]; _prog = [_welcome viewWithTag:12];   /* (the start screen while the games arrive) */
 	NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
 	for (NSString *n in @[ GCControllerDidConnectNotification, GCControllerDidDisconnectNotification, GCKeyboardDidConnectNotification, GCKeyboardDidDisconnectNotification ])
 		[nc addObserver:self selector:@selector(devicesChanged:) name:n object:nil];
@@ -539,7 +539,6 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44);
 	  _bar.frame = CGRectMake (s0.left + 8, s0.top + ([self barAuto] ? 6 : (VXA_TOPROW - 44) / 2), b.size.width - s0.left - s0.right - 16, 44);
 	  const int land = b.size.width > b.size.height; _bar.hidden = !_link || land; _menuBtn.hidden = !_link || !land; }   /* (upright: the quick bar; sideways: the menu button) */
-	_status.frame = CGRectMake (24, b.size.height / 2 - 60, b.size.width - 48, 80); _prog.frame = CGRectMake (40, b.size.height / 2 + 30, b.size.width - 80, 4);
 	if (_ctx) { [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer]; }
 	[self layoutControls];
 	UIEdgeInsets s = self.view.safeAreaInsets;
@@ -588,7 +587,7 @@ static void vxa_toast (NSString *s, double secs)
 It goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _prog.progress = 0;
 	[VXPack.shared fetch:ver progress:^(double p) { self->_prog.progress = (float) p; }
 		done:^(BOOL ok) { self->_prog.hidden = YES;
-			if (ok) [self startCore]; else self->_status.text = @"The games could not be fetched. Close the app and try again."; }];
+			if (ok) { self->_firstPack = 1; [self startCore]; } else self->_status.text = @"The games could not be fetched. Close the app and try again."; }];
 #endif
 }
 - (void) makeDisplayBuffer
@@ -601,7 +600,7 @@ It goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _pr
 }
 - (void) startCore
 {
-	_status.text = @"";
+	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
 	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
@@ -623,6 +622,7 @@ It goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _pr
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
 	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews]; [self showBar];
+	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 }
 - (void) present
@@ -867,10 +867,14 @@ NSString *vxa_docs (void) { return NSSearchPathForDirectoriesInDomains (NSDocume
 NSString *vxa_game (void) { const char *g = vx_app_game (); return g && *g ? @(g) : @""; }
 void vxa_do (NSString *w)
 {
-	if ([w isEqualToString:@"reset"]) vxa_press (RETROK_r, 1);
-	else if ([w isEqualToString:@"eject"]) vxa_press (RETROK_e, 1);
+	/* (straight into the core, not as keys: a key waits for the game to run - the overlay switched in the paused menu
+	 *  changed only after Resume - and needs the core's keyboard on) */
+	extern void vx_app_reset (void), vx_app_eject (void);
+	vlog ("action %s", w.UTF8String);
+	if ([w isEqualToString:@"reset"]) vx_app_reset ();
+	else if ([w isEqualToString:@"eject"]) vx_app_eject ();
 	else if ([w isEqualToString:@"pause"]) vxa_press (RETROK_p, 0);
-	else if ([w isEqualToString:@"overlay"]) vxa_press (RETROK_o, 0);
+	else if ([w isEqualToString:@"overlay"]) { int i = vxa_opt_find ("vectrex_emu_overlay"); if (i >= 0) vxa_oset (i, strcmp (vxa_opt[i].val, "on") ? "on" : "off"); }
 }
 void vxa_load (NSString *path)
 {

@@ -109,7 +109,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	for (int k = 1; k < n; k++) { int j = ((_opt + d * k) % n + n) % n; if (!strcmp (vxa_ocat (j), vxa_ocat (_opt)) && VSlider (j, NULL, NULL)) { [self show:j]; return; } }
 }
 /* (Done: back where it was opened from - the settings list, at this setting; or the game, from the quick bar) */
-- (void) close { [self closeTo:self.fromSettings]; }
+- (void) close { [self closeTo:NO]; }   /* (Done: straight back to the game; the list button: all settings) */
 - (void) closeTo:(BOOL)list
 {
 	ulog (list ? @"adjust done: back to the settings" : @"adjust done"); UIViewController *g = self.vc; int i = self.opt;
@@ -239,22 +239,33 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (instancetype) initWithFrame:(CGRect)f
 {
 	self = [super initWithFrame:f];
-	_img = [UIImageView new]; _img.contentMode = UIViewContentModeScaleAspectFill; _img.clipsToBounds = YES; _img.layer.cornerRadius = 8;
-	_img.layer.borderWidth = 1; _img.layer.borderColor = VX_EDGE.CGColor; _img.backgroundColor = VX_PANEL;
+	_img = [UIImageView new]; _img.contentMode = UIViewContentModeScaleAspectFit; _img.clipsToBounds = YES; _img.layer.cornerRadius = 8;   /* (a cartridge: its own clear outline) */
 	_ph = VL (@"", VT (15), VX_G); _ph.textAlignment = NSTextAlignmentCenter;
 	_name = VL (@"", VF (12, UIFontWeightMedium), VX_FG); _name.numberOfLines = 2;
 	[self.contentView addSubview:_img]; [_img addSubview:_ph]; [self.contentView addSubview:_name]; return self;
 }
 - (void) layoutSubviews
 {
-	[super layoutSubviews]; CGFloat w = self.bounds.size.width, h = w * 207 / 162;
+	[super layoutSubviews]; CGFloat w = self.bounds.size.width, h = self.bounds.size.height - 38;
 	_img.frame = CGRectMake (0, 0, w, h); _ph.frame = CGRectInset (_img.bounds, 6, 6); _name.frame = CGRectMake (0, h + 4, w, 32);
 }
 @end
 
 @interface VXLibrary : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate>
 @end
-@implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; }
+@implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; UISegmentedControl *_look; }
+/* (the tiles' look, the player's choice: Cartridges - the real cartridge seen from above with its label -, Boxes, Overlays;
+ *  a game without one in that look takes the next: cartridge, box, overlay; Last Human (UVMC2) takes Last Human's) */
++ (NSString *) look { return [NSUserDefaults.standardUserDefaults stringForKey:@"lib.look"] ?: @"carts"; }
++ (CGFloat) aspect { NSString *l = [self look]; return [l isEqualToString:@"carts"] ? 0.96 : [l isEqualToString:@"boxes"] ? 1.39 : 207.0 / 162; }
++ (UIImage *) tileFor:(NSString *)n
+{
+	NSString *th = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/thumbs"], *base = [n componentsSeparatedByString:@" ("].firstObject;
+	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes", @"carts", @"" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"", @"carts", @"boxes" ] : @[ @"carts", @"boxes", @"" ];
+	for (NSString *d in dirs) for (NSString *nm in @[ n, base ]) {
+		UIImage *im = [UIImage imageWithContentsOfFile:[[th stringByAppendingPathComponent:d] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]]]; if (im) return im; }
+	return nil;
+}
 - (void) scan
 {
 	NSMutableArray *a = [NSMutableArray array]; NSString *roms = [vxa_docs () stringByAppendingPathComponent:@"roms"];
@@ -299,8 +310,15 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UIScrollView *cs = [UIScrollView new]; cs.showsHorizontalScrollIndicator = NO; [cs addSubview:_chips]; _chips.translatesAutoresizingMaskIntoConstraints = NO;
 	[NSLayoutConstraint activateConstraints:@[ [_chips.leadingAnchor constraintEqualToAnchor:cs.contentLayoutGuide.leadingAnchor], [_chips.trailingAnchor constraintEqualToAnchor:cs.contentLayoutGuide.trailingAnchor],
 		[_chips.topAnchor constraintEqualToAnchor:cs.contentLayoutGuide.topAnchor], [_chips.bottomAnchor constraintEqualToAnchor:cs.contentLayoutGuide.bottomAnchor], [_chips.heightAnchor constraintEqualToAnchor:cs.frameLayoutGuide.heightAnchor] ]];
+	_look = [[UISegmentedControl alloc] initWithItems:@[ @"Cartridges", @"Boxes", @"Overlays" ]];
+	_look.selectedSegmentIndex = [[VXLibrary look] isEqualToString:@"boxes"] ? 1 : [[VXLibrary look] isEqualToString:@"overlays"] ? 2 : 0;
+	_look.selectedSegmentTintColor = VX_SEL; [_look setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
+	[_look setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal];
+	[_look addAction:[UIAction actionWithHandler:^(UIAction *a) { NSInteger k = ((UISegmentedControl *) a.sender).selectedSegmentIndex;
+		[NSUserDefaults.standardUserDefaults setObject:k == 1 ? @"boxes" : k == 2 ? @"overlays" : @"carts" forKey:@"lib.look"];
+		ulog ([NSString stringWithFormat:@"library look %ld", (long) k]); [ws reload]; }] forControlEvents:UIControlEventValueChanged];
 	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ title, [UIView new], close ]]; row.alignment = UIStackViewAlignmentCenter;
-	UIStackView *hs = [[UIStackView alloc] initWithArrangedSubviews:@[ row, _search, cs ]]; hs.axis = UILayoutConstraintAxisVertical; hs.spacing = 10; hs.translatesAutoresizingMaskIntoConstraints = NO;
+	UIStackView *hs = [[UIStackView alloc] initWithArrangedSubviews:@[ row, _look, _search, cs ]]; hs.axis = UILayoutConstraintAxisVertical; hs.spacing = 10; hs.translatesAutoresizingMaskIntoConstraints = NO;
 	[head addSubview:hs];
 	UICollectionViewFlowLayout *fl = [UICollectionViewFlowLayout new]; fl.minimumInteritemSpacing = 12; fl.minimumLineSpacing = 16; fl.sectionInset = UIEdgeInsetsMake (16, 16, 24, 16);
 	_cv = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:fl]; _cv.backgroundColor = VX_BG; _cv.dataSource = self; _cv.delegate = self;
@@ -316,22 +334,24 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[self applyFilter];
 }
 - (void) pick:(NSString *)f { _filter = f; [self applyFilter]; }
+- (void) reload { [_cv.collectionViewLayout invalidateLayout]; [_cv reloadData]; }
+- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; vxa_hold (0); }
 - (BOOL) textFieldShouldReturn:(UITextField *)t { [t resignFirstResponder]; return YES; }
 - (CGSize) collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l sizeForItemAtIndexPath:(NSIndexPath *)ip
 {
-	CGFloat w = cv.bounds.size.width - 32; int cols = w > 1000 ? 7 : w > 700 ? 5 : 3; CGFloat iw = floor ((w - 12 * (cols - 1)) / cols);
-	return CGSizeMake (iw, iw * 207 / 162 + 38);
+	CGFloat w = cv.bounds.size.width - 32; BOOL carts = [[VXLibrary look] isEqualToString:@"carts"];
+	int cols = carts ? (w > 1000 ? 5 : w > 700 ? 4 : 2) : (w > 1000 ? 7 : w > 700 ? 5 : 3); CGFloat iw = floor ((w - 12 * (cols - 1)) / cols);
+	return CGSizeMake (iw, iw * [VXLibrary aspect] + 38);
 }
 - (NSInteger) collectionView:(UICollectionView *)cv numberOfItemsInSection:(NSInteger)s { return (NSInteger) _shown.count; }
 - (UICollectionViewCell *) collectionView:(UICollectionView *)cv cellForItemAtIndexPath:(NSIndexPath *)ip
 {
 	VXGameCell *c = [cv dequeueReusableCellWithReuseIdentifier:@"g" forIndexPath:ip]; NSDictionary *g = _shown[(NSUInteger) ip.item]; NSString *n = g[@"name"];
-	NSString *th = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/thumbs"];
-	NSString *base = [n componentsSeparatedByString:@" ("].firstObject;   /* (Last Human (UVMC2): Last Human's overlay) */
-	UIImage *im = [UIImage imageWithContentsOfFile:[th stringByAppendingPathComponent:[n stringByAppendingPathExtension:@"png"]]]
-		?: [UIImage imageWithContentsOfFile:[th stringByAppendingPathComponent:[base stringByAppendingPathExtension:@"png"]]];
+	UIImage *im = [VXLibrary tileFor:n];
 	c.img.image = im; c.ph.text = im ? @"" : n.uppercaseString; c.name.text = n;
-	BOOL now = [g[@"path"] isEqualToString:vxa_game ()]; c.img.layer.borderColor = (now ? VX_HI : VX_EDGE).CGColor; c.img.layer.borderWidth = now ? 2 : 1;
+	c.img.backgroundColor = im ? UIColor.clearColor : VX_PANEL;
+	BOOL now = [g[@"path"] isEqualToString:vxa_game ()]; c.name.textColor = now ? VX_HI : VX_FG; c.name.font = VF (12, now ? UIFontWeightBold : UIFontWeightMedium);
+	c.img.layer.borderColor = (now ? VX_HI : VX_EDGE).CGColor; c.img.layer.borderWidth = im ? (now ? 2 : 0) : 1;
 	return c;
 }
 - (void) collectionView:(UICollectionView *)cv didSelectItemAtIndexPath:(NSIndexPath *)ip
@@ -355,6 +375,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 @end
 @implementation VXGameMenu
 - (void) presentationControllerDidDismiss:(UIPresentationController *)p { ulog (@"game menu swiped away"); vxa_hold (0); }
+- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; if (!self.presentedViewController) vxa_hold (0); }   /* (closed in any way: the game goes on) */
 - (void) close:(void (^) (void))then { [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); if (then) then (); }]; }
 - (void) viewDidLoad
 {
@@ -460,5 +481,69 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 		VB (@"ROOM", @"lightbulb", NO, ^{ [VXUI adjustOption:vxa_ofind ("vectrex_emu_room") over:w]; }),
 		VB (@"MENU", @"line.3.horizontal", NO, ^{ [VXUI showGameMenuFrom:w]; }) ]];
 	s.distribution = UIStackViewDistributionFillEqually; s.spacing = 6; return s;
+}
+@end
+
+/* ------------------------------------------------ the welcome: the start screen while the games arrive, "ready to play"
+ * once after the first ones (the mockup's 1 and 2) */
+@implementation VXUI (Welcome)
++ (UIView *) welcomeView
+{
+	UIView *w = [UIView new]; w.backgroundColor = VX_BG;
+	CAShapeLayer *logo = [CAShapeLayer layer]; UIBezierPath *p = [UIBezierPath bezierPath];   /* (a vector shape, as the console draws) */
+	CGPoint o[6] = { {0, -78}, {68, -38}, {68, 42}, {0, 82}, {-68, 42}, {-68, -38} }, i[6] = { {0, -48}, {40, -24}, {40, 26}, {0, 50}, {-40, 26}, {-40, -24} };
+	[p moveToPoint:o[0]]; for (int k = 1; k < 6; k++) [p addLineToPoint:o[k]]; [p closePath];
+	[p moveToPoint:i[0]]; for (int k = 1; k < 6; k++) [p addLineToPoint:i[k]]; [p closePath];
+	[p moveToPoint:i[0]]; [p addLineToPoint:i[3]]; [p moveToPoint:i[5]]; [p addLineToPoint:i[2]]; [p moveToPoint:i[1]]; [p addLineToPoint:i[4]];
+	logo.path = p.CGPath; logo.strokeColor = VX_G.CGColor; logo.fillColor = UIColor.clearColor.CGColor; logo.lineWidth = 2.2; logo.lineCap = kCALineCapRound;
+	logo.shadowColor = VX_G.CGColor; logo.shadowRadius = 10; logo.shadowOpacity = 0.7; logo.shadowOffset = CGSizeZero;
+	UIView *lv = [UIView new]; [lv.layer addSublayer:logo]; lv.translatesAutoresizingMaskIntoConstraints = NO; [lv.widthAnchor constraintEqualToConstant:170].active = YES; [lv.heightAnchor constraintEqualToConstant:180].active = YES;
+	logo.position = CGPointMake (85, 90);
+	UILabel *t = VL (@"Vectrex_EMU", VT (32), VX_HI), *sub = VL (@"The Vectrex, as faithful as it gets", VF (14, UIFontWeightRegular), VX_DIM);
+	t.textAlignment = sub.textAlignment = NSTextAlignmentCenter;
+	UILabel *st = VL (@"", VF (14, UIFontWeightRegular), VX_FG2); st.tag = 11; st.textAlignment = NSTextAlignmentCenter;
+	UIProgressView *pr = [UIProgressView new]; pr.tag = 12; pr.progressTintColor = VX_G; pr.trackTintColor = VXC (0x16302a); pr.hidden = YES;
+	UILabel *ver = VL ([NSString stringWithFormat:@"%@ (%@) - test build - diagnostics on", [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],
+		[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]], VF (11, UIFontWeightRegular), VX_DIM); ver.textAlignment = NSTextAlignmentCenter;
+	UIStackView *mid = [[UIStackView alloc] initWithArrangedSubviews:@[ lv, t, sub ]]; mid.axis = UILayoutConstraintAxisVertical; mid.alignment = UIStackViewAlignmentCenter; mid.spacing = 10;
+	UIStackView *bot = [[UIStackView alloc] initWithArrangedSubviews:@[ st, pr, ver ]]; bot.axis = UILayoutConstraintAxisVertical; bot.spacing = 12;
+	for (UIView *v in @[ mid, bot ]) { v.translatesAutoresizingMaskIntoConstraints = NO; [w addSubview:v]; }
+	UILayoutGuide *g = w.safeAreaLayoutGuide;
+	[NSLayoutConstraint activateConstraints:@[ [mid.centerXAnchor constraintEqualToAnchor:w.centerXAnchor], [mid.centerYAnchor constraintEqualToAnchor:w.centerYAnchor constant:-60],
+		[bot.leadingAnchor constraintEqualToAnchor:g.leadingAnchor constant:32], [bot.trailingAnchor constraintEqualToAnchor:g.trailingAnchor constant:-32],
+		[bot.bottomAnchor constraintEqualToAnchor:g.bottomAnchor constant:-28], [bot.widthAnchor constraintLessThanOrEqualToConstant:520] ]];
+	return w;
+}
++ (void) showReadyFrom:(UIViewController *)vc
+{
+	if ([NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"] || vc.presentedViewController) return;
+	[NSUserDefaults.standardUserDefaults setBool:YES forKey:@"app.welcomed"]; ulog (@"ready-to-play shown");
+	UIViewController *r = [UIViewController new]; r.view.backgroundColor = VX_BG; r.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+	NSString *d = vxa_docs (); NSFileManager *fm = NSFileManager.defaultManager; int games = 0;
+	for (NSString *f in [fm enumeratorAtPath:[d stringByAppendingPathComponent:@"roms"]]) if ([@[ @"bin", @"vec", @"um2" ] containsObject:f.pathExtension.lowercaseString] && ![f hasPrefix:@"Tests/"]) games++;
+	NSArray *rows = @[
+		@[ @"Vectrex BIOS", [fm fileExistsAtPath:[d stringByAppendingPathComponent:@"system/vectrex_emu/bios.bin"]] ? @"Ready" : @"Built in" ],
+		@[ @"Games", [NSString stringWithFormat:@"%d, with overlays", games] ],
+		@[ @"UVMC2 and Last Human", [fm fileExistsAtPath:[d stringByAppendingPathComponent:@"system/vectrex_emu/uvmc2"]] ? @"Ready" : @"-" ],
+		@[ @"PiTrex SD card", [fm fileExistsAtPath:[d stringByAppendingPathComponent:@"system/vectrex_emu/pitrex/pitrex.img"]] ? @"Ready, calibrated" : @"-" ],
+		@[ @"Speech ROM (VecVoice)", [fm fileExistsAtPath:[d stringByAppendingPathComponent:@"system/vectrex_emu/sp0256-al2.bin"]] ? @"Ready" : @"-" ],
+		@[ @"Controls", GCController.controllers.count ? [NSString stringWithFormat:@"%@: player 1", GCController.controllers.firstObject.vendorName ?: @"Controller"] : @"Touch - a controller or keyboard works too" ] ];
+	NSMutableArray *v = [NSMutableArray arrayWithArray:@[ VL (@"SET UP - ONCE", VF (12, UIFontWeightSemibold), VX_DIM), VL (@"Ready to play", VT (26), VX_HI),
+		VL (@"Everything is in place. The picture's quality is measured for this device at the first game; change anything later in Settings.", VF (14, UIFontWeightRegular), VX_FG2) ]];
+	UIStackView *list = [UIStackView new]; list.axis = UILayoutConstraintAxisVertical; list.spacing = 1; list.backgroundColor = VX_EDGE; list.layer.cornerRadius = 14; list.clipsToBounds = YES;
+	for (NSArray *rw in rows) { UILabel *a = VL (rw[0], VF (15, UIFontWeightRegular), VX_FG), *b = VL (rw[1], VF (13, UIFontWeightMedium), VX_HI); b.textAlignment = NSTextAlignmentRight;
+		UIStackView *h = [[UIStackView alloc] initWithArrangedSubviews:@[ a, b ]]; h.backgroundColor = VX_PANEL; h.layoutMargins = UIEdgeInsetsMake (13, 16, 13, 16); h.layoutMarginsRelativeArrangement = YES;
+		[list addArrangedSubview:h]; }
+	[v addObject:list];
+	__weak UIViewController *wr = r;
+	UIButton *play = VB (@"Play", nil, YES, ^{ [wr dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }]; }), *pick = VB (@"Choose a game", nil, NO, ^{ [wr dismissViewControllerAnimated:YES completion:^{ [VXUI showLibraryFrom:vc]; }]; });
+	[play.heightAnchor constraintEqualToConstant:54].active = YES; [pick.heightAnchor constraintEqualToConstant:46].active = YES;
+	[v addObjectsFromArray:@[ [UIView new], play, pick ]];
+	UIStackView *s = [[UIStackView alloc] initWithArrangedSubviews:v]; s.axis = UILayoutConstraintAxisVertical; s.spacing = 16; s.translatesAutoresizingMaskIntoConstraints = NO; [r.view addSubview:s];
+	UILayoutGuide *g = r.view.safeAreaLayoutGuide;
+	[NSLayoutConstraint activateConstraints:@[ [s.topAnchor constraintEqualToAnchor:g.topAnchor constant:24], [s.bottomAnchor constraintEqualToAnchor:g.bottomAnchor constant:-20],
+		[s.leadingAnchor constraintEqualToAnchor:g.leadingAnchor constant:20], [s.trailingAnchor constraintEqualToAnchor:g.trailingAnchor constant:-20] ]];
+	r.modalPresentationStyle = UIModalPresentationFormSheet; vxa_hold (1);
+	[vc presentViewController:r animated:YES completion:nil];
 }
 @end

@@ -49,3 +49,7 @@ void ulog (NSString *s);               /* into the app's live log */
 + (void) showSettingsFrom:(UIViewController *)vc at:(int)focus;   /* (scrolled to that setting) */
 + (void) adjustOption:(int)i over:(UIViewController *)vc fromSettings:(BOOL)fs;
 @end
+@interface VXUI (Welcome)
++ (UIView *) welcomeView;                                      /* (tag 11: the line of text, 12: the progress bar) */
++ (void) showReadyFrom:(UIViewController *)vc;                 /* (once, after the first games arrived) */
+@end

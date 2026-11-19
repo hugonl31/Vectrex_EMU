@@ -936,7 +936,8 @@ static void tate_note (void)
 	f = fopen (p, "w"); if (f) { fputs ("the tate note was shown\n", f); fclose (f); }
 }
 #endif
-void retro_reset (void) { if (ls_state == 2) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
+static int netvx_playing (void);
+void retro_reset (void) { if (ls_state == 2 || netvx_playing ()) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
 	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 
 /* ---- the overlay by the game's name (vectrex_emu.py find_overlay: the name, its base without (...), its letters) */
@@ -2655,17 +2656,18 @@ void retro_run (void)
 	dk_pointer (); dk_tick (0);
 	{ static int l2, r2; const int ri = btn_id ("vectrex_emu_btn_reset"), ei = btn_id ("vectrex_emu_btn_eject");
 	  const int a = ri >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ri) != 0, b = ei >= 0 && ei != ri && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ei) != 0;
-	  if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button;
+	  if (a && !l2 && !br_open && netvx_playing ()) ls_reset_req = 1;   /* (online, the app's: both players, the same game frame) */
+	  else if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button;
 	                                              netplay: RetroArch's own Reset, sent to both) */
-	  if (b && !r2 && !br_open && !net_on ()) eject_toggle ();
+	  if (b && !r2 && !br_open && !net_on () && !netvx_playing ()) eject_toggle ();
 	  l2 = a; r2 = b; }
 	if (kb_ev) { const unsigned e = kb_ev; kb_ev = 0;   /* (the desktop's shortcut keys - usbkm.c kb_desk; netplay: none, as the buttons) */
 		if (!net_on ()) {
 			if (e & KE_BROWSER) br_show (!br_open);
 			if (e & KE_ESC && br_open) br_show (0);
 			if (e & KE_PAUSE && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; }
-			if (e & KE_RESET && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
-			if (e & KE_EJECT && !br_open) eject_toggle ();
+			if (e & KE_RESET && !br_open) { if (netvx_playing ()) ls_reset_req = 1; else { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); } }
+			if (e & KE_EJECT && !br_open && !netvx_playing ()) eject_toggle ();
 			if (e & KE_OVERLAY && ovl_manual != 1 && (opt_overlay || !sheet_file)) ov_flip ("O"); }
 		if (e & KE_VOLUP) turn_volume (0.05);
 		if (e & KE_VOLDN) turn_volume (-0.05); }
@@ -3229,11 +3231,15 @@ static int game_switch (const char *path) { snprintf (sw_next, sizeof sw_next, "
 /* (the own iOS app: its own game library in place of the ROM browser - asked for (the deck's cartridge, a button, L)
  *  the browser is closed again at once and the app shows its library; a game it picks loads as the browser's do) */
 int vx_app_browser_wanted (void) { if (br_open) { br_show (0); return 1; } return 0; }
-void vx_app_load (const char *path) { game_switch (path); }
+void vx_app_load (const char *path) { if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] another game: not during an online game\n"); return; } game_switch (path); }
 const char *vx_app_game (void) { return cur_game; }
 static void eject_toggle (void);
-void vx_app_reset (void) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET (the app)\n"); }
-void vx_app_eject (void) { eject_toggle (); }   /* (as Ctrl+E: the switch at the next refresh) */
+void vx_app_reset (void)
+{
+	if (netvx_playing ()) { ls_reset_req = 1; fprintf (stderr, "[vectrex_emu] RESET (the app) - online: both players, in the same game frame\n"); return; }
+	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET (the app)\n");
+}
+void vx_app_eject (void) { if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] eject: not during an online game\n"); return; } eject_toggle (); }   /* (as Ctrl+E: the switch at the next refresh) */
 static int game_switch_now (const char *path)
 {
 	fprintf (stderr, "[vectrex_emu] switching to %s (from %s)\n", path, cur_game);   /* (a crash on a switch: its log says which) */

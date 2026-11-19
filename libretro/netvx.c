@@ -42,7 +42,7 @@ typedef int nv_sock_t;
 #define NV_SPORT 7745
 #define NV_KEEP 16                   /* inputs repeated in each packet */
 #define NV_RING 512
-#define NV_TIMEOUT 30.0              /* seconds without the other side: lost */
+#define NV_TIMEOUT 6.0               /* seconds without the other side: "no connection" said - the game waits for it, only Leave ends it */
 #define NV_PUNCH 3.0                 /* seconds of trying the direct way before the relay */
 #define NV_CHATMAX 200
 #ifndef NV_ARCH                              /* (a test build may say another: the iPhone's, arm64) */
@@ -61,7 +61,12 @@ static int nv_role, nv_phase, nv_mode;          /* (role 1 host, 2 join; mode 0 
 static volatile int nv_quit_th, nv_th_on;
 static struct sockaddr_in nv_peer, nv_srv, nv_cand[2]; static int nv_have_peer, nv_ncand, nv_relay, nv_locked;
 static char nv_code[8], nv_gamer[16], nv_key[48], nv_peer_name[16], nv_err[160], nv_note[160];
-static char nv_game[1024];                      /* (the game: the host's json - offered or agreed) */
+static char nv_game[1024];
+/* another game during a game (the iOS app, both sides): the host picks it, player 2 checks it has it, then a flag in the
+ * host's own input switches both in the same game frame - the connection and the frame count go on. Only between apps
+ * that both say they can ("regame" in the game, "\0regame" in player 2's yes); the desktop's online play can not */
+static int nv_rg_can, nv_rg_state, nv_rg_switched, nv_reset_n, nv_reset_by; static unsigned nv_rg_seq, nv_rg_seen = 0xffffu;
+static char nv_rg_game[1024], nv_rg_rom[1100], nv_rg_msg[160]; static double nv_t_rg, nv_rg_t0; static uint32_t nv_rg_done_f = 0xffffffffu;                      /* (the game: the host's json - offered or agreed) */
 static char nv_rom_md5[33], nv_rom_name[256]; static long long nv_rom_size; static int nv_skip_boot; static char nv_carthw[32];
 static double nv_dacofs;
 static int nv_delay = 3, nv_accepted, nv_go, nv_left, nv_lost, nv_peer_pause, nv_pause, nv_pause_seq;
@@ -370,7 +375,7 @@ static void nv_make_game (void)
 	char nm[300], hn[40]; nv_jesc (nm, sizeof nm, nv_rom_name); nv_jesc (hn, sizeof hn, nv_gamer);
 	uint32_t seed = (uint32_t) (nv_now () * 1e6) ^ (uint32_t) rand () ^ ((uint32_t) rand () << 15); seed &= 0x7fffffff;
 	snprintf (nv_game, sizeof nv_game, "{\"md5\": \"%s\", \"size\": %lld, \"name\": %s, \"seed\": %u, \"nver\": %d, \"arch\": \"" NV_ARCH "\", "
-		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"host_name\": %s%s%s%s}",
+		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"host_name\": %s%s%s%s}",
 		nv_rom_md5, nv_rom_size, nm, (unsigned) seed, NV_VER, nv_skip_boot ? "true" : "false", nv_carthw, nv_dacofs, nv_delay,
 		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
 }
@@ -422,6 +427,7 @@ static double nv_g_sent;
 static void nv_on_packet (int kind, const unsigned char *b, size_t n, const struct sockaddr_in *src, int relayed)
 {
 	nv_last_heard = nv_now ();
+	if (nv_lost && !nv_left && kind != 'Q') { nv_lost = 0; nv_log ("the other side is heard again"); }   /* (a gap, not a leave: on) */
 	if (!relayed) { nv_last_direct = nv_last_heard;
 		for (int i = 0; i < nv_ncand; i++) if (nv_same (src, &nv_cand[i]) && !(nv_have_peer && nv_same (src, &nv_peer))) { nv_peer = *src; nv_have_peer = 1; nv_log ("a direct connection"); }
 		if (nv_locked && nv_have_peer && src->sin_addr.s_addr == nv_peer.sin_addr.s_addr && src->sin_port != nv_peer.sin_port && (kind == 'I' || kind == 'Z' || kind == 'S'))
@@ -452,11 +458,13 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 			  snprintf (nv_uvm2, sizeof nv_uvm2, "%s", rank == 2 ? "dev" : rank == 1 ? "fast" : "exact"); }
 			{ char nm2[256]; if (nv_jstr (nv_game, "name", nm2, sizeof nm2)) snprintf (nv_rom_name, sizeof nv_rom_name, "%s", nm2); }
 			{ char ar[16] = ""; nv_jitfast = nv_jstr (nv_game, "arch", ar, sizeof ar) && !strcmp (ar, NV_ARCH); }
+			nv_rg_can = strstr (nv_game, "\"regame\": true") != NULL;
 			nv_phase = NV_AGREED; nv_accepted = -1; nv_log ("the host's game came: the app looks for the ROM"); } break;
 	case 'A': if (nv_role == 1 && nv_phase == NV_WAIT && nv_rtt >= 0) { nv_phase = NV_AGREED; nv_accepted = 1;
 			for (size_t i = 0; i + 6 < n; i++) if (!memcmp (b + i, "\0uvm2:", 6)) { char m[8] = ""; size_t k = 0; while (i + 6 + k < n && k < 7 && b[i + 6 + k]) { m[k] = (char) b[i + 6 + k]; k++; } m[k] = 0;
 				if (!strcmp (m, "exact") || !strcmp (m, "fast") || !strcmp (m, "dev")) snprintf (nv_uvm2, sizeof nv_uvm2, "%s", m); break; }
 			nv_jitfast = 0; for (size_t i = 0; i + 9 <= n; i++) if (!memcmp (b + i, "\0jit:fast", 9)) nv_jitfast = 1;
+			nv_rg_can = 0; for (size_t i = 0; i + 7 <= n; i++) if (!memcmp (b + i, "\0regame", 7)) nv_rg_can = 1;
 			if (nv_card) { nv_card_done = 0; nv_cidx = 0; nv_log ("player 2 has the game: the SD cards compared"); } else { nv_card_done = 1; nv_ready = 1; nv_log ("player 2 has the game: both start"); } }
 		else if (n >= 2) { const unsigned k = nv_get16 (b); for (int i = 0; i < nv_ncout; i++) if (nv_cout[i].k == k) { memmove (nv_cout + i, nv_cout + i + 1, sizeof *nv_cout * (size_t) (nv_ncout - i - 1)); nv_ncout--; break; } }
 		break;
@@ -466,6 +474,13 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 	case 'I': if (nv_role == 2 && nv_card && nv_cbitn && !nv_card_done) { nv_card_done = 1; nv_ready = 1; }
 		if (nv_phase == NV_PLAY || nv_phase == NV_AGREED) nv_on_inputs (b, n); break;
 	case 'T': nv_on_chat (b, n); break;
+	case 'R': if (nv_role == 2 && nv_phase == NV_PLAY && n > 2) { const unsigned q = nv_get16 (b); if (q == nv_rg_seen) break; nv_rg_seen = q;
+			size_t m = n - 2 < sizeof nv_rg_game - 1 ? n - 2 : sizeof nv_rg_game - 1; memcpy (nv_rg_game, b + 2, m); nv_rg_game[m] = 0;
+			nv_rg_seq = q; nv_rg_state = 1; nv_log ("the host picked another game: the app looks for the ROM"); } break;
+	case 'r': if (nv_role == 1 && nv_rg_state == 1 && n >= 3 && nv_get16 (b) == nv_rg_seq) {
+			if (b[2]) { nv_rg_state = 2; nv_log ("player 2 has the next game: both switch"); }
+			else { char nm[200] = ""; nv_jstr (nv_rg_game, "name", nm, sizeof nm); snprintf (nv_rg_msg, sizeof nv_rg_msg, "the other player does not have %s", nm);
+				nv_rg_state = 0; nv_log (nv_rg_msg); } } break;
 	case 'S': nv_on_sum (b, n); break;
 	case 'c': if (nv_role == 1 && nv_card && !nv_card_done && n >= 4) {   /* (player 2's answer: the files it has alike) */
 			const int k = (int) nv_get32 (b); nv_only_set (b + 4, k < nv_nmine ? k : nv_nmine, nv_mine);
@@ -585,6 +600,10 @@ static void nv_tick (void)
 	if (nv_role == 2 && nv_card && nv_cbitn && !nv_card_done && now - nv_t_card > 0.05) {   /* (player 2: its answer, until the host starts) */
 		nv_t_card = now; unsigned char pk[4 + 512]; nv_put32 (pk, (uint32_t) nv_cbitn); const size_t nb = (size_t) (nv_cbitn + 7) / 8; memcpy (pk + 4, nv_cbits, nb); nv_send ('c', pk, 4 + nb); }
 	/* playing or paused: the inputs and the chat go on, the pause is said now and then */
+	if (nv_phase == NV_PLAY && nv_rg_state && now - nv_t_rg > 0.1) { nv_t_rg = now;
+		if (nv_role == 1 && nv_rg_state == 1) { unsigned char pk[600]; const size_t k = strlen (nv_rg_game); nv_put16 (pk, nv_rg_seq); memcpy (pk + 2, nv_rg_game, k); nv_send ('R', pk, 2 + k);
+			if (now - nv_rg_t0 > 8.0) { snprintf (nv_rg_msg, sizeof nv_rg_msg, "the other player did not answer"); nv_rg_state = 0; } }
+		if (nv_role == 2 && nv_rg_state == 2) { unsigned char pk[3]; nv_put16 (pk, nv_rg_seq); pk[2] = 1; nv_send ('r', pk, 3); } }
 	if (nv_phase == NV_PLAY) {
 		if (now - nv_last_send > 0.03) nv_send_inputs ();
 		if (nv_ncout && now - nv_t_pause > 0.15) { nv_send_chat (now); nv_t_pause = now; }
@@ -632,18 +651,33 @@ static int netvx_frame (unsigned char *m)
 	while (nv_lhave <= nv_f + (uint32_t) nv_delay) {              /* (this side's input `delay` frames on: the controller now) */
 		nv_in *x = &nv_local[nv_lhave % NV_RING]; int jx = (int) ls_pad[0] - 128, jy = (int) ls_pad[1] - 128;
 		x->jx = (signed char) (jx < -127 ? -127 : jx > 127 ? 127 : jx); x->jy = (signed char) (jy < -127 ? -127 : jy > 127 ? 127 : jy);
-		x->b = ls_pad[2]; x->fl = (unsigned char) (ls_reset_req ? 4 : 0); ls_reset_req = 0; nv_lhave++; }
+		x->b = ls_pad[2]; x->fl = (unsigned char) (ls_reset_req ? 4 : 0); ls_reset_req = 0;
+		if (nv_role == 1 && nv_rg_state == 2) { x->fl |= 8; nv_rg_state = 3; }   /* (the host: the next game from this frame on, both) */
+		nv_lhave++; }
 	if (nv_now () - nv_last_send > 0.008) nv_send_inputs ();
 	const int r = nv_f % NV_RING; int got = nv_rgot[r] && nv_rgot_f[r] == nv_f;
-	if (!got && !nv_lost && !nv_pause && !nv_wait_t0) {           /* (the other side's input late: a moment's wait, then the picture stands -
-	                                                                 once per hold-up: waiting in each refresh run to catch up held the iPhone at 15 pictures a second) */
+	static double wait_end;                                       /* (the other side's input late: a moment's wait, then the picture stands -
+	                                                                 at most 12 ms in 50: a wait in each run of a refresh (the app runs 2-4 to catch up)
+	                                                                 held the iPhone at 15 pictures a second, the iPad at 20) */
+	if (!got && !nv_lost && !nv_pause && nv_now () - wait_end > 0.05) {
 		const double t0 = nv_now (); nv_unlock ();
 		do { nv_sleep_ms (1); nv_lock (); nv_pump (); got = nv_rgot[r] && nv_rgot_f[r] == nv_f; nv_unlock (); } while (!got && nv_now () - t0 < 0.012);
-		nv_lock (); }
+		wait_end = nv_now (); nv_lock (); }
 	if (!got || nv_pause) { if (!nv_wait_t0) nv_wait_t0 = nv_now (); nv_unlock (); return 0; }
 	nv_wait_t0 = 0;
 	const nv_in *mine = &nv_local[nv_f % NV_RING], *theirs = &nv_remote[r];
 	const nv_in *hi = nv_role == 1 ? mine : theirs, *jo = nv_role == 1 ? theirs : mine;   /* (host, joiner) */
+	if ((hi->fl & 8) && nv_f != nv_rg_done_f && nv_rg_rom[0]) {     /* (the next game: switched before this frame, on both sides) */
+		nv_rg_done_f = nv_f; snprintf (nv_game, sizeof nv_game, "%s", nv_rg_game);
+		double v; char ch[32]; ls_seed = nv_jnum (nv_game, "seed", &v) ? (uint32_t) v : 0; ls_intro_skip = nv_jnum (nv_game, "skip_boot", &v) ? (int) v : 0;
+		ls_dacofs = nv_jnum (nv_game, "dacofs", &v) ? v : 0;
+		if (!nv_jstr (nv_game, "cart_hw", ch, sizeof ch)) snprintf (ch, sizeof ch, "auto");
+		snprintf (ls_carthw, sizeof ls_carthw, "%s", !strcmp (ch, "auto") ? "1" : !strcmp (ch, "off") ? "0" : ch);
+		{ char nm2[256]; if (nv_jstr (nv_game, "name", nm2, sizeof nm2)) snprintf (nv_rom_name, sizeof nv_rom_name, "%s", nm2); }
+		snprintf (sw_next, sizeof sw_next, "%s", nv_rg_rom); nv_rg_rom[0] = 0; nv_rg_state = 0; nv_rg_switched++;
+		{ char m[300]; snprintf (m, sizeof m, "the next game at frame %u: %s", (unsigned) nv_f, nv_rom_name); nv_log (m); }
+		nv_unlock (); return 0; }
+	if ((hi->fl | jo->fl) & 4) { nv_reset_n++; nv_reset_by = hi->fl & 4 ? 1 : 2; }   /* (RESET: who - said on both screens) */
 	nv_ports_take (0, hi->fl); nv_ports_take (1, jo->fl);
 	const nv_in *p1 = nv_ports[0] == 1 ? hi : nv_ports[1] == 1 ? jo : NULL, *p2 = nv_ports[0] == 2 ? hi : nv_ports[1] == 2 ? jo : NULL;
 	m[0] = (unsigned char) ((p1 ? p1->jx : 0) + 128); m[1] = (unsigned char) ((p1 ? p1->jy : 0) + 128); m[2] = p1 ? p1->b : 0;
@@ -690,6 +724,7 @@ static void nv_clear (void)
 	nv_game[0] = 0; nv_accepted = 0; nv_go = 0; nv_left = nv_lost = 0; nv_pause = nv_peer_pause = 0; nv_pause_seq = 0;
 	nv_last_heard = nv_last_direct = nv_last_relayed = 0; nv_punch_t0 = 0; nv_rtt = 0; nv_delay = 3; nv_ncout = 0; nv_ncin = 0; nv_ncheld = 0; nv_cseq = nv_cnext = 0;
 	nv_t_srv = nv_t_hello = nv_t_beacon = nv_t_punch = nv_t_pause = nv_t_ka = 0; nv_ping_i = nv_ping_got = 0; nv_g_sent = 0;
+	nv_rg_can = nv_rg_state = 0; nv_rg_rom[0] = nv_rg_msg[0] = 0; nv_rg_seen = 0xffffu; nv_rg_done_f = 0xffffffffu;
 	nv_card = nv_card_done = nv_ready = 0; nv_jitfast = 0; nv_cbitn = 0; nv_ctotal = nv_cgot = 0; nv_cidx = 0; snprintf (nv_uvm2, sizeof nv_uvm2, "exact");
 	for (int q = 0; q < 512; q++) { free (nv_cparts[q]); nv_cparts[q] = NULL; }
 	memset (nv_rgot, 0, sizeof nv_rgot); nv_f = 0; nv_lhave = 0; nv_nsums = 0; nv_ntheir = 0; nv_desync = -1; nv_nmatch = 0; nv_last_match = 0xffffffffu;
@@ -738,7 +773,7 @@ void vx_net_accept (int ok)
 {
 	nv_lock ();
 	if (nv_role == 2 && nv_phase == NV_AGREED) {
-		unsigned char why[64]; size_t wn = 0; if (ok) { if (nv_jitfast) { memcpy (why, "\0jit:fast", 9); wn = 9; }
+		unsigned char why[64]; size_t wn = 0; if (ok) { if (nv_jitfast) { memcpy (why, "\0jit:fast", 9); wn = 9; } memcpy (why + wn, "\0regame", 7); wn += 7;
 			memcpy (why + wn, "\0uvm2:", 6); wn += 6; const size_t k = strlen (nv_uvm2); memcpy (why + wn, nv_uvm2, k); wn += k; }
 		for (int i = 0; i < 5; i++) nv_send (ok ? 'A' : 'N', why, wn);
 		if (!ok) { snprintf (nv_err, sizeof nv_err, "you do not have the game"); nv_phase = NV_ENDED; } else { nv_accepted = 1; if (!nv_card) nv_ready = 1; } }
@@ -755,6 +790,34 @@ void vx_net_prepare (void)
 	if (!nv_jstr (nv_game, "cart_hw", ch, sizeof ch)) snprintf (ch, sizeof ch, "auto");
 	snprintf (ls_carthw, sizeof ls_carthw, "%s", !strcmp (ch, "auto") ? "1" : !strcmp (ch, "off") ? "0" : ch);
 	nv_reset_frames (); nv_phase = NV_PLAY; nv_go = 0; nv_last_heard = nv_now ();
+	nv_unlock ();
+}
+/* the host, playing: another game for both (1: offered - the switch follows when player 2 has it; 0: not possible, the
+ * reason in the status' regame_msg) */
+int vx_net_regame (const char *rom, int skip_boot, const char *cart_hw, double dacofs)
+{
+	nv_lock (); int ok = 0;
+	const char *e = strrchr (rom, '.'); const int card = e && (!vx_stricmp (e, ".um2") || !vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit"));
+	if (nv_role != 1 || nv_phase != NV_PLAY) snprintf (nv_rg_msg, sizeof nv_rg_msg, "only the host changes the game");
+	else if (!nv_rg_can) snprintf (nv_rg_msg, sizeof nv_rg_msg, "the other player's Vectrex_EMU can not change games: leave and host again");
+	else if (card || nv_card) snprintf (nv_rg_msg, sizeof nv_rg_msg, "a card game (UVMC2, PiTrex): leave and host it anew");
+	else if (nv_rg_state) snprintf (nv_rg_msg, sizeof nv_rg_msg, "a game change is on its way already");
+	else if (!vx_net_md5_file (rom, nv_rom_md5, &nv_rom_size)) snprintf (nv_rg_msg, sizeof nv_rg_msg, "the game's file can not be read");
+	else {
+		const char *bn = rom; for (const char *q = rom; *q; q++) if (*q == '/' || *q == '\\') bn = q + 1; snprintf (nv_rom_name, sizeof nv_rom_name, "%s", bn);
+		nv_skip_boot = skip_boot; snprintf (nv_carthw, sizeof nv_carthw, "%s", cart_hw && cart_hw[0] ? cart_hw : "auto"); nv_dacofs = dacofs;
+		nv_make_game (); snprintf (nv_rg_game, sizeof nv_rg_game, "%s", nv_game); snprintf (nv_rg_rom, sizeof nv_rg_rom, "%s", rom);
+		nv_rg_seq = (nv_rg_seq + 1) & 0xffffu; nv_rg_state = 1; nv_t_rg = 0; nv_rg_t0 = nv_now (); nv_rg_msg[0] = 0; ok = 1;
+		char m[300]; snprintf (m, sizeof m, "another game offered: %s", nv_rom_name); nv_log (m); }
+	nv_unlock (); return ok;
+}
+/* player 2: the host's next game here (path) - or not (NULL) */
+void vx_net_regame_answer (const char *path)
+{
+	nv_lock ();
+	if (nv_role == 2 && nv_rg_state == 1) {
+		if (path && path[0]) { snprintf (nv_rg_rom, sizeof nv_rg_rom, "%s", path); nv_rg_state = 2; nv_t_rg = 0; }
+		else { unsigned char pk[3]; nv_put16 (pk, nv_rg_seq); pk[2] = 0; for (int i = 0; i < 5; i++) nv_send ('r', pk, 3); nv_rg_state = 0; } }
 	nv_unlock ();
 }
 void vx_net_go (void) { nv_lock (); nv_go = 1; nv_last_heard = nv_now (); if (nv_card) { sdc_only = NULL; sdc_nonly = 0; sdc_fixed = 0; } nv_unlock (); nv_log ("playing"); }
@@ -805,6 +868,9 @@ const char *vx_net_status (void)
 	nv_jesc (t, sizeof t, nv_peer_name); o += (size_t) snprintf (out + o, sizeof out - o, ", \"peer\": %s", t);
 	nv_jesc (t, sizeof t, nv_err); o += (size_t) snprintf (out + o, sizeof out - o, ", \"error\": %s", t);
 	o += (size_t) snprintf (out + o, sizeof out - o, ", \"game\": %s", nv_game[0] ? nv_game : "null");
+	nv_jesc (t, sizeof t, nv_rg_msg); nv_rg_msg[0] = 0;
+	o += (size_t) snprintf (out + o, sizeof out - o, ", \"regame_msg\": %s, \"regame_offer\": %s, \"regame_n\": %d, \"reset_n\": %d, \"reset_by\": %d",
+		t, nv_role == 2 && nv_rg_state == 1 && nv_rg_game[0] ? nv_rg_game : "null", nv_rg_switched, nv_reset_n, nv_reset_by);
 	o += (size_t) snprintf (out + o, sizeof out - o, ", \"chat\": [");
 	for (int i = 0; i < nv_ncin; i++) { nv_jesc (g, sizeof g, nv_cin[i]); o += (size_t) snprintf (out + o, sizeof out - o, "%s%s", i ? ", " : "", g); }
 	nv_ncin = 0;

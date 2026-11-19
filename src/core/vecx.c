@@ -992,6 +992,7 @@ void write8 (unsigned address, unsigned char data)
 
 /* the RESET button: the 6809, the 6522 and the AY are reset, the RAM keeps its contents (the BIOS
  * then does a warm start: no intro); vecx_reset is power-on (the RAM gets a fresh pattern) */
+unsigned long vt_power_n;
 void vecx_reset (void);
 void vecx_reset_button (void)
 {
@@ -1026,8 +1027,10 @@ void vecx_reset (void)
 	 * (Vec_Random_Seed, $C87E/$C87F) as it finds it, so Mine Storm's first starfield differs each time.
 	 * VT_POWERSEED=n (the frontend sets it): a different odd seed at every power-on from n (the MiSTer
 	 * core's way, Mathis Rosenhauer's idea); unset: the fixed pattern above (repeatable tests). */
-	{ const char *z = getenv ("VT_POWERSEED"); static unsigned long n;
-	  if (z) { uint32_t x = (uint32_t) strtoul (z, 0, 10) + 0x9E3779B9u * (uint32_t) ++n;   /* (32 bits on every system: a long is 64 bits on Linux and macOS) */ x ^= x >> 15; x *= 0x2C1B3C6Du; x ^= x >> 12;
+	{ const char *z = getenv ("VT_POWERSEED"); extern unsigned long vt_power_n;   /* (the power-ons since the seed was given: online
+	                                              both sides count from the game's start - vt_power_n set 0 there; a count of this
+	                                              machine's own history gave the two different RAM: out of step after a game change) */
+	  if (z) { uint32_t x = (uint32_t) strtoul (z, 0, 10) + 0x9E3779B9u * (uint32_t) ++vt_power_n;   /* (32 bits on every system: a long is 64 bits on Linux and macOS) */ x ^= x >> 15; x *= 0x2C1B3C6Du; x ^= x >> 12;
 	           ram[0x7e] = (unsigned char) (x | 1); ram[0x7f] = (unsigned char) ((x >> 8) | 1); } }
 
 	for (r = 0; r < 16; r++) {

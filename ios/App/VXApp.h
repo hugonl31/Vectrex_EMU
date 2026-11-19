@@ -28,6 +28,10 @@ void vx_net_accept (int ok), vx_net_prepare (void), vx_net_go (void), vx_net_lea
 void vx_net_pause (int on), vx_net_room (void), vx_net_lan (int on);
 const char *vx_net_status (void);
 int vx_net_regame (const char *rom, int skip_boot, const char *cart_hw, double dacofs); void vx_net_regame_answer (const char *path);
+int vx_net_go_hot (void); void vx_net_prepare_hot (void), vx_net_take_port (int k);   /* (joining a running game; a port taken) */
+int vx_app_port2 (void), vx_app_cart_out (void), vx_app_power_on (void), vx_app_paused (void);   /* (the deck's states) */
+double vx_app_volume (void); void vx_app_turn (double d), vx_app_power (void);
+int vxa_is_held (void); void vxa_toast_ext (NSString *s);
 int vx_net_md5_file (const char *path, char *out33, long long *size);
 NSString *vxa_net_ip (void);           /* this phone's address on its network */
 NSString *vxa_net_name (void), *vxa_net_key (void);
@@ -77,4 +81,9 @@ int vxa_net_playing (void);              /* (1 while a game for two runs: no sav
 @end
 @interface VXUI (Online)
 + (void) showOnlineFrom:(UIViewController *)vc;
+@end
+@interface VXDeck : UIView
+@property (nonatomic, weak) UIViewController *game;
+@property (nonatomic) int mode;                  /* (1 full, 2 slim) */
+- (void) tick;
 @end

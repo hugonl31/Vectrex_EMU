@@ -110,6 +110,17 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 		[s addObject:@[ @"On this Wi-Fi", @"Games hosted on this network. Not listed? Enter the host's address under Join.", lan ]]; }
 	_secs = s;
 }
+/* the guest left: the host's game goes on, hosted again the same way (the game room, a code, this Wi-Fi) - 1: hosted */
+int vxa_net_hostmode = -1;
+int vxa_net_rehost (void)
+{
+	NSString *rom = vxa_game (); if (vxa_net_hostmode < 0 || !rom.length) return 0;
+	NSString *nm = OClean (vxa_net_name ()); if (vxa_net_hostmode == 0 && !nm.length) return 0;
+	int ski = vxa_ofind ("vectrex_emu_skip_intro"); int skip = ski >= 0 && !strcmp (vxa_oval (ski), "on");
+	extern void vxa_net_hosting (NSString *rom); vxa_net_hosting (rom);
+	const int ok = vx_net_host (vxa_net_hostmode, nm.UTF8String, vxa_net_key ().UTF8String, rom.fileSystemRepresentation, skip, "auto", 0.0);
+	ulog ([NSString stringWithFormat:@"online: hosting %@ again", rom.lastPathComponent]); return ok;
+}
 - (void) host:(int)mode
 {
 	NSString *rom = vxa_game ();
@@ -117,7 +128,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 	NSString *nm = OClean (vxa_net_name ());
 	if (mode == 0 && !nm.length) { [self note:@"The game room needs your name: enter it above"]; return; }
 	int ski = vxa_ofind ("vectrex_emu_skip_intro"); int skip = ski >= 0 && !strcmp (vxa_oval (ski), "on");
-	extern void vxa_net_hosting (NSString *rom); vxa_net_hosting (rom);
+	extern void vxa_net_hosting (NSString *rom); vxa_net_hosting (rom); vxa_net_hostmode = mode;
 	vx_net_host (mode, nm.UTF8String, vxa_net_key ().UTF8String, rom.fileSystemRepresentation, skip, "auto", 0.0);
 	ulog ([NSString stringWithFormat:@"online: hosting %@ (%@)", rom.lastPathComponent, mode == 0 ? @"game room" : mode == 1 ? @"code" : @"Wi-Fi"]);
 	[self poll];

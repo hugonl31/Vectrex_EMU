@@ -4,6 +4,7 @@
  * the quick bar above the picture. Every tap is logged. Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see
  * LICENSE.md. */
 #import "VXApp.h"
+#include <ctype.h>
 #import <GameController/GameController.h>
 
 static UIFont *VF (CGFloat s, UIFontWeight w) { return [UIFont systemFontOfSize:s weight:w]; }
@@ -754,61 +755,244 @@ extern double vx_app_volume (void); extern void vx_app_turn (double d); extern v
 }
 @end
 
-@interface VXDeck : UIView
-@property (nonatomic, weak) UIViewController *game;
+
+/* the deck's panels: a rounded box, the PC app's strip look; on (online): the highlighted one */
+@interface VXPan : UIControl
+@property (nonatomic) BOOL on;
 @end
-@implementation VXDeck { UILabel *_fps, *_hz, *_emu, *_vol; UIView *_cpu, *_gpu, *_cpuF, *_gpuF; NSLayoutConstraint *_cpuW, *_gpuW; VXKnob *_knob; NSTimer *_tm; }
-- (UIView *) bar:(NSLayoutConstraint *__strong *)w fill:(UIView *__strong *)fo
+@implementation VXPan
+- (instancetype) initWithFrame:(CGRect)f { self = [super initWithFrame:f]; self.layer.cornerRadius = 10; self.layer.borderWidth = 1; self.on = NO; return self; }
+- (void) setOn:(BOOL)o { _on = o; self.backgroundColor = o ? VX_SEL : VX_PANEL; self.layer.borderColor = (o ? VX_EDGE2 : VX_EDGE).CGColor; }
+- (void) setHighlighted:(BOOL)h { [super setHighlighted:h]; self.alpha = h ? 0.6 : 1; }
+@end
+/* the volume as a bar (the slim deck): drag along it; a long press switches the Vectrex off and on, as the knob */
+@interface VXVolBar : UIControl
+@end
+@implementation VXVolBar { UIImageView *_ic; CALayer *_tr, *_fill; UILabel *_v; }
+- (instancetype) initWithFrame:(CGRect)f
 {
-	UIView *tr = [UIView new]; tr.backgroundColor = VXC (0x16302a); tr.layer.cornerRadius = 2;
-	UIView *f = [UIView new]; f.backgroundColor = VX_G; f.layer.cornerRadius = 2; f.translatesAutoresizingMaskIntoConstraints = NO; [tr addSubview:f];
-	*w = [f.widthAnchor constraintEqualToAnchor:tr.widthAnchor multiplier:0.01]; *fo = f;
-	[NSLayoutConstraint activateConstraints:@[ [f.leadingAnchor constraintEqualToAnchor:tr.leadingAnchor], [f.topAnchor constraintEqualToAnchor:tr.topAnchor], [f.bottomAnchor constraintEqualToAnchor:tr.bottomAnchor], *w ]];
-	[tr.heightAnchor constraintEqualToConstant:4].active = YES; return tr;
+	self = [super initWithFrame:f];
+	_ic = [UIImageView new]; _ic.contentMode = UIViewContentModeScaleAspectFit; [self addSubview:_ic];
+	_tr = [CALayer layer]; _tr.backgroundColor = VXC (0x16302a).CGColor; _tr.cornerRadius = 2.5; [self.layer addSublayer:_tr];
+	_fill = [CALayer layer]; _fill.backgroundColor = VX_G.CGColor; _fill.cornerRadius = 2.5; [self.layer addSublayer:_fill];
+	_v = VL (@"", [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightSemibold], VX_HI); _v.numberOfLines = 1; _v.textAlignment = NSTextAlignmentRight; [self addSubview:_v];
+	[self addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(press:)]];
+	self.accessibilityLabel = @"Volume and power"; return self;
 }
+- (void) layoutSubviews
+{
+	[super layoutSubviews]; CGSize s = self.bounds.size;
+	_ic.frame = CGRectMake (9, (s.height - 15) / 2, 16, 15); _v.frame = CGRectMake (s.width - 9 - 28, 0, 28, s.height);
+	_tr.frame = CGRectMake (32, s.height / 2 - 2.5, MAX (10, s.width - 32 - 42), 5); [self show];
+}
+- (void) show
+{
+	const double v = vx_app_volume (); const BOOL off = !vx_app_power_on ();
+	_ic.image = [UIImage systemImageNamed:off ? @"power" : @"speaker.wave.2" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:12 weight:UIImageSymbolWeightSemibold]];
+	_ic.tintColor = off ? VX_CHG : VX_HI; _v.text = off ? @"OFF" : [NSString stringWithFormat:@"%.0f", v * 100]; _v.textColor = off ? VX_CHG : VX_HI;
+	[CATransaction begin]; [CATransaction setDisableActions:YES];
+	CGRect t = _tr.frame; _fill.frame = CGRectMake (t.origin.x, t.origin.y, off ? 0 : t.size.width * MAX (0.0, MIN (1.0, v)), t.size.height); [CATransaction commit];
+}
+- (void) setTo:(CGPoint)p
+{
+	CGRect t = _tr.frame; if (t.size.width <= 0 || !vx_app_power_on ()) return;
+	const double want = MAX (0.0, MIN (1.0, (p.x - t.origin.x) / t.size.width)); vx_app_turn (want - vx_app_volume ()); [self show];
+}
+- (BOOL) beginTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { [self setTo:[t locationInView:self]]; [self sendActionsForControlEvents:UIControlEventValueChanged]; return YES; }
+- (BOOL) continueTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { [self setTo:[t locationInView:self]]; [self sendActionsForControlEvents:UIControlEventValueChanged]; return YES; }
+- (void) endTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { ulog ([NSString stringWithFormat:@"deck: volume %.0f %%", vx_app_volume () * 100]); }
+- (void) press:(UILongPressGestureRecognizer *)g
+{
+	if (g.state != UIGestureRecognizerStateBegan) return;
+	vx_app_power (); [self show]; [[UIImpactFeedbackGenerator new] impactOccurred];
+	ulog (vx_app_power_on () ? @"deck: switched on" : @"deck: switched off"); [self sendActionsForControlEvents:UIControlEventValueChanged];
+}
+@end
+
+/* VecVoice's robot (the simple, robotic one): drawn, there is no SF symbol for it */
+static UIImage *VXRobot (CGFloat pt)
+{
+	UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake (pt, pt)];
+	UIImage *im = [r imageWithActions:^(UIGraphicsImageRendererContext *c) { (void) c; const CGFloat k = pt / 24.0;
+		[UIColor.blackColor setStroke]; [UIColor.blackColor setFill];
+		UIBezierPath *h = [UIBezierPath bezierPathWithRoundedRect:CGRectMake (5 * k, 7 * k, 14 * k, 10 * k) cornerRadius:2.5 * k]; h.lineWidth = 1.9 * k; [h stroke];
+		UIBezierPath *a = [UIBezierPath bezierPath]; [a moveToPoint:CGPointMake (12 * k, 7 * k)]; [a addLineToPoint:CGPointMake (12 * k, 4 * k)]; a.lineWidth = 1.9 * k; a.lineCapStyle = kCGLineCapRound; [a stroke];
+		[[UIBezierPath bezierPathWithOvalInRect:CGRectMake (10.6 * k, 1.8 * k, 2.8 * k, 2.8 * k)] fill];
+		[[UIBezierPath bezierPathWithOvalInRect:CGRectMake (8.2 * k, 10 * k, 2.6 * k, 2.6 * k)] fill]; [[UIBezierPath bezierPathWithOvalInRect:CGRectMake (13.2 * k, 10 * k, 2.6 * k, 2.6 * k)] fill];
+		UIBezierPath *m = [UIBezierPath bezierPath]; [m moveToPoint:CGPointMake (9.5 * k, 14.6 * k)]; [m addLineToPoint:CGPointMake (14.5 * k, 14.6 * k)]; m.lineWidth = 1.5 * k; m.lineCapStyle = kCGLineCapRound; [m stroke];
+		UIBezierPath *b = [UIBezierPath bezierPath]; [b moveToPoint:CGPointMake (8 * k, 17 * k)]; [b addLineToPoint:CGPointMake (8 * k, 21 * k)]; [b moveToPoint:CGPointMake (16 * k, 17 * k)]; [b addLineToPoint:CGPointMake (16 * k, 21 * k)];
+		b.lineWidth = 1.9 * k; b.lineCapStyle = kCGLineCapRound; [b stroke]; }];
+	return [im imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+static UIImage *VXSym (NSString *n, NSString *fallback, CGFloat pt)
+{
+	UIImageSymbolConfiguration *c = [UIImageSymbolConfiguration configurationWithPointSize:pt weight:UIImageSymbolWeightSemibold];
+	return [UIImage systemImageNamed:n withConfiguration:c] ?: [UIImage systemImageNamed:fallback withConfiguration:c];
+}
+
+@implementation VXDeck {
+	VXPan *_stats, *_dev, *_cart, *_rst, *_volP; VXKnob *_knob; VXVolBar *_bar;
+	UILabel *_sMain, *_n1, *_n2, *_r1, *_r2, *_lc, *_lg, *_devW, *_cartW, *_rstW, *_kv; UIImageView *_devI, *_cartI, *_rstI;
+	CALayer *_cT, *_cF, *_gT, *_gF; NSTimer *_tm; NSDictionary *_st; double _stT; int _online, _role;
+}
+- (UILabel *) word { UILabel *l = VL (@"", VF (9, UIFontWeightBold), VX_HI); l.numberOfLines = 1; l.textAlignment = NSTextAlignmentCenter; l.adjustsFontSizeToFitWidth = YES; l.minimumScaleFactor = 0.7; return l; }
+- (VXPan *) pan:(SEL)act { VXPan *p = [VXPan new]; [p addTarget:self action:act forControlEvents:UIControlEventTouchUpInside]; [self addSubview:p]; return p; }
 - (instancetype) initWithGame:(UIViewController *)g
 {
-	self = [super initWithFrame:CGRectZero]; _game = g;
-	UIFont *mono = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightSemibold], *small = VF (9, UIFontWeightSemibold);
-	_fps = VL (@"--", mono, VX_HI); _fps.numberOfLines = 1; _fps.adjustsFontSizeToFitWidth = YES; _fps.minimumScaleFactor = 0.7; _hz = nil; _emu = nil;
-	UILabel *lc = VL (@"CPU", small, VX_DIM), *lg = VL (@"GPU", small, VX_DIM);
-	for (UILabel *l in @[ lc, lg ]) { [l setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal]; [l setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal]; }
-	NSLayoutConstraint *cw, *gw; UIView *cf, *gf; UIView *cb = [self bar:&cw fill:&cf], *gb = [self bar:&gw fill:&gf]; _cpuW = cw; _gpuW = gw; _cpu = cb; _gpu = gb; _cpuF = cf; _gpuF = gf;
-	UIStackView *r3 = [[UIStackView alloc] initWithArrangedSubviews:@[ lc, cb, lg, gb ]]; r3.spacing = 4; r3.alignment = UIStackViewAlignmentCenter;
-	[cb.widthAnchor constraintEqualToAnchor:gb.widthAnchor].active = YES;
-	UIStackView *osd = [[UIStackView alloc] initWithArrangedSubviews:@[ _fps, r3 ]]; osd.axis = UILayoutConstraintAxisVertical; osd.spacing = 5; osd.distribution = UIStackViewDistributionFillEqually;
-	osd.layoutMargins = UIEdgeInsetsMake (6, 8, 6, 8); osd.layoutMarginsRelativeArrangement = YES; osd.backgroundColor = VX_PANEL; osd.layer.cornerRadius = 12; osd.layer.borderWidth = 1; osd.layer.borderColor = VX_EDGE.CGColor;
-	__weak VXDeck *ws = self;
-	UIButton *p2 = VB (@"P2", @"gamecontroller", NO, ^{ int i = vxa_ofind ("vectrex_emu_port2"); if (i >= 0 && ws.game) [VXUI showChoice:i from:ws.game]; });
-	UIButton *cart = VB (@"CART", @"square.grid.2x2", NO, ^{ if (ws.game) [VXUI showLibraryFrom:ws.game]; });
-	UIButton *rst = VB (@"RESET", @"arrow.counterclockwise", NO, ^{ vxa_do (@"reset"); [[UIImpactFeedbackGenerator new] impactOccurred]; });
-	_knob = [VXKnob new]; [_knob addTarget:self action:@selector(knobbed) forControlEvents:UIControlEventValueChanged];
-	_vol = VL (@"VOL", [UIFont monospacedDigitSystemFontOfSize:9 weight:UIFontWeightBold], VX_HI); _vol.textAlignment = NSTextAlignmentCenter; _vol.userInteractionEnabled = NO;
-	_vol.translatesAutoresizingMaskIntoConstraints = NO; [_knob addSubview:_vol];
-	[NSLayoutConstraint activateConstraints:@[ [_vol.centerXAnchor constraintEqualToAnchor:_knob.centerXAnchor], [_vol.centerYAnchor constraintEqualToAnchor:_knob.centerYAnchor] ]];
-	UIStackView *kn = [[UIStackView alloc] initWithArrangedSubviews:@[ _knob ]]; kn.axis = UILayoutConstraintAxisVertical; kn.alignment = UIStackViewAlignmentCenter;
-	kn.backgroundColor = VX_PANEL; kn.layer.cornerRadius = 12; kn.layer.borderWidth = 1; kn.layer.borderColor = VX_EDGE.CGColor; kn.layoutMargins = UIEdgeInsetsMake (4, 4, 4, 4); kn.layoutMarginsRelativeArrangement = YES;
-	[_knob.widthAnchor constraintEqualToConstant:42].active = YES; [_knob.heightAnchor constraintEqualToConstant:42].active = YES;
-	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ osd, p2, cart, rst, kn ]]; row.spacing = 6; row.distribution = UIStackViewDistributionFill;
-	[osd.widthAnchor constraintEqualToAnchor:row.widthAnchor multiplier:0.34].active = YES;
-	for (UIView *v in @[ p2, cart, rst ]) [v.widthAnchor constraintEqualToAnchor:kn.widthAnchor multiplier:0.95].active = YES;
-	row.translatesAutoresizingMaskIntoConstraints = NO; [self addSubview:row];
-	[NSLayoutConstraint activateConstraints:@[ [row.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:8], [row.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-8],
-		[row.topAnchor constraintEqualToAnchor:self.topAnchor constant:6], [row.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:-6] ]];
-	_tm = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { (void) t; [ws tick]; }];
-	return self;
+	self = [super initWithFrame:CGRectZero]; _game = g; _mode = 1;
+	_stats = [VXPan new]; [self addSubview:_stats]; [_stats addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(statsTap:)]]; _dev = [self pan:@selector(devTap)]; _cart = [self pan:@selector(cartTap)]; _rst = [self pan:@selector(rstTap)];
+	UIFont *mono = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightSemibold];
+	_sMain = VL (@"--", mono, VX_HI); _sMain.numberOfLines = 1; _sMain.textAlignment = NSTextAlignmentCenter; _sMain.adjustsFontSizeToFitWidth = YES; _sMain.minimumScaleFactor = 0.6; [_stats addSubview:_sMain];
+	_n1 = VL (@"", VF (10, UIFontWeightBold), VX_HI); _n2 = VL (@"", VF (10, UIFontWeightBold), VX_HI); _r1 = VL (@"", VF (9, UIFontWeightBold), VX_DIM); _r2 = VL (@"", VF (9, UIFontWeightBold), VX_DIM);
+	for (UILabel *l in @[ _n1, _n2, _r1, _r2 ]) { l.numberOfLines = 1; [_stats addSubview:l]; }
+	_r1.textAlignment = _r2.textAlignment = NSTextAlignmentRight;
+	_lc = VL (@"CPU", VF (8, UIFontWeightBold), VX_DIM); _lg = VL (@"GPU", VF (8, UIFontWeightBold), VX_DIM); [_stats addSubview:_lc]; [_stats addSubview:_lg];
+	_cT = [CALayer layer]; _cF = [CALayer layer]; _gT = [CALayer layer]; _gF = [CALayer layer];
+	for (CALayer *l in @[ _cT, _cF, _gT, _gF ]) { l.cornerRadius = 2; [_stats.layer addSublayer:l]; }
+	_cT.backgroundColor = _gT.backgroundColor = VXC (0x16302a).CGColor; _cF.backgroundColor = _gF.backgroundColor = VX_G.CGColor;
+	_devI = [UIImageView new]; _cartI = [UIImageView new]; _rstI = [UIImageView new];
+	for (UIImageView *v in @[ _devI, _cartI, _rstI ]) { v.contentMode = UIViewContentModeScaleAspectFit; v.tintColor = VX_HI; }
+	_devW = [self word]; _cartW = [self word]; _rstW = [self word];
+	[_dev addSubview:_devI]; [_dev addSubview:_devW]; [_cart addSubview:_cartI]; [_cart addSubview:_cartW]; [_rst addSubview:_rstI]; [_rst addSubview:_rstW];
+	_cartW.text = @"CART"; _rstW.text = @"RESET"; _cartI.image = VXSym (@"sdcard", @"square.grid.2x2", 15); _rstI.image = VXSym (@"arrow.counterclockwise", @"arrow.counterclockwise", 15);
+	for (UIView *v in @[ _stats, _dev, _cart, _rst ]) for (UIView *s in v.subviews) s.userInteractionEnabled = NO;
+	_volP = [VXPan new]; [self addSubview:_volP];
+	_knob = [VXKnob new]; [_knob addTarget:self action:@selector(volChanged) forControlEvents:UIControlEventValueChanged]; [_volP addSubview:_knob];
+	_kv = VL (@"", [UIFont monospacedDigitSystemFontOfSize:9 weight:UIFontWeightBold], VX_HI); _kv.textAlignment = NSTextAlignmentCenter; _kv.userInteractionEnabled = NO; [_knob addSubview:_kv];
+	_bar = [VXVolBar new]; [_bar addTarget:self action:@selector(volChanged) forControlEvents:UIControlEventValueChanged]; [_volP addSubview:_bar];
+	_stats.accessibilityLabel = @"Figures"; _cart.accessibilityLabel = @"Cartridge: the games"; _rst.accessibilityLabel = @"RESET";
+	__weak VXDeck *ws = self; _tm = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { (void) t; [ws tick]; }];
+	[self tick]; return self;
 }
 - (void) dealloc { [_tm invalidate]; }
-- (void) knobbed { _vol.text = _knob.value > 0 ? [NSString stringWithFormat:@"%.0f", _knob.value * 100] : @"OFF"; }
+- (void) setMode:(int)m { if (m == _mode) return; _mode = m; [self setNeedsLayout]; [self tick]; }
+- (void) poke { UIViewController *g = self.game; if ([g respondsToSelector:@selector(deckPoked)]) [g performSelector:@selector(deckPoked)]; }   /* (the pop-up: open a while longer) */
+/* (a panel's icon and word: full - the icon above the word; slim - beside it) */
+- (void) place:(UIImageView *)i word:(UILabel *)w in:(UIView *)p
+{
+	CGSize s = p.bounds.size;
+	if (_mode == 1) { i.frame = CGRectMake (0, 7, s.width, 17); w.frame = CGRectMake (3, 27, s.width - 6, 12); }
+	else { [w sizeToFit]; const CGFloat iw = 16, gap = 4, tw = MIN (w.bounds.size.width, s.width - iw - gap - 8), x = (s.width - iw - gap - tw) / 2;
+		i.frame = CGRectMake (x, (s.height - 15) / 2, iw, 15); w.frame = CGRectMake (x + iw + gap, 0, tw, s.height); }
+}
+- (void) layoutSubviews
+{
+	[super layoutSubviews]; const CGFloat W = self.bounds.size.width, H = self.bounds.size.height, m = 8, gap = _mode == 1 ? 6 : 5;
+	const CGFloat ph = _mode == 1 ? 46 : 30, y = (H - ph) / 2;
+	if (_mode == 1) {                                      /* (full: the figures a third, the knob 50, the three buttons alike) */
+		const CGFloat sw = floor ((W - 2 * m) * 0.33), kw = 50, bw = floor ((W - 2 * m - sw - kw - 4 * gap) / 3);
+		_stats.frame = CGRectMake (m, y, sw, ph); CGFloat x = m + sw + gap;
+		for (UIView *v in @[ _dev, _cart, _rst ]) { v.frame = CGRectMake (x, y, bw, ph); x += bw + gap; }
+		_volP.frame = CGRectMake (x, y, W - m - x, ph); _knob.hidden = NO; _bar.hidden = YES; _knob.frame = CGRectMake ((_volP.bounds.size.width - 42) / 2, 2, 42, 42); _kv.frame = _knob.bounds;
+		_volP.backgroundColor = VX_PANEL; _volP.layer.cornerRadius = 10; _volP.layer.borderWidth = 1; _volP.layer.borderColor = VX_EDGE.CGColor;
+	} else {                                               /* (slim: the figures, three 58 pt buttons, the volume the rest) */
+		const CGFloat sw = MIN (170, floor ((W - 2 * m) * 0.29)), bw = 58;
+		_stats.frame = CGRectMake (m, y, sw, ph); CGFloat x = m + sw + gap;
+		for (UIView *v in @[ _dev, _cart, _rst ]) { v.frame = CGRectMake (x, y, bw, ph); x += bw + gap; }
+		_volP.frame = CGRectMake (x, y, W - m - x, ph); _knob.hidden = YES; _bar.hidden = NO; _bar.frame = _volP.bounds;
+		_volP.backgroundColor = VX_PANEL; _volP.layer.cornerRadius = 10; _volP.layer.borderWidth = 1; _volP.layer.borderColor = VX_EDGE.CGColor;
+	}
+	[self place:_devI word:_devW in:_dev]; [self place:_cartI word:_cartW in:_cart];
+	if (_mode == 1) { _rstI.hidden = NO; [self place:_rstI word:_rstW in:_rst]; } else { _rstI.hidden = YES; _rstW.frame = _rst.bounds; }   /* (slim: RESET in words) */
+	[self layoutStats];
+}
+- (void) layoutStats
+{
+	CGSize s = _stats.bounds.size; const BOOL names = _online != 0;
+	_n1.hidden = _n2.hidden = _r1.hidden = _r2.hidden = !names; _sMain.hidden = names;
+	const BOOL bars = _mode == 1 && !names; _lc.hidden = _lg.hidden = !bars;
+	for (CALayer *l in @[ _cT, _cF, _gT, _gF ]) l.hidden = !bars;
+	if (names) { const CGFloat rw = 52, top = (s.height - 26) / 2;
+		_n1.frame = CGRectMake (9, top, s.width - 18 - rw, 13); _n2.frame = CGRectMake (9, top + 13, s.width - 18 - rw, 13);
+		_r1.frame = CGRectMake (s.width - 9 - rw, top, rw, 13); _r2.frame = CGRectMake (s.width - 9 - rw, top + 13, rw, 13); return; }
+	if (!bars) { _sMain.frame = CGRectInset (_stats.bounds, 7, 0); return; }
+	_sMain.frame = CGRectMake (6, 6, s.width - 12, 17);
+	[_lc sizeToFit]; [_lg sizeToFit]; const CGFloat by = 31, bw = (s.width - 16 - _lc.bounds.size.width - _lg.bounds.size.width - 16) / 2;
+	_lc.frame = CGRectMake (8, by - 4, _lc.bounds.size.width, 9); _cT.frame = CGRectMake (CGRectGetMaxX (_lc.frame) + 4, by - 2, bw, 4);
+	_lg.frame = CGRectMake (CGRectGetMaxX (_cT.frame) + 6, by - 4, _lg.bounds.size.width, 9); _gT.frame = CGRectMake (CGRectGetMaxX (_lg.frame) + 4, by - 2, bw, 4);
+}
+/* the figures: the EMU RATE coloured as the PC's (green from 97 %, orange from 80 %, red below) */
+- (NSAttributedString *) fig:(const char *)f hz:(const char *)h emu:(const char *)e
+{
+	const int pct = atoi (e); UIColor *ec = !isdigit ((unsigned char) e[0]) || pct >= 97 ? VX_G : pct >= 80 ? VX_CHG : VXC (0xed5454);
+	UIFont *mono = [UIFont monospacedDigitSystemFontOfSize:_mode == 1 ? 12 : 11 weight:UIFontWeightSemibold];
+	NSMutableAttributedString *a = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"%s  %s  ", f, h] attributes:@{ NSFontAttributeName: mono, NSForegroundColorAttributeName: VX_HI }];
+	[a appendAttributedString:[[NSAttributedString alloc] initWithString:@(e) attributes:@{ NSFontAttributeName: mono, NSForegroundColorAttributeName: ec }]];
+	return a;
+}
 - (void) tick
 {
 	if (self.hidden || !self.window) return;
-	char f[24], h[24], e[24]; int c = -1, g = -1; vx_app_osd (f, h, e, &c, &g);
-	_fps.text = [NSString stringWithFormat:@"%s  %s  %s", f, h, e];   /* (50 FPS  60 HZ  100%%: the EMU RATE last) */
-	_cpuW.active = NO; _cpuW = [_cpuF.widthAnchor constraintEqualToAnchor:_cpu.widthAnchor multiplier:MAX (0.01, MIN (1.0, c / 100.0))]; _cpuW.active = YES;
-	_gpuW.active = NO; _gpuW = [_gpuF.widthAnchor constraintEqualToAnchor:_gpu.widthAnchor multiplier:MAX (0.01, MIN (1.0, g / 100.0))]; _gpuW.active = YES;
-	if (!_knob.tracking) { _knob.value = vx_app_volume (); [self knobbed]; }
+	extern int vxa_net_playing (void), vxa_is_held (void);
+	/* online: the status (the players, the ports, the round trip) - a few times a second is plenty */
+	const double now = CACurrentMediaTime (); if (now - _stT > 0.45) { _stT = now;
+		NSDictionary *st = [NSJSONSerialization JSONObjectWithData:[@(vx_net_status ()) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]; _st = [st isKindOfClass:NSDictionary.class] ? st : nil; }
+	const int ph = [_st[@"phase"] intValue], role = [_st[@"role"] intValue], hosting = role == 1 && ph >= 1 && ph <= 3, online = vxa_net_playing () || hosting;
+	if (online != (_online != 0) || role != _role) { _online = online; _role = role; [self layoutStats]; }
+	const int power = vx_app_power_on (), paused = vx_app_paused () || vxa_is_held ();
+	/* the figures, or online the players: "1 HUGO / 2 BART", the round trip; hosting: 2 FREE, WAITING */
+	if (online) {
+		NSString *me = [_st[@"me"] isKindOfClass:NSString.class] && [_st[@"me"] length] ? [_st[@"me"] uppercaseString] : @"YOU";
+		NSString *peer = [_st[@"peer"] isKindOfClass:NSString.class] && [_st[@"peer"] length] ? [_st[@"peer"] uppercaseString] : (role == 1 ? @"PLAYER 2" : @"PLAYER 1");
+		NSArray *pt = [_st[@"ports"] isKindOfClass:NSArray.class] ? _st[@"ports"] : @[ @1, @2 ];
+		const int myPort = [pt[role == 1 ? 0 : 1] intValue] ?: (role == 1 ? 1 : 2);
+		NSString *a1 = nil, *a2 = nil;   /* (who holds each port) */
+		if (hosting) { a1 = me; a2 = nil; }
+		else { NSString *host = role == 1 ? me : peer, *join = role == 1 ? peer : me; const int hp = [pt[0] intValue], jp = [pt[1] intValue];
+			a1 = hp == 1 ? host : jp == 1 ? join : nil; a2 = hp == 2 ? host : jp == 2 ? join : nil; }
+		_n1.text = [NSString stringWithFormat:@"1 %@", a1 ?: @"FREE"]; _n2.text = [NSString stringWithFormat:@"2 %@", a2 ?: @"FREE"];
+		_n1.textColor = myPort == 1 ? VX_HI2 : a1 ? VX_HI : VX_DIM; _n2.textColor = myPort == 2 ? VX_HI2 : a2 ? VX_HI : VX_DIM;
+		const int rtt = [_st[@"rtt"] intValue], relay = [_st[@"relay"] intValue], lost = [_st[@"lost"] intValue];
+		if (hosting) { _r1.text = @"WAITING"; _r1.textColor = VX_CHG; _r2.text = @""; }
+		else if (lost) { _r1.text = @"NO"; _r2.text = @"CONNECTION"; _r1.textColor = _r2.textColor = VX_CHG; }
+		else { _r1.text = relay ? @"RELAY" : @""; _r2.text = rtt > 0 ? [NSString stringWithFormat:@"%d MS", rtt] : @""; _r1.textColor = _r2.textColor = VX_DIM; }
+	} else if (paused && power) { _sMain.text = @"PAUSED"; _sMain.textColor = VX_CHG; _sMain.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightBold]; }
+	else { char f[24], h[24], e[24]; int c = -1, gq = -1; vx_app_osd (f, h, e, &c, &gq);
+		if (!power) { _sMain.text = @"-- FPS  -- HZ  --"; _sMain.textColor = VXC (0x4a6658); _sMain.font = [UIFont monospacedDigitSystemFontOfSize:_mode == 1 ? 12 : 11 weight:UIFontWeightSemibold]; }
+		else _sMain.attributedText = [self fig:f hz:h emu:e];
+		[CATransaction begin]; [CATransaction setDisableActions:YES];
+		_cF.frame = CGRectMake (_cT.frame.origin.x, _cT.frame.origin.y, _cT.frame.size.width * MAX (0.0, MIN (1.0, (power ? c : 0) / 100.0)), 4);
+		_gF.frame = CGRectMake (_gT.frame.origin.x, _gT.frame.origin.y, _gT.frame.size.width * MAX (0.0, MIN (1.0, (power ? gq : 0) / 100.0)), 4);
+		[CATransaction commit]; }
+	/* port 2: its device - online, your badge (P1 / P2); VecLink later */
+	const int full = _mode == 1;
+	if (online) { const int me2 = [([_st[@"ports"] isKindOfClass:NSArray.class] ? _st[@"ports"] : @[ @1, @2 ])[role == 1 ? 0 : 1] intValue] ?: (role == 1 ? 1 : 2);
+		_dev.on = YES; _devI.image = VXSym (@"globe", @"network", 15); _devI.tintColor = VX_HI2; _devW.textColor = VX_HI2;
+		_devW.text = [NSString stringWithFormat:full ? @"ONLINE P%d" : @"P%d", me2]; _dev.accessibilityLabel = [NSString stringWithFormat:@"Online: you are player %d", me2]; }
+	else { _dev.on = NO; _devI.tintColor = VX_HI; _devW.textColor = VX_HI; const int d = vx_app_port2 ();
+		static NSString *const W[2][5] = { { @"P2", @"VOX", @"VOICE", @"3D", @"PEN" }, { @"P2", @"VECVOX", @"VECVOICE", @"3D IMAGER", @"LIGHT PEN" } };
+		const int k = d >= 0 && d <= 4 ? d : 0; _devW.text = W[full][k];
+		_devI.image = k == 2 ? VXRobot (17) : k == 1 ? VXSym (@"person.wave.2", @"waveform", 15) : k == 3 ? VXSym (@"eyeglasses", @"eyeglasses", 15) : k == 4 ? VXSym (@"pencil.tip", @"pencil", 15) : VXSym (@"gamecontroller", @"gamecontroller", 15);
+		_dev.accessibilityLabel = [NSString stringWithFormat:@"Port 2: %@", W[1][k]]; }
+	/* the cartridge: out - dim, OUT */
+	const int out = vx_app_cart_out (); UIColor *cc = out ? VXC (0x4a6658) : VX_HI; _cartI.tintColor = cc; _cartW.textColor = cc; _cartW.text = out ? @"OUT" : @"CART";
+	/* the volume: the knob (full) or the bar (slim), off: OFF */
+	if (!_knob.tracking) { _knob.value = vx_app_volume (); [self volChanged]; }
+	if (!_bar.tracking) [_bar show];
+	[self setNeedsLayout];
 }
+- (void) volChanged
+{
+	const int on = vx_app_power_on ();
+	_kv.text = on ? [NSString stringWithFormat:@"%.0f", _knob.value * 100] : @"OFF"; _kv.textColor = on ? VX_HI : VX_CHG; [self poke];
+}
+- (void) statsTap:(UITapGestureRecognizer *)g   /* (online, playing: a player's row tapped - that port taken, the PC's TAKE PORT) */
+{
+	[self poke]; extern int vxa_net_playing (void); if (!_online || !vxa_net_playing ()) return;
+	const int k = [g locationInView:_stats].y < _stats.bounds.size.height / 2 ? 1 : 2; extern void vxa_toast_ext (NSString *s);
+	vx_net_take_port (k); vxa_toast_ext ([NSString stringWithFormat:@"ONLINE: YOU TAKE PORT %d", k]); ulog ([NSString stringWithFormat:@"deck: take port %d", k]);
+}
+- (void) devTap
+{
+	[self poke]; UIViewController *g = self.game; if (!g) return;
+	if (_online) {                                       /* (online: hosting - the code again; else the Online screen) */
+		NSString *code = [_st[@"code"] isKindOfClass:NSString.class] ? _st[@"code"] : @"";
+		if (_role == 1 && [_st[@"phase"] intValue] < 3 && code.length) { extern void vxa_toast_ext (NSString *s); vxa_toast_ext ([NSString stringWithFormat:@"ONLINE: HOSTING - CODE %@", code]); return; }
+		[VXUI showOnlineFrom:g]; return; }
+	int i = vxa_ofind ("vectrex_emu_port2"); if (i >= 0) [VXUI showChoice:i from:g];
+}
+- (void) cartTap { [self poke]; if (self.game) [VXUI showLibraryFrom:self.game]; }
+- (void) rstTap { [self poke]; vxa_do (@"reset"); [[UIImpactFeedbackGenerator new] impactOccurred]; }
 @end
 
 @implementation VXUI (Deck)

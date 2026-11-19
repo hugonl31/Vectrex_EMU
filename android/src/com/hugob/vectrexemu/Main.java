@@ -254,7 +254,9 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	{
 		int W = root.getWidth (), H = root.getHeight (); if (W <= 0 || H <= 0) { root.post (this::layout); return; }
 		boolean land = W > H; if (land != landscape) { landscape = land; VX.setLandscape (land); log ("layout: " + W + " x " + H + " px, " + (land ? "landscape" : "portrait")); }
-		{ int r = getWindowManager ().getDefaultDisplay ().getRotation (); if (r != Input.rot) { Input.rot = r; log ("screen turned: rotation " + r * 90); } }
+		{ int r = getWindowManager ().getDefaultDisplay ().getRotation ();   /* (a handheld's controls are made for its landscape grip: turned from there - the Nova's screen is upright by nature, landscape is its rotation 90) */
+		  final boolean natPortrait = (r % 2 == 0) == (H > W); final int rel = (r - (natPortrait ? 1 : 0) + 4) % 4;
+		  if (rel != Input.rot) { Input.rot = rel; log ("screen turned: rotation " + r * 90 + ", the controls turned " + rel * 90); } }
 		boolean touch = started && touchShown (); boolean tablet = Math.min (W, H) / getResources ().getDisplayMetrics ().density >= 600;
 		final int dm = deckMode (); final int dh = dm == 1 ? (int) dp (58) : dm == 2 ? (int) dp (40) : 0;   /* (the deck below the picture: its room) */
 		int row = land || barAuto () ? 0 : (int) dp (56), keep = (land || tablet || !touch ? 0 : (int) dp (150)) + dh;

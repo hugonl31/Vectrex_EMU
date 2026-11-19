@@ -198,23 +198,6 @@ static void dk_draw_modern (int slim)
 		if (v > 0) br_fill ((float) bx0, (float) (cy - th / 2), (float) (bx0 + (bx1 - bx0) * v), (float) (cy + th / 2), DK_G, 1);
 		br_text (t, (float) (x1 - 0.12 * ph - dkm_textw (t, k)), (float) (cy - 3 * k), (float) k, c); dkm_bx0 = bx0; dkm_bx1 = bx1; } }
 }
-/* (the pop-up's tab, modern: under the picture's foot, in the middle - tap it, or the picture's bottom) */
-static void dk_draw_modern_tab (void)
-{
-	const double tw = fmax (24.0, 0.10 * dk_w), th = fmax (10.0, 0.26 * dk_h), x0 = (dk_w - tw) / 2, y0 = dk_h - th;
-	dkm_panel (x0, y0, x0 + tw, dk_h + th, th * 0.5, DKM_PANEL, DKM_EDGE, fmax (1.0, dk_h / 70.0));
-	const double a = th * 0.28, cx = dk_w / 2.0, cy = y0 + th * 0.45;
-	br_line ((float) (cx - a), (float) (cy + 0.4 * a), (float) cx, (float) (cy - 0.4 * a), (float) fmax (1.0, a / 4), DKM_DIM);
-	br_line ((float) cx, (float) (cy - 0.4 * a), (float) (cx + a), (float) (cy + 0.4 * a), (float) fmax (1.0, a / 4), DKM_DIM);
-}
-/* the pop-up deck's arrow (hidden: bottom left, tap it - or the picture's bottom - for the deck) */
-static void dk_draw_arrow (void)
-{
-	const double a = 0.16 * dk_h, x = dk_ox + a, y = dk_h - 1.6 * a;
-	br_fill ((float) (x - 1.3 * a), (float) (y - 1.1 * a), (float) (x + 1.3 * a), (float) (y + 1.1 * a), 0x000000u, 0.55f);
-	br_line ((float) (x - a), (float) (y + 0.5 * a), (float) x, (float) (y - 0.5 * a), (float) fmax (1.0, a / 6), DK_G);
-	br_line ((float) x, (float) (y - 0.5 * a), (float) (x + a), (float) (y + 0.5 * a), (float) fmax (1.0, a / 6), DK_G);
-}
 static void dk_draw (void)
 {
 	dk_w = CW; dk_h = DKH; if (dk_w < 1 || dk_h < 1) return;
@@ -223,11 +206,11 @@ static void dk_draw (void)
 	if (!dk_img) return;
 	memset (dk_img, 0, n * 4); dr_img = dk_img; dr_w = dk_w; dr_h = dk_h; dk_gen++;
 	if (opt_deck_look) {                              /* (the modern look: slim and the pop-up one low row, full the app's deck) */
-		if (dk_pop && !dk_shown) { dk_place (); dk_draw_modern_tab (); return; }
+		if (dk_pop && !dk_shown) { dk_place (); return; }   /* (the pop-up hidden: nothing drawn - tap the picture's bottom) */
 		dk_draw_modern (opt_deck == 2 || dk_pop); return; }
 	if (opt_deck == 2) { dk_draw_slim (); return; }
 	dk_place ();
-	if (dk_pop && !dk_shown) { dk_draw_arrow (); return; }
+	if (dk_pop && !dk_shown) return;
 	if (dk_pop) br_fill (0, 0, (float) dk_w, (float) dk_h, 0x000000u, 0.82f);   /* (over the picture: on a dark panel) */
 	const double r = dk_r, cy = dk_cy, w = r / 45.0 > 1.2 ? r / 45.0 : 1.2, lh = 0.30 * r;
 	/* the OSD (vecrender.py _osd, _meters): the frame rate, the screen's, the emulation's; the CPU meter */

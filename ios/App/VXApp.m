@@ -552,7 +552,8 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 	/* (the picture: the core's values as they would go to an ordinary screen - sRGB, 1.0 white - made linear for the extended
 	 *  linear layer by the exact sRGB curve, as iOS shows an ordinary picture (RetroArch's): a plain 2.2 power left the faint
 	 *  light - the phosphor trail - 1.5 to 3x too dark (the owner, 2026-11-19); above 1.0, HDR, up to the screen's headroom) */
-#define VXA_DECKH 58                            /* (the native control deck's height) */
+#define VXA_DECKH 58                            /* (the native control deck's height: full; slim 40) */
+#define VXA_SLIMH 40
 #define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
 @end
@@ -585,8 +586,9 @@ static void vxa_toast (NSString *s, double secs)
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
+	UIButton *_popTab; double _popUntil;           /* (the pop-up deck: its tab, shown until) */
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
-	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq;
+	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq; long _notReady;
 	double _tRun, _tFin, _tDraw, _tMax, _tLinkDur;               /* (where a refresh's time goes: the stat line - "starts smooth, then choppy") */
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -630,6 +632,12 @@ static void vxa_toast (NSString *s, double secs)
 	(void) ws; [_menuBtn addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
 	_bar = [VXUI quickBarFor:self]; _bar.hidden = YES; [self.view addSubview:_bar];
 	_deck = [VXUI deckFor:self]; _deck.hidden = YES; [self.view addSubview:_deck];
+	_popTab = [UIButton buttonWithType:UIButtonTypeCustom]; _popTab.hidden = YES; _popTab.accessibilityLabel = @"Show the control deck";
+	{ UIView *t = [[UIView alloc] initWithFrame:CGRectMake (10, 0, 44, 14)]; t.userInteractionEnabled = NO; t.backgroundColor = VX_PANEL; t.layer.borderWidth = 1; t.layer.borderColor = VX_EDGE.CGColor;
+	  t.layer.cornerRadius = 7; t.layer.maskedCorners = kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner; t.tag = 5;
+	  UIImageView *a = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.up" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:9 weight:UIImageSymbolWeightBold]]];
+	  a.tintColor = VX_DIM; a.center = CGPointMake (22, 7); [t addSubview:a]; [_popTab addSubview:t]; }
+	[_popTab addTarget:self action:@selector(popOpen) forControlEvents:UIControlEventTouchUpInside]; [self.view addSubview:_popTab];
 	[self.view addSubview:_menuBtn];
 	(void) g; _welcome = [VXUI welcomeView]; _welcome.frame = self.view.bounds; _welcome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 	[self.view addSubview:_welcome]; _status = [_welcome viewWithTag:11]; _prog = [_welcome viewWithTag:12];   /* (the start screen while the games arrive) */
@@ -796,7 +804,10 @@ static void vxa_toast (NSString *s, double secs)
 	const int sl = vxa_newest; if (sl < 0 || !vxa_mtexs[sl] || !_pipe) return;
 	if (vxa_seq == _shownSeq) return;                   /* (nothing new) */
 	double tf0 = CACurrentMediaTime ();
-	if (vxa_fence[sl]) { glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 50000000); glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }   /* (its drawing done - normally long since) */
+	if (vxa_fence[sl]) {                                /* (its drawing done - normally long since. Not done: shown at the next refresh, the
+	                                                       last one stays - a long wait here spun the processor: 120-144 % on the iPad, it heated up) */
+		if (glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 2000000) == GL_TIMEOUT_EXPIRED) { _tFin += CACurrentMediaTime () - tf0; _notReady++; return; }
+		glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }
 	_tFin += CACurrentMediaTime () - tf0;
 	_fw = vxa_sw[sl]; _fh = vxa_sh[sl]; _shownSeq = vxa_seq;
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
@@ -804,7 +815,7 @@ static void vxa_toast (NSString *s, double secs)
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
 	const int land = v.width > v.height, ipad = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
 	const double row = land || [self barAuto] ? 0 : VXA_TOPROW;   /* (the quick bar's row: kept, or over the picture when it hides itself) */
-	const double deckh = [self deckShown] ? VXA_DECKH : 0;   /* (the native deck below the picture, upright) */
+	const int dmode = [self deckMode]; const double deckh = dmode == 1 ? VXA_DECKH : dmode == 2 ? VXA_SLIMH : 0;   /* (the native deck below the picture, upright; the pop-up: over it) */
 	const double keep = (land || ipad || _ctl.hidden ? 0 : 150) + deckh;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
 	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
 	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = land ? s.top * sc + (ah - h) / 2 : (s.top + row) * sc;
@@ -828,8 +839,7 @@ static void vxa_toast (NSString *s, double secs)
 		atomic_store (&vxa_busy[sl], 1); [cb addCompletedHandler:^(id<MTLCommandBuffer> b) { (void) b; atomic_store (&vxa_busy[sl], 0); }];
 		[cb presentDrawable:d]; [cb commit]; _presents++; }
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
-	if (_deck.hidden != !deckh) _deck.hidden = !deckh;
-	if (deckh) { CGRect df = CGRectMake (s.left, CGRectGetMaxY (pic), v.width - s.left - s.right, VXA_DECKH); if (!CGRectEqualToRect (df, _deck.frame)) _deck.frame = df; }   /* (only when it moves: setting it each picture laid the view out again and again) */
+	[self placeDeck:pic mode:dmode];
 	if (!CGRectEqualToRect (pic, _pic)) { _pic = pic; vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f pt (%s)", _fw, _fh, pic.origin.x, pic.origin.y, pic.size.width, pic.size.height, k == 1.0 ? "1:1" : "scaled"); [self layoutControls]; }
 }
 - (void) gotFrame:(unsigned)w :(unsigned)h { (void) w; (void) h; _have = 1; }
@@ -857,9 +867,11 @@ static void vxa_toast (NSString *s, double secs)
 	{ const double tt = CACurrentMediaTime () - now; if (tt > _tMax) _tMax = tt; }
 	if (now - _stat_t >= 5) {
 		double t = now - _stat_t; _stat_t = now;
-		if (_ticks) vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms, Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s",
-			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
-			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "");
+		if (_ticks) { const CGRect pr = _pic; const int barOver = !_bar.hidden && CGRectIntersectsRect (_bar.frame, pr), deckOver = !_deck.hidden && CGRectIntersectsRect (CGRectInset (_deck.frame, 0, 1), pr);
+			vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms (%ld not ready), Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s; over the picture: bar %d, deck %d",
+			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _notReady, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
+			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "", barOver, deckOver); }
+		_notReady = 0;
 		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
@@ -919,11 +931,31 @@ static void vxa_set_opt (int i, NSString *v)
 }
 - (void) openMenu { [VXUI showGameMenuFrom:self]; }
 - (void) controlsChanged { [self layoutControls]; _pic = CGRectZero; }
-- (BOOL) deckShown                              /* (the native deck: upright, the setting Control deck not off) */
+- (BOOL) deckShown { const int m = [self deckMode]; return m == 1 || m == 2; }   /* (room kept for it below the picture) */
+- (int) deckMode                               /* (the setting Control deck, upright: 1 full, 2 slim, 3 pop-up, 0 off) */
 {
-	CGSize v = self.view.bounds.size; if (v.width > v.height || !_link) return NO;
-	int i = vxa_opt_find ("vectrex_emu_deck"); return i < 0 || strcmp (vxa_opt[i].val, "off") != 0;
+	CGSize v = self.view.bounds.size; if (v.width > v.height || !_link) return 0;
+	int i = vxa_opt_find ("vectrex_emu_deck"); if (i < 0) return 1; const char *d = vxa_opt[i].val;
+	return !strcmp (d, "off") ? 0 : !strcmp (d, "slim") ? 2 : !strcmp (d, "pop-up") ? 3 : 1;
 }
+/* the deck in its place: full / slim below the picture (only when it moves - setting it each picture laid the view out
+ * again and again); pop-up: the slim deck over the picture's foot for a while after its tab or a touch on it, while paused */
+- (void) placeDeck:(CGRect)pic mode:(int)m
+{
+	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; VXDeck *dk = (VXDeck *) _deck;
+	if (m == 0) { if (!_deck.hidden) _deck.hidden = YES; if (!_popTab.hidden) _popTab.hidden = YES; return; }
+	const int want = m == 1 ? 1 : 2; if (dk.mode != want) dk.mode = want;
+	const double h = m == 1 ? VXA_DECKH : VXA_SLIMH;
+	CGRect df = CGRectMake (s.left, m == 3 ? CGRectGetMaxY (pic) - h : CGRectGetMaxY (pic), v.width - s.left - s.right, h);
+	if (!CGRectEqualToRect (df, _deck.frame)) _deck.frame = df;
+	BOOL show = YES;
+	if (m == 3) { show = CACurrentMediaTime () < _popUntil || vx_app_paused () || vxa_holding; [_deck.superview bringSubviewToFront:_deck]; }
+	if (_deck.hidden == show) { _deck.hidden = !show; if (show) [dk tick]; }
+	const BOOL tab = m == 3 && !show; if (_popTab.hidden != !tab) _popTab.hidden = !tab;
+	if (tab) { CGRect tf = CGRectMake (CGRectGetMidX (pic) - 32, CGRectGetMaxY (pic) - 14, 64, 26); if (!CGRectEqualToRect (tf, _popTab.frame)) { _popTab.frame = tf; [_popTab viewWithTag:5].frame = CGRectMake (10, 12, 44, 14); } }
+}
+- (void) popOpen { _popUntil = CACurrentMediaTime () + 4; ulog (@"deck: pop-up opened"); [self placeDeck:_pic mode:[self deckMode]]; }
+- (void) deckPoked { if ([self deckMode] == 3) _popUntil = CACurrentMediaTime () + 4; }
 /* the quick bar hiding itself (Settings > App: the default on an iPad, where its row would cost the picture its width): over
  * the picture, it fades 3 s after it was last shown; a tap at the top of the screen brings it back */
 - (BOOL) barAuto
@@ -968,7 +1000,7 @@ static void vxa_set_opt (int i, NSString *v)
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; CGRect pic = _pic;
 	CGRect zl, zr;
 	if (v.width > v.height) { zl = CGRectMake (s.left, s.top, CGRectGetMinX (pic) - s.left, v.height - s.top - s.bottom); zr = CGRectMake (CGRectGetMaxX (pic), s.top, v.width - s.right - CGRectGetMaxX (pic), zl.size.height); }
-	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0), bot = v.height - s.bottom, need = fmax (120, 140 * tsize);
+	else { double top = CGRectGetMaxY (pic) + ([self deckMode] == 1 ? VXA_DECKH : [self deckMode] == 2 ? VXA_SLIMH : 0), bot = v.height - s.bottom, need = fmax (120, 140 * tsize);
 		if (bot - top < need) { bot = CGRectGetMaxY (pic) - 4; top = bot - need; }   /* (no room below the deck: over the picture's foot, above the deck - never on it) */
 		zl = CGRectMake (s.left, top, v.width / 2, bot - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
@@ -1121,6 +1153,8 @@ int vxa_state (int save, int slot)
 	else { NSData *d = [NSData dataWithContentsOfFile:p]; ok = d.length == n && retro_unserialize (d.bytes, n); }
 	vlog ("state %s slot %d: %s (%zu bytes)", save ? "save" : "load", slot, ok ? "done" : "FAILED", n); return ok;
 }
+int vxa_is_held (void) { return vxa_holding; }
+void vxa_toast_ext (NSString *s) { extern void vxa_ntoast_c (NSString *s); vxa_ntoast_c (s); }
 void vxa_hold (int on)
 {
 	if (on != vxa_holding) { vxa_holding = on; vlog ("game %s", on ? "held (a screen over it)" : "running again");
@@ -1155,6 +1189,8 @@ static int vxa_net_pick (NSString *path)
 		vlog ("online: the host picked %s - offered to player 2", path.lastPathComponent.UTF8String); }
 	return 1;
 }
+static void vxa_ntoast (NSString *s);
+void vxa_ntoast_c (NSString *s) { vxa_ntoast (s); }
 static void vxa_ntoast (NSString *s)
 {
 	UIViewController *vc = vxa_vc; if (!vc) return; UIView *v = vc.view;
@@ -1188,19 +1224,33 @@ static void vxa_net_tick (void)
 	NSDictionary *st = [NSJSONSerialization JSONObjectWithData:[@(vx_net_status ()) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
 	if (![st isKindOfClass:NSDictionary.class]) return;
 	const int ph = [st[@"phase"] intValue], role = [st[@"role"] intValue], acc = [st[@"accepted"] intValue];
-	static int asked, said_pause, said_desync, said_lost;
-	if (ph < 3) { asked = 0; vxa_net_join_rom = nil; }
+	static int asked, said_pause, said_desync, said_lost, hot_started; static double hot_said;
+	NSString *peer = [st[@"peer"] isKindOfClass:NSString.class] && [st[@"peer"] length] ? [st[@"peer"] uppercaseString] : (role == 1 ? @"PLAYER 2" : @"THE HOST");
+	if (ph < 3) { asked = 0; hot_started = 0; vxa_net_join_rom = nil; }
+	/* player 2, joining the host's running game: its state arriving, then in it (the core switches to playing itself) */
+	if (role == 2 && hot_started && !vxa_net_on) {
+		if (ph == 4) { vxa_net_on = 1; said_pause = said_desync = said_lost = 0; vlog ("online: in the host's running game as player 2");
+			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: IN %@'S GAME - YOU ARE PLAYER 2%@", peer, [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); }
+		else if (now - hot_said > 1.0 && [st[@"hot_total"] intValue] > 0) { hot_said = now;
+			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: JOINING %@'S GAME... %d %%", peer, 100 * [st[@"hot_got"] intValue] / MAX (1, [st[@"hot_total"] intValue])]); } }
 	if (ph == 3 && !vxa_net_on) {
-		if (role == 1 && acc == 1 && [st[@"ready"] intValue] && vxa_net_rom.length) {   /* (the host: player 2 has the game (and its card compared) - both start) */
-			vx_net_prepare (); vxa_load (vxa_net_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
-			vlog ("online: playing %s as player 1", vxa_net_rom.lastPathComponent.UTF8String);
-			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 1", [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); }
+		if (role == 1 && acc == 1 && [st[@"ready"] intValue] && vxa_net_rom.length) {   /* (the host: player 2 has the game (and its card compared))  */
+			if ([st[@"hot"] intValue] && vx_net_go_hot ()) {   /* (app to app, no SD card: player 2 plugged into the running game - no reset) */
+				vxa_net_on = 1; said_pause = said_desync = said_lost = 0; vlog ("online: player 2 joins the running game as player 2");
+				vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ JOINED AS PLAYER 2%@ - YOUR GAME GOES ON", peer, [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); }
+			else {                                       /* (the desktop, or a UVMC2 / PiTrex: both start anew) */
+				vx_net_prepare (); vxa_load (vxa_net_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
+				vlog ("online: playing %s as player 1 (both started anew)", vxa_net_rom.lastPathComponent.UTF8String);
+				vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ JOINED%@ - BOTH START ANEW, YOU ARE PLAYER 1", peer, [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); } }
 		else if (role == 2 && !asked) { asked = 1;                               /* (the joiner: the host's game in the library?) */
 			NSDictionary *g = st[@"game"]; NSString *md5 = [g isKindOfClass:NSDictionary.class] ? g[@"md5"] : nil;
 			NSString *name = [g isKindOfClass:NSDictionary.class] ? [g[@"name"] stringByDeletingPathExtension] : @"?";
 			{ NSString *p = md5 ? vxa_find_md5 (md5) : nil;
 				if (!p) { vx_net_accept (0); vxa_ntoast ([NSString stringWithFormat:@"ONLINE: YOU DO NOT HAVE %@", name.uppercaseString]); vlog ("online: no ROM with md5 %s", md5.UTF8String); }
 				else { vx_net_accept (1); vxa_net_join_rom = p; vlog ("online: the host's game here: %s - waiting for the start", p.lastPathComponent.UTF8String); } } }
+		else if (role == 2 && acc == 1 && [st[@"ready"] intValue] && vxa_net_join_rom.length && [st[@"hot"] intValue]) {   /* (into the host's running game: its state follows) */
+			if (!hot_started) { hot_started = 1; hot_said = 0; vx_net_prepare_hot (); vxa_load (vxa_net_join_rom);
+				vlog ("online: joining the host's running game %s", vxa_net_join_rom.lastPathComponent.UTF8String); vxa_ntoast ([NSString stringWithFormat:@"ONLINE: JOINING %@'S GAME...", peer]); } }
 		else if (role == 2 && acc == 1 && [st[@"ready"] intValue] && vxa_net_join_rom.length) {   /* (both agreed, the card too: start) */
 			vx_net_prepare (); vxa_load (vxa_net_join_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
 			vlog ("online: playing %s as player 2", vxa_net_join_rom.lastPathComponent.UTF8String);
@@ -1224,7 +1274,10 @@ static void vxa_net_tick (void)
 		if (pp && !said_pause) { said_pause = 1; vxa_ntoast (@"PAUSED BY THE OTHER PLAYER"); } else if (!pp) said_pause = 0;
 		if ([st[@"desync"] intValue] >= 0 && !said_desync) { said_desync = 1; vxa_ntoast (@"ONLINE: OUT OF STEP - THE TWO GAMES DIFFER"); }
 		/* (only Leave ends a game: the other's Leave ends it here too; a gap in the connection is waited out) */
-		if ([st[@"left"] intValue] && !said_lost) { said_lost = 1; vxa_ntoast (@"ONLINE: THE OTHER PLAYER LEFT"); vlog ("online: the other player left"); vx_net_leave (); vxa_net_on = 0; }
+		if ([st[@"left"] intValue] && !said_lost) { said_lost = 1; vx_net_leave (); vxa_net_on = 0;
+			if (role == 1) { extern int vxa_net_rehost (void); const int again = vxa_net_rehost ();   /* (the host: its game goes on, open for the next player) */
+				vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ LEFT - %@", peer, again ? @"YOUR GAME GOES ON, HOSTED AGAIN" : @"YOUR GAME GOES ON"]); vlog ("online: the other player left - hosted again: %d", again); }
+			else { vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ LEFT - YOUR GAME GOES ON", peer]); vlog ("online: the host left"); } }
 		else if (!said_lost) { static int gap; const int l = [st[@"lost"] intValue];
 			if (l && !gap) { gap = 1; vxa_ntoast (@"ONLINE: NO CONNECTION - WAITING FOR THE OTHER PLAYER (ONLINE > LEAVE TO STOP)"); vlog ("online: no connection - waiting"); }
 			else if (!l && gap) { gap = 0; vxa_ntoast (@"ONLINE: CONNECTED AGAIN"); vlog ("online: connected again"); } }

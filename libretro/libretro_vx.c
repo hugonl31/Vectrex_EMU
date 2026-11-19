@@ -1135,7 +1135,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  im_out = im;
 	  lightpen = (memmem_title (h, 96, "ART") && memmem_title (h, 96, "MASTER")) || memmem_title (h, 96, "MELODY") || memmem_title (h, 96, "ANIMACTION");
 	  /* (1.1, the desktop's Config > Ports: port 2's device - auto (the game's own, above), none, or one by name) */
-	  const char *p2 = optv ("vectrex_emu_port2"); int p2_none = !strcmp (p2, "none"), p2_im = !strcmp (p2, "3D Imager"), p2_lp = !strcmp (p2, "light pen");
+	  const char *p2 = ls_cfg_on && ls_port2[0] ? ls_port2 : optv ("vectrex_emu_port2"); int p2_none = !strcmp (p2, "none"), p2_im = !strcmp (p2, "3D Imager"), p2_lp = !strcmp (p2, "light pen");
 	  const char *p2_sp = !strcmp (p2, "VecVoice") ? "vecvoice" : !strcmp (p2, "VecVox") ? "vecvox" : NULL;
 	  if (p2_none || p2_lp || p2_sp) { im = 0; vx_putenv ("VT_IMAGER="); }
 	  if (p2_im && !im) { const char *b = path; for (const char *q = path; *q; q++) if (*q == '/' || *q == '\\') b = q + 1;   /* (the disc by
@@ -2628,6 +2628,7 @@ void retro_run (void)
 			if (sw_eject != 1) { snprintf (br_game, sizeof br_game, "%s", p); br_rec_note (p); }
 #endif
 		} sw_eject = 0; }
+	netvx_hot_apply ();                         /* (online: the host's running game, once its cartridge is in) */
 	const int asy = emu_threaded (), primed = asy && emu_primed;
 	bool upd = false;
 	if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &upd) && upd) { read_options (); input_names (); }
@@ -3189,7 +3190,9 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	if (!f) { fprintf (stderr, "[vectrex_emu] no folder to write in (system, saves, the game's)\n"); return false; } fclose (f);
 	char *argv[] = { "vx", bios, (char *) gp, scr, tmpdir, NULL };
 	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
-	if (ls_cfg_on) total_cycles = 0;            /* (online: the game from cycle 0 on both sides - a switch kept the last game's count, which the state's checksum has: out of step at frame 0) */
+	if (ls_cfg_on) { extern unsigned long vt_power_n; total_cycles = frame_start_cycles = last_busframe = last_recal = idle_cycles = idle_frame = 0; vt_power_n = 0; }   /* (online: the game from cycle 0 on both
+	                                              sides, the frame counters with it - a switch kept the last game's, which the checksum and the frames' ends have:
+	                                              out of step at frame 0; after a join into a running game, at the next game) */
 	int rc = vtest_main (5, argv);
 	remove (scr); cart_id_set ();
 	if (rc != 2) flash_to_saves (gp);
@@ -3239,6 +3242,10 @@ void vx_app_reset (void)
 	if (netvx_playing ()) { ls_reset_req = 1; fprintf (stderr, "[vectrex_emu] RESET (the app) - online: both players, in the same game frame\n"); return; }
 	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET (the app)\n");
 }
+int vx_app_port2 (void) { return dk_p2; }        /* (port 2's device: 0 controller, 1 VecVox, 2 VecVoice, 3 3D Imager, 4 light pen) */
+int vx_app_cart_out (void) { return ej_out; }
+int vx_app_power_on (void) { return pw_on; }
+int vx_app_paused (void) { return vx_paused; }
 void vx_app_eject (void) { if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] eject: not during an online game\n"); return; } eject_toggle (); }   /* (as Ctrl+E: the switch at the next refresh) */
 static int game_switch_now (const char *path)
 {

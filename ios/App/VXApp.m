@@ -564,6 +564,7 @@ static void vxa_toast (NSString *s, double secs)
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
 	long _runs, _presents, _late, _ticks; double _stat_t;
+	double _tRun, _tFin, _tDraw, _tMax, _tLinkDur;               /* (where a refresh's time goes: the stat line - "starts smooth, then choppy") */
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
 - (UIStatusBarStyle) preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
@@ -765,11 +766,23 @@ static void vxa_toast (NSString *s, double secs)
 	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 }
+/* the picture's drawing size, measured while playing: a device whose GPU keeps missing refreshes at the screen's own
+ * pixels (the iPad Air upright: 1629 x 2082 with HDR and the overlay, ~25 ms a picture where the start's measuring said
+ * 8) draws it smaller, step by step - Metal scales it up. Kept per device and way up (sideways / upright) */
+static double vxa_resk_v[2] = { -1, -1 };
+static NSString *vxa_resk_key (int land) { return land ? @"resk.land" : @"resk.up"; }
+static double vxa_resk (int land)
+{
+	if (vxa_resk_v[land] < 0) { double v = [NSUserDefaults.standardUserDefaults doubleForKey:vxa_resk_key (land)]; vxa_resk_v[land] = v >= 0.5 && v <= 1 ? v : 1; }
+	return vxa_resk_v[land];
+}
 - (void) present
 {
 	if (!_have) return;
 	if (!vxa_mtex || !_pipe) return;
+	double tf0 = CACurrentMediaTime ();
 	glFinish ();                                     /* (the core's drawing done before Metal reads the shared surface) */
+	_tFin += CACurrentMediaTime () - tf0;
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
 	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
@@ -777,13 +790,17 @@ static void vxa_toast (NSString *s, double secs)
 	const double row = land || [self barAuto] ? 0 : VXA_TOPROW;   /* (the quick bar's row: kept, or over the picture when it hides itself) */
 	const double deckh = [self deckShown] ? VXA_DECKH : 0;   /* (the native deck below the picture, upright) */
 	const double keep = (land || ipad || _ctl.hidden ? 0 : 150) + deckh;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
-	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
+	const double rk = vxa_resk (land);
+	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (aw / _fw, ah / _fh);
+	if (rk >= 0.999) k = fmin (1.0, k);                       /* (drawn smaller (rk < 1): scaled up to the room) */
+	if (fabs (k - 1) < 0.004) k = 1.0;
 	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = land ? s.top * sc + (ah - h) / 2 : (s.top + row) * sc;
-	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw), r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
+	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw) * rk, r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
 	  if (fabs (r - 1) > 0.01) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) _fh) * r);
 		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, _fh, want); vx_app_pich = want; } } }
 	@autoreleasepool {
-		id<CAMetalDrawable> d = [(CAMetalLayer *) _gl.layer nextDrawable]; if (!d) return;
+		double td0 = CACurrentMediaTime ();
+		id<CAMetalDrawable> d = [(CAMetalLayer *) _gl.layer nextDrawable]; _tDraw += CACurrentMediaTime () - td0; if (!d) return;
 		MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor]; rp.colorAttachments[0].texture = d.texture;
 		rp.colorAttachments[0].loadAction = MTLLoadActionClear; rp.colorAttachments[0].clearColor = MTLClearColorMake (0, 0, 0, 1); rp.colorAttachments[0].storeAction = MTLStoreActionStore;
 		id<MTLCommandBuffer> cb = [_queue commandBuffer]; id<MTLRenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
@@ -816,12 +833,25 @@ static void vxa_toast (NSString *s, double secs)
 	[EAGLContext setCurrentContext:_ctx];
 	/* (behind: the runs before the last emulate only - drawing each one's picture as well, that no one sees, kept the GPU
 	 *  behind for good: 3 runs a tick, ~20 pictures a second until a screen was opened) */
+	const double tr0 = CACurrentMediaTime ();
 	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; }
+	_tRun += CACurrentMediaTime () - tr0; _tLinkDur += l.targetTimestamp - l.timestamp;
 	vxa_nodraw = 0;
 	if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); [VXUI showLibraryFrom:self]; }
 	if (n) [self present];
+	{ const double tt = CACurrentMediaTime () - now; if (tt > _tMax) _tMax = tt; }
 	if (now - _stat_t >= 5) {
 		double t = now - _stat_t; _stat_t = now;
+		{ static int bad; const CGSize vb = self.view.bounds.size; const int land = vb.width > vb.height;   /* (the GPU behind: drawn smaller - see vxa_resk) */
+		  const int over = _ticks > 100 && _presents * 10 < _runs * 9 && !vxa_holding && !_welcome.superview && !vxa_net_playing ();
+		  bad = over ? bad + 1 : 0;
+		  if (bad >= 2 && vxa_resk (land) > 0.61) { bad = 0; vxa_resk_v[land] = fmax (0.6, vxa_resk (land) * 0.88);
+			[NSUserDefaults.standardUserDefaults setDouble:vxa_resk_v[land] forKey:vxa_resk_key (land)];
+			vlog ("picture: the GPU behind (%ld late of %ld) - drawn at %.0f %% of the screen's pixels now (%s)", _late, _ticks, vxa_resk_v[land] * 100, land ? "sideways" : "upright"); } }
+		if (_ticks) vlog ("time a refresh: emulator %.1f ms, GL finish %.1f ms, Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s",
+			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
+			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "");
+		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
 			(unsigned long) GCController.controllers.count, GCKeyboard.coalescedKeyboard != nil);

@@ -163,7 +163,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	                                                   through the overlay's colour; softly up to the screen's peak) */
 	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"
 	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb; float hx = texelFetch(L, ivec2(gl_FragCoord.xy), 0).a;\n"
-	"  vec3 o0 = sg(o, uv);\n"
+	"  vec3 ag = br * (texture(pS, uv).rgb - texture(pF, uv).rgb), o0 = max(o - ag, 0.0);\n"   /* (the afterglow here, read once: the picture's and the scatter's) */
 	"  vec3 m = texture(ovm, uv).rgb, la = texture(ova, uv).rgb, l = dot(o, vec3(1.0 / 3.0)) * m, l0 = dot(o0, vec3(1.0 / 3.0)) * m;\n"
 	"  vec3 c = sqrt(l0 * l0 + la * la), tm = vec3(1.0);\n"   /* (the picture from the light without the afterglow; tm: what the sheet
 	                                              does to the light passing it, the afterglow's too) */
@@ -181,8 +181,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    float D = max(a.x, 0.0), mt = D > 0.0 ? (1.0 - exp(-1.5 * D / ref)) / (1.0 - exp(-1.5)) : 0.0;\n"
 	"    vec2 px = vec2(pxo) / size;\n"
 	"    vec2 p2 = vec2(px.x, -px.y);\n"   /* (the scatter from the fresh light only: the fading trail lights the plastic hardly at all) */
-	"    vec3 near = (sg(texture(L, uv).rgb, uv) * 2.0 + sg(texture(L, uv + px).rgb, uv + px) + sg(texture(L, uv - px).rgb, uv - px)\n"
-	"                 + sg(texture(L, uv + p2).rgb, uv + p2) + sg(texture(L, uv - p2).rgb, uv - p2)) / 6.0;\n"
+	"    vec3 near = max((o * 2.0 + texture(L, uv + px).rgb + texture(L, uv - px).rgb + texture(L, uv + p2).rgb + texture(L, uv - p2).rgb) / 6.0 - ag, 0.0);\n"
 	"    vec3 mid = texture(M, uv).rgb, far = texture(F, uv).rgb; float k = scrk * mt;\n"
 	"    c *= vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq)); tm *= vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq));\n"
 	"    vec3 halo = (0.6 * near + 0.8 * mid + 0.5 * far) * trans;\n"

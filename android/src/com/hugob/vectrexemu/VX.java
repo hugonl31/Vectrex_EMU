@@ -38,6 +38,7 @@ final class VX {
 	static native int stateExists (int slot);
 	static native int stateSupported ();
 	static native int[] deckState ();                      /* port 2's device, cart out, power on, paused, volume % */
+	static native String osd ();                          /* the deck's figures: "fps|hz|emu|cpu|gpu" */
 	static native int untgz (String tgz, String root);
 	static native int netHost (int mode, String gamer, String key, String rom, boolean skip);
 	static native int netJoin (String where, String gamer, String key);

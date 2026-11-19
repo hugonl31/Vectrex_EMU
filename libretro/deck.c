@@ -105,7 +105,7 @@ static void dkm_panel (double x0, double y0, double x1, double y1, double rad, u
 		br_fill ((float) (x0 + in), (float) y, (float) (x1 - in), (float) fmin (y + 1.0, y1), fill, 1); }
 	br_line ((float) (x0 + rad), (float) y0, (float) (x1 - rad), (float) y0, (float) lw, edge); br_line ((float) (x0 + rad), (float) y1, (float) (x1 - rad), (float) y1, (float) lw, edge);
 	br_line ((float) x0, (float) (y0 + rad), (float) x0, (float) (y1 - rad), (float) lw, edge); br_line ((float) x1, (float) (y0 + rad), (float) x1, (float) (y1 - rad), (float) lw, edge);
-	const double cx[4] = { x0 + rad, x1 - rad, x1 - rad, x0 + rad }, cy[4] = { y0 + rad, y0 + rad, y1 - rad, y1 - rad }, a0[4] = { 270, 0, 90, 180 };
+	const double cx[4] = { x0 + rad, x1 - rad, x1 - rad, x0 + rad }, cy[4] = { y0 + rad, y0 + rad, y1 - rad, y1 - rad }, a0[4] = { 180, 270, 0, 90 };   /* (each corner its own quarter, y down: top left 180-270 - the quarter beside it curled the corners outwards, the Nova 2026-11-19) */
 	for (int c = 0; c < 4; c++) for (int i = 0; i < 9; i++) { const double p = (a0[c] + i * 10) * M_PI / 180, q = (a0[c] + (i + 1) * 10) * M_PI / 180;
 		br_line ((float) (cx[c] + rad * cos (p)), (float) (cy[c] + rad * sin (p)), (float) (cx[c] + rad * cos (q)), (float) (cy[c] + rad * sin (q)), (float) lw, edge); }
 }

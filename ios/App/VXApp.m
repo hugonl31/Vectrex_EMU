@@ -155,14 +155,22 @@ static void vxa_opts_set (const struct retro_variable *v)
 	}
 	vxa_opts_defaults ();
 }
+/* a 4:3-ish screen (an iPad's, the Nova's 1280 x 960; the iPad mini's 1.52 too): upright the picture takes all its width -
+ * the top bar hides itself and the deck pops up by default (as the Android app) */
+int vxa_squarish (void)
+{
+	CGSize s = UIScreen.mainScreen.nativeBounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
+	return b > 0 && a < 1.55 * b;
+}
 static void vxa_opts_defaults (void)
 {
 	for (int i = 0; i < vxa_nopt; i++) { NSString *sv = [[NSUserDefaults standardUserDefaults] stringForKey:[NSString stringWithFormat:@"opt.%s", vxa_opt[i].key]];
 		if (sv) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", sv.UTF8String); }
 	/* (this app's own defaults: the control deck below the picture - its cartridge opens the ROM browser, RESET, the knob) */
 	int dk = vxa_opt_find ("vectrex_emu_deck");
-	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "full");   /* (the app's default - what Reset gives back) */
-	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "full");
+	const char *dd = vxa_squarish () ? "pop-up" : "full";   /* (a 4:3 screen: the deck pops up, the picture gets the room) */
+	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "%s", dd);   /* (the app's default - what Reset gives back) */
+	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", dd);
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
 	int r = vxa_opt_find ("vectrex_emu_rate");
 	if (r >= 0) snprintf (vxa_opt[r].def, sizeof vxa_opt[r].def, "%s", UIScreen.mainScreen.maximumFramesPerSecond >= 120 ? "120 Hz" : "60 Hz");   /* (this screen's: the default) */
@@ -985,12 +993,12 @@ static void vxa_set_opt (int i, NSString *v)
 }
 - (void) popOpen { _popUntil = CACurrentMediaTime () + 4; ulog (@"deck: pop-up opened"); [self placeDeck:_pic mode:[self deckMode]]; }
 - (void) deckPoked { if ([self deckMode] == 3) _popUntil = CACurrentMediaTime () + 4; }
-/* the quick bar hiding itself (Settings > App: the default on an iPad, where its row would cost the picture its width): over
+/* the quick bar hiding itself (Settings > App: the default on a 4:3 screen - an iPad, where its row would cost the picture its width): over
  * the picture, it fades 3 s after it was last shown; a tap at the top of the screen brings it back */
 - (BOOL) barAuto
 {
 	NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"];
-	return m ? [m isEqualToString:@"auto"] : UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+	return m ? [m isEqualToString:@"auto"] : vxa_squarish () != 0;
 }
 - (void) showBar
 {

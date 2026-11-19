@@ -59,7 +59,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	static final int BG = 0xff05080a, BAR = 0xff0a1210, PANEL = 0xff0b1511, BODY = 0xff0f1c17, EDGE = 0xff1d3329, EDGE2 = 0xff2f5544, SEL = 0xff24443a,
 		G = 0xff66aa88, HI = 0xff88ccbb, HI2 = 0xffbbffee, FG = 0xffc8d6cf, FG2 = 0xffa9bdb3, DIM = 0xff7f978b, CHG = 0xffd9a35e;
 	static Main me;
-	SharedPreferences prefs; FrameLayout root, screens; SurfaceView sv; Controls ctl; LinearLayout bar, toasts; TextView menuBtn;
+	SharedPreferences prefs; FrameLayout root, screens; SurfaceView sv; Controls ctl; LinearLayout bar, toasts; TextView menuBtn; DeckView deck; View popTab; long popUntil;
 	View welcome; TextView wStatus; ProgressBar wProg;
 	final Handler h = new Handler (Looper.getMainLooper ());
 	File files, sysDir, savesDir; final List<File> romRoots = new ArrayList<> ();
@@ -81,6 +81,8 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		sv = new SurfaceView (this); sv.getHolder ().addCallback (this); root.addView (sv, new FrameLayout.LayoutParams (-1, -1));
 		ctl = new Controls (this); root.addView (ctl, new FrameLayout.LayoutParams (-1, -1));
 		bar = quickBar (); root.addView (bar, new FrameLayout.LayoutParams (-1, (int) dp (44)));
+		deck = new DeckView (this); deck.setVisibility (View.GONE); root.addView (deck, new FrameLayout.LayoutParams (-1, (int) dp (58)));
+		popTab = popTabView (); popTab.setVisibility (View.GONE); root.addView (popTab, new FrameLayout.LayoutParams ((int) dp (64), (int) dp (26)));
 		menuBtn = new TextView (this); menuBtn.setText ("≡"); menuBtn.setTextSize (24); menuBtn.setTextColor (HI); menuBtn.setGravity (Gravity.CENTER);
 		menuBtn.setBackground (round (0xbf0b1511, EDGE2, dp (22))); menuBtn.setOnClickListener (v -> Screens.gameMenu (this)); menuBtn.setContentDescription ("Menu");
 		root.addView (menuBtn, new FrameLayout.LayoutParams ((int) dp (44), (int) dp (44)));
@@ -98,7 +100,9 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void immersive ()
 	{
 		if (Build.VERSION.SDK_INT >= 30) { getWindow ().setDecorFitsSystemWindows (false); android.view.WindowInsetsController c = getWindow ().getInsetsController ();
-			if (c != null) { c.hide (WindowInsets.Type.systemBars ()); c.setSystemBarsBehavior (android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); } return; }
+			if (c != null) { boolean sb = prefs.getBoolean ("app.statusbar", false);   /* (Settings > Clock and battery: the status bar kept) */
+				c.hide (sb ? WindowInsets.Type.navigationBars () : WindowInsets.Type.systemBars ()); if (sb) c.show (WindowInsets.Type.statusBars ());
+				c.setSystemBarsBehavior (android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); } return; }
 		getWindow ().getDecorView ().setSystemUiVisibility (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
 			| View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
 	}
@@ -106,7 +110,8 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void insets (WindowInsets ins)
 	{
 		int t = 0, bo = 0, l = 0, r = 0;
-		if (Build.VERSION.SDK_INT >= 28 && ins.getDisplayCutout () != null) { t = ins.getDisplayCutout ().getSafeInsetTop (); bo = ins.getDisplayCutout ().getSafeInsetBottom (); l = ins.getDisplayCutout ().getSafeInsetLeft (); r = ins.getDisplayCutout ().getSafeInsetRight (); }
+		if (Build.VERSION.SDK_INT >= 30 && prefs.getBoolean ("app.statusbar", false)) t = ins.getInsets (WindowInsets.Type.statusBars ()).top;
+		if (Build.VERSION.SDK_INT >= 28 && ins.getDisplayCutout () != null) { t = Math.max (t, ins.getDisplayCutout ().getSafeInsetTop ()); bo = ins.getDisplayCutout ().getSafeInsetBottom (); l = ins.getDisplayCutout ().getSafeInsetLeft (); r = ins.getDisplayCutout ().getSafeInsetRight (); }
 		if (t != insTop || bo != insBot || l != insL || r != insR) { insTop = t; insBot = bo; insL = l; insR = r; log ("safe insets " + t + " " + l + " " + bo + " " + r); layout (); }
 	}
 
@@ -116,18 +121,27 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	{
 		Display d = getWindowManager ().getDefaultDisplay ();
 		try {
-			hdrCan = Build.VERSION.SDK_INT >= 26 && d.isHdr ();
+			/* (HDR only where Android keeps ordinary pictures at their brightness beside it: Android 14 with the screen's
+			 *  HDR / SDR ratio. Before - the Nova, Android 13 - the extended linear window showed the whole picture dim, HDR
+			 *  brightness 0 % or not; and not when the player set it to 0 % - an ordinary window then, from the start) */
+			hdrScreen = Build.VERSION.SDK_INT >= 26 && d.isHdr ();
+			hdrCan = hdrScreen && Build.VERSION.SDK_INT >= 34 && d.isHdrSdrRatioAvailable ();
 			if (hdrCan && d.getHdrCapabilities () != null) hdrRoom = Math.max (1f, d.getHdrCapabilities ().getDesiredMaxLuminance () / 203f);
-			if (Build.VERSION.SDK_INT >= 34 && d.isHdrSdrRatioAvailable ()) hdrRoom = Math.max (hdrRoom, d.getHdrSdrRatio ());
-			if (hdrCan && Build.VERSION.SDK_INT >= 26) getWindow ().setColorMode (ActivityInfo.COLOR_MODE_HDR);
+			if (hdrCan) hdrRoom = Math.max (hdrRoom, d.getHdrSdrRatio ());
+			if (hdrCan && prefs.getFloat ("app.hdr", 1f) > 0.01f) getWindow ().setColorMode (ActivityInfo.COLOR_MODE_HDR);
 		} catch (Throwable t) { log ("HDR: " + t); }
 		float best = d.getRefreshRate (); try { for (Display.Mode m : d.getSupportedModes ()) best = Math.max (best, m.getRefreshRate ()); } catch (Throwable t) { }
 		maxHz = best;
-		log ("screen: " + d.getRefreshRate () + " Hz (up to " + best + "), HDR " + (hdrCan ? "yes, headroom " + hdrRoom : "no") + ", " + getResources ().getDisplayMetrics ().widthPixels + " x " + getResources ().getDisplayMetrics ().heightPixels + " px, density " + getResources ().getDisplayMetrics ().density);
-		VX.setHdr (hdrCan, hdrRoom, prefs.getFloat ("app.hdr", 1f));
+		curHz = d.getRefreshRate ();
+		log ("screen: " + d.getRefreshRate () + " Hz (up to " + best + "), HDR " + (hdrCan ? "yes, headroom " + hdrRoom : hdrScreen ? "screen yes, but not on this Android (before 14): off" : "no") + ", " + getResources ().getDisplayMetrics ().widthPixels + " x " + getResources ().getDisplayMetrics ().heightPixels + " px, density " + getResources ().getDisplayMetrics ().density);
+		VX.setHdr (hdrCan && prefs.getFloat ("app.hdr", 1f) > 0.01f, hdrRoom, prefs.getFloat ("app.hdr", 1f));
 	}
-	float maxHz = 60;
-	void hdrChanged () { VX.setHdr (hdrCan, hdrRoom, prefs.getFloat ("app.hdr", 1f)); }
+	float maxHz = 60, curHz = 60; boolean hdrScreen;
+	void hdrChanged ()
+	{
+		final float f = prefs.getFloat ("app.hdr", 1f); VX.setHdr (hdrCan && f > 0.01f, hdrRoom, f);
+		if (hdrCan && (f > 0.01f) != (VX.hdrActive () != 0)) toast (f > 0.01f ? "HDR: on at the next start of the app" : "HDR: off at the next start of the app", 3);   /* (the window's kind: chosen at the start) */
+	}
 
 	/* ---------------------------------------------------------------- the content: the games, the BIOS, the cards */
 	/* (where they are: the app's own folder (the downloads, adb), or RetroArch's folders - as the RetroArch core: BIOS/
@@ -180,18 +194,24 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	@Override protected void onDestroy () { super.onDestroy (); Adhoc.stop (this); log ("the app ends"); }
 	@Override public void onRequestPermissionsResult (int code, String[] perms, int[] res) { if (code == 7) Adhoc.onPermission (this, res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED); }
 
+	/* a 4:3-ish screen (the Nova's 1280 x 960; an iPad's, as the iOS app): upright, the picture takes all its width - the bar hides itself, the deck pops up */
+	boolean squarish ()
+	{
+		android.util.DisplayMetrics dm = new android.util.DisplayMetrics (); getWindowManager ().getDefaultDisplay ().getRealMetrics (dm);
+		return Math.max (dm.widthPixels, dm.heightPixels) < 1.55f * Math.min (dm.widthPixels, dm.heightPixels);
+	}
 	String defaults ()
 	{
 		/* (this app's own, as the iOS app's: the deck below the picture, the picture upright as the screen stands, the keys
 		 *  as on the PC, the screen's own rate) */
-		int hz = maxHz >= 143 ? 144 : maxHz >= 119 ? 120 : maxHz >= 89 ? 90 : 60;
-		return "vectrex_emu_deck=full\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=off\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
+		int hz = curHz >= 143 ? 144 : curHz >= 119 ? 120 : curHz >= 89 ? 90 : curHz >= 71 ? 72 : 60;   /* (the screen's rate now: the Nova "up to 120" ran at 60 - 120 Hz ran the emulator twice a refresh, 15.6 of 16.7 ms) */
+		return "vectrex_emu_deck=" + (squarish () ? "pop-up" : "full") + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
 	}
 	void startCore ()
 	{
-		if (started) return; started = true; findContent ();
+		if (started) return; started = true; findContent (); showBar ();   /* (the bar hiding itself: shown a while at the start) */
 		String g = prefs.getString ("lastGame", ""); if (g.isEmpty () || !new File (g).exists ()) g = firstGame ();
-		log ("starting with " + g); if (maxHz > 61) { WindowManager.LayoutParams a = getWindow ().getAttributes (); a.preferredRefreshRate = maxHz; getWindow ().setAttributes (a); }
+		log ("starting with " + g);
 		VX.start (sysDir.getAbsolutePath (), savesDir.getAbsolutePath (), g, defaults ());
 		welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome));
 		layout (); Live.start (this);
@@ -238,13 +258,17 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		String m = prefs.getString ("touch.show", "auto");
 		return m.equals ("always") || (m.equals ("auto") && Input.pads () == 0);
 	}
-	boolean barAuto () { return prefs.getString ("app.topbar", "fixed").equals ("auto"); }
+	boolean barAuto () { return prefs.getString ("app.topbar", squarish () ? "auto" : "fixed").equals ("auto"); }
 	void layout ()
 	{
 		int W = root.getWidth (), H = root.getHeight (); if (W <= 0 || H <= 0) { root.post (this::layout); return; }
 		boolean land = W > H; if (land != landscape) { landscape = land; VX.setLandscape (land); log ("layout: " + W + " x " + H + " px, " + (land ? "landscape" : "portrait")); }
+		{ int r = getWindowManager ().getDefaultDisplay ().getRotation ();   /* (a handheld's controls are made for its landscape grip: turned from there - the Nova's screen is upright by nature, landscape is its rotation 90) */
+		  final boolean natPortrait = (r % 2 == 0) == (H > W); final int rel = (r - (natPortrait ? 1 : 0) + 4) % 4;
+		  if (rel != Input.rot) { Input.rot = rel; log ("screen turned: rotation " + r * 90 + ", the controls turned " + rel * 90); } }
 		boolean touch = started && touchShown (); boolean tablet = Math.min (W, H) / getResources ().getDisplayMetrics ().density >= 600;
-		int row = land || barAuto () ? 0 : (int) dp (56), keep = land || tablet || !touch ? 0 : (int) dp (150);
+		final int dm = deckMode (); final int dh = dm == 1 ? (int) dp (58) : dm == 2 ? (int) dp (40) : dm == 3 ? (int) dp (14) : 0;   /* (the pop-up: its tab's room)*/   /* (the deck below the picture: its room) */
+		int row = land || barAuto () ? 0 : (int) dp (56), keep = (land || tablet || !touch ? 0 : (int) dp (150)) + dh;
 		int x = insL, y = insTop + row, w = W - insL - insR, hh = H - insTop - insBot - row - keep;
 		VX.setRoom (x, y, w, hh, !land);
 		FrameLayout.LayoutParams bl = (FrameLayout.LayoutParams) bar.getLayoutParams (); bl.leftMargin = insL + (int) dp (8); bl.rightMargin = insR + (int) dp (8); bl.topMargin = insTop + (int) dp (6); bar.setLayoutParams (bl);
@@ -257,20 +281,51 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 
 	/* ---------------------------------------------------------------- each moment: the core's news, online, the picture's place */
 	float[] pic = new float[4];
+	/* the deck (Settings: Control deck): 1 full, 2 slim, 3 pop-up, 0 off - upright only, as the iOS app */
+	int deckMode ()
+	{
+		if (!started || landscape) return 0; String v = VX.val ("vectrex_emu_deck");
+		return v.equals ("off") ? 0 : v.equals ("slim") ? 2 : v.equals ("pop-up") ? 3 : 1;
+	}
+	int lastDeckMode = -1;
+	void placeDeck ()
+	{
+		final int dm = deckMode (); if (dm != lastDeckMode) { lastDeckMode = dm; layout (); }
+		if (dm == 0 || pic[2] <= 0) { deck.setVisibility (View.GONE); popTab.setVisibility (View.GONE); return; }
+		final int h = (int) dp (dm == 1 ? 58 : 40), top = (int) (dm == 3 ? pic[1] + pic[3] - h : pic[1] + pic[3]);
+		FrameLayout.LayoutParams l = (FrameLayout.LayoutParams) deck.getLayoutParams ();
+		if (l.topMargin != top || l.height != h || l.leftMargin != insL || l.rightMargin != insR) { l.topMargin = top; l.height = h; l.leftMargin = insL; l.rightMargin = insR; l.gravity = android.view.Gravity.TOP; deck.setLayoutParams (l); }
+		deck.mode = dm == 1 ? 1 : 2;
+		boolean show = dm != 3 || System.currentTimeMillis () < popUntil || !stack.isEmpty () || deck.paused != 0;   /* (the pop-up: a while after a touch, while paused) */
+		deck.setVisibility (show ? View.VISIBLE : View.GONE);
+		popTab.setVisibility (dm == 3 && !show ? View.VISIBLE : View.GONE);
+		if (dm == 3) { FrameLayout.LayoutParams t = (FrameLayout.LayoutParams) popTab.getLayoutParams (); t.gravity = android.view.Gravity.TOP;
+			t.leftMargin = (int) (pic[0] + pic[2] / 2 - dp (32)); t.topMargin = (int) (pic[1] + pic[3] - dp (14)); popTab.setLayoutParams (t); }
+	}
+	void deckPoked () { if (deckMode () == 3) popUntil = System.currentTimeMillis () + 4000; }
+	View popTabView ()                                         /* (the pop-up deck's tab under the picture) */
+	{
+		TextView t = text ("\u25B4", 12, DIM, true); t.setGravity (Gravity.CENTER); t.setBackground (round (PANEL, EDGE, dp (7)));
+		t.setOnClickListener (v -> { popUntil = System.currentTimeMillis () + 4000; log ("deck: pop-up opened"); placeDeck (); }); t.setContentDescription ("Show the control deck");
+		return t;
+	}
+	long deckT;
 	void tick ()
 	{
 		h.postDelayed (this::tick, 50);
 		if (!started) return;
 		int st = VX.status (); if (st < 0 && welcome.getParent () == null) { started = false; root.addView (welcome); welcome.setAlpha (1); status ("The game could not be started. See files/applog.txt"); return; }
 		float[] p = VX.picRect (); if (p[2] != pic[2] || p[3] != pic[3] || p[0] != pic[0] || p[1] != pic[1]) { pic = p; ctl.relayout (); }
+		placeDeck (); { long now = System.currentTimeMillis (); if (now - deckT > 500) { deckT = now; deck.tick (); } }
 		String m = VX.takeMessage (); if (m != null && !m.isEmpty ()) toast (m, 2.5);
 		if (VX.takeBrowser () && stack.isEmpty ()) Library.show (this);
 		Online.tick (this);
 		Input.poll (this);
-		if (barAuto () && bar.getAlpha () > 0 && System.currentTimeMillis () > barUntil) bar.animate ().alpha (0).setDuration (400);
+		if (barAuto () && !barHidden && System.currentTimeMillis () > barUntil) { barHidden = true; bar.animate ().alpha (0).setDuration (400); }
 	}
-	long barUntil;
-	void showBar () { if (barAuto ()) { bar.animate ().alpha (1).setDuration (150); barUntil = System.currentTimeMillis () + 3000; } }
+	long barUntil; boolean barHidden;
+	void showBar () { if (barAuto ()) { if (barHidden) log ("top bar shown"); barHidden = false; bar.animate ().cancel (); bar.animate ().alpha (1).setDuration (150); barUntil = System.currentTimeMillis () + 3000; }
+		else { barHidden = false; bar.setAlpha (1); } }
 
 	/* ---------------------------------------------------------------- the screens over the game */
 	void hold (boolean on) { VX.setHold (on); if (Online.playing) VX.net (4, on ? 1 : 0); }
@@ -311,11 +366,19 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	LinearLayout quickBar ()
 	{
 		LinearLayout b = new LinearLayout (this); b.setOrientation (LinearLayout.HORIZONTAL);
-		String[][] it = { { "GAMES", "games" }, { "SAVE", "save" }, { "LOAD", "load" }, { "OVERLAY", "overlay" }, { "ROOM", "room" }, { "MENU", "menu" } };
-		for (String[] x : it) {
-			TextView t = text (x[0], 11, HI, true); t.setGravity (Gravity.CENTER); t.setBackground (round (PANEL, EDGE, dp (10)));
+		String[][] it = { { "GAMES", "games", "10" }, { "SAVE", "save", "11" }, { "LOAD", "load", "12" }, { "OVERLAY", "overlay", "13" }, { "ROOM", "room", "14" }, { "MENU", "menu", "15" } };
+		for (String[] x : it) {                                    /* (as the iOS app's: the icon above the word) */
+			final String w = x[0]; final int ic = Integer.parseInt (x[2]);
+			View t = new View (this) { final Paint tp = new Paint (Paint.ANTI_ALIAS_FLAG);
+				@Override protected void onDraw (Canvas c) { if (deck == null) return; float d = dp (1), cx = getWidth () / 2f;
+					deck.icon (c, ic, cx, getHeight () * 0.36f, 15 * d, HI);
+					tp.setColor (HI); tp.setTypeface (Typeface.DEFAULT_BOLD); tp.setTextAlign (Paint.Align.CENTER); tp.setTextSize (10 * d);
+					float tw = tp.measureText (w), room = getWidth () - 6 * d; if (tw > room) tp.setTextSize (10 * d * room / tw);
+					c.drawText (w, cx, getHeight () - 7 * d, tp); } };
+			t.setBackground (round (PANEL, EDGE, dp (12))); t.setContentDescription (w); t.setFocusable (false);
 			LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (0, -1, 1); lp.leftMargin = lp.rightMargin = (int) dp (3); b.addView (t, lp);
-			final String a = x[1]; t.setOnClickListener (v -> { v.performHapticFeedback (HapticFeedbackConstants.VIRTUAL_KEY); quick (a); }); }
+			final String a = x[1]; t.setOnClickListener (v -> { if (barHidden) { showBar (); return; }   /* (the faded bar: a tap shows it, presses nothing) */
+				v.performHapticFeedback (HapticFeedbackConstants.VIRTUAL_KEY); showBar (); quick (a); }); }
 		return b;
 	}
 	void quick (String a)

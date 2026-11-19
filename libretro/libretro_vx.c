@@ -2492,6 +2492,9 @@ static pthread_mutex_t emu_mx = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t
 static void *emu_main (void *p)
 {
 	(void) p;
+#ifdef __ANDROID__
+	pthread_setname_np (pthread_self (), "vx-emu");      /* (named: the Android app's thread figures) */
+#endif
 	for (;;) {
 		pthread_mutex_lock (&emu_mx); while (!emu_req) pthread_cond_wait (&emu_cv, &emu_mx); emu_req = 0; pthread_mutex_unlock (&emu_mx);
 		emu_loop ();

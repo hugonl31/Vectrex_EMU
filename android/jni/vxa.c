@@ -5,6 +5,7 @@
  * controllers, keys and touch come from the Java side (VX.java). Everything that happens goes into the app's log
  * (files/applog.txt) and the core's (system/vectrex_emu/vectrex_emu.log).
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
+#define _GNU_SOURCE                             /* (sched_setaffinity, cpu_set_t) */
 #include <jni.h>
 #include <android/native_window_jni.h>
 #include <android/log.h>
@@ -13,6 +14,7 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -232,8 +234,10 @@ static void vxa_present (void)
 	const double aw = vxa_aw > 0 ? vxa_aw : vxa_sw, ah = vxa_ah > 0 ? vxa_ah : vxa_sh, ax = vxa_aw > 0 ? vxa_ax : 0, ay = vxa_ah > 0 ? vxa_ay : 0;
 	const double k = fmin (1.0, fmin (aw / vxa_fw, ah / vxa_fh)), w = vxa_fw * k, h = vxa_fh * k, x = ax + (aw - w) / 2, top = vxa_top_align ? ay : ay + (ah - h) / 2;
 	{ const double fit = fmin (ah, aw * vxa_fh / vxa_fw), r = fit / vxa_fh;   /* (the core draws the picture at the size there is room for: 1:1) */
-	  if (fabs (r - 1) > 0.01 && vxa_snap_n < 0 && !vxa_snap_fixed) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) vxa_fh) * r);
-		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, vxa_fh, want); vx_app_pich = want; } } }
+	  static unsigned asked_fh;                         /* (asked once per picture size: the core's answer waited for - a fixed size never comes) */
+	  if (fabs (r - 1) > 0.01 && vxa_snap_n < 0 && !vxa_snap_fixed && vxa_fh != asked_fh) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) vxa_fh) * r);
+		if (want > 2400) want = 2400;
+		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, vxa_fh, want); vx_app_pich = want; asked_fh = vxa_fh; } } }
 	if (fabs (x - vxa_px) > 0.5 || fabs (top - vxa_py) > 0.5 || fabs (w - vxa_pw) > 0.5 || fabs (h - vxa_ph) > 0.5) {
 		vxa_px = (float) x; vxa_py = (float) top; vxa_pw = (float) w; vxa_ph = (float) h;
 		vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f (%s)", vxa_fw, vxa_fh, x, top, w, h, k == 1.0 ? "1:1" : "scaled"); }
@@ -354,7 +358,7 @@ static bool vxa_env (unsigned cmd, void *data)
 	case 68: return true;
 	case RETRO_ENVIRONMENT_GET_VARIABLE: { struct retro_variable *v = data; pthread_mutex_lock (&vxa_omx); int i = vxa_opt_find (v->key);
 		v->value = i >= 0 ? vxa_opt[i].val : NULL;
-		if (i >= 0 && vxa_land && !strcmp (v->key, "vectrex_emu_deck")) v->value = "off";   /* (sideways: no deck - the picture the whole height, as the iOS app) */ pthread_mutex_unlock (&vxa_omx); return i >= 0; }
+		if (i >= 0 && !strcmp (v->key, "vectrex_emu_deck")) v->value = "off";   /* (the app draws its own deck - DeckView.java, as the iOS app: the core's stays off) */ pthread_mutex_unlock (&vxa_omx); return i >= 0; }
 	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = vxa_opt_dirty; vxa_opt_dirty = 0; return true;
 	case 70: { const struct retro_variable *v = data; if (!v || !v->key) return true;
 		pthread_mutex_lock (&vxa_omx); int i = vxa_opt_find (v->key);
@@ -454,9 +458,70 @@ static pthread_t vxa_th; static volatile int vxa_quit, vxa_running = 1, vxa_star
 static char vxa_game0[1100]; static volatile int vxa_browser;     /* (the core's ROM browser asked for: the library instead) */
 static volatile int vxa_stat_rps, vxa_stat_pps, vxa_stat_ms;
 extern int vx_app_noshape, vx_app_osd_on;
+/* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
+ * slow cores took 15-16 ms of a 16.7 ms refresh for Armor Attack (the iPad: 4); RetroArch's game thread is kept on the
+ * fast ones. The cores near the top clock speed; the threads the core starts from here (UVMC2 / PiTrex, the drawing) follow */
+static int vxa_tid;
+static cpu_set_t vxa_top_set; static int vxa_top_ok;   /* (the fastest cores: the emulation thread's - UVMC2 / PiTrex) */
+static void vxa_fast_cores (void)
+{
+	long mx[64]; int n = 0; long top = 0;
+	for (int c = 0; c < 64; c++) { char p[96]; snprintf (p, sizeof p, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
+		FILE *f = fopen (p, "r"); if (!f) { mx[c] = 0; if (c > 15) break; continue; } long v = 0; if (fscanf (f, "%ld", &v) != 1) v = 0; fclose (f); mx[c] = v; n = c + 1; if (v > top) top = v; }
+	if (!top || n < 2) { vlog ("cores: their speeds unknown - left to Android"); return; }
+	cpu_set_t set; CPU_ZERO (&set); int k = 0; char list[200] = ""; size_t o = 0;
+	for (int c = 0; c < n; c++) if (mx[c] >= top * 3 / 4) { CPU_SET (c, &set); k++; o += (size_t) snprintf (list + o, o < sizeof list ? sizeof list - o : 0, "%s%d", o ? "," : "", c); }
+	CPU_ZERO (&vxa_top_set); for (int c = 0; c < n; c++) if (mx[c] == top) CPU_SET (c, &vxa_top_set); vxa_top_ok = 1;
+	const int r = sched_setaffinity (0, sizeof set, &set);
+	vlog ("cores: the game's thread on %d fast ones (%s, up to %ld MHz)%s", k, list, top / 1000, r ? " - not allowed" : "");
+}
+/* (Android 13+: the game thread says how long each refresh's work took - the clocks follow) */
+static int vxa_emu_tid; static double vxa_hint_fps;
+typedef void *(*vxa_ph_mgr_t) (void); typedef void *(*vxa_ph_new_t) (void *, const int32_t *, size_t, int64_t); typedef int (*vxa_ph_rep_t) (void *, int64_t);
+static void *vxa_hint; static vxa_ph_rep_t vxa_ph_rep;
+static void vxa_perf_hint (double fps)
+{
+	vxa_hint_fps = fps;
+	void *l = dlopen ("libandroid.so", RTLD_NOW); if (!l) return;
+	vxa_ph_mgr_t mg = (vxa_ph_mgr_t) dlsym (l, "APerformanceHint_getManager"); vxa_ph_new_t mk = (vxa_ph_new_t) dlsym (l, "APerformanceHint_createSession");
+	vxa_ph_rep = (vxa_ph_rep_t) dlsym (l, "APerformanceHint_reportActualWorkDuration");
+	if (!mg || !mk || !vxa_ph_rep) { vlog ("performance hints: not on this Android"); return; }
+	void *m = mg (); int32_t t[2] = { vxa_tid, vxa_emu_tid }; const int nt = vxa_emu_tid ? 2 : 1;
+	if (vxa_hint) { void (*cl) (void *) = (void (*) (void *)) dlsym (l, "APerformanceHint_closeSession"); if (cl) cl (vxa_hint); vxa_hint = NULL; }
+	vxa_hint = m ? mk (m, t, nt, (int64_t) (1e9 / (fps > 0 ? fps : 60))) : NULL;
+	vlog ("performance hints: %s%s", vxa_hint ? "on" : "not given", nt > 1 ? " (the emulation thread too)" : "");
+}
+/* the app's busiest threads over the last stat period (/proc/self/task: user+system ticks) - what loads the processor */
+#include <dirent.h>
+#define VXA_TH 96
+static int vxa_th_id[VXA_TH]; static long vxa_th_t[VXA_TH]; static int vxa_th_n;
+static void vxa_threads (double secs)
+{
+	int id[VXA_TH]; long tk[VXA_TH]; char nm[VXA_TH][20]; int n = 0; long all = 0;
+	DIR *d = opendir ("/proc/self/task"); if (!d) return; struct dirent *de;
+	while ((de = readdir (d)) && n < VXA_TH) { if (de->d_name[0] < '0' || de->d_name[0] > '9') continue;
+		char f[64], b[512]; snprintf (f, sizeof f, "/proc/self/task/%s/stat", de->d_name); int fd = open (f, O_RDONLY); if (fd < 0) continue;
+		int r = (int) read (fd, b, sizeof b - 1); close (fd); if (r <= 0) continue; b[r] = 0;
+		char *o = strchr (b, '('), *c = strrchr (b, ')'); if (!o || !c) continue;
+		int l = (int) (c - o - 1); if (l > 19) l = 19; memcpy (nm[n], o + 1, l); nm[n][l] = 0;
+		long ut = 0, st = 0; if (sscanf (c + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld", &ut, &st) != 2) continue;
+		id[n] = atoi (de->d_name); tk[n] = ut + st;
+		if (!strcmp (nm[n], "vx-emu") && id[n] != vxa_emu_tid) { vxa_emu_tid = id[n];   /* (the emulation's own thread: on the fastest core, in the hints) */
+			const int e = vxa_top_ok ? sched_setaffinity (vxa_emu_tid, sizeof vxa_top_set, &vxa_top_set) : -1;
+			vlog ("cores: the emulation thread on the fastest%s", e ? " - not allowed" : ""); if (vxa_hint) vxa_perf_hint (vxa_hint_fps); }
+		n++; }
+	closedir (d);
+	long dl[VXA_TH]; for (int i = 0; i < n; i++) { dl[i] = 0; for (int j = 0; j < vxa_th_n; j++) if (vxa_th_id[j] == id[i]) { dl[i] = tk[i] - vxa_th_t[j]; break; } all += dl[i]; }
+	const int first = vxa_th_n == 0; vxa_th_n = n; memcpy (vxa_th_id, id, n * sizeof *id); memcpy (vxa_th_t, tk, n * sizeof *tk);
+	if (first || secs <= 0) return;
+	const double hz = sysconf (_SC_CLK_TCK); char out[400]; int k = snprintf (out, sizeof out, "threads: all %.0f%% of a core", all / hz / secs * 100);
+	for (int m = 0; m < 6; m++) { int bi = -1; for (int i = 0; i < n; i++) if (dl[i] > 0 && (bi < 0 || dl[i] > dl[bi])) bi = i; if (bi < 0) break;
+		k += snprintf (out + k, sizeof out - k, ", %s %.0f%%", nm[bi], dl[bi] / hz / secs * 100); dl[bi] = 0; if (k >= (int) sizeof out - 30) break; }
+	vlog ("%s", out);
+}
 static void *vxa_main (void *u)
 {
-	(void) u;
+	(void) u; vxa_tid = gettid (); vxa_fast_cores (); pthread_setname_np (pthread_self (), "vx-game");
 	if (!vxa_egl_init ()) { vxa_ok = -1; return NULL; }
 	vxa_present_setup ();
 	vx_app_noshape = 1;                                  /* (the app places the picture and the deck: no bars to the screen's shape) */
@@ -476,8 +541,9 @@ static void *vxa_main (void *u)
 	vlog ("av: %u x %u (max %u x %u), aspect %.3f, %.2f Hz, sound %.0f Hz", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_av.geometry.max_width, vxa_av.geometry.max_height, vxa_av.geometry.aspect_ratio, vxa_av.timing.fps, vxa_av.timing.sample_rate);
 	if (vxa_hw_on) { vxa_core_fb (vxa_av.geometry.max_width, vxa_av.geometry.max_height); if (vxa_hw.context_reset) vxa_hw.context_reset (); vlog ("GL context handed to the core"); }
 	vxa_audio_start (vxa_av.timing.sample_rate);
+	vxa_perf_hint (vxa_av.timing.fps);
 	vxa_ok = 1;
-	double last = 0, acc = 0, stat_t = vxa_now (), t_run = 0, t_max = 0; long runs = 0, pres = 0, ticks = 0, late = 0; int was_running = 1;
+	double last = 0, acc = 0, stat_t = vxa_now (), t_run = 0, t_max = 0, t_cpu = 0; long runs = 0, pres = 0, ticks = 0, late = 0; int was_running = 1;
 	while (!vxa_quit) {
 		vxa_surface_update ();
 		vxa_cmd_run ();
@@ -499,17 +565,21 @@ static void *vxa_main (void *u)
 		vxa_hdr_update ();
 		if (!vxa_holding) {
 			const double t0 = vxa_now ();
+			struct timespec c0, c1; clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c0);
 			for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); runs++; vxa_since_load++; }
+			clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c1); t_cpu += (c1.tv_sec - c0.tv_sec) + (c1.tv_nsec - c0.tv_nsec) * 1e-9;   /* (the thread's own processor time: waiting for the GPU is not) */
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;
 			if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); vxa_browser = 1; } }
 		vxa_present (); pres++;
+		if (vxa_hint && vxa_ph_rep) vxa_ph_rep (vxa_hint, (int64_t) ((vxa_now () - now) * 1e9));   /* (this refresh's work: the hint) */
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
 		eglSwapBuffers (vxa_dpy, vxa_surf);
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
-			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (longest %.1f), %ld late of %ld, sound %.0f ms, %u dry, %u dropped%s",
-				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, t_max * 1000, late, ticks, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
-			runs = pres = ticks = late = 0; t_run = t_max = 0; vxa_under = vxa_drop = 0; }
+			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld, sound %.0f ms, %u dry, %u dropped%s",
+				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
+			vxa_threads (t);
+			runs = pres = ticks = late = 0; t_run = t_max = t_cpu = 0; vxa_under = vxa_drop = 0; }
 	}
 	vlog ("the core ends"); if (vxa_as) { AAudioStream_requestStop (vxa_as); AAudioStream_close (vxa_as); vxa_as = NULL; }
 	retro_unload_game (); retro_deinit ();
@@ -685,6 +755,9 @@ JNIEXPORT jintArray JNICALL JF(deckState) (JNIEnv *e, jclass c)
 	(void) c; jintArray a = (*e)->NewIntArray (e, 5); jint v[5] = { vx_app_port2 (), vx_app_cart_out (), vx_app_power_on (), vx_app_paused (), (jint) lround (vx_app_volume () * 100) };
 	(*e)->SetIntArrayRegion (e, a, 0, 5, v); return a;
 }
+extern void vx_app_osd (char *fps, char *hz, char *emu, int *cpu, int *gpu);
+JNIEXPORT jstring JNICALL JF(osd) (JNIEnv *e, jclass c)   /* (the deck's figures: "fps|hz|emu|cpu|gpu") */
+{ (void) c; char f[24], h[24], m[24]; int cp = -1, gp = -1; vx_app_osd (f, h, m, &cp, &gp); char b[120]; snprintf (b, sizeof b, "%s|%s|%s|%d|%d", f, h, m, cp, gp); return js (e, b); }
 JNIEXPORT jint JNICALL JF(untgz) (JNIEnv *e, jclass c, jstring tgz, jstring root)
 { (void) c; JSTR (a, tgz); JSTR (b, root); int files = 0; int r = vxa_untgz (a, b, &files); vlog ("unpacked %s: %d files%s", a, files, r ? " - NOT WHOLE" : ""); JREL (a, tgz); JREL (b, root); return r ? -1 : files; }
 /* (online play: the core's netvx.c, as the iOS app) */

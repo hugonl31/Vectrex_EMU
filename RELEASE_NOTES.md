@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.7.5
+
+* iPhone and iPad together with no network at all: Online > Nearby - iPhone and iPad > Host for an iPhone / iPad
+  nearby. The other device sees the game in the same list and joins with a tap - through Apple's peer-to-peer Wi-Fi
+  (as AirDrop): no router, no hotspot, no internet, also where a hotel's Wi-Fi keeps its guests apart. Wi-Fi must be
+  switched on (connected or not). Between Apple devices only; with Android and PCs: the Android app's or the PC's own
+  network (Nearby), which an iPhone joins in its Wi-Fi settings.
+
 ## v1.7.4
 
 * Online through the meeting point (relayed - a hotel's Wi-Fi, two routers that do not connect): the round trip is

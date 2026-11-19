@@ -18,7 +18,9 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key><true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key><true/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Online play on this Wi-Fi: to find and play games hosted by phones and PCs on the same network.</string>
+	<string>Online play nearby and on this Wi-Fi: to find and play games hosted by phones, tablets and PCs close by.</string>
+	<key>NSBonjourServices</key>
+	<array><string>_vectrexemu._udp</string></array>
 	<key>UIFileSharingEnabled</key><true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key><true/>
 	<key>ITSAppUsesNonExemptEncryption</key><false/>

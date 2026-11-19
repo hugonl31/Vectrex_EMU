@@ -39,6 +39,10 @@ void vxa_name_first (UIViewController *vc);  /* the first start: this device's n
 NSString *vxa_net_ip (void);           /* this phone's address on its network */
 NSString *vxa_net_gateway (void);      /* the nearby host: an ad-hoc network's host (.1), nil: not on one */
 int vxa_hotspot_on (void);             /* this iPhone's Personal Hotspot is up */
+/* iPhone / iPad nearby without a network (VXP2P.m: Apple's peer-to-peer Wi-Fi) */
+void vxp_host_start (NSString *name), vxp_stop (void), vxp_browse (int on);
+int vxp_hosting (void), vxp_join (NSString *name);
+NSArray<NSString *> *vxp_games (void);
 NSString *vxa_net_name (void), *vxa_net_key (void);
 int vxa_net_playing (void);              /* (1 while a game for two runs: no save states) */
 

@@ -1362,6 +1362,9 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 #define BEAM_HALO_C 18.0
 #define BEAM_DOTC 4.0                   /* a resting spot: BEAM_DOTMAX x min (1, cycles / BEAM_DOTC) */
 #define BEAM_DOTMAX 1.6
+#define BEAM_HDR_DOT0 4.0               /* HDR: a rest held longer than this (cycles) lights above the line, up to the HDR peak at DOT1 */
+#define BEAM_HDR_DOT1 32.0
+extern float vx_hdr_peak;               /* (gpu_phos.c; 1.0: no HDR) */
 #define BEAM_DOTW 1.0                   /* its width: the line's x DOTW + DOTWK per cycle (game px) */
 #define BEAM_DOTWK 0.002
 #define BEAM_BLOOM_E0 20.0              /* a long bright rest blooms: wider (x BLOOM_W) and its halo brighter (x BLOOM_H) */
@@ -2276,6 +2279,10 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
 			kk = BEAM_DOTMAX * (cyc / BEAM_DOTC < 1 ? cyc / BEAM_DOTC : 1); dot = 1;
+			if (vx_hdr_peak > 1.0f) {               /* HDR: the beam held still (a bullet: Mine Storm's, Last Human's) - its light grows with the dwell, the
+			                                           brightest on the screen at the HDR peak; lines and the short rests at the corners as before (the owner, 2026-11-19) */
+				double hd = (cyc - BEAM_HDR_DOT0) / (BEAM_HDR_DOT1 - BEAM_HDR_DOT0); hd = hd < 0 ? 0 : hd > 1 ? 1 : hd;
+				kk *= 1.0 + 1.4 * (vx_hdr_peak - 1.0) * hd; }
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
 			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);

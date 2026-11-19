@@ -21,6 +21,16 @@ int vxa_state_supported (void);     /* 0: UVMC2 / PiTrex - no save states */
 void vxa_hold (int on);                /* the game stopped while a screen covers it */
 void ulog (NSString *s);               /* into the app's live log */
 
+/* online play (the core's netvx.c: the desktop's way - phones and PCs together) */
+int vx_net_host (int mode, const char *gamer, const char *key, const char *rom, int skip_boot, const char *cart_hw, double dacofs);
+int vx_net_join (const char *where, const char *gamer, const char *key);
+void vx_net_accept (int ok), vx_net_prepare (void), vx_net_go (void), vx_net_leave (void), vx_net_chat (const char *text);
+void vx_net_pause (int on), vx_net_room (void), vx_net_lan (int on);
+const char *vx_net_status (void);
+int vx_net_md5_file (const char *path, char *out33, long long *size);
+NSString *vxa_net_ip (void);           /* this phone's address on its network */
+NSString *vxa_net_name (void), *vxa_net_key (void);
+
 /* the theme: the PC app's colours */
 #define VXC(rgb) [UIColor colorWithRed:((rgb) >> 16 & 255) / 255.0 green:((rgb) >> 8 & 255) / 255.0 blue:((rgb) & 255) / 255.0 alpha:1]
 #define VX_BG VXC (0x05080a)
@@ -62,4 +72,7 @@ void ulog (NSString *s);               /* into the app's live log */
 @end
 @interface VXUI (Controls)
 + (void) showControlsFrom:(UIViewController *)vc;
+@end
+@interface VXUI (Online)
++ (void) showOnlineFrom:(UIViewController *)vc;
 @end

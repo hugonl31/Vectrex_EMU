@@ -444,6 +444,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	acts.distribution = UIStackViewDistributionFillEqually; acts.spacing = 8; [acts.heightAnchor constraintEqualToConstant:64].active = YES;
 	UIButton *allb = VB (@"All settings", @"slider.horizontal.3", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ [VXUI showSettingsFrom:gm]; }]; });
 	[allb.heightAnchor constraintEqualToConstant:56].active = YES;
+	UIButton *onl = VB (@"Online: play with a friend", @"globe", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ [VXUI showOnlineFrom:gm]; }]; });
+	[onl.heightAnchor constraintEqualToConstant:56].active = YES;
 	UILabel *hw = VL (@"VECTREX HARDWARE", VF (11, UIFontWeightSemibold), VX_DIM);
 	int p2 = vxa_ofind ("vectrex_emu_port2");
 	UIButton *ej = VB (@"Eject / insert cartridge", nil, NO, ^{ vxa_do (@"eject"); [ws close:nil]; });
@@ -453,8 +455,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	for (UIButton *b in @[ ej, pb ]) { UIButtonConfiguration *c = b.configuration; c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (13, UIFontWeightRegular); return m; };
 		c.baseForegroundColor = VX_FG2; b.configuration = c; [b.heightAnchor constraintEqualToConstant:40].active = YES; }
 	UIStackView *hwr = [[UIStackView alloc] initWithArrangedSubviews:@[ ej, pb ]]; hwr.distribution = UIStackViewDistributionFillEqually; hwr.spacing = 8;
-	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ head, st, slots, stn, acts, allb, hw, hwr ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 14;
-	[all setCustomSpacing:24 afterView:allb];
+	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ head, st, slots, stn, acts, allb, onl, hw, hwr ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 14;
+	[all setCustomSpacing:24 afterView:onl];
 	UIScrollView *sc = [UIScrollView new]; sc.translatesAutoresizingMaskIntoConstraints = NO; all.translatesAutoresizingMaskIntoConstraints = NO; [sc addSubview:all]; [self.view addSubview:sc];
 	[NSLayoutConstraint activateConstraints:@[ [sc.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:24], [sc.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
 		[sc.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor], [sc.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],

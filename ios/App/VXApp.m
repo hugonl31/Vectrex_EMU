@@ -36,6 +36,7 @@ static void vxa_net_watch (void)
 	nw_path_monitor_set_queue (vxa_mon, dispatch_get_main_queue ()); nw_path_monitor_start (vxa_mon);
 }
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding;
+static void vxa_net_tick (void);                  /* (online play: below) */
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 void vxa_hdr_update (void); float vxa_hdr_headroom (void);
 
@@ -793,6 +794,7 @@ static void vxa_toast (NSString *s, double secs)
 	double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
 	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3) n++;
 	if (n > 4) n = 4;
+	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
 	if (vxa_holding) return;                       /* (a screen over the game: it waits) */
 	[EAGLContext setCurrentContext:_ctx];
 	for (int i = 0; i < n; i++) { vxa_input_poll (); retro_run (); _runs++; }
@@ -1054,7 +1056,83 @@ int vxa_state (int save, int slot)
 	else { NSData *d = [NSData dataWithContentsOfFile:p]; ok = d.length == n && retro_unserialize (d.bytes, n); }
 	vlog ("state %s slot %d: %s (%zu bytes)", save ? "save" : "load", slot, ok ? "done" : "FAILED", n); return ok;
 }
-void vxa_hold (int on) { if (on != vxa_holding) { vxa_holding = on; vlog ("game %s", on ? "held (a screen over it)" : "running again"); } }
+void vxa_hold (int on)
+{
+	if (on != vxa_holding) { vxa_holding = on; vlog ("game %s", on ? "held (a screen over it)" : "running again");
+		extern int vxa_net_playing (void); if (vxa_net_playing ()) vx_net_pause (on); }   /* (online: a menu open pauses both, as the desktop's P) */
+}
+
+/* ---------------------------------------------------------------- online play (the core's netvx.c; VXOnline.m the screen) */
+#include <ifaddrs.h>
+#include <arpa/inet.h>
+NSString *vxa_net_ip (void)                          /* (this phone's address on its Wi-Fi: what player 2 enters) */
+{
+	struct ifaddrs *a = NULL, *i; NSString *out = @"?";
+	if (getifaddrs (&a) == 0) for (i = a; i; i = i->ifa_next)
+		if (i->ifa_addr && i->ifa_addr->sa_family == AF_INET && !strcmp (i->ifa_name, "en0")) { char b[64]; inet_ntop (AF_INET, &((struct sockaddr_in *) i->ifa_addr)->sin_addr, b, sizeof b); out = @(b); break; }
+	if (a) freeifaddrs (a);
+	return out;
+}
+static NSString *vxa_net_rom;                        /* (the game this phone hosts) */
+static int vxa_net_on;                               /* (1 while a game for two runs) */
+static NSMutableDictionary<NSString *, NSString *> *vxa_md5s;   /* (path -> its MD5: the library, for the host's game) */
+void vxa_net_hosting (NSString *rom) { vxa_net_rom = rom; }
+int vxa_net_playing (void) { return vxa_net_on; }
+static void vxa_toast (NSString *s)
+{
+	UIViewController *vc = vxa_vc; if (!vc) return; UIView *v = vc.view;
+	UILabel *l = [UILabel new]; l.text = [NSString stringWithFormat:@"   %@   ", s]; l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium]; l.textColor = VX_HI;
+	l.backgroundColor = [VX_PANEL colorWithAlphaComponent:0.95]; l.layer.cornerRadius = 10; l.layer.masksToBounds = YES; l.layer.borderWidth = 1; l.layer.borderColor = VX_EDGE2.CGColor;
+	l.numberOfLines = 2; l.textAlignment = NSTextAlignmentCenter;
+	CGSize sz = [l sizeThatFits:CGSizeMake (v.bounds.size.width - 40, 80)]; sz.width = fmin (sz.width, v.bounds.size.width - 40);
+	static double nextY; static double nextT; const double now = CACurrentMediaTime (); if (now > nextT) nextY = 0;   /* (several at once: stacked) */
+	l.frame = CGRectMake ((v.bounds.size.width - sz.width) / 2, v.safeAreaInsets.top + 64 + nextY, sz.width, fmax (34, sz.height + 8)); nextY += l.frame.size.height + 6; nextT = now + 3.5;
+	[v addSubview:l]; [UIView animateWithDuration:0.5 delay:3.5 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL d) { (void) d; [l removeFromSuperview]; }];
+}
+void vxa_net_chat_in (NSArray *lines) { for (NSString *t in lines) if ([t isKindOfClass:NSString.class]) { vlog ("online chat in: %s", t.UTF8String); vxa_toast ([NSString stringWithFormat:@"💬 %@", t]); } }
+static NSString *vxa_find_md5 (NSString *md5)          /* (the host's game in this phone's library: by its MD5, as the desktop's find_rom) */
+{
+	if (!vxa_md5s) vxa_md5s = [NSMutableDictionary dictionary];
+	NSString *root = [vxa_docs () stringByAppendingPathComponent:@"roms"];
+	NSDirectoryEnumerator *e = [NSFileManager.defaultManager enumeratorAtPath:root];
+	for (NSString *rel in e) { NSString *ext = rel.pathExtension.lowercaseString; if (![@[ @"bin", @"vec", @"gam", @"rom" ] containsObject:ext]) continue;
+		NSString *p = [root stringByAppendingPathComponent:rel], *m = vxa_md5s[p];
+		if (!m) { char h[33]; long long n; if (!vx_net_md5_file (p.fileSystemRepresentation, h, &n)) continue; m = @(h); vxa_md5s[p] = m; }
+		if ([m isEqualToString:md5]) return p; }
+	return nil;
+}
+/* each moment: what the online game asks of the app - both start the agreed game, its news shown */
+static void vxa_net_tick (void)
+{
+	static double last; const double now = CACurrentMediaTime (); if (now - last < 0.15) return; last = now;
+	NSDictionary *st = [NSJSONSerialization JSONObjectWithData:[@(vx_net_status ()) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+	if (![st isKindOfClass:NSDictionary.class]) return;
+	const int ph = [st[@"phase"] intValue], role = [st[@"role"] intValue], acc = [st[@"accepted"] intValue];
+	static int asked, said_pause, said_desync, said_lost;
+	if (ph < 3) { asked = 0; }
+	if (ph == 3 && !vxa_net_on) {
+		if (role == 1 && acc == 1 && vxa_net_rom.length) {                       /* (the host: player 2 has the game - both start) */
+			vx_net_prepare (); vxa_load (vxa_net_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
+			vlog ("online: playing %s as player 1", vxa_net_rom.lastPathComponent.UTF8String);
+			vxa_toast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 1", [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); }
+		else if (role == 2 && !asked) { asked = 1;                               /* (the joiner: the host's game in the library?) */
+			NSDictionary *g = st[@"game"]; NSString *md5 = [g isKindOfClass:NSDictionary.class] ? g[@"md5"] : nil;
+			NSString *name = [g isKindOfClass:NSDictionary.class] ? [g[@"name"] stringByDeletingPathExtension] : @"?";
+			if ([g isKindOfClass:NSDictionary.class] && [g[@"card"] boolValue]) { vx_net_accept (0); vxa_toast (@"ONLINE: UVMC2 / PITREX GAMES NOT YET ON THE PHONE"); vlog ("online: a card game - declined"); }
+			else { NSString *p = md5 ? vxa_find_md5 (md5) : nil;
+				if (!p) { vx_net_accept (0); vxa_toast ([NSString stringWithFormat:@"ONLINE: YOU DO NOT HAVE %@", name.uppercaseString]); vlog ("online: no ROM with md5 %s", md5.UTF8String); }
+				else { vx_net_accept (1); vx_net_prepare (); vxa_load (p); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
+					vlog ("online: playing %s as player 2", p.lastPathComponent.UTF8String);
+					vxa_toast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 2", [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); } } } }
+	if (vxa_net_on) {
+		NSArray *chat = st[@"chat"]; if ([chat isKindOfClass:NSArray.class] && chat.count) vxa_net_chat_in (chat);
+		const int pp = [st[@"peer_paused"] intValue] && [st[@"paused"] intValue];
+		if (pp && !said_pause) { said_pause = 1; vxa_toast (@"PAUSED BY THE OTHER PLAYER"); } else if (!pp) said_pause = 0;
+		if ([st[@"desync"] intValue] >= 0 && !said_desync) { said_desync = 1; vxa_toast (@"ONLINE: OUT OF STEP - THE TWO GAMES DIFFER"); }
+		if ([st[@"lost"] intValue] && !said_lost) { said_lost = 1; vxa_toast ([st[@"left"] intValue] ? @"ONLINE: THE OTHER PLAYER LEFT" : @"ONLINE: CONNECTION LOST");
+			vlog ("online: %s", [st[@"left"] intValue] ? "the other player left" : "connection lost"); vx_net_leave (); vxa_net_on = 0; }
+		if (ph != 4 && !said_lost) vxa_net_on = 0; }
+}
 
 /* ---------------------------------------------------------------- the app */
 @interface VXAppDelegate : UIResponder <UIApplicationDelegate>
@@ -1069,8 +1147,8 @@ void vxa_hold (int on) { if (on != vxa_holding) { vxa_holding = on; vlog ("game 
 }
 - (void) application:(UIApplication *)a handleEventsForBackgroundURLSession:(NSString *)i completionHandler:(void (^) (void))h
 { vlog ("woken for the pack's fetch (%s)", i.UTF8String); VXPack.shared.bgDone = h; if ([i hasSuffix:@".wifi"]) (void) VXPack.shared.wifiSession; else (void) VXPack.shared.session; }
-- (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; }
-- (void) applicationDidBecomeActive:(UIApplication *)a { [vxa_vc setRunning:1]; }
+- (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; if (vxa_net_playing ()) vx_net_pause (1); }   /* (online: the other side sees a pause) */
+- (void) applicationDidBecomeActive:(UIApplication *)a { [vxa_vc setRunning:1]; if (vxa_net_playing () && !vxa_holding) vx_net_pause (0); }
 - (void) applicationDidReceiveMemoryWarning:(UIApplication *)a { vlog ("memory warning: %.0f MB in use", vxa_mem_mb ()); }
 - (void) applicationWillTerminate:(UIApplication *)a { vlog ("the app ends"); retro_unload_game (); retro_deinit (); }
 @end

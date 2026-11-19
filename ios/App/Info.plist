@@ -17,6 +17,8 @@
 	<key>UIStatusBarHidden</key><true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key><true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key><true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Online play on this Wi-Fi: to find and play games hosted by phones and PCs on the same network.</string>
 	<key>UIFileSharingEnabled</key><true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key><true/>
 	<key>ITSAppUsesNonExemptEncryption</key><false/>

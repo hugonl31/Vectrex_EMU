@@ -130,11 +130,7 @@ def is_on():
 def host_addr(addresses):
     """the nearby host: the address .1 of the network this PC joined (an ad-hoc network's host is its router); the
     ad-hoc kinds first"""
-    best = None
-    for a in addresses:
-        gw = a.rsplit('.', 1)[0] + '.1'
+    for a in addresses:                               # (an ordinary network's .1 is its router - a hotel's - not a player)
         if a.startswith(ADHOC_NETS):
-            return gw
-        if best is None and a.startswith(('192.168.', '10.', '172.')):
-            best = gw
-    return best
+            return a.rsplit('.', 1)[0] + '.1'
+    return None

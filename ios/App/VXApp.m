@@ -859,8 +859,9 @@ static void vxa_toast (NSString *s, double secs)
 	if (dt > 0.25) dt = 0.25;
 	_acc += dt * vxa_av.timing.fps; int n = (int) _acc; _acc -= n;
 	double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
-	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3) n++;
-	if (n > 4) n = 4;
+	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3 && !vxa_net_on) n++;
+	if (n > (vxa_net_on ? 2 : 4)) n = vxa_net_on ? 2 : 4;   /* (online: the lockstep waits for the other side - runs to fill the dry sound
+	                                                           drew pictures nobody saw: 115 runs, 0 pictures a second, the owner 2026-11-19) */
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
 	if (vxa_holding) [self padBack];               /* (a screen over the game: the Vectrex's button 3 goes back) */
 	if (vxa_holding || _welcome.superview) return; /* (a screen over the game, or a download on the start screen: it waits - no playing while downloading) */
@@ -1197,11 +1198,20 @@ NSString *vxa_net_ip (void)                          /* (this phone's address on
 }
 /* the nearby host: the address .1 of the Wi-Fi this phone joined - an ad-hoc network's host is its router (an Android
  * phone's Wi-Fi Direct group 192.168.49.1, an iPhone's hotspot 172.20.10.1, a Windows PC's 192.168.137.1, Linux 10.42.0.1) */
-NSString *vxa_net_gateway (void)
+NSString *vxa_net_gateway (void)                     /* (nil: not on an ad-hoc network - a hotel's .1 is its router, not a player) */
 {
 	NSString *ip = vxa_net_ip (); NSRange d = [ip rangeOfString:@"." options:NSBackwardsSearch];
 	if ([ip isEqualToString:@"?"] || d.location == NSNotFound) return nil;
-	return [[ip substringToIndex:d.location] stringByAppendingString:@".1"];
+	for (NSString *p in @[ @"172.20.10.", @"192.168.49.", @"192.168.137.", @"10.42.0." ]) if ([ip hasPrefix:p]) return [p stringByAppendingString:@"1"];
+	return nil;
+}
+int vxa_hotspot_on (void)                             /* (this iPhone's Personal Hotspot up: its own network 172.20.10.1) */
+{
+	struct ifaddrs *a = NULL, *i; int on = 0;
+	if (getifaddrs (&a) == 0) for (i = a; i; i = i->ifa_next)
+		if (i->ifa_addr && i->ifa_addr->sa_family == AF_INET && !strncmp (i->ifa_name, "bridge", 6)) { char b[64]; inet_ntop (AF_INET, &((struct sockaddr_in *) i->ifa_addr)->sin_addr, b, sizeof b); if (!strncmp (b, "172.20.10.", 10)) on = 1; }
+	if (a) freeifaddrs (a);
+	return on;
 }
 static NSString *vxa_net_rom, *vxa_net_join_rom;    /* (the game this phone hosts / joins) */
 static int vxa_net_on;                               /* (1 while a game for two runs) */

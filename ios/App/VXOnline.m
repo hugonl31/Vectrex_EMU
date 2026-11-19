@@ -160,10 +160,12 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 		/* nearby, no router: the host makes the network (an Android phone or a PC does it itself; an iPhone: its Personal
 		 *  Hotspot), the others join it in Settings > Wi-Fi - the network's host is its router (.1) */
 		NSString *gw = vxa_net_gateway ();
-		[s addObject:@[ @"Nearby - no router, no internet", @"Host: turn on Personal Hotspot (Settings > Personal Hotspot), then host here; players join your iPhone's network in their Wi-Fi settings. Join: first join the host's network (DIRECT-VX-VECTREX-..., VECTREX-EMU-... or the host's hotspot) in Settings > Wi-Fi.", @[
-			@[ @"Host on your Personal Hotspot", @"Your game on your iPhone's own network", ^{ [ws host:2]; } ],
-			@[ @"Join the nearby host", gw ? [NSString stringWithFormat:@"The host of this Wi-Fi: %@", gw] : @"Join the host's network first", ^{
-				NSString *g = vxa_net_gateway (); if (!g) { [ws note:@"Join the host's network first: Settings > Wi-Fi"]; return; }
+		[s addObject:@[ @"Nearby - no router, no internet", @"Also where a hotel's or an airport's Wi-Fi keeps its guests' devices apart (On this Wi-Fi then finds nothing). Host: Personal Hotspot on (Settings > Personal Hotspot), then host here; the others join your iPhone's network in their Wi-Fi settings. Join: first join the host's network (its hotspot, DIRECT-VX-VECTREX-..., VECTREX-EMU-...) in Settings > Wi-Fi.", @[
+			@[ @"Host on your Personal Hotspot", vxa_hotspot_on () ? @"Your hotspot is on: your game on it" : @"Turn Personal Hotspot on first (Settings)", ^{
+				if (!vxa_hotspot_on ()) { [ws note:@"Personal Hotspot is not on - or nobody has joined it yet.\n\nSettings > Personal Hotspot > Allow Others to Join. The other player joins your iPhone's network in their Wi-Fi settings, then taps Join the nearby host. (An iPad without mobile data has no hotspot: let the other device host.)"]; ulog (@"online: hotspot not on"); return; }
+				[ws host:2]; } ],
+			@[ @"Join the nearby host", gw ? [NSString stringWithFormat:@"The host of this network: %@", gw] : @"Not on a host's own network yet: join it in Settings > Wi-Fi", ^{
+				NSString *g = vxa_net_gateway (); if (!g) { [ws note:@"This device is on an ordinary Wi-Fi, not a host's own network.\n\nJoin the host's network first in Settings > Wi-Fi: the host iPhone's name (its Personal Hotspot), DIRECT-VX-VECTREX-... or VECTREX-EMU-..."]; return; }
 				ulog ([NSString stringWithFormat:@"online: joining the nearby host %@", g]); vx_net_join (g.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); } ] ] ]];
 		[s addObject:@[ @"Join", @"", @[ @[ @"Enter a code", @"Five letters from the host", ^{ [ws ask:@"The host's code" then:^(NSString *v) { vx_net_join (v.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); }]; } ],
 			@[ @"Enter an address", @"A host on this Wi-Fi (its address)", ^{ [ws ask:@"The host's address" then:^(NSString *v) { vx_net_join (v.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); }]; } ] ] ]];

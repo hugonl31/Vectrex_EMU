@@ -376,10 +376,10 @@ class NetPlay:
                     self._path()
                     self.log('player 2 at %s' % ('the relay' if self.relay else '%s:%d' % self.peer))
                     rtt = self._ping()                  # (the round trip: the input delay that hides it, at 50 Hz)
-                    self.delay = max(DELAY, min(12, int(rtt * 50.0 + 0.999) + 1))
+                    self.delay = max(DELAY, min(12, int(rtt * 50.0 + 0.999) + 1 + (2 if self.relay else 0)))   # (relayed: 2 frames more room)
                     game = dict(self.offer or game, delay=self.delay, rtt_ms=round(rtt * 1000), relay=self.relay)
                     self.reset()                        # (the first frames for this delay: the same on both sides)
-                    self.log('round trip %.0f ms: %d frames of input delay' % (rtt * 1000, self.delay))
+                    self.log('round trip %.0f ms (%s%s): %d frames of input delay' % (rtt * 1000, getattr(self, 'ping_note', ''), ', relayed' if self.relay else '', self.delay))
                     msg = json.dumps(game).encode()
                     for _ in range(int(5.0 / 0.05)):    # (the game, until it is acknowledged)
                         self._send(ord('G'), msg)
@@ -502,22 +502,29 @@ class NetPlay:
         self._keepalive()
 
     def _ping(self, n=8):
-        """the round trip to the other side (the slowest of n pings, as a connection's jitter needs that much)"""
-        got = []
-        for i in range(n):
+        """the round trip to the other side (the slowest of n pings, as a connection's jitter needs that much). An answer
+        counts also after the next ping went (it carries its send time): through a hotel's relay every answer took over
+        0.5 s, none counted and 100 ms was guessed - the game then ran at a third of its speed. Fewer than 4 answers: on,
+        up to 24 pings; none at all: a slow path (0.3 s) assumed"""
+        got, seen, i = [], set(), 0
+        while i < (n if len(got) >= 4 else 24) and len(got) < n:
             t = time.perf_counter()
             self._send(ord('P'), struct.pack('<Id', i, t))
             while time.perf_counter() - t < 0.5:
                 q = self._recv()
                 if q and q[0] == ord('p') and len(q[1]) >= 12:
                     k, t0 = struct.unpack_from('<Id', q[1])
-                    if k == i:
-                        got.append(time.perf_counter() - t0); break
+                    if k <= i and k not in seen:
+                        seen.add(k); got.append(time.perf_counter() - t0)
+                        if k == i:
+                            break
                 elif q and q[0] in (ord('H'), ord('h')):
                     pass
                 else:
                     time.sleep(0.001)
-        return max(got) if got else 0.1
+            i += 1
+        self.ping_note = '%d of %d answered' % (len(got), i)
+        return max(got) if got else 0.3
 
     def regame_offer(self, game):
         """host: another game for both (player 2 answers: rg_answer True / False)"""

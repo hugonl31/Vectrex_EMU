@@ -95,8 +95,8 @@ final class Adhoc {
 			for (InetAddress a : Collections.list (ni.getInetAddresses ())) { if (!(a instanceof Inet4Address)) continue; String ip = a.getHostAddress ();
 				String gw = ip.substring (0, ip.lastIndexOf ('.')) + ".1";
 				if (ip.startsWith ("192.168.49.") || ip.startsWith ("172.20.10.") || ip.startsWith ("192.168.137.") || ip.startsWith ("10.42.0.")) return gw;   /* (the ad-hoc kinds first) */
-				if (best == null && (ip.startsWith ("192.168.") || ip.startsWith ("10.") || ip.startsWith ("172."))) best = gw; } } } catch (Exception e) { }
-		return best;
+			} } } catch (Exception e) { }
+		return best;                                    /* (null: an ordinary network - its .1 is a router, not a player) */
 	}
 	static boolean onAdhocNet ()
 	{

@@ -156,9 +156,22 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[super viewDidLoad]; self.title = @"Settings";
 	self.tableView.backgroundColor = VX_BG; self.tableView.separatorColor = VX_EDGE;
 	_rows = [NSMutableArray array]; _cats = [NSMutableArray array];
-	for (int c = 0; c < vxa_ncats (); c++) {
+	/* (the most used first: the groups as a phone player reaches for them, the service trim pots last; in each group the
+	 *  usual ones on top; settings that mean nothing here left out - the screen's shape, RetroArch's ROM browser button) */
+	NSArray *order = @[ @"video", @"overlay", @"case", @"tube", @"controls", @"audio", @"system", @"unit", @"circuit" ];
+	NSArray *top = @[ @"vectrex_emu_profile", @"vectrex_emu_deck", @"vectrex_emu_rotate", @"vectrex_emu_rate", @"vectrex_emu_size",
+	                  @"vectrex_emu_overlay", @"vectrex_emu_ov_glow", @"vectrex_emu_scratches", @"vectrex_emu_room", @"vectrex_emu_ceiling",
+	                  @"vectrex_emu_glow", @"vectrex_emu_afterglow", @"vectrex_emu_brightness", @"vectrex_emu_keys", @"vectrex_emu_port2" ];
+	NSSet *hide = [NSSet setWithArray:@[ @"vectrex_emu_shape", @"vectrex_emu_btn_browser" ]];
+	NSMutableArray *cs = [NSMutableArray array];
+	for (NSString *k in order) for (int c = 0; c < vxa_ncats (); c++) if ([k isEqualToString:@(vxa_ckey (c))]) [cs addObject:@(c)];
+	for (int c = 0; c < vxa_ncats (); c++) if (![cs containsObject:@(c)]) [cs addObject:@(c)];
+	for (NSNumber *cn in cs) { int c = cn.intValue;
 		NSMutableArray *r = [NSMutableArray array];
-		for (int i = 0; i < vxa_nopts (); i++) if (!strcmp (vxa_ocat (i), vxa_ckey (c))) [r addObject:@(i)];
+		for (int i = 0; i < vxa_nopts (); i++) if (!strcmp (vxa_ocat (i), vxa_ckey (c)) && ![hide containsObject:@(vxa_okey (i))]) [r addObject:@(i)];
+		[r sortWithOptions:NSSortStable usingComparator:^NSComparisonResult (NSNumber *x, NSNumber *y) {
+			NSUInteger a = [top indexOfObject:@(vxa_okey (x.intValue))], b = [top indexOfObject:@(vxa_okey (y.intValue))];
+			return a < b ? NSOrderedAscending : a > b ? NSOrderedDescending : NSOrderedSame; }];
 		if (r.count) { [_rows addObject:r]; [_cats addObject:@(c)]; } }
 	__weak VXSettings *ws = self;
 	self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithPrimaryAction:[UIAction actionWithTitle:@"Done" image:nil identifier:nil handler:^(UIAction *a) { (void) a; [ws dismissViewControllerAnimated:YES completion:nil]; }]];
@@ -352,38 +365,38 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UIStackView *tt = [[UIStackView alloc] initWithArrangedSubviews:@[ t, sub ]]; tt.axis = UILayoutConstraintAxisVertical; tt.spacing = 2;
 	UIStackView *head = [[UIStackView alloc] initWithArrangedSubviews:@[ tt, resume ]]; head.alignment = UIStackViewAlignmentCenter; head.spacing = 12;
 	[resume.widthAnchor constraintEqualToConstant:100].active = YES; [resume.heightAnchor constraintEqualToConstant:44].active = YES;
-	int ov = vxa_ofind ("vectrex_emu_overlay"); BOOL ovOn = ov >= 0 && !strcmp (vxa_oval (ov), "on");
-	UIStackView *acts = [[UIStackView alloc] initWithArrangedSubviews:@[
-		VB (@"RESET", @"arrow.counterclockwise", NO, ^{ vxa_do (@"reset"); [ws close:nil]; }),
-		VB (@"Eject", @"eject", NO, ^{ vxa_do (@"eject"); [ws close:nil]; }),
-		VB (ovOn ? @"Overlay on" : @"Overlay off", @"rectangle.on.rectangle", ovOn, ^{ vxa_do (@"overlay"); [ws close:nil]; }),
-		VB (@"Games", @"square.grid.2x2", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ [VXUI showLibraryFrom:gm]; }]; }) ]];
-	acts.distribution = UIStackViewDistributionFillEqually; acts.spacing = 8; [acts.heightAnchor constraintEqualToConstant:64].active = YES;
-	/* save states: three slots */
+	/* (the most used first, as a phone player uses it: save / load, then games and RESET, the picture's two quick ones, all
+	 *  settings; the Vectrex's own hardware - eject, port 2 - small at the foot) */
 	UILabel *st = VL (@"Save states", VF (15, UIFontWeightSemibold), VX_FG);
 	UIStackView *slots = [UIStackView new]; slots.distribution = UIStackViewDistributionFillEqually; slots.spacing = 8;
 	BOOL can = vxa_state_supported () != 0;
 	for (int s = 1; s <= 3; s++) {
 		UIButton *sv = VB ([NSString stringWithFormat:@"Save %d", s], @"square.and.arrow.down", NO, ^{ int ok = vxa_state (1, s); UIViewController *gm = ws.game; [ws close:^{ VToast (gm, ok ? [NSString stringWithFormat:@"Saved in slot %d", s] : @"Not saved"); }]; });
 		UIButton *ld = VB ([NSString stringWithFormat:@"Load %d", s], @"square.and.arrow.up", NO, ^{ int ok = vxa_state (0, s); UIViewController *gm = ws.game; [ws close:^{ VToast (gm, ok ? [NSString stringWithFormat:@"Slot %d loaded", s] : @"Nothing loaded"); }]; });
-		ld.enabled = vxa_state_exists (s); sv.enabled = ld.enabled || can; if (!can) sv.enabled = ld.enabled = NO;
+		ld.enabled = can && vxa_state_exists (s); sv.enabled = can;
 		UIStackView *col = [[UIStackView alloc] initWithArrangedSubviews:@[ sv, ld ]]; col.axis = UILayoutConstraintAxisVertical; col.spacing = 6; col.distribution = UIStackViewDistributionFillEqually;
 		[col.heightAnchor constraintEqualToConstant:116].active = YES; [slots addArrangedSubview:col]; }
 	UILabel *stn = VL (can ? @"" : @"This game has no save states (UVMC2 and PiTrex games keep their own).", VF (12, UIFontWeightRegular), VX_DIM); stn.hidden = can;
-	/* the most used settings, then all of them */
-	NSMutableArray *rows = [NSMutableArray array];
-	for (NSString *k in @[ @"vectrex_emu_port2", @"vectrex_emu_deck", @"vectrex_emu_room" ]) {
-		int i = vxa_ofind (k.UTF8String); if (i < 0) continue;
-		UIButton *b = VB ([NSString stringWithFormat:@"%s:  %s", vxa_odesc (i), vxa_oval (i)], nil, NO, ^{
-			UIViewController *gm = ws.game;
-			if (VSlider (i, NULL, NULL)) [ws close:^{ [VXUI adjustOption:i over:gm]; }];
-			else { VXChoice *ch = [[VXChoice alloc] initWithStyle:UITableViewStyleInsetGrouped]; ch.opt = i;
-				UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:ch]; [VXUI styleNav:n]; [ws presentViewController:n animated:YES completion:nil]; } });
-		UIButtonConfiguration *c = b.configuration; c.contentInsets = NSDirectionalEdgeInsetsMake (12, 14, 12, 14); b.configuration = c; b.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
-		[rows addObject:b]; }
-	[rows addObject:VB (@"All settings", @"slider.horizontal.3", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ [VXUI showSettingsFrom:gm]; }]; })];
-	UIStackView *list = [[UIStackView alloc] initWithArrangedSubviews:rows]; list.axis = UILayoutConstraintAxisVertical; list.spacing = 8;
-	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ head, acts, st, slots, stn, list ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 14;
+	int ov = vxa_ofind ("vectrex_emu_overlay"); BOOL ovOn = ov >= 0 && !strcmp (vxa_oval (ov), "on");
+	UIStackView *acts = [[UIStackView alloc] initWithArrangedSubviews:@[
+		VB (@"Games", @"square.grid.2x2", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ [VXUI showLibraryFrom:gm]; }]; }),
+		VB (@"RESET", @"arrow.counterclockwise", NO, ^{ vxa_do (@"reset"); [ws close:nil]; }),
+		VB (ovOn ? @"Overlay on" : @"Overlay off", @"rectangle.on.rectangle", ovOn, ^{ vxa_do (@"overlay"); [ws close:nil]; }),
+		VB (@"Room light", @"lightbulb", NO, ^{ UIViewController *gm = ws.game; [ws close:^{ [VXUI adjustOption:vxa_ofind ("vectrex_emu_room") over:gm]; }]; }) ]];
+	acts.distribution = UIStackViewDistributionFillEqually; acts.spacing = 8; [acts.heightAnchor constraintEqualToConstant:64].active = YES;
+	UIButton *allb = VB (@"All settings", @"slider.horizontal.3", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ [VXUI showSettingsFrom:gm]; }]; });
+	[allb.heightAnchor constraintEqualToConstant:56].active = YES;
+	UILabel *hw = VL (@"VECTREX HARDWARE", VF (11, UIFontWeightSemibold), VX_DIM);
+	int p2 = vxa_ofind ("vectrex_emu_port2");
+	UIButton *ej = VB (@"Eject / insert cartridge", nil, NO, ^{ vxa_do (@"eject"); [ws close:nil]; });
+	UIButton *pb = VB (p2 >= 0 ? [NSString stringWithFormat:@"Port 2: %s", vxa_oval (p2)] : @"Port 2", nil, NO, ^{
+		if (p2 < 0) return; VXChoice *ch = [[VXChoice alloc] initWithStyle:UITableViewStyleInsetGrouped]; ch.opt = p2;
+		UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:ch]; [VXUI styleNav:n]; [ws presentViewController:n animated:YES completion:nil]; });
+	for (UIButton *b in @[ ej, pb ]) { UIButtonConfiguration *c = b.configuration; c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (13, UIFontWeightRegular); return m; };
+		c.baseForegroundColor = VX_FG2; b.configuration = c; [b.heightAnchor constraintEqualToConstant:40].active = YES; }
+	UIStackView *hwr = [[UIStackView alloc] initWithArrangedSubviews:@[ ej, pb ]]; hwr.distribution = UIStackViewDistributionFillEqually; hwr.spacing = 8;
+	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ head, st, slots, stn, acts, allb, hw, hwr ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 14;
+	[all setCustomSpacing:24 afterView:allb];
 	UIScrollView *sc = [UIScrollView new]; sc.translatesAutoresizingMaskIntoConstraints = NO; all.translatesAutoresizingMaskIntoConstraints = NO; [sc addSubview:all]; [self.view addSubview:sc];
 	[NSLayoutConstraint activateConstraints:@[ [sc.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:24], [sc.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
 		[sc.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor], [sc.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],

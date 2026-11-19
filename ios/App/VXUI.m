@@ -297,7 +297,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 + (UIImage *) tileFor:(NSString *)n
 {
 	NSString *th = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/thumbs"], *base = [n componentsSeparatedByString:@" ("].firstObject;
-	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes", @"carts", @"overlays", @"" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"overlays", @"", @"carts", @"boxes" ] : @[ @"carts", @"boxes", @"overlays", @"" ];
+	/* (each look its own pictures only - no mixing (the owner: carts, boxes and overlays mixed); none: the name's tile) */
+	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"overlays", @"" ] : @[ @"carts" ];
 	for (NSString *d in dirs) for (NSString *nm in @[ n, base ]) {
 		UIImage *im = [UIImage imageWithContentsOfFile:[[th stringByAppendingPathComponent:d] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]]]; if (im) return im; }
 	return nil;
@@ -736,25 +737,26 @@ extern double vx_app_volume (void); extern void vx_app_turn (double d); extern v
 - (instancetype) initWithGame:(UIViewController *)g
 {
 	self = [super initWithFrame:CGRectZero]; _game = g;
-	UIFont *mono = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightMedium], *small = VF (9, UIFontWeightSemibold);
-	_fps = VL (@"--", mono, VX_HI); _hz = VL (@"--", mono, VX_HI); _emu = VL (@"--", mono, VX_HI);
-	UILabel *l1 = VL (@"FPS", small, VX_DIM), *l2 = VL (@"HZ", small, VX_DIM), *l3 = VL (@"EMU", small, VX_DIM), *lc = VL (@"CPU", small, VX_DIM), *lg = VL (@"GPU", small, VX_DIM);
-	UIStackView *r1 = [[UIStackView alloc] initWithArrangedSubviews:@[ l1, _fps, [UIView new], l2, _hz ]]; r1.spacing = 4; r1.alignment = UIStackViewAlignmentFirstBaseline;
-	UIStackView *r2 = [[UIStackView alloc] initWithArrangedSubviews:@[ l3, _emu, [UIView new] ]]; r2.spacing = 4; r2.alignment = UIStackViewAlignmentFirstBaseline;
+	UIFont *mono = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightSemibold], *small = VF (9, UIFontWeightSemibold);
+	_fps = VL (@"--", mono, VX_HI); _fps.numberOfLines = 1; _fps.adjustsFontSizeToFitWidth = YES; _fps.minimumScaleFactor = 0.7; _hz = nil; _emu = nil;
+	UILabel *lc = VL (@"CPU", small, VX_DIM), *lg = VL (@"GPU", small, VX_DIM);
+	for (UILabel *l in @[ lc, lg ]) { [l setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal]; [l setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal]; }
 	NSLayoutConstraint *cw, *gw; UIView *cf, *gf; UIView *cb = [self bar:&cw fill:&cf], *gb = [self bar:&gw fill:&gf]; _cpuW = cw; _gpuW = gw; _cpu = cb; _gpu = gb; _cpuF = cf; _gpuF = gf;
 	UIStackView *r3 = [[UIStackView alloc] initWithArrangedSubviews:@[ lc, cb, lg, gb ]]; r3.spacing = 4; r3.alignment = UIStackViewAlignmentCenter;
 	[cb.widthAnchor constraintEqualToAnchor:gb.widthAnchor].active = YES;
-	UIStackView *osd = [[UIStackView alloc] initWithArrangedSubviews:@[ r1, r2, r3 ]]; osd.axis = UILayoutConstraintAxisVertical; osd.spacing = 3;
+	UIStackView *osd = [[UIStackView alloc] initWithArrangedSubviews:@[ _fps, r3 ]]; osd.axis = UILayoutConstraintAxisVertical; osd.spacing = 5; osd.distribution = UIStackViewDistributionFillEqually;
 	osd.layoutMargins = UIEdgeInsetsMake (6, 8, 6, 8); osd.layoutMarginsRelativeArrangement = YES; osd.backgroundColor = VX_PANEL; osd.layer.cornerRadius = 12; osd.layer.borderWidth = 1; osd.layer.borderColor = VX_EDGE.CGColor;
 	__weak VXDeck *ws = self;
-	UIButton *p2 = VB (@"P2 PORT", @"gamecontroller", NO, ^{ int i = vxa_ofind ("vectrex_emu_port2"); if (i >= 0 && ws.game) [VXUI showChoice:i from:ws.game]; });
+	UIButton *p2 = VB (@"P2", @"gamecontroller", NO, ^{ int i = vxa_ofind ("vectrex_emu_port2"); if (i >= 0 && ws.game) [VXUI showChoice:i from:ws.game]; });
 	UIButton *cart = VB (@"CART", @"square.grid.2x2", NO, ^{ if (ws.game) [VXUI showLibraryFrom:ws.game]; });
 	UIButton *rst = VB (@"RESET", @"arrow.counterclockwise", NO, ^{ vxa_do (@"reset"); [[UIImpactFeedbackGenerator new] impactOccurred]; });
 	_knob = [VXKnob new]; [_knob addTarget:self action:@selector(knobbed) forControlEvents:UIControlEventValueChanged];
-	_vol = VL (@"VOL", VF (10, UIFontWeightSemibold), VX_HI); _vol.textAlignment = NSTextAlignmentCenter;
-	UIStackView *kn = [[UIStackView alloc] initWithArrangedSubviews:@[ _knob, _vol ]]; kn.axis = UILayoutConstraintAxisVertical; kn.spacing = 0; kn.alignment = UIStackViewAlignmentCenter;
+	_vol = VL (@"VOL", [UIFont monospacedDigitSystemFontOfSize:9 weight:UIFontWeightBold], VX_HI); _vol.textAlignment = NSTextAlignmentCenter; _vol.userInteractionEnabled = NO;
+	_vol.translatesAutoresizingMaskIntoConstraints = NO; [_knob addSubview:_vol];
+	[NSLayoutConstraint activateConstraints:@[ [_vol.centerXAnchor constraintEqualToAnchor:_knob.centerXAnchor], [_vol.centerYAnchor constraintEqualToAnchor:_knob.centerYAnchor] ]];
+	UIStackView *kn = [[UIStackView alloc] initWithArrangedSubviews:@[ _knob ]]; kn.axis = UILayoutConstraintAxisVertical; kn.alignment = UIStackViewAlignmentCenter;
 	kn.backgroundColor = VX_PANEL; kn.layer.cornerRadius = 12; kn.layer.borderWidth = 1; kn.layer.borderColor = VX_EDGE.CGColor; kn.layoutMargins = UIEdgeInsetsMake (4, 4, 4, 4); kn.layoutMarginsRelativeArrangement = YES;
-	[_knob.widthAnchor constraintEqualToConstant:40].active = YES; [_knob.heightAnchor constraintEqualToConstant:40].active = YES;
+	[_knob.widthAnchor constraintEqualToConstant:42].active = YES; [_knob.heightAnchor constraintEqualToConstant:42].active = YES;
 	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ osd, p2, cart, rst, kn ]]; row.spacing = 6; row.distribution = UIStackViewDistributionFill;
 	[osd.widthAnchor constraintEqualToAnchor:row.widthAnchor multiplier:0.34].active = YES;
 	for (UIView *v in @[ p2, cart, rst ]) [v.widthAnchor constraintEqualToAnchor:kn.widthAnchor multiplier:0.95].active = YES;
@@ -765,12 +767,12 @@ extern double vx_app_volume (void); extern void vx_app_turn (double d); extern v
 	return self;
 }
 - (void) dealloc { [_tm invalidate]; }
-- (void) knobbed { _vol.text = _knob.value > 0 ? [NSString stringWithFormat:@"%.0f%%", _knob.value * 100] : @"OFF"; }
+- (void) knobbed { _vol.text = _knob.value > 0 ? [NSString stringWithFormat:@"%.0f", _knob.value * 100] : @"OFF"; }
 - (void) tick
 {
 	if (self.hidden || !self.window) return;
 	char f[24], h[24], e[24]; int c = -1, g = -1; vx_app_osd (f, h, e, &c, &g);
-	_fps.text = [@(f) stringByReplacingOccurrencesOfString:@" FPS" withString:@""]; _hz.text = [@(h) stringByReplacingOccurrencesOfString:@" HZ" withString:@""]; _emu.text = @(e);
+	_fps.text = [NSString stringWithFormat:@"%s  %s  %s", f, h, e];   /* (50 FPS  60 HZ  100%%: the EMU RATE last) */
 	_cpuW.active = NO; _cpuW = [_cpuF.widthAnchor constraintEqualToAnchor:_cpu.widthAnchor multiplier:MAX (0.01, MIN (1.0, c / 100.0))]; _cpuW.active = YES;
 	_gpuW.active = NO; _gpuW = [_gpuF.widthAnchor constraintEqualToAnchor:_gpu.widthAnchor multiplier:MAX (0.01, MIN (1.0, g / 100.0))]; _gpuW.active = YES;
 	if (!_knob.tracking) { _knob.value = vx_app_volume (); [self knobbed]; }

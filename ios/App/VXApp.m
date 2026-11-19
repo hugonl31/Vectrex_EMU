@@ -527,7 +527,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 	"  return half4 (half3 (min (x, max (c.x, 1.0))), 1.0); }\n"
 	/* (the picture: the core's values as they would go to an ordinary screen - display gamma, 1.0 white - made linear for the
 	 *  extended linear layer; above 1.0, HDR, up to the screen's headroom now) */
-#define VXA_DECKH 78                            /* (the native control deck's height) */
+#define VXA_DECKH 58                            /* (the native control deck's height) */
 #define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
 @end
@@ -621,7 +621,8 @@ static void vxa_toast (NSString *s, double secs)
 	[self makeDisplayBuffer];
 	[self layoutControls];
 	UIEdgeInsets s = self.view.safeAreaInsets;
-	vlog ("layout: view %.0f x %.0f pt, safe %.0f %.0f %.0f %.0f, scale %.2f, %s", b.size.width, b.size.height, s.top, s.left, s.bottom, s.right, UIScreen.mainScreen.nativeScale, b.size.width > b.size.height ? "landscape" : "portrait");
+	{ static CGSize lastb; static UIEdgeInsets lasts; if (!CGSizeEqualToSize (lastb, b.size) || !UIEdgeInsetsEqualToEdgeInsets (lasts, s)) { lastb = b.size; lasts = s;   /* (a change only) */
+	  vlog ("layout: view %.0f x %.0f pt, safe %.0f %.0f %.0f %.0f, scale %.2f, %s", b.size.width, b.size.height, s.top, s.left, s.bottom, s.right, UIScreen.mainScreen.nativeScale, b.size.width > b.size.height ? "landscape" : "portrait"); } }
 }
 - (void) viewDidAppear:(BOOL)a
 {
@@ -777,7 +778,8 @@ static void vxa_toast (NSString *s, double secs)
 		[en drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4]; [en endEncoding];
 		[cb presentDrawable:d]; [cb commit]; _presents++; }
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
-	_deck.hidden = !deckh; if (deckh) _deck.frame = CGRectMake (s.left, CGRectGetMaxY (pic), v.width - s.left - s.right, VXA_DECKH);
+	if (_deck.hidden != !deckh) _deck.hidden = !deckh;
+	if (deckh) { CGRect df = CGRectMake (s.left, CGRectGetMaxY (pic), v.width - s.left - s.right, VXA_DECKH); if (!CGRectEqualToRect (df, _deck.frame)) _deck.frame = df; }   /* (only when it moves: setting it each picture laid the view out again and again) */
 	if (!CGRectEqualToRect (pic, _pic)) { _pic = pic; vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f pt (%s)", _fw, _fh, pic.origin.x, pic.origin.y, pic.size.width, pic.size.height, k == 1.0 ? "1:1" : "scaled"); [self layoutControls]; }
 }
 - (void) gotFrame:(unsigned)w :(unsigned)h { _fw = w; _fh = h; _have = 1; }
@@ -904,8 +906,9 @@ static void vxa_set_opt (int i, NSString *v)
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; CGRect pic = _pic;
 	CGRect zl, zr;
 	if (v.width > v.height) { zl = CGRectMake (s.left, s.top, CGRectGetMinX (pic) - s.left, v.height - s.top - s.bottom); zr = CGRectMake (CGRectGetMaxX (pic), s.top, v.width - s.right - CGRectGetMaxX (pic), zl.size.height); }
-	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0); if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (the deck is in the picture now) */
-		zl = CGRectMake (s.left, top, v.width / 2, v.height - s.bottom - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
+	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0), bot = v.height - s.bottom, need = fmax (170, 185 * tsize);
+		if (bot - top < need) { bot = CGRectGetMaxY (pic) - 4; top = bot - need; }   /* (no room below the deck: over the picture's foot, above the deck - never on it) */
+		zl = CGRectMake (s.left, top, v.width / 2, bot - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
 	_stickZone = zl;
 	double r = fmin (zr.size.width / 4.6, 38 * tsize), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);

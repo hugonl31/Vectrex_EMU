@@ -54,7 +54,7 @@ static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gauss
 	"  if (vc1.w > 0.5 && dot(p, vc1.xy) > vc1.z) discard;\n"
 	"  fragc = vec4(vrc.yzw * exp(-d2 * vk), 0.0); }\n";
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2, ag; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, 1.0); return; }\n"
@@ -65,11 +65,11 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
 	"  g1 = mix(g1, max(g1 - f * a1, 0.0), lit); g2 = mix(g2, max(g2 - f * a2, 0.0), lit);\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
-	"  o1 = vec4(g1, 1.0); o2 = vec4(g2, 1.0); os = vec4(f + g1 + g2, 1.0); }\n";
+	"  o1 = vec4(g1, 1.0); o2 = vec4(g2, 1.0); os = vec4(f + ag * (g1 + g2), 1.0); }\n";
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
-	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; out vec4 fragc;\n"
+	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform float ag; uniform vec2 sz; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"
-	"  if (after != 0) o += txb(g1t, uv).rgb + txb(g2t, uv).rgb;\n"
+	"  if (after != 0) o += ag * (txb(g1t, uv).rgb + txb(g2t, uv).rgb);\n"
 	"  fragc = vec4(o, 1.0); }\n";
 static const char *PH_FS_UI =                   /* (the ROM browser's panel: premultiplied, over the picture) */
 	"uniform sampler2D t; out vec4 fragc; void main() { fragc = texelFetch(t, ivec2(gl_FragCoord.xy), 0); }\n";
@@ -263,15 +263,17 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	{ const float tk = ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0;
 	  const float a1 = 0.1404f * tk, a2 = 0.0582f * tk, ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
+	  const float ag = vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f;   /* (HDR: the afterglow up as the knee's top - the beam's head up to the screen's peak
+	                                                                   left it too faint to see beside it (the owner, iPhone, 2026-11-19); SDR 1.0, as before) */
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
 	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);
 	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
 	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "e1", a1 * kd1); PU1F (ph_upd, "e2", a2 * kd2);
-	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
+	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after); PU1F (ph_upd, "ag", ag);
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
 		ph_bind (ph_comp, "fc", 0, ph_F[cur]); ph_bind (ph_comp, "g1t", 1, ph_G1[cur]); ph_bind (ph_comp, "g2t", 2, ph_G2[cur]);
-		PU1I (ph_comp, "after", after); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
+		PU1I (ph_comp, "after", after); PU1F (ph_comp, "ag", ag); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {
 		const int gd = 2 * S, nf = 2 * gd; double vd = 0;

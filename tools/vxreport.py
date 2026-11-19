@@ -117,6 +117,11 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         IOSX = {'/iosextra': 'extra_roms.zip', '/iosextra/pitrex': 'pitrex.zip', '/iosextra/pack': 'pack.tgz',
                 '/iosextra/packver': 'pack.ver'}
+        import re as _re
+        m = _re.fullmatch(r'/iosextra/part/([a-z0-9]{1,16})', self.path)   # (the pack in parts: pack-<id>.tgz, and pack.json)
+        if m:
+            IOSX[self.path] = 'pack-%s.tgz' % m.group(1)
+        IOSX['/iosextra/packjson'] = 'pack.json'
         if self.path in IOSX:                  # (the owner's private iOS test builds: the owner's own extra ROMs and the
             # PiTrex's files as the PC has them, at the RetroArch build's build; the test app's content pack - everything
             # the PC has, tools/ios_pack.py - and its version, at the app's start; put there by hand; the /ioslog token)

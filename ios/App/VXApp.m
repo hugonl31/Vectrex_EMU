@@ -429,17 +429,26 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 		_wifiSession = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:nil]; }
 	return _wifiSession;
 }
-- (void) fetch:(NSString *)ver wifiOnly:(BOOL)wifi progress:(void (^) (int64_t, int64_t))prog unpacking:(void (^) (void))unp done:(void (^) (BOOL))done
+/* (the parts fetched: Documents/parts.json, id -> version) */
++ (NSString *) partsFile { return [NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:@"parts.json"]; }
++ (NSDictionary *) installed { NSData *d = [NSData dataWithContentsOfFile:[self partsFile]]; NSDictionary *j = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil; return [j isKindOfClass:NSDictionary.class] ? j : @{}; }
++ (void) setInstalled:(NSString *)pid version:(NSString *)v
 {
-	self.ver = ver; self.progress = prog; self.unpacking = unp; self.done = done; NSURLSession *ses = wifi ? self.wifiSession : self.session; _lastpc = -1; _t0 = CACurrentMediaTime();
+	NSMutableDictionary *m = [[self installed] mutableCopy]; if (v) m[pid] = v; else [m removeObjectForKey:pid];
+	[[NSJSONSerialization dataWithJSONObject:m options:0 error:nil] writeToFile:[self partsFile] atomically:YES];
+}
+- (void) fetchPart:(NSString *)pid version:(NSString *)ver wifiOnly:(BOOL)wifi progress:(void (^) (int64_t, int64_t))prog unpacking:(void (^) (void))unp done:(void (^) (BOOL))done
+{
+	self.ver = [NSString stringWithFormat:@"%@:%@", pid, ver]; self.progress = prog; self.unpacking = unp; self.done = done; NSURLSession *ses = wifi ? self.wifiSession : self.session; _lastpc = -1; _t0 = CACurrentMediaTime();
 	[UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
 		completionHandler:^(BOOL g, NSError *e) { (void) e; vlog ("notifications %s", g ? "allowed" : "not allowed"); }];
 	[ses getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> *ts) {
-		if (ts.count) { vlog ("pack %s: the fetch already running goes on", ver.UTF8String); return; }   /* (after a restart) */
+		for (NSURLSessionTask *t in ts) if ([t.taskDescription isEqualToString:self.ver]) { vlog ("part %s: the fetch already running goes on", self.ver.UTF8String); return; }   /* (after a restart) */
 #ifdef VX_LOG_TOKEN
-		NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/pack"]];
+		NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[@"http://172.233.60.40:7746/iosextra/part/" stringByAppendingString:pid]]];
 		[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"];
-		[[ses downloadTaskWithRequest:rq] resume]; vlog ("pack %s: fetching in the background%s", ver.UTF8String, wifi ? ", Wi-Fi only" : "");
+		NSURLSessionDownloadTask *t = [ses downloadTaskWithRequest:rq]; t.taskDescription = self.ver; [t resume];
+		vlog ("part %s: fetching in the background%s", self.ver.UTF8String, wifi ? ", Wi-Fi only" : "");
 #endif
 	}];
 }
@@ -453,7 +462,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 {
 	long code = [t.response isKindOfClass:NSHTTPURLResponse.class] ? (long) ((NSHTTPURLResponse *) t.response).statusCode : 0;
 	if (code != 200) { vlog ("pack: fetch failed (%ld)", code); return; }
-	NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"pack.tgz"]; [NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
+	NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"part.tgz"]; [NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
 	[NSFileManager.defaultManager moveItemAtURL:loc toURL:[NSURL fileURLWithPath:tmp] error:nil];   /* (now: the file goes when this returns) */
 	long long sz = [[NSFileManager.defaultManager attributesOfItemAtPath:tmp error:nil] fileSize];
 	vlog ("pack: %.1f MB in %.0f s; unpacking%s", sz / 1e6, CACurrentMediaTime () - _t0, UIApplication.sharedApplication.applicationState == UIApplicationStateBackground ? " (in the background)" : "");
@@ -462,10 +471,9 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 	NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; int files = 0; double t1 = CACurrentMediaTime ();
 	int bad = vxa_untgz (tmp.fileSystemRepresentation, docs.fileSystemRepresentation, &files);
 	[NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
-	vlog ("pack %s: %d files unpacked in %.1f s%s", self.ver.UTF8String, files, CACurrentMediaTime () - t1, bad ? " - NOT WHOLE" : "");
-	if (!bad && UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-		UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
-		[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
+	NSString *key = t.taskDescription ?: self.ver; NSRange c = [key rangeOfString:@":"];
+	vlog ("part %s: %d files unpacked in %.1f s%s", key.UTF8String, files, CACurrentMediaTime () - t1, bad ? " - NOT WHOLE" : "");
+	if (!bad && c.location != NSNotFound) [VXPack setInstalled:[key substringToIndex:c.location] version:[key substringFromIndex:c.location + 1]];
 	void (^d) (BOOL) = self.done; dispatch_async (dispatch_get_main_queue (), ^{ if (d) d (!bad); [UIApplication.sharedApplication endBackgroundTask:bt]; });
 }
 - (void) URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)e
@@ -511,6 +519,7 @@ static void vxa_toast (NSString *s, double secs)
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome; int _firstPack;
+	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -578,68 +587,77 @@ static void vxa_toast (NSString *s, double secs)
 	[self checkPack];
 }
 /* the content pack: its version from the server; a new one (or none here yet) is fetched and unpacked */
+/* the content in parts (the core's own and the games always; box art, cartridges, UVMC2, PiTrex chosen): the list from
+ * the project's server, each part's version its contents' - only new or changed parts are fetched, after asking */
 - (void) checkPack
 {
 #ifdef VX_LOG_TOKEN
-	NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-	NSString *have = [[NSString stringWithContentsOfFile:[docs stringByAppendingPathComponent:@"system/vectrex_emu/pack_version.txt"] encoding:NSUTF8StringEncoding error:nil]
-		stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-	NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/packver"]];
+	NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/packjson"]];
 	[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"]; rq.timeoutInterval = 8;
 	_status.text = @"Looking for games...";
 	[[NSURLSession.sharedSession dataTaskWithRequest:rq completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-		NSArray *ln = d && ((NSHTTPURLResponse *) r).statusCode == 200 ? [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] componentsSeparatedByString:@"\n"] : nil;
-		NSString *want = ln.count ? [ln[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : nil;
-		long long size = ln.count > 1 ? [ln[1] longLongValue] : 0;
-		vlog ("pack: here %s, server %s (%.1f MB)%s", have ? have.UTF8String : "none", want ? want.UTF8String : "unreachable", size / 1e6, e ? [@" - " stringByAppendingString:e.localizedDescription].UTF8String : "");
+		NSDictionary *j = d && ((NSHTTPURLResponse *) r).statusCode == 200 ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
+		NSArray *parts = [j isKindOfClass:NSDictionary.class] ? j[@"parts"] : nil; NSDictionary *inst = [VXPack installed];
+		vlog ("parts: server %lu, here %lu%s", (unsigned long) parts.count, (unsigned long) inst.count, e ? [@" - " stringByAppendingString:e.localizedDescription].UTF8String : "");
 		dispatch_async (dispatch_get_main_queue (), ^{
-			if (want.length && ![want isEqualToString:have ?: @""]) [self askPack:want size:size have:have];
-			else if (have) [self startCore];
-			else self->_status.text = @"The games could not be fetched: no connection to the project's server. Close the app and try again."; });
+			if (!parts.count) { if (inst.count || [self hasOldPack]) [self startCore]; else self->_status.text = @"The games could not be fetched: no connection to the project's server. Close the app and try again."; return; }
+			self->_parts = parts;
+			NSMutableArray *need = [NSMutableArray array];   /* (the parts here with a new version, the required ones missing) */
+			for (NSDictionary *p in parts) { NSString *v = inst[p[@"id"]];
+				if ((v && ![v isEqualToString:p[@"version"]]) || (!v && [p[@"required"] boolValue])) [need addObject:p[@"id"]]; }
+			if (!inst.count && ![self hasOldPack]) [self chooseParts:YES];
+			else if (need.count) [self askUpdate:need];
+			else [self startCore]; });
 	}] resume];
 #else
 	vlog ("pack: no token in this build - the content must be in the app's folder already");
 	[self startCore];
 #endif
 }
-/* (asked first, with the size: maybe on mobile data - "wait for Wi-Fi" lets iOS start it by itself on Wi-Fi, in the
- *  background too; a new set while one is here: later is fine, the game starts with what is here) */
-- (void) askPack:(NSString *)ver size:(long long)size have:(NSString *)have
+- (void) openDownloads { if (_parts.count) [self chooseParts:NO]; else { vlog ("downloads: the list not here yet - asking the server"); [self checkPack]; } }
+- (BOOL) hasOldPack { return [NSFileManager.defaultManager fileExistsAtPath:[vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/pack_version.txt"]]; }
+/* (the first start: the choice of parts, on the start screen) */
+- (void) chooseParts:(BOOL)first
 {
-	extern int vxa_net_expensive (void); const int cell = vxa_net_expensive ();
-	NSString *mb = size > 0 ? [NSString stringWithFormat:@"%.0f MB", size / 1e6] : @"about 150 MB";
-	_status.text = [NSString stringWithFormat:@"%@: %@, once - the games, overlays, cartridges, UVMC2 and PiTrex.%@", have ? @"New games and pictures" : @"Download the games", mb,
-		cell ? @"\nYou are on mobile data." : @""];
-	vlog ("pack: asking (%s, %s)", mb.UTF8String, cell ? "mobile data" : "Wi-Fi");
-	UIStackView *bs = [UIStackView new]; bs.axis = UILayoutConstraintAxisVertical; bs.spacing = 10; bs.tag = 13;
 	__weak VXGameVC *ws = self;
-	void (^add) (NSString *, BOOL, void (^) (void)) = ^(NSString *t, BOOL main, void (^f) (void)) {
-		UIButtonConfiguration *c = main ? [UIButtonConfiguration filledButtonConfiguration] : [UIButtonConfiguration plainButtonConfiguration];
-		c.title = t; c.baseForegroundColor = main ? VX_HI2 : VX_HI; c.background.backgroundColor = main ? VX_SEL : VX_PANEL; c.background.strokeColor = VX_EDGE2; c.background.strokeWidth = 1; c.background.cornerRadius = 14;
-		UIButton *b = [UIButton buttonWithConfiguration:c primaryAction:[UIAction actionWithHandler:^(UIAction *x) { (void) x; vlog ("pack: %s", t.UTF8String); [bs removeFromSuperview]; f (); }]];
-		[b.heightAnchor constraintEqualToConstant:main ? 52 : 44].active = YES; [bs addArrangedSubview:b]; };
-	add (cell ? [NSString stringWithFormat:@"Download now (%@ of mobile data)", mb] : [NSString stringWithFormat:@"Download (%@)", mb], YES, ^{ [ws fetchPack:ver size:size wifi:NO]; });
-	if (cell) add (@"Wait for Wi-Fi", NO, ^{ [ws fetchPack:ver size:size wifi:YES]; });
-	if (have) add (@"Later: play with what is here", NO, ^{ [ws startCore]; });
-	else add (@"Not now", NO, ^{ dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.3 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [ws askPack:ver size:size have:have]; }); });   /* (the games are needed: asked again, nothing fetched) */
-	UIView *w = _welcome; bs.translatesAutoresizingMaskIntoConstraints = NO; [w addSubview:bs];
-	[NSLayoutConstraint activateConstraints:@[ [bs.leadingAnchor constraintEqualToAnchor:w.safeAreaLayoutGuide.leadingAnchor constant:32], [bs.trailingAnchor constraintEqualToAnchor:w.safeAreaLayoutGuide.trailingAnchor constant:-32],
-		[bs.bottomAnchor constraintEqualToAnchor:_status.topAnchor constant:-18] ]];
+	[VXUI choosePartsIn:self parts:_parts installed:[VXPack installed] first:first go:^(NSArray<NSString *> *ids, BOOL wifi) { [ws fetchParts:ids wifi:wifi]; }
+		later:^{ if ([VXPack installed].count || [ws hasOldPack]) [ws startCore]; }];
 }
-- (void) setStatusText:(NSString *)t { _status.text = t; }
-- (NSString *) statusText { return _status.text; }
-- (void) fetchPack:(NSString *)ver size:(long long)size wifi:(BOOL)wifi
+- (void) askUpdate:(NSArray<NSString *> *)need
 {
-#ifdef VX_LOG_TOKEN
-	_status.text = wifi ? @"Waiting for Wi-Fi: the download starts by itself then, in the background too. A notification says when the games are ready."
-		: @"Downloading - it goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _prog.progress = 0;
-	[VXPack.shared fetch:ver wifiOnly:wifi progress:^(int64_t got, int64_t total) {
-			if (total <= 0) total = size; self->_prog.progress = total > 0 ? (float) ((double) got / total) : 0;
-			self->_status.text = [NSString stringWithFormat:@"Downloading: %.1f of %.1f MB  -  %.0f %%\nIt goes on in the background: use other apps meanwhile.", got / 1e6, total / 1e6, total > 0 ? 100.0 * got / total : 0]; }
-		unpacking:^{ self->_status.text = @"Unpacking..."; }
-		done:^(BOOL ok) { self->_prog.hidden = YES;
-			if (ok) { self->_firstPack = 1; [self startCore]; } else self->_status.text = @"The games could not be fetched. Close the app and try again."; }];
-#endif
+	long long sz = 0; NSMutableArray *names = [NSMutableArray array];
+	for (NSDictionary *p in _parts) if ([need containsObject:p[@"id"]]) { sz += [p[@"size"] longLongValue]; [names addObject:p[@"name"]]; }
+	vlog ("parts: new versions - %s (%.1f MB)", [names componentsJoinedByString:@", "].UTF8String, sz / 1e6);
+	[self chooseParts:NO];
+}
+- (void) fetchParts:(NSArray<NSString *> *)ids wifi:(BOOL)wifi
+{
+	if (!ids.count) { [self startCore]; return; }
+	long long total = 0; for (NSDictionary *p in _parts) if ([ids containsObject:p[@"id"]]) total += [p[@"size"] longLongValue];
+	_qIds = [ids mutableCopy]; _qWifi = wifi; _qTotal = total; _qDone = 0; _prog.hidden = NO; _prog.progress = 0;
+	vlog ("parts: fetching %s (%.1f MB)%s", [ids componentsJoinedByString:@", "].UTF8String, total / 1e6, wifi ? ", Wi-Fi only" : "");
+	_status.text = wifi ? @"Waiting for Wi-Fi: the download starts by itself then, in the background too. A notification says when the games are ready." : @"Downloading...";
+	[self nextPart];
+}
+- (void) nextPart
+{
+	if (!_qIds.count) {                                  /* (all here) */
+		_prog.hidden = YES; vlog ("parts: all fetched");
+		if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+			UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
+			[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
+		if (!_link) { _firstPack = 1; [self startCore]; } return; }
+	NSString *pid = _qIds.firstObject; NSDictionary *part = nil; for (NSDictionary *p in _parts) if ([p[@"id"] isEqualToString:pid]) part = p;
+	if (!part) { [_qIds removeObjectAtIndex:0]; [self nextPart]; return; }
+	long long psz = [part[@"size"] longLongValue];
+	[VXPack.shared fetchPart:pid version:part[@"version"] wifiOnly:_qWifi progress:^(int64_t got, int64_t tot) { (void) tot;
+			long long all = self->_qDone + got; self->_prog.progress = self->_qTotal > 0 ? (float) ((double) all / self->_qTotal) : 0;
+			self->_status.text = [NSString stringWithFormat:@"%@\n%.1f of %.1f MB  -  %.0f %%\nIt goes on in the background: use other apps meanwhile.", part[@"name"], all / 1e6, self->_qTotal / 1e6,
+				self->_qTotal > 0 ? 100.0 * all / self->_qTotal : 0]; }
+		unpacking:^{ self->_status.text = [NSString stringWithFormat:@"%@\nUnpacking...", part[@"name"]]; }
+		done:^(BOOL ok) {
+			if (!ok) { self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; return; }
+			self->_qDone += psz; [self->_qIds removeObject:pid]; [self nextPart]; }];
 }
 - (void) makeDisplayBuffer
 {
@@ -651,6 +669,7 @@ static void vxa_toast (NSString *s, double secs)
 }
 - (void) startCore
 {
+	if (_link) return;                              /* (running already: a download from Settings while playing) */
 	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));

@@ -53,3 +53,6 @@ void ulog (NSString *s);               /* into the app's live log */
 + (UIView *) welcomeView;                                      /* (tag 11: the line of text, 12: the progress bar) */
 + (void) showReadyFrom:(UIViewController *)vc;                 /* (once, after the first games arrived) */
 @end
+@interface VXUI (Parts)
++ (void) choosePartsIn:(UIViewController *)vc parts:(NSArray *)parts installed:(NSDictionary *)inst first:(BOOL)first go:(void (^) (NSArray<NSString *> *, BOOL))go later:(void (^) (void))later;
+@end

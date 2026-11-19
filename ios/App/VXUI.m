@@ -40,6 +40,7 @@ static int VNum (NSString *v, double *out)
 static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **extra)
 {
 	NSArray *vals = [@(vxa_ovals (i)) componentsSeparatedByString:@"|"]; NSMutableArray *n = [NSMutableArray array], *x = [NSMutableArray array];
+	for (NSString *v in vals) if ([v containsString:@" Hz"]) return 0;   /* (screen rates: a choice of the screen's own, not a slide) */
 	for (NSString *v in vals) { double d; if (VNum (v, &d)) [n addObject:v]; else [x addObject:v]; }
 	if (n.count < 4) return 0;
 	[n sortUsingComparator:^NSComparisonResult (NSString *a, NSString *b) { double p, q; VNum (a, &p); VNum (b, &q); return p < q ? NSOrderedAscending : p > q ? NSOrderedDescending : NSOrderedSame; }];

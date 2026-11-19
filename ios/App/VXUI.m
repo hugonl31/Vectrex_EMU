@@ -847,7 +847,7 @@ extern double vx_app_volume (void); extern void vx_app_turn (double d); extern v
 {
 	[super layoutSubviews]; CGFloat r = MIN (self.bounds.size.width, self.bounds.size.height) / 2 - 4; CGPoint c = CGPointMake (CGRectGetMidX (self.bounds), CGRectGetMidY (self.bounds));
 	_track.path = [UIBezierPath bezierPathWithArcCenter:c radius:r startAngle:M_PI * 0.75 endAngle:M_PI * 2.25 clockwise:YES].CGPath;
-	_cap.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (c.x - r * 0.52, c.y - r * 0.52, r * 1.04, r * 1.04)].CGPath; [self draw];
+	_cap.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (c.x - r * 0.62, c.y - r * 0.62, r * 1.24, r * 1.24)].CGPath; [self draw];
 }
 - (void) draw
 {
@@ -977,7 +977,7 @@ static UIImage *VXSym (NSString *n, NSString *fallback, CGFloat pt)
 	for (UIView *v in @[ _stats, _dev, _cart, _rst ]) for (UIView *s in v.subviews) s.userInteractionEnabled = NO;
 	_volP = [VXPan new]; [self addSubview:_volP];
 	_knob = [VXKnob new]; [_knob addTarget:self action:@selector(volChanged) forControlEvents:UIControlEventValueChanged]; [_volP addSubview:_knob];
-	_kv = VL (@"", [UIFont monospacedDigitSystemFontOfSize:9 weight:UIFontWeightBold], VX_HI); _kv.textAlignment = NSTextAlignmentCenter; _kv.userInteractionEnabled = NO; [_knob addSubview:_kv];
+	_kv = VL (@"", [UIFont monospacedDigitSystemFontOfSize:9 weight:UIFontWeightBold], VX_HI); _kv.textAlignment = NSTextAlignmentCenter; _kv.adjustsFontSizeToFitWidth = YES; _kv.minimumScaleFactor = 0.6; _kv.userInteractionEnabled = NO; [_knob addSubview:_kv];
 	_bar = [VXVolBar new]; [_bar addTarget:self action:@selector(volChanged) forControlEvents:UIControlEventValueChanged]; [_volP addSubview:_bar];
 	_stats.accessibilityLabel = @"Figures"; _cart.accessibilityLabel = @"Cartridge: the games"; _rst.accessibilityLabel = @"RESET";
 	__weak VXDeck *ws = self; _tm = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { (void) t; [ws tick]; }];
@@ -1002,7 +1002,7 @@ static UIImage *VXSym (NSString *n, NSString *fallback, CGFloat pt)
 		const CGFloat sw = floor ((W - 2 * m) * 0.33), kw = 50, bw = floor ((W - 2 * m - sw - kw - 4 * gap) / 3);
 		_stats.frame = CGRectMake (m, y, sw, ph); CGFloat x = m + sw + gap;
 		for (UIView *v in @[ _dev, _cart, _rst ]) { v.frame = CGRectMake (x, y, bw, ph); x += bw + gap; }
-		_volP.frame = CGRectMake (x, y, W - m - x, ph); _knob.hidden = NO; _bar.hidden = YES; _knob.frame = CGRectMake ((_volP.bounds.size.width - 42) / 2, 2, 42, 42); _kv.frame = _knob.bounds;
+		_volP.frame = CGRectMake (x, y, W - m - x, ph); _knob.hidden = NO; _bar.hidden = YES; _knob.frame = CGRectMake ((_volP.bounds.size.width - 42) / 2, 2, 42, 42); { const CGFloat kw = (21 - 4) * 0.62 * 2 * 0.8; _kv.frame = CGRectMake ((42 - kw) / 2, (42 - 12) / 2, kw, 12); }   /* (inside the cap: "100" at 9 pt ran over the ring on the iPhone, 2026-11-19 - as the core and Android, 80 % of the cap) */
 		_volP.backgroundColor = VX_PANEL; _volP.layer.cornerRadius = 10; _volP.layer.borderWidth = 1; _volP.layer.borderColor = VX_EDGE.CGColor;
 	} else {                                               /* (slim: the figures, three 58 pt buttons, the volume the rest) */
 		const CGFloat sw = MIN (170, floor ((W - 2 * m) * 0.29)), bw = 58;

@@ -537,7 +537,7 @@ static void vxa_toast (NSString *s, double secs)
 {
 	[super viewDidLayoutSubviews];
 	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44);
-	  _bar.frame = CGRectMake (s0.left + 8, s0.top + (VXA_TOPROW - 44) / 2, b.size.width - s0.left - s0.right - 16, 44);
+	  _bar.frame = CGRectMake (s0.left + 8, s0.top + ([self barAuto] ? 6 : (VXA_TOPROW - 44) / 2), b.size.width - s0.left - s0.right - 16, 44);
 	  const int land = b.size.width > b.size.height; _bar.hidden = !_link || land; _menuBtn.hidden = !_link || !land; }   /* (upright: the quick bar; sideways: the menu button) */
 	_status.frame = CGRectMake (24, b.size.height / 2 - 60, b.size.width - 48, 80); _prog.frame = CGRectMake (40, b.size.height / 2 + 30, b.size.width - 80, 4);
 	if (_ctx) { [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer]; }
@@ -622,7 +622,7 @@ It goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _pr
 	vxa_audio_start (vxa_av.timing.sample_rate);
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
-	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews];
+	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews]; [self showBar];
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 }
 - (void) present
@@ -633,8 +633,14 @@ It goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _pr
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
 	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
-	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - (v.width > v.height ? 0 : VXA_TOPROW + 150)) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
-	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = v.width > v.height ? s.top * sc + (ah - h) / 2 : (s.top + VXA_TOPROW) * sc;
+	const int land = v.width > v.height, ipad = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+	const double row = land || [self barAuto] ? 0 : VXA_TOPROW;   /* (the quick bar's row: kept, or over the picture when it hides itself) */
+	const double keep = land || ipad || _ctl.hidden ? 0 : 150;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
+	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
+	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = land ? s.top * sc + (ah - h) / 2 : (s.top + row) * sc;
+	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw), r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
+	  if (fabs (r - 1) > 0.01) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) _fh) * r);
+		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, _fh, want); vx_app_pich = want; } } }
 	int y0 = (int) (_dh - top - h + 0.5);                      /* (GL: from the bottom) */
 	int sy0 = 0, sy1 = (int) _fh; if (!vxa_hw.bottom_left_origin) { sy0 = (int) _fh; sy1 = 0; }
 	glBlitFramebuffer (0, sy0, (GLint) _fw, sy1, (GLint) x, y0, (GLint) (x + w), (GLint) (y0 + h), GL_COLOR_BUFFER_BIT, k == 1.0 ? GL_NEAREST : GL_LINEAR);
@@ -716,6 +722,21 @@ static void vxa_set_opt (int i, NSString *v)
 	return [UIMenu menuWithTitle:@"Vectrex_EMU" children:top];
 }
 - (void) openMenu { [VXUI showGameMenuFrom:self]; }
+/* the quick bar hiding itself (Settings > App: the default on an iPad, where its row would cost the picture its width): over
+ * the picture, it fades 3 s after it was last shown; a tap at the top of the screen brings it back */
+- (BOOL) barAuto
+{
+	NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"];
+	return m ? [m isEqualToString:@"auto"] : UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+}
+- (void) showBar
+{
+	if (![self barAuto]) { _bar.alpha = 1; return; }
+	[UIView animateWithDuration:0.2 animations:^{ self->_bar.alpha = 1; }];
+	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBar) object:nil]; [self performSelector:@selector(fadeBar) withObject:nil afterDelay:3];
+}
+- (void) fadeBar { if ([self barAuto]) [UIView animateWithDuration:0.5 animations:^{ self->_bar.alpha = 0; }]; }
+- (void) barModeChanged { [self viewDidLayoutSubviews]; _pic = CGRectZero; [self showBar]; }
 - (void) setRunning:(int)on
 {
 	if (!_link || on == _running) return; _running = on; _link.paused = !on; _last = 0;
@@ -760,6 +781,7 @@ static void vxa_set_opt (int i, NSString *v)
 }
 - (void) touchesBegan:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e
 {
+	if ([self barAuto] && _bar.alpha < 0.5) for (UITouch *t in ts) if ([t locationInView:self.view].y < self.view.safeAreaInsets.top + 70) { vlog ("top tapped: the quick bar"); [self showBar]; return; }
 	for (UITouch *t in ts) {
 		CGPoint p = [t locationInView:self.view]; NSString *what = @"nothing";
 		if (!_ctl.hidden) {

@@ -8,7 +8,7 @@ options:
     iOS: "15.0"
 settings:
   base:
-    MARKETING_VERSION: "1.6.8"
+    MARKETING_VERSION: "1.6.9"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   VectrexEMU:

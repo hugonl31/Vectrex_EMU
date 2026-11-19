@@ -200,13 +200,17 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 5; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 6; }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s ? @(vxa_cdesc (_cats[(NSUInteger) s - 1].intValue)).uppercaseString : @"APP"; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Clock and battery: the time and battery at the top of the screen, beside the camera. Top bar: always in its own row, or over the picture and hiding itself - tap the top of the screen to bring it back (the picture then gets the room)."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
+	if (!ip.section && ip.row == 5) {               /* (about and help: the version, how to play, online, credits, licence) */
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+		c.textLabel.text = @"About and help"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"how to play, online, credits"; c.detailTextLabel.textColor = VX_DIM;
+		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
 	if (!ip.section && ip.row == 4) {               /* (the controls: controllers, buttons, touch, keyboard) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 		c.textLabel.text = @"Controls"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"controllers, touch, keyboard"; c.detailTextLabel.textColor = VX_DIM;
@@ -257,6 +261,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
 	if (!ip.section && ip.row == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
+	if (!ip.section && ip.row == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }
 	if (!ip.section && ip.row == 2) { UIViewController *g = self.game; ulog (@"settings: downloads");
 		[self dismissViewControllerAnimated:YES completion:^{ if ([g respondsToSelector:@selector(openDownloads)]) [g performSelector:@selector(openDownloads)]; }]; return; }
 	if (!ip.section) return;
@@ -287,7 +292,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 @end
 
-@interface VXLibrary : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+@interface VXLibrary : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate, UIDocumentPickerDelegate>
 @end
 @implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; UISegmentedControl *_look; }
 /* (the tiles' look, the player's choice: Cartridges - the real cartridge seen from above with its label -, Boxes, Overlays;
@@ -315,6 +321,26 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	if ([NSFileManager.defaultManager fileExistsAtPath:px]) [a addObject:@{ @"name": @"PiTrex", @"path": px, @"kind": @"PiTrex" }];
 	[a sortUsingComparator:^NSComparisonResult (NSDictionary *x, NSDictionary *y) { return [x[@"name"] localizedCaseInsensitiveCompare:y[@"name"]]; }];
 	_all = a; ulog ([NSString stringWithFormat:@"library: %lu games", (unsigned long) a.count]);
+}
+/* (your own games: picked in Files - from iCloud, the phone, a USB stick - and copied into roms/Imported) */
+- (void) importGames
+{
+	UIDocumentPickerViewController *p = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[ UTTypeData ] asCopy:YES];
+	p.allowsMultipleSelection = YES; p.delegate = self; [self presentViewController:p animated:YES completion:nil];
+}
+- (void) documentPicker:(UIDocumentPickerViewController *)c didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls
+{
+	NSSet *ext = [NSSet setWithArray:@[ @"bin", @"vec", @"gam", @"um2", @"v4e", @"rom" ]];
+	NSString *dir = [[vxa_docs () stringByAppendingPathComponent:@"roms"] stringByAppendingPathComponent:@"Imported"];
+	[NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+	int added = 0, skipped = 0;
+	for (NSURL *u in urls) { NSString *e = u.pathExtension.lowercaseString;
+		if (![ext containsObject:e]) { skipped++; continue; }
+		NSString *to = [dir stringByAppendingPathComponent:u.lastPathComponent]; [NSFileManager.defaultManager removeItemAtPath:to error:nil];
+		if ([NSFileManager.defaultManager copyItemAtPath:u.path toPath:to error:nil]) added++; else skipped++; }
+	ulog ([NSString stringWithFormat:@"library: %d games imported, %d skipped", added, skipped]);
+	[self scan]; [self applyFilter];
+	VToast (self, skipped ? [NSString stringWithFormat:@"Added %d - %d not a Vectrex game (.bin .vec .gam .um2)", added, skipped] : [NSString stringWithFormat:@"Added %d game%@", added, added == 1 ? @"" : @"s"]);
 }
 - (void) applyFilter
 {
@@ -354,7 +380,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[_look addAction:[UIAction actionWithHandler:^(UIAction *a) { NSInteger k = ((UISegmentedControl *) a.sender).selectedSegmentIndex;
 		[NSUserDefaults.standardUserDefaults setObject:k == 1 ? @"boxes" : k == 2 ? @"overlays" : @"carts" forKey:@"lib.look"];
 		ulog ([NSString stringWithFormat:@"library look %ld", (long) k]); [ws reload]; }] forControlEvents:UIControlEventValueChanged];
-	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ title, [UIView new], close ]]; row.alignment = UIStackViewAlignmentCenter;
+	UIButton *add = VB (@"", @"plus", NO, ^{ [ws importGames]; }); add.accessibilityLabel = @"Add games from Files";   /* (your own ROMs: from Files) */
+	[add.widthAnchor constraintEqualToConstant:44].active = YES; [add.heightAnchor constraintEqualToConstant:44].active = YES;
+	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ title, [UIView new], add, close ]]; row.alignment = UIStackViewAlignmentCenter; row.spacing = 8;
 	UIStackView *hs = [[UIStackView alloc] initWithArrangedSubviews:@[ row, _look, _search, cs ]]; hs.axis = UILayoutConstraintAxisVertical; hs.spacing = 10; hs.translatesAutoresizingMaskIntoConstraints = NO;
 	[head addSubview:hs];
 	UICollectionViewFlowLayout *fl = [UICollectionViewFlowLayout new]; fl.minimumInteritemSpacing = 12; fl.minimumLineSpacing = 16; fl.sectionInset = UIEdgeInsetsMake (16, 16, 24, 16);

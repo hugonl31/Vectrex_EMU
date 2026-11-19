@@ -114,6 +114,7 @@ def shrink(im, W=420):
 
 
 SHELL = None                                                    # (the real shell, its label's place: for a label alone)
+LAB_ANY = None
 
 
 def cart(label):
@@ -127,12 +128,43 @@ def cart(label):
         cols = [x for x in range(w) if sum(light(x, y) for y in range(rows[0], rows[-1], 3)) > (rows[-1] - rows[0]) / 3 * 0.6]
         SHELL = (sh, (cols[0], rows[0], cols[-1], rows[-1]))
     sh, (x0, y0, x1, y1) = SHELL; im = sh.copy()
-    lab = Image.open(label).convert('RGBA').resize((x1 - x0 + 1, y1 - y0 + 1), Image.LANCZOS); im.paste(lab, (x0, y0))
+    lab = (label if isinstance(label, Image.Image) else Image.open(label)).convert('RGBA').resize((x1 - x0 + 1, y1 - y0 + 1), Image.LANCZOS); im.paste(lab, (x0, y0))
     return shrink(im)
+
+
+def name_label(name):
+    """a cartridge for a game with no label of its own: the real label's top band (the Vectrex logo, ARCADE SYSTEM
+    CARTRIDGE), then the label's grey grid with the game's name in bold black - no GCE (homebrew)"""
+    from PIL import ImageFont
+    cart(LAB_ANY)                                               # (SHELL measured)
+    sh, (x0, y0, x1, y1) = SHELL; w, h = x1 - x0 + 1, y1 - y0 + 1
+    src = sh.crop((x0, y0, x1 + 1, y1 + 1)).convert('RGB')
+    bg = (214, 214, 214)                                        # (the real labels' light grey)
+    lab = Image.new('RGB', (w, h), bg); d = ImageDraw.Draw(lab)
+    step = max(4, w // 27)
+    for x in range(0, w, step): d.line((x, 0, x, h), fill=(176, 176, 176), width=max(1, w // 300))
+    for y in range(0, h, step): d.line((0, y, w, y), fill=(176, 176, 176), width=max(1, w // 300))
+    band = int(h * 0.30); lab.paste(src.crop((0, 0, w, band)), (0, 0))
+    t = re.sub(r'\s*\(.*?\)', '', name).replace('_', ' ').upper()
+    fp = 'C:/Windows/Fonts/ariblk.ttf' if os.path.exists('C:/Windows/Fonts/ariblk.ttf') else 'C:/Windows/Fonts/arialbd.ttf'
+    words = t.split(); lines = [t]
+    if len(t) > 12 and len(words) > 1:                          # (two lines when long)
+        best = min(range(1, len(words)), key=lambda k: abs(len(' '.join(words[:k])) - len(' '.join(words[k:]))))
+        lines = [' '.join(words[:best]), ' '.join(words[best:])]
+    size = int(h * 0.30)
+    while size > 8:
+        f = ImageFont.truetype(fp, size); wd = max(d.textlength(l, font=f) for l in lines)
+        if wd <= w * 0.86 and size * len(lines) * 1.25 <= (h - band) * 0.80 and size <= h * 0.20: break
+        size -= 2
+    f = ImageFont.truetype(fp, size); lh = size * 1.25; y = band + (h - band - lh * len(lines)) / 2 + lh / 2
+    for l in lines:
+        d.text((w / 2, y), l, font=f, fill=(12, 12, 12), anchor='mm'); y += lh
+    return cart(lab)
 
 
 if os.path.isdir(LAB) and os.path.isdir(BOX):
     labs = {key(os.path.splitext(f)[0]): os.path.join(LAB, f) for f in os.listdir(LAB) if f.lower().endswith('.png')}
+    LAB_ANY = next(iter(labs.values()))
     boxes = {}
     for f in os.listdir(BOX):
         if not f.lower().endswith('.png'):
@@ -157,7 +189,9 @@ if os.path.isdir(LAB) and os.path.isdir(BOX):
         gp, lp, bp = find(gce, stem), find(labs, stem), find(boxes, stem)
         if gp:
             shrink(Image.open(gp).convert('RGBA')).save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
-        elif lp:
+        elif not lp:                                            # (no label: one made with its name)
+            name_label(stem).save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
+        if lp and not gp:
             cart(lp).save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
         if bp:
             b = Image.open(bp).convert('RGB'); b.resize((390, int(390 * b.height / b.width)), Image.LANCZOS).save(os.path.join(tb, stem + '.png'), optimize=True); nb += 1

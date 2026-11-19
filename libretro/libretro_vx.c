@@ -1362,6 +1362,19 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 #define BEAM_HALO_C 18.0
 #define BEAM_DOTC 4.0                   /* a resting spot: BEAM_DOTMAX x min (1, cycles / BEAM_DOTC) */
 #define BEAM_DOTMAX 1.6
+extern float vx_hdr_peak;               /* (gpu_phos.c; 1.0: no HDR) */
+/* HDR (the own iOS app): how much brighter than a line the beam at rest lights the tube - the owner's Corner Test photo
+ * (2026-10-26, ProRAW: linear): 2.3x at 16 cycles, 3.2x at 24, 4.9x at 32, 7-9x from 48 on. Without HDR such a spot is
+ * the screen's white, as every line's core; with it the rest's light above white, as a display value: R^(1/2.2) - 1.
+ * Mine Storm's shots rest 36 cycles (intensity 95), Last Human's 53 + 66 in one place (127): the brightest */
+static double hdr_rest (double cyc)
+{
+	static const double C[] = { 8, 16, 24, 32, 48, 96 }, R[] = { 1.0, 2.3, 3.2, 4.9, 8.0, 8.5 };
+	double r = R[5];
+	if (cyc <= C[0]) return 0;
+	for (int i = 1; i < 6; i++) if (cyc <= C[i]) { r = R[i - 1] + (R[i] - R[i - 1]) * (cyc - C[i - 1]) / (C[i] - C[i - 1]); break; }
+	return pow (r, 1 / 2.2) - 1.0;
+}
 #define BEAM_DOTW 1.0                   /* its width: the line's x DOTW + DOTWK per cycle (game px) */
 #define BEAM_DOTWK 0.002
 #define BEAM_BLOOM_E0 20.0              /* a long bright rest blooms: wider (x BLOOM_W) and its halo brighter (x BLOOM_H) */
@@ -1401,7 +1414,7 @@ typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; } 
 #define NW (MAXL * 3)
 static wline W1[NW], W2[NW];
 /* a piece in picture pixels: the segment (run on past an open end), the ends of its own box, the cuts, the spot */
-typedef struct { float ax, ay, bx, by, x0, y0, x1, y1, n0x, n0y, c0, n1x, n1y, c1, k2, R, r, g, b; int to, cut; } pline;
+typedef struct { float ax, ay, bx, by, x0, y0, x1, y1, n0x, n0y, c0, n1x, n1y, c1, k2, R, r, g, b, hx; int to, cut; } pline;
 static pline pl[NW];
 #define GTAB 4096
 #define GX 4.5                          /* (the spot out to 3 sigma: d^2 / 2 sigma^2 up to 4.5) */
@@ -2263,7 +2276,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		if (up_kb != 0) { double d = zi * 127.0; d = d > 127 ? 127 : d; const int ii = d >= 126 ? 126 : (int) d;   /* (vecrender.py tube_light) */
 			zk = pow (TUBE_LIGHT[ii] + (TUBE_LIGHT[ii + 1] - TUBE_LIGHT[ii]) * (d - ii), 1 / 2.2); }
 		const double zw = zi >= BEAM_LOWZ ? 1.0 : BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ;
-		double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * pw_width * up_width, kk; int dot = 0;   /* (up_width: R525's stiffer beam) */
+		double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * pw_width * up_width, kk, hx = 0; int dot = 0;   /* (up_width: R525's stiffer beam) */
 		const double lp = sqrt ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 		if (halo[i]) {
 			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
@@ -2276,26 +2289,28 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
 			kk = BEAM_DOTMAX * (cyc / BEAM_DOTC < 1 ? cyc / BEAM_DOTC : 1); dot = 1;
+			if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk;   /* (HDR: above white, the rest's own light) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
 			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);
 			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
 			fw = fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl);
 			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
-				kk *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
+				kk *= pow (wd, 2.5); hx *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
 		}
 		kk *= zk * BEAM_PEAK * PHOS_GAIN * pw_gain * up_light * (L[i].wq / 255.0);   /* (up_light: the high voltage's light, unit.c) */
 		if ((l->b & 128) && !web) kk *= BEAM_FADE;
 		double sg = fw * gp / 2.355 * bk, sw = sg < 0.5 ? 0.5 : sg;   /* (at least half a pixel: a thinner spot as wide, its light kept) */
 		kk *= dot ? (sg / sw) * (sg / sw) : sg / sw;
+		hx *= (sg / sw) * (sg / sw) * pw_gain * up_light * (L[i].wq / 255.0); if ((l->b & 128) && !web) hx *= BEAM_FADE;
 		if (kk < 1e-4) continue;
 		float r = (float) kk, g = r, b = r;
-		if (vt_imager && opt_imager) {          /* (the filter in front of the eye: its colour) */
+		if (vt_imager && opt_imager) { hx = 0;  /* (the filter in front of the eye: its colour; no HDR light past it) */
 			r = (l->rgb & 1) ? r : 0; g = (l->rgb & 2) ? g : 0; b = (l->rgb & 4) ? b : 0; if (!(l->rgb & 7)) r = g = b = 0; }
 		pline *q = &pl[npl++];
 		q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
 		q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
-		q->k2 = (float) (1.0 / (2.0 * sw * sw)); q->R = (float) (sw * 3.0); q->r = r; q->g = g; q->b = b;
+		q->k2 = (float) (1.0 / (2.0 * sw * sw)); q->R = (float) (sw * 3.0); q->r = r; q->g = g; q->b = b; q->hx = (float) hx;
 		q->cut = (!dot && lp > 1e-3) ? jo[i] : 0;          /* (open ends: cut below, when the neighbour is open too) */
 		q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;
 	}

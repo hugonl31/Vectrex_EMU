@@ -29,7 +29,7 @@ final class Input {
 	static int[] turn (int p, int x, int y)
 	{
 		if (p < 0 || p > 1 || !builtIn[p] || rot == 0) return new int[] { x, y };
-		return rot == 1 ? new int[] { -y, x } : rot == 2 ? new int[] { -x, -y } : new int[] { y, -x };
+		return rot == 1 ? new int[] { y, -x } : rot == 2 ? new int[] { -x, -y } : new int[] { -y, x };   /* (left side up: the top edge points right) */
 	}
 	/* a handheld's face buttons turned with it: the Vectrex's 1-4 by their place as the player now sees them - left, top,
 	 * bottom, right - whichever button is there (the player's own map in Settings is left as it is) */

@@ -1,6 +1,6 @@
 /* Screens.java - the screens over the game, as the iOS app's (ios/App/VXUI.m): the game menu (save states, the games,
  * RESET, the overlay, the room light, all settings, online, the Vectrex's hardware), the settings (the app's own and every
- * core setting in its submenu, each value with its help), a setting's values, the controller's buttons. Plain views,
+ * core setting in its group, in the iOS app's order, each value with its help), a setting's values, the controller's buttons. Plain views,
  * the PC app's colours; every row reachable with a controller (the highlight), button 4 picks, button 3 goes back.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 package com.hugob.vectrexemu;
@@ -88,20 +88,22 @@ final class Screens {
 			LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (0, -2, 1); lp.leftMargin = lp.rightMargin = (int) m.dp (4); slots.addView (c, lp); }
 		p.col.addView (slots);
 		if (!can) p.foot (Online.playing ? "No save states during an online game." : "This game has no save states (UVMC2 and PiTrex games keep their own).");
-		p.header ("Play");
-		p.row ("Games", "The library: pick a game", () -> { m.pop (); Library.show (m); });
-		p.row ("RESET", Online.playing ? "Resets both players' game" : "The Vectrex's RESET button", () -> { VX.act (1, 0); m.pop (); });
-		final int ov = VX.ofind ("vectrex_emu_overlay");
-		p.row (ov >= 0 && VX.opt (ov, 5).equals ("on") ? "Overlay: on" : "Overlay: off", "The game's overlay", () -> { m.overlayToggle (); m.pop (); });
+		final int ov = VX.ofind ("vectrex_emu_overlay"); final boolean ovOn = ov >= 0 && VX.opt (ov, 5).equals ("on");
 		final int room = VX.ofind ("vectrex_emu_room");
-		if (room >= 0) p.row ("Room light", VX.opt (room, 5), () -> { m.pop (); choice (m, room); });
+		LinearLayout acts = new LinearLayout (m); acts.setOrientation (LinearLayout.HORIZONTAL);
+		String[] an = { "Games", "RESET", ovOn ? "Overlay on" : "Overlay off", "Room light" };
+		Runnable[] ag = { () -> { m.pop (); Library.show (m); }, () -> { VX.act (1, 0); m.pop (); }, () -> { m.overlayToggle (); m.pop (); },
+			() -> { if (room < 0) return; m.pop (); choice (m, room); } };
+		for (int k = 0; k < 4; k++) { final Runnable go = ag[k]; final String nm = an[k]; TextView b = button (m, nm, k == 2 && ovOn); b.setTextSize (13); b.setMaxLines (2);
+			b.setOnClickListener (v -> { Main.log ("ui " + nm); go.run (); });
+			LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (0, (int) m.dp (64), 1); lp.leftMargin = lp.rightMargin = (int) m.dp (4); acts.addView (b, lp); }
+		LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams (-1, -2); alp.topMargin = (int) m.dp (14); alp.bottomMargin = (int) m.dp (8); p.col.addView (acts, alp);
 		p.row ("All settings", "The picture, the overlay, the sound, the controls...", () -> { m.pop (); settings (m); });
 		p.row ("Online: play with a friend", Online.playing ? "Playing online now" : "Host or join - phones and PCs together", () -> { m.pop (); Online.show (m); });
 		p.header ("Vectrex hardware");
 		p.row ("Eject / insert cartridge", "Mine Storm without a cartridge", () -> { VX.act (2, 0); m.pop (); });
 		final int p2 = VX.ofind ("vectrex_emu_port2");
 		if (p2 >= 0) p.row ("Port 2: " + VX.opt (p2, 5), "The controller port's device", () -> choice (m, p2));
-		p.row ("Power off / on", "As the volume knob's switch", () -> { VX.act (3, 0); m.pop (); });
 		m.push (p); resume.requestFocus ();
 	}
 
@@ -110,18 +112,15 @@ final class Screens {
 	{
 		Main.log ("ui settings opened"); Panel p = new Panel (m, "Settings");
 		p.header ("App");
-		String ts = m.prefs.getString ("touch.show", "auto");
-		p.row ("Touch controls", ts.equals ("auto") ? "While no controller is connected" : ts.equals ("always") ? "Always" : "Never", () -> pick (m, "Touch controls", new String[] { "auto", "always", "never" },
-			new String[] { "While no controller is connected", "Always", "Never" }, ts, v -> { m.prefs.edit ().putString ("touch.show", v).apply (); m.layout (); reopenSettings (m); }));
-		p.row ("Touch controls: size", pct (m.prefs.getFloat ("touch.size", 1f)), () -> pickF (m, "Touch controls: size", "touch.size", new float[] { 0.75f, 0.9f, 1f, 1.15f, 1.3f }, 1f));
-		p.row ("Touch controls: opacity", pct (m.prefs.getFloat ("touch.alpha", 1f)), () -> pickF (m, "Touch controls: opacity", "touch.alpha", new float[] { 0.25f, 0.5f, 0.75f, 1f }, 1f));
-		p.row ("Left-handed", m.prefs.getBoolean ("touch.lefty", false) ? "On: the stick on the right" : "Off", () -> { m.prefs.edit ().putBoolean ("touch.lefty", !m.prefs.getBoolean ("touch.lefty", false)).apply (); m.layout (); reopenSettings (m); });
-		p.row ("Controller buttons", "The Vectrex's buttons 1-4 on your controller", () -> controls (m));
-		p.row ("Top bar (upright)", m.barAuto () ? "Hides itself: tap the top to show it" : "Always shown", () -> { m.prefs.edit ().putString ("app.topbar", m.barAuto () ? "fixed" : "auto").apply (); m.showBar (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); });
-		if (m.hdrCan) p.row ("HDR brightness", pct (m.prefs.getFloat ("app.hdr", 1f)) + " of the screen's headroom (" + String.format (java.util.Locale.ROOT, "%.1fx", m.hdrRoom) + ")" + (VX.hdrActive () != 0 ? "" : " - not active"),
+		p.row ("Clock and battery", m.prefs.getBoolean ("app.statusbar", false) ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("app.statusbar", !m.prefs.getBoolean ("app.statusbar", false)).apply ();
+			Main.log ("clock and battery " + (m.prefs.getBoolean ("app.statusbar", false) ? "on" : "off")); m.immersive (); m.root.postDelayed (() -> reopenSettings (m), 350); });   /* (built again once the status bar's room is known) */
+		p.row ("Top bar", m.barAuto () ? "Auto-hide" : "Always", () -> { m.prefs.edit ().putString ("app.topbar", m.barAuto () ? "fixed" : "auto").apply (); m.showBar (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); });
+		p.row ("Downloads", Pack.token (m) != null ? "games, boxes, UVMC2, PiTrex" : "Not in this build (no server key)", () -> { if (Pack.token (m) == null) { m.toast ("This build has no server key: no downloads", 2.5); return; } m.pop (); Pack.choose (m, false); });
+		if (m.hdrCan) p.row ("HDR brightness", m.prefs.getFloat ("app.hdr", 1f) > 0.01f ? "The brightest dots up to " + String.format (java.util.Locale.ROOT, "%.1fx", 1 + (m.hdrRoom - 1) * m.prefs.getFloat ("app.hdr", 1f)) + " white" : "Off: as an ordinary screen",
 			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
-		else p.row ("HDR", m.hdrScreen ? "Off on this Android version (HDR needs Android 14 or newer)" : "This screen shows no HDR", null);
-		p.row ("Downloads", Pack.token (m) != null ? "The games, box art, cartridges, UVMC2, PiTrex" : "Not in this build (no server key)", () -> { if (Pack.token (m) == null) { m.toast ("This build has no server key: no downloads", 2.5); return; } m.pop (); Pack.choose (m, false); });
+		else p.row ("HDR brightness", m.hdrScreen ? "Not on this Android version (HDR needs Android 14)" : "Not on this screen (it shows no HDR)", null);
+		p.row ("Controls", "controllers, touch, keyboard", () -> { m.pop (); controls (m); });
+		p.row ("About and help", "how to play, online, credits", () -> about (m));
 		{ int n = 0; for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) n++; final int changed = n;
 		  LinearLayout r = p.row ("Reset all settings", n > 0 ? n + " changed - all back to their defaults (a long press on one: that one)" : "All at their defaults", () -> {
 			if (changed == 0) { m.toast ("All settings are at their defaults", 2); return; }
@@ -130,19 +129,33 @@ final class Screens {
 				for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) { VX.oset (i, VX.opt (i, 6)); k++; }
 				Main.log ("settings: reset all (" + k + " changed)"); m.toast ("Settings back to their defaults", 2); reopenSettings (m); }); });
 		  if (n > 0) ((TextView) r.findViewWithTag ("t")).setTextColor (Main.CHG); }
-		p.row ("About", "Vectrex_EMU " + m.version () + " - files: " + m.sysDir, null);
-		/* the core's settings, by its submenus */
+		p.foot ("Clock and battery: the time and battery at the top of the screen. Top bar: always in its own row, or over the picture and hiding itself - tap the top of the screen to bring it back (the picture then gets the room).");
+		/* the core's settings by its groups, in the iOS app's order (VXSettings): the most used first, in each group the
+		 * usual ones on top; settings that mean nothing here left out */
 		final int n = VX.nopts (), nc = VX.ncats ();
-		for (int c = -1; c < nc; c++) {
-			String ck = c >= 0 ? VX.cat (c, 0) : ""; boolean any = false;
-			for (int i = 0; i < n; i++) { String k = VX.opt (i, 0); if (!VX.opt (i, 2).equals (ck) || k.equals ("vectrex_emu_deck_look")) continue;
-				if (c < 0 && nc > 0 && !ck.isEmpty ()) continue;
-				if (!any) { any = true; p.header (c >= 0 ? VX.cat (c, 1) : "General"); }
+		java.util.List<String> order = java.util.Arrays.asList ("video", "overlay", "case", "tube", "controls", "audio", "system", "unit", "circuit");
+		java.util.List<String> top = java.util.Arrays.asList ("vectrex_emu_profile", "vectrex_emu_deck", "vectrex_emu_rotate", "vectrex_emu_rate", "vectrex_emu_size",
+			"vectrex_emu_overlay", "vectrex_emu_ov_glow", "vectrex_emu_scratches", "vectrex_emu_room", "vectrex_emu_ceiling",
+			"vectrex_emu_glow", "vectrex_emu_afterglow", "vectrex_emu_brightness", "vectrex_emu_keys", "vectrex_emu_port2");
+		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look");
+		java.util.ArrayList<Integer> cs = new java.util.ArrayList<> ();
+		for (String k : order) for (int c = 0; c < nc; c++) if (VX.cat (c, 0).equals (k)) cs.add (c);
+		for (int c = 0; c < nc; c++) if (!cs.contains (c)) cs.add (c);
+		if (nc == 0) cs.add (-1);
+		for (int c : cs) {
+			String ck = c >= 0 ? VX.cat (c, 0) : "";
+			java.util.ArrayList<Integer> rows = new java.util.ArrayList<> ();
+			for (int i = 0; i < n; i++) if (VX.opt (i, 2).equals (ck) && !hide.contains (VX.opt (i, 0))) rows.add (i);
+			rows.sort ((x, y) -> { int a = top.indexOf (VX.opt (x, 0)), b = top.indexOf (VX.opt (y, 0)); if (a < 0) a = 999; if (b < 0) b = 999; return Integer.compare (a, b); });
+			if (rows.isEmpty ()) continue;
+			p.header (c >= 0 ? VX.cat (c, 1) : "General");
+			for (int i : rows) {
 				final int ix = i; String v = VX.opt (i, 5); boolean chg = !v.equals (VX.opt (i, 6));
 				LinearLayout r = p.row (VX.opt (i, 1), v, () -> choice (m, ix)); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG);
 				r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true;   /* (a long press: back to the default) */
 					VX.oset (ix, VX.opt (ix, 6)); Main.log ("settings: " + VX.opt (ix, 0) + " back to the default"); x.performHapticFeedback (android.view.HapticFeedbackConstants.LONG_PRESS);
 					m.toast (VX.opt (ix, 1) + ": " + VX.opt (ix, 6) + " (the default)", 2); reopenSettings (m); return true; }); }
+			if (c >= 0 && !VX.cat (c, 2).isEmpty ()) p.foot (VX.cat (c, 2));
 		}
 		m.push (p);
 	}
@@ -179,16 +192,57 @@ final class Screens {
 		p.foot (VX.opt (i, 3) + "\nDefault: " + VX.opt (i, 6));
 		m.push (p); if (first != null) first.requestFocus ();
 	}
-	/* the Vectrex's buttons on the controller */
+	/* Settings > Controls, as the iOS app's: what is connected, the Vectrex's buttons on the controller, the touch
+	 * controls, the keyboard */
 	static void controls (Main m)
 	{
-		Panel p = new Panel (m, "Controller buttons");
-		p.foot ("The Vectrex controller's four buttons in a row: 1 2 3 4. On a modern pad's diamond: 1 left, 2 top, 3 bottom, 4 right. Over a menu, button 3 goes back and button 4 picks.");
+		Main.log ("ui controls opened"); Panel p = new Panel (m, "Controls");
+		final boolean kb = m.getResources ().getConfiguration ().keyboard == android.content.res.Configuration.KEYBOARD_QWERTY;
+		p.header ("Connected"); int np = 0;
+		for (int k = 0; k < Input.devs.size () && k < 2; k++) { android.view.InputDevice d = android.view.InputDevice.getDevice (Input.devs.get (k));
+			if (d == null) continue; p.row (d.getName (), "player " + (k + 1), null); np++; }
+		if (np == 0) p.row (kb ? "Keyboard" : "Nothing connected", kb ? "the PC keys" : "touch", null);
+		p.foot ("Player 1 is the first controller, player 2 the second.");
+		p.header ("Vectrex buttons on the controller");
 		for (int v = 0; v < 4; v++) { final int k = v;
-			p.row ("Vectrex button " + (v + 1), Input.PHYS[Input.phys (v)], () -> {
+			p.row ("Button " + (v + 1), Input.PHYS[Input.phys (v)], () -> {
 				String[] vals = new String[8]; for (int j = 0; j < 8; j++) vals[j] = String.valueOf (j);
 				pick (m, "Vectrex button " + (k + 1), vals, Input.PHYS, String.valueOf (Input.phys (k)), s -> { m.prefs.edit ().putInt ("map." + (k + 1), Integer.parseInt (s)).apply (); m.pop (); controls (m); }); }); }
 		p.row ("As the Vectrex controller (default)", Input.nintendo ? "1 Y, 2 X, 3 B, 4 A (this pad's labels)" : "1 X, 2 Y, 3 A, 4 B", () -> { for (int j = 1; j <= 4; j++) m.prefs.edit ().remove ("map." + j).apply (); m.pop (); controls (m); });
+		p.foot ("Tap a button to choose. The Vectrex controller's four buttons in a row; on a modern pad's diamond by default 1 left, 2 top, 3 bottom, 4 right.");
+		p.header ("Touch controls");
+		String ts = m.prefs.getString ("touch.show", "auto");
+		p.row ("Show", ts.equals ("auto") ? "Automatic" : ts.equals ("always") ? "Always" : "Never", () -> pick (m, "Show", new String[] { "auto", "always", "never" },
+			new String[] { "Automatic", "Always", "Never" }, ts, v -> { m.prefs.edit ().putString ("touch.show", v).apply (); m.layout (); m.pop (); controls (m); }));
+		p.row ("Size", pct (m.prefs.getFloat ("touch.size", 1f)), () -> pickC (m, "Size", "touch.size", new float[] { 0.7f, 0.85f, 1f, 1.2f, 1.4f }, 1f));
+		p.row ("Opacity", pct (m.prefs.getFloat ("touch.alpha", 1f)), () -> pickC (m, "Opacity", "touch.alpha", new float[] { 0.2f, 0.4f, 0.6f, 0.8f, 1f }, 1f));
+		p.row ("Left-handed (the stick on the right)", m.prefs.getBoolean ("touch.lefty", false) ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("touch.lefty", !m.prefs.getBoolean ("touch.lefty", false)).apply (); m.layout (); m.pop (); controls (m); });
+		p.foot ("Automatic: shown only while no controller or keyboard is connected. The stick appears where the thumb lands.");
+		p.header ("Keyboard");
+		final int kk = VX.ofind ("vectrex_emu_keys");
+		if (kk >= 0) p.row ("Keyboard as on the PC", VX.opt (kk, 5).equals ("on") ? "On" : "Off", () -> { VX.oset (kk, VX.opt (kk, 5).equals ("on") ? "off" : "on"); m.pop (); controls (m); });
+		p.foot ("As on the PC: the arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L the games, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, M the menu.");
+		m.push (p);
+	}
+	static void pickC (Main m, String title, String key, float[] vals, float def)
+	{
+		String[] v = new String[vals.length], l = new String[vals.length]; float cur = m.prefs.getFloat (key, def);
+		for (int i = 0; i < vals.length; i++) { v[i] = String.valueOf (vals[i]); l[i] = pct (vals[i]); }
+		pick (m, title, v, l, String.valueOf (cur), s -> { m.prefs.edit ().putFloat (key, Float.parseFloat (s)).apply (); m.layout (); m.pop (); controls (m); });
+	}
+	/* Settings > About and help, as the iOS app's (VXAbout.m) */
+	static void about (Main m)
+	{
+		Panel p = new Panel (m, "About and help"); Main.log ("settings: about and help");
+		String[][] parts = {
+			{ "Vectrex_EMU", "Version " + m.version () + ". The Vectrex as it looks on a real tube: the beam, the phosphor's afterglow, the glow, the overlays, the glass and the case." },
+			{ "Playing", "MENU (top bar) opens the game menu: save and load, games, RESET, overlay, room light, all settings. With a controller: Select + X; with a keyboard: M.\nThe knob below the picture: the volume; hold it to switch the Vectrex off and on.\nTouch a setting and hold: back to its default." },
+			{ "Controls", "The touch controls show while no controller or keyboard is connected (Settings > Controls: always, never, their size and side). Controller buttons 1-4 are chosen there too." },
+			{ "Online", "Game menu > Online: host your game in the game room (anyone can join), with a code (only who you tell), or on this Wi-Fi (no internet needed); join with a code or from the lists. Phones and PCs play together - both need the same game and the same version of Vectrex_EMU. A menu open pauses both players." },
+			{ "Your own games", "Copy ROMs (.bin .vec .gam .um2) with a file manager to " + new File (m.ext (), "roms") + "." },
+			{ "Credits", "Vectrex_EMU by Hugo Bokhorst, started from vecx, the open-source Vectrex emulator. Overlays: the libretro overlay-borders collection and their creators (the full list: overlays/CREDITS.md in the app's files). Last Human and the UVMC2 games with their makers' permission.\nVectrex is a trademark of its owners; this app is not affiliated with them." },
+			{ "Licence", "Free software: GNU General Public License version 3. The source code: github.com/hugonl31/Vectrex_EMU" } };
+		for (String[] x : parts) { p.header (x[0]); TextView b = m.text (x[1], 15, Main.FG, false); b.setPadding ((int) m.dp (4), 0, (int) m.dp (4), (int) m.dp (6)); p.col.addView (b); }
 		m.push (p);
 	}
 	/* a line of text typed in (chat, a code, an address) */

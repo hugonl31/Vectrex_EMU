@@ -8,6 +8,7 @@ const char *vxa_okey (int i), *vxa_odesc (int i), *vxa_ocat (int i), *vxa_oinfo 
 int vxa_ofind (const char *key);
 void vxa_oset (int i, const char *value);
 int vxa_ncats (void);
+int vxa_squarish (void);               /* a 4:3-ish screen (an iPad, the Nova): the bar hides itself, the deck pops up */
 const char *vxa_ckey (int i), *vxa_cdesc (int i), *vxa_cinfo (int i);
 
 /* actions */

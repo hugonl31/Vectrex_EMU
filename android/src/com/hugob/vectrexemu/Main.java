@@ -100,7 +100,9 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void immersive ()
 	{
 		if (Build.VERSION.SDK_INT >= 30) { getWindow ().setDecorFitsSystemWindows (false); android.view.WindowInsetsController c = getWindow ().getInsetsController ();
-			if (c != null) { c.hide (WindowInsets.Type.systemBars ()); c.setSystemBarsBehavior (android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); } return; }
+			if (c != null) { boolean sb = prefs.getBoolean ("app.statusbar", false);   /* (Settings > Clock and battery: the status bar kept) */
+				c.hide (sb ? WindowInsets.Type.navigationBars () : WindowInsets.Type.systemBars ()); if (sb) c.show (WindowInsets.Type.statusBars ());
+				c.setSystemBarsBehavior (android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); } return; }
 		getWindow ().getDecorView ().setSystemUiVisibility (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
 			| View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
 	}
@@ -108,7 +110,8 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void insets (WindowInsets ins)
 	{
 		int t = 0, bo = 0, l = 0, r = 0;
-		if (Build.VERSION.SDK_INT >= 28 && ins.getDisplayCutout () != null) { t = ins.getDisplayCutout ().getSafeInsetTop (); bo = ins.getDisplayCutout ().getSafeInsetBottom (); l = ins.getDisplayCutout ().getSafeInsetLeft (); r = ins.getDisplayCutout ().getSafeInsetRight (); }
+		if (Build.VERSION.SDK_INT >= 30 && prefs.getBoolean ("app.statusbar", false)) t = ins.getInsets (WindowInsets.Type.statusBars ()).top;
+		if (Build.VERSION.SDK_INT >= 28 && ins.getDisplayCutout () != null) { t = Math.max (t, ins.getDisplayCutout ().getSafeInsetTop ()); bo = ins.getDisplayCutout ().getSafeInsetBottom (); l = ins.getDisplayCutout ().getSafeInsetLeft (); r = ins.getDisplayCutout ().getSafeInsetRight (); }
 		if (t != insTop || bo != insBot || l != insL || r != insR) { insTop = t; insBot = bo; insL = l; insR = r; log ("safe insets " + t + " " + l + " " + bo + " " + r); layout (); }
 	}
 
@@ -191,11 +194,11 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	@Override protected void onDestroy () { super.onDestroy (); Adhoc.stop (this); log ("the app ends"); }
 	@Override public void onRequestPermissionsResult (int code, String[] perms, int[] res) { if (code == 7) Adhoc.onPermission (this, res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED); }
 
-	/* a 4:3-ish screen (the Nova's 1280 x 960): upright, the picture takes all its width - the bar hides itself, the deck pops up */
+	/* a 4:3-ish screen (the Nova's 1280 x 960; an iPad's, as the iOS app): upright, the picture takes all its width - the bar hides itself, the deck pops up */
 	boolean squarish ()
 	{
 		android.util.DisplayMetrics dm = new android.util.DisplayMetrics (); getWindowManager ().getDefaultDisplay ().getRealMetrics (dm);
-		return Math.max (dm.widthPixels, dm.heightPixels) < 1.45f * Math.min (dm.widthPixels, dm.heightPixels);
+		return Math.max (dm.widthPixels, dm.heightPixels) < 1.55f * Math.min (dm.widthPixels, dm.heightPixels);
 	}
 	String defaults ()
 	{

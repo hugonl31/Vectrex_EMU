@@ -639,6 +639,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UIButton *lt = VB (self.first ? @"Not now" : @"Later", nil, NO, ^{ ulog (@"downloads: later"); [ws dismissViewControllerAnimated:YES completion:^{ if (ws.later) ws.later (); }]; });
 	[dl.heightAnchor constraintEqualToConstant:52].active = YES; [wf.heightAnchor constraintEqualToConstant:44].active = YES; [lt.heightAnchor constraintEqualToConstant:44].active = YES;
 	extern int vxa_net_expensive (void); wf.hidden = !vxa_net_expensive (); dl.tag = 21;
+	lt.hidden = self.first;                               /* (the first start: the needed parts come - no "not now") */
 	UIStackView *f = [[UIStackView alloc] initWithArrangedSubviews:@[ _sum, dl, wf, lt ]]; f.axis = UILayoutConstraintAxisVertical; f.spacing = 10;
 	f.frame = CGRectMake (0, 0, 320, 230); f.layoutMargins = UIEdgeInsetsMake (16, 16, 16, 16); f.layoutMarginsRelativeArrangement = YES;
 	self.tableView.tableFooterView = f; [self refresh];
@@ -660,8 +661,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	c.title = sz ? (cell ? [NSString stringWithFormat:@"Download now (%.0f MB of mobile data)", sz / 1e6] : [NSString stringWithFormat:@"Download (%.0f MB)", sz / 1e6]) : @"Done"; dl.configuration = c;
 }
 - (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger) self.parts.count; }
-- (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return self.first ? @"CHOOSE WHAT TO DOWNLOAD - ONCE" : @"WHAT IS ON THIS DEVICE"; }
-- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return @"Each part comes once; later only a part that changed comes again. Switch a part off to remove it and get its space back."; }
+- (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return self.first ? @"NEEDED PARTS COME ALWAYS - CHOOSE THE REST" : @"WHAT IS ON THIS DEVICE"; }
+- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return @"The Vectrex and the games are needed: without them nothing plays. Each part comes once; later only a part that changed comes again (a needed one by itself). Switch an optional part off to remove it."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
@@ -670,7 +671,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
 	c.textLabel.text = p[@"name"]; c.textLabel.textColor = VX_FG; c.textLabel.numberOfLines = 2; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
 	NSString *st = !v ? @"not here" : [v isEqualToString:p[@"version"]] ? @"on this device" : @"a newer version";
-	c.detailTextLabel.text = [NSString stringWithFormat:@"%.0f MB  -  %@%@", [p[@"size"] doubleValue] / 1e6, st, req ? @"  -  always" : @""];
+	c.detailTextLabel.text = [NSString stringWithFormat:@"%.0f MB  -  %@  -  %@", [p[@"size"] doubleValue] / 1e6, st, req ? @"needed" : @"optional"];
 	c.detailTextLabel.textColor = v && ![v isEqualToString:p[@"version"]] ? VX_CHG : VX_DIM;
 	UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [self.on containsObject:pid]; sw.enabled = !req; __weak VXParts *ws = self;
 	[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISwitch *) a.sender).on; if (on) [ws.on addObject:pid]; else [ws.on removeObject:pid];

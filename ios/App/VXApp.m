@@ -562,7 +562,7 @@ static void vxa_toast (NSString *s, double secs)
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
-	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
+	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; NSArray<NSString *> *_optNeed; BOOL _qWifi; long long _qTotal, _qDone;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -683,8 +683,13 @@ static void vxa_toast (NSString *s, double secs)
 	long long sz = 0; NSMutableArray *names = [NSMutableArray array];
 	for (NSDictionary *p in _parts) if ([need containsObject:p[@"id"]]) { sz += [p[@"size"] longLongValue]; [names addObject:p[@"name"]]; }
 	vlog ("parts: new versions - %s (%.1f MB)", [names componentsJoinedByString:@", "].UTF8String, sz / 1e6);
-	/* (the game starts first, the offer comes over it: on the iPad the offer never showed on the start screen and the
-	 *  start waited for it for good) */
+	/* (a needed part's new version: fetched at once on the start screen, its progress shown - the game after it. An
+	 *  optional one's: offered over the running game (on the iPad the offer never showed on the start screen, and the
+	 *  start waited for it for good)) */
+	NSMutableArray *req = [NSMutableArray array], *opt = [NSMutableArray array];
+	for (NSDictionary *p in _parts) if ([need containsObject:p[@"id"]]) [([p[@"required"] boolValue] ? req : opt) addObject:p[@"id"]];
+	_optNeed = opt.count ? opt : nil;
+	if (req.count) { [self fetchParts:req wifi:NO]; return; }
 	[self startCore];
 	__weak VXGameVC *ws = self;
 	dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (1.5 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [ws chooseParts:NO]; });
@@ -705,17 +710,23 @@ static void vxa_toast (NSString *s, double secs)
 		if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
 			UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
 			[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
-		if (!_link) { _firstPack = 1; [self startCore]; } return; }
+		if (!_link) { _firstPack = 1; [self startCore]; } else vxa_toast (@"Download done", 2);
+		if (_optNeed.count) { _optNeed = nil; __weak VXGameVC *ws = self;   /* (then the optional parts' new versions offered, over the game) */
+			dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (1.5 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [ws chooseParts:NO]; }); }
+		return; }
 	NSString *pid = _qIds.firstObject; NSDictionary *part = nil; for (NSDictionary *p in _parts) if ([p[@"id"] isEqualToString:pid]) part = p;
 	if (!part) { [_qIds removeObjectAtIndex:0]; [self nextPart]; return; }
 	long long psz = [part[@"size"] longLongValue];
 	[VXPack.shared fetchPart:pid version:part[@"version"] wifiOnly:_qWifi progress:^(int64_t got, int64_t tot) { (void) tot;
 			long long all = self->_qDone + got; self->_prog.progress = self->_qTotal > 0 ? (float) ((double) all / self->_qTotal) : 0;
 			self->_status.text = [NSString stringWithFormat:@"%@\n%.1f of %.1f MB  -  %.0f %%\nIt goes on in the background: use other apps meanwhile.", part[@"name"], all / 1e6, self->_qTotal / 1e6,
-				self->_qTotal > 0 ? 100.0 * all / self->_qTotal : 0]; }
-		unpacking:^{ self->_status.text = [NSString stringWithFormat:@"%@\nUnpacking...", part[@"name"]]; }
+				self->_qTotal > 0 ? 100.0 * all / self->_qTotal : 0];
+			if (self->_link) vxa_toast ([NSString stringWithFormat:@"Downloading %@: %.1f of %.1f MB (%.0f %%)", part[@"name"], all / 1e6, self->_qTotal / 1e6, self->_qTotal > 0 ? 100.0 * all / self->_qTotal : 0], 3); }
+		unpacking:^{ self->_status.text = [NSString stringWithFormat:@"%@\nUnpacking...", part[@"name"]]; if (self->_link) vxa_toast ([NSString stringWithFormat:@"Unpacking %@...", part[@"name"]], 10); }
 		done:^(BOOL ok) {
-			if (!ok) { self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; return; }
+			if (!ok) { self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; if (self->_link) vxa_toast (@"The download failed: try again in Settings > Downloads", 5);
+				else if ([VXPack installed].count) { self->_qIds = nil; [self startCore]; vxa_toast (@"The update failed: playing with the files here", 5); }   /* (the old files still play) */
+				return; }
 			self->_qDone += psz; [self->_qIds removeObject:pid]; [self nextPart]; }];
 }
 - (void) makeDisplayBuffer                      /* (the Metal layer's pixels: the view's, at the screen's own scale) */

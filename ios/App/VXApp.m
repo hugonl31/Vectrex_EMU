@@ -909,6 +909,7 @@ static void vxa_toast (NSString *s, double secs)
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
 			(unsigned long) GCController.controllers.count, GCKeyboard.coalescedKeyboard != nil);
+		{ extern int vx_net_playing_now (void), vx_net_diag (char *, int); if (vx_net_playing_now ()) { char d[200]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */
 		_runs = _presents = _late = _ticks = 0; vxa_under = vxa_drop = 0; }
 }
 /* the menu (step 1's stopgap until the native screens of step 2): the PC's keys for the actions the core knows, every

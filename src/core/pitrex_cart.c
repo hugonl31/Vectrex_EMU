@@ -482,6 +482,7 @@ int pitrex_open (const char *path)
 	if (!px_ram) px_ram = (uint8_t *) calloc (1, PX_RAM);
 	if (!px_ram) { fprintf (stderr, "PITREX: no memory\n"); return -1; }
 	{ const char *z = getenv ("VT_PITREX_SD");                               /* the SD card: a FAT image */
+	  if (px_sd) { fclose (px_sd); px_sd = NULL; }   /* (the last game's card closed: a game switch opened it again) */
 	  if (z && *z) { px_sd = fopen (z, "r+b");
 	    if (px_sd) {
 #ifdef _WIN32

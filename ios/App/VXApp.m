@@ -23,6 +23,16 @@
 #include "libretro.h"
 #include "vx_token.h"
 #import "VXApp.h"
+#import <Network/Network.h>
+static nw_path_monitor_t vxa_mon; static volatile int vxa_expensive;   /* (mobile data, a personal hotspot: costs the user) */
+int vxa_net_expensive (void) { return vxa_expensive; }
+static void vxa_net_watch (void)
+{
+	if (vxa_mon) return; vxa_mon = nw_path_monitor_create ();
+	nw_path_monitor_set_update_handler (vxa_mon, ^(nw_path_t p) { int e = nw_path_is_expensive (p) || nw_path_uses_interface_type (p, nw_interface_type_cellular);
+		if (e != vxa_expensive) { vxa_expensive = e; } });
+	nw_path_monitor_set_queue (vxa_mon, dispatch_get_main_queue ()); nw_path_monitor_start (vxa_mon);
+}
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding;
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 
@@ -210,10 +220,10 @@ static bool vxa_env (unsigned cmd, void *data)
 		snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v->value); vxa_opt_store (i); vlog ("core set option %s = %s", v->key, v->value); return true; }
 	case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: ((struct retro_log_callback *) data)->log = vxa_corelog; return true;
 	case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: vxa_av = *(const struct retro_system_av_info *) data; vxa_av_changed = 1;
-		vlog ("av info: %u x %u (max %u x %u), %.2f Hz", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_av.geometry.max_width, vxa_av.geometry.max_height, vxa_av.timing.fps);
+		vlog ("av info: %u x %u (max %u x %u), %.2f Hz (memory %.0f MB)", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_av.geometry.max_width, vxa_av.geometry.max_height, vxa_av.timing.fps, vxa_mem_mb ());
 		if (vxa_cfbo) vxa_core_fb (vxa_av.geometry.max_width, vxa_av.geometry.max_height); return true;
 	case RETRO_ENVIRONMENT_SET_GEOMETRY: vxa_av.geometry = *(const struct retro_game_geometry *) data;
-		vlog ("geometry: %u x %u", vxa_av.geometry.base_width, vxa_av.geometry.base_height); return true;
+		vlog ("geometry: %u x %u (memory %.0f MB)", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_mem_mb ()); return true;
 	case RETRO_ENVIRONMENT_GET_LANGUAGE: *(unsigned *) data = RETRO_LANGUAGE_ENGLISH; return true;
 	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: *(int *) data = 3; return true;
 	default: return false;
@@ -391,6 +401,84 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 	*files = u.files; return r == Z_STREAM_END && !u.bad ? 0 : -3;
 }
 
+/* ---------------------------------------------------------------- the content pack, fetched by iOS's background transfer
+ * service: it goes on while the user is in another app (or the app is suspended); iOS wakes the app to unpack it and a
+ * notification says the games are ready */
+#import <UserNotifications/UserNotifications.h>
+@interface VXPack : NSObject <NSURLSessionDownloadDelegate>
+@property (nonatomic, copy) void (^progress) (int64_t, int64_t); @property (nonatomic, copy) void (^unpacking) (void); @property (nonatomic, copy) void (^done) (BOOL); @property (nonatomic, copy) void (^bgDone) (void);
+@property (nonatomic, strong) NSURLSession *wifiSession;
+@property (nonatomic, copy) NSString *ver; @property (nonatomic, strong) NSURLSession *session;
++ (instancetype) shared;
+@end
+@implementation VXPack { int _lastpc; double _t0; }
++ (instancetype) shared { static VXPack *p; static dispatch_once_t o; dispatch_once (&o, ^{ p = [VXPack new]; }); return p; }
+- (NSURLSession *) session
+{
+	if (!_session) {
+		NSURLSessionConfiguration *c = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"com.hugob.vectrexemu.pack"];
+		c.sessionSendsLaunchEvents = YES; c.discretionary = NO; c.timeoutIntervalForResource = 6 * 3600;
+		_session = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:nil]; }
+	return _session;
+}
+- (NSURLSession *) wifiSession                  /* (Wait for Wi-Fi: a session that may not use mobile data - iOS starts it on Wi-Fi) */
+{
+	if (!_wifiSession) {
+		NSURLSessionConfiguration *c = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"com.hugob.vectrexemu.pack.wifi"];
+		c.sessionSendsLaunchEvents = YES; c.discretionary = NO; c.allowsCellularAccess = NO; c.allowsExpensiveNetworkAccess = NO; c.timeoutIntervalForResource = 7 * 24 * 3600;
+		_wifiSession = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:nil]; }
+	return _wifiSession;
+}
+- (void) fetch:(NSString *)ver wifiOnly:(BOOL)wifi progress:(void (^) (int64_t, int64_t))prog unpacking:(void (^) (void))unp done:(void (^) (BOOL))done
+{
+	self.ver = ver; self.progress = prog; self.unpacking = unp; self.done = done; NSURLSession *ses = wifi ? self.wifiSession : self.session; _lastpc = -1; _t0 = CACurrentMediaTime();
+	[UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
+		completionHandler:^(BOOL g, NSError *e) { (void) e; vlog ("notifications %s", g ? "allowed" : "not allowed"); }];
+	[ses getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> *ts) {
+		if (ts.count) { vlog ("pack %s: the fetch already running goes on", ver.UTF8String); return; }   /* (after a restart) */
+#ifdef VX_LOG_TOKEN
+		NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/pack"]];
+		[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"];
+		[[ses downloadTaskWithRequest:rq] resume]; vlog ("pack %s: fetching in the background%s", ver.UTF8String, wifi ? ", Wi-Fi only" : "");
+#endif
+	}];
+}
+- (void) URLSession:(NSURLSession *)s downloadTask:(NSURLSessionDownloadTask *)t didWriteData:(int64_t)w totalBytesWritten:(int64_t)tw totalBytesExpectedToWrite:(int64_t)te
+{
+	double p = te > 0 ? (double) tw / te : 0; int pc = (int) (p * 10);
+	if (pc != _lastpc) { _lastpc = pc; vlog ("pack: %d %% (%.1f MB)", pc * 10, tw / 1e6); }
+	void (^f) (int64_t, int64_t) = self.progress; if (f) dispatch_async (dispatch_get_main_queue (), ^{ f (tw, te); });
+}
+- (void) URLSession:(NSURLSession *)s downloadTask:(NSURLSessionDownloadTask *)t didFinishDownloadingToURL:(NSURL *)loc
+{
+	long code = [t.response isKindOfClass:NSHTTPURLResponse.class] ? (long) ((NSHTTPURLResponse *) t.response).statusCode : 0;
+	if (code != 200) { vlog ("pack: fetch failed (%ld)", code); return; }
+	NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"pack.tgz"]; [NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
+	[NSFileManager.defaultManager moveItemAtURL:loc toURL:[NSURL fileURLWithPath:tmp] error:nil];   /* (now: the file goes when this returns) */
+	long long sz = [[NSFileManager.defaultManager attributesOfItemAtPath:tmp error:nil] fileSize];
+	vlog ("pack: %.1f MB in %.0f s; unpacking%s", sz / 1e6, CACurrentMediaTime () - _t0, UIApplication.sharedApplication.applicationState == UIApplicationStateBackground ? " (in the background)" : "");
+	{ void (^u) (void) = self.unpacking; if (u) dispatch_async (dispatch_get_main_queue (), u); }
+	__block UIBackgroundTaskIdentifier bt = [UIApplication.sharedApplication beginBackgroundTaskWithExpirationHandler:^{ vlog ("pack: unpacking cut short by iOS"); }];
+	NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; int files = 0; double t1 = CACurrentMediaTime ();
+	int bad = vxa_untgz (tmp.fileSystemRepresentation, docs.fileSystemRepresentation, &files);
+	[NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
+	vlog ("pack %s: %d files unpacked in %.1f s%s", self.ver.UTF8String, files, CACurrentMediaTime () - t1, bad ? " - NOT WHOLE" : "");
+	if (!bad && UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+		UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
+		[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
+	void (^d) (BOOL) = self.done; dispatch_async (dispatch_get_main_queue (), ^{ if (d) d (!bad); [UIApplication.sharedApplication endBackgroundTask:bt]; });
+}
+- (void) URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)e
+{
+	if (!e) return; vlog ("pack: fetch failed - %s", e.localizedDescription.UTF8String);
+	void (^d) (BOOL) = self.done; dispatch_async (dispatch_get_main_queue (), ^{ if (d) d (NO); });
+}
+- (void) URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)s
+{
+	vlog ("pack: background events done"); void (^h) (void) = self.bgDone; self.bgDone = nil; if (h) dispatch_async (dispatch_get_main_queue (), h);
+}
+@end
+
 /* ---------------------------------------------------------------- the view: OpenGL ES, the touch controls, messages */
 #define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
@@ -422,10 +510,11 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
-	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar;
+	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome; int _firstPack;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
-- (BOOL) prefersStatusBarHidden { return YES; }
+- (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
+- (UIStatusBarStyle) preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
 - (BOOL) prefersHomeIndicatorAutoHidden { return YES; }
 - (UIRectEdge) preferredScreenEdgesDeferringSystemGestures { return UIRectEdgeAll; }
 - (void) viewDidLoad
@@ -457,8 +546,8 @@ static void vxa_toast (NSString *s, double secs)
 	(void) ws; [_menuBtn addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
 	_bar = [VXUI quickBarFor:self]; _bar.hidden = YES; [self.view addSubview:_bar];
 	[self.view addSubview:_menuBtn];
-	_status = [UILabel new]; _status.textColor = g; _status.font = [UIFont systemFontOfSize:15]; _status.numberOfLines = 0; _status.textAlignment = NSTextAlignmentCenter; [self.view addSubview:_status];
-	_prog = [UIProgressView new]; _prog.progressTintColor = g; _prog.trackTintColor = [UIColor colorWithRed:0x16 / 255.0 green:0x30 / 255.0 blue:0x2a / 255.0 alpha:1]; _prog.hidden = YES; [self.view addSubview:_prog];
+	(void) g; _welcome = [VXUI welcomeView]; _welcome.frame = self.view.bounds; _welcome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+	[self.view addSubview:_welcome]; _status = [_welcome viewWithTag:11]; _prog = [_welcome viewWithTag:12];   /* (the start screen while the games arrive) */
 	NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
 	for (NSString *n in @[ GCControllerDidConnectNotification, GCControllerDidDisconnectNotification, GCKeyboardDidConnectNotification, GCKeyboardDidDisconnectNotification ])
 		[nc addObserver:self selector:@selector(devicesChanged:) name:n object:nil];
@@ -468,9 +557,8 @@ static void vxa_toast (NSString *s, double secs)
 {
 	[super viewDidLayoutSubviews];
 	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44);
-	  _bar.frame = CGRectMake (s0.left + 8, s0.top + (VXA_TOPROW - 44) / 2, b.size.width - s0.left - s0.right - 16, 44);
+	  _bar.frame = CGRectMake (s0.left + 8, s0.top + ([self barAuto] ? 6 : (VXA_TOPROW - 44) / 2), b.size.width - s0.left - s0.right - 16, 44);
 	  const int land = b.size.width > b.size.height; _bar.hidden = !_link || land; _menuBtn.hidden = !_link || !land; }   /* (upright: the quick bar; sideways: the menu button) */
-	_status.frame = CGRectMake (24, b.size.height / 2 - 60, b.size.width - 48, 80); _prog.frame = CGRectMake (40, b.size.height / 2 + 30, b.size.width - 80, 4);
 	if (_ctx) { [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer]; }
 	[self layoutControls];
 	UIEdgeInsets s = self.view.safeAreaInsets;
@@ -500,10 +588,12 @@ static void vxa_toast (NSString *s, double secs)
 	[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"]; rq.timeoutInterval = 8;
 	_status.text = @"Looking for games...";
 	[[NSURLSession.sharedSession dataTaskWithRequest:rq completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-		NSString *want = d && ((NSHTTPURLResponse *) r).statusCode == 200 ? [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : nil;
-		vlog ("pack: here %s, server %s%s", have ? have.UTF8String : "none", want ? want.UTF8String : "unreachable", e ? [@" - " stringByAppendingString:e.localizedDescription].UTF8String : "");
+		NSArray *ln = d && ((NSHTTPURLResponse *) r).statusCode == 200 ? [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] componentsSeparatedByString:@"\n"] : nil;
+		NSString *want = ln.count ? [ln[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : nil;
+		long long size = ln.count > 1 ? [ln[1] longLongValue] : 0;
+		vlog ("pack: here %s, server %s (%.1f MB)%s", have ? have.UTF8String : "none", want ? want.UTF8String : "unreachable", size / 1e6, e ? [@" - " stringByAppendingString:e.localizedDescription].UTF8String : "");
 		dispatch_async (dispatch_get_main_queue (), ^{
-			if (want && ![want isEqualToString:have ?: @""]) [self fetchPack:want];
+			if (want.length && ![want isEqualToString:have ?: @""]) [self askPack:want size:size have:have];
 			else if (have) [self startCore];
 			else self->_status.text = @"The games could not be fetched: no connection to the project's server. Close the app and try again."; });
 	}] resume];
@@ -512,34 +602,43 @@ static void vxa_toast (NSString *s, double secs)
 	[self startCore];
 #endif
 }
-- (void) fetchPack:(NSString *)ver
+/* (asked first, with the size: maybe on mobile data - "wait for Wi-Fi" lets iOS start it by itself on Wi-Fi, in the
+ *  background too; a new set while one is here: later is fine, the game starts with what is here) */
+- (void) askPack:(NSString *)ver size:(long long)size have:(NSString *)have
+{
+	extern int vxa_net_expensive (void); const int cell = vxa_net_expensive ();
+	NSString *mb = size > 0 ? [NSString stringWithFormat:@"%.0f MB", size / 1e6] : @"about 150 MB";
+	_status.text = [NSString stringWithFormat:@"%@: %@, once - the games, overlays, cartridges, UVMC2 and PiTrex.%@", have ? @"New games and pictures" : @"Download the games", mb,
+		cell ? @"\nYou are on mobile data." : @""];
+	vlog ("pack: asking (%s, %s)", mb.UTF8String, cell ? "mobile data" : "Wi-Fi");
+	UIStackView *bs = [UIStackView new]; bs.axis = UILayoutConstraintAxisVertical; bs.spacing = 10; bs.tag = 13;
+	__weak VXGameVC *ws = self;
+	void (^add) (NSString *, BOOL, void (^) (void)) = ^(NSString *t, BOOL main, void (^f) (void)) {
+		UIButtonConfiguration *c = main ? [UIButtonConfiguration filledButtonConfiguration] : [UIButtonConfiguration plainButtonConfiguration];
+		c.title = t; c.baseForegroundColor = main ? VX_HI2 : VX_HI; c.background.backgroundColor = main ? VX_SEL : VX_PANEL; c.background.strokeColor = VX_EDGE2; c.background.strokeWidth = 1; c.background.cornerRadius = 14;
+		UIButton *b = [UIButton buttonWithConfiguration:c primaryAction:[UIAction actionWithHandler:^(UIAction *x) { (void) x; vlog ("pack: %s", t.UTF8String); [bs removeFromSuperview]; f (); }]];
+		[b.heightAnchor constraintEqualToConstant:main ? 52 : 44].active = YES; [bs addArrangedSubview:b]; };
+	add (cell ? [NSString stringWithFormat:@"Download now (%@ of mobile data)", mb] : [NSString stringWithFormat:@"Download (%@)", mb], YES, ^{ [ws fetchPack:ver size:size wifi:NO]; });
+	if (cell) add (@"Wait for Wi-Fi", NO, ^{ [ws fetchPack:ver size:size wifi:YES]; });
+	if (have) add (@"Later: play with what is here", NO, ^{ [ws startCore]; });
+	else add (@"Not now", NO, ^{ dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.3 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [ws askPack:ver size:size have:have]; }); });   /* (the games are needed: asked again, nothing fetched) */
+	UIView *w = _welcome; bs.translatesAutoresizingMaskIntoConstraints = NO; [w addSubview:bs];
+	[NSLayoutConstraint activateConstraints:@[ [bs.leadingAnchor constraintEqualToAnchor:w.safeAreaLayoutGuide.leadingAnchor constant:32], [bs.trailingAnchor constraintEqualToAnchor:w.safeAreaLayoutGuide.trailingAnchor constant:-32],
+		[bs.bottomAnchor constraintEqualToAnchor:_status.topAnchor constant:-18] ]];
+}
+- (void) setStatusText:(NSString *)t { _status.text = t; }
+- (NSString *) statusText { return _status.text; }
+- (void) fetchPack:(NSString *)ver size:(long long)size wifi:(BOOL)wifi
 {
 #ifdef VX_LOG_TOKEN
-	_status.text = @"Fetching the games, overlays, UVMC2 and PiTrex\n(once for each new set)"; _prog.hidden = NO; _prog.progress = 0;
-	NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/pack"]];
-	[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"]; rq.timeoutInterval = 60;
-	double t0 = CACurrentMediaTime(); vlog ("pack %s: fetching", ver.UTF8String);
-	NSURLSessionDownloadTask *t = [NSURLSession.sharedSession downloadTaskWithRequest:rq completionHandler:^(NSURL *loc, NSURLResponse *r, NSError *e) {
-		if (!loc || ((NSHTTPURLResponse *) r).statusCode != 200) {
-			vlog ("pack: fetch failed (%ld) %s", (long) ((NSHTTPURLResponse *) r).statusCode, e.localizedDescription.UTF8String);
-			dispatch_async (dispatch_get_main_queue (), ^{ self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; }); return; }
-		NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"pack.tgz"]; [NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
-		[NSFileManager.defaultManager moveItemAtURL:loc toURL:[NSURL fileURLWithPath:tmp] error:nil];
-		double t1 = CACurrentMediaTime(); long long sz = [[NSFileManager.defaultManager attributesOfItemAtPath:tmp error:nil] fileSize];
-		vlog ("pack: %.1f MB in %.1f s; unpacking", sz / 1e6, t1 - t0);
-		dispatch_async (dispatch_get_main_queue (), ^{ self->_status.text = @"Unpacking..."; });
-		NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; int files = 0;
-		int ok = vxa_untgz (tmp.fileSystemRepresentation, docs.fileSystemRepresentation, &files);
-		[NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
-		vlog ("pack %s: %d files unpacked in %.1f s%s", ver.UTF8String, files, CACurrentMediaTime() - t1, ok ? " - NOT WHOLE" : "");
-		dispatch_async (dispatch_get_main_queue (), ^{ self->_prog.hidden = YES; [self startCore]; });
-	}];
-	[t resume];
-	[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *tm) {   /* (the progress bar; every 10 % in the log) */
-		double p = t.countOfBytesExpectedToReceive > 0 ? (double) t.countOfBytesReceived / t.countOfBytesExpectedToReceive : 0;
-		self->_prog.progress = (float) p; static int lastp = -1; int pc = (int) (p * 10);
-		if (pc != lastp) { lastp = pc; vlog ("pack: %d %% (%.1f MB)", pc * 10, t.countOfBytesReceived / 1e6); }
-		if (t.state != NSURLSessionTaskStateRunning) [tm invalidate]; }];
+	_status.text = wifi ? @"Waiting for Wi-Fi: the download starts by itself then, in the background too. A notification says when the games are ready."
+		: @"Downloading - it goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _prog.progress = 0;
+	[VXPack.shared fetch:ver wifiOnly:wifi progress:^(int64_t got, int64_t total) {
+			if (total <= 0) total = size; self->_prog.progress = total > 0 ? (float) ((double) got / total) : 0;
+			self->_status.text = [NSString stringWithFormat:@"Downloading: %.1f of %.1f MB  -  %.0f %%\nIt goes on in the background: use other apps meanwhile.", got / 1e6, total / 1e6, total > 0 ? 100.0 * got / total : 0]; }
+		unpacking:^{ self->_status.text = @"Unpacking..."; }
+		done:^(BOOL ok) { self->_prog.hidden = YES;
+			if (ok) { self->_firstPack = 1; [self startCore]; } else self->_status.text = @"The games could not be fetched. Close the app and try again."; }];
 #endif
 }
 - (void) makeDisplayBuffer
@@ -552,7 +651,7 @@ static void vxa_toast (NSString *s, double secs)
 }
 - (void) startCore
 {
-	_status.text = @"";
+	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
 	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
@@ -573,7 +672,8 @@ static void vxa_toast (NSString *s, double secs)
 	vxa_audio_start (vxa_av.timing.sample_rate);
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
-	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews];
+	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews]; [self showBar];
+	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 }
 - (void) present
@@ -584,8 +684,14 @@ static void vxa_toast (NSString *s, double secs)
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
 	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
-	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - (v.width > v.height ? 0 : VXA_TOPROW + 150)) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
-	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = v.width > v.height ? s.top * sc + (ah - h) / 2 : (s.top + VXA_TOPROW) * sc;
+	const int land = v.width > v.height, ipad = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+	const double row = land || [self barAuto] ? 0 : VXA_TOPROW;   /* (the quick bar's row: kept, or over the picture when it hides itself) */
+	const double keep = land || ipad || _ctl.hidden ? 0 : 150;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
+	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
+	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = land ? s.top * sc + (ah - h) / 2 : (s.top + row) * sc;
+	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw), r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
+	  if (fabs (r - 1) > 0.01) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) _fh) * r);
+		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, _fh, want); vx_app_pich = want; } } }
 	int y0 = (int) (_dh - top - h + 0.5);                      /* (GL: from the bottom) */
 	int sy0 = 0, sy1 = (int) _fh; if (!vxa_hw.bottom_left_origin) { sy0 = (int) _fh; sy1 = 0; }
 	glBlitFramebuffer (0, sy0, (GLint) _fw, sy1, (GLint) x, y0, (GLint) (x + w), (GLint) (y0 + h), GL_COLOR_BUFFER_BIT, k == 1.0 ? GL_NEAREST : GL_LINEAR);
@@ -667,6 +773,21 @@ static void vxa_set_opt (int i, NSString *v)
 	return [UIMenu menuWithTitle:@"Vectrex_EMU" children:top];
 }
 - (void) openMenu { [VXUI showGameMenuFrom:self]; }
+/* the quick bar hiding itself (Settings > App: the default on an iPad, where its row would cost the picture its width): over
+ * the picture, it fades 3 s after it was last shown; a tap at the top of the screen brings it back */
+- (BOOL) barAuto
+{
+	NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"];
+	return m ? [m isEqualToString:@"auto"] : UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+}
+- (void) showBar
+{
+	if (![self barAuto]) { _bar.alpha = 1; return; }
+	[UIView animateWithDuration:0.2 animations:^{ self->_bar.alpha = 1; }];
+	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBar) object:nil]; [self performSelector:@selector(fadeBar) withObject:nil afterDelay:3];
+}
+- (void) fadeBar { if ([self barAuto]) [UIView animateWithDuration:0.5 animations:^{ self->_bar.alpha = 0; }]; }
+- (void) barModeChanged { [self viewDidLayoutSubviews]; _pic = CGRectZero; [self showBar]; }
 - (void) setRunning:(int)on
 {
 	if (!_link || on == _running) return; _running = on; _link.paused = !on; _last = 0;
@@ -711,6 +832,7 @@ static void vxa_set_opt (int i, NSString *v)
 }
 - (void) touchesBegan:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e
 {
+	if ([self barAuto] && _bar.alpha < 0.5) for (UITouch *t in ts) if ([t locationInView:self.view].y < self.view.safeAreaInsets.top + 70) { vlog ("top tapped: the quick bar"); [self showBar]; return; }
 	for (UITouch *t in ts) {
 		CGPoint p = [t locationInView:self.view]; NSString *what = @"nothing";
 		if (!_ctl.hidden) {
@@ -785,7 +907,7 @@ int vxa_ofind (const char *key) { return vxa_opt_find (key); }
 void vxa_oset (int i, const char *v)
 {
 	if (i < 0 || i >= vxa_nopt || !strcmp (vxa_opt[i].val, v)) return;
-	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v); vxa_opt_store (i); vxa_opt_dirty = 1; vlog ("setting %s = %s", vxa_opt[i].key, v);
+	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v); vxa_opt_store (i); vxa_opt_dirty = 1; vlog ("setting %s = %s (memory %.0f MB)", vxa_opt[i].key, v, vxa_mem_mb ());
 }
 int vxa_ncats (void) { return vxa_ncat; }
 const char *vxa_ckey (int i) { return vxa_cat[i].key; }
@@ -796,14 +918,18 @@ NSString *vxa_docs (void) { return NSSearchPathForDirectoriesInDomains (NSDocume
 NSString *vxa_game (void) { const char *g = vx_app_game (); return g && *g ? @(g) : @""; }
 void vxa_do (NSString *w)
 {
-	if ([w isEqualToString:@"reset"]) vxa_press (RETROK_r, 1);
-	else if ([w isEqualToString:@"eject"]) vxa_press (RETROK_e, 1);
+	/* (straight into the core, not as keys: a key waits for the game to run - the overlay switched in the paused menu
+	 *  changed only after Resume - and needs the core's keyboard on) */
+	extern void vx_app_reset (void), vx_app_eject (void);
+	vlog ("action %s", w.UTF8String);
+	if ([w isEqualToString:@"reset"]) vx_app_reset ();
+	else if ([w isEqualToString:@"eject"]) vx_app_eject ();
 	else if ([w isEqualToString:@"pause"]) vxa_press (RETROK_p, 0);
-	else if ([w isEqualToString:@"overlay"]) vxa_press (RETROK_o, 0);
+	else if ([w isEqualToString:@"overlay"]) { int i = vxa_opt_find ("vectrex_emu_overlay"); if (i >= 0) vxa_oset (i, strcmp (vxa_opt[i].val, "on") ? "on" : "off"); }
 }
 void vxa_load (NSString *path)
 {
-	vlog ("load %s", path.UTF8String); vx_app_load (path.fileSystemRepresentation);
+	vlog ("load %s (memory %.0f MB)", path.UTF8String, vxa_mem_mb ()); vx_app_load (path.fileSystemRepresentation);
 	NSString *d = vxa_docs (); if ([path hasPrefix:d]) [NSUserDefaults.standardUserDefaults setObject:[path substringFromIndex:d.length + 1] forKey:@"lastGame"];
 	NSMutableArray *r = [[NSUserDefaults.standardUserDefaults arrayForKey:@"recent"] mutableCopy] ?: [NSMutableArray array];
 	[r removeObject:path]; [r insertObject:path atIndex:0]; while (r.count > 12) [r removeLastObject];
@@ -833,10 +959,12 @@ void vxa_hold (int on) { if (on != vxa_holding) { vxa_holding = on; vlog ("game 
 @implementation VXAppDelegate
 - (BOOL) application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
 {
-	vxa_log_start (); vlog ("app start");
+	vxa_log_start (); vlog ("app start"); vxa_net_watch ();
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;
 }
+- (void) application:(UIApplication *)a handleEventsForBackgroundURLSession:(NSString *)i completionHandler:(void (^) (void))h
+{ vlog ("woken for the pack's fetch (%s)", i.UTF8String); VXPack.shared.bgDone = h; if ([i hasSuffix:@".wifi"]) (void) VXPack.shared.wifiSession; else (void) VXPack.shared.session; }
 - (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; }
 - (void) applicationDidBecomeActive:(UIApplication *)a { [vxa_vc setRunning:1]; }
 - (void) applicationDidReceiveMemoryWarning:(UIApplication *)a { vlog ("memory warning: %.0f MB in use", vxa_mem_mb ()); }

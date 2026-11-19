@@ -2340,7 +2340,8 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
 /* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
  * the afterglow's two parts, one colour channel or three - all dark again */
-int vx_app_noshape;                             /* (set by a host that lays out the picture itself: the deck block exactly the
+int vx_app_pich;                                /* (the own iOS app: the picture height it has room for, px; 0: the screen's) */
+int vx_app_noshape;                            /* (set by a host that lays out the picture itself: the deck block exactly the
                                                 picture and the deck, no bars to the screen's shape - the own iOS app) */
 static void pic_setup (void)
 {
@@ -2656,7 +2657,10 @@ void retro_run (void)
 	{ static int lr = -1, ld = -1; static double ts; const double now = vt_wall ();   /* (Picture size auto again: the rotation or
 	                                              the deck changed; on an iPhone / iPad also the device turned - looked at once a second) */
 	  if (opt_rot != lr || opt_deck != ld || (VX_IOS && now - ts > 1.0)) { lr = opt_rot; ld = opt_deck; ts = now; if (gpu_ok) scr_detect (); } }
-	if (scr_new) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
+	{ extern int vx_app_pich;                   /* (the own iOS app: the picture's height it has room for, its own pixels -
+	                                              Picture size auto follows it, 1:1, as the layout changes) */
+	  if (size_auto && vx_app_pich >= 200 && vx_app_pich != opt_size) { opt_size = vx_app_pich; fprintf (stderr, "[vectrex_emu] picture size: the app's %d px\n", vx_app_pich); scr_new = 0; } }
+	if (scr_new && !(size_auto && vx_app_pich >= 200)) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape
 	    || (dk_on && (scr_w != geo_sw || scr_h != geo_sh))) { pic_setup (); geo_tell (); }   /* (with the deck: the screen turned - its shape) */
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }
@@ -3204,6 +3208,9 @@ static int game_switch (const char *path) { snprintf (sw_next, sizeof sw_next, "
 int vx_app_browser_wanted (void) { if (br_open) { br_show (0); return 1; } return 0; }
 void vx_app_load (const char *path) { game_switch (path); }
 const char *vx_app_game (void) { return cur_game; }
+static void eject_toggle (void);
+void vx_app_reset (void) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET (the app)\n"); }
+void vx_app_eject (void) { eject_toggle (); }   /* (as Ctrl+E: the switch at the next refresh) */
 static int game_switch_now (const char *path)
 {
 	fprintf (stderr, "[vectrex_emu] switching to %s (from %s)\n", path, cur_game);   /* (a crash on a switch: its log says which) */

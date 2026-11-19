@@ -36,7 +36,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 
 @interface VXOnline : UITableViewController <UITextFieldDelegate>
 @end
-@implementation VXOnline { NSTimer *_tm; NSDictionary *_st; NSString *_last; NSArray *_secs; int _shownPlay; }
+@implementation VXOnline { NSTimer *_tm; NSDictionary *_st; NSString *_last; NSArray *_secs; int _shownPlay, _sawSetup; }
 - (void) viewDidLoad
 {
 	[super viewDidLoad]; self.title = @"Online";
@@ -57,7 +57,8 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 	NSArray *chat = st[@"chat"]; if ([chat isKindOfClass:NSArray.class] && chat.count) { extern void vxa_net_chat_in (NSArray *lines); vxa_net_chat_in (chat); }
 	NSMutableDictionary *k = [st mutableCopy]; [k removeObjectForKey:@"chat"]; [k removeObjectForKey:@"waiting"]; [k removeObjectForKey:@"frame"]; [k removeObjectForKey:@"sums"]; [k removeObjectForKey:@"checked"];
 	NSString *key = [k description]; _st = st;
-	if ([self phase] == 4 && !_shownPlay) { _shownPlay = 1; [self done]; return; }   /* (the game started: back to it) */
+	if ([self phase] >= 1 && [self phase] <= 3) _sawSetup = 1;
+	if ([self phase] == 4 && _sawSetup && !_shownPlay) { _shownPlay = 1; [self done]; return; }   /* (the game started here: back to it - not when opened during one) */
 	if ([key isEqualToString:_last ?: @""]) return; _last = key;
 	[self build]; [self.tableView reloadData];
 }

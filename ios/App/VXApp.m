@@ -203,13 +203,16 @@ static CVPixelBufferRef vxa_pbs[VXA_NS]; static CVOpenGLESTextureCacheRef vxa_gc
 static CVMetalTextureCacheRef vxa_mcache; static CVMetalTextureRef vxa_mtexs[VXA_NS]; static id<MTLDevice> vxa_mdev; static int vxa_half;
 static GLuint vxa_fbos[VXA_NS]; static GLsync vxa_fence[VXA_NS]; static atomic_int vxa_busy[VXA_NS];   /* (busy: Metal still reading it) */
 static unsigned vxa_sw[VXA_NS], vxa_sh[VXA_NS];          /* (each slot's picture size) */
+static int vxa_pending = -1; static unsigned vxa_slot_seq[VXA_NS];   /* (a picture not finished at its refresh: kept, shown later in the same refresh) */
 static int vxa_draw, vxa_newest = -1; static unsigned vxa_seq;   /* (vxa_seq: pictures finished, counted) */                    /* (the slot the core draws into; the last one finished) */
 static uintptr_t vxa_get_fb (void) { return vxa_fbos[vxa_draw]; }
 static void vxa_pick_draw (void)                         /* (a slot that is not the newest picture and not being shown) */
 {
 	for (int tries = 0; tries < 400; tries++) {
 		for (int k = 1; k <= VXA_NS; k++) { const int s2 = (vxa_draw + k) % VXA_NS;
-			if (s2 != vxa_newest && !atomic_load (&vxa_busy[s2])) { vxa_draw = s2; vxa_cfbo = vxa_fbos[s2]; return; } }
+			if (s2 != vxa_newest && s2 != vxa_pending && !atomic_load (&vxa_busy[s2])) { vxa_draw = s2; vxa_cfbo = vxa_fbos[s2]; return; } }
+		if (vxa_pending >= 0 && vxa_pending != vxa_newest && !atomic_load (&vxa_busy[vxa_pending])) {   /* (no other: the late one given up) */
+			vxa_draw = vxa_pending; vxa_pending = -1; vxa_cfbo = vxa_fbos[vxa_draw]; return; }
 		usleep (100); }                                  /* (all shown or about to: a moment - rare) */
 	vxa_draw = (vxa_newest + 1) % VXA_NS; vxa_cfbo = vxa_fbos[vxa_draw];
 }
@@ -246,7 +249,7 @@ static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's fra
 			glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, vxa_cdepth); }
 		ok &= glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE && vxa_mtexs[i] != NULL;
 		vxa_sw[i] = vxa_sh[i] = 0; atomic_store (&vxa_busy[i], 0); }
-	vxa_half = half; vxa_newest = -1; vxa_draw = 0; vxa_cfbo = vxa_fbos[0];
+	vxa_half = half; vxa_newest = -1; vxa_pending = -1; vxa_draw = 0; vxa_cfbo = vxa_fbos[0];
 	vxa_cw = w; vxa_ch = h; vlog ("core framebuffers: %d of %u x %u, %s, shared with Metal: %s", VXA_NS, w, h, vxa_half ? "half floats (HDR room)" : "8-bit", ok ? "yes" : "NOT ALL");
 }
 static bool vxa_env (unsigned cmd, void *data)
@@ -608,7 +611,7 @@ static void vxa_toast (NSString *s, double secs)
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	UIButton *_popTab; double _popUntil;           /* (the pop-up deck: its tab, shown until) */
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
-	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq; long _notReady;
+	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq; long _notReady, _lateShown;
 	double _tRun, _tFin, _tDraw, _tMax, _tLinkDur;               /* (where a refresh's time goes: the stat line - "starts smooth, then choppy") */
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -819,18 +822,23 @@ static void vxa_toast (NSString *s, double secs)
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 	__weak VXGameVC *wn = self; dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (3 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ VXGameVC *g = wn; if (g) vxa_name_first (g); });   /* (the player name) */
 }
-- (void) present
+- (void) present { [self presentSlot:vxa_newest late:NO]; }
+- (void) presentSlot:(int)sl late:(BOOL)late
 {
 	if (!_have) return;
-	const int sl = vxa_newest; if (sl < 0 || !vxa_mtexs[sl] || !_pipe) return;
-	if (vxa_seq == _shownSeq) return;                   /* (nothing new) */
+	if (sl < 0 || !vxa_mtexs[sl] || !_pipe) return;
+	if (vxa_slot_seq[sl] == _shownSeq || (int) (vxa_slot_seq[sl] - _shownSeq) < 0) return;   /* (nothing new; older than the one shown) */
 	double tf0 = CACurrentMediaTime ();
-	if (vxa_fence[sl]) {                                /* (its drawing done - normally long since. Not done: shown at the next refresh, the
-	                                                       last one stays - a long wait here spun the processor: 120-144 % on the iPad, it heated up) */
-		if (glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 2000000) == GL_TIMEOUT_EXPIRED) { _tFin += CACurrentMediaTime () - tf0; _notReady++; return; }
+	if (vxa_fence[sl]) {                                /* (its drawing done - normally long since. Not done at the refresh's start: kept,
+	                                                       tried again after the emulator's step in the same refresh (tick) - dropped, it was
+	                                                       10-25 pictures a second on an M3 iPad: the stutter, the owner 2026-11-19. A long
+	                                                       wait here spun the processor: 120-144 % on the iPad, it heated up) */
+		if (glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 2000000) == GL_TIMEOUT_EXPIRED) {
+			_tFin += CACurrentMediaTime () - tf0; if (late) vxa_pending = -1; else { vxa_pending = sl; _notReady++; } return; }
 		glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }
-	_tFin += CACurrentMediaTime () - tf0;
-	_fw = vxa_sw[sl]; _fh = vxa_sh[sl]; _shownSeq = vxa_seq;
+	_tFin += CACurrentMediaTime () - tf0; if (late) _lateShown++;
+	if (vxa_pending == sl) vxa_pending = -1;
+	_fw = vxa_sw[sl]; _fh = vxa_sh[sl]; _shownSeq = vxa_slot_seq[sl];
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
 	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
@@ -887,15 +895,16 @@ static void vxa_toast (NSString *s, double secs)
 	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; }
 	_tRun += CACurrentMediaTime () - tr0; _tLinkDur += l.targetTimestamp - l.timestamp;
 	vxa_nodraw = 0;
+	if (vxa_pending >= 0) [self presentSlot:vxa_pending late:YES];   /* (the one not ready at the start: now, in this refresh still) */
 	if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); [VXUI showLibraryFrom:self]; }
 	{ const double tt = CACurrentMediaTime () - now; if (tt > _tMax) _tMax = tt; }
 	if (now - _stat_t >= 5) {
 		double t = now - _stat_t; _stat_t = now;
 		if (_ticks) { const CGRect pr = _pic; const int barOver = !_bar.hidden && CGRectIntersectsRect (_bar.frame, pr), deckOver = !_deck.hidden && CGRectIntersectsRect (CGRectInset (_deck.frame, 0, 1), pr);
-			vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms (%ld not ready), Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s; over the picture: bar %d, deck %d",
-			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _notReady, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
+			vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms (%ld not ready, %ld shown late), Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s; over the picture: bar %d, deck %d",
+			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _notReady, _lateShown, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
 			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "", barOver, deckOver); }
-		_notReady = 0;
+		_notReady = 0; _lateShown = 0;
 		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
@@ -1113,7 +1122,7 @@ static void vxa_video (const void *d, unsigned w, unsigned h, size_t pitch)
 	if (d == RETRO_HW_FRAME_BUFFER_VALID) {
 		if (vxa_fence[vxa_draw]) glDeleteSync (vxa_fence[vxa_draw]);
 		vxa_fence[vxa_draw] = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0); glFlush ();   /* (sent to the GPU now - not waited for) */
-		vxa_sw[vxa_draw] = w; vxa_sh[vxa_draw] = h; vxa_newest = vxa_draw; vxa_seq++; vxa_pick_draw ();
+		vxa_sw[vxa_draw] = w; vxa_sh[vxa_draw] = h; vxa_newest = vxa_draw; vxa_seq++; vxa_slot_seq[vxa_draw] = vxa_seq; vxa_pick_draw ();
 		[vxa_vc gotFrame:w :h]; return; }
 	if (!d) return;                                    /* (the same picture again) */
 	static int told; if (!told) { told = 1; vlog ("a picture without the GPU (%u x %u) - not shown in this step", w, h); }

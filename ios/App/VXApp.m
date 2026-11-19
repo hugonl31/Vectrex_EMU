@@ -523,10 +523,11 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 	"  o.t = float2 (q.x * u.x, (u.z > 0.5 ? 1.0 - q.y : q.y) * u.y); return o; }\n" \
 	"fragment half4 fmain (V v [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant float4 &c [[buffer(0)]]) {\n" \
 	"  float3 x = max (t.sample (s, v.t).rgb, 0.0);\n" \
-	"  x = pow (x, 2.2);\n" \
+	"  x = select (pow ((x + 0.055) / 1.055, 2.4), x / 12.92, x <= 0.04045);\n" \
 	"  return half4 (half3 (min (x, max (c.x, 1.0))), 1.0); }\n"
-	/* (the picture: the core's values as they would go to an ordinary screen - display gamma, 1.0 white - made linear for the
-	 *  extended linear layer; above 1.0, HDR, up to the screen's headroom now) */
+	/* (the picture: the core's values as they would go to an ordinary screen - sRGB, 1.0 white - made linear for the extended
+	 *  linear layer by the exact sRGB curve, as iOS shows an ordinary picture (RetroArch's): a plain 2.2 power left the faint
+	 *  light - the phosphor trail - 1.5 to 3x too dark (the owner, 2026-11-19); above 1.0, HDR, up to the screen's headroom) */
 #define VXA_DECKH 58                            /* (the native control deck's height) */
 #define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
@@ -906,12 +907,12 @@ static void vxa_set_opt (int i, NSString *v)
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; CGRect pic = _pic;
 	CGRect zl, zr;
 	if (v.width > v.height) { zl = CGRectMake (s.left, s.top, CGRectGetMinX (pic) - s.left, v.height - s.top - s.bottom); zr = CGRectMake (CGRectGetMaxX (pic), s.top, v.width - s.right - CGRectGetMaxX (pic), zl.size.height); }
-	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0), bot = v.height - s.bottom, need = fmax (170, 185 * tsize);
+	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0), bot = v.height - s.bottom, need = fmax (120, 140 * tsize);
 		if (bot - top < need) { bot = CGRectGetMaxY (pic) - 4; top = bot - need; }   /* (no room below the deck: over the picture's foot, above the deck - never on it) */
 		zl = CGRectMake (s.left, top, v.width / 2, bot - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
 	_stickZone = zl;
-	double r = fmin (zr.size.width / 4.6, 38 * tsize), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
+	double r = fmin (fmin (zr.size.width / 4.6, zr.size.height / 4.4), 38 * tsize), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
 	for (int i = 0; i < 4; i++) {
 		double bx = cx + (i % 2 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2);
 		_btnR[i] = CGRectMake (bx - r, by - r, 2 * r, 2 * r);
@@ -1014,7 +1015,7 @@ float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIS
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
-	float pk = hr > 1.05 && fr > 0.01 ? (float) pow (1.0 + (hr - 1.0) * fr, 1 / 2.2) : 1.0f;
+	float pk = hr > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (hr - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */
 	if (fabsf (pk - vx_hdr_peak) > 0.005f) { vlog ("HDR: %s (screen headroom %.2f, setting %.0f %%, knee top %.2f)", pk > 1 ? "on" : "off", hr, fr * 100, pk); vx_hdr_peak = pk; }
 }
 NSString *vxa_docs (void) { return NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; }

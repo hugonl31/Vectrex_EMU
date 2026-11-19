@@ -859,8 +859,9 @@ static void vxa_toast (NSString *s, double secs)
 	if (dt > 0.25) dt = 0.25;
 	_acc += dt * vxa_av.timing.fps; int n = (int) _acc; _acc -= n;
 	double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
-	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3 && !vxa_net_on) n++;
-	if (n > (vxa_net_on ? 2 : 4)) n = vxa_net_on ? 2 : 4;   /* (online: the lockstep waits for the other side - runs to fill the dry sound
+	const int onl = vxa_net_playing ();                     /* (VXApp.h: vxa_net_on is declared further down) */
+	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3 && !onl) n++;
+	if (n > (onl ? 2 : 4)) n = onl ? 2 : 4;   /* (online: the lockstep waits for the other side - runs to fill the dry sound
 	                                                           drew pictures nobody saw: 115 runs, 0 pictures a second, the owner 2026-11-19) */
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
 	if (vxa_holding) [self padBack];               /* (a screen over the game: the Vectrex's button 3 goes back) */

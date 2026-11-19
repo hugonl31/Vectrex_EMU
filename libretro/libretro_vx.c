@@ -2531,8 +2531,10 @@ static void emu_join (void) { pthread_mutex_lock (&emu_mx); while (!emu_fin) pth
 static void run_t_next (void)               /* (the emulated time this refresh has to reach: one refresh on) */
 {
 	if (!run_t) run_t = total_cycles;
-	run_t += (unsigned long long) (1.5e6 / opt_rate + 0.5);
-	run_frac += 1.5e6 / opt_rate - (double) (unsigned long long) (1.5e6 / opt_rate + 0.5);
+	double st = 1.5e6 / opt_rate;
+	if (netvx_playing ()) { extern double netvx_pace (void); st *= 1.0 - netvx_pace (); }   /* (online: the side ahead a little slower - netvx.c) */
+	run_t += (unsigned long long) (st + 0.5);
+	run_frac += st - (double) (unsigned long long) (st + 0.5);
 	if (run_frac >= 1) { run_t++; run_frac -= 1; } else if (run_frac <= -1) { run_t--; run_frac += 1; }
 	if (!pw_on) run_t = total_cycles;
 }

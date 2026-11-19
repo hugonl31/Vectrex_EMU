@@ -343,6 +343,24 @@ static void nv_send_inputs (void)
 	int adv = (int) (nv_adv * 16); if (adv > 2000) adv = 2000; if (adv < -2000) adv = -2000; nv_put16 (b + 5 + 4 * n, (unsigned) (adv & 0xffff));
 	nv_send ('I', b, 5 + 4 * n + 2); nv_last_send = nv_now ();
 }
+/* the clock sync, as the PC's (netplay.py pace_s): the side ahead of the other slows down a little - at most 1 %, from
+ * half a frame ahead - so neither runs into the other's inputs and stands (a stutter: measured and sent, but not used
+ * until 2026-11-20 - the iPad and the iPhone stood and raced). Each side sees itself ahead by the one-way delay too: half
+ * the difference of the two is how far ahead it really is. Returns the share of this refresh's time to leave out */
+static long nv_n_wait, nv_n_stood, nv_n_frames;     /* (the app's log: frames played, waited for a moment, stood - since last asked) */
+/* the app's log line: the delay, how far ahead each side sees itself, the frames since the last call */
+int vx_net_diag (char *o, int n)
+{
+	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood",
+		nv_delay, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood);
+	nv_n_wait = nv_n_stood = nv_n_frames = 0; nv_unlock (); return r;
+}
+double netvx_pace (void)
+{
+	nv_lock (); const double ahead = (nv_adv - nv_adv_them) / 2.0; const uint32_t f = nv_f; nv_unlock ();
+	if (f < 100 || ahead <= 0.5) return 0.0;
+	const double s = (ahead - 0.5) * 0.005; return s < 0.01 ? s : 0.01;
+}
 static void nv_on_inputs (const unsigned char *b, size_t n)
 {
 	if (n < 5) return; const uint32_t lo = nv_get32 (b); const int k = b[4];
@@ -741,9 +759,10 @@ static int netvx_frame (unsigned char *m)
 	if (!got && !nv_lost && !nv_pause && nv_now () - wait_end > 0.05) {
 		const double t0 = nv_now (); nv_unlock ();
 		do { nv_sleep_ms (1); nv_lock (); nv_pump (); got = nv_rgot[r] && nv_rgot_f[r] == nv_f; nv_unlock (); } while (!got && nv_now () - t0 < 0.012);
-		wait_end = nv_now (); nv_lock (); }
+		wait_end = nv_now (); nv_lock (); nv_n_wait++; }
+	if (!got && !nv_pause) nv_n_stood++;
 	if (!got || nv_pause) { if (!nv_wait_t0) nv_wait_t0 = nv_now (); nv_unlock (); return 0; }
-	nv_wait_t0 = 0;
+	nv_wait_t0 = 0; nv_n_frames++;
 	const nv_in *mine = &nv_local[nv_f % NV_RING], *theirs = &nv_remote[r];
 	const nv_in *hi = nv_role == 1 ? mine : theirs, *jo = nv_role == 1 ? theirs : mine;   /* (host, joiner) */
 	if ((hi->fl & 8) && nv_f != nv_rg_done_f && nv_rg_rom[0]) {     /* (the next game: switched before this frame, on both sides) */

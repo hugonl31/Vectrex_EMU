@@ -256,7 +256,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 @implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; UISegmentedControl *_look; }
 /* (the tiles' look, the player's choice: Cartridges - the real cartridge seen from above with its label -, Boxes, Overlays;
  *  a game without one in that look takes the next: cartridge, box, overlay; Last Human (UVMC2) takes Last Human's) */
-+ (NSString *) look { return [NSUserDefaults.standardUserDefaults stringForKey:@"lib.look"] ?: @"carts"; }
++ (NSString *) look { return [NSUserDefaults.standardUserDefaults stringForKey:@"lib.look"] ?: @"boxes"; }   /* (the default: the boxes - the owner, 2026-11-19) */
 + (CGFloat) aspect { NSString *l = [self look]; return [l isEqualToString:@"carts"] ? 0.96 : [l isEqualToString:@"boxes"] ? 1.39 : 207.0 / 162; }
 + (UIImage *) tileFor:(NSString *)n
 {

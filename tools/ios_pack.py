@@ -171,5 +171,5 @@ with tarfile.open(os.path.join(out, 'pack.tgz'), 'w:gz', compresslevel=6) as t:
         t.add(src, arc, filter=keep)
     v = os.path.join(out, 'pack_version.txt'); open(v, 'w').write(ver + '\n')
     t.add(v, 'system/vectrex_emu/pack_version.txt')
-open(os.path.join(out, 'pack.ver'), 'w').write(ver + '\n')
+open(os.path.join(out, 'pack.ver'), 'w').write('%s\n%d\n' % (ver, os.path.getsize(os.path.join(out, 'pack.tgz'))))   # (the version, then the size: the app asks before it fetches)
 print('pack %s: %d files, %.1f MB' % (ver, n, os.path.getsize(os.path.join(out, 'pack.tgz')) / 1e6))

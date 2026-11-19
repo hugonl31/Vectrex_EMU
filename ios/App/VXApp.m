@@ -391,6 +391,74 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 	*files = u.files; return r == Z_STREAM_END && !u.bad ? 0 : -3;
 }
 
+/* ---------------------------------------------------------------- the content pack, fetched by iOS's background transfer
+ * service: it goes on while the user is in another app (or the app is suspended); iOS wakes the app to unpack it and a
+ * notification says the games are ready */
+#import <UserNotifications/UserNotifications.h>
+@interface VXPack : NSObject <NSURLSessionDownloadDelegate>
+@property (nonatomic, copy) void (^progress) (double); @property (nonatomic, copy) void (^done) (BOOL); @property (nonatomic, copy) void (^bgDone) (void);
+@property (nonatomic, copy) NSString *ver; @property (nonatomic, strong) NSURLSession *session;
++ (instancetype) shared;
+@end
+@implementation VXPack { int _lastpc; double _t0; }
++ (instancetype) shared { static VXPack *p; static dispatch_once_t o; dispatch_once (&o, ^{ p = [VXPack new]; }); return p; }
+- (NSURLSession *) session
+{
+	if (!_session) {
+		NSURLSessionConfiguration *c = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"com.hugob.vectrexemu.pack"];
+		c.sessionSendsLaunchEvents = YES; c.discretionary = NO; c.timeoutIntervalForResource = 6 * 3600;
+		_session = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:nil]; }
+	return _session;
+}
+- (void) fetch:(NSString *)ver progress:(void (^) (double))prog done:(void (^) (BOOL))done
+{
+	self.ver = ver; self.progress = prog; self.done = done; _lastpc = -1; _t0 = CACurrentMediaTime();
+	[UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
+		completionHandler:^(BOOL g, NSError *e) { (void) e; vlog ("notifications %s", g ? "allowed" : "not allowed"); }];
+	[self.session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> *ts) {
+		if (ts.count) { vlog ("pack %s: the fetch already running goes on", ver.UTF8String); return; }   /* (after a restart) */
+#ifdef VX_LOG_TOKEN
+		NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/pack"]];
+		[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"];
+		[[self.session downloadTaskWithRequest:rq] resume]; vlog ("pack %s: fetching in the background", ver.UTF8String);
+#endif
+	}];
+}
+- (void) URLSession:(NSURLSession *)s downloadTask:(NSURLSessionDownloadTask *)t didWriteData:(int64_t)w totalBytesWritten:(int64_t)tw totalBytesExpectedToWrite:(int64_t)te
+{
+	double p = te > 0 ? (double) tw / te : 0; int pc = (int) (p * 10);
+	if (pc != _lastpc) { _lastpc = pc; vlog ("pack: %d %% (%.1f MB)", pc * 10, tw / 1e6); }
+	void (^f) (double) = self.progress; if (f) dispatch_async (dispatch_get_main_queue (), ^{ f (p); });
+}
+- (void) URLSession:(NSURLSession *)s downloadTask:(NSURLSessionDownloadTask *)t didFinishDownloadingToURL:(NSURL *)loc
+{
+	long code = [t.response isKindOfClass:NSHTTPURLResponse.class] ? (long) ((NSHTTPURLResponse *) t.response).statusCode : 0;
+	if (code != 200) { vlog ("pack: fetch failed (%ld)", code); return; }
+	NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"pack.tgz"]; [NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
+	[NSFileManager.defaultManager moveItemAtURL:loc toURL:[NSURL fileURLWithPath:tmp] error:nil];   /* (now: the file goes when this returns) */
+	long long sz = [[NSFileManager.defaultManager attributesOfItemAtPath:tmp error:nil] fileSize];
+	vlog ("pack: %.1f MB in %.0f s; unpacking%s", sz / 1e6, CACurrentMediaTime () - _t0, UIApplication.sharedApplication.applicationState == UIApplicationStateBackground ? " (in the background)" : "");
+	__block UIBackgroundTaskIdentifier bt = [UIApplication.sharedApplication beginBackgroundTaskWithExpirationHandler:^{ vlog ("pack: unpacking cut short by iOS"); }];
+	NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; int files = 0; double t1 = CACurrentMediaTime ();
+	int bad = vxa_untgz (tmp.fileSystemRepresentation, docs.fileSystemRepresentation, &files);
+	[NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
+	vlog ("pack %s: %d files unpacked in %.1f s%s", self.ver.UTF8String, files, CACurrentMediaTime () - t1, bad ? " - NOT WHOLE" : "");
+	if (!bad && UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+		UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
+		[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
+	void (^d) (BOOL) = self.done; dispatch_async (dispatch_get_main_queue (), ^{ if (d) d (!bad); [UIApplication.sharedApplication endBackgroundTask:bt]; });
+}
+- (void) URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)e
+{
+	if (!e) return; vlog ("pack: fetch failed - %s", e.localizedDescription.UTF8String);
+	void (^d) (BOOL) = self.done; dispatch_async (dispatch_get_main_queue (), ^{ if (d) d (NO); });
+}
+- (void) URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)s
+{
+	vlog ("pack: background events done"); void (^h) (void) = self.bgDone; self.bgDone = nil; if (h) dispatch_async (dispatch_get_main_queue (), h);
+}
+@end
+
 /* ---------------------------------------------------------------- the view: OpenGL ES, the touch controls, messages */
 #define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
@@ -425,7 +493,8 @@ static void vxa_toast (NSString *s, double secs)
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
-- (BOOL) prefersStatusBarHidden { return YES; }
+- (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
+- (UIStatusBarStyle) preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
 - (BOOL) prefersHomeIndicatorAutoHidden { return YES; }
 - (UIRectEdge) preferredScreenEdgesDeferringSystemGestures { return UIRectEdgeAll; }
 - (void) viewDidLoad
@@ -515,31 +584,11 @@ static void vxa_toast (NSString *s, double secs)
 - (void) fetchPack:(NSString *)ver
 {
 #ifdef VX_LOG_TOKEN
-	_status.text = @"Fetching the games, overlays, UVMC2 and PiTrex\n(once for each new set)"; _prog.hidden = NO; _prog.progress = 0;
-	NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/pack"]];
-	[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"]; rq.timeoutInterval = 60;
-	double t0 = CACurrentMediaTime(); vlog ("pack %s: fetching", ver.UTF8String);
-	NSURLSessionDownloadTask *t = [NSURLSession.sharedSession downloadTaskWithRequest:rq completionHandler:^(NSURL *loc, NSURLResponse *r, NSError *e) {
-		if (!loc || ((NSHTTPURLResponse *) r).statusCode != 200) {
-			vlog ("pack: fetch failed (%ld) %s", (long) ((NSHTTPURLResponse *) r).statusCode, e.localizedDescription.UTF8String);
-			dispatch_async (dispatch_get_main_queue (), ^{ self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; }); return; }
-		NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"pack.tgz"]; [NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
-		[NSFileManager.defaultManager moveItemAtURL:loc toURL:[NSURL fileURLWithPath:tmp] error:nil];
-		double t1 = CACurrentMediaTime(); long long sz = [[NSFileManager.defaultManager attributesOfItemAtPath:tmp error:nil] fileSize];
-		vlog ("pack: %.1f MB in %.1f s; unpacking", sz / 1e6, t1 - t0);
-		dispatch_async (dispatch_get_main_queue (), ^{ self->_status.text = @"Unpacking..."; });
-		NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; int files = 0;
-		int ok = vxa_untgz (tmp.fileSystemRepresentation, docs.fileSystemRepresentation, &files);
-		[NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
-		vlog ("pack %s: %d files unpacked in %.1f s%s", ver.UTF8String, files, CACurrentMediaTime() - t1, ok ? " - NOT WHOLE" : "");
-		dispatch_async (dispatch_get_main_queue (), ^{ self->_prog.hidden = YES; [self startCore]; });
-	}];
-	[t resume];
-	[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *tm) {   /* (the progress bar; every 10 % in the log) */
-		double p = t.countOfBytesExpectedToReceive > 0 ? (double) t.countOfBytesReceived / t.countOfBytesExpectedToReceive : 0;
-		self->_prog.progress = (float) p; static int lastp = -1; int pc = (int) (p * 10);
-		if (pc != lastp) { lastp = pc; vlog ("pack: %d %% (%.1f MB)", pc * 10, t.countOfBytesReceived / 1e6); }
-		if (t.state != NSURLSessionTaskStateRunning) [tm invalidate]; }];
+	_status.text = @"Fetching the games, overlays, UVMC2 and PiTrex (once).
+It goes on in the background: use other apps meanwhile."; _prog.hidden = NO; _prog.progress = 0;
+	[VXPack.shared fetch:ver progress:^(double p) { self->_prog.progress = (float) p; }
+		done:^(BOOL ok) { self->_prog.hidden = YES;
+			if (ok) [self startCore]; else self->_status.text = @"The games could not be fetched. Close the app and try again."; }];
 #endif
 }
 - (void) makeDisplayBuffer
@@ -837,6 +886,8 @@ void vxa_hold (int on) { if (on != vxa_holding) { vxa_holding = on; vlog ("game 
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;
 }
+- (void) application:(UIApplication *)a handleEventsForBackgroundURLSession:(NSString *)i completionHandler:(void (^) (void))h
+{ vlog ("woken for the pack's fetch"); VXPack.shared.bgDone = h; (void) VXPack.shared.session; }
 - (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; }
 - (void) applicationDidBecomeActive:(UIApplication *)a { [vxa_vc setRunning:1]; }
 - (void) applicationDidReceiveMemoryWarning:(UIApplication *)a { vlog ("memory warning: %.0f MB in use", vxa_mem_mb ()); }

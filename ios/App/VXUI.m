@@ -154,16 +154,24 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithPrimaryAction:[UIAction actionWithTitle:@"Done" image:nil identifier:nil handler:^(UIAction *a) { (void) a; [ws dismissViewControllerAnimated:YES completion:nil]; }]];
 }
 - (void) viewWillAppear:(BOOL)a { [super viewWillAppear:a]; [self.tableView reloadData]; }
-- (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger) _rows[(NSUInteger) s].count; }
-- (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @(vxa_cdesc (_cats[(NSUInteger) s].intValue)).uppercaseString; }
-- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return @(vxa_cinfo (_cats[(NSUInteger) s].intValue)); }
+/* (section 0: the app's own settings; then the core's groups) */
+- (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 1; }
+- (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s ? @(vxa_cdesc (_cats[(NSUInteger) s - 1].intValue)).uppercaseString : @"APP"; }
+- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"The time and battery at the top of the screen, beside the camera."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
+	if (!ip.section) {                              /* (the clock and battery: iOS's own status bar) */
+		UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"app"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"app"];
+		c.textLabel.text = @"Clock and battery"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
+		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; __weak VXSettings *ws = self;
+		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.statusbar"];
+			ulog ([NSString stringWithFormat:@"clock and battery %@", on ? @"on" : @"off"]); [ws.game setNeedsStatusBarAppearanceUpdate]; }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sw; return c; }
 	UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"o"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"o"];
-	int i = _rows[(NSUInteger) ip.section][(NSUInteger) ip.row].intValue; BOOL chg = strcmp (vxa_oval (i), vxa_odef (i)) != 0;
+	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; BOOL chg = strcmp (vxa_oval (i), vxa_odef (i)) != 0;
 	c.textLabel.text = @(vxa_odesc (i)); c.textLabel.textColor = VX_FG; c.textLabel.font = VF (15, UIFontWeightRegular); c.textLabel.numberOfLines = 2;
 	c.detailTextLabel.text = @(vxa_oval (i)); c.detailTextLabel.textColor = chg ? VX_CHG : VX_DIM; c.detailTextLabel.font = VF (14, UIFontWeightRegular);
 	c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; c.tintColor = VX_DIM;
@@ -171,7 +179,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
-	int i = _rows[(NSUInteger) ip.section][(NSUInteger) ip.row].intValue; ulog ([NSString stringWithFormat:@"setting opened %s", vxa_okey (i)]);
+	if (!ip.section) return;
+	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; ulog ([NSString stringWithFormat:@"setting opened %s", vxa_okey (i)]);
 	if (VSlider (i, NULL, NULL)) {                  /* (a number: the slider over the running game, the settings out of the way) */
 		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:i over:g]; }]; return; }
 	VXChoice *ch = [[VXChoice alloc] initWithStyle:UITableViewStyleInsetGrouped]; ch.opt = i; [self.navigationController pushViewController:ch animated:YES];

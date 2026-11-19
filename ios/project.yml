@@ -58,6 +58,7 @@ targets:
       - sdk: AVFoundation.framework
       - sdk: QuartzCore.framework
       - sdk: libz.tbd
+      - sdk: Security.framework
       - sdk: UserNotifications.framework
       - sdk: Network.framework
     scheme: {}

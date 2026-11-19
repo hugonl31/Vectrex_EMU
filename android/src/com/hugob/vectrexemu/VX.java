@@ -47,5 +47,7 @@ final class VX {
 	static native String netStatus ();
 	static native int net (int what, int arg);             /* 0 accept 1 prepare 2 go 3 leave 4 pause 5 room 6 lan 7 go_hot 8 prepare_hot 9 take_port */
 	static native String md5 (String path);
+	static native String netClaim (String name, String key, String old);   /* "1NAME" reserved, "0" another player's, "-1" not allowed, "-2" no answer */
+	static native String netWhoami (String key);                         /* the name kept for this key, "" none, null no answer */
 	static String val (String key) { int i = ofind (key); return i >= 0 ? opt (i, 5) : ""; }
 }

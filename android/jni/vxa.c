@@ -709,4 +709,10 @@ JNIEXPORT jint JNICALL JF(net) (JNIEnv *e, jclass c, jint what, jint arg)
 	}
 	return 0;
 }
+extern int vx_net_claim (const char *name, const char *key, const char *old, char *out, int outn), vx_net_whoami (const char *key, char *out, int outn);
+JNIEXPORT jstring JNICALL JF(netClaim) (JNIEnv *e, jclass c, jstring name, jstring key, jstring old)   /* ("1NAME" reserved, "0" another's, "-1" not allowed, "-2" no answer) */
+{ (void) c; JSTR (n, name); JSTR (k, key); JSTR (o, old); char got[64] = ""; const int r = vx_net_claim (n, k, o, got, sizeof got); JREL (n, name); JREL (k, key); JREL (o, old);
+  char b[80]; snprintf (b, sizeof b, "%d%s", r, r == 1 ? got : ""); return js (e, b); }
+JNIEXPORT jstring JNICALL JF(netWhoami) (JNIEnv *e, jclass c, jstring key)   /* (the name kept for this device's key, "" none, null no answer) */
+{ (void) c; JSTR (k, key); char got[64] = ""; const int r = vx_net_whoami (k, got, sizeof got); JREL (k, key); return r == -2 ? NULL : js (e, got); }
 JNIEXPORT jstring JNICALL JF(md5) (JNIEnv *e, jclass c, jstring p) { (void) c; JSTR (s, p); char h[33] = ""; long long n = 0; int ok = s && vx_net_md5_file (s, h, &n); JREL (s, p); return ok ? js (e, h) : NULL; }

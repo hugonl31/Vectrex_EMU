@@ -805,6 +805,7 @@ static void vxa_toast (NSString *s, double secs)
 	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews]; [self showBar];
 	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
+	__weak VXGameVC *wn = self; dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (3 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ VXGameVC *g = wn; if (g) vxa_name_first (g); });   /* (the player name) */
 }
 - (void) present
 {

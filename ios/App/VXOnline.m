@@ -3,6 +3,7 @@
  * waiting games and the ones on this network, a tap to join. The game itself is started by the app (VXApp.m vxa_net_tick)
  * once both sides agree. Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 #import "VXApp.h"
+#import <Security/Security.h>
 
 static UIFont *OF (CGFloat s, UIFontWeight w) { return [UIFont systemFontOfSize:s weight:w]; }
 static UITableViewCell *OCell (NSString *t, NSString *d, BOOL tap)
@@ -19,12 +20,76 @@ NSString *vxa_net_name (void)
 	NSString *n = [NSUserDefaults.standardUserDefaults stringForKey:@"net.name"];
 	return n.length ? n : @"";
 }
-NSString *vxa_net_key (void)                         /* (this phone's secret for its name at the meeting point: made once) */
+/* this phone's secret for its name at the meeting point: made once, kept in the Keychain - it stays through a reinstall,
+ * so a fresh install gets its name back (vxa_name_first) */
+static NSDictionary *OKeyQuery (void) { return @{ (id) kSecClass: (id) kSecClassGenericPassword, (id) kSecAttrService: @"com.hugob.vectrexemu.net", (id) kSecAttrAccount: @"key" }; }
+static NSString *OKeychainGet (void)
 {
-	NSString *k = [NSUserDefaults.standardUserDefaults stringForKey:@"net.key"];
-	if (!k.length) { NSMutableString *m = [NSMutableString string]; for (int i = 0; i < 16; i++) [m appendFormat:@"%02x", arc4random_uniform (256)];
-		k = m; [NSUserDefaults.standardUserDefaults setObject:k forKey:@"net.key"]; }
+	NSMutableDictionary *q = [OKeyQuery () mutableCopy]; q[(id) kSecReturnData] = @YES; q[(id) kSecMatchLimit] = (id) kSecMatchLimitOne;
+	CFTypeRef r = NULL; if (SecItemCopyMatching ((__bridge CFDictionaryRef) q, &r) != errSecSuccess || !r) return nil;
+	NSData *d = (__bridge_transfer NSData *) r; return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
+}
+static void OKeychainSet (NSString *k)
+{
+	SecItemDelete ((__bridge CFDictionaryRef) OKeyQuery ()); NSMutableDictionary *a = [OKeyQuery () mutableCopy];
+	a[(id) kSecValueData] = [k dataUsingEncoding:NSUTF8StringEncoding]; a[(id) kSecAttrAccessible] = (id) kSecAttrAccessibleAfterFirstUnlock;
+	OSStatus st = SecItemAdd ((__bridge CFDictionaryRef) a, NULL); if (st != errSecSuccess) ulog ([NSString stringWithFormat:@"online: key not kept in the Keychain (%d)", (int) st]);
+}
+NSString *vxa_net_key (void)
+{
+	static NSString *k; if (k.length) return k;
+	k = OKeychainGet ();
+	if (!k.length) { k = [NSUserDefaults.standardUserDefaults stringForKey:@"net.key"];   /* (an earlier build's: into the Keychain) */
+		if (!k.length) { NSMutableString *m = [NSMutableString string]; for (int i = 0; i < 16; i++) [m appendFormat:@"%02x", arc4random_uniform (256)]; k = m; }
+		OKeychainSet (k); }
+	[NSUserDefaults.standardUserDefaults setObject:k forKey:@"net.key"];
 	return k;
+}
+/* the name reserved at the meeting point (on a background queue; done on the main one): 1 reserved, 0 another player's,
+ * -1 not allowed, -2 no answer (kept here, reserved at the next online game) */
+static void OClaim (NSString *name, void (^done) (int, NSString *))
+{
+	NSString *old = [NSUserDefaults.standardUserDefaults boolForKey:@"net.name_ok"] ? vxa_net_name () : nil, *key = vxa_net_key ();
+	dispatch_async (dispatch_get_global_queue (QOS_CLASS_UTILITY, 0), ^{
+		char got[64] = ""; const int r = vx_net_claim (name.UTF8String, key.UTF8String, old.length && ![old isEqualToString:name] ? old.UTF8String : NULL, got, sizeof got);
+		NSString *g = r == 1 && got[0] ? @(got) : name;
+		dispatch_async (dispatch_get_main_queue (), ^{
+			if (r == 1 || r == -2) { [NSUserDefaults.standardUserDefaults setObject:g forKey:@"net.name"]; [NSUserDefaults.standardUserDefaults setBool:r == 1 forKey:@"net.name_ok"]; }
+			ulog ([NSString stringWithFormat:@"online: name %@: %s", name, r == 1 ? "reserved" : r == 0 ? "another player's" : r == -1 ? "not allowed" : "no answer - kept here"]);
+			if (done) done (r, g); }); });
+}
+static NSString *OClaimSays (int r, NSString *n)
+{
+	return r == 1 ? [NSString stringWithFormat:@"YOUR PLAYER NAME: %@", n] : r == 0 ? [NSString stringWithFormat:@"%@ BELONGS TO ANOTHER PLAYER - PICK ANOTHER", n]
+		: r == -1 ? @"THAT NAME IS NOT ALLOWED (A-Z, 0-9)" : [NSString stringWithFormat:@"NO ANSWER FROM THE MEETING POINT: %@ KEPT HERE", n];
+}
+static NSString *OClean (NSString *s);
+static void OAsk (UIViewController *vc, NSString *msg)       /* (the name asked for: typed, checked and kept) */
+{
+	while (vc.presentedViewController) vc = vc.presentedViewController;
+	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Your player name" message:msg ?: @"The name other players see when you play online. Up to 10 letters A-Z and digits 0-9 - reserved for this phone, the same in every online mode." preferredStyle:UIAlertControllerStyleAlert];
+	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.placeholder = @"YOUR NAME"; f.text = vxa_net_name (); f.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters; f.autocorrectionType = UITextAutocorrectionTypeNo; }];
+	[a addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:^(UIAlertAction *x) { (void) x; ulog (@"online: name later"); }]];
+	__weak UIViewController *wv = vc;
+	[a addAction:[UIAlertAction actionWithTitle:@"Check and keep" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x;
+		NSString *n = OClean (a.textFields.firstObject.text ?: @"");
+		if (!n.length) { UIViewController *v = wv; if (v) OAsk (v, @"A name first: 1 to 10 letters A-Z or digits 0-9."); return; }
+		OClaim (n, ^(int r, NSString *g) { UIViewController *v = wv;
+			if (r == 0 || r == -1) { if (v) OAsk (v, [OClaimSays (r, g).capitalizedString stringByAppendingString:@"."]); }
+			else vxa_toast_ext (OClaimSays (r, g)); }); }]];
+	[vc presentViewController:a animated:YES completion:nil];
+}
+void vxa_name_first (UIViewController *vc)
+{
+	NSString *nm = vxa_net_name (); if (nm.length && [NSUserDefaults.standardUserDefaults boolForKey:@"net.name_ok"]) return;
+	NSString *key = vxa_net_key (); __weak UIViewController *wv = vc;
+	dispatch_async (dispatch_get_global_queue (QOS_CLASS_UTILITY, 0), ^{
+		char got[64] = ""; const int r = vx_net_whoami (key.UTF8String, got, sizeof got); NSString *g = r == 1 && got[0] ? @(got) : nil;
+		dispatch_async (dispatch_get_main_queue (), ^{
+			if (g.length) { [NSUserDefaults.standardUserDefaults setObject:g forKey:@"net.name"]; [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"net.name_ok"];
+				ulog ([NSString stringWithFormat:@"online: welcome back %@", g]); vxa_toast_ext ([NSString stringWithFormat:@"WELCOME BACK, %@", g]); return; }
+			if (nm.length) { OClaim (nm, nil); return; }          /* (a name kept here while offline: reserved now) */
+			UIViewController *v = wv; if (v) OAsk (v, nil); }); });
 }
 static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 0-9 only, up to 10 - the rest left out) */
 {
@@ -183,14 +248,22 @@ int vxa_net_rehost (void)
 	return OCell (r[0], r[1], r[2] != [NSNull null]);
 }
 - (BOOL) textFieldShouldReturn:(UITextField *)f { [f resignFirstResponder]; return YES; }
-- (void) textFieldDidEndEditing:(UITextField *)f { NSString *n = OClean (f.text ?: @""); f.text = n; [NSUserDefaults.standardUserDefaults setObject:n forKey:@"net.name"]; }
+- (void) textFieldDidEndEditing:(UITextField *)f
+{
+	NSString *n = OClean (f.text ?: @""); f.text = n;
+	if (!n.length) { [NSUserDefaults.standardUserDefaults setObject:@"" forKey:@"net.name"]; [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"net.name_ok"]; return; }
+	if ([n isEqualToString:vxa_net_name ()] && [NSUserDefaults.standardUserDefaults boolForKey:@"net.name_ok"]) return;
+	[NSUserDefaults.standardUserDefaults setObject:n forKey:@"net.name"];
+	OClaim (n, ^(int r, NSString *g) { vxa_toast_ext (OClaimSays (r, g)); });   /* (a new name: reserved at the meeting point) */
+}
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
 	[t deselectRowAtIndexPath:ip animated:YES]; [self.view endEditing:YES];
 	id a = _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][2];
 	{ NSString *sec = _secs[(NSUInteger) ip.section][0], *row = _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][0];   /* (hosting or joining: a name first) */
 	  BOOL needs = a != [NSNull null] && ([sec hasPrefix:@"Host"] || [sec hasPrefix:@"Join"] || [sec hasPrefix:@"Nearby"] || [sec hasPrefix:@"Game room"] || [sec hasPrefix:@"On this"]) && ![row isEqualToString:@"Look again"];
-	  if (needs && !OClean (vxa_net_name ()).length) { ulog (@"online: no player name"); [self note:@"Your player name is missing: enter it above (A-Z, 0-9)"]; return; } }
+	  if (needs && !OClean (vxa_net_name ()).length) { ulog (@"online: no player name"); [self note:@"Your player name is missing: enter it above (A-Z, 0-9)"]; return; }
+	  if (needs && ![NSUserDefaults.standardUserDefaults boolForKey:@"net.name_ok"]) OClaim (OClean (vxa_net_name ()), ^(int r, NSString *g) { if (r == 0 || r == -1) vxa_toast_ext (OClaimSays (r, g)); }); }
 	if (a != [NSNull null]) { ulog ([NSString stringWithFormat:@"online: tap %@", _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][0]]); ((void (^) (void)) a) (); [self poll]; }
 }
 @end

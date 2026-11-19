@@ -33,6 +33,7 @@ import json
 import os
 import random
 import socket
+import sys
 import struct
 import threading
 import time
@@ -811,6 +812,54 @@ def gamer_name(s, own=False):
     else:
         s = s.replace(' ', '_')
     return s if 1 <= len(s) <= 10 and set(s) <= GAMER_CHARS else None
+
+
+def machine_key():
+    """this PC's secret for its player name, made from the machine (Windows' MachineGuid, Linux's machine-id) hashed with
+    the program's own salt - the meeting point never sees the id; a fresh install on the same PC gets its name back
+    (whoami). Random where the machine has no id"""
+    mid = ''
+    try:
+        if sys.platform == 'win32':
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Cryptography', 0,
+                                winreg.KEY_READ | getattr(winreg, 'KEY_WOW64_64KEY', 0)) as k:
+                mid = str(winreg.QueryValueEx(k, 'MachineGuid')[0])
+        else:
+            for f in ('/etc/machine-id', '/var/lib/dbus/machine-id'):
+                if os.path.isfile(f):
+                    mid = open(f).read().strip(); break
+    except (OSError, ImportError):
+        mid = ''
+    if not mid:
+        import secrets
+        return secrets.token_hex(16)
+    import hashlib
+    return hashlib.sha256(('vectrex_emu-player-' + mid).encode()).hexdigest()[:32]
+
+
+def whoami(server, key, timeout=3.0):
+    """the name the meeting point keeps for this key: the name, '' none, None no answer"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0.5)
+    t0, asked = time.perf_counter(), -1.0
+    try:
+        while time.perf_counter() - t0 < timeout:
+            if time.perf_counter() - asked > 1.0:
+                s.sendto(RMAGIC + b'W' + json.dumps(dict(key=key)).encode(), server)
+                asked = time.perf_counter()
+            try:
+                data, _ = s.recvfrom(2048)
+            except (socket.timeout, OSError):
+                continue
+            if data.startswith(RMAGIC + b'w'):
+                try:
+                    return json.loads(data[5:].decode()).get('name') or ''
+                except ValueError:
+                    return None
+    finally:
+        s.close()
+    return None
 
 
 def claim_name(server, name, key, old=None, timeout=3.0):

@@ -37,7 +37,8 @@ int vx_net_claim (const char *name, const char *key, const char *old, char *out,
 int vx_net_whoami (const char *key, char *out, int outn);                                  /* (1 found, 0 none, -2 no answer) */
 void vxa_name_first (UIViewController *vc);  /* the first start: this device's name back, or asked for once */
 NSString *vxa_net_ip (void);           /* this phone's address on its network */
-NSString *vxa_net_gateway (void);      /* the nearby host: .1 of this phone's Wi-Fi (an ad-hoc network's host), nil: none */
+NSString *vxa_net_gateway (void);      /* the nearby host: an ad-hoc network's host (.1), nil: not on one */
+int vxa_hotspot_on (void);             /* this iPhone's Personal Hotspot is up */
 NSString *vxa_net_name (void), *vxa_net_key (void);
 int vxa_net_playing (void);              /* (1 while a game for two runs: no save states) */
 

@@ -491,8 +491,9 @@ static void *vxa_main (void *u)
 		if (dt > 0.25) dt = 0.25;
 		acc += dt * fps; int n = (int) acc; acc -= n;
 		const double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
-		if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3) n++;
-		if (n > 4) n = 4;
+		extern int vx_net_playing_now (void); const int onl = vx_net_playing_now ();
+		if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3 && !onl) n++;
+		if (n > (onl ? 2 : 4)) n = onl ? 2 : 4;            /* (online: the lockstep waits - no runs to fill the dry sound, as the iOS app) */
 		if (vxa_snap_n >= 0) n = 1;                         /* (a snapshot asked for: every run drawn) */
 		vxa_hdr_update ();
 		if (!vxa_holding) {

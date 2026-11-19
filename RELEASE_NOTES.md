@@ -3,6 +3,19 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.7.4
+
+* Online through the meeting point (relayed - a hotel's Wi-Fi, two routers that do not connect): the round trip is
+  measured properly. Its test pings had to come back within 0.5 s; through a hotel's relay none did, 100 ms was
+  guessed, the input delay was far too short and the game ran at a third of its speed. An answer now counts whenever it
+  comes (each ping carries its send time), up to 24 pings until 4 have answered, and a relayed game gets 2 frames more
+  room. The PC version measures the same way.
+* The iPhone / iPad and Android apps: while an online game waits for the other player, no extra runs to fill the
+  sound - they drew pictures nobody saw (115 runs, no pictures a second).
+* Join the nearby host goes only to a host's own network (a phone's hotspot or Wi-Fi Direct group, a PC's); on a
+  hotel's Wi-Fi its address was the hotel's router. On the iPhone, Host on your Personal Hotspot checks that the
+  hotspot is on and says how otherwise (an app can not switch it on).
+
 ## v1.7.3
 
 * Player names are tied to the device: its secret key for the meeting point is made from the device (Windows'

@@ -459,7 +459,7 @@ static void nv_path (void)
 }
 
 /* ---- the game packets */
-static double nv_ping_t[8]; static int nv_ping_i, nv_ping_got; static double nv_ping_max, nv_ping_sent;
+static double nv_ping_t[8]; static int nv_ping_i, nv_ping_got; static double nv_ping_max, nv_ping_sent; static uint32_t nv_ping_seen;
 static double nv_g_sent;
 static void nv_on_packet (int kind, const unsigned char *b, size_t n, const struct sockaddr_in *src, int relayed)
 {
@@ -477,13 +477,17 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 		if (ver != NV_VER) { unsigned char v[2]; nv_put16 (v, NV_VER); for (int i = 0; i < 5; i++) nv_send ('V', v, 2);
 			snprintf (nv_err, sizeof nv_err, "the other player has another version (online %u, this %d)", ver, NV_VER); nv_phase = NV_ENDED; return; }
 		nv_path ();                                              /* (still waiting: the round trip first) */
-		nv_ping_i = 0; nv_ping_got = 0; nv_ping_max = 0; nv_ping_sent = 0; nv_accepted = -1; nv_g_sent = 0; nv_rtt = -1;
+		nv_ping_i = 0; nv_ping_got = 0; nv_ping_max = 0; nv_ping_sent = 0; nv_ping_seen = 0; nv_accepted = -1; nv_g_sent = 0; nv_rtt = -1;
 		nv_log ("a player came: measuring the round trip"); return; }
 	if (kind == 'H' || kind == 'h') return;                      /* (more hellos: the way is open) */
 	switch (kind) {
 	case 'P': if (nv_role == 2) { nv_path (); nv_send ('p', b, n); } break;          /* (the host measuring the round trip) */
 	case 'p': if (nv_role == 1 && n >= 12 && nv_rtt == -1) { const uint32_t k = nv_get32 (b); double t0; memcpy (&t0, b + 4, 8);
-			if ((int) k == nv_ping_i) { const double r = nv_now () - t0; if (r > nv_ping_max) nv_ping_max = r; if (nv_ping_got < 8) nv_ping_t[nv_ping_got] = r; nv_ping_got++; nv_ping_i++; nv_ping_sent = 0; } } break;
+			/* (any answer counts once, also one later than the next ping - it carries its own send time: through a hotel's
+			 *  relay every answer came after 0.5 s, none counted, 100 ms was guessed and the game ran at 17 frames a second) */
+			if (k < 32 && !(nv_ping_seen >> k & 1u)) { nv_ping_seen |= 1u << k; const double r = nv_now () - t0; if (r > nv_ping_max) nv_ping_max = r;
+				if (nv_ping_got < 8) nv_ping_t[nv_ping_got] = r; nv_ping_got++;
+				if ((int) k == nv_ping_i) { nv_ping_i++; nv_ping_sent = 0; } } } break;
 	case 'G': if (nv_role == 2 && nv_phase <= NV_WAIT) { size_t m = n < sizeof nv_game ? n : sizeof nv_game - 1; memcpy (nv_game, b, m); nv_game[m] = 0;
 			double v; if (nv_jnum (nv_game, "nver", &v) && (int) v != NV_VER) { static const unsigned char no[] = "\0version";
 				for (int i = 0; i < 5; i++) nv_send ('N', no, 8); snprintf (nv_err, sizeof nv_err, "the host has another version (online %d, this %d)", (int) v, NV_VER); nv_phase = NV_ENDED; break; }
@@ -643,18 +647,19 @@ static void nv_tick (void)
 		if (now - nv_last_heard > 20.0 && nv_last_heard > 0) { snprintf (nv_err, sizeof nv_err, "the host does not answer"); nv_phase = NV_ENDED; } }
 	/* the host: the round trip (8 pings, the slowest), then the game until player 2 answers */
 	if (nv_role == 1 && nv_phase == NV_WAIT && nv_rtt == -1 && nv_have_peer + nv_relay) {
-		if (nv_ping_i < 8 && (nv_ping_sent == 0 || now - nv_ping_sent > 0.5)) {
+		const int pings = nv_ping_got >= 4 ? 8 : 24;           /* (fewer than 4 answers: on, up to 24 - a slow path still measured) */
+		if (nv_ping_i < pings && nv_ping_got < 8 && (nv_ping_sent == 0 || now - nv_ping_sent > 0.5)) {
 			if (nv_ping_sent) nv_ping_i++;                       /* (no answer in 0.5 s: the next) */
-			if (nv_ping_i < 8) { unsigned char p[12]; nv_put32 (p, (uint32_t) nv_ping_i); memcpy (p + 4, &now, 8); nv_send ('P', p, 12); nv_ping_sent = now; } }
-		if (nv_ping_i >= 8) {
+			if (nv_ping_i < pings) { unsigned char p[12]; nv_put32 (p, (uint32_t) nv_ping_i); memcpy (p + 4, &now, 8); nv_send ('P', p, 12); nv_ping_sent = now; } }
+		if ((nv_ping_i >= pings || nv_ping_got >= 8) && now - nv_ping_sent > (nv_ping_got ? 0.0 : 1.0)) {
 			/* (the round trip: the second slowest of the 8 - one late answer (a phone's Wi-Fi waking up) set 12 frames for the
 			 *  whole game. The delay covers the way there (half the round trip, 50 game frames a second) and 2 frames of
 			 *  unevenness: the input is there when the other side's game needs it) */
 			const int g = nv_ping_got < 8 ? nv_ping_got : 8; double t[8]; for (int i = 0; i < g; i++) t[i] = nv_ping_t[i];
 			for (int i = 0; i < g; i++) for (int j = i + 1; j < g; j++) if (t[j] > t[i]) { const double x = t[i]; t[i] = t[j]; t[j] = x; }
-			nv_rtt = g >= 4 ? t[1] : g ? t[0] : 0.1;
-			nv_delay = (int) (nv_rtt * 25.0 + 0.999) + 2; if (nv_delay < 3) nv_delay = 3; if (nv_delay > 12) nv_delay = 12;
-			nv_make_game (); char m[128]; snprintf (m, sizeof m, "round trip %.0f ms (slowest %.0f): %d frames of input delay", nv_rtt * 1000, nv_ping_max * 1000, nv_delay); nv_log (m); } }
+			nv_rtt = g >= 4 ? t[1] : g ? t[0] : 0.3;             /* (no answer at all: a slow path assumed, not a fast one) */
+			nv_delay = (int) (nv_rtt * 25.0 + 0.999) + 2 + (nv_relay ? 2 : 0); if (nv_delay < 3) nv_delay = 3; if (nv_delay > 12) nv_delay = 12;   /* (relayed: 2 frames more - its way varies more) */
+			nv_make_game (); char m[160]; snprintf (m, sizeof m, "round trip %.0f ms (slowest %.0f, %d of %d answered)%s: %d frames of input delay", nv_rtt * 1000, nv_ping_max * 1000, nv_ping_got, nv_ping_i, nv_relay ? ", relayed" : "", nv_delay); nv_log (m); } }
 	if (nv_role == 1 && nv_phase == NV_WAIT && nv_rtt >= 0 && now - nv_g_sent > 0.05) { nv_g_sent = now; nv_send ('G', nv_game, strlen (nv_game)); }
 	if (nv_role == 1 && nv_phase == NV_AGREED && nv_card && !nv_card_done && nv_czn && now - nv_t_card > 0.004) {   /* (the host: its card list, piece by piece) */
 		nv_t_card = now; const int t = (int) ((nv_czn + NV_CARD_CHUNK - 1) / NV_CARD_CHUNK); const int i = nv_cidx % t; nv_cidx++;
@@ -1011,6 +1016,7 @@ int vx_net_whoami (const char *key, char *out, int outn)
 	{ char m[120]; snprintf (m, sizeof m, "this device's name: %s", r == 1 ? out : r == 0 ? "none yet" : "the meeting point did not answer"); nv_log (m); }
 	return r;
 }
+int vx_net_playing_now (void) { return netvx_playing (); }
 const char *vx_net_status (void)
 {
 	static char out[16384]; char t[256], g[1100];

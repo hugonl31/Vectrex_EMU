@@ -4,6 +4,12 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.7.4
+- Online through the meeting point: full speed (the delay was guessed)
+- Online: no picture stalls while waiting for the other player
+- Nearby: Join the nearby host only on a host's own network
+- iPhone: hosting on the hotspot checks that it is on
+
 ## v1.7.3
 - Online: your player name is asked once and kept for every mode
 - Online: a fresh install on the same device gets its name back

@@ -404,8 +404,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (BOOL) textFieldShouldReturn:(UITextField *)t { [t resignFirstResponder]; return YES; }
 - (CGSize) collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l sizeForItemAtIndexPath:(NSIndexPath *)ip
 {
-	CGFloat w = cv.bounds.size.width - 32; BOOL carts = [[VXLibrary look] isEqualToString:@"carts"];
-	int cols = carts ? (w > 1000 ? 9 : w > 700 ? 7 : 5) : (w > 1000 ? 7 : w > 700 ? 5 : 3); CGFloat iw = floor ((w - 12 * (cols - 1)) / cols);
+	CGFloat w = cv.bounds.size.width - 32;
+	int cols = w > 1000 ? 7 : w > 700 ? 5 : 3;          /* (3 a row on an iPhone, 5 on an iPad - every look) */ CGFloat iw = floor ((w - 12 * (cols - 1)) / cols);
 	return CGSizeMake (iw, iw * [VXLibrary aspect] + 38);
 }
 - (NSInteger) collectionView:(UICollectionView *)cv numberOfItemsInSection:(NSInteger)s { return (NSInteger) _shown.count; }
@@ -415,7 +415,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UIImage *im = [VXLibrary tileFor:n];
 	c.img.image = im; c.ph.text = im ? @"" : n.uppercaseString; c.name.text = n;
 	c.img.backgroundColor = im ? UIColor.clearColor : VX_PANEL;
-	BOOL now = [g[@"path"] isEqualToString:vxa_game ()]; c.name.textColor = now ? VX_HI : VX_FG; c.name.font = VF ([[VXLibrary look] isEqualToString:@"carts"] ? 10 : 12, now ? UIFontWeightBold : UIFontWeightMedium);   /* (the small cartridges: 5 a row on an iPhone, 7 on an iPad - the owner) */
+	BOOL now = [g[@"path"] isEqualToString:vxa_game ()]; c.name.textColor = now ? VX_HI : VX_FG; c.name.font = VF (12, now ? UIFontWeightBold : UIFontWeightMedium);
+	c.img.contentMode = [[VXLibrary look] isEqualToString:@"overlays"] ? UIViewContentModeScaleToFill : UIViewContentModeScaleAspectFit;   /* (an overlay: always the sheet's own 162:207, whatever its picture's size) */
 	c.img.layer.borderColor = (now ? VX_HI : VX_EDGE).CGColor; c.img.layer.borderWidth = im ? (now ? 2 : 0) : 1;
 	return c;
 }

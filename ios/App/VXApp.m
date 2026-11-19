@@ -35,7 +35,7 @@ static void vxa_net_watch (void)
 		if (e != vxa_expensive) { vxa_expensive = e; } });
 	nw_path_monitor_set_queue (vxa_mon, dispatch_get_main_queue ()); nw_path_monitor_start (vxa_mon);
 }
-@class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding;
+@class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding, vxa_nodraw;
 static void vxa_net_tick (void);                  /* (online play: below) */
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 void vxa_hdr_update (void); float vxa_hdr_headroom (void);
@@ -249,7 +249,7 @@ static bool vxa_env (unsigned cmd, void *data)
 	case RETRO_ENVIRONMENT_SET_GEOMETRY: vxa_av.geometry = *(const struct retro_game_geometry *) data;
 		vlog ("geometry: %u x %u (memory %.0f MB)", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_mem_mb ()); return true;
 	case RETRO_ENVIRONMENT_GET_LANGUAGE: *(unsigned *) data = RETRO_LANGUAGE_ENGLISH; return true;
-	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: *(int *) data = 3; return true;
+	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: *(int *) data = vxa_nodraw ? 2 : 3; return true;   /* (a catch-up run: sound, no picture) */
 	default: return false;
 	}
 }
@@ -675,13 +675,19 @@ static void vxa_toast (NSString *s, double secs)
 	__weak VXGameVC *ws = self;
 	[VXUI choosePartsIn:self parts:_parts installed:[VXPack installed] first:first go:^(NSArray<NSString *> *ids, BOOL wifi) { [ws fetchParts:ids wifi:wifi]; }
 		later:^{ if ([VXPack installed].count || [ws hasOldPack]) [ws startCore]; }];
+	dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (2 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{
+		VXGameVC *s = ws; if (s) vlog ("downloads: %s", s.presentedViewController ? "shown" : "NOT shown"); });
 }
 - (void) askUpdate:(NSArray<NSString *> *)need
 {
 	long long sz = 0; NSMutableArray *names = [NSMutableArray array];
 	for (NSDictionary *p in _parts) if ([need containsObject:p[@"id"]]) { sz += [p[@"size"] longLongValue]; [names addObject:p[@"name"]]; }
 	vlog ("parts: new versions - %s (%.1f MB)", [names componentsJoinedByString:@", "].UTF8String, sz / 1e6);
-	[self chooseParts:NO];
+	/* (the game starts first, the offer comes over it: on the iPad the offer never showed on the start screen and the
+	 *  start waited for it for good) */
+	[self startCore];
+	__weak VXGameVC *ws = self;
+	dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (1.5 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [ws chooseParts:NO]; });
 }
 - (void) fetchParts:(NSArray<NSString *> *)ids wifi:(BOOL)wifi
 {
@@ -797,7 +803,10 @@ static void vxa_toast (NSString *s, double secs)
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
 	if (vxa_holding) return;                       /* (a screen over the game: it waits) */
 	[EAGLContext setCurrentContext:_ctx];
-	for (int i = 0; i < n; i++) { vxa_input_poll (); retro_run (); _runs++; }
+	/* (behind: the runs before the last emulate only - drawing each one's picture as well, that no one sees, kept the GPU
+	 *  behind for good: 3 runs a tick, ~20 pictures a second until a screen was opened) */
+	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; }
+	vxa_nodraw = 0;
 	if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); [VXUI showLibraryFrom:self]; }
 	if (n) [self present];
 	if (now - _stat_t >= 5) {

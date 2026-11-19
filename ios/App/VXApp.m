@@ -37,6 +37,7 @@ static void vxa_net_watch (void)
 }
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding;
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
+void vxa_hdr_update (void); float vxa_hdr_headroom (void);
 
 /* ---------------------------------------------------------------- the log: the app's own, sent live from the first
  * second (the core's sender starts only with a game - build 39 crashed before, unseen), kept in Documents/applog.txt; a

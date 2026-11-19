@@ -441,8 +441,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 {
 	if (_search.isFirstResponder) return;
 	NSString *i = c.input;
-	if ([i isEqualToString:UIKeyInputUpArrow]) [self move:0]; else if ([i isEqualToString:UIKeyInputDownArrow]) [self move:1];
-	else if ([i isEqualToString:UIKeyInputLeftArrow]) [self move:2]; else if ([i isEqualToString:UIKeyInputRightArrow]) [self move:3];
+	if ([i isEqualToString:UIKeyInputUpArrow]) [self moveSel:0]; else if ([i isEqualToString:UIKeyInputDownArrow]) [self moveSel:1];
+	else if ([i isEqualToString:UIKeyInputLeftArrow]) [self moveSel:2]; else if ([i isEqualToString:UIKeyInputRightArrow]) [self moveSel:3];
 	else if ([i isEqualToString:UIKeyInputPageUp]) [self page:-1]; else if ([i isEqualToString:UIKeyInputPageDown]) [self page:1];
 	else if ([i isEqualToString:@"\r"]) [self playSel]; else if ([i isEqualToString:UIKeyInputEscape]) [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }];
 }
@@ -453,7 +453,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	const uint32_t dirs = b & ((1u << UP) | (1u << DN) | (1u << LT) | (1u << RT) | (1u << L) | (1u << R));
 	BOOL rep = NO; if (dirs && (dirs & ~_padPrev)) _padNext = now + 0.38; else if (dirs && now >= _padNext) { rep = YES; _padNext = now + 0.09; }   /* (held: repeated) */
 	const uint32_t act = (dirs & ~_padPrev) | (rep ? dirs : 0);
-	if (act >> UP & 1) [self move:0]; if (act >> DN & 1) [self move:1]; if (act >> LT & 1) [self move:2]; if (act >> RT & 1) [self move:3];
+	if (act >> UP & 1) [self moveSel:0]; if (act >> DN & 1) [self moveSel:1]; if (act >> LT & 1) [self moveSel:2]; if (act >> RT & 1) [self moveSel:3];
 	if (act >> L & 1) [self page:-1]; if (act >> R & 1) [self page:1];
 	if (down >> A & 1) [self playSel];
 	if (down >> Y & 1) [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }];
@@ -464,7 +464,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UICollectionViewFlowLayout *fl = (UICollectionViewFlowLayout *) _cv.collectionViewLayout; const CGSize it = [self collectionView:_cv layout:fl sizeForItemAtIndexPath:[NSIndexPath indexPathForItem:0 inSection:0]];
 	const NSInteger rows = MAX (1, (NSInteger) floor (_cv.bounds.size.height / (it.height + fl.minimumLineSpacing))); return rows * [self cols];
 }
-- (void) move:(int)d                            /* (0 up, 1 down, 2 left, 3 right) */
+- (void) moveSel:(int)d                            /* (0 up, 1 down, 2 left, 3 right) */
 {
 	if (!_shown.count) return; const NSInteger n = (NSInteger) _shown.count, cols = [self cols];
 	if (_sel < 0) { _sel = 0; [self showSel]; return; }   /* (the first press: the highlight appears) */

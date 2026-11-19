@@ -3187,6 +3187,7 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	if (!f) { fprintf (stderr, "[vectrex_emu] no folder to write in (system, saves, the game's)\n"); return false; } fclose (f);
 	char *argv[] = { "vx", bios, (char *) gp, scr, tmpdir, NULL };
 	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
+	if (ls_cfg_on) total_cycles = 0;            /* (online: the game from cycle 0 on both sides - a switch kept the last game's count, which the state's checksum has: out of step at frame 0) */
 	int rc = vtest_main (5, argv);
 	remove (scr); cart_id_set ();
 	if (rc != 2) flash_to_saves (gp);

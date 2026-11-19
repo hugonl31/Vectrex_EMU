@@ -70,7 +70,8 @@ final class Input {
 	{
 		int[] s = turn (p, ax[p][0], ax[p][1]);                   /* (the stick and the pad turned with the screen on a handheld) */
 		int b = turnBits (p, btn[p] | hat[p]) | trig[p]; if (s[1] < -16000) b |= 1 << UP; if (s[1] > 16000) b |= 1 << DOWN; if (s[0] < -16000) b |= 1 << LEFT; if (s[0] > 16000) b |= 1 << RIGHT;
-		VX.setPad (p, b, s[0], s[1], ax[p][2], ax[p][3]);
+		int[] r = turn (p, ax[p][2], ax[p][3]);                   /* (the right stick turned too) */
+		VX.setPad (p, b, s[0], s[1], r[0], r[1]);
 	}
 	static int prevAll;
 	static boolean key (Main m, KeyEvent e)

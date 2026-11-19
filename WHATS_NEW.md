@@ -4,6 +4,13 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.7.0
+- Online: the host can change the game for both players
+- Online: no ending after a dropout - waits until a player leaves
+- Online: the same power-on on both sides (no early out of step)
+- RetroArch: a modern control deck - panels, words, a volume bar
+- RetroArch: the overlay drawn faster on phones and handhelds
+
 ## v1.6.9
 - Phosphor trail on black: as long as through an overlay
 - RetroArch: the overlay no longer brightens the trail

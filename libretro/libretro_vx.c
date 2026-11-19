@@ -235,6 +235,7 @@ static void scr_load (void)
   if (v >= 240 && v <= 4320) scr_short = v; }
 uint32_t *dk_cb;
 static int dk_pop, dk_y, dk_shown;   /* (the pop-up deck: over the picture's bottom, dk_y its top in the block; shown now) */
+static int opt_deck_look = 1;                   /* (the control deck: 1 the modern look - the app's panels, 0 the classic strip) */
 static int opt_deck, opt_shape, dk_on, DKH, TW, TH, BX, BY, dk_dirty_set = 1, vx_paused, geo_deck = -1, geo_shape = -1;   /* (the control deck:
                                                   deck.c - the output TW x TH, the picture at BX, BY, the deck DKH high below it) */
 static float vx_vol = 1.0f;                      /* (the volume knob: deck.c) */   /* (opt_area: 0 auto, 1 glass window, 2 overlay sheet) */
@@ -453,6 +454,11 @@ static const struct vx_opt OPTS[] = {
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|ultra|high|medium|low|basic" },
 	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom or the arrow.", "off|full|slim|pop-up" },
+#if defined(__ANDROID__) || VX_IOS                  /* (a phone, a handheld: the app's panels by default - easier to read and hit on a small screen) */
+	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "modern|classic" },
+#else
+	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "classic|modern" },
+#endif
 #if !VX_IOS                                         /* (an iPhone / iPad: the block takes the screen's own shape - no choice) */
 	{ "vectrex_emu_shape", "video", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
 #endif
@@ -726,6 +732,7 @@ static void read_options (void)
 	  if (size_auto) { if (!scr_short) scr_load (); z = scr_short; }   /* (the screen's short side: gpu_gl.c scr_detect, kept) */
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
+	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }
 	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0; opt_shape = !VX_IOS && opt_is ("vectrex_emu_shape", "16:9");
 	opt_trail_k0 = opt_trail_k;                 /* (1.1: one trail brightness - the light added as light: no other one needed) */
 	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */

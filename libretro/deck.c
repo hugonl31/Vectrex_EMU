@@ -20,6 +20,7 @@ static float vol_before_off = 1.0f;
 
 /* (the layout, at the picture's size: vectrex_emu.py knob_geom & co in the sheet's pixels, the strip centred) */
 static int dk_cols = 20, dk_thin; static double dk_ow;   /* (the OSD: its columns, thin meters, its width) */
+static double dk_sl, dk_sr;                          /* (the strip's left and right ends: the modern deck's panels within them) */
 static int dk_wmax (int cols) { int w = cols; static const int NL_[3] = { 9, 8, 9 };
 	for (int i = 0; i < 3; i++) { const int L = NL_[i] + 1 + (int) strlen (dk_osd[i]); if (L > w) w = L; } return w; }
 static void dk_place (void)
@@ -39,7 +40,7 @@ static void dk_place (void)
 		ox = right - dk_wmax (cols) * 6.0 * k; }
 	dk_r = r; dk_M = M; dk_cy = M + 1.8 * r; dk_kx = kx + sdx; dk_rx = rx + sdx; dk_cx = cx + sdx; dk_p2x = p2 + sdx;
 	dk_p1x = ((cx + 1.3 * r) + (rx - 0.95 * r)) / 2.0 + sdx; dk_ox = ox + sdx; dk_ok_ = k; dk_cols = cols; dk_thin = thin;
-	dk_ow = dk_wmax (cols) * 6.0 * k;
+	dk_ow = dk_wmax (cols) * 6.0 * k; dk_sl = fmax (0.0, sl + sdx); dk_sr = fmin ((double) dk_w, sr + sdx);
 }
 static void dk_circle (double x, double y, double rad, double w, unsigned c)
 { for (int i = 0; i < 72; i++) { const double a0 = i * 5.0 * M_PI / 180, a1 = (i + 1) * 5.0 * M_PI / 180;
@@ -83,6 +84,129 @@ static void dk_draw_slim (void)
 	  if (dk_hover_label) { char t[16]; if (pw_on) snprintf (t, sizeof t, "%d%%", (int) (vx_vol * 100 + 0.5)); else snprintf (t, sizeof t, "OFF");
 		const double k = fmax (1.0, dk_h * 0.22 / 6.0); br_text (t, (float) (cx + 1.6 * r), (float) (cy - 3 * k), (float) k, DK_G); } }
 }
+/* the modern deck (the own iOS app's look, chosen in Control deck look - the default on Android and iOS): rounded panels
+ * of one width each whatever they show - the figures (PAUSED, OFF), port 2's device, the cartridge (OUT), RESET, the
+ * volume (the knob; slim: a bar). Full: icons above their words, CPU / GPU under the figures; slim and the pop-up: one
+ * low row, icons beside their words. The touch zones follow the panels (dk_p2x, dk_cx, dk_rx, dk_kx) */
+#define DKM_PANEL 0x0b1511u
+#define DKM_EDGE 0x1d3329u
+#define DKM_TRACK 0x16302au
+#define DKM_HI 0x88ccbbu
+#define DKM_DIM 0x7f978bu
+#define DKM_OFF 0x4a6658u
+#define DKM_OR 0xed9933u
+static double dkm_bx0, dkm_bx1;                 /* (slim: the volume bar's track, for the finger) */
+static void dkm_panel (double x0, double y0, double x1, double y1, double rad, unsigned fill, unsigned edge, double lw)
+{
+	if (x1 - x0 < 2 * rad) rad = (x1 - x0) / 2; if (y1 - y0 < 2 * rad) rad = (y1 - y0) / 2;
+	for (double y = y0; y < y1; y += 1.0) {          /* (filled a row at a time: the corners rounded) */
+		const double dy = y + 0.5 < y0 + rad ? y0 + rad - (y + 0.5) : y + 0.5 > y1 - rad ? (y + 0.5) - (y1 - rad) : 0;
+		const double in = dy > 0 ? rad - sqrt (fmax (0.0, rad * rad - dy * dy)) : 0;
+		br_fill ((float) (x0 + in), (float) y, (float) (x1 - in), (float) fmin (y + 1.0, y1), fill, 1); }
+	br_line ((float) (x0 + rad), (float) y0, (float) (x1 - rad), (float) y0, (float) lw, edge); br_line ((float) (x0 + rad), (float) y1, (float) (x1 - rad), (float) y1, (float) lw, edge);
+	br_line ((float) x0, (float) (y0 + rad), (float) x0, (float) (y1 - rad), (float) lw, edge); br_line ((float) x1, (float) (y0 + rad), (float) x1, (float) (y1 - rad), (float) lw, edge);
+	const double cx[4] = { x0 + rad, x1 - rad, x1 - rad, x0 + rad }, cy[4] = { y0 + rad, y0 + rad, y1 - rad, y1 - rad }, a0[4] = { 270, 0, 90, 180 };
+	for (int c = 0; c < 4; c++) for (int i = 0; i < 9; i++) { const double p = (a0[c] + i * 10) * M_PI / 180, q = (a0[c] + (i + 1) * 10) * M_PI / 180;
+		br_line ((float) (cx[c] + rad * cos (p)), (float) (cy[c] + rad * sin (p)), (float) (cx[c] + rad * cos (q)), (float) (cy[c] + rad * sin (q)), (float) lw, edge); }
+}
+static double dkm_textw (const char *t, double k) { return (strlen (t) * 6.0 - 1.0) * k; }
+static void dkm_ctext (const char *t, double cx, double cy, double k, unsigned c) { br_text (t, (float) (cx - dkm_textw (t, k) / 2), (float) (cy - 3 * k), (float) k, c); }
+static void dkm_arc (double cx, double cy, double rad, double d0, double d1, double w, unsigned c)   /* (degrees, clockwise from up) */
+{
+	const int n = (int) fmax (2, fabs (d1 - d0) / 6);
+	for (int i = 0; i < n; i++) { const double p = (d0 + (d1 - d0) * i / n) * M_PI / 180, q = (d0 + (d1 - d0) * (i + 1) / n) * M_PI / 180;
+		br_line ((float) (cx + rad * sin (p)), (float) (cy - rad * cos (p)), (float) (cx + rad * sin (q)), (float) (cy - rad * cos (q)), (float) w, c); }
+}
+/* (a panel's icon - the classic deck's vector pictures - and its word: full above, slim beside) */
+static void dkm_dev_icon (int kind, double cx, double cy, double h, double w, unsigned c)
+{
+	const double s = h / 100.0 * (kind == 2 ? 1.35 : kind == 1 ? 1.2 : 1.1), ox = cx + (kind == 2 ? 10 * s : 0);
+	if (kind == 2) dk_icon (PORT2_ICON_P, PORT2_ICON_L, NL (PORT2_ICON_L), ox, cy, s, w, c);
+	else if (kind == 1) dk_icon (VOICE_ICON_P, VOICE_ICON_L, NL (VOICE_ICON_L), ox, cy, s, w, c);
+	else if (kind == 3) dk_icon (IMAGER_ICON_P, IMAGER_ICON_L, NL (IMAGER_ICON_L), ox, cy, s, w, c);
+	else if (kind == 4) dk_icon (LPEN_ICON_P, LPEN_ICON_L, NL (LPEN_ICON_L), ox, cy, s, w, c);
+	else dk_icon (JOY_ICON_P, JOY_ICON_L, NL (JOY_ICON_L), ox, cy, s, w, c);
+}
+static void dkm_reset_icon (double cx, double cy, double h, double w, unsigned c)   /* (the circular arrow) */
+{
+	const double r = h * 0.36; dkm_arc (cx, cy, r, -60, 240, w, c);
+	const double p = -60 * M_PI / 180, tx = cx + r * sin (p), ty = cy - r * cos (p);
+	br_line ((float) tx, (float) ty, (float) (tx + 0.42 * r), (float) (ty - 0.12 * r), (float) w, c); br_line ((float) tx, (float) ty, (float) (tx + 0.10 * r), (float) (ty + 0.42 * r), (float) w, c);
+}
+static void dk_draw_modern (int slim)
+{
+	dk_place ();
+	const double L0 = dk_sr > dk_sl + 40 ? dk_sl : 0, W = (dk_sr > dk_sl + 40 ? dk_sr - dk_sl : dk_w) * 0.975, H = dk_h, m = fmax (3.0, 0.018 * W), gap = fmax (2.0, (slim ? 0.011 : 0.014) * W), ph = H * (slim ? 0.78 : 0.80), y0 = (H - ph) / 2, y1 = y0 + ph, cy = (y0 + y1) / 2;
+	const double lw = fmax (1.0, H / 70.0), rad = fmin (ph * 0.22, 0.024 * W), iw = fmax (1.2, ph / (slim ? 26.0 : 34.0)), mm = L0 + m;
+	const int paused = vx_paused || br_open, on = pw_on;
+	double sw, bw, x;
+	if (!slim) { sw = floor ((W - 2 * m) * 0.33); const double kw = ph * 1.09; bw = floor ((W - 2 * m - sw - kw - 4 * gap) / 3); }
+	else { sw = fmin (0.29 * (W - 2 * m), 4.3 * ph); bw = 1.93 * ph; }
+	/* the figures: FPS HZ EMU (EMU coloured), CPU / GPU (full); PAUSED; switched off: -- */
+	dkm_panel (mm, y0, mm + sw, y1, rad, DKM_PANEL, DKM_EDGE, lw);
+	{ const double k = fmin ((slim ? 0.30 : 0.22) * ph / 6.0, 0.88 * sw / (19 * 6.0)), ty = slim ? cy : y0 + 0.32 * ph;
+	  if (paused && on) dkm_ctext ("PAUSED", mm + sw / 2, cy, fmin (0.30 * ph / 6.0, 0.8 * sw / 36.0), DKM_OR);
+	  else if (!on) dkm_ctext ("-- FPS  -- HZ  --", mm + sw / 2, ty, k, DKM_OFF);
+	  else { char a[48]; snprintf (a, sizeof a, "%s  %s  ", dk_osd[0], dk_osd[1]); const double tw = dkm_textw (a, k) + 6 * k + dkm_textw (dk_osd[2], k);
+		const float xe = br_text (a, (float) (mm + (sw - tw) / 2), (float) (ty - 3 * k), (float) k, DKM_HI); br_text (dk_osd[2], xe, (float) (ty - 3 * k), (float) k, (unsigned) dk_osd_col); }
+	  if (!slim && !(paused && on)) { const double k2 = fmin (0.13 * ph / 6.0, 0.7 * k), by = y0 + 0.70 * ph, lx = mm + 0.04 * sw, lw2 = dkm_textw ("CPU", k2);
+		const double tw = (sw - 0.08 * sw - 2 * lw2 - 3 * 4 * k2) / 2; const int pc[2] = { on ? dk_cpu : -1, on ? dk_gpu : -1 };
+		for (int i = 0; i < 2; i++) { const double bx = lx + i * (lw2 + 2 * 4 * k2 + tw); br_text (i ? "GPU" : "CPU", (float) bx, (float) (by - 3 * k2), (float) k2, DKM_DIM);
+			const double tx0 = bx + lw2 + 4 * k2, th = fmax (2.0, 0.06 * ph); br_fill ((float) tx0, (float) (by - th / 2), (float) (tx0 + tw), (float) (by + th / 2), DKM_TRACK, 1);
+			if (pc[i] > 0) br_fill ((float) tx0, (float) (by - th / 2), (float) (tx0 + tw * fmin (1.0, pc[i] / 100.0)), (float) (by + th / 2), DK_G, 1); } } }
+	x = mm + sw + gap;
+	/* port 2's device (online in RetroArch: its own netplay - the port shown as P1 / P2 by the desktop's rule: P2 PORT) */
+	{ static const char *const WF[5] = { "P2", "VECVOX", "VECVOICE", "3D IMAGER", "LIGHT PEN" }, *const WS[5] = { "P2", "VOX", "VOICE", "3D", "PEN" };
+	  const int k5 = dk_p2 >= 0 && dk_p2 <= 4 ? dk_p2 : 0; const char *wd = slim ? WS[k5] : WF[k5];
+	  dkm_panel (x, y0, x + bw, y1, rad, DKM_PANEL, DKM_EDGE, lw); dk_p2x = x + bw / 2;
+	  if (!slim) { dkm_dev_icon (k5, x + bw / 2, y0 + 0.36 * ph, 0.40 * ph, iw, DKM_HI); dkm_ctext (wd, x + bw / 2, y0 + 0.78 * ph, fmin (0.15 * ph / 6.0, 0.86 * bw / (strlen (wd) * 6.0)), DKM_HI); }
+	  else { const double k = fmin (0.28 * ph / 6.0, 0.55 * bw / (strlen (wd) * 6.0)), tw = dkm_textw (wd, k), ih = 0.62 * ph, gx = x + (bw - ih - 0.12 * ph - tw) / 2;
+		dkm_dev_icon (k5, gx + ih / 2, cy, ih, iw, DKM_HI); br_text (wd, (float) (gx + ih + 0.12 * ph), (float) (cy - 3 * k), (float) k, DKM_HI); }
+	  x += bw + gap; }
+	/* the cartridge: in, or OUT (dim) */
+	{ const unsigned c = ej_out ? DKM_OFF : DKM_HI; const char *wd = ej_out ? "OUT" : "CART";
+	  dkm_panel (x, y0, x + bw, y1, rad, DKM_PANEL, br_open ? 0x2f5544u : DKM_EDGE, lw); dk_cx = x + bw / 2;
+	  if (!slim) { dk_icon (CART_ICON_P, CART_ICON_L, NL (CART_ICON_L), x + bw / 2, y0 + 0.36 * ph, 0.40 * ph / 100.0, iw, c); dkm_ctext (wd, x + bw / 2, y0 + 0.78 * ph, fmin (0.15 * ph / 6.0, 0.86 * bw / 24.0), c); }
+	  else { const double k = fmin (0.28 * ph / 6.0, 0.55 * bw / 24.0), tw = dkm_textw (wd, k), ih = 0.62 * ph, gx = x + (bw - ih - 0.12 * ph - tw) / 2;
+		dk_icon (CART_ICON_P, CART_ICON_L, NL (CART_ICON_L), gx + ih / 2, cy, ih / 100.0, iw, c); br_text (wd, (float) (gx + ih + 0.12 * ph), (float) (cy - 3 * k), (float) k, c); }
+	  x += bw + gap; }
+	/* RESET: the circular arrow and the word (slim: the word) - pressed: brighter */
+	{ const unsigned c = vt_wall () < dk_reset_until ? 0xbbffeeu : DKM_HI;
+	  dkm_panel (x, y0, x + bw, y1, rad, DKM_PANEL, DKM_EDGE, lw); dk_rx = x + bw / 2;
+	  if (!slim) { dkm_reset_icon (x + bw / 2, y0 + 0.36 * ph, 0.40 * ph, iw, c); dkm_ctext ("RESET", x + bw / 2, y0 + 0.78 * ph, fmin (0.15 * ph / 6.0, 0.86 * bw / 30.0), c); }
+	  else dkm_ctext ("RESET", x + bw / 2, cy, fmin (0.28 * ph / 6.0, 0.72 * bw / 30.0), c);
+	  x += bw + gap; }
+	/* the volume: the knob (full) - its arc from 135 degrees, the cap, the value inside; slim: a bar. Off: OFF */
+	{ const double x1 = L0 + W - m; dkm_panel (x, y0, x1, y1, rad, DKM_PANEL, DKM_EDGE, lw); dk_kx = (x + x1) / 2; dk_cy = cy; dk_r = ph * 0.5;
+	  const double v = on ? vx_vol : 0.0;
+	  if (!slim) { const double r = ph * 0.38, kcx = (x + x1) / 2; dkm_arc (kcx, cy, r, -135, 135, fmax (2.0, ph / 16.0), DKM_TRACK);
+		if (v > 0.002) dkm_arc (kcx, cy, r, -135, -135 + 270 * v, fmax (2.0, ph / 16.0), DK_G);
+		dk_circle (kcx, cy, 0.52 * r, lw, on ? DKM_HI : DKM_OR); char t[8]; if (on) snprintf (t, sizeof t, "%d", (int) (v * 100 + 0.5)); else snprintf (t, sizeof t, "OFF");
+		dkm_ctext (t, kcx, cy, fmin (0.11 * ph / 6.0, 0.8 * r / (strlen (t) * 6.0)), on ? DKM_HI : DKM_OR); dkm_bx0 = dkm_bx1 = 0; }
+	  else { const double ih = 0.48 * ph, ix = x + 0.10 * ph, k = fmin (0.26 * ph / 6.0, 0.18 * (x1 - x) / 18.0); char t[8];
+		if (on) snprintf (t, sizeof t, "%d", (int) (v * 100 + 0.5)); else snprintf (t, sizeof t, "OFF");
+		const unsigned c = on ? DKM_HI : DKM_OR;
+		/* (the speaker - or the power sign switched off) */
+		if (on) { const double sx = ix, sy = cy; br_fill ((float) sx, (float) (sy - 0.16 * ih), (float) (sx + 0.22 * ih), (float) (sy + 0.16 * ih), c, 1);
+			br_line ((float) (sx + 0.22 * ih), (float) (sy - 0.16 * ih), (float) (sx + 0.52 * ih), (float) (sy - 0.42 * ih), (float) iw, c);
+			br_line ((float) (sx + 0.52 * ih), (float) (sy - 0.42 * ih), (float) (sx + 0.52 * ih), (float) (sy + 0.42 * ih), (float) iw, c);
+			br_line ((float) (sx + 0.52 * ih), (float) (sy + 0.42 * ih), (float) (sx + 0.22 * ih), (float) (sy + 0.16 * ih), (float) iw, c);
+			dkm_arc (sx + 0.5 * ih, sy, 0.30 * ih, 40, 140, iw, c); dkm_arc (sx + 0.5 * ih, sy, 0.52 * ih, 40, 140, iw, c); }
+		else { dkm_arc (ix + 0.45 * ih, cy, 0.38 * ih, 30, 330, iw, c); br_line ((float) (ix + 0.45 * ih), (float) (cy - 0.5 * ih), (float) (ix + 0.45 * ih), (float) (cy - 0.05 * ih), (float) iw, c); }
+		const double tx1 = x1 - 0.12 * ph - dkm_textw ("100", k), bx0 = ix + ih + 0.18 * ph, bx1 = tx1 - 0.18 * ph, th = fmax (2.0, 0.14 * ph);
+		br_fill ((float) bx0, (float) (cy - th / 2), (float) bx1, (float) (cy + th / 2), DKM_TRACK, 1);
+		if (v > 0) br_fill ((float) bx0, (float) (cy - th / 2), (float) (bx0 + (bx1 - bx0) * v), (float) (cy + th / 2), DK_G, 1);
+		br_text (t, (float) (x1 - 0.12 * ph - dkm_textw (t, k)), (float) (cy - 3 * k), (float) k, c); dkm_bx0 = bx0; dkm_bx1 = bx1; } }
+}
+/* (the pop-up's tab, modern: under the picture's foot, in the middle - tap it, or the picture's bottom) */
+static void dk_draw_modern_tab (void)
+{
+	const double tw = fmax (24.0, 0.10 * dk_w), th = fmax (10.0, 0.26 * dk_h), x0 = (dk_w - tw) / 2, y0 = dk_h - th;
+	dkm_panel (x0, y0, x0 + tw, dk_h + th, th * 0.5, DKM_PANEL, DKM_EDGE, fmax (1.0, dk_h / 70.0));
+	const double a = th * 0.28, cx = dk_w / 2.0, cy = y0 + th * 0.45;
+	br_line ((float) (cx - a), (float) (cy + 0.4 * a), (float) cx, (float) (cy - 0.4 * a), (float) fmax (1.0, a / 4), DKM_DIM);
+	br_line ((float) cx, (float) (cy - 0.4 * a), (float) (cx + a), (float) (cy + 0.4 * a), (float) fmax (1.0, a / 4), DKM_DIM);
+}
 /* the pop-up deck's arrow (hidden: bottom left, tap it - or the picture's bottom - for the deck) */
 static void dk_draw_arrow (void)
 {
@@ -98,6 +222,9 @@ static void dk_draw (void)
 	if (n != dk_n) { free (dk_img); dk_img = malloc (n * 4); dk_n = n; }
 	if (!dk_img) return;
 	memset (dk_img, 0, n * 4); dr_img = dk_img; dr_w = dk_w; dr_h = dk_h; dk_gen++;
+	if (opt_deck_look) {                              /* (the modern look: slim and the pop-up one low row, full the app's deck) */
+		if (dk_pop && !dk_shown) { dk_place (); dk_draw_modern_tab (); return; }
+		dk_draw_modern (opt_deck == 2 || dk_pop); return; }
 	if (opt_deck == 2) { dk_draw_slim (); return; }
 	dk_place ();
 	if (dk_pop && !dk_shown) { dk_draw_arrow (); return; }
@@ -267,7 +394,7 @@ static void dk_pointer (void)
 	 *  its word, away from the screen's edge - a thumb slipping off the right stick switched port 2 and reset Last Human,
 	 *  the Nova 2026-11-18) */
 	{ static int held, done; static double ht;   /* (RESET: held 0.2 s there; moved off before then: nothing) */
-	  const int on = zone == 4 && y <= dk_cy + 0.4 * r && fabs (x - dk_rx) <= 1.3 * r;   /* (the button's upper half up to its word, wider) */
+	  const int on = zone == 4 && (opt_deck_look ? y >= 0 && y <= dk_h : y <= dk_cy + 0.4 * r && fabs (x - dk_rx) <= 1.3 * r);   /* (the button's upper half up to its word, wider; modern: its panel) */
 	  if (pr && !dk_prev_press && on) { held = 1; ht = vt_wall (); done = 0; }
 	  else if (!pr || !on) held = 0;
 	  else if (held && !done && vt_wall () - ht >= 0.2) { extern void vecx_reset_button (void); done = 1; if (netvx_playing ()) ls_reset_req = 1; else { emu_wait_ext (); vecx_reset_button (); } dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
@@ -275,10 +402,15 @@ static void dk_pointer (void)
 		if (zone == 1 || zone == 4) { }
 		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }
 		else if (zone == 3) { }                         /* (P1: for online play, later) */
+		else if (zone == 5 && dkm_bx1 > dkm_bx0) {   /* (the modern slim deck's bar: the volume where the finger is) */
+			dk_drag.on = 1; dk_drag.moved = 1; dk_drag.a = -1e9; dk_hover_label = 1;
+			if (pw_on) turn_volume (fmax (0.01, fmin (1.0, (x - dkm_bx0) / (dkm_bx1 - dkm_bx0))) - vx_vol); else power_up (); dk_dirty_set = 1; }
 		else if (zone == 5) { dk_drag.on = 1; dk_drag.moved = 0; dk_drag.x = x; dk_drag.y = y; dk_drag.up = x >= dk_kx; dk_drag.acc = 0; dk_drag.vol0 = vx_vol;
 			dk_drag.a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI; dk_hover_label = 1; dk_dirty_set = 1; }
 		else if (y < 0 && !pw_on && !net_on ()) power_up ();
 		else if (vx_paused && x > dk_ox + dk_ow && x < dk_p2x - 1.1 * r && y >= 0) { vx_paused = 0; dk_dirty_set = 1; }
+	} else if (pr && dk_drag.on && dk_drag.a == -1e9) {   /* (the bar: followed) */
+		if (pw_on && dkm_bx1 > dkm_bx0) { turn_volume (fmax (0.01, fmin (1.0, (x - dkm_bx0) / (dkm_bx1 - dkm_bx0))) - vx_vol); dk_dirty_set = 1; }
 	} else if (pr && dk_drag.on) {                   /* (turned round its centre, clockwise louder, one to one with its marker) */
 		if (!dk_drag.moved && hypot (x - dk_drag.x, y - dk_drag.y) >= fmax (3.0, 0.12 * r)) dk_drag.moved = 1;
 		const double a = hypot (x - dk_kx, y - dk_cy) < 0.3 * r ? 1e9 : atan2 (x - dk_kx, -(y - dk_cy)) * 180 / M_PI;

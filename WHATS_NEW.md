@@ -4,6 +4,12 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.7.2
+- PC: HDR on an HDR monitor (View > HDR) - as on phones
+- Player names: A-Z and 0-9 only; needed to host or join
+- iPhone / Android: Reset all settings; a long press resets one
+- iPhone: double-tap a slider for its default; it opens there
+
 ## v1.7.1
 - Online > Nearby: play without a router - the host makes the Wi-Fi
 - Nearby: the network's name and password stay the same each time

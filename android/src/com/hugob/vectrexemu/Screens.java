@@ -122,6 +122,14 @@ final class Screens {
 			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
 		else p.row ("HDR", "This screen shows no HDR", null);
 		if (Pack.token (m) != null) p.row ("Downloads", "The games, box art, cartridges, UVMC2, PiTrex", () -> { m.pop (); Pack.choose (m, false); });
+		{ int n = 0; for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) n++; final int changed = n;
+		  LinearLayout r = p.row ("Reset all settings", n > 0 ? n + " changed - all back to their defaults (a long press on one: that one)" : "All at their defaults", () -> {
+			if (changed == 0) { m.toast ("All settings are at their defaults", 2); return; }
+			pick (m, "Reset all settings?", new String[] { "no", "yes" }, new String[] { "Cancel", "Reset: every setting back to its default" }, "no", v -> {
+				if (!v.equals ("yes")) { reopenSettings (m); return; } int k = 0;
+				for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) { VX.oset (i, VX.opt (i, 6)); k++; }
+				Main.log ("settings: reset all (" + k + " changed)"); m.toast ("Settings back to their defaults", 2); reopenSettings (m); }); });
+		  if (n > 0) ((TextView) r.findViewWithTag ("t")).setTextColor (Main.CHG); }
 		p.row ("About", "Vectrex_EMU " + m.version () + " - files: " + m.sysDir, null);
 		/* the core's settings, by its submenus */
 		final int n = VX.nopts (), nc = VX.ncats ();
@@ -131,7 +139,10 @@ final class Screens {
 				if (c < 0 && nc > 0 && !ck.isEmpty ()) continue;
 				if (!any) { any = true; p.header (c >= 0 ? VX.cat (c, 1) : "General"); }
 				final int ix = i; String v = VX.opt (i, 5); boolean chg = !v.equals (VX.opt (i, 6));
-				LinearLayout r = p.row (VX.opt (i, 1), v, () -> choice (m, ix)); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG); }
+				LinearLayout r = p.row (VX.opt (i, 1), v, () -> choice (m, ix)); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG);
+				r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true;   /* (a long press: back to the default) */
+					VX.oset (ix, VX.opt (ix, 6)); Main.log ("settings: " + VX.opt (ix, 0) + " back to the default"); x.performHapticFeedback (android.view.HapticFeedbackConstants.LONG_PRESS);
+					m.toast (VX.opt (ix, 1) + ": " + VX.opt (ix, 6) + " (the default)", 2); reopenSettings (m); return true; }); }
 		}
 		m.push (p);
 	}
@@ -161,6 +172,7 @@ final class Screens {
 	{
 		Panel p = new Panel (m, VX.opt (i, 1)); String cur = VX.opt (i, 5); View first = null;
 		final boolean fromSettings = m.top () instanceof Panel;
+		if (!cur.equals (VX.opt (i, 6))) p.row ("Back to the default: " + VX.opt (i, 6), null, () -> { VX.oset (i, VX.opt (i, 6)); m.pop (); if (fromSettings && m.top () instanceof Panel) reopenSettings (m); });
 		for (String v : VX.opt (i, 4).split ("\\|")) {
 			LinearLayout r = p.row ((v.equals (cur) ? "✓  " : "     ") + v, null, () -> { VX.oset (i, v); m.pop (); if (fromSettings && m.top () instanceof Panel) reopenSettings (m); });
 			if (v.equals (cur) || first == null) first = r; }

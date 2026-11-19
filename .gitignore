@@ -44,3 +44,4 @@ system/al2.bin
 /libretro/bench/vxhost_android
 ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png
 ios/*.xcodeproj/
+system/adhoc.json

@@ -212,11 +212,12 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (g != null) { log ("test: load " + g); VX.load (g); Library.remember (this, g); }
 		if (ho != null) h.postDelayed (() -> { log ("test: host " + ho); int mode = Integer.parseInt (ho); Online.hostRom = VX.game (); Online.hostMode = mode;
 			VX.netHost (mode, Online.clean (Online.name (this)), Online.key (this), VX.game (), Online.skip ()); }, g != null ? 1500 : 0);
+		if ("settings".equals (i.getStringExtra ("vx.screen"))) h.postDelayed (() -> { log ("test: settings"); Screens.settings (this); }, 1200);
 		if (i.getStringExtra ("vx.adhoc") != null) h.postDelayed (() -> { log ("test: ad hoc host");   /* (as "Make a network and host") */
 			Adhoc.start (this, (ok, msg) -> { log ("test: ad hoc " + (ok ? "up: " + Adhoc.ssidOn + " / " + Adhoc.pass (this) : msg)); if (ok) { Online.hostRom = VX.game (); Online.hostMode = 2;
 				VX.netHost (2, Online.clean (Online.name (this)), Online.key (this), VX.game (), Online.skip ()); } }); }, 1500);
 		if (jo != null) h.postDelayed (() -> { log ("test: join " + jo); VX.netJoin (jo, Online.clean (Online.name (this)), Online.key (this)); }, g != null ? 1500 : 0);
-		i.removeExtra ("vx.game"); i.removeExtra ("vx.host"); i.removeExtra ("vx.join"); i.removeExtra ("vx.opts"); i.removeExtra ("vx.snap"); i.removeExtra ("vx.adhoc");
+		i.removeExtra ("vx.game"); i.removeExtra ("vx.host"); i.removeExtra ("vx.join"); i.removeExtra ("vx.opts"); i.removeExtra ("vx.snap"); i.removeExtra ("vx.adhoc"); i.removeExtra ("vx.screen");
 	}
 	String firstGame ()
 	{

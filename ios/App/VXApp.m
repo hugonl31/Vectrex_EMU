@@ -157,9 +157,11 @@ static void vxa_opts_defaults (void)
 		if (sv) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", sv.UTF8String); }
 	/* (this app's own defaults: the control deck below the picture - its cartridge opens the ROM browser, RESET, the knob) */
 	int dk = vxa_opt_find ("vectrex_emu_deck");
+	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "full");   /* (the app's default - what Reset gives back) */
 	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "full");
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
 	int r = vxa_opt_find ("vectrex_emu_rate");
+	if (r >= 0) snprintf (vxa_opt[r].def, sizeof vxa_opt[r].def, "%s", UIScreen.mainScreen.maximumFramesPerSecond >= 120 ? "120 Hz" : "60 Hz");   /* (this screen's: the default) */
 	if (r >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_rate"])
 		snprintf (vxa_opt[r].val, sizeof vxa_opt[r].val, "%s", UIScreen.mainScreen.maximumFramesPerSecond >= 120 ? "120 Hz" : "60 Hz");   /* (Metal shows the picture: ProMotion's 120 pictures a second) */
 	vlog ("core options: %d (rate %s)", vxa_nopt, r >= 0 ? vxa_opt[r].val : "?");

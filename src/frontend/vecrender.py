@@ -173,7 +173,10 @@ class GLRenderer:
         if getattr(self, 'rec_mark', None):                # (recording: REC below the picture - after the read-back)
             self._rec_mark(self.rec_mark)
         if IS_WIN:
-            self.gdi.SwapBuffers(self.dc)
+            if getattr(self, 'hdr', None):              # (HDR: shown through DirectX instead - hdrwin.py)
+                self._hdr_show()
+            else:
+                self.gdi.SwapBuffers(self.dc)
         else:
             self.ctxo.swap()
 
@@ -908,10 +911,28 @@ void main() {
 # bright slow shapes (the ship at full intensity) keep their detail instead of clipping white
 TONE_SHADER = b"""
 uniform sampler2D tex;
+uniform float hk;
 void main() {
     vec3 c = texture2D(tex, gl_TexCoord[0].st).rgb;
     vec3 k = 0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6));
-    gl_FragColor = vec4(mix(c, k, step(0.55, c)), 1.0);
+    vec3 o = mix(c, k, step(0.55, c));
+    if (hk > 1.0) { vec3 x = max(c - o, 0.0); float m = hk - 1.0;
+        o += x / pow(1.0 + pow(x / m, vec3(8.0)), vec3(0.125)); }
+    gl_FragColor = vec4(o, 1.0);
+}
+"""
+# (an HDR screen, hk > 1: the light the shoulder took away given back above white, softly up to the screen's peak - as the
+#  core's HDR: its knee as always, then up to the top; hk is the top as a screen value - 1.0 an ordinary screen, as before)
+
+# the picture to an HDR screen (hdrwin.py): the screen values made linear by the exact sRGB curve (as Windows shows an
+# ordinary picture), scaled to the SDR white Windows uses (scRGB: 1.0 = 80 nits) - above 1.0 the same curve: HDR
+HDR_OUT_SHADER = b"""
+uniform sampler2D tex;
+uniform float sc;
+void main() {
+    vec3 v = max(texture2D(tex, gl_TexCoord[0].st).rgb, 0.0);
+    vec3 l = mix(pow((v + 0.055) / 1.055, vec3(2.4)), v / 12.92, step(v, vec3(0.04045)));
+    gl_FragColor = vec4(l * sc, 1.0);
 }
 """
 
@@ -2202,7 +2223,15 @@ class GLBloomRenderer(GLRenderer):
         self.dprog = program(DITHER_SHADER, 'dither'); self.u_dtex = GetUniform(self.dprog, b'tex')
         self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'ah', 'goff', 'gsc', 'glut', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'hsh', 'gsh', 'lca', 'lsa', 'cse', 'croom', 'crefl', 'cwear', 'clut', 'lc', 'smap', 'smr')}
         self.tprog = program(TONE_SHADER, 'tone')
-        self.u_ttex = GetUniform(self.tprog, b'tex')
+        self.u_ttex = GetUniform(self.tprog, b'tex'); self.u_thk = GetUniform(self.tprog, b'hk')
+        self.hdr = None; self.hdr_hk = 1.0                      # (HDR: hdr_start - the picture through DirectX, scRGB)
+        try:
+            self.hdrprog = program(HDR_OUT_SHADER, 'HDR output')   # (not hprog: the glint's)
+            self.u_hsc = GetUniform(self.hdrprog, b'sc')
+        except OSError:
+            self.hdrprog = None
+        self._bind_raw = self.BindFB
+        self.BindFB = lambda t, f: self._bind_raw(t, self.hdr_w[1] if f == 0 and self.hdr else f)   # (HDR: the window is a half-float target)
         self.aprog = program(ART_SHADER, 'overlay')
         self.u_a = {k: GetUniform(self.aprog, k.encode()) for k in ('tex', 'scr', 'ssz', 'tint', 'room', 'print_')}
         try:                                                    # (the overlay's scratches; without them if the
@@ -2380,6 +2409,8 @@ class GLBloomRenderer(GLRenderer):
     def resize(self, w, h):
         self._win_wh = (w, h)                             # (the window as Tk gave it: a reallocation calls resize again)
         super().resize(w, h)
+        if getattr(self, 'hdr', None):
+            self._hdr_target()
         w, h = self.size
         ps = min(1.0, max(0.25, float(getattr(self, 'phos_scale', 1.0))))
         pw, ph = max(4, int(round(w * ps))), max(4, int(round(h * ps)))
@@ -3645,6 +3676,73 @@ class GLBloomRenderer(GLRenderer):
             self._t_pres = None
         return super()._swap()
 
+    # ---------------------------------------------------------------- HDR (Windows): hdrwin.py
+    def hdr_start(self, force=False, frac=1.0):
+        """the picture through DirectX in scRGB when the window's monitor has HDR on (force: also without - the tests);
+        frac: how much of the screen's headroom above white (HDR brightness). Returns a line for the log"""
+        if not IS_WIN:
+            return 'HDR: not on this system'
+        if self.hdr or not self.hdrprog:
+            return ''
+        try:
+            import hdrwin
+            r = W.RECT(); ctypes.windll.user32.GetWindowRect(W.HWND(self.hwnd), ctypes.byref(r))
+            mons = [m for m in hdrwin.probe((r.left, r.top, r.right, r.bottom)) if 'name' in m]
+            m = mons[0] if mons else None
+            if not m or not (m['hdr'] or force):
+                return 'HDR: the monitor shows no HDR (Windows: Settings > Display > Use HDR)'
+            rw, rh = self.real_size
+            self.hdr = hdrwin.Out(self, self.hwnd, rw, rh)
+            self.hdr_sc = m['sdr_white'] / 80.0 if m['hdr'] else 1.0
+            room = max(1.0, m['peak'] / m['sdr_white']) if m['hdr'] else 1.0
+            self.hdr_hk = 1.055 * (1.0 + (room - 1.0) * frac) ** (1 / 2.4) - 0.055 if room > 1.05 and frac > 0.01 else 1.0
+            self.hdr_w = None; self._hdr_target()
+            return 'HDR: on (%s, peak %.0f nits, SDR white %.0f nits: %.1fx above white, top %.2f)%s' % (
+                m['name'], m['peak'], m['sdr_white'], room, self.hdr_hk, '' if m['hdr'] else ' - forced on an SDR screen')
+        except Exception as e:   # noqa
+            if self.hdr:
+                try:
+                    self.hdr.close()
+                except Exception:   # noqa
+                    pass
+            self.hdr = None; self.hdr_hk = 1.0
+            return 'HDR: not available (%s)' % e
+
+    def hdr_stop(self):
+        if self.hdr:
+            self.hdr.close(); self.hdr = None; self.hdr_hk = 1.0
+
+    def _hdr_target(self):
+        """the window's picture drawn here (half floats: room above white); the HDR output at the window's size"""
+        gl = self.gl; rw, rh = self.real_size
+        if getattr(self, 'hdr_w', None):
+            gl.glDeleteTextures(1, ctypes.byref(ctypes.c_uint(self.hdr_w[0]))); self.DelFB(1, ctypes.byref(ctypes.c_uint(self.hdr_w[1])))
+        t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t)); gl.glBindTexture(GL_TEXTURE_2D, t.value)
+        for k, v in ((GL_TEX_MIN, 0x2600), (GL_TEX_MAG, 0x2600), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):   # (GL_NEAREST: 1:1)
+            gl.glTexParameteri(GL_TEXTURE_2D, k, v)
+        gl.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, rw, rh, 0, GL_RGBA, GL_HALF_FLOAT, None)
+        f = ctypes.c_uint(); self.GenFB(1, ctypes.byref(f)); self._bind_raw(GL_FRAMEBUFFER, f.value)
+        self.FBTex(GL_FRAMEBUFFER, GL_COLOR_ATT0, GL_TEXTURE_2D, t.value, 0)
+        self.hdr_w = (t.value, f.value)
+        self.hdr.size(rw, rh)
+        self.BindFB(GL_FRAMEBUFFER, 0)
+
+    def _hdr_show(self):
+        """the window's picture onto the HDR screen: made linear, scaled, into DirectX's texture - shown"""
+        gl = self.gl; rw, rh = self.real_size
+        self._bind_raw(GL_FRAMEBUFFER, self.hdr.fbo.value); gl.glViewport(0, 0, rw, rh); gl.glDisable(GL_BLEND)
+        self.UseProgram(self.hdrprog); self.Uniform1f(self.u_hsc, self.hdr_sc)   # (the texture: unit 0)
+        gl.glMatrixMode(GL_PROJECTION); gl.glPushMatrix(); gl.glLoadIdentity(); gl.glOrtho(0, 1, 0, 1, -1, 1); gl.glMatrixMode(GL_MODELVIEW)
+        gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, self.hdr_w[0]); gl.glColor4f(1, 1, 1, 1)
+        gl.glBegin(GL_QUADS)                                    # (DirectX's rows from the top: the picture turned over)
+        for x, y in ((0, 0), (1, 0), (1, 1), (0, 1)):
+            gl.glTexCoord2f(x, 1 - y); gl.glVertex2f(x, y)
+        gl.glEnd(); gl.glDisable(GL_TEXTURE_2D)
+        gl.glMatrixMode(GL_PROJECTION); gl.glPopMatrix(); gl.glMatrixMode(GL_MODELVIEW)
+        self.UseProgram(0); gl.glEnable(GL_BLEND)
+        self.hdr.show(False)
+        self.BindFB(GL_FRAMEBUFFER, 0); gl.glViewport(0, 0, *self.size)
+
     def _present(self, T, imm=None, flush=False):
         """show the screen at real time T: the light of the lines drawn since the last display frame
         (at their own moments), the phosphor image aged by the time passed. imm: lines lit now (the
@@ -4257,7 +4355,7 @@ class GLBloomRenderer(GLRenderer):
         hx, hy = self.head_px()                                 # (head tracking: the whole glowing picture moved)
         if hx or hy:
             gl.glMatrixMode(GL_MODELVIEW); gl.glPushMatrix(); gl.glTranslatef(hx / float(w), -hy / float(h), 0.0)
-        self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0)
+        self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0); self.Uniform1f(self.u_thk, self.hdr_hk)
         self._quad(src)
         self.UseProgram(0)
         gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)

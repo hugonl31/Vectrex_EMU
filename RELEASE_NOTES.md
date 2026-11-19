@@ -3,6 +3,19 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.7.2
+
+* The PC version shows HDR on an HDR monitor (Windows with HDR on; View > HDR, on by itself): the picture goes
+  through DirectX in Windows' extended colour space, and the brightest light - what the tone curve's shoulder takes
+  away on an ordinary screen - rises above white, up to the monitor's peak. Ordinary pictures stay at the brightness
+  Windows gives them. The iPhone / iPad and Android apps already had HDR; the RetroArch cores keep RetroArch's.
+* Online player names are capitals and digits only (A-Z, 0-9; letters typed in lower case become capitals, other
+  characters are left out). An earlier name with _ or - loses them and is reserved again. Hosting and joining need a
+  name: the apps say so when it is missing.
+* iPhone / iPad and Android: Settings > Reset all settings (every setting back to its default, after a question); a
+  long press on one setting sets that one back. On the iPhone a slider opens where its value - or its default - is,
+  and a double tap on it gives the default.
+
 ## v1.7.1
 
 **Online: Nearby - no router, no internet**

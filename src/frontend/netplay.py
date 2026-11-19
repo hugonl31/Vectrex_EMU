@@ -800,10 +800,16 @@ class NetPlay:
 GAMER_CHARS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
 
 
-def gamer_name(s):
-    """a gamer name as the game room keeps it (upper case, 1-10 of A-Z 0-9 _ -, spaces as _: it fits above a port
-    pictogram), or None"""
-    s = str(s or '').strip().upper().replace(' ', '_')
+def gamer_name(s, own=False):
+    """a gamer name as the game room keeps it (upper case, 1-10 characters: it fits above a port pictogram), or None.
+    own: a name this player chooses - A-Z and 0-9 only (the owner, 2026-11-19: easy to read in the Vectrex letters, to
+    type on a phone or with a controller, no look-alikes); anything else is left out. Without own: another player's,
+    as the game room has it (an earlier version's may still hold _ or -)"""
+    s = str(s or '').strip().upper()
+    if own:
+        s = ''.join(c for c in s if 'A' <= c <= 'Z' or '0' <= c <= '9')
+    else:
+        s = s.replace(' ', '_')
     return s if 1 <= len(s) <= 10 and set(s) <= GAMER_CHARS else None
 
 

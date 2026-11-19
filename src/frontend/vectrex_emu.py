@@ -2460,8 +2460,9 @@ class App:
         self.report_email = str(conf0.get('report_email', '') or '')[:120]   # (Debug report: the user's email, optional)
         self.gamer_ok = bool(conf0.get('gamer_ok', False))      # (reserved at the meeting point for player_key)
         import netplay as _np
-        if self.gamer and not _np.gamer_name(self.gamer):      # (a name from before names had 10 characters at most:
-            self.gamer_ok = False                               #  asked again, once)
+        if self.gamer and _np.gamer_name(self.gamer, own=True) != self.gamer:   # (a name from before: over 10 characters, or
+            self.gamer = _np.gamer_name(self.gamer, own=True) or ''    #  with _ or - (A-Z 0-9 only since 1.7.1): without them,
+            self.gamer_ok = False                               #  reserved again at the next online game)
         self.player_key = conf0.get('player_key', '')           # (the secret that makes the name this player's)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
@@ -2528,6 +2529,8 @@ class App:
                 self.ren = vecrender.make_renderer(self.screen.winfo_id(), self.screen)
                 self.ren.reserve = self.knob_reserve()
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
+                self.hdr_mode = c0.get('hdr', 'auto'); self.hdr_frac = float(c0.get('hdr_frac', 1.0))   # (View > HDR)
+                self.root.after(400, self.hdr_apply)
             except Exception as e:                              # noqa: fall back to the Tk canvas
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
@@ -2741,6 +2744,10 @@ class App:
         self.net_vl_want = bool(getattr(args, 'net_veclink', False))   # (--net-veclink: a VecLink game offered)
         if getattr(args, 'net_host', None) or getattr(args, 'net_join', None) or getattr(args, 'net_online', False):   # (online play: netplay.py)
             self.root.after(600, self.net_start)
+        if os.environ.get('VECTREX_TEST_ONLINE'):              # (test: the Online window opened, as from the menu)
+            if os.environ['VECTREX_TEST_ONLINE'] != '1':       # (a name for the test: the window itself, not the name window)
+                self.gamer, self.gamer_ok = os.environ['VECTREX_TEST_ONLINE'], True
+            self.root.after(1500, lambda: (self.online_window(), print('test: online window open: %s' % bool(getattr(self, 'net_win', None)), flush=True)))
         self.win_q = []                                         # (from the window procedure: dropped files, the close button)
         self.root.after(400, self.win_hooks)
         self.root.after(3000, self.update_start)                # (a new version on GitHub: asked once, a moment after start)
@@ -2983,6 +2990,10 @@ class App:
             item(m, 'Quit', '', self.quit)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='View', menu=m, underline=1)
             check(m, 'Full screen', 'F11', lambda: self.full, self.toggle_full)
+            if IS_WIN and self.ren and hasattr(self.ren, 'hdr_start'):
+                check(m, 'HDR', '', lambda: getattr(self, 'hdr_mode', 'auto') != 'off', self.toggle_hdr,
+                      "An HDR monitor (Windows: Settings > Display > Use HDR): the brightest light above white, up to the "
+                      "monitor's peak; the rest as on any screen. Off: an ordinary picture.")
             check(m, 'Always on top', '', lambda: self.on_top, self.toggle_on_top,
                   "The emulator's window stays above every other program's window, also when you click elsewhere.")
             item(m, 'Bigger', '+', lambda: self.zoom_step(1.1))
@@ -5397,6 +5408,24 @@ class App:
         return 'break'
 
     # ---------------------------------------------------------------- online play (netplay.py, a prototype)
+    def hdr_apply(self):
+        """View > HDR: the picture through an HDR monitor's headroom when Windows has HDR on (vecrender.hdr_start)"""
+        r = self.ren
+        if not r or not hasattr(r, 'hdr_start'):
+            return
+        if getattr(self, 'hdr_mode', 'auto') == 'off':
+            if r.hdr:
+                r.hdr_stop(); print('HDR: off', flush=True)
+            return
+        msg = r.hdr_start(force=bool(os.environ.get('VECTREX_TEST_HDR')), frac=getattr(self, 'hdr_frac', 1.0))
+        if msg:
+            print(msg, flush=True)
+        if r.hdr is None and getattr(self, 'hdr_mode', 'auto') == 'auto':
+            self.root.after(5000, self.hdr_apply)                # (HDR switched on in Windows later: taken up)
+    def toggle_hdr(self):
+        self.hdr_mode = 'off' if getattr(self, 'hdr_mode', 'auto') != 'off' else 'auto'
+        self.hdr_apply(); self.save_settings()
+        self.flash('HDR: ' + ('ON' if self.ren and self.ren.hdr else 'OFF' if self.hdr_mode == 'off' else 'NO HDR MONITOR'), secs=2)
     def net_start(self):
         """--net-host / --net-join / --net-online: as the Online window's Host and Join"""
         a = self.args
@@ -5945,15 +5974,15 @@ class App:
         e.pack(side='left')
         e.bind('<FocusIn>', lambda ev: setattr(self.inp, 'block', True))
         e.bind('<FocusOut>', lambda ev: setattr(self.inp, 'block', False))
-        tk.Label(r1, text='  up to 10: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
+        tk.Label(r1, text='  up to 10: A-Z 0-9', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
         msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
         busy = {'on': False}
         def take():
             if busy['on']:
                 return
-            name = netplay.gamer_name(nv.get())
+            name = netplay.gamer_name(nv.get(), own=True)
             if not name:
-                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9'); return
             if not self.player_key:
                 self.player_key = secrets.token_hex(16); self.save_settings()
             old = self.gamer if (change and self.gamer_ok and self.gamer != name) else None
@@ -5976,16 +6005,16 @@ class App:
             elif res and res[0] == 'taken':
                 msg.configure(text='That name belongs to another player. Pick another.')
             elif res:
-                msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9 _ -')
+                msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9')
             else:
                 msg.configure(text='The meeting point did not answer (no internet?). Try again in a moment - or, to play '
                                    'on this network now, Use on this network.')
                 if not local_b.winfo_ismapped():
                     local_b.pack(side='left', padx=(6, 0))
         def local():                                            # (a LAN without internet - the owner, 2026-11-13: the name
-            name = netplay.gamer_name(nv.get())                 #  for this network, this session; reserved once the
+            name = netplay.gamer_name(nv.get(), own=True)       #  for this network, this session; reserved once the
             if not name:                                        #  meeting point answers again)
-                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9'); return
             self.gamer, self.gamer_local = name, True; self.save_settings()
             close()
             self.flash('YOUR PLAYER NAME:', name, 'ON THIS NETWORK', secs=3)
@@ -8535,6 +8564,7 @@ class App:
         d['imager_note'] = getattr(self, 'imager_note', True)
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'
+        d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name

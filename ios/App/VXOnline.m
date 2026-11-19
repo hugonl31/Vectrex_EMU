@@ -116,7 +116,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 	NSString *nm = OClean (vxa_net_name ());
 	if (mode == 0 && !nm.length) { [self note:@"The game room needs your name: enter it above"]; return; }
 	NSString *ext = rom.pathExtension.lowercaseString;
-	if ([@[ @"um2", @"img", @"pit" ] containsObject:ext]) { [self note:@"UVMC2 and PiTrex games online: not in this version yet"]; return; }
+	if ([@[ @"img", @"pit" ] containsObject:ext]) { [self note:@"PiTrex games online: not in this version yet"]; return; }
 	int ski = vxa_ofind ("vectrex_emu_skip_intro"); int skip = ski >= 0 && !strcmp (vxa_oval (ski), "on");
 	extern void vxa_net_hosting (NSString *rom); vxa_net_hosting (rom);
 	vx_net_host (mode, nm.UTF8String, vxa_net_key ().UTF8String, rom.fileSystemRepresentation, skip, "auto", 0.0);

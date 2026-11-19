@@ -1073,12 +1073,12 @@ NSString *vxa_net_ip (void)                          /* (this phone's address on
 	if (a) freeifaddrs (a);
 	return out;
 }
-static NSString *vxa_net_rom;                        /* (the game this phone hosts) */
+static NSString *vxa_net_rom, *vxa_net_join_rom;    /* (the game this phone hosts / joins) */
 static int vxa_net_on;                               /* (1 while a game for two runs) */
 static NSMutableDictionary<NSString *, NSString *> *vxa_md5s;   /* (path -> its MD5: the library, for the host's game) */
 void vxa_net_hosting (NSString *rom) { vxa_net_rom = rom; }
 int vxa_net_playing (void) { return vxa_net_on; }
-static void vxa_toast (NSString *s)
+static void vxa_ntoast (NSString *s)
 {
 	UIViewController *vc = vxa_vc; if (!vc) return; UIView *v = vc.view;
 	UILabel *l = [UILabel new]; l.text = [NSString stringWithFormat:@"   %@   ", s]; l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium]; l.textColor = VX_HI;
@@ -1089,13 +1089,13 @@ static void vxa_toast (NSString *s)
 	l.frame = CGRectMake ((v.bounds.size.width - sz.width) / 2, v.safeAreaInsets.top + 64 + nextY, sz.width, fmax (34, sz.height + 8)); nextY += l.frame.size.height + 6; nextT = now + 3.5;
 	[v addSubview:l]; [UIView animateWithDuration:0.5 delay:3.5 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL d) { (void) d; [l removeFromSuperview]; }];
 }
-void vxa_net_chat_in (NSArray *lines) { for (NSString *t in lines) if ([t isKindOfClass:NSString.class]) { vlog ("online chat in: %s", t.UTF8String); vxa_toast ([NSString stringWithFormat:@"💬 %@", t]); } }
+void vxa_net_chat_in (NSArray *lines) { for (NSString *t in lines) if ([t isKindOfClass:NSString.class]) { vlog ("online chat in: %s", t.UTF8String); vxa_ntoast ([NSString stringWithFormat:@"💬 %@", t]); } }
 static NSString *vxa_find_md5 (NSString *md5)          /* (the host's game in this phone's library: by its MD5, as the desktop's find_rom) */
 {
 	if (!vxa_md5s) vxa_md5s = [NSMutableDictionary dictionary];
 	NSString *root = [vxa_docs () stringByAppendingPathComponent:@"roms"];
 	NSDirectoryEnumerator *e = [NSFileManager.defaultManager enumeratorAtPath:root];
-	for (NSString *rel in e) { NSString *ext = rel.pathExtension.lowercaseString; if (![@[ @"bin", @"vec", @"gam", @"rom" ] containsObject:ext]) continue;
+	for (NSString *rel in e) { NSString *ext = rel.pathExtension.lowercaseString; if (![@[ @"bin", @"vec", @"gam", @"rom", @"um2" ] containsObject:ext]) continue;
 		NSString *p = [root stringByAppendingPathComponent:rel], *m = vxa_md5s[p];
 		if (!m) { char h[33]; long long n; if (!vx_net_md5_file (p.fileSystemRepresentation, h, &n)) continue; m = @(h); vxa_md5s[p] = m; }
 		if ([m isEqualToString:md5]) return p; }
@@ -1109,27 +1109,31 @@ static void vxa_net_tick (void)
 	if (![st isKindOfClass:NSDictionary.class]) return;
 	const int ph = [st[@"phase"] intValue], role = [st[@"role"] intValue], acc = [st[@"accepted"] intValue];
 	static int asked, said_pause, said_desync, said_lost;
-	if (ph < 3) { asked = 0; }
+	if (ph < 3) { asked = 0; vxa_net_join_rom = nil; }
 	if (ph == 3 && !vxa_net_on) {
-		if (role == 1 && acc == 1 && vxa_net_rom.length) {                       /* (the host: player 2 has the game - both start) */
+		if (role == 1 && acc == 1 && [st[@"ready"] intValue] && vxa_net_rom.length) {   /* (the host: player 2 has the game (and its card compared) - both start) */
 			vx_net_prepare (); vxa_load (vxa_net_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
 			vlog ("online: playing %s as player 1", vxa_net_rom.lastPathComponent.UTF8String);
-			vxa_toast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 1", [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); }
+			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 1", [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); }
 		else if (role == 2 && !asked) { asked = 1;                               /* (the joiner: the host's game in the library?) */
 			NSDictionary *g = st[@"game"]; NSString *md5 = [g isKindOfClass:NSDictionary.class] ? g[@"md5"] : nil;
 			NSString *name = [g isKindOfClass:NSDictionary.class] ? [g[@"name"] stringByDeletingPathExtension] : @"?";
-			if ([g isKindOfClass:NSDictionary.class] && [g[@"card"] boolValue]) { vx_net_accept (0); vxa_toast (@"ONLINE: UVMC2 / PITREX GAMES NOT YET ON THE PHONE"); vlog ("online: a card game - declined"); }
+			NSString *ext = [g isKindOfClass:NSDictionary.class] ? [g[@"name"] pathExtension].lowercaseString : @"";
+			if ([@[ @"img", @"pit" ] containsObject:ext]) { vx_net_accept (0); vxa_ntoast (@"ONLINE: PITREX GAMES NOT YET ON THE PHONE"); vlog ("online: a PiTrex game - declined"); }
 			else { NSString *p = md5 ? vxa_find_md5 (md5) : nil;
-				if (!p) { vx_net_accept (0); vxa_toast ([NSString stringWithFormat:@"ONLINE: YOU DO NOT HAVE %@", name.uppercaseString]); vlog ("online: no ROM with md5 %s", md5.UTF8String); }
-				else { vx_net_accept (1); vx_net_prepare (); vxa_load (p); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
-					vlog ("online: playing %s as player 2", p.lastPathComponent.UTF8String);
-					vxa_toast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 2", [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); } } } }
+				if (!p) { vx_net_accept (0); vxa_ntoast ([NSString stringWithFormat:@"ONLINE: YOU DO NOT HAVE %@", name.uppercaseString]); vlog ("online: no ROM with md5 %s", md5.UTF8String); }
+				else { vx_net_accept (1); vxa_net_join_rom = p; vlog ("online: the host's game here: %s - waiting for the start", p.lastPathComponent.UTF8String); } } }
+		else if (role == 2 && acc == 1 && [st[@"ready"] intValue] && vxa_net_join_rom.length) {   /* (both agreed, the card too: start) */
+			vx_net_prepare (); vxa_load (vxa_net_join_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
+			vlog ("online: playing %s as player 2", vxa_net_join_rom.lastPathComponent.UTF8String);
+			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 2%@", [st[@"relay"] intValue] ? @" (RELAYED)" : @"",
+				[st[@"card"] intValue] ? [NSString stringWithFormat:@" - UVMC2 %@", [st[@"uvm2"] uppercaseString]] : @""]); } }
 	if (vxa_net_on) {
 		NSArray *chat = st[@"chat"]; if ([chat isKindOfClass:NSArray.class] && chat.count) vxa_net_chat_in (chat);
 		const int pp = [st[@"peer_paused"] intValue] && [st[@"paused"] intValue];
-		if (pp && !said_pause) { said_pause = 1; vxa_toast (@"PAUSED BY THE OTHER PLAYER"); } else if (!pp) said_pause = 0;
-		if ([st[@"desync"] intValue] >= 0 && !said_desync) { said_desync = 1; vxa_toast (@"ONLINE: OUT OF STEP - THE TWO GAMES DIFFER"); }
-		if ([st[@"lost"] intValue] && !said_lost) { said_lost = 1; vxa_toast ([st[@"left"] intValue] ? @"ONLINE: THE OTHER PLAYER LEFT" : @"ONLINE: CONNECTION LOST");
+		if (pp && !said_pause) { said_pause = 1; vxa_ntoast (@"PAUSED BY THE OTHER PLAYER"); } else if (!pp) said_pause = 0;
+		if ([st[@"desync"] intValue] >= 0 && !said_desync) { said_desync = 1; vxa_ntoast (@"ONLINE: OUT OF STEP - THE TWO GAMES DIFFER"); }
+		if ([st[@"lost"] intValue] && !said_lost) { said_lost = 1; vxa_ntoast ([st[@"left"] intValue] ? @"ONLINE: THE OTHER PLAYER LEFT" : @"ONLINE: CONNECTION LOST");
 			vlog ("online: %s", [st[@"left"] intValue] ? "the other player left" : "connection lost"); vx_net_leave (); vxa_net_on = 0; }
 		if (ph != 4 && !said_lost) vxa_net_on = 0; }
 }

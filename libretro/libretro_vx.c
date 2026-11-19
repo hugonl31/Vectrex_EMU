@@ -1217,7 +1217,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 			else if (sdc_prepare (fo, sd_img)) { static char e[2000]; snprintf (sd_folder, sizeof sd_folder, "%s", fo);
 				snprintf (e, sizeof e, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", sd_img); vx_putenv (e); }
 			else sd_img[0] = 0; } }
-	  if ((px || um) && !sd_folder[0]) { static char sd[1800]; const char *nm = px ? "pitrex_sd.img" : "uvmc2_sd.img"; const char *dd[] = { dir, sys, NULL }; sd[0] = 0;
+	  if ((px || um) && !sd_folder[0] && !(ls_cfg_on && sd_img[0])) { static char sd[1800];   /* (online: its own card, built above) */ const char *nm = px ? "pitrex_sd.img" : "uvmc2_sd.img"; const char *dd[] = { dir, sys, NULL }; sd[0] = 0;
 		for (int d = 0; dd[d] && !sd[0]; d++) { char q[1700]; snprintf (q, sizeof q, d ? "%s" SEP "vectrex_emu" SEP "%s" : "%s" SEP "%s", dd[d], nm);
 			FILE *t = fopen (q, "rb"); if (t) { fclose (t); snprintf (sd, sizeof sd, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", q); } }
 		if (sd[0]) { vx_putenv (sd); fprintf (stderr, "[vectrex_emu] SD card %s\n", strchr (sd, '=') + 1); }

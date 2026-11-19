@@ -1365,7 +1365,7 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 extern float vx_hdr_peak;               /* (gpu_phos.c; 1.0: no HDR) */
 /* HDR (the own iOS app): how much brighter than a line the beam at rest lights the tube - the owner's Corner Test photo
  * (2026-10-26, ProRAW: linear): 2.3x at 16 cycles, 3.2x at 24, 4.9x at 32, 7-9x from 48 on. Without HDR such a spot is
- * the screen's white, as every line's core; with it the rest's light above white, as a display value: R^(1/2.2) - 1.
+ * the screen's white, as every line's core; with it the rest's light above white, as an sRGB value less white.
  * Mine Storm's shots rest 36 cycles (intensity 95), Last Human's 53 + 66 in one place (127): the brightest */
 static double hdr_rest (double cyc)
 {
@@ -1373,7 +1373,7 @@ static double hdr_rest (double cyc)
 	double r = R[5];
 	if (cyc <= C[0]) return 0;
 	for (int i = 1; i < 6; i++) if (cyc <= C[i]) { r = R[i - 1] + (R[i] - R[i - 1]) * (cyc - C[i - 1]) / (C[i] - C[i - 1]); break; }
-	return pow (r, 1 / 2.2) - 1.0;
+	return 1.055 * pow (r, 1 / 2.4) - 0.055 - 1.0;   /* (as an sRGB value, as the app makes it light: VXApp.m) */
 }
 #define BEAM_DOTW 1.0                   /* its width: the line's x DOTW + DOTWK per cycle (game px) */
 #define BEAM_DOTWK 0.002

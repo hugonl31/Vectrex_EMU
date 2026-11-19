@@ -2741,6 +2741,10 @@ class App:
         self.net_vl_want = bool(getattr(args, 'net_veclink', False))   # (--net-veclink: a VecLink game offered)
         if getattr(args, 'net_host', None) or getattr(args, 'net_join', None) or getattr(args, 'net_online', False):   # (online play: netplay.py)
             self.root.after(600, self.net_start)
+        if os.environ.get('VECTREX_TEST_ONLINE'):              # (test: the Online window opened, as from the menu)
+            if os.environ['VECTREX_TEST_ONLINE'] != '1':       # (a name for the test: the window itself, not the name window)
+                self.gamer, self.gamer_ok = os.environ['VECTREX_TEST_ONLINE'], True
+            self.root.after(1500, lambda: (self.online_window(), print('test: online window open: %s' % bool(getattr(self, 'net_win', None)), flush=True)))
         self.win_q = []                                         # (from the window procedure: dropped files, the close button)
         self.root.after(400, self.win_hooks)
         self.root.after(3000, self.update_start)                # (a new version on GitHub: asked once, a moment after start)

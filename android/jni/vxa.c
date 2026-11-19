@@ -5,6 +5,7 @@
  * controllers, keys and touch come from the Java side (VX.java). Everything that happens goes into the app's log
  * (files/applog.txt) and the core's (system/vectrex_emu/vectrex_emu.log).
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
+#define _GNU_SOURCE                             /* (sched_setaffinity, cpu_set_t) */
 #include <jni.h>
 #include <android/native_window_jni.h>
 #include <android/log.h>
@@ -13,6 +14,7 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -454,9 +456,36 @@ static pthread_t vxa_th; static volatile int vxa_quit, vxa_running = 1, vxa_star
 static char vxa_game0[1100]; static volatile int vxa_browser;     /* (the core's ROM browser asked for: the library instead) */
 static volatile int vxa_stat_rps, vxa_stat_pps, vxa_stat_ms;
 extern int vx_app_noshape, vx_app_osd_on;
+/* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
+ * slow cores took 15-16 ms of a 16.7 ms refresh for Armor Attack (the iPad: 4); RetroArch's game thread is kept on the
+ * fast ones. The cores near the top clock speed; the threads the core starts from here (UVMC2 / PiTrex, the drawing) follow */
+static int vxa_tid;
+static void vxa_fast_cores (void)
+{
+	long mx[64]; int n = 0; long top = 0;
+	for (int c = 0; c < 64; c++) { char p[96]; snprintf (p, sizeof p, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
+		FILE *f = fopen (p, "r"); if (!f) { mx[c] = 0; if (c > 15) break; continue; } long v = 0; if (fscanf (f, "%ld", &v) != 1) v = 0; fclose (f); mx[c] = v; n = c + 1; if (v > top) top = v; }
+	if (!top || n < 2) { vlog ("cores: their speeds unknown - left to Android"); return; }
+	cpu_set_t set; CPU_ZERO (&set); int k = 0; char list[200] = ""; size_t o = 0;
+	for (int c = 0; c < n; c++) if (mx[c] >= top * 3 / 4) { CPU_SET (c, &set); k++; o += (size_t) snprintf (list + o, o < sizeof list ? sizeof list - o : 0, "%s%d", o ? "," : "", c); }
+	const int r = sched_setaffinity (0, sizeof set, &set);
+	vlog ("cores: the game's thread on %d fast ones (%s, up to %ld MHz)%s", k, list, top / 1000, r ? " - not allowed" : "");
+}
+/* (Android 13+: the game thread says how long each refresh's work took - the clocks follow) */
+typedef void *(*vxa_ph_mgr_t) (void); typedef void *(*vxa_ph_new_t) (void *, const int32_t *, size_t, int64_t); typedef int (*vxa_ph_rep_t) (void *, int64_t);
+static void *vxa_hint; static vxa_ph_rep_t vxa_ph_rep;
+static void vxa_perf_hint (double fps)
+{
+	void *l = dlopen ("libandroid.so", RTLD_NOW); if (!l) return;
+	vxa_ph_mgr_t mg = (vxa_ph_mgr_t) dlsym (l, "APerformanceHint_getManager"); vxa_ph_new_t mk = (vxa_ph_new_t) dlsym (l, "APerformanceHint_createSession");
+	vxa_ph_rep = (vxa_ph_rep_t) dlsym (l, "APerformanceHint_reportActualWorkDuration");
+	if (!mg || !mk || !vxa_ph_rep) { vlog ("performance hints: not on this Android"); return; }
+	void *m = mg (); int32_t t = vxa_tid; vxa_hint = m ? mk (m, &t, 1, (int64_t) (1e9 / (fps > 0 ? fps : 60))) : NULL;
+	vlog ("performance hints: %s", vxa_hint ? "on" : "not given");
+}
 static void *vxa_main (void *u)
 {
-	(void) u;
+	(void) u; vxa_tid = gettid (); vxa_fast_cores ();
 	if (!vxa_egl_init ()) { vxa_ok = -1; return NULL; }
 	vxa_present_setup ();
 	vx_app_noshape = 1;                                  /* (the app places the picture and the deck: no bars to the screen's shape) */
@@ -476,6 +505,7 @@ static void *vxa_main (void *u)
 	vlog ("av: %u x %u (max %u x %u), aspect %.3f, %.2f Hz, sound %.0f Hz", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_av.geometry.max_width, vxa_av.geometry.max_height, vxa_av.geometry.aspect_ratio, vxa_av.timing.fps, vxa_av.timing.sample_rate);
 	if (vxa_hw_on) { vxa_core_fb (vxa_av.geometry.max_width, vxa_av.geometry.max_height); if (vxa_hw.context_reset) vxa_hw.context_reset (); vlog ("GL context handed to the core"); }
 	vxa_audio_start (vxa_av.timing.sample_rate);
+	vxa_perf_hint (vxa_av.timing.fps);
 	vxa_ok = 1;
 	double last = 0, acc = 0, stat_t = vxa_now (), t_run = 0, t_max = 0; long runs = 0, pres = 0, ticks = 0, late = 0; int was_running = 1;
 	while (!vxa_quit) {
@@ -503,6 +533,7 @@ static void *vxa_main (void *u)
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;
 			if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); vxa_browser = 1; } }
 		vxa_present (); pres++;
+		if (vxa_hint && vxa_ph_rep) vxa_ph_rep (vxa_hint, (int64_t) ((vxa_now () - now) * 1e9));   /* (this refresh's work: the hint) */
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
 		eglSwapBuffers (vxa_dpy, vxa_surf);
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;

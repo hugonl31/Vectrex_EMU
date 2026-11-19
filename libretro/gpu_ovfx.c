@@ -102,7 +102,7 @@ static const char *OX_FS_LIGHT =                /* (the light before the sheet: 
 	"  if (wbon != 0) o *= mix(wbg, wbc, smoothstep(0.35, 0.9, max(o.r, max(o.g, o.b))));\n"
 	"  if (k2 > 0.0) { float sheet = step(0.004, texture(art, gl_FragCoord.xy / vec2(textureSize(s, 0))).a);\n"
 	"    vec2 uv = (gl_FragCoord.xy - pic.xy) / pic.z; o += LIGHTC * k2 * ceiling((uv * 0.9 - lpos.xy) / lpos.z, 0.15) * sheet; }\n"
-	"  fragc = vec4(o, 1.0); }\n";
+	"  fragc = vec4(o, texelFetch(s, ip, 0).a); }\n";
 static const char *OX_FS_DOWN =                 /* (DOWN_SHADER: 8 x 8 pixels, 1 3 3 1 per pair, by linear taps) */
 	"uniform sampler2D tex; uniform vec2 sp, qs; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / qs; vec4 c = vec4(0.0);\n"
@@ -154,9 +154,12 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"uniform vec4 pen, rlp; uniform vec2 rpt[6]; uniform vec3 lpos, pic; uniform float dith; out vec4 fragc;\n"
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"float lum(vec3 c) { return max(max(c.r, c.g), c.b); }\n"
-	"uniform float hk;\n"   /* (HDR: the knees top - 1.0 the screens white, as before; above it the brightest light up to the screens HDR peak) */
-	"vec3 knee(vec3 c) { float r = max(hk, 1.0) - 0.75; return mix(c, 0.75 + r * (1.0 - exp(-(c - 0.75) / r)), step(0.75, c)); }\n"
-	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb;\n"
+	"uniform float hk;\n"   /* (HDR: as PH_FS_OUT) */
+	"vec3 knee(vec3 c) { return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
+	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
+	                                                   through the overlay's colour; softly up to the screen's peak) */
+	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"
+	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb; float hx = texelFetch(L, ivec2(gl_FragCoord.xy), 0).a;\n"
 	"  vec3 m = texture(ovm, uv).rgb, la = texture(ova, uv).rgb, l = dot(o, vec3(1.0 / 3.0)) * m; vec3 c = sqrt(l * l + la * la);\n"
 	"  vec4 ov = texture(art, uv); float sheet = step(0.004, ov.a);\n"
 	"  if (ovl > 0.0) { vec2 u = (gl_FragCoord.xy - pic.xy) / pic.z;\n"
@@ -195,7 +198,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    float cut = smoothstep(pen.x, pen.y, cc.z);\n"
 	"    e += cut * pen.z * (0.5 * near + 0.8 * mid + 0.6 * far) * (vec3(1.0) - trans * 0.5) + cut * room * 0.5;\n"
 	"    c += e; }\n"
-	"  fragc = vec4((knee(c) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
+	"  fragc = vec4((hdrx(knee(c), hx, m) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ox_prog (const char *vsrc, const char *a, const char *b)
 {

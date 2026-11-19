@@ -39,25 +39,26 @@ static const char *PH_VS_CAP =                  /* (a piece: its box, in picture
 	"layout(location = 0) in vec4 ab; layout(location = 1) in vec4 box; layout(location = 2) in vec4 c0;\n"
 	"layout(location = 3) in vec4 c1; layout(location = 4) in vec4 rc; layout(location = 5) in vec4 kx;\n"
 	"uniform vec2 sz;\n"
-	"flat out vec4 vab, vc0, vc1, vrc; flat out float vk;\n"
+	"flat out vec4 vab, vc0, vc1, vrc; flat out float vk, vx;\n"
 	"void main() { int k = gl_VertexID; vec2 q = vec2((k == 1 || k == 2 || k == 4) ? 1.0 : 0.0, (k == 2 || k == 4 || k == 5) ? 1.0 : 0.0);\n"
 	"  vec2 lo = min(box.xy, box.zw) - vec2(rc.x + 1.0), hi = max(box.xy, box.zw) + vec2(rc.x + 1.0);\n"
-	"  vec2 p = mix(lo, hi, q); vab = ab; vc0 = c0; vc1 = c1; vrc = rc; vk = kx.x;\n"
+	"  vec2 p = mix(lo, hi, q); vab = ab; vc0 = c0; vc1 = c1; vrc = rc; vk = kx.x; vx = kx.y;\n"
 	"  gl_Position = vec4(p / sz * 2.0 - 1.0, 0.0, 1.0); }\n";
 static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gaussian round the segment, the joints' cuts) */
-	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk; out vec4 fragc;\n"
+	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx; out vec4 fragc;\n"
 	"void main() { vec2 p = gl_FragCoord.xy, a = vab.xy, d = vab.zw - vab.xy;\n"
 	"  float L2 = dot(d, d), t = L2 > 0.0 ? clamp(dot(p - a, d) / L2, 0.0, 1.0) : 0.0;\n"
 	"  vec2 e = p - (a + d * t); float d2 = dot(e, e);\n"
 	"  if (d2 >= vrc.x * vrc.x) discard;\n"
 	"  if (vc0.w > 0.5 && dot(p, vc0.xy) < vc0.z) discard;\n"
 	"  if (vc1.w > 0.5 && dot(p, vc1.xy) > vc1.z) discard;\n"
-	"  fragc = vec4(vrc.yzw * exp(-d2 * vk), 0.0); }\n";
+	"  float sh = exp(-d2 * vk); fragc = vec4(vrc.yzw * sh, sh * vx); }\n";
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2, ag; uniform int after; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
-	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, 1.0); return; }\n"
+	"  float fa = txb(fc, uv).a;\n"
+	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, fa); return; }\n"
 	"  vec3 p = txb(fp, uv).rgb, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
 	"  float cap = pv && lp > 1.0 ? 1.0 / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
@@ -65,12 +66,16 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
 	"  g1 = mix(g1, max(g1 - f * a1, 0.0), lit); g2 = mix(g2, max(g2 - f * a2, 0.0), lit);\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
-	"  o1 = vec4(g1, 1.0); o2 = vec4(g2, 1.0); os = vec4(f + ag * (g1 + g2), 1.0); }\n";
+	"  float la = max(txb(fp, uv).a - fa, 0.0), h1 = texelFetch(g1t, ip, 0).a * kd1 + la * e1, h2 = texelFetch(g2t, ip, 0).a * kd2 + la * e2;\n"
+	"  if (fa > 0.0) { h1 = max(h1 - fa * a1, 0.0); h2 = max(h2 - fa * a2, 0.0); }\n"
+	"  h1 *= step(1e-4, h1); h2 *= step(1e-4, h2);\n"
+	"  o1 = vec4(g1, h1); o2 = vec4(g2, h2); os = vec4(f + g1 + g2, fa + h1 + h2); }\n";
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
-	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform float ag; uniform vec2 sz; out vec4 fragc;\n"
+	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"
-	"  if (after != 0) o += ag * (txb(g1t, uv).rgb + txb(g2t, uv).rgb);\n"
-	"  fragc = vec4(o, 1.0); }\n";
+	"  float a = txb(fc, uv).a;\n"
+	"  if (after != 0) { o += txb(g1t, uv).rgb + txb(g2t, uv).rgb; a += txb(g1t, uv).a + txb(g2t, uv).a; }\n"
+	"  fragc = vec4(o, a); }\n";
 static const char *PH_FS_UI =                   /* (the ROM browser's panel: premultiplied, over the picture) */
 	"uniform sampler2D t; out vec4 fragc; void main() { fragc = texelFetch(t, ivec2(gl_FragCoord.xy), 0); }\n";
 static const char *PH_FS_DOWN =                 /* (glow_blur: 2 S x 2 S pixels to a cell, 1 3 3 1 by groups of S) */
@@ -89,16 +94,20 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"uniform sampler2D s, gt, ovm, ova; uniform int glow, ovon, wbon; uniform vec3 tint, wbg, wbc; uniform float bright, grey;\n"
 	"uniform vec2 gsz; uniform float dith; out vec4 fragc;\n"
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
-	"uniform float hk;\n"   /* (HDR: the knees top - 1.0 the screens white, as before; above it the brightest light up to the screens HDR peak) */
-	"vec3 knee(vec3 c) { float r = max(hk, 1.0) - 0.75; return mix(c, 0.75 + r * (1.0 - exp(-(c - 0.75) / r)), step(0.75, c)); }\n"
-	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec3 o = texelFetch(s, ip, 0).rgb;\n"
+	"uniform float hk;\n"   /* (HDR: the top, x the screen's white - 1.0 no HDR. The knee as always; above white only the long rests' own light (hx), up to it) */
+	"vec3 knee(vec3 c) { return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
+	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
+	                                                   through the overlay's colour; softly up to the screen's peak) */
+	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"
+	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec3 o = texelFetch(s, ip, 0).rgb; float hx = texelFetch(s, ip, 0).a;\n"
 	"  if (glow != 0) o += tint * txc(gt, gl_FragCoord.xy / gsz).rgb;\n"
 	"  o = max(o, 0.0) * bright;\n"
 	"  if (wbon != 0) o *= mix(wbg, wbc, smoothstep(0.35, 0.9, max(o.r, max(o.g, o.b))));\n"
 	"  if (ovon != 0) { vec2 u = gl_FragCoord.xy / vec2(textureSize(s, 0)); vec3 m = txb(ovm, u).rgb, la = txb(ova, u).rgb;\n"
 	"    vec3 l = dot(o, vec3(1.0 / 3.0)) * m; o = sqrt(l * l + la * la); }\n"
 	"  else { o *= 1.6; if (grey > 0.0) { vec3 g = grey * vec3(0.92, 0.95, 1.0); o = sqrt(o * o + g * g); } }\n"
-	"  fragc = vec4((knee(o) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
+	"  vec3 ht = ovon != 0 ? txb(ovm, gl_FragCoord.xy / vec2(textureSize(s, 0))).rgb : vec3(1.0);\n"
+	"  fragc = vec4((hdrx(knee(o), hx, ht) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ph_prog (const char *vsrc, const char *fsrc)
 {
@@ -243,9 +252,9 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		o[4] = q->x0 + ox; o[5] = q->y0; o[6] = q->x1 + ox; o[7] = q->y1;
 		o[8] = q->n0x; o[9] = q->n0y; o[10] = q->c0 + q->n0x * ox; o[11] = (q->cut & 1) ? 1.0f : 0.0f;
 		o[12] = q->n1x; o[13] = q->n1y; o[14] = q->c1 + q->n1x * ox; o[15] = (q->cut & 2) ? 1.0f : 0.0f;
-		o[16] = q->R; o[17] = q->r; o[18] = q->g; o[19] = q->b; o[20] = q->k2; o[21] = o[22] = o[23] = 0;
+		o[16] = q->R; o[17] = q->r; o[18] = q->g; o[19] = q->b; o[20] = q->k2; o[21] = q->hx; o[22] = o[23] = 0;
 		if (ls != 1.0f) { for (int i = 0; i < 8; i++) o[i] *= ls; o[10] *= ls; o[14] *= ls;
-			float sw = sqrtf (0.5f / q->k2) * ls; if (sw < 0.5f) { o[17] *= sw / 0.5f; o[18] *= sw / 0.5f; o[19] *= sw / 0.5f; sw = 0.5f; }
+			float sw = sqrtf (0.5f / q->k2) * ls; if (sw < 0.5f) { o[17] *= sw / 0.5f; o[18] *= sw / 0.5f; o[19] *= sw / 0.5f; o[21] *= sw / 0.5f; sw = 0.5f; }
 			o[16] = sw * 3.0f; o[20] = 0.5f / (sw * sw); } }
 	glDisable_ (GL_DEPTH_TEST); glDisable_ (GL_SCISSOR_TEST); glDisable_ (GL_CULL_FACE); glDisable_ (GL_STENCIL_TEST);
 	/* the fresh light */
@@ -263,17 +272,15 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	{ const float tk = ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0;
 	  const float a1 = 0.1404f * tk, a2 = 0.0582f * tk, ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
-	  const float ag = vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f;   /* (HDR: the afterglow up as the knee's top - the beam's head up to the screen's peak
-	                                                                   left it too faint to see beside it (the owner, iPhone, 2026-11-19); SDR 1.0, as before) */
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
 	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);
 	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
 	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "e1", a1 * kd1); PU1F (ph_upd, "e2", a2 * kd2);
-	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after); PU1F (ph_upd, "ag", ag);
+	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
 		ph_bind (ph_comp, "fc", 0, ph_F[cur]); ph_bind (ph_comp, "g1t", 1, ph_G1[cur]); ph_bind (ph_comp, "g2t", 2, ph_G2[cur]);
-		PU1I (ph_comp, "after", after); PU1F (ph_comp, "ag", ag); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
+		PU1I (ph_comp, "after", after); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {
 		const int gd = 2 * S, nf = 2 * gd; double vd = 0;

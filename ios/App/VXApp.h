@@ -30,6 +30,7 @@ const char *vx_net_status (void);
 int vx_net_md5_file (const char *path, char *out33, long long *size);
 NSString *vxa_net_ip (void);           /* this phone's address on its network */
 NSString *vxa_net_name (void), *vxa_net_key (void);
+int vxa_net_playing (void);              /* (1 while a game for two runs: no save states) */
 
 /* the theme: the PC app's colours */
 #define VXC(rgb) [UIColor colorWithRed:((rgb) >> 16 & 255) / 255.0 green:((rgb) >> 8 & 255) / 255.0 blue:((rgb) & 255) / 255.0 alpha:1]

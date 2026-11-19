@@ -455,14 +455,14 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	 *  settings; the Vectrex's own hardware - eject, port 2 - small at the foot) */
 	UILabel *st = VL (@"Save states", VF (15, UIFontWeightSemibold), VX_FG);
 	UIStackView *slots = [UIStackView new]; slots.distribution = UIStackViewDistributionFillEqually; slots.spacing = 8;
-	BOOL can = vxa_state_supported () != 0;
+	BOOL can = vxa_state_supported () != 0 && !vxa_net_playing ();   /* (online: a loaded state would part the two games) */
 	for (int s = 1; s <= 3; s++) {
 		UIButton *sv = VB ([NSString stringWithFormat:@"Save %d", s], @"square.and.arrow.down", NO, ^{ int ok = vxa_state (1, s); UIViewController *gm = ws.game; [ws close:^{ VToast (gm, ok ? [NSString stringWithFormat:@"Saved in slot %d", s] : @"Not saved"); }]; });
 		UIButton *ld = VB ([NSString stringWithFormat:@"Load %d", s], @"square.and.arrow.up", NO, ^{ int ok = vxa_state (0, s); UIViewController *gm = ws.game; [ws close:^{ VToast (gm, ok ? [NSString stringWithFormat:@"Slot %d loaded", s] : @"Nothing loaded"); }]; });
 		ld.enabled = can && vxa_state_exists (s); sv.enabled = can;
 		UIStackView *col = [[UIStackView alloc] initWithArrangedSubviews:@[ sv, ld ]]; col.axis = UILayoutConstraintAxisVertical; col.spacing = 6; col.distribution = UIStackViewDistributionFillEqually;
 		[col.heightAnchor constraintEqualToConstant:116].active = YES; [slots addArrangedSubview:col]; }
-	UILabel *stn = VL (can ? @"" : @"This game has no save states (UVMC2 and PiTrex games keep their own).", VF (12, UIFontWeightRegular), VX_DIM); stn.hidden = can;
+	UILabel *stn = VL (can ? @"" : vxa_net_playing () ? @"No save states during an online game." : @"This game has no save states (UVMC2 and PiTrex games keep their own).", VF (12, UIFontWeightRegular), VX_DIM); stn.hidden = can;
 	int ov = vxa_ofind ("vectrex_emu_overlay"); BOOL ovOn = ov >= 0 && !strcmp (vxa_oval (ov), "on");
 	UIStackView *acts = [[UIStackView alloc] initWithArrangedSubviews:@[
 		VB (@"Games", @"square.grid.2x2", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ [VXUI showLibraryFrom:gm]; }]; }),

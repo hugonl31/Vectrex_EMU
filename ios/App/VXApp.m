@@ -57,7 +57,11 @@ static void vxa_post (NSString *kind, NSData *d)
 	rq.HTTPMethod = @"POST"; rq.HTTPBody = d; rq.timeoutInterval = 15;
 	[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"]; [rq setValue:[NSString stringWithFormat:@"%s-%@", vxa_sess, kind] forHTTPHeaderField:@"X-Vectrex-Kind"];
 	[rq setValue:@"txt" forHTTPHeaderField:@"X-Vectrex-Ext"];
-	[[NSURLSession.sharedSession dataTaskWithRequest:rq] resume];
+	const BOOL live = [kind isEqualToString:@"app-log"];
+	[[NSURLSession.sharedSession dataTaskWithRequest:rq completionHandler:^(NSData *x, NSURLResponse *r, NSError *e) { (void) x;
+		if (!live || (!e && ((NSHTTPURLResponse *) r).statusCode == 200)) return;   /* (no connection - on a phone's own network: kept, sent again) */
+		NSString *back = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding]; if (!back.length || !vxa_pend) return;
+		@synchronized (vxa_pend) { if (vxa_pend.length < 2000000) [vxa_pend insertString:back atIndex:0]; } }] resume];
 #else
 	(void) kind; (void) d;
 #endif

@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.7.6
+- Online: joining a game starts both anew (steadier across devices)
+
 ## v1.7.5
 - iPhone / iPad: play nearby with no network (peer-to-peer Wi-Fi)
 

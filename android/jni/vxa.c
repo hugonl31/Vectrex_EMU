@@ -28,7 +28,7 @@
 #include "libretro.h"
 
 /* ---------------------------------------------------------------- the log */
-static int vxa_lfd = -1; static pthread_mutex_t vxa_lmx = PTHREAD_MUTEX_INITIALIZER;
+static int vxa_lfd = -1, vxa_lfd2 = -1; static pthread_mutex_t vxa_lmx = PTHREAD_MUTEX_INITIALIZER;   /* (2: next to the core's log - reachable without the app's private folder) */
 static char vxa_pend[65536]; static size_t vxa_pendn;          /* (lines not yet fetched by the Java side's live sender) */
 static double vxa_now (void) { struct timespec t; clock_gettime (CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
 static void vlog (const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
@@ -41,6 +41,7 @@ static void vlog (const char *fmt, ...)
 	__android_log_write (ANDROID_LOG_INFO, "VectrexEMU", b);
 	pthread_mutex_lock (&vxa_lmx);
 	if (vxa_lfd >= 0) write (vxa_lfd, line, (size_t) n);
+	if (vxa_lfd2 >= 0) write (vxa_lfd2, line, (size_t) n);
 	if (vxa_pendn + (size_t) n < sizeof vxa_pend) { memcpy (vxa_pend + vxa_pendn, line, (size_t) n); vxa_pendn += (size_t) n; }
 	pthread_mutex_unlock (&vxa_lmx);
 }
@@ -600,6 +601,8 @@ JNIEXPORT void JNICALL JF(start) (JNIEnv *e, jclass c, jstring sys, jstring save
 	snprintf (vxa_sys, sizeof vxa_sys, "%s", s1); snprintf (vxa_saves, sizeof vxa_saves, "%s", s2); snprintf (vxa_game0, sizeof vxa_game0, "%s", s3); snprintf (vxa_odefs, sizeof vxa_odefs, "%s", s4 ? s4 : "");
 	JREL (s1, sys); JREL (s2, saves); JREL (s3, game); JREL (s4, defs);
 	snprintf (vxa_states, sizeof vxa_states, "%s/states", vxa_files); vxa_mkdirs (vxa_states, 1); vxa_mkdirs (vxa_saves, 1);
+	{ char p[1200]; snprintf (p, sizeof p, "%s/vectrex_emu/vectrex_emu_app.log", vxa_sys); vxa_lfd2 = open (p, O_WRONLY | O_CREAT | O_TRUNC, 0644);   /* (this run's app log there too, from the start) */
+	  if (vxa_lfd2 >= 0) { char q[1100]; snprintf (q, sizeof q, "%s/applog.txt", vxa_files); FILE *f = fopen (q, "r"); if (f) { char b[4096]; size_t k; while ((k = fread (b, 1, sizeof b, f)) > 0) write (vxa_lfd2, b, k); fclose (f); } } }
 	vlog ("start: system %s, saves %s, game %s", vxa_sys, vxa_saves, vxa_game0);
 	pthread_attr_t a; pthread_attr_init (&a); pthread_attr_setstacksize (&a, 8 << 20);
 	pthread_create (&vxa_th, &a, vxa_main, NULL);

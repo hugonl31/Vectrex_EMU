@@ -3,6 +3,14 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.7.6
+
+* Online: joining a game always starts both players' games anew. Joining a running game sent its state - up to 2 MB
+  - which stalled a phone's own network (Wi-Fi Direct) and parted the two games at once (an iPad with an Android
+  handheld). A fresh start for both is quick and plays the same on every device.
+* The test builds: the iPhone / iPad app keeps its log while it has no internet (on a phone's own network) and sends
+  it later; the Android app writes its log next to the core's as well.
+
 ## v1.7.5
 
 * iPhone and iPad together with no network at all: Online > Nearby - iPhone and iPad > Host for an iPhone / iPad

@@ -1362,6 +1362,11 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 #define BEAM_HALO_C 18.0
 #define BEAM_DOTC 4.0                   /* a resting spot: BEAM_DOTMAX x min (1, cycles / BEAM_DOTC) */
 #define BEAM_DOTMAX 1.6
+/* the afterglow's faint end lifted: g x (1 + A / (1 + g / G0)) - up to A x G0 more, reached already where it is faint. On
+ * black the trail so looks as it did through an overlay, whose plastic glow (added as a screen value) lifted it there;
+ * measured on Armor Attack's jeep, overlay on / off, the owner's wish 2026-11-19. The same numbers in gpu_phos.c (lift) */
+#define TRAIL_LIFT_A 3.0f
+#define TRAIL_LIFT_G0 0.00625f
 extern float vx_hdr_peak;               /* (gpu_phos.c; 1.0: no HDR) */
 /* HDR (the own iOS app): how much brighter than a line the beam at rest lights the tube - the owner's Corner Test photo
  * (2026-10-26, ProRAW: linear): 2.3x at 16 cycles, 3.2x at 24, 4.9x at 32, 7-9x from 48 on. Without HDR such a spot is
@@ -2877,7 +2882,8 @@ void retro_run (void)
 							if (l > 0) { g1 += l * e1; g2 += l * e2; }   /* (no longer lit: it starts to glow away) */
 							if (f[c] > 0) { g1 -= f[c] * a1; g2 -= f[c] * a2; if (g1 < 0) g1 = 0; if (g2 < 0) g2 = 0; }   /* (lit again) */
 							if (g1 < 1e-4f) g1 = 0; if (g2 < 1e-4f) g2 = 0;
-							g1b[c][i] = g1; g2b[c][i] = g2; o[c] += g1 + g2; any |= g1 + g2 > 0; gl |= g1 + g2 > 0; }
+							g1b[c][i] = g1; g2b[c][i] = g2; { const float g = g1 + g2; o[c] += g * (1.0f + TRAIL_LIFT_A / (1.0f + g / TRAIL_LIFT_G0)); }   /* (lifted: gpu_phos.c lift) */
+							any |= g1 + g2 > 0; gl |= g1 + g2 > 0; }
 					}
 					if (gl) { if (x < ng0) ng0 = x; ng1 = x; }
 				}

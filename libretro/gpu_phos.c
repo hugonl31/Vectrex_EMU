@@ -54,6 +54,8 @@ static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gauss
 	"  if (vc1.w > 0.5 && dot(p, vc1.xy) > vc1.z) discard;\n"
 	"  float sh = exp(-d2 * vk); fragc = vec4(vrc.yzw * sh, sh * vx); }\n";
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
+	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
+	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
 	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
@@ -69,12 +71,14 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  float la = max(txb(fp, uv).a - fa, 0.0), h1 = texelFetch(g1t, ip, 0).a * kd1 + la * e1, h2 = texelFetch(g2t, ip, 0).a * kd2 + la * e2;\n"
 	"  if (fa > 0.0) { h1 = max(h1 - fa * a1, 0.0); h2 = max(h2 - fa * a2, 0.0); }\n"
 	"  h1 *= step(1e-4, h1); h2 *= step(1e-4, h2);\n"
-	"  o1 = vec4(g1, h1); o2 = vec4(g2, h2); os = vec4(f + g1 + g2, fa + h1 + h2); }\n";
+	"  o1 = vec4(g1, h1); o2 = vec4(g2, h2); os = vec4(f + lift(g1 + g2), fa + h1 + h2); }\n";
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
+	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
+	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
 	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"
 	"  float a = txb(fc, uv).a;\n"
-	"  if (after != 0) { o += txb(g1t, uv).rgb + txb(g2t, uv).rgb; a += txb(g1t, uv).a + txb(g2t, uv).a; }\n"
+	"  if (after != 0) { o += lift(txb(g1t, uv).rgb + txb(g2t, uv).rgb); a += txb(g1t, uv).a + txb(g2t, uv).a; }\n"
 	"  fragc = vec4(o, a); }\n";
 static const char *PH_FS_UI =                   /* (the ROM browser's panel: premultiplied, over the picture) */
 	"uniform sampler2D t; out vec4 fragc; void main() { fragc = texelFetch(t, ivec2(gl_FragCoord.xy), 0); }\n";

@@ -3,6 +3,21 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.6.9
+
+* The phosphor trail on black now looks as it did through an overlay: its faint end is lifted, so a moving object's
+  afterglow stays visible as long as it does behind an overlay (measured on Armor Attack's jeep and Mine Storm's
+  mothership, overlay on and off at the same moment). Lines, dots and the overlay's own look are unchanged.
+
+**The RetroArch core**
+* The same trail on black. And through an overlay the sheet's own light - the plastic glow, the scratches' glints, the
+  ceiling light's reflection - no longer lifts the trail it lies over: it was added to the picture as a screen value,
+  which brightened the faint trail 1.4-1.8x; the trail now gets the sheet's colour and light as light, and the
+  plastic glows from the lines and dots as they are drawn. Lines, dots, the sheet and its glow measure as before.
+* New for frontends without their own netplay (the coming iPhone / iPad app): online play the PC version's way, in
+  the core - it plays the PC version (the meeting point, codes, the game room, a game on a network without the
+  internet, UVMC2 games with their SD cards). RetroArch keeps its own netplay.
+
 ## v1.6.8
 
 * Last Human, the newest builds of both editions: 16 shots (above 8 at half rate, as the game draws them), shield

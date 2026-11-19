@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.6.9
+- Phosphor trail on black: as long as through an overlay
+- RetroArch: the overlay no longer brightens the trail
+- RetroArch: the trail on black as on the PC
+
 ## v1.6.8
 - Last Human: 16 shots, slower shield bots, centipede cages, fixes
 - RetroArch: slow games (Vectrexians) no longer flicker

@@ -265,7 +265,21 @@ static nv_sock_t nv_udp (int port, int bcast)
 	if (bind (s, (struct sockaddr *) &a, sizeof a) != 0) { nv_closesock (s); return NV_BADSOCK; }
 	nv_nonblock (s); return s;
 }
-static void nv_raw (const void *b, size_t n, const struct sockaddr_in *to) { if (nv_s != NV_BADSOCK) sendto (nv_s, (const char *) b, (int) n, 0, (const struct sockaddr *) to, sizeof *to); }
+static void nv_log (const char *m);
+static void nv_raw (const void *b, size_t n, const struct sockaddr_in *to)
+{
+	if (nv_s == NV_BADSOCK) return;
+	if (sendto (nv_s, (const char *) b, (int) n, 0, (const struct sockaddr *) to, sizeof *to) < 0) {   /* (said once an address: an iPhone without
+	                                                              the local network's permission can not send to the other's home address) */
+		static uint32_t said[4]; static int ns; const uint32_t a = to->sin_addr.s_addr; int k = 0; for (int i = 0; i < ns; i++) k |= said[i] == a;
+		if (!k) { if (ns < 4) said[ns++] = a; char m[96]; snprintf (m, sizeof m, "can not send to %s (error %d)", inet_ntoa (to->sin_addr),
+#ifdef _WIN32
+			WSAGetLastError ()
+#else
+			errno
+#endif
+			); nv_log (m); } }
+}
 static void nv_send (int kind, const void *pay, size_t n)   /* (a game packet: straight to the other side, or through the relay) */
 {
 	unsigned char b[640]; if (n > 600) n = 600;
@@ -361,7 +375,7 @@ static void nv_make_game (void)
 }
 static void nv_reset_frames (void)
 {
-	nv_f = 0; nv_lhave = 0; nv_their_f = -1; nv_adv = nv_adv_them = 0;
+	nv_f = 0; nv_lhave = 0; nv_wait_t0 = 0; nv_their_f = -1; nv_adv = nv_adv_them = 0;
 	for (uint32_t f = 0; f < (uint32_t) nv_delay; f++) {        /* (the first frames: no input, the same on both sides) */
 		nv_local[f].jx = nv_local[f].jy = 0; nv_local[f].b = nv_local[f].fl = 0;
 		nv_remote[f] = nv_local[f]; nv_rgot[f] = 1; nv_rgot_f[f] = f; }
@@ -380,6 +394,8 @@ static void nv_on_server (int kind, const char *body, size_t n)
 				if (nv_addr (&nv_cand[nv_ncand], ip, port)) nv_ncand++; }
 		char nm[16]; if (nv_jstr (j, nv_role == 2 ? "gamer" : "name", nm, sizeof nm) && !nv_peer_name[0]) snprintf (nv_peer_name, sizeof nv_peer_name, "%s", nm);   /* (the host's: its gamer name - "name" there is its game's) */
 		if (nv_ncand && !nv_have_peer) { nv_peer = nv_cand[0]; nv_have_peer = 1; }
+		{ char m[160]; int k = snprintf (m, sizeof m, "the other side's ways:"); for (int i = 0; i < nv_ncand && k < 140; i++)
+			k += snprintf (m + k, sizeof m - (size_t) k, " %s:%d", inet_ntoa (nv_cand[i].sin_addr), ntohs (nv_cand[i].sin_port)); nv_log (m); }
 		nv_punch_t0 = nv_now (); nv_locked = 1; }
 	else if (kind == 'E') { snprintf (nv_err, sizeof nv_err, "meeting point: %s", j); nv_log (nv_err); if (nv_phase < NV_AGREED) nv_phase = NV_ENDED; }
 	else if (kind == 'l') { snprintf (nv_room, sizeof nv_room, "%s", j); nv_room_state = 2; }
@@ -423,7 +439,7 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 	switch (kind) {
 	case 'P': if (nv_role == 2) { nv_path (); nv_send ('p', b, n); } break;          /* (the host measuring the round trip) */
 	case 'p': if (nv_role == 1 && n >= 12 && nv_rtt == -1) { const uint32_t k = nv_get32 (b); double t0; memcpy (&t0, b + 4, 8);
-			if ((int) k == nv_ping_i) { const double r = nv_now () - t0; if (r > nv_ping_max) nv_ping_max = r; nv_ping_got++; nv_ping_i++; nv_ping_sent = 0; } } break;
+			if ((int) k == nv_ping_i) { const double r = nv_now () - t0; if (r > nv_ping_max) nv_ping_max = r; if (nv_ping_got < 8) nv_ping_t[nv_ping_got] = r; nv_ping_got++; nv_ping_i++; nv_ping_sent = 0; } } break;
 	case 'G': if (nv_role == 2 && nv_phase <= NV_WAIT) { size_t m = n < sizeof nv_game ? n : sizeof nv_game - 1; memcpy (nv_game, b, m); nv_game[m] = 0;
 			double v; if (nv_jnum (nv_game, "nver", &v) && (int) v != NV_VER) { static const unsigned char no[] = "\0version";
 				for (int i = 0; i < 5; i++) nv_send ('N', no, 8); snprintf (nv_err, sizeof nv_err, "the host has another version (online %d, this %d)", (int) v, NV_VER); nv_phase = NV_ENDED; break; }
@@ -551,8 +567,15 @@ static void nv_tick (void)
 		if (nv_ping_i < 8 && (nv_ping_sent == 0 || now - nv_ping_sent > 0.5)) {
 			if (nv_ping_sent) nv_ping_i++;                       /* (no answer in 0.5 s: the next) */
 			if (nv_ping_i < 8) { unsigned char p[12]; nv_put32 (p, (uint32_t) nv_ping_i); memcpy (p + 4, &now, 8); nv_send ('P', p, 12); nv_ping_sent = now; } }
-		if (nv_ping_i >= 8) { nv_rtt = nv_ping_got ? nv_ping_max : 0.1; nv_delay = (int) (nv_rtt * 50.0 + 0.999) + 1; if (nv_delay < 3) nv_delay = 3; if (nv_delay > 12) nv_delay = 12;
-			nv_make_game (); char m[96]; snprintf (m, sizeof m, "round trip %.0f ms: %d frames of input delay", nv_rtt * 1000, nv_delay); nv_log (m); } }
+		if (nv_ping_i >= 8) {
+			/* (the round trip: the second slowest of the 8 - one late answer (a phone's Wi-Fi waking up) set 12 frames for the
+			 *  whole game. The delay covers the way there (half the round trip, 50 game frames a second) and 2 frames of
+			 *  unevenness: the input is there when the other side's game needs it) */
+			const int g = nv_ping_got < 8 ? nv_ping_got : 8; double t[8]; for (int i = 0; i < g; i++) t[i] = nv_ping_t[i];
+			for (int i = 0; i < g; i++) for (int j = i + 1; j < g; j++) if (t[j] > t[i]) { const double x = t[i]; t[i] = t[j]; t[j] = x; }
+			nv_rtt = g >= 4 ? t[1] : g ? t[0] : 0.1;
+			nv_delay = (int) (nv_rtt * 25.0 + 0.999) + 2; if (nv_delay < 3) nv_delay = 3; if (nv_delay > 12) nv_delay = 12;
+			nv_make_game (); char m[128]; snprintf (m, sizeof m, "round trip %.0f ms (slowest %.0f): %d frames of input delay", nv_rtt * 1000, nv_ping_max * 1000, nv_delay); nv_log (m); } }
 	if (nv_role == 1 && nv_phase == NV_WAIT && nv_rtt >= 0 && now - nv_g_sent > 0.05) { nv_g_sent = now; nv_send ('G', nv_game, strlen (nv_game)); }
 	if (nv_role == 1 && nv_phase == NV_AGREED && nv_card && !nv_card_done && nv_czn && now - nv_t_card > 0.004) {   /* (the host: its card list, piece by piece) */
 		nv_t_card = now; const int t = (int) ((nv_czn + NV_CARD_CHUNK - 1) / NV_CARD_CHUNK); const int i = nv_cidx % t; nv_cidx++;
@@ -611,7 +634,8 @@ static int netvx_frame (unsigned char *m)
 		x->b = ls_pad[2]; x->fl = (unsigned char) (ls_reset_req ? 4 : 0); ls_reset_req = 0; nv_lhave++; }
 	if (nv_now () - nv_last_send > 0.008) nv_send_inputs ();
 	const int r = nv_f % NV_RING; int got = nv_rgot[r] && nv_rgot_f[r] == nv_f;
-	if (!got && !nv_lost && !nv_pause) {                          /* (the other side's input late: a moment's wait, then the picture stands) */
+	if (!got && !nv_lost && !nv_pause && !nv_wait_t0) {           /* (the other side's input late: a moment's wait, then the picture stands -
+	                                                                 once per hold-up: waiting in each refresh run to catch up held the iPhone at 15 pictures a second) */
 		const double t0 = nv_now (); nv_unlock ();
 		do { nv_sleep_ms (1); nv_lock (); nv_pump (); got = nv_rgot[r] && nv_rgot_f[r] == nv_f; nv_unlock (); } while (!got && nv_now () - t0 < 0.012);
 		nv_lock (); }
@@ -679,13 +703,14 @@ int vx_net_host (int mode, const char *gamer, const char *key, const char *rom, 
 	const char *b = rom; for (const char *q = rom; *q; q++) if (*q == '/' || *q == '\\') b = q + 1; snprintf (nv_rom_name, sizeof nv_rom_name, "%s", b);
 	snprintf (nv_gamer, sizeof nv_gamer, "%s", gamer ? gamer : ""); snprintf (nv_key, sizeof nv_key, "%s", key ? key : "");
 	nv_skip_boot = skip_boot; snprintf (nv_carthw, sizeof nv_carthw, "%s", cart_hw && cart_hw[0] ? cart_hw : "auto"); nv_dacofs = dacofs;
-	nv_role = 1; nv_mode = mode; nv_lan_addr (nv_me, sizeof nv_me);
+	nv_role = 1; nv_mode = mode;
 	{ const char *e = strrchr (rom, '.'); nv_card = e && (!vx_stricmp (e, ".um2") || !vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit"));
 	  if (nv_card) { const int m = ls_mode_now (); snprintf (nv_uvm2, sizeof nv_uvm2, "%s", m == 2 ? "dev" : m == 1 ? "fast" : "exact");
 		nv_card_mine (rom); nv_card_pack (); char t[96]; snprintf (t, sizeof t, "a card game: its card %d files, UVMC2 mode %s", nv_nmine, nv_uvm2); nv_log (t); } }
 	nv_s = nv_udp (mode == 2 ? NV_PORT : 0, mode == 2);
 	if (nv_s == NV_BADSOCK && mode == 2) nv_s = nv_udp (0, 1);   /* (the port taken: another one - the announcement says which) */
 	if (nv_s == NV_BADSOCK) { snprintf (nv_err, sizeof nv_err, "no network"); nv_phase = NV_ENDED; nv_unlock (); return 0; }
+	nv_lan_addr (nv_me, sizeof nv_me);                         /* (after the socket: on Windows the network is started there - before it, 127.0.0.1) */
 	nv_addr (&nv_srv, NV_SERVER, NV_SPORT);
 	nv_phase = mode == 2 ? NV_WAIT : NV_MEET; nv_locked = 0; nv_rtt = -2;   /* (-2: no player yet) */
 	nv_last_heard = nv_now ();

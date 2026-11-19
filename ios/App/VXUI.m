@@ -275,7 +275,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 
 /* ------------------------------------------------ the game library */
 @interface VXGameCell : UICollectionViewCell
-@property (nonatomic, strong) UIImageView *img; @property (nonatomic, strong) UILabel *name, *ph;
+@property (nonatomic, strong) UIImageView *img; @property (nonatomic, strong) UILabel *name, *ph, *kind;
+@property (nonatomic) BOOL titles, focusOn;       /* (titles only: a row of the list; focusOn: the highlight - a controller, the keys) */
 @end
 @implementation VXGameCell
 - (instancetype) initWithFrame:(CGRect)f
@@ -284,19 +285,27 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	_img = [UIImageView new]; _img.contentMode = UIViewContentModeScaleAspectFit; _img.clipsToBounds = YES; _img.layer.cornerRadius = 8;   /* (a cartridge: its own clear outline) */
 	_ph = VL (@"", VT (15), VX_G); _ph.textAlignment = NSTextAlignmentCenter;
 	_name = VL (@"", VF (12, UIFontWeightMedium), VX_FG); _name.numberOfLines = 2;
-	[self.contentView addSubview:_img]; [_img addSubview:_ph]; [self.contentView addSubview:_name]; return self;
+	_kind = VL (@"", VF (10, UIFontWeightSemibold), VX_DIM); _kind.numberOfLines = 1; _kind.textAlignment = NSTextAlignmentRight;
+	[self.contentView addSubview:_img]; [_img addSubview:_ph]; [self.contentView addSubview:_name]; [self.contentView addSubview:_kind];
+	self.contentView.layer.cornerRadius = 8; return self;
 }
 - (void) layoutSubviews
 {
 	[super layoutSubviews]; CGFloat w = self.bounds.size.width, h = self.bounds.size.height - 38;
-	_img.frame = CGRectMake (0, 0, w, h); _ph.frame = CGRectInset (_img.bounds, 6, 6); _name.frame = CGRectMake (0, h + 4, w, 32);
+	if (_titles) { _img.hidden = YES; _kind.hidden = NO; _name.numberOfLines = 1; _name.frame = CGRectMake (14, 0, w - 28 - 70, self.bounds.size.height); _kind.frame = CGRectMake (w - 14 - 70, 0, 70, self.bounds.size.height); }
+	else { _img.hidden = NO; _kind.hidden = YES; _name.numberOfLines = 2; _img.frame = CGRectMake (0, 0, w, h); _ph.frame = CGRectInset (_img.bounds, 6, 6); _name.frame = CGRectMake (0, h + 4, w, 32); }
+	self.contentView.backgroundColor = _titles && _focusOn ? VX_SEL : UIColor.clearColor;
 }
 @end
 
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 @interface VXLibrary : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate, UIDocumentPickerDelegate>
 @end
-@implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; UISegmentedControl *_look; }
+@implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; UISegmentedControl *_look;
+	UIButton *_size; NSInteger _sel; CADisplayLink *_pad; uint32_t _padPrev; double _padNext; }
+/* (the tiles a row: 1-5, 0 titles only - one setting for every look, the same on an iPhone and an iPad (the owner); 3 at first) */
++ (int) perRow { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"lib.perrow"]; return n ? MAX (0, MIN (5, n.intValue)) : 3; }
+- (int) cols { const int k = [VXLibrary perRow]; return k ? k : 1; }
 /* (the tiles' look, the player's choice: Cartridges - the real cartridge seen from above with its label -, Boxes, Overlays;
  *  a game without one in that look takes the next: cartridge, box, overlay; Last Human (UVMC2) takes Last Human's) */
 + (NSString *) look { return [NSUserDefaults.standardUserDefaults stringForKey:@"lib.look"] ?: @"boxes"; }   /* (the default: the boxes - the owner, 2026-11-19) */
@@ -350,7 +359,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	if ([_filter isEqualToString:@"Recent"]) { for (NSString *p in rec) for (NSDictionary *g in _all) if ([g[@"path"] isEqualToString:p]) [r addObject:g]; }
 	else for (NSDictionary *g in _all) if (([_filter isEqualToString:@"All"] && ![g[@"kind"] isEqualToString:@"Tests"]) || [g[@"kind"] isEqualToString:_filter]) [r addObject:g];
 	if (q.length) [r filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL (NSDictionary *g, NSDictionary *b) { (void) b; return [[g[@"name"] lowercaseString] containsString:q]; }]];
-	_shown = r; [_cv reloadData];
+	_shown = r; if (_sel >= (NSInteger) r.count) _sel = (NSInteger) r.count - 1; [_cv reloadData];
 	for (UIButton *b in _chips.arrangedSubviews) { BOOL on = [b.accessibilityLabel isEqualToString:_filter];
 		UIButtonConfiguration *c = b.configuration; c.baseForegroundColor = on ? VX_HI2 : VX_FG2; c.background.backgroundColor = on ? VX_SEL : UIColor.clearColor;
 		c.background.strokeColor = on ? VX_EDGE2 : VX_EDGE2; b.configuration = c; }
@@ -367,6 +376,11 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	_search.layer.cornerRadius = 10; _search.layer.borderWidth = 1; _search.layer.borderColor = VX_EDGE.CGColor; _search.clearButtonMode = UITextFieldViewModeWhileEditing;
 	_search.leftView = [[UIView alloc] initWithFrame:CGRectMake (0, 0, 12, 10)]; _search.leftViewMode = UITextFieldViewModeAlways; _search.returnKeyType = UIReturnKeyDone; _search.delegate = self;
 	[_search addTarget:self action:@selector(applyFilter) forControlEvents:UIControlEventEditingChanged];
+	_size = [UIButton buttonWithType:UIButtonTypeSystem]; _size.showsMenuAsPrimaryAction = YES; [self sizeMenu];
+	_size.backgroundColor = VX_BODY; _size.layer.cornerRadius = 10; _size.layer.borderWidth = 1; _size.layer.borderColor = VX_EDGE2.CGColor; _size.tintColor = VX_HI;
+	_size.titleLabel.font = VF (12, UIFontWeightBold); _size.contentEdgeInsets = UIEdgeInsetsMake (0, 10, 0, 10); _size.accessibilityLabel = @"Games per row";
+	[_size setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal]; [_size setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+	UIStackView *srow = [[UIStackView alloc] initWithArrangedSubviews:@[ _search, _size ]]; srow.spacing = 8;
 	_chips = [UIStackView new]; _chips.spacing = 6;
 	for (NSString *f in @[ @"All", @"Recent", @"Games", @"UVMC2", @"PiTrex", @"Tests" ]) {
 		UIButton *b = VB (f, nil, NO, ^{ [ws pick:f]; }); UIButtonConfiguration *c = b.configuration; c.background.cornerRadius = 16;
@@ -384,7 +398,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UIButton *add = VB (@"", @"plus", NO, ^{ [ws importGames]; }); add.accessibilityLabel = @"Add games from Files";   /* (your own ROMs: from Files) */
 	[add.widthAnchor constraintEqualToConstant:44].active = YES; [add.heightAnchor constraintEqualToConstant:44].active = YES;
 	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ title, [UIView new], add, close ]]; row.alignment = UIStackViewAlignmentCenter; row.spacing = 8;
-	UIStackView *hs = [[UIStackView alloc] initWithArrangedSubviews:@[ row, _look, _search, cs ]]; hs.axis = UILayoutConstraintAxisVertical; hs.spacing = 10; hs.translatesAutoresizingMaskIntoConstraints = NO;
+	UIStackView *hs = [[UIStackView alloc] initWithArrangedSubviews:@[ row, _look, srow, cs ]]; hs.axis = UILayoutConstraintAxisVertical; hs.spacing = 10; hs.translatesAutoresizingMaskIntoConstraints = NO;
 	[head addSubview:hs];
 	UICollectionViewFlowLayout *fl = [UICollectionViewFlowLayout new]; fl.minimumInteritemSpacing = 12; fl.minimumLineSpacing = 16; fl.sectionInset = UIEdgeInsetsMake (16, 16, 24, 16);
 	_cv = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:fl]; _cv.backgroundColor = VX_BG; _cv.dataSource = self; _cv.delegate = self;
@@ -397,16 +411,101 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 		[_search.heightAnchor constraintEqualToConstant:40], [cs.heightAnchor constraintEqualToConstant:34],
 		[_cv.topAnchor constraintEqualToAnchor:head.bottomAnchor], [_cv.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor], [_cv.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
 		[_cv.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor] ]];
-	[self applyFilter];
+	_sel = -1; [self applyFilter];
 }
-- (void) pick:(NSString *)f { _filter = f; [self applyFilter]; }
+/* the size menu: 1-5 per row, titles only */
+- (void) sizeMenu
+{
+	const int k = [VXLibrary perRow]; __weak VXLibrary *ws = self; NSMutableArray *acts = [NSMutableArray array];
+	for (int i = 1; i <= 6; i++) { const int v = i == 6 ? 0 : i; NSString *t = v ? [NSString stringWithFormat:@"%d per row", v] : @"Titles only";
+		UIAction *a = [UIAction actionWithTitle:t image:nil identifier:nil handler:^(UIAction *x) { (void) x;
+			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"lib.perrow"]; ulog ([NSString stringWithFormat:@"library: %@", t]); [ws sizeMenu]; [ws reload]; }];
+		if (v == k) a.state = UIMenuElementStateOn; [acts addObject:a]; }
+	_size.menu = [UIMenu menuWithTitle:@"" children:acts];
+	[_size setTitle:(k ? [NSString stringWithFormat:@"%d PER ROW \u25BE", k] : @"TITLES ONLY \u25BE") forState:UIControlStateNormal];
+}
+/* a controller or the keys: up / down / left / right move the highlight (titles only: up / down one, left / right a page),
+ * L / R (Page Up / Down) a page, the Vectrex's button 4 (Return) plays, button 1 (Esc) closes - the player's own buttons
+ * (Settings > Controls) */
+- (void) viewDidAppear:(BOOL)a { [super viewDidAppear:a]; [self becomeFirstResponder]; _pad = [CADisplayLink displayLinkWithTarget:self selector:@selector(padTick)]; [_pad addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; }
+- (void) viewWillDisappear:(BOOL)a { [super viewWillDisappear:a]; [_pad invalidate]; _pad = nil; }
+- (BOOL) canBecomeFirstResponder { return YES; }
+- (NSArray<UIKeyCommand *> *) keyCommands
+{
+	NSMutableArray *k = [NSMutableArray array];
+	for (NSString *ky in @[ UIKeyInputUpArrow, UIKeyInputDownArrow, UIKeyInputLeftArrow, UIKeyInputRightArrow, UIKeyInputPageUp, UIKeyInputPageDown, @"\r", UIKeyInputEscape ]) {
+		UIKeyCommand *c = [UIKeyCommand keyCommandWithInput:ky modifierFlags:0 action:@selector(key:)]; c.wantsPriorityOverSystemBehavior = YES; [k addObject:c]; }
+	return k;
+}
+- (void) key:(UIKeyCommand *)c
+{
+	if (_search.isFirstResponder) return;
+	NSString *i = c.input;
+	if ([i isEqualToString:UIKeyInputUpArrow]) [self move:0]; else if ([i isEqualToString:UIKeyInputDownArrow]) [self move:1];
+	else if ([i isEqualToString:UIKeyInputLeftArrow]) [self move:2]; else if ([i isEqualToString:UIKeyInputRightArrow]) [self move:3];
+	else if ([i isEqualToString:UIKeyInputPageUp]) [self page:-1]; else if ([i isEqualToString:UIKeyInputPageDown]) [self page:1];
+	else if ([i isEqualToString:@"\r"]) [self playSel]; else if ([i isEqualToString:UIKeyInputEscape]) [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }];
+}
+- (void) padTick
+{
+	extern uint32_t vxa_pad_buttons (void); const uint32_t b = vxa_pad_buttons (), down = b & ~_padPrev; const double now = CACurrentMediaTime ();
+	enum { UP = 4, DN = 5, LT = 6, RT = 7, A = 8, Y = 1, L = 10, R = 11 };   /* (the RetroPad's: the Vectrex's 1-4 on Y X B A) */
+	const uint32_t dirs = b & ((1u << UP) | (1u << DN) | (1u << LT) | (1u << RT) | (1u << L) | (1u << R));
+	BOOL rep = NO; if (dirs && (dirs & ~_padPrev)) _padNext = now + 0.38; else if (dirs && now >= _padNext) { rep = YES; _padNext = now + 0.09; }   /* (held: repeated) */
+	const uint32_t act = (dirs & ~_padPrev) | (rep ? dirs : 0);
+	if (act >> UP & 1) [self move:0]; if (act >> DN & 1) [self move:1]; if (act >> LT & 1) [self move:2]; if (act >> RT & 1) [self move:3];
+	if (act >> L & 1) [self page:-1]; if (act >> R & 1) [self page:1];
+	if (down >> A & 1) [self playSel];
+	if (down >> Y & 1) [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }];
+	_padPrev = b;
+}
+- (NSInteger) pageItems                         /* (a screenful: the rows that fit, times the tiles a row) */
+{
+	UICollectionViewFlowLayout *fl = (UICollectionViewFlowLayout *) _cv.collectionViewLayout; const CGSize it = [self collectionView:_cv layout:fl sizeForItemAtIndexPath:[NSIndexPath indexPathForItem:0 inSection:0]];
+	const NSInteger rows = MAX (1, (NSInteger) floor (_cv.bounds.size.height / (it.height + fl.minimumLineSpacing))); return rows * [self cols];
+}
+- (void) move:(int)d                            /* (0 up, 1 down, 2 left, 3 right) */
+{
+	if (!_shown.count) return; const NSInteger n = (NSInteger) _shown.count, cols = [self cols];
+	if (_sel < 0) { _sel = 0; [self showSel]; return; }   /* (the first press: the highlight appears) */
+	if ([VXLibrary perRow] == 0 && (d == 2 || d == 3)) { [self page:d == 2 ? -1 : 1]; return; }   /* (titles only: left / right a page) */
+	NSInteger s = _sel + (d == 0 ? -cols : d == 1 ? cols : d == 2 ? -1 : 1);
+	if (s < 0 || s >= n) { if (d == 1 && _sel / cols < (n - 1) / cols) s = n - 1; else return; }   /* (down from the row above a short last row: its last) */
+	_sel = s; [self showSel];
+}
+- (void) page:(int)dir
+{
+	if (!_shown.count) return; if (_sel < 0) _sel = 0;
+	_sel = MAX (0, MIN ((NSInteger) _shown.count - 1, _sel + dir * [self pageItems])); [self showSel];
+}
+- (void) showSel
+{
+	if (_sel < 0 || _sel >= (NSInteger) _shown.count) return;
+	for (VXGameCell *c in _cv.visibleCells) { NSIndexPath *ip = [_cv indexPathForCell:c]; [self paint:c on:ip.item == _sel]; }
+	[_cv scrollToItemAtIndexPath:[NSIndexPath indexPathForItem:_sel inSection:0] atScrollPosition:UICollectionViewScrollPositionCenteredVertically animated:YES];
+	[[UISelectionFeedbackGenerator new] selectionChanged];
+}
+- (void) paint:(VXGameCell *)c on:(BOOL)on
+{
+	c.focusOn = on; const BOOL titles = [VXLibrary perRow] == 0; c.titles = titles;
+	if (!titles) { c.img.layer.borderColor = (on ? VX_HI2 : VX_EDGE).CGColor; c.img.layer.borderWidth = on ? 3 : (c.img.image ? 0 : 1); }
+	if (on) { c.name.textColor = VX_HI2; c.name.font = VF (titles ? 15 : 12, UIFontWeightBold); }
+	[c setNeedsLayout];
+}
+- (void) playSel
+{
+	if (_sel < 0 || _sel >= (NSInteger) _shown.count) return;
+	[self collectionView:_cv didSelectItemAtIndexPath:[NSIndexPath indexPathForItem:_sel inSection:0]];
+}
+- (void) pick:(NSString *)f { _filter = f; _sel = -1; [self applyFilter]; }
 - (void) reload { [_cv.collectionViewLayout invalidateLayout]; [_cv reloadData]; }
 - (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; vxa_hold (0); }
 - (BOOL) textFieldShouldReturn:(UITextField *)t { [t resignFirstResponder]; return YES; }
 - (CGSize) collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l sizeForItemAtIndexPath:(NSIndexPath *)ip
 {
 	CGFloat w = cv.bounds.size.width - 32;
-	int cols = w > 1000 ? 7 : w > 700 ? 5 : 3;          /* (3 a row on an iPhone, 5 on an iPad - every look) */ CGFloat iw = floor ((w - 12 * (cols - 1)) / cols);
+	if ([VXLibrary perRow] == 0) return CGSizeMake (w, 44);   /* (titles only: a list) */
+	const int cols = [self cols]; CGFloat iw = floor ((w - 12 * (cols - 1)) / cols);
 	return CGSizeMake (iw, iw * [VXLibrary aspect] + 38);
 }
 - (NSInteger) collectionView:(UICollectionView *)cv numberOfItemsInSection:(NSInteger)s { return (NSInteger) _shown.count; }
@@ -416,9 +515,11 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	UIImage *im = [VXLibrary tileFor:n];
 	c.img.image = im; c.ph.text = im ? @"" : n.uppercaseString; c.name.text = n;
 	c.img.backgroundColor = im ? UIColor.clearColor : VX_PANEL;
-	BOOL now = [g[@"path"] isEqualToString:vxa_game ()]; c.name.textColor = now ? VX_HI : VX_FG; c.name.font = VF (12, now ? UIFontWeightBold : UIFontWeightMedium);
+	const BOOL titles = [VXLibrary perRow] == 0; c.titles = titles; c.kind.text = [g[@"kind"] isEqualToString:@"Games"] ? @"" : [g[@"kind"] uppercaseString];
+	BOOL now = [g[@"path"] isEqualToString:vxa_game ()]; c.name.textColor = now ? VX_HI : VX_FG; c.name.font = VF (titles ? 15 : 12, now ? UIFontWeightBold : UIFontWeightMedium);
 	c.img.contentMode = [[VXLibrary look] isEqualToString:@"overlays"] ? UIViewContentModeScaleToFill : UIViewContentModeScaleAspectFit;   /* (an overlay: always the sheet's own 162:207, whatever its picture's size) */
 	c.img.layer.borderColor = (now ? VX_HI : VX_EDGE).CGColor; c.img.layer.borderWidth = im ? (now ? 2 : 0) : 1;
+	c.focusOn = NO; if (ip.item == _sel) [self paint:c on:YES]; else [c setNeedsLayout];
 	return c;
 }
 - (void) collectionView:(UICollectionView *)cv didSelectItemAtIndexPath:(NSIndexPath *)ip

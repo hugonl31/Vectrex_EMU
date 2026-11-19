@@ -53,6 +53,8 @@ for f in sorted(os.listdir(os.path.join(PKG, 'overlays'))):
             continue
     except Exception as e:                                      # noqa: BLE001
         print('thumb skipped:', f, e); continue
+    bb = im.getchannel('A').point(lambda a: 255 if a > 8 else 0).getbbox()   # (the sheet itself: the .art keeps it in the middle
+    if bb: im = im.crop(bb)                                     #  of a 1360 x 1080 canvas - squeezed whole, the tile showed it half as wide)
     bg = Image.new('RGBA', im.size, (5, 8, 10, 255)); bg.alpha_composite(im)   # (on the app's black: the sheet's clear parts dark)
     os.makedirs(os.path.join(th, 'overlays'), exist_ok=True)
     bg.convert('RGB').resize((324, 414), Image.LANCZOS).save(os.path.join(th, 'overlays', stem + '.png'), optimize=True)

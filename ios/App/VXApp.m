@@ -334,6 +334,11 @@ static void vxa_read_pad (GCController *c, vxa_pad *p)
 	p->btn = b; p->ax[0][0] = (int16_t) (lx * 32767); p->ax[0][1] = (int16_t) (-ly * 32767);
 	p->ax[1][0] = (int16_t) (g.rightThumbstick.xAxis.value * 32767); p->ax[1][1] = (int16_t) (-g.rightThumbstick.yAxis.value * 32767);
 }
+uint32_t vxa_pad_buttons (void)                   /* (the first controller's RetroPad buttons, the player's mapping - the library's) */
+{
+	NSArray<GCController *> *cs = GCController.controllers; if (!cs.count) return 0;
+	vxa_pad p; vxa_read_pad (cs[0], &p); return p.btn;
+}
 static void vxa_input_poll (void)
 {
 	NSArray<GCController *> *cs = GCController.controllers; static uint32_t prev[2];

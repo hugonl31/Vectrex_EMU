@@ -40,9 +40,19 @@ final class Input {
 	static int phys (int vec) { return Main.me.prefs.getInt ("map." + (vec + 1), (nintendo ? DEF_N : DEF)[vec]); }
 	static boolean isPad (InputDevice d) { if (d == null || d.isVirtual ()) return false; int s = d.getSources ();
 		return (s & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD || (s & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK; }
+	/* a handheld's own controls (they turn with the device): Android's "not external" - or a handheld maker's name, as the
+	 * Nova's are wired inside over USB and Android calls them external ("Retroid Pocket Controller") */
+	static boolean handheld (InputDevice d)
+	{
+		if (d == null) return false;
+		if (android.os.Build.VERSION.SDK_INT >= 29 && !d.isExternal ()) return true;
+		final String n = (d.getName () + " " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL).toLowerCase (java.util.Locale.ROOT);
+		return d.getName ().toLowerCase (java.util.Locale.ROOT).matches (".*(retroid|odin|ayn|anbernic|ayaneo|gpd|handheld).*")
+			|| (n.matches (".*(retroid|ayn|anbernic|ayaneo|odin).*") && d.getName ().toLowerCase (java.util.Locale.ROOT).matches (".*(pocket|controller|gamepad|internal|builtin|built-in).*"));
+	}
 	static int pads () { int n = 0; for (int id : InputDevice.getDeviceIds ()) if (isPad (InputDevice.getDevice (id))) n++; return n; }
 	static int port (int dev) { int i = devs.indexOf (dev); if (i < 0) { devs.add (dev); i = devs.size () - 1; InputDevice d = InputDevice.getDevice (dev);
-		boolean bi = d != null && android.os.Build.VERSION.SDK_INT >= 29 && !d.isExternal (); if (i < 2) builtIn[i] = bi;
+		boolean bi = handheld (d); if (i < 2) builtIn[i] = bi;
 		Main.log ("controller " + (d != null ? d.getName () : "?") + " -> port " + (i + 1) + (bi ? " (this device's own: turns with the screen)" : "")); } return i < 2 ? i : -1; }
 	static String bname (int b) { return new String[] { "B(3)", "Y(1)", "Select", "Start", "Up", "Down", "Left", "Right", "A(4)", "X(2)", "L1", "R1", "L2", "R2", "L3", "R3" }[b]; }
 	/* the RetroPad button a key is, the player's mapping (-1: none) */

@@ -7,6 +7,11 @@
 #else
 #define VX_IOS 0
 #endif
+#if defined(__ANDROID__) && !defined(VX_APP_ANDROID)
+#define VX_DECK_AUTO 1                          /* (the Control deck's auto: Android RetroArch - the apps choose their own) */
+#else
+#define VX_DECK_AUTO 0
+#endif
 #ifdef _WIN32
 __declspec(dllimport) unsigned long __stdcall GetTickCount (void);   /* (v0.25: the boot token) */
 #define VX_TICKS() ((unsigned) GetTickCount ())
@@ -235,6 +240,8 @@ static void scr_load (void)
   if (v >= 240 && v <= 4320) scr_short = v; }
 uint32_t *dk_cb;
 static int dk_pop, dk_y, dk_shown;   /* (the pop-up deck: over the picture's bottom, dk_y its top in the block; shown now) */
+static int deck_auto;                            /* (Control deck auto: the pop-up on a 4:3 screen, else off - once the screen is known) */
+static int deck_auto_mode (void);
 static int opt_deck_look = 1;                   /* (the control deck: 1 the modern look - the app's panels, 0 the classic strip) */
 static int opt_deck, opt_shape, dk_on, DKH, TW, TH, BX, BY, dk_dirty_set = 1, vx_paused, geo_deck = -1, geo_shape = -1;   /* (the control deck:
                                                   deck.c - the output TW x TH, the picture at BX, BY, the deck DKH high below it) */
@@ -453,7 +460,11 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_profile", "video", "Quality profile",
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|ultra|high|medium|low|basic" },
-	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom or the arrow.", "off|full|slim|pop-up" },
+#if VX_DECK_AUTO                                 /* (Android RetroArch: auto - the pop-up on a 4:3 screen, as the apps) */
+	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom. Auto: pop-up on a 4:3 screen (the Nova, a tablet), else off.", "auto|off|full|slim|pop-up" },
+#else
+	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom.", "off|full|slim|pop-up" },
+#endif
 #if defined(__ANDROID__) || VX_IOS                  /* (a phone, a handheld: the app's panels by default - easier to read and hit on a small screen) */
 	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "modern|classic" },
 #else
@@ -733,7 +744,8 @@ static void read_options (void)
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
 	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }
-	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0; opt_shape = !VX_IOS && opt_is ("vectrex_emu_shape", "16:9");
+	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0;
+	deck_auto = VX_DECK_AUTO && opt_is ("vectrex_emu_deck", "auto"); if (deck_auto) opt_deck = deck_auto_mode (); opt_shape = !VX_IOS && opt_is ("vectrex_emu_shape", "16:9");
 	opt_trail_k0 = opt_trail_k;                 /* (1.1: one trail brightness - the light added as light: no other one needed) */
 	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */
 	if (rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
@@ -2369,6 +2381,11 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
 /* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
  * the afterglow's two parts, one colour channel or three - all dark again */
+static int deck_auto_mode (void)
+{
+	const int a = scr_w > scr_h ? scr_w : scr_h, b = scr_w > scr_h ? scr_h : scr_w;
+	return b > 0 && a < 1.55 * b ? 3 : 0;
+}
 int vx_app_pich;                                /* (the own iOS app: the picture height it has room for, px; 0: the screen's) */
 int vx_app_noshape;                            /* (set by a host that lays out the picture itself: the deck block exactly the
                                                 picture and the deck, no bars to the screen's shape - the own iOS app) */
@@ -2695,6 +2712,7 @@ void retro_run (void)
 	                                              Picture size auto follows it, 1:1, as the layout changes) */
 	  if (size_auto && vx_app_pich >= 200 && vx_app_pich != opt_size) { opt_size = vx_app_pich; fprintf (stderr, "[vectrex_emu] picture size: the app's %d px\n", vx_app_pich); scr_new = 0; } }
 	if (scr_new && !(size_auto && vx_app_pich >= 200)) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
+	if (deck_auto) opt_deck = deck_auto_mode ();   /* (the screen known or turned: auto chooses again) */
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape
 	    || (dk_on && (scr_w != geo_sw || scr_h != geo_sh))) { pic_setup (); geo_tell (); }   /* (with the deck: the screen turned - its shape) */
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }

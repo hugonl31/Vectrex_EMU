@@ -1093,12 +1093,15 @@ void vxa_net_chat_in (NSArray *lines) { for (NSString *t in lines) if ([t isKind
 static NSString *vxa_find_md5 (NSString *md5)          /* (the host's game in this phone's library: by its MD5, as the desktop's find_rom) */
 {
 	if (!vxa_md5s) vxa_md5s = [NSMutableDictionary dictionary];
-	NSString *root = [vxa_docs () stringByAppendingPathComponent:@"roms"];
-	NSDirectoryEnumerator *e = [NSFileManager.defaultManager enumeratorAtPath:root];
-	for (NSString *rel in e) { NSString *ext = rel.pathExtension.lowercaseString; if (![@[ @"bin", @"vec", @"gam", @"rom", @"um2" ] containsObject:ext]) continue;
-		NSString *p = [root stringByAppendingPathComponent:rel], *m = vxa_md5s[p];
-		if (!m) { char h[33]; long long n; if (!vx_net_md5_file (p.fileSystemRepresentation, h, &n)) continue; m = @(h); vxa_md5s[p] = m; }
-		if ([m isEqualToString:md5]) return p; }
+	for (NSString *top in @[ @"roms", @"system/vectrex_emu/pitrex" ]) {     /* (the games; the PiTrex's own image lives on its card) */
+		NSString *root = [vxa_docs () stringByAppendingPathComponent:top];
+		NSDirectoryEnumerator *e = [NSFileManager.defaultManager enumeratorAtPath:root];
+		for (NSString *rel in e) { NSString *ext = rel.pathExtension.lowercaseString;
+			if (![@[ @"bin", @"vec", @"gam", @"rom", @"um2", @"img", @"pit" ] containsObject:ext]) continue;
+			if ([top hasPrefix:@"system"] && rel.pathComponents.count > 1) continue;   /* (the card's own folders: not the image) */
+			NSString *p = [root stringByAppendingPathComponent:rel], *m = vxa_md5s[p];
+			if (!m) { char h[33]; long long n; if (!vx_net_md5_file (p.fileSystemRepresentation, h, &n)) continue; m = @(h); vxa_md5s[p] = m; }
+			if ([m isEqualToString:md5]) return p; } }
 	return nil;
 }
 /* each moment: what the online game asks of the app - both start the agreed game, its news shown */
@@ -1118,9 +1121,7 @@ static void vxa_net_tick (void)
 		else if (role == 2 && !asked) { asked = 1;                               /* (the joiner: the host's game in the library?) */
 			NSDictionary *g = st[@"game"]; NSString *md5 = [g isKindOfClass:NSDictionary.class] ? g[@"md5"] : nil;
 			NSString *name = [g isKindOfClass:NSDictionary.class] ? [g[@"name"] stringByDeletingPathExtension] : @"?";
-			NSString *ext = [g isKindOfClass:NSDictionary.class] ? [g[@"name"] pathExtension].lowercaseString : @"";
-			if ([@[ @"img", @"pit" ] containsObject:ext]) { vx_net_accept (0); vxa_ntoast (@"ONLINE: PITREX GAMES NOT YET ON THE PHONE"); vlog ("online: a PiTrex game - declined"); }
-			else { NSString *p = md5 ? vxa_find_md5 (md5) : nil;
+			{ NSString *p = md5 ? vxa_find_md5 (md5) : nil;
 				if (!p) { vx_net_accept (0); vxa_ntoast ([NSString stringWithFormat:@"ONLINE: YOU DO NOT HAVE %@", name.uppercaseString]); vlog ("online: no ROM with md5 %s", md5.UTF8String); }
 				else { vx_net_accept (1); vxa_net_join_rom = p; vlog ("online: the host's game here: %s - waiting for the start", p.lastPathComponent.UTF8String); } } }
 		else if (role == 2 && acc == 1 && [st[@"ready"] intValue] && vxa_net_join_rom.length) {   /* (both agreed, the card too: start) */

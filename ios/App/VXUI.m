@@ -4,6 +4,7 @@
  * the quick bar above the picture. Every tap is logged. Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see
  * LICENSE.md. */
 #import "VXApp.h"
+#import <GameController/GameController.h>
 
 static UIFont *VF (CGFloat s, UIFontWeight w) { return [UIFont systemFontOfSize:s weight:w]; }
 static UIFont *VT (CGFloat s) { return [UIFont monospacedSystemFontOfSize:s weight:UIFontWeightSemibold]; }   /* (the vector-like lettering) */
@@ -69,9 +70,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[_sl addTarget:self action:@selector(slid) forControlEvents:UIControlEventValueChanged];
 	_extra = [UIStackView new]; _extra.spacing = 8; _extra.distribution = UIStackViewDistributionFillEqually;
 	UIButton *def = VB (@"Default", nil, NO, ^{ [ws setValue:@(vxa_odef (ws.opt))]; }), *done = VB (@"Done", nil, YES, ^{ [ws close]; });
-	UIButton *all = VB (@"", @"list.bullet", NO, ^{ [ws closeTo:YES]; }); all.accessibilityLabel = @"All settings";   /* (the full list, at this setting) */
-	[all.widthAnchor constraintEqualToConstant:44].active = YES; [all.heightAnchor constraintEqualToConstant:40].active = YES;
-	UIStackView *bot = [[UIStackView alloc] initWithArrangedSubviews:@[ _val, [UIView new], all, def, done ]]; bot.alignment = UIStackViewAlignmentCenter; bot.spacing = 8;
+	UIButton *allb = VB (@"", @"list.bullet", NO, ^{ [ws closeTo:YES]; }); allb.accessibilityLabel = @"All settings";   /* (the full list, at this setting) */
+	[allb.widthAnchor constraintEqualToConstant:44].active = YES; [allb.heightAnchor constraintEqualToConstant:40].active = YES;
+	UIStackView *bot = [[UIStackView alloc] initWithArrangedSubviews:@[ _val, [UIView new], allb, def, done ]]; bot.alignment = UIStackViewAlignmentCenter; bot.spacing = 8;
 	[def.heightAnchor constraintEqualToConstant:40].active = YES; [done.heightAnchor constraintEqualToConstant:40].active = YES; [done.widthAnchor constraintEqualToConstant:80].active = YES;
 	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ top, _info, _sl, _extra, bot ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 10;
 	all.translatesAutoresizingMaskIntoConstraints = NO; [self addSubview:all];
@@ -189,13 +190,17 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 2; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 3; }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s ? @(vxa_cdesc (_cats[(NSUInteger) s - 1].intValue)).uppercaseString : @"APP"; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Clock and battery: the time and battery at the top of the screen, beside the camera. Top bar: always in its own row, or over the picture and hiding itself - tap the top of the screen to bring it back (the picture then gets the room)."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
+	if (!ip.section && ip.row == 2) {               /* (the downloads: which parts are here, add or remove) */
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+		c.textLabel.text = @"Downloads"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"games, boxes, UVMC2, PiTrex"; c.detailTextLabel.textColor = VX_DIM;
+		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
 	if (!ip.section && ip.row == 1) {               /* (the quick bar: its own row, or hiding itself over the picture) */
 		UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"bar"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"bar"];
 		c.textLabel.text = @"Top bar"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -223,6 +228,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
+	if (!ip.section && ip.row == 2) { UIViewController *g = self.game; ulog (@"settings: downloads");
+		[self dismissViewControllerAnimated:YES completion:^{ if ([g respondsToSelector:@selector(openDownloads)]) [g performSelector:@selector(openDownloads)]; }]; return; }
 	if (!ip.section) return;
 	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; ulog ([NSString stringWithFormat:@"setting opened %s", vxa_okey (i)]);
 	if (VSlider (i, NULL, NULL)) {                  /* (a number: the slider over the running game, the settings out of the way) */
@@ -261,7 +268,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 + (UIImage *) tileFor:(NSString *)n
 {
 	NSString *th = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/thumbs"], *base = [n componentsSeparatedByString:@" ("].firstObject;
-	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes", @"carts", @"" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"", @"carts", @"boxes" ] : @[ @"carts", @"boxes", @"" ];
+	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes", @"carts", @"overlays", @"" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"overlays", @"", @"carts", @"boxes" ] : @[ @"carts", @"boxes", @"overlays", @"" ];
 	for (NSString *d in dirs) for (NSString *nm in @[ n, base ]) {
 		UIImage *im = [UIImage imageWithContentsOfFile:[[th stringByAppendingPathComponent:d] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]]]; if (im) return im; }
 	return nil;
@@ -545,5 +552,92 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 		[s.leadingAnchor constraintEqualToAnchor:g.leadingAnchor constant:20], [s.trailingAnchor constraintEqualToAnchor:g.trailingAnchor constant:-20] ]];
 	r.modalPresentationStyle = UIModalPresentationFormSheet; vxa_hold (1);
 	[vc presentViewController:r animated:YES completion:nil];
+}
+@end
+
+/* ------------------------------------------------ what to fetch: the content's parts, each with its size, a switch (the
+ * core's own and the games always); an installed part switched off is removed (its space back) */
+@interface VXParts : UITableViewController
+@property (nonatomic, strong) NSArray<NSDictionary *> *parts; @property (nonatomic, strong) NSDictionary *inst;
+@property (nonatomic, strong) NSMutableSet<NSString *> *on; @property (nonatomic) BOOL first;
+@property (nonatomic, copy) void (^go) (NSArray<NSString *> *, BOOL); @property (nonatomic, copy) void (^later) (void);
+@end
+@implementation VXParts { UILabel *_sum; }
+- (NSString *) dirOf:(NSString *)pid
+{
+	NSDictionary *d = @{ @"boxes": @"system/vectrex_emu/thumbs/boxes", @"carts": @"system/vectrex_emu/thumbs/carts",
+		@"uvmc2": @"system/vectrex_emu/uvmc2", @"pitrex": @"system/vectrex_emu/pitrex" };
+	return d[pid];
+}
+- (void) viewDidLoad
+{
+	[super viewDidLoad]; self.title = @"Downloads"; self.tableView.backgroundColor = VX_BG; self.tableView.separatorColor = VX_EDGE;
+	_sum = VL (@"", VF (14, UIFontWeightRegular), VX_FG2); _sum.textAlignment = NSTextAlignmentCenter;
+	__weak VXParts *ws = self;
+	UIButton *dl = VB (@"Download", nil, YES, ^{ [ws start:NO]; }), *wf = VB (@"Wait for Wi-Fi", nil, NO, ^{ [ws start:YES]; });
+	UIButton *lt = VB (self.first ? @"Not now" : @"Later", nil, NO, ^{ ulog (@"downloads: later"); [ws dismissViewControllerAnimated:YES completion:^{ if (ws.later) ws.later (); }]; });
+	[dl.heightAnchor constraintEqualToConstant:52].active = YES; [wf.heightAnchor constraintEqualToConstant:44].active = YES; [lt.heightAnchor constraintEqualToConstant:44].active = YES;
+	extern int vxa_net_expensive (void); wf.hidden = !vxa_net_expensive (); dl.tag = 21;
+	UIStackView *f = [[UIStackView alloc] initWithArrangedSubviews:@[ _sum, dl, wf, lt ]]; f.axis = UILayoutConstraintAxisVertical; f.spacing = 10;
+	f.frame = CGRectMake (0, 0, 320, 230); f.layoutMargins = UIEdgeInsetsMake (16, 16, 16, 16); f.layoutMarginsRelativeArrangement = YES;
+	self.tableView.tableFooterView = f; [self refresh];
+	if (!self.first) self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithPrimaryAction:[UIAction actionWithTitle:@"Close" image:nil identifier:nil handler:^(UIAction *a) { (void) a; [ws dismissViewControllerAnimated:YES completion:nil]; }]];
+}
+- (NSArray<NSString *> *) toFetch
+{
+	NSMutableArray *r = [NSMutableArray array];
+	for (NSDictionary *p in self.parts) { NSString *pid = p[@"id"], *v = self.inst[pid];
+		if ([self.on containsObject:pid] && (!v || ![v isEqualToString:p[@"version"]])) [r addObject:pid]; }
+	return r;
+}
+- (void) refresh
+{
+	NSArray *tf = [self toFetch]; long long sz = 0; for (NSDictionary *p in self.parts) if ([tf containsObject:p[@"id"]]) sz += [p[@"size"] longLongValue];
+	extern int vxa_net_expensive (void); const int cell = vxa_net_expensive ();
+	_sum.text = sz ? [NSString stringWithFormat:@"To download: %.0f MB%@", sz / 1e6, cell ? @" - you are on mobile data" : @""] : @"Nothing to download.";
+	UIButton *dl = [self.tableView.tableFooterView viewWithTag:21]; UIButtonConfiguration *c = dl.configuration;
+	c.title = sz ? (cell ? [NSString stringWithFormat:@"Download now (%.0f MB of mobile data)", sz / 1e6] : [NSString stringWithFormat:@"Download (%.0f MB)", sz / 1e6]) : @"Done"; dl.configuration = c;
+}
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger) self.parts.count; }
+- (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return self.first ? @"CHOOSE WHAT TO DOWNLOAD - ONCE" : @"WHAT IS ON THIS DEVICE"; }
+- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return @"Each part comes once; later only a part that changed comes again. Switch a part off to remove it and get its space back."; }
+- (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
+- (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
+- (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
+{
+	NSDictionary *p = self.parts[(NSUInteger) ip.row]; NSString *pid = p[@"id"], *v = self.inst[pid]; BOOL req = [p[@"required"] boolValue];
+	UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+	c.textLabel.text = p[@"name"]; c.textLabel.textColor = VX_FG; c.textLabel.numberOfLines = 2; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
+	NSString *st = !v ? @"not here" : [v isEqualToString:p[@"version"]] ? @"on this device" : @"a newer version";
+	c.detailTextLabel.text = [NSString stringWithFormat:@"%.0f MB  -  %@%@", [p[@"size"] doubleValue] / 1e6, st, req ? @"  -  always" : @""];
+	c.detailTextLabel.textColor = v && ![v isEqualToString:p[@"version"]] ? VX_CHG : VX_DIM;
+	UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [self.on containsObject:pid]; sw.enabled = !req; __weak VXParts *ws = self;
+	[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISwitch *) a.sender).on; if (on) [ws.on addObject:pid]; else [ws.on removeObject:pid];
+		ulog ([NSString stringWithFormat:@"downloads: %@ %@", pid, on ? @"on" : @"off"]); [ws refresh]; }] forControlEvents:UIControlEventValueChanged];
+	c.accessoryView = sw; return c;
+}
+- (void) start:(BOOL)wifi
+{
+	/* (the parts switched off that are here: removed) */
+	for (NSDictionary *p in self.parts) { NSString *pid = p[@"id"]; if ([self.on containsObject:pid] || !self.inst[pid] || [p[@"required"] boolValue]) continue;
+		NSString *d = [self dirOf:pid]; if (d) [NSFileManager.defaultManager removeItemAtPath:[vxa_docs () stringByAppendingPathComponent:d] error:nil];
+		ulog ([NSString stringWithFormat:@"downloads: %@ removed", pid]);
+		NSMutableDictionary *m = [self.inst mutableCopy]; [m removeObjectForKey:pid]; self.inst = m;
+		[[NSJSONSerialization dataWithJSONObject:m options:0 error:nil] writeToFile:[vxa_docs () stringByAppendingPathComponent:@"parts.json"] atomically:YES]; }
+	NSArray *ids = [self toFetch]; __weak VXParts *ws = self; ulog ([NSString stringWithFormat:@"downloads: start %@%@", [ids componentsJoinedByString:@","], wifi ? @" (Wi-Fi only)" : @""]);
+	[self dismissViewControllerAnimated:YES completion:^{ if (ws.go) ws.go (ids, wifi); }];
+}
+@end
+
+@implementation VXUI (Parts)
++ (void) choosePartsIn:(UIViewController *)vc parts:(NSArray *)parts installed:(NSDictionary *)inst first:(BOOL)first go:(void (^) (NSArray<NSString *> *, BOOL))go later:(void (^) (void))later
+{
+	if (vc.presentedViewController) return;
+	VXParts *p = [[VXParts alloc] initWithStyle:UITableViewStyleInsetGrouped]; p.parts = parts; p.inst = inst ?: @{}; p.first = first; p.go = go; p.later = later;
+	p.on = [NSMutableSet set];
+	for (NSDictionary *x in parts) if ([x[@"required"] boolValue] || inst[x[@"id"]] || first) [p.on addObject:x[@"id"]];   /* (the first time: everything on) */
+	UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:p]; [self styleNav:n];
+	n.modalPresentationStyle = UIModalPresentationFormSheet; n.modalInPresentation = first;
+	ulog (@"downloads opened"); [vc presentViewController:n animated:YES completion:nil];
 }
 @end

@@ -69,6 +69,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[prev.heightAnchor constraintEqualToConstant:44].active = YES; [next.heightAnchor constraintEqualToConstant:44].active = YES;
 	_sl = [UISlider new]; _sl.minimumTrackTintColor = VX_G; _sl.maximumTrackTintColor = VX_SEL; _sl.thumbTintColor = VX_HI;
 	[_sl addTarget:self action:@selector(slid) forControlEvents:UIControlEventValueChanged];
+	{ UITapGestureRecognizer *dt = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toDefault)]; dt.numberOfTapsRequired = 2; [_sl addGestureRecognizer:dt]; }   /* (a double tap: the default) */
 	_extra = [UIStackView new]; _extra.spacing = 8; _extra.distribution = UIStackViewDistributionFillEqually;
 	UIButton *def = VB (@"Default", nil, NO, ^{ [ws setValue:@(vxa_odef (ws.opt))]; }), *done = VB (@"Done", nil, YES, ^{ [ws close]; });
 	UIButton *allb = VB (@"", @"list.bullet", NO, ^{ [ws closeTo:YES]; }); allb.accessibilityLabel = @"All settings";   /* (the full list, at this setting) */
@@ -96,6 +97,10 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (void) refresh
 {
 	NSString *v = @(vxa_oval (_opt)); NSUInteger k = [_nums indexOfObject:v]; if (k != NSNotFound) { _sl.value = (float) k; _last = (int) k; }
+	else {                                           /* (a word - auto: the thumb at the default's place, else 1x's, else the middle -
+	                                                    not where the setting shown before left it, the owner 2026-11-19) */
+		NSUInteger d = [_nums indexOfObject:@(vxa_odef (_opt))]; if (d == NSNotFound) d = [_nums indexOfObject:@"1x"];
+		_sl.value = d != NSNotFound ? (float) d : (_sl.maximumValue / 2); _last = -1; }
 	_sl.alpha = k == NSNotFound ? 0.4 : 1;
 	_val.text = v; _val.textColor = strcmp (vxa_oval (_opt), vxa_odef (_opt)) ? VX_CHG : VX_HI;
 }
@@ -105,6 +110,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	if (k != _last) { _last = k; [[UISelectionFeedbackGenerator new] selectionChanged]; vxa_oset (_opt, _nums[k].UTF8String); [self refresh]; [self show:_opt]; }
 }
 - (void) setValue:(NSString *)v { vxa_oset (_opt, v.UTF8String); [self show:_opt]; }
+- (void) toDefault { ulog ([NSString stringWithFormat:@"adjust %s: double tap - the default", vxa_okey (_opt)]); [[UIImpactFeedbackGenerator new] impactOccurred]; [self setValue:@(vxa_odef (_opt))]; }
 - (void) step:(int)d                                 /* (the next setting with a slider in the same group) */
 {
 	int n = vxa_nopts ();
@@ -201,13 +207,19 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 6; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 7; }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s ? @(vxa_cdesc (_cats[(NSUInteger) s - 1].intValue)).uppercaseString : @"APP"; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Clock and battery: the time and battery at the top of the screen, beside the camera. Top bar: always in its own row, or over the picture and hiding itself - tap the top of the screen to bring it back (the picture then gets the room)."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
+	if (!ip.section && ip.row == 6) {               /* (every setting back to its default - as RetroArch's Reset Core Options) */
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+		int n = 0; for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) n++;
+		c.textLabel.text = @"Reset all settings"; c.textLabel.textColor = n ? VX_CHG : VX_DIM; c.backgroundColor = VX_PANEL;
+		c.detailTextLabel.text = n ? [NSString stringWithFormat:@"%d changed - all back to their defaults (a long press on one: that one)", n] : @"All at their defaults"; c.detailTextLabel.textColor = VX_DIM;
+		UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
 	if (!ip.section && ip.row == 5) {               /* (about and help: the version, how to play, online, credits, licence) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 		c.textLabel.text = @"About and help"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"how to play, online, credits"; c.detailTextLabel.textColor = VX_DIM;
@@ -262,6 +274,13 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
 	if (!ip.section && ip.row == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
+	if (!ip.section && ip.row == 6) { [t deselectRowAtIndexPath:ip animated:YES]; __weak VXSettings *ws = self;
+		UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Reset all settings?" message:@"Every setting of the picture, the overlay, the sound and the controls back to its default." preferredStyle:UIAlertControllerStyleAlert];
+		[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+		[a addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x) { (void) x; int n = 0;
+			for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
+			ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); [ws.tableView reloadData]; }]];
+		[self presentViewController:a animated:YES completion:nil]; return; }
 	if (!ip.section && ip.row == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }
 	if (!ip.section && ip.row == 2) { UIViewController *g = self.game; ulog (@"settings: downloads");
 		[self dismissViewControllerAnimated:YES completion:^{ if ([g respondsToSelector:@selector(openDownloads)]) [g performSelector:@selector(openDownloads)]; }]; return; }

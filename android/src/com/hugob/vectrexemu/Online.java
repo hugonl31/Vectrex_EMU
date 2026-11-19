@@ -31,10 +31,10 @@ final class Online {
 			for (byte x : b) s.append (String.format ("%02x", x & 255)); k = s.toString (); m.prefs.edit ().putString ("net.key", k).apply (); }
 		return k;
 	}
-	static String clean (String s)                       /* (a gamer name as the game room keeps it: A-Z 0-9 _ -, up to 10) */
+	static String clean (String s)                       /* (a gamer name: A-Z and 0-9 only, up to 10 - the rest left out) */
 	{
 		StringBuilder o = new StringBuilder (); s = s.toUpperCase (Locale.ROOT);
-		for (int i = 0; i < s.length () && o.length () < 10; i++) { char c = s.charAt (i); if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') o.append (c); else if (c == ' ') o.append ('_'); }
+		for (int i = 0; i < s.length () && o.length () < 10; i++) { char c = s.charAt (i); if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) o.append (c); }
 		return o.toString ();
 	}
 	static String ip (Main m)                             /* (this phone's address on its Wi-Fi: what player 2 enters) */
@@ -125,7 +125,7 @@ final class Online {
 	/* ---------------------------------------------------------------- the Online screen */
 	static void show (Main m) { if (!m.stack.isEmpty () || !m.started) return; Main.log ("ui online opened"); Screen s = new Screen (m); m.push (s); }
 	static final class Screen extends Screens.Panel {
-		String last = ""; int shownPlay, sawSetup; final Runnable poll = this::poll;
+		String last = ""; int shownPlay, sawSetup; EditText nameField; final Runnable poll = this::poll;
 		Screen (Main m) { super (m, "Online"); Adhoc.lock (m, true); VX.net (6, 1); VX.net (5, 0); onClose = () -> { removeCallbacks (poll); VX.net (6, 0); Adhoc.lock (m, false); }; poll (); }
 		int phase (JSONObject st) { return st.optInt ("phase"); }
 		void poll ()
@@ -163,11 +163,11 @@ final class Online {
 			} else {
 				String err = st.optString ("error", ""); if (!err.isEmpty () && ph == 5) row ("Not connected", err, null);
 				header ("Your name");
-				EditText e = new EditText (m); e.setText (name (m)); e.setHint ("YOUR NAME"); e.setTextColor (Main.HI); e.setHintTextColor (Main.DIM); e.setSingleLine (true);
+				EditText e = new EditText (m); nameField = e; e.setText (name (m)); e.setHint ("YOUR NAME"); e.setTextColor (Main.HI); e.setHintTextColor (Main.DIM); e.setSingleLine (true);
 				e.setInputType (android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
 				e.setBackground (Screens.states (m, Main.PANEL, Main.EDGE, m.dp (10))); e.setPadding ((int) m.dp (14), (int) m.dp (10), (int) m.dp (14), (int) m.dp (10));
 				e.setOnFocusChangeListener ((v, has) -> { if (!has) { String n = clean (e.getText ().toString ()); e.setText (n); m.prefs.edit ().putString ("net.name", n).apply (); } });
-				col.addView (e); foot ("Up to 10 letters, digits, _ or -. Players see it in the game room and the chat.");
+				col.addView (e); foot ("Up to 10 letters A-Z and digits 0-9. Players see it in the game room and the chat.");
 				header (game.isEmpty () ? "Host" : "Host " + game);
 				row ("In the game room", "Public: anyone can join it there", () -> host (0));
 				row ("With a code", "Private: only who you tell the code", () -> host (1));
@@ -199,19 +199,30 @@ final class Online {
 			if (ft != null) for (int i = 0; i < col.getChildCount (); i++) { View c = col.getChildAt (i); View t = c.findViewWithTag ("t");
 				if (t instanceof TextView && ((TextView) t).getText ().toString ().equals (ft) && c.isFocusable ()) { c.requestFocus (); break; } }
 		}
+		/* a player name is needed to host or join (the owner, 2026-11-19): the field's text taken, else said */
+		boolean named ()
+		{
+			if (nameField != null) { String n = clean (nameField.getText ().toString ()); nameField.setText (n); m.prefs.edit ().putString ("net.name", n).apply (); }
+			if (!clean (name (m)).isEmpty ()) return true;
+			m.toast ("ONLINE: YOUR PLAYER NAME IS MISSING - ENTER IT ABOVE (A-Z, 0-9)", 4); Main.log ("online: no player name");
+			if (nameField != null) { nameField.requestFocus (); sc.smoothScrollTo (0, 0); }
+			return false;
+		}
 		void host (int mode)
 		{
 			String rom = VX.game (); if (rom.isEmpty ()) { m.toast ("Start a game first: the one you host", 3); return; }
-			String nm = clean (name (m)); if (mode == 0 && nm.isEmpty ()) { m.toast ("The game room needs your name: enter it above", 3); return; }
+			if (!named ()) return;
+			String nm = clean (name (m));
 			hostRom = rom; hostMode = mode; VX.netHost (mode, nm, key (m), rom, skip ());
 			Main.log ("online: hosting " + rom + " (" + (mode == 0 ? "game room" : mode == 1 ? "code" : "Wi-Fi") + ")"); last = "";
 		}
 		void adhocHost ()
 		{
 			if (VX.game ().isEmpty ()) { m.toast ("Start a game first: the one you host", 3); return; }
+			if (!named ()) return;
 			m.toast ("Making the network " + Adhoc.ssid (m) + "...", 2);
 			Adhoc.start (m, (ok, msg) -> { if (!ok) { m.toast (msg, 4); return; } host (2); last = ""; });
 		}
-		void join (String where) { Main.log ("online: joining " + where); VX.netJoin (where, clean (name (m)), key (m)); last = ""; }
+		void join (String where) { if (!named ()) return; Main.log ("online: joining " + where); VX.netJoin (where, clean (name (m)), key (m)); last = ""; }
 	}
 }

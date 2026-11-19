@@ -2460,8 +2460,9 @@ class App:
         self.report_email = str(conf0.get('report_email', '') or '')[:120]   # (Debug report: the user's email, optional)
         self.gamer_ok = bool(conf0.get('gamer_ok', False))      # (reserved at the meeting point for player_key)
         import netplay as _np
-        if self.gamer and not _np.gamer_name(self.gamer):      # (a name from before names had 10 characters at most:
-            self.gamer_ok = False                               #  asked again, once)
+        if self.gamer and _np.gamer_name(self.gamer, own=True) != self.gamer:   # (a name from before: over 10 characters, or
+            self.gamer = _np.gamer_name(self.gamer, own=True) or ''    #  with _ or - (A-Z 0-9 only since 1.7.1): without them,
+            self.gamer_ok = False                               #  reserved again at the next online game)
         self.player_key = conf0.get('player_key', '')           # (the secret that makes the name this player's)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
@@ -5973,15 +5974,15 @@ class App:
         e.pack(side='left')
         e.bind('<FocusIn>', lambda ev: setattr(self.inp, 'block', True))
         e.bind('<FocusOut>', lambda ev: setattr(self.inp, 'block', False))
-        tk.Label(r1, text='  up to 10: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
+        tk.Label(r1, text='  up to 10: A-Z 0-9', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
         msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
         busy = {'on': False}
         def take():
             if busy['on']:
                 return
-            name = netplay.gamer_name(nv.get())
+            name = netplay.gamer_name(nv.get(), own=True)
             if not name:
-                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9'); return
             if not self.player_key:
                 self.player_key = secrets.token_hex(16); self.save_settings()
             old = self.gamer if (change and self.gamer_ok and self.gamer != name) else None
@@ -6004,16 +6005,16 @@ class App:
             elif res and res[0] == 'taken':
                 msg.configure(text='That name belongs to another player. Pick another.')
             elif res:
-                msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9 _ -')
+                msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9')
             else:
                 msg.configure(text='The meeting point did not answer (no internet?). Try again in a moment - or, to play '
                                    'on this network now, Use on this network.')
                 if not local_b.winfo_ismapped():
                     local_b.pack(side='left', padx=(6, 0))
         def local():                                            # (a LAN without internet - the owner, 2026-11-13: the name
-            name = netplay.gamer_name(nv.get())                 #  for this network, this session; reserved once the
+            name = netplay.gamer_name(nv.get(), own=True)       #  for this network, this session; reserved once the
             if not name:                                        #  meeting point answers again)
-                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9'); return
             self.gamer, self.gamer_local = name, True; self.save_settings()
             close()
             self.flash('YOUR PLAYER NAME:', name, 'ON THIS NETWORK', secs=3)

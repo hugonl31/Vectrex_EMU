@@ -26,11 +26,11 @@ NSString *vxa_net_key (void)                         /* (this phone's secret for
 		k = m; [NSUserDefaults.standardUserDefaults setObject:k forKey:@"net.key"]; }
 	return k;
 }
-static NSString *OClean (NSString *s)                 /* (a gamer name as the game room keeps it: A-Z 0-9 _ -, up to 10) */
+static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 0-9 only, up to 10 - the rest left out) */
 {
 	NSMutableString *o = [NSMutableString string];
 	for (NSUInteger i = 0; i < s.length && o.length < 10; i++) { unichar c = [s.uppercaseString characterAtIndex:i];
-		if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') [o appendFormat:@"%C", c]; else if (c == ' ') [o appendString:@"_"]; }
+		if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) [o appendFormat:@"%C", c]; }
 	return o;
 }
 
@@ -87,7 +87,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 	else {
 		NSString *err = _st[@"error"];
 		if ([err isKindOfClass:NSString.class] && err.length && ph == 5) [s addObject:@[ @"", @"", @[ @[ @"Not connected", err, [NSNull null] ] ] ]];
-		[s addObject:@[ @"Your name", @"Up to 10 letters, digits, _ or -. Players see it in the game room and the chat.", @[ @[ @"#name", @"", [NSNull null] ] ] ]];
+		[s addObject:@[ @"Your name", @"Up to 10 letters A-Z and digits 0-9. Players see it in the game room and the chat.", @[ @[ @"#name", @"", [NSNull null] ] ] ]];
 		[s addObject:@[ game.length ? [NSString stringWithFormat:@"Host %@", game] : @"Host", game.length ? @"Player 2 needs the same game. Both start it together; you are player 1." : @"Start a game first, then host it here.", @[
 			@[ @"In the game room", @"Public: anyone can join it there", ^{ [ws host:0]; } ],
 			@[ @"With a code", @"Private: only who you tell the code", ^{ [ws host:1]; } ],
@@ -134,7 +134,7 @@ int vxa_net_rehost (void)
 	NSString *rom = vxa_game ();
 	if (!rom.length) { [self note:@"Start a game first: the one you host"]; return; }
 	NSString *nm = OClean (vxa_net_name ());
-	if (mode == 0 && !nm.length) { [self note:@"The game room needs your name: enter it above"]; return; }
+	if (!nm.length) { [self note:@"Your player name is missing: enter it above (A-Z, 0-9)"]; return; }   /* (a name to host or join - the owner, 2026-11-19) */
 	int ski = vxa_ofind ("vectrex_emu_skip_intro"); int skip = ski >= 0 && !strcmp (vxa_oval (ski), "on");
 	extern void vxa_net_hosting (NSString *rom); vxa_net_hosting (rom); vxa_net_hostmode = mode;
 	vx_net_host (mode, nm.UTF8String, vxa_net_key ().UTF8String, rom.fileSystemRepresentation, skip, "auto", 0.0);
@@ -188,6 +188,9 @@ int vxa_net_rehost (void)
 {
 	[t deselectRowAtIndexPath:ip animated:YES]; [self.view endEditing:YES];
 	id a = _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][2];
+	{ NSString *sec = _secs[(NSUInteger) ip.section][0], *row = _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][0];   /* (hosting or joining: a name first) */
+	  BOOL needs = a != [NSNull null] && ([sec hasPrefix:@"Host"] || [sec hasPrefix:@"Join"] || [sec hasPrefix:@"Nearby"] || [sec hasPrefix:@"Game room"] || [sec hasPrefix:@"On this"]) && ![row isEqualToString:@"Look again"];
+	  if (needs && !OClean (vxa_net_name ()).length) { ulog (@"online: no player name"); [self note:@"Your player name is missing: enter it above (A-Z, 0-9)"]; return; } }
 	if (a != [NSNull null]) { ulog ([NSString stringWithFormat:@"online: tap %@", _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][0]]); ((void (^) (void)) a) (); [self poll]; }
 }
 @end

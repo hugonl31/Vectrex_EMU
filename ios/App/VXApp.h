@@ -56,3 +56,7 @@ void ulog (NSString *s);               /* into the app's live log */
 @interface VXUI (Parts)
 + (void) choosePartsIn:(UIViewController *)vc parts:(NSArray *)parts installed:(NSDictionary *)inst first:(BOOL)first go:(void (^) (NSArray<NSString *> *, BOOL))go later:(void (^) (void))later;
 @end
+@interface VXUI (Deck)
++ (UIView *) deckFor:(UIViewController *)vc;                  /* (the native control deck, below the picture) */
++ (void) showChoice:(int)i from:(UIViewController *)vc;
+@end

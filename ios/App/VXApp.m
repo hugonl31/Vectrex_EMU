@@ -213,7 +213,9 @@ static bool vxa_env (unsigned cmd, void *data)
 	case 52: *(unsigned *) data = 2; return true;           /* (GET_CORE_OPTIONS_VERSION: v2 - the submenus and help texts) */
 	case 67: vxa_opts_v2 (data); return true;                /* (SET_CORE_OPTIONS_V2) */
 	case 68: return true;                                    /* (SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK) */
-	case RETRO_ENVIRONMENT_GET_VARIABLE: { struct retro_variable *v = data; int i = vxa_opt_find (v->key); v->value = i >= 0 ? vxa_opt[i].val : NULL; return i >= 0; }
+	case RETRO_ENVIRONMENT_GET_VARIABLE: { struct retro_variable *v = data; int i = vxa_opt_find (v->key);
+		if (i >= 0 && !strcmp (v->key, "vectrex_emu_deck")) { v->value = "off"; return true; }   /* (the app draws its own deck: the core's stays off) */
+		v->value = i >= 0 ? vxa_opt[i].val : NULL; return i >= 0; }
 	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = vxa_opt_dirty; vxa_opt_dirty = 0; return true;
 	case 70: { const struct retro_variable *v = data; if (!v || !v->key) return true;   /* (SET_VARIABLE: the core sets one itself) */
 		int i = vxa_opt_find (v->key); if (i < 0 || !v->value) return false;
@@ -488,6 +490,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 @end
 
 /* ---------------------------------------------------------------- the view: OpenGL ES, the touch controls, messages */
+#define VXA_DECKH 78                            /* (the native control deck's height) */
 #define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
 @end
@@ -518,7 +521,7 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
-	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome; int _firstPack;
+	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
@@ -554,6 +557,7 @@ static void vxa_toast (NSString *s, double secs)
 	__weak VXGameVC *ws = self;
 	(void) ws; [_menuBtn addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
 	_bar = [VXUI quickBarFor:self]; _bar.hidden = YES; [self.view addSubview:_bar];
+	_deck = [VXUI deckFor:self]; _deck.hidden = YES; [self.view addSubview:_deck];
 	[self.view addSubview:_menuBtn];
 	(void) g; _welcome = [VXUI welcomeView]; _welcome.frame = self.view.bounds; _welcome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 	[self.view addSubview:_welcome]; _status = [_welcome viewWithTag:11]; _prog = [_welcome viewWithTag:12];   /* (the start screen while the games arrive) */
@@ -673,6 +677,7 @@ static void vxa_toast (NSString *s, double secs)
 	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
+	extern int vx_app_osd_on; vx_app_osd_on = 1;     /* (the figures measured for the native deck) */
 	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
 	retro_set_environment (vxa_env); vxa_set_callbacks ();
 	retro_init ();
@@ -705,7 +710,8 @@ static void vxa_toast (NSString *s, double secs)
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
 	const int land = v.width > v.height, ipad = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
 	const double row = land || [self barAuto] ? 0 : VXA_TOPROW;   /* (the quick bar's row: kept, or over the picture when it hides itself) */
-	const double keep = land || ipad || _ctl.hidden ? 0 : 150;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
+	const double deckh = [self deckShown] ? VXA_DECKH : 0;   /* (the native deck below the picture, upright) */
+	const double keep = (land || ipad || _ctl.hidden ? 0 : 150) + deckh;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
 	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
 	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = land ? s.top * sc + (ah - h) / 2 : (s.top + row) * sc;
 	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw), r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
@@ -716,6 +722,7 @@ static void vxa_toast (NSString *s, double secs)
 	glBlitFramebuffer (0, sy0, (GLint) _fw, sy1, (GLint) x, y0, (GLint) (x + w), (GLint) (y0 + h), GL_COLOR_BUFFER_BIT, k == 1.0 ? GL_NEAREST : GL_LINEAR);
 	glBindRenderbuffer (GL_RENDERBUFFER, _drb); [_ctx presentRenderbuffer:GL_RENDERBUFFER]; _presents++;
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
+	_deck.hidden = !deckh; if (deckh) _deck.frame = CGRectMake (s.left, CGRectGetMaxY (pic), v.width - s.left - s.right, VXA_DECKH);
 	if (!CGRectEqualToRect (pic, _pic)) { _pic = pic; vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f pt (%s)", _fw, _fh, pic.origin.x, pic.origin.y, pic.size.width, pic.size.height, k == 1.0 ? "1:1" : "scaled"); [self layoutControls]; }
 }
 - (void) gotFrame:(unsigned)w :(unsigned)h { _fw = w; _fh = h; _have = 1; }
@@ -792,6 +799,11 @@ static void vxa_set_opt (int i, NSString *v)
 	return [UIMenu menuWithTitle:@"Vectrex_EMU" children:top];
 }
 - (void) openMenu { [VXUI showGameMenuFrom:self]; }
+- (BOOL) deckShown                              /* (the native deck: upright, the setting Control deck not off) */
+{
+	CGSize v = self.view.bounds.size; if (v.width > v.height || !_link) return NO;
+	int i = vxa_opt_find ("vectrex_emu_deck"); return i < 0 || strcmp (vxa_opt[i].val, "off") != 0;
+}
 /* the quick bar hiding itself (Settings > App: the default on an iPad, where its row would cost the picture its width): over
  * the picture, it fades 3 s after it was last shown; a tap at the top of the screen brings it back */
 - (BOOL) barAuto
@@ -833,7 +845,7 @@ static void vxa_set_opt (int i, NSString *v)
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; CGRect pic = _pic;
 	CGRect zl, zr;
 	if (v.width > v.height) { zl = CGRectMake (s.left, s.top, CGRectGetMinX (pic) - s.left, v.height - s.top - s.bottom); zr = CGRectMake (CGRectGetMaxX (pic), s.top, v.width - s.right - CGRectGetMaxX (pic), zl.size.height); }
-	else { double top = CGRectGetMaxY (pic); if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (the deck is in the picture now) */
+	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0); if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (the deck is in the picture now) */
 		zl = CGRectMake (s.left, top, v.width / 2, v.height - s.bottom - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	_stickZone = zl;
 	double r = fmin (zr.size.width / 4.6, 38), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);

@@ -641,3 +641,121 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	ulog (@"downloads opened"); [vc presentViewController:n animated:YES completion:nil];
 }
 @end
+
+/* ------------------------------------------------ the native control deck (the PC app's strip below the picture, in the
+ * quick bar's style): the figures (the core's own, twice a second), port 2, the cartridge (the library), RESET, the
+ * knob - turned round with a finger (a tick every 5 %), a long press switches the Vectrex off and on */
+extern void vx_app_osd (char *fps, char *hz, char *emu, int *cpu, int *gpu);
+extern double vx_app_volume (void); extern void vx_app_turn (double d); extern void vx_app_power (void);
+@interface VXKnob : UIControl
+@property (nonatomic) double value;                 /* (0..1; 0: off) */
+@end
+@implementation VXKnob { CAShapeLayer *_track, *_arc, *_cap; double _lastAng; int _lastStep; }
+- (instancetype) initWithFrame:(CGRect)f
+{
+	self = [super initWithFrame:f];
+	_track = [CAShapeLayer layer]; _arc = [CAShapeLayer layer]; _cap = [CAShapeLayer layer];
+	for (CAShapeLayer *l in @[ _track, _arc ]) { l.fillColor = UIColor.clearColor.CGColor; l.lineWidth = 3.5; l.lineCap = kCALineCapRound; [self.layer addSublayer:l]; }
+	_track.strokeColor = VXC (0x16302a).CGColor; _arc.strokeColor = VX_G.CGColor;
+	_cap.fillColor = VX_BODY.CGColor; _cap.strokeColor = VX_HI.CGColor; _cap.lineWidth = 1.4; [self.layer addSublayer:_cap];
+	UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(press:)]; [self addGestureRecognizer:lp];
+	self.accessibilityLabel = @"Volume and power"; return self;
+}
+- (void) layoutSubviews
+{
+	[super layoutSubviews]; CGFloat r = MIN (self.bounds.size.width, self.bounds.size.height) / 2 - 4; CGPoint c = CGPointMake (CGRectGetMidX (self.bounds), CGRectGetMidY (self.bounds));
+	_track.path = [UIBezierPath bezierPathWithArcCenter:c radius:r startAngle:M_PI * 0.75 endAngle:M_PI * 2.25 clockwise:YES].CGPath;
+	_cap.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (c.x - r * 0.52, c.y - r * 0.52, r * 1.04, r * 1.04)].CGPath; [self draw];
+}
+- (void) draw
+{
+	CGFloat r = MIN (self.bounds.size.width, self.bounds.size.height) / 2 - 4; CGPoint c = CGPointMake (CGRectGetMidX (self.bounds), CGRectGetMidY (self.bounds));
+	_arc.path = [UIBezierPath bezierPathWithArcCenter:c radius:r startAngle:M_PI * 0.75 endAngle:M_PI * (0.75 + 1.5 * MAX (0.001, self.value)) clockwise:YES].CGPath;
+	_arc.hidden = self.value <= 0;
+}
+- (void) setValue:(double)v { _value = v; [self draw]; }
+- (double) angleAt:(CGPoint)p { return atan2 (p.y - CGRectGetMidY (self.bounds), p.x - CGRectGetMidX (self.bounds)); }
+- (BOOL) beginTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { _lastAng = [self angleAt:[t locationInView:self]]; _lastStep = (int) (self.value * 20); return YES; }
+- (BOOL) continueTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e
+{
+	double a = [self angleAt:[t locationInView:self]], d = a - _lastAng; if (d > M_PI) d -= 2 * M_PI; if (d < -M_PI) d += 2 * M_PI; _lastAng = a;
+	vx_app_turn (d / (M_PI * 1.5)); self.value = vx_app_volume ();   /* (a full turn of the arc: 0 to 100 %) */
+	int st = (int) (self.value * 20); if (st != _lastStep) { _lastStep = st; [[UISelectionFeedbackGenerator new] selectionChanged]; }
+	[self sendActionsForControlEvents:UIControlEventValueChanged]; return YES;
+}
+- (void) endTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { ulog ([NSString stringWithFormat:@"deck: volume %.0f %%", self.value * 100]); }
+- (void) press:(UILongPressGestureRecognizer *)g
+{
+	if (g.state != UIGestureRecognizerStateBegan) return;
+	vx_app_power (); self.value = vx_app_volume (); [[UIImpactFeedbackGenerator new] impactOccurred];
+	ulog (self.value > 0 ? @"deck: switched on" : @"deck: switched off"); [self sendActionsForControlEvents:UIControlEventValueChanged];
+}
+@end
+
+@interface VXDeck : UIView
+@property (nonatomic, weak) UIViewController *game;
+@end
+@implementation VXDeck { UILabel *_fps, *_hz, *_emu, *_vol; UIView *_cpu, *_gpu, *_cpuF, *_gpuF; NSLayoutConstraint *_cpuW, *_gpuW; VXKnob *_knob; NSTimer *_tm; }
+- (UIView *) bar:(NSLayoutConstraint *__strong *)w fill:(UIView *__strong *)fo
+{
+	UIView *tr = [UIView new]; tr.backgroundColor = VXC (0x16302a); tr.layer.cornerRadius = 2;
+	UIView *f = [UIView new]; f.backgroundColor = VX_G; f.layer.cornerRadius = 2; f.translatesAutoresizingMaskIntoConstraints = NO; [tr addSubview:f];
+	*w = [f.widthAnchor constraintEqualToAnchor:tr.widthAnchor multiplier:0.01]; *fo = f;
+	[NSLayoutConstraint activateConstraints:@[ [f.leadingAnchor constraintEqualToAnchor:tr.leadingAnchor], [f.topAnchor constraintEqualToAnchor:tr.topAnchor], [f.bottomAnchor constraintEqualToAnchor:tr.bottomAnchor], *w ]];
+	[tr.heightAnchor constraintEqualToConstant:4].active = YES; return tr;
+}
+- (instancetype) initWithGame:(UIViewController *)g
+{
+	self = [super initWithFrame:CGRectZero]; _game = g;
+	UIFont *mono = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightMedium], *small = VF (9, UIFontWeightSemibold);
+	_fps = VL (@"--", mono, VX_HI); _hz = VL (@"--", mono, VX_HI); _emu = VL (@"--", mono, VX_HI);
+	UILabel *l1 = VL (@"FPS", small, VX_DIM), *l2 = VL (@"HZ", small, VX_DIM), *l3 = VL (@"EMU", small, VX_DIM), *lc = VL (@"CPU", small, VX_DIM), *lg = VL (@"GPU", small, VX_DIM);
+	UIStackView *r1 = [[UIStackView alloc] initWithArrangedSubviews:@[ l1, _fps, [UIView new], l2, _hz ]]; r1.spacing = 4; r1.alignment = UIStackViewAlignmentFirstBaseline;
+	UIStackView *r2 = [[UIStackView alloc] initWithArrangedSubviews:@[ l3, _emu, [UIView new] ]]; r2.spacing = 4; r2.alignment = UIStackViewAlignmentFirstBaseline;
+	NSLayoutConstraint *cw, *gw; UIView *cf, *gf; UIView *cb = [self bar:&cw fill:&cf], *gb = [self bar:&gw fill:&gf]; _cpuW = cw; _gpuW = gw; _cpu = cb; _gpu = gb; _cpuF = cf; _gpuF = gf;
+	UIStackView *r3 = [[UIStackView alloc] initWithArrangedSubviews:@[ lc, cb, lg, gb ]]; r3.spacing = 4; r3.alignment = UIStackViewAlignmentCenter;
+	[cb.widthAnchor constraintEqualToAnchor:gb.widthAnchor].active = YES;
+	UIStackView *osd = [[UIStackView alloc] initWithArrangedSubviews:@[ r1, r2, r3 ]]; osd.axis = UILayoutConstraintAxisVertical; osd.spacing = 3;
+	osd.layoutMargins = UIEdgeInsetsMake (6, 8, 6, 8); osd.layoutMarginsRelativeArrangement = YES; osd.backgroundColor = VX_PANEL; osd.layer.cornerRadius = 12; osd.layer.borderWidth = 1; osd.layer.borderColor = VX_EDGE.CGColor;
+	__weak VXDeck *ws = self;
+	UIButton *p2 = VB (@"P2 PORT", @"gamecontroller", NO, ^{ int i = vxa_ofind ("vectrex_emu_port2"); if (i >= 0 && ws.game) [VXUI showChoice:i from:ws.game]; });
+	UIButton *cart = VB (@"CART", @"square.grid.2x2", NO, ^{ if (ws.game) [VXUI showLibraryFrom:ws.game]; });
+	UIButton *rst = VB (@"RESET", @"arrow.counterclockwise", NO, ^{ vxa_do (@"reset"); [[UIImpactFeedbackGenerator new] impactOccurred]; });
+	_knob = [VXKnob new]; [_knob addTarget:self action:@selector(knobbed) forControlEvents:UIControlEventValueChanged];
+	_vol = VL (@"VOL", VF (10, UIFontWeightSemibold), VX_HI); _vol.textAlignment = NSTextAlignmentCenter;
+	UIStackView *kn = [[UIStackView alloc] initWithArrangedSubviews:@[ _knob, _vol ]]; kn.axis = UILayoutConstraintAxisVertical; kn.spacing = 0; kn.alignment = UIStackViewAlignmentCenter;
+	kn.backgroundColor = VX_PANEL; kn.layer.cornerRadius = 12; kn.layer.borderWidth = 1; kn.layer.borderColor = VX_EDGE.CGColor; kn.layoutMargins = UIEdgeInsetsMake (4, 4, 4, 4); kn.layoutMarginsRelativeArrangement = YES;
+	[_knob.widthAnchor constraintEqualToConstant:40].active = YES; [_knob.heightAnchor constraintEqualToConstant:40].active = YES;
+	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ osd, p2, cart, rst, kn ]]; row.spacing = 6; row.distribution = UIStackViewDistributionFill;
+	[osd.widthAnchor constraintEqualToAnchor:row.widthAnchor multiplier:0.34].active = YES;
+	for (UIView *v in @[ p2, cart, rst ]) [v.widthAnchor constraintEqualToAnchor:kn.widthAnchor multiplier:0.95].active = YES;
+	row.translatesAutoresizingMaskIntoConstraints = NO; [self addSubview:row];
+	[NSLayoutConstraint activateConstraints:@[ [row.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:8], [row.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-8],
+		[row.topAnchor constraintEqualToAnchor:self.topAnchor constant:6], [row.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:-6] ]];
+	_tm = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { (void) t; [ws tick]; }];
+	return self;
+}
+- (void) dealloc { [_tm invalidate]; }
+- (void) knobbed { _vol.text = _knob.value > 0 ? [NSString stringWithFormat:@"%.0f%%", _knob.value * 100] : @"OFF"; }
+- (void) tick
+{
+	if (self.hidden || !self.window) return;
+	char f[24], h[24], e[24]; int c = -1, g = -1; vx_app_osd (f, h, e, &c, &g);
+	_fps.text = [@(f) stringByReplacingOccurrencesOfString:@" FPS" withString:@""]; _hz.text = [@(h) stringByReplacingOccurrencesOfString:@" HZ" withString:@""]; _emu.text = @(e);
+	_cpuW.active = NO; _cpuW = [_cpuF.widthAnchor constraintEqualToAnchor:_cpu.widthAnchor multiplier:MAX (0.01, MIN (1.0, c / 100.0))]; _cpuW.active = YES;
+	_gpuW.active = NO; _gpuW = [_gpuF.widthAnchor constraintEqualToAnchor:_gpu.widthAnchor multiplier:MAX (0.01, MIN (1.0, g / 100.0))]; _gpuW.active = YES;
+	if (!_knob.tracking) { _knob.value = vx_app_volume (); [self knobbed]; }
+}
+@end
+
+@implementation VXUI (Deck)
++ (UIView *) deckFor:(UIViewController *)vc { VXDeck *d = [[VXDeck alloc] initWithGame:vc]; return d; }
++ (void) showChoice:(int)i from:(UIViewController *)vc
+{
+	if (vc.presentedViewController) return;
+	VXChoice *ch = [[VXChoice alloc] initWithStyle:UITableViewStyleInsetGrouped]; ch.opt = i;
+	UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:ch]; [self styleNav:n];
+	n.modalPresentationStyle = UIModalPresentationPageSheet; n.sheetPresentationController.detents = @[ UISheetPresentationControllerDetent.mediumDetent ];
+	[vc presentViewController:n animated:YES completion:nil];
+}
+@end

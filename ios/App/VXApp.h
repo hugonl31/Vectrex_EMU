@@ -34,6 +34,7 @@ double vx_app_volume (void); void vx_app_turn (double d), vx_app_power (void);
 int vxa_is_held (void); void vxa_toast_ext (NSString *s);
 int vx_net_md5_file (const char *path, char *out33, long long *size);
 NSString *vxa_net_ip (void);           /* this phone's address on its network */
+NSString *vxa_net_gateway (void);      /* the nearby host: .1 of this phone's Wi-Fi (an ad-hoc network's host), nil: none */
 NSString *vxa_net_name (void), *vxa_net_key (void);
 int vxa_net_playing (void);              /* (1 while a game for two runs: no save states) */
 

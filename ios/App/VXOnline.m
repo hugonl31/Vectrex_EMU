@@ -107,12 +107,12 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 	[super viewDidLoad]; self.title = @"Online";
 	self.tableView.backgroundColor = VX_BG; self.tableView.separatorColor = VX_EDGE;
 	self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector (done)];
-	vx_net_lan (1); vx_net_room ();
+	vx_net_lan (1); vx_net_room (); vxp_browse (1);
 	__weak VXOnline *ws = self;
 	_tm = [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) { [ws poll]; }];
 	[self poll];
 }
-- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; [_tm invalidate]; _tm = nil; vx_net_lan (0); vxa_hold (0); }
+- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; [_tm invalidate]; _tm = nil; vx_net_lan (0); vxp_browse (0); vxa_hold (0); }
 - (void) done { [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }]; }
 - (int) phase { return [_st[@"phase"] intValue]; }
 - (void) poll
@@ -121,7 +121,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 	if (![st isKindOfClass:NSDictionary.class]) return;
 	NSArray *chat = st[@"chat"]; if ([chat isKindOfClass:NSArray.class] && chat.count) { extern void vxa_net_chat_in (NSArray *lines); vxa_net_chat_in (chat); }
 	NSMutableDictionary *k = [st mutableCopy]; [k removeObjectForKey:@"chat"]; [k removeObjectForKey:@"waiting"]; [k removeObjectForKey:@"frame"]; [k removeObjectForKey:@"sums"]; [k removeObjectForKey:@"checked"];
-	NSString *key = [k description]; _st = st;
+	NSString *key = [[k description] stringByAppendingString:[vxp_games () componentsJoinedByString:@"|"]]; _st = st;
 	if ([self phase] >= 1 && [self phase] <= 3) _sawSetup = 1;
 	if ([self phase] == 4 && _sawSetup && !_shownPlay) { _shownPlay = 1; [self done]; return; }   /* (the game started here: back to it - not when opened during one) */
 	if ([key isEqualToString:_last ?: @""]) return; _last = key;
@@ -137,7 +137,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 		[s addObject:@[ @"Playing online", [NSString stringWithFormat:@"You are player %d. %@", role == 1 ? 1 : 2, [_st[@"relay"] intValue] ? @"The game goes through the meeting point (relayed): a little more delay." : @"A direct connection."], @[
 			@[ [NSString stringWithFormat:@"With %@", peer], [NSString stringWithFormat:@"%d frames of input delay%@", [_st[@"delay"] intValue], [_st[@"desync"] intValue] >= 0 ? @" - OUT OF STEP: the two games differ" : @""], [NSNull null] ],
 			@[ @"Chat", @"A line to the other player", ^{ [ws chat]; } ],
-			@[ @"Leave the online game", @"", ^{ vx_net_leave (); [ws done]; } ] ] ]];
+			@[ @"Leave the online game", @"", ^{ vx_net_leave (); vxp_stop (); [ws done]; } ] ] ]];
 		_secs = s; return; }
 	if (ph >= 1 && ph <= 3) {                         /* hosting or joining: what happens */
 		NSString *t, *d; NSString *code = _st[@"code"];
@@ -148,7 +148,8 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 			else { t = [NSString stringWithFormat:@"Your code:  %@", code.length ? code : @"..."]; d = mode == 0 ? @"Your game is in the game room. Player 2 picks it there, or enters the code." : @"Tell player 2 this code: they enter it under Join."; }
 			if ([_st[@"peer"] length]) d = [NSString stringWithFormat:@"%@ is connecting...", _st[@"peer"]]; }
 		else { t = ph == 3 ? @"The host's game came: starting..." : @"Connecting to the host..."; d = [_st[@"peer"] length] ? [NSString stringWithFormat:@"Host: %@", _st[@"peer"]] : @""; }
-		[s addObject:@[ @"Online", @"", @[ @[ t, d, [NSNull null] ], @[ @"Cancel", @"", ^{ vx_net_leave (); [ws poll]; } ] ] ]]; }
+		if (vxp_hosting () && role == 1) d = [d stringByAppendingString:@" - also seen by iPhones and iPads nearby (no network needed)"];
+		[s addObject:@[ @"Online", @"", @[ @[ t, d, [NSNull null] ], @[ @"Cancel", @"", ^{ vx_net_leave (); vxp_stop (); [ws poll]; } ] ] ]]; }
 	else {
 		NSString *err = _st[@"error"];
 		if ([err isKindOfClass:NSString.class] && err.length && ph == 5) [s addObject:@[ @"", @"", @[ @[ @"Not connected", err, [NSNull null] ] ] ]];
@@ -160,6 +161,10 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 		/* nearby, no router: the host makes the network (an Android phone or a PC does it itself; an iPhone: its Personal
 		 *  Hotspot), the others join it in Settings > Wi-Fi - the network's host is its router (.1) */
 		NSString *gw = vxa_net_gateway ();
+		NSMutableArray *ap = [NSMutableArray arrayWithObject:@[ @"Host for an iPhone / iPad nearby", @"Apple's peer-to-peer Wi-Fi: no network, no hotspot - the other device sees your game below", ^{ [ws hostNearby]; } ]];
+		for (NSString *g in vxp_games ()) [ap addObject:@[ g, @"An iPhone / iPad nearby - tap to join", ^{ [ws joinNearby:g]; } ]];
+		if (vxp_games ().count == 0) [ap addObject:@[ @"No iPhone or iPad hosting nearby yet", @"On the other device: Online > Host for an iPhone / iPad nearby", [NSNull null] ]];
+		[s addObject:@[ @"Nearby - iPhone and iPad", @"Two Apple devices close together, with Wi-Fi switched on (it need not be connected): no router, no internet - also where a hotel's Wi-Fi keeps its guests apart.", ap ]];
 		[s addObject:@[ @"Nearby - no router, no internet", @"Also where a hotel's or an airport's Wi-Fi keeps its guests' devices apart (On this Wi-Fi then finds nothing). Host: Personal Hotspot on (Settings > Personal Hotspot), then host here; the others join your iPhone's network in their Wi-Fi settings. Join: first join the host's network (its hotspot, DIRECT-VX-VECTREX-..., VECTREX-EMU-...) in Settings > Wi-Fi.", @[
 			@[ @"Host on your Personal Hotspot", vxa_hotspot_on () ? @"Your hotspot is on: your game on it" : @"Turn Personal Hotspot on first (Settings)", ^{
 				if (!vxa_hotspot_on ()) { [ws note:@"Personal Hotspot is not on - or nobody has joined it yet.\n\nSettings > Personal Hotspot > Allow Others to Join. The other player joins your iPhone's network in their Wi-Fi settings, then taps Join the nearby host. (An iPad without mobile data has no hotspot: let the other device host.)"]; ulog (@"online: hotspot not on"); return; }
@@ -207,6 +212,22 @@ int vxa_net_rehost (void)
 	vx_net_host (mode, nm.UTF8String, vxa_net_key ().UTF8String, rom.fileSystemRepresentation, skip, "auto", 0.0);
 	ulog ([NSString stringWithFormat:@"online: hosting %@ (%@)", rom.lastPathComponent, mode == 0 ? @"game room" : mode == 1 ? @"code" : @"Wi-Fi"]);
 	[self poll];
+}
+- (void) hostNearby
+{
+	NSString *rom = vxa_game (); if (!rom.length) { [self note:@"Start a game first: the one you host"]; return; }
+	[self host:2];                                       /* (the game hosted on this device: says itself what is missing) */
+	NSString *nm = OClean (vxa_net_name ()); if (!nm.length) return;
+	vxp_host_start ([NSString stringWithFormat:@"%@ - %@", nm, rom.lastPathComponent.stringByDeletingPathExtension]);
+	ulog (@"online: hosting for an iPhone / iPad nearby");
+}
+- (void) joinNearby:(NSString *)g
+{
+	const int port = vxp_join (g);
+	if (!port) { [self note:@"That game is no longer nearby."]; return; }
+	NSString *where = [NSString stringWithFormat:@"127.0.0.1:%d", port];
+	ulog ([NSString stringWithFormat:@"online: joining %@ nearby (%@)", g, where]);
+	vx_net_join (where.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String);
 }
 - (void) note:(NSString *)t
 {

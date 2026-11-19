@@ -1017,6 +1017,7 @@ int vx_net_whoami (const char *key, char *out, int outn)
 	return r;
 }
 int vx_net_playing_now (void) { return netvx_playing (); }
+int vx_net_port (void) { return nv_my_port (); }       /* (the game's UDP port here: the iOS app's peer-to-peer bridge hands its packets to it) */
 const char *vx_net_status (void)
 {
 	static char out[16384]; char t[256], g[1100];

@@ -20,12 +20,27 @@ final class Input {
 	static final int[] VID = { Y, X, B, A };                    /* (Vectrex 1-4: the RetroPad's) */
 	static final ArrayList<Integer> devs = new ArrayList<> ();  /* (the controllers seen, in order: ports 1, 2) */
 	static final int[] btn = new int[2], hat = new int[2], trig = new int[2]; static final int[][] ax = new int[2][4];
+	static final boolean[] builtIn = new boolean[2]; static int rot;   /* (a handheld's own controls: they turn with the screen; rot: Surface.ROTATION_*) */
+	/* a direction as the player pushes it on a handheld's own controls, turned to the screen (Android's own rule, as its
+	 * sensors: ROTATION_90 - the screen's x the device's y, its y the device's -x); a separate controller is not turned */
+	static int[] turn (int p, int x, int y)
+	{
+		if (p < 0 || p > 1 || !builtIn[p] || rot == 0) return new int[] { x, y };
+		return rot == 1 ? new int[] { -y, x } : rot == 2 ? new int[] { -x, -y } : new int[] { y, -x };
+	}
+	static int turnBits (int p, int b)
+	{
+		int x = ((b >> RIGHT) & 1) - ((b >> LEFT) & 1), y = ((b >> DOWN) & 1) - ((b >> UP) & 1); int[] t = turn (p, x, y);
+		b &= ~((1 << UP) | (1 << DOWN) | (1 << LEFT) | (1 << RIGHT));
+		if (t[1] < 0) b |= 1 << UP; if (t[1] > 0) b |= 1 << DOWN; if (t[0] < 0) b |= 1 << LEFT; if (t[0] > 0) b |= 1 << RIGHT; return b;
+	}
 	static int phys (int vec) { return Main.me.prefs.getInt ("map." + (vec + 1), DEF[vec]); }
 	static boolean isPad (InputDevice d) { if (d == null || d.isVirtual ()) return false; int s = d.getSources ();
 		return (s & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD || (s & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK; }
 	static int pads () { int n = 0; for (int id : InputDevice.getDeviceIds ()) if (isPad (InputDevice.getDevice (id))) n++; return n; }
 	static int port (int dev) { int i = devs.indexOf (dev); if (i < 0) { devs.add (dev); i = devs.size () - 1; InputDevice d = InputDevice.getDevice (dev);
-		Main.log ("controller " + (d != null ? d.getName () : "?") + " -> port " + (i + 1)); } return i < 2 ? i : -1; }
+		boolean bi = d != null && android.os.Build.VERSION.SDK_INT >= 29 && !d.isExternal (); if (i < 2) builtIn[i] = bi;
+		Main.log ("controller " + (d != null ? d.getName () : "?") + " -> port " + (i + 1) + (bi ? " (this device's own: turns with the screen)" : "")); } return i < 2 ? i : -1; }
 	static String bname (int b) { return new String[] { "B(3)", "Y(1)", "Select", "Start", "Up", "Down", "Left", "Right", "A(4)", "X(2)", "L1", "R1", "L2", "R2", "L3", "R3" }[b]; }
 	/* the RetroPad button a key is, the player's mapping (-1: none) */
 	static int pbit (int code)
@@ -40,8 +55,9 @@ final class Input {
 	}
 	static void send (int p)
 	{
-		int b = btn[p] | hat[p] | trig[p]; if (ax[p][1] < -16000) b |= 1 << UP; if (ax[p][1] > 16000) b |= 1 << DOWN; if (ax[p][0] < -16000) b |= 1 << LEFT; if (ax[p][0] > 16000) b |= 1 << RIGHT;
-		VX.setPad (p, b, ax[p][0], ax[p][1], ax[p][2], ax[p][3]);
+		int[] s = turn (p, ax[p][0], ax[p][1]);                   /* (the stick and the pad turned with the screen on a handheld) */
+		int b = turnBits (p, btn[p] | hat[p]) | trig[p]; if (s[1] < -16000) b |= 1 << UP; if (s[1] > 16000) b |= 1 << DOWN; if (s[0] < -16000) b |= 1 << LEFT; if (s[0] > 16000) b |= 1 << RIGHT;
+		VX.setPad (p, b, s[0], s[1], ax[p][2], ax[p][3]);
 	}
 	static int prevAll;
 	static boolean key (Main m, KeyEvent e)
@@ -56,6 +72,7 @@ final class Input {
 			int p = port (e.getDeviceId ()); if (p < 0) return true;
 			int b = pbit (code); if (b < 0) { if (code == KeyEvent.KEYCODE_BUTTON_MODE && down && e.getRepeatCount () == 0) Screens.gameMenu (m); return true; }
 			if (e.getRepeatCount () > 0) return true;
+			if (down) Main.log ("in key " + KeyEvent.keyCodeToString (code) + " (" + (d != null ? d.getName () : "?") + ")");
 			int was = btn[p]; if (down) btn[p] |= 1 << b; else btn[p] &= ~(1 << b);
 			if (was != btn[p]) Main.log ("in p" + (p + 1) + " " + bname (b) + (down ? " down" : " up"));
 			if (down && (btn[p] >> SELECT & 1) != 0 && b == X) { Main.log ("Select + X: the game menu"); btn[p] = 0; send (p); Screens.gameMenu (m); return true; }

@@ -120,7 +120,7 @@ final class Screens {
 		p.row ("Top bar (upright)", m.barAuto () ? "Hides itself: tap the top to show it" : "Always shown", () -> { m.prefs.edit ().putString ("app.topbar", m.barAuto () ? "fixed" : "auto").apply (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); });
 		if (m.hdrCan) p.row ("HDR brightness", pct (m.prefs.getFloat ("app.hdr", 1f)) + " of the screen's headroom (" + String.format (java.util.Locale.ROOT, "%.1fx", m.hdrRoom) + ")" + (VX.hdrActive () != 0 ? "" : " - not active"),
 			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
-		else p.row ("HDR", "This screen shows no HDR", null);
+		else p.row ("HDR", m.hdrScreen ? "Off on this Android version (HDR needs Android 14 or newer)" : "This screen shows no HDR", null);
 		if (Pack.token (m) != null) p.row ("Downloads", "The games, box art, cartridges, UVMC2, PiTrex", () -> { m.pop (); Pack.choose (m, false); });
 		{ int n = 0; for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) n++; final int changed = n;
 		  LinearLayout r = p.row ("Reset all settings", n > 0 ? n + " changed - all back to their defaults (a long press on one: that one)" : "All at their defaults", () -> {

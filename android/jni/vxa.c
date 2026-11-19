@@ -354,7 +354,7 @@ static bool vxa_env (unsigned cmd, void *data)
 	case 68: return true;
 	case RETRO_ENVIRONMENT_GET_VARIABLE: { struct retro_variable *v = data; pthread_mutex_lock (&vxa_omx); int i = vxa_opt_find (v->key);
 		v->value = i >= 0 ? vxa_opt[i].val : NULL;
-		if (i >= 0 && vxa_land && !strcmp (v->key, "vectrex_emu_deck")) v->value = "off";   /* (sideways: no deck - the picture the whole height, as the iOS app) */ pthread_mutex_unlock (&vxa_omx); return i >= 0; }
+		if (i >= 0 && !strcmp (v->key, "vectrex_emu_deck")) v->value = "off";   /* (the app draws its own deck - DeckView.java, as the iOS app: the core's stays off) */ pthread_mutex_unlock (&vxa_omx); return i >= 0; }
 	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = vxa_opt_dirty; vxa_opt_dirty = 0; return true;
 	case 70: { const struct retro_variable *v = data; if (!v || !v->key) return true;
 		pthread_mutex_lock (&vxa_omx); int i = vxa_opt_find (v->key);
@@ -685,6 +685,9 @@ JNIEXPORT jintArray JNICALL JF(deckState) (JNIEnv *e, jclass c)
 	(void) c; jintArray a = (*e)->NewIntArray (e, 5); jint v[5] = { vx_app_port2 (), vx_app_cart_out (), vx_app_power_on (), vx_app_paused (), (jint) lround (vx_app_volume () * 100) };
 	(*e)->SetIntArrayRegion (e, a, 0, 5, v); return a;
 }
+extern void vx_app_osd (char *fps, char *hz, char *emu, int *cpu, int *gpu);
+JNIEXPORT jstring JNICALL JF(osd) (JNIEnv *e, jclass c)   /* (the deck's figures: "fps|hz|emu|cpu|gpu") */
+{ (void) c; char f[24], h[24], m[24]; int cp = -1, gp = -1; vx_app_osd (f, h, m, &cp, &gp); char b[120]; snprintf (b, sizeof b, "%s|%s|%s|%d|%d", f, h, m, cp, gp); return js (e, b); }
 JNIEXPORT jint JNICALL JF(untgz) (JNIEnv *e, jclass c, jstring tgz, jstring root)
 { (void) c; JSTR (a, tgz); JSTR (b, root); int files = 0; int r = vxa_untgz (a, b, &files); vlog ("unpacked %s: %d files%s", a, files, r ? " - NOT WHOLE" : ""); JREL (a, tgz); JREL (b, root); return r ? -1 : files; }
 /* (online play: the core's netvx.c, as the iOS app) */

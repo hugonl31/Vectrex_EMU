@@ -29,8 +29,9 @@ final class Controls extends View {
 		R = m.dp (60) * tsize; final int W = getWidth (), H = getHeight (); if (W <= 0) { post (this::relayout); return; }
 		final float[] p = m.pic; final float px = p[0], py = p[1], pw = p[2], ph = p[3];
 		RectF zl, zr;
-		if (W > H) { zl = new RectF (m.insL, m.insTop, Math.max (px, m.insL + R * 2.2f), H - m.insBot); zr = new RectF (Math.min (px + pw, W - m.insR - R * 2.2f), m.insTop, W - m.insR, H - m.insBot); }
-		else { float top = py + ph, bot = H - m.insBot, need = Math.max (m.dp (120), m.dp (140) * tsize);
+		final float mg = m.dp (10);                                  /* (a margin: the buttons kept on the screen) */
+		if (W > H) { zl = new RectF (m.insL + mg, m.insTop + mg, Math.max (px, m.insL + R * 2.2f), H - m.insBot - mg); zr = new RectF (Math.min (px + pw, W - m.insR - R * 2.2f), m.insTop + mg, W - m.insR - mg, H - m.insBot - mg); }
+		else { final int dm = m.deckMode (); float top = py + ph + (dm == 1 ? m.dp (58) : dm == 2 ? m.dp (40) : 0), bot = H - m.insBot - mg, need = Math.max (m.dp (120), m.dp (140) * tsize);
 			if (bot - top < need) { bot = py + ph - m.dp (4); top = bot - need; }
 			zl = new RectF (m.insL, top, W / 2f, bot); zr = new RectF (W / 2f, top, W - m.insR, bot); }
 		if (m.prefs.getBoolean ("touch.lefty", false)) { RectF t = zl; zl = zr; zr = t; }

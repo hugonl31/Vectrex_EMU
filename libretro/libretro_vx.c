@@ -2340,6 +2340,8 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
 /* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
  * the afterglow's two parts, one colour channel or three - all dark again */
+int vx_app_noshape;                             /* (set by a host that lays out the picture itself: the deck block exactly the
+                                                picture and the deck, no bars to the screen's shape - the own iOS app) */
 static void pic_setup (void)
 {
 	const int glass = area_glass (); geom_calc (glass, &EW, &FH, &CW, &CH);
@@ -2357,6 +2359,7 @@ static void pic_setup (void)
 		const int own = scr_w > 0 && !(opt_rot & 1) && (scr_h > scr_w || VX_IOS);   /* (iPhone / iPad: either way round) */
 		const double ab = own ? (double) scr_w / scr_h : (opt_rot & 1) ? 1.0 / A : A;
 		TW = (int) (bh * ab + 0.5); if (TW < bw) TW = bw; TH = (int) (bw / ab + 0.5); if (TH < bh) TH = bh;
+		if (vx_app_noshape) { TW = bw; TH = bh; }           /* (the own iOS app: it places the picture and the deck itself) */
 		BX = (TW - bw) / 2; BY = (TH - bh) / 2; OW = TW; OH = TH; dk_dirty_set = 1; }
 #ifndef VX_EMUVR
 	{ static int lw, lh; if (OW != lw || OH != lh) { lw = OW; lh = OH;   /* (the log only) */
@@ -3196,6 +3199,11 @@ static char ej_last[1100]; static int ej_out;
 static char sw_next[1100]; static int sw_eject;          /* (a switch asked for: done at the next refresh's start - see retro_run) */
 static int game_switch_now (const char *path);
 static int game_switch (const char *path) { snprintf (sw_next, sizeof sw_next, "%s", path); return 1; }
+/* (the own iOS app: its own game library in place of the ROM browser - asked for (the deck's cartridge, a button, L)
+ *  the browser is closed again at once and the app shows its library; a game it picks loads as the browser's do) */
+int vx_app_browser_wanted (void) { if (br_open) { br_show (0); return 1; } return 0; }
+void vx_app_load (const char *path) { game_switch (path); }
+const char *vx_app_game (void) { return cur_game; }
 static int game_switch_now (const char *path)
 {
 	fprintf (stderr, "[vectrex_emu] switching to %s (from %s)\n", path, cur_game);   /* (a crash on a switch: its log says which) */

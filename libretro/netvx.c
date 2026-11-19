@@ -64,7 +64,7 @@ static char nv_code[8], nv_gamer[16], nv_key[48], nv_peer_name[16], nv_err[160],
 static char nv_game[1024];
 /* joining a running game (app to app): the host's state sent, compressed (nv_lz), player 2 loads it into the same game -
  * no reset: as a controller plugged into port 2 of a running Vectrex. Only when both say they can ("hot" in the game,
- * "\0hotjoin" in player 2's yes) and no SD card (a UVMC2 / PiTrex has no save state): else both start anew as before */
+ * "\0hotjoin" in player 2's yes), no SD card (a UVMC2 / PiTrex has no save state) and not relayed: else both start anew as before */
 static int nv_hot_can, nv_hot, nv_hot_total, nv_hot_got, nv_hot_last, nv_hot_apply, nv_take_req;
 static unsigned char *nv_hz, *nv_hbuf, *nv_hmask, *nv_hraw; static size_t nv_hzn, nv_hrawn; static double nv_t_hot;
 static char ls_port2[24]; static unsigned long long nv_hctr[5];   /* (the host's frame counters, with its state) */                        /* (online: the host's port 2 device, both sides - libretro_vx.c game_env) */
@@ -383,7 +383,7 @@ static void nv_make_game (void)
 	snprintf (nv_game, sizeof nv_game, "{\"md5\": \"%s\", \"size\": %lld, \"name\": %s, \"seed\": %u, \"nver\": %d, \"arch\": \"" NV_ARCH "\", "
 		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"hot\": %s, \"port2\": \"%s\", \"host_name\": %s%s%s%s}",
 		nv_rom_md5, nv_rom_size, nm, (unsigned) seed, NV_VER, nv_skip_boot ? "true" : "false", nv_carthw, nv_dacofs, nv_delay,
-		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", nv_card ? "false" : "true", optv ("vectrex_emu_port2"), hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
+		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", nv_card || nv_relay ? "false" : "true", optv ("vectrex_emu_port2"), hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
 }
 static size_t nv_lz (const unsigned char *b, size_t n, unsigned char *out)   /* (out: n + n / 127 + 16 bytes) */
 {
@@ -500,7 +500,7 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 				if (!strcmp (m, "exact") || !strcmp (m, "fast") || !strcmp (m, "dev")) snprintf (nv_uvm2, sizeof nv_uvm2, "%s", m); break; }
 			nv_jitfast = 0; for (size_t i = 0; i + 9 <= n; i++) if (!memcmp (b + i, "\0jit:fast", 9)) nv_jitfast = 1;
 			nv_rg_can = 0; for (size_t i = 0; i + 7 <= n; i++) if (!memcmp (b + i, "\0regame", 7)) nv_rg_can = 1;
-			nv_hot_can = 0; for (size_t i = 0; i + 8 <= n; i++) if (!memcmp (b + i, "\0hotjoin", 8)) nv_hot_can = !nv_card;
+			nv_hot_can = 0; for (size_t i = 0; i + 8 <= n; i++) if (!memcmp (b + i, "\0hotjoin", 8)) nv_hot_can = !nv_card && !nv_relay;   /* (relayed: 2 MB through the meeting point took 15 s, the host's game standing - both start anew) */
 			if (nv_card) { nv_card_done = 0; nv_cidx = 0; nv_log ("player 2 has the game: the SD cards compared"); } else { nv_card_done = 1; nv_ready = 1; nv_log ("player 2 has the game: both start"); } }
 		else if (n >= 2) { const unsigned k = nv_get16 (b); for (int i = 0; i < nv_ncout; i++) if (nv_cout[i].k == k) { memmove (nv_cout + i, nv_cout + i + 1, sizeof *nv_cout * (size_t) (nv_ncout - i - 1)); nv_ncout--; break; } }
 		break;

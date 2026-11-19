@@ -454,6 +454,30 @@ static int vxa_state_file (int save, int slot)
 /* ---------------------------------------------------------------- the core's thread: start, then a refresh each vsync */
 static pthread_t vxa_th; static volatile int vxa_quit, vxa_running = 1, vxa_started, vxa_ok;
 static char vxa_game0[1100]; static volatile int vxa_browser;     /* (the core's ROM browser asked for: the library instead) */
+/* the app's busiest threads over the last stat period (/proc/self/task: user+system ticks) - what loads the processor */
+#include <dirent.h>
+#define VXA_TH 96
+static int vxa_th_id[VXA_TH]; static long vxa_th_t[VXA_TH]; static int vxa_th_n;
+static void vxa_threads (double secs)
+{
+	int id[VXA_TH]; long tk[VXA_TH]; char nm[VXA_TH][20]; int n = 0; long all = 0;
+	DIR *d = opendir ("/proc/self/task"); if (!d) return; struct dirent *de;
+	while ((de = readdir (d)) && n < VXA_TH) { if (de->d_name[0] < '0' || de->d_name[0] > '9') continue;
+		char f[64], b[512]; snprintf (f, sizeof f, "/proc/self/task/%s/stat", de->d_name); int fd = open (f, O_RDONLY); if (fd < 0) continue;
+		int r = (int) read (fd, b, sizeof b - 1); close (fd); if (r <= 0) continue; b[r] = 0;
+		char *o = strchr (b, '('), *c = strrchr (b, ')'); if (!o || !c) continue;
+		int l = (int) (c - o - 1); if (l > 19) l = 19; memcpy (nm[n], o + 1, l); nm[n][l] = 0;
+		long ut = 0, st = 0; if (sscanf (c + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld", &ut, &st) != 2) continue;
+		id[n] = atoi (de->d_name); tk[n] = ut + st; n++; }
+	closedir (d);
+	long dl[VXA_TH]; for (int i = 0; i < n; i++) { dl[i] = 0; for (int j = 0; j < vxa_th_n; j++) if (vxa_th_id[j] == id[i]) { dl[i] = tk[i] - vxa_th_t[j]; break; } all += dl[i]; }
+	const int first = vxa_th_n == 0; vxa_th_n = n; memcpy (vxa_th_id, id, n * sizeof *id); memcpy (vxa_th_t, tk, n * sizeof *tk);
+	if (first || secs <= 0) return;
+	const double hz = sysconf (_SC_CLK_TCK); char out[400]; int k = snprintf (out, sizeof out, "threads: all %.0f%% of a core", all / hz / secs * 100);
+	for (int m = 0; m < 6; m++) { int bi = -1; for (int i = 0; i < n; i++) if (dl[i] > 0 && (bi < 0 || dl[i] > dl[bi])) bi = i; if (bi < 0) break;
+		k += snprintf (out + k, sizeof out - k, ", %s %.0f%%", nm[bi], dl[bi] / hz / secs * 100); dl[bi] = 0; if (k >= (int) sizeof out - 30) break; }
+	vlog ("%s", out);
+}
 static volatile int vxa_stat_rps, vxa_stat_pps, vxa_stat_ms;
 extern int vx_app_noshape, vx_app_osd_on;
 /* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
@@ -485,7 +509,7 @@ static void vxa_perf_hint (double fps)
 }
 static void *vxa_main (void *u)
 {
-	(void) u; vxa_tid = gettid (); vxa_fast_cores ();
+	(void) u; vxa_tid = gettid (); vxa_fast_cores (); pthread_setname_np (pthread_self (), "vx-game");
 	if (!vxa_egl_init ()) { vxa_ok = -1; return NULL; }
 	vxa_present_setup ();
 	vx_app_noshape = 1;                                  /* (the app places the picture and the deck: no bars to the screen's shape) */
@@ -542,6 +566,7 @@ static void *vxa_main (void *u)
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld, sound %.0f ms, %u dry, %u dropped%s",
 				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
+			vxa_threads (t);
 			runs = pres = ticks = late = 0; t_run = t_max = t_cpu = 0; vxa_under = vxa_drop = 0; }
 	}
 	vlog ("the core ends"); if (vxa_as) { AAudioStream_requestStop (vxa_as); AAudioStream_close (vxa_as); vxa_as = NULL; }

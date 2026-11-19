@@ -2191,7 +2191,11 @@ class Runner(threading.Thread):
                 self.then_flags = 0                     # (a flag for the frame after: App.restart's RESET)
                 if self.net is not None:                # online: both players' input for this frame (the RESET button
                     req, self.port_req = self.port_req, 0              #  too: it reaches both machines on one frame;
-                    got = self.net.exchange((jx, jy, btn, (fl & 4) | req))   #  so does a 'take port', 0x10 / 0x20)
+                    rg, self.rg_flag = getattr(self, 'rg_flag', 0), 0              #  another game: the host's flag 8)
+                    got = self.pending_got if getattr(self, 'pending_got', None) is not None else self.net.exchange((jx, jy, btn, (fl & 4) | req | rg))
+                    self.pending_got = None
+                    if got is not None and (got[0][3] & 8) and getattr(self, 'rg_due', None) is not None and not getattr(self, 'rg_switched', False):
+                        self.rg_switched = True; self.rg_got = got; self.stop = True; break   # (both: the next game before this frame)
                     if got is None:
                         self.net = None; self.net_lost = True
                     else:
@@ -5691,7 +5695,7 @@ class App:
                 g['jit_fast'] = bool(rom is not None and g.get('arch') and g.get('arch') == netplay.arch())
                 g['uvm2_net'] = netplay.uvm2_agree(g.get('uvm2', 'exact'), getattr(self, 'uvm2_mode', 'exact'))
                 net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else '')
-                           + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
+                           + netplay.REGAME_TAG.decode() + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
                                                                     # (the same processor type on both sides: the PiTrex JIT
                                                                     #  runs at full speed - its blocks fall the same on both)
                 if rom and g.get('card'):                           # (the host's card list: which files are the same here)
@@ -6043,8 +6047,61 @@ class App:
             self.flash('ONLINE CODE: ' + ' '.join(net.code), *rows, secs=WAIT_MSG_S)
         else:
             self.flash('ONLINE: WAITING FOR PLAYER 2', *rows, secs=WAIT_MSG_S)
+    def net_regame(self, rom):
+        """the host, online: another game for both (the iOS app's way, R / r and a flag 8 in the host's input) - True
+        when offered; False: not possible (player 2 can not follow, a card game, VecLink) - online play ends as before"""
+        net = getattr(self, 'net', None)
+        import netplay
+        if net is None or net.lost or getattr(self, 'net_role', '') != 'host' or not getattr(net, 'peer_regame', False):
+            return False
+        if self.card_dir(rom) or self.card_dir(getattr(self, 'net_rom', '') or '') or getattr(self.run, 'core2', None) is not None:
+            return False
+        g = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw, dacofs=float(self.unit.get('dacofs', 0.0))))
+        if game_turns(rom): g['turns'] = True
+        g['delay'] = net.delay
+        net.regame_offer(g); self.net_rg_pick = (os.path.abspath(rom), g)
+        self.net_flash('ONLINE: STARTING %s' % os.path.splitext(os.path.basename(rom))[0].upper()[:24], 'FOR BOTH...', secs=3)
+        return True
+    def net_regame_poll(self):
+        """(the Tk side, each poll: the host's offer answered; player 2's offer looked up; the flag: both switch)"""
+        net = getattr(self, 'net', None)
+        if net is None or not getattr(self, 'net_game', None):
+            return
+        import netplay
+        tr = os.environ.get('VECTREX_TEST_REGAME')               # (test: "frame:rom" - the host picks that game then)
+        if tr and not getattr(self, 'test_rg_done', False) and getattr(self, 'net_role', '') == 'host':
+            fr, _, trom = tr.partition(':')
+            if net.f >= int(fr): self.test_rg_done = True; self.restart(trom)
+        if net.rg_answer is not None:                          # (the host: player 2 has it - the flag in the next input)
+            ok, net.rg_answer = net.rg_answer, None
+            pick = getattr(self, 'net_rg_pick', None)
+            if ok and pick:
+                self.run.rg_due = pick; self.run.rg_flag = 8
+            else:
+                self.net_flash('ONLINE: THE OTHER PLAYER', 'DOES NOT HAVE THAT GAME', secs=5); self.net_rg_pick = None
+        if net.rg_offer is not None:                           # (player 2: the host's next game - here?)
+            g = net.rg_offer[1]
+            dirs = [os.path.join(ROOT, 'roms')] + ([os.path.dirname(os.path.abspath(self.args.rom))] if self.args.rom else [])
+            rom = netplay.find_rom(g.get('md5'), g.get('size', -1), dirs)
+            net.regame_reply(rom is not None)
+            if rom is not None:
+                self.net_rg_pick = (os.path.abspath(rom), g); self.run.rg_due = self.net_rg_pick
+            else:
+                self.net_flash('ONLINE: YOU DO NOT HAVE', os.path.splitext(g.get('name', '?'))[0].upper()[:24], secs=5)
+        run = self.run
+        if getattr(run, 'rg_switched', False) and getattr(run, 'rg_due', None) is not None:   # (both: the switch, at the flag's frame)
+            rom, g = run.rg_due; run.rg_due = None; net.rg_ans_out = None
+            self.net_game, self.net_rom = g, rom; self.net_rg_pick = None
+            Core.force_seed = g.get('seed'); self.net_rg_now = True
+            try:
+                self.restart(rom)
+            finally:
+                Core.force_seed = None; self.net_rg_now = False
+            self.flash('ONLINE: NOW PLAYING', os.path.splitext(os.path.basename(rom))[0].upper()[:24], secs=3)
+            self.chat_add('sys', 'Both switched to %s.' % os.path.splitext(os.path.basename(rom))[0])
     def net_poll(self):
         """the Tk side: the connection made (the game loaded, both switched on at once), or lost"""
+        self.net_regame_poll()
         res = getattr(self, 'net_result', None)
         if res is not None:
             self.net_result = None
@@ -6135,12 +6192,11 @@ class App:
         if net is not None and getattr(self, 'net_game', None) and not net.lost:
             import netplay
             out = net.out_s()
-            if out > 0:                                         # (the connection gone: both wait - how long still)
-                left_s = max(0, int(math.ceil(netplay.TIMEOUT - out)))
+            if out > 0:                                         # (the connection gone: both wait for it - only Leave ends a game)
                 if not getattr(self, 'net_out', False):
                     self.net_out = True
-                    self.chat_add('sys', 'The connection is gone - waiting %d seconds for %s.' % (int(netplay.TIMEOUT), self.peer_label()))
-                self.flash('CONNECTION LOST', 'WAITING FOR %s' % self.peer_label().upper()[:22], '%d' % left_s, secs=0.6)
+                    self.chat_add('sys', 'No connection - waiting for %s. Online > Leave to stop.' % self.peer_label())
+                self.flash('NO CONNECTION', 'WAITING FOR %s' % self.peer_label().upper()[:22], 'LEAVE TO STOP', secs=0.6)
             elif getattr(self, 'net_out', False):
                 self.net_out = False
                 self.chat_add('sys', 'The connection is back.')
@@ -7107,14 +7163,17 @@ class App:
             except (ValueError, OSError) as e:
                 self.rom_error('%s:\n%s' % (os.path.basename(rom), e)); return
         net_ = getattr(self, 'net', None)
-        if getattr(self, 'net_game', None) and net_ is not None and not net_.lost and net_.f > 0 and \
+        if getattr(self, 'net_game', None) and net_ is not None and not net_.lost and net_.f > 0 and not getattr(self, 'net_rg_now', False) and \
                 os.path.abspath(rom or '') == os.path.abspath(getattr(self, 'net_rom', '') or ''):
             self.net_flash('ONLINE: NOT WHILE CONNECTED', 'IT STARTS THE GAME AGAIN HERE', 'ONLY: KEPT FOR THE NEXT GAME', secs=5)
             self.chat_add('sys', 'That setting starts the game again - on this PC only, so the two games would part. It '
                           'is kept for the next game.')
             return                                              # (the same game started again on one side: refused -
                                                                 #  Cartridge hardware, USB keys, a tab's reset...)
-        if getattr(self, 'net_game', None) and os.path.abspath(rom or '') != os.path.abspath(getattr(self, 'net_rom', '') or ''):
+        if getattr(self, 'net_game', None) and os.path.abspath(rom or '') != os.path.abspath(getattr(self, 'net_rom', '') or '') \
+                and not getattr(self, 'net_rg_now', False):
+            if self.net_regame(rom):                            # (the host's pick: started for both - the other side follows)
+                return
             self.net_end('ONLINE: GAME CHANGED')                # (the other side would not follow: online play ends)
         old = self.run
         old.stop = True; old.join(timeout=2)
@@ -7196,7 +7255,11 @@ class App:
         net = getattr(self, 'net', None)
         if ng and net is not None and not net.lost:             # (online: on, and the frames counted from this power-on)
             run.power = True; run.crt.volume = run.crt.volume or 0.5
-            net.reset(); run.net = net
+            if getattr(self, 'net_rg_now', False):              # (another game in a game: the frames go on - the old
+                run.pending_got = getattr(old, 'rg_got', None)  #  game's last input runs the new game's first frame)
+            else:
+                net.reset()
+            run.net = net
             run.ports = {'host': 1, 'join': 2}                  # (one player a port, always: a resting stick drifts)
         if run.power:
             run.flags = self.power_flags()

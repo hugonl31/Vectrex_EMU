@@ -3,6 +3,27 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.7.0
+
+**Online play**
+* The host can change the game while connected: the game picked in the browser starts for both players at the same
+  moment, player 2's copy found by its MD5 (a player without the game is told, and the game goes on). This works
+  between PCs and with the iPhone / iPad app; UVMC2, PiTrex and VecLink games still start a new session.
+* A dropout no longer ends a game: both wait for the connection to come back ("No connection - waiting"), and only
+  Leave ends it. The host's game goes on after the other player leaves, and it is hosted again.
+* The power-on is the same on both sides whatever each machine played before: the RAM's random seed counted the
+  machine's own power-ons, and two machines with a different history powered the same game on differently - out of
+  step soon after the start or after a game change.
+
+**The RetroArch core**
+* A modern control deck (Control deck look; the default on Android and iOS, the classic strip on the PC): rounded
+  panels of one width whatever they show - the figures (PAUSED, OFF), port 2's device, the cartridge (OUT), RESET -
+  and the volume as a knob, or as a bar on the slim deck; the pop-up deck has a tab under the picture.
+* The overlay is drawn with fewer texture reads (the afterglow read once per pixel instead of six times): the same
+  picture (x1.0000 in light, at most 8 of 255 apart in a few pixels), less work for a phone's or handheld's GPU.
+* For the iPhone / iPad app: joining a running game without a reset (app to app), RESET and another game for both
+  players, the deck's states.
+
 ## v1.6.9
 
 * The phosphor trail on black now looks as it did through an overlay: its faint end is lifted, so a moving object's

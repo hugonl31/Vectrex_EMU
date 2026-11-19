@@ -45,8 +45,9 @@ MAGIC = b'VXN1'
 DELAY = 3                   # frames of input delay (each side's input runs this many frames after it was read): at
                             # least this; the host measures the round trip and adds what it needs (the game's 'delay')
 KEEP = 16                   # inputs repeated in every packet
-TIMEOUT = 30.0              # seconds without the other side (no packet, or no new input while the game waits for it):
-                            # the connection is lost - until then both wait, a countdown on the screen
+TIMEOUT = 6.0               # seconds without the other side (no packet, or no new input while the game waits for it):
+                            # "no connection" said - both wait for it as long as it takes, only Leave ends a game (the
+                            # owner, 2026-11-19 - as the iOS app; it used to end after 30 s)
 JOIN_SILENT = 20.0          # (joining: seconds without a packet from the host before giving up)
 OUT_GRACE = 1.5             # (seconds the game waits before the countdown shows: a connection drop)
 SERVER = (os.environ.get('VECTREX_NET_SERVER', '172.233.60.40'), int(os.environ.get('VECTREX_NET_SERVER_PORT', '7745')))
@@ -71,6 +72,7 @@ PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
 
 
 JIT_FAST = b'\x00jit:fast'   # (player 2's yes, with its accept: the same processor type - the PiTrex JIT at full speed)
+REGAME_TAG = b'\x00regame'   # (player 2's yes: it follows the host to another game in a game - the iOS app's netvx.c too)
 UVM2_TAG = b'\x00uvm2:'      # (player 2's yes: + the UVMC2 mode both play in - the lower of the two players')
 UVM2_RANK = ('exact', 'fast', 'dev')
 
@@ -234,6 +236,10 @@ class NetPlay:
         self.candidates = []                            # (the other side's addresses to try)
         self.reset()
         self.lost = False
+        self.gap = False
+        self.peer_regame = False                                # (another game in a game, both: the host's pick - R / r, a
+        self.rg_seq = 0; self.rg_out = None; self.rg_t = 0.0    #  flag 8 in the host's input switches both at one frame)
+        self.rg_offer = None; self.rg_answer = None; self.rg_ans_out = None                                        # (no connection for a while: waited for, not the end)
         self.stall_s = 0.0                              # (time spent waiting for the other side: the report)
         # the chat (the Chat window): lines sent until the other side confirms them ('T' / 'A'), each shown once
         self.chat_lock = threading.Lock()
@@ -380,6 +386,7 @@ class NetPlay:
                         q = self._recv()
                         if q and q[0] == ord('A'):
                             game['jit_fast'] = JIT_FAST in q[1]   # (player 2 has the same processor type)
+                            self.peer_regame = REGAME_TAG in q[1]    # (it can follow the host to another game)
                             game['uvm2_net'] = uvm2_from_accept(q[1])   # (the UVMC2 mode both play in)
                             return game
                         if q and q[0] == ord('N') and q[1] == VERSION_NO:
@@ -511,6 +518,28 @@ class NetPlay:
                     time.sleep(0.001)
         return max(got) if got else 0.1
 
+    def regame_offer(self, game):
+        """host: another game for both (player 2 answers: rg_answer True / False)"""
+        self.rg_seq = (self.rg_seq + 1) & 0xFFFF; self.rg_out = json.dumps(game).encode(); self.rg_t = 0.0; self.rg_answer = None
+    def regame_reply(self, ok):
+        """player 2: the host's next game here (or not) - said until the switch"""
+        if self.rg_offer is None:
+            return
+        seq = self.rg_offer[0]; self.rg_offer = None
+        pk = struct.pack('<HB', seq, 1 if ok else 0)
+        for _ in range(5): self._send(ord('r'), pk)
+        self.rg_ans_out = pk if ok else None; self.rg_t = 0.0
+    def regame_tick(self):
+        """(each frame / idle: the offer or the answer sent again until it is taken)"""
+        now = time.perf_counter()
+        if now - self.rg_t < 0.1:
+            return
+        self.rg_t = now
+        if self.rg_out is not None:
+            self._send(ord('R'), struct.pack('<H', self.rg_seq) + self.rg_out[:590])
+        if self.rg_ans_out is not None:
+            self._send(ord('r'), self.rg_ans_out)
+
     def accept(self, ok, why=''):
         """join: the game is there (or not)"""
         for _ in range(5):
@@ -606,16 +635,16 @@ class NetPlay:
                 t_out = now                              #  ends, before the next input comes, it read as 30 s of nothing)
             if now - self.last_send > 0.010:
                 self._send_inputs()
-            self._drain()
+            self._drain(); self.regame_tick()
             if f in self.remote:
                 break
-            if now - self.last_heard > TIMEOUT or (now - t_out > TIMEOUT and not self.pause_on):
-                self.lost = True                         # (nothing from the other side - or no new input: it can not
-                self.wait_t0 = None                      #  hear us; a paused one still says it is there)
-                self.log('connection lost (no input for frame %d)' % f)
-                return None
-            time.sleep(0.0005)
+            if (now - self.last_heard > TIMEOUT or (now - t_out > TIMEOUT and not self.pause_on)) and not self.gap:
+                self.gap = True                          # (nothing from the other side - or no new input: a gap,
+                self.log('no connection (no input for frame %d) - waiting' % f)   #  waited out; only Leave ends)
+            time.sleep(0.002 if self.gap else 0.0005)
         self.wait_t0 = None
+        if self.gap:
+            self.gap = False; self.log('connected again')
         self.stall_s += time.perf_counter() - t_wait
         self._send_inputs()
         a, b = self.local[f], self.remote.pop(f)     # (this side's own input kept: every packet repeats the last KEEP
@@ -646,10 +675,8 @@ class NetPlay:
             self._send_pause()
             if self.chat_out and now - self.chat_t > 0.15:
                 self._send_chat(now)
-        self._drain()
-        if now - self.last_heard > TIMEOUT:
-            self.lost = True
-            self.log('connection lost (nothing from the other side while paused)')
+        self._drain(); self.regame_tick()
+        self.gap = now - self.last_heard > TIMEOUT             # (nothing heard while paused: a gap, waited out)
 
     def out_s(self):
         """how long the connection has been gone (0: it is not) - the game waits for the other side longer than
@@ -745,6 +772,16 @@ class NetPlay:
                 on, seq = struct.unpack_from('<BH', body)
                 if 0 < (seq - self.pause_seq) & 0xFFFF < 0x8000:
                     self.pause_on, self.pause_seq, self.pause_peer = bool(on), seq, True
+            elif kind == ord('R') and len(body) > 2 and self.role != 'host':   # (the host's next game)
+                seq = struct.unpack_from('<H', body)[0]
+                if seq != getattr(self, 'rg_seen', None):
+                    self.rg_seen = seq
+                    try: self.rg_offer = (seq, json.loads(body[2:].decode('utf-8', 'replace')))
+                    except ValueError: pass
+            elif kind == ord('r') and len(body) >= 3 and self.role == 'host':   # (player 2: it has it, or not)
+                seq, ok = struct.unpack_from('<HB', body)
+                if self.rg_out is not None and seq == self.rg_seq:
+                    self.rg_out = None; self.rg_answer = bool(ok)
             elif kind == ord('Q'):                       # (the other side quit)
                 self.lost = True; self.left = True
                 self.log('the other player left')
@@ -951,4 +988,4 @@ class LanListener(threading.Thread):
 def new_game(rom_path, settings):
     """the host's game: the ROM's identity and what must be the same on both sides"""
     return dict(md5=rom_md5(rom_path), size=os.path.getsize(rom_path), name=os.path.basename(rom_path),
-                seed=random.getrandbits(31), nver=NET_VER, arch=arch(), **settings)
+                seed=random.getrandbits(31), nver=NET_VER, arch=arch(), regame=True, **settings)

@@ -2528,6 +2528,8 @@ class App:
                 self.ren = vecrender.make_renderer(self.screen.winfo_id(), self.screen)
                 self.ren.reserve = self.knob_reserve()
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
+                self.hdr_mode = c0.get('hdr', 'auto'); self.hdr_frac = float(c0.get('hdr_frac', 1.0))   # (View > HDR)
+                self.root.after(400, self.hdr_apply)
             except Exception as e:                              # noqa: fall back to the Tk canvas
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
@@ -2987,6 +2989,10 @@ class App:
             item(m, 'Quit', '', self.quit)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='View', menu=m, underline=1)
             check(m, 'Full screen', 'F11', lambda: self.full, self.toggle_full)
+            if IS_WIN and self.ren and hasattr(self.ren, 'hdr_start'):
+                check(m, 'HDR', '', lambda: getattr(self, 'hdr_mode', 'auto') != 'off', self.toggle_hdr,
+                      "An HDR monitor (Windows: Settings > Display > Use HDR): the brightest light above white, up to the "
+                      "monitor's peak; the rest as on any screen. Off: an ordinary picture.")
             check(m, 'Always on top', '', lambda: self.on_top, self.toggle_on_top,
                   "The emulator's window stays above every other program's window, also when you click elsewhere.")
             item(m, 'Bigger', '+', lambda: self.zoom_step(1.1))
@@ -5401,6 +5407,24 @@ class App:
         return 'break'
 
     # ---------------------------------------------------------------- online play (netplay.py, a prototype)
+    def hdr_apply(self):
+        """View > HDR: the picture through an HDR monitor's headroom when Windows has HDR on (vecrender.hdr_start)"""
+        r = self.ren
+        if not r or not hasattr(r, 'hdr_start'):
+            return
+        if getattr(self, 'hdr_mode', 'auto') == 'off':
+            if r.hdr:
+                r.hdr_stop(); print('HDR: off', flush=True)
+            return
+        msg = r.hdr_start(force=bool(os.environ.get('VECTREX_TEST_HDR')), frac=getattr(self, 'hdr_frac', 1.0))
+        if msg:
+            print(msg, flush=True)
+        if r.hdr is None and getattr(self, 'hdr_mode', 'auto') == 'auto':
+            self.root.after(5000, self.hdr_apply)                # (HDR switched on in Windows later: taken up)
+    def toggle_hdr(self):
+        self.hdr_mode = 'off' if getattr(self, 'hdr_mode', 'auto') != 'off' else 'auto'
+        self.hdr_apply(); self.save_settings()
+        self.flash('HDR: ' + ('ON' if self.ren and self.ren.hdr else 'OFF' if self.hdr_mode == 'off' else 'NO HDR MONITOR'), secs=2)
     def net_start(self):
         """--net-host / --net-join / --net-online: as the Online window's Host and Join"""
         a = self.args
@@ -8539,6 +8563,7 @@ class App:
         d['imager_note'] = getattr(self, 'imager_note', True)
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'
+        d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name

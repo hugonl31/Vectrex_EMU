@@ -5607,8 +5607,13 @@ class App:
         self.net_msg = (' - '.join(r.lower() for r in rows if r) + '.').capitalize()
         self.flash(*rows, secs=secs)
     def net_leave(self):
-        """Online > Leave: the game goes on here alone (or the waiting stops)"""
+        """Online > Leave: the game goes on here alone (or the waiting stops); this PC's own network ends too"""
         self.net_rehost_left = 0
+        try:
+            import adhoc
+            adhoc.stop()
+        except Exception:
+            pass
         if getattr(self, 'net_pending', None) is not None:
             self.net_cancel = True
             self.net_msg = 'Stopped waiting.'
@@ -6717,6 +6722,37 @@ class App:
             t.after(1000, lan_refresh)
         g_col = g
         t.after(300, lan_refresh)
+        # nearby: no router, no internet - this PC's own Wi-Fi network (adhoc.py), or the nearby host's
+        import adhoc
+        nb = box('NEARBY: NO ROUTER, NO INTERNET')
+        r5 = tk.Frame(nb, bg=bg); r5.pack(fill='x')
+        ah_ssid, ah_pw = adhoc.creds(os.path.dirname(SETTINGS_F))
+        ah_l = tk.Label(nb, text='Network %s   password %s   (kept on this PC: the next time the other device knows it)' % (ah_ssid, ah_pw),
+                        fg=dim, bg=bg, font=f9, anchor='w', justify='left', wraplength=560)
+        def ah_host():
+            if self.net_busy():
+                return self.flash('ONLINE: LEAVE THE GAME FIRST', secs=2)
+            ah_l.config(text='Making the network %s...' % ah_ssid, fg=deck.HI)
+            def done(ok, msg):
+                def ui():
+                    if ok:
+                        ah_l.config(text='Your network: %s   password: %s\nPlayers join it in their Wi-Fi settings, then pick your game '
+                                         '(Games on this network, or Join the nearby host).' % (ah_ssid, ah_pw), fg=deck.HI)
+                        self.net_begin('host', direct_port=netplay.PORT); sync()
+                    else:
+                        ah_l.config(text=msg, fg=deck.WARN)
+                    print('online: ad hoc %s' % ('up: ' + ah_ssid if ok else msg), flush=True)
+                self.root.after(0, ui)
+            adhoc.start(os.path.dirname(SETTINGS_F), done)
+        def ah_join():
+            a = adhoc.host_addr(netplay.lan_addresses())
+            if not a:
+                return ah_l.config(text="Not on a network: join the host's network first (DIRECT-VX-VECTREX-..., VECTREX-EMU-... or "
+                                        "the host phone's hotspot)", fg=deck.WARN)
+            self.net_last_join = a; self.net_via_room = False; self.net_begin('join', target=a); sync()
+        ah_host_b = deck._button(r5, 'Make a network and host', ah_host, self, small=True); ah_host_b.pack(side='left')
+        ah_join_b = deck._button(r5, 'Join the nearby host', ah_join, self, small=True); ah_join_b.pack(side='left', padx=(6, 0))
+        ah_l.pack(fill='x', pady=(4, 0))
         # now
         n = box('NOW')
         now_l = tk.Label(n, text='', fg=g, bg=bg, font=f9, anchor='w', justify='left', wraplength=560); now_l.pack(fill='x')
@@ -6777,6 +6813,10 @@ class App:
                 (lan_host_b, "Host on the local network, no internet needed: your game shows in player 2's Online window "
                              "under Games on this network (or they type your address). Tick VecLink game for a game made "
                              "for two consoles."),
+                (ah_host_b, "This PC makes a Wi-Fi network of its own (no router, no internet) and hosts the game in the slot on "
+                            "it: players join the network in their Wi-Fi settings."),
+                (ah_join_b, "This PC is on a nearby host's network (a phone's, a PC's): join its game - the network's host is "
+                            "its router."),
                 (se, "The server that introduces the two players and passes the game on when two routers will not "
                      "connect directly. Both players need the same one."))
         for w, txt in tips:

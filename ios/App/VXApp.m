@@ -1192,6 +1192,14 @@ NSString *vxa_net_ip (void)                          /* (this phone's address on
 	if (a) freeifaddrs (a);
 	return out;
 }
+/* the nearby host: the address .1 of the Wi-Fi this phone joined - an ad-hoc network's host is its router (an Android
+ * phone's Wi-Fi Direct group 192.168.49.1, an iPhone's hotspot 172.20.10.1, a Windows PC's 192.168.137.1, Linux 10.42.0.1) */
+NSString *vxa_net_gateway (void)
+{
+	NSString *ip = vxa_net_ip (); NSRange d = [ip rangeOfString:@"." options:NSBackwardsSearch];
+	if ([ip isEqualToString:@"?"] || d.location == NSNotFound) return nil;
+	return [[ip substringToIndex:d.location] stringByAppendingString:@".1"];
+}
 static NSString *vxa_net_rom, *vxa_net_join_rom;    /* (the game this phone hosts / joins) */
 static int vxa_net_on;                               /* (1 while a game for two runs) */
 static NSMutableDictionary<NSString *, NSString *> *vxa_md5s;   /* (path -> its MD5: the library, for the host's game) */

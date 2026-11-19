@@ -92,6 +92,14 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 			@[ @"In the game room", @"Public: anyone can join it there", ^{ [ws host:0]; } ],
 			@[ @"With a code", @"Private: only who you tell the code", ^{ [ws host:1]; } ],
 			@[ @"On this Wi-Fi", @"No internet needed: players on the same network", ^{ [ws host:2]; } ] ] ]];
+		/* nearby, no router: the host makes the network (an Android phone or a PC does it itself; an iPhone: its Personal
+		 *  Hotspot), the others join it in Settings > Wi-Fi - the network's host is its router (.1) */
+		NSString *gw = vxa_net_gateway ();
+		[s addObject:@[ @"Nearby - no router, no internet", @"Host: turn on Personal Hotspot (Settings > Personal Hotspot), then host here; players join your iPhone's network in their Wi-Fi settings. Join: first join the host's network (DIRECT-VX-VECTREX-..., VECTREX-EMU-... or the host's hotspot) in Settings > Wi-Fi.", @[
+			@[ @"Host on your Personal Hotspot", @"Your game on your iPhone's own network", ^{ [ws host:2]; } ],
+			@[ @"Join the nearby host", gw ? [NSString stringWithFormat:@"The host of this Wi-Fi: %@", gw] : @"Join the host's network first", ^{
+				NSString *g = vxa_net_gateway (); if (!g) { [ws note:@"Join the host's network first: Settings > Wi-Fi"]; return; }
+				ulog ([NSString stringWithFormat:@"online: joining the nearby host %@", g]); vx_net_join (g.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); } ] ] ]];
 		[s addObject:@[ @"Join", @"", @[ @[ @"Enter a code", @"Five letters from the host", ^{ [ws ask:@"The host's code" then:^(NSString *v) { vx_net_join (v.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); }]; } ],
 			@[ @"Enter an address", @"A host on this Wi-Fi (its address)", ^{ [ws ask:@"The host's address" then:^(NSString *v) { vx_net_join (v.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); }]; } ] ] ]];
 		NSMutableArray *room = [NSMutableArray array]; NSDictionary *r = _st[@"room"];

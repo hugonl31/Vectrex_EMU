@@ -30,6 +30,8 @@ typedef SOCKET nv_sock_t;
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <ifaddrs.h>                             /* (each network's own broadcast address: an ad-hoc one - a phone's Wi-Fi Direct group, a hotspot - too) */
+#include <net/if.h>
 typedef int nv_sock_t;
 #define NV_BADSOCK (-1)
 #define nv_closesock close
@@ -566,6 +568,18 @@ static void nv_lan_beacon (void)
 	char ip[64]; nv_lan_addr (ip, sizeof ip); unsigned a1, a2, a3, a4;   /* (each network's own broadcast address: a /24 assumed, as the desktop) */
 	if (sscanf (ip, "%u.%u.%u.%u", &a1, &a2, &a3, &a4) == 4) { char bc[32]; snprintf (bc, sizeof bc, "%u.%u.%u.255", a1, a2, a3);
 		if (nv_addr (&a, bc, NV_LANPORT)) sendto (b, j, n, 0, (struct sockaddr *) &a, sizeof a); }
+#ifndef _WIN32
+	/* (and every other network of this device: an ad-hoc one has no way to the internet - a phone's Wi-Fi Direct group (p2p0),
+	 *  its hotspot - and 255.255.255.255 leaves by the main one only) */
+	{ struct ifaddrs *ia = NULL; if (getifaddrs (&ia) == 0) { for (struct ifaddrs *i = ia; i; i = i->ifa_next) {
+		if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET || (i->ifa_flags & IFF_LOOPBACK) || !(i->ifa_flags & IFF_UP)) continue;
+		struct sockaddr_in t; memset (&t, 0, sizeof t); t.sin_family = AF_INET; t.sin_port = htons (NV_LANPORT);
+		if ((i->ifa_flags & IFF_BROADCAST) && i->ifa_broadaddr && i->ifa_broadaddr->sa_family == AF_INET) t.sin_addr = ((struct sockaddr_in *) i->ifa_broadaddr)->sin_addr;
+		else if (i->ifa_netmask) t.sin_addr.s_addr = ((struct sockaddr_in *) i->ifa_addr)->sin_addr.s_addr | ~((struct sockaddr_in *) i->ifa_netmask)->sin_addr.s_addr;
+		else continue;
+		sendto (b, j, n, 0, (struct sockaddr *) &t, sizeof t); }
+		freeifaddrs (ia); } }
+#endif
 }
 static void nv_lan_take (void)
 {

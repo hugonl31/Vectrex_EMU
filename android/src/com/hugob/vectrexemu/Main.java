@@ -177,7 +177,8 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (Online.playing && stack.isEmpty ()) VX.net (4, 0);
 	}
 	@Override protected void onPause () { super.onPause (); VX.setRunning (false); if (Online.playing) VX.net (4, 1); log ("app in the background"); }
-	@Override protected void onDestroy () { super.onDestroy (); log ("the app ends"); }
+	@Override protected void onDestroy () { super.onDestroy (); Adhoc.stop (this); log ("the app ends"); }
+	@Override public void onRequestPermissionsResult (int code, String[] perms, int[] res) { if (code == 7) Adhoc.onPermission (this, res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED); }
 
 	String defaults ()
 	{
@@ -211,8 +212,11 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (g != null) { log ("test: load " + g); VX.load (g); Library.remember (this, g); }
 		if (ho != null) h.postDelayed (() -> { log ("test: host " + ho); int mode = Integer.parseInt (ho); Online.hostRom = VX.game (); Online.hostMode = mode;
 			VX.netHost (mode, Online.clean (Online.name (this)), Online.key (this), VX.game (), Online.skip ()); }, g != null ? 1500 : 0);
+		if (i.getStringExtra ("vx.adhoc") != null) h.postDelayed (() -> { log ("test: ad hoc host");   /* (as "Make a network and host") */
+			Adhoc.start (this, (ok, msg) -> { log ("test: ad hoc " + (ok ? "up: " + Adhoc.ssidOn + " / " + Adhoc.pass (this) : msg)); if (ok) { Online.hostRom = VX.game (); Online.hostMode = 2;
+				VX.netHost (2, Online.clean (Online.name (this)), Online.key (this), VX.game (), Online.skip ()); } }); }, 1500);
 		if (jo != null) h.postDelayed (() -> { log ("test: join " + jo); VX.netJoin (jo, Online.clean (Online.name (this)), Online.key (this)); }, g != null ? 1500 : 0);
-		i.removeExtra ("vx.game"); i.removeExtra ("vx.host"); i.removeExtra ("vx.join"); i.removeExtra ("vx.opts"); i.removeExtra ("vx.snap");
+		i.removeExtra ("vx.game"); i.removeExtra ("vx.host"); i.removeExtra ("vx.join"); i.removeExtra ("vx.opts"); i.removeExtra ("vx.snap"); i.removeExtra ("vx.adhoc");
 	}
 	String firstGame ()
 	{

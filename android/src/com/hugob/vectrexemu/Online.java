@@ -126,7 +126,7 @@ final class Online {
 	static void show (Main m) { if (!m.stack.isEmpty () || !m.started) return; Main.log ("ui online opened"); Screen s = new Screen (m); m.push (s); }
 	static final class Screen extends Screens.Panel {
 		String last = ""; int shownPlay, sawSetup; final Runnable poll = this::poll;
-		Screen (Main m) { super (m, "Online"); VX.net (6, 1); VX.net (5, 0); onClose = () -> { removeCallbacks (poll); VX.net (6, 0); }; poll (); }
+		Screen (Main m) { super (m, "Online"); Adhoc.lock (m, true); VX.net (6, 1); VX.net (5, 0); onClose = () -> { removeCallbacks (poll); VX.net (6, 0); Adhoc.lock (m, false); }; poll (); }
 		int phase (JSONObject st) { return st.optInt ("phase"); }
 		void poll ()
 		{
@@ -147,17 +147,19 @@ final class Online {
 				header ("Playing online");
 				row ("With " + (peer.isEmpty () ? "the other player" : peer), st.optInt ("delay") + " frames of input delay" + (st.optInt ("desync", -1) >= 0 ? " - OUT OF STEP: the two games differ" : ""), null);
 				row ("Chat", "A line to the other player", () -> Screens.ask (m, "Chat", "A line to the other player", false, VX::netChat));
-				row ("Leave the online game", "", () -> { VX.net (3, 0); playing = false; m.pop (); });
+				row ("Leave the online game", Adhoc.on ? "Your network " + Adhoc.ssidOn + " ends too" : "", () -> { VX.net (3, 0); playing = false; Adhoc.stop (m); m.pop (); });
 				foot ("You are player " + (role == 1 ? 1 : 2) + ". " + (st.optInt ("relay") != 0 ? "The game goes through the meeting point (relayed): a little more delay." : "A direct connection."));
 			} else if (ph >= 1 && ph <= 3) {
 				String t, d; String code = st.optString ("code", "");
 				if (role == 1) { int mode = st.optInt ("mode");
 					if (ph == 1) { t = "Asking the meeting point for a code..."; d = ""; }
-					else if (mode == 2) { t = "Waiting on this Wi-Fi"; d = "Player 2 picks your game under \"On this Wi-Fi\" or enters this device's address: " + ip (m); }
+					else if (mode == 2) { t = Adhoc.on ? "Waiting on your own network" : "Waiting on this Wi-Fi"; d = "Player 2 picks your game under \"On this Wi-Fi\", uses \"Join the nearby host\" or enters this device's address: " + ip (m); }
 					else { t = "Your code:  " + (code.isEmpty () ? "..." : code); d = mode == 0 ? "Your game is in the game room. Player 2 picks it there, or enters the code." : "Tell player 2 this code: they enter it under Join."; }
 					if (!peer.isEmpty ()) d = peer + " is connecting..."; }
 				else { t = ph == 3 ? "The host's game came: starting..." : "Connecting to the host..."; d = peer.isEmpty () ? "" : "Host: " + peer; }
-				header ("Online"); row (t, d, null); row ("Cancel", "", () -> { VX.net (3, 0); last = ""; });
+				header ("Online"); row (t, d, null);
+				if (Adhoc.on && role == 1) { row ("Network:  " + Adhoc.ssidOn, "Players join it in their Wi-Fi settings", null); row ("Password:  " + Adhoc.pass (m), "Kept on this device: the next time their phone or PC knows the network", null); }
+				row ("Cancel", "", () -> { VX.net (3, 0); Adhoc.stop (m); last = ""; });
 			} else {
 				String err = st.optString ("error", ""); if (!err.isEmpty () && ph == 5) row ("Not connected", err, null);
 				header ("Your name");
@@ -171,6 +173,12 @@ final class Online {
 				row ("With a code", "Private: only who you tell the code", () -> host (1));
 				row ("On this Wi-Fi", "No internet needed: players on the same network", () -> host (2));
 				foot (game.isEmpty () ? "Start a game first, then host it here." : "Player 2 needs the same game. You are player 1.");
+				header ("Nearby - no router, no internet");
+				row ("Make a network and host" + (game.isEmpty () ? "" : " " + game), "This device makes the Wi-Fi network " + Adhoc.ssid (m) + " (password " + Adhoc.pass (m) + "); players join it in their Wi-Fi settings", () -> adhocHost ());
+				row ("Join the nearby host", Adhoc.onAdhocNet () ? "This device is on a nearby host's network: " + Adhoc.hostAddr () : "First join the host's network in Wi-Fi settings: DIRECT-VX-VECTREX-..., VECTREX-EMU-... or the host phone's hotspot", () -> {
+					String a = Adhoc.hostAddr (); if (a == null) { m.toast ("Not on a Wi-Fi network: join the host's network first", 3); Adhoc.wifiSettings (m); return; } join (a); });
+				row ("Wi-Fi settings", "Find and join the host's network", () -> Adhoc.wifiSettings (m));
+				foot ("The host's game also shows under \"On this Wi-Fi\" below. The network's name and password stay the same on this device.");
 				header ("Join");
 				row ("Enter a code", "Five letters from the host", () -> Screens.ask (m, "The host's code", "CODE", true, v -> join (v)));
 				row ("Enter an address", "A host on this Wi-Fi (its address)", () -> Screens.ask (m, "The host's address", "192.168.1.20", false, v -> join (v)));
@@ -197,6 +205,12 @@ final class Online {
 			String nm = clean (name (m)); if (mode == 0 && nm.isEmpty ()) { m.toast ("The game room needs your name: enter it above", 3); return; }
 			hostRom = rom; hostMode = mode; VX.netHost (mode, nm, key (m), rom, skip ());
 			Main.log ("online: hosting " + rom + " (" + (mode == 0 ? "game room" : mode == 1 ? "code" : "Wi-Fi") + ")"); last = "";
+		}
+		void adhocHost ()
+		{
+			if (VX.game ().isEmpty ()) { m.toast ("Start a game first: the one you host", 3); return; }
+			m.toast ("Making the network " + Adhoc.ssid (m) + "...", 2);
+			Adhoc.start (m, (ok, msg) -> { if (!ok) { m.toast (msg, 4); return; } host (2); last = ""; });
 		}
 		void join (String where) { Main.log ("online: joining " + where); VX.netJoin (where, clean (name (m)), key (m)); last = ""; }
 	}

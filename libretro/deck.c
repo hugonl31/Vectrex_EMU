@@ -185,10 +185,11 @@ static double dk_t0, dk_busy, dk_run0; static long dk_f0, dk_r0; static unsigned
  *  system not keeping up, and shows at once) */
 #define DK_RW 4
 static double dk_rw_e[DK_RW], dk_rw_t[DK_RW]; static int dk_rw_m[DK_RW], dk_rw_n, dk_rw_i, dk_miss; static double dk_lastshown;
+int vx_app_osd_on;                              /* (set by the own iOS app: the figures measured with the drawn deck off) */
 static void dk_rate_reset (void) { dk_rw_n = 0; dk_rw_i = 0; dk_miss = 0; dk_lastshown = 0; }
 static void dk_tick (double busy)
 {
-	if (!dk_on && !dk_pop) return;
+	if (!dk_on && !dk_pop && !vx_app_osd_on) return;   /* (the own iOS app: its native deck reads the figures) */
 	(void) busy;
 	{ int av = 3; if (!env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) || (av & 1)) { dk_runs++;
 		const double w = vt_wall (), gap = dk_lastshown > 0 ? w - dk_lastshown : 0;
@@ -220,7 +221,7 @@ static void dk_tick (double busy)
 			dk_cpu = (int) (100.0 * dk_busy / dt + 0.5);
 			dk_gpu = gq_ok > 0 && gq_n ? (int) (gq_sum_ms / 10.0 / dt + 0.5) : -1; }   /* (the GPU's busy share of the second: its time per picture, summed) */
 		dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; gq_sum_ms = 0; gq_n = 0; dk_dirty_set = 1; }
-	if (dk_dirty_set || vt_wall () < dk_reset_until + 0.05) { dk_draw (); dk_dirty_set = 0; }
+	if ((dk_on || dk_pop) && (dk_dirty_set || vt_wall () < dk_reset_until + 0.05)) { dk_draw (); dk_dirty_set = 0; }
 }
 static void turn_volume (double d)
 {
@@ -231,6 +232,12 @@ static void turn_volume (double d)
 	dk_dirty_set = 1;
 }
 static void power_up (void) { turn_volume (vol_before_off > 0 ? vol_before_off : 0.5); }
+/* (the own iOS app's native deck: the figures, the knob, the switch) */
+void vx_app_osd (char *fps, char *hz, char *emu, int *cpu, int *gpu)
+{ snprintf (fps, 24, "%s", dk_osd[0]); snprintf (hz, 24, "%s", dk_osd[1]); snprintf (emu, 24, "%s", dk_osd[2]); *cpu = dk_cpu; *gpu = dk_gpu; }
+double vx_app_volume (void) { return pw_on ? vx_vol : 0; }
+void vx_app_turn (double d) { turn_volume (d); }
+void vx_app_power (void) { if (pw_on) { vol_before_off = vx_vol > 0.01f ? vx_vol : 0.5f; vx_vol = 0; pw_switch (0, 0); dk_dirty_set = 1; } else power_up (); }
 /* RetroArch's pointer (the mouse, touch) on the deck - and, switched off, on the picture: on */
 static int dk_prev_press;
 static void dk_pointer (void)

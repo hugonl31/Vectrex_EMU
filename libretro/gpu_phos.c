@@ -29,7 +29,9 @@ GLFN(void, glFinish, (void)); GLFN(void, glInvalidateFramebuffer, (GLenum, GLsiz
 static uint32_t *br_img; static int br_shown, br_gen; static GLuint ph_ui, ph_uit; static int ph_uigen = -1, ph_uiw, ph_uih;   /* (browser.c) */
 static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
-static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1;
+static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1, ph_hdr_made = -1;
+float vx_hdr_peak = 1.0f;                       /* (HDR: the brightest lights top, x the screens white - the own iOS app sets it
+                                                from the screens headroom; 1: SDR, as everywhere else) */
 static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
 static float *ph_buf; static size_t ph_bufn;
 
@@ -87,7 +89,8 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"uniform sampler2D s, gt, ovm, ova; uniform int glow, ovon, wbon; uniform vec3 tint, wbg, wbc; uniform float bright, grey;\n"
 	"uniform vec2 gsz; uniform float dith; out vec4 fragc;\n"
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
-	"vec3 knee(vec3 c) { return mix(c, 0.75 + 0.25 * (1.0 - exp(-(c - 0.75) * 4.0)), step(0.75, c)); }\n"
+	"uniform float hk;\n"   /* (HDR: the knees top - 1.0 the screens white, as before; above it the brightest light up to the screens HDR peak) */
+	"vec3 knee(vec3 c) { float r = max(hk, 1.0) - 0.75; return mix(c, 0.75 + r * (1.0 - exp(-(c - 0.75) / r)), step(0.75, c)); }\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec3 o = texelFetch(s, ip, 0).rgb;\n"
 	"  if (glow != 0) o += tint * txc(gt, gl_FragCoord.xy / gsz).rgb;\n"
 	"  o = max(o, 0.0) * bright;\n"
@@ -203,7 +206,8 @@ static void ph_size (void)
 		ph_G2[k] = ph_tex (ph_pw, ph_ph, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
 		ph_B[k] = ph_tex (ph_gw, ph_gh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL); }
 	ph_S = ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL);
-	ph_P = ph_tex (FW, FH, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, NULL);
+	ph_P = vx_hdr_peak > 1.0f ? ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL)   /* (HDR: room above white) */
+	                          : ph_tex (FW, FH, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, NULL); ph_hdr_made = vx_hdr_peak > 1.0f;
 	ph_made = 1; ph_w = FW; ph_h = FH;
 	glClearColor_ (0, 0, 0, 0);
 	GLuint all[7] = { ph_F[0], ph_F[1], ph_G1[0], ph_G1[1], ph_G2[0], ph_G2[1], ph_S };
@@ -229,7 +233,7 @@ static void ph_overlay (void)
 static int ph_frame (int npl, double dt, int glow, int after, int shot)
 {
 	if (!ph_ok) return 0;
-	if (FW != ph_w || FH != ph_h || !ph_made || fx_ps != ph_ps_made || fx_lh != ph_lh_made) { ph_size (); if (!ph_ok) return 0; }
+	if (FW != ph_w || FH != ph_h || !ph_made || fx_ps != ph_ps_made || fx_lh != ph_lh_made || (vx_hdr_peak > 1.0f) != ph_hdr_made) { ph_size (); if (!ph_ok) return 0; }
 	const int scaled = ph_pw != FW || ph_ph != FH || ph_fw != FW; const float ls = (float) ph_fw / FW;   /* (the lines' scale: Basic) */
 	const int cur = ph_i, prv = ph_i ^ 1; ph_i ^= 1;
 	/* the pieces: 24 floats each */
@@ -295,7 +299,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  PU1I (ph_out, "glow", glow); PU1I (ph_out, "ovon", ovon && ph_ovm); PU1I (ph_out, "wbon", wb_on);
 	  glUniform3f_ (ph_ul (ph_out, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
 	  glUniform3f_ (ph_ul (ph_out, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (ph_ul (ph_out, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
-	  PU1F (ph_out, "bright", opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0);
+	  PU1F (ph_out, "bright", opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0); PU1F (ph_out, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f);
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:

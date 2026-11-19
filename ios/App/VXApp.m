@@ -14,6 +14,8 @@
 #import <QuartzCore/QuartzCore.h>
 #import <AVFoundation/AVFoundation.h>
 #import <GameController/GameController.h>
+#import <Metal/Metal.h>
+#import <CoreVideo/CoreVideo.h>
 #include <dlfcn.h>
 #include <sys/utsname.h>
 #include <sys/time.h>
@@ -156,7 +158,7 @@ static void vxa_opts_defaults (void)
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
 	int r = vxa_opt_find ("vectrex_emu_rate");
 	if (r >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_rate"])
-		snprintf (vxa_opt[r].val, sizeof vxa_opt[r].val, "%s", "60 Hz");   /* (OpenGL ES showed only 60 pictures a second on ProMotion: 120 with Metal, the HDR step) */
+		snprintf (vxa_opt[r].val, sizeof vxa_opt[r].val, "%s", UIScreen.mainScreen.maximumFramesPerSecond >= 120 ? "120 Hz" : "60 Hz");   /* (Metal shows the picture: ProMotion's 120 pictures a second) */
 	vlog ("core options: %d (rate %s)", vxa_nopt, r >= 0 ? vxa_opt[r].val : "?");
 }
 
@@ -174,20 +176,38 @@ static void vxa_corelog (enum retro_log_level l, const char *fmt, ...)
 {
 	char b[1500]; va_list a; va_start (a, fmt); vsnprintf (b, sizeof b, fmt, a); va_end (a); (void) l; fputs (b, stderr);
 }
+/* the core's framebuffer: one IOSurface the core draws into with OpenGL ES and the app shows with Metal (no copy) - half
+ * floats: room above white for HDR (8-bit BGRA where the device will not) */
+static CVPixelBufferRef vxa_pb; static CVOpenGLESTextureCacheRef vxa_gcache; static CVOpenGLESTextureRef vxa_gtex;
+static CVMetalTextureCacheRef vxa_mcache; static CVMetalTextureRef vxa_mtex; static id<MTLDevice> vxa_mdev; static int vxa_half;
 static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's framebuffer at least w x h) */
 {
 	if (w <= vxa_cw && h <= vxa_ch && vxa_cfbo) return;
 	if (w < vxa_cw) w = vxa_cw; if (h < vxa_ch) h = vxa_ch;
-	if (!vxa_cfbo) { glGenFramebuffers (1, &vxa_cfbo); glGenTextures (1, &vxa_ctex); }
-	glBindTexture (GL_TEXTURE_2D, vxa_ctex); glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei) w, (GLsizei) h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	if (!vxa_cfbo) glGenFramebuffers (1, &vxa_cfbo);
+	if (!vxa_gcache) CVOpenGLESTextureCacheCreate (kCFAllocatorDefault, NULL, [EAGLContext currentContext], NULL, &vxa_gcache);
+	if (!vxa_mcache && vxa_mdev) CVMetalTextureCacheCreate (kCFAllocatorDefault, NULL, vxa_mdev, NULL, &vxa_mcache);
+	if (vxa_gtex) { CFRelease (vxa_gtex); vxa_gtex = NULL; } if (vxa_mtex) { CFRelease (vxa_mtex); vxa_mtex = NULL; } if (vxa_pb) { CVPixelBufferRelease (vxa_pb); vxa_pb = NULL; }
+	NSDictionary *at = @{ (id) kCVPixelBufferIOSurfacePropertiesKey: @{}, (id) kCVPixelBufferOpenGLESCompatibilityKey: @YES, (id) kCVPixelBufferMetalCompatibilityKey: @YES };
+	for (int half = 1; half >= 0 && !vxa_gtex; half--) {
+		if (vxa_pb) { CVPixelBufferRelease (vxa_pb); vxa_pb = NULL; }
+		if (CVPixelBufferCreate (kCFAllocatorDefault, w, h, half ? kCVPixelFormatType_64RGBAHalf : kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef) at, &vxa_pb) != kCVReturnSuccess) continue;
+		CVReturn r = half ? CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pb, NULL, GL_TEXTURE_2D, GL_RGBA16F, (GLsizei) w, (GLsizei) h, GL_RGBA, GL_HALF_FLOAT, 0, &vxa_gtex)
+		                  : CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pb, NULL, GL_TEXTURE_2D, GL_RGBA, (GLsizei) w, (GLsizei) h, GL_BGRA_EXT, GL_UNSIGNED_BYTE, 0, &vxa_gtex);
+		if (r != kCVReturnSuccess) { vxa_gtex = NULL; continue; }
+		vxa_half = half; if (vxa_mcache) CVMetalTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_mcache, vxa_pb, NULL, half ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm, w, h, 0, &vxa_mtex); }
+	vxa_ctex = vxa_gtex ? CVOpenGLESTextureGetName (vxa_gtex) : 0;
+	glBindTexture (GL_TEXTURE_2D, vxa_ctex);
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindFramebuffer (GL_FRAMEBUFFER, vxa_cfbo); glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, vxa_ctex, 0);
 	if (vxa_hw.depth || vxa_hw.stencil) {
 		if (!vxa_cdepth) glGenRenderbuffers (1, &vxa_cdepth);
 		glBindRenderbuffer (GL_RENDERBUFFER, vxa_cdepth); glRenderbufferStorage (GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, (GLsizei) w, (GLsizei) h);
 		glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, vxa_cdepth); }
 	GLenum st = glCheckFramebufferStatus (GL_FRAMEBUFFER);
-	vxa_cw = w; vxa_ch = h; vlog ("core framebuffer %u x %u%s", w, h, st == GL_FRAMEBUFFER_COMPLETE ? "" : " - NOT COMPLETE");
+	vxa_cw = w; vxa_ch = h; vlog ("core framebuffer %u x %u, %s, shared with Metal: %s%s", w, h, vxa_half ? "half floats (HDR room)" : "8-bit", vxa_mtex ? "yes" : "NO",
+		st == GL_FRAMEBUFFER_COMPLETE ? "" : " - NOT COMPLETE");
 }
 static bool vxa_env (unsigned cmd, void *data)
 {
@@ -213,7 +233,9 @@ static bool vxa_env (unsigned cmd, void *data)
 	case 52: *(unsigned *) data = 2; return true;           /* (GET_CORE_OPTIONS_VERSION: v2 - the submenus and help texts) */
 	case 67: vxa_opts_v2 (data); return true;                /* (SET_CORE_OPTIONS_V2) */
 	case 68: return true;                                    /* (SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK) */
-	case RETRO_ENVIRONMENT_GET_VARIABLE: { struct retro_variable *v = data; int i = vxa_opt_find (v->key); v->value = i >= 0 ? vxa_opt[i].val : NULL; return i >= 0; }
+	case RETRO_ENVIRONMENT_GET_VARIABLE: { struct retro_variable *v = data; int i = vxa_opt_find (v->key);
+		if (i >= 0 && !strcmp (v->key, "vectrex_emu_deck")) { v->value = "off"; return true; }   /* (the app draws its own deck: the core's stays off) */
+		v->value = i >= 0 ? vxa_opt[i].val : NULL; return i >= 0; }
 	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = vxa_opt_dirty; vxa_opt_dirty = 0; return true;
 	case 70: { const struct retro_variable *v = data; if (!v || !v->key) return true;   /* (SET_VARIABLE: the core sets one itself) */
 		int i = vxa_opt_find (v->key); if (i < 0 || !v->value) return false;
@@ -272,8 +294,12 @@ static void vxa_read_pad (GCController *c, vxa_pad *p)
 	float lx = g.leftThumbstick.xAxis.value, ly = g.leftThumbstick.yAxis.value;
 	uint32_t b = 0;
 #define VB(cond, id) if (cond) b |= 1u << (id)
-	VB (g.buttonA.pressed, RETRO_DEVICE_ID_JOYPAD_B); VB (g.buttonX.pressed, RETRO_DEVICE_ID_JOYPAD_Y);
-	VB (g.buttonB.pressed, RETRO_DEVICE_ID_JOYPAD_A); VB (g.buttonY.pressed, RETRO_DEVICE_ID_JOYPAD_X);
+	{ /* (Vectrex buttons 1-4 - the core's RetroPad Y X B A - on the buttons the player chose; the default as the
+	   *  Vectrex controller's row on a modern pad's diamond: 1 left, 2 top, 3 bottom, 4 right) */
+	  const BOOL phys[8] = { g.buttonA.pressed, g.buttonB.pressed, g.buttonX.pressed, g.buttonY.pressed, g.leftShoulder.pressed, g.rightShoulder.pressed, g.leftTrigger.pressed, g.rightTrigger.pressed };
+	  static const int vid[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A }, def[4] = { 2, 3, 0, 1 };
+	  for (int k = 0; k < 4; k++) { NSNumber *m = [NSUserDefaults.standardUserDefaults objectForKey:[NSString stringWithFormat:@"map.%d", k + 1]];
+		int src = m ? m.intValue : def[k]; if (src >= 0 && src < 8 && phys[src]) b |= 1u << vid[k]; } }
 	VB (g.buttonOptions.pressed, RETRO_DEVICE_ID_JOYPAD_SELECT); VB (g.buttonMenu.pressed, RETRO_DEVICE_ID_JOYPAD_START);
 	VB (g.leftShoulder.pressed, RETRO_DEVICE_ID_JOYPAD_L); VB (g.rightShoulder.pressed, RETRO_DEVICE_ID_JOYPAD_R);
 	VB (g.leftTrigger.pressed, RETRO_DEVICE_ID_JOYPAD_L2); VB (g.rightTrigger.pressed, RETRO_DEVICE_ID_JOYPAD_R2);
@@ -488,11 +514,24 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 @end
 
 /* ---------------------------------------------------------------- the view: OpenGL ES, the touch controls, messages */
+#define VXA_MSL "#include <metal_stdlib>\n using namespace metal;\n" \
+	"struct V { float4 p [[position]]; float2 t; };\n" \
+	"vertex V vmain (uint i [[vertex_id]], constant float4 &r [[buffer(0)]], constant float4 &u [[buffer(1)]]) {\n" \
+	"  float2 q = float2 ((i & 1) ? 1.0 : 0.0, (i & 2) ? 1.0 : 0.0); V o;\n" \
+	"  o.p = float4 (mix (r.x, r.z, q.x), mix (r.y, r.w, q.y), 0, 1);\n" \
+	"  o.t = float2 (q.x * u.x, (u.z > 0.5 ? 1.0 - q.y : q.y) * u.y); return o; }\n" \
+	"fragment half4 fmain (V v [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant float4 &c [[buffer(0)]]) {\n" \
+	"  float3 x = max (t.sample (s, v.t).rgb, 0.0);\n" \
+	"  x = pow (x, 2.2);\n" \
+	"  return half4 (half3 (min (x, max (c.x, 1.0))), 1.0); }\n"
+	/* (the picture: the core's values as they would go to an ordinary screen - display gamma, 1.0 white - made linear for the
+	 *  extended linear layer; above 1.0, HDR, up to the screen's headroom now) */
+#define VXA_DECKH 78                            /* (the native control deck's height) */
 #define VXA_TOPROW 56                           /* (upright: the row above the picture, the menu button in it) */
 @interface VXGLView : UIView
 @end
 @implementation VXGLView
-+ (Class) layerClass { return [CAEAGLLayer class]; }
++ (Class) layerClass { return [CAMetalLayer class]; }   /* (Metal shows the picture; the core still draws with OpenGL ES) */
 @end
 
 @interface VXGameVC : UIViewController
@@ -513,12 +552,13 @@ static void vxa_toast (NSString *s, double secs)
 
 @implementation VXGameVC {
 	VXGLView *_gl; EAGLContext *_ctx; GLuint _dfbo, _drb; GLint _dw, _dh;
+	id<MTLCommandQueue> _queue; id<MTLRenderPipelineState> _pipe; id<MTLSamplerState> _nearest, _linear;
 	CADisplayLink *_link; double _last, _acc; int _started, _running;
 	unsigned _fw, _fh; int _have;                                   /* (the last picture from the core) */
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
-	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
-	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome; int _firstPack;
+	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
+	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
@@ -531,8 +571,16 @@ static void vxa_toast (NSString *s, double secs)
 	[super viewDidLoad]; vxa_vc = self; self.view.backgroundColor = UIColor.blackColor; self.view.multipleTouchEnabled = YES;
 	_gl = [[VXGLView alloc] initWithFrame:self.view.bounds]; _gl.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 	_gl.userInteractionEnabled = NO; _gl.contentScaleFactor = UIScreen.mainScreen.nativeScale;
-	CAEAGLLayer *l = (CAEAGLLayer *) _gl.layer; l.opaque = YES;
-	l.drawableProperties = @{ kEAGLDrawablePropertyRetainedBacking: @NO, kEAGLDrawablePropertyColorFormat: kEAGLColorFormatRGBA8 };
+	vxa_mdev = MTLCreateSystemDefaultDevice (); _queue = [vxa_mdev newCommandQueue];
+	CAMetalLayer *l = (CAMetalLayer *) _gl.layer; l.opaque = YES; l.device = vxa_mdev; l.framebufferOnly = YES;
+	l.pixelFormat = MTLPixelFormatRGBA16Float; l.colorspace = CGColorSpaceCreateWithName (kCGColorSpaceExtendedLinearSRGB);   /* (linear, extended: 1.0 white) */
+	if (@available (iOS 16.0, *)) l.wantsExtendedDynamicRangeContent = YES;
+	NSError *me = nil; id<MTLLibrary> lib = [vxa_mdev newLibraryWithSource:@VXA_MSL options:nil error:&me];
+	MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new]; pd.vertexFunction = [lib newFunctionWithName:@"vmain"]; pd.fragmentFunction = [lib newFunctionWithName:@"fmain"];
+	pd.colorAttachments[0].pixelFormat = l.pixelFormat; _pipe = [vxa_mdev newRenderPipelineStateWithDescriptor:pd error:&me];
+	MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new]; sd.minFilter = sd.magFilter = MTLSamplerMinMagFilterNearest; _nearest = [vxa_mdev newSamplerStateWithDescriptor:sd];
+	sd.minFilter = sd.magFilter = MTLSamplerMinMagFilterLinear; _linear = [vxa_mdev newSamplerStateWithDescriptor:sd];
+	vlog ("Metal: %s, pipeline %s%s", vxa_mdev.name.UTF8String, _pipe ? "ready" : "FAILED", me ? [@" - " stringByAppendingString:me.localizedDescription].UTF8String : "");
 	[self.view addSubview:_gl];
 	_ctl = [[UIView alloc] initWithFrame:self.view.bounds]; _ctl.autoresizingMask = _gl.autoresizingMask; _ctl.userInteractionEnabled = NO; [self.view addSubview:_ctl];
 	UIColor *g = [UIColor colorWithRed:0x66 / 255.0 green:0xaa / 255.0 blue:0x88 / 255.0 alpha:1];
@@ -554,6 +602,7 @@ static void vxa_toast (NSString *s, double secs)
 	__weak VXGameVC *ws = self;
 	(void) ws; [_menuBtn addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
 	_bar = [VXUI quickBarFor:self]; _bar.hidden = YES; [self.view addSubview:_bar];
+	_deck = [VXUI deckFor:self]; _deck.hidden = YES; [self.view addSubview:_deck];
 	[self.view addSubview:_menuBtn];
 	(void) g; _welcome = [VXUI welcomeView]; _welcome.frame = self.view.bounds; _welcome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 	[self.view addSubview:_welcome]; _status = [_welcome viewWithTag:11]; _prog = [_welcome viewWithTag:12];   /* (the start screen while the games arrive) */
@@ -568,7 +617,7 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44);
 	  _bar.frame = CGRectMake (s0.left + 8, s0.top + ([self barAuto] ? 6 : (VXA_TOPROW - 44) / 2), b.size.width - s0.left - s0.right - 16, 44);
 	  const int land = b.size.width > b.size.height; _bar.hidden = !_link || land; _menuBtn.hidden = !_link || !land; }   /* (upright: the quick bar; sideways: the menu button) */
-	if (_ctx) { [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer]; }
+	[self makeDisplayBuffer];
 	[self layoutControls];
 	UIEdgeInsets s = self.view.safeAreaInsets;
 	vlog ("layout: view %.0f x %.0f pt, safe %.0f %.0f %.0f %.0f, scale %.2f, %s", b.size.width, b.size.height, s.top, s.left, s.bottom, s.right, UIScreen.mainScreen.nativeScale, b.size.width > b.size.height ? "landscape" : "portrait");
@@ -659,20 +708,20 @@ static void vxa_toast (NSString *s, double secs)
 			if (!ok) { self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; return; }
 			self->_qDone += psz; [self->_qIds removeObject:pid]; [self nextPart]; }];
 }
-- (void) makeDisplayBuffer
+- (void) makeDisplayBuffer                      /* (the Metal layer's pixels: the view's, at the screen's own scale) */
 {
-	if (!_dfbo) { glGenFramebuffers (1, &_dfbo); glGenRenderbuffers (1, &_drb); }
-	glBindRenderbuffer (GL_RENDERBUFFER, _drb); [_ctx renderbufferStorage:GL_RENDERBUFFER fromDrawable:(CAEAGLLayer *) _gl.layer];
-	glBindFramebuffer (GL_FRAMEBUFFER, _dfbo); glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _drb);
-	glGetRenderbufferParameteriv (GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &_dw); glGetRenderbufferParameteriv (GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &_dh);
-	vlog ("display buffer %d x %d px", _dw, _dh);
+	CAMetalLayer *l = (CAMetalLayer *) _gl.layer; double sc = UIScreen.mainScreen.nativeScale; l.contentsScale = sc;
+	CGSize ds = CGSizeMake (round (_gl.bounds.size.width * sc), round (_gl.bounds.size.height * sc)); if (ds.width < 1 || ds.height < 1) return;
+	if (!CGSizeEqualToSize (l.drawableSize, ds)) { l.drawableSize = ds; vlog ("display %.0f x %.0f px", ds.width, ds.height); }
+	_dw = (GLint) ds.width; _dh = (GLint) ds.height;
 }
 - (void) startCore
 {
 	if (_link) return;                              /* (running already: a download from Settings while playing) */
 	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
-	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];
+	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];   /* (OpenGL ES: the core's; no layer of its own) */
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
+	extern int vx_app_osd_on; vx_app_osd_on = 1; vxa_hdr_update ();     /* (the figures measured for the native deck) */
 	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
 	retro_set_environment (vxa_env); vxa_set_callbacks ();
 	retro_init ();
@@ -698,24 +747,36 @@ static void vxa_toast (NSString *s, double secs)
 - (void) present
 {
 	if (!_have) return;
-	glBindFramebuffer (GL_READ_FRAMEBUFFER, vxa_cfbo); glBindFramebuffer (GL_DRAW_FRAMEBUFFER, _dfbo);
-	glDisable (GL_SCISSOR_TEST); glColorMask (1, 1, 1, 1); glViewport (0, 0, _dw, _dh); glClearColor (0, 0, 0, 1); glClear (GL_COLOR_BUFFER_BIT);
+	if (!vxa_mtex || !_pipe) return;
+	glFinish ();                                     /* (the core's drawing done before Metal reads the shared surface) */
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
 	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
 	const int land = v.width > v.height, ipad = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
 	const double row = land || [self barAuto] ? 0 : VXA_TOPROW;   /* (the quick bar's row: kept, or over the picture when it hides itself) */
-	const double keep = land || ipad || _ctl.hidden ? 0 : 150;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
+	const double deckh = [self deckShown] ? VXA_DECKH : 0;   /* (the native deck below the picture, upright) */
+	const double keep = (land || ipad || _ctl.hidden ? 0 : 150) + deckh;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
 	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
 	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = land ? s.top * sc + (ah - h) / 2 : (s.top + row) * sc;
 	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw), r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
 	  if (fabs (r - 1) > 0.01) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) _fh) * r);
 		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, _fh, want); vx_app_pich = want; } } }
-	int y0 = (int) (_dh - top - h + 0.5);                      /* (GL: from the bottom) */
-	int sy0 = 0, sy1 = (int) _fh; if (!vxa_hw.bottom_left_origin) { sy0 = (int) _fh; sy1 = 0; }
-	glBlitFramebuffer (0, sy0, (GLint) _fw, sy1, (GLint) x, y0, (GLint) (x + w), (GLint) (y0 + h), GL_COLOR_BUFFER_BIT, k == 1.0 ? GL_NEAREST : GL_LINEAR);
-	glBindRenderbuffer (GL_RENDERBUFFER, _drb); [_ctx presentRenderbuffer:GL_RENDERBUFFER]; _presents++;
+	@autoreleasepool {
+		id<CAMetalDrawable> d = [(CAMetalLayer *) _gl.layer nextDrawable]; if (!d) return;
+		MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor]; rp.colorAttachments[0].texture = d.texture;
+		rp.colorAttachments[0].loadAction = MTLLoadActionClear; rp.colorAttachments[0].clearColor = MTLClearColorMake (0, 0, 0, 1); rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+		id<MTLCommandBuffer> cb = [_queue commandBuffer]; id<MTLRenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
+		float rect[4] = { (float) (x / _dw * 2 - 1), (float) (1 - (top + h) / _dh * 2), (float) ((x + w) / _dw * 2 - 1), (float) (1 - top / _dh * 2) };   /* (NDC: x0 y0 x1 y1) */
+		float uv[4] = { (float) _fw / vxa_cw, (float) _fh / vxa_ch, vxa_hw.bottom_left_origin ? 0.f : 1.f, 0 };
+		float edr = 1; if (@available (iOS 16.0, *)) edr = (float) UIScreen.mainScreen.currentEDRHeadroom;
+		float cfg[4] = { edr, vxa_half ? 1.f : 0.f, 0, 0 };
+		[en setRenderPipelineState:_pipe]; [en setVertexBytes:rect length:sizeof rect atIndex:0]; [en setVertexBytes:uv length:sizeof uv atIndex:1];
+		[en setFragmentBytes:cfg length:sizeof cfg atIndex:0]; [en setFragmentTexture:CVMetalTextureGetTexture (vxa_mtex) atIndex:0];
+		[en setFragmentSamplerState:(k == 1.0 ? _nearest : _linear) atIndex:0];
+		[en drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4]; [en endEncoding];
+		[cb presentDrawable:d]; [cb commit]; _presents++; }
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
+	_deck.hidden = !deckh; if (deckh) _deck.frame = CGRectMake (s.left, CGRectGetMaxY (pic), v.width - s.left - s.right, VXA_DECKH);
 	if (!CGRectEqualToRect (pic, _pic)) { _pic = pic; vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f pt (%s)", _fw, _fh, pic.origin.x, pic.origin.y, pic.size.width, pic.size.height, k == 1.0 ? "1:1" : "scaled"); [self layoutControls]; }
 }
 - (void) gotFrame:(unsigned)w :(unsigned)h { _fw = w; _fh = h; _have = 1; }
@@ -792,6 +853,12 @@ static void vxa_set_opt (int i, NSString *v)
 	return [UIMenu menuWithTitle:@"Vectrex_EMU" children:top];
 }
 - (void) openMenu { [VXUI showGameMenuFrom:self]; }
+- (void) controlsChanged { [self layoutControls]; _pic = CGRectZero; }
+- (BOOL) deckShown                              /* (the native deck: upright, the setting Control deck not off) */
+{
+	CGSize v = self.view.bounds.size; if (v.width > v.height || !_link) return NO;
+	int i = vxa_opt_find ("vectrex_emu_deck"); return i < 0 || strcmp (vxa_opt[i].val, "off") != 0;
+}
 /* the quick bar hiding itself (Settings > App: the default on an iPad, where its row would cost the picture its width): over
  * the picture, it fades 3 s after it was last shown; a tap at the top of the screen brings it back */
 - (BOOL) barAuto
@@ -828,15 +895,19 @@ static void vxa_set_opt (int i, NSString *v)
  * controller and no keyboard is connected; below the picture upright, beside it sideways */
 - (void) layoutControls
 {
-	BOOL show = GCController.controllers.count == 0 && GCKeyboard.coalescedKeyboard == nil && _running;
+	NSUserDefaults *ud = NSUserDefaults.standardUserDefaults; NSString *mode = [ud stringForKey:@"touch.show"] ?: @"auto";
+	BOOL show = _running && ([mode isEqualToString:@"always"] || ([mode isEqualToString:@"auto"] && GCController.controllers.count == 0 && GCKeyboard.coalescedKeyboard == nil));
+	const double tsize = [ud objectForKey:@"touch.size"] ? [ud doubleForKey:@"touch.size"] : 1.0; _ctl.alpha = [ud objectForKey:@"touch.alpha"] ? [ud doubleForKey:@"touch.alpha"] : 1.0;
+	_stickR = 60 * tsize;
 	_ctl.hidden = !show; if (!show) return;
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; CGRect pic = _pic;
 	CGRect zl, zr;
 	if (v.width > v.height) { zl = CGRectMake (s.left, s.top, CGRectGetMinX (pic) - s.left, v.height - s.top - s.bottom); zr = CGRectMake (CGRectGetMaxX (pic), s.top, v.width - s.right - CGRectGetMaxX (pic), zl.size.height); }
-	else { double top = CGRectGetMaxY (pic); if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (the deck is in the picture now) */
+	else { double top = CGRectGetMaxY (pic) + ([self deckShown] ? VXA_DECKH : 0); if (v.height - s.bottom - top < 150) top = v.height - s.bottom - 150;   /* (the deck is in the picture now) */
 		zl = CGRectMake (s.left, top, v.width / 2, v.height - s.bottom - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
+	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
 	_stickZone = zl;
-	double r = fmin (zr.size.width / 4.6, 38), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
+	double r = fmin (zr.size.width / 4.6, 38 * tsize), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
 	for (int i = 0; i < 4; i++) {
 		double bx = cx + (i % 2 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2);
 		_btnR[i] = CGRectMake (bx - r, by - r, 2 * r, 2 * r);
@@ -846,8 +917,8 @@ static void vxa_set_opt (int i, NSString *v)
 }
 - (void) drawStick:(CGPoint)knob
 {
-	double R = 60; _stickBase.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (_stickC.x - R, _stickC.y - R, 2 * R, 2 * R)].CGPath;
-	_stickKnob.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (knob.x - 26, knob.y - 26, 52, 52)].CGPath;
+	double R = _stickR > 0 ? _stickR : 60; _stickBase.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (_stickC.x - R, _stickC.y - R, 2 * R, 2 * R)].CGPath;
+	double kr = R * 0.43; _stickKnob.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake (knob.x - kr, knob.y - kr, 2 * kr, 2 * kr)].CGPath;
 }
 - (void) touchesBegan:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e
 {
@@ -876,7 +947,7 @@ static void vxa_set_opt (int i, NSString *v)
 		CGPoint p = [t locationInView:self.view];
 		if (t == _ptrT) [self pointerAt:p on:1];
 		if (t == _stickT) {
-			double dx = p.x - _stickC.x, dy = p.y - _stickC.y, R = 60, d = hypot (dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
+			double dx = p.x - _stickC.x, dy = p.y - _stickC.y, R = _stickR > 0 ? _stickR : 60, d = hypot (dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
 			[self drawStick:CGPointMake (_stickC.x + dx, _stickC.y + dy)];
 			double ax = dx / R, ay = dy / R; uint32_t b = vxa_tpad.btn & ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP);
 			if (ay < -0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_UP; if (ay > 0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
@@ -933,6 +1004,15 @@ const char *vxa_ckey (int i) { return vxa_cat[i].key; }
 const char *vxa_cdesc (int i) { return vxa_cat[i].desc; }
 const char *vxa_cinfo (int i) { return vxa_cat[i].info; }
 void ulog (NSString *s) { vlog ("ui %s", s.UTF8String); }
+/* HDR (Settings > App, HDR brightness 0..1 of the screen's headroom; the default 1 where the screen has HDR): the core's
+ * brightest light up to that, its knee's top in display gamma */
+float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIScreen.mainScreen.potentialEDRHeadroom; return 1; }
+void vxa_hdr_update (void)
+{
+	extern float vx_hdr_peak; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
+	float pk = hr > 1.05 && fr > 0.01 ? (float) pow (1.0 + (hr - 1.0) * fr, 1 / 2.2) : 1.0f;
+	if (fabsf (pk - vx_hdr_peak) > 0.005f) { vlog ("HDR: %s (screen headroom %.2f, setting %.0f %%, knee top %.2f)", pk > 1 ? "on" : "off", hr, fr * 100, pk); vx_hdr_peak = pk; }
+}
 NSString *vxa_docs (void) { return NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; }
 NSString *vxa_game (void) { const char *g = vx_app_game (); return g && *g ? @(g) : @""; }
 void vxa_do (NSString *w)

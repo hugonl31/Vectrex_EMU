@@ -154,7 +154,8 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"uniform vec4 pen, rlp; uniform vec2 rpt[6]; uniform vec3 lpos, pic; uniform float dith; out vec4 fragc;\n"
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"float lum(vec3 c) { return max(max(c.r, c.g), c.b); }\n"
-	"vec3 knee(vec3 c) { return mix(c, 0.75 + 0.25 * (1.0 - exp(-(c - 0.75) * 4.0)), step(0.75, c)); }\n"
+	"uniform float hk;\n"   /* (HDR: the knees top - 1.0 the screens white, as before; above it the brightest light up to the screens HDR peak) */
+	"vec3 knee(vec3 c) { float r = max(hk, 1.0) - 0.75; return mix(c, 0.75 + r * (1.0 - exp(-(c - 0.75) / r)), step(0.75, c)); }\n"
 	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb;\n"
 	"  vec3 m = texture(ovm, uv).rgb, la = texture(ova, uv).rgb, l = dot(o, vec3(1.0 / 3.0)) * m; vec3 c = sqrt(l * l + la * la);\n"
 	"  vec4 ov = texture(art, uv); float sheet = step(0.004, ov.a);\n"
@@ -379,7 +380,7 @@ static int ox_draw (int glow, double dt)
 	glUniform4f_ (ph_ul (ox_sheet, "pen"), 0.45f, 0.85f, 1.5f, 0.0f);
 	glUniform4f_ (ph_ul (ox_sheet, "rlp"), 0.0f, 0.0f, hh, scr ? ovfx.ovl : 0.0f);
 	glUniform3f_ (ph_ul (ox_sheet, "lpos"), fxp, fyp, 0.42f); glUniform3f_ (ph_ul (ox_sheet, "pic"), FW / 2.0f, FH / 2.0f, hh);
-	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0);
+	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f);
 	if (scr && ovfx.ovl > 0) {                                     /* (roomlight.flat_points: the light's area as six points) */
 		static float key_x = -1, key_y = -1, pts[12];
 		if (key_x != g_lamp_x || key_y != g_lamp_y) { key_x = g_lamp_x; key_y = g_lamp_y; rl_flat_points (g_lamp_x, g_lamp_y, pts); }

@@ -54,7 +54,8 @@ for f in sorted(os.listdir(os.path.join(PKG, 'overlays'))):
     except Exception as e:                                      # noqa: BLE001
         print('thumb skipped:', f, e); continue
     bg = Image.new('RGBA', im.size, (5, 8, 10, 255)); bg.alpha_composite(im)   # (on the app's black: the sheet's clear parts dark)
-    bg.convert('RGB').resize((324, 414), Image.LANCZOS).save(os.path.join(th, stem + '.png'), optimize=True)
+    os.makedirs(os.path.join(th, 'overlays'), exist_ok=True)
+    bg.convert('RGB').resize((324, 414), Image.LANCZOS).save(os.path.join(th, 'overlays', stem + '.png'), optimize=True)
     nt += 1
 print('thumbs:', nt)
 # the library's other two looks (the owner's choice in the app): each game's cartridge - the real cartridge seen from
@@ -159,17 +160,53 @@ if os.path.isdir(LAB) and os.path.isdir(BOX):
         elif lp:
             cart(lp).save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
         if bp:
-            b = Image.open(bp).convert('RGB'); b.resize((330, int(330 * b.height / b.width)), Image.LANCZOS).save(os.path.join(tb, stem + '.png'), optimize=True); nb += 1
+            b = Image.open(bp).convert('RGB'); b.resize((390, int(390 * b.height / b.width)), Image.LANCZOS).save(os.path.join(tb, stem + '.png'), optimize=True); nb += 1
     print('cartridges:', nc, 'boxes:', nb)
 else:
     print('labels / box art not found: none in the pack')
-parts.append((th, 'system/vectrex_emu/thumbs'))
-with tarfile.open(os.path.join(out, 'pack.tgz'), 'w:gz', compresslevel=6) as t:
-    for src, arc in parts:
+# the pack in parts, each chosen in the app (the core's own and the games always): each part's version is its contents'
+# hash, so a part that did not change is never fetched again. Out: pack-<id>.tgz per part, pack.json (the parts, their
+# names, sizes and versions); the old single pack.tgz / pack.ver too, for the apps before this
+import hashlib, json                                            # noqa: E402
+J = 'system/vectrex_emu/'
+PARTS = [
+    ('core', 'The Vectrex: BIOS, overlays, picture files, speech ROM', True,
+     [(os.path.join(PKG, 'bios.bin'), J + 'bios.bin'), (os.path.join(PKG, 'gpu'), J + 'gpu'), (os.path.join(PKG, 'overlays'), J + 'overlays'),
+      (os.path.join(PC, 'system', 'sp0256-al2.bin'), J + 'sp0256-al2.bin'), (os.path.join(th, 'overlays'), J + 'thumbs/overlays')]),
+    ('games', 'Games (ROMs)', True, [(os.path.join(PC, 'roms'), 'roms')]),
+    ('boxes', 'Box art', False, [(os.path.join(th, 'boxes'), J + 'thumbs/boxes')]),
+    ('carts', 'Cartridges with their labels', False, [(os.path.join(th, 'carts'), J + 'thumbs/carts')]),
+    ('uvmc2', 'UVMC2: Last Human, Doom, Quake, vector movies', False, [(os.path.join(PC, 'uvmc2'), J + 'uvmc2')]),
+    ('pitrex', 'PiTrex SD card (calibrated)', False, [(os.path.join(PC, 'pitrex'), J + 'pitrex')]),
+]
+
+
+def files_of(src, arc):
+    if os.path.isfile(src):
+        yield src, arc; return
+    for r, ds, fs in os.walk(src):
+        ds.sort()
+        for f in sorted(fs):
+            if f in SKIP:
+                continue
+            q = os.path.join(r, f); yield q, arc + '/' + os.path.relpath(q, src).replace(os.sep, '/')
+
+
+man = {'made': ver, 'parts': []}
+for pid, name, req, srcs in PARTS:
+    h = hashlib.sha1(); fl = []
+    for src, arc in srcs:
         if not os.path.exists(src):
             sys.exit('missing: ' + src)
-        t.add(src, arc, filter=keep)
-    v = os.path.join(out, 'pack_version.txt'); open(v, 'w').write(ver + '\n')
-    t.add(v, 'system/vectrex_emu/pack_version.txt')
-open(os.path.join(out, 'pack.ver'), 'w').write('%s\n%d\n' % (ver, os.path.getsize(os.path.join(out, 'pack.tgz'))))   # (the version, then the size: the app asks before it fetches)
-print('pack %s: %d files, %.1f MB' % (ver, n, os.path.getsize(os.path.join(out, 'pack.tgz')) / 1e6))
+        for q, a2 in files_of(src, arc):
+            fl.append((q, a2)); h.update(a2.encode()); h.update(open(q, 'rb').read())
+    pv = h.hexdigest()[:12]; tp = os.path.join(out, 'pack-%s.tgz' % pid)
+    with tarfile.open(tp, 'w:gz', compresslevel=6) as t:
+        for q, a2 in fl:
+            ti = t.gettarinfo(q, a2); ti.uid = ti.gid = 0; ti.uname = ti.gname = ''; ti.mtime = 0
+            with open(q, 'rb') as fh:
+                t.addfile(ti, fh)
+    man['parts'].append({'id': pid, 'name': name, 'required': req, 'version': pv, 'size': os.path.getsize(tp), 'files': len(fl)})
+    print('part %-6s %-55s %4d files %7.1f MB  %s' % (pid, name, len(fl), os.path.getsize(tp) / 1e6, pv))
+json.dump(man, open(os.path.join(out, 'pack.json'), 'w'), indent=1)
+print('pack %s: %d parts, %.1f MB in all' % (ver, len(man['parts']), sum(x['size'] for x in man['parts']) / 1e6))

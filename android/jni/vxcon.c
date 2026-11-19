@@ -66,6 +66,10 @@ static int jint (const char *js, const char *k)   /* (the status' own number: a 
 int main (int argc, char **argv)
 {
 	if (argc < 6) { fprintf (stderr, "vxcon SYSDIR ROM SECONDS host lan|public|private [NAME] | join WHERE [NAME]\n"); return 2; }
+	if (!strcmp (argv[4], "claim")) {                 /* (vxcon - - - claim NAME [OLD]: a player name reserved at the meeting point) */
+		extern int vx_net_claim (const char *, const char *, const char *, char *, int); char got[64];
+		const int r = vx_net_claim (argv[5], "0123456789abcdef0123456789abcdef", argc > 6 ? argv[6] : NULL, got, sizeof got);
+		say ("claim %s: %d (%s)", argv[5], r, got); return r == 1 ? 0 : 1; }
 	snprintf (sysd, sizeof sysd, "%s", argv[1]); const char *rom = argv[2]; const double secs = atof (argv[3]); const int host = !strcmp (argv[4], "host");
 	const char *where = argv[5], *name = argc > 6 ? argv[6] : "NOVA";
 	snprintf (saves, sizeof saves, "%s/vxcon_saves", getenv ("HOME") ? getenv ("HOME") : "."); mkdir (saves, 0755);

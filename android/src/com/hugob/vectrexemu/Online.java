@@ -25,11 +25,66 @@ final class Online {
 	static final HashMap<String, String> md5s = new HashMap<> ();
 	static JSONObject status () { try { return new JSONObject (VX.netStatus ()); } catch (Exception e) { return new JSONObject (); } }
 	static String name (Main m) { return m.prefs.getString ("net.name", ""); }
+	/* this device's secret for its name at the meeting point: made from the device (Android's ID for this app - the same after
+	 * a reinstall), hashed with the app's own salt (the meeting point never sees the ID): a fresh install gets its name back */
 	static String key (Main m)
 	{
-		String k = m.prefs.getString ("net.key", ""); if (k.isEmpty ()) { byte[] b = new byte[16]; new SecureRandom ().nextBytes (b); StringBuilder s = new StringBuilder ();
-			for (byte x : b) s.append (String.format ("%02x", x & 255)); k = s.toString (); m.prefs.edit ().putString ("net.key", k).apply (); }
+		String k = m.prefs.getString ("net.key", "");
+		if (k.isEmpty ()) {
+			String id = null; try { id = android.provider.Settings.Secure.getString (m.getContentResolver (), android.provider.Settings.Secure.ANDROID_ID); } catch (Exception e) { }
+			byte[] b;
+			try { if (id == null || id.isEmpty ()) throw new Exception ("no id");
+				b = java.security.MessageDigest.getInstance ("SHA-256").digest (("vectrex_emu-player-" + id).getBytes ("UTF-8")); }
+			catch (Exception e) { b = new byte[32]; new SecureRandom ().nextBytes (b); }
+			StringBuilder s = new StringBuilder (); for (int i = 0; i < 16; i++) s.append (String.format ("%02x", b[i] & 255));
+			k = s.toString (); m.prefs.edit ().putString ("net.key", k).apply (); }
 		return k;
+	}
+	/* the name reserved at the meeting point (a background thread; then on the main one): ok, or why not */
+	interface Claimed { void go (int r, String name); }
+	static void claim (Main m, String name, Claimed done)
+	{
+		final String old = m.prefs.getBoolean ("net.name_ok", false) ? name (m) : null, k = key (m);
+		new Thread (() -> { String r = VX.netClaim (name, k, old != null && !old.equals (name) ? old : null);
+			final int code = Integer.parseInt (r.startsWith ("1") ? "1" : r); final String got = code == 1 ? r.substring (1) : name;
+			m.h.post (() -> {
+				if (code == 1 || code == -2) m.prefs.edit ().putString ("net.name", got).putBoolean ("net.name_ok", code == 1).apply ();
+				Main.log ("online: name " + name + ": " + (code == 1 ? "reserved" : code == 0 ? "another player's" : code == -1 ? "not allowed" : "no answer - kept here"));
+				done.go (code, got); }); }).start ();
+	}
+	static String claimSays (int r, String name)
+	{
+		return r == 1 ? "YOUR PLAYER NAME: " + name : r == 0 ? name + " BELONGS TO ANOTHER PLAYER - PICK ANOTHER" : r == -1 ? "THAT NAME IS NOT ALLOWED (A-Z, 0-9)"
+			: "NO ANSWER FROM THE MEETING POINT: " + name + " KEPT HERE, RESERVED AT THE NEXT ONLINE GAME";
+	}
+	/* the first start: the name this device had (a reinstall), else asked for once */
+	static void firstName (Main m)
+	{
+		if (!name (m).isEmpty () && m.prefs.getBoolean ("net.name_ok", false)) return;
+		final String k = key (m);
+		new Thread (() -> { String got = VX.netWhoami (k);
+			m.h.post (() -> {
+				if (got != null && !got.isEmpty ()) { m.prefs.edit ().putString ("net.name", got).putBoolean ("net.name_ok", true).apply (); Main.log ("online: welcome back " + got); m.toast ("WELCOME BACK, " + got, 3); return; }
+				if (!name (m).isEmpty ()) { claim (m, name (m), (r, n) -> { }); return; }   /* (a name kept here while offline: reserved now) */
+				if (m.stack.isEmpty ()) nameScreen (m, false); }); }).start ();
+	}
+	/* the name asked for: typed (A-Z 0-9), checked at the meeting point and kept */
+	static void nameScreen (Main m, boolean change)
+	{
+		Screens.Panel p = new Screens.Panel (m, "Your player name");
+		p.foot ("The name other players see when you play online - in the game room, the chat, on the deck. Up to 10 letters A-Z and digits 0-9. It is reserved for this device and stays the same in every online mode.");
+		EditText e = new EditText (m); e.setText (name (m)); e.setHint ("YOUR NAME"); e.setTextColor (Main.HI); e.setHintTextColor (Main.DIM); e.setSingleLine (true); e.setTextSize (20);
+		e.setInputType (android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+		e.setBackground (Screens.states (m, Main.PANEL, Main.EDGE, m.dp (10))); e.setPadding ((int) m.dp (14), (int) m.dp (12), (int) m.dp (14), (int) m.dp (12));
+		p.col.addView (e);
+		TextView said = m.text ("", 14, Main.CHG, false); said.setPadding ((int) m.dp (4), (int) m.dp (8), 0, (int) m.dp (8)); p.col.addView (said);
+		p.row ("Check and keep", "Reserved at the meeting point for this device", () -> {
+			String n = clean (e.getText ().toString ()); e.setText (n);
+			if (n.isEmpty ()) { said.setText ("A name first: 1 to 10 letters A-Z or digits 0-9"); return; }
+			said.setText ("Asking the meeting point...");
+			claim (m, n, (r, got) -> { said.setText (claimSays (r, got)); if (r == 1 || r == -2) { m.toast (claimSays (r, got), 3); if (m.top () == p) m.pop (); } }); });
+		p.row (change ? "Cancel" : "Later", change ? "" : "Asked again when you go online", () -> m.pop ());
+		m.push (p); e.requestFocus ();
 	}
 	static String clean (String s)                       /* (a gamer name: A-Z and 0-9 only, up to 10 - the rest left out) */
 	{
@@ -166,7 +221,9 @@ final class Online {
 				EditText e = new EditText (m); nameField = e; e.setText (name (m)); e.setHint ("YOUR NAME"); e.setTextColor (Main.HI); e.setHintTextColor (Main.DIM); e.setSingleLine (true);
 				e.setInputType (android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
 				e.setBackground (Screens.states (m, Main.PANEL, Main.EDGE, m.dp (10))); e.setPadding ((int) m.dp (14), (int) m.dp (10), (int) m.dp (14), (int) m.dp (10));
-				e.setOnFocusChangeListener ((v, has) -> { if (!has) { String n = clean (e.getText ().toString ()); e.setText (n); m.prefs.edit ().putString ("net.name", n).apply (); } });
+				e.setOnFocusChangeListener ((v, has) -> { if (!has) { String n = clean (e.getText ().toString ()); e.setText (n);
+					if (!n.isEmpty () && !(n.equals (name (m)) && m.prefs.getBoolean ("net.name_ok", false))) claim (m, n, (r, got) -> m.toast (claimSays (r, got), 3));   /* (a new name: reserved) */
+					else if (n.isEmpty ()) m.prefs.edit ().putString ("net.name", "").putBoolean ("net.name_ok", false).apply (); } });
 				col.addView (e); foot ("Up to 10 letters A-Z and digits 0-9. Players see it in the game room and the chat.");
 				header (game.isEmpty () ? "Host" : "Host " + game);
 				row ("In the game room", "Public: anyone can join it there", () -> host (0));
@@ -203,7 +260,7 @@ final class Online {
 		boolean named ()
 		{
 			if (nameField != null) { String n = clean (nameField.getText ().toString ()); nameField.setText (n); m.prefs.edit ().putString ("net.name", n).apply (); }
-			if (!clean (name (m)).isEmpty ()) return true;
+			if (!clean (name (m)).isEmpty ()) { if (!m.prefs.getBoolean ("net.name_ok", false)) claim (m, clean (name (m)), (r, got) -> { if (r == 0 || r == -1) m.toast (claimSays (r, got), 4); }); return true; }
 			m.toast ("ONLINE: YOUR PLAYER NAME IS MISSING - ENTER IT ABOVE (A-Z, 0-9)", 4); Main.log ("online: no player name");
 			if (nameField != null) { nameField.requestFocus (); sc.smoothScrollTo (0, 0); }
 			return false;

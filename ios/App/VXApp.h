@@ -33,6 +33,9 @@ int vx_app_port2 (void), vx_app_cart_out (void), vx_app_power_on (void), vx_app_
 double vx_app_volume (void); void vx_app_turn (double d), vx_app_power (void);
 int vxa_is_held (void); void vxa_toast_ext (NSString *s);
 int vx_net_md5_file (const char *path, char *out33, long long *size);
+int vx_net_claim (const char *name, const char *key, const char *old, char *out, int outn);   /* (1 reserved, 0 another's, -1 not allowed, -2 no answer) */
+int vx_net_whoami (const char *key, char *out, int outn);                                  /* (1 found, 0 none, -2 no answer) */
+void vxa_name_first (UIViewController *vc);  /* the first start: this device's name back, or asked for once */
 NSString *vxa_net_ip (void);           /* this phone's address on its network */
 NSString *vxa_net_gateway (void);      /* the nearby host: .1 of this phone's Wi-Fi (an ad-hoc network's host), nil: none */
 NSString *vxa_net_name (void), *vxa_net_key (void);

@@ -196,6 +196,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome));
 		layout (); Live.start (this);
 		h.postDelayed (() -> testIntent (getIntent ()), 3000);
+		h.postDelayed (() -> Online.firstName (this), 2500);    /* (the player name: this device's, or asked for once) */
 		if (!prefs.getBoolean ("app.welcomed", false)) h.postDelayed (() -> { prefs.edit ().putBoolean ("app.welcomed", true).apply ();
 			toast ("Tap the cartridge on the deck for the games, ≡ or the menu button for the rest", 5); }, 1500);
 	}

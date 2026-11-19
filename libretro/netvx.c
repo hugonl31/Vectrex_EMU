@@ -965,6 +965,52 @@ void vx_net_lan (int on)                                           /* (games on 
 /* everything the app shows, as JSON: the phase (0 alone, 1 meeting point, 2 waiting, 3 agreed, 4 playing, 5 ended), the
  * role, the code, the other player, the game, the relay, the input delay, a problem, the chat lines new since the last
  * call, the game room's answer and the network's games */
+/* a player name reserved at the meeting point for this device's key (as the desktop's claim_name: the app's first start,
+ * a name changed in Online) - waits up to 3 s, on the caller's thread (an app's background one). old: the name before,
+ * set free. out: the name as the meeting point keeps it. 1 reserved, 0 another player's, -1 not allowed, -2 no answer */
+int vx_net_claim (const char *name, const char *key, const char *old, char *out, int outn)
+{
+	if (out && outn > 0) out[0] = 0;
+	if (!name || !*name || !key || !*key) return -1;
+	nv_sock_t s = socket (AF_INET, SOCK_DGRAM, 0); if (s == NV_BADSOCK) return -2;
+	struct sockaddr_in a; if (!nv_addr (&a, NV_SERVER, NV_SPORT)) { nv_closesock (s); return -2; }
+	char nm[64], ky[200], od[64], q[400]; nv_jesc (nm, sizeof nm, name); nv_jesc (ky, sizeof ky, key); nv_jesc (od, sizeof od, old && *old ? old : "");
+	const int qn = snprintf (q, sizeof q, "VXR1N{\"name\": %s, \"key\": %s, \"old\": %s}", nm, ky, old && *old ? od : "null");
+	const double t0 = nv_now (); double asked = -10; int r = -2;
+	while (nv_now () - t0 < 3.0) {
+		if (nv_now () - asked > 1.0) { sendto (s, q, qn, 0, (struct sockaddr *) &a, sizeof a); asked = nv_now (); }
+		fd_set rs; FD_ZERO (&rs); FD_SET (s, &rs); struct timeval tv = { 0, 200000 };
+		if (select ((int) s + 1, &rs, NULL, NULL, &tv) <= 0) continue;
+		char b[1024]; const int n = (int) recv (s, b, sizeof b - 1, 0); if (n < 5) continue; b[n] = 0;
+		if (!memcmp (b, "VXR1n", 5)) { double ok = 0; nv_jnum (b + 5, "ok", &ok);
+			if (ok != 0) { r = 1; if (out) nv_jstr (b + 5, "name", out, (size_t) outn); }
+			else { char why[64] = ""; nv_jstr (b + 5, "why", why, sizeof why); r = !strcmp (why, "taken") ? 0 : -1; }
+			break; }
+		if (!memcmp (b, "VXR1E", 5)) { r = -1; break; } }
+	nv_closesock (s);
+	{ char m[160]; snprintf (m, sizeof m, "name %s: %s", name, r == 1 ? "reserved" : r == 0 ? "another player's" : r == -1 ? "not allowed" : "the meeting point did not answer"); nv_log (m); }
+	return r;
+}
+/* the name the meeting point keeps for this device's key (the apps make the key from the device: a fresh install gets its
+ * name back) - up to 3 s, on the caller's thread. 1 found (out), 0 none, -2 no answer */
+int vx_net_whoami (const char *key, char *out, int outn)
+{
+	if (out && outn > 0) out[0] = 0;
+	if (!key || !*key) return 0;
+	nv_sock_t s = socket (AF_INET, SOCK_DGRAM, 0); if (s == NV_BADSOCK) return -2;
+	struct sockaddr_in a; if (!nv_addr (&a, NV_SERVER, NV_SPORT)) { nv_closesock (s); return -2; }
+	char ky[200], q[260]; nv_jesc (ky, sizeof ky, key); const int qn = snprintf (q, sizeof q, "VXR1W{\"key\": %s}", ky);
+	const double t0 = nv_now (); double asked = -10; int r = -2;
+	while (nv_now () - t0 < 3.0) {
+		if (nv_now () - asked > 1.0) { sendto (s, q, qn, 0, (struct sockaddr *) &a, sizeof a); asked = nv_now (); }
+		fd_set rs; FD_ZERO (&rs); FD_SET (s, &rs); struct timeval tv = { 0, 200000 };
+		if (select ((int) s + 1, &rs, NULL, NULL, &tv) <= 0) continue;
+		char b[512]; const int n = (int) recv (s, b, sizeof b - 1, 0); if (n < 5) continue; b[n] = 0;
+		if (!memcmp (b, "VXR1w", 5)) { char nm[64] = ""; r = nv_jstr (b + 5, "name", nm, sizeof nm) && nm[0] ? 1 : 0; if (r && out) snprintf (out, (size_t) outn, "%s", nm); break; } }
+	nv_closesock (s);
+	{ char m[120]; snprintf (m, sizeof m, "this device's name: %s", r == 1 ? out : r == 0 ? "none yet" : "the meeting point did not answer"); nv_log (m); }
+	return r;
+}
 const char *vx_net_status (void)
 {
 	static char out[16384]; char t[256], g[1100];

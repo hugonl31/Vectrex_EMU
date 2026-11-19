@@ -3,6 +3,18 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.7.3
+
+* Player names are tied to the device: its secret key for the meeting point is made from the device (Windows'
+  machine id, Linux's machine-id, Android's id for the app; on an iPhone / iPad kept in the Keychain), hashed with the
+  program's own salt - the meeting point never sees the id. A fresh install on the same device asks the meeting point
+  and gets its name back ("Welcome back") instead of asking for one. Names chosen before keep their key.
+* The iPhone / iPad and Android apps ask for the name once, at the first start, and reserve it at the meeting point
+  (taken: another one is asked for; no connection: kept on the device and reserved at the next online game). A name
+  changed in Online is reserved anew and the old one set free.
+* The meeting point answers which name a key holds (tools/vxrelay.py, 'W'); the core can reserve and look up names
+  (vx_net_claim, vx_net_whoami) for the apps.
+
 ## v1.7.2
 
 * The PC version shows HDR on an HDR monitor (Windows with HDR on; View > HDR, on by itself): the picture goes

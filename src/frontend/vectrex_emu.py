@@ -5952,6 +5952,26 @@ class App:
         meeting point did not answer: a LAN without internet) is enough there"""
         if getattr(self, 'gamer', '') and (getattr(self, 'gamer_ok', False) or (lan and getattr(self, 'gamer_local', False))):
             return True
+        if not getattr(self, 'gamer', '') and not getattr(self, 'whoami_asked', False):   # (a fresh install: this PC's name back?)
+            self.whoami_asked = True
+            import netplay
+            if not self.player_key:
+                self.player_key = netplay.machine_key(); self.save_settings()
+            server, key = self.net_server(), self.player_key
+            def work():
+                got = netplay.whoami(server, key)
+                def ui():
+                    if got:
+                        self.gamer, self.gamer_ok = got, True; self.save_settings()
+                        print('online: welcome back %s' % got, flush=True)
+                        self.flash('WELCOME BACK,', got, secs=3)
+                        if then:
+                            self.root.after(50, then)
+                    else:
+                        self.name_window(then)
+                self.root.after(0, ui)
+            threading.Thread(target=work, daemon=True).start()
+            return False
         self.name_window(then)
         return False
     def name_window(self, then=None, change=False):
@@ -5984,7 +6004,7 @@ class App:
             if not name:
                 msg.configure(text='A name: 1 to 10 of A-Z 0-9'); return
             if not self.player_key:
-                self.player_key = secrets.token_hex(16); self.save_settings()
+                self.player_key = netplay.machine_key(); self.save_settings()   # (from the machine: a reinstall gets the name back)
             old = self.gamer if (change and self.gamer_ok and self.gamer != name) else None
             busy['on'] = True; msg.configure(text='Asking the meeting point...'); nv.set(name)
             server, key = self.net_server(), self.player_key

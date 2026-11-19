@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.7.3
+- Online: your player name is asked once and kept for every mode
+- Online: a fresh install on the same device gets its name back
+- Apps: the name is reserved at the first start
+
 ## v1.7.2
 - PC: HDR on an HDR monitor (View > HDR) - as on phones
 - Player names: A-Z and 0-9 only; needed to host or join

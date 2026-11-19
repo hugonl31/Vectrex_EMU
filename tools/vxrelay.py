@@ -240,6 +240,15 @@ class Relay:
             self.send(addr, b'n', json.dumps(dict(ok=1, name=name)).encode())
             print('name %s' % name, flush=True)
             return
+        if kind == b'W':                                # (which name is this key's: a fresh install on the same device -
+            try:                                        #  its key made from the device - gets its name back)
+                q = json.loads(body.decode())
+                h = self.key_hash(q.get('key')) if isinstance(q, dict) else None
+            except (ValueError, UnicodeDecodeError):
+                return
+            mine = [(e['t'], n) for n, e in self.names.items() if h and e.get('k') == h and now - e['t'] <= NAME_DAYS * 86400]
+            self.send(addr, b'w', json.dumps(dict(name=max(mine)[1] if mine else None)).encode())
+            return
         if kind == b'R':
             try:
                 info = json.loads(body.decode())

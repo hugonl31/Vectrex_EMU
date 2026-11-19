@@ -683,17 +683,18 @@ static void vxa_toast (NSString *s, double secs)
 	long long sz = 0; NSMutableArray *names = [NSMutableArray array];
 	for (NSDictionary *p in _parts) if ([need containsObject:p[@"id"]]) { sz += [p[@"size"] longLongValue]; [names addObject:p[@"name"]]; }
 	vlog ("parts: new versions - %s (%.1f MB)", [names componentsJoinedByString:@", "].UTF8String, sz / 1e6);
-	/* (the game starts first, the offer comes over it: on the iPad the offer never showed on the start screen and the
-	 *  start waited for it for good) */
-	[self startCore];
-	__weak VXGameVC *ws = self;
-	dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (1.5 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [ws chooseParts:NO]; });
+	/* (the new versions of the parts here, and a needed one missing: fetched at once on the start screen, the progress
+	 *  shown - the game only after them, the owner: no playing until all downloads are done. No offer to wait on - on the
+	 *  iPad it never showed on the start screen and the start waited for good) */
+	[self fetchParts:need wifi:NO];
 }
 - (void) fetchParts:(NSArray<NSString *> *)ids wifi:(BOOL)wifi
 {
 	if (!ids.count) { [self startCore]; return; }
 	long long total = 0; for (NSDictionary *p in _parts) if ([ids containsObject:p[@"id"]]) total += [p[@"size"] longLongValue];
 	_qIds = [ids mutableCopy]; _qWifi = wifi; _qTotal = total; _qDone = 0; _prog.hidden = NO; _prog.progress = 0;
+	if (_link && !_welcome.superview) {                    /* (playing: the start screen over the game again, the game waits until it is done) */
+		_welcome.alpha = 1; _welcome.frame = self.view.bounds; [self.view addSubview:_welcome]; vxa_hold (1); }
 	vlog ("parts: fetching %s (%.1f MB)%s", [ids componentsJoinedByString:@", "].UTF8String, total / 1e6, wifi ? ", Wi-Fi only" : "");
 	_status.text = wifi ? @"Waiting for Wi-Fi: the download starts by itself then, in the background too. A notification says when the games are ready." : @"Downloading...";
 	[self nextPart];
@@ -705,18 +706,28 @@ static void vxa_toast (NSString *s, double secs)
 		if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
 			UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
 			[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
-		if (!_link) { _firstPack = 1; [self startCore]; } return; }
+		if (!_link) { _firstPack = 1; [self startCore]; } else [self closeWelcome];
+		return; }
 	NSString *pid = _qIds.firstObject; NSDictionary *part = nil; for (NSDictionary *p in _parts) if ([p[@"id"] isEqualToString:pid]) part = p;
 	if (!part) { [_qIds removeObjectAtIndex:0]; [self nextPart]; return; }
 	long long psz = [part[@"size"] longLongValue];
 	[VXPack.shared fetchPart:pid version:part[@"version"] wifiOnly:_qWifi progress:^(int64_t got, int64_t tot) { (void) tot;
 			long long all = self->_qDone + got; self->_prog.progress = self->_qTotal > 0 ? (float) ((double) all / self->_qTotal) : 0;
 			self->_status.text = [NSString stringWithFormat:@"%@\n%.1f of %.1f MB  -  %.0f %%\nIt goes on in the background: use other apps meanwhile.", part[@"name"], all / 1e6, self->_qTotal / 1e6,
-				self->_qTotal > 0 ? 100.0 * all / self->_qTotal : 0]; }
+				self->_qTotal > 0 ? 100.0 * all / self->_qTotal : 0];
+}
 		unpacking:^{ self->_status.text = [NSString stringWithFormat:@"%@\nUnpacking...", part[@"name"]]; }
 		done:^(BOOL ok) {
-			if (!ok) { self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; return; }
+			if (!ok) { self->_prog.hidden = YES; self->_status.text = @"The games could not be fetched. Close the app and try again."; if ([VXPack installed].count) {   /* (the files here still play: on with them after a moment) */
+					self->_status.text = @"The download failed - no connection to the project's server. On with the files here; try again later in Settings > Downloads.";
+					dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (4 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ self->_qIds = nil; if (self->_link) [self closeWelcome]; else [self startCore]; }); }
+				return; }
 			self->_qDone += psz; [self->_qIds removeObject:pid]; [self nextPart]; }];
+}
+- (void) closeWelcome                             /* (a download while playing done: the game on again) */
+{
+	[UIView animateWithDuration:0.4 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
+	vxa_hold (0);
 }
 - (void) makeDisplayBuffer                      /* (the Metal layer's pixels: the view's, at the screen's own scale) */
 {
@@ -801,7 +812,7 @@ static void vxa_toast (NSString *s, double secs)
 	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3) n++;
 	if (n > 4) n = 4;
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
-	if (vxa_holding) return;                       /* (a screen over the game: it waits) */
+	if (vxa_holding || _welcome.superview) return; /* (a screen over the game, or a download on the start screen: it waits - no playing while downloading) */
 	[EAGLContext setCurrentContext:_ctx];
 	/* (behind: the runs before the last emulate only - drawing each one's picture as well, that no one sees, kept the GPU
 	 *  behind for good: 3 runs a tick, ~20 pictures a second until a screen was opened) */
@@ -1042,8 +1053,10 @@ void vxa_do (NSString *w)
 	else if ([w isEqualToString:@"pause"]) vxa_press (RETROK_p, 0);
 	else if ([w isEqualToString:@"overlay"]) { int i = vxa_opt_find ("vectrex_emu_overlay"); if (i >= 0) vxa_oset (i, strcmp (vxa_opt[i].val, "on") ? "on" : "off"); }
 }
+static int vxa_net_pick (NSString *path);
 void vxa_load (NSString *path)
 {
+	if (vxa_net_pick (path)) return;                  /* (online: the host's pick goes to both, player 2's to none) */
 	vlog ("load %s (memory %.0f MB)", path.UTF8String, vxa_mem_mb ()); vx_app_load (path.fileSystemRepresentation);
 	NSString *d = vxa_docs (); if ([path hasPrefix:d]) [NSUserDefaults.standardUserDefaults setObject:[path substringFromIndex:d.length + 1] forKey:@"lastGame"];
 	NSMutableArray *r = [[NSUserDefaults.standardUserDefaults arrayForKey:@"recent"] mutableCopy] ?: [NSMutableArray array];
@@ -1087,6 +1100,18 @@ static int vxa_net_on;                               /* (1 while a game for two 
 static NSMutableDictionary<NSString *, NSString *> *vxa_md5s;   /* (path -> its MD5: the library, for the host's game) */
 void vxa_net_hosting (NSString *rom) { vxa_net_rom = rom; }
 int vxa_net_playing (void) { return vxa_net_on; }
+static void vxa_ntoast (NSString *s);
+/* online, a game picked in the library: the host's starts on both sides (vx_net_regame), player 2 can not */
+static int vxa_net_pick (NSString *path)
+{
+	if (!vxa_net_on) return 0;
+	NSDictionary *st = [NSJSONSerialization JSONObjectWithData:[@(vx_net_status ()) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+	if ([st[@"role"] intValue] != 1) { vxa_ntoast (@"ONLINE: ONLY THE HOST CHANGES THE GAME"); vlog ("online: player 2 picked %s - only the host changes the game", path.lastPathComponent.UTF8String); return 1; }
+	int ski = vxa_opt_find ("vectrex_emu_skip_intro"); const int skip = ski >= 0 && !strcmp (vxa_opt[ski].val, "on");
+	if (vx_net_regame (path.fileSystemRepresentation, skip, "auto", 0.0)) { vxa_ntoast ([NSString stringWithFormat:@"ONLINE: STARTING %@ FOR BOTH...", path.lastPathComponent.stringByDeletingPathExtension.uppercaseString]);
+		vlog ("online: the host picked %s - offered to player 2", path.lastPathComponent.UTF8String); }
+	return 1;
+}
 static void vxa_ntoast (NSString *s)
 {
 	UIViewController *vc = vxa_vc; if (!vc) return; UIView *v = vc.view;
@@ -1139,12 +1164,27 @@ static void vxa_net_tick (void)
 			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 2%@", [st[@"relay"] intValue] ? @" (RELAYED)" : @"",
 				[st[@"card"] intValue] ? [NSString stringWithFormat:@" - UVMC2 %@", [st[@"uvm2"] uppercaseString]] : @""]); } }
 	if (vxa_net_on) {
+		static int seen_rg = 0, seen_reset = 0;
+		{ NSString *m = st[@"regame_msg"]; if ([m isKindOfClass:NSString.class] && m.length) { vxa_ntoast ([@"ONLINE: " stringByAppendingString:m.uppercaseString]); vlog ("online: %s", m.UTF8String); } }
+		{ NSDictionary *g = st[@"regame_offer"];                 /* (player 2: the host's next game - here?) */
+		  if ([g isKindOfClass:NSDictionary.class]) { NSString *p = [g[@"md5"] isKindOfClass:NSString.class] ? vxa_find_md5 (g[@"md5"]) : nil;
+			vx_net_regame_answer (p.length ? p.fileSystemRepresentation : NULL);
+			if (!p.length) vxa_ntoast ([NSString stringWithFormat:@"ONLINE: YOU DO NOT HAVE %@", [g[@"name"] description].stringByDeletingPathExtension.uppercaseString]);
+			vlog ("online: the host's next game %s: %s", [[g[@"name"] description] UTF8String], p.length ? p.lastPathComponent.UTF8String : "not here"); } }
+		{ const int n = [st[@"regame_n"] intValue]; if (n != seen_rg) { seen_rg = n; NSString *gn = [st[@"game"] isKindOfClass:NSDictionary.class] ? [st[@"game"][@"name"] description] : @"";
+			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: NOW PLAYING %@", gn.stringByDeletingPathExtension.uppercaseString]); vlog ("online: both switched to %s", gn.UTF8String); } }
+		{ const int n = [st[@"reset_n"] intValue]; if (n != seen_reset) { seen_reset = n; const int me = [st[@"role"] intValue];
+			NSString *who = [st[@"reset_by"] intValue] == me ? @"YOU" : ([st[@"peer"] isKindOfClass:NSString.class] && [st[@"peer"] length] ? [st[@"peer"] uppercaseString] : @"THE OTHER PLAYER");
+			vxa_ntoast ([NSString stringWithFormat:@"RESET (%@)", who]); vlog ("online: reset by %s", who.UTF8String); } }
 		NSArray *chat = st[@"chat"]; if ([chat isKindOfClass:NSArray.class] && chat.count) vxa_net_chat_in (chat);
 		const int pp = [st[@"peer_paused"] intValue] && [st[@"paused"] intValue];
 		if (pp && !said_pause) { said_pause = 1; vxa_ntoast (@"PAUSED BY THE OTHER PLAYER"); } else if (!pp) said_pause = 0;
 		if ([st[@"desync"] intValue] >= 0 && !said_desync) { said_desync = 1; vxa_ntoast (@"ONLINE: OUT OF STEP - THE TWO GAMES DIFFER"); }
-		if ([st[@"lost"] intValue] && !said_lost) { said_lost = 1; vxa_ntoast ([st[@"left"] intValue] ? @"ONLINE: THE OTHER PLAYER LEFT" : @"ONLINE: CONNECTION LOST");
-			vlog ("online: %s", [st[@"left"] intValue] ? "the other player left" : "connection lost"); vx_net_leave (); vxa_net_on = 0; }
+		/* (only Leave ends a game: the other's Leave ends it here too; a gap in the connection is waited out) */
+		if ([st[@"left"] intValue] && !said_lost) { said_lost = 1; vxa_ntoast (@"ONLINE: THE OTHER PLAYER LEFT"); vlog ("online: the other player left"); vx_net_leave (); vxa_net_on = 0; }
+		else if (!said_lost) { static int gap; const int l = [st[@"lost"] intValue];
+			if (l && !gap) { gap = 1; vxa_ntoast (@"ONLINE: NO CONNECTION - WAITING FOR THE OTHER PLAYER (ONLINE > LEAVE TO STOP)"); vlog ("online: no connection - waiting"); }
+			else if (!l && gap) { gap = 0; vxa_ntoast (@"ONLINE: CONNECTED AGAIN"); vlog ("online: connected again"); } }
 		if (ph != 4 && !said_lost) vxa_net_on = 0; }
 }
 

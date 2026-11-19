@@ -237,7 +237,7 @@ void vx_app_osd (char *fps, char *hz, char *emu, int *cpu, int *gpu)
 { snprintf (fps, 24, "%s", dk_osd[0]); snprintf (hz, 24, "%s", dk_osd[1]); snprintf (emu, 24, "%s", dk_osd[2]); *cpu = dk_cpu; *gpu = dk_gpu; }
 double vx_app_volume (void) { return pw_on ? vx_vol : 0; }
 void vx_app_turn (double d) { turn_volume (d); }
-void vx_app_power (void) { if (pw_on) { vol_before_off = vx_vol > 0.01f ? vx_vol : 0.5f; vx_vol = 0; pw_switch (0, 0); dk_dirty_set = 1; } else power_up (); }
+void vx_app_power (void) { if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] power: not during an online game\n"); return; } if (pw_on) { vol_before_off = vx_vol > 0.01f ? vx_vol : 0.5f; vx_vol = 0; pw_switch (0, 0); dk_dirty_set = 1; } else power_up (); }
 /* RetroArch's pointer (the mouse, touch) on the deck - and, switched off, on the picture: on */
 static int dk_prev_press;
 static void dk_pointer (void)
@@ -270,7 +270,7 @@ static void dk_pointer (void)
 	  const int on = zone == 4 && y <= dk_cy + 0.4 * r && fabs (x - dk_rx) <= 1.3 * r;   /* (the button's upper half up to its word, wider) */
 	  if (pr && !dk_prev_press && on) { held = 1; ht = vt_wall (); done = 0; }
 	  else if (!pr || !on) held = 0;
-	  else if (held && !done && vt_wall () - ht >= 0.2) { extern void vecx_reset_button (void); done = 1; emu_wait_ext (); vecx_reset_button (); dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
+	  else if (held && !done && vt_wall () - ht >= 0.2) { extern void vecx_reset_button (void); done = 1; if (netvx_playing ()) ls_reset_req = 1; else { emu_wait_ext (); vecx_reset_button (); } dk_reset_until = vt_wall () + 0.18; dk_dirty_set = 1; } }
 	if (pr && !dk_prev_press) {
 		if (zone == 1 || zone == 4) { }
 		else if (zone == 2) { if (vt_wall () - br_t_toggle >= 0.3) { br_show (1); dk_dirty_set = 1; } }

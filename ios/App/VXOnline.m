@@ -169,7 +169,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name as the ga
 {
 	[t deselectRowAtIndexPath:ip animated:YES]; [self.view endEditing:YES];
 	id a = _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][2];
-	if (a != [NSNull null]) { ((void (^) (void)) a) (); [self poll]; }
+	if (a != [NSNull null]) { ulog ([NSString stringWithFormat:@"online: tap %@", _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][0]]); ((void (^) (void)) a) (); [self poll]; }
 }
 @end
 

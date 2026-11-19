@@ -1290,7 +1290,7 @@ static void vxa_net_tick (void)
 	NSDictionary *st = [NSJSONSerialization JSONObjectWithData:[@(vx_net_status ()) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
 	if (![st isKindOfClass:NSDictionary.class]) return;
 	const int ph = [st[@"phase"] intValue], role = [st[@"role"] intValue], acc = [st[@"accepted"] intValue];
-	static int asked, said_pause, said_desync, said_lost, hot_started; static double hot_said;
+	static int asked, said_pause, said_desync, said_lost, hot_started; static double hot_said; int just = 0;   /* (just: started in this pass - ph is still the phase before) */
 	NSString *peer = [st[@"peer"] isKindOfClass:NSString.class] && [st[@"peer"] length] ? [st[@"peer"] uppercaseString] : (role == 1 ? @"PLAYER 2" : @"THE HOST");
 	if (ph < 3) { asked = 0; hot_started = 0; vxa_net_join_rom = nil; }
 	/* player 2, joining the host's running game: its state arriving, then in it (the core switches to playing itself) */
@@ -1302,10 +1302,10 @@ static void vxa_net_tick (void)
 	if (ph == 3 && !vxa_net_on) {
 		if (role == 1 && acc == 1 && [st[@"ready"] intValue] && vxa_net_rom.length) {   /* (the host: player 2 has the game (and its card compared))  */
 			if ([st[@"hot"] intValue] && vx_net_go_hot ()) {   /* (app to app, no SD card: player 2 plugged into the running game - no reset) */
-				vxa_net_on = 1; said_pause = said_desync = said_lost = 0; vlog ("online: player 2 joins the running game as player 2");
+				vxa_net_on = 1; just = 1; said_pause = said_desync = said_lost = 0; vlog ("online: player 2 joins the running game as player 2");
 				vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ JOINED AS PLAYER 2%@ - YOUR GAME GOES ON", peer, [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); }
 			else {                                       /* (the desktop, or a UVMC2 / PiTrex: both start anew) */
-				vx_net_prepare (); vxa_load (vxa_net_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
+				vx_net_prepare (); vxa_load (vxa_net_rom); vx_net_go (); vxa_net_on = 1; just = 1; said_pause = said_desync = said_lost = 0;
 				vlog ("online: playing %s as player 1 (both started anew)", vxa_net_rom.lastPathComponent.UTF8String);
 				vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ JOINED%@ - BOTH START ANEW, YOU ARE PLAYER 1", peer, [st[@"relay"] intValue] ? @" (RELAYED)" : @""]); } }
 		else if (role == 2 && !asked) { asked = 1;                               /* (the joiner: the host's game in the library?) */
@@ -1318,7 +1318,7 @@ static void vxa_net_tick (void)
 			if (!hot_started) { hot_started = 1; hot_said = 0; vx_net_prepare_hot (); vxa_load (vxa_net_join_rom);
 				vlog ("online: joining the host's running game %s", vxa_net_join_rom.lastPathComponent.UTF8String); vxa_ntoast ([NSString stringWithFormat:@"ONLINE: JOINING %@'S GAME...", peer]); } }
 		else if (role == 2 && acc == 1 && [st[@"ready"] intValue] && vxa_net_join_rom.length) {   /* (both agreed, the card too: start) */
-			vx_net_prepare (); vxa_load (vxa_net_join_rom); vx_net_go (); vxa_net_on = 1; said_pause = said_desync = said_lost = 0;
+			vx_net_prepare (); vxa_load (vxa_net_join_rom); vx_net_go (); vxa_net_on = 1; just = 1; said_pause = said_desync = said_lost = 0;
 			vlog ("online: playing %s as player 2", vxa_net_join_rom.lastPathComponent.UTF8String);
 			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 2%@", [st[@"relay"] intValue] ? @" (RELAYED)" : @"",
 				[st[@"card"] intValue] ? [NSString stringWithFormat:@" - UVMC2 %@", [st[@"uvm2"] uppercaseString]] : @""]); } }
@@ -1347,7 +1347,8 @@ static void vxa_net_tick (void)
 		else if (!said_lost) { static int gap; const int l = [st[@"lost"] intValue];
 			if (l && !gap) { gap = 1; vxa_ntoast (@"ONLINE: NO CONNECTION - WAITING FOR THE OTHER PLAYER (ONLINE > LEAVE TO STOP)"); vlog ("online: no connection - waiting"); }
 			else if (!l && gap) { gap = 0; vxa_ntoast (@"ONLINE: CONNECTED AGAIN"); vlog ("online: connected again"); } }
-		if (ph != 4 && !said_lost) vxa_net_on = 0; }
+		if (ph != 4 && !said_lost && !just) vxa_net_on = 0; }   /* (not in the pass that started it: ph was read before - it switched every game's
+	                                                     "online" off at once: no game change for the host, the offline catch-up on - 2026-11-20) */
 }
 
 /* ---------------------------------------------------------------- the app */

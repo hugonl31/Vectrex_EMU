@@ -1717,6 +1717,11 @@ PHOS_GCAP = 1.5
 PHOS_SMOOTH = 0.0               # (0.8 the owner's choice 2026-10-14; 0 and off by default since the two-layer afterglow,
                                 #  2026-10-29: crisp copies - phos_smooth_on)
 PHOS_ACAP = 1.0                 # the afterglow's brightest: a line's (the corners' extra light only while lit - SHOW_SHADER)
+# the afterglow's faint end lifted where no overlay is shown: g x (1 + A / (1 + g / G0)) - up to A x G0 more, reached already
+# where it is faint. On black the trail so looks as it does through an overlay, whose plastic glow and scratches (added as
+# screen values) lift it there; measured with the RetroArch core on Armor Attack's jeep, overlay on / off (the owner,
+# 2026-11-19). The core lifts it always and adds the sheet's own light to the trail as light instead - the same look
+TRAIL_LIFT_A, TRAIL_LIFT_G0 = 3.0, 0.00625
 PHOS_GROW_MAX = PHOS_SMOOTH_MAX = 0.8   # (the sliders 0 .. 1 reach this: joining's spread, smoothing's px - the owner,
                                         #  2026-10-29: more looks wrong)
 PHOS_GAGE = 0.035               # the afterglow grows only this long after its hold (2 display frames: it joins
@@ -1885,7 +1890,7 @@ uniform vec3 wb;
 uniform vec2 px;
 """ + PHOS_FUNC + b"""
 uniform vec3 wbc;
-uniform float acap;
+uniform float acap, lifta;
 vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pure white in the bright core: a cold white
     float m = max(c.r, max(c.g, c.b));      //  line that keeps the screen's full brightness (WB_CORE)
     return c * mix(wb, wbc, smoothstep(0.35, 0.9, m));
@@ -1909,6 +1914,7 @@ void main() {
           + 0.125 * (glow(uv + vec2(d.x, 0.0)) + glow(uv - vec2(d.x, 0.0)) + glow(uv + vec2(0.0, d.y)) + glow(uv - vec2(0.0, d.y)))
           + 0.0625 * (glow(uv + d) + glow(uv - d) + glow(uv + vec2(d.x, -d.y)) + glow(uv + vec2(-d.x, d.y)));
     }
+    g *= 1.0 + lifta / (1.0 + g / 0.00625);   // (the faint end lifted with no overlay shown: TRAIL_LIFT_A, TRAIL_LIFT_G0)
     gl_FragColor = vec4(cold(lit + g, wb), 0.7);   // (they add up: a new line's glow over a trail - the brighter of the two
                                                    //  only, its glow ended in an edge there. White balance: see cold)
 }
@@ -2171,7 +2177,7 @@ class GLBloomRenderer(GLRenderer):
         self.u_gp = {k: GetUniform(self.glowpack, k.encode()) for k in GK}
         self.sprog = program(SHOW_SHADER, 'phosphor show')
         self.u_stex = GetUniform(self.sprog, b'tex')
-        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'sm', 'px', 'wb', 'wbc', 'acap', 'g1', 'g2', 'pkd')}
+        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'sm', 'px', 'wb', 'wbc', 'acap', 'g1', 'g2', 'pkd', 'lifta')}
         try:                                                    # (max blending: overlaps do not add up)
             self.BlendEq = proc('glBlendEquation', None, u)
         except OSError:
@@ -3798,6 +3804,7 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform3f(self.u_sh['wb'], *self._wb())
         self.Uniform3f(self.u_sh['wbc'], *self._wbc())
         self.Uniform1f(self.u_sh['acap'], getattr(self, 'phos_acap', PHOS_ACAP))
+        self.Uniform1f(self.u_sh['lifta'], 0.0 if (self.art and self.art_on) else TRAIL_LIFT_A)   # (an overlay shown: its own look)
         self.Uniform1f(self.u_sh['sm'], PHOS_SMOOTH_MAX * min(1.0, getattr(self, 'phos_smooth', PHOS_SMOOTH)) * ph / 820.0
                        if (self.trail_on and getattr(self, 'phos_smooth_on', False)) else 0.0)
         self.Uniform2f(self.u_sh['px'], 1.0 / max(1, pw), 1.0 / max(1, ph))

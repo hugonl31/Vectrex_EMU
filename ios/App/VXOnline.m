@@ -1,0 +1,184 @@
+/* VXOnline.m - online play: host or join a game for two, the desktop's way (the core's netvx.c - a phone plays a PC
+ * too): in the game room (public), with a code (private), or on this Wi-Fi without the internet; the game room's
+ * waiting games and the ones on this network, a tap to join. The game itself is started by the app (VXApp.m vxa_net_tick)
+ * once both sides agree. Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
+#import "VXApp.h"
+
+static UIFont *OF (CGFloat s, UIFontWeight w) { return [UIFont systemFontOfSize:s weight:w]; }
+static UITableViewCell *OCell (NSString *t, NSString *d, BOOL tap)
+{
+	UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+	c.textLabel.text = t; c.textLabel.textColor = tap ? VX_HI : VX_FG; c.textLabel.numberOfLines = 0;
+	c.detailTextLabel.text = d; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 0;
+	c.backgroundColor = VX_PANEL; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb;
+	if (!tap) c.selectionStyle = UITableViewCellSelectionStyleNone;
+	return c;
+}
+NSString *vxa_net_name (void)
+{
+	NSString *n = [NSUserDefaults.standardUserDefaults stringForKey:@"net.name"];
+	return n.length ? n : @"";
+}
+NSString *vxa_net_key (void)                         /* (this phone's secret for its name at the meeting point: made once) */
+{
+	NSString *k = [NSUserDefaults.standardUserDefaults stringForKey:@"net.key"];
+	if (!k.length) { NSMutableString *m = [NSMutableString string]; for (int i = 0; i < 16; i++) [m appendFormat:@"%02x", arc4random_uniform (256)];
+		k = m; [NSUserDefaults.standardUserDefaults setObject:k forKey:@"net.key"]; }
+	return k;
+}
+static NSString *OClean (NSString *s)                 /* (a gamer name as the game room keeps it: A-Z 0-9 _ -, up to 10) */
+{
+	NSMutableString *o = [NSMutableString string];
+	for (NSUInteger i = 0; i < s.length && o.length < 10; i++) { unichar c = [s.uppercaseString characterAtIndex:i];
+		if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') [o appendFormat:@"%C", c]; else if (c == ' ') [o appendString:@"_"]; }
+	return o;
+}
+
+@interface VXOnline : UITableViewController <UITextFieldDelegate>
+@end
+@implementation VXOnline { NSTimer *_tm; NSDictionary *_st; NSString *_last; NSArray *_secs; int _shownPlay; }
+- (void) viewDidLoad
+{
+	[super viewDidLoad]; self.title = @"Online";
+	self.tableView.backgroundColor = VX_BG; self.tableView.separatorColor = VX_EDGE;
+	self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector (done)];
+	vx_net_lan (1); vx_net_room ();
+	__weak VXOnline *ws = self;
+	_tm = [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) { [ws poll]; }];
+	[self poll];
+}
+- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; [_tm invalidate]; _tm = nil; vx_net_lan (0); vxa_hold (0); }
+- (void) done { [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }]; }
+- (int) phase { return [_st[@"phase"] intValue]; }
+- (void) poll
+{
+	NSString *js = @(vx_net_status ()); NSDictionary *st = [NSJSONSerialization JSONObjectWithData:[js dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+	if (![st isKindOfClass:NSDictionary.class]) return;
+	NSArray *chat = st[@"chat"]; if ([chat isKindOfClass:NSArray.class] && chat.count) { extern void vxa_net_chat_in (NSArray *lines); vxa_net_chat_in (chat); }
+	NSMutableDictionary *k = [st mutableCopy]; [k removeObjectForKey:@"chat"]; [k removeObjectForKey:@"waiting"]; [k removeObjectForKey:@"frame"]; [k removeObjectForKey:@"sums"]; [k removeObjectForKey:@"checked"];
+	NSString *key = [k description]; _st = st;
+	if ([self phase] == 4 && !_shownPlay) { _shownPlay = 1; [self done]; return; }   /* (the game started: back to it) */
+	if ([key isEqualToString:_last ?: @""]) return; _last = key;
+	[self build]; [self.tableView reloadData];
+}
+/* the sections, as the state is: [title, footer, rows (title, detail, action)] */
+- (void) build
+{
+	NSMutableArray *s = [NSMutableArray array]; int ph = [self phase], role = [_st[@"role"] intValue]; __weak VXOnline *ws = self;
+	NSString *game = vxa_game ().lastPathComponent.stringByDeletingPathExtension;
+	if (ph == 4) {                                    /* playing */
+		NSString *peer = [_st[@"peer"] length] ? _st[@"peer"] : @"the other player";
+		[s addObject:@[ @"Playing online", [NSString stringWithFormat:@"You are player %d. %@", role == 1 ? 1 : 2, [_st[@"relay"] intValue] ? @"The game goes through the meeting point (relayed): a little more delay." : @"A direct connection."], @[
+			@[ [NSString stringWithFormat:@"With %@", peer], [NSString stringWithFormat:@"%d frames of input delay%@", [_st[@"delay"] intValue], [_st[@"desync"] intValue] >= 0 ? @" - OUT OF STEP: the two games differ" : @""], [NSNull null] ],
+			@[ @"Chat", @"A line to the other player", ^{ [ws chat]; } ],
+			@[ @"Leave the online game", @"", ^{ vx_net_leave (); [ws done]; } ] ] ]];
+		_secs = s; return; }
+	if (ph >= 1 && ph <= 3) {                         /* hosting or joining: what happens */
+		NSString *t, *d; NSString *code = _st[@"code"];
+		if (role == 1) {
+			int mode = [_st[@"mode"] intValue];
+			if (ph == 1) { t = @"Asking the meeting point for a code..."; d = @""; }
+			else if (mode == 2) { t = @"Waiting on this Wi-Fi"; d = [NSString stringWithFormat:@"Player 2 picks your game under \"On this Wi-Fi\" or enters this phone's address: %@", vxa_net_ip ()]; }
+			else { t = [NSString stringWithFormat:@"Your code:  %@", code.length ? code : @"..."]; d = mode == 0 ? @"Your game is in the game room. Player 2 picks it there, or enters the code." : @"Tell player 2 this code: they enter it under Join."; }
+			if ([_st[@"peer"] length]) d = [NSString stringWithFormat:@"%@ is connecting...", _st[@"peer"]]; }
+		else { t = ph == 3 ? @"The host's game came: starting..." : @"Connecting to the host..."; d = [_st[@"peer"] length] ? [NSString stringWithFormat:@"Host: %@", _st[@"peer"]] : @""; }
+		[s addObject:@[ @"Online", @"", @[ @[ t, d, [NSNull null] ], @[ @"Cancel", @"", ^{ vx_net_leave (); [ws poll]; } ] ] ]]; }
+	else {
+		NSString *err = _st[@"error"];
+		if ([err isKindOfClass:NSString.class] && err.length && ph == 5) [s addObject:@[ @"", @"", @[ @[ @"Not connected", err, [NSNull null] ] ] ]];
+		[s addObject:@[ @"Your name", @"Up to 10 letters, digits, _ or -. Players see it in the game room and the chat.", @[ @[ @"#name", @"", [NSNull null] ] ] ]];
+		[s addObject:@[ game.length ? [NSString stringWithFormat:@"Host %@", game] : @"Host", game.length ? @"Player 2 needs the same game. Both start it together; you are player 1." : @"Start a game first, then host it here.", @[
+			@[ @"In the game room", @"Public: anyone can join it there", ^{ [ws host:0]; } ],
+			@[ @"With a code", @"Private: only who you tell the code", ^{ [ws host:1]; } ],
+			@[ @"On this Wi-Fi", @"No internet needed: players on the same network", ^{ [ws host:2]; } ] ] ]];
+		[s addObject:@[ @"Join", @"", @[ @[ @"Enter a code", @"Five letters from the host", ^{ [ws ask:@"The host's code" then:^(NSString *v) { vx_net_join (v.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); }]; } ],
+			@[ @"Enter an address", @"A host on this Wi-Fi (its address)", ^{ [ws ask:@"The host's address" then:^(NSString *v) { vx_net_join (v.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); }]; } ] ] ]];
+		NSMutableArray *room = [NSMutableArray array]; NSDictionary *r = _st[@"room"];
+		if ([r isKindOfClass:NSDictionary.class]) for (NSArray *g in r[@"g"]) if ([g isKindOfClass:NSArray.class] && g.count >= 6) {
+			NSString *code = g[0]; [room addObject:@[ [NSString stringWithFormat:@"%@", [g[2] stringByDeletingPathExtension]], [NSString stringWithFormat:@"%@ - waiting %d s", g[1] == [NSNull null] ? @"?" : g[1], [g[5] intValue]],
+				^{ vx_net_join (code.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); } ]]; }
+		int rs = [_st[@"room_state"] intValue];
+		if (!room.count) [room addObject:@[ rs == 1 ? @"Looking..." : rs == 3 ? @"The meeting point does not answer" : @"No games waiting", @"", [NSNull null] ]];
+		[room addObject:@[ @"Look again", @"", ^{ vx_net_room (); } ]];
+		[s addObject:@[ @"Game room", @"Public games waiting for a player 2, from phones and PCs.", room ]];
+		NSMutableArray *lan = [NSMutableArray array];
+		for (NSDictionary *g in _st[@"lan"]) if ([g isKindOfClass:NSDictionary.class]) { NSString *where = [NSString stringWithFormat:@"%@:%@", g[@"ip"], g[@"port"]];
+			[lan addObject:@[ [g[@"name"] stringByDeletingPathExtension], [NSString stringWithFormat:@"%@ - %@", [g[@"gamer"] length] ? g[@"gamer"] : @"?", where],
+				^{ vx_net_join (where.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); } ]]; }
+		if (!lan.count) [lan addObject:@[ @"None found", [NSString stringWithFormat:@"This phone: %@", vxa_net_ip ()], [NSNull null] ]];
+		[s addObject:@[ @"On this Wi-Fi", @"Games hosted on this network. Not listed? Enter the host's address under Join.", lan ]]; }
+	_secs = s;
+}
+- (void) host:(int)mode
+{
+	NSString *rom = vxa_game ();
+	if (!rom.length) { [self note:@"Start a game first: the one you host"]; return; }
+	NSString *nm = OClean (vxa_net_name ());
+	if (mode == 0 && !nm.length) { [self note:@"The game room needs your name: enter it above"]; return; }
+	NSString *ext = rom.pathExtension.lowercaseString;
+	if ([@[ @"um2", @"img", @"pit" ] containsObject:ext]) { [self note:@"UVMC2 and PiTrex games online: not in this version yet"]; return; }
+	int ski = vxa_ofind ("vectrex_emu_skip_intro"); int skip = ski >= 0 && !strcmp (vxa_oval (ski), "on");
+	extern void vxa_net_hosting (NSString *rom); vxa_net_hosting (rom);
+	vx_net_host (mode, nm.UTF8String, vxa_net_key ().UTF8String, rom.fileSystemRepresentation, skip, "auto", 0.0);
+	ulog ([NSString stringWithFormat:@"online: hosting %@ (%@)", rom.lastPathComponent, mode == 0 ? @"game room" : mode == 1 ? @"code" : @"Wi-Fi"]);
+	[self poll];
+}
+- (void) note:(NSString *)t
+{
+	UIAlertController *a = [UIAlertController alertControllerWithTitle:nil message:t preferredStyle:UIAlertControllerStyleAlert];
+	[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]]; [self presentViewController:a animated:YES completion:nil];
+}
+- (void) ask:(NSString *)t then:(void (^) (NSString *))go
+{
+	UIAlertController *a = [UIAlertController alertControllerWithTitle:t message:nil preferredStyle:UIAlertControllerStyleAlert];
+	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters; f.autocorrectionType = UITextAutocorrectionTypeNo; }];
+	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+	[a addAction:[UIAlertAction actionWithTitle:@"Join" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { NSString *v = [a.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+		if (v.length) { ulog ([NSString stringWithFormat:@"online: joining %@", v]); go (v); } }]];
+	[self presentViewController:a animated:YES completion:nil];
+}
+- (void) chat
+{
+	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Chat" message:nil preferredStyle:UIAlertControllerStyleAlert];
+	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.placeholder = @"A line to the other player"; }];
+	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+	[a addAction:[UIAlertAction actionWithTitle:@"Send" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { NSString *v = a.textFields.firstObject.text; if (v.length) vx_net_chat (v.UTF8String); }]];
+	[self presentViewController:a animated:YES completion:nil];
+}
+- (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _secs.count; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger) [_secs[(NSUInteger) s][2] count]; }
+- (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { NSString *h = _secs[(NSUInteger) s][0]; return h.length ? h : nil; }
+- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { NSString *f = _secs[(NSUInteger) s][1]; return f.length ? f : nil; }
+- (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
+- (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
+- (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
+{
+	NSArray *r = _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row];
+	if ([r[0] isEqualToString:@"#name"]) {             /* (the name: typed in place) */
+		UITableViewCell *c = OCell (@"", @"", NO); UITextField *f = [UITextField new]; f.text = vxa_net_name (); f.placeholder = @"YOUR NAME"; f.textColor = VX_HI; f.font = OF (17, UIFontWeightSemibold);
+		f.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters; f.autocorrectionType = UITextAutocorrectionTypeNo; f.returnKeyType = UIReturnKeyDone; f.delegate = self;
+		f.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"YOUR NAME" attributes:@{ NSForegroundColorAttributeName: VX_DIM }];
+		f.translatesAutoresizingMaskIntoConstraints = NO; [c.contentView addSubview:f];
+		[NSLayoutConstraint activateConstraints:@[ [f.leadingAnchor constraintEqualToAnchor:c.contentView.layoutMarginsGuide.leadingAnchor], [f.trailingAnchor constraintEqualToAnchor:c.contentView.layoutMarginsGuide.trailingAnchor],
+			[f.topAnchor constraintEqualToAnchor:c.contentView.topAnchor constant:8], [f.bottomAnchor constraintEqualToAnchor:c.contentView.bottomAnchor constant:-8], [f.heightAnchor constraintGreaterThanOrEqualToConstant:32] ]];
+		return c; }
+	return OCell (r[0], r[1], r[2] != [NSNull null]);
+}
+- (BOOL) textFieldShouldReturn:(UITextField *)f { [f resignFirstResponder]; return YES; }
+- (void) textFieldDidEndEditing:(UITextField *)f { NSString *n = OClean (f.text ?: @""); f.text = n; [NSUserDefaults.standardUserDefaults setObject:n forKey:@"net.name"]; }
+- (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
+{
+	[t deselectRowAtIndexPath:ip animated:YES]; [self.view endEditing:YES];
+	id a = _secs[(NSUInteger) ip.section][2][(NSUInteger) ip.row][2];
+	if (a != [NSNull null]) { ((void (^) (void)) a) (); [self poll]; }
+}
+@end
+
+@implementation VXUI (Online)
++ (void) showOnlineFrom:(UIViewController *)vc
+{
+	vxa_hold (1); VXOnline *o = [[VXOnline alloc] initWithStyle:UITableViewStyleInsetGrouped];
+	UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:o]; [VXUI styleNav:n];
+	[vc presentViewController:n animated:YES completion:nil];
+}
+@end

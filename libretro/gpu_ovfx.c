@@ -103,11 +103,13 @@ static const char *OX_FS_LIGHT =                /* (the light before the sheet: 
 	"  if (k2 > 0.0) { float sheet = step(0.004, texture(art, gl_FragCoord.xy / vec2(textureSize(s, 0))).a);\n"
 	"    vec2 uv = (gl_FragCoord.xy - pic.xy) / pic.z; o += LIGHTC * k2 * ceiling((uv * 0.9 - lpos.xy) / lpos.z, 0.15) * sheet; }\n"
 	"  fragc = vec4(o, texelFetch(s, ip, 0).a); }\n";
-static const char *OX_FS_DOWN =                 /* (DOWN_SHADER: 8 x 8 pixels, 1 3 3 1 per pair, by linear taps) */
-	"uniform sampler2D tex; uniform vec2 sp, qs; out vec4 fragc;\n"
+static const char *OX_FS_DOWN =                 /* (DOWN_SHADER: 8 x 8 pixels, 1 3 3 1 per pair, by linear taps;
+	                                               the light less its afterglow - what the plastic scatters) */
+	"uniform sampler2D tex, pS, pF; uniform vec2 sp, qs; uniform float br; out vec4 fragc;\n"
+	"vec3 sg(vec3 c, vec2 u) { return max(c - br * (texture(pS, u).rgb - texture(pF, u).rgb), 0.0); }\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / qs; vec4 c = vec4(0.0);\n"
 	"  for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) { float wi = (i == 0 || i == 3) ? 1.0 : 3.0, wj = (j == 0 || j == 3) ? 1.0 : 3.0;\n"
-	"    c += wi * wj * texture(tex, uv + vec2(float(2 * i - 3), float(2 * j - 3)) * sp); }\n"
+	"    vec2 u = uv + vec2(float(2 * i - 3), float(2 * j - 3)) * sp; vec4 t = texture(tex, u); c += wi * wj * vec4(sg(t.rgb, u), t.a); }\n"
 	"  fragc = c / 64.0; }\n";
 static const char *OX_FS_Q1 =                   /* (the light the plastic scatters, smoothed: GLOW_SMOOTH_S) */
 	"uniform sampler2D q0, q1; uniform float a; out vec4 fragc;\n"
@@ -149,7 +151,8 @@ static const char *OX_FS_HV =                   /* (SCR_HARM_V, both parts at on
 static const char *OX_FS_SHEET =                /* (the sheet: the core's filter tables (ART_SHADER), the ceiling light on it
 	                                               (OV_LIGHT_SHADER modes 0 and 1), the scratches and the glow (SCR_SHADE's two
 	                                               passes), the knee - written B G R as PH_FS_OUT) */
-	"uniform sampler2D L, ovm, ova, art, A, B, C, M, F, V1, V2;\n"
+	"uniform sampler2D L, ovm, ova, art, A, B, C, M, F, V1, V2, pS, pF; uniform float br;\n"
+	"vec3 sg(vec3 c, vec2 u) { return max(c - br * (texture(pS, u).rgb - texture(pF, u).rgb), 0.0); }\n"   /* (the light less its afterglow) */
 	"uniform float glint, room, scrk, scron, a2, a4, gk, glow, ref, ovl, wear, pxo;\n"
 	"uniform vec4 pen, rlp; uniform vec2 rpt[6]; uniform vec3 lpos, pic; uniform float dith; out vec4 fragc;\n"
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
@@ -160,12 +163,15 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	                                                   through the overlay's colour; softly up to the screen's peak) */
 	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"
 	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb; float hx = texelFetch(L, ivec2(gl_FragCoord.xy), 0).a;\n"
-	"  vec3 m = texture(ovm, uv).rgb, la = texture(ova, uv).rgb, l = dot(o, vec3(1.0 / 3.0)) * m; vec3 c = sqrt(l * l + la * la);\n"
+	"  vec3 o0 = sg(o, uv);\n"
+	"  vec3 m = texture(ovm, uv).rgb, la = texture(ova, uv).rgb, l = dot(o, vec3(1.0 / 3.0)) * m, l0 = dot(o0, vec3(1.0 / 3.0)) * m;\n"
+	"  vec3 c = sqrt(l0 * l0 + la * la), tm = vec3(1.0);\n"   /* (the picture from the light without the afterglow; tm: what the sheet
+	                                              does to the light passing it, the afterglow's too) */
 	"  vec4 ov = texture(art, uv); float sheet = step(0.004, ov.a);\n"
 	"  if (ovl > 0.0) { vec2 u = (gl_FragCoord.xy - pic.xy) / pic.z;\n"
 	"    vec2 d = (u - lpos.xy / 0.9) * vec2(1.0 / 1.25, 1.0); float s = (70.0 + 110.0 * wear) / 917.0, d2 = dot(d, d);\n"
 	"    float g = 0.30 * exp(-d2 / (2.0 * s * s)) + 0.05 * exp(-d2 / (18.0 * s * s));\n"
-	"    c *= 1.0 + 6.0 * g * ovl * sheet;\n"
+	"    c *= 1.0 + 6.0 * g * ovl * sheet; tm *= 1.0 + 6.0 * g * ovl * sheet;\n"
 	"    c += LIGHTC * 0.45 * ovl * ceiling((u * 0.9 - lpos.xy) / lpos.z, 0.02) * sheet; }\n"
 	"  if (scron > 0.0 || glow > 0.0) {\n"
 	"    float opq = step(0.996, ov.a), filt = step(0.004, ov.a) * (1.0 - opq);\n"
@@ -174,10 +180,11 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    vec4 a = texture(A, uv) * scron, b = texture(B, uv) * scron, cc = texture(C, uv) * scron;\n"
 	"    float D = max(a.x, 0.0), mt = D > 0.0 ? (1.0 - exp(-1.5 * D / ref)) / (1.0 - exp(-1.5)) : 0.0;\n"
 	"    vec2 px = vec2(pxo) / size;\n"
-	"    vec3 near = (texture(L, uv).rgb * 2.0 + texture(L, uv + px).rgb + texture(L, uv - px).rgb\n"
-	"                 + texture(L, uv + vec2(px.x, -px.y)).rgb + texture(L, uv - vec2(px.x, -px.y)).rgb) / 6.0;\n"
+	"    vec2 p2 = vec2(px.x, -px.y);\n"   /* (the scatter from the fresh light only: the fading trail lights the plastic hardly at all) */
+	"    vec3 near = (sg(texture(L, uv).rgb, uv) * 2.0 + sg(texture(L, uv + px).rgb, uv + px) + sg(texture(L, uv - px).rgb, uv - px)\n"
+	"                 + sg(texture(L, uv + p2).rgb, uv + p2) + sg(texture(L, uv - p2).rgb, uv - p2)) / 6.0;\n"
 	"    vec3 mid = texture(M, uv).rgb, far = texture(F, uv).rgb; float k = scrk * mt;\n"
-	"    c *= vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq));\n"
+	"    c *= vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq)); tm *= vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq));\n"
 	"    vec3 halo = (0.6 * near + 0.8 * mid + 0.5 * far) * trans;\n"
 	"    vec3 e = halo * k * 0.8 * glint + room * 0.6 * mt * own;\n"
 	"    vec4 h = texture(V1, uv), h2 = texture(V2, uv); vec3 lc = (far + 0.002) / (lum(far) + 0.002); float Rl = max(h.x, 0.0);\n"
@@ -198,6 +205,8 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    float cut = smoothstep(pen.x, pen.y, cc.z);\n"
 	"    e += cut * pen.z * (0.5 * near + 0.8 * mid + 0.6 * far) * (vec3(1.0) - trans * 0.5) + cut * room * 0.5;\n"
 	"    c += e; }\n"
+	"  c = sqrt(c * c + max(l * l - l0 * l0, 0.0) * tm * tm);\n"   /* (the afterglow added as light: the sheet's own light lifts it no more -
+	                                              added on it as a screen value it did, 2026-11-19; with no afterglow the picture as before) */
 	"  fragc = vec4((hdrx(knee(c), hx, m) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ox_prog (const char *vsrc, const char *a, const char *b)
@@ -334,7 +343,7 @@ static int ox_draw (int glow, double dt)
 	  OU1F (ox_light, "lca", cos (20 * M_PI / 180)); OU1F (ox_light, "lsa", sin (20 * M_PI / 180)); ox_quad (); } OXT (1);
 	const float qs[2] = { (float) ox_qw, (float) ox_qh };
 	/* the light at quarter size: smoothed (the glints, the glow), blurred (M: once, F: three times) */
-	ph_target (ox_Q0, 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_down); ph_bind (ox_down, "tex", 0, ox_L);
+	ph_target (ox_Q0, 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_down); ph_bind (ox_down, "tex", 0, ox_L); ph_bind (ox_down, "pS", 1, ph_S); ph_bind (ox_down, "pF", 2, ph_F[ph_i ^ 1]); OU1F (ox_down, "br", opt_bright);
 	glUniform2f_ (ph_ul (ox_down, "sp"), 1.0f / FW, 1.0f / FH); glUniform2f_ (ph_ul (ox_down, "qs"), qs[0], qs[1]); ox_quad (); OXT (2);
 	{ double a = 1.0 - exp (-(dt < 0 ? 0 : dt > 1 ? 1 : dt) / 0.15); if (ox_t_prev < 0) a = 1; ox_t_prev = 1;
 	  ph_target (ox_Q1[ox_q1i ^ 1], 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_q1); ph_bind (ox_q1, "q0", 0, ox_Q0); ph_bind (ox_q1, "q1", 1, ox_Q1[ox_q1i]);
@@ -373,7 +382,7 @@ static int ox_draw (int glow, double dt)
 	ph_target (ph_P, 0, 0, FW, FH); glUseProgram_ (ox_sheet);
 	ph_bind (ox_sheet, "L", 0, ox_L); ph_bind (ox_sheet, "ovm", 1, ph_ovm); ph_bind (ox_sheet, "ova", 2, ph_ova); ph_bind (ox_sheet, "art", 3, ox_art);
 	ph_bind (ox_sheet, "A", 4, scr ? ox_S[0] : ox_art); ph_bind (ox_sheet, "B", 5, scr ? ox_S[1] : ox_art); ph_bind (ox_sheet, "C", 6, scr ? ox_S[2] : ox_art);
-	ph_bind (ox_sheet, "M", 7, ox_B[2]); ph_bind (ox_sheet, "F", 8, ox_B[0]); ph_bind (ox_sheet, "V1", 9, ox_V[0]); ph_bind (ox_sheet, "V2", 10, ox_V[1]);
+	ph_bind (ox_sheet, "M", 7, ox_B[2]); ph_bind (ox_sheet, "F", 8, ox_B[0]); ph_bind (ox_sheet, "V1", 9, ox_V[0]); ph_bind (ox_sheet, "V2", 10, ox_V[1]); ph_bind (ox_sheet, "pS", 11, ph_S); ph_bind (ox_sheet, "pF", 12, ph_F[ph_i ^ 1]); OU1F (ox_sheet, "br", opt_bright);
 	const double room = 0.0648 * 0.0648 / 0.075 * opt_room * opt_room;   /* (vecrender.py room_light: the default x the setting squared) */
 	OU1F (ox_sheet, "glint", scr ? ovfx.glint * SCR_BASE[2] : 0.0); OU1F (ox_sheet, "room", room);
 	OU1F (ox_sheet, "scrk", scr ? 2.5 * 0.85 * 0.5 : 0.0); OU1F (ox_sheet, "scron", scr ? 1.0 : 0.0);

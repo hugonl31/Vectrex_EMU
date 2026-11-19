@@ -190,13 +190,27 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 3; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 4; }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s ? @(vxa_cdesc (_cats[(NSUInteger) s - 1].intValue)).uppercaseString : @"APP"; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Clock and battery: the time and battery at the top of the screen, beside the camera. Top bar: always in its own row, or over the picture and hiding itself - tap the top of the screen to bring it back (the picture then gets the room)."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
+	if (!ip.section && ip.row == 3) {               /* (HDR: the brightest dots above the screen's white) */
+		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void); float hr = vxa_hdr_headroom ();
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+		c.textLabel.text = @"HDR brightness"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
+		c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
+		if (hr <= 1.05) { c.detailTextLabel.text = @"Not on this screen (it shows no HDR)"; return c; }
+		NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0;
+		c.detailTextLabel.text = fr > 0.01 ? [NSString stringWithFormat:@"The brightest dots up to %.1fx white", 1 + (hr - 1) * fr] : @"Off: as an ordinary screen";
+		UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake (0, 0, 130, 30)]; sl.value = (float) fr; sl.minimumTrackTintColor = VX_G; sl.maximumTrackTintColor = VX_SEL; sl.thumbTintColor = VX_HI;
+		__weak UITableViewCell *wc = c;
+		[sl addAction:[UIAction actionWithHandler:^(UIAction *a) { double v = ((UISlider *) a.sender).value; [NSUserDefaults.standardUserDefaults setObject:@(v) forKey:@"app.hdr"]; vxa_hdr_update ();
+			wc.detailTextLabel.text = v > 0.01 ? [NSString stringWithFormat:@"The brightest dots up to %.1fx white", 1 + (hr - 1) * v] : @"Off: as an ordinary screen"; }] forControlEvents:UIControlEventValueChanged];
+		[sl addAction:[UIAction actionWithHandler:^(UIAction *a) { ulog ([NSString stringWithFormat:@"HDR %.0f %%", ((UISlider *) a.sender).value * 100]); }] forControlEvents:UIControlEventTouchUpInside];
+		c.accessoryView = sl; return c; }
 	if (!ip.section && ip.row == 2) {               /* (the downloads: which parts are here, add or remove) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 		c.textLabel.text = @"Downloads"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"games, boxes, UVMC2, PiTrex"; c.detailTextLabel.textColor = VX_DIM;

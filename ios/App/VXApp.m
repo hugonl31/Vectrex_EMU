@@ -210,10 +210,10 @@ static bool vxa_env (unsigned cmd, void *data)
 		snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v->value); vxa_opt_store (i); vlog ("core set option %s = %s", v->key, v->value); return true; }
 	case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: ((struct retro_log_callback *) data)->log = vxa_corelog; return true;
 	case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: vxa_av = *(const struct retro_system_av_info *) data; vxa_av_changed = 1;
-		vlog ("av info: %u x %u (max %u x %u), %.2f Hz", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_av.geometry.max_width, vxa_av.geometry.max_height, vxa_av.timing.fps);
+		vlog ("av info: %u x %u (max %u x %u), %.2f Hz (memory %.0f MB)", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_av.geometry.max_width, vxa_av.geometry.max_height, vxa_av.timing.fps, vxa_mem_mb ());
 		if (vxa_cfbo) vxa_core_fb (vxa_av.geometry.max_width, vxa_av.geometry.max_height); return true;
 	case RETRO_ENVIRONMENT_SET_GEOMETRY: vxa_av.geometry = *(const struct retro_game_geometry *) data;
-		vlog ("geometry: %u x %u", vxa_av.geometry.base_width, vxa_av.geometry.base_height); return true;
+		vlog ("geometry: %u x %u (memory %.0f MB)", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_mem_mb ()); return true;
 	case RETRO_ENVIRONMENT_GET_LANGUAGE: *(unsigned *) data = RETRO_LANGUAGE_ENGLISH; return true;
 	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: *(int *) data = 3; return true;
 	default: return false;
@@ -834,7 +834,7 @@ int vxa_ofind (const char *key) { return vxa_opt_find (key); }
 void vxa_oset (int i, const char *v)
 {
 	if (i < 0 || i >= vxa_nopt || !strcmp (vxa_opt[i].val, v)) return;
-	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v); vxa_opt_store (i); vxa_opt_dirty = 1; vlog ("setting %s = %s", vxa_opt[i].key, v);
+	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v); vxa_opt_store (i); vxa_opt_dirty = 1; vlog ("setting %s = %s (memory %.0f MB)", vxa_opt[i].key, v, vxa_mem_mb ());
 }
 int vxa_ncats (void) { return vxa_ncat; }
 const char *vxa_ckey (int i) { return vxa_cat[i].key; }
@@ -852,7 +852,7 @@ void vxa_do (NSString *w)
 }
 void vxa_load (NSString *path)
 {
-	vlog ("load %s", path.UTF8String); vx_app_load (path.fileSystemRepresentation);
+	vlog ("load %s (memory %.0f MB)", path.UTF8String, vxa_mem_mb ()); vx_app_load (path.fileSystemRepresentation);
 	NSString *d = vxa_docs (); if ([path hasPrefix:d]) [NSUserDefaults.standardUserDefaults setObject:[path substringFromIndex:d.length + 1] forKey:@"lastGame"];
 	NSMutableArray *r = [[NSUserDefaults.standardUserDefaults arrayForKey:@"recent"] mutableCopy] ?: [NSMutableArray array];
 	[r removeObject:path]; [r insertObject:path atIndex:0]; while (r.count > 12) [r removeLastObject];

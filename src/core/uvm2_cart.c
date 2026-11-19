@@ -58,6 +58,8 @@ int uvm2_open (const char *path)
 	size_t n = fread (buf, 1, sizeof uvm2_image, f);
 	uvm2_image_n = n;
 	fclose (f);
+	if (uvm2) { rp_destroy (uvm2); uvm2 = NULL; }   /* (the last UVMC2 game's chip out: a game switch made a new one each time - 14 MB
+	                                                 a switch, the iPad / RetroArch, 2026-11-19) */
 	uvm2 = rp_create ();
 	char err[200];
 	if (!uvm2 || rp_load_um2 (uvm2, buf, n, err, sizeof err)) { fprintf (stderr, "UVMC2: %s\n", uvm2 ? err : "no memory"); return -1; }

@@ -3,6 +3,29 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.7.1
+
+**Online: Nearby - no router, no internet**
+* Online > Nearby > Make a network and host: the host makes a Wi-Fi network of its own and hosts the game in the slot
+  on it. On Windows a Wi-Fi Direct access point that phones and PCs join as any network (VECTREX-EMU-xxxx), on Linux
+  NetworkManager's hotspot; on a Mac use Internet Sharing, then Host on local network. The Android app makes a Wi-Fi
+  Direct group (DIRECT-VX-VECTREX-xxxx); on an iPhone or iPad turn on Personal Hotspot and host there.
+* The network's name and password ("vectrex" and four digits) are made once and kept on the device: the second time,
+  the other phone or PC knows the network and joins it by itself.
+* The other players join that network in their Wi-Fi settings; the game is then under Games on this network, or
+  Join the nearby host goes straight to it (an ad-hoc network's host is its router).
+* A host's game is announced on every network the device is on, not only the one with the internet: an ad-hoc
+  network's games show in the list too.
+* Joining a running game through the meeting point (relayed) now starts both anew: the running game's state - about
+  2 MB - took some 15 seconds through the meeting point while the host's game stood still. Direct and on a network it
+  is still joined as it runs (well under a second).
+
+**The Android app (a test build)**
+* Our own app around the core, no RetroArch - as the iPhone / iPad app: the picture with HDR where the screen has it,
+  touch controls, controllers (button 3 back, button 4 picks), the core's modern control deck, the library (cartridges,
+  boxes, overlays, 1-5 per row or titles only), the settings, save states and online play with phones and PCs. It
+  reads the Vectrex's files and games from its own folder or from RetroArch's (BIOS/vectrex_emu, ROMs/vectrex).
+
 ## v1.7.0
 
 **Online play**

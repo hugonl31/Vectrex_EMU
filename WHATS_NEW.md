@@ -4,6 +4,14 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.7.1
+- Online > Nearby: play without a router - the host makes the Wi-Fi
+- Nearby: the network's name and password stay the same each time
+- Nearby: Join the nearby host - one click on the host's network
+- Online: a game seen on every network, ad-hoc ones too
+- Online: through the meeting point both start anew (no 15 s wait)
+- New: the Android app (test build) - as the iPhone / iPad app
+
 ## v1.7.0
 - Online: the host can change the game for both players
 - Online: no ending after a dropout - waits until a player leaves

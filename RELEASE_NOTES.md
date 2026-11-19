@@ -16,7 +16,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
   plastic glows from the lines and dots as they are drawn. Lines, dots, the sheet and its glow measure as before.
 * New for frontends without their own netplay (the coming iPhone / iPad app): online play the PC version's way, in
   the core - it plays the PC version (the meeting point, codes, the game room, a game on a network without the
-  internet, UVMC2 games with their SD cards). RetroArch keeps its own netplay.
+  internet, UVMC2 and PiTrex games with their SD cards). RetroArch keeps its own netplay.
 
 ## v1.6.8
 

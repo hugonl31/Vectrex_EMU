@@ -586,7 +586,7 @@ static void vxa_toast (NSString *s, double secs)
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
-	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq;
+	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq; long _notReady;
 	double _tRun, _tFin, _tDraw, _tMax, _tLinkDur;               /* (where a refresh's time goes: the stat line - "starts smooth, then choppy") */
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -796,7 +796,10 @@ static void vxa_toast (NSString *s, double secs)
 	const int sl = vxa_newest; if (sl < 0 || !vxa_mtexs[sl] || !_pipe) return;
 	if (vxa_seq == _shownSeq) return;                   /* (nothing new) */
 	double tf0 = CACurrentMediaTime ();
-	if (vxa_fence[sl]) { glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 50000000); glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }   /* (its drawing done - normally long since) */
+	if (vxa_fence[sl]) {                                /* (its drawing done - normally long since. Not done: shown at the next refresh, the
+	                                                       last one stays - a long wait here spun the processor: 120-144 % on the iPad, it heated up) */
+		if (glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 2000000) == GL_TIMEOUT_EXPIRED) { _tFin += CACurrentMediaTime () - tf0; _notReady++; return; }
+		glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }
 	_tFin += CACurrentMediaTime () - tf0;
 	_fw = vxa_sw[sl]; _fh = vxa_sh[sl]; _shownSeq = vxa_seq;
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
@@ -857,9 +860,11 @@ static void vxa_toast (NSString *s, double secs)
 	{ const double tt = CACurrentMediaTime () - now; if (tt > _tMax) _tMax = tt; }
 	if (now - _stat_t >= 5) {
 		double t = now - _stat_t; _stat_t = now;
-		if (_ticks) vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms, Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s",
-			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
-			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "");
+		if (_ticks) { const CGRect pr = _pic; const int barOver = !_bar.hidden && CGRectIntersectsRect (_bar.frame, pr), deckOver = !_deck.hidden && CGRectIntersectsRect (CGRectInset (_deck.frame, 0, 1), pr);
+			vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms (%ld not ready), Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s; over the picture: bar %d, deck %d",
+			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _notReady, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
+			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "", barOver, deckOver); }
+		_notReady = 0;
 		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,

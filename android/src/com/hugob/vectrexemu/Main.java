@@ -267,7 +267,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		  final boolean natPortrait = (r % 2 == 0) == (H > W); final int rel = (r - (natPortrait ? 1 : 0) + 4) % 4;
 		  if (rel != Input.rot) { Input.rot = rel; log ("screen turned: rotation " + r * 90 + ", the controls turned " + rel * 90); } }
 		boolean touch = started && touchShown (); boolean tablet = Math.min (W, H) / getResources ().getDisplayMetrics ().density >= 600;
-		final int dm = deckMode (); final int dh = dm == 1 ? (int) dp (58) : dm == 2 ? (int) dp (40) : dm == 3 ? (int) dp (14) : 0;   /* (the pop-up: its tab's room)*/   /* (the deck below the picture: its room) */
+		final int dm = deckMode (); final int dh = dm == 1 ? (int) dp (58) : dm == 2 ? (int) dp (40) : 0;   /* (the deck below the picture: its room) */
 		int row = land || barAuto () ? 0 : (int) dp (56), keep = (land || tablet || !touch ? 0 : (int) dp (150)) + dh;
 		int x = insL, y = insTop + row, w = W - insL - insR, hh = H - insTop - insBot - row - keep;
 		VX.setRoom (x, y, w, hh, !land);
@@ -298,9 +298,16 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		deck.mode = dm == 1 ? 1 : 2;
 		boolean show = dm != 3 || System.currentTimeMillis () < popUntil || !stack.isEmpty () || deck.paused != 0;   /* (the pop-up: a while after a touch, while paused) */
 		deck.setVisibility (show ? View.VISIBLE : View.GONE);
-		popTab.setVisibility (dm == 3 && !show ? View.VISIBLE : View.GONE);
+		popTab.setVisibility (View.GONE);   /* (no tab: a tap on the picture's foot opens the pop-up deck) */
 		if (dm == 3) { FrameLayout.LayoutParams t = (FrameLayout.LayoutParams) popTab.getLayoutParams (); t.gravity = android.view.Gravity.TOP;
 			t.leftMargin = (int) (pic[0] + pic[2] / 2 - dp (32)); t.topMargin = (int) (pic[1] + pic[3] - dp (14)); popTab.setLayoutParams (t); }
+	}
+	/* the pop-up deck opened: a tap on the picture's foot, where it shows (as the hidden top bar: a tap at the top) */
+	boolean popTap (float x, float y)
+	{
+		if (deckMode () != 3 || deck.getVisibility () == View.VISIBLE || pic[2] <= 0) return false;
+		if (x < pic[0] || x > pic[0] + pic[2] || y < pic[1] + pic[3] - dp (70) || y > pic[1] + pic[3] + dp (10)) return false;
+		popUntil = System.currentTimeMillis () + 4000; log ("deck: pop-up opened"); placeDeck (); return true;
 	}
 	void deckPoked () { if (deckMode () == 3) popUntil = System.currentTimeMillis () + 4000; }
 	View popTabView ()                                         /* (the pop-up deck's tab under the picture) */

@@ -31,7 +31,7 @@ final class Controls extends View {
 		RectF zl, zr;
 		final float mg = m.dp (10);                                  /* (a margin: the buttons kept on the screen) */
 		if (W > H) { zl = new RectF (m.insL + mg, m.insTop + mg, Math.max (px, m.insL + R * 2.2f), H - m.insBot - mg); zr = new RectF (Math.min (px + pw, W - m.insR - R * 2.2f), m.insTop + mg, W - m.insR - mg, H - m.insBot - mg); }
-		else { final int dm = m.deckMode (); float top = py + ph + (dm == 1 ? m.dp (58) : dm == 2 ? m.dp (40) : dm == 3 ? m.dp (14) : 0), bot = H - m.insBot - mg, need = Math.max (m.dp (120), m.dp (140) * tsize);
+		else { final int dm = m.deckMode (); float top = py + ph + (dm == 1 ? m.dp (58) : dm == 2 ? m.dp (40) : 0), bot = H - m.insBot - mg, need = Math.max (m.dp (120), m.dp (140) * tsize);
 			if (bot - top < need) { bot = py + ph - m.dp (4); top = bot - need; }
 			zl = new RectF (m.insL, top, W / 2f, bot); zr = new RectF (W / 2f, top, W - m.insR, bot); }
 		if (m.prefs.getBoolean ("touch.lefty", false)) { RectF t = zl; zl = zr; zr = t; }
@@ -56,6 +56,7 @@ final class Controls extends View {
 	{
 		final int a = e.getActionMasked (), ix = e.getActionIndex ();
 		if (m.barAuto () && a == MotionEvent.ACTION_DOWN && e.getY () < m.insTop + m.dp (70)) m.showBar ();
+		if (a == MotionEvent.ACTION_DOWN && m.popTap (e.getX (), e.getY ())) return true;   /* (the pop-up deck: the tap opens it, nothing else) */
 		switch (a) {
 		case MotionEvent.ACTION_DOWN: case MotionEvent.ACTION_POINTER_DOWN: down (e.getPointerId (ix), e.getX (ix), e.getY (ix)); break;
 		case MotionEvent.ACTION_MOVE: for (int i = 0; i < e.getPointerCount (); i++) move (e.getPointerId (i), e.getX (i), e.getY (i)); break;

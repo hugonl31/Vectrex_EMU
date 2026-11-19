@@ -975,7 +975,7 @@ static void vxa_set_opt (int i, NSString *v)
 	BOOL show = YES;
 	if (m == 3) { show = CACurrentMediaTime () < _popUntil || vx_app_paused () || vxa_holding; [_deck.superview bringSubviewToFront:_deck]; }
 	if (_deck.hidden == show) { _deck.hidden = !show; if (show) [dk tick]; }
-	const BOOL tab = m == 3 && !show; if (_popTab.hidden != !tab) _popTab.hidden = !tab;
+	const BOOL tab = NO; if (_popTab.hidden != !tab) _popTab.hidden = !tab;   /* (no tab: a tap on the picture's foot opens the pop-up deck) */
 	if (tab) { CGRect tf = CGRectMake (CGRectGetMidX (pic) - 32, CGRectGetMaxY (pic) - 14, 64, 26); if (!CGRectEqualToRect (tf, _popTab.frame)) { _popTab.frame = tf; [_popTab viewWithTag:5].frame = CGRectMake (10, 12, 44, 14); } }
 }
 /* the Vectrex's button 3 (B on a modern pad; the player's own button, Settings > Controls) - back, on every screen over the
@@ -1058,6 +1058,8 @@ static void vxa_set_opt (int i, NSString *v)
 - (void) touchesBegan:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e
 {
 	if ([self barAuto] && _bar.alpha < 0.5) for (UITouch *t in ts) if ([t locationInView:self.view].y < self.view.safeAreaInsets.top + 70) { vlog ("top tapped: the quick bar"); [self showBar]; return; }
+	if ([self deckMode] == 3 && _deck.hidden && _pic.size.width > 0) for (UITouch *t in ts) { CGPoint p = [t locationInView:self.view];   /* (the pop-up deck: a tap on the picture's foot) */
+		if (p.x >= CGRectGetMinX (_pic) && p.x <= CGRectGetMaxX (_pic) && p.y >= CGRectGetMaxY (_pic) - 70 && p.y <= CGRectGetMaxY (_pic) + 10) { [self popOpen]; return; } }
 	for (UITouch *t in ts) {
 		CGPoint p = [t locationInView:self.view]; NSString *what = @"nothing";
 		if (!_ctl.hidden) {

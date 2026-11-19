@@ -168,48 +168,71 @@ static void vxa_opts_defaults (void)
 static struct retro_hw_render_callback vxa_hw; static int vxa_hw_on;
 static retro_keyboard_event_t vxa_kbcb;
 static struct retro_system_av_info vxa_av;
-static GLuint vxa_cfbo, vxa_ctex, vxa_cdepth; static unsigned vxa_cw, vxa_ch;      /* (the core's framebuffer and its size) */
+static GLuint vxa_cfbo, vxa_cdepth; static unsigned vxa_cw, vxa_ch;      /* (the core's framebuffer - the slot it draws into now - and its size) */
 static char vxa_sys[1100], vxa_saves[1100];
 static int vxa_av_changed;
 static void vxa_toast (NSString *s, double secs);
-static uintptr_t vxa_get_fb (void) { return vxa_cfbo; }
+static uintptr_t vxa_get_fb (void);
 static retro_proc_address_t vxa_get_proc (const char *s) { return (retro_proc_address_t) dlsym (RTLD_DEFAULT, s); }
 static void vxa_corelog (enum retro_log_level l, const char *fmt, ...)
 {
 	char b[1500]; va_list a; va_start (a, fmt); vsnprintf (b, sizeof b, fmt, a); va_end (a); (void) l; fputs (b, stderr);
 }
-/* the core's framebuffer: one IOSurface the core draws into with OpenGL ES and the app shows with Metal (no copy) - half
+/* the core's framebuffer: three IOSurfaces taking turns - the core draws into one with OpenGL ES while Metal shows the
+ * one finished at the refresh before (no copy). One surface made them take turns: glFinish each refresh, OpenGL and Metal
+ * never at once - "starts smooth, then choppy" (builds 47-59). A picture is shown one refresh after it is drawn. Half
  * floats: room above white for HDR (8-bit BGRA where the device will not) */
-static CVPixelBufferRef vxa_pb; static CVOpenGLESTextureCacheRef vxa_gcache; static CVOpenGLESTextureRef vxa_gtex;
-static CVMetalTextureCacheRef vxa_mcache; static CVMetalTextureRef vxa_mtex; static id<MTLDevice> vxa_mdev; static int vxa_half;
-static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's framebuffer at least w x h) */
+#include <stdatomic.h>
+#define VXA_NS 3
+static CVPixelBufferRef vxa_pbs[VXA_NS]; static CVOpenGLESTextureCacheRef vxa_gcache; static CVOpenGLESTextureRef vxa_gtexs[VXA_NS];
+static CVMetalTextureCacheRef vxa_mcache; static CVMetalTextureRef vxa_mtexs[VXA_NS]; static id<MTLDevice> vxa_mdev; static int vxa_half;
+static GLuint vxa_fbos[VXA_NS]; static GLsync vxa_fence[VXA_NS]; static atomic_int vxa_busy[VXA_NS];   /* (busy: Metal still reading it) */
+static unsigned vxa_sw[VXA_NS], vxa_sh[VXA_NS];          /* (each slot's picture size) */
+static int vxa_draw, vxa_newest = -1; static unsigned vxa_seq;   /* (vxa_seq: pictures finished, counted) */                    /* (the slot the core draws into; the last one finished) */
+static uintptr_t vxa_get_fb (void) { return vxa_fbos[vxa_draw]; }
+static void vxa_pick_draw (void)                         /* (a slot that is not the newest picture and not being shown) */
 {
-	if (w <= vxa_cw && h <= vxa_ch && vxa_cfbo) return;
+	for (int tries = 0; tries < 400; tries++) {
+		for (int k = 1; k <= VXA_NS; k++) { const int s2 = (vxa_draw + k) % VXA_NS;
+			if (s2 != vxa_newest && !atomic_load (&vxa_busy[s2])) { vxa_draw = s2; vxa_cfbo = vxa_fbos[s2]; return; } }
+		usleep (100); }                                  /* (all shown or about to: a moment - rare) */
+	vxa_draw = (vxa_newest + 1) % VXA_NS; vxa_cfbo = vxa_fbos[vxa_draw];
+}
+static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's framebuffers at least w x h) */
+{
+	if (w <= vxa_cw && h <= vxa_ch && vxa_fbos[0]) return;
 	if (w < vxa_cw) w = vxa_cw; if (h < vxa_ch) h = vxa_ch;
-	if (!vxa_cfbo) glGenFramebuffers (1, &vxa_cfbo);
+	for (int k = 0; k < 2000; k++) { int b = 0; for (int i = 0; i < VXA_NS; i++) b |= atomic_load (&vxa_busy[i]); if (!b) break; usleep (100); }   /* (Metal done with them) */
+	glFinish ();
+	if (!vxa_fbos[0]) glGenFramebuffers (VXA_NS, vxa_fbos);
 	if (!vxa_gcache) CVOpenGLESTextureCacheCreate (kCFAllocatorDefault, NULL, [EAGLContext currentContext], NULL, &vxa_gcache);
 	if (!vxa_mcache && vxa_mdev) CVMetalTextureCacheCreate (kCFAllocatorDefault, NULL, vxa_mdev, NULL, &vxa_mcache);
-	if (vxa_gtex) { CFRelease (vxa_gtex); vxa_gtex = NULL; } if (vxa_mtex) { CFRelease (vxa_mtex); vxa_mtex = NULL; } if (vxa_pb) { CVPixelBufferRelease (vxa_pb); vxa_pb = NULL; }
 	NSDictionary *at = @{ (id) kCVPixelBufferIOSurfacePropertiesKey: @{}, (id) kCVPixelBufferOpenGLESCompatibilityKey: @YES, (id) kCVPixelBufferMetalCompatibilityKey: @YES };
-	for (int half = 1; half >= 0 && !vxa_gtex; half--) {
-		if (vxa_pb) { CVPixelBufferRelease (vxa_pb); vxa_pb = NULL; }
-		if (CVPixelBufferCreate (kCFAllocatorDefault, w, h, half ? kCVPixelFormatType_64RGBAHalf : kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef) at, &vxa_pb) != kCVReturnSuccess) continue;
-		CVReturn r = half ? CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pb, NULL, GL_TEXTURE_2D, GL_RGBA16F, (GLsizei) w, (GLsizei) h, GL_RGBA, GL_HALF_FLOAT, 0, &vxa_gtex)
-		                  : CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pb, NULL, GL_TEXTURE_2D, GL_RGBA, (GLsizei) w, (GLsizei) h, GL_BGRA_EXT, GL_UNSIGNED_BYTE, 0, &vxa_gtex);
-		if (r != kCVReturnSuccess) { vxa_gtex = NULL; continue; }
-		vxa_half = half; if (vxa_mcache) CVMetalTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_mcache, vxa_pb, NULL, half ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm, w, h, 0, &vxa_mtex); }
-	vxa_ctex = vxa_gtex ? CVOpenGLESTextureGetName (vxa_gtex) : 0;
-	glBindTexture (GL_TEXTURE_2D, vxa_ctex);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glBindFramebuffer (GL_FRAMEBUFFER, vxa_cfbo); glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, vxa_ctex, 0);
-	if (vxa_hw.depth || vxa_hw.stencil) {
-		if (!vxa_cdepth) glGenRenderbuffers (1, &vxa_cdepth);
-		glBindRenderbuffer (GL_RENDERBUFFER, vxa_cdepth); glRenderbufferStorage (GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, (GLsizei) w, (GLsizei) h);
-		glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, vxa_cdepth); }
-	GLenum st = glCheckFramebufferStatus (GL_FRAMEBUFFER);
-	vxa_cw = w; vxa_ch = h; vlog ("core framebuffer %u x %u, %s, shared with Metal: %s%s", w, h, vxa_half ? "half floats (HDR room)" : "8-bit", vxa_mtex ? "yes" : "NO",
-		st == GL_FRAMEBUFFER_COMPLETE ? "" : " - NOT COMPLETE");
+	int half = 1, ok = 1;
+	for (int i = 0; i < VXA_NS; i++) {
+		if (vxa_gtexs[i]) { CFRelease (vxa_gtexs[i]); vxa_gtexs[i] = NULL; } if (vxa_mtexs[i]) { CFRelease (vxa_mtexs[i]); vxa_mtexs[i] = NULL; }
+		if (vxa_pbs[i]) { CVPixelBufferRelease (vxa_pbs[i]); vxa_pbs[i] = NULL; } if (vxa_fence[i]) { glDeleteSync (vxa_fence[i]); vxa_fence[i] = NULL; }
+		for (int hf = half; hf >= 0 && !vxa_gtexs[i]; hf--) {
+			if (vxa_pbs[i]) { CVPixelBufferRelease (vxa_pbs[i]); vxa_pbs[i] = NULL; }
+			if (CVPixelBufferCreate (kCFAllocatorDefault, w, h, hf ? kCVPixelFormatType_64RGBAHalf : kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef) at, &vxa_pbs[i]) != kCVReturnSuccess) continue;
+			CVReturn r = hf ? CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pbs[i], NULL, GL_TEXTURE_2D, GL_RGBA16F, (GLsizei) w, (GLsizei) h, GL_RGBA, GL_HALF_FLOAT, 0, &vxa_gtexs[i])
+			                : CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pbs[i], NULL, GL_TEXTURE_2D, GL_RGBA, (GLsizei) w, (GLsizei) h, GL_BGRA_EXT, GL_UNSIGNED_BYTE, 0, &vxa_gtexs[i]);
+			if (r != kCVReturnSuccess) { vxa_gtexs[i] = NULL; continue; }
+			half = hf;                                   /* (the first's format: all three the same) */
+			if (vxa_mcache) CVMetalTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_mcache, vxa_pbs[i], NULL, hf ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm, w, h, 0, &vxa_mtexs[i]); }
+		const GLuint tx = vxa_gtexs[i] ? CVOpenGLESTextureGetName (vxa_gtexs[i]) : 0;
+		glBindTexture (GL_TEXTURE_2D, tx);
+		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glBindFramebuffer (GL_FRAMEBUFFER, vxa_fbos[i]); glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tx, 0);
+		if (vxa_hw.depth || vxa_hw.stencil) {
+			if (!vxa_cdepth) { glGenRenderbuffers (1, &vxa_cdepth); }
+			if (i == 0) { glBindRenderbuffer (GL_RENDERBUFFER, vxa_cdepth); glRenderbufferStorage (GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, (GLsizei) w, (GLsizei) h); }
+			glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, vxa_cdepth); }
+		ok &= glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE && vxa_mtexs[i] != NULL;
+		vxa_sw[i] = vxa_sh[i] = 0; atomic_store (&vxa_busy[i], 0); }
+	vxa_half = half; vxa_newest = -1; vxa_draw = 0; vxa_cfbo = vxa_fbos[0];
+	vxa_cw = w; vxa_ch = h; vlog ("core framebuffers: %d of %u x %u, %s, shared with Metal: %s", VXA_NS, w, h, vxa_half ? "half floats (HDR room)" : "8-bit", ok ? "yes" : "NOT ALL");
 }
 static bool vxa_env (unsigned cmd, void *data)
 {
@@ -563,7 +586,7 @@ static void vxa_toast (NSString *s, double secs)
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
-	long _runs, _presents, _late, _ticks; double _stat_t;
+	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq;
 	double _tRun, _tFin, _tDraw, _tMax, _tLinkDur;               /* (where a refresh's time goes: the stat line - "starts smooth, then choppy") */
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -743,6 +766,7 @@ static void vxa_toast (NSString *s, double secs)
 	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];   /* (OpenGL ES: the core's; no layer of its own) */
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
+	[NSUserDefaults.standardUserDefaults removeObjectForKey:@"resk.land"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"resk.up"];   /* (a smaller drawing tried in a test: gone) */
 	extern int vx_app_osd_on; vx_app_osd_on = 1; vxa_hdr_update ();     /* (the figures measured for the native deck) */
 	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
 	retro_set_environment (vxa_env); vxa_set_callbacks ();
@@ -766,23 +790,15 @@ static void vxa_toast (NSString *s, double secs)
 	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 }
-/* the picture's drawing size, measured while playing: a device whose GPU keeps missing refreshes at the screen's own
- * pixels (the iPad Air upright: 1629 x 2082 with HDR and the overlay, ~25 ms a picture where the start's measuring said
- * 8) draws it smaller, step by step - Metal scales it up. Kept per device and way up (sideways / upright) */
-static double vxa_resk_v[2] = { -1, -1 };
-static NSString *vxa_resk_key (int land) { return land ? @"resk.land" : @"resk.up"; }
-static double vxa_resk (int land)
-{
-	if (vxa_resk_v[land] < 0) { double v = [NSUserDefaults.standardUserDefaults doubleForKey:vxa_resk_key (land)]; vxa_resk_v[land] = v >= 0.5 && v <= 1 ? v : 1; }
-	return vxa_resk_v[land];
-}
 - (void) present
 {
 	if (!_have) return;
-	if (!vxa_mtex || !_pipe) return;
+	const int sl = vxa_newest; if (sl < 0 || !vxa_mtexs[sl] || !_pipe) return;
+	if (vxa_seq == _shownSeq) return;                   /* (nothing new) */
 	double tf0 = CACurrentMediaTime ();
-	glFinish ();                                     /* (the core's drawing done before Metal reads the shared surface) */
+	if (vxa_fence[sl]) { glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 50000000); glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }   /* (its drawing done - normally long since) */
 	_tFin += CACurrentMediaTime () - tf0;
+	_fw = vxa_sw[sl]; _fh = vxa_sh[sl]; _shownSeq = vxa_seq;
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
 	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
@@ -790,12 +806,9 @@ static double vxa_resk (int land)
 	const double row = land || [self barAuto] ? 0 : VXA_TOPROW;   /* (the quick bar's row: kept, or over the picture when it hides itself) */
 	const double deckh = [self deckShown] ? VXA_DECKH : 0;   /* (the native deck below the picture, upright) */
 	const double keep = (land || ipad || _ctl.hidden ? 0 : 150) + deckh;   /* (iPhone upright with the touch controls: room below for them; iPad: over the picture's foot) */
-	const double rk = vxa_resk (land);
-	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (aw / _fw, ah / _fh);
-	if (rk >= 0.999) k = fmin (1.0, k);                       /* (drawn smaller (rk < 1): scaled up to the room) */
-	if (fabs (k - 1) < 0.004) k = 1.0;
+	double aw = (v.width - s.left - s.right) * sc, ah = (v.height - s.top - s.bottom - row - keep) * sc, k = fmin (1.0, fmin (aw / _fw, ah / _fh));
 	double w = _fw * k, h = _fh * k, x = s.left * sc + (aw - w) / 2, top = land ? s.top * sc + (ah - h) / 2 : (s.top + row) * sc;
-	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw) * rk, r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
+	{ extern int vx_app_pich; const double fit = fmin (ah, aw * _fh / _fw), r = fit / _fh;   /* (the core draws the picture at the size there is room for: 1:1) */
 	  if (fabs (r - 1) > 0.01) { int want = (int) lround ((vx_app_pich > 0 ? vx_app_pich : (int) _fh) * r);
 		if (want != vx_app_pich) { vlog ("picture: room for %.0f px high, %u now - asking the core for %d", fit, _fh, want); vx_app_pich = want; } } }
 	@autoreleasepool {
@@ -809,16 +822,17 @@ static double vxa_resk (int land)
 		float edr = 1; if (@available (iOS 16.0, *)) edr = (float) UIScreen.mainScreen.currentEDRHeadroom;
 		float cfg[4] = { edr, vxa_half ? 1.f : 0.f, 0, 0 };
 		[en setRenderPipelineState:_pipe]; [en setVertexBytes:rect length:sizeof rect atIndex:0]; [en setVertexBytes:uv length:sizeof uv atIndex:1];
-		[en setFragmentBytes:cfg length:sizeof cfg atIndex:0]; [en setFragmentTexture:CVMetalTextureGetTexture (vxa_mtex) atIndex:0];
+		[en setFragmentBytes:cfg length:sizeof cfg atIndex:0]; [en setFragmentTexture:CVMetalTextureGetTexture (vxa_mtexs[sl]) atIndex:0];
 		[en setFragmentSamplerState:(k == 1.0 ? _nearest : _linear) atIndex:0];
 		[en drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4]; [en endEncoding];
+		atomic_store (&vxa_busy[sl], 1); [cb addCompletedHandler:^(id<MTLCommandBuffer> b) { (void) b; atomic_store (&vxa_busy[sl], 0); }];
 		[cb presentDrawable:d]; [cb commit]; _presents++; }
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
 	if (_deck.hidden != !deckh) _deck.hidden = !deckh;
 	if (deckh) { CGRect df = CGRectMake (s.left, CGRectGetMaxY (pic), v.width - s.left - s.right, VXA_DECKH); if (!CGRectEqualToRect (df, _deck.frame)) _deck.frame = df; }   /* (only when it moves: setting it each picture laid the view out again and again) */
 	if (!CGRectEqualToRect (pic, _pic)) { _pic = pic; vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f pt (%s)", _fw, _fh, pic.origin.x, pic.origin.y, pic.size.width, pic.size.height, k == 1.0 ? "1:1" : "scaled"); [self layoutControls]; }
 }
-- (void) gotFrame:(unsigned)w :(unsigned)h { _fw = w; _fh = h; _have = 1; }
+- (void) gotFrame:(unsigned)w :(unsigned)h { (void) w; (void) h; _have = 1; }
 - (void) tick:(CADisplayLink *)l
 {
 	double now = CACurrentMediaTime(), dt = _last ? now - _last : 0; _last = now; _ticks++;
@@ -831,6 +845,8 @@ static double vxa_resk (int land)
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
 	if (vxa_holding || _welcome.superview) return; /* (a screen over the game, or a download on the start screen: it waits - no playing while downloading) */
 	[EAGLContext setCurrentContext:_ctx];
+	[self present];                                  /* (the picture finished at the last refresh: shown while the core draws the next) */
+	vxa_pick_draw ();
 	/* (behind: the runs before the last emulate only - drawing each one's picture as well, that no one sees, kept the GPU
 	 *  behind for good: 3 runs a tick, ~20 pictures a second until a screen was opened) */
 	const double tr0 = CACurrentMediaTime ();
@@ -838,17 +854,10 @@ static double vxa_resk (int land)
 	_tRun += CACurrentMediaTime () - tr0; _tLinkDur += l.targetTimestamp - l.timestamp;
 	vxa_nodraw = 0;
 	if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); [VXUI showLibraryFrom:self]; }
-	if (n) [self present];
 	{ const double tt = CACurrentMediaTime () - now; if (tt > _tMax) _tMax = tt; }
 	if (now - _stat_t >= 5) {
 		double t = now - _stat_t; _stat_t = now;
-		{ static int bad; const CGSize vb = self.view.bounds.size; const int land = vb.width > vb.height;   /* (the GPU behind: drawn smaller - see vxa_resk) */
-		  const int over = _ticks > 100 && _presents * 10 < _runs * 9 && !vxa_holding && !_welcome.superview && !vxa_net_playing ();
-		  bad = over ? bad + 1 : 0;
-		  if (bad >= 2 && vxa_resk (land) > 0.61) { bad = 0; vxa_resk_v[land] = fmax (0.6, vxa_resk (land) * 0.88);
-			[NSUserDefaults.standardUserDefaults setDouble:vxa_resk_v[land] forKey:vxa_resk_key (land)];
-			vlog ("picture: the GPU behind (%ld late of %ld) - drawn at %.0f %% of the screen's pixels now (%s)", _late, _ticks, vxa_resk_v[land] * 100, land ? "sideways" : "upright"); } }
-		if (_ticks) vlog ("time a refresh: emulator %.1f ms, GL finish %.1f ms, Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s",
+		if (_ticks) vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms, Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s",
 			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
 			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "");
 		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
@@ -1030,7 +1039,11 @@ static void vxa_set_opt (int i, NSString *v)
 static void vxa_video (const void *d, unsigned w, unsigned h, size_t pitch)
 {
 	(void) pitch;
-	if (d == RETRO_HW_FRAME_BUFFER_VALID) { [vxa_vc gotFrame:w :h]; return; }
+	if (d == RETRO_HW_FRAME_BUFFER_VALID) {
+		if (vxa_fence[vxa_draw]) glDeleteSync (vxa_fence[vxa_draw]);
+		vxa_fence[vxa_draw] = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0); glFlush ();   /* (sent to the GPU now - not waited for) */
+		vxa_sw[vxa_draw] = w; vxa_sh[vxa_draw] = h; vxa_newest = vxa_draw; vxa_seq++; vxa_pick_draw ();
+		[vxa_vc gotFrame:w :h]; return; }
 	if (!d) return;                                    /* (the same picture again) */
 	static int told; if (!told) { told = 1; vlog ("a picture without the GPU (%u x %u) - not shown in this step", w, h); }
 }

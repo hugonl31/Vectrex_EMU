@@ -425,7 +425,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[_size setTitle:(k ? [NSString stringWithFormat:@"%d PER ROW \u25BE", k] : @"TITLES ONLY \u25BE") forState:UIControlStateNormal];
 }
 /* a controller or the keys: up / down / left / right move the highlight (titles only: up / down one, left / right a page),
- * L / R (Page Up / Down) a page, the Vectrex's button 4 (Return) plays, button 1 (Esc) closes - the player's own buttons
+ * L / R (Page Up / Down) a page, the Vectrex's button 4 (Return) plays, button 3 (Esc) goes back - the player's own buttons
  * (Settings > Controls) */
 - (void) viewDidAppear:(BOOL)a { [super viewDidAppear:a]; [self becomeFirstResponder]; _pad = [CADisplayLink displayLinkWithTarget:self selector:@selector(padTick)]; [_pad addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; }
 - (void) viewWillDisappear:(BOOL)a { [super viewWillDisappear:a]; [_pad invalidate]; _pad = nil; }
@@ -449,14 +449,13 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (void) padTick
 {
 	extern uint32_t vxa_pad_buttons (void); const uint32_t b = vxa_pad_buttons (), down = b & ~_padPrev; const double now = CACurrentMediaTime ();
-	enum { UP = 4, DN = 5, LT = 6, RT = 7, A = 8, Y = 1, L = 10, R = 11 };   /* (the RetroPad's: the Vectrex's 1-4 on Y X B A) */
+	enum { UP = 4, DN = 5, LT = 6, RT = 7, A = 8, L = 10, R = 11 };   /* (the RetroPad's: the Vectrex's 1-4 on Y X B A) */
 	const uint32_t dirs = b & ((1u << UP) | (1u << DN) | (1u << LT) | (1u << RT) | (1u << L) | (1u << R));
 	BOOL rep = NO; if (dirs && (dirs & ~_padPrev)) _padNext = now + 0.38; else if (dirs && now >= _padNext) { rep = YES; _padNext = now + 0.09; }   /* (held: repeated) */
 	const uint32_t act = (dirs & ~_padPrev) | (rep ? dirs : 0);
 	if (act >> UP & 1) [self moveSel:0]; if (act >> DN & 1) [self moveSel:1]; if (act >> LT & 1) [self moveSel:2]; if (act >> RT & 1) [self moveSel:3];
 	if (act >> L & 1) [self page:-1]; if (act >> R & 1) [self page:1];
-	if (down >> A & 1) [self playSel];
-	if (down >> Y & 1) [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }];
+	if (down >> A & 1) [self playSel];             /* (button 3, back: the game's own tick closes the library - one button for back everywhere) */
 	_padPrev = b;
 }
 - (NSInteger) pageItems                         /* (a screenful: the rows that fit, times the tiles a row) */

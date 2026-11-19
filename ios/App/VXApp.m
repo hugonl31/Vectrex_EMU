@@ -858,6 +858,7 @@ static void vxa_toast (NSString *s, double secs)
 	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3) n++;
 	if (n > 4) n = 4;
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
+	if (vxa_holding) [self padBack];               /* (a screen over the game: the Vectrex's button 3 goes back) */
 	if (vxa_holding || _welcome.superview) return; /* (a screen over the game, or a download on the start screen: it waits - no playing while downloading) */
 	[EAGLContext setCurrentContext:_ctx];
 	[self present];                                  /* (the picture finished at the last refresh: shown while the core draws the next) */
@@ -958,6 +959,19 @@ static void vxa_set_opt (int i, NSString *v)
 	if (_deck.hidden == show) { _deck.hidden = !show; if (show) [dk tick]; }
 	const BOOL tab = m == 3 && !show; if (_popTab.hidden != !tab) _popTab.hidden = !tab;
 	if (tab) { CGRect tf = CGRectMake (CGRectGetMidX (pic) - 32, CGRectGetMaxY (pic) - 14, 64, 26); if (!CGRectEqualToRect (tf, _popTab.frame)) { _popTab.frame = tf; [_popTab viewWithTag:5].frame = CGRectMake (10, 12, 44, 14); } }
+}
+/* the Vectrex's button 3 (B on a modern pad; the player's own button, Settings > Controls) - back, on every screen over the
+ * game: a step back in a settings list, else the screen closed (the owner: one button for back everywhere) */
+- (void) padBack
+{
+	static uint32_t prev; const uint32_t b = vxa_pad_buttons (), down = b & ~prev; prev = b;
+	if (!(down >> RETRO_DEVICE_ID_JOYPAD_B & 1)) return;
+	UIViewController *top = self; while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) top = top.presentedViewController;
+	if (top == self) return;
+	if ([top isKindOfClass:UINavigationController.class] && ((UINavigationController *) top).viewControllers.count > 1) { [(UINavigationController *) top popViewControllerAnimated:YES]; ulog (@"pad: back"); return; }
+	if ([top isKindOfClass:UIAlertController.class]) return;   /* (a question: answered by tapping) */
+	ulog (@"pad: close"); __weak VXGameVC *ws = self;
+	[top dismissViewControllerAnimated:YES completion:^{ VXGameVC *g = ws; if (g && !g.presentedViewController) vxa_hold (0); }];   /* (nothing over the game any more: on) */
 }
 - (void) popOpen { _popUntil = CACurrentMediaTime () + 4; ulog (@"deck: pop-up opened"); [self placeDeck:_pic mode:[self deckMode]]; }
 - (void) deckPoked { if ([self deckMode] == 3) _popUntil = CACurrentMediaTime () + 4; }

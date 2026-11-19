@@ -46,4 +46,6 @@ void ulog (NSString *s);               /* into the app's live log */
 + (void) adjustOption:(int)i over:(UIViewController *)vc;   /* the one-slider panel over the running game */
 + (UIView *) quickBarFor:(UIViewController *)vc;              /* the row above the picture */
 + (void) styleNav:(UINavigationController *)n;
++ (void) showSettingsFrom:(UIViewController *)vc at:(int)focus;   /* (scrolled to that setting) */
++ (void) adjustOption:(int)i over:(UIViewController *)vc fromSettings:(BOOL)fs;
 @end

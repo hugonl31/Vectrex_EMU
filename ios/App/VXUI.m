@@ -49,7 +49,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 
 /* ------------------------------------------------ the one-slider panel over the running game */
 @interface VXAdjust : UIView
-@property (nonatomic) int opt; @property (nonatomic, weak) UIViewController *vc;
+@property (nonatomic) int opt; @property (nonatomic, weak) UIViewController *vc; @property (nonatomic) BOOL fromSettings;
 @end
 @implementation VXAdjust { UILabel *_cat, *_name, *_info, *_val; UISlider *_sl; UIStackView *_extra; NSArray<NSString *> *_nums; int _last; }
 - (instancetype) initWithOpt:(int)i vc:(UIViewController *)vc
@@ -69,7 +69,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[_sl addTarget:self action:@selector(slid) forControlEvents:UIControlEventValueChanged];
 	_extra = [UIStackView new]; _extra.spacing = 8; _extra.distribution = UIStackViewDistributionFillEqually;
 	UIButton *def = VB (@"Default", nil, NO, ^{ [ws setValue:@(vxa_odef (ws.opt))]; }), *done = VB (@"Done", nil, YES, ^{ [ws close]; });
-	UIStackView *bot = [[UIStackView alloc] initWithArrangedSubviews:@[ _val, [UIView new], def, done ]]; bot.alignment = UIStackViewAlignmentCenter; bot.spacing = 8;
+	UIButton *all = VB (@"", @"list.bullet", NO, ^{ [ws closeTo:YES]; }); all.accessibilityLabel = @"All settings";   /* (the full list, at this setting) */
+	[all.widthAnchor constraintEqualToConstant:44].active = YES; [all.heightAnchor constraintEqualToConstant:40].active = YES;
+	UIStackView *bot = [[UIStackView alloc] initWithArrangedSubviews:@[ _val, [UIView new], all, def, done ]]; bot.alignment = UIStackViewAlignmentCenter; bot.spacing = 8;
 	[def.heightAnchor constraintEqualToConstant:40].active = YES; [done.heightAnchor constraintEqualToConstant:40].active = YES; [done.widthAnchor constraintEqualToConstant:80].active = YES;
 	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ top, _info, _sl, _extra, bot ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 10;
 	all.translatesAutoresizingMaskIntoConstraints = NO; [self addSubview:all];
@@ -106,7 +108,13 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	int n = vxa_nopts ();
 	for (int k = 1; k < n; k++) { int j = ((_opt + d * k) % n + n) % n; if (!strcmp (vxa_ocat (j), vxa_ocat (_opt)) && VSlider (j, NULL, NULL)) { [self show:j]; return; } }
 }
-- (void) close { ulog (@"adjust done"); [UIView animateWithDuration:0.2 animations:^{ self.alpha = 0; } completion:^(BOOL f) { (void) f; [self removeFromSuperview]; }]; }
+/* (Done: back where it was opened from - the settings list, at this setting; or the game, from the quick bar) */
+- (void) close { [self closeTo:self.fromSettings]; }
+- (void) closeTo:(BOOL)list
+{
+	ulog (list ? @"adjust done: back to the settings" : @"adjust done"); UIViewController *g = self.vc; int i = self.opt;
+	[UIView animateWithDuration:0.2 animations:^{ self.alpha = 0; } completion:^(BOOL f) { (void) f; [self removeFromSuperview]; if (list && g) [VXUI showSettingsFrom:g at:i]; }];
+}
 @end
 
 /* ------------------------------------------------ settings: the core's groups, a value list, help texts */
@@ -140,7 +148,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 @end
 
 @interface VXSettings : UITableViewController
-@property (nonatomic, weak) UIViewController *game;
+@property (nonatomic, weak) UIViewController *game; @property (nonatomic) int focus;
 @end
 @implementation VXSettings { NSMutableArray<NSMutableArray<NSNumber *> *> *_rows; NSMutableArray<NSNumber *> *_cats; }
 - (void) viewDidLoad
@@ -156,6 +164,16 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithPrimaryAction:[UIAction actionWithTitle:@"Done" image:nil identifier:nil handler:^(UIAction *a) { (void) a; [ws dismissViewControllerAnimated:YES completion:nil]; }]];
 }
 - (void) viewWillAppear:(BOOL)a { [super viewWillAppear:a]; [self.tableView reloadData]; }
+- (void) viewDidAppear:(BOOL)a
+{
+	[super viewDidAppear:a]; if (self.focus < 0) return;
+	for (NSUInteger sct = 0; sct < _rows.count; sct++) for (NSUInteger r = 0; r < _rows[sct].count; r++) if (_rows[sct][r].intValue == self.focus) {
+		NSIndexPath *ip = [NSIndexPath indexPathForRow:(NSInteger) r inSection:(NSInteger) sct + 1];
+		[self.tableView scrollToRowAtIndexPath:ip atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
+		[self.tableView selectRowAtIndexPath:ip animated:NO scrollPosition:UITableViewScrollPositionNone];
+		dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.6 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [self.tableView deselectRowAtIndexPath:ip animated:YES]; }); }
+	self.focus = -1;
+}
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
 - (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 2; }
@@ -195,7 +213,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	if (!ip.section) return;
 	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; ulog ([NSString stringWithFormat:@"setting opened %s", vxa_okey (i)]);
 	if (VSlider (i, NULL, NULL)) {                  /* (a number: the slider over the running game, the settings out of the way) */
-		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:i over:g]; }]; return; }
+		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:i over:g fromSettings:YES]; }]; return; }
 	VXChoice *ch = [[VXChoice alloc] initWithStyle:UITableViewStyleInsetGrouped]; ch.opt = i; [self.navigationController pushViewController:ch animated:YES];
 }
 @end
@@ -398,19 +416,21 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	s.detents = @[ UISheetPresentationControllerDetent.mediumDetent, UISheetPresentationControllerDetent.largeDetent ]; s.prefersGrabberVisible = YES; s.preferredCornerRadius = 22;
 	m.presentationController.delegate = m; [vc presentViewController:m animated:YES completion:nil];
 }
-+ (void) showSettingsFrom:(UIViewController *)vc
++ (void) showSettingsFrom:(UIViewController *)vc { [self showSettingsFrom:vc at:-1]; }
++ (void) showSettingsFrom:(UIViewController *)vc at:(int)focus
 {
 	if ([self busy:vc]) return; ulog (@"settings opened");
-	VXSettings *s = [[VXSettings alloc] initWithStyle:UITableViewStyleInsetGrouped]; s.game = vc;
+	VXSettings *s = [[VXSettings alloc] initWithStyle:UITableViewStyleInsetGrouped]; s.game = vc; s.focus = focus;
 	UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:s]; [self styleNav:n];
 	n.modalPresentationStyle = UIModalPresentationPageSheet; n.sheetPresentationController.prefersGrabberVisible = YES;
 	[vc presentViewController:n animated:YES completion:nil];
 }
-+ (void) adjustOption:(int)i over:(UIViewController *)vc
++ (void) adjustOption:(int)i over:(UIViewController *)vc { [self adjustOption:i over:vc fromSettings:NO]; }
++ (void) adjustOption:(int)i over:(UIViewController *)vc fromSettings:(BOOL)fs
 {
 	if (i < 0) return; vxa_hold (0);
 	for (UIView *v in vc.view.subviews) if ([v isKindOfClass:VXAdjust.class]) [v removeFromSuperview];
-	VXAdjust *a = [[VXAdjust alloc] initWithOpt:i vc:vc]; a.translatesAutoresizingMaskIntoConstraints = NO; [vc.view addSubview:a];
+	VXAdjust *a = [[VXAdjust alloc] initWithOpt:i vc:vc]; a.fromSettings = fs; a.translatesAutoresizingMaskIntoConstraints = NO; [vc.view addSubview:a];
 	UILayoutGuide *sa = vc.view.safeAreaLayoutGuide;
 	[NSLayoutConstraint activateConstraints:@[ [a.leadingAnchor constraintEqualToAnchor:sa.leadingAnchor constant:10], [a.trailingAnchor constraintEqualToAnchor:sa.trailingAnchor constant:-10],
 		[a.bottomAnchor constraintEqualToAnchor:sa.bottomAnchor constant:-8], [a.widthAnchor constraintLessThanOrEqualToConstant:560] ]];

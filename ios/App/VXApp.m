@@ -22,6 +22,9 @@
 #include <zlib.h>
 #include "libretro.h"
 #include "vx_token.h"
+#import "VXApp.h"
+@class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding;
+extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 
 /* ---------------------------------------------------------------- the log: the app's own, sent live from the first
  * second (the core's sender starts only with a game - build 39 crashed before, unseen), kept in Documents/applog.txt; a
@@ -91,11 +94,34 @@ static double vxa_mem_mb (void)
 
 /* ---------------------------------------------------------------- the core's settings (its option list, v0 style) */
 #define VXA_NOPT 256
-static struct { char key[64]; char val[160]; char def[160]; char vals[1200]; char desc[160]; } vxa_opt[VXA_NOPT]; static int vxa_nopt, vxa_opt_dirty;
+static struct { char key[64]; char val[160]; char def[160]; char vals[1200]; char desc[160]; char cat[32]; char info[600]; } vxa_opt[VXA_NOPT]; static int vxa_nopt, vxa_opt_dirty;
+static struct { char key[32]; char desc[64]; char info[200]; } vxa_cat[16]; static int vxa_ncat;
+/* (libretro.h's core options v2 - not in this repo's older header: the same layout, as the core declares it) */
+struct vxa_ov { const char *value, *label; }; struct vxa_oc { const char *key, *desc, *info; };
+struct vxa_od { const char *key, *desc, *desc_categorized, *info, *info_categorized, *category_key; struct vxa_ov values[128]; const char *default_value; };
+struct vxa_o2 { struct vxa_oc *categories; struct vxa_od *definitions; };
 static int vxa_opt_find (const char *k) { for (int i = 0; i < vxa_nopt; i++) if (!strcmp (vxa_opt[i].key, k)) return i; return -1; }
 static void vxa_opt_store (int i)
 {
 	[[NSUserDefaults standardUserDefaults] setObject:@(vxa_opt[i].val) forKey:[NSString stringWithFormat:@"opt.%s", vxa_opt[i].key]];
+}
+static void vxa_opts_defaults (void);
+static void vxa_opts_v2 (const struct vxa_o2 *o)   /* (the definitions with their submenus and help texts) */
+{
+	vxa_nopt = 0; vxa_ncat = 0;
+	for (const struct vxa_oc *c = o->categories; c && c->key && vxa_ncat < 16; c++, vxa_ncat++) {
+		snprintf (vxa_cat[vxa_ncat].key, sizeof vxa_cat[0].key, "%s", c->key); snprintf (vxa_cat[vxa_ncat].desc, sizeof vxa_cat[0].desc, "%s", c->desc ? c->desc : c->key);
+		snprintf (vxa_cat[vxa_ncat].info, sizeof vxa_cat[0].info, "%s", c->info ? c->info : ""); }
+	for (const struct vxa_od *d = o->definitions; d && d->key && vxa_nopt < VXA_NOPT; d++) {
+		int i = vxa_nopt++; snprintf (vxa_opt[i].key, sizeof vxa_opt[i].key, "%s", d->key);
+		snprintf (vxa_opt[i].desc, sizeof vxa_opt[i].desc, "%s", d->desc_categorized ? d->desc_categorized : d->desc);
+		snprintf (vxa_opt[i].info, sizeof vxa_opt[i].info, "%s", d->info_categorized ? d->info_categorized : (d->info ? d->info : ""));
+		snprintf (vxa_opt[i].cat, sizeof vxa_opt[i].cat, "%s", d->category_key ? d->category_key : "");
+		size_t u = 0; vxa_opt[i].vals[0] = 0;
+		for (int k = 0; k < 128 && d->values[k].value; k++) u += (size_t) snprintf (vxa_opt[i].vals + u, u < sizeof vxa_opt[i].vals ? sizeof vxa_opt[i].vals - u : 0, "%s%s", k ? "|" : "", d->values[k].value);
+		snprintf (vxa_opt[i].def, sizeof vxa_opt[i].def, "%s", d->default_value ? d->default_value : d->values[0].value);
+		snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", vxa_opt[i].def); }
+	vxa_opts_defaults ();
 }
 static void vxa_opts_set (const struct retro_variable *v)
 {
@@ -108,6 +134,12 @@ static void vxa_opts_set (const struct retro_variable *v)
 		NSString *sv = [[NSUserDefaults standardUserDefaults] stringForKey:[NSString stringWithFormat:@"opt.%s", v->key]];
 		if (sv) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", sv.UTF8String);
 	}
+	vxa_opts_defaults ();
+}
+static void vxa_opts_defaults (void)
+{
+	for (int i = 0; i < vxa_nopt; i++) { NSString *sv = [[NSUserDefaults standardUserDefaults] stringForKey:[NSString stringWithFormat:@"opt.%s", vxa_opt[i].key]];
+		if (sv) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", sv.UTF8String); }
 	/* (this app's own defaults: the control deck below the picture - its cartridge opens the ROM browser, RESET, the knob) */
 	int dk = vxa_opt_find ("vectrex_emu_deck");
 	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "full");
@@ -168,6 +200,9 @@ static bool vxa_env (unsigned cmd, void *data)
 		c->get_current_framebuffer = vxa_get_fb; c->get_proc_address = vxa_get_proc; vxa_hw = *c; vxa_hw_on = 1; return true; }
 	case 56: *(unsigned *) data = RETRO_HW_CONTEXT_OPENGLES3; return true;   /* (GET_PREFERRED_HW_RENDER) */
 	case RETRO_ENVIRONMENT_SET_VARIABLES: vxa_opts_set (data); return true;
+	case 52: *(unsigned *) data = 2; return true;           /* (GET_CORE_OPTIONS_VERSION: v2 - the submenus and help texts) */
+	case 67: vxa_opts_v2 (data); return true;                /* (SET_CORE_OPTIONS_V2) */
+	case 68: return true;                                    /* (SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK) */
 	case RETRO_ENVIRONMENT_GET_VARIABLE: { struct retro_variable *v = data; int i = vxa_opt_find (v->key); v->value = i >= 0 ? vxa_opt[i].val : NULL; return i >= 0; }
 	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: *(bool *) data = vxa_opt_dirty; vxa_opt_dirty = 0; return true;
 	case 70: { const struct retro_variable *v = data; if (!v || !v->key) return true;   /* (SET_VARIABLE: the core sets one itself) */
@@ -246,6 +281,8 @@ static void vxa_input_poll (void)
 		if (port == 0) { p.btn |= vxa_tpad.btn; if (vxa_tpad.ax[0][0] || vxa_tpad.ax[0][1]) { p.ax[0][0] = vxa_tpad.ax[0][0]; p.ax[0][1] = vxa_tpad.ax[0][1]; } }
 		uint32_t ch = p.btn ^ prev[port];
 		for (int i = 0; i < 16; i++) if (ch >> i & 1) vlog ("in p%d %s %s%s", port + 1, vxa_bname[i], p.btn >> i & 1 ? "down" : "up", port == 0 && (vxa_tpad.btn >> i & 1) ? " (touch)" : "");
+		if (port == 0 && (p.btn >> RETRO_DEVICE_ID_JOYPAD_SELECT & 1) && (ch >> RETRO_DEVICE_ID_JOYPAD_X & 1) && (p.btn >> RETRO_DEVICE_ID_JOYPAD_X & 1)) {   /* (Select + X: the game menu) */
+			vlog ("Select + X: the game menu"); dispatch_async (dispatch_get_main_queue (), ^{ if (vxa_vc) [VXUI showGameMenuFrom:vxa_vc]; }); }
 		prev[port] = p.btn; vxa_pads[port] = p; }
 }
 static int16_t vxa_input_state (unsigned port, unsigned device, unsigned index, unsigned id)
@@ -283,6 +320,8 @@ static unsigned vxa_hid_to_retrok (GCKeyCode c, uint32_t *ch)
 }
 static void vxa_key (GCKeyCode code, BOOL down)
 {
+	if ((long) code == 0x10 && !vxa_kb[RETROK_LCTRL] && !vxa_kb[RETROK_RCTRL]) {   /* (M: the game menu, as RetroArch's menu key was) */
+		if (down) { vlog ("M: the game menu"); dispatch_async (dispatch_get_main_queue (), ^{ if (vxa_vc) [VXUI showGameMenuFrom:vxa_vc]; }); } return; }
 	uint32_t ch; unsigned k = vxa_hid_to_retrok (code, &ch);
 	vlog ("in key 0x%02lx -> %u %s", (long) code, k, down ? "down" : "up");
 	if (k == RETROK_UNKNOWN || k >= RETROK_LAST) return;
@@ -365,7 +404,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 - (void) setRunning:(int)on;
 @end
 void vxa_set_callbacks (void);
-static __weak VXGameVC *vxa_vc; static UILabel *vxa_toast_l;
+static UILabel *vxa_toast_l;
 static void vxa_toast (NSString *s, double secs)
 {
 	if (!vxa_toast_l) return;
@@ -383,7 +422,7 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone;
-	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn;
+	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar;
 	long _runs, _presents, _late, _ticks; double _stat_t;
 }
 - (BOOL) prefersStatusBarHidden { return YES; }
@@ -413,9 +452,10 @@ static void vxa_toast (NSString *s, double secs)
 	[_menuBtn setImage:[UIImage systemImageNamed:@"line.3.horizontal"] forState:UIControlStateNormal]; _menuBtn.tintColor = [UIColor colorWithRed:0x88 / 255.0 green:0xcc / 255.0 blue:0xbb / 255.0 alpha:1];
 	_menuBtn.backgroundColor = [UIColor colorWithRed:0x0b / 255.0 green:0x15 / 255.0 blue:0x11 / 255.0 alpha:0.75]; _menuBtn.layer.cornerRadius = 22;
 	_menuBtn.layer.borderWidth = 1; _menuBtn.layer.borderColor = [UIColor colorWithRed:0x2f / 255.0 green:0x55 / 255.0 blue:0x44 / 255.0 alpha:1].CGColor;
-	_menuBtn.accessibilityLabel = @"Menu"; _menuBtn.showsMenuAsPrimaryAction = YES; _menuBtn.hidden = YES;
+	_menuBtn.accessibilityLabel = @"Menu"; _menuBtn.hidden = YES;
 	__weak VXGameVC *ws = self;
-	_menuBtn.menu = [UIMenu menuWithChildren:@[ [UIDeferredMenuElement elementWithUncachedProvider:^(void (^done) (NSArray<UIMenuElement *> *)) { done (@[ [ws buildMenu] ]); }] ]];
+	(void) ws; [_menuBtn addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
+	_bar = [VXUI quickBarFor:self]; _bar.hidden = YES; [self.view addSubview:_bar];
 	[self.view addSubview:_menuBtn];
 	_status = [UILabel new]; _status.textColor = g; _status.font = [UIFont systemFontOfSize:15]; _status.numberOfLines = 0; _status.textAlignment = NSTextAlignmentCenter; [self.view addSubview:_status];
 	_prog = [UIProgressView new]; _prog.progressTintColor = g; _prog.trackTintColor = [UIColor colorWithRed:0x16 / 255.0 green:0x30 / 255.0 blue:0x2a / 255.0 alpha:1]; _prog.hidden = YES; [self.view addSubview:_prog];
@@ -427,7 +467,9 @@ static void vxa_toast (NSString *s, double secs)
 - (void) viewDidLayoutSubviews
 {
 	[super viewDidLayoutSubviews];
-	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = b.size.width > b.size.height ? CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44) : CGRectMake (b.size.width - s0.right - 54, s0.top + (VXA_TOPROW - 44) / 2, 44, 44); }
+	CGRect b = self.view.bounds; { UIEdgeInsets s0 = self.view.safeAreaInsets; _menuBtn.frame = CGRectMake (b.size.width - s0.right - 56, s0.top + 8, 44, 44);
+	  _bar.frame = CGRectMake (s0.left + 8, s0.top + (VXA_TOPROW - 44) / 2, b.size.width - s0.left - s0.right - 16, 44);
+	  const int land = b.size.width > b.size.height; _bar.hidden = !_link || land; _menuBtn.hidden = !_link || !land; }   /* (upright: the quick bar; sideways: the menu button) */
 	_status.frame = CGRectMake (24, b.size.height / 2 - 60, b.size.width - 48, 80); _prog.frame = CGRectMake (40, b.size.height / 2 + 30, b.size.width - 80, 4);
 	if (_ctx) { [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer]; }
 	[self layoutControls];
@@ -531,7 +573,7 @@ static void vxa_toast (NSString *s, double secs)
 	vxa_audio_start (vxa_av.timing.sample_rate);
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
-	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; _menuBtn.hidden = NO;
+	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews];
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 }
 - (void) present
@@ -561,8 +603,10 @@ static void vxa_toast (NSString *s, double secs)
 	double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
 	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3) n++;
 	if (n > 4) n = 4;
+	if (vxa_holding) return;                       /* (a screen over the game: it waits) */
 	[EAGLContext setCurrentContext:_ctx];
 	for (int i = 0; i < n; i++) { vxa_input_poll (); retro_run (); _runs++; }
+	if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); [VXUI showLibraryFrom:self]; }
 	if (n) [self present];
 	if (now - _stat_t >= 5) {
 		double t = now - _stat_t; _stat_t = now;
@@ -622,6 +666,7 @@ static void vxa_set_opt (int i, NSString *v)
 	[top addObject:[UIMenu menuWithTitle:@"All settings" image:[UIImage systemImageNamed:@"slider.horizontal.3"] identifier:nil options:0 children:all]];
 	return [UIMenu menuWithTitle:@"Vectrex_EMU" children:top];
 }
+- (void) openMenu { [VXUI showGameMenuFrom:self]; }
 - (void) setRunning:(int)on
 {
 	if (!_link || on == _running) return; _running = on; _link.paused = !on; _last = 0;
@@ -726,6 +771,60 @@ void vxa_set_callbacks (void)
 	retro_set_video_refresh (vxa_video); retro_set_audio_sample (vxa_audio_sample); retro_set_audio_sample_batch (vxa_audio_batch);
 	retro_set_input_poll (vxa_poll); retro_set_input_state (vxa_input_state);
 }
+
+/* ---------------------------------------------------------------- what the screens use (VXApp.h) */
+int vxa_nopts (void) { return vxa_nopt; }
+const char *vxa_okey (int i) { return vxa_opt[i].key; }
+const char *vxa_odesc (int i) { return vxa_opt[i].desc; }
+const char *vxa_ocat (int i) { return vxa_opt[i].cat; }
+const char *vxa_oinfo (int i) { return vxa_opt[i].info; }
+const char *vxa_ovals (int i) { return vxa_opt[i].vals; }
+const char *vxa_oval (int i) { return vxa_opt[i].val; }
+const char *vxa_odef (int i) { return vxa_opt[i].def; }
+int vxa_ofind (const char *key) { return vxa_opt_find (key); }
+void vxa_oset (int i, const char *v)
+{
+	if (i < 0 || i >= vxa_nopt || !strcmp (vxa_opt[i].val, v)) return;
+	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v); vxa_opt_store (i); vxa_opt_dirty = 1; vlog ("setting %s = %s", vxa_opt[i].key, v);
+}
+int vxa_ncats (void) { return vxa_ncat; }
+const char *vxa_ckey (int i) { return vxa_cat[i].key; }
+const char *vxa_cdesc (int i) { return vxa_cat[i].desc; }
+const char *vxa_cinfo (int i) { return vxa_cat[i].info; }
+void ulog (NSString *s) { vlog ("ui %s", s.UTF8String); }
+NSString *vxa_docs (void) { return NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; }
+NSString *vxa_game (void) { const char *g = vx_app_game (); return g && *g ? @(g) : @""; }
+void vxa_do (NSString *w)
+{
+	if ([w isEqualToString:@"reset"]) vxa_press (RETROK_r, 1);
+	else if ([w isEqualToString:@"eject"]) vxa_press (RETROK_e, 1);
+	else if ([w isEqualToString:@"pause"]) vxa_press (RETROK_p, 0);
+	else if ([w isEqualToString:@"overlay"]) vxa_press (RETROK_o, 0);
+}
+void vxa_load (NSString *path)
+{
+	vlog ("load %s", path.UTF8String); vx_app_load (path.fileSystemRepresentation);
+	NSString *d = vxa_docs (); if ([path hasPrefix:d]) [NSUserDefaults.standardUserDefaults setObject:[path substringFromIndex:d.length + 1] forKey:@"lastGame"];
+	NSMutableArray *r = [[NSUserDefaults.standardUserDefaults arrayForKey:@"recent"] mutableCopy] ?: [NSMutableArray array];
+	[r removeObject:path]; [r insertObject:path atIndex:0]; while (r.count > 12) [r removeLastObject];
+	[NSUserDefaults.standardUserDefaults setObject:r forKey:@"recent"];
+}
+static NSString *vxa_state_path (int slot)
+{
+	NSString *dir = [vxa_docs () stringByAppendingPathComponent:@"states"]; [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+	return [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.state%d", vxa_game ().lastPathComponent.stringByDeletingPathExtension, slot]];
+}
+int vxa_state_supported (void) { return retro_serialize_size () > 0; }
+int vxa_state_exists (int slot) { return [NSFileManager.defaultManager fileExistsAtPath:vxa_state_path (slot)]; }
+int vxa_state (int save, int slot)
+{
+	size_t n = retro_serialize_size (); if (!n) { vlog ("state: this game has none"); return 0; }
+	NSString *p = vxa_state_path (slot); int ok = 0;
+	if (save) { NSMutableData *d = [NSMutableData dataWithLength:n]; ok = retro_serialize (d.mutableBytes, n) && [d writeToFile:p atomically:YES]; }
+	else { NSData *d = [NSData dataWithContentsOfFile:p]; ok = d.length == n && retro_unserialize (d.bytes, n); }
+	vlog ("state %s slot %d: %s (%zu bytes)", save ? "save" : "load", slot, ok ? "done" : "FAILED", n); return ok;
+}
+void vxa_hold (int on) { if (on != vxa_holding) { vxa_holding = on; vlog ("game %s", on ? "held (a screen over it)" : "running again"); } }
 
 /* ---------------------------------------------------------------- the app */
 @interface VXAppDelegate : UIResponder <UIApplicationDelegate>

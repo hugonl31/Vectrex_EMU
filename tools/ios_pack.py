@@ -35,6 +35,29 @@ def keep(ti):
 
 
 ver = time.strftime('%Y%m%d-%H%M')
+# the game library's tiles: each overlay as a small picture (system/vectrex_emu/thumbs/<game>.png, 324 x 414 - the
+# overlay's 162:207, sharp at 2x on an iPhone's tile); the .art overlays read as the PC app does (src/frontend/vart.py)
+sys.path.insert(0, os.path.join(R, 'src', 'frontend'))
+import vart                                                     # noqa: E402
+from PIL import Image                                           # noqa: E402
+th = os.path.join(out, 'thumbs'); os.makedirs(th, exist_ok=True)
+nt = 0
+for f in sorted(os.listdir(os.path.join(PKG, 'overlays'))):
+    stem, ext = os.path.splitext(f)
+    try:
+        if ext.lower() == '.art':
+            w, h, px = vart.load(os.path.join(PKG, 'overlays', f)); im = Image.frombytes('RGBA', (w, h), px)
+        elif ext.lower() == '.png':
+            im = Image.open(os.path.join(PKG, 'overlays', f)).convert('RGBA')
+        else:
+            continue
+    except Exception as e:                                      # noqa: BLE001
+        print('thumb skipped:', f, e); continue
+    bg = Image.new('RGBA', im.size, (5, 8, 10, 255)); bg.alpha_composite(im)   # (on the app's black: the sheet's clear parts dark)
+    bg.convert('RGB').resize((324, 414), Image.LANCZOS).save(os.path.join(th, stem + '.png'), optimize=True)
+    nt += 1
+print('thumbs:', nt)
+parts.append((th, 'system/vectrex_emu/thumbs'))
 with tarfile.open(os.path.join(out, 'pack.tgz'), 'w:gz', compresslevel=6) as t:
     for src, arc in parts:
         if not os.path.exists(src):

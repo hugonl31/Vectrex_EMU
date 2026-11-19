@@ -3199,6 +3199,11 @@ static char ej_last[1100]; static int ej_out;
 static char sw_next[1100]; static int sw_eject;          /* (a switch asked for: done at the next refresh's start - see retro_run) */
 static int game_switch_now (const char *path);
 static int game_switch (const char *path) { snprintf (sw_next, sizeof sw_next, "%s", path); return 1; }
+/* (the own iOS app: its own game library in place of the ROM browser - asked for (the deck's cartridge, a button, L)
+ *  the browser is closed again at once and the app shows its library; a game it picks loads as the browser's do) */
+int vx_app_browser_wanted (void) { if (br_open) { br_show (0); return 1; } return 0; }
+void vx_app_load (const char *path) { game_switch (path); }
+const char *vx_app_game (void) { return cur_game; }
 static int game_switch_now (const char *path)
 {
 	fprintf (stderr, "[vectrex_emu] switching to %s (from %s)\n", path, cur_game);   /* (a crash on a switch: its log says which) */

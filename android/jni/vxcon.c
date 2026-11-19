@@ -22,6 +22,7 @@ static const char *opt (const char *k)
 {
 	static const char *o[][2] = { { "vectrex_emu_size", "600 px" }, { "vectrex_emu_profile", "low" }, { "vectrex_emu_deck", "off" }, { "vectrex_emu_rotate", "off" },
 		{ "vectrex_emu_renderer", "CPU only" }, { "vectrex_emu_rate", "60 Hz" }, { "vectrex_emu_threaded", "on" }, { "vectrex_emu_power_fx", "off" } };
+	if (!strcmp (k, "vectrex_emu_rate") && getenv ("VXCON_RATE")) return getenv ("VXCON_RATE");   /* (tests: another screen rate, "120 Hz") */
 	for (unsigned i = 0; i < sizeof o / sizeof o[0]; i++) if (!strcmp (o[i][0], k)) return o[i][1];
 	return NULL;
 }

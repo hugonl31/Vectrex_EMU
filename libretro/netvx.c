@@ -127,7 +127,7 @@ static long nv_n_rb, nv_n_rbf, nv_n_pred; static int64_t nv_reset_lastf = -1;
 static int nv_rb_ports[NV_RB_SLOTS][2]; static unsigned long long nv_rb_ctr[NV_RB_SLOTS][5];   /* (with each saved frame: the ports taken,
                                                  the frame counters outside the state - as the running game's state sent to a joiner) */
 static int nv_in_differ (const nv_in *a, const nv_in *b) { return a->jx != b->jx || a->jy != b->jy || a->b != b->b || a->fl != b->fl; }
-static int nv_stream, nv_stream_peer;   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static int nv_stream, nv_stream_peer, nv_st_tgt = 2, nv_st_buf; static double nv_st_calm;   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
 static void nv_st_on_piece (const unsigned char *b, size_t n); static void nv_st_on_input (const unsigned char *b, size_t n); static void nv_ports_take (int side, unsigned char fl); static void nv_st_clear (void);
 static size_t vx_save_to (unsigned char *d); static bool vx_load_from (const void *d, size_t sz); static void vx_state_init (void); static void nv_sum_send (uint32_t f, uint32_t h); static void vx_rb_keep (int back);
 static int nv_dly = 3, nv_their_dly, nv_st_run, nv_st_ep; static double nv_st_t0, nv_calm_t0;   /* (this side's input delay now - it grows when the
@@ -400,7 +400,7 @@ int vx_net_diag (char *o, int n)
 	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood, %ld guessed, %ld rollbacks (%ld frames again), %.2f s emulated in %.2f s%s",
 		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood, nv_n_pred, nv_n_rb, nv_n_rbf, (double) (total_cycles - nv_dg_tc) / 1.5e6, nv_now () - nv_dg_t, nv_rb_on ? "" : " - lockstep"); nv_dg_tc = total_cycles; nv_dg_t = nv_now ();
 	nv_n_wait = nv_n_stood = nv_n_frames = nv_n_pred = nv_n_rb = nv_n_rbf = 0;
-	if (nv_stream && r > 0 && r < n) { const int r2 = snprintf (o + r, (size_t) (n - r), " - streamed: %ld frames came, %ld left out, %ld lost, %ld pieces repaired; %ld of %ld refreshes a new frame (%ld more than one)", nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_fix, nv_st_n_new, nv_st_n_ref, nv_st_n_two); nv_st_n_got = nv_st_n_drop = nv_st_n_lost = nv_st_n_ref = nv_st_n_new = nv_st_n_two = nv_st_n_fix = 0; nv_unlock (); return r2 > 0 ? r + r2 : r; }
+	if (nv_stream && r > 0 && r < n) { const int r2 = snprintf (o + r, (size_t) (n - r), " - streamed: %ld frames came, %ld left out, %ld lost, %ld pieces repaired; %ld of %ld refreshes a new frame (%ld more than one); buffer %d", nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_fix, nv_st_n_new, nv_st_n_ref, nv_st_n_two, nv_st_tgt); nv_st_n_got = nv_st_n_drop = nv_st_n_lost = nv_st_n_ref = nv_st_n_new = nv_st_n_two = nv_st_n_fix = 0; nv_unlock (); return r2 > 0 ? r + r2 : r; }
 	nv_unlock (); return r;
 }
 double netvx_pace (void)
@@ -932,7 +932,7 @@ static unsigned char nv_st_raw[64 + NV_ST_MAXL * 26 + NV_ST_MAXA], nv_st_z[sizeo
 typedef struct { uint32_t fno; int nd, got, done; size_t zlen, rawn, csz; unsigned char mask[NV_ST_MAXC]; unsigned char *buf, *par; } nv_stasm_t;
 static nv_stasm_t nv_sta[6];
 typedef struct { uint32_t fno; unsigned long long p0, tc; int nl, na; line_t *L; int16_t *a; } nv_stfr_t;
-static nv_stfr_t nv_stq[8]; static int nv_stq_n, nv_st_started; static uint32_t nv_st_last; static long nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static nv_stfr_t nv_stq[16]; static int nv_stq_n, nv_st_started; static uint32_t nv_st_last; static long nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
 static nv_in nv_st_in; static uint32_t nv_st_in_seq; static int nv_st_in_ok; static unsigned char nv_st_resets, nv_st_resets_done, nv_st_take_seq, nv_st_take_val, nv_st_take_done;
 static unsigned char nv_st_my_resets, nv_st_my_take_seq, nv_st_my_take_val; static uint32_t nv_st_out_seq; static uint32_t nv_st_fno;
 static void nv_st_put16 (unsigned char *p, unsigned v) { p[0] = (unsigned char) v; p[1] = (unsigned char) (v >> 8); }
@@ -1045,7 +1045,7 @@ static void nv_st_on_piece (const unsigned char *b, size_t n)
 	if (a->buf[0] == 1) ok = !nv_unlz (a->buf + 1, a->zlen - 1, raw, a->rawn) && nv_st_unpack (raw, a->rawn, &fr);
 	else ok = a->zlen - 1 == a->rawn && nv_st_unpack (a->buf + 1, a->rawn, &fr);
 	if (!ok) { nv_st_n_lost++; return; }
-	if (nv_stq_n == 8) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * 7); nv_stq_n--; nv_st_n_drop++; }
+	if (nv_stq_n == 16) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * 15); nv_stq_n--; nv_st_n_drop++; }
 	int at = nv_stq_n; while (at > 0 && nv_stq[at - 1].fno > f) at--;
 	if (at < nv_stq_n) memmove (nv_stq + at + 1, nv_stq + at, sizeof nv_stq[0] * (size_t) (nv_stq_n - at));
 	nv_stq[at] = fr; nv_stq_n++; nv_st_n_got++;
@@ -1062,11 +1062,19 @@ static void netvx_stream_guest (void)
 	  pk[6] = ls_pad[2]; pk[7] = nv_st_my_resets; pk[8] = nv_st_my_take_seq; pk[9] = nv_st_my_take_val; pk[10] = 0; nv_send ('u', pk, 11); }
 	if (nv_x_got) { nv_x_got = 0; if (nv_rg_state == 2) nv_switch_now (); nv_unlock (); run_t = total_cycles; emu_stood = 1; return; }   /* (the host switched) */
 	if (nv_pause) { nv_unlock (); run_t = total_cycles; emu_stood = 1; return; }
-	/* (Apple's peer-to-peer Wi-Fi brings the frames in bursts: up to 8 kept (the queue's size), each shown when its time comes, one extra a
+	/* (Apple's peer-to-peer Wi-Fi brings the frames in bursts: up to the buffer + 6 kept, each shown when its time comes, one extra a
 	 *  refresh while more than 3 wait - more than 3 left out at once was 10-30 frames in 5 s and the sound running dry) */
-	while (nv_stq_n > 8) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--; nv_st_n_drop++; }
+	while (nv_stq_n > nv_st_tgt + 6) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--; nv_st_n_drop++; }
+	/* (a small playout buffer: frames shown only once nv_st_tgt are here - a late one no longer stands the picture and makes it
+	 *  jump after (iPhone from iPad, Apple's peer-to-peer Wi-Fi: choppy, 19 frames left out in 5 s); run dry: one frame more,
+	 *  up to 6; 15 s without: one less, down to 2) */
+	if (!nv_st_started && !nv_st_buf) { nv_st_buf = 1; nv_st_tgt = 2; }
+	if (nv_st_buf) {
+		if (nv_stq_n >= nv_st_tgt) { nv_st_buf = 0; nv_st_calm = nv_now (); if (nv_st_started) run_t = total_cycles; }
+		else { nv_unlock (); nv_st_n_ref++; run_t = total_cycles; emu_stood = nv_st_started; return; } }
+	if (nv_now () - nv_st_calm > 15.0 && nv_st_tgt > 2) { nv_st_tgt--; nv_st_calm = nv_now (); }
 	int k = 0;
-	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || (nv_stq_n > 3 && k < 2)) && k < 8) {
+	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || (nv_stq_n > nv_st_tgt + 1 && k < 2)) && k < 8) {
 		nv_stfr_t q = nv_stq[0]; memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--;
 		nv_unlock ();
 		memcpy (last, q.L, sizeof (line_t) * (size_t) q.nl); nlast = q.nl; total_cycles = q.tc;
@@ -1077,6 +1085,8 @@ static void netvx_stream_guest (void)
 		nv_lock (); nv_st_last = q.fno; nv_f = q.fno + 1; nv_n_frames++; if (!nv_st_started) { nv_st_started = 1; run_t = total_cycles; } k++; }
 	nv_unlock ();
 	nv_st_n_ref++; if (k) nv_st_n_new++; if (k > 1) nv_st_n_two++;
+	if (!k && nv_st_started && total_cycles < run_t && !nv_stq_n) {   /* (one was due and none is here: run dry - wait for a fuller buffer) */
+		nv_lock (); nv_st_buf = 1; if (nv_st_tgt < 6) nv_st_tgt++; nv_st_calm = nv_now (); nv_unlock (); }
 	if (!k) { run_t = total_cycles; emu_stood = nv_st_started; }   /* (none came: the picture as it was) */
 	else if (total_cycles > run_t) run_t = total_cycles;        /* (the host's time: this side follows it) */
 }

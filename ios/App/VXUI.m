@@ -595,6 +595,20 @@ static UITableViewCell *vxs_cell (NSString *title)
 }
 @end
 
+/* the game held while any screen is over it (the menu, settings, controls); it runs again only once nothing is over it -
+ * the menu's way into settings kept it held throughout; a slider over the game lets it run (adjustOption) */
+static void vxu_release (UIViewController *game)
+{
+	__weak UIViewController *g = game;
+	dispatch_async (dispatch_get_main_queue (), ^{ UIViewController *gg = g; if (!gg || !gg.presentedViewController) vxa_hold (0); });
+}
+@interface VXNav : UINavigationController
+@property (nonatomic, weak) UIViewController *game;
+@end
+@implementation VXNav
+- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; if (self.isBeingDismissed || !self.presentingViewController) vxu_release (self.game); }
+@end
+
 /* ------------------------------------------------ the game menu: a sheet from below, the game paused above it */
 @interface VXGameMenu : UIViewController <UIAdaptivePresentationControllerDelegate>
 @property (nonatomic, weak) UIViewController *game;
@@ -602,9 +616,9 @@ static UITableViewCell *vxs_cell (NSString *title)
 - (CGFloat) fitHeight:(CGFloat)w;
 @end
 @implementation VXGameMenu
-- (void) presentationControllerDidDismiss:(UIPresentationController *)p { ulog (@"game menu swiped away"); vxa_hold (0); }
-- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; if (!self.presentedViewController) vxa_hold (0); }   /* (closed in any way: the game goes on) */
-- (void) close:(void (^) (void))then { [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); if (then) then (); }]; }
+- (void) presentationControllerDidDismiss:(UIPresentationController *)p { ulog (@"game menu swiped away"); vxu_release (self.game); }
+- (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; if (!self.presentedViewController) vxu_release (self.game); }   /* (closed in any way: the game goes on - unless another screen took its place) */
+- (void) close:(void (^) (void))then { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ vxu_release (g); if (then) then (); }]; }
 - (void) viewDidLoad
 {
 	[super viewDidLoad]; self.view.backgroundColor = VX_BAR; __weak VXGameMenu *ws = self;
@@ -697,7 +711,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 {
 	if ([self busy:vc]) return; ulog (@"settings opened");
 	VXSettings *s = [[VXSettings alloc] initWithStyle:UITableViewStyleInsetGrouped]; s.game = vc; s.focus = focus;
-	UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:s]; [self styleNav:n];
+	VXNav *n = [[VXNav alloc] initWithRootViewController:s]; n.game = vc; [self styleNav:n]; vxa_hold (1);   /* (held while settings are open) */
 	n.modalPresentationStyle = UIModalPresentationPageSheet; n.sheetPresentationController.prefersGrabberVisible = YES;
 	[vc presentViewController:n animated:YES completion:nil];
 }
@@ -1274,7 +1288,7 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 {
 	if (vc.presentedViewController) return; ulog (@"controls opened");
 	VXControls *c = [[VXControls alloc] initWithStyle:UITableViewStyleInsetGrouped]; c.game = vc;
-	UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:c]; [self styleNav:n];
+	VXNav *n = [[VXNav alloc] initWithRootViewController:c]; n.game = vc; [self styleNav:n]; vxa_hold (1);
 	__weak UINavigationController *wn = n;
 	c.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithPrimaryAction:[UIAction actionWithTitle:@"Done" image:nil identifier:nil handler:^(UIAction *a) { (void) a; [wn dismissViewControllerAnimated:YES completion:nil]; }]];
 	n.modalPresentationStyle = UIModalPresentationPageSheet; [vc presentViewController:n animated:YES completion:nil];

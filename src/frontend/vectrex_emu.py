@@ -5827,8 +5827,8 @@ class App:
                 g['jit_fast'] = bool(rom is not None and g.get('arch') and g.get('arch') == netplay.arch())
                 g['uvm2_net'] = netplay.uvm2_agree(g.get('uvm2', 'exact'), getattr(self, 'uvm2_mode', 'exact'))
                 net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else '')
-                           + netplay.REGAME_TAG.decode() + netplay.SAVE_TAG.decode()
-                           + (netplay.RB_TAG.decode('latin-1') if IS_WIN and not g.get('card') else '')
+                           + netplay.REGAME_TAG.decode() + netplay.RGMODE_TAG.decode() + netplay.SAVE_TAG.decode()
+                           + (netplay.RB_TAG.decode('latin-1') if IS_WIN else '')
                            + (netplay.STREAM_TAG.decode('latin-1') if g.get('card') and g.get('stream') else '')
                            + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
                 net.rb_peer = bool(g.get('rb'))                     # (the host runs on guesses too)
@@ -6232,12 +6232,17 @@ class App:
         import netplay
         if net is None or net.lost or getattr(self, 'net_role', '') != 'host' or not getattr(net, 'peer_regame', False):
             return False
-        if self.card_dir(rom) or self.card_dir(getattr(self, 'net_rom', '') or '') or getattr(self.run, 'core2', None) is not None:
-            return False
+        card = bool(self.card_dir(rom)); was_card = bool(self.card_dir(getattr(self, 'net_rom', '') or ''))
+        if ((card or was_card) and not getattr(net, 'rgm_peer', False)) or getattr(self.run, 'core2', None) is not None:
+            return False                                        # (to or from a card game: player 2 must follow that - streamed)
         g = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw, dacofs=0.0))   # (R302: online the factory's)
         if game_turns(rom): g['turns'] = True
         g['delay'] = net.delay
-        sv = self.net_save_pack(rom); g['sv'], g['svi'] = len(sv[0]), sv[1]   # (its saves along - player 2's yes waits for them)
+        if card:                                                # (a card game: streamed - this PC plays it, its lines to player 2)
+            g['card'] = True; g['stream'] = True; g['uvm2'] = getattr(self, 'uvm2_mode', 'exact'); sv = (b'', 0); g['sv'], g['svi'] = 0, 0
+        else:
+            sv = self.net_save_pack(rom); g['sv'], g['svi'] = len(sv[0]), sv[1]   # (its saves along - player 2's yes waits for them)
+        if IS_WIN and not card: g['rb'] = True
         net.regame_offer(g, sv); self.net_rg_pick = (os.path.abspath(rom), g)
         self.net_flash('ONLINE: STARTING %s' % os.path.splitext(os.path.basename(rom))[0].upper()[:24], 'FOR BOTH...', secs=3)
         return True
@@ -6254,7 +6259,10 @@ class App:
         if net.rg_answer is not None:                          # (the host: player 2 has it - the flag in the next input)
             ok, net.rg_answer = net.rg_answer, None
             pick = getattr(self, 'net_rg_pick', None)
-            if ok and pick:
+            if ok and pick and getattr(net, 'stream', False):    # (streamed: no input frames - switched here now, the word sent)
+                net.x_seq = net.rg_seq; net.x_until = time.perf_counter() + 3.0
+                self.run.rg_due = pick; self.run.rg_switched = True
+            elif ok and pick:
                 self.run.rg_due = pick; self.run.rg_flag = 8
             else:
                 self.net_flash('ONLINE: THE OTHER PLAYER', 'DOES NOT HAVE THAT GAME', secs=5); self.net_rg_pick = None
@@ -6268,11 +6276,20 @@ class App:
             else:
                 self.net_flash('ONLINE: YOU DO NOT HAVE', os.path.splitext(g.get('name', '?'))[0].upper()[:24], secs=5)
         run = self.run
+        if getattr(net, 'x_got', None) is not None and getattr(run, 'rg_due', None) is not None:   # (player 2: the host switched out of
+            net.x_got = None; run.rg_switched = True                                             #  its streamed game)
         if getattr(run, 'rg_switched', False) and getattr(run, 'rg_due', None) is not None:   # (both: the switch, at the flag's frame)
             rom, g = run.rg_due; run.rg_due = None; net.rg_ans_out = None
             self.net_game, self.net_rom = g, rom; self.net_rg_pick = None
             Core.force_seed = g.get('seed'); self.net_rg_now = True
             Core.net_save = (net.rg_sv[0] if net.rg_sv else None) if getattr(self, 'net_role', '') == 'host' else net.rg_sv_blob   # (the host's saves)
+            new_stream = bool(g.get('card') and g.get('stream'))
+            if new_stream or getattr(net, 'stream', False):     # (to or from a streamed game: frame 0 again, streamed or in step)
+                net.reset_mode(new_stream)
+            net.rb = IS_WIN and not new_stream and not os.environ.get('VX_NO_ROLLBACK'); net.rb_ok = False
+            if getattr(self, 'net_role', '') != 'host': net.rb_peer = bool(g.get('rb'))   # (the host runs it on guesses too)
+            if new_stream:                                      # (streamed: each side as offline - the host plays its own way)
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'; Core.net_save = None
             try:
                 self.restart(rom)
             finally:

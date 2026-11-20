@@ -1355,7 +1355,8 @@ static void vxa_ntoast (NSString *s);
 void vxa_ntoast_c (NSString *s) { vxa_ntoast (s); }
 static void vxa_ntoast (NSString *s)
 {
-	UIViewController *vc = vxa_vc; if (!vc) return; UIView *v = vc.view;
+	UIViewController *vc = vxa_vc; if (!vc) return; UIView *v = vc.view.window ?: vc.view;   /* (the window: over any open screen - a chat line came while the
+	                                                     Online screen was open, under it, unseen) */
 	UILabel *l = [UILabel new]; l.text = [NSString stringWithFormat:@"   %@   ", s]; l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium]; l.textColor = VX_HI;
 	l.backgroundColor = [VX_PANEL colorWithAlphaComponent:0.95]; l.layer.cornerRadius = 10; l.layer.masksToBounds = YES; l.layer.borderWidth = 1; l.layer.borderColor = VX_EDGE2.CGColor;
 	l.numberOfLines = 2; l.textAlignment = NSTextAlignmentCenter;

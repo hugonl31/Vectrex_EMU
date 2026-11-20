@@ -404,7 +404,10 @@ int vx_net_diag (char *o, int n)
 double netvx_pace (void)
 {
 	nv_lock (); const double ahead = (nv_adv - nv_adv_them) / 2.0; const uint32_t f = nv_f; nv_unlock ();
-	if (f < 100 || ahead <= 0.5) return 0.0;
+	if (f < 100) return 0.0;
+	if (ahead < -1.5) { const double u = (ahead + 1.5) * 0.02; return u > -0.10 ? u : -0.10; }   /* (behind - a moment's halt, the overlay switched on the
+	                                                 iPad: 18 frames behind, 36 s to come back at the other's 1 %): up to 10 % faster, a few seconds */
+	if (ahead <= 0.5) return 0.0;
 	const double s = (ahead - 0.5) * 0.005; return s < 0.01 ? s : 0.01;
 }
 static void nv_on_inputs (const unsigned char *b, size_t n)
@@ -1213,6 +1216,7 @@ static void nv_switch_now (void)
 	{ char nm2[256]; if (nv_jstr (nv_game, "name", nm2, sizeof nm2)) snprintf (nv_rom_name, sizeof nv_rom_name, "%s", nm2); }
 	snprintf (sw_next, sizeof sw_next, "%s", nv_rg_rom); nv_rg_rom[0] = 0; nv_rg_state = 0; nv_rg_switched++;
 	nv_card = nv_jnum (nv_game, "card", &v) && v != 0; ls_me = nv_role == 1 ? 0 : 1;
+	if (nv_role == 2) nv_rb_peer = strstr (nv_game, "\"rb\": true") != NULL;   /* (the host runs the next game on guesses too: both the short delay) */
 	if (nv_card) {                                               /* (streamed: each side as offline - the host its own settings) */
 		nv_stream = 1; ls_cfg_on = 0; nv_st_started = 0; nv_st_fno = 0; nv_st_last = 0; nv_st_in_ok = 0;
 		for (int k = 0; k < nv_stq_n; k++) { free (nv_stq[k].L); free (nv_stq[k].a); } nv_stq_n = 0; for (int k = 0; k < 6; k++) nv_sta[k].done = 1;

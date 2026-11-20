@@ -156,13 +156,26 @@ static void vxa_opts_set (const struct retro_variable *v)
 	}
 	vxa_opts_defaults ();
 }
-/* the top bar and the full deck do not both fit (upright, the picture at its full width - 5 % less allowed): the bar hides
- * itself and the deck pops up by default. Fit: the iPhones, an iPad / iPad Air (1180 pt), an iPad mini, an 11-inch iPad Pro;
+/* the top bar and the full deck do not both fit (upright, the picture at its full width - 5 % less allowed): the deck
+  * (slim) pops up by default. Fit: the iPhones, an iPad / iPad Air (1180 pt), an iPad mini, an 11-inch iPad Pro;
  * not: a 13-inch iPad Pro (4:3), a square screen - the Nova's 4:3 in the Android app alike */
 int vxa_squarish (void)
 {
 	CGSize s = UIScreen.mainScreen.bounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
 	return b > 0 && a < b * 1.278 * 0.95 + 56 + 58 + 30;   /* (the picture 1.278 x its width high; the bar's row, the deck, the safe edges) */
+}
+/* the top bar alone does not fit either: it hides itself by default (three stages - both shown; the bar shown, the deck
+ * popping up; both out of the way) */
+int vxa_popdef (void)   /* (the slim deck does not fit with the bar either: it pops up by default - the four stages: bar + full deck,
+                          bar + slim deck, bar + the deck popping up, both out of the way) */
+{
+	CGSize s = UIScreen.mainScreen.bounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
+	return b > 0 && a < b * 1.278 * 0.95 + 56 + 40 + 30;
+}
+int vxa_tight (void)
+{
+	CGSize s = UIScreen.mainScreen.bounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
+	return b > 0 && a < b * 1.278 * 0.95 + 56 + 30;
 }
 static void vxa_opts_defaults (void)
 {
@@ -176,7 +189,7 @@ static void vxa_opts_defaults (void)
 		if (!vxa_squarish () && UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) { [u removeObjectForKey:@"app.topbar"]; [u removeObjectForKey:@"app.deckpop"];
 			if (dk >= 0 && !strcmp (vxa_opt[dk].val, "pop-up")) { snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", "full"); [u removeObjectForKey:@"opt.vectrex_emu_deck"]; }
 			vlog ("layout: this screen is not 4:3 - the top bar and the deck as a phone's"); } } }
-	const char *dd = vxa_squarish () ? "slim" : "full";   /* (a 4:3 screen: slim, popping up - the picture gets the room) */
+	const char *dd = vxa_squarish () ? "slim" : "full";   /* (no room for the full deck with the bar: slim - shown, or popping up) */
 	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "%s", dd);   /* (the app's default - what Reset gives back) */
 	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", dd);
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
@@ -1022,7 +1035,7 @@ static void vxa_set_opt (int i, NSString *v)
 - (BOOL) barAuto
 {
 	NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"];
-	return m ? [m isEqualToString:@"auto"] : vxa_squarish () != 0;
+	return m ? [m isEqualToString:@"auto"] : vxa_tight () != 0;
 }
 - (void) showBar
 {
@@ -1217,7 +1230,7 @@ int vxa_deck_style (void)
 int vxa_deck_pop (void)
 {
 	int i = vxa_opt_find ("vectrex_emu_deck"); if (i >= 0 && !strcmp (vxa_opt[i].val, "pop-up")) return 1;
-	NSNumber *p = [NSUserDefaults.standardUserDefaults objectForKey:@"app.deckpop"]; return p ? p.boolValue : vxa_squarish () != 0;
+	NSNumber *p = [NSUserDefaults.standardUserDefaults objectForKey:@"app.deckpop"]; return p ? p.boolValue : vxa_popdef () != 0;
 }
 void vxa_deck_set (int style, int pop)
 {

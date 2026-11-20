@@ -281,7 +281,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"bar"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"bar"];
 		c.textLabel.text = @"Top bar"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
 		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Always", @"Auto-hide" ]];
-		NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"]; BOOL au = m ? [m isEqualToString:@"auto"] : vxa_squarish () != 0;
+		NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"]; BOOL au = m ? [m isEqualToString:@"auto"] : vxa_tight () != 0;
 		sg.selectedSegmentIndex = au ? 1 : 0; sg.selectedSegmentTintColor = VX_SEL; [sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal];
 		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISegmentedControl *) a.sender).selectedSegmentIndex == 1;

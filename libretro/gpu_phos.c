@@ -35,6 +35,8 @@ float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_vs = 0.25f, 
                                                   the lines lower, the slow ones and the dots up to white) */       /* (HDR, the Vectrex look: a line this slow (cycles a game px: Test Cartridge Rev. 4's grid) as
                                                   before, slower ones brighter by the time the beam spends - its bars 5.8x, the photo 6.8x with
                                                   the edge under them; the lines' scale) */
+float vx_trail_mul = 1.0f;                     /* (the own apps: the trail for the look and the screen's brightness - the owner's
+                                                  iPhone and Nova next to a real Vectrex, 2026-11-21) */
 float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture
                                                   lifted towards the peak, 2 the measured Vectrex - dots with the slow beam round them, the
                                                   brightest lines a little above white; below the knee as SDR) */
@@ -289,7 +291,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	}
 	glBindVertexArray_ (g_vao);
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
-	{ const float tk = ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0;
+	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
 	  const float a1 = 0.1404f * tk, a2 = 0.0582f * tk, ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);

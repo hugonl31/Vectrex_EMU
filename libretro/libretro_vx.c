@@ -1191,7 +1191,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  unit_addon = e && (!vx_stricmp (e, ".um2") || !vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit"));
 	  if (ls_cfg_on) nv_sv_apply (path); else { vx_putenv ("VT_FLASH_CLEAN="); vx_putenv ("VT_FLASH_IMG="); }   /* (online: the host's saves -
 	                                              netvx.c, temporary files only; else the player's own) */
-	  unit_make (unit_preset (), optv); unit_env (unit_addon);
+	  unit_make (unit_preset (), optv); unit_env (unit_addon); unit_force (unit_addon);
 	  km_on = unit_addon && !opt_is ("vectrex_emu_usb_hid", "off"); km_n = 0; km_mods = 0; km_dirty = km_on; km_btn = -1;
 	  vx_putenv (km_on ? "VT_USBHID=1" : "VT_USBHID=");   /* (the desktop's usb_hid: a UVMC2 / PiTrex gets the keyboard and mouse) */
 	  km_typing = 0; kb_held = 0; kb_ev = 0;

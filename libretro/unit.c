@@ -111,6 +111,17 @@ static void unit_env (int addon)
 	vx_putenv (e[n]); n++;
 	for (int i = 0; i < (int) NUNIT; i++) unit_sent[i] = unit_v[i];
 }
+/* (a game's start: every analog part to the core at once - the core reads its VT_ variables only once, at the first game: a
+ *  UVMC2 game first (the standard zero hold, an add-on's) left every 6809 game after it at that, and Last Human's calibration
+ *  screen drew slanted boxes and an open octagon at its defaults (the iPhone 2026-11-20); the other way round the UVMC2 got
+ *  the unit's) */
+static void unit_force (int addon)
+{
+	extern void vt_set_analog (int id, double v);
+	for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i]; if (p->id < 0) continue;
+		if (addon && p->id == 1) { vt_set_analog (1, 0.597); continue; }   /* (an add-on: the standard zero hold, vecx.c ZREF_K) */
+		vt_set_analog (p->id, p->id == 8 ? knob_bias (unit_v[i]) : unit_v[i]); unit_sent[i] = unit_v[i]; }
+}
 /* (while running: the parts changed since sent, to the core) */
 static void unit_live (int addon)
 {

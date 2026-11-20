@@ -103,7 +103,8 @@ static void unit_make (const char *preset, const char *(*get) (const char *))
 static void unit_env (int addon)
 {
 	static char e[NUNIT + 3][96]; int n = 0;
-	for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i]; if (!p->env || (addon && p->id == 1)) continue;
+	(void) addon; for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i]; if (!p->env) continue;   /* (the UVMC2 / PiTrex too: the console's zero
+	                                                 hold, as the desktop since 2026-11-13 - the zero test cartridge drew sharp at 0-8 on the owner's Vectrex) */
 		snprintf (e[n], sizeof e[n], "%s=%.4f", p->env, p->id == 8 ? knob_bias (unit_v[i]) : unit_v[i]); vx_putenv (e[n]); n++; }
 	snprintf (e[n], sizeof e[n], "VT_HWOFS=%.4f,%.4f", unit_v[unit_idx ("drift_x")], unit_v[unit_idx ("drift_y")]); vx_putenv (e[n]); n++;
 	snprintf (e[n], sizeof e[n], "VT_ZEROTAU=%.3f,%.3f", unit_v[unit_idx ("zerotx")], unit_v[unit_idx ("zeroty")]); vx_putenv (e[n]); n++;
@@ -113,13 +114,12 @@ static void unit_env (int addon)
 }
 /* (a game's start: every analog part to the core at once - the core reads its VT_ variables only once, at the first game: a
  *  UVMC2 game first (the standard zero hold, an add-on's) left every 6809 game after it at that, and Last Human's calibration
- *  screen drew slanted boxes and an open octagon at its defaults (the iPhone 2026-11-20); the other way round the UVMC2 got
- *  the unit's) */
+ *  screen drew slanted boxes and an open octagon at its defaults (the iPhone 2026-11-20). Every game the unit's, the UVMC2 /
+ *  PiTrex too (the desktop's rule since 2026-11-13) */
 static void unit_force (int addon)
 {
 	extern void vt_set_analog (int id, double v);
 	for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i]; if (p->id < 0) continue;
-		if (addon && p->id == 1) { vt_set_analog (1, 0.597); continue; }   /* (an add-on: the standard zero hold, vecx.c ZREF_K) */
 		vt_set_analog (p->id, p->id == 8 ? knob_bias (unit_v[i]) : unit_v[i]); unit_sent[i] = unit_v[i]; }
 }
 /* (while running: the parts changed since sent, to the core) */
@@ -127,7 +127,7 @@ static void unit_live (int addon)
 {
 	extern void vt_set_analog (int id, double v);
 	for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i];
-		if (p->id < 0 || unit_v[i] == unit_sent[i] || (addon && p->id == 1)) continue;
+		(void) addon; if (p->id < 0 || unit_v[i] == unit_sent[i]) continue;
 		vt_set_analog (p->id, p->id == 8 ? knob_bias (unit_v[i]) : unit_v[i]); unit_sent[i] = unit_v[i]; }
 }
 static void picture_apply (double *x, double *y)       /* (vectrex_emu.py picture_apply: emulator units) */

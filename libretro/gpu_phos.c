@@ -30,7 +30,9 @@ static uint32_t *br_img; static int br_shown, br_gen; static GLuint ph_ui, ph_ui
 static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
 static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1, ph_hdr_made = -1;
-float vx_hdr_lift = 0.0f;                      /* (HDR: the whole picture lifted towards the peak - the own iOS app sets it, its default) */
+float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture
+                                                  lifted towards the peak, 2 the measured Vectrex - dots with the slow beam round them, the
+                                                  brightest lines a little above white; below the knee as SDR) */
 float vx_hdr_peak = 1.0f;                       /* (HDR: the brightest lights top, x the screens white - the own iOS app sets it
                                                 from the screens headroom; 1: SDR, as everywhere else) */
 static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
@@ -100,8 +102,10 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"uniform float hk;\n"   /* (HDR: the top, x the screen's white - 1.0 no HDR. The knee as always; above white only the long rests' own light (hx), up to it) */
 	"uniform float hl;\n"   /* (HDR, the whole picture (the own iOS app's default): the brighter a part, the closer to the screen's peak -
 	                           black stays black, the faint trail nearly as it was; 0: only the rests above white) */
-	"vec3 hlift(vec3 k) { if (hl < 0.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
-	"vec3 knee(vec3 c) { return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
+	"vec3 hlift(vec3 k) { if (hl < 0.5 || hl > 1.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
+	"vec3 knee(vec3 c) { float a = hk > 1.0 && hl > 1.5 ? min(hk, 1.2) - 0.75 : 0.25;\n"   /* (HDR: the brightest lines up to 1.2, the real tube's
+	                                                   127 vs 96 is 1.5x in light; below 0.75 as SDR - the faint lines and the trail untouched) */
+	"  return mix(c, 0.75 + a - a * exp(-(c - 0.75) / a), step(0.75, c)); }\n"
 	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
 	                                                   through the overlay's colour; softly up to the screen's peak) */
 	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"

@@ -2253,6 +2253,22 @@ static int tube_split (const wline *L, int n, wline *o)
 #define ART_PARALLAX 0.008
 static double par_dy (void)                  /* (vecrender.py par_dy: the overlay's parallax, emulator units - up) */
 { return opt_par && ov && ov_on && !sheet_file ? -ART_PARALLAX * 0.924 * ALG_MAX_Y : 0.0; }
+/* HDR: a rest's light with the beam's slow parts round it - the end of the stroke before, the start of the one after (the
+ * integrators slowing down and speeding up: Test Cartridge Rev. 4's joints rest 11 cycles, with ~20 more cycles within one
+ * spot; the owner's photos, 2026-11-20, ProRAW: the joint 3.5x the line's peak at every intensity). Weighted by distance (the
+ * spot: sigma half a game px) and by intensity; other rests not (their own spots) */
+static double rest_cyc (const wline *L, int n, int i, const unsigned char *zl, const unsigned char *halo)
+{
+	const double px = L[i].x1, py = L[i].y1, sg = 0.5 * GAME_PX, z = L[i].b & 127; double c = L[i].cyc;
+	for (int d = -1; d <= 1; d += 2)
+		for (int j = i + d, k = 0; j >= 0 && j < n && k < 12; j += d, k++) {
+			const wline *l = &L[j]; if (halo[j] || zl[j]) { if (zl[j]) break; continue; }
+			const double mx = (l->x0 + l->x1) / 2 - px, my = (l->y0 + l->y1) / 2 - py, dd = mx * mx + my * my;
+			if (dd > 9 * sg * sg) break;
+			if (!(l->b & 127) || (l->b & 128)) continue;
+			c += l->cyc * exp (-dd / (2 * sg * sg)) * ((l->b & 127) < z ? (l->b & 127) / z : 1.0); }
+	return c;
+}
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
 static int build_lines (wline *L, int n, int to, double esh, int npl)
 {
@@ -2319,7 +2335,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
 			kk = BEAM_DOTMAX * (cyc / BEAM_DOTC < 1 ? cyc / BEAM_DOTC : 1); dot = 1;
-			if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk;   /* (HDR: above white, the rest's own light) */
+			{ extern float vx_hdr_lift; if (vx_hdr_peak > 1.0f) hx = hdr_rest (vx_hdr_lift > 1.5f ? rest_cyc (L, n, i, zl, halo) : cyc) * zk; }   /* (HDR: above white, the rest's own light - with the slow beam round it) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
 			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);

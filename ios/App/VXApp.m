@@ -1260,7 +1260,7 @@ float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIS
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
-	NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrlift"]; vx_hdr_lift = (!wl || wl.boolValue) ? 1.0f : 0.0f;   /* (the whole picture: the default) */
+	NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; vx_hdr_lift = wl ? (float) wl.integerValue : 2.0f;   /* (0 previous, 1 whole picture, 2 Vectrex: the default) */   /* (the whole picture: the default) */
 	/* (Apple: map to the headroom the screen gives NOW (currentEDRHeadroom) - the most (potential) only while iOS has not yet
 	 *  raised it for our light; at full brightness the iPhone's white is near its peak already, ~1.6x left: mapped to 8x, all
 	 *  above 1.6 clipped flat. Read again every second (vxa_hdr_tick): the headroom at the start can be 1.0 (Low Power Mode) -
@@ -1271,7 +1271,7 @@ void vxa_hdr_update (void)
 	if ((pk > 1) != (vx_hdr_peak > 1) || fabsf (pk - vx_hdr_peak) > 0.03f * vx_hdr_peak) {
 		static float logged = -1; const int lp = NSProcessInfo.processInfo.lowPowerModeEnabled;
 		if ((pk > 1) != (logged > 1) || fabsf (pk - logged) > 0.15f * logged)
-			{ vlog ("HDR: %s (screen headroom now %.2f, at most %.2f, setting %.0f %%, knee top %.2f%s)", pk > 1 ? "on" : "off", cur, hr, fr * 100, pk, lp ? ", Low Power Mode" : ""); logged = pk; }
+			{ vlog ("HDR: %s (screen headroom now %.2f, at most %.2f, setting %.0f %%, knee top %.2f, look %.0f%s)", pk > 1 ? "on" : "off", cur, hr, fr * 100, pk, vx_hdr_lift, lp ? ", Low Power Mode" : ""); logged = pk; }
 		vx_hdr_peak = pk; }
 }
 NSString *vxa_docs (void) { return NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; }

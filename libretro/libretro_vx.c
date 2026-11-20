@@ -7,8 +7,8 @@
 #else
 #define VX_IOS 0
 #endif
-#if defined(__ANDROID__) && !defined(VX_APP_ANDROID)
-#define VX_DECK_AUTO 1                          /* (the Control deck's auto: Android RetroArch - the apps choose their own) */
+#if !defined(VX_APP_ANDROID)
+#define VX_DECK_AUTO 1                          /* (the Control deck's auto, every RetroArch: the slim pop-up on a real 4:3 screen, else off - the apps choose their own) */
 #else
 #define VX_DECK_AUTO 0
 #endif
@@ -460,8 +460,8 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_profile", "video", "Quality profile",
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|ultra|high|medium|low|basic" },
-#if VX_DECK_AUTO                                 /* (Android RetroArch: auto - the pop-up on a 4:3 screen, as the apps) */
-	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom. Auto: pop-up on a 4:3 screen (the Nova, a tablet), else off.", "auto|off|full|slim|pop-up" },
+#if VX_DECK_AUTO                                 /* (every RetroArch: auto - the slim pop-up on a real 4:3 screen, as the apps) */
+	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom. Auto: pop-up on a real 4:3 screen (the Nova, a 13-inch iPad), else off.", "auto|off|full|slim|pop-up" },
 #else
 	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom.", "off|full|slim|pop-up" },
 #endif
@@ -2388,7 +2388,7 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 static int deck_auto_mode (void)
 {
 	const int a = scr_w > scr_h ? scr_w : scr_h, b = scr_w > scr_h ? scr_h : scr_w;
-	return b > 0 && a < 1.4 * b ? 3 : 0;
+	return b > 0 && a >= 1.2 * b && a < 1.4 * b ? 3 : 0;   /* (4:3 only - 5:4 to 1.4; a square screen (RGB30, 1:1) as any other) */
 }
 int vx_app_pich;                                /* (the own iOS app: the picture height it has room for, px; 0: the screen's) */
 int vx_app_noshape;                            /* (set by a host that lays out the picture itself: the deck block exactly the

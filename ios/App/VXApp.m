@@ -161,7 +161,7 @@ static void vxa_opts_set (const struct retro_variable *v)
 int vxa_squarish (void)
 {
 	CGSize s = UIScreen.mainScreen.nativeBounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
-	return b > 0 && a < 1.4 * b;
+	return b > 0 && a >= 1.2 * b && a < 1.4 * b;   /* (4:3 only - a square screen as any other) */
 }
 static void vxa_opts_defaults (void)
 {

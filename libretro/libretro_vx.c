@@ -2337,7 +2337,8 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
 			kk = BEAM_DOTMAX * (cyc / BEAM_DOTC < 1 ? cyc / BEAM_DOTC : 1); dot = 1;
-			{ extern float vx_hdr_lift, vx_hdr_dk; if (vx_hdr_lift > 1.5f) kk *= vx_hdr_dk; else if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk; }   /* (HDR: above white, the rest's own light - with the slow beam round it) */
+			{ extern float vx_hdr_lift, vx_hdr_dk, vx_hdr_dx; if (vx_hdr_lift > 1.5f) { kk *= vx_hdr_dk; if (vx_hdr_peak > 1.0f) hx = hdr_rest (rest_cyc (L, n, i, zl, halo)) * zk * zk * vx_hdr_dx; }
+			  else if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk; }   /* (the Vectrex look, HDR: the dots above the lines in their own channel - the lines keep the lower part) */   /* (HDR: above white, the rest's own light - with the slow beam round it) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
 			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);

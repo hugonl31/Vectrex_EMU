@@ -665,7 +665,8 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform1f_ (g_u[U_LK], g_lmap_ok ? gfx.lk : 0.0f);
 	glUniform3f_ (g_u[U_LPOS], g_lpos[0], g_lpos[1], g_lpos[2]); glUniform4f_ (g_u[U_LMR], GPU_LMR[0], GPU_LMR[1], GPU_LMR[2], GPU_LMR[3]);
 	glUniform2f_ (g_u[U_GSC], GPU_GSC[0], GPU_GSC[1]);
-	glUniform1f_ (g_u[U_CSE], (float) gfx.cse); glUniform1f_ (g_u[U_CROOM], gfx.croom); glUniform1f_ (g_u[U_CREFL], gfx.crefl);
+	glUniform1f_ (g_u[U_CSE], (float) gfx.cse); glUniform1f_ (g_u[U_CROOM], gfx.croom); { extern float vx_hdr_lift, vx_hdr_peak; glUniform1f_ (g_u[U_CREFL], gfx.crefl * (vx_hdr_lift > 1.5f && vx_hdr_peak > 1.0f ? 1.3f : 1.0f)); }   /* (the Vectrex look, HDR: the walls
+	                                                  mirror the brighter lines as much as SDR does - 0.026 -> 0.04 x a line, the grid photo) */
 	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); glUniform3f_ (g_u[U_LC], g_lc[0], g_lc[1], g_lc[2]);   /* (the light turns with the picture in tate: the screen is turned) */
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));

@@ -185,12 +185,89 @@ static void ra_load (void)
 	if (bcur) { memcpy (bcur, s, sizeof (beam_t) * nbcur); s += sizeof (beam_t) * nbcur; }
 	if (vt_cart_len) memcpy (cart, s, vt_cart_len);
 }
+/* (online rollback, netplay.py: a ring of saved frames - settings 0x7C save the state into slot k before this frame,
+ *  0x7D load slot k before it; 0x7B a quiet frame: run, its lines and sound not sent - a frame run again) */
+#define RB_SLOTS 24
+static unsigned char *rb_buf[RB_SLOTS];
+static int rb_save (int k)
+{
+	if (k < 0 || k >= RB_SLOTS || ra_ready () != 1) return 0;
+	if (!rb_buf[k]) rb_buf[k] = malloc (ra_raw + 2 * sizeof cur + (bcur ? sizeof (beam_t) * MAXB : 0) + vt_cart_len); if (!rb_buf[k]) return 0;
+	unsigned char *keep = ra_buf; ra_buf = rb_buf[k]; ra_save (); ra_buf = keep; return 1;
+}
+static int rb_load (int k)
+{
+	if (k < 0 || k >= RB_SLOTS || !rb_buf[k] || ra_ready () != 1) return 0;
+	unsigned char *keep = ra_buf; ra_buf = rb_buf[k]; ra_load (); ra_buf = keep; return 1;
+}
 #else
 static int ra_ready (void) { static int told; if (!told) { told = 1; fprintf (stderr, "STAT: runahead unsupported (this build)\n"); } return 0; }
 static void ra_save (void) { }
 static void ra_load (void) { }
+static int rb_save (int k) { (void) k; return 0; }
+static int rb_load (int k) { (void) k; return 0; }
 #endif
 
+/* ---------- line streaming (online, netplay.py - the apps' netvx.c format): a card game played on one side only. The
+ * host's core adds each frame's lines and sound, small (settings 0x7A on): after the frame's record "VS", u32 length, the
+ * frame (u32 number, u64 start, u64 end cycles, u16 lines, u16 samples; each line a flags byte (bit 0 it starts where the
+ * last ended, 1 its brightness as the last's, 2 its colour as the last's, 3 its start where the last ended) and the rest
+ * as zig-zag differences in 7-bit bytes; the sound 8-bit mu-law, 22 kHz). Player 2's core runs no game: a message
+ * 0x90 brings such a frame (u32 length, the frame) and it sends it back as an ordinary frame record */
+static int st_out; static uint32_t st_fno;
+static unsigned char *st_vput (unsigned char *o, unsigned long long v) { while (v >= 0x80) { *o++ = (unsigned char) (v | 0x80); v >>= 7; } *o++ = (unsigned char) v; return o; }
+static unsigned char *st_zput (unsigned char *o, long long v) { return st_vput (o, v < 0 ? ((unsigned long long) (-(v + 1)) << 1) | 1 : (unsigned long long) v << 1); }
+static const unsigned char *st_vget (const unsigned char *i, const unsigned char *e, unsigned long long *v)
+{ unsigned long long r = 0; int sh = 0; while (i < e) { const unsigned char c = *i++; r |= (unsigned long long) (c & 0x7f) << sh; if (!(c & 0x80)) { *v = r; return i; } sh += 7; if (sh > 63) break; } *v = 0; return NULL; }
+static const unsigned char *st_zget (const unsigned char *i, const unsigned char *e, long long *v)
+{ unsigned long long u; i = st_vget (i, e, &u); *v = (u & 1) ? -(long long) (u >> 1) - 1 : (long long) (u >> 1); return i; }
+static unsigned char st_mu_enc (int x)
+{
+	const int sign = x < 0 ? 0x80 : 0; if (x < 0) x = -x; if (x > 32635) x = 32635; x += 132;
+	int e = 7; for (int m = 0x4000; !(x & m) && e > 0; m >>= 1) e--;
+	return (unsigned char) ~(sign | (e << 4) | ((x >> (e + 3)) & 15));
+}
+static int st_mu_dec (unsigned char u) { u = (unsigned char) ~u; const int e = (u >> 4) & 7, m = u & 15, x = (((m << 3) + 132) << e) - 132; return u & 0x80 ? -x : x; }
+static void st_put32 (unsigned char *p, uint32_t v) { p[0] = (unsigned char) v; p[1] = (unsigned char) (v >> 8); p[2] = (unsigned char) (v >> 16); p[3] = (unsigned char) (v >> 24); }
+static size_t st_pack (unsigned char *o0, unsigned long long p0, int nl, int two)
+{
+	unsigned char *o = o0; const unsigned long long tc = total_cycles; const int16_t *a = (const int16_t *) abuf;
+	const int stride = two ? 4 : 2, na = abuf_n / 2 / stride;   /* (every second sample of the first channel: 22 kHz) */
+	st_put32 (o, st_fno++); memcpy (o + 4, &p0, 8); memcpy (o + 12, &tc, 8); put16 (o + 20, (unsigned) nl); put16 (o + 22, (unsigned) na); o += 24;
+	long px = 0, py = 0; unsigned char pc = 0, prgb = 0; unsigned long long pend = 0;
+	for (int i = 0; i < nl; i++) { const line_t *l = &last[i];
+		const int cont = l->x0 == px && l->y0 == py, samec = l->c == pc, samergb = l->rgb == prgb, sameT = (unsigned long long) l->t0 == pend;
+		*o++ = (unsigned char) (cont | samec << 1 | samergb << 2 | sameT << 3);
+		if (!cont) { o = st_zput (o, (long long) l->x0 - px); o = st_zput (o, (long long) l->y0 - py); }
+		o = st_zput (o, (long long) l->x1 - l->x0); o = st_zput (o, (long long) l->y1 - l->y0);
+		if (!samec) *o++ = l->c; if (!samergb) *o++ = l->rgb;
+		o = st_vput (o, l->cyc); if (!sameT) o = st_zput (o, (long long) l->t0 - (long long) pend);
+		px = l->x1; py = l->y1; pc = l->c; prgb = l->rgb; pend = (unsigned long long) l->t0 + l->cyc; }
+	for (int k = 0; k < na; k++) *o++ = st_mu_enc (a[k * stride]);
+	return (size_t) (o - o0);
+}
+static int st_unpack (const unsigned char *r, size_t rn, unsigned long long *p0)   /* (into last / nlast, abuf: 44 kHz mono) */
+{
+	if (rn < 24) return 0; const unsigned char *e = r + rn;
+	memcpy (p0, r + 4, 8); const int n = r[20] | r[21] << 8, na = r[22] | r[23] << 8;
+	if (n > MAXL || na > 4000) return 0;
+	const unsigned char *i = r + 24; long px = 0, py = 0; unsigned char pc = 0, prgb = 0; unsigned long long pend = 0;
+	for (int k = 0; k < n; k++) { line_t *l = &last[k]; long long v; unsigned long long u;
+		if (!i || i >= e) return 0; const unsigned char f = *i++;
+		if (f & 1) { l->x0 = px; l->y0 = py; } else { i = st_zget (i, e, &v); if (!i) return 0; l->x0 = px + (long) v; i = st_zget (i, e, &v); if (!i) return 0; l->y0 = py + (long) v; }
+		i = st_zget (i, e, &v); if (!i) return 0; l->x1 = l->x0 + (long) v; i = st_zget (i, e, &v); if (!i) return 0; l->y1 = l->y0 + (long) v;
+		if (f & 2) l->c = pc; else { if (i >= e) return 0; l->c = *i++; }
+		if (f & 4) l->rgb = prgb; else { if (i >= e) return 0; l->rgb = *i++; }
+		i = st_vget (i, e, &u); if (!i) return 0; l->cyc = (unsigned) u;
+		if (f & 8) l->t0 = (unsigned) pend; else { i = st_zget (i, e, &v); if (!i) return 0; l->t0 = (unsigned) ((long long) pend + v); }
+		px = l->x1; py = l->y1; pc = l->c; prgb = l->rgb; pend = (unsigned long long) l->t0 + l->cyc; }
+	if (!i || i + na > e) return 0;
+	nlast = n;
+	if (abuf_cap < na * 4) return 0;
+	int16_t *a = (int16_t *) abuf; for (int k = 0; k < na; k++) a[2 * k] = a[2 * k + 1] = (int16_t) st_mu_dec (i[k]);
+	abuf_n = na * 4;
+	return 1;
+}
 static int live_main (const char *recfn, const char *symfn)
 {
 	FILE *rec = fopen (recfn, "wb");
@@ -207,6 +284,22 @@ static int live_main (const char *recfn, const char *symfn)
 	long nframes = 0;
 	unsigned long long piece0 = 0;
 	while (fread (m, 1, 4, stdin) == 4) {
+		int rb_s = -1, rb_l = -1, quiet = 0;         /* (online rollback: this message's slot to save / load, a quiet frame) */
+		if (m[3] == 0x90) {                         /* (line streaming: the host's frame - no game run here) */
+			unsigned char lb[4]; if (fread (lb, 1, 4, stdin) != 4) break;
+			const size_t ln = (size_t) lb[0] | (size_t) lb[1] << 8 | (size_t) lb[2] << 16 | (size_t) lb[3] << 24;
+			static unsigned char *sb; static size_t sbn; if (ln > sbn) { unsigned char *q = realloc (sb, ln); if (!q) break; sb = q; sbn = ln; }
+			if (ln && fread (sb, 1, ln, stdin) != ln) break;
+			unsigned long long p0 = 0; if (!st_unpack (sb, ln, &p0)) { nlast = 0; abuf_n = 0; }
+			const int n = nlast > 30000 ? 30000 : nlast; unsigned char *p = out;
+			*p++ = 'V'; *p++ = 'F'; put16 (p, n); p += 2; put16 (p, abuf_n / 2); p += 2;
+			put16 (p, (unsigned) p0 & 0xffff); put16 (p + 2, (unsigned) (p0 >> 16) & 0xffff); p += 4; put16 (p, 0); put16 (p + 2, 0); p += 4;
+			for (int i = 0; i < n; i++) { line_t *l = &last[i];
+				put16 (p, LIVE_C (l->x0)); put16 (p + 2, LIVE_C (l->y0)); put16 (p + 4, LIVE_C (l->x1)); put16 (p + 6, LIVE_C (l->y1));
+				p[8] = l->c; put16 (p + 9, l->cyc > 65535 ? 65535 : l->cyc); put16 (p + 11, l->t0); p += 13; }
+			memcpy (p, abuf, abuf_n); p += abuf_n;
+			fwrite (out, 1, p - out, stdout_bin); fflush (stdout_bin);
+			continue; }
 		if (m[3] & 0x80) break;
 		if ((m[3] & 0x40) && fread (m + 4, 1, 3, stdin) != 3) break;   /* (player 2) */
 		if (m[3] & 0x20) {                      /* (bit 5: settings follow - a count, then each an id and 4 bytes: a float for
@@ -216,12 +309,18 @@ static int live_main (const char *recfn, const char *symfn)
 			for (int k = 0; k < cnt; k++) {
 				if (fread (g, 1, 5, stdin) != 5) { cnt = 0; break; }
 				if (g[0] == 0x7E) { memcpy (&f, g + 1, 4); ra_want = f > 0.5f; if (ra_want) ra_ready (); }   /* (run-ahead) */
+				else if (g[0] == 0x7C) { memcpy (&f, g + 1, 4); rb_s = (int) f; }      /* (rollback: save into this slot) */
+				else if (g[0] == 0x7D) { memcpy (&f, g + 1, 4); rb_l = (int) f; }      /* (rollback: load this slot) */
+				else if (g[0] == 0x7B) { memcpy (&f, g + 1, 4); quiet = f > 0.5f; }   /* (a frame run again: not sent) */
+				else if (g[0] == 0x7A) { memcpy (&f, g + 1, 4); st_out = f > 0.5f; }   /* (line streaming: each frame's lines out too) */
 				else if (g[0] >= 0x80) vt_usb_report (g[0], g + 1);
 				else { memcpy (&f, g + 1, 4); vt_set_analog (g[0], f); }
 			}
 			m[3] &= ~0x20;                      /* (recordings keep their format) */
 		}
-		fwrite (m, 1, (m[3] & 0x40) ? 7 : 4, rec);
+		if (rb_l >= 0 && !rb_load (rb_l)) fprintf (stderr, "STAT: rollback load %d failed\n", rb_l);
+		if (rb_s >= 0 && !rb_save (rb_s)) fprintf (stderr, "STAT: rollback save %d failed\n", rb_s);
+		if (!quiet) fwrite (m, 1, (m[3] & 0x40) ? 7 : 4, rec);
 		nframes++;
 		apply_input (m);
 		abuf_n = 0;
@@ -239,6 +338,7 @@ static int live_main (const char *recfn, const char *symfn)
 			abuf_n = abuf_real;                         /* (its sound dropped) */
 		}
 		int n = nlast > 30000 ? 30000 : nlast;
+		if (quiet) { n = 0; abuf_n = 0; }               /* (a frame run again: its checksum only) */
 		{ extern int vt_veclink, vt_slice_frame; extern long vl_slice; static int nolines = -1;
 		  if (nolines < 0) nolines = getenv ("VT_NOLINES") != NULL;
 		  if (nolines || (vt_veclink && vl_slice > 0 && !vt_slice_frame)) n = 0; }   /* (the console nobody watches -
@@ -266,6 +366,10 @@ static int live_main (const char *recfn, const char *symfn)
 		  } }
 		memcpy (p, abuf, abuf_n); p += abuf_n;
 		fwrite (out, 1, p - out, stdout_bin);
+		if (st_out) {                                   /* (line streaming: the frame for player 2, small - see above) */
+			static unsigned char *sp; if (!sp) sp = malloc (64 + MAXL * 26 + 8000);
+			extern int vt_speech_sep, vt_vecvoice, vt_uvm2_cart, vt_imager; const int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2_cart || vt_imager;
+			if (sp) { const size_t k = st_pack (sp + 6, piece0, nlast > 30000 ? 30000 : nlast, two); sp[0] = 'V'; sp[1] = 'S'; st_put32 (sp + 2, (uint32_t) k); fwrite (sp, 1, 6 + k, stdout_bin); } }
 		fflush (stdout_bin);
 		if (ra) ra_load ();                             /* (back to the real frame's end) */
 		flash_save (0);

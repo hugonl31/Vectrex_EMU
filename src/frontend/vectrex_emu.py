@@ -1965,7 +1965,8 @@ class Core:
                     elif (t.startswith('UVMC2:') or t.startswith('PITREX: the program stopped')) and len(out) < 20:
                         out.append(t.split(':', 1)[1].strip())          # (a PiTrex's own text, its UART, is not shown)
                     elif t.startswith('STAT: runahead '):              # (run-ahead: 'ready' or 'unsupported' - live.c)
-                        self.ra_ok = t.split()[2] == 'ready'
+                        self.ra_ok = t.split()[2].startswith('ready')   # ('ready, N bytes a save': the comma)
+                        if os.environ.get('VX_STATLOG'): print('CORE', t, flush=True)
                     elif t.startswith('STAT: threads '):               # (the core: its UVMC2 runs on 1 or 2 host threads)
                         try: self.threads = int(t.split()[2])
                         except (ValueError, IndexError): pass
@@ -2030,6 +2031,10 @@ class Core:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags | 0x40, p2[0] + 128, p2[1] + 128, p2[2]]) + extra)
         else:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags]) + extra)
+    def stream_frame(self, payload):
+        """line streaming, player 2: the host's frame (packed by its core) shown - this core runs no game (live.c 0x90)"""
+        self.p.stdin.write(bytes([0, 0, 0, 0x90]) + struct.pack('<I', len(payload)) + payload)
+        return self.frame_recv()
     def frame_recv(self):
         tw = time.perf_counter()
         h = self._read(14)
@@ -2074,6 +2079,9 @@ class Core:
                     return (int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))) + tuple(r[4:])
                 lines = [_p(r) for r in lines]
         self.sig = hash(body[:n * 13])                          # (the picture: a new one, or the last drawn again)
+        if getattr(self, 'st_on', False):                       # (line streaming, the host: its packed frame follows)
+            vs = self._read(6)
+            self.st_payload = self._read(struct.unpack_from('<I', vs, 2)[0]) if vs[:2] == b'VS' else None
         if not two:
             return lines, body[n * 13:], None
         from array import array
@@ -2134,6 +2142,7 @@ class Runner(threading.Thread):
         self.power = True
         self.net = None                     # online play (netplay.py): the other player's input each frame
         self.net_lost = False
+        self.ports_at = {}                  # (rollback: the ports as they were before each frame)
     def demo_input(self):
         import random
         f = self.frames
@@ -2151,6 +2160,27 @@ class Runner(threading.Thread):
             self.d = (random.randint(-127, 127), random.randint(-127, 127), random.choice(DIR_MASK))
         return getattr(self, 'd', (0, 0, 0))
 
+    def rb_replay(self):
+        """rollback: a guess was wrong - that frame's state back in the core (live.c 0x7D, with the next frame sent), the
+        frames since run again with the inputs now (0x7B: unseen, unheard)"""
+        import netplay
+        g, end = self.net.rb_begin()
+        if g in self.ports_at:
+            self.ports = dict(self.ports_at[g]) if self.ports_at[g] is not None else None
+        self.core.set_analog(0x7D, float(g % netplay.RB_SLOTS))
+        while self.net.f < end:
+            fno = self.net.f
+            r = self.net.rb_next()
+            if r is None:                                       # (a game switch's frame: the normal frames take it)
+                break
+            (a, b), pred, sure = r
+            self.ports_at[fno] = dict(self.ports) if self.ports else None
+            (jx, jy, btn), p2 = self.port_inputs(a, b)
+            if pred:
+                self.core.set_analog(0x7C, float(fno % netplay.RB_SLOTS))
+            self.core.set_analog(0x7B, 1.0)
+            self.core.frame(jx, jy, btn, (1 if self.inf else 0) | ((a[3] | b[3]) & 4), p2)
+            self.net.mark_rb(fno, getattr(self.core, 'state_sum', 0), sure)
     def port_inputs(self, a, b):
         """online: the controller in each port this frame from the two players' inputs (a: the host's, b: the joiner's).
         A player's 'take port' (flags 0x10 / 0x20, sent with the input: on the same frame on both sides) puts their
@@ -2195,10 +2225,42 @@ class Runner(threading.Thread):
                     (jx, jy, btn), p2 = self.inp.read()                 # (both players)
                 fl, self.flags = self.flags, getattr(self, 'then_flags', 0)
                 self.then_flags = 0                     # (a flag for the frame after: App.restart's RESET)
-                if self.net is not None:                # online: both players' input for this frame (the RESET button
+                st_guest = False
+                if self.net is not None and getattr(self.net, 'stream', False):   # (line streaming: a card game)
+                    req, self.port_req = self.port_req, 0
+                    if self.net.lost:
+                        self.net = None; self.net_lost = True
+                    elif self.net.role == 'host':       # (the host plays: player 2's controller with its own)
+                        if not getattr(self.core, 'st_on', False):
+                            self.core.set_analog(0x7A, 1.0); self.core.st_on = True
+                        mine_, theirs_ = (jx, jy, btn, (fl & 4) | req), self.net.st_input()
+                        (jx, jy, btn), p2 = self.port_inputs(mine_, theirs_)
+                        fl = (fl & ~4) | ((mine_[3] | theirs_[3]) & 4)   # (a RESET from either player)
+                    else:                               # (player 2: its controller to the host, the host's frame shown)
+                        self.net.st_send_input(jx, jy, btn, (fl & 4) | req)
+                        st_guest = True
+                elif self.net is not None:                # online: both players' input for this frame (the RESET button
                     req, self.port_req = self.port_req, 0              #  too: it reaches both machines on one frame;
                     rg, self.rg_flag = getattr(self, 'rg_flag', 0), 0              #  another game: the host's flag 8)
-                    got = self.pending_got if getattr(self, 'pending_got', None) is not None else self.net.exchange((jx, jy, btn, (fl & 4) | req | rg))
+                    rb_pred = rb_sure = False; rb_f = -1
+                    if getattr(self.net, 'rb', False):     # (rollback - 6809 games, a core with saved frames: netplay.py)
+                        import netplay as _np_
+                        if not getattr(self, 'rb_probe', False):           # (the core asked once whether it can: its
+                            self.rb_probe = True; self.core.set_analog(0x7C, float(_np_.RB_SLOTS - 1))   #  STAT line)
+                        self.net.rb_ok = getattr(self.core, 'ra_ok', None) is True
+                        if self.net.rb_from is not None:
+                            self.rb_replay()
+                        got = self.net.exchange_rb((jx, jy, btn, (fl & 4) | req | rg))
+                        if got == 'wait':                  # (not yet: a moment, then again - nothing lost, the buttons kept)
+                            time.sleep(0.002); t_next = time.perf_counter(); continue
+                        if got is not None:
+                            got, rb_pred, rb_sure = got; rb_f = self.net.f - 1
+                            self.ports_at[rb_f] = dict(self.ports) if self.ports else None
+                            for old in [k for k in self.ports_at if k < rb_f - 64]: del self.ports_at[old]
+                            if rb_pred:                        # (on a guess: this frame's state kept first)
+                                self.core.set_analog(0x7C, float(rb_f % _np_.RB_SLOTS))
+                    else:
+                        got = self.pending_got if getattr(self, 'pending_got', None) is not None else self.net.exchange((jx, jy, btn, (fl & 4) | req | rg))
                     self.pending_got = None
                     if got is not None and (got[0][3] & 8) and getattr(self, 'rg_due', None) is not None and not getattr(self, 'rg_switched', False):
                         self.rg_switched = True; self.rg_got = got; self.stop = True; break   # (both: the next game before this frame)
@@ -2242,20 +2304,35 @@ class Runner(threading.Thread):
                                 self.audio.play(self.crt.idle(RATE // 100))
                             time.sleep(0.004)
                     feed = threading.Thread(target=fill, daemon=True); feed.start()
+                st_payload = None
+                if st_guest:
+                    st_payload = self.net.st_take(False)
+                    if st_payload is None:              # (none came yet: the picture stands a moment)
+                        time.sleep(0.002); t_next = time.perf_counter(); continue
                 try:
                     c2 = self.core2
                     if c2 is not None:                  # (online VecLink: the other console's slice, at the same time)
                         o = self.other_in
                         c2.frame_send(o[0], o[1], o[2], (fl & ~4) | o[3])
-                    lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
+                    if st_payload is not None:
+                        lines, pcm, speech = self.core.stream_frame(st_payload)
+                    else:
+                        lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
                     sync = getattr(self.core, 'state_sum', 0)
+                    if self.net is not None and getattr(self.net, 'stream', False):   # (streamed: no sync check - one game)
+                        if self.net.role == 'host' and getattr(self.core, 'st_payload', None):
+                            self.net.stream_send(self.core.st_payload)
+                        sync = None
                     if c2 is not None:
                         c2.frame_recv()                 # (its picture and sound: nobody's - VT_NOLINES, dropped)
                         s2 = getattr(c2, 'state_sum', 0) & 0xffffffff
                         a_sum, b_sum = (sync, s2) if self.vl_role == 'host' else (s2, sync)   # (the same order on both PCs)
                         sync = (a_sum ^ ((b_sum << 7 | b_sum >> 25) & 0xffffffff)) & 0xffffffff
-                    if self.net is not None:            # (online: the sync check - this frame's state against the other's)
-                        self.net.mark(self.net.f - 1, sync)
+                    if self.net is not None and sync is not None:   # (online: the sync check - this frame's state against the other's)
+                        if getattr(self.net, 'rb', False) and rb_f >= 0:
+                            self.net.mark_rb(rb_f, sync, rb_sure)   # (rollback: only frames both are sure of)
+                        else:
+                            self.net.mark(self.net.f - 1, sync)
                 finally:
                     if feed:
                         done.set(); feed.join()
@@ -5750,14 +5827,19 @@ class App:
                 g['jit_fast'] = bool(rom is not None and g.get('arch') and g.get('arch') == netplay.arch())
                 g['uvm2_net'] = netplay.uvm2_agree(g.get('uvm2', 'exact'), getattr(self, 'uvm2_mode', 'exact'))
                 net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else '')
-                           + netplay.REGAME_TAG.decode() + netplay.SAVE_TAG.decode() + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
+                           + netplay.REGAME_TAG.decode() + netplay.SAVE_TAG.decode()
+                           + (netplay.RB_TAG.decode('latin-1') if IS_WIN and not g.get('card') else '')
+                           + (netplay.STREAM_TAG.decode('latin-1') if g.get('card') and g.get('stream') else '')
+                           + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
+                net.rb_peer = bool(g.get('rb'))                     # (the host runs on guesses too)
+                net.stream = bool(g.get('card') and g.get('stream'))   # (a card game: the host's lines shown here)
                 if rom and g.get('sv') and not g.get('card'):           # (the host's saves - its calibration - for this game)
                     g['save_blob'] = net.recv_save(int(g['sv']), int(g.get('svi', 0)), stop=stop)
                     if g['save_blob'] is None:
                         g = None                                    # (they did not come: no game - both would differ)
                                                                     # (the same processor type on both sides: the PiTrex JIT
                                                                     #  runs at full speed - its blocks fall the same on both)
-                if rom and g and g.get('card'):                     # (the host's card list: which files are the same here)
+                if rom and g and g.get('card') and not net.stream:  # (the host's card list: which files are the same here)
                     folder = self.card_dir(rom); mine = {}
                     def answer(m):
                         mine['ok'] = netplay.card_matches(m, folder, CARD_CACHE); return mine['ok']
@@ -5771,7 +5853,7 @@ class App:
                     g['save_blob'] = sv[0] if net.send_save(sv[0], sv[1], stop=stop) else None
                     if g['save_blob'] is None:
                         g = None
-                if g and g.get('card'):                             # (ours to player 2: the files both have)
+                if g and g.get('card') and not getattr(net, 'stream', False):   # (ours to player 2: the files both have)
                     folder = self.card_dir(rom)
                     m = netplay.card_manifest(folder, CARD_CACHE)
                     ok = net.send_card(m, stop=stop)
@@ -6112,7 +6194,10 @@ class App:
                                           dacofs=0.0,                                     #  comparator: online the factory's on both - no unit value copied)
                                           bios=netplay.rom_md5(BIOS) or ''))               # (the BIOS: the same on both)
         if self.card_dir(rom):
-            game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
+            game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after -
+            game['stream'] = True                               #  or streamed: this PC plays it, its lines to player 2)
+        elif IS_WIN:
+            game['rb'] = True                                   # (rollback: this PC's core keeps saved frames)
         else:                                                   # (its saves - the calibration - for player 2: netplay.save_blob)
             self.net_sv_out = self.net_save_pack(rom); game['sv'], game['svi'] = len(self.net_sv_out[0]), self.net_sv_out[1]
         if game_turns(rom):
@@ -6235,7 +6320,7 @@ class App:
                 net.close(); self.net_flash('ONLINE: YOU DO NOT HAVE', os.path.splitext(g.get('name', '?'))[0].upper(), secs=8)
                 return
             card = g.get('card_only')
-            if g.get('card') and (not card or card[1] is None):
+            if g.get('card') and not getattr(net, 'stream', False) and (not card or card[1] is None):
                 net.close(); self.net_flash('ONLINE: THE SD CARDS', 'COULD NOT BE COMPARED', secs=8)
                 return
             if role == 'join' and g.get('host_name'):
@@ -6253,6 +6338,10 @@ class App:
             Core.net_jitfast = bool(g.get('jit_fast'))
             Core.net_uvm2 = g.get('uvm2_net', 'exact')          # (this game only: the Config setting stays as it is)
             Core.net_save = g.get('save_blob')                  # (the host's saves: this start only)
+            if getattr(net, 'stream', False):                   # (streamed: each side as offline - the host plays its own
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'; Core.net_save = None   #  way)
+            net.rb = IS_WIN and not g.get('card') and not os.environ.get('VX_NO_ROLLBACK')   # (rollback: a 6809 game, this
+                                                                #  PC's core with saved frames - checked with it at the start)
             try:
                 self.restart(rom)
             finally:

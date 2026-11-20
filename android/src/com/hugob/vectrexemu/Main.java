@@ -135,7 +135,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		curHz = d.getRefreshRate ();
 		log ("screen: " + d.getRefreshRate () + " Hz (up to " + best + "), HDR " + (hdrCan ? "yes, headroom " + hdrRoom : hdrScreen ? "screen yes, but not on this Android (before 14): off" : "no") + ", " + getResources ().getDisplayMetrics ().widthPixels + " x " + getResources ().getDisplayMetrics ().heightPixels + " px, density " + getResources ().getDisplayMetrics ().density);
 		VX.setHdr (hdrCan && prefs.getFloat ("app.hdr", 1f) > 0.01f, hdrRoom, prefs.getFloat ("app.hdr", 1f));
-		VX.setHdrLook (prefs.getInt ("app.hdrmode", 2));   /* (HDR look: Vectrex the default, as iOS) */
+		VX.setHdrLook (prefs.getInt ("app.hdrmode", hdrCan ? 2 : 0));   /* (the look: Vectrex the default with HDR, Bright without - as iOS) */
 	}
 	float maxHz = 60, curHz = 60; boolean hdrScreen;
 	void hdrChanged ()

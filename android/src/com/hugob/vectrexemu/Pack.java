@@ -39,6 +39,7 @@ final class Pack {
 	/* at the start: the list from the server; the needed and the changed parts downloaded first */
 	static void check (Main m, boolean have)
 	{
+		if (busy) return;   /* (once at a time: the start and coming back both asked - two downloads ran into the same files) */
 		m.status ("Looking for games..."); busy = true;
 		new Thread (() -> {
 			JSONArray p = null; String err = "";
@@ -52,7 +53,9 @@ final class Pack {
 				parts = pp; List<String> need = new ArrayList<> ();
 				for (int i = 0; i < pp.length (); i++) { JSONObject x = pp.optJSONObject (i); String v = inst.optString (x.optString ("id"), null);
 					if ((v != null && !v.equals (x.optString ("version"))) || (v == null && x.optBoolean ("required"))) need.add (x.optString ("id")); }
-				if (inst.length () == 0 && !have) choose (m, true);
+				if (inst.length () == 0 && !have) { List<String> all = new ArrayList<> (); for (int i = 0; i < pp.length (); i++) all.add (pp.optJSONObject (i).optString ("id"));
+					Main.log ("first start: every part downloaded"); fetch (m, all); }   /* (a fresh install gets everything - the owner, 2026-11-21: the choice
+					                                                   screen lay behind the start screen and nothing came) */
 				else if (!need.isEmpty ()) fetch (m, need);
 				else { busy = false; m.startCore (); } });
 		}).start ();

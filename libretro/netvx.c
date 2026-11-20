@@ -127,7 +127,7 @@ static long nv_n_rb, nv_n_rbf, nv_n_pred; static int64_t nv_reset_lastf = -1;
 static int nv_rb_ports[NV_RB_SLOTS][2]; static unsigned long long nv_rb_ctr[NV_RB_SLOTS][5];   /* (with each saved frame: the ports taken,
                                                  the frame counters outside the state - as the running game's state sent to a joiner) */
 static int nv_in_differ (const nv_in *a, const nv_in *b) { return a->jx != b->jx || a->jy != b->jy || a->b != b->b || a->fl != b->fl; }
-static int nv_stream, nv_stream_peer, nv_st_tgt = 2, nv_st_buf; static double nv_st_calm;   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static int nv_stream, nv_stream_peer, nv_st_tgt = 2, nv_st_buf; static double nv_st_calm, nv_st_gap_max; static long nv_st_n_dry;   /* (run dry: how often, the longest gap between two frames in) */   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
 static void nv_st_on_piece (const unsigned char *b, size_t n); static void nv_st_on_input (const unsigned char *b, size_t n); static void nv_ports_take (int side, unsigned char fl); static void nv_st_clear (void);
 static size_t vx_save_to (unsigned char *d); static bool vx_load_from (const void *d, size_t sz); static void vx_state_init (void); static void nv_sum_send (uint32_t f, uint32_t h); static void vx_rb_keep (int back);
 static int nv_dly = 3, nv_their_dly, nv_st_run, nv_st_ep; static double nv_st_t0, nv_calm_t0;   /* (this side's input delay now - it grows when the
@@ -400,7 +400,7 @@ int vx_net_diag (char *o, int n)
 	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood, %ld guessed, %ld rollbacks (%ld frames again), %.2f s emulated in %.2f s%s",
 		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood, nv_n_pred, nv_n_rb, nv_n_rbf, (double) (total_cycles - nv_dg_tc) / 1.5e6, nv_now () - nv_dg_t, nv_rb_on ? "" : " - lockstep"); nv_dg_tc = total_cycles; nv_dg_t = nv_now ();
 	nv_n_wait = nv_n_stood = nv_n_frames = nv_n_pred = nv_n_rb = nv_n_rbf = 0;
-	if (nv_stream && r > 0 && r < n) { const int r2 = snprintf (o + r, (size_t) (n - r), " - streamed: %ld frames came, %ld left out, %ld lost, %ld pieces repaired; %ld of %ld refreshes a new frame (%ld more than one); buffer %d", nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_fix, nv_st_n_new, nv_st_n_ref, nv_st_n_two, nv_st_tgt); nv_st_n_got = nv_st_n_drop = nv_st_n_lost = nv_st_n_ref = nv_st_n_new = nv_st_n_two = nv_st_n_fix = 0; nv_unlock (); return r2 > 0 ? r + r2 : r; }
+	if (nv_stream && r > 0 && r < n) { const int r2 = snprintf (o + r, (size_t) (n - r), " - streamed: %ld frames came, %ld left out, %ld lost, %ld pieces repaired; %ld of %ld refreshes a new frame (%ld more than one); buffer %d, ran dry %ld, longest gap between frames in %.0f ms", nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_fix, nv_st_n_new, nv_st_n_ref, nv_st_n_two, nv_st_tgt, nv_st_n_dry, nv_st_gap_max * 1000); nv_st_n_got = nv_st_n_drop = nv_st_n_lost = nv_st_n_ref = nv_st_n_new = nv_st_n_two = nv_st_n_fix = nv_st_n_dry = 0; nv_st_gap_max = 0; nv_unlock (); return r2 > 0 ? r + r2 : r; }
 	nv_unlock (); return r;
 }
 double netvx_pace (void)
@@ -1049,6 +1049,7 @@ static void nv_st_on_piece (const unsigned char *b, size_t n)
 	int at = nv_stq_n; while (at > 0 && nv_stq[at - 1].fno > f) at--;
 	if (at < nv_stq_n) memmove (nv_stq + at + 1, nv_stq + at, sizeof nv_stq[0] * (size_t) (nv_stq_n - at));
 	nv_stq[at] = fr; nv_stq_n++; nv_st_n_got++;
+	{ static double last_in; const double t = nv_now (); if (last_in > 0 && t - last_in > nv_st_gap_max && t - last_in < 5.0) nv_st_gap_max = t - last_in; last_in = t; }   /* (the longest wait for a frame: the log) */
 }
 /* (player 2, emu_loop: the frames come in their time - two waiting at most (a third: the oldest left out), none: the
  *  picture stands; and this side's controller to the host) */
@@ -1089,7 +1090,7 @@ static void netvx_stream_guest (void)
 	                                                 a few ms late is the host's own rhythm: counted so, it grew to 6 frames, 120 ms behind) */
 	  if (k || !nv_st_started) due_t = 0;
 	  else if (total_cycles < run_t && !nv_stq_n) { const double t = nv_now (); if (!due_t) due_t = t;
-		else if (t - due_t > 0.02) { due_t = 0; nv_lock (); nv_st_buf = 1; if (nv_st_tgt < 6) nv_st_tgt++; nv_st_calm = t; nv_unlock (); } } }
+		else if (t - due_t > 0.02) { due_t = 0; nv_lock (); nv_st_buf = 1; if (nv_st_tgt < 6) nv_st_tgt++; nv_st_calm = t; nv_st_n_dry++; nv_unlock (); } } }
 	if (!k) { run_t = total_cycles; emu_stood = nv_st_started; }   /* (none came: the picture as it was) */
 	else if (total_cycles > run_t) run_t = total_cycles;        /* (the host's time: this side follows it) */
 }

@@ -1266,6 +1266,11 @@ void vxa_hdr_update (void)
 	 *  above 1.6 clipped flat. Read again every second (vxa_hdr_tick): the headroom at the start can be 1.0 (Low Power Mode) -
 	 *  builds 114-118 on the iPhone never had HDR on, read once) */
 	double cur = 1; if (@available (iOS 16.0, *)) cur = UIScreen.mainScreen.currentEDRHeadroom;
+	{ /* (the trail for the look and the screen's brightness - the owner next to a real Vectrex, 2026-11-21: Vectrex on HDR 1.25x,
+	   *  on SDR 2x; Bright at full brightness 0.5x - easing with the slider) */
+	  extern float vx_trail_mul; const double b = UIScreen.mainScreen.brightness;
+	  const float tm = vx_hdr_lift > 1.5f ? (hr > 1.05 ? 1.25f : 2.0f) : (float) (1.0 - 0.5 * b * b);
+	  if (fabsf (tm - vx_trail_mul) > 0.02f) { vlog ("trail x%.2f (look %.0f, brightness %.0f %%)", tm, vx_hdr_lift, b * 100); vx_trail_mul = tm; } }
 	const double use = hr <= 1.05 ? 1.0 : cur > 1.05 ? fmin (cur, hr) : hr;
 	float pk = use > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (use - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */
 	if ((pk > 1) != (vx_hdr_peak > 1) || fabsf (pk - vx_hdr_peak) > 0.03f * vx_hdr_peak) {

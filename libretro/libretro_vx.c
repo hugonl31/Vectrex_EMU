@@ -2922,7 +2922,7 @@ void retro_run (void)
 	const int painted = paint_all;             /* (the overlay painted in, or the glass grey: every pixel has colour) */
 	const int ry0 = glow ? 0 : CY0, ry1 = glow ? H - 1 : CY0 + CH - 1;   /* (no glow: only the window's rows are sent) */
 	const int cx0 = glow ? 0 : CX0, cx1 = glow ? Wd - 1 : (FW - EW) + CX0 + CW - 1;
-	const float tk = ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0;   /* (1.0: its own without an overlay) */
+	extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;   /* (1.0: its own without an overlay; the apps' look) */
 	const float a1 = 0.1404f * tk, a2 = 0.0582f * tk,   /* (v0.16: x the trail brightness option) */
 	             ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;   /* (the trail's time scale: Vectrex_EMU's 0.6, a real Vectrex 1.0) */
 	const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2), e1 = a1 * kd1, e2 = a2 * kd2;

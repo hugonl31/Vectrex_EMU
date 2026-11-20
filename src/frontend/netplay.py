@@ -366,6 +366,9 @@ class NetPlay:
         else:
             self.sock.bind(('', 0))
         self.sock.settimeout(0.0)
+        for o in (socket.SO_RCVBUF, socket.SO_SNDBUF):         # (streamed frames come in bursts of pieces: room for them)
+            try: self.sock.setsockopt(socket.SOL_SOCKET, o, 1 << 20)
+            except OSError: pass
         self.log = log or (lambda *a: None)
         self.delay = DELAY
         self.relay = False                              # (sending through the meeting point)

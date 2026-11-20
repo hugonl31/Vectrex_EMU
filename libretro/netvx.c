@@ -314,6 +314,8 @@ static nv_sock_t nv_udp (int port, int bcast)
 	nv_sock_t s = socket (AF_INET, SOCK_DGRAM, 0); if (s == NV_BADSOCK) return s;
 	int one = 1; setsockopt (s, SOL_SOCKET, SO_REUSEADDR, (const char *) &one, sizeof one);
 	if (bcast) setsockopt (s, SOL_SOCKET, SO_BROADCAST, (const char *) &one, sizeof one);
+	{ int big = 1 << 20; setsockopt (s, SOL_SOCKET, SO_RCVBUF, (const char *) &big, sizeof big); setsockopt (s, SOL_SOCKET, SO_SNDBUF, (const char *) &big, sizeof big); }   /* (streamed
+	                                                 frames: a card game's intro, 10+ pieces a frame in bursts - the default buffers dropped them: the Nova to the iPad 48-82 of 250 lost) */
 	struct sockaddr_in a; memset (&a, 0, sizeof a); a.sin_family = AF_INET; a.sin_addr.s_addr = htonl (INADDR_ANY); a.sin_port = htons ((unsigned short) port);
 	if (bind (s, (struct sockaddr *) &a, sizeof a) != 0) { nv_closesock (s); return NV_BADSOCK; }
 	nv_nonblock (s); return s;
@@ -1120,7 +1122,7 @@ static int netvx_playing (void) { return nv_phase == NV_PLAY && nv_go; }
 static void nv_ports_take (int side, unsigned char fl)            /* (netplay.py port_inputs: 'take port' 0x10 / 0x20) */
 {
 	const int k = fl & 0x10 ? 1 : fl & 0x20 ? 2 : 0; if (!k) return;
-	nv_ports[side] = k; if (nv_ports[side ^ 1] == k) nv_ports[side ^ 1] = 0;
+	nv_ports[side] = k; if (nv_ports[side ^ 1] == k) nv_ports[side ^ 1] = 3 - k;   /* (the other player: pushed to the other port - the PC alike) */
 }
 static int netvx_frame (unsigned char *m)
 {

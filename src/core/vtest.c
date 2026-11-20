@@ -500,7 +500,9 @@ int main (int argc, char **argv)
 		else { vt_hb512 = 1; vt_cart_len = 524288; }  /* (the whole chip: a game may save anywhere) */
 		/* the flash's saved state (high scores, settings) - next to the ROM, the dump stays as it is */
 		static char sav[4096]; snprintf (sav, sizeof sav, "%s.sav", argv[2]); vt_flash_file = sav;
-		FILE *fs = fopen (sav, "rb");
+		const char *fc = getenv ("VT_FLASH_CLEAN"); if (fc && fc[0] && fc[0] != '0') vt_flash_file = NULL;   /* (online: as it came, both
+		                                                  players alike - no saves read, none written) */
+		FILE *fs = vt_flash_file ? fopen (sav, "rb") : NULL;
 		if (fs) { unsigned char *tmp = malloc (524288); size_t m = tmp ? fread (tmp, 1, 524288, fs) : 0; fclose (fs);   /* (on the heap: not in a save) */
 		          if (m == vt_cart_len) memcpy (cart, tmp, m);
 		          free (tmp); }

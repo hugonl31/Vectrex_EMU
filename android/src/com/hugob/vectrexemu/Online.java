@@ -158,18 +158,28 @@ final class Online {
 				m.toast ("ONLINE: NOW PLAYING " + stem (gn).toUpperCase (Locale.ROOT), 3); Main.log ("online: both switched to " + gn); }
 			n = st.optInt ("reset_n"); if (n != seenReset) { seenReset = n; String who = st.optInt ("reset_by") == role ? "YOU" : peer; m.toast ("RESET (" + who + ")", 2); Main.log ("online: reset by " + who); }
 			chat (m, st.optJSONArray ("chat"));
-			boolean pp = st.optInt ("peer_paused") != 0 && st.optInt ("paused") != 0;
-			if (pp && saidPause == 0) { saidPause = 1; m.toast ("PAUSED BY THE OTHER PLAYER", 3); } else if (!pp) saidPause = 0;
+			int pw = st.optInt ("peer_why");   /* (the other player's own pause: 1 a menu, 2 another app - the line stays until they are back) */
+			if (pw != 0) { m.banner ("PAUSED BY " + peer + " - " + (pw == 2 ? "IN ANOTHER APP" : "IN THE MENU"));
+				if (saidPause != pw) { saidPause = pw; Main.log ("online: paused by the other player (" + (pw == 2 ? "another app" : "the menu") + ")"); } }
+			else if (saidPause != 0) { saidPause = 0; m.banner (null); m.toast (peer + " IS BACK", 2); Main.log ("online: the other player is back"); }
 			if (st.optInt ("desync", -1) >= 0 && saidDesync == 0) { saidDesync = 1; m.toast ("ONLINE: OUT OF STEP - THE TWO GAMES DIFFER", 4); }
 			if (st.optInt ("left") != 0 && saidLost == 0) { saidLost = 1; VX.net (3, 0); playing = false;
 				if (role == 1) { boolean again = rehost (m); m.toast ("ONLINE: " + peer + " LEFT - " + (again ? "YOUR GAME GOES ON, HOSTED AGAIN" : "YOUR GAME GOES ON"), 4); Main.log ("online: the other player left - hosted again: " + again); }
 				else { m.toast ("ONLINE: " + peer + " LEFT - YOUR GAME GOES ON", 4); Main.log ("online: the host left"); } }
 			else if (saidLost == 0) { int l = st.optInt ("lost");
-				if (l != 0 && gap == 0) { gap = 1; m.toast ("ONLINE: NO CONNECTION - WAITING FOR THE OTHER PLAYER (ONLINE > LEAVE TO STOP)", 4); Main.log ("online: no connection - waiting"); }
+				if (l != 0 && gap == 0) { gap = 1; if (st.optInt ("peer_why") != 2) m.toast ("ONLINE: NO CONNECTION - WAITING FOR THE OTHER PLAYER (ONLINE > LEAVE TO STOP)", 4); Main.log ("online: no connection - waiting"); }
 				else if (l == 0 && gap != 0) { gap = 0; m.toast ("ONLINE: CONNECTED AGAIN", 2); Main.log ("online: connected again"); } }
 			if (ph != 4 && ph != 3 && saidLost == 0) { playing = false;   /* (3: the start just asked for - it reaches the core at its next refresh) */  Main.log ("online: the game for two ended (phase " + ph + ")"); } }
+		if (!playing && m.ban != null) { m.banner (null); saidPause = 0; }   /* (not online any more: the pause line away) */
 	}
-	static void chat (Main m, JSONArray c) { if (c != null) for (int i = 0; i < c.length (); i++) { String t = c.optString (i, ""); if (!t.isEmpty ()) { Main.log ("online chat in: " + t); m.toast ("💬 " + t, 4); } } }
+	static android.media.ToneGenerator tone;
+	static void chat (Main m, JSONArray c)
+	{
+		int n = 0; if (c != null) for (int i = 0; i < c.length (); i++) { String t = c.optString (i, ""); if (!t.isEmpty ()) { Main.log ("online chat in: " + t); m.toast ("💬 " + t, 5); n++; } }
+		if (n > 0) {   /* (a line in: heard and felt - the game goes on) */
+			try { if (tone == null) tone = new android.media.ToneGenerator (android.media.AudioManager.STREAM_NOTIFICATION, 70); tone.startTone (android.media.ToneGenerator.TONE_PROP_ACK, 150); } catch (RuntimeException e) { tone = null; }
+			m.root.performHapticFeedback (android.view.HapticFeedbackConstants.LONG_PRESS, android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING); }
+	}
 	static boolean rehost (Main m)                         /* (the guest left: the host's game goes on, hosted again the same way) */
 	{
 		String rom = VX.game (); if (hostMode < 0 || rom.isEmpty ()) return false;
@@ -201,7 +211,7 @@ final class Online {
 			if (ph == 4) {
 				header ("Playing online");
 				row ("With " + (peer.isEmpty () ? "the other player" : peer), st.optInt ("delay") + " frames of input delay" + (st.optInt ("desync", -1) >= 0 ? " - OUT OF STEP: the two games differ" : ""), null);
-				row ("Chat", "A line to the other player", () -> Screens.ask (m, "Chat", "A line to the other player", false, VX::netChat));
+				row ("Chat", "A line to the other player - the game goes on meanwhile", () -> { m.popAll (); Screens.ask (m, "Chat", "A line to the other player", false, s -> { VX.netChat (s); Main.log ("online chat out: " + s); }); });
 				row ("Leave the online game", Adhoc.on ? "Your network " + Adhoc.ssidOn + " ends too" : "", () -> { VX.net (3, 0); playing = false; Adhoc.stop (m); m.pop (); });
 				foot ("You are player " + (role == 1 ? 1 : 2) + ". " + (st.optInt ("relay") != 0 ? "The game goes through the meeting point (relayed): a little more delay." : "A direct connection."));
 			} else if (ph >= 1 && ph <= 3) {

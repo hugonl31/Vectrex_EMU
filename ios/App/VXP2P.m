@@ -18,7 +18,7 @@
 extern int vx_net_port (void);
 
 /* one bridge: the peer-to-peer connection <-> a UDP socket on 127.0.0.1 */
-@interface VXPBridge : NSObject { @public int fd; struct sockaddr_in to; BOOL have_to, host; nw_connection_t conn; dispatch_source_t src; long in, out; }
+@interface VXPBridge : NSObject { @public int fd; struct sockaddr_in to; BOOL have_to, host, closing, retrying; nw_connection_t conn; nw_endpoint_t ep; dispatch_source_t src; long in, out; }
 @end
 @implementation VXPBridge
 @end
@@ -37,14 +37,39 @@ static nw_parameters_t vxp_params (void)
 }
 static void vxp_log (NSString *s) { dispatch_async (dispatch_get_main_queue (), ^{ ulog ([@"p2p: " stringByAppendingString:s]); }); }
 
-static void vxp_receive (VXPBridge *b)                    /* (the peer-to-peer side's packets to the core's socket) */
+/* (the link gone - the other device in another app, or out of reach a moment: player 2 connects again, every second,
+ *  through the same bridge - its core goes on with the same address; the host takes the new connection on the bridge it
+ *  has, so its core sees the same player. The game waits meanwhile, as for any gap) */
+static void vxp_attach (VXPBridge *b, nw_connection_t c);
+static void vxp_retry (VXPBridge *b)
 {
-	nw_connection_receive_message (b->conn, ^(dispatch_data_t content, nw_content_context_t ctx, bool done, nw_error_t err) {
+	if (b->closing || b->host || !b->ep || b->retrying) return;
+	b->retrying = YES;
+	dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (1.0 * NSEC_PER_SEC)), vxp_queue (), ^{
+		b->retrying = NO; if (b->closing) return;
+		vxp_log (@"connecting to the host nearby again");
+		nw_connection_t old = b->conn; vxp_attach (b, nw_connection_create (b->ep, vxp_params ())); if (old) nw_connection_cancel (old); });
+}
+static void vxp_receive (VXPBridge *b, nw_connection_t c)  /* (the peer-to-peer side's packets to the core's socket) */
+{
+	nw_connection_receive_message (c, ^(dispatch_data_t content, nw_content_context_t ctx, bool done, nw_error_t err) {
 		(void) ctx; (void) done;
+		if (c != b->conn) return;                              /* (a connection replaced meanwhile: done with) */
 		if (content && b->have_to) { const void *p = NULL; size_t n = 0; dispatch_data_t m = dispatch_data_create_map (content, &p, &n);
 			if (p && n) { sendto (b->fd, p, n, 0, (struct sockaddr *) &b->to, sizeof b->to); b->in++; } (void) m; }
-		if (!err) vxp_receive (b);
-		else vxp_log ([NSString stringWithFormat:@"connection ended (%d)", (int) nw_error_get_error_code (err)]); });
+		if (!err) vxp_receive (b, c);
+		else { vxp_log ([NSString stringWithFormat:@"connection ended (%d)", (int) nw_error_get_error_code (err)]); vxp_retry (b); } });
+}
+static void vxp_attach (VXPBridge *b, nw_connection_t c)  /* (a connection on the bridge: this one from now on) */
+{
+	b->conn = c; const BOOL host = b->host;
+	nw_connection_set_queue (c, vxp_queue ());
+	nw_connection_set_state_changed_handler (c, ^(nw_connection_state_t st, nw_error_t e) {
+		if (c != b->conn) return;
+		if (st == nw_connection_state_ready) vxp_log (host ? @"a player nearby connected" : @"connected to the host nearby");
+		else if (st == nw_connection_state_failed || st == nw_connection_state_waiting) {
+			vxp_log ([NSString stringWithFormat:@"the connection %@ (%d)", st == nw_connection_state_failed ? @"failed" : @"waits", e ? (int) nw_error_get_error_code (e) : 0]); vxp_retry (b); } });
+	nw_connection_start (c); vxp_receive (b, c);
 }
 static VXPBridge *vxp_bridge (nw_connection_t c, BOOL host)
 {
@@ -62,13 +87,9 @@ static VXPBridge *vxp_bridge (nw_connection_t c, BOOL host)
 			const ssize_t n = recvfrom (s->fd, buf, sizeof buf, 0, (struct sockaddr *) &from, &fl); if (n <= 0) break;
 			if (!s->host) { s->to = from; s->have_to = YES; }       /* (the guest: its core's socket, learnt from its first packet) */
 			dispatch_data_t d = dispatch_data_create (buf, (size_t) n, vxp_queue (), DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-			nw_connection_send (s->conn, d, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t e) { (void) e; }); s->out++; } });
+			if (s->conn) nw_connection_send (s->conn, d, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t e) { (void) e; }); s->out++; } });
 	dispatch_resume (b->src);
-	nw_connection_set_queue (c, vxp_queue ());
-	nw_connection_set_state_changed_handler (c, ^(nw_connection_state_t st, nw_error_t e) {
-		if (st == nw_connection_state_ready) vxp_log (host ? @"a player nearby connected" : @"connected to the host nearby");
-		else if (st == nw_connection_state_failed) vxp_log ([NSString stringWithFormat:@"the connection failed (%d)", e ? (int) nw_error_get_error_code (e) : 0]); });
-	nw_connection_start (c); vxp_receive (b);
+	vxp_attach (b, c);
 	if (!vxp_bridges) vxp_bridges = [NSMutableArray array];
 	@synchronized (vxp_bridges) { [vxp_bridges addObject:b]; }
 	return b;
@@ -76,22 +97,31 @@ static VXPBridge *vxp_bridge (nw_connection_t c, BOOL host)
 static void vxp_bridges_end (void)
 {
 	if (!vxp_bridges) return;
-	@synchronized (vxp_bridges) { for (VXPBridge *b in vxp_bridges) { dispatch_source_cancel (b->src); nw_connection_cancel (b->conn); close (b->fd); } [vxp_bridges removeAllObjects]; }
+	@synchronized (vxp_bridges) { for (VXPBridge *b in vxp_bridges) { b->closing = YES; dispatch_source_cancel (b->src); if (b->conn) nw_connection_cancel (b->conn); close (b->fd); } [vxp_bridges removeAllObjects]; }
 }
 
 /* ---- the host: its game advertised nearby, each player's connection bridged to its core */
+static NSString *vxp_name;
 void vxp_host_start (NSString *name)
 {
 	if (vxp_listener) return;
+	vxp_name = name;
 	vxp_listener = nw_listener_create (vxp_params ()); if (!vxp_listener) { vxp_log (@"no listener"); return; }
+	nw_listener_t me = vxp_listener;
 	NSString *n = name.length > 60 ? [name substringToIndex:60] : name;
 	nw_listener_set_advertise_descriptor (vxp_listener, nw_advertise_descriptor_create_bonjour_service (n.UTF8String, VXP_TYPE, NULL));
 	nw_listener_set_queue (vxp_listener, vxp_queue ());
 	nw_listener_set_state_changed_handler (vxp_listener, ^(nw_listener_state_t st, nw_error_t e) {
 		if (st == nw_listener_state_ready) vxp_log ([NSString stringWithFormat:@"advertised nearby as \"%@\"", n]);
-		else if (st == nw_listener_state_failed) vxp_log ([NSString stringWithFormat:@"advertising failed (%d)", e ? (int) nw_error_get_error_code (e) : 0]); });
-	nw_listener_set_new_connection_handler (vxp_listener, ^(nw_connection_t c) {
-		vxp_bridges_end (); vxp_bridge (c, YES); });           /* (one other player: a new one replaces the one before - a second round) */
+		else if (st == nw_listener_state_failed) { vxp_log ([NSString stringWithFormat:@"advertising failed (%d) - again in a second", e ? (int) nw_error_get_error_code (e) : 0]);
+			dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (1.0 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{   /* (after the app was away: advertised anew,
+				                                                 the bridge and its player kept) */
+				if (vxp_listener != me) return; nw_listener_cancel (me); vxp_listener = nil; vxp_host_start (vxp_name); }); } });
+	nw_listener_set_new_connection_handler (vxp_listener, ^(nw_connection_t c) {   /* (one other player: a new connection on the bridge there is -
+		                                                 player 2 back after a gap, or a second round: the core sees the same address) */
+		VXPBridge *b = nil; if (vxp_bridges) @synchronized (vxp_bridges) { b = vxp_bridges.firstObject; }
+		if (b) { nw_connection_t old = b->conn; vxp_attach (b, c); if (old) nw_connection_cancel (old); vxp_log (@"a player nearby connected again"); }
+		else vxp_bridge (c, YES); });
 	nw_listener_start (vxp_listener);
 }
 void vxp_stop (void)
@@ -130,6 +160,7 @@ int vxp_join (NSString *name)                             /* (the bridge's port 
 	if (!ep) return 0;
 	vxp_bridges_end ();
 	VXPBridge *b = vxp_bridge (nw_connection_create (ep, vxp_params ()), NO); if (!b) return 0;
+	b->ep = ep;                                             /* (kept: connected again through it after a gap) */
 	struct sockaddr_in me; socklen_t l = sizeof me; getsockname (b->fd, (struct sockaddr *) &me, &l);
 	vxp_log ([NSString stringWithFormat:@"joining \"%@\" through 127.0.0.1:%d", name, ntohs (me.sin_port)]);
 	return ntohs (me.sin_port);

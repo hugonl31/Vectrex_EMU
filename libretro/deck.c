@@ -335,9 +335,10 @@ static void dk_tick (double busy)
 }
 static void turn_volume (double d)
 {
-	if (!pw_on) { if (d <= 0 || net_on ()) return; vx_vol = 0; pw_switch (1, 30); }
+	const int onl = net_on () || netvx_playing ();   /* (online: never switched off or on by the knob - that would be one side only) */
+	if (!pw_on) { if (d <= 0 || onl) return; vx_vol = 0; pw_switch (1, 30); }
 	vx_vol += (float) d; if (vx_vol > 1) vx_vol = 1;
-	if (net_on () && vx_vol < 0.01f) vx_vol = 0.01f;   /* (netplay: not switched off - that would be one side only) */
+	if (onl && vx_vol < 0.01f) vx_vol = 0.01f;   /* (netplay: not switched off - that would be one side only) */
 	if (vx_vol <= 0.0005f) { vx_vol = 0; vol_before_off = 0.5f; pw_switch (0, 0); }   /* (down to 0: switched off, as the Vectrex) */
 	dk_dirty_set = 1;
 }

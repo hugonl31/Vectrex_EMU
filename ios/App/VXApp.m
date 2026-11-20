@@ -16,6 +16,7 @@
 #import <GameController/GameController.h>
 #import <Metal/Metal.h>
 #import <CoreVideo/CoreVideo.h>
+#import <AudioToolbox/AudioToolbox.h>
 #include <dlfcn.h>
 #include <sys/utsname.h>
 #include <sys/time.h>
@@ -1268,7 +1269,37 @@ static void vxa_ntoast (NSString *s)
 	l.frame = CGRectMake ((v.bounds.size.width - sz.width) / 2, v.safeAreaInsets.top + 64 + nextY, sz.width, fmax (34, sz.height + 8)); nextY += l.frame.size.height + 6; nextT = now + 3.5;
 	[v addSubview:l]; [UIView animateWithDuration:0.5 delay:3.5 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL d) { (void) d; [l removeFromSuperview]; }];
 }
-void vxa_net_chat_in (NSArray *lines) { for (NSString *t in lines) if ([t isKindOfClass:NSString.class]) { vlog ("online chat in: %s", t.UTF8String); vxa_ntoast ([NSString stringWithFormat:@"💬 %@", t]); } }
+void vxa_net_chat_in (NSArray *lines)
+{
+	int n = 0; for (NSString *t in lines) if ([t isKindOfClass:NSString.class]) { vlog ("online chat in: %s", t.UTF8String); vxa_ntoast ([NSString stringWithFormat:@"💬 %@", t]); n++; }
+	if (n) { AudioServicesPlaySystemSound (1003); [[UINotificationFeedbackGenerator new] notificationOccurred:UINotificationFeedbackTypeSuccess]; }   /* (a line in:
+	                                                     heard and felt - the game goes on) */
+}
+/* (the other player paused: a line that stays until they are back) */
+static UILabel *vxa_ban_l;
+static void vxa_banner (NSString *s)
+{
+	if (!s) { [vxa_ban_l removeFromSuperview]; vxa_ban_l = nil; return; }
+	UIViewController *vc = vxa_vc; if (!vc) return; UIView *v = vc.view;
+	if (!vxa_ban_l) { UILabel *l = [UILabel new]; l.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold]; l.textColor = VX_HI;
+		l.backgroundColor = [VX_PANEL colorWithAlphaComponent:0.95]; l.layer.cornerRadius = 10; l.layer.masksToBounds = YES; l.layer.borderWidth = 1; l.layer.borderColor = VX_EDGE2.CGColor;
+		l.numberOfLines = 2; l.textAlignment = NSTextAlignmentCenter; vxa_ban_l = l; }
+	if (![vxa_ban_l.text isEqualToString:s]) vxa_ban_l.text = s;
+	CGSize sz = [vxa_ban_l sizeThatFits:CGSizeMake (v.bounds.size.width - 40, 80)]; sz.width = fmin (sz.width + 28, v.bounds.size.width - 40);
+	vxa_ban_l.frame = CGRectMake ((v.bounds.size.width - sz.width) / 2, v.safeAreaInsets.top + 20, sz.width, fmax (40, sz.height + 14));
+	if (vxa_ban_l.superview != v) [v addSubview:vxa_ban_l]; else [v bringSubviewToFront:vxa_ban_l];
+}
+/* (the chat over the running game: a line typed and sent - no menu, no pause) */
+void vxa_chat_prompt (void)
+{
+	UIViewController *vc = vxa_vc; if (!vc || vc.presentedViewController) return;
+	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Chat" message:nil preferredStyle:UIAlertControllerStyleAlert];
+	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.placeholder = @"A line to the other player"; f.autocapitalizationType = UITextAutocapitalizationTypeSentences; }];
+	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+	[a addAction:[UIAlertAction actionWithTitle:@"Send" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { NSString *v = a.textFields.firstObject.text;
+		if (v.length) { extern void vx_net_chat (const char *); vx_net_chat (v.UTF8String); vlog ("online chat out: %s", v.UTF8String); } }]];
+	[vc presentViewController:a animated:YES completion:nil];
+}
 static NSString *vxa_find_md5 (NSString *md5)          /* (the host's game in this phone's library: by its MD5, as the desktop's find_rom) */
 {
 	if (!vxa_md5s) vxa_md5s = [NSMutableDictionary dictionary];
@@ -1337,7 +1368,10 @@ static void vxa_net_tick (void)
 			vxa_ntoast ([NSString stringWithFormat:@"RESET (%@)", who]); vlog ("online: reset by %s", who.UTF8String); } }
 		NSArray *chat = st[@"chat"]; if ([chat isKindOfClass:NSArray.class] && chat.count) vxa_net_chat_in (chat);
 		const int pp = [st[@"peer_paused"] intValue] && [st[@"paused"] intValue];
-		if (pp && !said_pause) { said_pause = 1; vxa_ntoast (@"PAUSED BY THE OTHER PLAYER"); } else if (!pp) said_pause = 0;
+		{ const int pw = [st[@"peer_why"] intValue];   /* (the other player's own pause: 1 a menu, 2 another app - the line stays until they are back) */
+		  if (pw) { vxa_banner ([NSString stringWithFormat:@"PAUSED BY %@ - %@", peer, pw == 2 ? @"IN ANOTHER APP" : @"IN THE MENU"]);
+			if (said_pause != pw) { said_pause = pw; vlog ("online: paused by the other player (%s)", pw == 2 ? "another app" : "the menu"); } }
+		  else if (said_pause) { said_pause = 0; vxa_banner (nil); vxa_ntoast ([NSString stringWithFormat:@"%@ IS BACK", peer]); vlog ("online: the other player is back"); } }
 		if ([st[@"desync"] intValue] >= 0 && !said_desync) { said_desync = 1; vxa_ntoast (@"ONLINE: OUT OF STEP - THE TWO GAMES DIFFER"); }
 		/* (only Leave ends a game: the other's Leave ends it here too; a gap in the connection is waited out) */
 		if ([st[@"left"] intValue] && !said_lost) { said_lost = 1; vx_net_leave (); vxa_net_on = 0;
@@ -1345,9 +1379,10 @@ static void vxa_net_tick (void)
 				vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ LEFT - %@", peer, again ? @"YOUR GAME GOES ON, HOSTED AGAIN" : @"YOUR GAME GOES ON"]); vlog ("online: the other player left - hosted again: %d", again); }
 			else { vxa_ntoast ([NSString stringWithFormat:@"ONLINE: %@ LEFT - YOUR GAME GOES ON", peer]); vlog ("online: the host left"); } }
 		else if (!said_lost) { static int gap; const int l = [st[@"lost"] intValue];
-			if (l && !gap) { gap = 1; vxa_ntoast (@"ONLINE: NO CONNECTION - WAITING FOR THE OTHER PLAYER (ONLINE > LEAVE TO STOP)"); vlog ("online: no connection - waiting"); }
+			if (l && !gap) { gap = 1; if ([st[@"peer_why"] intValue] != 2) vxa_ntoast (@"ONLINE: NO CONNECTION - WAITING FOR THE OTHER PLAYER (ONLINE > LEAVE TO STOP)"); vlog ("online: no connection - waiting"); }
 			else if (!l && gap) { gap = 0; vxa_ntoast (@"ONLINE: CONNECTED AGAIN"); vlog ("online: connected again"); } }
-		if (ph != 4 && !said_lost && !just) vxa_net_on = 0; }   /* (not in the pass that started it: ph was read before - it switched every game's
+		if (ph != 4 && !said_lost && !just) vxa_net_on = 0; }
+	if (!vxa_net_on && vxa_ban_l) vxa_banner (nil);   /* (not online any more: the pause line away) */   /* (not in the pass that started it: ph was read before - it switched every game's
 	                                                     "online" off at once: no game change for the host, the offline catch-up on - 2026-11-20) */
 }
 
@@ -1364,8 +1399,20 @@ static void vxa_net_tick (void)
 }
 - (void) application:(UIApplication *)a handleEventsForBackgroundURLSession:(NSString *)i completionHandler:(void (^) (void))h
 { vlog ("woken for the pack's fetch (%s)", i.UTF8String); VXPack.shared.bgDone = h; if ([i hasSuffix:@".wifi"]) (void) VXPack.shared.wifiSession; else (void) VXPack.shared.session; }
-- (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; if (vxa_net_playing ()) vx_net_pause (1); }   /* (online: the other side sees a pause) */
-- (void) applicationDidBecomeActive:(UIApplication *)a { [vxa_vc setRunning:1]; if (vxa_net_playing () && !vxa_holding) vx_net_pause (0); }
+static UIBackgroundTaskIdentifier vxa_bgt = UIBackgroundTaskInvalid;
+- (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; if (vxa_net_playing ()) vx_net_pause (2); }   /* (online: the other side sees
+	                                                     "in another app" - a call, Control Center, the app switcher alike) */
+- (void) applicationDidEnterBackground:(UIApplication *)a
+{
+	if (!vxa_net_playing () || vxa_bgt != UIBackgroundTaskInvalid) return;   /* (online: iOS's extra half minute - the connection kept, the pause told) */
+	vxa_bgt = [a beginBackgroundTaskWithName:@"online" expirationHandler:^{ vlog ("online: iOS stops the app in the background now"); [a endBackgroundTask:vxa_bgt]; vxa_bgt = UIBackgroundTaskInvalid; }];
+	vlog ("online: in the background - the connection kept for a while");
+}
+- (void) applicationDidBecomeActive:(UIApplication *)a
+{
+	[vxa_vc setRunning:1]; if (vxa_net_playing ()) vx_net_pause (vxa_holding ? 1 : 0);
+	if (vxa_bgt != UIBackgroundTaskInvalid) { [a endBackgroundTask:vxa_bgt]; vxa_bgt = UIBackgroundTaskInvalid; }
+}
 - (void) applicationDidReceiveMemoryWarning:(UIApplication *)a { vlog ("memory warning: %.0f MB in use", vxa_mem_mb ()); }
 - (void) applicationWillTerminate:(UIApplication *)a { vlog ("the app ends"); retro_unload_game (); retro_deinit (); }
 @end

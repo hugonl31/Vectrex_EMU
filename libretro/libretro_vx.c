@@ -1242,6 +1242,8 @@ static int game_env (const char *path, const char *sys, const char *dir)
 			FILE *t = fopen (q, "rb"); if (t) { fclose (t); snprintf (sd, sizeof sd, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", q); } }
 		if (sd[0]) { vx_putenv (sd); fprintf (stderr, "[vectrex_emu] SD card %s\n", strchr (sd, '=') + 1); }
 		else fprintf (stderr, "[vectrex_emu] no SD card (%s in <system>/vectrex_emu)\n", nm); } }
+	vx_putenv (ls_cfg_on ? "VT_FLASH_CLEAN=1" : "VT_FLASH_CLEAN=");   /* (online: a flash cartridge as it came - each player's own saves
+	                                              (Vectorblade's high scores) differed, and the games from the first frame; none written) */
 	netls_env ();                               /* (online in lockstep: the host's settings - netls.c) */
 	return im_out;
 }
@@ -3133,6 +3135,7 @@ bool retro_serialize (void *d, size_t sz)
 }
 bool retro_unserialize (const void *d, size_t sz)
 {
+	if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] a saved state: not during an online game\n"); return false; }   /* (it would part the two games - the apps' buttons, any way in) */
 	emu_wait_ext (); net_mark ();
 	unser_seen = 1; runs_since_unser = 0;
 	if (!vx_ok () || !vx_size) vx_state_init ();

@@ -133,7 +133,7 @@ final class Screens {
 			pick (m, "Reset all settings?", new String[] { "no", "yes" }, new String[] { "Cancel", "Reset: every setting back to its default" }, "no", v -> {
 				if (!v.equals ("yes")) { reopenSettings (m); return; } int k = 0;
 				for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) { VX.oset (i, VX.opt (i, 6)); k++; }
-				m.prefs.edit ().remove ("app.deckpop").apply ();   /* (the deck's pop-up too: this screen's default) */
+				m.prefs.edit ().remove ("app.deckpop").remove ("app.topbar").apply (); m.showBar (); m.layout ();   /* (the deck's pop-up and the top bar too: this screen's defaults) */
 				Main.log ("settings: reset all (" + k + " changed)"); m.toast ("Settings back to their defaults", 2); reopenSettings (m); }); });
 		  if (n > 0) ((TextView) r.findViewWithTag ("t")).setTextColor (Main.CHG); }
 		p.foot ("Top bar auto-hide: tap the top of the screen to bring it back. Control deck: below the picture; pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away.");

@@ -40,6 +40,104 @@ import time
 
 PORT = 7744
 VERSION_NO = b'\x00version'  # (player 2's no: another online version)
+
+# ---- the host's saves for both (2026-11-20, as the apps' netvx.c): a flash cartridge's flash (Vectorblade's calibration,
+#      high scores) and Last Human's save chip go to player 2 at the start (and with a game switch); both play with them -
+#      each player's own parted the games, none (as they came) lost the calibration. Only for this game, only in files of
+#      their own (vectrex_emu_online.*, made anew each time): player 2's own saves are never written. "VXS1", then records:
+#      type (1 flash, 2 save chip), length, the runs where it differs from the ROM / an empty chip ([offset 4][length 2][bytes])
+SAVE_TAG = b'\x00save'       # (player 2's yes: it takes the host's saves)
+SAVE_MAX = 65536
+
+
+def _save_runs(typ, img, base):
+    out = bytearray(); runs = 0; i = 0; n = len(img)
+    while i < n:
+        if img[i] == base[i]:
+            i += 1; continue
+        j = last = i
+        while j < n and j - i < 60000:
+            if img[j] != base[j]:
+                last = j
+            elif j - last > 8:
+                break
+            j += 1
+        j = last + 1
+        out += struct.pack('<IH', i, j - i) + img[i:j]; runs += 1; i = j
+    return struct.pack('<BII', typ, n, runs) + bytes(out)
+
+
+def save_flash_len(n, hw):
+    """a flash cartridge's flash size (the core's vtest.c rule), 0: none"""
+    if hw == 'vb':
+        return n if n > 65536 else 262144
+    if hw == 'hb512':
+        return 524288
+    if hw not in ('auto', '1', '', None):
+        return 0
+    return 524288 if n == 524288 else (n if 65536 < n <= 262144 else 0)
+
+
+def save_blob(rom, hw='auto', chip=None):
+    """the host's package for rom: its flash save (rom.sav) and its save chip's file (chip)"""
+    out = bytearray(b'VXS1')
+    try:
+        with open(rom, 'rb') as f:
+            r = f.read()
+    except OSError:
+        return bytes(out)
+    L = save_flash_len(len(r), hw)
+    if L:
+        try:
+            with open(rom + '.sav', 'rb') as f:
+                s = f.read()
+        except OSError:
+            s = None
+        if s is not None and len(s) == L:
+            rec = _save_runs(1, s, (r + b'\xff' * L)[:L])
+            if len(out) + len(rec) <= SAVE_MAX:
+                out += rec
+    if chip:
+        try:
+            with open(chip, 'rb') as f:
+                d = f.read()
+        except OSError:
+            d = None
+        if d is not None and len(d) == 128:
+            out += _save_runs(2, d, b'\xff' * 128)
+    return bytes(out)
+
+
+def save_env(blob, rom, folder):
+    """the package's files for the core (VT_FLASH_IMG, VT_DS2431), written to folder"""
+    env = {}
+    if not blob or blob[:4] != b'VXS1':
+        return env
+    try:
+        with open(rom, 'rb') as f:
+            r = f.read()
+    except OSError:
+        r = b''
+    k, n = 4, len(blob)
+    while k + 9 <= n:
+        typ, L, runs = struct.unpack_from('<BII', blob, k); k += 9
+        if typ not in (1, 2):                                   # (another kind: passed over)
+            k += L; continue
+        img = bytearray((r + b'\xff' * L)[:L]) if typ == 1 and L <= 1 << 20 else bytearray(b'\xff' * 128) if typ == 2 and L == 128 else None
+        for _ in range(runs):
+            if k + 6 > n:
+                break
+            o, l = struct.unpack_from('<IH', blob, k); k += 6
+            if img is not None and o + l <= L:
+                img[o:o + l] = blob[k:k + l]
+            k += l
+        if img is not None:
+            p = os.path.join(folder, 'vectrex_emu_online' + ('.sav' if typ == 1 else '.ds2431'))
+            with open(p, 'wb') as f:
+                f.write(img)
+            env['VT_FLASH_IMG' if typ == 1 else 'VT_DS2431'] = p
+    return env
+
 BIOS_NO = b'\x00bios'        # (player 2's no: another BIOS (bios.bin) - the games would part from the first frame)
 CHAT_MAX = 200               # the chat: bytes a line (UTF-8)
 CHAT_GIVEUP = 15.0           # (seconds: a line the other side never confirms is reported as not delivered)
@@ -243,7 +341,9 @@ class NetPlay:
         self.gap = False
         self.peer_regame = False                                # (another game in a game, both: the host's pick - R / r, a
         self.rg_seq = 0; self.rg_out = None; self.rg_t = 0.0    #  flag 8 in the host's input switches both at one frame)
-        self.rg_offer = None; self.rg_answer = None; self.rg_ans_out = None                                        # (no connection for a while: waited for, not the end)
+        self.rg_offer = None; self.rg_answer = None; self.rg_ans_out = None
+        self.save_peer = False; self.sv_done = None                         # (the host's saves: player 2 takes them; the one here)
+        self.rg_sv = None; self.rg_sv_need = None; self.rg_sv_got = {}; self.rg_sv_blob = None; self.rg_ans_wait = None                                        # (no connection for a while: waited for, not the end)
         self.stall_s = 0.0                              # (time spent waiting for the other side: the report)
         # the chat (the Chat window): lines sent until the other side confirms them ('T' / 'A'), each shown once
         self.chat_lock = threading.Lock()
@@ -392,6 +492,7 @@ class NetPlay:
                             game['jit_fast'] = JIT_FAST in q[1]   # (player 2 has the same processor type)
                             self.peer_regame = REGAME_TAG in q[1]    # (it can follow the host to another game)
                             game['uvm2_net'] = uvm2_from_accept(q[1])   # (the UVMC2 mode both play in)
+                            self.save_peer = SAVE_TAG in q[1]        # (it takes the host's saves)
                             return game
                         if q and q[0] == ord('N') and q[1] == VERSION_NO:
                             return 'version'
@@ -531,15 +632,18 @@ class NetPlay:
         self.ping_note = '%d of %d answered' % (len(got), i)
         return max(got) if got else 0.3
 
-    def regame_offer(self, game):
-        """host: another game for both (player 2 answers: rg_answer True / False)"""
+    def regame_offer(self, game, save=None):
+        """host: another game for both (player 2 answers: rg_answer True / False); save: (package, its number) sent along"""
         self.rg_seq = (self.rg_seq + 1) & 0xFFFF; self.rg_out = json.dumps(game).encode(); self.rg_t = 0.0; self.rg_answer = None
+        self.rg_sv = save if (save and self.save_peer) else None
     def regame_reply(self, ok):
         """player 2: the host's next game here (or not) - said until the switch"""
         if self.rg_offer is None:
             return
         seq = self.rg_offer[0]; self.rg_offer = None
         pk = struct.pack('<HB', seq, 1 if ok else 0)
+        if ok and self.rg_sv_need and self.rg_sv_blob is None:   # (the host's saves for it: the yes once they are here)
+            self.rg_ans_wait = pk; return
         for _ in range(5): self._send(ord('r'), pk)
         self.rg_ans_out = pk if ok else None; self.rg_t = 0.0
     def regame_tick(self):
@@ -550,6 +654,10 @@ class NetPlay:
         self.rg_t = now
         if self.rg_out is not None:
             self._send(ord('R'), struct.pack('<H', self.rg_seq) + self.rg_out[:590])
+            if self.rg_sv is not None:                      # (the host's saves for it: all pieces, until the yes)
+                blob, sid = self.rg_sv; parts = [blob[k:k + CARD_CHUNK] for k in range(0, len(blob), CARD_CHUNK)] or [b'']
+                for i, part in enumerate(parts):
+                    self._send(ord('W'), struct.pack('<HHHI', sid, i, len(parts), len(blob)) + part)
         if self.rg_ans_out is not None:
             self._send(ord('r'), self.rg_ans_out)
 
@@ -575,6 +683,54 @@ class NetPlay:
             if self.sums_mine[f] != self.sums_theirs.pop(f) and self.desync is None:
                 self.desync = f
                 self.log('out of sync at frame %d' % f)
+
+    # ---- the host's saves (after the game was accepted)
+    def send_save(self, blob, sid, timeout=30.0, stop=lambda: False):
+        """host: its package to player 2, in pieces until player 2 says it has it (True)"""
+        parts = [blob[k:k + CARD_CHUNK] for k in range(0, len(blob), CARD_CHUNK)] or [b'']
+        t0 = time.perf_counter(); i = 0
+        while time.perf_counter() - t0 < timeout and not stop():
+            self._send(ord('W'), struct.pack('<HHHI', sid, i, len(parts), len(blob)) + parts[i])
+            i = (i + 1) % len(parts)
+            time.sleep(0.004)
+            p = self._recv()
+            while p:
+                if p[0] == ord('w') and len(p[1]) >= 2 and struct.unpack_from('<H', p[1])[0] == sid:
+                    return True
+                p = self._recv()
+        return False
+
+    def _save_piece(self, body, size, sid, got):
+        """a piece of the host's package: the whole once all are here, else None"""
+        if len(body) < 10:
+            return None
+        i, k, t, n = struct.unpack_from('<HHHI', body)      # (its number, the piece, of how many, the whole's size)
+        if i != sid or n != size or n > SAVE_MAX or t != (n + CARD_CHUNK - 1) // CARD_CHUNK or k >= t:
+            return None
+        got[k] = body[10:]
+        if len(got) < t:
+            return None
+        blob = b''.join(got[q] for q in range(t)); got.clear()
+        if len(blob) != n or blob[:4] != b'VXS1':
+            self.log('the host\'s saves arrived damaged: collecting them again'); return None
+        for _ in range(3):
+            self._send(ord('w'), struct.pack('<H', sid))
+        self.sv_done = sid
+        return blob
+
+    def recv_save(self, size, sid, timeout=30.0, stop=lambda: False):
+        """player 2: the host's package (None: it did not come)"""
+        got = {}; t0 = time.perf_counter()
+        while time.perf_counter() - t0 < timeout and not stop():
+            p = self._recv()
+            while p:
+                if p[0] == ord('W'):
+                    blob = self._save_piece(p[1], size, sid, got)
+                    if blob is not None:
+                        return blob
+                p = self._recv()
+            time.sleep(0.002)
+        return None
 
     # ---- the SD card both play from (after the game was accepted)
     def send_card(self, manifest, timeout=60.0, stop=lambda: False):
@@ -804,6 +960,21 @@ class NetPlay:
                     self.rg_seen = seq
                     try: self.rg_offer = (seq, json.loads(body[2:].decode('utf-8', 'replace')))
                     except ValueError: pass
+                    else:
+                        g = self.rg_offer[1]; self.rg_sv_got = {}; self.rg_sv_blob = None; self.rg_ans_wait = None
+                        self.rg_sv_need = (int(g['sv']), int(g.get('svi', 0))) if g.get('sv') else None
+            elif kind == ord('W') and self.role != 'host' and len(body) >= 2:   # (the host's saves: a piece)
+                sid = struct.unpack_from('<H', body)[0]
+                if sid == self.sv_done:                      # (the host did not hear the yes: again)
+                    self._send(ord('w'), struct.pack('<H', sid))
+                elif self.rg_sv_need and sid == self.rg_sv_need[1] and self.rg_sv_blob is None:
+                    blob = self._save_piece(body, self.rg_sv_need[0], sid, self.rg_sv_got)
+                    if blob is not None:
+                        self.rg_sv_blob = blob
+                        if self.rg_ans_wait is not None:    # (the yes held for it: now)
+                            pk, self.rg_ans_wait = self.rg_ans_wait, None
+                            for _ in range(5): self._send(ord('r'), pk)
+                            self.rg_ans_out = pk; self.rg_t = 0.0
             elif kind == ord('r') and len(body) >= 3 and self.role == 'host':   # (player 2: it has it, or not)
                 seq, ok = struct.unpack_from('<HB', body)
                 if self.rg_out is not None and seq == self.rg_seq:

@@ -1805,6 +1805,7 @@ class Core:
                                                         #  replayed natively, for slower PCs, or 'dev' - fast plus an ideal
                                                         #  beam drawing clean lines; set_uvm2_mode. Online: exact)
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
+    net_save = None                                     # (online: the host's saves - the package, netplay.save_blob - this start only)
     veclink = None                                      # (the VecLink cable: (file, 'A' / 'B') - veclink.c; None: unplugged)
     veclink_slice = 0                                   # (online VecLink: both consoles of the PC in 30000-cycle slices)
     headless = False                                    # (online VecLink's other console: no picture sent)
@@ -1855,6 +1856,10 @@ class Core:
                 env['VT_SPEECHDEV'] = speech                        # (a speech accessory on port 2 now)
         # no input recording, no log: the core records to NUL, its messages are discarded
         env.update(V4E_ENV.get(rom, {}))                           # (a .v4e cartridge's save chip)
+        if Core.force_seed is not None:                             # (online: no save of this player's own - the host's, or none)
+            env.pop('VT_DS2431', None)
+            import tempfile, netplay
+            env.update(netplay.save_env(Core.net_save, rom, tempfile.gettempdir()))
         if 'VT_DS2431' not in env and Core.force_seed is None and last_human_rom(rom):   # (Last Human's save chip: its
             env['VT_DS2431'] = rom + '.ds2431'                     #  calibration and high scores; not online - both start alike)
         # a UVMC2 game: its SD card is the folder sd_dir, as a FAT32 image (fatimg.py), copied back at the end
@@ -5745,10 +5750,14 @@ class App:
                 g['jit_fast'] = bool(rom is not None and g.get('arch') and g.get('arch') == netplay.arch())
                 g['uvm2_net'] = netplay.uvm2_agree(g.get('uvm2', 'exact'), getattr(self, 'uvm2_mode', 'exact'))
                 net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else '')
-                           + netplay.REGAME_TAG.decode() + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
+                           + netplay.REGAME_TAG.decode() + netplay.SAVE_TAG.decode() + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
+                if rom and g.get('sv') and not g.get('card'):           # (the host's saves - its calibration - for this game)
+                    g['save_blob'] = net.recv_save(int(g['sv']), int(g.get('svi', 0)), stop=stop)
+                    if g['save_blob'] is None:
+                        g = None                                    # (they did not come: no game - both would differ)
                                                                     # (the same processor type on both sides: the PiTrex JIT
                                                                     #  runs at full speed - its blocks fall the same on both)
-                if rom and g.get('card'):                           # (the host's card list: which files are the same here)
+                if rom and g and g.get('card'):                     # (the host's card list: which files are the same here)
                     folder = self.card_dir(rom); mine = {}
                     def answer(m):
                         mine['ok'] = netplay.card_matches(m, folder, CARD_CACHE); return mine['ok']
@@ -5757,7 +5766,12 @@ class App:
                                       0 if m is None else len(m))
             elif g:
                 rom = net.offer_rom or a.rom                        # (the game offered when player 2 came)
-                if g.get('card'):                                   # (ours to player 2: the files both have)
+                sv = getattr(self, 'net_sv_out', None)
+                if not g.get('card') and sv and g.get('sv') and getattr(net, 'save_peer', False):   # (ours to player 2)
+                    g['save_blob'] = sv[0] if net.send_save(sv[0], sv[1], stop=stop) else None
+                    if g['save_blob'] is None:
+                        g = None
+                if g and g.get('card'):                             # (ours to player 2: the files both have)
                     folder = self.card_dir(rom)
                     m = netplay.card_manifest(folder, CARD_CACHE)
                     ok = net.send_card(m, stop=stop)
@@ -6085,6 +6099,12 @@ class App:
             h = [('you' if w == me else them) for w in ('host', 'join') if ports.get(w) == k]
             return ' + '.join(h) if h else 'nobody'
         return 'Port 1: %s     Port 2: %s' % (holder(1), holder(2))
+    def net_save_pack(self, rom):
+        """the host's saves of rom for player 2: (package, its number)"""
+        import netplay
+        chip = rom + '.ds2431' if last_human_rom(rom) else V4E_ENV.get(rom, {}).get('VT_DS2431')
+        self.net_sv_n = (getattr(self, 'net_sv_n', 0) + 1) & 0x7FFF or 1
+        return netplay.save_blob(rom, self.cart_hw, chip), self.net_sv_n
     def net_offer(self, rom):
         """the game a host offers (the ROM's identity and what must be the same on both sides), and its note (net_note)"""
         import netplay
@@ -6093,6 +6113,8 @@ class App:
                                           bios=netplay.rom_md5(BIOS) or ''))               # (the BIOS: the same on both)
         if self.card_dir(rom):
             game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
+        else:                                                   # (its saves - the calibration - for player 2: netplay.save_blob)
+            self.net_sv_out = self.net_save_pack(rom); game['sv'], game['svi'] = len(self.net_sv_out[0]), self.net_sv_out[1]
         if game_turns(rom):
             game['turns'] = True                                # (the players take turns on port 1: a note)
         if getattr(self, 'net_vl_want', False):
@@ -6130,7 +6152,8 @@ class App:
         g = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw, dacofs=0.0))   # (R302: online the factory's)
         if game_turns(rom): g['turns'] = True
         g['delay'] = net.delay
-        net.regame_offer(g); self.net_rg_pick = (os.path.abspath(rom), g)
+        sv = self.net_save_pack(rom); g['sv'], g['svi'] = len(sv[0]), sv[1]   # (its saves along - player 2's yes waits for them)
+        net.regame_offer(g, sv); self.net_rg_pick = (os.path.abspath(rom), g)
         self.net_flash('ONLINE: STARTING %s' % os.path.splitext(os.path.basename(rom))[0].upper()[:24], 'FOR BOTH...', secs=3)
         return True
     def net_regame_poll(self):
@@ -6164,10 +6187,11 @@ class App:
             rom, g = run.rg_due; run.rg_due = None; net.rg_ans_out = None
             self.net_game, self.net_rom = g, rom; self.net_rg_pick = None
             Core.force_seed = g.get('seed'); self.net_rg_now = True
+            Core.net_save = (net.rg_sv[0] if net.rg_sv else None) if getattr(self, 'net_role', '') == 'host' else net.rg_sv_blob   # (the host's saves)
             try:
                 self.restart(rom)
             finally:
-                Core.force_seed = None; self.net_rg_now = False
+                Core.force_seed = None; self.net_rg_now = False; Core.net_save = None
             self.flash('ONLINE: NOW PLAYING', os.path.splitext(os.path.basename(rom))[0].upper()[:24], secs=3)
             self.chat_add('sys', 'Both switched to %s.' % os.path.splitext(os.path.basename(rom))[0])
     def net_poll(self):
@@ -6228,10 +6252,11 @@ class App:
             Core.net_card = (card[0], card[1]) if card else None
             Core.net_jitfast = bool(g.get('jit_fast'))
             Core.net_uvm2 = g.get('uvm2_net', 'exact')          # (this game only: the Config setting stays as it is)
+            Core.net_save = g.get('save_blob')                  # (the host's saves: this start only)
             try:
                 self.restart(rom)
             finally:
-                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'; Core.net_save = None
             um2 = self.net_uvm2_note(rom, g)
             if um2:
                 self.chat_add('sys', um2)

@@ -155,6 +155,36 @@ RMAGIC = b'VXR1'            # (the meeting point's packets)
 PUNCH_S = 3.0               # seconds of trying the direct way before the relay
 CODE_LEN = 5
 SYNC_EVERY = 25             # (frames between two sync checks: twice a second)
+RB_TAG = b'\x00rb'           # (player 2's yes: it runs on guesses - rollback, as the apps' netvx.c)
+RB_W = 20                   # (rollback: frames on guesses at most, then it waits as in lockstep)
+RB_SLOTS = 24               # (the core's saved frames, live.c RB_SLOTS)
+
+# ---- line streaming (as the apps' netvx.c): a card game played on the host only - each frame's lines and sound (the
+#      core packs them, live.c) to player 2 in pieces of 1180 bytes (560 through the meeting point), one repair piece (the
+#      four XORed) after each four; player 2's core shows them (live.c message 0x90) and its controller goes back ('u')
+STREAM_TAG = b'\x00stream'   # (player 2's yes: the host's lines shown here)
+ST_GROUP = 4
+
+
+def unlz(data, cap):
+    """the apps' small packer (netvx.c nv_lz) undone - None when it does not come out at exactly cap bytes"""
+    out = bytearray(); i, n = 0, len(data)
+    while i < n:
+        t = data[i]; i += 1
+        if t & 0x80:
+            if i + 4 > n:
+                return None
+            off = data[i] | data[i + 1] << 8; ln = data[i + 2] | data[i + 3] << 8; i += 4
+            if not off or off > len(out) or len(out) + ln > cap:
+                return None
+            for _ in range(ln):
+                out.append(out[-off])
+        else:
+            if i + t > n or len(out) + t > cap:
+                return None
+            out += data[i:i + t]; i += t
+    return bytes(out) if len(out) == cap else None
+
 NET_VER = 11                # the online version: both sides must have the same (libretro/netvx.c NV_VER too: the iOS app
                             # plays the PC). Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
@@ -322,6 +352,11 @@ class NetPlay:
         self.left = False                               # (the other side said it leaves)
         self.pause_on, self.pause_seq, self.pause_peer = False, 0, False   # (the pause: on for either side, this side's
         self.pause_t = 0.0                                                 #  number, a change from the other side)
+        self.rb = False; self.rb_ok = False; self.rb_peer = False             # (rollback: on for this game; the core can; the other side too)
+        self.stream = False; self.st_fno = 0; self.st_asm = {}; self.st_q = []; self.st_last = -1; self.st_done = set()   # (line streaming, below)
+        self.st_in = (0, 0, 0, 0); self.st_in_seq = None; self.st_resets = self.st_resets_done = 0
+        self.st_take_seq = self.st_take_done = 0; self.st_take_val = 0; self.st_my_resets = self.st_my_take = 0; self.st_out_seq = 0
+        self.st_got = self.st_lost = self.st_drop = self.st_fix = 0
         self.my_pause, self.their_pause, self.their_seq = 0, 0, None       # (each side's own: 0 playing, 1 paused / a menu,
                                                                            #  2 another app - the game stands while either is)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -366,6 +401,9 @@ class NetPlay:
         self.remote = {f: (0, 0, 0, 0) for f in range(self.delay)}
         self.last_send = 0.0
         self.their_f = -1; self.adv = 0.0; self.adv_them = 0.0
+        self.dly = self.delay; self.lhave = self.delay; self.pend_fl = 0    # (rollback: this side's delay now, its inputs made up to)
+        self.conf = 0; self.used = {}; self.rb_from = None; self.psum = {}  #  (the frames both are sure of; what each frame ran with)
+        self.rlast = (0, 0, 0, 0); self.rlast_f = self.delay - 1
 
     # ---- the packets
     def _raw(self, data, addr):
@@ -493,6 +531,8 @@ class NetPlay:
                             self.peer_regame = REGAME_TAG in q[1]    # (it can follow the host to another game)
                             game['uvm2_net'] = uvm2_from_accept(q[1])   # (the UVMC2 mode both play in)
                             self.save_peer = SAVE_TAG in q[1]        # (it takes the host's saves)
+                            self.rb_peer = RB_TAG in q[1]            # (it runs on guesses too: both a short delay)
+                            self.stream = bool(game.get('card')) and STREAM_TAG in q[1]   # (a card game: streamed)
                             return game
                         if q and q[0] == ord('N') and q[1] == VERSION_NO:
                             return 'version'
@@ -672,6 +712,9 @@ class NetPlay:
         """this side's state checksum after frame f (the core's, live.c): every SYNC_EVERY frames it goes to the other side"""
         if f % SYNC_EVERY:
             return
+        self._mark_send(f, state)
+
+    def _mark_send(self, f, state):
         self.sums_mine[f] = state & 0xffffffff
         self._send(ord('S'), struct.pack('<II', f, state & 0xffffffff))
         self._compare(f)
@@ -826,6 +869,197 @@ class NetPlay:
             del self.remote[old]
         return (a, b) if self.role == 'host' else (b, a)
 
+    # ---- rollback (as the apps' netvx.c): a frame whose other-side input is late runs at once on a guess (that side's last
+    #      input, no moment's button), its state kept in the core (live.c 0x7C); the real input different: the Runner loads
+    #      that frame's state (0x7D) and runs the frames since again, unseen (0x7B). The sync check: frames both are sure of
+    def _rb_advance(self):
+        while self.conf < self.f:
+            r = self.remote.get(self.conf)
+            if r is None:
+                break
+            u = self.used.get(self.conf)
+            if u and u[1] and u[0] != r:                         # (a wrong guess: the rollback first)
+                if self.rb_from is None or self.conf < self.rb_from:
+                    self.rb_from = self.conf
+                break
+            ps = self.psum.pop(self.conf, None)
+            if ps is not None:
+                self._mark_send(self.conf, ps)
+            self.conf += 1
+
+    def _rb_take(self, f):
+        """frame f's two inputs (the other's real or guessed); (pair, guessed, sure) - None: it must wait"""
+        got = f in self.remote
+        theirs = self.remote[f] if got else (self.rlast[0], self.rlast[1], self.rlast[2], 0)
+        mine = self.local[f]
+        if ((mine[3] | theirs[3]) & 8) and not (got and self.conf == f):   # (a game switch: only on a frame both are sure of)
+            return None
+        self.used[f] = (theirs, not got)
+        sure = got and self.conf == f
+        if sure:
+            self.conf += 1
+        return ((mine, theirs) if self.role == 'host' else (theirs, mine)), not got, sure
+
+    def exchange_rb(self, mine):
+        """rollback's exchange: (pair, guessed, sure) for the frame now - 'wait' when it may not run yet (too far on
+        guesses, paused, a rollback due first), None when the connection is lost"""
+        if self.lost:
+            return None
+        f = self.f
+        if self.rb_peer and self.dly > 2:
+            self.dly = 2                                         # (both with rollback: 2 frames of input delay)
+        self.pend_fl |= int(mine[3])
+        while self.lhave <= f + self.dly:                        # (this side's input `dly` frames on, its buttons once)
+            self.local[self.lhave] = (int(mine[0]), int(mine[1]), int(mine[2]), self.pend_fl); self.pend_fl = 0; self.lhave += 1
+        now = time.perf_counter()
+        if now - self.last_send > 0.008:
+            self._send_inputs()
+        if now - self.pause_t > 1.0:
+            self._send_pause()
+        self._drain(); self.regame_tick(); self._rb_advance()
+        if self.rb_from is not None:
+            return 'wait'
+        if f not in self.remote and (self.pause_on or f - self.conf >= RB_W or self.rlast_f < 0 or not self.rb_ok):
+            if now - self.last_heard > TIMEOUT and not self.gap:
+                self.gap = True; self.log('no connection (no input for frame %d) - waiting' % f)
+            return 'wait'
+        if self.gap:
+            self.gap = False; self.log('connected again')
+        r = self._rb_take(f)
+        if r is None:
+            return 'wait'
+        self.f += 1
+        if f not in self.remote:
+            self.n_guess = getattr(self, 'n_guess', 0) + 1
+        for old in [k for k in self.local if k < self.conf - KEEP - 8]:
+            del self.local[old]
+        for old in [k for k in self.remote if k < self.conf - 64]:
+            del self.remote[old]
+        for old in [k for k in self.used if k < self.conf - 64]:
+            del self.used[old]
+        return r
+
+    def rb_begin(self):
+        """a rollback: (the frame to go back to, the frame it was at) - the Runner loads its state and runs them again"""
+        g, end = self.rb_from, self.f
+        self.rb_from = None; self.f = g; self.n_rb = getattr(self, 'n_rb', 0) + 1
+        return g, end
+
+    def rb_next(self):
+        """a frame run again: its inputs now (as rb_take)"""
+        r = self._rb_take(self.f)
+        if r is not None:
+            self.f += 1
+        return r
+
+    def mark_rb(self, f, state, sure):
+        if f % SYNC_EVERY:
+            return
+        if sure:
+            self._mark_send(f, state)
+        else:
+            self.psum[f] = state & 0xffffffff                    # (run on a guess: sent once sure)
+
+    # ---- line streaming: the host's side
+    def stream_send(self, payload):
+        """the host: a frame (the core's packed lines and sound) to player 2 - in pieces, a repair piece after each four"""
+        if self.lost:
+            return
+        z = b'\x00' + payload                                  # (0: not packed further)
+        C = 560 if (self.relay and self.code) else 1180
+        nd = (len(z) + C - 1) // C; ng = (nd + ST_GROUP - 1) // ST_GROUP
+        if nd + ng > 240:
+            return
+        fno = struct.unpack_from('<I', payload)[0]
+        head = lambda i: struct.pack('<IHHIIH', fno, i, nd, len(z), len(payload), C)
+        for g in range(ng):
+            par = 0
+            for i in range(g * ST_GROUP, min(nd, (g + 1) * ST_GROUP)):
+                piece = z[i * C:(i + 1) * C]
+                par ^= int.from_bytes(piece.ljust(C, b'\x00'), 'little')   # (the four XORed: whole numbers, fast)
+                self._send(ord('L'), head(i) + piece)
+            self._send(ord('L'), head(nd + g) + par.to_bytes(C, 'little'))
+        now = time.perf_counter()
+        if now - self.last_send > 0.25:                         # (alive, the pause - no inputs are sent while streamed)
+            self._send_pause(); self.last_send = now
+        self._drain()
+
+    def st_input(self):
+        """the host: player 2's controller now (its RESET and a port taken once each)"""
+        jx, jy, b, _ = self.st_in; fl = 0
+        if self.st_resets != self.st_resets_done:
+            self.st_resets_done = self.st_resets; fl |= 4
+        if self.st_take_seq != self.st_take_done:
+            self.st_take_done = self.st_take_seq; fl |= 0x10 if self.st_take_val == 1 else 0x20
+        return (jx, jy, b, fl)
+
+    # ---- line streaming: player 2's side
+    def _st_piece(self, body):
+        if len(body) < 19:
+            return
+        fno, i, nd, zn, rawn, C = struct.unpack_from('<IHHIIH', body)
+        ng = (nd + ST_GROUP - 1) // ST_GROUP
+        if fno <= self.st_last or fno in self.st_done or nd <= 0 or i >= nd + ng or C < 64 or C > 1180 or zn > nd * C:
+            return                                              # (too late, or whole already: a repair piece after it)
+        a = self.st_asm.get(fno)
+        if a is None:
+            if len(self.st_asm) >= 6:                           # (the oldest unfinished one given up)
+                old = min(self.st_asm); del self.st_asm[old]; self.st_lost += 1
+            a = self.st_asm[fno] = dict(nd=nd, C=C, zn=zn, rawn=rawn, d={}, p={})
+        if a['nd'] != nd or a['C'] != C:
+            return
+        data = body[18:]
+        if i < nd:
+            a['d'][i] = data.ljust(C, b'\x00')
+        else:
+            a['p'][i - nd] = data.ljust(C, b'\x00')
+        for g in range(ng):                                     # (a group with one missing and its repair piece: made again)
+            if g not in a['p']:
+                continue
+            ks = [k for k in range(g * ST_GROUP, min(nd, (g + 1) * ST_GROUP)) if k not in a['d']]
+            if len(ks) == 1:
+                r = int.from_bytes(a['p'][g], 'little')
+                for k in range(g * ST_GROUP, min(nd, (g + 1) * ST_GROUP)):
+                    if k != ks[0]:
+                        r ^= int.from_bytes(a['d'][k], 'little')
+                a['d'][ks[0]] = r.to_bytes(C, 'little'); self.st_fix += 1
+        if len(a['d']) < nd:
+            return
+        del self.st_asm[fno]; self.st_done.add(fno)
+        if len(self.st_done) > 64:
+            self.st_done = {k for k in self.st_done if k > fno - 32}
+        z = b''.join(a['d'][k] for k in range(nd))[:zn]
+        payload = (unlz(z[1:], rawn) if z[0] == 1 else z[1:1 + rawn]) if z else None
+        if not payload or len(payload) != rawn:
+            self.st_lost += 1; return
+        self.st_q.append((fno, payload)); self.st_q.sort(); self.st_got += 1
+        for old in [k for k in self.st_asm if k < fno - 8]:
+            del self.st_asm[old]; self.st_lost += 1
+
+    def st_take(self, behind):
+        """player 2: the next frame's packed data (None: none here) - more than 3 waiting: the oldest left out; behind:
+        the time to show has passed, a second one may go too"""
+        self._drain()
+        while len(self.st_q) > 3:
+            self.st_q.pop(0); self.st_drop += 1
+        if not self.st_q:
+            return None
+        fno, payload = self.st_q.pop(0); self.st_last = fno
+        return payload
+
+    def st_send_input(self, jx, jy, b, fl):
+        """player 2: its controller to the host - RESET and a port taken as counters (never lost)"""
+        if fl & 4:
+            self.st_my_resets = (self.st_my_resets + 1) & 255
+        if fl & 0x30:
+            self.st_my_take = (self.st_my_take + 1) & 255; self.st_take_val = 1 if fl & 0x10 else 2
+        self.st_out_seq = (self.st_out_seq + 1) & 0xFFFFFFFF
+        self._send(ord('u'), struct.pack('<IbbBBBBB', self.st_out_seq, max(-127, min(127, jx)), max(-127, min(127, jy)), b & 255,
+                                         self.st_my_resets, self.st_my_take, self.st_take_val, 0))
+        now = time.perf_counter()
+        if now - self.pause_t > 1.0:
+            self._send_pause()
+
     # ---- the pause: each side's own (P, a menu, another app on a phone); the game stands while either side is paused -
     #      one side going on no longer ends the other's (the apps' netvx.c alike)
     def set_pause(self, on, why=1):
@@ -894,13 +1128,14 @@ class NetPlay:
         self.chat_t = now
 
     def _send_inputs(self):
-        hi = self.f + self.delay
+        hi = self.lhave - 1 if getattr(self, 'rb', False) else self.f + self.delay
         lo = max(0, hi - KEEP + 1)
         body = struct.pack('<IB', lo, hi - lo + 1)
         for k in range(lo, hi + 1):
             jx, jy, b, fl = self.local.get(k, (0, 0, 0, 0))
             body += struct.pack('<bbBB', max(-127, min(127, jx)), max(-127, min(127, jy)), b & 255, fl & 255)
         body += struct.pack('<h', int(max(-2000, min(2000, self.adv * 16))))   # (the clock sync: how far ahead I see me)
+        body += struct.pack('<B', max(1, min(255, getattr(self, 'dly', self.delay) or self.delay)))   # (this side's delay now)
         self._send(ord('I'), body)
         self.last_send = time.perf_counter()
         if self.chat_out and self.last_send - self.chat_t > 0.15:     # (the chat: until confirmed)
@@ -920,8 +1155,15 @@ class NetPlay:
                     if 5 + 4 * i + 4 > len(body):
                         break
                     k = lo + i
-                    if k >= self.f and k not in self.remote:
-                        self.remote[k] = struct.unpack_from('<bbBB', body, 5 + 4 * i)
+                    rbm = getattr(self, 'rb', False)
+                    if k >= (self.conf if rbm else self.f) and k not in self.remote:
+                        inp = struct.unpack_from('<bbBB', body, 5 + 4 * i); self.remote[k] = inp
+                        if rbm:                                  # (rollback: the guess for frames not here yet; a wrong one -
+                            if k > self.rlast_f:                 #  back to it before the next frame)
+                                self.rlast, self.rlast_f = inp, k
+                            u = self.used.get(k)
+                            if k < self.f and u and u[1] and u[0] != inp and (self.rb_from is None or k < self.rb_from):
+                                self.rb_from = k
                 dly = body[5 + 4 * n + 2] if len(body) >= 5 + 4 * n + 3 and body[5 + 4 * n + 2] else self.delay   # (the app's delay now:
                                                  #  it grows when its game stands - libretro/netvx.c)
                 tf = lo + n - 1 - dly                           # (the frame the other side is on)
@@ -963,6 +1205,14 @@ class NetPlay:
                     else:
                         g = self.rg_offer[1]; self.rg_sv_got = {}; self.rg_sv_blob = None; self.rg_ans_wait = None
                         self.rg_sv_need = (int(g['sv']), int(g.get('svi', 0))) if g.get('sv') else None
+            elif kind == ord('L') and self.stream and self.role != 'host':
+                self._st_piece(body)
+            elif kind == ord('u') and self.stream and self.role == 'host' and len(body) >= 10:   # (player 2's controller: the newest)
+                s_, jx, jy, b_, rs, ts, tv = struct.unpack_from('<IbbBBBB', body)
+                if self.st_in_seq is None or 0 < (s_ - self.st_in_seq) & 0xFFFFFFFF < 0x80000000:
+                    self.st_in_seq = s_; self.st_in = (jx, jy, b_, 0); self.st_resets = rs
+                    if ts != self.st_take_seq:
+                        self.st_take_seq, self.st_take_val = ts, tv
             elif kind == ord('W') and self.role != 'host' and len(body) >= 2:   # (the host's saves: a piece)
                 sid = struct.unpack_from('<H', body)[0]
                 if sid == self.sv_done:                      # (the host did not hear the yes: again)

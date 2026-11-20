@@ -2547,7 +2547,10 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 {
 	extern int vt_imager;
 	emu_stood = 0;
-	for (int k = 0; total_cycles < run_t && k < 8; k++) {
+	uint32_t replay_to = 0; int most = 8;
+	if (netvx_playing ()) { replay_to = netvx_rollback (); if (replay_to) most = 8 + NV_RB_W; }   /* (online: a guess was wrong - back
+	                                              to that frame's state, the frames since run again with the right input, unheard) */
+	for (int k = 0; total_cycles < run_t && k < most; k++) {
 		extern unsigned long long vt_piece_t0;
 		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
 		if (ls_state == 2 || netvx_playing ()) { unsigned char lm[8];   /* (online in lockstep: a game frame only with both players' input for it) */
@@ -2555,10 +2558,11 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 			apply_input (lm); }
 		abuf_n = 0;
 		run_frame ();
+		const int replay = replay_to && nv_f < replay_to;   /* (a frame run again: its sound was heard the first time) */
 		if (ls_state == 2) netls_after (); else if (netvx_playing ()) netvx_after ();
 		frame_push (p0);
 		if (vt_imager) eyes_take ();
-		audio_frame ();
+		if (!replay) audio_frame ();
 	}
 	if (total_cycles + 3000000 < run_t) run_t = total_cycles;   /* (far behind - a stall: on from here) */
 }
@@ -3117,12 +3121,10 @@ static int net_dbg = -1;
 /* (the cartridge in the slot, in each save state: its first 64K as loaded - the image, $FF after its end) */
 static uint32_t cart_id;
 static void cart_id_set (void) { uint32_t h = 2166136261u; for (int k = 0; k < 65536; k++) h = (h ^ cart[k]) * 16777619u; cart_id = h | 1; }
-bool retro_serialize (void *d, size_t sz)
+static size_t vx_save_to (unsigned char *d)   /* (the state into d - at most vx_size bytes; its length: online's rollback saves
+                                                these from inside the emulation, netvx.c) */
 {
-	emu_wait_ext (); net_mark ();
-	{ static long n; if (++n % 120 == 1) NDBG ("[netdbg] serialize #%ld sz %zu vx_size %zu run %ld\n", n, sz, vx_size, net_runs); }
-	if (!vx_ok () || !vx_size) vx_state_init ();
-	if (!vx_ok () || sz < vx_size) return false;
+	if (!vx_size) vx_state_init ();
 	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), cart_id };
 	PUT (h, 16);
 	o = vxv_save (o);
@@ -3132,14 +3134,40 @@ bool retro_serialize (void *d, size_t sz)
 	PUT (&nh, sizeof (int)); PUT (&have_prev, sizeof (int));
 	if (have_prev) o = put_frame (o, &prevf);
 	for (int k = 0; k < nh; k++) o = put_frame (o, &hist[k]);
-	memset (o, 0, (unsigned char *) d + sz - o);   /* (the rest: zeros, so two saves of one moment compare equal) */
+	return (size_t) (o - d);
+}
+bool retro_serialize (void *d, size_t sz)
+{
+	emu_wait_ext (); net_mark ();
+	{ static long n; if (++n % 120 == 1) NDBG ("[netdbg] serialize #%ld sz %zu vx_size %zu run %ld\n", n, sz, vx_size, net_runs); }
+	if (!vx_ok () || !vx_size) vx_state_init ();
+	if (!vx_ok () || sz < vx_size) return false;
+	const size_t n = vx_save_to (d);
+	memset ((unsigned char *) d + n, 0, sz - n);   /* (the rest: zeros, so two saves of one moment compare equal) */
 	return true;
 }
+static bool vx_load_from (const void *d, size_t sz);
 bool retro_unserialize (const void *d, size_t sz)
 {
 	if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] a saved state: not during an online game\n"); return false; }   /* (it would part the two games - the apps' buttons, any way in) */
 	emu_wait_ext (); net_mark ();
 	unser_seen = 1; runs_since_unser = 0;
+	return vx_load_from (d, sz);
+}
+/* (online's rollback: what the state holds for RetroArch's run-ahead but that belongs to now - the time to reach, the sound
+ *  queue and its filters (the frames run again are not heard), the tube's warm-up, the overlay switch - kept through the load:
+ *  the time went back with the state and every rollback cost its frames' time, the game ran a third slow) */
+static void vx_rb_keep (int back)
+{
+	static int16_t k_aq[AQ * 2]; static int k_r, k_w, k_fm, k_ov, k_sel; static double k_fr, k_rf, k_pw; static long k_fs; static unsigned long long k_rt;
+	static biquad k_b[8], k_s[6], k_v[2];
+	if (!back) { memcpy (k_aq, aq, sizeof aq); k_r = aq_r; k_w = aq_w; k_fr = aq_frac; k_fs = aq_frames; memcpy (k_b, f_buzz, sizeof f_buzz); memcpy (k_s, f_spk, sizeof f_spk);
+		memcpy (k_v, f_voice, sizeof f_voice); k_fm = filters_made; k_rt = run_t; k_rf = run_frac; k_pw = pw_t; k_ov = ov_on; k_sel = sel_held; }
+	else { memcpy (aq, k_aq, sizeof aq); aq_r = k_r; aq_w = k_w; aq_frac = k_fr; aq_frames = k_fs; memcpy (f_buzz, k_b, sizeof f_buzz); memcpy (f_spk, k_s, sizeof f_spk);
+		memcpy (f_voice, k_v, sizeof f_voice); filters_made = k_fm; run_t = k_rt; run_frac = k_rf; pw_t = k_pw; ov_on = k_ov; sel_held = k_sel; }
+}
+static bool vx_load_from (const void *d, size_t sz)   /* (retro_unserialize's work - also online's rollback, from inside the emulation) */
+{
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	const unsigned char *i = d; uint32_t h[4];
 	if (!vx_ok () || sz < 16) { NDBG ("[netdbg] unserialize: no (ok %d sz %zu)\n", vx_ok (), sz); return false; }

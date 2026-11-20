@@ -108,6 +108,23 @@ static int nv_card, nv_card_done, nv_ready, nv_cidx; static double nv_t_card;
 static char **nv_only; static int nv_nonly;                  /* (the files both play from) */
 static char nv_uvm2[8] = "exact"; static int nv_jitfast;   /* (the PiTrex JIT fast: both the same processor type) */
 static double nv_last_heard, nv_last_direct, nv_last_relayed, nv_punch_t0, nv_last_send, nv_wait_t0, nv_rtt;
+/* ---- rollback (2026-11-20): a frame whose other-side input is not here yet runs at once with a guess - that side's last
+ * input (a moment's button - RESET, a game switch, a port taken - never guessed); the state before it kept. The real input
+ * different: back to that frame's state, the frames since run again (netvx_rollback, emu_loop). The game runs on through a
+ * network's pauses instead of standing (lockstep: every pause longer than the input delay stood both games - the iPad and
+ * the iPhone 8-10 times in 30 s, up to 316 ms; Wi-Fi, 4G alike). At most NV_RB_W frames on guesses, then it waits as before.
+ * 6809 games only (save states); a UVMC2 / PiTrex stays in lockstep. The packets are the same: an older side plays on in
+ * lockstep against it. The sync check: only frames both sides ran with real input */
+#define NV_RB_W 20
+#define NV_RB_SLOTS 24
+static unsigned char *nv_rb_buf[NV_RB_SLOTS], *nv_rb_tmp; static size_t nv_rb_len[NV_RB_SLOTS], nv_rb_cap[NV_RB_SLOTS]; static uint32_t nv_rb_fr[NV_RB_SLOTS];
+static int nv_rb_on, nv_rb_peer; static uint32_t nv_conf, nv_fd;   /* (nv_fd: frames below have their inputs decided - run, or running now) */ static int64_t nv_rb_from = -1; static nv_in nv_rlast; static int64_t nv_rlast_f = -1;
+static nv_in nv_used[512]; static unsigned char nv_used_pred[512]; static uint32_t nv_psum[512][2]; static unsigned char nv_psum_ok[512]; static int nv_cur_conf;
+static long nv_n_rb, nv_n_rbf, nv_n_pred; static int64_t nv_reset_lastf = -1;
+static int nv_rb_ports[NV_RB_SLOTS][2]; static unsigned long long nv_rb_ctr[NV_RB_SLOTS][5];   /* (with each saved frame: the ports taken,
+                                                 the frame counters outside the state - as the running game's state sent to a joiner) */
+static int nv_in_differ (const nv_in *a, const nv_in *b) { return a->jx != b->jx || a->jy != b->jy || a->b != b->b || a->fl != b->fl; }
+static size_t vx_save_to (unsigned char *d); static bool vx_load_from (const void *d, size_t sz); static void vx_state_init (void); static void nv_sum_send (uint32_t f, uint32_t h); static void vx_rb_keep (int back);
 static int nv_dly = 3, nv_their_dly, nv_st_run, nv_st_ep; static double nv_st_t0, nv_calm_t0;   /* (this side's input delay now - it grows when the
 						  game stands (a Wi-Fi's pauses), and comes back to the agreed one when calm; the other side's, sent with its inputs) */
 static uint32_t nv_f, nv_lhave;                  /* (the frame now; this side's inputs made up to) */
@@ -370,11 +387,12 @@ static void nv_send_inputs (void)
  * the difference of the two is how far ahead it really is. Returns the share of this refresh's time to leave out */
 static long nv_n_wait, nv_n_stood, nv_n_frames;     /* (the app's log: frames played, waited for a moment, stood - since last asked) */
 /* the app's log line: the delay, how far ahead each side sees itself, the frames since the last call */
+static unsigned long long nv_dg_tc; static double nv_dg_t;
 int vx_net_diag (char *o, int n)
 {
-	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood",
-		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood);
-	nv_n_wait = nv_n_stood = nv_n_frames = 0; nv_unlock (); return r;
+	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood, %ld guessed, %ld rollbacks (%ld frames again), %.2f s emulated in %.2f s%s",
+		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood, nv_n_pred, nv_n_rb, nv_n_rbf, (double) (total_cycles - nv_dg_tc) / 1.5e6, nv_now () - nv_dg_t, nv_rb_on ? "" : " - lockstep"); nv_dg_tc = total_cycles; nv_dg_t = nv_now ();
+	nv_n_wait = nv_n_stood = nv_n_frames = nv_n_pred = nv_n_rb = nv_n_rbf = 0; nv_unlock (); return r;
 }
 double netvx_pace (void)
 {
@@ -389,7 +407,10 @@ static void nv_on_inputs (const unsigned char *b, size_t n)
 		if (f + NV_RING / 2 < nv_f || f >= nv_f + NV_RING / 2) continue;   /* (far off: not this game's frames) */
 		const int r = f % NV_RING; if (nv_rgot[r] && nv_rgot_f[r] == f) continue;
 		nv_remote[r].jx = (signed char) b[5 + 4 * i]; nv_remote[r].jy = (signed char) b[6 + 4 * i]; nv_remote[r].b = b[7 + 4 * i]; nv_remote[r].fl = b[8 + 4 * i];
-		nv_rgot[r] = 1; nv_rgot_f[r] = f; }
+		nv_rgot[r] = 1; nv_rgot_f[r] = f;
+		if ((int64_t) f > nv_rlast_f) { nv_rlast = nv_remote[r]; nv_rlast_f = f; }   /* (the guess for frames not here yet) */
+		if (nv_rb_on && f < nv_fd && nv_used_pred[r] && nv_in_differ (&nv_remote[r], &nv_used[r]) && (nv_rb_from < 0 || (int64_t) f < nv_rb_from))
+			nv_rb_from = f; }   /* (a frame run with a wrong guess: back to it - emu_loop) */
 	if (n >= 5 + 4 * (size_t) k + 3 && b[5 + 4 * k + 2]) nv_their_dly = b[5 + 4 * k + 2];
 	const int32_t tf = (int32_t) (lo + (uint32_t) k) - 1 - (nv_their_dly ? nv_their_dly : nv_delay);
 	if (tf > nv_their_f) { nv_their_f = tf; nv_adv += 0.05 * (((double) nv_f - tf) - nv_adv);
@@ -509,7 +530,7 @@ static void nv_make_game (void)
 	                                              one (Mine Storm II, a patched one) parts the games from the first frame) */
 	uint32_t seed = (uint32_t) (nv_now () * 1e6) ^ (uint32_t) rand () ^ ((uint32_t) rand () << 15); seed &= 0x7fffffff;
 	snprintf (nv_game, sizeof nv_game, "{\"md5\": \"%s\", \"size\": %lld, \"name\": %s, \"seed\": %u, \"nver\": %d, \"arch\": \"" NV_ARCH "\", "
-		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"hot\": %s, \"port2\": \"%s\", \"bios\": \"%s\", \"sv\": %u, \"svi\": %d, \"host_name\": %s%s%s%s}",
+		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"hot\": %s, \"port2\": \"%s\", \"bios\": \"%s\", \"sv\": %u, \"svi\": %d, \"rb\": true, \"host_name\": %s%s%s%s}",
 		nv_rom_md5, nv_rom_size, nm, (unsigned) seed, NV_VER, nv_skip_boot ? "true" : "false", nv_carthw, nv_dacofs, nv_delay,
 		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", "false", optv ("vectrex_emu_port2"), bm, (unsigned) (nv_card ? 0 : nv_svn), nv_sv_id, hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
 }
@@ -542,10 +563,13 @@ static void nv_hot_free (void)
 	free (nv_hz); nv_hz = NULL; nv_hzn = 0; free (nv_hbuf); nv_hbuf = NULL; free (nv_hmask); nv_hmask = NULL; free (nv_hraw); nv_hraw = NULL; nv_hrawn = 0;
 	nv_hot = nv_hot_total = nv_hot_got = nv_hot_last = nv_hot_apply = 0;
 }
+static nv_in *nv_rlast_zero_ (void) { return &nv_rlast; }
 static void nv_reset_frames (void)
 {
 	nv_f = 0; nv_lhave = 0; nv_wait_t0 = 0; nv_their_f = -1; nv_adv = nv_adv_them = 0;
 	nv_dly = nv_delay; nv_their_dly = 0; nv_st_run = nv_st_ep = 0; nv_st_t0 = nv_calm_t0 = 0;
+	nv_conf = 0; nv_fd = 0; nv_rb_from = -1; nv_reset_lastf = -1; memset (nv_rlast_zero_ (), 0, sizeof nv_rlast); nv_rlast_f = nv_delay > 0 ? nv_delay - 1 : -1;
+	for (int q = 0; q < NV_RB_SLOTS; q++) nv_rb_fr[q] = 0xffffffffu; memset (nv_psum_ok, 0, sizeof nv_psum_ok); memset (nv_used_pred, 0, sizeof nv_used_pred);
 	for (uint32_t f = 0; f < (uint32_t) nv_delay; f++) {        /* (the first frames: no input, the same on both sides) */
 		nv_local[f].jx = nv_local[f].jy = 0; nv_local[f].b = nv_local[f].fl = 0;
 		nv_remote[f] = nv_local[f]; nv_rgot[f] = 1; nv_rgot_f[f] = f; }
@@ -627,7 +651,7 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 			{ char nm2[256]; if (nv_jstr (nv_game, "name", nm2, sizeof nm2)) snprintf (nv_rom_name, sizeof nv_rom_name, "%s", nm2); }
 			{ char ar[16] = ""; nv_jitfast = nv_jstr (nv_game, "arch", ar, sizeof ar) && !strcmp (ar, NV_ARCH); }
 			nv_rg_can = strstr (nv_game, "\"regame\": true") != NULL; nv_hot_can = strstr (nv_game, "\"hot\": true") != NULL;
-			nv_sv_want (nv_game);
+			nv_sv_want (nv_game); nv_rb_peer = strstr (nv_game, "\"rb\": true") != NULL;
 			nv_phase = NV_AGREED; nv_accepted = -1; nv_log ("the host's game came: the app looks for the ROM"); } break;
 	case 'A': if (nv_role == 1 && nv_phase == NV_WAIT && nv_rtt >= 0) { nv_phase = NV_AGREED; nv_accepted = 1;
 			for (size_t i = 0; i + 6 < n; i++) if (!memcmp (b + i, "\0uvm2:", 6)) { char m[8] = ""; size_t k = 0; while (i + 6 + k < n && k < 7 && b[i + 6 + k]) { m[k] = (char) b[i + 6 + k]; k++; } m[k] = 0;
@@ -635,6 +659,7 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 			nv_jitfast = 0; for (size_t i = 0; i + 9 <= n; i++) if (!memcmp (b + i, "\0jit:fast", 9)) nv_jitfast = 1;
 			nv_rg_can = 0; for (size_t i = 0; i + 7 <= n; i++) if (!memcmp (b + i, "\0regame", 7)) nv_rg_can = 1;
 			nv_sv_peer = 0; for (size_t i = 0; i + 5 <= n; i++) if (!memcmp (b + i, "\0save", 5)) nv_sv_peer = 1;
+			nv_rb_peer = 0; for (size_t i = 0; i + 3 <= n; i++) if (!memcmp (b + i, "\0rb", 3)) nv_rb_peer = 1;
 			nv_hot_can = 0; for (size_t i = 0; i + 8 <= n; i++) if (!memcmp (b + i, "\0hotjoin", 8)) nv_hot_can = 0;   /* (a join starts both anew - the owner's choice: the running game's state (up to 2 MB) stalled a phone's Wi-Fi Direct link and parted the games at frame 0, iPad with the Nova, 2026-11-19) */   /* (relayed: 2 MB through the meeting point took 15 s, the host's game standing - both start anew) */
 			if (nv_card) { nv_card_done = 0; nv_cidx = 0; nv_curn = 0; nv_log ("player 2 has the game: the SD cards compared"); }
 			else if (nv_svn && nv_sv_peer) { nv_card_done = 1; nv_sv_state = 1; nv_sv_cidx = 0; nv_log ("player 2 has the game: the host's saves sent"); }
@@ -887,19 +912,28 @@ static int netvx_frame (unsigned char *m)
 		nv_lhave++; }
 	if (nv_now () - nv_last_send > 0.008) nv_send_inputs ();
 	const int r = nv_f % NV_RING; int got = nv_rgot[r] && nv_rgot_f[r] == nv_f;
+	{ static int no = -1; if (no < 0) no = getenv ("VX_NO_ROLLBACK") != NULL; nv_rb_on = vx_ok () && !no; }   /* (6809 games: rollback; a UVMC2 / PiTrex: lockstep - test: off) */
+	if (nv_rb_on && nv_rb_peer && nv_dly > 2) nv_dly = 2;        /* (both with rollback: 2 frames of input delay - the guess covers the rest) */
+	while (nv_conf < nv_f) {                                      /* (the frames both sides' real inputs are in for, in order: the sync check's sums sent) */
+		const int q = nv_conf % NV_RING; if (!(nv_rgot[q] && nv_rgot_f[q] == nv_conf)) break;
+		if (nv_used_pred[q] && nv_in_differ (&nv_remote[q], &nv_used[q])) { if (nv_rb_from < 0 || (int64_t) nv_conf < nv_rb_from) nv_rb_from = nv_conf; break; }   /* (a wrong guess: the rollback first) */
+		if (nv_psum_ok[q] && nv_psum[q][0] == nv_conf) nv_sum_send (nv_psum[q][0], nv_psum[q][1]); nv_psum_ok[q] = 0;
+		nv_conf++; }
+	const int can_guess = !got && nv_rb_on && !nv_pause && nv_rlast_f >= 0 && (int64_t) nv_f - (int64_t) nv_conf < NV_RB_W && nv_rb_from < 0;
 	static double wait_end;                                       /* (the other side's input late: a moment's wait, then the picture stands -
 	                                                                 at most 12 ms in 50: a wait in each run of a refresh (the app runs 2-4 to catch up)
 	                                                                 held the iPhone at 15 pictures a second, the iPad at 20) */
-	if (!got && !nv_lost && !nv_pause && nv_now () - wait_end > 0.05) {
+	if (!got && !can_guess && !nv_lost && !nv_pause && nv_now () - wait_end > 0.05) {
 		const double t0 = nv_now (); nv_unlock ();
 		do { nv_sleep_ms (1); nv_lock (); nv_pump (); got = nv_rgot[r] && nv_rgot_f[r] == nv_f; nv_unlock (); } while (!got && nv_now () - t0 < 0.012);
 		wait_end = nv_now (); nv_lock (); nv_n_wait++; }
-	if (!got && !nv_pause) nv_n_stood++;
+	if (!got && !can_guess && !nv_pause) nv_n_stood++;
 	/* (the delay to the link: the game stood 3 times in 5 s, or 6 frames at once (a longer stand: a quarter of it more) - one frame more, up to 12; 15 s without
 	 *  standing - one less, down to the agreed one. A Wi-Fi's (and Apple's peer-to-peer's) pauses are longer some evenings
 	 *  than the pings showed: 6 frames stood 10-20 times in 5 s, the iPad / iPhone 2026-11-20. Frames are numbered: each
 	 *  side's delay its own, the extra frames the controller as it is) */
-	if (nv_f > 60 && !nv_pause && !nv_lost && !nv_rg_state) { const double t = nv_now ();
+	if (nv_f > 60 && !nv_pause && !nv_lost && !nv_rg_state && !(nv_rb_on && nv_rb_peer)) { const double t = nv_now ();   /* (both with rollback: the delay stays -
+	                                                 against one in lockstep (the PC) it grows as before: that side waits for this one's input) */
 		if (!got) { if (!nv_st_run++) { if (t - nv_st_t0 > 5.0) { nv_st_t0 = t; nv_st_ep = 0; } nv_st_ep++; }
 			if ((nv_st_ep >= 3 || nv_st_run == 6) && nv_dly < 12) { nv_dly++; nv_st_ep = 0; nv_st_t0 = t;
 				char m[64]; snprintf (m, sizeof m, "input delay %d frames (the link pauses)", nv_dly); nv_log (m); }
@@ -909,10 +943,25 @@ static int netvx_frame (unsigned char *m)
 				char m[64]; snprintf (m, sizeof m, "input delay %d frames (the link paused)", nv_dly); nv_log (m); }
 			nv_st_run = 0; if (!nv_calm_t0) nv_calm_t0 = t;
 			if (t - nv_calm_t0 > 15.0 && nv_dly > nv_delay) { nv_dly--; nv_calm_t0 = t; char m[64]; snprintf (m, sizeof m, "input delay %d frames (calm)", nv_dly); nv_log (m); } } }
-	if (!got || nv_pause) { if (!nv_wait_t0) nv_wait_t0 = nv_now (); nv_unlock (); return 0; }
-	nv_wait_t0 = 0; nv_n_frames++;
-	const nv_in *mine = &nv_local[nv_f % NV_RING], *theirs = &nv_remote[r];
+	if ((!got && !can_guess) || nv_pause) { if (!nv_wait_t0) nv_wait_t0 = nv_now (); nv_unlock (); return 0; }
+	nv_wait_t0 = 0;
+	nv_in guess; const nv_in *mine = &nv_local[nv_f % NV_RING], *theirs = &nv_remote[r];
+	if (!got) { guess = nv_rlast; guess.fl = 0; theirs = &guess; }   /* (the guess: the other side's last input, no moment's button) */
 	const nv_in *hi = nv_role == 1 ? mine : theirs, *jo = nv_role == 1 ? theirs : mine;   /* (host, joiner) */
+	if ((hi->fl & 8) && nv_f != nv_rg_done_f && nv_rg_rom[0] && nv_rb_on && !(got && nv_conf == nv_f)) { nv_unlock (); return 0; }   /* (a game switch:
+	                                                 only on a frame both are sure of - no rollback across it) */
+	if (!got) { const int q = nv_f % NV_RB_SLOTS;                 /* (a guess: this frame's state kept first) */
+		{ static size_t tn; const size_t z = retro_serialize_size (); if (z > tn) { free (nv_rb_tmp); nv_rb_tmp = malloc (z + 16); tn = nv_rb_tmp ? z : 0; } }   /* (as large as this game's state can be) */
+		const size_t n = nv_rb_tmp ? vx_save_to (nv_rb_tmp) : 0;
+		if (n && nv_rb_cap[q] < n) { unsigned char *p = realloc (nv_rb_buf[q], n); if (p) { nv_rb_buf[q] = p; nv_rb_cap[q] = n; } }
+		if (!n || nv_rb_cap[q] < n) { nv_unlock (); return 0; }   /* (no room: it waits, as without rollback) */
+		memcpy (nv_rb_buf[q], nv_rb_tmp, n); nv_rb_len[q] = n; nv_rb_fr[q] = nv_f; nv_rb_ports[q][0] = nv_ports[0]; nv_rb_ports[q][1] = nv_ports[1];
+		nv_rb_ctr[q][0] = frame_start_cycles; nv_rb_ctr[q][1] = last_busframe; nv_rb_ctr[q][2] = last_recal; nv_rb_ctr[q][3] = idle_cycles; nv_rb_ctr[q][4] = idle_frame;
+		nv_n_pred++; }
+	nv_n_frames++;
+	if (nv_rb_on) { nv_used[r] = *theirs; nv_used_pred[r] = (unsigned char) !got; }
+	nv_cur_conf = got && nv_conf == nv_f; if (nv_cur_conf) nv_conf++; nv_fd = nv_f + 1;
+	{ static int lg = -1; if (lg < 0) lg = getenv ("VX_RBLOG") != NULL; if (lg) fprintf (stderr, "RUN %u %s %d,%d,%d,%d conf %u\n", nv_f, got ? "real" : "GUESS", theirs->jx, theirs->jy, theirs->b, theirs->fl, nv_conf); }
 	if ((hi->fl & 8) && nv_f != nv_rg_done_f && nv_rg_rom[0]) {     /* (the next game: switched before this frame, on both sides) */
 		nv_rg_done_f = nv_f; snprintf (nv_game, sizeof nv_game, "%s", nv_rg_game);
 		if (nv_role == 2) { if (nv_sv_need && nv_sv_state == 2) nv_sv_take (); else nv_curn = 0; }   /* (player 2: the next game's package - the host took it at the yes) */
@@ -923,8 +972,10 @@ static int netvx_frame (unsigned char *m)
 		{ char nm2[256]; if (nv_jstr (nv_game, "name", nm2, sizeof nm2)) snprintf (nv_rom_name, sizeof nv_rom_name, "%s", nm2); }
 		snprintf (sw_next, sizeof sw_next, "%s", nv_rg_rom); nv_rg_rom[0] = 0; nv_rg_state = 0; nv_rg_switched++;
 		{ char m[300]; snprintf (m, sizeof m, "the next game at frame %u: %s", (unsigned) nv_f, nv_rom_name); nv_log (m); }
+		for (int q = 0; q < NV_RB_SLOTS; q++) nv_rb_fr[q] = 0xffffffffu; nv_rb_from = -1; nv_conf = nv_f;   /* (the last game's states: gone) */
 		nv_unlock (); return 0; }
-	if ((hi->fl | jo->fl) & 4) { nv_reset_n++; nv_reset_by = hi->fl & 4 ? 1 : 2; }   /* (RESET: who - said on both screens) */
+	if (((hi->fl | jo->fl) & 4) && (int64_t) nv_f > nv_reset_lastf) { nv_reset_lastf = nv_f; nv_reset_n++; nv_reset_by = hi->fl & 4 ? 1 : 2; }   /* (RESET: who - said on
+	                                                 both screens, once - not again when the frame is run again) */
 	nv_ports_take (0, hi->fl); nv_ports_take (1, jo->fl);
 	const nv_in *p1 = nv_ports[0] == 1 ? hi : nv_ports[1] == 1 ? jo : NULL, *p2 = nv_ports[0] == 2 ? hi : nv_ports[1] == 2 ? jo : NULL;
 	m[0] = (unsigned char) ((p1 ? p1->jx : 0) + 128); m[1] = (unsigned char) ((p1 ? p1->jy : 0) + 128); m[2] = p1 ? p1->b : 0;
@@ -947,15 +998,39 @@ static void nv_on_sum (const unsigned char *b, size_t n)
 	if (n < 8) return; if (nv_ntheir == 32) { memmove (nv_their, nv_their + 1, sizeof nv_their[0] * 31); nv_ntheir--; }
 	nv_their[nv_ntheir][0] = nv_get32 (b); nv_their[nv_ntheir][1] = nv_get32 (b + 4); nv_ntheir++; nv_compare ();
 }
+static void nv_sum_send (uint32_t f, uint32_t h)
+{
+	if (nv_nsums == 8) { memmove (nv_sums, nv_sums + 1, sizeof nv_sums[0] * 7); nv_nsums--; }
+	nv_sums[nv_nsums][0] = f; nv_sums[nv_nsums][1] = h; nv_nsums++;
+	unsigned char p[8]; nv_put32 (p, f); nv_put32 (p + 4, h); nv_send ('S', p, 8); nv_compare ();
+}
+/* (emu_loop, before the frames: a wrong guess - the state of its frame back, the frames since to be run again; the frame
+ *  number they were up to (0: none)) */
+static uint32_t netvx_rollback (void)
+{
+	nv_lock ();
+	if (nv_rb_from < 0 || !nv_rb_on) { nv_unlock (); return 0; }
+	const uint32_t g = (uint32_t) nv_rb_from, was = nv_f; nv_rb_from = -1; const int q = g % NV_RB_SLOTS;
+	if (g >= was || nv_rb_fr[q] != g || !nv_rb_len[q]) { nv_unlock (); nv_log ("rollback: that frame's state is gone"); return 0; }
+	nv_unlock ();
+	vx_rb_keep (0); const int ok = vx_load_from (nv_rb_buf[q], nv_rb_len[q]); vx_rb_keep (1);   /* (now's time, sound and switches kept) */
+	if (!ok) { nv_log ("rollback: the state could not be loaded"); return 0; }
+	nv_lock ();
+	nv_ports[0] = nv_rb_ports[q][0]; nv_ports[1] = nv_rb_ports[q][1];
+	frame_start_cycles = nv_rb_ctr[q][0]; last_busframe = nv_rb_ctr[q][1]; last_recal = nv_rb_ctr[q][2]; idle_cycles = nv_rb_ctr[q][3]; idle_frame = nv_rb_ctr[q][4];
+	nv_f = g; nv_fd = g; nv_n_rb++; if (getenv ("VX_RBLOG")) fprintf (stderr, "ROLLBACK to %u from %u\n", g, was); nv_n_rbf += (long) (was - g);
+	nv_unlock ();
+	return was;
+}
 static void netvx_after (void)
 {
-	nv_lock (); nv_rgot[nv_f % NV_RING] = 0;
-	if (nv_f % 25 == 0) { extern unsigned char (*e6809_read8) (unsigned address); extern int vt_uvm2, vt_pitrex; extern uint32_t uvm2_sig (void), pitrex_sig (void);
+	nv_lock (); if (!nv_rb_on) nv_rgot[nv_f % NV_RING] = 0;      /* (rollback: kept - a frame may be run again) */
+	static int sumn = -1; if (sumn < 0) { const char *e = getenv ("VX_SUMN"); sumn = e ? atoi (e) : 25; if (sumn < 1) sumn = 25; }   /* (test: another period) */
+	if (nv_f % (uint32_t) sumn == 0) { extern unsigned char (*e6809_read8) (unsigned address); extern int vt_uvm2, vt_pitrex; extern uint32_t uvm2_sig (void), pitrex_sig (void);
 		uint32_t h = 2166136261u; for (unsigned a = 0xC800; a < 0xCC00; a++) h = (h ^ e6809_read8 (a)) * 16777619u;
 		h ^= (uint32_t) total_cycles * 2654435761u; if (vt_uvm2) h ^= uvm2_sig (); else if (vt_pitrex) h ^= pitrex_sig ();
-		if (nv_nsums == 8) { memmove (nv_sums, nv_sums + 1, sizeof nv_sums[0] * 7); nv_nsums--; }
-		nv_sums[nv_nsums][0] = nv_f; nv_sums[nv_nsums][1] = h; nv_nsums++;
-		unsigned char p[8]; nv_put32 (p, nv_f); nv_put32 (p + 4, h); nv_send ('S', p, 8); nv_compare (); }
+		if (nv_cur_conf) nv_sum_send (nv_f, h);
+		else { const int q = nv_f % NV_RING; nv_psum[q][0] = nv_f; nv_psum[q][1] = h; nv_psum_ok[q] = 1; } }   /* (run on a guess: sent once sure) */
 	nv_f++;
 	nv_unlock ();
 }
@@ -1029,6 +1104,7 @@ void vx_net_accept (int ok)
 		unsigned char why[64]; size_t wn = 0; if (bad_bios) { memcpy (why, "\0bios", 5); wn = 5; }
 		if (ok) { if (nv_jitfast) { memcpy (why, "\0jit:fast", 9); wn = 9; } memcpy (why + wn, "\0regame", 7); wn += 7; memcpy (why + wn, "\0hotjoin", 8); wn += 8;
 			memcpy (why + wn, "\0save", 5); wn += 5;   /* (it takes the host's saves) */
+			memcpy (why + wn, "\0rb", 3); wn += 3;     /* (it runs on guesses: rollback) */
 			memcpy (why + wn, "\0uvm2:", 6); wn += 6; const size_t k = strlen (nv_uvm2); memcpy (why + wn, nv_uvm2, k); wn += k; }
 		for (int i = 0; i < 5; i++) nv_send (ok ? 'A' : 'N', why, wn);
 		if (!ok) { snprintf (nv_err, sizeof nv_err, bad_bios ? "your BIOS (bios.bin) is not the host's - online both need the same one" : "you do not have the game"); nv_phase = NV_ENDED; } else { nv_accepted = 1;

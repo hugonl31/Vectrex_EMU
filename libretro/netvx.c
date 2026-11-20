@@ -127,7 +127,7 @@ static long nv_n_rb, nv_n_rbf, nv_n_pred; static int64_t nv_reset_lastf = -1;
 static int nv_rb_ports[NV_RB_SLOTS][2]; static unsigned long long nv_rb_ctr[NV_RB_SLOTS][5];   /* (with each saved frame: the ports taken,
                                                  the frame counters outside the state - as the running game's state sent to a joiner) */
 static int nv_in_differ (const nv_in *a, const nv_in *b) { return a->jx != b->jx || a->jy != b->jy || a->b != b->b || a->fl != b->fl; }
-static int nv_stream, nv_stream_peer, nv_st_tgt = 2, nv_st_buf; static double nv_st_calm, nv_st_gap_max, nv_st_gap_recent; static long nv_st_n_dry;   /* (run dry: how often, the longest gap between two frames in) */   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static int nv_stream, nv_stream_peer, nv_st_tgt = 2, nv_st_buf, nv_stq_n; static double nv_st_calm, nv_st_gap_max, nv_st_gap_recent; static long nv_st_n_dry;   /* (run dry: how often, the longest gap between two frames in) */   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
 static void nv_st_on_piece (const unsigned char *b, size_t n); static void nv_st_on_input (const unsigned char *b, size_t n); static void nv_ports_take (int side, unsigned char fl); static void nv_st_clear (void);
 static size_t vx_save_to (unsigned char *d); static bool vx_load_from (const void *d, size_t sz); static void vx_state_init (void); static void nv_sum_send (uint32_t f, uint32_t h); static void vx_rb_keep (int back);
 static int nv_dly = 3, nv_their_dly, nv_st_run, nv_st_ep; static double nv_st_t0, nv_calm_t0;   /* (this side's input delay now - it grows when the
@@ -405,6 +405,9 @@ int vx_net_diag (char *o, int n)
 }
 double netvx_pace (void)
 {
+	if (nv_stream && nv_role == 2) {                              /* (streamed, player 2: frames waiting beyond the buffer - up to 25 % faster) */
+		nv_lock (); const int over = nv_stq_n - (nv_st_tgt + 1); nv_unlock ();
+		if (over <= 0) return 0.0; const double u = -0.06 * over; return u > -0.25 ? u : -0.25; }
 	nv_lock (); const double ahead = (nv_adv - nv_adv_them) / 2.0; const uint32_t f = nv_f; nv_unlock ();
 	if (f < 100) return 0.0;
 	if (ahead < -1.5) { const double u = (ahead + 1.5) * 0.02; return u > -0.10 ? u : -0.10; }   /* (behind - a moment's halt, the overlay switched on the
@@ -932,7 +935,7 @@ static unsigned char nv_st_raw[64 + NV_ST_MAXL * 26 + NV_ST_MAXA], nv_st_z[sizeo
 typedef struct { uint32_t fno; int nd, got, done; size_t zlen, rawn, csz; unsigned char mask[NV_ST_MAXC]; unsigned char *buf, *par; } nv_stasm_t;
 static nv_stasm_t nv_sta[6];
 typedef struct { uint32_t fno; unsigned long long p0, tc; int nl, na; line_t *L; int16_t *a; } nv_stfr_t;
-static nv_stfr_t nv_stq[16]; static int nv_stq_n, nv_st_started; static uint32_t nv_st_last; static long nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static nv_stfr_t nv_stq[16]; static int nv_st_started; static uint32_t nv_st_last; static long nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
 static nv_in nv_st_in; static uint32_t nv_st_in_seq; static int nv_st_in_ok; static unsigned char nv_st_resets, nv_st_resets_done, nv_st_take_seq, nv_st_take_val, nv_st_take_done;
 static unsigned char nv_st_my_resets, nv_st_my_take_seq, nv_st_my_take_val; static uint32_t nv_st_out_seq; static uint32_t nv_st_fno;
 static void nv_st_put16 (unsigned char *p, unsigned v) { p[0] = (unsigned char) v; p[1] = (unsigned char) (v >> 8); }
@@ -1077,7 +1080,8 @@ static void netvx_stream_guest (void)
 		else { nv_unlock (); nv_st_n_ref++; run_t = total_cycles; emu_stood = nv_st_started; return; } }
 	if (nv_now () - nv_st_calm > 6.0 && nv_st_tgt > 2 && nv_st_tgt > (int) (nv_st_gap_recent / 0.02) + 1) { nv_st_tgt--; nv_st_calm = nv_now (); }   /* (not below what the recent waits need) */
 	int k = 0;
-	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || (nv_stq_n > nv_st_tgt + 1 && k < 2)) && k < 8) {
+	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t) && (k < 1 || !nv_st_started)) {   /* (one a refresh at most: two in one
+	                                                 picture flickered - a game drawing on alternate frames; ahead of the buffer, netvx_pace plays a little faster) */
 		nv_stfr_t q = nv_stq[0]; memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--;
 		nv_unlock ();
 		memcpy (last, q.L, sizeof (line_t) * (size_t) q.nl); nlast = q.nl; total_cycles = q.tc;

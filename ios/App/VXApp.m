@@ -156,12 +156,13 @@ static void vxa_opts_set (const struct retro_variable *v)
 	}
 	vxa_opts_defaults ();
 }
-/* a real 4:3 screen (an iPad Pro 13", the Nova's 1280 x 960 - not the 1.44 of an iPad Air / iPad, nor the mini's 1.52): upright the picture takes all its width -
- * the top bar hides itself and the deck pops up by default (as the Android app) */
+/* the top bar and the full deck do not both fit (upright, the picture at its full width - 5 % less allowed): the bar hides
+ * itself and the deck pops up by default. Fit: the iPhones, an iPad / iPad Air (1180 pt), an iPad mini, an 11-inch iPad Pro;
+ * not: a 13-inch iPad Pro (4:3), a square screen - the Nova's 4:3 in the Android app alike */
 int vxa_squarish (void)
 {
-	CGSize s = UIScreen.mainScreen.nativeBounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
-	return b > 0 && a >= 1.2 * b && a < 1.4 * b;   /* (4:3 only - a square screen as any other) */
+	CGSize s = UIScreen.mainScreen.bounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
+	return b > 0 && a < b * 1.278 * 0.95 + 56 + 58 + 30;   /* (the picture 1.278 x its width high; the bar's row, the deck, the safe edges) */
 }
 static void vxa_opts_defaults (void)
 {

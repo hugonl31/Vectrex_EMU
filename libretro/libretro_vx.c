@@ -461,7 +461,7 @@ static const struct vx_opt OPTS[] = {
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|ultra|high|medium|low|basic" },
 #if VX_DECK_AUTO                                 /* (every RetroArch: auto - the slim pop-up on a real 4:3 screen, as the apps) */
-	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom. Auto: pop-up on a real 4:3 screen (the Nova, a 13-inch iPad), else off.", "auto|off|full|slim|pop-up" },
+	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom. Auto: pop-up where the deck does not fit below the picture (4:3, square), else off.", "auto|off|full|slim|pop-up" },
 #else
 	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom.", "off|full|slim|pop-up" },
 #endif
@@ -2388,7 +2388,7 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 static int deck_auto_mode (void)
 {
 	const int a = scr_w > scr_h ? scr_w : scr_h, b = scr_w > scr_h ? scr_h : scr_w;
-	return b > 0 && a >= 1.2 * b && a < 1.4 * b ? 3 : 0;   /* (4:3 only - 5:4 to 1.4; a square screen (RGB30, 1:1) as any other) */
+	return b > 0 && a < 1.4 * b ? 3 : 0;   /* (the deck does not fit below the picture: a 4:3 or a square screen (RGB30) - the pop-up) */
 }
 int vx_app_pich;                                /* (the own iOS app: the picture height it has room for, px; 0: the screen's) */
 int vx_app_noshape;                            /* (set by a host that lays out the picture itself: the deck block exactly the

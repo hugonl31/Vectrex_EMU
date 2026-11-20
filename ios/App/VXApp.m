@@ -186,10 +186,16 @@ static void vxa_opts_defaults (void)
 	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (once, 1.7.6 (104), an iPad only: a screen that is not 4:3 - an iPad Air / iPad, 1.44 - had the
 	                                              4:3 defaults (the bar hiding, the deck popping up): those taken back, the phone's layout fits) */
 	  if (![u boolForKey:@"app.layout2"]) { [u setBool:YES forKey:@"app.layout2"];
-		if (!vxa_squarish () && UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) { [u removeObjectForKey:@"app.topbar"]; [u removeObjectForKey:@"app.deckpop"];
+		if (!vxa_squarish () && UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) { [u removeObjectForKey:@"app.topbar"]; [u removeObjectForKey:@"app.bar"]; [u removeObjectForKey:@"app.deckpop"];
 			if (dk >= 0 && !strcmp (vxa_opt[dk].val, "pop-up")) { snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", "full"); [u removeObjectForKey:@"opt.vectrex_emu_deck"]; }
 			vlog ("layout: this screen is not 4:3 - the top bar and the deck as a phone's"); } } }
-	const char *dd = vxa_squarish () ? "slim" : "full";   /* (no room for the full deck with the bar: slim - shown, or popping up) */
+	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (once, 1.7.6 (108): the deck and the top bar to Auto - values kept from before it existed) */
+	  if (![u boolForKey:@"app.auto1"]) { [u setBool:YES forKey:@"app.auto1"]; [u removeObjectForKey:@"opt.vectrex_emu_deck"]; [u removeObjectForKey:@"app.deckpop"];
+		[u removeObjectForKey:@"app.topbar"]; [u removeObjectForKey:@"app.bar"]; if (dk >= 0) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", "auto"); vlog ("deck and top bar: Auto (once)"); } }
+	const char *dd = "auto";   /* (Auto: this screen's - full, slim, popping up; vxa_deck_style) */
+	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (the top bar's setting as Auto / Shown / Auto-hide: an older one carried over) */
+	  if (![u stringForKey:@"app.bar"] && [u stringForKey:@"app.topbar"]) [u setObject:[[u stringForKey:@"app.topbar"] isEqualToString:@"auto"] ? @"hide" : @"always" forKey:@"app.bar"];
+	  [u removeObjectForKey:@"app.topbar"]; }
 	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "%s", dd);   /* (the app's default - what Reset gives back) */
 	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", dd);
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
@@ -1034,8 +1040,7 @@ static void vxa_set_opt (int i, NSString *v)
  * the picture, it fades 3 s after it was last shown; a tap at the top of the screen brings it back */
 - (BOOL) barAuto
 {
-	NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"];
-	return m ? [m isEqualToString:@"auto"] : vxa_tight () != 0;
+	extern int vxa_bar_hides (void); return vxa_bar_hides () != 0;
 }
 - (void) showBar
 {
@@ -1220,23 +1225,27 @@ void vxa_oset (int i, const char *v)
 	if (i < 0 || i >= vxa_nopt || !strcmp (vxa_opt[i].val, v)) return;
 	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v); vxa_opt_store (i); vxa_opt_dirty = 1; vlog ("setting %s = %s (memory %.0f MB)", vxa_opt[i].key, v, vxa_mem_mb ());
 }
-/* the control deck (Settings > App): its look - 0 off, 1 full, 2 slim - and whether it pops up (an app setting of its own;
- * the old value "pop-up": slim, popping up) */
-int vxa_deck_style (void)
+/* the control deck (Settings > App): Auto (the default: what fits this screen - full, slim, slim popping up), Off, Full,
+ * Slim, and whether a full / slim one pops up (an app setting of its own; the old value "pop-up": slim, popping up) */
+static const char *vxa_deck_val (void) { int i = vxa_opt_find ("vectrex_emu_deck"); return i >= 0 ? vxa_opt[i].val : "auto"; }
+int vxa_deck_sel (void) { const char *d = vxa_deck_val (); return !strcmp (d, "off") ? 1 : !strcmp (d, "full") ? 2 : !strcmp (d, "slim") || !strcmp (d, "pop-up") ? 3 : 0; }   /* (0 Auto, 1 Off, 2 Full, 3 Slim) */
+int vxa_deck_style (void)                     /* (0 off, 1 full, 2 slim) */
 {
-	int i = vxa_opt_find ("vectrex_emu_deck"); if (i < 0) return 1; const char *d = vxa_opt[i].val;
-	return !strcmp (d, "off") ? 0 : !strcmp (d, "slim") || !strcmp (d, "pop-up") ? 2 : 1;
+	const int s = vxa_deck_sel (); return s == 0 ? (vxa_squarish () ? 2 : 1) : s == 1 ? 0 : s == 2 ? 1 : 2;
 }
 int vxa_deck_pop (void)
 {
-	int i = vxa_opt_find ("vectrex_emu_deck"); if (i >= 0 && !strcmp (vxa_opt[i].val, "pop-up")) return 1;
-	NSNumber *p = [NSUserDefaults.standardUserDefaults objectForKey:@"app.deckpop"]; return p ? p.boolValue : vxa_popdef () != 0;
+	const int s = vxa_deck_sel (); if (s == 0) return vxa_popdef () != 0; if (!strcmp (vxa_deck_val (), "pop-up")) return 1;
+	return [NSUserDefaults.standardUserDefaults boolForKey:@"app.deckpop"];
 }
-void vxa_deck_set (int style, int pop)
+void vxa_deck_set (int sel, int pop)
 {
-	int i = vxa_opt_find ("vectrex_emu_deck"); vxa_oset (i, style == 0 ? "off" : style == 2 ? "slim" : "full");
-	[NSUserDefaults.standardUserDefaults setBool:pop != 0 forKey:@"app.deckpop"]; vlog ("deck %s%s", style == 0 ? "off" : style == 2 ? "slim" : "full", pop ? ", pop-up" : "");
+	static const char *const V[4] = { "auto", "off", "full", "slim" }; if (sel < 0 || sel > 3) sel = 0;
+	vxa_oset (vxa_opt_find ("vectrex_emu_deck"), V[sel]); [NSUserDefaults.standardUserDefaults setBool:pop != 0 forKey:@"app.deckpop"]; vlog ("deck %s%s", V[sel], sel >= 2 && pop ? ", pop-up" : "");
 }
+/* the top bar (Settings > App): Auto (the default: shown where it fits, else hiding itself), Shown, Auto-hide */
+int vxa_bar_sel (void) { NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.bar"]; return [m isEqualToString:@"always"] ? 1 : [m isEqualToString:@"hide"] ? 2 : 0; }
+int vxa_bar_hides (void) { const int s = vxa_bar_sel (); return s == 2 || (s == 0 && vxa_tight ()); }
 int vxa_ncats (void) { return vxa_ncat; }
 const char *vxa_ckey (int i) { return vxa_cat[i].key; }
 const char *vxa_cdesc (int i) { return vxa_cat[i].desc; }

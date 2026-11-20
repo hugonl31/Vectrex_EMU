@@ -222,23 +222,23 @@ static UITableViewCell *vxs_cell (NSString *title)
 	c.textLabel.text = title; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; return c;
 }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s ? @(vxa_cdesc (_cats[(NSUInteger) s - 1].intValue)).uppercaseString : @"APP"; }
-- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Top bar auto-hide: tap the top of the screen to bring it back. Control deck: below the picture; pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away."; }
+- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Auto: what fits this screen with the picture at its full width. Top bar auto-hide: tap the top of the screen to bring it back. Deck pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
 	const NSInteger R = vxs_app (ip); __weak VXSettings *ws = self;
 	if (R == 7) {                                   /* (the control deck: its look) */
-		extern int vxa_deck_style (void), vxa_deck_pop (void); extern void vxa_deck_set (int, int);
-		UITableViewCell *c = vxs_cell (@"Control deck"); UISegmentedControl *sg = vxs_seg (@[ @"Off", @"Full", @"Slim" ], vxa_deck_style ());
+		extern int vxa_deck_sel (void), vxa_deck_pop (void); extern void vxa_deck_set (int, int);
+		UITableViewCell *c = vxs_cell (@"Control deck"); UISegmentedControl *sg = vxs_seg (@[ @"Auto", @"Off", @"Full", @"Slim" ], vxa_deck_sel ());
 		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set ((int) ((UISegmentedControl *) a.sender).selectedSegmentIndex, vxa_deck_pop ());
 			[ws.tableView reloadRowsAtIndexPaths:@[ [NSIndexPath indexPathForRow:3 inSection:0] ] withRowAnimation:UITableViewRowAnimationNone]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sg; return c; }
 	if (R == 8) {                                   /* (the deck pops up: hidden until the picture's bottom is tapped) */
-		extern int vxa_deck_style (void), vxa_deck_pop (void); extern void vxa_deck_set (int, int);
-		UITableViewCell *c = vxs_cell (@"Deck pop-up"); UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_deck_pop () != 0; sw.enabled = vxa_deck_style () != 0;
+		extern int vxa_deck_sel (void), vxa_deck_pop (void); extern void vxa_deck_set (int, int);
+		UITableViewCell *c = vxs_cell (@"Deck pop-up"); UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_deck_pop () != 0; sw.enabled = vxa_deck_sel () >= 2;   /* (Auto: its own choice, shown) */
 		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_style (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
+		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_sel (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
 	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
 		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");
@@ -280,12 +280,11 @@ static UITableViewCell *vxs_cell (NSString *title)
 	if (R == 1) {                                   /* (the quick bar: its own row, or hiding itself over the picture) */
 		UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"bar"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"bar"];
 		c.textLabel.text = @"Top bar"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
-		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Always", @"Auto-hide" ]];
-		NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"]; BOOL au = m ? [m isEqualToString:@"auto"] : vxa_tight () != 0;
-		sg.selectedSegmentIndex = au ? 1 : 0; sg.selectedSegmentTintColor = VX_SEL; [sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
+		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Auto", @"Shown", @"Auto-hide" ]];
+		extern int vxa_bar_sel (void); sg.selectedSegmentIndex = vxa_bar_sel (); sg.selectedSegmentTintColor = VX_SEL; [sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal];
-		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISegmentedControl *) a.sender).selectedSegmentIndex == 1;
-			[NSUserDefaults.standardUserDefaults setObject:on ? @"auto" : @"always" forKey:@"app.topbar"]; ulog ([NSString stringWithFormat:@"top bar %@", on ? @"auto-hide" : @"always"]);
+		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger k = ((UISegmentedControl *) a.sender).selectedSegmentIndex;
+			[NSUserDefaults.standardUserDefaults setObject:k == 1 ? @"always" : k == 2 ? @"hide" : @"auto" forKey:@"app.bar"]; ulog ([NSString stringWithFormat:@"top bar %@", k == 1 ? @"shown" : k == 2 ? @"auto-hide" : @"auto"]);
 			if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)]; }] forControlEvents:UIControlEventValueChanged];
 		[sg sizeToFit]; c.accessoryView = sg; return c; }
 	if (R == 0) {                                   /* (the clock and battery: iOS's own status bar) */
@@ -311,7 +310,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 		[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
 		[a addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x) { (void) x; int n = 0;
 			for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
-			[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.topbar"];   /* (the deck's pop-up and the top bar too: this screen's defaults) */
+			[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.bar"];   /* (the deck's pop-up and the top bar too: Auto) */
 			if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)];
 			ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); [ws.tableView reloadData]; }]];
 		[self presentViewController:a animated:YES completion:nil]; return; }

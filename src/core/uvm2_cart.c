@@ -50,6 +50,8 @@ void uvm2_power_on (void)
 	uvm2_fault_told = 0; uvm2_rd_valid = 0;
 }
 
+/* another game: the chip out (its thread too - it kept a core busy in the next games, the iPhone 2026-11-20) */
+void uvm2_close (void) { if (uvm2) { rp_destroy (uvm2); uvm2 = NULL; } }
 int uvm2_open (const char *path)
 {
 	FILE *f = fopen (path, "rb");

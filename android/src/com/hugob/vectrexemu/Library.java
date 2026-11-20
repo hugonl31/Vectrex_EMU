@@ -94,7 +94,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 		grid.setOnItemClickListener ((par, v, pos, id) -> play (pos));
 		grid.setAdapter (adapter); addView (grid, new LayoutParams (-1, 0, 1));
 		paintLooks (); sizeLabel (); reload (); apply ();
-		post (() -> { int cur = current (); if (cur >= 0) grid.setSelection (Math.max (0, cur - Math.max (1, perRow ()))); });
+		post (() -> { int cur = current (); if (cur >= 0) { sel = cur; adapter.notifyDataSetChanged (); grid.setSelection (Math.max (0, cur - Math.max (1, perRow ()))); } });   /* (opened at the game playing, selected) */
 	}
 	@Override public void closed () { cache.evictAll (); }
 	/* the keys and the pad (Input.java hands a controller's here as the arrows, Page Up / Down, Enter): the highlight -

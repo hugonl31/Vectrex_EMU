@@ -158,6 +158,9 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"float lum(vec3 c) { return max(max(c.r, c.g), c.b); }\n"
 	"uniform float hk;\n"   /* (HDR: as PH_FS_OUT) */
+	"uniform float hl;\n"   /* (HDR, the whole picture (the own iOS app's default): the brighter a part, the closer to the screen's peak -
+	                           black stays black, the faint trail nearly as it was; 0: only the rests above white) */
+	"vec3 hlift(vec3 k) { if (hl < 0.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
 	"vec3 knee(vec3 c) { return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
 	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
 	                                                   through the overlay's colour; softly up to the screen's peak) */
@@ -206,7 +209,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    c += e; }\n"
 	"  c = sqrt(c * c + max(l * l - l0 * l0, 0.0) * tm * tm);\n"   /* (the afterglow added as light: the sheet's own light lifts it no more -
 	                                              added on it as a screen value it did, 2026-11-19; with no afterglow the picture as before) */
-	"  fragc = vec4((hdrx(knee(c), hx, m) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
+	"  fragc = vec4((min(hdrx(hlift(knee(c)), hx, m), vec3(max(hk, 1.0))) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ox_prog (const char *vsrc, const char *a, const char *b)
 {
@@ -391,7 +394,7 @@ static int ox_draw (int glow, double dt)
 	glUniform4f_ (ph_ul (ox_sheet, "pen"), 0.45f, 0.85f, 1.5f, 0.0f);
 	glUniform4f_ (ph_ul (ox_sheet, "rlp"), 0.0f, 0.0f, hh, scr ? ovfx.ovl : 0.0f);
 	glUniform3f_ (ph_ul (ox_sheet, "lpos"), fxp, fyp, 0.42f); glUniform3f_ (ph_ul (ox_sheet, "pic"), FW / 2.0f, FH / 2.0f, hh);
-	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f);
+	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); { extern float vx_hdr_lift; OU1F (ox_sheet, "hl", vx_hdr_lift); }
 	if (scr && ovfx.ovl > 0) {                                     /* (roomlight.flat_points: the light's area as six points) */
 		static float key_x = -1, key_y = -1, pts[12];
 		if (key_x != g_lamp_x || key_y != g_lamp_y) { key_x = g_lamp_x; key_y = g_lamp_y; rl_flat_points (g_lamp_x, g_lamp_y, pts); }

@@ -398,7 +398,7 @@ static unsigned long long nv_dg_tc; static double nv_dg_t;
 int vx_net_diag (char *o, int n)
 {
 	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood, %ld guessed, %ld rollbacks (%ld frames again), %.2f s emulated in %.2f s%s",
-		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood, nv_n_pred, nv_n_rb, nv_n_rbf, (double) (total_cycles - nv_dg_tc) / 1.5e6, nv_now () - nv_dg_t, nv_rb_on ? "" : " - lockstep"); nv_dg_tc = total_cycles; nv_dg_t = nv_now ();
+		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood, nv_n_pred, nv_n_rb, nv_n_rbf, (total_cycles >= nv_dg_tc ? (double) (total_cycles - nv_dg_tc) / 1.5e6 : 0.0), nv_now () - nv_dg_t, nv_rb_on ? "" : " - lockstep"); nv_dg_tc = total_cycles; nv_dg_t = nv_now ();
 	nv_n_wait = nv_n_stood = nv_n_frames = nv_n_pred = nv_n_rb = nv_n_rbf = 0;
 	if (nv_stream && r > 0 && r < n) { const int r2 = snprintf (o + r, (size_t) (n - r), " - streamed: %ld frames came, %ld left out, %ld lost, %ld pieces repaired; %ld of %ld refreshes a new frame (%ld more than one); buffer %d, ran dry %ld, longest gap between frames in %.0f ms", nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_fix, nv_st_n_new, nv_st_n_ref, nv_st_n_two, nv_st_tgt, nv_st_n_dry, nv_st_gap_max * 1000); nv_st_n_got = nv_st_n_drop = nv_st_n_lost = nv_st_n_ref = nv_st_n_new = nv_st_n_two = nv_st_n_fix = nv_st_n_dry = 0; nv_st_gap_max = 0; nv_unlock (); return r2 > 0 ? r + r2 : r; }
 	nv_unlock (); return r;

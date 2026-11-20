@@ -207,9 +207,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 10; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 11; }
 /* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, HDR, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[10] = { 0, 1, 7, 8, 9, 2, 3, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 9 ? -1 : m[ip.row]; }
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[11] = { 0, 1, 7, 8, 9, 2, 3, 10, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 10 ? -1 : m[ip.row]; }
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
@@ -239,6 +239,16 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UITableViewCell *c = vxs_cell (@"Deck pop-up"); UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_deck_pop () != 0; sw.enabled = vxa_deck_sel () >= 2;   /* (Auto: its own choice, shown) */
 		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_sel (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sw; return c; }
+	if (R == 10) {                                  /* (HDR: the whole picture lifted towards the screen's peak, or only the brightest rests above white) */
+		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void);
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"HDR: whole picture"; c.textLabel.textColor = VX_FG;
+		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
+		NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrlift"]; const BOOL on = !wl || wl.boolValue, can = vxa_hdr_headroom () > 1.05;
+		c.detailTextLabel.text = !can ? @"Not on this screen (it shows no HDR)" : on ? @"Lines and dots brighter, up to the screen's peak" : @"Only the brightest dots above white";
+		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = on; sw.enabled = can;
+		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const BOOL v = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:v forKey:@"app.hdrlift"];
+			ulog ([NSString stringWithFormat:@"HDR whole picture %@", v ? @"on" : @"off"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
 	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
 		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");

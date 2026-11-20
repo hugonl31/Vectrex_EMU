@@ -565,6 +565,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 /* ------------------------------------------------ the game menu: a sheet from below, the game paused above it */
 @interface VXGameMenu : UIViewController <UIAdaptivePresentationControllerDelegate>
 @property (nonatomic, weak) UIViewController *game;
+@property (nonatomic, strong) UIStackView *all;
+- (CGFloat) fitHeight:(CGFloat)w;
 @end
 @implementation VXGameMenu
 - (void) presentationControllerDidDismiss:(UIPresentationController *)p { ulog (@"game menu swiped away"); vxa_hold (0); }
@@ -612,12 +614,18 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 		c.baseForegroundColor = VX_FG2; b.configuration = c; [b.heightAnchor constraintEqualToConstant:40].active = YES; }
 	UIStackView *hwr = [[UIStackView alloc] initWithArrangedSubviews:@[ ej, pb ]]; hwr.distribution = UIStackViewDistributionFillEqually; hwr.spacing = 8;
 	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ head, st, slots, stn, acts, allb, onl, hw, hwr ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 14;
-	[all setCustomSpacing:24 afterView:onl];
+	[all setCustomSpacing:24 afterView:onl]; self.all = all;
 	UIScrollView *sc = [UIScrollView new]; sc.translatesAutoresizingMaskIntoConstraints = NO; all.translatesAutoresizingMaskIntoConstraints = NO; [sc addSubview:all]; [self.view addSubview:sc];
 	[NSLayoutConstraint activateConstraints:@[ [sc.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:24], [sc.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
 		[sc.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor], [sc.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
 		[all.topAnchor constraintEqualToAnchor:sc.contentLayoutGuide.topAnchor], [all.bottomAnchor constraintEqualToAnchor:sc.contentLayoutGuide.bottomAnchor constant:-24],
 		[all.leadingAnchor constraintEqualToAnchor:sc.frameLayoutGuide.leadingAnchor constant:16], [all.trailingAnchor constraintEqualToAnchor:sc.frameLayoutGuide.trailingAnchor constant:-16] ]];
+}
+- (CGFloat) fitHeight:(CGFloat)w   /* (the whole menu's height: the sheet opens that tall, all of it seen) */
+{
+	[self loadViewIfNeeded];
+	return ceil ([self.all systemLayoutSizeFittingSize:CGSizeMake (w - 32, UILayoutFittingCompressedSize.height) withHorizontalFittingPriority:UILayoutPriorityRequired
+		verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height) + 24 + 24;
 }
 @end
 
@@ -642,7 +650,13 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	if ([self busy:vc]) return; ulog (@"game menu opened"); vxa_hold (1);
 	VXGameMenu *m = [VXGameMenu new]; m.game = vc; m.modalPresentationStyle = UIModalPresentationPageSheet; m.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
 	UISheetPresentationController *s = m.sheetPresentationController;
-	s.detents = @[ UISheetPresentationControllerDetent.mediumDetent, UISheetPresentationControllerDetent.largeDetent ]; s.prefersGrabberVisible = YES; s.preferredCornerRadius = 22;
+	if (@available (iOS 16.0, *)) {   /* (as tall as the menu: everything down to the hardware row seen; scrolls when the screen is smaller) */
+		__weak VXGameMenu *wm = m; __weak UIViewController *wv = vc;
+		s.detents = @[ [UISheetPresentationControllerDetent customDetentWithIdentifier:@"vxfit" resolver:^CGFloat (id<UISheetPresentationControllerDetentResolutionContext> ctx) {
+			CGFloat w = wm.view.bounds.size.width > 100 ? wm.view.bounds.size.width : wv.view.bounds.size.width;
+			return MIN (ctx.maximumDetentValue, [wm fitHeight:w]); }] ];
+	} else s.detents = @[ UISheetPresentationControllerDetent.largeDetent ];
+	s.prefersGrabberVisible = YES; s.preferredCornerRadius = 22;
 	m.presentationController.delegate = m; [vc presentViewController:m animated:YES completion:nil];
 }
 + (void) showSettingsFrom:(UIViewController *)vc { [self showSettingsFrom:vc at:-1]; }

@@ -1072,7 +1072,10 @@ static void vxa_set_opt (int i, NSString *v)
 {
 	if ([self barAuto] && _bar.alpha < 0.5) for (UITouch *t in ts) if ([t locationInView:self.view].y < self.view.safeAreaInsets.top + 70) { vlog ("top tapped: the quick bar"); [self showBar]; return; }
 	if ([self deckMode] == 3 && _deck.hidden && _pic.size.width > 0) for (UITouch *t in ts) { CGPoint p = [t locationInView:self.view];   /* (the pop-up deck: a tap on the picture's foot) */
-		if (p.x >= CGRectGetMinX (_pic) && p.x <= CGRectGetMaxX (_pic) && p.y >= CGRectGetMaxY (_pic) - 70 && p.y <= CGRectGetMaxY (_pic) + 10) { [self popOpen]; return; } }
+		/* (the picture's foot or the room under it - never a touch for the stick or a button: on the iPad they lie over
+		 *  the picture's foot, and a press on 3 / 4 opened the deck instead) */
+		BOOL onCtl = NO; if (!_ctl.hidden) { for (int i = 0; i < 4; i++) if (CGRectContainsPoint (CGRectInset (_btnR[i], -8, -8), p)) onCtl = YES; if (CGRectContainsPoint (_stickZone, p)) onCtl = YES; }
+		if (!onCtl && p.x >= CGRectGetMinX (_pic) && p.x <= CGRectGetMaxX (_pic) && p.y >= CGRectGetMaxY (_pic) - 70 && p.y <= CGRectGetMaxY (_pic) + 80) { [self popOpen]; return; } }
 	for (UITouch *t in ts) {
 		CGPoint p = [t locationInView:self.view]; NSString *what = @"nothing";
 		if (!_ctl.hidden) {

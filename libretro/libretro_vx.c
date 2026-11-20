@@ -2331,13 +2331,13 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		} else if (!zl[i]) {
 			double ee = lp > 1e-9 ? cyc / (lp / gp) : 1e9;
 			kk = opt_speedb ? BEAM_LINE * (1.0 - BEAM_SPEED * exp (-ee / 0.8)) : BEAM_LINE * (1.0 - 0.5 * BEAM_SPEED);
-			{ extern float vx_hdr_lift, vx_hdr_ee, vx_hdr_eq, vx_hdr_ec; if (vx_hdr_lift > 1.5f && vx_hdr_peak > 1.0f && ee > vx_hdr_ee) kk *= pow (fmin (ee / vx_hdr_ee, vx_hdr_ec), vx_hdr_eq); }   /* (HDR, the Vectrex look:
+			{ extern float vx_hdr_lift, vx_hdr_ee, vx_hdr_eq, vx_hdr_ec; if (vx_hdr_lift > 1.5f && ee > vx_hdr_ee) kk *= pow (fmin (ee / vx_hdr_ee, vx_hdr_ec), vx_hdr_eq); }   /* (HDR, the Vectrex look:
 			                                                  a slow line brighter by the beam's time on it - a real tube, the test cartridge's bars) */
 		} else if (!opt_dots) {                   /* (corner dots off: the resting spot as faint as a line's) */
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
 			kk = BEAM_DOTMAX * (cyc / BEAM_DOTC < 1 ? cyc / BEAM_DOTC : 1); dot = 1;
-			{ extern float vx_hdr_lift, vx_hdr_dk; if (vx_hdr_peak > 1.0f) { if (vx_hdr_lift > 1.5f) kk *= vx_hdr_dk; else hx = hdr_rest (cyc) * zk; } }   /* (HDR: above white, the rest's own light - with the slow beam round it) */
+			{ extern float vx_hdr_lift, vx_hdr_dk; if (vx_hdr_lift > 1.5f) kk *= vx_hdr_dk; else if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk; }   /* (HDR: above white, the rest's own light - with the slow beam round it) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
 			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);

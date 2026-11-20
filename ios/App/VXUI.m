@@ -244,10 +244,10 @@ static UITableViewCell *vxs_cell (NSString *title)
 		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void);
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"HDR look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl ? wl.integerValue : 2; const BOOL can = vxa_hdr_headroom () > 1.05;
-		c.detailTextLabel.text = !can ? @"Not on this screen (it shows no HDR)" : md == 2 ? @"As a real Vectrex: slow lines and dots far brighter than the rest" : md == 1 ? @"Lines and dots up to the screen's peak" : @"As SDR: bright overall, the brightest held back";
+		const BOOL can = vxa_hdr_headroom () > 1.05; NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl ? wl.integerValue : can ? 2 : 0; if (!can) c.textLabel.text = @"Look";
+		c.detailTextLabel.text = !can ? (md == 2 ? @"Vectrex: the lines lower, the slow ones and the dots brighter" : @"Bright: the brightest held back (no HDR here)") : md == 2 ? @"As a real Vectrex: slow lines and dots far brighter than the rest" : md == 1 ? @"Lines and dots up to the screen's peak" : @"As SDR: bright overall, the brightest held back";
 		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Vectrex", @"Bright", @"Whole" ]];
-		sg.selectedSegmentIndex = md == 2 ? 0 : md == 0 ? 1 : 2; sg.enabled = can; sg.selectedSegmentTintColor = VX_G;
+		sg.selectedSegmentIndex = md == 2 ? 0 : md == 0 ? 1 : 2; sg.enabled = YES; if (!can) [sg setEnabled:NO forSegmentAtIndex:2]; sg.selectedSegmentTintColor = VX_G;
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG } forState:UIControlStateNormal];
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: UIColor.blackColor } forState:UIControlStateSelected];
 		[sg sizeToFit];

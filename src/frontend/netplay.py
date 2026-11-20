@@ -1058,18 +1058,23 @@ class NetPlay:
         the time to show has passed, a second one may go too"""
         self._drain()
         now = time.perf_counter()                           # (a small playout buffer, as the apps': shown once st_tgt frames are here;
-        tgt = getattr(self, 'st_tgt', 2)                     #  run dry - one more, up to 6; 15 calm seconds - one less)
+        tgt = getattr(self, 'st_tgt', 2)                     #  run dry - one more, up to 6; 6 calm seconds - one less)
         if getattr(self, 'st_buf', True):
             if len(self.st_q) < tgt:
                 return None
             self.st_buf = False; self.st_calm = now
-        if now - getattr(self, 'st_calm', now) > 15.0 and tgt > 2:
+        if now - getattr(self, 'st_calm', now) > 6.0 and tgt > 2:
             self.st_tgt = tgt = tgt - 1; self.st_calm = now
         while len(self.st_q) > tgt + 6:
             self.st_q.pop(0); self.st_drop += 1
-        if not self.st_q:
-            self.st_buf = True; self.st_tgt = min(6, tgt + 1); self.st_calm = now
+        if not self.st_q:                                   # (none for more than a frame (20 ms): run dry - a few ms late is the
+            t0 = getattr(self, 'st_empty_t', None)          #  host's own rhythm, not counted)
+            if t0 is None:
+                self.st_empty_t = now
+            elif now - t0 > 0.02:
+                self.st_empty_t = None; self.st_buf = True; self.st_tgt = min(6, tgt + 1); self.st_calm = now
             return None
+        self.st_empty_t = None
         fno, payload = self.st_q.pop(0); self.st_last = fno
         return payload
 

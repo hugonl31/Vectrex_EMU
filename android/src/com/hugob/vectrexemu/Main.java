@@ -195,11 +195,13 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	@Override protected void onDestroy () { super.onDestroy (); Adhoc.stop (this); log ("the app ends"); }
 	@Override public void onRequestPermissionsResult (int code, String[] perms, int[] res) { if (code == 7) Adhoc.onPermission (this, res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED); }
 
-	/* a 4:3-ish screen (the Nova's 1280 x 960; an iPad's, as the iOS app): upright, the picture takes all its width - the bar hides itself, the deck pops up */
+	/* the top bar and the full deck do not both fit (upright, the picture at its full width - 5 % less allowed): the bar hides
+	 * itself, the deck pops up by default - as the iOS app (a phone fits; the Nova's 4:3, a square screen not) */
 	boolean squarish ()
 	{
 		android.util.DisplayMetrics dm = new android.util.DisplayMetrics (); getWindowManager ().getDefaultDisplay ().getRealMetrics (dm);
-		final int a = Math.max (dm.widthPixels, dm.heightPixels), b = Math.min (dm.widthPixels, dm.heightPixels); return a >= 1.2f * b && a < 1.4f * b;   /* (4:3 only - a square screen (RGB30, 1:1) as any other) */
+		final float a = Math.max (dm.widthPixels, dm.heightPixels) / dm.density, b = Math.min (dm.widthPixels, dm.heightPixels) / dm.density;
+		return b > 0 && a < b * 1.278f * 0.95f + 70 + 58 + 30;   /* (dp: the picture 1.278 x its width high; the bar's row, the deck, the safe edges) */
 	}
 	String defaults ()
 	{

@@ -1992,7 +1992,7 @@ static void frame_push (unsigned long long p0)
 	                                              VecDoom's 66 a second were all joined, 2 ms a refresh on the Nova) */
 	  if (nh && !vt_imager && !vt_uvm2 && !vt_pitrex) {
 		gframe *h = &hist[nh - 1]; const double pt = nh > 1 ? hist[nh - 2].t : have_prev ? prevf.t : -1;
-		if (pt >= 0 && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
+		if (pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
 			const unsigned sh = (unsigned) (p0 - h->p0);
 			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
 			h->n += nlast; h->t = total_cycles / 1.5e6; frame_keys (h);
@@ -2538,14 +2538,16 @@ static void run_t_next (void)               /* (the emulated time this refresh h
 	if (run_frac >= 1) { run_t++; run_frac -= 1; } else if (run_frac <= -1) { run_t--; run_frac += 1; }
 	if (!pw_on) run_t = total_cycles;
 }
+static int emu_stood;                      /* (online: this run waited for the other side's input and made no game frame) */
 static void emu_loop (void)                 /* (game frames until the emulated time has reached run_t) */
 {
 	extern int vt_imager;
+	emu_stood = 0;
 	for (int k = 0; total_cycles < run_t && k < 8; k++) {
 		extern unsigned long long vt_piece_t0;
 		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
 		if (ls_state == 2 || netvx_playing ()) { unsigned char lm[8];   /* (online in lockstep: a game frame only with both players' input for it) */
-			if (!(ls_state == 2 ? netls_frame (lm) : netvx_frame (lm))) { run_t = total_cycles; break; }
+			if (!(ls_state == 2 ? netls_frame (lm) : netvx_frame (lm))) { run_t = total_cycles; emu_stood = !k; break; }
 			apply_input (lm); }
 		abuf_n = 0;
 		run_frame ();
@@ -2755,6 +2757,7 @@ void retro_run (void)
 	const double dt = 1.0 / opt_rate;
 	if (pf_on) pf1 = pf_now ();
 	if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; }
+	const int stood = emu_stood && (ls_state == 2 || netvx_playing ());   /* (read before the next run starts) */
 	if (pf_on) pf2 = pf_now ();
 	{ int av = 3; vx_nobuild = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1); }
 	/* the picture: which lines, from which game frames */
@@ -2845,6 +2848,13 @@ void retro_run (void)
 	const int gph = gpu_asked && gpu_ok && ph_ok && !stereo && !sheet_file;
 	static int half_skip; static double half_dt;
 	if (gph) gq_begin ();                      /* (the GPU meter: this picture's GPU time, the light and the glass) */
+	if (stood && !shot_due && (!gph || ph_made)) {   /* (online, waiting for the other side: the picture as it was, as paused - the
+		                                       *  held frame's light added each refresh made it glow brighter and brighter) */
+		if (gph) gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+		else frame_out (0, NULL, NULL, NULL);
+		sheet_write (); if (!asy) flash_save (0); if (!asy) audio_out ();
+		return;
+	}
 	if (gph && fx_half && (half_skip ^= 1) && ph_made && !shot_due) {   /* (Low: 30 pictures a second - this one the last again) */
 		half_dt += dt;
 		gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
@@ -3235,6 +3245,9 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	for (int k = 0; k < GTAB + 1; k++) gtab[k] = (float) exp (-(double) k * GX / GTAB);
 	for (int z = 0; z < 128; z++) zk_tab[z] = pow (TUBE_LIGHT[z], 1 / 2.2);
 	run_t = 0; run_frac = 0; load_f = -1; while (nh) frame_pop (); aq_r = aq_w = 0; aq_frac = 0;
+	if (have_prev) { if (spare.L) { free (prevf.L); free (prevf.keys); } else spare = prevf; have_prev = 0; }   /* (the last game's last frame
+	                                              too: online the time starts at 0 again - its later time joined every new frame
+	                                              into one, ever more lines drawn at once: a growing glow, the iPhone 2026-11-20) */
 	vx_size = 0; if (vx_ok ()) vx_state_init ();   /* (v0.13: the save state's layout, for this game) */
 	/* v0.15: switched on - the tube warming up for the time it was off (a first start: cold), the power sound */
 	{ char sp[1100]; double off_for = 1e9; pw_stamp_path (sp, sizeof sp); FILE *f = fopen (sp, "r"); long long ts;

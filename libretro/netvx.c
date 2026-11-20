@@ -1095,8 +1095,9 @@ static void netvx_stream_guest (void)
 		else if (t - due_t > 0.02) { due_t = 0; nv_lock (); nv_st_buf = 1;   /* (one more - or at once as many as the longest recent wait needs, up to 8) */
 			{ int need = (int) (nv_st_gap_recent / 0.02) + 1; if (need < nv_st_tgt + 1) need = nv_st_tgt + 1; nv_st_tgt = need > 8 ? 8 : need; }
 			nv_st_calm = t; nv_st_n_dry++; nv_unlock (); } } }
-	if (!k) { run_t = total_cycles; emu_stood = nv_st_started; }   /* (none came: the picture as it was) */
-	else if (total_cycles > run_t) run_t = total_cycles;        /* (the host's time: this side follows it) */
+	if (!k) { if (total_cycles < run_t) run_t = total_cycles; emu_stood = nv_st_started; }   /* (none shown: the picture as it was - the time held
+	                                                 only when one was due and none is here; moved up to the last frame's end each refresh, it
+	                                                 played every frame in two refreshes (17 ms, not its 20-28) and ran the buffer dry 10-18 times in 5 s) */
 }
 /* (the host, before each frame: its controller and player 2's last - a RESET or a port taken by player 2 once each) */
 static int netvx_stream_input (unsigned char *m)

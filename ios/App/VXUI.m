@@ -1154,14 +1154,15 @@ static UIImage *VXSym (NSString *n, NSString *fallback, CGFloat pt)
 	/* the cartridge: out - dim, OUT */
 	const int out = vx_app_cart_out (); UIColor *cc = out ? VXC (0x4a6658) : VX_HI; _cartI.tintColor = cc; _cartW.textColor = cc; _cartW.text = out ? @"OUT" : @"CART";
 	/* the volume: the knob (full) or the bar (slim), off: OFF */
-	if (!_knob.tracking) { _knob.value = vx_app_volume (); [self volChanged]; }
+	if (!_knob.tracking) { _knob.value = vx_app_volume (); [self volShow]; }   /* (shown only: not a touch - it kept the pop-up deck open) */
 	if (!_bar.tracking) [_bar show];
 	[self setNeedsLayout];
 }
-- (void) volChanged
+- (void) volChanged { [self volShow]; [self poke]; }   /* (the knob or the bar turned: the pop-up deck stays a while longer) */
+- (void) volShow
 {
 	const int on = vx_app_power_on ();
-	_kv.text = on ? [NSString stringWithFormat:@"%.0f", _knob.value * 100] : @"OFF"; _kv.textColor = on ? VX_HI : VX_CHG; [self poke];
+	_kv.text = on ? [NSString stringWithFormat:@"%.0f", _knob.value * 100] : @"OFF"; _kv.textColor = on ? VX_HI : VX_CHG;
 }
 - (void) statsTap:(UITapGestureRecognizer *)g   /* (online, playing: a player's row tapped - that port taken, the PC's TAKE PORT) */
 {

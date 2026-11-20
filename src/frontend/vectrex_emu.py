@@ -2184,7 +2184,7 @@ class Runner(threading.Thread):
     def port_inputs(self, a, b):
         """online: the controller in each port this frame from the two players' inputs (a: the host's, b: the joiner's).
         A player's 'take port' (flags 0x10 / 0x20, sent with the input: on the same frame on both sides) puts their
-        controller in that port and the other's out of it (one player a port: a stick at rest still drifts a little);
+        controller in that port and the other's to the other port (one player a port: a stick at rest still drifts a little);
         a port nobody holds: at rest"""
         if self.ports is None:
             self.ports = {'host': 1, 'join': 2}
@@ -2192,8 +2192,8 @@ class Runner(threading.Thread):
             k = 1 if inp[3] & 0x10 else 2 if inp[3] & 0x20 else 0
             if k:
                 self.ports[who] = k
-                if self.ports[other] == k:
-                    self.ports[other] = 0
+                if self.ports[other] == k:              # (the other player had it: pushed to the other port - all platforms alike)
+                    self.ports[other] = 3 - k
                 self.port_events.append((who, k))
         out = []
         for k in (1, 2):

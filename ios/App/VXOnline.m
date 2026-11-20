@@ -113,6 +113,11 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 	[self poll];
 }
 - (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; [_tm invalidate]; _tm = nil; vx_net_lan (0); vxp_browse (0); vxa_hold (0); }
+- (NSString *) portNote:(int)k role:(int)role peer:(NSString *)peer   /* (who holds port k now - taking it pushes the other player to the other port) */
+{
+	NSArray *pt = [_st[@"ports"] isKindOfClass:NSArray.class] ? _st[@"ports"] : @[ @1, @2 ]; const int mine = [pt[role == 1 ? 0 : 1] intValue], theirs = [pt[role == 1 ? 1 : 0] intValue];
+	return mine == k ? @"Yours now" : theirs == k ? [NSString stringWithFormat:@"%@ has it - they move to port %d", peer, 3 - k] : @"Free";
+}
 - (void) done { [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }]; }
 - (int) phase { return [_st[@"phase"] intValue]; }
 - (void) poll
@@ -137,6 +142,8 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 		[s addObject:@[ @"Playing online", [NSString stringWithFormat:@"You are player %d. %@", role == 1 ? 1 : 2, [_st[@"relay"] intValue] ? @"The game goes through the meeting point (relayed): a little more delay." : @"A direct connection."], @[
 			@[ [NSString stringWithFormat:@"With %@", peer], [NSString stringWithFormat:@"%d frames of input delay%@", [_st[@"delay"] intValue], [_st[@"desync"] intValue] >= 0 ? @" - OUT OF STEP: the two games differ" : @""], [NSNull null] ],
 			@[ @"Chat", @"A line to the other player", ^{ [ws chat]; } ],
+			@[ @"Take port 1", [self portNote:1 role:role peer:peer], ^{ vx_net_take_port (1); extern void vxa_toast_ext (NSString *); vxa_toast_ext (@"ONLINE: YOU TAKE PORT 1"); ulog (@"online: take port 1"); [ws done]; } ],
+			@[ @"Take port 2", [self portNote:2 role:role peer:peer], ^{ vx_net_take_port (2); extern void vxa_toast_ext (NSString *); vxa_toast_ext (@"ONLINE: YOU TAKE PORT 2"); ulog (@"online: take port 2"); [ws done]; } ],
 			@[ @"Leave the online game", @"", ^{ vx_net_leave (); vxp_stop (); [ws done]; } ] ] ]];
 		_secs = s; return; }
 	if (ph >= 1 && ph <= 3) {                         /* hosting or joining: what happens */

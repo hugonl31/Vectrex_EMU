@@ -212,6 +212,10 @@ final class Online {
 				header ("Playing online");
 				row ("With " + (peer.isEmpty () ? "the other player" : peer), st.optInt ("delay") + " frames of input delay" + (st.optInt ("desync", -1) >= 0 ? " - OUT OF STEP: the two games differ" : ""), null);
 				row ("Chat", "A line to the other player - the game goes on meanwhile", () -> { m.popAll (); Screens.ask (m, "Chat", "A line to the other player", false, s -> { VX.netChat (s); Main.log ("online chat out: " + s); }); });
+				{ org.json.JSONArray pt = st.optJSONArray ("ports"); final int mine = pt != null ? pt.optInt (role == 1 ? 0 : 1, role == 1 ? 1 : 2) : (role == 1 ? 1 : 2), theirs = pt != null ? pt.optInt (role == 1 ? 1 : 0, role == 1 ? 2 : 1) : (role == 1 ? 2 : 1);
+				  final String who = peer.isEmpty () ? "The other player" : peer;
+				  for (int k = 1; k <= 2; k++) { final int kk = k;   /* (taking a port the other player has: they move to the other one - all platforms alike) */
+					row ("Take port " + k, mine == k ? "Yours now" : theirs == k ? who + " has it - they move to port " + (3 - k) : "Free", () -> { VX.net (9, kk); m.toast ("ONLINE: YOU TAKE PORT " + kk, 2.5); Main.log ("online: take port " + kk); m.popAll (); }); } }
 				row ("Leave the online game", Adhoc.on ? "Your network " + Adhoc.ssidOn + " ends too" : "", () -> { VX.net (3, 0); playing = false; Adhoc.stop (m); m.pop (); });
 				foot ("You are player " + (role == 1 ? 1 : 2) + ". " + (st.optInt ("relay") != 0 ? "The game goes through the meeting point (relayed): a little more delay." : "A direct connection."));
 			} else if (ph >= 1 && ph <= 3) {

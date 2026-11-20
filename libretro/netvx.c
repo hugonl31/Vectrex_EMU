@@ -127,7 +127,7 @@ static long nv_n_rb, nv_n_rbf, nv_n_pred; static int64_t nv_reset_lastf = -1;
 static int nv_rb_ports[NV_RB_SLOTS][2]; static unsigned long long nv_rb_ctr[NV_RB_SLOTS][5];   /* (with each saved frame: the ports taken,
                                                  the frame counters outside the state - as the running game's state sent to a joiner) */
 static int nv_in_differ (const nv_in *a, const nv_in *b) { return a->jx != b->jx || a->jy != b->jy || a->b != b->b || a->fl != b->fl; }
-static int nv_stream, nv_stream_peer, nv_st_tgt = 2, nv_st_buf; static double nv_st_calm, nv_st_gap_max; static long nv_st_n_dry;   /* (run dry: how often, the longest gap between two frames in) */   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static int nv_stream, nv_stream_peer, nv_st_tgt = 2, nv_st_buf; static double nv_st_calm, nv_st_gap_max, nv_st_gap_recent; static long nv_st_n_dry;   /* (run dry: how often, the longest gap between two frames in) */   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
 static void nv_st_on_piece (const unsigned char *b, size_t n); static void nv_st_on_input (const unsigned char *b, size_t n); static void nv_ports_take (int side, unsigned char fl); static void nv_st_clear (void);
 static size_t vx_save_to (unsigned char *d); static bool vx_load_from (const void *d, size_t sz); static void vx_state_init (void); static void nv_sum_send (uint32_t f, uint32_t h); static void vx_rb_keep (int back);
 static int nv_dly = 3, nv_their_dly, nv_st_run, nv_st_ep; static double nv_st_t0, nv_calm_t0;   /* (this side's input delay now - it grows when the
@@ -1049,7 +1049,9 @@ static void nv_st_on_piece (const unsigned char *b, size_t n)
 	int at = nv_stq_n; while (at > 0 && nv_stq[at - 1].fno > f) at--;
 	if (at < nv_stq_n) memmove (nv_stq + at + 1, nv_stq + at, sizeof nv_stq[0] * (size_t) (nv_stq_n - at));
 	nv_stq[at] = fr; nv_stq_n++; nv_st_n_got++;
-	{ static double last_in; const double t = nv_now (); if (last_in > 0 && t - last_in > nv_st_gap_max && t - last_in < 5.0) nv_st_gap_max = t - last_in; last_in = t; }   /* (the longest wait for a frame: the log) */
+	{ static double last_in; const double t = nv_now (); const double g = last_in > 0 ? t - last_in : 0; last_in = t;   /* (the longest wait for a frame: the log, and the
+	                                                 buffer's size - Apple's peer-to-peer Wi-Fi stops for 110-130 ms about 4 times a second) */
+	  if (g < 5.0) { if (g > nv_st_gap_max) nv_st_gap_max = g; nv_st_gap_recent = g > nv_st_gap_recent ? g : nv_st_gap_recent * 0.995; } }
 }
 /* (player 2, emu_loop: the frames come in their time - two waiting at most (a third: the oldest left out), none: the
  *  picture stands; and this side's controller to the host) */
@@ -1068,12 +1070,12 @@ static void netvx_stream_guest (void)
 	while (nv_stq_n > nv_st_tgt + 6) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--; nv_st_n_drop++; }
 	/* (a small playout buffer: frames shown only once nv_st_tgt are here - a late one no longer stands the picture and makes it
 	 *  jump after (iPhone from iPad, Apple's peer-to-peer Wi-Fi: choppy, 19 frames left out in 5 s); run dry: one frame more,
-	 *  up to 6; 6 s without: one less, down to 2) */
+	 *  up to 8 - or at once what the longest recent wait needs; 6 s without: one less, down to 2) */
 	if (!nv_st_started && !nv_st_buf) { nv_st_buf = 1; nv_st_tgt = 2; }
 	if (nv_st_buf) {
 		if (nv_stq_n >= nv_st_tgt) { nv_st_buf = 0; nv_st_calm = nv_now (); if (nv_st_started) run_t = total_cycles; }
 		else { nv_unlock (); nv_st_n_ref++; run_t = total_cycles; emu_stood = nv_st_started; return; } }
-	if (nv_now () - nv_st_calm > 6.0 && nv_st_tgt > 2) { nv_st_tgt--; nv_st_calm = nv_now (); }
+	if (nv_now () - nv_st_calm > 6.0 && nv_st_tgt > 2 && nv_st_tgt > (int) (nv_st_gap_recent / 0.02) + 1) { nv_st_tgt--; nv_st_calm = nv_now (); }   /* (not below what the recent waits need) */
 	int k = 0;
 	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || (nv_stq_n > nv_st_tgt + 1 && k < 2)) && k < 8) {
 		nv_stfr_t q = nv_stq[0]; memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--;
@@ -1090,7 +1092,9 @@ static void netvx_stream_guest (void)
 	                                                 a few ms late is the host's own rhythm: counted so, it grew to 6 frames, 120 ms behind) */
 	  if (k || !nv_st_started) due_t = 0;
 	  else if (total_cycles < run_t && !nv_stq_n) { const double t = nv_now (); if (!due_t) due_t = t;
-		else if (t - due_t > 0.02) { due_t = 0; nv_lock (); nv_st_buf = 1; if (nv_st_tgt < 6) nv_st_tgt++; nv_st_calm = t; nv_st_n_dry++; nv_unlock (); } } }
+		else if (t - due_t > 0.02) { due_t = 0; nv_lock (); nv_st_buf = 1;   /* (one more - or at once as many as the longest recent wait needs, up to 8) */
+			{ int need = (int) (nv_st_gap_recent / 0.02) + 1; if (need < nv_st_tgt + 1) need = nv_st_tgt + 1; nv_st_tgt = need > 8 ? 8 : need; }
+			nv_st_calm = t; nv_st_n_dry++; nv_unlock (); } } }
 	if (!k) { run_t = total_cycles; emu_stood = nv_st_started; }   /* (none came: the picture as it was) */
 	else if (total_cycles > run_t) run_t = total_cycles;        /* (the host's time: this side follows it) */
 }

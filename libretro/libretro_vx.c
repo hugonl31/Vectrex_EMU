@@ -2557,7 +2557,14 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 			if (!(ls_state == 2 ? netls_frame (lm) : netvx_frame (lm))) { run_t = total_cycles; emu_stood = !k; break; }
 			apply_input (lm); }
 		abuf_n = 0;
-		run_frame ();
+		{ static int dp = -1; if (dp < 0) dp = getenv ("VX_DIRTY") != NULL;   /* (test: a card game's frame - its time, the memory pages it changed) */
+		  if (dp) { extern int vt_uvm2, vt_pitrex, uvm2_dirty_probe (int *), pitrex_dirty_probe (int *); static double tsum, tmax; static long fn, psum, pmax; static int tot;
+			const double t0 = vt_wall (); run_frame (); const double t1 = vt_wall () - t0;
+			const int pg = vt_uvm2 ? uvm2_dirty_probe (&tot) : vt_pitrex ? pitrex_dirty_probe (&tot) : 0;
+			if (fn > 0) { tsum += t1; if (t1 > tmax) tmax = t1; psum += pg; if (pg > pmax) pmax = pg; }
+			if (++fn % 200 == 0) { fprintf (stderr, "DIRTY frames %ld: emulation %.2f ms a frame (most %.2f), pages changed %.1f a frame (most %ld) of %d - %.0f KB a frame%c",
+				fn, tsum / 199 * 1e3, tmax * 1e3, psum / 199.0, pmax, tot, psum / 199.0 * 4, 10); tsum = tmax = 0; psum = pmax = 0; } }
+		  else run_frame (); }
 		const int replay = replay_to && nv_f < replay_to;   /* (a frame run again: its sound was heard the first time) */
 		if (ls_state == 2) netls_after (); else if (netvx_playing ()) netvx_after ();
 		frame_push (p0);

@@ -223,3 +223,4 @@ uint32_t uvm2_sig (void)                    /* (online play: the cartridge's sta
 {
 	return uvm2 ? rp2350_sig (uvm2) : 0;
 }
+int uvm2_dirty_probe (int *total) { extern int rp_dirty_probe (rp2350_t *, int *); return uvm2 ? rp_dirty_probe (uvm2, total) : 0; }

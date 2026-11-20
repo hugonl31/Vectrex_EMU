@@ -317,7 +317,8 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	boolean popTap (float x, float y)
 	{
 		if (deckMode () != 3 || deck.getVisibility () == View.VISIBLE || pic[2] <= 0) return false;
-		if (x < pic[0] || x > pic[0] + pic[2] || y < pic[1] + pic[3] - dp (70) || y > pic[1] + pic[3] + dp (10)) return false;
+		if (x < pic[0] || x > pic[0] + pic[2] || y < pic[1] + pic[3] - dp (70) || y > pic[1] + pic[3] + dp (80)) return false;
+		if (ctl.shown () && ctl.onControl (x, y)) return false;   /* (never a touch for the stick or a button: over the picture's foot when there is no room below) */
 		popUntil = System.currentTimeMillis () + 4000; log ("deck: pop-up opened"); placeDeck (); return true;
 	}
 	void deckPoked () { if (deckMode () == 3) popUntil = System.currentTimeMillis () + 4000; }

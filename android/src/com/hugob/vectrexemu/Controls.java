@@ -71,6 +71,11 @@ final class Controls extends View {
 		float[] p = m.pic; if (p[2] <= 0) return;
 		float px = Math.max (-1, Math.min (1, (x - p[0]) / p[2] * 2 - 1)), py = Math.max (-1, Math.min (1, (y - p[1]) / p[3] * 2 - 1)); VX.setPointer (on, px, py);
 	}
+	boolean onControl (float x, float y)   /* (a touch for a button or the stick - the pop-up deck leaves it) */
+	{
+		for (int i = 0; i < 4; i++) { RectF r = new RectF (btn[i]); r.inset (-m.dp (8), -m.dp (8)); if (r.contains (x, y)) return true; }
+		return stickZone.contains (x, y) && !inPic (x, y);
+	}
 	void down (int id, float x, float y)
 	{
 		String what = "nothing";

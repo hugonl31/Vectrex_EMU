@@ -245,6 +245,9 @@ int vxa_net_rehost (void)
 }
 - (void) chat
 {
+	extern int vxa_net_playing (void); extern void vxa_chat_prompt (void);
+	if (vxa_net_playing ()) { [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); vxa_chat_prompt (); }]; return; }   /* (in a game: typed over
+	                                                     the running game - the menu closed, no pause for either) */
 	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Chat" message:nil preferredStyle:UIAlertControllerStyleAlert];
 	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.placeholder = @"A line to the other player"; }];
 	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];

@@ -1835,6 +1835,7 @@ class Core:
         #  state at every power-on; online play: the host's, the same on both sides)
         if Core.force_seed is not None:                             # (online: the 512K cartridge's latch powers up the same on
             env['VT_HBLATCH'] = str(Core.force_seed & 7)            #  both sides - otherwise from the clock, vecx.c)
+            env['VT_FLASH_CLEAN'] = '1'                             # (a flash cartridge as it came: each player's saves differ)
         if Core.veclink:                                            # (the VecLink cable in port 2: nothing else there)
             env['VT_VECLINK'] = '%s,%s' % Core.veclink
             speech = 'off'
@@ -2812,12 +2813,22 @@ class App:
                                                 '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
         self.title_t = int(rec.seconds()) if rec else -1
     def toggle_pause(self, e=None):
-        self.set_paused(not self.run.paused)
         net = getattr(self, 'net', None)
-        if net is not None and getattr(self, 'net_game', None):  # (online: the pause is both players')
-            net.set_pause(self.run.paused)
-            self.net_flash('ONLINE: PAUSED FOR BOTH PLAYERS' if self.run.paused else 'ONLINE: GOING ON',
-                           'P GOES ON' if self.run.paused else '', secs=600 if self.run.paused else 2)
+        if net is not None and getattr(self, 'net_game', None):  # (online: this side's own pause - the game stands while
+            net.set_pause(not net.my_pause)                      #  either player has paused)
+            self.set_paused(net.pause_on)
+            self.net_pause_say(net)
+            return
+        self.set_paused(not self.run.paused)
+    def net_pause_say(self, net):
+        other = getattr(net, 'peer_name', '') or 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+        where = {2: 'IN ANOTHER APP'}.get(net.their_pause, 'IN THE MENU' if net.their_pause else '')
+        if net.my_pause:
+            self.net_flash('ONLINE: PAUSED FOR BOTH PLAYERS', 'P GOES ON', secs=600)
+        elif net.their_pause:
+            self.net_flash('PAUSED BY ' + other.upper(), where or 'WAITING', secs=600)
+        else:
+            self.net_flash('ONLINE: GOING ON', '', secs=2)
     def set_paused(self, on):
         if bool(on) == bool(self.run.paused):
             return
@@ -5718,8 +5729,13 @@ class App:
                 g, rom = None, 'missing'
             elif g == 'version':                                # (the other side has another emulator version)
                 g, rom = None, 'version'
+            elif g == 'bios':                                   # (player 2 has another BIOS)
+                g, rom = None, 'bios'
             elif isinstance(g, str):                            # (no meeting point, or its answer: no such code...)
                 g, rom = None, 'server:' + g
+            elif g and role == 'join' and g.get('bios') and netplay.rom_md5(BIOS) and g['bios'] != netplay.rom_md5(BIOS):
+                net.accept(False, netplay.BIOS_NO.decode('latin-1'))   # (another BIOS here: the games would part)
+                g, rom = None, 'bios_here'
             elif g and role == 'join':
                 here = a.rom if (a.rom and netplay.rom_md5(a.rom) == g.get('md5')) else None
                 dirs = [os.path.join(ROOT, 'roms')] + ([os.path.dirname(os.path.abspath(a.rom))] if a.rom else [])
@@ -6073,7 +6089,8 @@ class App:
         """the game a host offers (the ROM's identity and what must be the same on both sides), and its note (net_note)"""
         import netplay
         game = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw,   # (R302 moves the joystick
-                                          dacofs=float(self.unit.get('dacofs', 0.0))))     #  comparator: the host's on both)
+                                          dacofs=float(self.unit.get('dacofs', 0.0)),     #  comparator: the host's on both)
+                                          bios=netplay.rom_md5(BIOS) or ''))               # (the BIOS: the same on both)
         if self.card_dir(rom):
             game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
         if game_turns(rom):
@@ -6175,6 +6192,11 @@ class App:
                     return
                 self.net_flash('ONLINE: NO MEETING POINT' if why == 'server' else 'ONLINE: THE MEETING POINT SAYS', ('THE SERVER DID NOT ANSWER' if why == 'server' else why)[:34].upper(), secs=8)
                 return
+            if not g and rom in ('bios', 'bios_here'):
+                net.close(); self.net_flash('ONLINE: THE BIOS DIFFERS', "THE HOST'S" if rom == 'bios_here' else "PLAYER 2'S", secs=8)
+                self.chat_add('sys', 'The two players have different BIOS files (system/bios.bin): online, both need the same one, '
+                              'or the two games would differ from the start.')
+                return
             if not g and rom == 'version':
                 net.close(); self.net_flash('ONLINE: THE OTHER PLAYER HAS', 'ANOTHER EMULATOR VERSION', secs=8)
                 self.chat_add('sys', 'The other player has another version of Vectrex_EMU: online, both need the same '
@@ -6233,11 +6255,8 @@ class App:
         net = getattr(self, 'net', None)
         if net is not None and getattr(self, 'net_game', None) and net.pause_peer:   # (the other side paused, or went on)
             net.pause_peer = False
-            if net.pause_on != bool(self.run.paused):
-                self.set_paused(net.pause_on)
-                other = 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
-                self.net_flash(('PAUSED BY ' if net.pause_on else 'GOING ON: ') + other, 'P GOES ON' if net.pause_on else '',
-                               secs=600 if net.pause_on else 2)
+            self.set_paused(net.pause_on)
+            self.net_pause_say(net)
         if net is not None and net.desync is not None and not getattr(net, 'desync_told', False):
             net.desync_told = True                              # (the two games have parted: say so, once)
             self.net_flash('ONLINE: OUT OF SYNC', 'THE GAMES DIFFER NOW', secs=8)

@@ -78,6 +78,11 @@ static char nv_rg_game[1024], nv_rg_rom[1100], nv_rg_msg[160]; static double nv_
 static char nv_rom_md5[33], nv_rom_name[256]; static long long nv_rom_size; static int nv_skip_boot; static char nv_carthw[32];
 static double nv_dacofs;
 static int nv_delay = 3, nv_accepted, nv_go, nv_left, nv_lost, nv_peer_pause, nv_pause, nv_pause_seq;
+/* (the pause: each side's own - 0 playing, 1 a menu, 2 another app - and the game stands while either is paused: one side's
+ *  going on no longer ended the other's (a menu closed here went on while the other player was in another app). Each side
+ *  sends its own now and then, its number with it: a lost one is sent again) */
+static int nv_mypause, nv_theirpause, nv_their_seq = -1; static double nv_t_z;
+static void nv_pause_upd (void) { nv_pause = nv_mypause || nv_theirpause; nv_peer_pause = nv_theirpause != 0; }
 /* a cartridge with an SD card (the UVMC2): the host's card list ([path, size, md5], zlib JSON, CARD_CHUNK pieces), player 2's
  * answer (which files it has alike), the files both play from - the card built of those only, every file dated
  * NV_CARD_TIME (the desktop's netplay.CARD_TIME) - and the UVMC2 mode both play in (the slower of the two) */
@@ -406,11 +411,13 @@ static void nv_on_chat (const unsigned char *b, size_t n)
 static void nv_make_game (void)
 {
 	char nm[300], hn[40]; nv_jesc (nm, sizeof nm, nv_rom_name); nv_jesc (hn, sizeof hn, nv_gamer);
+	char bm[33] = ""; { long long bz; if (!g_bios[0] || !vx_net_md5_file (g_bios, bm, &bz)) bm[0] = 0; }   /* (the BIOS: both the same - another
+	                                              one (Mine Storm II, a patched one) parts the games from the first frame) */
 	uint32_t seed = (uint32_t) (nv_now () * 1e6) ^ (uint32_t) rand () ^ ((uint32_t) rand () << 15); seed &= 0x7fffffff;
 	snprintf (nv_game, sizeof nv_game, "{\"md5\": \"%s\", \"size\": %lld, \"name\": %s, \"seed\": %u, \"nver\": %d, \"arch\": \"" NV_ARCH "\", "
-		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"hot\": %s, \"port2\": \"%s\", \"host_name\": %s%s%s%s}",
+		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"hot\": %s, \"port2\": \"%s\", \"bios\": \"%s\", \"host_name\": %s%s%s%s}",
 		nv_rom_md5, nv_rom_size, nm, (unsigned) seed, NV_VER, nv_skip_boot ? "true" : "false", nv_carthw, nv_dacofs, nv_delay,
-		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", "false", optv ("vectrex_emu_port2"), hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
+		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", "false", optv ("vectrex_emu_port2"), bm, hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
 }
 static size_t nv_lz (const unsigned char *b, size_t n, unsigned char *out)   /* (out: n + n / 127 + 16 bytes) */
 {
@@ -537,7 +544,8 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 		else if (n >= 2) { const unsigned k = nv_get16 (b); for (int i = 0; i < nv_ncout; i++) if (nv_cout[i].k == k) { memmove (nv_cout + i, nv_cout + i + 1, sizeof *nv_cout * (size_t) (nv_ncout - i - 1)); nv_ncout--; break; } }
 		break;
 	case 'N': if (nv_role == 1 && nv_phase == NV_WAIT) { char why[64] = ""; size_t m = n < 63 ? n : 63; memcpy (why, b, m); why[m] = 0;
-			snprintf (nv_err, sizeof nv_err, n >= 2 && !b[0] ? "the other player has another version" : "player 2 does not have the game"); nv_phase = NV_ENDED; } break;
+			snprintf (nv_err, sizeof nv_err, n == 5 && !memcmp (b, "\0bios", 5) ? "player 2's BIOS (bios.bin) is not yours - online both need the same one"
+				: n >= 2 && !b[0] ? "the other player has another version" : "player 2 does not have the game"); nv_phase = NV_ENDED; } break;
 	case 'V': snprintf (nv_err, sizeof nv_err, "the host has another version of Vectrex_EMU"); nv_phase = NV_ENDED; break;
 	case 'I': if (nv_role == 2 && nv_card && nv_cbitn && !nv_card_done) { nv_card_done = 1; nv_ready = 1; }
 		if (nv_phase == NV_PLAY || nv_phase == NV_AGREED) nv_on_inputs (b, n); break;
@@ -579,8 +587,9 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 					if (!nv_cmp_rel (&nv_theirs[q], &nv_mine[r]) && nv_theirs[q].size == nv_mine[r].size && !strcmp (nv_theirs[q].md5, nv_mine[r].md5)) { nv_cbits[q >> 3] |= (unsigned char) (1 << (q & 7)); break; }
 				nv_cbitn = m; nv_only_set (nv_cbits, m, nv_theirs); char t2[96]; snprintf (t2, sizeof t2, "SD card: %d of the host's %d files alike", nv_nonly, m); nv_log (t2); } } break;
 	case 'K': if (nv_role == 2 && nv_card && nv_cbitn && !nv_card_done) { nv_card_done = 1; nv_ready = 1; nv_log ("the host has the answer: both start"); } break;
-	case 'Z': if (n >= 3) { const unsigned seq = nv_get16 (b + 1); if (((seq - (unsigned) nv_pause_seq) & 0xffff) > 0 && ((seq - (unsigned) nv_pause_seq) & 0xffff) < 0x8000) {
-			nv_pause = b[0] != 0; nv_pause_seq = (int) seq; nv_peer_pause = 1; } } break;
+	case 'Z': if (n >= 3) { const unsigned seq = nv_get16 (b + 1);   /* (the other side's own pause: the newest of its own) */
+			if (nv_their_seq < 0 || ((seq - (unsigned) nv_their_seq) & 0xffff) < 0x8000) {
+				nv_their_seq = (int) seq; nv_theirpause = b[0] ? (n >= 4 && b[3] ? b[3] : 1) : 0; nv_pause_upd (); } } break;
 	case 'Q': nv_lost = 1; nv_left = 1; nv_log ("the other player left"); if (nv_phase < NV_PLAY) nv_phase = NV_ENDED; break;
 	default: break; }
 }
@@ -711,7 +720,7 @@ static void nv_tick (void)
 	if (nv_phase == NV_PLAY) {
 		if (now - nv_last_send > 0.03) nv_send_inputs ();
 		if (nv_ncout && now - nv_t_pause > 0.15) { nv_send_chat (now); nv_t_pause = now; }
-		if (nv_pause && now - nv_t_ka > 0.25) { unsigned char z[3]; z[0] = 1; nv_put16 (z + 1, (unsigned) nv_pause_seq); nv_send ('Z', z, 3); nv_t_ka = now; }
+		if (now - nv_t_z > 0.25) { unsigned char z[4]; z[0] = nv_mypause ? 1 : 0; nv_put16 (z + 1, (unsigned) nv_pause_seq); z[3] = (unsigned char) nv_mypause; nv_send ('Z', z, 4); nv_t_z = now; }
 		if (now - nv_last_heard > NV_TIMEOUT) { if (!nv_lost) nv_log ("connection lost"); nv_lost = 1; } }
 	if (nv_lan_on) nv_lan_take ();
 	if (nv_room_state == 1 && now - nv_t_srv > 0.5) { nv_t_srv = now; nv_raw ("VXR1L\0", 6, &nv_srv); if (now - nv_room_t0 > 3.0) nv_room_state = 3; }
@@ -841,7 +850,7 @@ static void nv_close_socks (void)
 static void nv_clear (void)
 {
 	nv_role = 0; nv_phase = NV_IDLE; nv_have_peer = nv_ncand = nv_relay = nv_locked = 0; nv_code[0] = nv_peer_name[0] = nv_err[0] = nv_note[0] = 0;
-	nv_game[0] = 0; nv_accepted = 0; nv_go = 0; nv_left = nv_lost = 0; nv_pause = nv_peer_pause = 0; nv_pause_seq = 0;
+	nv_game[0] = 0; nv_accepted = 0; nv_go = 0; nv_left = nv_lost = 0; nv_pause = nv_peer_pause = 0; nv_pause_seq = 0; nv_mypause = nv_theirpause = 0; nv_their_seq = -1; nv_t_z = 0;
 	nv_last_heard = nv_last_direct = nv_last_relayed = 0; nv_punch_t0 = 0; nv_rtt = 0; nv_delay = 3; nv_ncout = 0; nv_ncin = 0; nv_ncheld = 0; nv_cseq = nv_cnext = 0;
 	nv_t_srv = nv_t_hello = nv_t_beacon = nv_t_punch = nv_t_pause = nv_t_ka = 0; nv_ping_i = nv_ping_got = 0; nv_g_sent = 0;
 	nv_hot_free (); nv_hot_can = 0; nv_take_req = 0; ls_port2[0] = 0;
@@ -894,10 +903,14 @@ void vx_net_accept (int ok)
 {
 	nv_lock ();
 	if (nv_role == 2 && nv_phase == NV_AGREED) {
-		unsigned char why[64]; size_t wn = 0; if (ok) { if (nv_jitfast) { memcpy (why, "\0jit:fast", 9); wn = 9; } memcpy (why + wn, "\0regame", 7); wn += 7; memcpy (why + wn, "\0hotjoin", 8); wn += 8;
+		int bad_bios = 0;
+		if (ok) { char hb[40], mb[33] = ""; long long bz;   /* (the host's BIOS: the same here, or no game) */
+			if (nv_jstr (nv_game, "bios", hb, sizeof hb) && hb[0] && g_bios[0] && vx_net_md5_file (g_bios, mb, &bz) && vx_stricmp (hb, mb)) { ok = 0; bad_bios = 1; } }
+		unsigned char why[64]; size_t wn = 0; if (bad_bios) { memcpy (why, "\0bios", 5); wn = 5; }
+		if (ok) { if (nv_jitfast) { memcpy (why, "\0jit:fast", 9); wn = 9; } memcpy (why + wn, "\0regame", 7); wn += 7; memcpy (why + wn, "\0hotjoin", 8); wn += 8;
 			memcpy (why + wn, "\0uvm2:", 6); wn += 6; const size_t k = strlen (nv_uvm2); memcpy (why + wn, nv_uvm2, k); wn += k; }
 		for (int i = 0; i < 5; i++) nv_send (ok ? 'A' : 'N', why, wn);
-		if (!ok) { snprintf (nv_err, sizeof nv_err, "you do not have the game"); nv_phase = NV_ENDED; } else { nv_accepted = 1; if (!nv_card) nv_ready = 1; } }
+		if (!ok) { snprintf (nv_err, sizeof nv_err, bad_bios ? "your BIOS (bios.bin) is not the host's - online both need the same one" : "you do not have the game"); nv_phase = NV_ENDED; } else { nv_accepted = 1; if (!nv_card) nv_ready = 1; } }
 	nv_unlock ();
 }
 /* both: the game agreed - its settings for the power-on (the app loads the ROM after this, then vx_net_go) */
@@ -997,8 +1010,10 @@ void vx_net_chat (const char *text)
 }
 void vx_net_pause (int on)
 {
-	nv_lock (); nv_pause = on != 0; nv_peer_pause = 0; nv_pause_seq = (nv_pause_seq + 1) & 0xffff;
-	unsigned char z[3]; z[0] = (unsigned char) nv_pause; nv_put16 (z + 1, (unsigned) nv_pause_seq); nv_send ('Z', z, 3); nv_unlock ();
+	nv_lock (); const int w = on <= 0 ? 0 : on > 2 ? 1 : on;   /* (1: a menu, 2: another app) */
+	if (w != nv_mypause) { nv_mypause = w; nv_pause_seq = (nv_pause_seq + 1) & 0xffff; nv_pause_upd ();
+		unsigned char z[4]; z[0] = w ? 1 : 0; nv_put16 (z + 1, (unsigned) nv_pause_seq); z[3] = (unsigned char) w; nv_send ('Z', z, 4); nv_t_z = nv_now (); }
+	nv_unlock ();
 }
 void vx_net_room (void)                                            /* (the game room: asked now, its answer in vx_net_status) */
 {
@@ -1070,8 +1085,8 @@ const char *vx_net_status (void)
 	static char out[16384]; char t[256], g[1100];
 	nv_lock ();
 	size_t o = (size_t) snprintf (out, sizeof out, "{\"phase\": %d, \"role\": %d, \"mode\": %d, \"code\": \"%s\", \"relay\": %d, \"delay\": %d, \"rtt\": %d, "
-		"\"lost\": %d, \"left\": %d, \"paused\": %d, \"peer_paused\": %d, \"waiting\": %.2f, \"frame\": %u, \"accepted\": %d, \"desync\": %d, \"checked\": %d, \"ready\": %d, \"card\": %d, \"card_files\": %d, \"uvm2\": \"%s\"",
-		nv_phase, nv_role, nv_mode, nv_code, nv_relay, nv_delay, (int) (nv_rtt > 0 ? nv_rtt * 1000 : 0), nv_lost, nv_left, nv_pause, nv_peer_pause,
+		"\"lost\": %d, \"left\": %d, \"paused\": %d, \"peer_paused\": %d, \"peer_why\": %d, \"my_pause\": %d, \"waiting\": %.2f, \"frame\": %u, \"accepted\": %d, \"desync\": %d, \"checked\": %d, \"ready\": %d, \"card\": %d, \"card_files\": %d, \"uvm2\": \"%s\"",
+		nv_phase, nv_role, nv_mode, nv_code, nv_relay, nv_delay, (int) (nv_rtt > 0 ? nv_rtt * 1000 : 0), nv_lost, nv_left, nv_pause, nv_peer_pause, nv_theirpause, nv_mypause,
 		nv_wait_t0 ? nv_now () - nv_wait_t0 : 0.0, (unsigned) nv_f, nv_accepted, (int) nv_desync, nv_nmatch, nv_ready, nv_card, nv_nonly, nv_uvm2);
 	nv_jesc (t, sizeof t, nv_peer_name); o += (size_t) snprintf (out + o, sizeof out - o, ", \"peer\": %s", t);
 	nv_jesc (t, sizeof t, nv_err); o += (size_t) snprintf (out + o, sizeof out - o, ", \"error\": %s", t);

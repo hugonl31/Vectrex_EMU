@@ -188,9 +188,10 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	{
 		super.onResume (); VX.setRunning (true); immersive ();
 		if (!started && welcome.getParent () != null && !Pack.busy) h.postDelayed (this::checkContent, 300);   /* (back from the all-files setting) */
-		if (Online.playing && stack.isEmpty ()) VX.net (4, 0);
+		if (Online.playing) VX.net (4, stack.isEmpty () ? 0 : 1);   /* (back: playing again - or still in a menu) */
 	}
-	@Override protected void onPause () { super.onPause (); VX.setRunning (false); if (Online.playing) VX.net (4, 1); log ("app in the background"); }
+	@Override protected void onPause () { super.onPause (); VX.setRunning (false); if (Online.playing) VX.net (4, 2); log ("app in the background"); }   /* (online: the other
+	                                                     side sees "in another app") */
 	@Override protected void onDestroy () { super.onDestroy (); Adhoc.stop (this); log ("the app ends"); }
 	@Override public void onRequestPermissionsResult (int code, String[] perms, int[] res) { if (code == 7) Adhoc.onPermission (this, res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED); }
 
@@ -404,13 +405,23 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 
 	/* ---------------------------------------------------------------- messages */
 	long toastNext; int toastN;
+	/* (the other player paused: a line that stays until they are back - at the top of the toasts) */
+	TextView ban;
+	void banner (String s)
+	{
+		if (s == null) { if (ban != null) { toasts.removeView (ban); ban = null; } return; }
+		if (ban == null) { ban = text ("  " + s + "  ", 15, HI, true); ban.setGravity (Gravity.CENTER); ban.setMaxLines (2); ban.setPadding ((int) dp (14), (int) dp (9), (int) dp (14), (int) dp (9));
+			ban.setBackground (round (0xf20b1511, EDGE2, dp (10)));
+			LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-2, -2); lp.bottomMargin = (int) dp (8); lp.leftMargin = lp.rightMargin = (int) dp (20); toasts.addView (ban, 0, lp); }
+		else if (!ban.getText ().toString ().equals ("  " + s + "  ")) ban.setText ("  " + s + "  ");
+	}
 	void toast (String s, double secs)
 	{
 		log ("toast: " + s);
 		TextView t = text ("  " + s + "  ", 14, HI, true); t.setGravity (Gravity.CENTER); t.setMaxLines (2); t.setPadding ((int) dp (12), (int) dp (7), (int) dp (12), (int) dp (7));
 		t.setBackground (round (0xf20b1511, EDGE2, dp (10)));
 		LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-2, -2); lp.bottomMargin = (int) dp (6); lp.leftMargin = lp.rightMargin = (int) dp (20);
-		toasts.addView (t, lp); while (toasts.getChildCount () > 4) toasts.removeViewAt (0);
+		toasts.addView (t, lp); while (toasts.getChildCount () > 4) toasts.removeViewAt (ban != null && toasts.getChildAt (0) == ban ? 1 : 0);
 		t.animate ().alpha (0).setStartDelay ((long) (Math.max (secs, 2) * 1000)).setDuration (500).withEndAction (() -> toasts.removeView (t));
 	}
 

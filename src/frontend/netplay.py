@@ -40,6 +40,7 @@ import time
 
 PORT = 7744
 VERSION_NO = b'\x00version'  # (player 2's no: another online version)
+BIOS_NO = b'\x00bios'        # (player 2's no: another BIOS (bios.bin) - the games would part from the first frame)
 CHAT_MAX = 200               # the chat: bytes a line (UTF-8)
 CHAT_GIVEUP = 15.0           # (seconds: a line the other side never confirms is reported as not delivered)
 MAGIC = b'VXN1'
@@ -221,8 +222,10 @@ class NetPlay:
         self.last_heard = time.perf_counter()           # (the other side's last packet: TIMEOUT without one = lost)
         self.wait_t0 = None                             # (since when the game waits for the other side's input)
         self.left = False                               # (the other side said it leaves)
-        self.pause_on, self.pause_seq, self.pause_peer = False, 0, False   # (the pause both share: on or not, its
-        self.pause_t = 0.0                                                 #  number, set by the other side)
+        self.pause_on, self.pause_seq, self.pause_peer = False, 0, False   # (the pause: on for either side, this side's
+        self.pause_t = 0.0                                                 #  number, a change from the other side)
+        self.my_pause, self.their_pause, self.their_seq = 0, 0, None       # (each side's own: 0 playing, 1 paused / a menu,
+                                                                           #  2 another app - the game stands while either is)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         if role == 'host' and not server:
             self.sock.bind(('', port))
@@ -392,6 +395,8 @@ class NetPlay:
                             return game
                         if q and q[0] == ord('N') and q[1] == VERSION_NO:
                             return 'version'
+                        if q and q[0] == ord('N') and q[1] == BIOS_NO:
+                            return 'bios'
                         if q and q[0] == ord('N'):      # (no: it does not have the ROM)
                             self.log('player 2 does not have the game: ' + q[1].decode(errors='replace'))
                             return 'missing'
@@ -643,6 +648,8 @@ class NetPlay:
                 t_out = now                              #  ends, before the next input comes, it read as 30 s of nothing)
             if now - self.last_send > 0.010:
                 self._send_inputs()
+            if now - self.pause_t > 1.0:                 # (this side's pause state now and then: a lost one is sent again)
+                self._send_pause()
             self._drain(); self.regame_tick()
             if f in self.remote:
                 break
@@ -663,14 +670,19 @@ class NetPlay:
             del self.remote[old]
         return (a, b) if self.role == 'host' else (b, a)
 
-    # ---- the pause both share: P on either side pauses both, P on either goes on
-    def set_pause(self, on):
-        self.pause_on, self.pause_peer = bool(on), False
+    # ---- the pause: each side's own (P, a menu, another app on a phone); the game stands while either side is paused -
+    #      one side going on no longer ends the other's (the apps' netvx.c alike)
+    def set_pause(self, on, why=1):
+        w = (why or 1) if on else 0
+        if w == self.my_pause:
+            return
+        self.my_pause = w
         self.pause_seq = (self.pause_seq + 1) & 0xFFFF
+        self.pause_on = bool(self.my_pause or self.their_pause)
         self._send_pause()
 
     def _send_pause(self):
-        self._send(ord('Z'), struct.pack('<BH', 1 if self.pause_on else 0, self.pause_seq))
+        self._send(ord('Z'), struct.pack('<BHB', 1 if self.my_pause else 0, self.pause_seq, self.my_pause))
         self.pause_t = time.perf_counter()
 
     def idle(self):
@@ -778,10 +790,14 @@ class NetPlay:
                 f, v = struct.unpack_from('<II', body)
                 self.sums_theirs[f] = v
                 self._compare(f)
-            elif kind == ord('Z') and len(body) >= 3:   # (the pause: the newer of the two sides' wins)
+            elif kind == ord('Z') and len(body) >= 3:   # (the other side's own pause: its newest)
                 on, seq = struct.unpack_from('<BH', body)
-                if 0 < (seq - self.pause_seq) & 0xFFFF < 0x8000:
-                    self.pause_on, self.pause_seq, self.pause_peer = bool(on), seq, True
+                if self.their_seq is None or (seq - self.their_seq) & 0xFFFF < 0x8000:
+                    self.their_seq = seq
+                    w = (body[3] or 1) if on and len(body) >= 4 else (1 if on else 0)
+                    if w != self.their_pause:
+                        self.their_pause = w; self.pause_peer = True
+                    self.pause_on = bool(self.my_pause or self.their_pause)
             elif kind == ord('R') and len(body) > 2 and self.role != 'host':   # (the host's next game)
                 seq = struct.unpack_from('<H', body)[0]
                 if seq != getattr(self, 'rg_seen', None):

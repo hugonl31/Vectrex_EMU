@@ -57,6 +57,7 @@ targets:
       - sdk: GameController.framework
       - sdk: AVFoundation.framework
       - sdk: QuartzCore.framework
+      - sdk: AudioToolbox.framework
       - sdk: libz.tbd
       - sdk: Security.framework
       - sdk: UserNotifications.framework

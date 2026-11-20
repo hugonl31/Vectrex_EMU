@@ -1718,7 +1718,8 @@ static void *th_main (void *p)
 		uint64_t tgt = TH_LOAD (&rp->th_target);
 		if (!TH_LOAD (&rp->th_on) || c->cycles >= tgt) {
 			TH_PAUSE (); rp->th_spin_idle++;
-			if (++idle > 2000000u) { TH_SLEEP (); idle = 0; }            /* (the emulation paused: no busy core) */
+			if (++idle > (TH_LOAD (&rp->th_on) ? 2000000u : 20000u)) { TH_SLEEP (); idle = 0; }   /* (the emulation paused: no busy core -
+			                                              stopped (a menu over the game): a 1 ms rest after a short spin, not 2 million) */
 			continue;
 		}
 		idle = 0;

@@ -321,7 +321,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 @interface VXLibrary : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate, UIDocumentPickerDelegate>
 @end
 @implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; UISegmentedControl *_look;
-	UIButton *_size; NSInteger _sel; CADisplayLink *_pad; uint32_t _padPrev; double _padNext; }
+	UIButton *_size; NSInteger _sel; BOOL _atCur; CADisplayLink *_pad; uint32_t _padPrev; double _padNext; }
 /* (the tiles a row: 1-5, 0 titles only - one setting for every look, the same on an iPhone and an iPad (the owner); 3 at first) */
 + (int) perRow { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"lib.perrow"]; return n ? MAX (0, MIN (5, n.intValue)) : 3; }
 - (int) cols { const int k = [VXLibrary perRow]; return k ? k : 1; }
@@ -431,6 +431,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 		[_cv.topAnchor constraintEqualToAnchor:head.bottomAnchor], [_cv.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor], [_cv.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
 		[_cv.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor] ]];
 	_sel = -1; [self applyFilter];
+	{ NSString *cur = vxa_game (); for (NSUInteger i = 0; i < _shown.count; i++) if ([_shown[i][@"path"] isEqualToString:cur]) { _sel = (NSInteger) i; break; } }   /* (opened at the game playing) */
 }
 /* the size menu: 1-5 per row, titles only */
 - (void) sizeMenu
@@ -446,6 +447,12 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 /* a controller or the keys: up / down / left / right move the highlight (titles only: up / down one, left / right a page),
  * L / R (Page Up / Down) a page, the Vectrex's button 4 (Return) plays, button 3 (Esc) goes back - the player's own buttons
  * (Settings > Controls) */
+- (void) viewDidLayoutSubviews
+{
+	[super viewDidLayoutSubviews];
+	if (!_atCur && _sel >= 0 && _sel < (NSInteger) _shown.count && _cv.bounds.size.height > 0) { _atCur = YES; [_cv layoutIfNeeded];
+		[_cv scrollToItemAtIndexPath:[NSIndexPath indexPathForItem:_sel inSection:0] atScrollPosition:UICollectionViewScrollPositionCenteredVertically animated:NO]; }
+}
 - (void) viewDidAppear:(BOOL)a { [super viewDidAppear:a]; [self becomeFirstResponder]; _pad = [CADisplayLink displayLinkWithTarget:self selector:@selector(padTick)]; [_pad addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; }
 - (void) viewWillDisappear:(BOOL)a { [super viewWillDisappear:a]; [_pad invalidate]; _pad = nil; }
 - (BOOL) canBecomeFirstResponder { return YES; }

@@ -240,20 +240,20 @@ static UITableViewCell *vxs_cell (NSString *title)
 		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_sel (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
-	if (R == 10) {                                  /* (HDR: the profile - the measured Vectrex (default), as before 2026-11-20, or the whole picture lifted) */
+	if (R == 10) {                                  /* (the look: Vectrex - as the real tube - or Bright, as before 2026-11-20) */
 		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void);
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"HDR look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		const BOOL can = vxa_hdr_headroom () > 1.05; NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl ? wl.integerValue : can ? 2 : 0; if (!can) c.textLabel.text = @"Look";
-		c.detailTextLabel.text = !can ? (md == 2 ? @"Vectrex: the lines lower, the slow ones and the dots brighter" : @"Bright: the brightest held back (no HDR here)") : md == 2 ? @"As a real Vectrex: slow lines and dots far brighter than the rest" : md == 1 ? @"Lines and dots up to the screen's peak" : @"As SDR: bright overall, the brightest held back";
-		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Vectrex", @"Bright", @"Whole" ]];
-		sg.selectedSegmentIndex = md == 2 ? 0 : md == 0 ? 1 : 2; sg.enabled = YES; if (!can) [sg setEnabled:NO forSegmentAtIndex:2]; sg.selectedSegmentTintColor = VX_G;
+		const BOOL can = vxa_hdr_headroom () > 1.05; NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl && wl.integerValue != 1 ? wl.integerValue : can ? 2 : 0; if (!can) c.textLabel.text = @"Look";
+		c.detailTextLabel.text = !can ? (md == 2 ? @"Vectrex: the lines lower, the slow ones and the dots brighter" : @"Bright: the brightest held back (no HDR here)") : md == 2 ? @"As a real Vectrex: slow lines and dots far brighter than the rest" : @"As SDR: bright overall, the brightest held back";
+		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Vectrex", @"Bright" ]];
+		sg.selectedSegmentIndex = md == 2 ? 0 : 1; sg.selectedSegmentTintColor = VX_G;
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG } forState:UIControlStateNormal];
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: UIColor.blackColor } forState:UIControlStateSelected];
 		[sg sizeToFit];
-		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger x = ((UISegmentedControl *) a.sender).selectedSegmentIndex, v = x == 0 ? 2 : x == 1 ? 0 : 1;
+		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger x = ((UISegmentedControl *) a.sender).selectedSegmentIndex, v = x == 0 ? 2 : 0;
 			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.hdrmode"];
-			ulog ([NSString stringWithFormat:@"HDR look %@", v == 2 ? @"Vectrex" : v == 0 ? @"bright" : @"whole picture"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
+			ulog ([NSString stringWithFormat:@"HDR look %@", v == 2 ? @"Vectrex" : @"bright"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sg; return c; }
 	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
 		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");

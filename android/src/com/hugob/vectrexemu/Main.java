@@ -135,7 +135,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		curHz = d.getRefreshRate ();
 		log ("screen: " + d.getRefreshRate () + " Hz (up to " + best + "), HDR " + (hdrCan ? "yes, headroom " + hdrRoom : hdrScreen ? "screen yes, but not on this Android (before 14): off" : "no") + ", " + getResources ().getDisplayMetrics ().widthPixels + " x " + getResources ().getDisplayMetrics ().heightPixels + " px, density " + getResources ().getDisplayMetrics ().density);
 		VX.setHdr (hdrCan && prefs.getFloat ("app.hdr", 1f) > 0.01f, hdrRoom, prefs.getFloat ("app.hdr", 1f));
-		VX.setHdrLook (prefs.getInt ("app.hdrmode", hdrCan ? 2 : 0));   /* (the look: Vectrex the default with HDR, Bright without - as iOS) */
+		{ int lk = prefs.getInt ("app.hdrmode", hdrCan ? 2 : 0); VX.setHdrLook (lk == 1 ? (hdrCan ? 2 : 0) : lk); }   /* (1, the whole picture lifted: gone) */   /* (the look: Vectrex the default with HDR, Bright without - as iOS) */
 		trailTick ();
 	}
 	float maxHz = 60, curHz = 60; boolean hdrScreen;
@@ -241,7 +241,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		float b = 0.5f;
 		try { b = android.provider.Settings.System.getInt (getContentResolver (), android.provider.Settings.System.SCREEN_BRIGHTNESS, 128) / 255f; } catch (Throwable t) { }
 		b = Math.max (0f, Math.min (1f, b));
-		final int md = prefs.getInt ("app.hdrmode", hdrCan ? 2 : 0);
+		int md = prefs.getInt ("app.hdrmode", hdrCan ? 2 : 0); if (md == 1) md = hdrCan ? 2 : 0;
 		final float tm = md == 2 ? (hdrCan ? 1.25f : 2.0f) : 1f - 0.25f * b * b;
 		if (Math.abs (tm - trailLast) > 0.02f) { trailLast = tm; VX.setTrailMul (tm); log ("trail x" + tm + " (look " + md + ", brightness " + Math.round (b * 100) + " %)"); }
 		h.postDelayed (trailR, 2000);

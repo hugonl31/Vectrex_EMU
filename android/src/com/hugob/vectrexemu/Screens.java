@@ -128,9 +128,9 @@ final class Screens {
 		if (m.hdrCan) p.row ("HDR brightness", m.prefs.getFloat ("app.hdr", 1f) > 0.01f ? "The brightest dots up to " + String.format (java.util.Locale.ROOT, "%.1fx", 1 + (m.hdrRoom - 1) * m.prefs.getFloat ("app.hdr", 1f)) + " white" : "Off: as an ordinary screen",
 			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
 		else p.row ("HDR brightness", m.hdrScreen ? "Not on this Android version (HDR needs Android 14)" : "Not on this screen (it shows no HDR)", null);
-		{ final int md = m.prefs.getInt ("app.hdrmode", m.hdrCan ? 2 : 0); final boolean h = m.hdrCan;   /* (the look - iOS alike; without HDR: Bright or Vectrex) */
-			p.row (h ? "HDR look" : "Look", md == 2 ? (h ? "Vectrex: slow lines and dots far brighter than the rest" : "Vectrex: the lines lower, the slow ones and the dots brighter") : md == 1 && h ? "Whole: lines and dots up to the screen's peak" : "Bright: the brightest held back",
-				() -> pick (m, h ? "HDR look" : "Look", h ? new String[] { "2", "0", "1" } : new String[] { "0", "2" }, h ? new String[] { "Vectrex", "Bright", "Whole" } : new String[] { "Bright", "Vectrex" }, String.valueOf (md), s -> {
+		{ final int md0 = m.prefs.getInt ("app.hdrmode", m.hdrCan ? 2 : 0), md = md0 == 1 ? (m.hdrCan ? 2 : 0) : md0; final boolean h = m.hdrCan;   /* (the look - iOS alike; without HDR: Bright or Vectrex) */
+			p.row (h ? "HDR look" : "Look", md == 2 ? (h ? "Vectrex: slow lines and dots far brighter than the rest" : "Vectrex: the lines lower, the slow ones and the dots brighter") : "Bright: the brightest held back",
+				() -> pick (m, h ? "HDR look" : "Look", h ? new String[] { "2", "0" } : new String[] { "0", "2" }, h ? new String[] { "Vectrex", "Bright" } : new String[] { "Bright", "Vectrex" }, String.valueOf (md), s -> {
 					m.prefs.edit ().putInt ("app.hdrmode", Integer.parseInt (s)).apply (); VX.setHdrLook (Integer.parseInt (s)); m.trailLast = -1; m.trailTick (); Main.log ("HDR look " + s); reopenSettings (m); })); }
 		p.row ("Controls", "controllers, touch, keyboard", () -> { m.pop (); controls (m); });
 		p.row ("About and help", "how to play, online, credits", () -> about (m));

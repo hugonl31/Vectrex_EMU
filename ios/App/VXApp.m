@@ -1260,7 +1260,7 @@ float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIS
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
-	NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; vx_hdr_lift = wl ? (float) wl.integerValue : hr > 1.05 ? 2.0f : 0.0f;   /* (0 bright, 1 whole picture, 2 Vectrex: the default with HDR, Bright without) */   /* (the whole picture: the default) */
+	NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; vx_hdr_lift = wl && wl.integerValue != 1 ? (float) wl.integerValue : hr > 1.05 ? 2.0f : 0.0f;   /* (1, the whole picture lifted: gone - the default then) */   /* (0 bright, 1 whole picture, 2 Vectrex: the default with HDR, Bright without) */   /* (the whole picture: the default) */
 	/* (Apple: map to the headroom the screen gives NOW (currentEDRHeadroom) - the most (potential) only while iOS has not yet
 	 *  raised it for our light; at full brightness the iPhone's white is near its peak already, ~1.6x left: mapped to 8x, all
 	 *  above 1.6 clipped flat. Read again every second (vxa_hdr_tick): the headroom at the start can be 1.0 (Low Power Mode) -

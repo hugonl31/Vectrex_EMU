@@ -224,7 +224,8 @@ static const char *GPU_FS_B =
 	"        }\n"
 	"        float fall = 1.0 / (1.0 + pow(back / 130.0, 2.0));\n"
 	"        float side = abs(n.x), bot = max(n.y, 0.0), top = max(-n.y, 0.0);\n"
-	"        float strength = crefl * 1.5 * (0.85 * pow(side, 1.5) + 0.40 * bot + 0.35 * top) * fall * (1.0 + 0.06 * flow);\n"
+	"        float strength = crefl * 1.5 * (0.85 * pow(side, 1.5) + 0.40 * bot + 0.35 * top) * fall * (1.0 + 0.06 * flow)\n"
+	"            * (1.0 - smoothstep(0.84, 0.94, u));\n"   /* (none on the rounded outer edge: it turns away from the screen - vecrender.py alike) */
 	"        vec3 Nu = vec3(N.x, -N.y, N.z);\n"
 	"        vec3 Pc = vec3(tgt.x * 11.0, -tgt.y * 11.0, H * u * 11.0);\n"
 	"        vec3 V = normalize(vec3(0.0, 0.0, 50.0) - Pc), L = normalize(lc - Pc);\n"

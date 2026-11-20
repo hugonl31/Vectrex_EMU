@@ -713,7 +713,7 @@ class NetPlay:
     def reset_mode(self, stream):
         """a game switch to or from a streamed game: frame 0 again on both sides, streamed or in step"""
         self.stream = bool(stream); self.reset(); self.sums_mine, self.sums_theirs = {}, {}; self.desync = None
-        self.st_fno = 0; self.st_asm = {}; self.st_q = []; self.st_last = -1; self.st_in_seq = None
+        self.st_fno = 0; self.st_asm = {}; self.st_q = []; self.st_last = -1; self.st_in_seq = None; self.st_buf = True; self.st_tgt = 2
         if hasattr(self, 'st_done'): self.st_done = set()
 
     def accept(self, ok, why=''):
@@ -1057,9 +1057,18 @@ class NetPlay:
         """player 2: the next frame's packed data (None: none here) - more than 3 waiting: the oldest left out; behind:
         the time to show has passed, a second one may go too"""
         self._drain()
-        while len(self.st_q) > 3:
+        now = time.perf_counter()                           # (a small playout buffer, as the apps': shown once st_tgt frames are here;
+        tgt = getattr(self, 'st_tgt', 2)                     #  run dry - one more, up to 6; 15 calm seconds - one less)
+        if getattr(self, 'st_buf', True):
+            if len(self.st_q) < tgt:
+                return None
+            self.st_buf = False; self.st_calm = now
+        if now - getattr(self, 'st_calm', now) > 15.0 and tgt > 2:
+            self.st_tgt = tgt = tgt - 1; self.st_calm = now
+        while len(self.st_q) > tgt + 6:
             self.st_q.pop(0); self.st_drop += 1
         if not self.st_q:
+            self.st_buf = True; self.st_tgt = min(6, tgt + 1); self.st_calm = now
             return None
         fno, payload = self.st_q.pop(0); self.st_last = fno
         return payload

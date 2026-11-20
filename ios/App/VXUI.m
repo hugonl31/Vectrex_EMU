@@ -170,7 +170,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	NSArray *top = @[ @"vectrex_emu_profile", @"vectrex_emu_deck", @"vectrex_emu_rotate", @"vectrex_emu_rate", @"vectrex_emu_size",
 	                  @"vectrex_emu_overlay", @"vectrex_emu_ov_glow", @"vectrex_emu_scratches", @"vectrex_emu_room", @"vectrex_emu_ceiling",
 	                  @"vectrex_emu_glow", @"vectrex_emu_afterglow", @"vectrex_emu_brightness", @"vectrex_emu_keys", @"vectrex_emu_port2" ];
-	NSSet *hide = [NSSet setWithArray:@[ @"vectrex_emu_shape", @"vectrex_emu_btn_browser" ]];
+	NSSet *hide = [NSSet setWithArray:@[ @"vectrex_emu_shape", @"vectrex_emu_btn_browser", @"vectrex_emu_deck", @"vectrex_emu_skip_intro" ]];   /* (the deck, skip intro: under App, on top) */
 	NSMutableArray *cs = [NSMutableArray array];
 	for (NSString *k in order) for (int c = 0; c < vxa_ncats (); c++) if ([k isEqualToString:@(vxa_ckey (c))]) [cs addObject:@(c)];
 	for (int c = 0; c < vxa_ncats (); c++) if (![cs containsObject:@(c)]) [cs addObject:@(c)];
@@ -207,28 +207,59 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 7; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 10; }
+/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, HDR, controls, about, reset - as numbered below) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[10] = { 0, 1, 7, 8, 9, 2, 3, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 9 ? -1 : m[ip.row]; }
+static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
+{
+	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
+	[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
+	[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal]; [sg sizeToFit]; return sg;
+}
+static UITableViewCell *vxs_cell (NSString *title)
+{
+	UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+	c.textLabel.text = title; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; return c;
+}
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s ? @(vxa_cdesc (_cats[(NSUInteger) s - 1].intValue)).uppercaseString : @"APP"; }
-- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Clock and battery: the time and battery at the top of the screen, beside the camera. Top bar: always in its own row, or over the picture and hiding itself - tap the top of the screen to bring it back (the picture then gets the room)."; }
+- (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s ? @(vxa_cinfo (_cats[(NSUInteger) s - 1].intValue)) : @"Top bar auto-hide: tap the top of the screen to bring it back. Control deck: below the picture; pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away."; }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
-	if (!ip.section && ip.row == 6) {               /* (every setting back to its default - as RetroArch's Reset Core Options) */
+	const NSInteger R = vxs_app (ip); __weak VXSettings *ws = self;
+	if (R == 7) {                                   /* (the control deck: its look) */
+		extern int vxa_deck_style (void), vxa_deck_pop (void); extern void vxa_deck_set (int, int);
+		UITableViewCell *c = vxs_cell (@"Control deck"); UISegmentedControl *sg = vxs_seg (@[ @"Off", @"Full", @"Slim" ], vxa_deck_style ());
+		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set ((int) ((UISegmentedControl *) a.sender).selectedSegmentIndex, vxa_deck_pop ());
+			[ws.tableView reloadRowsAtIndexPaths:@[ [NSIndexPath indexPathForRow:3 inSection:0] ] withRowAnimation:UITableViewRowAnimationNone]; }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sg; return c; }
+	if (R == 8) {                                   /* (the deck pops up: hidden until the picture's bottom is tapped) */
+		extern int vxa_deck_style (void), vxa_deck_pop (void); extern void vxa_deck_set (int, int);
+		UITableViewCell *c = vxs_cell (@"Deck pop-up"); UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_deck_pop () != 0; sw.enabled = vxa_deck_style () != 0;
+		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
+		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_style (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sw; return c; }
+	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
+		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");
+		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = i >= 0 && !strcmp (vxa_oval (i), "on");
+		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_oset (i, ((UISwitch *) a.sender).on ? "on" : "off"); }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sw; return c; }
+	if (R == 6) {                                   /* (every setting back to its default - as RetroArch's Reset Core Options) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
 		int n = 0; for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) n++;
 		c.textLabel.text = @"Reset all settings"; c.textLabel.textColor = n ? VX_CHG : VX_DIM; c.backgroundColor = VX_PANEL;
 		c.detailTextLabel.text = n ? [NSString stringWithFormat:@"%d changed - all back to their defaults (a long press on one: that one)", n] : @"All at their defaults"; c.detailTextLabel.textColor = VX_DIM;
 		UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
-	if (!ip.section && ip.row == 5) {               /* (about and help: the version, how to play, online, credits, licence) */
+	if (R == 5) {                                   /* (about and help: the version, how to play, online, credits, licence) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 		c.textLabel.text = @"About and help"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"how to play, online, credits"; c.detailTextLabel.textColor = VX_DIM;
 		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
-	if (!ip.section && ip.row == 4) {               /* (the controls: controllers, buttons, touch, keyboard) */
+	if (R == 4) {                                   /* (the controls: controllers, buttons, touch, keyboard) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 		c.textLabel.text = @"Controls"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"controllers, touch, keyboard"; c.detailTextLabel.textColor = VX_DIM;
 		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
-	if (!ip.section && ip.row == 3) {               /* (HDR: the brightest dots above the screen's white) */
+	if (R == 3) {                                   /* (HDR: the brightest dots above the screen's white) */
 		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void); float hr = vxa_hdr_headroom ();
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
 		c.textLabel.text = @"HDR brightness"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -242,25 +273,25 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 			wc.detailTextLabel.text = v > 0.01 ? [NSString stringWithFormat:@"The brightest dots up to %.1fx white", 1 + (hr - 1) * v] : @"Off: as an ordinary screen"; }] forControlEvents:UIControlEventValueChanged];
 		[sl addAction:[UIAction actionWithHandler:^(UIAction *a) { ulog ([NSString stringWithFormat:@"HDR %.0f %%", ((UISlider *) a.sender).value * 100]); }] forControlEvents:UIControlEventTouchUpInside];
 		c.accessoryView = sl; return c; }
-	if (!ip.section && ip.row == 2) {               /* (the downloads: which parts are here, add or remove) */
+	if (R == 2) {                                   /* (the downloads: which parts are here, add or remove) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 		c.textLabel.text = @"Downloads"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"games, boxes, UVMC2, PiTrex"; c.detailTextLabel.textColor = VX_DIM;
 		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
-	if (!ip.section && ip.row == 1) {               /* (the quick bar: its own row, or hiding itself over the picture) */
+	if (R == 1) {                                   /* (the quick bar: its own row, or hiding itself over the picture) */
 		UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"bar"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"bar"];
 		c.textLabel.text = @"Top bar"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
 		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Always", @"Auto-hide" ]];
 		NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:@"app.topbar"]; BOOL au = m ? [m isEqualToString:@"auto"] : vxa_squarish () != 0;
 		sg.selectedSegmentIndex = au ? 1 : 0; sg.selectedSegmentTintColor = VX_SEL; [sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
-		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal]; __weak VXSettings *ws = self;
+		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal];
 		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISegmentedControl *) a.sender).selectedSegmentIndex == 1;
 			[NSUserDefaults.standardUserDefaults setObject:on ? @"auto" : @"always" forKey:@"app.topbar"]; ulog ([NSString stringWithFormat:@"top bar %@", on ? @"auto-hide" : @"always"]);
 			if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)]; }] forControlEvents:UIControlEventValueChanged];
 		[sg sizeToFit]; c.accessoryView = sg; return c; }
-	if (!ip.section) {                              /* (the clock and battery: iOS's own status bar) */
+	if (R == 0) {                                   /* (the clock and battery: iOS's own status bar) */
 		UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"app"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"app"];
 		c.textLabel.text = @"Clock and battery"; c.textLabel.textColor = VX_FG; c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; __weak VXSettings *ws = self;
+		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"];
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.statusbar"];
 			ulog ([NSString stringWithFormat:@"clock and battery %@", on ? @"on" : @"off"]); [ws.game setNeedsStatusBarAppearanceUpdate]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
@@ -273,16 +304,18 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
-	if (!ip.section && ip.row == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
-	if (!ip.section && ip.row == 6) { [t deselectRowAtIndexPath:ip animated:YES]; __weak VXSettings *ws = self;
+	const NSInteger R = vxs_app (ip);
+	if (R == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
+	if (R == 6) { [t deselectRowAtIndexPath:ip animated:YES]; __weak VXSettings *ws = self;
 		UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Reset all settings?" message:@"Every setting of the picture, the overlay, the sound and the controls back to its default." preferredStyle:UIAlertControllerStyleAlert];
 		[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
 		[a addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x) { (void) x; int n = 0;
 			for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
+			[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"];   /* (the deck's pop-up too: this screen's default) */
 			ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); [ws.tableView reloadData]; }]];
 		[self presentViewController:a animated:YES completion:nil]; return; }
-	if (!ip.section && ip.row == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }
-	if (!ip.section && ip.row == 2) { UIViewController *g = self.game; ulog (@"settings: downloads");
+	if (R == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }
+	if (R == 2) { UIViewController *g = self.game; ulog (@"settings: downloads");
 		[self dismissViewControllerAnimated:YES completion:^{ if ([g respondsToSelector:@selector(openDownloads)]) [g performSelector:@selector(openDownloads)]; }]; return; }
 	if (!ip.section) return;
 	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; ulog ([NSString stringWithFormat:@"setting opened %s", vxa_okey (i)]);

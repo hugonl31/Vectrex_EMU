@@ -206,7 +206,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		/* (this app's own, as the iOS app's: the deck below the picture, the picture upright as the screen stands, the keys
 		 *  as on the PC, the screen's own rate) */
 		int hz = curHz >= 143 ? 144 : curHz >= 119 ? 120 : curHz >= 89 ? 90 : curHz >= 71 ? 72 : 60;   /* (the screen's rate now: the Nova "up to 120" ran at 60 - 120 Hz ran the emulator twice a refresh, 15.6 of 16.7 ms) */
-		return "vectrex_emu_deck=" + (squarish () ? "pop-up" : "full") + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
+		return "vectrex_emu_deck=" + (squarish () ? "slim" : "full") + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
 	}
 	void startCore ()
 	{
@@ -285,18 +285,28 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	/* the deck (Settings: Control deck): 1 full, 2 slim, 3 pop-up, 0 off - upright only, as the iOS app */
 	int deckMode ()
 	{
-		if (!started || landscape) return 0; String v = VX.val ("vectrex_emu_deck");
-		return v.equals ("off") ? 0 : v.equals ("slim") ? 2 : v.equals ("pop-up") ? 3 : 1;
+		if (!started || landscape) return 0; final int st = deckStyle ();
+		return st != 0 && deckPop () ? 3 : st;
+	}
+	/* (Settings > App: the deck's look - 0 off, 1 full, 2 slim - and whether it pops up, a setting of its own; the old "pop-up": slim, popping up) */
+	int deckStyle () { String v = VX.val ("vectrex_emu_deck"); return v.equals ("off") ? 0 : v.equals ("slim") || v.equals ("pop-up") ? 2 : 1; }
+	boolean deckPop () { return VX.val ("vectrex_emu_deck").equals ("pop-up") || prefs.getBoolean ("app.deckpop", squarish ()); }
+	void deckSet (int style, boolean pop)
+	{
+		VX.oset (VX.ofind ("vectrex_emu_deck"), style == 0 ? "off" : style == 2 ? "slim" : "full"); prefs.edit ().putBoolean ("app.deckpop", pop).apply ();
+		log ("deck " + (style == 0 ? "off" : style == 2 ? "slim" : "full") + (pop ? ", pop-up" : ""));
 	}
 	int lastDeckMode = -1;
 	void placeDeck ()
 	{
 		final int dm = deckMode (); if (dm != lastDeckMode) { lastDeckMode = dm; layout (); }
 		if (dm == 0 || pic[2] <= 0) { deck.setVisibility (View.GONE); popTab.setVisibility (View.GONE); return; }
-		final int h = (int) dp (dm == 1 ? 58 : 40), top = (int) (dm == 3 ? pic[1] + pic[3] - h : pic[1] + pic[3]);
+		final int look = dm == 3 ? deckStyle () : dm, h = (int) dp (look == 1 ? 58 : 40);
+		final boolean below = dm != 3 || root.getHeight () - insBot - (pic[1] + pic[3]) >= h + dp (8);   /* (popping up: below the picture where there is room, else over its foot) */
+		final int top = (int) (below ? pic[1] + pic[3] : pic[1] + pic[3] - h);
 		FrameLayout.LayoutParams l = (FrameLayout.LayoutParams) deck.getLayoutParams ();
 		if (l.topMargin != top || l.height != h || l.leftMargin != insL || l.rightMargin != insR) { l.topMargin = top; l.height = h; l.leftMargin = insL; l.rightMargin = insR; l.gravity = android.view.Gravity.TOP; deck.setLayoutParams (l); }
-		deck.mode = dm == 1 ? 1 : 2;
+		deck.mode = look == 1 ? 1 : 2;
 		boolean show = dm != 3 || System.currentTimeMillis () < popUntil || !stack.isEmpty () || deck.paused != 0;   /* (the pop-up: a while after a touch, while paused) */
 		deck.setVisibility (show ? View.VISIBLE : View.GONE);
 		popTab.setVisibility (View.GONE);   /* (no tab: a tap on the picture's foot opens the pop-up deck) */

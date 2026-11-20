@@ -115,6 +115,12 @@ final class Screens {
 		p.row ("Clock and battery", m.prefs.getBoolean ("app.statusbar", false) ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("app.statusbar", !m.prefs.getBoolean ("app.statusbar", false)).apply ();
 			Main.log ("clock and battery " + (m.prefs.getBoolean ("app.statusbar", false) ? "on" : "off")); m.immersive (); m.root.postDelayed (() -> reopenSettings (m), 350); });   /* (built again once the status bar's room is known) */
 		p.row ("Top bar", m.barAuto () ? "Auto-hide" : "Always", () -> { m.prefs.edit ().putString ("app.topbar", m.barAuto () ? "fixed" : "auto").apply (); m.showBar (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); });
+		{ final int st = m.deckStyle (); final boolean pop = m.deckPop ();
+		  p.row ("Control deck", st == 0 ? "Off" : st == 2 ? "Slim" : "Full", () -> pick (m, "Control deck", new String[] { "0", "1", "2" }, new String[] { "Off", "Full", "Slim" }, "" + st, v -> {
+			m.deckSet (Integer.parseInt (v), m.deckPop ()); m.layout (); reopenSettings (m); }));
+		  if (st != 0) p.row ("Deck pop-up", pop ? "On" : "Off", () -> { m.deckSet (m.deckStyle (), !m.deckPop ()); m.layout (); reopenSettings (m); }); }
+		{ final int si = VX.ofind ("vectrex_emu_skip_intro");
+		  if (si >= 0) p.row ("Skip intro", VX.opt (si, 5).equals ("on") ? "On" : "Off", () -> { VX.oset (si, VX.opt (si, 5).equals ("on") ? "off" : "on"); reopenSettings (m); }); }
 		p.row ("Downloads", Pack.token (m) != null ? "games, boxes, UVMC2, PiTrex" : "Not in this build (no server key)", () -> { if (Pack.token (m) == null) { m.toast ("This build has no server key: no downloads", 2.5); return; } m.pop (); Pack.choose (m, false); });
 		if (m.hdrCan) p.row ("HDR brightness", m.prefs.getFloat ("app.hdr", 1f) > 0.01f ? "The brightest dots up to " + String.format (java.util.Locale.ROOT, "%.1fx", 1 + (m.hdrRoom - 1) * m.prefs.getFloat ("app.hdr", 1f)) + " white" : "Off: as an ordinary screen",
 			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
@@ -127,9 +133,10 @@ final class Screens {
 			pick (m, "Reset all settings?", new String[] { "no", "yes" }, new String[] { "Cancel", "Reset: every setting back to its default" }, "no", v -> {
 				if (!v.equals ("yes")) { reopenSettings (m); return; } int k = 0;
 				for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) { VX.oset (i, VX.opt (i, 6)); k++; }
+				m.prefs.edit ().remove ("app.deckpop").apply ();   /* (the deck's pop-up too: this screen's default) */
 				Main.log ("settings: reset all (" + k + " changed)"); m.toast ("Settings back to their defaults", 2); reopenSettings (m); }); });
 		  if (n > 0) ((TextView) r.findViewWithTag ("t")).setTextColor (Main.CHG); }
-		p.foot ("Clock and battery: the time and battery at the top of the screen. Top bar: always in its own row, or over the picture and hiding itself - tap the top of the screen to bring it back (the picture then gets the room).");
+		p.foot ("Top bar auto-hide: tap the top of the screen to bring it back. Control deck: below the picture; pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away.");
 		/* the core's settings by its groups, in the iOS app's order (VXSettings): the most used first, in each group the
 		 * usual ones on top; settings that mean nothing here left out */
 		final int n = VX.nopts (), nc = VX.ncats ();
@@ -137,7 +144,7 @@ final class Screens {
 		java.util.List<String> top = java.util.Arrays.asList ("vectrex_emu_profile", "vectrex_emu_deck", "vectrex_emu_rotate", "vectrex_emu_rate", "vectrex_emu_size",
 			"vectrex_emu_overlay", "vectrex_emu_ov_glow", "vectrex_emu_scratches", "vectrex_emu_room", "vectrex_emu_ceiling",
 			"vectrex_emu_glow", "vectrex_emu_afterglow", "vectrex_emu_brightness", "vectrex_emu_keys", "vectrex_emu_port2");
-		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look");
+		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look", "vectrex_emu_deck", "vectrex_emu_skip_intro");   /* (the deck, skip intro: under App) */
 		java.util.ArrayList<Integer> cs = new java.util.ArrayList<> ();
 		for (String k : order) for (int c = 0; c < nc; c++) if (VX.cat (c, 0).equals (k)) cs.add (c);
 		for (int c = 0; c < nc; c++) if (!cs.contains (c)) cs.add (c);

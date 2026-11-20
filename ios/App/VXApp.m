@@ -169,7 +169,7 @@ static void vxa_opts_defaults (void)
 		if (sv) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", sv.UTF8String); }
 	/* (this app's own defaults: the control deck below the picture - its cartridge opens the ROM browser, RESET, the knob) */
 	int dk = vxa_opt_find ("vectrex_emu_deck");
-	const char *dd = vxa_squarish () ? "pop-up" : "full";   /* (a 4:3 screen: the deck pops up, the picture gets the room) */
+	const char *dd = vxa_squarish () ? "slim" : "full";   /* (a 4:3 screen: slim, popping up - the picture gets the room) */
 	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "%s", dd);   /* (the app's default - what Reset gives back) */
 	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", dd);
 	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
@@ -967,11 +967,11 @@ static void vxa_set_opt (int i, NSString *v)
 - (void) openMenu { [VXUI showGameMenuFrom:self]; }
 - (void) controlsChanged { [self layoutControls]; _pic = CGRectZero; }
 - (BOOL) deckShown { const int m = [self deckMode]; return m == 1 || m == 2; }   /* (room kept for it below the picture) */
-- (int) deckMode                               /* (the setting Control deck, upright: 1 full, 2 slim, 3 pop-up, 0 off) */
+- (int) deckMode                               /* (the setting Control deck, upright: 1 full, 2 slim, 3 popping up (full or slim), 0 off) */
 {
 	CGSize v = self.view.bounds.size; if (v.width > v.height || !_link) return 0;
-	int i = vxa_opt_find ("vectrex_emu_deck"); if (i < 0) return 1; const char *d = vxa_opt[i].val;
-	return !strcmp (d, "off") ? 0 : !strcmp (d, "slim") ? 2 : !strcmp (d, "pop-up") ? 3 : 1;
+	extern int vxa_deck_style (void), vxa_deck_pop (void); const int st = vxa_deck_style ();
+	return st && vxa_deck_pop () ? 3 : st;
 }
 /* the deck in its place: full / slim below the picture (only when it moves - setting it each picture laid the view out
  * again and again); pop-up: the slim deck over the picture's foot for a while after its tab or a touch on it, while paused */
@@ -979,9 +979,11 @@ static void vxa_set_opt (int i, NSString *v)
 {
 	CGSize v = self.view.bounds.size; UIEdgeInsets s = self.view.safeAreaInsets; VXDeck *dk = (VXDeck *) _deck;
 	if (m == 0) { if (!_deck.hidden) _deck.hidden = YES; if (!_popTab.hidden) _popTab.hidden = YES; return; }
-	const int want = m == 1 ? 1 : 2; if (dk.mode != want) dk.mode = want;
-	const double h = m == 1 ? VXA_DECKH : VXA_SLIMH;
-	CGRect df = CGRectMake (s.left, m == 3 ? CGRectGetMaxY (pic) - h : CGRectGetMaxY (pic), v.width - s.left - s.right, h);
+	extern int vxa_deck_style (void); const int want = m == 3 ? vxa_deck_style () : m; if (dk.mode != want) dk.mode = want;
+	const double h = want == 1 ? VXA_DECKH : VXA_SLIMH;
+	/* (popping up: below the picture where there is room for it (an iPhone upright), else over the picture's foot) */
+	const BOOL below = m != 3 || v.height - s.bottom - CGRectGetMaxY (pic) >= h + 8;
+	CGRect df = CGRectMake (s.left, below ? CGRectGetMaxY (pic) : CGRectGetMaxY (pic) - h, v.width - s.left - s.right, h);
 	if (!CGRectEqualToRect (df, _deck.frame)) _deck.frame = df;
 	BOOL show = YES;
 	if (m == 3) { show = CACurrentMediaTime () < _popUntil || vx_app_paused () || vxa_holding; [_deck.superview bringSubviewToFront:_deck]; }
@@ -1150,6 +1152,23 @@ void vxa_oset (int i, const char *v)
 {
 	if (i < 0 || i >= vxa_nopt || !strcmp (vxa_opt[i].val, v)) return;
 	snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", v); vxa_opt_store (i); vxa_opt_dirty = 1; vlog ("setting %s = %s (memory %.0f MB)", vxa_opt[i].key, v, vxa_mem_mb ());
+}
+/* the control deck (Settings > App): its look - 0 off, 1 full, 2 slim - and whether it pops up (an app setting of its own;
+ * the old value "pop-up": slim, popping up) */
+int vxa_deck_style (void)
+{
+	int i = vxa_opt_find ("vectrex_emu_deck"); if (i < 0) return 1; const char *d = vxa_opt[i].val;
+	return !strcmp (d, "off") ? 0 : !strcmp (d, "slim") || !strcmp (d, "pop-up") ? 2 : 1;
+}
+int vxa_deck_pop (void)
+{
+	int i = vxa_opt_find ("vectrex_emu_deck"); if (i >= 0 && !strcmp (vxa_opt[i].val, "pop-up")) return 1;
+	NSNumber *p = [NSUserDefaults.standardUserDefaults objectForKey:@"app.deckpop"]; return p ? p.boolValue : vxa_squarish () != 0;
+}
+void vxa_deck_set (int style, int pop)
+{
+	int i = vxa_opt_find ("vectrex_emu_deck"); vxa_oset (i, style == 0 ? "off" : style == 2 ? "slim" : "full");
+	[NSUserDefaults.standardUserDefaults setBool:pop != 0 forKey:@"app.deckpop"]; vlog ("deck %s%s", style == 0 ? "off" : style == 2 ? "slim" : "full", pop ? ", pop-up" : "");
 }
 int vxa_ncats (void) { return vxa_ncat; }
 const char *vxa_ckey (int i) { return vxa_cat[i].key; }

@@ -68,10 +68,8 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
 	"  g1 = mix(g1, max(g1 - f * a1, 0.0), lit); g2 = mix(g2, max(g2 - f * a2, 0.0), lit);\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
-	"  float la = max(txb(fp, uv).a - fa, 0.0), h1 = texelFetch(g1t, ip, 0).a * kd1 + la * e1, h2 = texelFetch(g2t, ip, 0).a * kd2 + la * e2;\n"
-	"  if (fa > 0.0) { h1 = max(h1 - fa * a1, 0.0); h2 = max(h2 - fa * a2, 0.0); }\n"
-	"  h1 *= step(1e-4, h1); h2 *= step(1e-4, h2);\n"
-	"  o1 = vec4(g1, h1); o2 = vec4(g2, h2); os = vec4(f + lift(g1 + g2), fa + h1 + h2); }\n";
+	"  o1 = vec4(g1, 0.0); o2 = vec4(g2, 0.0); os = vec4(f + lift(g1 + g2), fa); }\n";   /* (HDR: the light above white is the spot's own,
+	                                              no trail of it - that trail, up to 8x the ordinary one, gave Last Human's ship a long bright tail) */
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */

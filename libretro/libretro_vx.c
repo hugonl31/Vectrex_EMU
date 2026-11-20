@@ -2869,6 +2869,8 @@ void retro_run (void)
 		                                       *  held frame's light added each refresh made it glow brighter and brighter) */
 		if (gph) gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
 		else frame_out (0, NULL, NULL, NULL);
+		if (nv_stream && nv_role == 2 && !nv_pause) half_dt += dt;   /* (streamed, player 2: the host's time goes on between its frames
+		                                       *  (50 a second, 120 refreshes here) - the afterglow fades over it too; it lasted 2.5x long) */
 		sheet_write (); if (!asy) flash_save (0); if (!asy) audio_out ();
 		return;
 	}

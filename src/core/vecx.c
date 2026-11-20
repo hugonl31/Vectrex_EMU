@@ -1002,6 +1002,8 @@ void vecx_reset_button (void)
 	{ extern int vt_reset_btn; vt_reset_btn = 1; vecx_reset (); vt_reset_btn = 0; }
 	memcpy (ram, keep, sizeof keep);
 	vt_mc_page = page; vt_hb_latch = ra;
+	ram[0x3fe] = 0x73; ram[0x3ff] = 0x21;   /* (the BIOS's warm start flag ($CBFE = $7321): RESET goes to the game's title screen - a game that
+	                                       *  uses that RAM (Vectorblade) started cold, with the VECTREX intro, on every RESET) */
 }
 
 void vecx_reset (void)

@@ -461,6 +461,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		TextView t = text ("  " + s + "  ", 14, HI, true); t.setGravity (Gravity.CENTER); t.setMaxLines (2); t.setPadding ((int) dp (12), (int) dp (7), (int) dp (12), (int) dp (7));
 		t.setBackground (round (0xf20b1511, EDGE2, dp (10)));
 		LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-2, -2); lp.bottomMargin = (int) dp (6); lp.leftMargin = lp.rightMargin = (int) dp (20);
+		toasts.bringToFront ();   /* (over any open screen: a chat line came while a menu was open, under it) */
 		toasts.addView (t, lp); while (toasts.getChildCount () > 4) toasts.removeViewAt (ban != null && toasts.getChildAt (0) == ban ? 1 : 0);
 		t.animate ().alpha (0).setStartDelay ((long) (Math.max (secs, 2) * 1000)).setDuration (500).withEndAction (() -> toasts.removeView (t));
 	}

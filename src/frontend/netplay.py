@@ -202,6 +202,7 @@ PACE_MAX = 0.0002           # (seconds a frame it slows down at most: 1 %)
 
 
 JIT_FAST = b'\x00jit:fast'   # (player 2's yes, with its accept: the same processor type - the PiTrex JIT at full speed)
+RGMODE_TAG = b'\x00rgmode'   # (player 2's yes: it follows a switch to or from a card game too - streamed / in step; netvx.c alike)
 REGAME_TAG = b'\x00regame'   # (player 2's yes: it follows the host to another game in a game - the iOS app's netvx.c too)
 UVM2_TAG = b'\x00uvm2:'      # (player 2's yes: + the UVMC2 mode both play in - the lower of the two players')
 UVM2_RANK = ('exact', 'fast', 'dev')
@@ -374,6 +375,8 @@ class NetPlay:
         self.reset()
         self.lost = False
         self.gap = False
+        self.rgm_peer = False; self.x_seq = 0; self.x_until = 0.0; self.x_t = 0.0; self.x_got = None   # (a switch out of a streamed
+                                                        #  game: the host's word 'X' - no input frames carry it)
         self.peer_regame = False                                # (another game in a game, both: the host's pick - R / r, a
         self.rg_seq = 0; self.rg_out = None; self.rg_t = 0.0    #  flag 8 in the host's input switches both at one frame)
         self.rg_offer = None; self.rg_answer = None; self.rg_ans_out = None
@@ -529,6 +532,7 @@ class NetPlay:
                         if q and q[0] == ord('A'):
                             game['jit_fast'] = JIT_FAST in q[1]   # (player 2 has the same processor type)
                             self.peer_regame = REGAME_TAG in q[1]    # (it can follow the host to another game)
+                            self.rgm_peer = RGMODE_TAG in q[1]       # (to and from a card game too)
                             game['uvm2_net'] = uvm2_from_accept(q[1])   # (the UVMC2 mode both play in)
                             self.save_peer = SAVE_TAG in q[1]        # (it takes the host's saves)
                             self.rb_peer = RB_TAG in q[1]            # (it runs on guesses too: both a short delay)
@@ -700,6 +704,14 @@ class NetPlay:
                     self._send(ord('W'), struct.pack('<HHHI', sid, i, len(parts), len(blob)) + part)
         if self.rg_ans_out is not None:
             self._send(ord('r'), self.rg_ans_out)
+        if self.role == 'host' and now < self.x_until:
+            self._send(ord('X'), struct.pack('<H', self.x_seq))
+
+    def reset_mode(self, stream):
+        """a game switch to or from a streamed game: frame 0 again on both sides, streamed or in step"""
+        self.stream = bool(stream); self.reset(); self.sums_mine, self.sums_theirs = {}, {}; self.desync = None
+        self.st_fno = 0; self.st_asm = {}; self.st_q = []; self.st_last = -1; self.st_in_seq = None
+        if hasattr(self, 'st_done'): self.st_done = set()
 
     def accept(self, ok, why=''):
         """join: the game is there (or not)"""
@@ -982,7 +994,9 @@ class NetPlay:
         now = time.perf_counter()
         if now - self.last_send > 0.25:                         # (alive, the pause - no inputs are sent while streamed)
             self._send_pause(); self.last_send = now
-        self._drain()
+        if self.chat_out and now - self.chat_t > 0.15:          # (the chat: until confirmed - no inputs carry it here)
+            self._send_chat(now)
+        self._drain(); self.regame_tick()
 
     def st_input(self):
         """the host: player 2's controller now (its RESET and a port taken once each)"""
@@ -1059,6 +1073,9 @@ class NetPlay:
         now = time.perf_counter()
         if now - self.pause_t > 1.0:
             self._send_pause()
+        if self.chat_out and now - self.chat_t > 0.15:          # (the chat: until confirmed)
+            self._send_chat(now)
+        self.regame_tick()
 
     # ---- the pause: each side's own (P, a menu, another app on a phone); the game stands while either side is paused -
     #      one side going on no longer ends the other's (the apps' netvx.c alike)
@@ -1104,7 +1121,11 @@ class NetPlay:
         PC's clock runs into the other's and waits (a stutter). Each side sees itself ahead by the one-way delay too:
         half the difference of the two is how far ahead it really is"""
         ahead = (self.adv - self.adv_them) / 2.0
-        if self.f < 100 or ahead <= PACE_DEAD:
+        if self.f < 100:
+            return 0.0
+        if ahead < -1.5:                                 # (behind - a moment's halt over there or here: up to 10 % faster, back in a
+            return max(-0.002, (ahead + 1.5) * 0.0004)  #  few seconds - the apps' netvx_pace alike)
+        if ahead <= PACE_DEAD:
             return 0.0
         return min(PACE_MAX, (ahead - PACE_DEAD) * 0.0001)
 
@@ -1205,6 +1226,9 @@ class NetPlay:
                     else:
                         g = self.rg_offer[1]; self.rg_sv_got = {}; self.rg_sv_blob = None; self.rg_ans_wait = None
                         self.rg_sv_need = (int(g['sv']), int(g.get('svi', 0))) if g.get('sv') else None
+            elif kind == ord('X') and self.stream and self.role != 'host' and len(body) >= 2:   # (the host switched out of its streamed game)
+                if struct.unpack_from('<H', body)[0] == getattr(self, 'rg_seen', None):
+                    self.x_got = struct.unpack_from('<H', body)[0]
             elif kind == ord('L') and self.stream and self.role != 'host':
                 self._st_piece(body)
             elif kind == ord('u') and self.stream and self.role == 'host' and len(body) >= 10:   # (player 2's controller: the newest)

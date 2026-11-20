@@ -1049,9 +1049,11 @@ static void netvx_stream_guest (void)
 	  pk[4] = (unsigned char) (signed char) (jx < -127 ? -127 : jx > 127 ? 127 : jx); pk[5] = (unsigned char) (signed char) (jy < -127 ? -127 : jy > 127 ? 127 : jy);
 	  pk[6] = ls_pad[2]; pk[7] = nv_st_my_resets; pk[8] = nv_st_my_take_seq; pk[9] = nv_st_my_take_val; pk[10] = 0; nv_send ('u', pk, 11); }
 	if (nv_pause) { nv_unlock (); run_t = total_cycles; emu_stood = 1; return; }
-	while (nv_stq_n > 3) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--; nv_st_n_drop++; }
+	/* (Apple's peer-to-peer Wi-Fi brings the frames in bursts: up to 10 kept, each shown when its time comes, one extra a
+	 *  refresh while more than 3 wait - more than 3 left out at once was 10-30 frames in 5 s and the sound running dry) */
+	while (nv_stq_n > 10) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--; nv_st_n_drop++; }
 	int k = 0;
-	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || nv_stq_n > 2) && k < 8) {
+	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || (nv_stq_n > 3 && k < 2)) && k < 8) {
 		nv_stfr_t q = nv_stq[0]; memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--;
 		nv_unlock ();
 		memcpy (last, q.L, sizeof (line_t) * (size_t) q.nl); nlast = q.nl; total_cycles = q.tc;

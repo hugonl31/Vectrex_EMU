@@ -582,3 +582,15 @@ uint32_t pitrex_sig (void)                  /* (online play: the Pi's state in o
 	for (int i = 0; i < 16; i++) h = (h ^ px_cpu.r[i]) * 16777619u;
 	return (h ^ (uint32_t) px_n_acc) * 16777619u;
 }
+
+/* (test: VX_DIRTY - the 4 KB pages of the PiTrex (its RAM) that changed since the last call) */
+static int dirty_pages (const uint8_t *m, size_t n, uint32_t **prev, size_t *np)
+{
+	const size_t pages = n >> 12; int c = 0;
+	if (*np != pages) { free (*prev); *prev = calloc (pages, 4); *np = pages; if (!*prev) return -1; }
+	for (size_t i = 0; i < pages; i++) { uint32_t h = 2166136261u; const uint32_t *w = (const uint32_t *) (m + (i << 12));
+		for (int k = 0; k < 1024; k++) h = (h ^ w[k]) * 16777619u;
+		if (h != (*prev)[i]) { c++; (*prev)[i] = h; } }
+	return c;
+}
+int pitrex_dirty_probe (int *total) { static uint32_t *pp; static size_t np; if (!px_ram) return 0; *total = (int) (PX_RAM >> 12); return dirty_pages (px_ram, PX_RAM, &pp, &np); }

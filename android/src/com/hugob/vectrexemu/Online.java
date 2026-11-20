@@ -144,7 +144,7 @@ final class Online {
 			else if (role == 2 && acc == 1 && st.optInt ("ready") != 0 && joinRom != null) {
 				VX.net (1, 0); load (m, joinRom); VX.net (2, 0); playing = true; saidPause = saidDesync = saidLost = 0;
 				Main.log ("online: playing " + joinRom + " as player 2");
-				m.toast ("ONLINE: CONNECTED" + relay + " - YOU ARE PLAYER 2" + (st.optInt ("card") != 0 ? " - UVMC2 " + st.optString ("uvm2").toUpperCase (Locale.ROOT) : ""), 3.5); } }
+				m.toast ("ONLINE: CONNECTED" + relay + " - YOU ARE PLAYER 2" + (st.optInt ("stream") != 0 ? " - STREAMED BY THE HOST" : st.optInt ("card") != 0 ? " - UVMC2 " + st.optString ("uvm2").toUpperCase (Locale.ROOT) : ""), 3.5); } }   /* (streamed: a card game run by the host - netvx.c) */
 		if (playing && now - lastSum > 10000) { lastSum = now;   /* (the lockstep's state, for the log: the frame, the checks, out of step) */
 			Main.log ("online: frame " + st.optInt ("frame") + ", checked " + st.optInt ("checked") + ", out of step " + st.optInt ("desync", -1) + ", delay " + st.optInt ("delay") + ", rtt " + st.optInt ("rtt") + " ms" + (st.optInt ("relay") != 0 ? ", relayed" : "")); }
 		if (playing) {

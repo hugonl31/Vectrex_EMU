@@ -609,6 +609,7 @@ static void vxa_toast (NSString *s, double secs)
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
 	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
+	CAShapeLayer *_padTog; CATextLayer *_padTogT; CGRect _padTogR; int _padDir;   /* (stick / D-pad: the switch beside it; the D-pad's arms pressed) */
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	UIButton *_popTab; double _popUntil;           /* (the pop-up deck: its tab, shown until) */
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
@@ -640,6 +641,9 @@ static void vxa_toast (NSString *s, double secs)
 	_stickBase = [CAShapeLayer layer]; _stickBase.fillColor = [UIColor colorWithRed:0.06 green:0.11 blue:0.09 alpha:0.6].CGColor; _stickBase.strokeColor = [UIColor colorWithRed:0x2f / 255.0 green:0x55 / 255.0 blue:0x44 / 255.0 alpha:1].CGColor; _stickBase.lineWidth = 1.5;
 	_stickKnob = [CAShapeLayer layer]; _stickKnob.fillColor = [UIColor colorWithRed:0x16 / 255.0 green:0x30 / 255.0 blue:0x2a / 255.0 alpha:1].CGColor; _stickKnob.strokeColor = g.CGColor; _stickKnob.lineWidth = 1.5;
 	[_ctl.layer addSublayer:_stickBase]; [_ctl.layer addSublayer:_stickKnob];
+	_padTog = [CAShapeLayer layer]; _padTog.fillColor = _stickBase.fillColor; _padTog.strokeColor = _stickBase.strokeColor; _padTog.lineWidth = 1.5; [_ctl.layer addSublayer:_padTog];
+	_padTogT = [CATextLayer layer]; _padTogT.fontSize = 10; _padTogT.alignmentMode = kCAAlignmentCenter; _padTogT.contentsScale = UIScreen.mainScreen.scale;
+	_padTogT.font = (__bridge CFTypeRef) [UIFont systemFontOfSize:10 weight:UIFontWeightBold]; _padTogT.foregroundColor = g.CGColor; [_ctl.layer addSublayer:_padTogT];
 	for (int i = 0; i < 4; i++) {
 		_btn[i] = [CAShapeLayer layer]; _btn[i].fillColor = _stickBase.fillColor; _btn[i].strokeColor = g.CGColor; _btn[i].lineWidth = 1.5; [_ctl.layer addSublayer:_btn[i]];
 		_btnT[i] = [CATextLayer layer]; _btnT[i].string = [NSString stringWithFormat:@"%d", i + 1]; _btnT[i].fontSize = 22; _btnT[i].alignmentMode = kCAAlignmentCenter;
@@ -1055,13 +1059,55 @@ static void vxa_set_opt (int i, NSString *v)
 		zl = CGRectMake (s.left, top, v.width / 2, bot - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
 	_stickZone = zl;
+	{ const BOOL left = CGRectGetMidX (zl) < v.width / 2; const double tr = 17;   /* (the stick / D-pad switch: the zone's outer top corner) */
+	  _padTogR = CGRectMake (left ? CGRectGetMinX (zl) + 12 : CGRectGetMaxX (zl) - 12 - 2 * tr, CGRectGetMinY (zl) + 6, 2 * tr, 2 * tr);
+	  _padTog.path = [UIBezierPath bezierPathWithRoundedRect:_padTogR cornerRadius:tr].CGPath;
+	  _padTogT.string = [self dpad] ? @"STICK" : @"D-PAD"; _padTogT.frame = CGRectMake (_padTogR.origin.x - 6, CGRectGetMidY (_padTogR) - 7, _padTogR.size.width + 12, 14); }
+	if ([self dpad]) _stickC = CGPointMake (CGRectGetMidX (zl), CGRectGetMidY (zl) + 10);   /* (the D-pad: in one place, always) */
 	double r = fmin (fmin (zr.size.width / 4.6, zr.size.height / 4.4), 38 * tsize), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
 	for (int i = 0; i < 4; i++) {
 		double bx = cx + (i % 2 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2);
 		_btnR[i] = CGRectMake (bx - r, by - r, 2 * r, 2 * r);
 		_btn[i].path = [UIBezierPath bezierPathWithOvalInRect:_btnR[i]].CGPath;
 		_btnT[i].frame = CGRectMake (bx - r, by - 14, 2 * r, 28); }
-	if (!_stickT) { _stickC = CGPointMake (CGRectGetMidX (zl), CGRectGetMidY (zl)); [self drawStick:_stickC]; }
+	if ([self dpad]) [self drawPad];
+	else if (!_stickT) { _stickC = CGPointMake (CGRectGetMidX (zl), CGRectGetMidY (zl)); [self drawStick:_stickC]; }
+}
+- (BOOL) dpad { return [NSUserDefaults.standardUserDefaults boolForKey:@"touch.dpad"]; }   /* (Settings > Controls, or the switch beside it) */
+/* the D-pad: a cross in one place; up / down / left / right clearly - a diagonal only near the exact corner (30 degrees of
+ * each 90), nothing in the middle (games such as Clean Sweep: the stick's way missed a turn now and then) */
+- (void) drawPad
+{
+	const double R = _stickR > 0 ? _stickR : 60, w = R * 0.33; const CGPoint c = _stickC;
+	UIBezierPath *p = [UIBezierPath bezierPath];
+	[p moveToPoint:CGPointMake (c.x - w, c.y - R)]; [p addLineToPoint:CGPointMake (c.x + w, c.y - R)]; [p addLineToPoint:CGPointMake (c.x + w, c.y - w)];
+	[p addLineToPoint:CGPointMake (c.x + R, c.y - w)]; [p addLineToPoint:CGPointMake (c.x + R, c.y + w)]; [p addLineToPoint:CGPointMake (c.x + w, c.y + w)];
+	[p addLineToPoint:CGPointMake (c.x + w, c.y + R)]; [p addLineToPoint:CGPointMake (c.x - w, c.y + R)]; [p addLineToPoint:CGPointMake (c.x - w, c.y + w)];
+	[p addLineToPoint:CGPointMake (c.x - R, c.y + w)]; [p addLineToPoint:CGPointMake (c.x - R, c.y - w)]; [p addLineToPoint:CGPointMake (c.x - w, c.y - w)]; [p closePath];
+	_stickBase.path = p.CGPath;
+	UIBezierPath *k = [UIBezierPath bezierPath]; const double ins = w * 1.1, r2 = R - 4, h = w - 4;   /* (the arms pressed, lit) */
+	if (_padDir & 1) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - h, c.y - r2, 2 * h, r2 - ins) cornerRadius:4]];
+	if (_padDir & 2) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - h, c.y + ins, 2 * h, r2 - ins) cornerRadius:4]];
+	if (_padDir & 4) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - r2, c.y - h, r2 - ins, 2 * h) cornerRadius:4]];
+	if (_padDir & 8) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x + ins, c.y - h, r2 - ins, 2 * h) cornerRadius:4]];
+	_stickKnob.path = k.CGPath;
+}
+- (void) stickTo:(CGPoint)p   /* (the stick or the D-pad under the thumb: port 1's directions) */
+{
+	const double R = _stickR > 0 ? _stickR : 60; double dx = p.x - _stickC.x, dy = p.y - _stickC.y, ax, ay; uint32_t b = vxa_tpad.btn & ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP);
+	if ([self dpad]) {
+		int dir = 0; if (hypot (dx, dy) > R * 0.22) { double a = atan2 (dy, dx) * 180 / M_PI; if (a < 0) a += 360;
+			const double m = fmod (a, 90);   /* (within 15 degrees of a diagonal: both; else the nearest of the four) */
+			if (m > 30 && m < 60) { dir = (dy < 0 ? 1 : 2) | (dx < 0 ? 4 : 8); }
+			else { const int q = (int) floor ((a + 45) / 90) % 4; dir = q == 0 ? 8 : q == 1 ? 2 : q == 2 ? 4 : 1; } }
+		if (dir != _padDir) { _padDir = dir; [self drawPad]; if (dir) [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight] impactOccurred]; }
+		ax = (dir & 8) ? 1 : (dir & 4) ? -1 : 0; ay = (dir & 2) ? 1 : (dir & 1) ? -1 : 0;
+	} else {
+		const double d = hypot (dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
+		[self drawStick:CGPointMake (_stickC.x + dx, _stickC.y + dy)]; ax = dx / R; ay = dy / R; }
+	if (ay < -0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_UP; if (ay > 0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
+	if (ax < -0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_LEFT; if (ax > 0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_RIGHT;
+	vxa_tpad.btn = b; vxa_tpad.ax[0][0] = (int16_t) (ax * 32767); vxa_tpad.ax[0][1] = (int16_t) (ay * 32767);
 }
 - (void) drawStick:(CGPoint)knob
 {
@@ -1083,7 +1129,10 @@ static void vxa_set_opt (int i, NSString *v)
 			if (hit >= 0 && !_btnTouch[hit]) { _btnTouch[hit] = t; static const int id4[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A };
 				vxa_tpad.btn |= 1u << id4[hit]; _btn[hit].fillColor = [UIColor colorWithRed:0x24 / 255.0 green:0x44 / 255.0 blue:0x3a / 255.0 alpha:0.9].CGColor;
 				UIImpactFeedbackGenerator *h = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight]; [h impactOccurred]; what = [NSString stringWithFormat:@"button %d", hit + 1]; }
-			else if (!_stickT && CGRectContainsPoint (_stickZone, p)) { _stickT = t; _stickC = p; [self drawStick:p]; what = @"stick"; }
+			else if (CGRectContainsPoint (CGRectInset (_padTogR, -6, -6), p)) {   /* (the stick / D-pad switch) */
+				const BOOL d = ![self dpad]; [NSUserDefaults.standardUserDefaults setBool:d forKey:@"touch.dpad"]; _padDir = 0;
+				[[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred]; [self layoutControls]; what = d ? @"switched to the D-pad" : @"switched to the stick"; }
+			else if (!_stickT && CGRectContainsPoint (_stickZone, p)) { _stickT = t; if (![self dpad]) { _stickC = p; [self drawStick:p]; } else [self stickTo:p]; what = [self dpad] ? @"D-pad" : @"stick"; }
 		}
 		if ([what isEqualToString:@"nothing"] && !_ptrT && CGRectContainsPoint (_pic, p)) { _ptrT = t; [self pointerAt:p on:1]; what = @"picture"; }
 		vlog ("touch down %.0f,%.0f: %s", p.x, p.y, what.UTF8String);
@@ -1099,13 +1148,7 @@ static void vxa_set_opt (int i, NSString *v)
 	for (UITouch *t in ts) {
 		CGPoint p = [t locationInView:self.view];
 		if (t == _ptrT) [self pointerAt:p on:1];
-		if (t == _stickT) {
-			double dx = p.x - _stickC.x, dy = p.y - _stickC.y, R = _stickR > 0 ? _stickR : 60, d = hypot (dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
-			[self drawStick:CGPointMake (_stickC.x + dx, _stickC.y + dy)];
-			double ax = dx / R, ay = dy / R; uint32_t b = vxa_tpad.btn & ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP);
-			if (ay < -0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_UP; if (ay > 0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
-			if (ax < -0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_LEFT; if (ax > 0.4) b |= 1u << RETRO_DEVICE_ID_JOYPAD_RIGHT;
-			vxa_tpad.btn = b; vxa_tpad.ax[0][0] = (int16_t) (ax * 32767); vxa_tpad.ax[0][1] = (int16_t) (ay * 32767); }
+		if (t == _stickT) [self stickTo:p];
 	}
 }
 - (void) touchesEnded:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e
@@ -1113,7 +1156,7 @@ static void vxa_set_opt (int i, NSString *v)
 	for (UITouch *t in ts) {
 		CGPoint p = [t locationInView:self.view];
 		if (t == _ptrT) { _ptrT = nil; [self pointerAt:p on:0]; }
-		if (t == _stickT) { _stickT = nil; vxa_tpad.btn &= ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP); vxa_tpad.ax[0][0] = vxa_tpad.ax[0][1] = 0; [self layoutControls]; }
+		if (t == _stickT) { _stickT = nil; _padDir = 0; vxa_tpad.btn &= ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP); vxa_tpad.ax[0][0] = vxa_tpad.ax[0][1] = 0; [self layoutControls]; }
 		for (int i = 0; i < 4; i++) if (t == _btnTouch[i]) { static const int id4[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A };
 			_btnTouch[i] = nil; vxa_tpad.btn &= ~(1u << id4[i]); _btn[i].fillColor = _stickBase.fillColor; }
 		vlog ("touch up %.0f,%.0f", p.x, p.y);

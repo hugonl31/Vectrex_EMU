@@ -17,6 +17,8 @@ final class Controls extends View {
 	final Main m; final Paint fill = new Paint (Paint.ANTI_ALIAS_FLAG), edge = new Paint (Paint.ANTI_ALIAS_FLAG), txt = new Paint (Paint.ANTI_ALIAS_FLAG);
 	final RectF[] btn = new RectF[4]; final int[] btnPtr = { -1, -1, -1, -1 };
 	RectF stickZone = new RectF (); float scx, scy, kx, ky, R = 60; int stickPtr = -1, picPtr = -1; int tbtn; int tax, tay;
+	final RectF tog = new RectF (); int padDir;                   /* (the stick / D-pad switch beside it; the D-pad's arms pressed) */
+	boolean dpad () { return m.prefs.getBoolean ("touch.dpad", false); }
 	static final int[] ID4 = { 1, 9, 0, 8 };                      /* (the Vectrex's 1-4: the RetroPad's Y X B A) */
 	Controls (Main m)
 	{
@@ -36,17 +38,36 @@ final class Controls extends View {
 			zl = new RectF (m.insL, top, W / 2f, bot); zr = new RectF (W / 2f, top, W - m.insR, bot); }
 		if (m.prefs.getBoolean ("touch.lefty", false)) { RectF t = zl; zl = zr; zr = t; }
 		stickZone = zl;
+		{ final boolean left = zl.centerX () < W / 2f; final float tr = m.dp (17), x0 = left ? zl.left + m.dp (12) : zl.right - m.dp (12) - 2 * tr;
+		  tog.set (x0, zl.top + m.dp (6), x0 + 2 * tr, zl.top + m.dp (6) + 2 * tr); }
 		float r = Math.min (Math.min (zr.width () / 4.6f, zr.height () / 4.4f), m.dp (38) * tsize), gap = r * 0.35f, cx = zr.centerX (), cy = zr.centerY ();
 		for (int i = 0; i < 4; i++) { float bx = cx + (i % 2 == 1 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2); btn[i].set (bx - r, by - r, bx + r, by + r); }
-		if (stickPtr < 0) { scx = kx = zl.centerX (); scy = ky = zl.centerY (); }
+		if (dpad ()) { scx = kx = zl.centerX (); scy = ky = zl.centerY () + m.dp (10); }   /* (the D-pad: in one place, always) */
+		else if (stickPtr < 0) { scx = kx = zl.centerX (); scy = ky = zl.centerY (); }
 		txt.setTextSize (Math.max (m.dp (14), r * 0.75f)); invalidate ();
 	}
 	@Override protected void onSizeChanged (int w, int h, int ow, int oh) { relayout (); }
 	@Override protected void onDraw (Canvas c)
 	{
 		if (!show) return;
-		fill.setColor (0x990f1c17); edge.setColor (Main.EDGE2); c.drawCircle (scx, scy, R, fill); c.drawCircle (scx, scy, R, edge);
-		fill.setColor (0xff16302a); edge.setColor (Main.G); c.drawCircle (kx, ky, R * 0.43f, fill); c.drawCircle (kx, ky, R * 0.43f, edge);
+		fill.setColor (0x990f1c17); edge.setColor (Main.EDGE2);
+		if (dpad ()) {                                           /* (the D-pad: a cross, the arms pressed lit) */
+			final float w = R * 0.33f; android.graphics.Path p = new android.graphics.Path ();
+			p.moveTo (scx - w, scy - R); p.lineTo (scx + w, scy - R); p.lineTo (scx + w, scy - w); p.lineTo (scx + R, scy - w); p.lineTo (scx + R, scy + w); p.lineTo (scx + w, scy + w);
+			p.lineTo (scx + w, scy + R); p.lineTo (scx - w, scy + R); p.lineTo (scx - w, scy + w); p.lineTo (scx - R, scy + w); p.lineTo (scx - R, scy - w); p.lineTo (scx - w, scy - w); p.close ();
+			c.drawPath (p, fill); c.drawPath (p, edge);
+			fill.setColor (0xff24443a); final float in = w * 1.1f, r2 = R - m.dp (4), h = w - m.dp (4), cr = m.dp (4);
+			if ((padDir & 1) != 0) c.drawRoundRect (new RectF (scx - h, scy - r2, scx + h, scy - in), cr, cr, fill);
+			if ((padDir & 2) != 0) c.drawRoundRect (new RectF (scx - h, scy + in, scx + h, scy + r2), cr, cr, fill);
+			if ((padDir & 4) != 0) c.drawRoundRect (new RectF (scx - r2, scy - h, scx - in, scy + h), cr, cr, fill);
+			if ((padDir & 8) != 0) c.drawRoundRect (new RectF (scx + in, scy - h, scx + r2, scy + h), cr, cr, fill);
+		} else {
+			c.drawCircle (scx, scy, R, fill); c.drawCircle (scx, scy, R, edge);
+			fill.setColor (0xff16302a); edge.setColor (Main.G); c.drawCircle (kx, ky, R * 0.43f, fill); c.drawCircle (kx, ky, R * 0.43f, edge); }
+		fill.setColor (0x990f1c17); edge.setColor (Main.EDGE2); c.drawOval (tog, fill); c.drawOval (tog, edge);   /* (the switch) */
+		{ final float ts = txt.getTextSize (); txt.setTextSize (m.dp (9)); txt.setColor (Main.G);
+		  c.drawText (dpad () ? "STICK" : "D-PAD", tog.centerX (), tog.centerY () - (txt.descent () + txt.ascent ()) / 2, txt); txt.setTextSize (ts); txt.setColor (Main.HI); }
+		edge.setColor (Main.G);
 		for (int i = 0; i < 4; i++) { fill.setColor ((tbtn >> ID4[i] & 1) != 0 ? 0xe624443a : 0x990f1c17); c.drawOval (btn[i], fill); c.drawOval (btn[i], edge);
 			c.drawText (String.valueOf (i + 1), btn[i].centerX (), btn[i].centerY () - (txt.descent () + txt.ascent ()) / 2, txt); }
 	}
@@ -74,7 +95,7 @@ final class Controls extends View {
 	boolean onControl (float x, float y)   /* (a touch for a button or the stick - the pop-up deck leaves it) */
 	{
 		for (int i = 0; i < 4; i++) { RectF r = new RectF (btn[i]); r.inset (-m.dp (8), -m.dp (8)); if (r.contains (x, y)) return true; }
-		return stickZone.contains (x, y) && !inPic (x, y);
+		return tog.contains (x, y) || stickZone.contains (x, y) && !inPic (x, y);
 	}
 	void down (int id, float x, float y)
 	{
@@ -82,7 +103,11 @@ final class Controls extends View {
 		if (shown ()) {
 			int hit = -1; for (int i = 0; i < 4; i++) { RectF r = new RectF (btn[i]); r.inset (-m.dp (8), -m.dp (8)); if (r.contains (x, y)) hit = i; }
 			if (hit >= 0 && btnPtr[hit] < 0) { btnPtr[hit] = id; tbtn |= 1 << ID4[hit]; send (); performHapticFeedback (HapticFeedbackConstants.VIRTUAL_KEY); what = "button " + (hit + 1); invalidate (); }
-			else if (stickPtr < 0 && stickZone.contains (x, y) && !inPic (x, y)) { stickPtr = id; scx = kx = x; scy = ky = y; what = "stick"; invalidate (); } }
+			else if (hit < 0 && tog.contains (x, y)) {               /* (the stick / D-pad switch) */
+				final boolean d = !dpad (); m.prefs.edit ().putBoolean ("touch.dpad", d).apply (); padDir = 0;
+				performHapticFeedback (HapticFeedbackConstants.VIRTUAL_KEY); relayout (); what = d ? "switched to the D-pad" : "switched to the stick"; }
+			else if (stickPtr < 0 && stickZone.contains (x, y) && !inPic (x, y)) { stickPtr = id;
+				if (dpad ()) { move (id, x, y); what = "D-pad"; } else { scx = kx = x; scy = ky = y; what = "stick"; } invalidate (); } }
 		if (what.equals ("nothing") && picPtr < 0 && inPic (x, y)) { picPtr = id; pointer (true, x, y); what = "picture"; }
 		Main.log (String.format (java.util.Locale.ROOT, "touch down %.0f,%.0f: %s", x, y, what));
 	}
@@ -90,15 +115,23 @@ final class Controls extends View {
 	{
 		if (id == picPtr) pointer (true, x, y);
 		if (id == stickPtr) {
-			float dx = x - scx, dy = y - scy, d = (float) Math.hypot (dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
-			kx = scx + dx; ky = scy + dy; float ax = dx / R, ay = dy / R; int b = tbtn & ~(0xf << 4);
+			float dx = x - scx, dy = y - scy, d = (float) Math.hypot (dx, dy), ax, ay;
+			if (dpad ()) {                                       /* (up / down / left / right clearly; a diagonal only within 15 degrees of
+			                                                        *  the exact corner; nothing in the middle) */
+				int dir = 0; if (d > R * 0.22f) { double a = Math.toDegrees (Math.atan2 (dy, dx)); if (a < 0) a += 360; final double md = a % 90;
+					if (md > 30 && md < 60) dir = (dy < 0 ? 1 : 2) | (dx < 0 ? 4 : 8);
+					else { final int q = (int) Math.floor ((a + 45) / 90) % 4; dir = q == 0 ? 8 : q == 1 ? 2 : q == 2 ? 4 : 1; } }
+				if (dir != padDir) { padDir = dir; if (dir != 0) performHapticFeedback (HapticFeedbackConstants.CLOCK_TICK); }
+				ax = (dir & 8) != 0 ? 1 : (dir & 4) != 0 ? -1 : 0; ay = (dir & 2) != 0 ? 1 : (dir & 1) != 0 ? -1 : 0;
+			} else { if (d > R) { dx *= R / d; dy *= R / d; } kx = scx + dx; ky = scy + dy; ax = dx / R; ay = dy / R; }
+			int b = tbtn & ~(0xf << 4);
 			if (ay < -0.4f) b |= 1 << 4; if (ay > 0.4f) b |= 1 << 5; if (ax < -0.4f) b |= 1 << 6; if (ax > 0.4f) b |= 1 << 7;
 			tbtn = b; tax = (int) (ax * 32767); tay = (int) (ay * 32767); send (); invalidate (); }
 	}
 	void up (int id, float x, float y)
 	{
 		if (id == picPtr) { picPtr = -1; pointer (false, x, y); }
-		if (id == stickPtr) { stickPtr = -1; tbtn &= ~(0xf << 4); tax = tay = 0; send (); relayout (); }
+		if (id == stickPtr) { stickPtr = -1; padDir = 0; tbtn &= ~(0xf << 4); tax = tay = 0; send (); relayout (); }
 		for (int i = 0; i < 4; i++) if (btnPtr[i] == id) { btnPtr[i] = -1; tbtn &= ~(1 << ID4[i]); send (); invalidate (); }
 	}
 	void send () { VX.setTouchPad (tbtn, tax, tay); }

@@ -1214,14 +1214,14 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 - (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s
 {
 	if (s == 0) return (NSInteger) MAX (1, GCController.controllers.count + (GCKeyboard.coalescedKeyboard ? 1 : 0));
-	return s == 1 ? 4 : s == 2 ? 4 : 1;
+	return s == 1 ? 4 : s == 2 ? 5 : 1;
 }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[ @"CONNECTED", @"VECTREX BUTTONS ON THE CONTROLLER", @"TOUCH CONTROLS", @"KEYBOARD" ][(NSUInteger) s]; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s
 {
 	return @[ @"Player 1 is the first controller, player 2 the second.",
 		@"Tap a button to choose. The Vectrex controller's four buttons in a row; on a modern pad's diamond by default 1 left, 2 top, 3 bottom, 4 right.",
-		@"Automatic: shown only while no controller or keyboard is connected. The stick appears where the thumb lands.",
+		@"Automatic: shown only while no controller or keyboard is connected. The stick appears where the thumb lands; the D-pad gives clear up, down, left, right (the small switch beside it changes it too).",
 		@"As on the PC: the arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L the games, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, M the menu." ][(NSUInteger) s];
 }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
@@ -1261,6 +1261,12 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 				[u setObject:k == 1 ? @"always" : k == 2 ? @"never" : @"auto" forKey:@"touch.show"]; ulog ([NSString stringWithFormat:@"controls: touch shown %ld", (long) k]); [ws changed]; }] forControlEvents:UIControlEventValueChanged];
 			[sg sizeToFit]; c.accessoryView = sg; return c; }
 		if (ip.row == 1) { UITableViewCell *c = [self cell:@"Size" detail:nil]; c.selectionStyle = UITableViewCellSelectionStyleNone; c.accessoryView = [self slider:@"touch.size" min:0.7f max:1.4f def:1.0f]; return c; }
+		if (ip.row == 3) { UITableViewCell *c = [self cell:@"Directions" detail:nil]; c.selectionStyle = UITableViewCellSelectionStyleNone;   /* (the stick, or a D-pad: clear turns) */
+			UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Stick", @"D-pad" ]]; sg.selectedSegmentIndex = [u boolForKey:@"touch.dpad"] ? 1 : 0; sg.selectedSegmentTintColor = VX_SEL;
+			[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected]; [sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal];
+			[sg addAction:[UIAction actionWithHandler:^(UIAction *x) { const BOOL d = ((UISegmentedControl *) x.sender).selectedSegmentIndex == 1; [u setBool:d forKey:@"touch.dpad"];
+				ulog ([NSString stringWithFormat:@"controls: %@", d ? @"D-pad" : @"stick"]); [ws changed]; }] forControlEvents:UIControlEventValueChanged];
+			[sg sizeToFit]; c.accessoryView = sg; return c; }
 		if (ip.row == 2) { UITableViewCell *c = [self cell:@"Opacity" detail:nil]; c.selectionStyle = UITableViewCellSelectionStyleNone; c.accessoryView = [self slider:@"touch.alpha" min:0.2f max:1.0f def:1.0f]; return c; }
 		UITableViewCell *c = [self cell:@"Left-handed (the stick on the right)" detail:nil]; c.selectionStyle = UITableViewCellSelectionStyleNone;
 		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [u boolForKey:@"touch.lefty"];

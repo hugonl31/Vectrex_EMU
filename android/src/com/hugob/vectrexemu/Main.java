@@ -152,6 +152,11 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	{
 		List<File> v = new ArrayList<> (); v.add (Environment.getExternalStorageDirectory ());
 		File[] s = new File ("/storage").listFiles (); if (s != null) for (File f : s) if (!f.getName ().equals ("emulated") && !f.getName ().equals ("self") && f.isDirectory ()) v.add (f);
+		/* (Android's own list of the volumes - /storage may not be listable (Android 13, the Nova's SD card: a fresh install found
+		 *  nothing); the app's own folder on each volume, four levels up, as well) */
+		try { if (Build.VERSION.SDK_INT >= 30) for (android.os.storage.StorageVolume sv : ((android.os.storage.StorageManager) getSystemService (Context.STORAGE_SERVICE)).getStorageVolumes ()) {
+				File d = sv.getDirectory (); if (d != null && !v.contains (d)) v.add (d); } } catch (Throwable t) { log ("volumes: " + t); }
+		File[] ex = getExternalFilesDirs (null); if (ex != null) for (File f : ex) { if (f == null) continue; File r = f.getParentFile (); for (int i = 0; i < 3 && r != null; i++) r = r.getParentFile (); if (r != null && !v.contains (r)) v.add (r); }
 		return v;
 	}
 	File ext () { File e = getExternalFilesDir (null); return e != null ? e : files; }
@@ -183,7 +188,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 			h.postDelayed (() -> { try { startActivity (new Intent (Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse ("package:" + getPackageName ()))); }
 				catch (Exception x) { startActivity (new Intent (Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)); } }, 2500);
 			return; }
-		if (!bios) { status ("No Vectrex files found.\n\nPut them in " + new File (ext (), "system/vectrex_emu") + " and the games in " + new File (ext (), "roms") + ", or in RetroArch's folders (BIOS/vectrex_emu, ROMs/vectrex) with access to all files."); return; }
+		if (!bios) { log ("no Vectrex files: looked in " + volumes () + (allFiles () ? "" : " (no all-files access)")); status ("No Vectrex files found.\n\nPut them in " + new File (ext (), "system/vectrex_emu") + " and the games in " + new File (ext (), "roms") + ", or in RetroArch's folders (BIOS/vectrex_emu, ROMs/vectrex) with access to all files."); return; }
 		startCore ();
 	}
 	@Override protected void onResume ()

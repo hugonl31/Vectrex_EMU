@@ -38,8 +38,8 @@ final class Controls extends View {
 			zl = new RectF (m.insL, top, W / 2f, bot); zr = new RectF (W / 2f, top, W - m.insR, bot); }
 		if (m.prefs.getBoolean ("touch.lefty", false)) { RectF t = zl; zl = zr; zr = t; }
 		stickZone = zl;
-		{ final boolean left = zl.centerX () < W / 2f; final float tr = m.dp (17), x0 = left ? zl.left + m.dp (12) : zl.right - m.dp (12) - 2 * tr;
-		  tog.set (x0, zl.bottom - m.dp (6) - 2 * tr, x0 + 2 * tr, zl.bottom - m.dp (6)); }   /* (bottom, outer side) */
+		{ final boolean left = zl.centerX () < W / 2f; final float tw = m.dp (54), th = m.dp (26), x0 = left ? zl.left + m.dp (12) : zl.right - m.dp (12) - tw;
+		  tog.set (x0, zl.bottom - m.dp (8) - th, x0 + tw, zl.bottom - m.dp (8)); }   /* (bottom, outer side) */
 		float r = Math.min (Math.min (zr.width () / 4.6f, zr.height () / 4.4f), m.dp (38) * tsize), gap = r * 0.35f, cx = zr.centerX (), cy = zr.centerY ();
 		for (int i = 0; i < 4; i++) { float bx = cx + (i % 2 == 1 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2); btn[i].set (bx - r, by - r, bx + r, by + r); }
 		if (dpad ()) { scx = kx = zl.centerX (); scy = ky = zl.centerY () + m.dp (10); }   /* (the D-pad: in one place, always) */
@@ -64,7 +64,7 @@ final class Controls extends View {
 		} else {
 			c.drawCircle (scx, scy, R, fill); c.drawCircle (scx, scy, R, edge);
 			fill.setColor (0xff16302a); edge.setColor (Main.G); c.drawCircle (kx, ky, R * 0.43f, fill); c.drawCircle (kx, ky, R * 0.43f, edge); }
-		fill.setColor (0x990f1c17); edge.setColor (Main.EDGE2); c.drawOval (tog, fill); c.drawOval (tog, edge);   /* (the switch) */
+		fill.setColor (0x990f1c17); edge.setColor (Main.EDGE2); c.drawRoundRect (tog, tog.height () / 2, tog.height () / 2, fill); c.drawRoundRect (tog, tog.height () / 2, tog.height () / 2, edge);   /* (the switch) */
 		{ final float ts = txt.getTextSize (); txt.setTextSize (m.dp (9)); txt.setColor (Main.G);
 		  c.drawText (dpad () ? "STICK" : "D-PAD", tog.centerX (), tog.centerY () - (txt.descent () + txt.ascent ()) / 2, txt); txt.setTextSize (ts); txt.setColor (Main.HI); }
 		edge.setColor (Main.G);

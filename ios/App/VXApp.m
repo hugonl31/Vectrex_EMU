@@ -156,12 +156,12 @@ static void vxa_opts_set (const struct retro_variable *v)
 	}
 	vxa_opts_defaults ();
 }
-/* a 4:3-ish screen (an iPad's, the Nova's 1280 x 960; the iPad mini's 1.52 too): upright the picture takes all its width -
+/* a real 4:3 screen (an iPad Pro 13", the Nova's 1280 x 960 - not the 1.44 of an iPad Air / iPad, nor the mini's 1.52): upright the picture takes all its width -
  * the top bar hides itself and the deck pops up by default (as the Android app) */
 int vxa_squarish (void)
 {
 	CGSize s = UIScreen.mainScreen.nativeBounds.size; const double a = MAX (s.width, s.height), b = MIN (s.width, s.height);
-	return b > 0 && a < 1.55 * b;
+	return b > 0 && a < 1.4 * b;
 }
 static void vxa_opts_defaults (void)
 {
@@ -642,8 +642,8 @@ static void vxa_toast (NSString *s, double secs)
 	_stickKnob = [CAShapeLayer layer]; _stickKnob.fillColor = [UIColor colorWithRed:0x16 / 255.0 green:0x30 / 255.0 blue:0x2a / 255.0 alpha:1].CGColor; _stickKnob.strokeColor = g.CGColor; _stickKnob.lineWidth = 1.5;
 	[_ctl.layer addSublayer:_stickBase]; [_ctl.layer addSublayer:_stickKnob];
 	_padTog = [CAShapeLayer layer]; _padTog.fillColor = _stickBase.fillColor; _padTog.strokeColor = _stickBase.strokeColor; _padTog.lineWidth = 1.5; [_ctl.layer addSublayer:_padTog];
-	_padTogT = [CATextLayer layer]; _padTogT.fontSize = 10; _padTogT.alignmentMode = kCAAlignmentCenter; _padTogT.contentsScale = UIScreen.mainScreen.scale;
-	_padTogT.font = (__bridge CFTypeRef) [UIFont systemFontOfSize:10 weight:UIFontWeightBold]; _padTogT.foregroundColor = g.CGColor; [_ctl.layer addSublayer:_padTogT];
+	_padTogT = [CATextLayer layer]; _padTogT.fontSize = 9.5; _padTogT.alignmentMode = kCAAlignmentCenter; _padTogT.contentsScale = UIScreen.mainScreen.scale;
+	_padTogT.font = (__bridge CFTypeRef) [UIFont systemFontOfSize:9.5 weight:UIFontWeightBold]; _padTogT.foregroundColor = g.CGColor; [_ctl.layer addSublayer:_padTogT];
 	for (int i = 0; i < 4; i++) {
 		_btn[i] = [CAShapeLayer layer]; _btn[i].fillColor = _stickBase.fillColor; _btn[i].strokeColor = g.CGColor; _btn[i].lineWidth = 1.5; [_ctl.layer addSublayer:_btn[i]];
 		_btnT[i] = [CATextLayer layer]; _btnT[i].string = [NSString stringWithFormat:@"%d", i + 1]; _btnT[i].fontSize = 22; _btnT[i].alignmentMode = kCAAlignmentCenter;
@@ -1060,10 +1060,10 @@ static void vxa_set_opt (int i, NSString *v)
 		zl = CGRectMake (s.left, top, v.width / 2, bot - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
 	_stickZone = zl;
-	{ const BOOL left = CGRectGetMidX (zl) < v.width / 2; const double tr = 17;   /* (the stick / D-pad switch: the zone's outer bottom corner) */
-	  _padTogR = CGRectMake (left ? CGRectGetMinX (zl) + 12 : CGRectGetMaxX (zl) - 12 - 2 * tr, CGRectGetMaxY (zl) - 6 - 2 * tr, 2 * tr, 2 * tr);
-	  _padTog.path = [UIBezierPath bezierPathWithRoundedRect:_padTogR cornerRadius:tr].CGPath;
-	  _padTogT.string = [self dpad] ? @"STICK" : @"D-PAD"; _padTogT.frame = CGRectMake (_padTogR.origin.x - 6, CGRectGetMidY (_padTogR) - 7, _padTogR.size.width + 12, 14); }
+	{ const BOOL left = CGRectGetMidX (zl) < v.width / 2; const double tw = 54, th = 26;   /* (the stick / D-pad switch: the zone's outer bottom corner) */
+	  _padTogR = CGRectMake (left ? CGRectGetMinX (zl) + 12 : CGRectGetMaxX (zl) - 12 - tw, CGRectGetMaxY (zl) - 8 - th, tw, th);   /* (a pill: the word fits) */
+	  _padTog.path = [UIBezierPath bezierPathWithRoundedRect:_padTogR cornerRadius:th / 2].CGPath;
+	  _padTogT.string = [self dpad] ? @"STICK" : @"D-PAD"; _padTogT.frame = CGRectMake (_padTogR.origin.x, CGRectGetMidY (_padTogR) - 6.5, _padTogR.size.width, 13); }
 	if ([self dpad]) _stickC = CGPointMake (CGRectGetMidX (zl), CGRectGetMidY (zl) + 10);   /* (the D-pad: in one place, always) */
 	double r = fmin (fmin (zr.size.width / 4.6, zr.size.height / 4.4), 38 * tsize), gap = r * 0.35, cx = CGRectGetMidX (zr), cy = CGRectGetMidY (zr);
 	for (int i = 0; i < 4; i++) {

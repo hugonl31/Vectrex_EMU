@@ -199,7 +199,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	boolean squarish ()
 	{
 		android.util.DisplayMetrics dm = new android.util.DisplayMetrics (); getWindowManager ().getDefaultDisplay ().getRealMetrics (dm);
-		return Math.max (dm.widthPixels, dm.heightPixels) < 1.55f * Math.min (dm.widthPixels, dm.heightPixels);
+		return Math.max (dm.widthPixels, dm.heightPixels) < 1.4f * Math.min (dm.widthPixels, dm.heightPixels);
 	}
 	String defaults ()
 	{

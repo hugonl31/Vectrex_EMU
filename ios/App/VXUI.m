@@ -311,7 +311,8 @@ static UITableViewCell *vxs_cell (NSString *title)
 		[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
 		[a addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x) { (void) x; int n = 0;
 			for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
-			[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"];   /* (the deck's pop-up too: this screen's default) */
+			[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.topbar"];   /* (the deck's pop-up and the top bar too: this screen's defaults) */
+			if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)];
 			ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); [ws.tableView reloadData]; }]];
 		[self presentViewController:a animated:YES completion:nil]; return; }
 	if (R == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }

@@ -240,16 +240,21 @@ static UITableViewCell *vxs_cell (NSString *title)
 		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_sel (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
-	if (R == 10) {                                  /* (HDR: the whole picture lifted towards the screen's peak, or only the brightest rests above white) */
+	if (R == 10) {                                  /* (HDR: the profile - the measured Vectrex (default), as before 2026-11-20, or the whole picture lifted) */
 		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void);
-		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"HDR: whole picture"; c.textLabel.textColor = VX_FG;
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"HDR look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrlift"]; const BOOL on = !wl || wl.boolValue, can = vxa_hdr_headroom () > 1.05;
-		c.detailTextLabel.text = !can ? @"Not on this screen (it shows no HDR)" : on ? @"Lines and dots brighter, up to the screen's peak" : @"Only the brightest dots above white";
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = on; sw.enabled = can;
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const BOOL v = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:v forKey:@"app.hdrlift"];
-			ulog ([NSString stringWithFormat:@"HDR whole picture %@", v ? @"on" : @"off"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sw; return c; }
+		NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl ? wl.integerValue : 2; const BOOL can = vxa_hdr_headroom () > 1.05;
+		c.detailTextLabel.text = !can ? @"Not on this screen (it shows no HDR)" : md == 2 ? @"As a real Vectrex: dots much brighter than lines" : md == 1 ? @"Lines and dots up to the screen's peak" : @"Only the longest rests above white";
+		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Vectrex", @"Previous", @"Whole" ]];
+		sg.selectedSegmentIndex = md == 2 ? 0 : md == 0 ? 1 : 2; sg.enabled = can; sg.selectedSegmentTintColor = VX_G;
+		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG } forState:UIControlStateNormal];
+		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: UIColor.blackColor } forState:UIControlStateSelected];
+		[sg sizeToFit];
+		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger x = ((UISegmentedControl *) a.sender).selectedSegmentIndex, v = x == 0 ? 2 : x == 1 ? 0 : 1;
+			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.hdrmode"];
+			ulog ([NSString stringWithFormat:@"HDR look %@", v == 2 ? @"Vectrex" : v == 0 ? @"previous" : @"whole picture"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sg; return c; }
 	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
 		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");
 		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = i >= 0 && !strcmp (vxa_oval (i), "on");

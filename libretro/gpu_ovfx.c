@@ -160,8 +160,10 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"uniform float hk;\n"   /* (HDR: as PH_FS_OUT) */
 	"uniform float hl;\n"   /* (HDR, the whole picture (the own iOS app's default): the brighter a part, the closer to the screen's peak -
 	                           black stays black, the faint trail nearly as it was; 0: only the rests above white) */
-	"vec3 hlift(vec3 k) { if (hl < 0.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
-	"vec3 knee(vec3 c) { return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
+	"vec3 hlift(vec3 k) { if (hl < 0.5 || hl > 1.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
+	"vec3 knee(vec3 c) { float a = hk > 1.0 && hl > 1.5 ? min(hk, 1.2) - 0.75 : 0.25;\n"   /* (HDR: the brightest lines up to 1.2, the real tube's
+	                                                   127 vs 96 is 1.5x in light; below 0.75 as SDR - the faint lines and the trail untouched) */
+	"  return mix(c, 0.75 + a - a * exp(-(c - 0.75) / a), step(0.75, c)); }\n"
 	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
 	                                                   through the overlay's colour; softly up to the screen's peak) */
 	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"

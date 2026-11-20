@@ -2388,7 +2388,7 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 static int deck_auto_mode (void)
 {
 	const int a = scr_w > scr_h ? scr_w : scr_h, b = scr_w > scr_h ? scr_h : scr_w;
-	return b > 0 && a < 1.55 * b ? 3 : 0;
+	return b > 0 && a < 1.4 * b ? 3 : 0;
 }
 int vx_app_pich;                                /* (the own iOS app: the picture height it has room for, px; 0: the screen's) */
 int vx_app_noshape;                            /* (set by a host that lays out the picture itself: the deck block exactly the

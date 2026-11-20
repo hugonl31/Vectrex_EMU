@@ -223,8 +223,9 @@ final class Screens {
 			new String[] { "Automatic", "Always", "Never" }, ts, v -> { m.prefs.edit ().putString ("touch.show", v).apply (); m.layout (); m.pop (); controls (m); }));
 		p.row ("Size", pct (m.prefs.getFloat ("touch.size", 1f)), () -> pickC (m, "Size", "touch.size", new float[] { 0.7f, 0.85f, 1f, 1.2f, 1.4f }, 1f));
 		p.row ("Opacity", pct (m.prefs.getFloat ("touch.alpha", 1f)), () -> pickC (m, "Opacity", "touch.alpha", new float[] { 0.2f, 0.4f, 0.6f, 0.8f, 1f }, 1f));
+		p.row ("Directions", m.prefs.getBoolean ("touch.dpad", false) ? "D-pad" : "Stick", () -> { m.prefs.edit ().putBoolean ("touch.dpad", !m.prefs.getBoolean ("touch.dpad", false)).apply (); m.layout (); m.pop (); controls (m); });   /* (the stick, or a D-pad: clear turns) */
 		p.row ("Left-handed (the stick on the right)", m.prefs.getBoolean ("touch.lefty", false) ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("touch.lefty", !m.prefs.getBoolean ("touch.lefty", false)).apply (); m.layout (); m.pop (); controls (m); });
-		p.foot ("Automatic: shown only while no controller or keyboard is connected. The stick appears where the thumb lands.");
+		p.foot ("Automatic: shown only while no controller or keyboard is connected. The stick appears where the thumb lands; the D-pad gives clear up, down, left, right (the small switch beside it changes it too).");
 		p.header ("Keyboard");
 		final int kk = VX.ofind ("vectrex_emu_keys");
 		if (kk >= 0) p.row ("Keyboard as on the PC", VX.opt (kk, 5).equals ("on") ? "On" : "Off", () -> { VX.oset (kk, VX.opt (kk, 5).equals ("on") ? "off" : "on"); m.pop (); controls (m); });

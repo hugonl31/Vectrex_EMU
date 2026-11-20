@@ -694,6 +694,7 @@ JNIEXPORT void JNICALL JF(setLandscape) (JNIEnv *e, jclass c, jboolean on) { (vo
 JNIEXPORT void JNICALL JF(setRunning) (JNIEnv *e, jclass c, jboolean on) { (void) e; (void) c; vxa_running = on; }
 JNIEXPORT void JNICALL JF(setHold) (JNIEnv *e, jclass c, jboolean on) { (void) e; (void) c; if (vxa_holding != on) { vxa_holding = on; vlog ("game %s", on ? "held (a screen over it)" : "running again"); } }
 JNIEXPORT void JNICALL JF(setHdr) (JNIEnv *e, jclass c, jboolean can, jfloat headroom, jfloat frac) { (void) e; (void) c; vxa_want_hdr = can; vxa_headroom = headroom; vxa_hdr_frac = frac; }
+JNIEXPORT void JNICALL JF(setHdrLook) (JNIEnv *e, jclass c, jint look) { (void) e; (void) c; extern float vx_hdr_lift; vx_hdr_lift = (float) look; vlog ("HDR look %d", (int) look); }
 JNIEXPORT void JNICALL JF(snap) (JNIEnv *e, jclass c, jint n, jstring path) { (void) c; JSTR (s, path); snprintf (vxa_snap_path, sizeof vxa_snap_path, "%s", s ? s : ""); JREL (s, path); vx_app_pich = 0; vxa_snap_fixed = 1; vxa_snap_n = n; }   /* (the picture at the size the options give - Picture size - as any frontend) */
 JNIEXPORT jint JNICALL JF(hdrActive) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_hdr_surf == 1; }
 JNIEXPORT void JNICALL JF(setPad) (JNIEnv *e, jclass c, jint port, jint btn, jint lx, jint ly, jint rx, jint ry)

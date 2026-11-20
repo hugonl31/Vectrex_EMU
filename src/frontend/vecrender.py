@@ -1196,9 +1196,18 @@ vec3 plastic(vec2 gd, vec2 tgt) {
         float dr = dRg + u * dD;
         vec3 Pt = vec3(dr * cs - rho * sn, dr * sn + rho * cs, u * dH);
         vec3 N = normalize(cross(Pt, Pu)); N *= sign(N.z);                // (x right, y down, z to the viewer)
+        // (flat walls, the owner's grid photo 2026-11-20: each wall at one angle, square to the case's straight outer edge - the
+        //  grid mirrored evenly, its lines straight; near the glass the wall follows the glass's curved edge)
+        vec2 e2 = vec2(0.002, 0.0);
+        vec2 qc = abs(gd) - vec2(0.69188 - 0.045826, 0.89275 - 0.045826), sgn = vec2(gd.x < 0.0 ? -1.0 : 1.0, gd.y < 0.0 ? -1.0 : 1.0);
+        vec2 pc = normalize(exp(clamp((qc - max(qc.x, qc.y)) / 0.045, -30.0, 0.0))) * sgn;
+        vec2 pgl = normalize(vec2(sdG(gd + e2.xy) - sdG(gd - e2.xy), sdG(gd + e2.yx) - sdG(gd - e2.yx)) + 1e-6);
+        vec2 pd = normalize(mix(pgl, pc, smoothstep(0.0, 0.3 * pc.x * pc.x + 1e-3, u)));   // (only the side walls bend to the glass)
+        float phi = radians(mix(65.5, 68.5, smoothstep(0.3, 0.9, abs(pd.x))));
+        N = normalize(vec3(-pd * sin(phi), cos(phi)));
         vec2 n = normalize(gd);                                           // (outwards, in the picture)
         float wave2 = 2.0 * vnoise(rp / 70.0 + 31.0) - 1.0 + 0.4 * (2.0 * vnoise(rp / 26.0 + 9.0) - 1.0);
-        N = normalize(N + vec3(0.02 * wave + 0.005 * flow, 0.02 * wave2 + 0.005 * flow, 0.0));   // (the moulding: far from flat)
+        N = normalize(N + vec3(0.006 * wave + 0.003 * flow, 0.006 * wave2 + 0.003 * flow, 0.0));   // (the moulding: nearly flat - the grid photo mirrors straight)
         float lip = smoothstep(0.93, 1.0, u);                                // (the rounded outer edge; at the glass a dark gap)
         N = normalize(mix(N, vec3(0.0, 0.0, 1.0), 0.85 * lip));
         float t = u;
@@ -1211,11 +1220,11 @@ vec3 plastic(vec2 gd, vec2 tgt) {
             vec2 mq = P.xy + Rr.xy * (-P.z / Rr.z);
             back = length(mq - P.xy) * U;
             gm = clamp(0.5 - sdG(mq - goff) / pu, 0.0, 1.0);             // (only the glass's light)
-            refl = max(mix(disc(mq, 9.0), disc(mq, 6.0), 0.5) * gm - 0.02, 0.0);
+            refl = max(mix(disc(mq, 2.0), disc(mq, 1.2), 0.5) * gm - 0.02, 0.0);
         }
         float fall = 1.0 / (1.0 + pow(back / 130.0, 2.0));
         float side = abs(n.x), bot = max(n.y, 0.0), top = max(-n.y, 0.0);
-        float strength = crefl * 1.5 * (0.85 * pow(side, 1.5) + 0.40 * bot + 0.35 * top) * fall * (1.0 + 0.06 * flow)
+        float strength = crefl * 1.5 * (0.14 * pow(side, 1.5) + 0.15 * bot + 0.14 * top) * fall * (1.0 + 0.06 * flow)
             * (1.0 - smoothstep(0.84, 0.94, u));   // (none on the rounded outer edge: it turns away from the screen - a real
                                                                  //  case shows no lines there; the owner's marks 2026-11-20)
         // the room's light: the same surface (y up for the light's cm)

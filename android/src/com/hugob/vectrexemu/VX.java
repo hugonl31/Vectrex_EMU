@@ -16,6 +16,7 @@ final class VX {
 	static native void setLandscape (boolean land);       /* sideways: the deck off, as the iOS app (the picture the whole height) */
 	static native void setHold (boolean on);
 	static native void setHdr (boolean can, float headroom, float frac);
+	static native void setHdrLook (int look);                   /* (0 bright - as SDR, 1 the whole picture, 2 the Vectrex: iOS alike) */
 	static native int hdrActive ();
 	static native void snap (int runs, String path);        /* tests: the shown picture at that run after the next load */
 	static native void setPad (int port, int btn, int lx, int ly, int rx, int ry);

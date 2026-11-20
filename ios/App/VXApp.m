@@ -927,6 +927,7 @@ static void vxa_toast (NSString *s, double secs)
 	const double tr0 = CACurrentMediaTime ();
 	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; }
 	_tRun += CACurrentMediaTime () - tr0; _tLinkDur += l.targetTimestamp - l.timestamp;
+	{ static double hdr_t; if (now - hdr_t > 1.0) { hdr_t = now; vxa_hdr_update (); } }   /* (HDR: the screen's headroom now - brightness, Low Power Mode) */
 	vxa_nodraw = 0;
 	if (vxa_pending >= 0) [self presentSlot:vxa_pending late:YES];   /* (the one not ready at the start: now, in this refresh still) */
 	if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); [VXUI showLibraryFrom:self]; }
@@ -1260,8 +1261,18 @@ void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
 	NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrlift"]; vx_hdr_lift = (!wl || wl.boolValue) ? 1.0f : 0.0f;   /* (the whole picture: the default) */
-	float pk = hr > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (hr - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */
-	if (fabsf (pk - vx_hdr_peak) > 0.005f) { vlog ("HDR: %s (screen headroom %.2f, setting %.0f %%, knee top %.2f)", pk > 1 ? "on" : "off", hr, fr * 100, pk); vx_hdr_peak = pk; }
+	/* (Apple: map to the headroom the screen gives NOW (currentEDRHeadroom) - the most (potential) only while iOS has not yet
+	 *  raised it for our light; at full brightness the iPhone's white is near its peak already, ~1.6x left: mapped to 8x, all
+	 *  above 1.6 clipped flat. Read again every second (vxa_hdr_tick): the headroom at the start can be 1.0 (Low Power Mode) -
+	 *  builds 114-118 on the iPhone never had HDR on, read once) */
+	double cur = 1; if (@available (iOS 16.0, *)) cur = UIScreen.mainScreen.currentEDRHeadroom;
+	const double use = hr <= 1.05 ? 1.0 : cur > 1.05 ? fmin (cur, hr) : hr;
+	float pk = use > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (use - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */
+	if ((pk > 1) != (vx_hdr_peak > 1) || fabsf (pk - vx_hdr_peak) > 0.03f * vx_hdr_peak) {
+		static float logged = -1; const int lp = NSProcessInfo.processInfo.lowPowerModeEnabled;
+		if ((pk > 1) != (logged > 1) || fabsf (pk - logged) > 0.15f * logged)
+			{ vlog ("HDR: %s (screen headroom now %.2f, at most %.2f, setting %.0f %%, knee top %.2f%s)", pk > 1 ? "on" : "off", cur, hr, fr * 100, pk, lp ? ", Low Power Mode" : ""); logged = pk; }
+		vx_hdr_peak = pk; }
 }
 NSString *vxa_docs (void) { return NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; }
 NSString *vxa_game (void) { const char *g = vx_app_game (); return g && *g ? @(g) : @""; }

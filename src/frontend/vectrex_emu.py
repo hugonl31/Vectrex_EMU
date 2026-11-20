@@ -6089,7 +6089,7 @@ class App:
         """the game a host offers (the ROM's identity and what must be the same on both sides), and its note (net_note)"""
         import netplay
         game = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw,   # (R302 moves the joystick
-                                          dacofs=float(self.unit.get('dacofs', 0.0)),     #  comparator: the host's on both)
+                                          dacofs=0.0,                                     #  comparator: online the factory's on both - no unit value copied)
                                           bios=netplay.rom_md5(BIOS) or ''))               # (the BIOS: the same on both)
         if self.card_dir(rom):
             game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
@@ -6127,7 +6127,7 @@ class App:
             return False
         if self.card_dir(rom) or self.card_dir(getattr(self, 'net_rom', '') or '') or getattr(self.run, 'core2', None) is not None:
             return False
-        g = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw, dacofs=float(self.unit.get('dacofs', 0.0))))
+        g = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw, dacofs=0.0))   # (R302: online the factory's)
         if game_turns(rom): g['turns'] = True
         g['delay'] = net.delay
         net.regame_offer(g); self.net_rg_pick = (os.path.abspath(rom), g)

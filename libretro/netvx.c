@@ -1067,12 +1067,12 @@ static void netvx_stream_guest (void)
 	while (nv_stq_n > nv_st_tgt + 6) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--; nv_st_n_drop++; }
 	/* (a small playout buffer: frames shown only once nv_st_tgt are here - a late one no longer stands the picture and makes it
 	 *  jump after (iPhone from iPad, Apple's peer-to-peer Wi-Fi: choppy, 19 frames left out in 5 s); run dry: one frame more,
-	 *  up to 6; 15 s without: one less, down to 2) */
+	 *  up to 6; 6 s without: one less, down to 2) */
 	if (!nv_st_started && !nv_st_buf) { nv_st_buf = 1; nv_st_tgt = 2; }
 	if (nv_st_buf) {
 		if (nv_stq_n >= nv_st_tgt) { nv_st_buf = 0; nv_st_calm = nv_now (); if (nv_st_started) run_t = total_cycles; }
 		else { nv_unlock (); nv_st_n_ref++; run_t = total_cycles; emu_stood = nv_st_started; return; } }
-	if (nv_now () - nv_st_calm > 15.0 && nv_st_tgt > 2) { nv_st_tgt--; nv_st_calm = nv_now (); }
+	if (nv_now () - nv_st_calm > 6.0 && nv_st_tgt > 2) { nv_st_tgt--; nv_st_calm = nv_now (); }
 	int k = 0;
 	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || (nv_stq_n > nv_st_tgt + 1 && k < 2)) && k < 8) {
 		nv_stfr_t q = nv_stq[0]; memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--;
@@ -1085,8 +1085,11 @@ static void netvx_stream_guest (void)
 		nv_lock (); nv_st_last = q.fno; nv_f = q.fno + 1; nv_n_frames++; if (!nv_st_started) { nv_st_started = 1; run_t = total_cycles; } k++; }
 	nv_unlock ();
 	nv_st_n_ref++; if (k) nv_st_n_new++; if (k > 1) nv_st_n_two++;
-	if (!k && nv_st_started && total_cycles < run_t && !nv_stq_n) {   /* (one was due and none is here: run dry - wait for a fuller buffer) */
-		nv_lock (); nv_st_buf = 1; if (nv_st_tgt < 6) nv_st_tgt++; nv_st_calm = nv_now (); nv_unlock (); }
+	{ static double due_t;                     /* (one due and none here for more than a frame (20 ms): run dry - wait for a fuller buffer;
+	                                                 a few ms late is the host's own rhythm: counted so, it grew to 6 frames, 120 ms behind) */
+	  if (k || !nv_st_started) due_t = 0;
+	  else if (total_cycles < run_t && !nv_stq_n) { const double t = nv_now (); if (!due_t) due_t = t;
+		else if (t - due_t > 0.02) { due_t = 0; nv_lock (); nv_st_buf = 1; if (nv_st_tgt < 6) nv_st_tgt++; nv_st_calm = t; nv_unlock (); } } }
 	if (!k) { run_t = total_cycles; emu_stood = nv_st_started; }   /* (none came: the picture as it was) */
 	else if (total_cycles > run_t) run_t = total_cycles;        /* (the host's time: this side follows it) */
 }

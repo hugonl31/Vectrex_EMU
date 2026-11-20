@@ -395,7 +395,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	/* ---------------------------------------------------------------- keys and controllers: Input.java; here what the activity gets */
 	@Override public boolean dispatchKeyEvent (KeyEvent e) { if (Input.key (this, e)) return true; return super.dispatchKeyEvent (e); }
 	@Override public boolean dispatchGenericMotionEvent (MotionEvent e) { if (Input.motion (this, e)) return true; return super.dispatchGenericMotionEvent (e); }
-	@Override public void onBackPressed () { if (!stack.isEmpty ()) pop (); else if (started) Screens.gameMenu (this); else super.onBackPressed (); }
+	@Override public void onBackPressed () { if (Adjust.panel != null) Adjust.close (this); else if (!stack.isEmpty ()) pop (); else if (started) Screens.gameMenu (this); else super.onBackPressed (); }
 
 	/* ---------------------------------------------------------------- the start screen */
 	View welcomeView ()

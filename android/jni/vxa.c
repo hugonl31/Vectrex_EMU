@@ -579,7 +579,7 @@ static void *vxa_main (void *u)
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld, sound %.0f ms, %u dry, %u dropped%s",
 				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
 			vxa_threads (t);
-			{ extern int vx_net_diag (char *, int), vx_net_playing_now (void); if (vx_net_playing_now ()) { char d[200]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */
+			{ extern int vx_net_diag (char *, int), vx_net_playing_now (void); if (vx_net_playing_now ()) { char d[600]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */
 			runs = pres = ticks = late = 0; t_run = t_max = t_cpu = 0; vxa_under = vxa_drop = 0; }
 	}
 	vlog ("the core ends"); if (vxa_as) { AAudioStream_requestStop (vxa_as); AAudioStream_close (vxa_as); vxa_as = NULL; }

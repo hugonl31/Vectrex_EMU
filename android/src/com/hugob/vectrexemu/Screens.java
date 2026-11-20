@@ -193,6 +193,7 @@ final class Screens {
 	/* a core setting's values, its help and its default */
 	static void choice (Main m, int i)
 	{
+		if (Adjust.slider (i)) { Adjust.show (m, i); return; }   /* (a number: the slider over the running game, as the iOS app) */
 		Panel p = new Panel (m, VX.opt (i, 1)); String cur = VX.opt (i, 5); View first = null;
 		final boolean fromSettings = m.top () instanceof Panel;
 		if (!cur.equals (VX.opt (i, 6))) p.row ("Back to the default: " + VX.opt (i, 6), null, () -> { VX.oset (i, VX.opt (i, 6)); m.pop (); if (fromSettings && m.top () instanceof Panel) reopenSettings (m); });

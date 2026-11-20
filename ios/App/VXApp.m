@@ -1399,19 +1399,19 @@ static void vxa_net_tick (void)
 }
 - (void) application:(UIApplication *)a handleEventsForBackgroundURLSession:(NSString *)i completionHandler:(void (^) (void))h
 { vlog ("woken for the pack's fetch (%s)", i.UTF8String); VXPack.shared.bgDone = h; if ([i hasSuffix:@".wifi"]) (void) VXPack.shared.wifiSession; else (void) VXPack.shared.session; }
-static UIBackgroundTaskIdentifier vxa_bgt = UIBackgroundTaskInvalid;
+static UIBackgroundTaskIdentifier vxa_bgt; static int vxa_bgt_on;   /* (UIBackgroundTaskInvalid is no constant: a flag beside it) */
 - (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; if (vxa_net_playing ()) vx_net_pause (2); }   /* (online: the other side sees
 	                                                     "in another app" - a call, Control Center, the app switcher alike) */
 - (void) applicationDidEnterBackground:(UIApplication *)a
 {
-	if (!vxa_net_playing () || vxa_bgt != UIBackgroundTaskInvalid) return;   /* (online: iOS's extra half minute - the connection kept, the pause told) */
-	vxa_bgt = [a beginBackgroundTaskWithName:@"online" expirationHandler:^{ vlog ("online: iOS stops the app in the background now"); [a endBackgroundTask:vxa_bgt]; vxa_bgt = UIBackgroundTaskInvalid; }];
+	if (!vxa_net_playing () || vxa_bgt_on) return;   /* (online: iOS's extra half minute - the connection kept, the pause told) */
+	vxa_bgt_on = 1; vxa_bgt = [a beginBackgroundTaskWithName:@"online" expirationHandler:^{ vlog ("online: iOS stops the app in the background now"); if (vxa_bgt_on) { vxa_bgt_on = 0; [a endBackgroundTask:vxa_bgt]; } }];
 	vlog ("online: in the background - the connection kept for a while");
 }
 - (void) applicationDidBecomeActive:(UIApplication *)a
 {
 	[vxa_vc setRunning:1]; if (vxa_net_playing ()) vx_net_pause (vxa_holding ? 1 : 0);
-	if (vxa_bgt != UIBackgroundTaskInvalid) { [a endBackgroundTask:vxa_bgt]; vxa_bgt = UIBackgroundTaskInvalid; }
+	if (vxa_bgt_on) { vxa_bgt_on = 0; [a endBackgroundTask:vxa_bgt]; }
 }
 - (void) applicationDidReceiveMemoryWarning:(UIApplication *)a { vlog ("memory warning: %.0f MB in use", vxa_mem_mb ()); }
 - (void) applicationWillTerminate:(UIApplication *)a { vlog ("the app ends"); retro_unload_game (); retro_deinit (); }

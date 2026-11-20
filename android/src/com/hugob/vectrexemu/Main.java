@@ -220,7 +220,15 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		/* (this app's own, as the iOS app's: the deck below the picture, the picture upright as the screen stands, the keys
 		 *  as on the PC, the screen's own rate) */
 		int hz = curHz >= 143 ? 144 : curHz >= 119 ? 120 : curHz >= 89 ? 90 : curHz >= 71 ? 72 : 60;   /* (the screen's rate now: the Nova "up to 120" ran at 60 - 120 Hz ran the emulator twice a refresh, 15.6 of 16.7 ms) */
-		return "vectrex_emu_deck=" + (squarish () ? "slim" : "full") + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
+		return "vectrex_emu_deck=auto" + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
+	}
+	/* (once, 1.7.6: the deck and the top bar to Auto - an older install kept the screen's old default as its own value) */
+	void autoOnce ()
+	{
+		if (prefs.getBoolean ("app.auto1", false)) return; if (VX.ofind ("vectrex_emu_deck") < 0) { h.postDelayed (this::autoOnce, 1000); return; }
+		prefs.edit ().putBoolean ("app.auto1", true).remove ("app.deckpop").remove ("app.topbar").remove ("app.bar").apply ();
+		final String v = VX.val ("vectrex_emu_deck"); if (v.equals ("pop-up") || v.equals ("slim") || v.equals ("full")) VX.oset (VX.ofind ("vectrex_emu_deck"), "auto");
+		log ("deck and top bar: Auto (once)"); showBar (); layout ();
 	}
 	void startCore ()
 	{
@@ -230,6 +238,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		VX.start (sysDir.getAbsolutePath (), savesDir.getAbsolutePath (), g, defaults ());
 		welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome));
 		layout (); Live.start (this);
+		h.postDelayed (this::autoOnce, 2000);
 		h.postDelayed (() -> testIntent (getIntent ()), 3000);
 		h.postDelayed (() -> Online.firstName (this), 2500);    /* (the player name: this device's, or asked for once) */
 		if (!prefs.getBoolean ("app.welcomed", false)) h.postDelayed (() -> { prefs.edit ().putBoolean ("app.welcomed", true).apply ();
@@ -273,7 +282,11 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		String m = prefs.getString ("touch.show", "auto");
 		return m.equals ("always") || (m.equals ("auto") && Input.pads () == 0);
 	}
-	boolean barAuto () { return prefs.getString ("app.topbar", tight () ? "auto" : "fixed").equals ("auto"); }
+	/* the top bar (Settings > App): Auto (the default: shown where it fits, else hiding itself), Shown, Auto-hide - as iOS */
+	int barSel () { String b = prefs.getString ("app.bar", null);
+		if (b == null && prefs.contains ("app.topbar")) { b = prefs.getString ("app.topbar", "fixed").equals ("auto") ? "hide" : "always"; prefs.edit ().putString ("app.bar", b).remove ("app.topbar").apply (); }   /* (an older one carried over) */
+		return "always".equals (b) ? 1 : "hide".equals (b) ? 2 : 0; }
+	boolean barAuto () { final int s = barSel (); return s == 2 || (s == 0 && tight ()); }   /* (it hides itself) */
 	void layout ()
 	{
 		int W = root.getWidth (), H = root.getHeight (); if (W <= 0 || H <= 0) { root.post (this::layout); return; }
@@ -303,12 +316,14 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		return st != 0 && deckPop () ? 3 : st;
 	}
 	/* (Settings > App: the deck's look - 0 off, 1 full, 2 slim - and whether it pops up, a setting of its own; the old "pop-up": slim, popping up) */
-	int deckStyle () { String v = VX.val ("vectrex_emu_deck"); return v.equals ("off") ? 0 : v.equals ("slim") || v.equals ("pop-up") ? 2 : 1; }
-	boolean deckPop () { return VX.val ("vectrex_emu_deck").equals ("pop-up") || prefs.getBoolean ("app.deckpop", popDef ()); }
-	void deckSet (int style, boolean pop)
+	/* (Auto, the default: what fits this screen - full, slim, slim popping up; Off; Full; Slim - a full / slim one may pop up) */
+	int deckSel () { String v = VX.val ("vectrex_emu_deck"); return v.equals ("off") ? 1 : v.equals ("full") ? 2 : v.equals ("slim") || v.equals ("pop-up") ? 3 : 0; }
+	int deckStyle () { final int s = deckSel (); return s == 0 ? (squarish () ? 2 : 1) : s == 1 ? 0 : s == 2 ? 1 : 2; }
+	boolean deckPop () { final int s = deckSel (); return s == 0 ? popDef () : VX.val ("vectrex_emu_deck").equals ("pop-up") || prefs.getBoolean ("app.deckpop", false); }
+	void deckSet (int sel, boolean pop)
 	{
-		VX.oset (VX.ofind ("vectrex_emu_deck"), style == 0 ? "off" : style == 2 ? "slim" : "full"); prefs.edit ().putBoolean ("app.deckpop", pop).apply ();
-		log ("deck " + (style == 0 ? "off" : style == 2 ? "slim" : "full") + (pop ? ", pop-up" : ""));
+		final String[] V = { "auto", "off", "full", "slim" }; if (sel < 0 || sel > 3) sel = 0;
+		VX.oset (VX.ofind ("vectrex_emu_deck"), V[sel]); prefs.edit ().putBoolean ("app.deckpop", pop).apply (); log ("deck " + V[sel] + (sel >= 2 && pop ? ", pop-up" : ""));
 	}
 	int lastDeckMode = -1;
 	void placeDeck ()

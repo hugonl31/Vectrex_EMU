@@ -114,11 +114,14 @@ final class Screens {
 		p.header ("App");
 		p.row ("Clock and battery", m.prefs.getBoolean ("app.statusbar", false) ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("app.statusbar", !m.prefs.getBoolean ("app.statusbar", false)).apply ();
 			Main.log ("clock and battery " + (m.prefs.getBoolean ("app.statusbar", false) ? "on" : "off")); m.immersive (); m.root.postDelayed (() -> reopenSettings (m), 350); });   /* (built again once the status bar's room is known) */
-		p.row ("Top bar", m.barAuto () ? "Auto-hide" : "Always", () -> { m.prefs.edit ().putString ("app.topbar", m.barAuto () ? "fixed" : "auto").apply (); m.showBar (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); });
-		{ final int st = m.deckStyle (); final boolean pop = m.deckPop ();
-		  p.row ("Control deck", st == 0 ? "Off" : st == 2 ? "Slim" : "Full", () -> pick (m, "Control deck", new String[] { "0", "1", "2" }, new String[] { "Off", "Full", "Slim" }, "" + st, v -> {
+		{ final int bs = m.barSel (); final String[] BL = { "Auto", "Shown", "Auto-hide" };
+		  p.row ("Top bar", BL[bs], () -> pick (m, "Top bar", new String[] { "0", "1", "2" }, BL, "" + bs, v -> { final int k = Integer.parseInt (v);
+			m.prefs.edit ().putString ("app.bar", k == 1 ? "always" : k == 2 ? "hide" : "auto").apply (); Main.log ("top bar " + BL[k]); m.showBar (); m.bar.setAlpha (1); m.layout (); reopenSettings (m); })); }
+		{ final int sel = m.deckSel (); final boolean pop = m.deckPop (); final String[] DL = { "Auto", "Off", "Full", "Slim" };
+		  p.row ("Control deck", DL[sel], () -> pick (m, "Control deck", new String[] { "0", "1", "2", "3" }, DL, "" + sel, v -> {
 			m.deckSet (Integer.parseInt (v), m.deckPop ()); m.layout (); reopenSettings (m); }));
-		  if (st != 0) p.row ("Deck pop-up", pop ? "On" : "Off", () -> { m.deckSet (m.deckStyle (), !m.deckPop ()); m.layout (); reopenSettings (m); }); }
+		  if (sel >= 2) p.row ("Deck pop-up", pop ? "On" : "Off", () -> { m.deckSet (m.deckSel (), !m.deckPop ()); m.layout (); reopenSettings (m); });
+		  else if (sel == 0) p.row ("Deck pop-up", (pop ? "On" : "Off") + " (Auto)", null); }
 		{ final int si = VX.ofind ("vectrex_emu_skip_intro");
 		  if (si >= 0) p.row ("Skip intro", VX.opt (si, 5).equals ("on") ? "On" : "Off", () -> { VX.oset (si, VX.opt (si, 5).equals ("on") ? "off" : "on"); reopenSettings (m); }); }
 		p.row ("Downloads", Pack.token (m) != null ? "games, boxes, UVMC2, PiTrex" : "Not in this build (no server key)", () -> { if (Pack.token (m) == null) { m.toast ("This build has no server key: no downloads", 2.5); return; } m.pop (); Pack.choose (m, false); });
@@ -133,10 +136,10 @@ final class Screens {
 			pick (m, "Reset all settings?", new String[] { "no", "yes" }, new String[] { "Cancel", "Reset: every setting back to its default" }, "no", v -> {
 				if (!v.equals ("yes")) { reopenSettings (m); return; } int k = 0;
 				for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) { VX.oset (i, VX.opt (i, 6)); k++; }
-				m.prefs.edit ().remove ("app.deckpop").remove ("app.topbar").apply (); m.showBar (); m.layout ();   /* (the deck's pop-up and the top bar too: this screen's defaults) */
+				m.prefs.edit ().remove ("app.deckpop").remove ("app.topbar").remove ("app.bar").apply (); m.showBar (); m.layout ();   /* (the deck's pop-up and the top bar too: Auto) */
 				Main.log ("settings: reset all (" + k + " changed)"); m.toast ("Settings back to their defaults", 2); reopenSettings (m); }); });
 		  if (n > 0) ((TextView) r.findViewWithTag ("t")).setTextColor (Main.CHG); }
-		p.foot ("Top bar auto-hide: tap the top of the screen to bring it back. Control deck: below the picture; pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away.");
+		p.foot ("Auto: what fits this screen with the picture at its full width. Top bar auto-hide: tap the top of the screen to bring it back. Deck pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away.");
 		/* the core's settings by its groups, in the iOS app's order (VXSettings): the most used first, in each group the
 		 * usual ones on top; settings that mean nothing here left out */
 		final int n = VX.nopts (), nc = VX.ncats ();

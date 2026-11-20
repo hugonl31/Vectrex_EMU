@@ -1212,7 +1212,8 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	 *  folder; a save next to the ROM (the desktop's) is the start) */
 	{ static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };
 	  { FILE *c = fopen (path, "rb"); if (c) { if (fread (h, 1, 96, c)) {} fclose (c); } }
-	  if (v4e_ds || (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN"))) save_path (path, ".ds2431", ds, sizeof ds);
+	  if (!ls_cfg_on && (v4e_ds || (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN")))) save_path (path, ".ds2431", ds, sizeof ds);   /* (online: no chip -
+	                                              both start alike, as the desktop: each player's own calibration parted the games) */
 	  { static char e[1950]; snprintf (e, sizeof e, "VT_DS2431=%s", ds); vx_putenv (e); }
 	  extern void vt_ds2431_reload (void); vt_ds2431_reload ();
 	  if (ds[0]) fprintf (stderr, "[vectrex_emu] save chip %s\n", ds); }

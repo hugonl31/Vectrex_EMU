@@ -355,6 +355,7 @@ static void vxa_audio_start (double rate)
 /* ---------------------------------------------------------------- input: controllers, keyboard, touch */
 typedef struct { uint32_t btn; int16_t ax[2][2]; } vxa_pad;
 static vxa_pad vxa_pads[2], vxa_tpad;                   /* (the controllers, ports 1 and 2; the touch controls, port 1) */
+static uint32_t vxa_held_mask; static double vxa_held_until;   /* (buttons held for the player a while: a UVMC2 game's calibration - 2 + 3 at its start) */
 static uint8_t vxa_kb[RETROK_LAST];
 static struct { int on; double x, y; } vxa_ptr;          /* (a finger on the picture: the core's pointer, -1..1) */
 static const char *const vxa_bname[16] = { "B(3)", "Y(1)", "Select", "Start", "Up", "Down", "Left", "Right", "A(4)", "X(2)", "L1", "R1", "L2", "R2", "L3", "R3" };
@@ -389,6 +390,7 @@ static void vxa_input_poll (void)
 	NSArray<GCController *> *cs = GCController.controllers; static uint32_t prev[2];
 	for (int port = 0; port < 2; port++) {
 		vxa_pad p; memset (&p, 0, sizeof p); if ((NSUInteger) port < cs.count) vxa_read_pad (cs[port], &p);
+		if (port == 0 && vxa_held_mask && CACurrentMediaTime () < vxa_held_until) p.btn |= vxa_held_mask;
 		if (port == 0) { p.btn |= vxa_tpad.btn; if (vxa_tpad.ax[0][0] || vxa_tpad.ax[0][1]) { p.ax[0][0] = vxa_tpad.ax[0][0]; p.ax[0][1] = vxa_tpad.ax[0][1]; } }
 		uint32_t ch = p.btn ^ prev[port];
 		for (int i = 0; i < 16; i++) if (ch >> i & 1) vlog ("in p%d %s %s%s", port + 1, vxa_bname[i], p.btn >> i & 1 ? "down" : "up", port == 0 && (vxa_tpad.btn >> i & 1) ? " (touch)" : "");
@@ -1274,6 +1276,12 @@ void vxa_do (NSString *w)
 	else if ([w isEqualToString:@"overlay"]) { int i = vxa_opt_find ("vectrex_emu_overlay"); if (i >= 0) vxa_oset (i, strcmp (vxa_opt[i].val, "on") ? "on" : "off"); }
 }
 static int vxa_net_pick (NSString *path);
+/* a UVMC2 game with its calibration screen: loaded with buttons 2 + 3 held for 30 s (with the intro on they must stay held until it has ended, ~25 s; the calibration screen ignores them) - the desktop's way (hold them, load) */
+void vxa_load_cal (NSString *path)
+{
+	vxa_held_mask = (1u << RETRO_DEVICE_ID_JOYPAD_X) | (1u << RETRO_DEVICE_ID_JOYPAD_B); vxa_held_until = CACurrentMediaTime () + 30.0;
+	vlog ("load with buttons 2 + 3 held (calibration): %s", path.UTF8String); extern void vxa_load (NSString *); vxa_load (path);
+}
 void vxa_load (NSString *path)
 {
 	if (vxa_net_pick (path)) return;                  /* (online: the host's pick goes to both, player 2's to none) */

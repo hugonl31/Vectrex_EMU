@@ -590,8 +590,12 @@ static UITableViewCell *vxs_cell (NSString *title)
 {
 	NSDictionary *g = _shown[(NSUInteger) ip.item]; __weak VXLibrary *ws = self;
 	return [UIContextMenuConfiguration configurationWithIdentifier:nil previewProvider:nil actionProvider:^UIMenu *(NSArray *s) { (void) s;
-		return [UIMenu menuWithTitle:g[@"name"] children:@[ [UIAction actionWithTitle:@"Play" image:[UIImage systemImageNamed:@"play.fill"] identifier:nil handler:^(UIAction *a) { (void) a;
-			vxa_load (g[@"path"]); [ws dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }]; }] ]]; }];
+		NSMutableArray *acts = [NSMutableArray arrayWithObject:[UIAction actionWithTitle:@"Play" image:[UIImage systemImageNamed:@"play.fill"] identifier:nil handler:^(UIAction *a) { (void) a;
+			vxa_load (g[@"path"]); [ws dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }]; }]];
+		if ([[g[@"path"] pathExtension].lowercaseString isEqualToString:@"um2"])   /* (a UVMC2 game: its calibration screen - buttons 2 + 3 held at its start) */
+			[acts addObject:[UIAction actionWithTitle:@"Calibration (2 + 3 held)" image:[UIImage systemImageNamed:@"slider.horizontal.3"] identifier:nil handler:^(UIAction *a) { (void) a;
+				extern void vxa_load_cal (NSString *); vxa_load_cal (g[@"path"]); [ws dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); }]; }]];
+		return [UIMenu menuWithTitle:g[@"name"] children:acts]; }];
 }
 @end
 

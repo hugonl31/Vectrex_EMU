@@ -92,6 +92,13 @@ final class Library extends LinearLayout implements Screens.Closing {
 		grid.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (16), (int) m.dp (16) + m.insR, (int) m.dp (24) + m.insBot); grid.setClipToPadding (false);
 		grid.setStretchMode (GridView.STRETCH_COLUMN_WIDTH); grid.setSelector (new android.graphics.drawable.ColorDrawable (0)); grid.setFocusable (false);
 		grid.setOnItemClickListener ((par, v, pos, id) -> play (pos));
+		grid.setOnItemLongClickListener ((par, v, pos, id) -> {   /* (a UVMC2 game: its calibration screen - buttons 2 + 3 held at its start, as iOS) */
+			if (pos < 0 || pos >= shown.size () || !shown.get (pos).path.toLowerCase (java.util.Locale.ROOT).endsWith (".um2")) return false;
+			final Game g = shown.get (pos);
+			Screens.pick (m, g.name, new String[] { "play", "cal" }, new String[] { "Play", "Calibration (2 + 3 held)" }, "play", v2 -> {
+				if (v2.equals ("cal")) { Main.log ("library: " + g.name + " with buttons 2 + 3 held (calibration)"); m.ctl.holdFor ((1 << 9) | (1 << 0), 30000); VX.load (g.path); remember (m, g.path); m.pop (); }
+				else play (pos); });
+			return true; });
 		grid.setAdapter (adapter); addView (grid, new LayoutParams (-1, 0, 1));
 		paintLooks (); sizeLabel (); reload (); apply ();
 		post (() -> { int cur = current (); if (cur >= 0) { sel = cur; adapter.notifyDataSetChanged (); grid.setSelection (Math.max (0, cur - Math.max (1, perRow ()))); } });   /* (opened at the game playing, selected) */

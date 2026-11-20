@@ -1189,6 +1189,8 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	 *  needed ZERO REF +36. Read at the first reset) */
 	{ const char *e = strrchr (path, '.');
 	  unit_addon = e && (!vx_stricmp (e, ".um2") || !vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit"));
+	  if (ls_cfg_on) nv_sv_apply (path); else { vx_putenv ("VT_FLASH_CLEAN="); vx_putenv ("VT_FLASH_IMG="); }   /* (online: the host's saves -
+	                                              netvx.c, temporary files only; else the player's own) */
 	  unit_make (unit_preset (), optv); unit_env (unit_addon);
 	  km_on = unit_addon && !opt_is ("vectrex_emu_usb_hid", "off"); km_n = 0; km_mods = 0; km_dirty = km_on; km_btn = -1;
 	  vx_putenv (km_on ? "VT_USBHID=1" : "VT_USBHID=");   /* (the desktop's usb_hid: a UVMC2 / PiTrex gets the keyboard and mouse) */
@@ -1210,13 +1212,14 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  vx_putenv (on ? "VT_THREADS=1" : "VT_THREADS="); }
 	/* (1.1: Last Human's save chip - a DS2431 on PB6: its calibration, difficulty and high scores - in RetroArch's saves
 	 *  folder; a save next to the ROM (the desktop's) is the start) */
-	{ static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };
+	if (!ls_cfg_on) { static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };   /* (online: the host's chip or none - nv_sv_apply) */
 	  { FILE *c = fopen (path, "rb"); if (c) { if (fread (h, 1, 96, c)) {} fclose (c); } }
 	  if (!ls_cfg_on && (v4e_ds || (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN")))) save_path (path, ".ds2431", ds, sizeof ds);   /* (online: no chip -
 	                                              both start alike, as the desktop: each player's own calibration parted the games) */
 	  { static char e[1950]; snprintf (e, sizeof e, "VT_DS2431=%s", ds); vx_putenv (e); }
 	  extern void vt_ds2431_reload (void); vt_ds2431_reload ();
 	  if (ds[0]) fprintf (stderr, "[vectrex_emu] save chip %s\n", ds); }
+	else { extern void vt_ds2431_reload (void); vt_ds2431_reload (); }
 	/* (1.1: the SD card of a PiTrex program (.img / .pit) or a UVMC2 game (.um2) - a FAT image, next to the game or in
 	 *  <system>/vectrex_emu: pitrex_sd.img / uvmc2_sd.img, as the desktop Vectrex_EMU builds them from its card folders) */
 	{ const char *e = strrchr (path, '.'); int px = e && (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")), um = e && !vx_stricmp (e, ".um2");
@@ -1243,8 +1246,6 @@ static int game_env (const char *path, const char *sys, const char *dir)
 			FILE *t = fopen (q, "rb"); if (t) { fclose (t); snprintf (sd, sizeof sd, "%s=%s", px ? "VT_PITREX_SD" : "VT_UVM2_SD", q); } }
 		if (sd[0]) { vx_putenv (sd); fprintf (stderr, "[vectrex_emu] SD card %s\n", strchr (sd, '=') + 1); }
 		else fprintf (stderr, "[vectrex_emu] no SD card (%s in <system>/vectrex_emu)\n", nm); } }
-	vx_putenv (ls_cfg_on ? "VT_FLASH_CLEAN=1" : "VT_FLASH_CLEAN=");   /* (online: a flash cartridge as it came - each player's own saves
-	                                              (Vectorblade's high scores) differed, and the games from the first frame; none written) */
 	netls_env ();                               /* (online in lockstep: the host's settings - netls.c) */
 	return im_out;
 }

@@ -7864,8 +7864,14 @@ class App:
         if not deck_on and (size or not getattr(r, 'rot', 0)) and (self.knob_on or self.fps_on or self.cart_on):
             pl, pt, pr, pb = self.pic_rect()
             bot = int(min(rh, max(16, pb + vecrender.PAD_BOT * (pb - pt))))   # (the case's bottom: the strip starts there)
-        w, h = rw & ~1, bot & ~1
-        return (0, rh - h, w, h)
+        x0, w = 0, rw
+        if not getattr(r, 'rot', 0) and hasattr(r, 'map'):     # (full screen: the case's width only, as in a window - not the
+            pl, pt, pr, pb = self.pic_rect()                    #  black of the rest of the screen)
+            cw = int((pb - pt) * vecrender.VIEW_AW)
+            if 0 < cw < rw:
+                x0 = max(0, int((pl + pr) / 2 - cw / 2)); w = min(cw, rw - x0)
+        w, h = w & ~1, bot & ~1
+        return (x0, rh - h, w, h)
     def rec_ok(self):
         r = self.ren
         if not (r and hasattr(r, '_rec_grab') and hasattr(r, 'real_size') and hasattr(r, 'map')):

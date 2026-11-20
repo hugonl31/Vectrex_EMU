@@ -1215,7 +1215,9 @@ vec3 plastic(vec2 gd, vec2 tgt) {
         }
         float fall = 1.0 / (1.0 + pow(back / 130.0, 2.0));
         float side = abs(n.x), bot = max(n.y, 0.0), top = max(-n.y, 0.0);
-        float strength = crefl * 1.5 * (0.85 * pow(side, 1.5) + 0.40 * bot + 0.35 * top) * fall * (1.0 + 0.06 * flow);
+        float strength = crefl * 1.5 * (0.85 * pow(side, 1.5) + 0.40 * bot + 0.35 * top) * fall * (1.0 + 0.06 * flow)
+            * (1.0 - smoothstep(0.84, 0.94, u));   // (none on the rounded outer edge: it turns away from the screen - a real
+                                                                 //  case shows no lines there; the owner's marks 2026-11-20)
         // the room's light: the same surface (y up for the light's cm)
         vec3 Nu = vec3(N.x, -N.y, N.z);
         vec3 Pc = vec3(tgt.x * 11.0, -tgt.y * 11.0, H * u * 11.0);

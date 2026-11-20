@@ -2548,13 +2548,14 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 	extern int vt_imager;
 	emu_stood = 0;
 	uint32_t replay_to = 0; int most = 8;
+	if (netvx_playing () && nv_stream && nv_role == 2) { netvx_stream_guest (); return; }   /* (streamed: player 2 runs nothing - the host's frames) */
 	if (netvx_playing ()) { replay_to = netvx_rollback (); if (replay_to) most = 8 + NV_RB_W; }   /* (online: a guess was wrong - back
 	                                              to that frame's state, the frames since run again with the right input, unheard) */
 	for (int k = 0; total_cycles < run_t && k < most; k++) {
 		extern unsigned long long vt_piece_t0;
 		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
 		if (ls_state == 2 || netvx_playing ()) { unsigned char lm[8];   /* (online in lockstep: a game frame only with both players' input for it) */
-			if (!(ls_state == 2 ? netls_frame (lm) : netvx_frame (lm))) { run_t = total_cycles; emu_stood = !k; break; }
+			if (!(ls_state == 2 ? netls_frame (lm) : nv_stream ? netvx_stream_input (lm) : netvx_frame (lm))) { run_t = total_cycles; emu_stood = !k; break; }
 			apply_input (lm); }
 		abuf_n = 0;
 		{ static int dp = -1; if (dp < 0) dp = getenv ("VX_DIRTY") != NULL;   /* (test: a card game's frame - its time, the memory pages it changed) */
@@ -2566,10 +2567,11 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 				fn, tsum / 199 * 1e3, tmax * 1e3, psum / 199.0, pmax, tot, psum / 199.0 * 4, 10); tsum = tmax = 0; psum = pmax = 0; } }
 		  else run_frame (); }
 		const int replay = replay_to && nv_f < replay_to;   /* (a frame run again: its sound was heard the first time) */
-		if (ls_state == 2) netls_after (); else if (netvx_playing ()) netvx_after ();
+		if (ls_state == 2) netls_after (); else if (netvx_playing () && !nv_stream) netvx_after ();
 		frame_push (p0);
 		if (vt_imager) eyes_take ();
-		if (!replay) audio_frame ();
+		{ const int a0 = aq_w; if (!replay) audio_frame ();
+		  if (nv_stream && netvx_playing ()) netvx_stream_send (p0, a0); }   /* (streamed: the host's frame to player 2) */
 	}
 	if (total_cycles + 3000000 < run_t) run_t = total_cycles;   /* (far behind - a stall: on from here) */
 }

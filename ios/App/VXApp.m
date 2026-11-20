@@ -1352,7 +1352,7 @@ static void vxa_net_tick (void)
 			vx_net_prepare (); vxa_load (vxa_net_join_rom); vx_net_go (); vxa_net_on = 1; just = 1; said_pause = said_desync = said_lost = 0;
 			vlog ("online: playing %s as player 2", vxa_net_join_rom.lastPathComponent.UTF8String);
 			vxa_ntoast ([NSString stringWithFormat:@"ONLINE: CONNECTED%@ - YOU ARE PLAYER 2%@", [st[@"relay"] intValue] ? @" (RELAYED)" : @"",
-				[st[@"card"] intValue] ? [NSString stringWithFormat:@" - UVMC2 %@", [st[@"uvm2"] uppercaseString]] : @""]); } }
+				[st[@"stream"] intValue] ? @" - STREAMED BY THE HOST" : [st[@"card"] intValue] ? [NSString stringWithFormat:@" - UVMC2 %@", [st[@"uvm2"] uppercaseString]] : @""]); } }   /* (streamed: a card game run by the host, its lines shown here - netvx.c) */
 	if (vxa_net_on) {
 		static int seen_rg = 0, seen_reset = 0;
 		{ NSString *m = st[@"regame_msg"]; if ([m isKindOfClass:NSString.class] && m.length) { vxa_ntoast ([@"ONLINE: " stringByAppendingString:m.uppercaseString]); vlog ("online: %s", m.UTF8String); } }

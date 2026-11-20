@@ -124,6 +124,8 @@ static long nv_n_rb, nv_n_rbf, nv_n_pred; static int64_t nv_reset_lastf = -1;
 static int nv_rb_ports[NV_RB_SLOTS][2]; static unsigned long long nv_rb_ctr[NV_RB_SLOTS][5];   /* (with each saved frame: the ports taken,
                                                  the frame counters outside the state - as the running game's state sent to a joiner) */
 static int nv_in_differ (const nv_in *a, const nv_in *b) { return a->jx != b->jx || a->jy != b->jy || a->b != b->b || a->fl != b->fl; }
+static int nv_stream, nv_stream_peer;   /* (line streaming - below) */ static long nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static void nv_st_on_piece (const unsigned char *b, size_t n); static void nv_st_on_input (const unsigned char *b, size_t n); static void nv_ports_take (int side, unsigned char fl); static void nv_st_clear (void);
 static size_t vx_save_to (unsigned char *d); static bool vx_load_from (const void *d, size_t sz); static void vx_state_init (void); static void nv_sum_send (uint32_t f, uint32_t h); static void vx_rb_keep (int back);
 static int nv_dly = 3, nv_their_dly, nv_st_run, nv_st_ep; static double nv_st_t0, nv_calm_t0;   /* (this side's input delay now - it grows when the
 						  game stands (a Wi-Fi's pauses), and comes back to the agreed one when calm; the other side's, sent with its inputs) */
@@ -330,7 +332,7 @@ static void nv_raw (const void *b, size_t n, const struct sockaddr_in *to)
 }
 static void nv_send (int kind, const void *pay, size_t n)   /* (a game packet: straight to the other side, or through the relay) */
 {
-	unsigned char b[640]; if (n > 600) n = 600;
+	unsigned char b[1300]; { const size_t cap = (nv_relay && nv_code[0]) ? 600 : 1240; if (n > cap) n = cap; }   /* (through the meeting point: its packets' size; direct: up to 1240 - the streamed lines' pieces) */
 	{ static double gap = -1; if (gap < 0) { const char *e = getenv ("VX_NET_GAP"); gap = e ? atof (e) : 0; }   /* (test: the link silent
 	                                              `gap` s of every 1.5 s - a Wi-Fi's pauses) */
 	  if (gap > 0 && kind == 'I' && fmod (nv_now (), 1.5) < gap) return; }
@@ -392,7 +394,9 @@ int vx_net_diag (char *o, int n)
 {
 	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood, %ld guessed, %ld rollbacks (%ld frames again), %.2f s emulated in %.2f s%s",
 		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood, nv_n_pred, nv_n_rb, nv_n_rbf, (double) (total_cycles - nv_dg_tc) / 1.5e6, nv_now () - nv_dg_t, nv_rb_on ? "" : " - lockstep"); nv_dg_tc = total_cycles; nv_dg_t = nv_now ();
-	nv_n_wait = nv_n_stood = nv_n_frames = nv_n_pred = nv_n_rb = nv_n_rbf = 0; nv_unlock (); return r;
+	nv_n_wait = nv_n_stood = nv_n_frames = nv_n_pred = nv_n_rb = nv_n_rbf = 0;
+	if (nv_stream && r > 0 && r < n) { const int r2 = snprintf (o + r, (size_t) (n - r), " - streamed: %ld frames came, %ld left out, %ld lost, %ld pieces repaired; %ld of %ld refreshes a new frame (%ld more than one)", nv_st_n_got, nv_st_n_drop, nv_st_n_lost, nv_st_n_fix, nv_st_n_new, nv_st_n_ref, nv_st_n_two); nv_st_n_got = nv_st_n_drop = nv_st_n_lost = nv_st_n_ref = nv_st_n_new = nv_st_n_two = nv_st_n_fix = 0; nv_unlock (); return r2 > 0 ? r + r2 : r; }
+	nv_unlock (); return r;
 }
 double netvx_pace (void)
 {
@@ -530,9 +534,9 @@ static void nv_make_game (void)
 	                                              one (Mine Storm II, a patched one) parts the games from the first frame) */
 	uint32_t seed = (uint32_t) (nv_now () * 1e6) ^ (uint32_t) rand () ^ ((uint32_t) rand () << 15); seed &= 0x7fffffff;
 	snprintf (nv_game, sizeof nv_game, "{\"md5\": \"%s\", \"size\": %lld, \"name\": %s, \"seed\": %u, \"nver\": %d, \"arch\": \"" NV_ARCH "\", "
-		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"hot\": %s, \"port2\": \"%s\", \"bios\": \"%s\", \"sv\": %u, \"svi\": %d, \"rb\": true, \"host_name\": %s%s%s%s}",
+		"\"skip_boot\": %s, \"cart_hw\": \"%s\", \"dacofs\": %.6f, \"delay\": %d, \"rtt_ms\": %d, \"relay\": %s, \"regame\": true, \"hot\": %s, \"port2\": \"%s\", \"bios\": \"%s\", \"sv\": %u, \"svi\": %d, \"rb\": true, \"stream\": %s, \"host_name\": %s%s%s%s}",
 		nv_rom_md5, nv_rom_size, nm, (unsigned) seed, NV_VER, nv_skip_boot ? "true" : "false", nv_carthw, nv_dacofs, nv_delay,
-		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", "false", optv ("vectrex_emu_port2"), bm, (unsigned) (nv_card ? 0 : nv_svn), nv_sv_id, hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
+		(int) (nv_rtt * 1000 + 0.5), nv_relay ? "true" : "false", "false", optv ("vectrex_emu_port2"), bm, (unsigned) (nv_card ? 0 : nv_svn), nv_sv_id, nv_card ? "true" : "false", hn, nv_card ? ", \"card\": true, \"uvm2\": \"" : "", nv_card ? nv_uvm2 : "", nv_card ? "\"" : "");
 }
 static size_t nv_lz (const unsigned char *b, size_t n, unsigned char *out)   /* (out: n + n / 127 + 16 bytes) */
 {
@@ -651,7 +655,7 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 			{ char nm2[256]; if (nv_jstr (nv_game, "name", nm2, sizeof nm2)) snprintf (nv_rom_name, sizeof nv_rom_name, "%s", nm2); }
 			{ char ar[16] = ""; nv_jitfast = nv_jstr (nv_game, "arch", ar, sizeof ar) && !strcmp (ar, NV_ARCH); }
 			nv_rg_can = strstr (nv_game, "\"regame\": true") != NULL; nv_hot_can = strstr (nv_game, "\"hot\": true") != NULL;
-			nv_sv_want (nv_game); nv_rb_peer = strstr (nv_game, "\"rb\": true") != NULL;
+			nv_sv_want (nv_game); nv_rb_peer = strstr (nv_game, "\"rb\": true") != NULL; nv_stream_peer = strstr (nv_game, "\"stream\": true") != NULL;
 			nv_phase = NV_AGREED; nv_accepted = -1; nv_log ("the host's game came: the app looks for the ROM"); } break;
 	case 'A': if (nv_role == 1 && nv_phase == NV_WAIT && nv_rtt >= 0) { nv_phase = NV_AGREED; nv_accepted = 1;
 			for (size_t i = 0; i + 6 < n; i++) if (!memcmp (b + i, "\0uvm2:", 6)) { char m[8] = ""; size_t k = 0; while (i + 6 + k < n && k < 7 && b[i + 6 + k]) { m[k] = (char) b[i + 6 + k]; k++; } m[k] = 0;
@@ -660,8 +664,10 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 			nv_rg_can = 0; for (size_t i = 0; i + 7 <= n; i++) if (!memcmp (b + i, "\0regame", 7)) nv_rg_can = 1;
 			nv_sv_peer = 0; for (size_t i = 0; i + 5 <= n; i++) if (!memcmp (b + i, "\0save", 5)) nv_sv_peer = 1;
 			nv_rb_peer = 0; for (size_t i = 0; i + 3 <= n; i++) if (!memcmp (b + i, "\0rb", 3)) nv_rb_peer = 1;
+			nv_stream = 0; if (nv_card) for (size_t i = 0; i + 7 <= n; i++) if (!memcmp (b + i, "\0stream", 7)) nv_stream = 1;
 			nv_hot_can = 0; for (size_t i = 0; i + 8 <= n; i++) if (!memcmp (b + i, "\0hotjoin", 8)) nv_hot_can = 0;   /* (a join starts both anew - the owner's choice: the running game's state (up to 2 MB) stalled a phone's Wi-Fi Direct link and parted the games at frame 0, iPad with the Nova, 2026-11-19) */   /* (relayed: 2 MB through the meeting point took 15 s, the host's game standing - both start anew) */
-			if (nv_card) { nv_card_done = 0; nv_cidx = 0; nv_curn = 0; nv_log ("player 2 has the game: the SD cards compared"); }
+			if (nv_card && nv_stream) { nv_card_done = 1; nv_ready = 1; nv_curn = 0; nv_log ("player 2 has the game: the host plays it and sends its lines (streamed)"); }
+			else if (nv_card) { nv_card_done = 0; nv_cidx = 0; nv_curn = 0; nv_log ("player 2 has the game: the SD cards compared"); }
 			else if (nv_svn && nv_sv_peer) { nv_card_done = 1; nv_sv_state = 1; nv_sv_cidx = 0; nv_log ("player 2 has the game: the host's saves sent"); }
 			else { nv_card_done = 1; nv_ready = 1; nv_curn = 0; nv_log ("player 2 has the game: both start (no saves: the cartridges as they came)"); } }
 		else if (n >= 2) { const unsigned k = nv_get16 (b); for (int i = 0; i < nv_ncout; i++) if (nv_cout[i].k == k) { memmove (nv_cout + i, nv_cout + i + 1, sizeof *nv_cout * (size_t) (nv_ncout - i - 1)); nv_ncout--; break; } }
@@ -673,6 +679,8 @@ static void nv_on_packet (int kind, const unsigned char *b, size_t n, const stru
 	case 'I': if (nv_role == 2 && nv_card && nv_cbitn && !nv_card_done) { nv_card_done = 1; nv_ready = 1; }
 		if (nv_phase == NV_PLAY || nv_phase == NV_AGREED) nv_on_inputs (b, n); break;
 	case 'T': nv_on_chat (b, n); break;
+	case 'L': if (nv_phase == NV_PLAY) nv_st_on_piece (b, n); break;   /* (line streaming: a piece of the host's frame) */
+	case 'u': if (nv_phase == NV_PLAY) nv_st_on_input (b, n); break;   /* (line streaming: player 2's controller) */
 	case 'W': if (nv_role == 2 && nv_sv_need && n > 10 && (int) nv_get16 (b) == nv_sv_id) {   /* (player 2: a piece of the host's package) */
 			if (nv_sv_state == 2) { unsigned char a[2]; nv_put16 (a, (unsigned) nv_sv_id); nv_send ('w', a, 2); break; }
 			const int i = (int) nv_get16 (b + 2), t = (int) nv_get16 (b + 4); const size_t len = nv_get32 (b + 6), m = n - 10;
@@ -893,6 +901,205 @@ static void nv_thread (void)
 #endif
 }
 
+/* ---- line streaming (2026-11-20): a card game (UVMC2, PiTrex) - its frame takes 4-12 ms on a fast PC (VecDoom up to 26):
+ * no rollback (it would run several again in one refresh), and lockstep stood both at every network pause. The host plays
+ * it as offline (its own settings, no card compared) and sends each frame's lines and sound; player 2 does not run it - it
+ * shows the frames as they come (a phone needs no power for VecDoom then) and sends its controller. The host never waits;
+ * player 2 sees the game one network trip late. An older side (the PC today): the lockstep as before */
+#ifndef AQ
+#define AQ 65536
+#endif
+static int16_t aq[AQ * 2]; static int aq_r, aq_w; static long aq_frames; static int emu_stood; static unsigned long long run_t;   /* (defined in
+                                                 libretro_vx.c further down - the sound queue, the time to reach) */
+static int aq_fill (void); static void frame_push (unsigned long long p0);
+#define NV_ST_MAXL 6000
+#define NV_ST_MAXA 1200
+#define NV_ST_MAXC 240                                         /* (pieces a frame at most, the repair ones with them) */
+#define NV_ST_GROUP 4                                          /* (one repair piece for each 4: one lost of them comes back) */
+static unsigned char nv_st_raw[64 + NV_ST_MAXL * 26 + NV_ST_MAXA], nv_st_z[sizeof nv_st_raw + sizeof nv_st_raw / 127 + 64];
+typedef struct { uint32_t fno; int nd, got, done; size_t zlen, rawn, csz; unsigned char mask[NV_ST_MAXC]; unsigned char *buf, *par; } nv_stasm_t;
+static nv_stasm_t nv_sta[6];
+typedef struct { uint32_t fno; unsigned long long p0, tc; int nl, na; line_t *L; int16_t *a; } nv_stfr_t;
+static nv_stfr_t nv_stq[8]; static int nv_stq_n, nv_st_started; static uint32_t nv_st_last; static long nv_st_n_ref, nv_st_n_new, nv_st_n_two, nv_st_n_fix;
+static nv_in nv_st_in; static uint32_t nv_st_in_seq; static int nv_st_in_ok; static unsigned char nv_st_resets, nv_st_resets_done, nv_st_take_seq, nv_st_take_val, nv_st_take_done;
+static unsigned char nv_st_my_resets, nv_st_my_take_seq, nv_st_my_take_val; static uint32_t nv_st_out_seq; static uint32_t nv_st_fno;
+static void nv_st_put16 (unsigned char *p, unsigned v) { p[0] = (unsigned char) v; p[1] = (unsigned char) (v >> 8); }
+static unsigned nv_st_get16 (const unsigned char *p) { return (unsigned) p[0] | ((unsigned) p[1] << 8); }
+/* (the lines, small: a stroke that goes on where the last ended is one flag; the rest differences, 7 bits a byte) */
+static unsigned char *nv_vput (unsigned char *o, unsigned long long v) { while (v >= 0x80) { *o++ = (unsigned char) (v | 0x80); v >>= 7; } *o++ = (unsigned char) v; return o; }
+static unsigned char *nv_zput (unsigned char *o, long long v) { return nv_vput (o, v < 0 ? ((unsigned long long) (-(v + 1)) << 1) | 1 : (unsigned long long) v << 1); }
+static const unsigned char *nv_vget (const unsigned char *i, const unsigned char *e, unsigned long long *v)
+{ unsigned long long r = 0; int sh = 0; while (i < e) { const unsigned char c = *i++; r |= (unsigned long long) (c & 0x7f) << sh; if (!(c & 0x80)) { *v = r; return i; } sh += 7; if (sh > 63) break; } *v = 0; return NULL; }
+static const unsigned char *nv_zget (const unsigned char *i, const unsigned char *e, long long *v)
+{ unsigned long long u; i = nv_vget (i, e, &u); *v = (u & 1) ? -(long long) (u >> 1) - 1 : (long long) (u >> 1); return i; }
+/* (the sound: 8-bit mu-law, 22 kHz) */
+static unsigned char nv_mu_enc (int x)
+{
+	const int sign = x < 0 ? 0x80 : 0; if (x < 0) x = -x; if (x > 32635) x = 32635; x += 132;
+	int e = 7; for (int m = 0x4000; !(x & m) && e > 0; m >>= 1) e--;
+	return (unsigned char) ~(sign | (e << 4) | ((x >> (e + 3)) & 15));
+}
+static int nv_mu_dec (unsigned char u) { u = (unsigned char) ~u; const int e = (u >> 4) & 7, m = u & 15, x = (((m << 3) + 132) << e) - 132; return u & 0x80 ? -x : x; }
+static size_t nv_st_pack (unsigned char *o0, unsigned long long p0, int nl, int na, int a0)
+{
+	unsigned char *o = o0; nv_put32 (o, nv_st_fno); memcpy (o + 4, &p0, 8); { const unsigned long long tc = total_cycles; memcpy (o + 12, &tc, 8); }
+	nv_st_put16 (o + 20, (unsigned) nl); nv_st_put16 (o + 22, (unsigned) na); o += 24;
+	long px = 0, py = 0; unsigned char pc = 0, prgb = 0; unsigned long long pend = 0;
+	for (int i = 0; i < nl; i++) { const line_t *l = &last[i];
+		const int cont = l->x0 == px && l->y0 == py, samec = l->c == pc, samergb = l->rgb == prgb, sameT = (unsigned long long) l->t0 == pend;
+		*o++ = (unsigned char) (cont | samec << 1 | samergb << 2 | sameT << 3);
+		if (!cont) { o = nv_zput (o, (long long) l->x0 - px); o = nv_zput (o, (long long) l->y0 - py); }
+		o = nv_zput (o, (long long) l->x1 - l->x0); o = nv_zput (o, (long long) l->y1 - l->y0);
+		if (!samec) *o++ = l->c; if (!samergb) *o++ = l->rgb;
+		o = nv_vput (o, l->cyc); if (!sameT) o = nv_zput (o, (long long) l->t0 - (long long) pend);
+		px = l->x1; py = l->y1; pc = l->c; prgb = l->rgb; pend = (unsigned long long) l->t0 + l->cyc; }
+	{ int i = a0; for (int k = 0; k < na; k++) { *o++ = nv_mu_enc (aq[2 * i]); i = (i + 2) % AQ; } }
+	return (size_t) (o - o0);
+}
+/* (the host, after each frame: its lines and the sound it made - from the sound queue's a0 on - in pieces, a repair piece
+ *  (all four XORed) after each four: one lost of them is made again there) */
+static void netvx_stream_send (unsigned long long p0, int a0)
+{
+	const int nl = nlast < NV_ST_MAXL ? nlast : NV_ST_MAXL;
+	int na = 0; { int i = a0; while (i != aq_w && na < NV_ST_MAXA * 2) { i = (i + 1) % AQ; na++; } } na /= 2;
+	const size_t raw = nv_st_pack (nv_st_raw, p0, nl, na, a0);
+	size_t zn = nv_lz (nv_st_raw, raw, nv_st_z + 1); const unsigned char *z; if (zn < raw) { nv_st_z[0] = 1; z = nv_st_z; zn++; }   /* (packed when smaller) */
+	else { nv_st_z[0] = 0; memmove (nv_st_z + 1, nv_st_raw, raw); z = nv_st_z; zn = raw + 1; }
+	{ static double sr, sz, sl; static long c; sr += raw; sz += zn; sl += nl; if (++c % 250 == 0 && getenv ("VX_STSIZE")) { fprintf (stderr, "STSIZE lines %.0f raw %.0f sent %.0f bytes a frame%c", sl / 250, sr / 250, sz / 250, 10); sr = sz = sl = 0; } }
+	nv_lock ();
+	const size_t C = (nv_relay && nv_code[0]) ? 560 : 1180;      /* (through the meeting point: its packets' size) */
+	const int nd = (int) ((zn + C - 1) / C), ng = (nd + NV_ST_GROUP - 1) / NV_ST_GROUP;
+	if (nd + ng > NV_ST_MAXC) { nv_unlock (); nv_st_fno++; return; }
+	unsigned char pk[18 + 1180], par[1180];
+	for (int g = 0; g < ng; g++) { memset (par, 0, C);
+		for (int i = g * NV_ST_GROUP; i < nd && i < (g + 1) * NV_ST_GROUP; i++) {
+			const size_t k = zn - (size_t) i * C < C ? zn - (size_t) i * C : C;
+			nv_put32 (pk, nv_st_fno); nv_st_put16 (pk + 4, (unsigned) i); nv_st_put16 (pk + 6, (unsigned) nd); nv_put32 (pk + 8, (uint32_t) zn); nv_put32 (pk + 12, (uint32_t) raw); nv_st_put16 (pk + 16, (unsigned) C);
+			memcpy (pk + 18, z + (size_t) i * C, k); for (size_t q = 0; q < k; q++) par[q] ^= z[(size_t) i * C + q]; nv_send ('L', pk, 18 + k); }
+		nv_put32 (pk, nv_st_fno); nv_st_put16 (pk + 4, (unsigned) (nd + g)); nv_st_put16 (pk + 6, (unsigned) nd); nv_put32 (pk + 8, (uint32_t) zn); nv_put32 (pk + 12, (uint32_t) raw); nv_st_put16 (pk + 16, (unsigned) C);
+		memcpy (pk + 18, par, C); nv_send ('L', pk, 18 + C); }
+	nv_unlock (); nv_st_fno++;
+}
+static int nv_st_unpack (const unsigned char *r, size_t rn, nv_stfr_t *q)
+{
+	if (rn < 24) return 0; const unsigned char *e = r + rn;
+	q->fno = nv_get32 (r); memcpy (&q->p0, r + 4, 8); memcpy (&q->tc, r + 12, 8); q->nl = (int) nv_st_get16 (r + 20); q->na = (int) nv_st_get16 (r + 22);
+	if (q->nl > NV_ST_MAXL || q->na > NV_ST_MAXA) return 0;
+	q->L = malloc (sizeof (line_t) * (size_t) (q->nl ? q->nl : 1)); q->a = malloc (sizeof (int16_t) * (size_t) (q->na ? q->na : 1)); if (!q->L || !q->a) { free (q->L); free (q->a); return 0; }
+	const unsigned char *i = r + 24; long px = 0, py = 0; unsigned char pc = 0, prgb = 0; unsigned long long pend = 0;
+	for (int k = 0; k < q->nl; k++) { line_t *l = &q->L[k]; long long v; unsigned long long u;
+		if (!i || i >= e) goto bad; const unsigned char f = *i++;
+		if (f & 1) { l->x0 = px; l->y0 = py; } else { i = nv_zget (i, e, &v); l->x0 = px + (long) v; if (!i) goto bad; i = nv_zget (i, e, &v); l->y0 = py + (long) v; if (!i) goto bad; }
+		i = nv_zget (i, e, &v); if (!i) goto bad; l->x1 = l->x0 + (long) v; i = nv_zget (i, e, &v); if (!i) goto bad; l->y1 = l->y0 + (long) v;
+		if (f & 2) l->c = pc; else { if (i >= e) goto bad; l->c = *i++; }
+		if (f & 4) l->rgb = prgb; else { if (i >= e) goto bad; l->rgb = *i++; }
+		i = nv_vget (i, e, &u); if (!i) goto bad; l->cyc = (unsigned) u;
+		if (f & 8) l->t0 = (unsigned) pend; else { i = nv_zget (i, e, &v); if (!i) goto bad; l->t0 = (unsigned) ((long long) pend + v); }
+		px = l->x1; py = l->y1; pc = l->c; prgb = l->rgb; pend = (unsigned long long) l->t0 + l->cyc; }
+	if (!i || i + q->na > e) goto bad;
+	for (int k = 0; k < q->na; k++) q->a[k] = (int16_t) nv_mu_dec (i[k]);
+	return 1;
+bad: free (q->L); free (q->a); return 0;
+}
+/* (player 2, the network's thread: a piece of a frame; a lost one made again from its group's repair piece; a whole
+ *  frame into the queue, in order) */
+static void nv_st_on_piece (const unsigned char *b, size_t n)
+{
+	if (n < 19 || nv_role != 2 || !nv_stream) return;
+	const uint32_t f = nv_get32 (b); const int i = (int) nv_st_get16 (b + 4), nd = (int) nv_st_get16 (b + 6); const size_t zn = nv_get32 (b + 8), rawn = nv_get32 (b + 12), C = nv_st_get16 (b + 16);
+	const int ng = (nd + NV_ST_GROUP - 1) / NV_ST_GROUP;
+	if (nv_st_started && f <= nv_st_last) return;              /* (too late: newer shown) */
+	if (nd <= 0 || i >= nd + ng || nd + ng > NV_ST_MAXC || C < 64 || C > 1180 || zn > (size_t) nd * C || zn > sizeof nv_st_z || rawn > sizeof nv_st_raw || n - 18 > C) return;
+	nv_stasm_t *a = NULL; for (int k = 0; k < 6; k++) if (nv_sta[k].buf && nv_sta[k].fno == f && nv_sta[k].nd == nd) a = &nv_sta[k];
+	if (!a) { int o = 0; for (int k = 1; k < 6; k++) if (!nv_sta[k].buf || (nv_sta[o].buf && nv_sta[k].fno < nv_sta[o].fno)) o = k;   /* (the oldest's place) */
+		a = &nv_sta[o]; if (a->buf && !a->done) nv_st_n_lost++;
+		if (!a->buf) { a->buf = malloc ((size_t) NV_ST_MAXC * 1180); a->par = malloc ((size_t) NV_ST_MAXC / NV_ST_GROUP * 1180 + 1180); } if (!a->buf || !a->par) return;
+		a->fno = f; a->nd = nd; a->got = 0; a->done = 0; a->zlen = zn; a->rawn = rawn; a->csz = C; memset (a->mask, 0, sizeof a->mask); }
+	if (a->done || a->mask[i] || a->csz != C) return;
+	a->mask[i] = 1;
+	if (i < nd) { memcpy (a->buf + (size_t) i * C, b + 18, n - 18); if (n - 18 < C) memset (a->buf + (size_t) i * C + (n - 18), 0, C - (n - 18)); a->got++; }
+	else memcpy (a->par + (size_t) (i - nd) * C, b + 18, C);
+	/* (a group with one piece missing and its repair piece here: the missing one is the others XORed with it) */
+	for (int g = 0; g < ng && a->got < nd; g++) { int miss = -1, nm = 0; const int g0 = g * NV_ST_GROUP, g1 = g0 + NV_ST_GROUP < nd ? g0 + NV_ST_GROUP : nd;
+		if (!a->mask[nd + g]) continue;
+		for (int k = g0; k < g1; k++) if (!a->mask[k]) { miss = k; nm++; }
+		if (nm != 1) continue;
+		unsigned char *d = a->buf + (size_t) miss * C; memcpy (d, a->par + (size_t) g * C, C);
+		for (int k = g0; k < g1; k++) if (k != miss) for (size_t q = 0; q < C; q++) d[q] ^= a->buf[(size_t) k * C + q];
+		a->mask[miss] = 1; a->got++; nv_st_n_fix++; }
+	if (a->got < nd) return;
+	a->done = 1;
+	static unsigned char raw[sizeof nv_st_raw]; nv_stfr_t fr; int ok;
+	if (a->buf[0] == 1) ok = !nv_unlz (a->buf + 1, a->zlen - 1, raw, a->rawn) && nv_st_unpack (raw, a->rawn, &fr);
+	else ok = a->zlen - 1 == a->rawn && nv_st_unpack (a->buf + 1, a->rawn, &fr);
+	if (!ok) { nv_st_n_lost++; return; }
+	if (nv_stq_n == 8) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * 7); nv_stq_n--; nv_st_n_drop++; }
+	int at = nv_stq_n; while (at > 0 && nv_stq[at - 1].fno > f) at--;
+	if (at < nv_stq_n) memmove (nv_stq + at + 1, nv_stq + at, sizeof nv_stq[0] * (size_t) (nv_stq_n - at));
+	nv_stq[at] = fr; nv_stq_n++; nv_st_n_got++;
+}
+/* (player 2, emu_loop: the frames come in their time - two waiting at most (a third: the oldest left out), none: the
+ *  picture stands; and this side's controller to the host) */
+static void netvx_stream_guest (void)
+{
+	nv_lock ();
+	{ unsigned char pk[11]; nv_put32 (pk, ++nv_st_out_seq); int jx = (int) ls_pad[0] - 128, jy = (int) ls_pad[1] - 128;
+	  if (ls_reset_req) { nv_st_my_resets++; ls_reset_req = 0; }
+	  if (nv_take_req) { nv_st_my_take_seq++; nv_st_my_take_val = (unsigned char) nv_take_req; nv_take_req = 0; }
+	  pk[4] = (unsigned char) (signed char) (jx < -127 ? -127 : jx > 127 ? 127 : jx); pk[5] = (unsigned char) (signed char) (jy < -127 ? -127 : jy > 127 ? 127 : jy);
+	  pk[6] = ls_pad[2]; pk[7] = nv_st_my_resets; pk[8] = nv_st_my_take_seq; pk[9] = nv_st_my_take_val; pk[10] = 0; nv_send ('u', pk, 11); }
+	if (nv_pause) { nv_unlock (); run_t = total_cycles; emu_stood = 1; return; }
+	while (nv_stq_n > 3) { free (nv_stq[0].L); free (nv_stq[0].a); memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--; nv_st_n_drop++; }
+	int k = 0;
+	while (nv_stq_n > 0 && (!nv_st_started || total_cycles < run_t || nv_stq_n > 2) && k < 8) {
+		nv_stfr_t q = nv_stq[0]; memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--;
+		nv_unlock ();
+		memcpy (last, q.L, sizeof (line_t) * (size_t) q.nl); nlast = q.nl; total_cycles = q.tc;
+		frame_push (q.p0);
+		for (int i = 0; i < q.na; i++) for (int r = 0; r < 2; r++) if (aq_fill () < AQ - 1) { aq[2 * aq_w] = aq[2 * aq_w + 1] = q.a[i]; aq_w = (aq_w + 1) % AQ; }
+		aq_frames++;
+		free (q.L); free (q.a);
+		nv_lock (); nv_st_last = q.fno; nv_f = q.fno + 1; nv_n_frames++; if (!nv_st_started) { nv_st_started = 1; run_t = total_cycles; } k++; }
+	nv_unlock ();
+	nv_st_n_ref++; if (k) nv_st_n_new++; if (k > 1) nv_st_n_two++;
+	if (!k) { run_t = total_cycles; emu_stood = nv_st_started; }   /* (none came: the picture as it was) */
+	else if (total_cycles > run_t) run_t = total_cycles;        /* (the host's time: this side follows it) */
+}
+/* (the host, before each frame: its controller and player 2's last - a RESET or a port taken by player 2 once each) */
+static int netvx_stream_input (unsigned char *m)
+{
+	nv_lock ();
+	if (nv_pause) { nv_unlock (); return 0; }
+	nv_in mine, theirs = nv_st_in_ok ? nv_st_in : (nv_in) { 0, 0, 0, 0 };
+	{ int jx = (int) ls_pad[0] - 128, jy = (int) ls_pad[1] - 128; mine.jx = (signed char) (jx < -127 ? -127 : jx > 127 ? 127 : jx); mine.jy = (signed char) (jy < -127 ? -127 : jy > 127 ? 127 : jy);
+	  mine.b = ls_pad[2]; mine.fl = (unsigned char) (ls_reset_req ? 4 : 0); ls_reset_req = 0;
+	  if (nv_take_req) { mine.fl |= nv_take_req == 1 ? 0x10 : 0x20; nv_take_req = 0; } }
+	theirs.fl = 0;
+	if (nv_st_resets != nv_st_resets_done) { nv_st_resets_done = nv_st_resets; theirs.fl |= 4; }
+	if (nv_st_take_seq != nv_st_take_done) { nv_st_take_done = nv_st_take_seq; theirs.fl |= nv_st_take_val == 1 ? 0x10 : 0x20; }
+	const nv_in *hi = &mine, *jo = &theirs;
+	if ((hi->fl | jo->fl) & 4) { nv_reset_n++; nv_reset_by = hi->fl & 4 ? 1 : 2; }
+	nv_ports_take (0, hi->fl); nv_ports_take (1, jo->fl);
+	const nv_in *p1 = nv_ports[0] == 1 ? hi : nv_ports[1] == 1 ? jo : NULL, *p2 = nv_ports[0] == 2 ? hi : nv_ports[1] == 2 ? jo : NULL;
+	m[0] = (unsigned char) ((p1 ? p1->jx : 0) + 128); m[1] = (unsigned char) ((p1 ? p1->jy : 0) + 128); m[2] = p1 ? p1->b : 0;
+	m[3] = (unsigned char) (0x40 | ((hi->fl | jo->fl) & 4)); m[4] = (unsigned char) ((p2 ? p2->jx : 0) + 128); m[5] = (unsigned char) ((p2 ? p2->jy : 0) + 128); m[6] = p2 ? p2->b : 0; m[7] = 0;
+	nv_n_frames++; nv_f++; nv_unlock ();   /* (the frame's number: the status, as in lockstep) */
+	return 1;
+}
+static void nv_st_on_input (const unsigned char *b, size_t n)   /* (the host: player 2's controller - the newest) */
+{
+	if (n < 10 || nv_role != 1 || !nv_stream) return;
+	const uint32_t s = nv_get32 (b); if (nv_st_in_ok && (int32_t) (s - nv_st_in_seq) <= 0) return;
+	nv_st_in_seq = s; nv_st_in_ok = 1; nv_st_in.jx = (signed char) b[4]; nv_st_in.jy = (signed char) b[5]; nv_st_in.b = b[6];
+	nv_st_resets = b[7]; if (b[8] != nv_st_take_seq) { nv_st_take_seq = b[8]; nv_st_take_val = b[9]; }
+}
+static void nv_st_clear (void)
+{
+	nv_stream = nv_stream_peer = 0; nv_st_in_ok = 0; nv_st_resets = nv_st_resets_done = 0; nv_st_take_seq = nv_st_take_done = 0; nv_st_fno = 0; nv_st_started = 0; nv_st_last = 0;
+	nv_st_my_resets = nv_st_my_take_seq = 0; for (int k = 0; k < nv_stq_n; k++) { free (nv_stq[k].L); free (nv_stq[k].a); } nv_stq_n = 0;
+	for (int k = 0; k < 6; k++) nv_sta[k].done = 1;
+}
+
 /* ---- the game frames (emu_loop): 1 and the frame's input (m: the core's 8 bytes) once both players' are there */
 static int netvx_playing (void) { return nv_phase == NV_PLAY && nv_go; }
 static void nv_ports_take (int side, unsigned char fl)            /* (netplay.py port_inputs: 'take port' 0x10 / 0x20) */
@@ -1044,7 +1251,7 @@ static void nv_clear (void)
 {
 	nv_role = 0; nv_phase = NV_IDLE; nv_have_peer = nv_ncand = nv_relay = nv_locked = 0; nv_code[0] = nv_peer_name[0] = nv_err[0] = nv_note[0] = 0;
 	nv_game[0] = 0; nv_accepted = 0; nv_go = 0; nv_left = nv_lost = 0; nv_pause = nv_peer_pause = 0; nv_pause_seq = 0; nv_mypause = nv_theirpause = 0; nv_their_seq = -1; nv_t_z = 0;
-	nv_svn = nv_curn = 0; nv_sv_state = nv_sv_need = nv_sv_peer = nv_sv_total = nv_sv_got = 0; nv_cur_md5[0] = 0;
+	nv_svn = nv_curn = 0; nv_sv_state = nv_sv_need = nv_sv_peer = nv_sv_total = nv_sv_got = 0; nv_cur_md5[0] = 0; nv_st_clear ();
 	nv_last_heard = nv_last_direct = nv_last_relayed = 0; nv_punch_t0 = 0; nv_rtt = 0; nv_delay = 3; nv_ncout = 0; nv_ncin = 0; nv_ncheld = 0; nv_cseq = nv_cnext = 0;
 	nv_t_srv = nv_t_hello = nv_t_beacon = nv_t_punch = nv_t_pause = nv_t_ka = 0; nv_ping_i = nv_ping_got = 0; nv_g_sent = 0;
 	nv_hot_free (); nv_hot_can = 0; nv_take_req = 0; ls_port2[0] = 0;
@@ -1105,17 +1312,20 @@ void vx_net_accept (int ok)
 		if (ok) { if (nv_jitfast) { memcpy (why, "\0jit:fast", 9); wn = 9; } memcpy (why + wn, "\0regame", 7); wn += 7; memcpy (why + wn, "\0hotjoin", 8); wn += 8;
 			memcpy (why + wn, "\0save", 5); wn += 5;   /* (it takes the host's saves) */
 			memcpy (why + wn, "\0rb", 3); wn += 3;     /* (it runs on guesses: rollback) */
+			if (nv_card && nv_stream_peer) { memcpy (why + wn, "\0stream", 7); wn += 7; nv_stream = 1; }   /* (a card game: the host's lines - nothing run here) */
 			memcpy (why + wn, "\0uvm2:", 6); wn += 6; const size_t k = strlen (nv_uvm2); memcpy (why + wn, nv_uvm2, k); wn += k; }
 		for (int i = 0; i < 5; i++) nv_send (ok ? 'A' : 'N', why, wn);
 		if (!ok) { snprintf (nv_err, sizeof nv_err, bad_bios ? "your BIOS (bios.bin) is not the host's - online both need the same one" : "you do not have the game"); nv_phase = NV_ENDED; } else { nv_accepted = 1;
 			if (!nv_sv_need) nv_curn = 0; else if (nv_sv_state == 2) nv_sv_take ();   /* (the host's package: all here, or the start waits for it) */
-			if (!nv_card && (!nv_sv_need || nv_sv_state == 2)) nv_ready = 1; } }
+			if ((!nv_card || nv_stream) && (!nv_sv_need || nv_sv_state == 2)) nv_ready = 1; } }
 	nv_unlock ();
 }
 /* both: the game agreed - its settings for the power-on (the app loads the ROM after this, then vx_net_go) */
 void vx_net_prepare (void)
 {
 	nv_lock (); double v; char ch[32];
+	if (nv_stream) { ls_cfg_on = 0; ls_me = nv_role == 1 ? 0 : 1; nv_reset_frames (); nv_phase = NV_PLAY; nv_go = 0; nv_last_heard = nv_now ();
+		nv_st_started = 0; nv_stq_n = 0; nv_st_fno = 0; nv_unlock (); nv_log (nv_role == 1 ? "streamed: this side plays, its lines to player 2" : "streamed: the host's lines shown here"); return; }
 	ls_cfg_on = 1; ls_seed = nv_jnum (nv_game, "seed", &v) ? (uint32_t) v : 0; ls_intro_skip = nv_jnum (nv_game, "skip_boot", &v) ? (int) v : 0;
 	ls_dacofs = nv_jnum (nv_game, "dacofs", &v) ? v : 0; ls_jitfast = nv_jitfast; ls_mode = !strcmp (nv_uvm2, "dev") ? 2 : !strcmp (nv_uvm2, "fast") ? 1 : 0;
 	ls_me = nv_role == 1 ? 0 : 1;
@@ -1286,9 +1496,9 @@ const char *vx_net_status (void)
 	static char out[16384]; char t[256], g[1100];
 	nv_lock ();
 	size_t o = (size_t) snprintf (out, sizeof out, "{\"phase\": %d, \"role\": %d, \"mode\": %d, \"code\": \"%s\", \"relay\": %d, \"delay\": %d, \"rtt\": %d, "
-		"\"lost\": %d, \"left\": %d, \"paused\": %d, \"peer_paused\": %d, \"peer_why\": %d, \"my_pause\": %d, \"waiting\": %.2f, \"frame\": %u, \"accepted\": %d, \"desync\": %d, \"checked\": %d, \"ready\": %d, \"card\": %d, \"card_files\": %d, \"uvm2\": \"%s\"",
+		"\"lost\": %d, \"left\": %d, \"paused\": %d, \"peer_paused\": %d, \"peer_why\": %d, \"my_pause\": %d, \"waiting\": %.2f, \"frame\": %u, \"accepted\": %d, \"desync\": %d, \"checked\": %d, \"ready\": %d, \"card\": %d, \"card_files\": %d, \"uvm2\": \"%s\", \"stream\": %d",
 		nv_phase, nv_role, nv_mode, nv_code, nv_relay, nv_delay, (int) (nv_rtt > 0 ? nv_rtt * 1000 : 0), nv_lost, nv_left, nv_pause, nv_peer_pause, nv_theirpause, nv_mypause,
-		nv_wait_t0 ? nv_now () - nv_wait_t0 : 0.0, (unsigned) nv_f, nv_accepted, (int) nv_desync, nv_nmatch, nv_ready, nv_card, nv_nonly, nv_uvm2);
+		nv_wait_t0 ? nv_now () - nv_wait_t0 : 0.0, (unsigned) nv_f, nv_accepted, (int) nv_desync, nv_nmatch, nv_ready, nv_card, nv_nonly, nv_uvm2, nv_stream);
 	nv_jesc (t, sizeof t, nv_peer_name); o += (size_t) snprintf (out + o, sizeof out - o, ", \"peer\": %s", t);
 	nv_jesc (t, sizeof t, nv_err); o += (size_t) snprintf (out + o, sizeof out - o, ", \"error\": %s", t);
 	o += (size_t) snprintf (out + o, sizeof out - o, ", \"game\": %s", nv_game[0] ? nv_game : "null");

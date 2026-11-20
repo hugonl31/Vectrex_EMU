@@ -754,7 +754,9 @@ class NetPlay:
                     k = lo + i
                     if k >= self.f and k not in self.remote:
                         self.remote[k] = struct.unpack_from('<bbBB', body, 5 + 4 * i)
-                tf = lo + n - 1 - self.delay                    # (the frame the other side is on)
+                dly = body[5 + 4 * n + 2] if len(body) >= 5 + 4 * n + 3 and body[5 + 4 * n + 2] else self.delay   # (the app's delay now:
+                                                 #  it grows when its game stands - libretro/netvx.c)
+                tf = lo + n - 1 - dly                           # (the frame the other side is on)
                 if tf > self.their_f:
                     self.their_f = tf
                     self.adv += 0.05 * ((self.f - tf) - self.adv)

@@ -93,6 +93,8 @@ static int nv_card, nv_card_done, nv_ready, nv_cidx; static double nv_t_card;
 static char **nv_only; static int nv_nonly;                  /* (the files both play from) */
 static char nv_uvm2[8] = "exact"; static int nv_jitfast;   /* (the PiTrex JIT fast: both the same processor type) */
 static double nv_last_heard, nv_last_direct, nv_last_relayed, nv_punch_t0, nv_last_send, nv_wait_t0, nv_rtt;
+static int nv_dly = 3, nv_their_dly, nv_st_run, nv_st_ep; static double nv_st_t0, nv_calm_t0;   /* (this side's input delay now - it grows when the
+						  game stands (a Wi-Fi's pauses), and comes back to the agreed one when calm; the other side's, sent with its inputs) */
 static uint32_t nv_f, nv_lhave;                  /* (the frame now; this side's inputs made up to) */
 static nv_in nv_local[NV_RING], nv_remote[NV_RING]; static uint32_t nv_rhave_lo; static unsigned char nv_rgot[NV_RING];
 static uint32_t nv_rgot_f[NV_RING];
@@ -297,6 +299,9 @@ static void nv_raw (const void *b, size_t n, const struct sockaddr_in *to)
 static void nv_send (int kind, const void *pay, size_t n)   /* (a game packet: straight to the other side, or through the relay) */
 {
 	unsigned char b[640]; if (n > 600) n = 600;
+	{ static double gap = -1; if (gap < 0) { const char *e = getenv ("VX_NET_GAP"); gap = e ? atof (e) : 0; }   /* (test: the link silent
+	                                              `gap` s of every 1.5 s - a Wi-Fi's pauses) */
+	  if (gap > 0 && kind == 'I' && fmod (nv_now (), 1.5) < gap) return; }
 	if (nv_relay && nv_code[0]) { const size_t c = strlen (nv_code); memcpy (b, "VXR1X", 5); memcpy (b + 5, nv_code, c);
 		memcpy (b + 5 + c, "VXN1", 4); b[9 + c] = (unsigned char) kind; if (n) memcpy (b + 10 + c, pay, n); nv_raw (b, 10 + c + n, &nv_srv); return; }
 	if (!nv_have_peer) return;
@@ -336,12 +341,13 @@ static int nv_same (const struct sockaddr_in *a, const struct sockaddr_in *b) { 
 /* ---- the inputs: each packet the last NV_KEEP frames' of this side (netplay.py _send_inputs) */
 static void nv_send_inputs (void)
 {
-	unsigned char b[5 + 4 * NV_KEEP + 2]; const uint32_t hi = nv_lhave ? nv_lhave - 1 : 0, lo = hi + 1 >= NV_KEEP ? hi + 1 - NV_KEEP : 0;
+	unsigned char b[5 + 4 * NV_KEEP + 3]; const uint32_t hi = nv_lhave ? nv_lhave - 1 : 0, lo = hi + 1 >= NV_KEEP ? hi + 1 - NV_KEEP : 0;
 	const int n = nv_lhave ? (int) (hi - lo + 1) : 0;
 	nv_put32 (b, lo); b[4] = (unsigned char) n;
 	for (int i = 0; i < n; i++) { const nv_in *x = &nv_local[(lo + i) % NV_RING]; b[5 + 4 * i] = (unsigned char) x->jx; b[6 + 4 * i] = (unsigned char) x->jy; b[7 + 4 * i] = x->b; b[8 + 4 * i] = x->fl; }
 	int adv = (int) (nv_adv * 16); if (adv > 2000) adv = 2000; if (adv < -2000) adv = -2000; nv_put16 (b + 5 + 4 * n, (unsigned) (adv & 0xffff));
-	nv_send ('I', b, 5 + 4 * n + 2); nv_last_send = nv_now ();
+	b[5 + 4 * n + 2] = (unsigned char) nv_dly;   /* (this side's delay now: the other side's sync reckons with it - an older one reads no further) */
+	nv_send ('I', b, 5 + 4 * n + 3); nv_last_send = nv_now ();
 }
 /* the clock sync, as the PC's (netplay.py pace_s): the side ahead of the other slows down a little - at most 1 %, from
  * half a frame ahead - so neither runs into the other's inputs and stands (a stutter: measured and sent, but not used
@@ -352,7 +358,7 @@ static long nv_n_wait, nv_n_stood, nv_n_frames;     /* (the app's log: frames pl
 int vx_net_diag (char *o, int n)
 {
 	nv_lock (); const int r = snprintf (o, (size_t) n, "delay %d, round trip %.0f ms, ahead %.1f (them %.1f), %ld frames, %ld waited, %ld stood",
-		nv_delay, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood);
+		nv_dly, nv_rtt > 0 ? nv_rtt * 1000 : 0.0, nv_adv, nv_adv_them, nv_n_frames, nv_n_wait, nv_n_stood);
 	nv_n_wait = nv_n_stood = nv_n_frames = 0; nv_unlock (); return r;
 }
 double netvx_pace (void)
@@ -369,7 +375,8 @@ static void nv_on_inputs (const unsigned char *b, size_t n)
 		const int r = f % NV_RING; if (nv_rgot[r] && nv_rgot_f[r] == f) continue;
 		nv_remote[r].jx = (signed char) b[5 + 4 * i]; nv_remote[r].jy = (signed char) b[6 + 4 * i]; nv_remote[r].b = b[7 + 4 * i]; nv_remote[r].fl = b[8 + 4 * i];
 		nv_rgot[r] = 1; nv_rgot_f[r] = f; }
-	const int32_t tf = (int32_t) (lo + (uint32_t) k) - 1 - nv_delay;
+	if (n >= 5 + 4 * (size_t) k + 3 && b[5 + 4 * k + 2]) nv_their_dly = b[5 + 4 * k + 2];
+	const int32_t tf = (int32_t) (lo + (uint32_t) k) - 1 - (nv_their_dly ? nv_their_dly : nv_delay);
 	if (tf > nv_their_f) { nv_their_f = tf; nv_adv += 0.05 * (((double) nv_f - tf) - nv_adv);
 		if (n >= 5 + 4 * (size_t) k + 2) nv_adv_them = (double) (int16_t) nv_get16 (b + 5 + 4 * k) / 16.0; }
 }
@@ -437,6 +444,7 @@ static void nv_hot_free (void)
 static void nv_reset_frames (void)
 {
 	nv_f = 0; nv_lhave = 0; nv_wait_t0 = 0; nv_their_f = -1; nv_adv = nv_adv_them = 0;
+	nv_dly = nv_delay; nv_their_dly = 0; nv_st_run = nv_st_ep = 0; nv_st_t0 = nv_calm_t0 = 0;
 	for (uint32_t f = 0; f < (uint32_t) nv_delay; f++) {        /* (the first frames: no input, the same on both sides) */
 		nv_local[f].jx = nv_local[f].jy = 0; nv_local[f].b = nv_local[f].fl = 0;
 		nv_remote[f] = nv_local[f]; nv_rgot[f] = 1; nv_rgot_f[f] = f; }
@@ -744,7 +752,7 @@ static void nv_ports_take (int side, unsigned char fl)            /* (netplay.py
 static int netvx_frame (unsigned char *m)
 {
 	nv_lock ();
-	while (nv_lhave <= nv_f + (uint32_t) nv_delay) {              /* (this side's input `delay` frames on: the controller now) */
+	while (nv_lhave <= nv_f + (uint32_t) nv_dly) {              /* (this side's input `delay` frames on: the controller now) */
 		nv_in *x = &nv_local[nv_lhave % NV_RING]; int jx = (int) ls_pad[0] - 128, jy = (int) ls_pad[1] - 128;
 		x->jx = (signed char) (jx < -127 ? -127 : jx > 127 ? 127 : jx); x->jy = (signed char) (jy < -127 ? -127 : jy > 127 ? 127 : jy);
 		x->b = ls_pad[2]; x->fl = (unsigned char) (ls_reset_req ? 4 : 0); ls_reset_req = 0;
@@ -761,6 +769,20 @@ static int netvx_frame (unsigned char *m)
 		do { nv_sleep_ms (1); nv_lock (); nv_pump (); got = nv_rgot[r] && nv_rgot_f[r] == nv_f; nv_unlock (); } while (!got && nv_now () - t0 < 0.012);
 		wait_end = nv_now (); nv_lock (); nv_n_wait++; }
 	if (!got && !nv_pause) nv_n_stood++;
+	/* (the delay to the link: the game stood 3 times in 5 s, or 6 frames at once (a longer stand: a quarter of it more) - one frame more, up to 12; 15 s without
+	 *  standing - one less, down to the agreed one. A Wi-Fi's (and Apple's peer-to-peer's) pauses are longer some evenings
+	 *  than the pings showed: 6 frames stood 10-20 times in 5 s, the iPad / iPhone 2026-11-20. Frames are numbered: each
+	 *  side's delay its own, the extra frames the controller as it is) */
+	if (nv_f > 60 && !nv_pause && !nv_lost && !nv_rg_state) { const double t = nv_now ();
+		if (!got) { if (!nv_st_run++) { if (t - nv_st_t0 > 5.0) { nv_st_t0 = t; nv_st_ep = 0; } nv_st_ep++; }
+			if ((nv_st_ep >= 3 || nv_st_run == 6) && nv_dly < 12) { nv_dly++; nv_st_ep = 0; nv_st_t0 = t;
+				char m[64]; snprintf (m, sizeof m, "input delay %d frames (the link pauses)", nv_dly); nv_log (m); }
+			nv_calm_t0 = t; }
+		else { if (nv_st_run >= 8 && nv_dly < 12) {   /* (a long stand just over: as much more at once - half of it) */
+				nv_dly += nv_st_run / 4; if (nv_dly > 12) nv_dly = 12; nv_st_ep = 0; nv_st_t0 = t;
+				char m[64]; snprintf (m, sizeof m, "input delay %d frames (the link paused)", nv_dly); nv_log (m); }
+			nv_st_run = 0; if (!nv_calm_t0) nv_calm_t0 = t;
+			if (t - nv_calm_t0 > 15.0 && nv_dly > nv_delay) { nv_dly--; nv_calm_t0 = t; char m[64]; snprintf (m, sizeof m, "input delay %d frames (calm)", nv_dly); nv_log (m); } } }
 	if (!got || nv_pause) { if (!nv_wait_t0) nv_wait_t0 = nv_now (); nv_unlock (); return 0; }
 	nv_wait_t0 = 0; nv_n_frames++;
 	const nv_in *mine = &nv_local[nv_f % NV_RING], *theirs = &nv_remote[r];

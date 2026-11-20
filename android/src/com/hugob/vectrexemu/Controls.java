@@ -39,7 +39,7 @@ final class Controls extends View {
 		if (m.prefs.getBoolean ("touch.lefty", false)) { RectF t = zl; zl = zr; zr = t; }
 		stickZone = zl;
 		{ final boolean left = zl.centerX () < W / 2f; final float tr = m.dp (17), x0 = left ? zl.left + m.dp (12) : zl.right - m.dp (12) - 2 * tr;
-		  tog.set (x0, zl.top + m.dp (6), x0 + 2 * tr, zl.top + m.dp (6) + 2 * tr); }
+		  tog.set (x0, zl.bottom - m.dp (6) - 2 * tr, x0 + 2 * tr, zl.bottom - m.dp (6)); }   /* (bottom, outer side) */
 		float r = Math.min (Math.min (zr.width () / 4.6f, zr.height () / 4.4f), m.dp (38) * tsize), gap = r * 0.35f, cx = zr.centerX (), cy = zr.centerY ();
 		for (int i = 0; i < 4; i++) { float bx = cx + (i % 2 == 1 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2); btn[i].set (bx - r, by - r, bx + r, by + r); }
 		if (dpad ()) { scx = kx = zl.centerX (); scy = ky = zl.centerY () + m.dp (10); }   /* (the D-pad: in one place, always) */

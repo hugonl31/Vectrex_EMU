@@ -1030,6 +1030,7 @@ static void vxa_set_opt (int i, NSString *v)
 	if (!_link || on == _running) return; _running = on; _link.paused = !on; _last = 0;
 	if (on) [vxa_eng startAndReturnError:nil]; else [vxa_eng pause];
 	vlog ("%s", on ? "resumed" : "paused (the app in the background)");
+	[self layoutControls];   /* (the touch controls shown again: laid out while in the background they stayed hidden until something else changed) */
 }
 - (void) thermal { vlog ("heat: %ld", (long) NSProcessInfo.processInfo.thermalState); }
 - (void) devicesChanged:(NSNotification *)n
@@ -1059,8 +1060,8 @@ static void vxa_set_opt (int i, NSString *v)
 		zl = CGRectMake (s.left, top, v.width / 2, bot - top); zr = CGRectMake (v.width / 2, top, v.width / 2 - s.right, zl.size.height); }
 	if ([ud boolForKey:@"touch.lefty"]) { CGRect t = zl; zl = zr; zr = t; }   /* (left-handed: the stick on the right) */
 	_stickZone = zl;
-	{ const BOOL left = CGRectGetMidX (zl) < v.width / 2; const double tr = 17;   /* (the stick / D-pad switch: the zone's outer top corner) */
-	  _padTogR = CGRectMake (left ? CGRectGetMinX (zl) + 12 : CGRectGetMaxX (zl) - 12 - 2 * tr, CGRectGetMinY (zl) + 6, 2 * tr, 2 * tr);
+	{ const BOOL left = CGRectGetMidX (zl) < v.width / 2; const double tr = 17;   /* (the stick / D-pad switch: the zone's outer bottom corner) */
+	  _padTogR = CGRectMake (left ? CGRectGetMinX (zl) + 12 : CGRectGetMaxX (zl) - 12 - 2 * tr, CGRectGetMaxY (zl) - 6 - 2 * tr, 2 * tr, 2 * tr);
 	  _padTog.path = [UIBezierPath bezierPathWithRoundedRect:_padTogR cornerRadius:tr].CGPath;
 	  _padTogT.string = [self dpad] ? @"STICK" : @"D-PAD"; _padTogT.frame = CGRectMake (_padTogR.origin.x - 6, CGRectGetMidY (_padTogR) - 7, _padTogR.size.width + 12, 14); }
 	if ([self dpad]) _stickC = CGPointMake (CGRectGetMidX (zl), CGRectGetMidY (zl) + 10);   /* (the D-pad: in one place, always) */

@@ -169,6 +169,12 @@ static void vxa_opts_defaults (void)
 		if (sv) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", sv.UTF8String); }
 	/* (this app's own defaults: the control deck below the picture - its cartridge opens the ROM browser, RESET, the knob) */
 	int dk = vxa_opt_find ("vectrex_emu_deck");
+	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (once, 1.7.6 (104), an iPad only: a screen that is not 4:3 - an iPad Air / iPad, 1.44 - had the
+	                                              4:3 defaults (the bar hiding, the deck popping up): those taken back, the phone's layout fits) */
+	  if (![u boolForKey:@"app.layout2"]) { [u setBool:YES forKey:@"app.layout2"];
+		if (!vxa_squarish () && UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) { [u removeObjectForKey:@"app.topbar"]; [u removeObjectForKey:@"app.deckpop"];
+			if (dk >= 0 && !strcmp (vxa_opt[dk].val, "pop-up")) { snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", "full"); [u removeObjectForKey:@"opt.vectrex_emu_deck"]; }
+			vlog ("layout: this screen is not 4:3 - the top bar and the deck as a phone's"); } } }
 	const char *dd = vxa_squarish () ? "slim" : "full";   /* (a 4:3 screen: slim, popping up - the picture gets the room) */
 	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "%s", dd);   /* (the app's default - what Reset gives back) */
 	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", dd);

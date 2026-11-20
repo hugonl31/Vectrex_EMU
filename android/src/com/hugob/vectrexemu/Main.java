@@ -203,6 +203,18 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		final float a = Math.max (dm.widthPixels, dm.heightPixels) / dm.density, b = Math.min (dm.widthPixels, dm.heightPixels) / dm.density;
 		return b > 0 && a < b * 1.278f * 0.95f + 70 + 58 + 30;   /* (dp: the picture 1.278 x its width high; the bar's row, the deck, the safe edges) */
 	}
+	boolean popDef ()                                          /* (the slim deck does not fit with the bar either: it pops up by default - four stages, as iOS) */
+	{
+		android.util.DisplayMetrics dm = new android.util.DisplayMetrics (); getWindowManager ().getDefaultDisplay ().getRealMetrics (dm);
+		final float a = Math.max (dm.widthPixels, dm.heightPixels) / dm.density, b = Math.min (dm.widthPixels, dm.heightPixels) / dm.density;
+		return b > 0 && a < b * 1.278f * 0.95f + 70 + 40 + 30;
+	}
+	boolean tight ()                                           /* (the top bar alone does not fit either: it hides itself by default) */
+	{
+		android.util.DisplayMetrics dm = new android.util.DisplayMetrics (); getWindowManager ().getDefaultDisplay ().getRealMetrics (dm);
+		final float a = Math.max (dm.widthPixels, dm.heightPixels) / dm.density, b = Math.min (dm.widthPixels, dm.heightPixels) / dm.density;
+		return b > 0 && a < b * 1.278f * 0.95f + 70 + 30;
+	}
 	String defaults ()
 	{
 		/* (this app's own, as the iOS app's: the deck below the picture, the picture upright as the screen stands, the keys
@@ -261,7 +273,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		String m = prefs.getString ("touch.show", "auto");
 		return m.equals ("always") || (m.equals ("auto") && Input.pads () == 0);
 	}
-	boolean barAuto () { return prefs.getString ("app.topbar", squarish () ? "auto" : "fixed").equals ("auto"); }
+	boolean barAuto () { return prefs.getString ("app.topbar", tight () ? "auto" : "fixed").equals ("auto"); }
 	void layout ()
 	{
 		int W = root.getWidth (), H = root.getHeight (); if (W <= 0 || H <= 0) { root.post (this::layout); return; }
@@ -292,7 +304,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	}
 	/* (Settings > App: the deck's look - 0 off, 1 full, 2 slim - and whether it pops up, a setting of its own; the old "pop-up": slim, popping up) */
 	int deckStyle () { String v = VX.val ("vectrex_emu_deck"); return v.equals ("off") ? 0 : v.equals ("slim") || v.equals ("pop-up") ? 2 : 1; }
-	boolean deckPop () { return VX.val ("vectrex_emu_deck").equals ("pop-up") || prefs.getBoolean ("app.deckpop", squarish ()); }
+	boolean deckPop () { return VX.val ("vectrex_emu_deck").equals ("pop-up") || prefs.getBoolean ("app.deckpop", popDef ()); }
 	void deckSet (int style, boolean pop)
 	{
 		VX.oset (VX.ofind ("vectrex_emu_deck"), style == 0 ? "off" : style == 2 ? "slim" : "full"); prefs.edit ().putBoolean ("app.deckpop", pop).apply ();

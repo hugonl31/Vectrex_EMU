@@ -2480,7 +2480,7 @@ class GLBloomRenderer(GLRenderer):
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
         self.look = 'bright'         # Tube > Look: 'bright' (all lines up to white) or 'vectrex' (as a real Vectrex, LOOK_*)
         self.white_k = WHITE_DEFAULT # Tube > White balance: the beam's white, kelvin (see white_gain)
-        self.beam_trace = False      # Tube > Beam trace: the spot's own path lights the phosphor by the time it spent
+        self.beam_trace = bool(os.environ.get('VX_BEAM_TRACE'))   # Tube > Beam trace (VX_BEAM_TRACE=1: on at the start - the test launcher): the spot's own path lights the phosphor by the time it spent
                                      #  (BEAM_TRACE_CSAT; the core's beam-trace mode) - off: the line renderer
         self.even_beam = False       # Tube > Even beam: an ideal vector display - every point as bright and wide as a
                                      #  line, no corner glow, overlapping light not adding up (off: the real tube)

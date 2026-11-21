@@ -1887,7 +1887,8 @@ static void alg_sstep_full (void)
 	{ static int lag_env; static double lag_force = -1;      /* (VT_DEFLAG / VT_DEFLAGN given: they win over the frontend's unit
 	   * setting (analog 9) - tests in the app and the libretro core, where the setting arrived first and the variables were never read) */
 	  if (!lag_env) { const char *z = getenv ("VT_DEFLAG"); lag_env = 1; if (z) lag_force = atof (z); z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; z = getenv ("VT_DEFLAGSPLIT"); if (z) lag_split_k = atof (z); }
-	  if (lag_force >= 0) vt_lag = lag_force; else if (vt_lag < 0) vt_lag = LAG_TAU; }
+	  if (lag_force >= 0) { static int ly_env = -1; if (ly_env < 0) ly_env = getenv ("VT_DEFLAGY") != NULL; vt_lag = lag_force; if (!ly_env) vt_lag_y = -1; }   /* (.. and Y as X, unless VT_DEFLAGY says otherwise) */
+	  else if (vt_lag < 0) vt_lag = LAG_TAU; }
 	if (vt_lag_y < -1.5) { const char *z = getenv ("VT_DEFLAGY"); vt_lag_y = z ? atof (z) : LAG_TAU_Y; }
 	if (ofs_k < 0) { const char *z = getenv ("VT_OFSK"); ofs_k = z ? atof (z) : OFS_K; }
 	{ double ox = beam_x, oy = beam_y;

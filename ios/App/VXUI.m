@@ -244,7 +244,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void);
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"HDR look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		const BOOL can = vxa_hdr_headroom () > 1.05; NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl && wl.integerValue != 1 ? wl.integerValue : can ? 2 : 0; if (!can) c.textLabel.text = @"Look";
+		const BOOL can = vxa_hdr_headroom () > 1.05; NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl && wl.integerValue != 1 ? wl.integerValue : 0; if (!can) c.textLabel.text = @"Look";
 		c.detailTextLabel.text = md == 2 ? @"As a real Vectrex: dots and slow lines stand out. Wants a bright screen" : @"All lines pushed up to white: bright vectors on a dim screen";
 		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Vectrex", @"Bright" ]];
 		sg.selectedSegmentIndex = md == 2 ? 0 : 1; sg.selectedSegmentTintColor = VX_G;

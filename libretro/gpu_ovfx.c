@@ -161,10 +161,10 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"uniform float hl;\n"   /* (HDR, the whole picture (the own iOS app's default): the brighter a part, the closer to the screen's peak -
 	                           black stays black, the faint trail nearly as it was; 0: only the rests above white) */
 	"vec3 hlift(vec3 k) { if (hl < 0.5 || hl > 1.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
-	"uniform float vs, lt;\n"   /* (HDR, the Vectrex look: the bright lines' scale above mid grey - the faint ones and the trail as SDR; a line at white, the slow ones and the dots above) */
+	"uniform float vs, lt, sn, gb;\n"   /* (HDR, the Vectrex look: the bright lines' scale above mid grey - the faint ones and the trail as SDR; a line at white, the slow ones and the dots above) */
 	"vec3 knee(vec3 c) { if (hl > 1.5) {\n"   /* (HDR, the Vectrex look: light as a real tube gives it - no knee, every part
 	                                                   x vs in light (the ratios kept: slow lines, overlaps, dots), softly to the peak only near it) */
-	"    vec3 l = pow(max(c, 0.0), vec3(2.2)) * vs; float p = pow(max(hk, 1.0), 2.2) * (hk > 1.0 ? lt : 1.0); l = l / pow(1.0 + pow(l / p, vec3(6.0)), vec3(1.0 / 6.0));\n"
+	"    vec3 l = pow(max(c, 0.0), vec3(2.2)) * vs; float p = pow(max(hk, 1.0), 2.2) * (hk > 1.0 ? lt : 1.0); float kn = hk > 1.0 ? 6.0 : sn; l = l / pow(1.0 + pow(l / p, vec3(kn)), vec3(1.0 / kn));\n"
 	"    return pow(l, vec3(1.0 / 2.2)); }\n"
 	"  return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
 	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
@@ -399,7 +399,7 @@ static int ox_draw (int glow, double dt)
 	glUniform4f_ (ph_ul (ox_sheet, "pen"), 0.45f, 0.85f, 1.5f, 0.0f);
 	glUniform4f_ (ph_ul (ox_sheet, "rlp"), 0.0f, 0.0f, hh, scr ? ovfx.ovl : 0.0f);
 	glUniform3f_ (ph_ul (ox_sheet, "lpos"), fxp, fyp, 0.42f); glUniform3f_ (ph_ul (ox_sheet, "pic"), FW / 2.0f, FH / 2.0f, hh);
-	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); { extern float vx_hdr_lift, vx_hdr_vs, vx_hdr_vss; OU1F (ox_sheet, "hl", vx_hdr_lift); OU1F (ox_sheet, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); { extern float vx_hdr_lt; OU1F (ox_sheet, "lt", vx_hdr_lt); } }
+	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); { extern float vx_hdr_lift, vx_hdr_vs, vx_hdr_vss; OU1F (ox_sheet, "hl", vx_hdr_lift); OU1F (ox_sheet, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); { extern float vx_hdr_lt, vx_hdr_sn; OU1F (ox_sheet, "lt", vx_hdr_lt); OU1F (ox_sheet, "sn", vx_hdr_sn); } }
 	if (scr && ovfx.ovl > 0) {                                     /* (roomlight.flat_points: the light's area as six points) */
 		static float key_x = -1, key_y = -1, pts[12];
 		if (key_x != g_lamp_x || key_y != g_lamp_y) { key_x = g_lamp_x; key_y = g_lamp_y; rl_flat_points (g_lamp_x, g_lamp_y, pts); }

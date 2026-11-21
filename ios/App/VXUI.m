@@ -1154,6 +1154,12 @@ static UIImage *VXSym (NSString *n, NSString *fallback, CGFloat pt)
 		else { _r1.text = relay ? @"RELAY" : @""; _r2.text = rtt > 0 ? [NSString stringWithFormat:@"%d MS", rtt] : @""; _r1.textColor = _r2.textColor = VX_DIM; }
 	} else if (paused && power) { _sMain.text = @"PAUSED"; _sMain.textColor = VX_CHG; _sMain.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightBold]; }
 	else { char f[24], h[24], e[24]; int c = -1, gq = -1; vx_app_osd (f, h, e, &c, &gq);
+		/* (HZ: the pictures the screen was given a second - what the phone manages after the emulator and the GPU; the core's
+		 *  own figure counts the emulator's runs, 120 even when the GPU delivers fewer. FPS: the game's own frames) */
+		{ extern long vxa_presents; static long p0 = -1; static double t0; static int shown = -1; const double tn = CACurrentMediaTime ();
+		  if (p0 < 0 || vxa_presents < p0) { p0 = vxa_presents; t0 = tn; }
+		  else if (tn - t0 >= 0.95) { shown = (int) ((vxa_presents - p0) / (tn - t0) + 0.5); p0 = vxa_presents; t0 = tn; }
+		  if (shown >= 0 && power) snprintf (h, sizeof h, "%d HZ", shown); }
 		if (!power) { _sMain.text = @"-- FPS  -- HZ  --"; _sMain.textColor = VXC (0x4a6658); _sMain.font = [UIFont monospacedDigitSystemFontOfSize:_mode == 1 ? 12 : 11 weight:UIFontWeightSemibold]; }
 		else _sMain.attributedText = [self fig:f hz:h emu:e];
 		[CATransaction begin]; [CATransaction setDisableActions:YES];

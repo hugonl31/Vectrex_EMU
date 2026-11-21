@@ -1408,14 +1408,14 @@ static double hdr_rest (double cyc)
  * a spot as wide as the line at that intensity whose light grows with the rest - A = DOT_A x T x ln (1 + cycles / T) times
  * the line's peak (the tube's light of the intensity), 0.8x at 4 cycles, 2.9x at 16, 7x at 48, 13.5x at 128 - never wider;
  * round it a faint glow (about 0.4 % of that light). Matched in the picture (SDR, both looks): every dot's radius at 50, 25
- * and 12 % of white within 0.1 unit of the photo's on average. Shots alike (36-119 cycles,
+ * and 12 % of white within about 0.1 unit of the photo's on average, each look. Shots alike (36-119 cycles,
  * a double shot as one of the summed time); a rest at a joint or corner as long as an isolated dot of the same time */
-#define DOT_K 3.0                       /* the spot's peak (display value) for A = 1: matched to the photos' dot sizes */
-#define DOT_W 1.6                       /* its width: the line's x DOT_W (the photos: the camera's line wider than ours) */
+/* per look (0 Bright, 1 Vectrex - the lines' light differs): the spot's peak (display value) for A = 1, its width (the line's
+ * x DOT_W: the photos' camera widens the line more than ours), the glow's share and FWHM - each matched to the photos' dot
+ * sizes (Bright: within 0.12 unit on average, Vectrex 0.11) */
+static const double DOT_K[2] = { 1.2, 3.0 }, DOT_W[2] = { 1.4, 1.6 }, DOT_HALO[2] = { 0.003, 0.005 }, DOT_HALO_W[2] = { 1.3, 1.3 };
 #define DOT_A 0.209
 #define DOT_T 52.0
-#define DOT_HALO 0.005
-#define DOT_HALO_W 1.3
 static double dot_light (double cyc) { return DOT_A * DOT_T * log (1.0 + cyc / DOT_T); }
 #define REST_SPEED 0.5                  /* slower than this (units a cycle): the spot at rest */
 #define REST_DWELL_SLOW 0.6             /* the dwell inside a stroke (vecrender.py dwell_rests) */
@@ -2329,10 +2329,11 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			zk = pow (TUBE_LIGHT[ii] + (TUBE_LIGHT[ii + 1] - TUBE_LIGHT[ii]) * (d - ii), 1 / 2.2); }
 		const double zw = zi >= BEAM_LOWZ ? 1.0 : BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ;
 		double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * pw_width * up_width, kk, hx = 0; int dot = 0;   /* (up_width: R525's stiffer beam) */
+		extern float vx_hdr_lift; const int dlk = vx_hdr_lift > 1.5f;   /* (the look: 1 Vectrex, 0 Bright) */
 		const double lp = sqrt ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 		if (halo[i]) {
-			fw = DOT_HALO_W * zw / bk * pw_width;         /* (the glass's scatter: not the beam option's) */
-			kk = pow (DOT_HALO * dot_light (cyc), 1 / 2.2); dot = 1;   /* (as a display value, as the lines' light) */
+			fw = DOT_HALO_W[dlk] * zw / bk * pw_width;    /* (the glass's scatter: not the beam option's) */
+			kk = pow (DOT_HALO[dlk] * dot_light (cyc), 1 / 2.2); dot = 1;   /* (as a display value, as the lines' light) */
 		} else if (!zl[i]) {
 			double ee = lp > 1e-9 ? cyc / (lp / gp) : 1e9;
 			kk = opt_speedb ? BEAM_LINE * (1.0 - BEAM_SPEED * exp (-ee / 0.8)) : BEAM_LINE * (1.0 - 0.5 * BEAM_SPEED);
@@ -2341,12 +2342,12 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		} else if (!opt_dots) {                   /* (corner dots off: the resting spot as faint as a line's) */
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
-			kk = DOT_K * pow (dot_light (cyc), 1 / 2.2); dot = 1;
+			kk = DOT_K[dlk] * pow (dot_light (cyc), 1 / 2.2); dot = 1;
 			{ extern float vx_hdr_lift, vx_hdr_dk, vx_hdr_dx; if (vx_hdr_lift > 1.5f && vx_hdr_peak > 1.0f) { kk *= vx_hdr_dk; if (vx_hdr_peak > 1.0f) hx = hdr_rest (rest_cyc (L, n, i, zl, halo)) * zk * zk * vx_hdr_dx; }
 			  else if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk; }   /* (the Vectrex look, HDR: the dots above the lines in their own channel - the lines keep the lower part) */   /* (HDR: above white, the rest's own light - with the slow beam round it) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
-			fw *= DOT_W;                               /* (its width: the line's x DOT_W - brighter with the time, not wider) */
+			fw *= DOT_W[dlk];                          /* (its width: the line's x DOT_W - brighter with the time, not wider) */
 			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
 				kk *= pow (wd, 2.5); hx *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
 		}

@@ -35,6 +35,7 @@ float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_vs = 0.25f, 
                                                   the lines lower, the slow ones and the dots up to white) */       /* (HDR, the Vectrex look: a line this slow (cycles a game px: Test Cartridge Rev. 4's grid) as
                                                   before, slower ones brighter by the time the beam spends - its bars 5.8x, the photo 6.8x with
                                                   the edge under them; the lines' scale) */
+int vx_app_dots = 0;                           /* (the own apps: on SDR the dots' glare in Bright too - their spot wider, its glow up) */
 float vx_trail_mul = 1.0f;                     /* (the own apps: the trail for the look and the screen's brightness - the owner's
                                                   iPhone and Nova next to a real Vectrex, 2026-11-21) */
 float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture

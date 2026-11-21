@@ -86,3 +86,40 @@ samples 10 ms apart), the fit.
   7F (0.9-1.2), at 40 0.4-0.5. It saturates with the dose.
 - Limits: the first sample is 10 ms after the beam (the first 5 ms window mixes excitation and decay); the dots beyond
   ~100 ms are below the clip's noise (the local background's subtraction, +-0.1).
+
+## The Switch Test's stills, pages 1-3 (2026-11-21)
+
+The owner's eight DNGs (ultra-wide, ISO 64, 1/50 and 1/25 s). Three things had to be put right before any number:
+
+- **The picture's scale is not one number**: 6.7 px a unit at the left edge, 9.5 in the middle, 7.7 at the right (in X; Y
+  8.8-10.3). `sw4.py` / `sw4c.py`: page 4's dots sit at known places (8 / 16 / 24 units apart, eight rows) - a map units <->
+  px (rms 1.7 px); `swmap.py`, `swmap2.py`. One unit of that grid (Moveto at scale $FF) = 0.9627 of the emulator's unit of
+  134 (measured on the core). **The Dot Test's "travel during a RAMP-off pulse" (1.5 / 4.9 / 7.4 / 5.9 / 2.1 / 0.1 cycles)
+  was this distortion** - the joints with the middle pauses sat in the middle of the picture. With the map the pieces of
+  page 1 are L + 2 cycles whatever the pause (5 to 48), at $40 and at $7F.
+- **The blue channel clips on the lines' cores** (0.70-0.76 of full; the lines at 0.56): every bright spot was flattened in
+  the earlier light measurements (they took the brightest channel). The red channel is free up to ~3.6 x a line's peak:
+  `sw/*_red.npy`, `sw1.py`. The Dot Test's dot energies are owed a check in red.
+- **The picture's response by place** (lens + tube): the left edge 0.4-0.5 of the middle - `swresp.py`, from page 3's
+  fifteen figures (the same light each).
+
+Results (`sw1c.py`, `swp1.py`, `swp1b.py`, `swfit1.py`: page 1; `swfig.py`, `swfig2.py`, `swcut.py`: pages 2 and 3 - the
+core's path over the photo; `swmodel.py`, `swcutfit.py`: a small model; `swgrid.py`: the core over a grid; `swreg.py`: the
+logo and the Dot Test's corners with a candidate):
+
+- Page 1: the core's line 180.36 units, the photo's 180.4 (rows $40), 189.3 / 188.0 (rows $7F); the joints' places within
+  ~1 unit. RAMP start 5 / stop 7 stands. A model fitted to the light along the four rows returns the core's own settings
+  (start 5.3, stop 7.1, lag 6.2) and the light law's slow / fast share 0.37-0.42 (the law: 0.29 / 0.70 = 0.41).
+- Pages 2 and 3, the corner's cut (the curve's nearest distance to the point where the legs' straight parts meet; 0 =
+  sharp) - photo against the core today:
+  X flips with RAMP on, speed $20 / $40 / $7F: 1.23 / 2.43 / 5.09 against 1.06 / 1.73 / 3.02;
+  the flip 12 / 8 / 4 / 0 cycles before RAMP off: 3.19 / 2.82 / 1.70 / 0.07 against 2.32 / 2.51 / 1.56 / 0.03;
+  the flip 0 / 5 cycles after RAMP on: 1.27 / 1.85 against 1.16 / 1.41. **The real turn is wider, the more so the bigger
+  the step** (a delay and a lag alone: no setting beats the core's - `swgrid.py lag`, `xd`).
+- **A slew limit fits**: the X speed follows the DAC at 16 DAC steps a cycle after a delay of 5 (instead of all at once
+  after 9). The core's test switch `VT_XSLEW=16` with `VT_XYZDLY=5,9,8`, cut rms over the 14 corners: lag 6 0.32, lag 7
+  0.24, lag 8 0.19 (the core today 0.65). The same settings on the standing tests: Vectorblade's logo 1.23 / 1.27 / 1.33
+  (today 1.28); the Dot Test's 90 degree corners at rests 0 / 8 / 16: 2.04 / 1.46 / 0.37 (lag 6), 2.10 / 1.47 / 0.48 (lag 7),
+  1.99 / 1.56 / 0.61 (lag 8) - the photo 1.71 / 1.82 / 0.84, today 1.83 / 0.95 / 0.26.
+  `testcart/compare/switch_corners.png`: the photo with both paths. Not the default: the Y path (through the hold) is
+  untested by this cartridge, and the October tests (gaps, text, axis) are owed a run with it.

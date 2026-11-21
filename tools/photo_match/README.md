@@ -248,3 +248,36 @@ settles faster than a long one (the Settle Test's lines are 24-48 cycles) - a pa
   photo's; the font crisp. **What is left is light, not timing**: the tube shows a bright dot at every piece's start (the
   beam on while the spot only creeps away); the core's rule renderer makes a dot from a rest only, so with the slow
   start there is none (`testcart/compare/gap_joins_zoom.png`). The beam-on-phosphor light (dwell = light) is the fix.
+
+## The Photo Test's photos (2026-11-21, 22:48): sixteen pages, three passes
+
+28 DNGs (main camera): pages 1-12 at 1/50 s f/1.48 ISO 64 and again at f/4.0 ISO 50 (red free of clipping on nearly
+every page), pages 13-16 at 1/5 s f/4.0. `pt0.py` (loading, the lines of a page), `pt1.py` (pages 1-2), `pt7.py` (pages
+5, 7, tube and core), `pt_render.py` (the core's pages), pictures `testcart/compare/photo_p*.png` (tube | proposed | today).
+
+- **Edge focus**: the text at the screen's top and bottom is 12-13 px tall at f/1.48 AND at f/4.0, 6-7 px in the middle -
+  the tube's own (a camera's blur would shrink with the aperture); left / middle / right lines the same width.
+- **Pages 1-2, light against dwell** (cycles a unit, 1.05 to 33): light a unit = c d^p - **p 0.70 at intensity $7F, 0.73 at
+  $5F, 0.83 at $40, 0.90 at $30** (rms 2-5 %; a + b d does 7-10 %). At $7F the slowest line (32 x the dwell) is 11.7 x
+  the fastest's light, at $40 17.6 x. $5F / $7F at the same speed 0.49-0.56.
+- **Page 3**: a line drawn 1 / 2 / 4 / 8 times in the frame: 1 : 1.99 : 3.84 : >= 7.2 (the last clips) - **hits apart in time
+  add up**; the crossings 1.00 +- 0.02 of the two lines' sum. The saturation is within one pass of the beam only.
+- **Page 4**: light by intensity $3F / $5F / $6F / $7F = 0.12 / 0.51 / 0.76 / 1 ($1F does not show); the line's width the same
+  (6 px at f/4: the growth at f/1.48, 7 to 9 px, is the lens); a dot of 20 cycles = 14-17 px of that line's light at
+  every intensity, its width growing 6 -> 10 px with the intensity while its peak stays the line's (0.45): **a dot gets
+  wider, not brighter**; left / middle / right within 10 %.
+- **Page 5, the shift register's gap**: $00 written G cycles after $FF: the dash G 10..24 = 11.7 11.7 13.8 13.8 15.8 15.8
+  17.7 (never off: 42) 19.7 20.8 21.8 22.7 23.6 24.5 25.6 cycles - **while the eight bits are still going out the
+  switch follows their 2-cycle clock; a write 17 cycles after the last one is lost; otherwise 1.7 cycles late.** The
+  core: G - 0.9 for every G: none of the three.
+- Page 6, the bytes: most significant bit first, 2 cycles a bit, the last bit stays on the line - as the core.
+- **Page 7, timer 1's flag in the BIOS's wait loop**: the line's end steps between N 9 / 10 and 16 / 17 - the core's
+  steps at the same N: the flag's timing is right.
+- Page 8: with the X speed in the DAC before RAMP on the eight rays are straight (X and Y start together); written
+  with RAMP on the diagonals start bent (X ~2 cycles late), as the Settle Test said.
+- Pages 9-12, the BIOS's shapes: the tube closes its corners with a dot at scales $08-$30; the core today too; **the
+  "proposed" timing leaves gaps at the squares' corners** - not right for the BIOS's routines yet.
+- Pages 13-16, the rate ($5F line, 1/5 s): 40 / 30 / 25 Hz = 0.78 / 0.60 / 0.51 of 50 Hz - the frames' count: a frame's light
+  does not depend on the rate.
+Owed next: the 6522's shift register as page 5 shows it (in place of the VT_SRDELAY stand-in), then the timing fitted
+again on the BIOS's shapes; the light law (d^p by intensity, hits add, dots widen) into the renderer.

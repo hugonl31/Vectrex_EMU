@@ -943,6 +943,15 @@ static void vxa_toast (NSString *s, double secs)
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
 			(unsigned long) GCController.controllers.count, GCKeyboard.coalescedKeyboard != nil);
+		{ /* (120 Hz the GPU cannot hold: after 20-30 s at full load the iPhone slows its GPU and the pictures come irregularly - 40-60
+		   *  a second, a stutter (the owner's iPhone, builds 94-137). A steady 60 looks smooth: two periods behind (fewer than 80 %
+		   *  of the runs shown) - 60 Hz for this session; the default only (a rate the player chose stays), not online, not saved) */
+		  static int slow; const double rs = _runs / t, ps = _presents / t; const int ri = vxa_opt_find ("vectrex_emu_rate");
+		  if (ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && ![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] && !vxa_net_playing ()) {
+			slow = rs > 100 && ps < 0.8 * rs ? slow + 1 : 0;
+			if (slow >= 2) { slow = 0; snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1;
+				if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
+				vlog ("the GPU behind at 120 Hz (%.0f of %.0f pictures a second): 60 Hz for this session", ps, rs); } } }
 		{ extern int vx_net_playing_now (void), vx_net_diag (char *, int); if (vx_net_playing_now ()) { char d[600]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */
 		_runs = _presents = _late = _ticks = 0; vxa_under = vxa_drop = 0; }
 }

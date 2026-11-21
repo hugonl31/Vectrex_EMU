@@ -945,10 +945,11 @@ def bt_light(tl, l, t):
     az = _np.maximum(0.0, (BT_A + BT_B * BT_UREF) * tl - BT_B * BT_UREF * iz)
     tau = t * BT_W / (l + BT_W)
     return az * (l + BT_WF) + (l + BT_W) / BT_W * BT_B * BT_D0 * _np.log1p(iz * tau / BT_D0)
-BT_HALO_F, BT_HALO_S = 0.015, 1.4           # (the glass: this share of every piece's light spread wide - sigma, units. The Dot Test's
-                                            #  dots: 3-5 %, camera included; Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it)
-BT_SPOT = 2.4                               # (the spot's width x this: Vectorblade's logo in the owner's photo - a Gaussian, 0.92 units at
-                                            #  half height, 1.30 at a quarter, 1.67 at a tenth; ours 0.9 / 1.25 / 1.8)
+BT_HALO_F, BT_HALO_S = 0.015, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
+                                            #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
+BT_SPOT = 1.85                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
+                                            #  Vectorblade's logo (intensity 79) 1.00 units at half height, 0.70 at 75 %, 1.30 at 25 %, 1.70 at 10 %:
+                                            #  a Gaussian; the Dot Test's reference line (intensity 127) 1.03-1.16; ours 0.54 x this at 79)
 BT_TINT = (0.65, 0.86, 1.0)                 # (the beam on the phosphor: one white for cores and glow alike - the tube's own, from the owner's
                                             #  photos with the camera's white balance (three sessions: red 0.62-0.66 of blue, green 0.83-0.89 as
                                             #  display values, lines and glow alike): a blueish white, blue full so no brightness is given away)

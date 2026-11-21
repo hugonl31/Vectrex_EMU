@@ -338,3 +338,29 @@ switches. Here one of them at a time works against the hand-timed other. Generat
 
 Against the Settle Test's pages 1 and 2 (the same lines, all by hand): page 1 / 2's shift = timer 1's PB7 against a port
 write; page 3 / 4's shift = the shift register's first bit against a PCR write.
+
+## Short test (`short_test.bin`; delivered as `Short Test.bin`, 64 KB)
+
+Does a short move settle as a long one (2026-11-21)? With the Settle and Timer Tests' numbers the BIOS's short pieces
+still gape in the emulator. The Settle Test's lines with ramps of 6 - 13 cycles, and the same ramp at four speeds.
+`make_short_test.py`; buttons 1-4; 50 Hz; picture `short_test_pages.png`; the K of every row: `short_test_k.json`.
+Columns left to right, rows top to bottom.
+
+| Page | Columns | RAMP | Beam (PCR) | Rows (K) |
+|---|---|---|---|---|
+| 1 SHORT OFF | L = 6, 8, 10, 13 cycles, speed $7F | by hand | on 12 before RAMP on, OFF K after RAMP off | 5, 8, 12, 16, 20, 24, 32, 48 |
+| 2 SHORT ON | the same | by hand | ON K after RAMP on, off 40 after RAMP off | L 6: -8, 11, 13, 14, 16, 20, 24, 32; L 8: -8, 13, 15, 16, 17, 20, 24, 32; L 10: -8, 5, 15, 17, 18, 20, 24, 32; L 13: -8, 5, 8, 18, 20, 21, 24, 32 (the writes leave no room between) |
+| 3 T1 SHORT | N = 6, 8, 10, 13, speed $7F | timer 1 | OFF K after t0 + N | 5, 8, 12, 16, 20, 24, 32, 48 |
+| 4 SIZE | speed $20, $40, $60, $7F; L = 12 | by hand | OFF K after RAMP off | 5, 8, 12, 16, 20, 24, 32, 48 |
+
+## Join test (`join_test.bin`; delivered as `Join Test.bin`, 64 KB)
+
+The BIOS's own line by hand, and the Y speed's hold (2026-11-21). `make_join_test.py`; buttons 1-4; 50 Hz; picture
+`join_test_pages.png`; `join_test_k.json`.
+
+| Page | What | Rows / figures |
+|---|---|---|
+| 1 BIOS OFF | the shift register $FF 4 cycles before timer 1 starts (t0), timer 1 for N = 6, 8, 11, 13 (columns), speed $7F; the shift register $00 written K cycles after t0 + N | K = 2, 5, 8, 11, 14, 17, 20, 24, 32 |
+| 2 BIOS ON | the same; the shift register $FF written K cycles after t0, $00 40 after t0 + N | K = -12, -8, -4 (the BIOS), 4, 8, 12, 16, 20 |
+| 3 Y HOLD | a "V": leg 1 down-right (20 cycles, speed $50), a rest of 60, leg 2 up-right; the new Y speed into its hold through the mux (open 12 cycles), RAMP on K cycles after the mux closes | K = 5, 7, 8, 10 (top row), 12, 16, 20, 24 (bottom row) |
+| 4 Y HOLD 7 | the same, the mux open 7 cycles | as page 3 |

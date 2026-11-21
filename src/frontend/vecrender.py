@@ -1170,8 +1170,8 @@ vec3 disc(vec2 q, float rad) {                       // (an even soft disc: a li
     vec2 s = ctr + vec2(q.x, -q.y) / norm;           //  not its thin core and halo apart; 40 taps on a turned spiral)
     float rot = 6.2832 * hash(gl_FragCoord.xy);
     vec3 a = vec3(0.0); float ws = 0.0;
-    for (int i = 0; i < 40; i++) {
-        float f = (float(i) + 0.5) / 40.0, r = rad * sqrt(f), an = rot + 2.39996 * float(i);
+    for (int i = 0; i < 10; i++) {
+        float f = (float(i) + 0.5) / 10.0, r = rad * sqrt(f), an = rot + 2.39996 * float(i);
         float w = exp(-1.5 * f);
         a += w * texture2D(tex, s + vec2(cos(an), sin(an)) * r / U / norm).rgb; ws += w;
     }
@@ -1231,7 +1231,7 @@ vec3 plastic(vec2 gd, vec2 tgt) {
             vec2 mq = P.xy + Rr.xy * (-P.z / Rr.z);
             back = length(mq - P.xy) * U;
             gm = clamp(0.5 - sdG(mq - goff) / pu, 0.0, 1.0);             // (only the glass's light)
-            refl = max(mix(disc(mq, 2.0), disc(mq, 1.2), 0.5) * gm - 0.02, 0.0);
+            refl = max(disc(mq, 1.6) * gm - 0.02, 0.0);
         }
         float fall = 1.0 / (1.0 + pow(back / 130.0, 2.0));
         float side = abs(n.x), bot = max(n.y, 0.0), top = max(-n.y, 0.0);

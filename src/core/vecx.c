@@ -1575,9 +1575,12 @@ static void alg_sstep_full (void)
 	 * reach 98-98.5 %, within the photos' scatter). Measured 2026-10-26 (TODO.md, Clean Sweep): the real wall ends sit
 	 * ~0.4 cycle further along their sweeps, below this switch's whole-cycle step - a test switch, 0 (off) */
 	if (z_delay < 0) { const char *z = getenv ("VT_ZDELAY"); z_delay = z ? atoi (z) : 0; if (z_delay > 30) z_delay = 30; }
-	if (z_delay > 0) {
-		sd_zh[zpos++ & 31] = sig_blank ? 1 : 0;
-		sig_blank = sd_zh[(zpos - 1 - z_delay) & 31]; }
+	{ static int sr_delay = -1;      /* VT_SRDELAY=c (a test): the beam switched by the shift register (the BIOS's lines and text) c cycles
+	   * later than by a PCR write - the Settle Test (hand-timed, PCR) gives the spot's timing against the switch itself */
+	  if (sr_delay < 0) { const char *z = getenv ("VT_SRDELAY"); sr_delay = z ? atoi (z) : 0; if (sr_delay > 30) sr_delay = 30; if (sr_delay > 0 && z_delay == 0) z_delay = 0; }
+	  if (z_delay > 0 || sr_delay > 0) { int zd = z_delay + ((via_acr & 0x10) ? sr_delay : 0); static unsigned zq;
+		sd_zh[zq++ & 31] = sig_blank ? 1 : 0;
+		sig_blank = sd_zh[(zq - 1 - zd) & 31]; } }
 	{ int boff = (int) beam_off;
 	  if (boff) {
 		sd_bh[bpos++ & 15] = sig_blank ? 1 : 0;

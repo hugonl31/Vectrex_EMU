@@ -16,6 +16,7 @@ def render(c, only='corner,gap_p1'):
     if all(os.path.exists('sl_%s_%s.npy' % (o, t)) for o in only.split(',')): return t
     e = dict(os.environ); e['ONLY'] = only; e['VT_XYZDLY'] = '%d,%d,8' % (c.get('x', 9), c.get('y', 9)); e['VT_DEFLAGN'] = str(c.get('n', 1))
     if 'z' in c: e['VT_ZDELAY'] = str(c['z'])
+    if 'sr' in c: e['VT_SRDELAY'] = str(c['sr'])
     if 'bd' in c: e['VT_LAGBOX'] = '%g,%g,%g' % (c['bd'], c['bw'], c.get('bt', 0))
     if 'xs' in c: e['VT_XSLEW'] = str(c['xs'])
     if 'ramp' in c: e['VT_RAMPDLY'] = c['ramp']
@@ -39,4 +40,4 @@ if __name__ == '__main__':
     print('%-40s cut: %s | leg ratio: %s' % ('photo', ' '.join('%.3f' % v for v in PH_CUT), ' '.join('%.2f' % v for v in PH_RAT[:6])))
     print('%-40s dips: %s' % ('photo', ' '.join('%.3f' % v for v in PH_DIP)))
     for s, c, cut, rat, sc, dip, dg, dots in sorted(out, key=lambda o: o[0])[:int(os.environ.get('TOP', '12'))]:
-        print('%-40s cut: %s | leg ratio: %s | cut rms %.4f ratio rms %.3f | dips %s rms %.3f | dots %s' % (' '.join('%s=%s' % kv for kv in sorted(c.items())), ' '.join('%.3f' % v for v in cut), ' '.join('%.2f' % v for v in rat[:6]), sc[0], sc[1], ' '.join('%.3f' % v for v in dip), dg, ' '.join('%d' % v for v in dots)))
+        print('%-40s cut: %s | leg ratio: %s | cut rms %.4f ratio rms %.3f | dips %s rms %.3f | dots %s' % (' '.join('%s=%s' % kv for kv in sorted(c.items()))[:40], ' '.join('%.3f' % v for v in cut), ' '.join('%.2f' % v for v in rat[:6]), sc[0], sc[1], ' '.join('%.3f' % v for v in dip), dg, ' '.join('%d' % v for v in dots)))

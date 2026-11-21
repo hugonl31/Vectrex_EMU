@@ -156,3 +156,26 @@ from VT_DEFLAG: `LROPT=vectrex_emu_unit_lagx=..,vectrex_emu_unit_lagy=..`; VT_DE
 - A box-shaped response (VT_LAGBOX): no better than the stages.
 So no setting of this model (stages + pure delays) gives the corners, the joins' dots and the font together. Nothing is
 the default; VT_XSLEW, VT_DEFLAGN > 2, VT_LAGBOX are test switches.
+
+## The Settle Test's photos (2026-11-21, night): pages 1 and 2
+
+The owner's eight DNGs (main camera 6.93 mm, ISO 64, 1/50 and 1/25 s; the red channel free at 1/50). `st1.py`, `st2.py`:
+every line's lit ends; the whole line (the last row) = L + 2 cycles gives the px a cycle. `st3.py`: the fit.
+
+- Page 1, the travel still to come when the beam goes off K cycles after RAMP off (speed $7F; cycles):
+  K 5 / 8 / 12 / 16 / 20 / 24 / 32: **9.39 / 6.77 / 4.03 / 2.24 / 1.13 / 0.49 / 0.11** ($50: 9.90 / 7.29 / 4.34 / 2.64 / 1.37 / 0.78 / 0.20;
+  before the stop the $50 line: K + travel = 14.25).
+- Page 2, the travel done when the beam comes on K cycles after RAMP on ($7F): K 5 / 8 / 12 / 16 / 20 / 24 / 32:
+  **0.81 / 1.41 / 3.00 / 5.42 / 8.51 / 12.00 / 19.92** (a baseline of ~0.35); the spot ends 12.1 cycles behind.
+- So start 12.1, stop 14.25 cycles in all (the core today 11 and 12.5): stop - start 2 as page 1 of the Switch Test - the
+  beam's switch is the same both ways (no on / off asymmetry).
+- Fits (rms, cycles; the core today 1.10): a delay + one lag: start 5.2, stop 6.95, lag 8.0 - 0.25; two stages: start 1.9,
+  stop 3.6, lag 11.2 - 0.20; **three stages: start -0.6, stop 1.1, lag 13.65 - 0.18** (no pure delay left: the switch is
+  instant, all the lateness is the spot's).
+- Rendered frames with it (`cgrid.py`: lag 13.7 in 3 stages, VT_RAMPDLY=0,2, X delay 3): the Corner Test's cut / leg
+  0.117 / 0.104 / 0.093 / 0.070 / 0.053 / 0.030 (photo 0.122 / 0.120 / 0.105 / 0.073 / 0.044 / 0.003; today 0.092 / 0.058 / 0.052 /
+  0.036 / 0.026 / 0.019), the legs' ratio rms 0.024 (today 0.065). **But the Gap Test's joins (BIOS lines: timer 1's RAMP,
+  the shift register's beam) then gape** (dip index 0.22-0.34, photo 0.06-0.17): the timer / shift-register path is several
+  cycles off against the hand-timed one. A later beam for the shift register alone (VT_SRDELAY, a test) closes the gaps at
+  6-8 cycles but takes the joins' dots - not it. Owed: the BIOS path's own timing (timer 1's PB7, the shift register's
+  first bit) measured the same way - a page with timer-driven ramps and shift-register beam; pages 3 and 4 not yet read.

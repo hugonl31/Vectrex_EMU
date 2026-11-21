@@ -642,7 +642,7 @@ static void vxa_toast (NSString *s, double secs)
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	UIButton *_popTab; double _popUntil;           /* (the pop-up deck: its tab, shown until) */
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
-	long _runs, _presents, _late, _ticks; double _stat_t; unsigned _shownSeq; long _notReady, _lateShown;
+	long _runs, _presents, _late, _ticks, _zero, _multi; double _stat_t; unsigned _shownSeq; long _notReady, _lateShown;
 	double _tRun, _tFin, _tDraw, _tMax, _tLinkDur;               /* (where a refresh's time goes: the stat line - "starts smooth, then choppy") */
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -912,6 +912,11 @@ static void vxa_toast (NSString *s, double secs)
 	if (dt > 1.5 / (vxa_av.timing.fps > 0 ? vxa_av.timing.fps : 60)) _late++;
 	if (dt > 0.25) dt = 0.25;
 	_acc += dt * vxa_av.timing.fps; int n = (int) _acc; _acc -= n;
+	/* (the screen at the emulator's rate: one run a refresh - the fraction kept at a half. Left near a whole number, a
+	 *  refresh a little short gave no run and the next one two, one picture for both: 12-18 pictures a second lost at
+	 *  120 runs with the GPU in time, 1.7.6 (150); which sessions had it was chance - where the fraction started) */
+	if (n == 1 && fabs (dt * vxa_av.timing.fps - 1) < 0.3) _acc += (0.5 - _acc) * 0.1;
+	if (n == 0) _zero++; else if (n > 1) _multi++;
 	double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
 	const int onl = vxa_net_playing ();                     /* (VXApp.h: vxa_net_on is declared further down) */
 	if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3 && !onl) n++;
@@ -941,8 +946,8 @@ static void vxa_toast (NSString *s, double secs)
 			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "", barOver, deckOver); }
 		_notReady = 0; _lateShown = 0;
 		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
-		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
-			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
+		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
+			_runs / t, _presents / t, _late, _ticks, _zero, _multi, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
 			(unsigned long) GCController.controllers.count, GCKeyboard.coalescedKeyboard != nil);
 		{ /* (the core's own messages - its device measurement, the GPU diagnostic: it sends them to <system>/vectrex_emu/vectrex_emu.log;
 		   *  the new lines into this log, up to 40 a time) */
@@ -961,7 +966,7 @@ static void vxa_toast (NSString *s, double secs)
 				if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
 				vlog ("the GPU behind at 120 Hz (%.0f of %.0f pictures a second): 60 Hz for this session", ps, rs); } } }
 		{ extern int vx_net_playing_now (void), vx_net_diag (char *, int); if (vx_net_playing_now ()) { char d[600]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */
-		_runs = _presents = _late = _ticks = 0; vxa_under = vxa_drop = 0; }
+		_runs = _presents = _late = _ticks = _zero = _multi = 0; vxa_under = vxa_drop = 0; }
 }
 /* the menu (step 1's stopgap until the native screens of step 2): the PC's keys for the actions the core knows, every
  * core setting as a pull-down with its value ticked */

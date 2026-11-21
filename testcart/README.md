@@ -364,3 +364,28 @@ The BIOS's own line by hand, and the Y speed's hold (2026-11-21). `make_join_tes
 | 2 BIOS ON | the same; the shift register $FF written K cycles after t0, $00 40 after t0 + N | K = -12, -8, -4 (the BIOS), 4, 8, 12, 16, 20 |
 | 3 Y HOLD | a "V": leg 1 down-right (20 cycles, speed $50), a rest of 60, leg 2 up-right; the new Y speed into its hold through the mux (open 12 cycles), RAMP on K cycles after the mux closes | K = 5, 7, 8, 10 (top row), 12, 16, 20, 24 (bottom row) |
 | 4 Y HOLD 7 | the same, the mux open 7 cycles | as page 3 |
+
+## Photo test (`photo_test.bin`; delivered as `Photo Test.bin`, 64 KB) - sixteen pages on one cartridge
+
+The owner's idea (2026-11-21): every photo test on one cartridge, the camera set up once. **Button 4 / joystick right:
+the next page; button 1 / joystick left: the one before** (it wraps). Every page's title starts with its number
+("07/16 T1 FLAG"). Pages 1-12 run at 50 Hz (the longest draws 26,835 cycles), 13-16 are the Rate Test.
+`make_photo_test.py` puts together the four generators below (each also builds its own four-page cartridge, buttons 1-4;
+not delivered); `tc_common.py`: the shared header; `build_cart.sh <stem> "<Name>"`: generate, assemble, pack, copy.
+Picture: `photo_test_pages.png`.
+
+| Page | Title | What (generator) |
+|---|---|---|
+| 1 | SPEED | `make_light_test.py`: a line of ~30 units at nine constant speeds ($7F, $60, $40, $30, $20, $18, $10, $08, $04: rows), intensity $7F (left) and $40 (right) |
+| 2 | SPEED | the same at intensities $5F and $30 |
+| 3 | REPEAT CROSS | one line (Draw_Line_d, 40 units) drawn 1, 2, 4, 8 times in the frame at $7F (left), 1 and 2 times at $3F (right); below, three lines down crossing three across |
+| 4 | SPOT | rows: intensity $1F, $3F, $5F, $6F, $7F; three columns (left, middle, right of the screen): a line of 16 units and a dot (20 cycles at rest) |
+| 5 | SR GAP | `make_bios_test.py`: RAMP on 100 cycles ($7F); the shift register $FF at cycle 30, $00 written G = 10 .. 24 cycles later (rows), $00 again 24 after |
+| 6 | SR BYTE | one byte written once (rows: $80, $C0, $F0, $AA, $CC, $0F, $55, $01), $00 40 cycles later |
+| 7 | T1 FLAG | timer 1 N = 6 .. 20 (rows), the BIOS's wait loop (BITA <$0D / BEQ), then the beam off by PCR at once |
+| 8 | X AND Y | eight rays of 30 cycles: left star the X speed in the DAC before RAMP on, right star written with it |
+| 9 | VLC | `make_shapes_test.py`: arrowhead, octagon, square, zigzag (rows) by Draw_VLc at scales $08, $10, $20, $30 |
+| 10 | VLP | the same by Draw_VLp |
+| 11 | PATTERN | octagon and zigzag by Draw_VLp with patterns $AA, $F0, $E7 (rows), scales $20 and $30 |
+| 12 | TEXT | the BIOS's text at Vec_Text_HW $FC/$30, $F8/$50, $F4/$60, $F0/$78 |
+| 13-16 | 50 / 40 / 30 / 25 HZ | `make_rate_test.py`: five lines (intensity $7F, $5F, $3F, $2F, $1F) and a dot each, the frame timer 30000 / 37500 / 50000 / 60000 cycles |

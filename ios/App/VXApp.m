@@ -514,6 +514,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 @property (nonatomic, copy) NSString *ver; @property (nonatomic, strong) NSURLSession *session;
 + (instancetype) shared;
 @end
+long vxa_presents;                         /* (the pictures handed to the screen so far: the deck's HZ figure) */
 @implementation VXPack { int _lastpc; double _t0; }
 + (instancetype) shared { static VXPack *p; static dispatch_once_t o; dispatch_once (&o, ^{ p = [VXPack new]; }); return p; }
 - (NSURLSession *) session
@@ -899,7 +900,7 @@ static void vxa_toast (NSString *s, double secs)
 		[en setFragmentSamplerState:(k == 1.0 ? _nearest : _linear) atIndex:0];
 		[en drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4]; [en endEncoding];
 		atomic_store (&vxa_busy[sl], 1); [cb addCompletedHandler:^(id<MTLCommandBuffer> b) { (void) b; atomic_store (&vxa_busy[sl], 0); }];
-		[cb presentDrawable:d]; [cb commit]; _presents++; }
+		[cb presentDrawable:d]; [cb commit]; _presents++; vxa_presents++; }
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
 	[self placeDeck:pic mode:dmode];
 	if (!CGRectEqualToRect (pic, _pic)) { _pic = pic; vlog ("picture %u x %u px at %.0f,%.0f %.0f x %.0f pt (%s)", _fw, _fh, pic.origin.x, pic.origin.y, pic.size.width, pic.size.height, k == 1.0 ? "1:1" : "scaled"); [self layoutControls]; }

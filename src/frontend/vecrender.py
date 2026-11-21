@@ -936,7 +936,8 @@ BEAM_TRACE_SG = 0.674
 BT_A, BT_B, BT_D0, BT_IP = 0.70, 0.29, 150.0, 1.5
 BT_W, BT_WF, BT_UREF = 0.30, 0.10, 1.6
 BT_UNITS = 160.0 / 134.0                    # (Vectrex units - Moveto at scale $7F - a game px)
-BT_EXPO = 0.15                              # (the Vectrex look: the reference line's peak, through our own spot, = white)
+BT_EXPO = 0.24                              # (the Vectrex look: a typical game line just below white - Vectorblade's logo, intensity 79, as the
+                                            #  owner's photo shows it; the Dot Test's slow 7F reference line clips, as the fat lines do on the tube)
 def bt_light(tl, l, t):
     """a piece's light: tl = the tube's light of its intensity (0..1), l = its length (units), t = cycles (arrays)"""
     iz = tl ** BT_IP
@@ -945,7 +946,7 @@ def bt_light(tl, l, t):
     return az * (l + BT_WF) + (l + BT_W) / BT_W * BT_B * BT_D0 * _np.log1p(iz * tau / BT_D0)
 BT_HALO_F, BT_HALO_S = 0.04, 1.4            # (the glass: this share of every piece's light spread wide - sigma, units; the photos'
                                             #  dots: 3-5 % of their light in a glow of sigma ~1.4 units)
-BT_SPOT = 1.0                               # (the spot's width x this; VX_BT_SPOT: tests - 2.5: as wide as through the photos' camera)
+BT_SPOT = 2.7                               # (the spot's width x this; VX_BT_SPOT: tests - 2.5: as wide as through the photos' camera)
 BT_WB = 0.3                                 # (the beam on the phosphor: one cool white for cores and glow alike - this share of the
                                             #  way from 6504 K to the White balance setting (12000 K: ~8150 K), red and green lowered, blue
                                             #  full: ~15 % of the peak's brightness for a white that is cool at every level; the owner,

@@ -19,3 +19,23 @@ the test core DLLs (`cb/`). To be made into one tool; until then, what each does
 
 Test rules (the owner): skip intro on, wobble and brightness bending off, G-Sync on, minimised, the owner's window
 keeps the focus, pictures by F12 at the window's size.
+
+## The integrators' switch: what the photos say (2026-11-21, to fit)
+
+Three independent measurements of how RAMP really starts and stops the integrators on the owner's Vectrex:
+
+1. **Travel during a RAMP-off pulse** (`joints.py`; Dot Test page 3, the spacing of the joints' dots, four lines, the two
+   at the same speed alike within 0.2 cycle). Cycles of travel during a pulse of 5 / 8 / 11 / 16 / 24 / 32 cycles:
+   **1.5 / 4.9 / 7.4 / 5.9 / 2.1 / 0.1** (speed $50; $7F: - / 5.0 / 5.5 / 5.0 / 2.0 / 0.6). The emulator: 2 for every pulse
+   (start 5, stop 7). So: a short pulse (<= ~11 cycles) hardly stops the beam (it loses ~3.3 cycles), a long one stops it
+   for its whole length; the restart comes later the longer the stop was (lost travel: 3.5 3.1 3.6 10.1 21.9 31.9).
+2. **Corner rounding** (`cut.py` / `cutemu.py`; Dot Test page 4, 90 degrees, rests 0 / 8 / 16 / 32 / 64): the tip stays
+   **1.71 / 1.82 / 0.84 / ~0 / ~0** units inside the sharp corner; the emulator 1.83 / 0.95 / 0.26 / 0.02 / 0.00. No lag of
+   the spot (1-4 stages, `lagsim.py`) makes a rest of 8 as round as none.
+3. **Line length by scale** (`sq.py`; Gap Test page 3, squares at scales $06-$13): the photo's small squares 4-8 %
+   larger against scale $13 than the emulator's - the real lines ~0.5-1.2 cycles longer than ours, no more. A model must
+   not lengthen ordinary lines (VT_RAMPRC=14,0.4 does: +3.7 cycles) nor shrink short ones (8.6,0.443 does: Gap Test -22 %).
+
+Tried and not it: a speed low-pass while the beam is lit (rounds the corners, bends and shortens the second leg); one RC
+with a threshold, symmetric or with a soft threshold (`swfit.py`: rms 1.3 cycles on 1., and short lines vanish). Next: run
+the core with candidate switch models and score them against 1-3 together (plus the October photos' gaps and text).

@@ -223,6 +223,7 @@ static double ofs_k, zero_tx, zero_ty, vt_lag_y;   /* (see OFS_K) */
  * corner in a curve, while RAMP still starts and stops them at once (the owner's Vectrex, 2026-10-25: testcart/
  * lag_test - lines stop abruptly; testcart/corner_test - corners round off below ~16 cycles of rest) */
 static double vt_vlag = -1, vlag_x, vlag_y, vlag_x1, vlag_y1; static int vlag_init, vlag_n;   /* (VT_VLAGN = 2: two stages) */
+static int vlag_lit = 1;                /* (the speed smoothed only while the beam is lit: VT_VLAGLIT=0 always) */
 static double vlag_split_k = 0.06;      /* (a new line piece once the speed changed by this share of it + 2 DAC steps: VT_VLAGSPLIT) */
 #define VLAG_TAU 0.0                    /* (off: the combined fit of 2026-10-25 (6.0, X/Y delay 7, start 8, stop 11) rounds the corners as the owner's Vectrex but slants text - the moves between its rows lose distance) */
 #define VLAG_N 1
@@ -1634,9 +1635,11 @@ static void alg_sstep_full (void)
 		}
 	}
 	if (vt_vlag < 0) { const char *z = getenv ("VT_VLAG"); vt_vlag = z ? atof (z) : VLAG_TAU; z = getenv ("VT_VLAGN"); vlag_n = z ? atoi (z) : VLAG_N;
-	                   z = getenv ("VT_VLAGSPLIT"); if (z) vlag_split_k = atof (z); }
+	                   z = getenv ("VT_VLAGSPLIT"); if (z) vlag_split_k = atof (z); z = getenv ("VT_VLAGLIT"); if (z) vlag_lit = atoi (z); }
 	if (vt_vlag > 0.05) {                               /* the speed, smoothed (see vt_vlag) */
-		if (!vlag_init) { vlag_init = 1; vlag_x = vlag_x1 = adx; vlag_y = vlag_y1 = ady; }
+		if (!vlag_init || (vlag_lit && !sig_blank)) { vlag_init = 1; vlag_x = vlag_x1 = adx; vlag_y = vlag_y1 = ady; }   /* (VT_VLAGLIT: only
+		                                                  while the beam is lit - a corner, a rest inside a shape; a move with the beam
+		                                                  off starts at its speed, so the text and the moves keep their distance) */
 		if (vlag_n == 2) {                              /* (two stages of tau / 2) */
 			double k = kexp (&km_m2, 2.0, vt_vlag);
 			vlag_x1 += (adx - vlag_x1) * k; vlag_y1 += (ady - vlag_y1) * k;

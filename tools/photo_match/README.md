@@ -50,3 +50,19 @@ worse, so it stays off. Vectorblade's RAMP-off pulses (VT_RSWLOG=file): mostly 8
 Its joints: 1.2x the line's level in the photo (90th percentile along the lines), 1.9x here - the beam lingers 6-10 lit
 cycles at each (the pulse less 2); the Dot Test's page 3 says the real beam loses only ~4 cycles of travel to such a
 pulse. Open: what the beam and the DAC do during a short pause (Switch Test, pages 1 and 3).
+
+## The automatic fit, first run (2026-11-21): nothing beats October's timing
+
+`autofit.py` runs the core with candidate settings and scores them on three photo measurements at once: the logo's shape
+(`logofit.py`), the corners' cut (Dot Test page 4) and the travel during RAMP-off pulses (page 3). 18 settings
+(`autofit1.log`): the X / Y arrival delay 5 / 7 / 9 / 11 cycles, each with no short-pause rule and three windows of it
+(VT_RAMPSW_TAB), and the speed slide (VT_VLAG 4 and 8, two stages, only while the beam is lit - VT_VLAGLIT).
+- The logo's shape is best with October's settings (1.28 units); every short-pause window makes it 1.47-1.83, the speed
+  slide 1.54-1.84, an X / Y delay of 11 makes it 1.43.
+- The speed slide (tau 12, two stages) gives the corners of the photo (8 cycles: 1.78 / 1.82, 16: 0.73 / 0.84) - and
+  breaks the logo (1.90).
+- `defl.py`: instant integrators and any linear deflection (1-3 lags, a second order): no travel during a pulse at all.
+So one mechanism rounds the corner test's corners (the X speed flipped at RAMP off, the beam lit) without touching
+Vectorblade's vectors (X and Y set inside pauses of 8, 9, 12 cycles). The candidates differ in what they predict for
+the Switch Test: page 2 (an X step with RAMP held on: a slide shows there, a switch effect does not) and page 3 (the
+flip K cycles before / after the RAMP edges: where the dot sits against the tip).

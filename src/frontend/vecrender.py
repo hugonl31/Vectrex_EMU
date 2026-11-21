@@ -531,10 +531,13 @@ void main() {
     if (dot(cut.zw, cut.zw) > 0.5 && dot(p, cut.zw) > cc.y) discard;
     if (beam > 0.5) {
         vec2 q = p - a; float L = length(ba);
-        if (L < 1e-3) g = exp(-0.5 * dot(q, q) / (sg * sg));
+        // the spot's profile: flatter on top and steeper at the sides than a Gaussian - exp(-(d / a)^2.6), the same width at half
+        // height and the same light (the owner's photo of Vectorblade's logo: a line 0.70 / 1.00 / 1.30 / 1.70 units wide at 75 / 50 /
+        // 25 / 10 % of its peak; a Gaussian of that half width 0.64 / 1.00 / 1.41 / 1.82)
+        if (L < 1e-3) g = 1.177 * exp(-pow(length(q) / (1.356 * sg), 2.6));
         else {
             vec2 t = ba / L; float u = dot(q, t), v = q.x * t.y - q.y * t.x;
-            g = 2.5066283 * sg / L * exp(-0.5 * v * v / (sg * sg)) * (Phi(u / sg) - Phi((u - L) / sg));
+            g = 2.5066283 * sg / L * 1.041 * exp(-pow(abs(v) / (1.356 * sg), 2.6)) * (Phi(u / sg) - Phi((u - L) / sg));
         }
     } else {
         float h = clamp(dot(p - a, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
@@ -936,7 +939,7 @@ BEAM_TRACE_SG = 0.674
 BT_A, BT_B, BT_D0, BT_IP = 0.70, 0.29, 150.0, 1.5
 BT_W, BT_WF, BT_UREF = 0.30, 0.10, 1.6
 BT_UNITS = 160.0 / 134.0                    # (Vectrex units - Moveto at scale $7F - a game px)
-BT_EXPO = 0.16                              # (the Vectrex look: a typical game line just below white, not above - Vectorblade's logo,
+BT_EXPO = 0.20                              # (the Vectrex look: a typical game line's flat top at white, hardly above - Vectorblade's logo,
                                             #  intensity 79: its lines 0.6 of the photo's ceiling, unclipped; driven above white the tone step
                                             #  flattens a line's top and its skirt shows: "an out of focus photo", the owner)
 def bt_light(tl, l, t):
@@ -945,7 +948,7 @@ def bt_light(tl, l, t):
     az = _np.maximum(0.0, (BT_A + BT_B * BT_UREF) * tl - BT_B * BT_UREF * iz)
     tau = t * BT_W / (l + BT_W)
     return az * (l + BT_WF) + (l + BT_W) / BT_W * BT_B * BT_D0 * _np.log1p(iz * tau / BT_D0)
-BT_HALO_F, BT_HALO_S = 0.015, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
+BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_SPOT = 1.85                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
                                             #  Vectorblade's logo (intensity 79) 1.00 units at half height, 0.70 at 75 %, 1.30 at 25 %, 1.70 at 10 %:

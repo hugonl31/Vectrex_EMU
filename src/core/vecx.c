@@ -1666,8 +1666,30 @@ static void alg_sstep_full (void)
 	 * that); a long one stops the integrators tau ln (1 / level) cycles late, they start -tau ln (1 - level) late.
 	 * Instead of the fixed start / stop delays below */
 	{ static double rg_tau = -1, rg_lev = 0.4, rg_v = 0, rg_k = 0;
+	  static int rsw_on = -1, rsw_raw = 0, rsw_act = 0; static long long rsw_t = 0, rsw_off = -100000, rsw_stop = -1, rsw_start = -1;
 	  if (rg_tau < 0) { const char *z = getenv ("VT_RAMPRC"); rg_tau = 0; if (z) { sscanf (z, "%lf,%lf", &rg_tau, &rg_lev); if (rg_tau > 0) rg_k = 1.0 - exp (-1.0 / rg_tau); } }
 	  if (rg_tau > 0) { rg_v += ((sig_ramp ? 0.0 : 1.0) - rg_v) * rg_k; sig_ramp = rg_v > rg_lev ? 0 : 0x80; } else
+	  /* The integrators' switch after a short RAMP-off pulse (a test switch, VT_RAMPSW=1; off by default): the
+	   * owner's Dot Test page 3 (2026-11-21, four lines, the joints' spacing): the beam's travel lost to a RAMP-off pulse of
+	   * 5 / 8 / 11 / 16 / 24 / 32 cycles is 3.5-4.5 / 3.1-4.1 / 3.6-4.6 / 10.1-11.1 / 21.9-22.9 / 31.9 cycles - not the pulse less 2
+	   * as with one start delay: after a short pulse the integrators start again at once, the later the longer they were
+	   * off. They stop RDLY_OFF cycles after RAMP off as before; they start D (R) cycles after RAMP on, R the pulse's length:
+	   * 5 for R <= 6 and R >= 23 (a line after a pause: as fitted in October), down to 0 for R = 10-13. So a joint drawn with a
+	   * short pause is a slight thickening, not a dot (Vectorblade's logo: the joints 1.2x the line in his photo, ours 1.9x) */
+	  if (rsw_on < 0) { const char *z = getenv ("VT_RAMPSW"); rsw_on = z ? atoi (z) : 0;   /* (off: Vectorblade's logo grows 24 % with it - its vectors run through their pauses; the owner's photo shows it at the old size. To settle with the Switch Test, page 3) */ if (!alg_adly || getenv ("VT_RAMPDLY") || getenv ("VT_RAMPOFF")) rsw_on = 0; }
+	  if (rsw_on > 0) {
+		static const unsigned char DR[24] = { 5, 5, 5, 5, 5, 5, 5, 4, 2, 1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5 };
+		const int raw = sig_ramp ? 0 : 1;
+		rsw_t++;
+		if (rsw_raw && !raw) { rsw_off = rsw_t; rsw_stop = rsw_t + (long long) alg_rdly_off; rsw_start = -1; }
+		else if (!rsw_raw && raw) { const long long R = rsw_t - rsw_off; const long long st = rsw_t + (R >= 0 && R < 24 ? DR[R] : (long long) alg_rdly_on);
+			if (rsw_stop >= 0 && st <= rsw_stop) rsw_stop = -1; else rsw_start = st; }
+		rsw_raw = raw;
+		if (rsw_stop >= 0 && rsw_t >= rsw_stop) { rsw_act = 0; rsw_stop = -1; }
+		if (rsw_start >= 0 && rsw_t >= rsw_start) { rsw_act = 1; rsw_start = -1; }
+		sig_ramp = rsw_act ? 0 : 0x80;
+		sd_hist[hp++ & 63] = (raw ? 0 : 1) | ((via_acr & 0x80) ? 2 : 0);
+	  } else
 	{
 	  sd_hist[hp++ & 63] = (sig_ramp ? 1 : 0) | ((via_acr & 0x80) ? 2 : 0);
 	  if (alg_rdly_on | alg_rdly_off) {

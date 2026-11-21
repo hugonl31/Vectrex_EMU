@@ -203,7 +203,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    float dd = clamp(b.y * 0.6, 0.0, 1.4);\n"
 	"    e += (mt * df * df + 2.0 * dd * ds * ds) * Rl * gk * glint * lc * trans + dd * room * 0.9 * own;\n"
 	"    e += glow * max(h2.y, 0.0) * lc * trans;\n"
-	"    if (rlp.w > 0.0) { vec3 lcol = LIGHTC * mix(vec3(1.0), trans, 0.6); float bc = b.z / max(b.y, 1e-6), bs = b.w / max(b.y, 1e-6);\n"
+	"    if (rlp.w > 0.0 && (D > 0.0 || b.y > 0.0)) { vec3 lcol = LIGHTC * mix(vec3(1.0), trans, 0.6); float bc = b.z / max(b.y, 1e-6), bs = b.w / max(b.y, 1e-6);\n"
 	"      for (int i = 0; i < 6; i++) { vec2 dv = (rpt[i] - gl_FragCoord.xy) / rlp.z;\n"   /* (both y down here) */
 	"        float dl = length(dv * vec2(1.0 / 1.25, 1.0)); if (dl > 1.6) continue;\n"   /* (far: under 0.5 % - most of the six, most pixels) */
 	"        float r2 = dot(dv, dv) + 1e-14, c2l = (dv.x * dv.x - dv.y * dv.y) / r2, s2l = 2.0 * dv.x * dv.y / r2;\n"   /* (cos / sin of twice the angle, without atan, cos, sin: the same) */

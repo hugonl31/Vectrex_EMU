@@ -184,17 +184,17 @@ static const char *GPU_FS_A =
 	"    }\n"
 	"    return a / ws; }\n";
 static const char *GPU_FS_B =
-	"vec3 plastic(vec2 gd, vec2 tgt) {\n"
+	"vec3 plastic(vec2 gd, vec2 tgt, float sdg) {\n"   /* (sdg: the glass's outline here, worked out once in main) */
 	"    float pu = pxs;\n"
-	"    float dg = sdG(gd), dc = -sdC(gd);\n"
+	"    float dg = sdg, dc = -sdC(gd);\n"
 	"    vec2 rp = gd * U;\n"
 	"    float de = dc + pu * 1.6 * (0.5 - 0.65 * vnoise(rp / 9.0 + 41.0) - 0.35 * vnoise(rp / 2.5 + 13.0));\n"
 	"    float wa = clamp(dg / pu + 0.5, 0.0, 1.0) * clamp(de / pu + 0.5, 0.0, 1.0);\n"
 	"    float fa = clamp(0.5 - de / pu, 0.0, 1.0);\n"
-	"    float wave = 2.0 * vnoise(rp / 110.0) - 1.0 + 0.5 * (2.0 * vnoise(rp / 40.0 + 17.0) - 1.0);\n"
-	"    float flow = 2.0 * vnoise(rp / 14.0 + 5.0) - 1.0;\n"
 	"    vec3 col = vec3(0.0);\n"
 	"    if (wa > 0.0) {\n"
+	"        float wave = 2.0 * vnoise(rp / 110.0) - 1.0 + 0.5 * (2.0 * vnoise(rp / 40.0 + 17.0) - 1.0);\n"   /* (the wall's own: not worked out for the front) */
+	"        float flow = 2.0 * vnoise(rp / 14.0 + 5.0) - 1.0;\n"
 	"        float th = atan(gd.y, gd.x), a = ang(gd), sg = sign(gd.x * gd.y);\n"
 	"        vec2 G = gR(a), C = cR(a);\n"
 	"        float Rg = G.x, D = max(C.x - G.x, 1e-4), rho = length(gd);\n"
@@ -212,8 +212,8 @@ static const char *GPU_FS_B =
 	"        vec2 e2 = vec2(0.002, 0.0);\n"
 	"        vec2 qc = abs(gd) - vec2(0.69188 - 0.045826, 0.89275 - 0.045826), sgn = vec2(gd.x < 0.0 ? -1.0 : 1.0, gd.y < 0.0 ? -1.0 : 1.0);\n"
 	"        vec2 pc = normalize(exp(clamp((qc - max(qc.x, qc.y)) / 0.045, -30.0, 0.0))) * sgn;\n"
-	"        vec2 pgl = normalize(vec2(sdG(gd + e2.xy) - sdG(gd - e2.xy), sdG(gd + e2.yx) - sdG(gd - e2.yx)) + 1e-6);\n"
-	"        vec2 pd = normalize(mix(pgl, pc, smoothstep(0.0, 0.3 * pc.x * pc.x + 1e-3, u)));\n"   /* (only the side walls bend to the glass) */
+	"        float wpd = smoothstep(0.0, 0.3 * pc.x * pc.x + 1e-3, u); vec2 pd = pc;\n"   /* (the glass edge's direction - four outlines - only where it counts: near the glass on the side walls) */
+	"        if (wpd < 1.0) { vec2 pgl = normalize(vec2(sdG(gd + e2.xy) - sdG(gd - e2.xy), sdG(gd + e2.yx) - sdG(gd - e2.yx)) + 1e-6); pd = normalize(mix(pgl, pc, wpd)); }\n"   /* (only the side walls bend to the glass) */
 	"        float phi = radians(mix(65.5, 68.5, smoothstep(0.3, 0.9, abs(pd.x))));\n"
 	"        N = normalize(vec3(-pd * sin(phi), cos(phi)));\n"
 	"        vec2 n = normalize(gd);\n"
@@ -252,7 +252,7 @@ static const char *GPU_FS_B =
 	"        }\n"
 	"        vec2 sq = vec2((gd.x - smr.x) / (smr.y - smr.x), (gd.y - smr.z) / (smr.w - smr.z));\n"   /* (the map: top row first) */
 	"        vec2 sc = texture(smap, sq).rg;\n"
-	"        float lv = clamp(3.0 * dot(tex9(tgt - n * (dpos + 25.0) / U, 30.0), vec3(0.333)), 0.0, 1.0);\n"
+	"        float lv = cwear * sc.r > 0.0 ? clamp(3.0 * dot(tex9(tgt - n * (dpos + 25.0) / U, 30.0), vec3(0.333)), 0.0, 1.0) : 0.0;\n"   /* (nine reads: only where a scratch is) */
 	"        float scr = cwear * 0.9 * (0.5 * sc.r * lv + sc.g * (0.6 * lit + 0.8 * bl * 30.0));\n"
 	"        col = vec3(base) + refl * strength * vec3(0.85, 0.92, 1.0) + 0.35 * scr * vec3(0.95, 0.97, 1.0)\n"
 	"            + bl * vec3(0.97, 0.98, 1.0) + exp(-pow(dout / 2.0, 2.0)) * 0.26 * lit;\n"
@@ -297,14 +297,14 @@ static const char *GPU_FS_B =
 	"        vec2 tgt = vec2((p.x - 0.5) * norm.x, -(p.y - 0.5) * norm.y);\n"   /* (units round the centre, y down) */
 	"        vec2 gd = tgt;\n"
 	"        float g = 1.0;\n"
+	"        float ga = degrees(atan(abs(gd.y), abs(gd.x) + 1e-9)); vec2 Gm = gR(ga); float sdg = sdist(gd, Gm);\n"   /* (the glass's outline: once for the edge, the case, the wall) */
 	"        if (glass > 0.5) {\n"
-	"            float ga = degrees(atan(abs(gd.y), abs(gd.x) + 1e-9));\n"
-	"            float r = length(gd) / gR(ga).x;\n"
+	"            float r = length(gd) / Gm.x;\n"
 	"            g = smoothstep(0.0, 1.0, clamp((1.0 - r) / edge, 0.0, 1.0));\n"
-	"        } else g = sdG(gd) < 0.0 ? 1.0 : 0.0;\n"                       /* (the case needs the glass's outline: a hard edge) */
+	"        } else g = sdg < 0.0 ? 1.0 : 0.0;\n"                       /* (the case needs the glass's outline: a hard edge) */
 	"        vec3 add = vec3(0.0);\n"
 	"        vec2 tq = tgt / gsc;\n"
-	"        if (grey > 0.0 || lk > 0.0) {\n"
+	"        if ((grey > 0.0 || lk > 0.0) && g > 0.0) {\n"   /* (outside the glass: x 0 anyway) */
 	"            float gr = bumps(gl_FragCoord.xy * bscale);\n"
 	"            add += grey * (1.0 - 0.25 * tq.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);\n"
 	"            if (lk > 0.0) {\n"
@@ -315,7 +315,7 @@ static const char *GPU_FS_B =
 	"            }\n"
 	"        }\n"
 	"        c = sqrt(c * c + add * add) * g;\n"
-	"        if (cse > 0.5) c += sdG(gd) > -3.0 * pxs ? plastic(gd, tgt) : vec3((hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0);\n"
+	"        if (cse > 0.5) c += sdg > -3.0 * pxs ? plastic(gd, tgt, sdg) : vec3((hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0);\n"
 	"    }\n"
 	"    fragc = vec4(c, 1.0);\n"
 	"}\n";

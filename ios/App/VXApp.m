@@ -943,6 +943,13 @@ static void vxa_toast (NSString *s, double secs)
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks, sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
 			_runs / t, _presents / t, _late, _ticks, buf * 1000, vxa_under, vxa_drop, vxa_mem_mb (), (long) NSProcessInfo.processInfo.thermalState,
 			(unsigned long) GCController.controllers.count, GCKeyboard.coalescedKeyboard != nil);
+		{ /* (the core's own messages - its device measurement, the GPU diagnostic: it sends them to <system>/vectrex_emu/vectrex_emu.log;
+		   *  the new lines into this log, up to 40 a time) */
+		  static long off; char lp[1200]; snprintf (lp, sizeof lp, "%s/vectrex_emu/vectrex_emu.log", vxa_sys); FILE *lf = fopen (lp, "rb");
+		  if (lf) { fseek (lf, 0, SEEK_END); const long sz = ftell (lf); if (sz < off) off = 0; fseek (lf, off, SEEK_SET); char ln[600]; int k = 0;
+			while (k < 40 && fgets (ln, sizeof ln, lf)) { size_t n = strlen (ln); if (!n || ln[n - 1] != '\n') break; ln[n - 1] = 0; off = ftell (lf);
+				if (strstr (ln, "Optimize") || strstr (ln, "GPU") || strstr (ln, "measur") || strstr (ln, "effect")) { vlog ("core: %s", ln); k++; } }
+			fclose (lf); } }
 		{ /* (120 Hz the GPU cannot hold: after 20-30 s at full load the iPhone slows its GPU and the pictures come irregularly - 40-60
 		   *  a second, a stutter (the owner's iPhone, builds 94-137). A steady 60 looks smooth: two periods behind (fewer than 80 %
 		   *  of the runs shown) - 60 Hz for this session; the default only (a rate the player chose stays), not online, not saved) */
@@ -1524,12 +1531,7 @@ static void vxa_net_tick (void)
 - (BOOL) application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
 {
 	vxa_log_start (); vlog ("app start"); vxa_net_watch ();
-	{ /* (the core's own messages - its device measurement, the GPU diagnostic - into this log: they went to stderr, unseen) */
-	  int pp[2]; if (pipe (pp) == 0) { dup2 (pp[1], STDERR_FILENO); close (pp[1]); setvbuf (stderr, NULL, _IOLBF, 0); const int rd = pp[0];
-		dispatch_async (dispatch_get_global_queue (QOS_CLASS_UTILITY, 0), ^{ char buf[1024], line[1100]; size_t ln = 0; ssize_t n;
-			while ((n = read (rd, buf, sizeof buf)) > 0) for (ssize_t i = 0; i < n; i++) {
-				if (buf[i] == '\n' || ln >= sizeof line - 1) { line[ln] = 0; if (ln) vlog ("core: %s", line); ln = 0; } else line[ln++] = buf[i]; } }); }
-	  extern int vx_gprof; vx_gprof = 1; }   /* (the GPU diagnostic: one picture in 30 timed, stage by stage - the stutter at 120 Hz) */
+	{ extern int vx_gprof; vx_gprof = 1; }   /* (the GPU diagnostic: one picture in 30 timed, stage by stage - the stutter at 120 Hz) */
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;
 }

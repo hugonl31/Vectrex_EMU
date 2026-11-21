@@ -363,3 +363,17 @@ joined pieces are cut at their bisector. Corner Test (rendered, proposed timing)
 Open: **Vectorblade's logo is 8 % wider / 10 % taller with the proposed timing than today** - to check against the photo
 with a scale reference before anything becomes default; the lines' level by intensity is lower than before ($5F 0.51 of
 $7F, was 0.67): the exposure wants setting again; start dots are short bright pieces (comet-like at 2x); no glass glow.
+
+## The PC app under the test switches (2026-11-22) - `gaptrace.py`, `gaptrace2.py`
+
+- **The PC app replaced VT_DEFLAG by the unit's lag (6)**: every PC beam-trace picture before this (page 10's dots, the
+  20-cycle dot, "corner dot 5.8 x") had lag 6 with the proposed delays - the beam lit up to each line's end, no gaps. Now a
+  VT_DEFLAG in the environment stands (Core) and forces Y too. The libretro pictures (LROPT) always had 13.3.
+- The Gap Test's photo along a row: each line fades out, a dark gap (S10 / S11 / S12: ~12 / 18 / 30 px of 13.6 px a unit;
+  none at S6, S13), then the next line's start dot (2.1-2.8 x the line across ~1.2 units) and a slow start (above the line
+  for ~4 units). The core's path with the proposed timing: gaps 1.2 1.5 1.8 2.1 2.5 2.9 3.3 1.4 units (S6 .. S13; with the
+  owner's unit 0.9 .. 2.9) - the tube's gaps where they show, but S13's is not on the tube.
+- With the real lag the PC beam trace shows the gaps; the start dots hardly show - the lines already sit at white (the
+  exposure), a dot can only get wider. Owed with the exposure.
+- The switch-on bulge sent the frame through _build_py (screen values into the light shader: bright, bold, half a second
+  after a load): _build_np scales now. Tube > Line gaps under VT_RAMPDLY: moves the test's stop delays by (setting - 7).

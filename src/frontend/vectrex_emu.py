@@ -1819,6 +1819,7 @@ class Core:
         self.picture = unit_picture(unit)[0] if unit and not ideal else None   # (the size / centring pots, the yoke: frame)
         if unit and not ideal:                                     # (the Vectrex unit: the analog parts at the start)
             for key, i, label, lo, hi, fmt, var in UNIT_PARAMS:
+                if var in ('VT_DEFLAG', 'VT_DEFLAGY') and 'VT_DEFLAG' in os.environ: continue   # (a test's lag stands: the unit's would replace it)
                 if var and key in unit:
                     env[var] = '%.4f' % (knob_bias(unit[key]) if key == 'knob' else unit[key])
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))

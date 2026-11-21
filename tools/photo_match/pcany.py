@@ -25,7 +25,7 @@ def _back():
 for ms in (50, 300, 700, 1500): app.root.after(ms, _back)
 if os.environ.get('LOOK'): app.ren.look = os.environ['LOOK']
 if os.environ.get('BEAM'): app.ren.beam_trace = True
-app.ren.wob_on = False; app.ren.bend_on = False; app.skip_boot = True; app.ren.art_on = False
+app.ren.wob_on = False; app.ren.bend_on = False; app.skip_boot = not os.environ.get("NOSKIP"); app.ren.art_on = False
 def _vrr():
     app.vrr = True
     if app.ren and hasattr(app.ren, 'present'): app.ren.swap_interval(0)

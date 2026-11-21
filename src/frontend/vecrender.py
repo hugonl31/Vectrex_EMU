@@ -3174,15 +3174,17 @@ class GLBloomRenderer(GLRenderer):
                     lines = A2                             # (the array: not converted a second time)
             except (ValueError, TypeError, IndexError):
                 pass
-        if _np is not None and not getattr(self, 'np_off', False) and not any(
-                getattr(self, a, d) != d for a, d in (('crt_sx', 1.0), ('crt_sy', 1.0), ('crt_skew', 0.0), ('crt_shift', 0.0),
-                                                      ('crt_garble', 0.0), ('crt_warp', 0.0))):
+        _bt = bool(getattr(self, 'beam_trace', False)) and hasattr(self, 'satprog')
+        if _np is not None and not getattr(self, 'np_off', False) and not any(   # (beam trace: the switch-on bulge - the size alone - in _build_np too)
+                getattr(self, a, d) != d for a, d in ((() if _bt else (('crt_sx', 1.0), ('crt_sy', 1.0))) + (('crt_skew', 0.0), ('crt_shift', 0.0),
+                                                      ('crt_garble', 0.0), ('crt_warp', 0.0)))):
             try:                                           # (the tube switching on or off - collapse, garble: below)
                 return self._build_np(lines, gain, load)
             except (ValueError, TypeError, IndexError):
                 pass                                       # (lines of other shapes: the per-line way)
         if hasattr(lines, 'tolist'):                       # (a numpy array - Smooth motion - for the per-line way: rows,
             lines = [tuple(r[:4]) + (int(r[4]),) + tuple(r[5:]) for r in lines.tolist()]   #  the brightness a whole number)
+        if _bt: gain = gain * 0.0035                       # (beam trace, the tube collapsing: these are screen values, the picture takes light - about the same look)
         return self._build_py(lines, gain, load)
 
     def par_dy(self):
@@ -3311,6 +3313,7 @@ class GLBloomRenderer(GLRenderer):
         beam = bool(getattr(self, 'beam_trace', False)) and hasattr(self, 'satprog')
         bl = None
         if beam and os.environ.get('VX_BT_LAW', '2') != '1' and len(L):   # (the measured law: bt2_prepare)
+            if os.environ.get('VX_BT_DUMP'): np.save(os.environ['VX_BT_DUMP'], L)
             L, bl, col = bt2_prepare(L, col); b = L[:, 4].astype(np.int64)
         if beam:                                           # (no joins or rest rules: the light does it; the glass's glow: every
             hm = ((b & 127) != 0) & ((b & 128) == 0)       #  lit piece once more, wide and faint - bit 256)
@@ -3405,6 +3408,10 @@ class GLBloomRenderer(GLRenderer):
                         PY[1] * s1 + QY[1] * c1 + PY[2] * s2 + QY[2] * c2 + PY[3] * s3 + QY[3] * c3)
             dx0, dy0 = woff(t0); dx1, dy1 = woff(t0 + cyc)
             x0 = x0 + dx0; y0 = y0 + dy0; x1 = x1 + dx1; y1 = y1 + dy1
+        _csx, _csy = getattr(self, 'crt_sx', 1.0), getattr(self, 'crt_sy', 1.0)       # (beam trace: the switch-on bulge)
+        if _csx != 1.0 or _csy != 1.0:
+            _cx, _cy = ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0
+            x0 = _cx + (x0 - _cx) * _csx; x1 = _cx + (x1 - _cx) * _csx; y0 = _cy + (y0 - _cy) * _csy; y1 = _cy + (y1 - _cy) * _csy
         cgain = getattr(self, 'crt_gain', 1.0) * getattr(self, 'hv_light', 1.0)        # (R525: the high voltage's light and
         cwidth = getattr(self, 'crt_width', 1.0) * getattr(self, 'hv_width', 1.0)      #  spot, vectrex_emu.unit_picture)
         gp = 160.0 * sc

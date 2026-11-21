@@ -17,6 +17,8 @@ def render(c, only='corner,gap_p1'):
     e = dict(os.environ); e['ONLY'] = only; e['VT_XYZDLY'] = '%d,%d,8' % (c.get('x', 9), c.get('y', 9)); e['VT_DEFLAGN'] = str(c.get('n', 1))
     if 'z' in c: e['VT_ZDELAY'] = str(c['z'])
     if 'sr' in c: e['VT_SRDELAY'] = str(c['sr'])
+    if 'srm' in c: e['VT_SRMODEL'] = str(c['srm'])
+    if 'srw' in c: e['VT_SRW'] = str(c['srw'])
     if 'bd' in c: e['VT_LAGBOX'] = '%g,%g,%g' % (c['bd'], c['bw'], c.get('bt', 0))
     if 'xs' in c: e['VT_XSLEW'] = str(c['xs'])
     if 'ramp' in c: e['VT_RAMPDLY'] = c['ramp']

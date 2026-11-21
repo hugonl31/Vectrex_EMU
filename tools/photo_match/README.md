@@ -281,3 +281,18 @@ every page), pages 13-16 at 1/5 s f/4.0. `pt0.py` (loading, the lines of a page)
   does not depend on the rate.
 Owed next: the 6522's shift register as page 5 shows it (in place of the VT_SRDELAY stand-in), then the timing fitted
 again on the BIOS's shapes; the light law (d^p by intensity, hits add, dots widen) into the renderer.
+
+## The shift register in the core (VT_SRMODEL=1, a test switch) - 2026-11-21, night
+
+As the Photo Test's page 5: a byte written while the last one's bits still leave goes out on their 2-cycle clock (the
+second boundary after the write); written 17 cycles after the last it does not go out; up to VT_SRW (16) cycles after
+the bits ended its first bit leaves 4 cycles after the write, later 2 (VT_SRD0). `pt5c.py`, the dash by G 10..24: tube
+11.7 11.7 13.8 13.8 15.8 15.8 17.7 (lost) 19.7 20.8 21.8 22.7 23.6 24.5 25.6; the core with it 11.2 11.2 13.1 13.1 15.1 15.1
+17.1 (lost) 19.0 20.0 21.0 22.0 23.0 24.0 25.0; without 9.1 10.1 ... 22.8.
+- With it and today's timing the Gap Test's gaps at scales 10-12 vanish (dip 0.063 / 0.070 / 0.066, photo 0.099 / 0.132 /
+  0.171): today's gaps came from the wrong shift register. With lag 13.3 in 3 stages, VT_RAMPDLY=0,2,3, VT_ZDELAY=1, X / Y 3:
+  corners 0.117 / 0.104 / 0.090 / 0.065 / 0.056 / 0.030, dips rms 0.018 - but the BIOS's squares (Photo Test page 10) still
+  open ~2 units at their corners where the tube closes them with a dot.
+- The BIOS (Draw_VLp: the pattern to the shift register 6 cycles before timer 1 starts, a 7-cycle wait loop, then $00)
+  clears the register 22 + 7k cycles after setting it - beyond what page 5 measured (24). The SR Test's pages 1-2 measure
+  18 .. 60, its pages 3-4 the BIOS's own line by scale.

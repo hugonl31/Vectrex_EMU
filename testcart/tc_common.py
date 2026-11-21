@@ -40,3 +40,30 @@ def finish(stem, name):
         os.remove(os.path.join(here, stem + '_raw.bin')); print('packed %s.bin (32 KB, %d used), %s_64k.bin' % (stem, len(raw), stem))
     else:
         open(os.path.join(here, stem + '.asm'), 'w', newline='\n').write('\n'.join(A) + '\n'); print('wrote %s.asm' % stem)
+
+def begin_paged(title, note, npages):
+    """a cartridge of npages pages: button 4 / joystick right the next, button 1 / left the one before; labels Pg01 .."""
+    del A[:]
+    w('; %s' % note); w('')
+    for n, a in EQU + (('Joy_Digital', 0xF1F8), ('Vec_Joy_1_X', 0xC81B), ('Vec_Joy_Mux', 0xC81F), ('Vec_Button_1_1', 0xC812), ('Vec_Button_1_4', 0xC815), ('JoyLast', 0xC882)):
+        w('%-15s equ $%04X' % (n, a))
+    w('')
+    w('        org     $0000'); w('        fcc     "g GCE 2026"'); w('        fcb     $80'); w('        fdb     $FD0D')
+    w('        fcb     $F8,$50,$20,-$40'); w('        fcc     "%s"' % title); w('        fcb     $80'); w('        fcb     0')
+    w('')
+    w('Start:  clr     Page'); w('        clr     JoyLast')
+    w('Main:   jsr     Wait_Recal'); w('        lda     #$D0'); w('        tfr     a,dp'); w('        setdp   $D0')
+    w('        jsr     Read_Btns')
+    w('        ldd     #$0100'); w('        std     Vec_Joy_Mux'); w('        clr     Vec_Joy_Mux+2'); w('        clr     Vec_Joy_Mux+3')
+    w('        jsr     Joy_Digital')
+    w('        lda     Vec_Joy_1_X'); w('        cmpa    JoyLast'); w('        beq     NoJoy'); w('        sta     JoyLast'); w('        tsta'); w('        beq     NoJoy'); w('        bmi     Prev'); w('        bra     Next')
+    w('NoJoy:  lda     Vec_Button_1_4'); w('        bne     Next'); w('        lda     Vec_Button_1_1'); w('        bne     Prev'); w('        bra     Go')
+    w('Next:   lda     Page'); w('        inca'); w('        cmpa    #%d' % npages); w('        blo     SetP'); w('        clra'); w('        bra     SetP')
+    w('Prev:   lda     Page'); w('        deca'); w('        bpl     SetP'); w('        lda     #%d' % (npages - 1))
+    w('SetP:   sta     Page')
+    w('Go:     ldb     Page'); w('        aslb'); w('        ldx     #PageTab'); w('        jmp     [b,x]')
+
+def ppage(n): w(''); w('Pg%02d:' % n)
+def page_table(npages):
+    w(''); w('PageTab:')
+    for i in range(npages): w('        fdb     Pg%02d' % (i + 1))

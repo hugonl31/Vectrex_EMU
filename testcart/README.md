@@ -389,3 +389,18 @@ Picture: `photo_test_pages.png`.
 | 11 | PATTERN | octagon and zigzag by Draw_VLp with patterns $AA, $F0, $E7 (rows), scales $20 and $30 |
 | 12 | TEXT | the BIOS's text at Vec_Text_HW $FC/$30, $F8/$50, $F4/$60, $F0/$78 |
 | 13-16 | 50 / 40 / 30 / 25 HZ | `make_rate_test.py`: five lines (intensity $7F, $5F, $3F, $2F, $1F) and a dot each, the frame timer 30000 / 37500 / 50000 / 60000 cycles |
+
+## SR test (`sr_test.bin`; delivered as `SR Test.bin`, 64 KB) - four pages, button 4 next / button 1 back
+
+The shift register's switching after its bits have gone out, and the BIOS's Draw_VLp on one vector (2026-11-21).
+`make_sr_test.py` (`tc_common.begin_paged`); picture `sr_test_pages.png`; every page within 20,500 cycles.
+
+| Page | Title | What |
+|---|---|---|
+| 1 | 01/04 SR GAP EVEN | as the Photo Test's page 5 (RAMP on 114 cycles, $7F; the shift register $FF at cycle 30, $00 written G cycles later, again 24 after): G = 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40, 44, 48, 54, 60 (rows) |
+| 2 | 02/04 SR GAP ODD | G = 19, 21, 23 .. 47 |
+| 3 | 03/04 VLP 6-20 | ONE vector by the BIOS's Draw_VLp (pattern $FF, $7F to the right), scale N = 6 .. 20 a row |
+| 4 | 04/04 VLP 21-35 | N = 21 .. 35 |
+
+Why: the BIOS clears the shift register 22, 29, 36 ... cycles after setting it (its 7-cycle wait loop) - the Photo Test
+measured only up to 24, and whether the switch is 4 or 2 cycles late there decides the corners' gaps.

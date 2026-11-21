@@ -39,3 +39,14 @@ Three independent measurements of how RAMP really starts and stops the integrato
 Tried and not it: a speed low-pass while the beam is lit (rounds the corners, bends and shortens the second leg); one RC
 with a threshold, symmetric or with a soft threshold (`swfit.py`: rms 1.3 cycles on 1., and short lines vanish). Next: run
 the core with candidate switch models and score them against 1-3 together (plus the October photos' gaps and text).
+
+## Vectorblade's logo (2026-11-21)
+
+`prof.py` cuts the lines along their normal: the photo's line is 0.40 / 0.70 / 1.00 / 1.30 / 1.70 units wide at 90 / 75 / 50 /
+25 / 10 % of its peak (flatter and steeper than a Gaussian: exp(-(d/a)^2.6) in the shader). `logofit.py` lays the
+emulator's lines on the photo (a similarity transform + the tube's own height: the owner's picture ~10 % taller) and
+gives the mean distance between the line sets: October's timing 1.28 units, the short-pause rule (VT_RAMPSW=1) 1.43 -
+worse, so it stays off. Vectorblade's RAMP-off pulses (VT_RSWLOG=file): mostly 8, 9 and 12 cycles, then 18-22, 34, 39.
+Its joints: 1.2x the line's level in the photo (90th percentile along the lines), 1.9x here - the beam lingers 6-10 lit
+cycles at each (the pulse less 2); the Dot Test's page 3 says the real beam loses only ~4 cycles of travel to such a
+pulse. Open: what the beam and the DAC do during a short pause (Switch Test, pages 1 and 3).

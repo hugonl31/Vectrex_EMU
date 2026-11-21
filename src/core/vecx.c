@@ -1677,8 +1677,12 @@ static void alg_sstep_full (void)
 	   * 5 for R <= 6 and R >= 23 (a line after a pause: as fitted in October), down to 0 for R = 10-13. So a joint drawn with a
 	   * short pause is a slight thickening, not a dot (Vectorblade's logo: the joints 1.2x the line in his photo, ours 1.9x) */
 	  if (rsw_on < 0) { const char *z = getenv ("VT_RAMPSW"); rsw_on = z ? atoi (z) : 0;   /* (off: Vectorblade's logo grows 24 % with it - its vectors run through their pauses; the owner's photo shows it at the old size. To settle with the Switch Test, page 3) */ if (!alg_adly || getenv ("VT_RAMPDLY") || getenv ("VT_RAMPOFF")) rsw_on = 0; }
+	  { static int lg = -1, praw = 0; static long long lt = 0, loff = 0; static unsigned hist[66]; static unsigned long nn;   /* VT_RSWLOG: the RAMP-off pulses' lengths (a test) */
+	    if (lg < 0) lg = getenv ("VT_RSWLOG") != NULL;
+	    if (lg) { const int rw = sig_ramp ? 0 : 1; lt++; if (praw && !rw) loff = lt; else if (!praw && rw) { long long R = lt - loff; hist[R < 0 ? 0 : R > 64 ? 65 : R]++; if (++nn % 20000 == 0) { FILE *lf = fopen (getenv ("VT_RSWLOG"), "w"); if (lf) { for (int i = 0; i < 66; i++) if (hist[i]) fprintf (lf, " %d:%u", i, hist[i]); fclose (lf); } } } praw = rw; } }
 	  if (rsw_on > 0) {
-		static const unsigned char DR[24] = { 5, 5, 5, 5, 5, 5, 5, 4, 2, 1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5 };
+		static unsigned char DR[24] = { 5, 5, 5, 5, 5, 5, 5, 4, 2, 1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5 }; static int dr_init;
+		if (!dr_init) { const char *z = getenv ("VT_RAMPSW_TAB"); dr_init = 1; if (z) { int v[24], k = sscanf (z, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", v, v+1, v+2, v+3, v+4, v+5, v+6, v+7, v+8, v+9, v+10, v+11, v+12, v+13, v+14, v+15, v+16, v+17, v+18, v+19, v+20, v+21, v+22, v+23); for (int i = 0; i < k && i < 24; i++) DR[i] = (unsigned char) v[i]; } }   /* (tests: the table) */
 		const int raw = sig_ramp ? 0 : 1;
 		rsw_t++;
 		if (rsw_raw && !raw) { rsw_off = rsw_t; rsw_stop = rsw_t + (long long) alg_rdly_off; rsw_start = -1; }

@@ -24,6 +24,6 @@ for name, ph, title in PAIRS:
         if best is None or q > best[0]: best = (q, cc)
     old = np.load('all_%s_vectrex.npy' % name); a, b, c, e = box(old.max(2) / 255.0, 0.35)
     tiles = [fit(Image.fromarray((best[1] * 255).astype(np.uint8)).convert('RGB'), 900), fit(Image.fromarray(bmc), 900), fit(Image.fromarray(old[a:b, c:e]), 900)]
-    for t, n in zip(tiles, ['real Vectrex: ' + title, 'new: beam on phosphor (PC, at the photo exposure)', 'current default renderer']): ImageDraw.Draw(t).text((10, 8), n, fill=(255, 140, 0))
+    for t, n in zip(tiles, ['real Vectrex: ' + title, 'new: beam on phosphor (PC)', 'current default renderer']): ImageDraw.Draw(t).text((10, 8), n, fill=(255, 140, 0))
     im = np.concatenate([np.array(t) for t in tiles], 1)
     Image.fromarray(im).save(r'G:\AI\Vectrex_EMU\testcart\compare\beam_%s.png' % name); print(name, im.shape)

@@ -41,6 +41,9 @@ def _back():
 for _ms in (50, 300, 700, 1500): app.root.after(_ms, _back)
 if os.environ.get('LOOK'): app.ren.look = os.environ['LOOK']
 if os.environ.get('BEAM'): app.ren.beam_trace = True
+for kv in os.environ.get('RENSET', '').split(';'):
+    if '=' in kv:
+        k_, v_ = kv.split('='); setattr(app.ren, k_, eval(v_)); print('PHOSOFF set', k_, v_)
 app.ren.wob_on = False; app.ren.bend_on = False; app.skip_boot = True; app.ren.art_on = False      # (tests: no wobble, no bending, no intro)
 def _vrr():
     app.vrr = True

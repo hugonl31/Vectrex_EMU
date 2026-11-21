@@ -43,6 +43,8 @@ if __name__ == '__main__':
         cfgs = [dict(lag=6, n=1, xd=x, yd=9, xs=xs) for x in (5, 6, 7) for xs in (16, 24, 32, 48)]
     elif name == 'slew3':
         cfgs = [dict(lag=l, n=n, xd=x, yd=9, xs=xs) for l, n in ((7, 1), (8, 1), (8, 2), (10, 2)) for x in (4, 5) for xs in (14, 16, 20)]
+    elif name == 'slew4':
+        cfgs = [dict(lag=l, n=1, xd=6, yd=9, xs=xs) for l in (7, 8) for xs in (12, 14, 18)] + [dict(lag=7, n=1, xd=6, yd=9, xs=16), dict(lag=8, n=1, xd=6, yd=9, xs=16)]
     elif name == 'slew':
         cfgs = [dict(lag=l, n=1, xd=x, yd=9, xs=xs) for l in (6, 7) for x, xs in ((2, 16), (3, 18), (4, 22), (1, 14), (2, 20), (3, 14))]
     res = evaluate(cfgs)

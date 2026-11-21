@@ -123,3 +123,9 @@ logo and the Dot Test's corners with a candidate):
   1.99 / 1.56 / 0.61 (lag 8) - the photo 1.71 / 1.82 / 0.84, today 1.83 / 0.95 / 0.26.
   `testcart/compare/switch_corners.png`: the photo with both paths. Not the default: the Y path (through the hold) is
   untested by this cartridge, and the October tests (gaps, text, axis) are owed a run with it.
+- The October tests with the slew (`renall2.py`, `compose3.py` -> `testcart/compare/slew_*.png`: photo | today | candidate):
+  X delay 5 leaves a kink before the dot in the Corner Test's corners with a rest (the X change, written one cycle after
+  RAMP off, starts a cycle before the stop; the tube shows none) - **X delay 6, slew 18, lag 7** has none: the 14 corners'
+  cut rms 0.28 (today 0.65), the logo 1.26 (1.28), the Dot Test's 90 degree corners 2.05 / 1.39 / 0.42 at rests 0 / 8 / 16
+  (photo 1.71 / 1.82 / 0.84, today 1.83 / 0.95 / 0.26); the Corner Test round at rests 0-12 and sharp from 24 as the photo;
+  the Gap Test's lines and squares, the Lag Test and Vectorblade's logo as today. `VT_XYZDLY=6,9,8 VT_XSLEW=18 VT_DEFLAG=7`.

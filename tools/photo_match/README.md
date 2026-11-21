@@ -296,3 +296,38 @@ the bits ended its first bit leaves 4 cycles after the write, later 2 (VT_SRD0).
 - The BIOS (Draw_VLp: the pattern to the shift register 6 cycles before timer 1 starts, a 7-cycle wait loop, then $00)
   clears the register 22 + 7k cycles after setting it - beyond what page 5 measured (24). The SR Test's pages 1-2 measure
   18 .. 60, its pages 3-4 the BIOS's own line by scale.
+
+## The SR Test's photos (2026-11-22): `srt1.py` / `srt2.py` (the tube), `srt3.py` / `srt4.py` (the core), `sqtrace.py`
+
+Four DNGs (1/50 s, f/1.48, ISO 64, focus on the left). All 15 rows a page by a projection (`srt2.py`).
+- **Pages 1-2, $00 written G = 18 .. 60 cycles after $FF**: the dash grows evenly, ~7 px a cycle, no step and no lost
+  write anywhere (G 18 19 20 .. 48: 117 124 132 138 144 152 158 165 172 178 186 192 199 207 212 220 227 234 242 248 . 264 270
+  277 . 292 298 308 . 321 328; 54: 370; 60: 414 px). The "2 cycles more for 16 cycles after the bits" of the first
+  reading (it made a step at G 32) is out: **a write goes out a fixed time later; while the bits still leave, on
+  their 2-cycle clock (an odd gap one cycle more); 17 cycles after the last write it is lost.** The Photo Test's
+  page 5 fits the same (even G <= 16 on one line with G >= 18). VT_SRMODEL=1 now does that (VT_SRD0, 3: the write's
+  delay; VT_SRW=16 brings the first reading back).
+- A photo's absolute lengths are good to ~1.5 cycles only: the scale runs 6.6 px a cycle at the left to 7.1 further
+  right (from rows a wait-loop pass apart: 7 cycles more). Differences and levels are what to read.
+- **Pages 3-4, the BIOS's Draw_VLp, one vector at scale N = 6 .. 35**: the lit length steps where the core's does
+  (N 12/13, 19/20, 26/27, 33/34), by 3.1 cycles (the core with the proposed timing 3.2, today 2.9); within a pass it
+  grows 0.56 a cycle of N (proposed 0.58, today 0.65). With the scale from the rows themselves the lengths fit
+  VT_SRD0=3 to 0.1-0.3 cycles (N 6 / 13 / 20 / 27 / 35: tube 10.0 16.9 24.0 30.9 38.6, core 10.1 16.9 23.9 30.9 38.5).
+  The light of the line's last 2 units against its middle (the beam lingering before the blank; a dash cut at speed:
+  0.72): tube 1.13 .. 0.82 within a pass, core 1.05 .. 0.84 (VT_SRD0 2), 1.11 .. 0.88 (3), 1.15 .. 0.92 (4). The start: tube
+  1.6-1.9 x the middle (peak 2.6-3.2 x), the core as dwell^0.7 2.1 (peak 4.0) - the dot's light wants the renderer's
+  dot (wider, not brighter), not this stand-in.
+- The BIOS's Draw_VLp from the ROM ($F410): the pattern to the register, CLR T1 high 6 cycles later (t0), the flag
+  read at t0 + 7 + 7j, the register cleared 9 cycles after the read that saw it: K = 12 .. 17 cycles after t0 + N.
+- **The Photo Test's page 10 again, by the light along a square's sides (f/4)**: the tube's lines do NOT reach the
+  corner - each side brightens at its end (the beam slowing), dips, then comes the next side's start dot, 5 x the
+  line's level and ~9 px wide. The line's end to the dot's centre at scale $20: 1.5-1.6 units (the core: today 2.0,
+  proposed with VT_SRD0 3 / 4 / 5: 2.4 / 2.1 / 1.8). The squares look closed because the dot is wide and bright; the
+  core's rule renderer draws no such dot from 3 cycles of rest. So the corners' "gaps" in the proposed renders are
+  mostly the missing dot, not the timing.
+- Gap Test / Corner Test on rendered frames with the new register: the joins' dips follow VT_ZDELAY + VT_SRD0 (5:
+  rms 0.018, 4: 0.024, 3: 0.041); the corners as before (cut / leg 0.117 0.104 0.090 0.065 0.056 0.030). The Timer Test
+  says 2 for the register after a PCR write, the line's end 3, the joins 4: 3 taken, whole cycles only so far.
+Proposed (tests, nothing default): VT_SRMODEL=1 (VT_SRD0 3), lag 13.3 in 3 stages (VT_DEFLAGN=3), VT_RAMPDLY=0,2,3,
+VT_ZDELAY=1, VT_XYZDLY=3,3,8. Owed: the renderer's light (dwell^p by intensity, hits add, a resting dot wider not
+brighter, the slow start's light) - without it the BIOS's corners cannot look like the tube's; fractional delays.

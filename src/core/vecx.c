@@ -64,7 +64,7 @@ static unsigned via_srphase;      /* system-clock shifting: every other cycle */
  * shows it on the tube - a byte written while the last one's eight bits still leave goes out on their 2-cycle clock (the
  * second boundary after the write); written 17 cycles after the last one it does not go out at all (CB2 keeps the last
  * bit); written up to SR_W cycles after the bits ended its first bit leaves 4 cycles after the write, later 2 */
-static int sr_model = -1, sr_pend, sr_w = 16, sr_d0 = 2; static unsigned char sr_pend_data; static unsigned long long sr_now, sr_pend_at, sr_seq_on = 0;
+static int sr_model = -1, sr_pend, sr_w = -100, sr_d0 = 3; static unsigned char sr_pend_data; static unsigned long long sr_now, sr_pend_at, sr_seq_on = 0;
 static int sr_seq = 0;                /* (a sequence has started: sr_seq_on is its first bit's cycle) */
 int vt_sr1;
 static unsigned via_acr;
@@ -922,8 +922,9 @@ void write8 (unsigned address, unsigned char data)
 					if (sr_pend) { sr_pend_data = (unsigned char) data; break; }           /* (not yet out: the new byte takes its place) */
 					if (g == 17) { via_sr = data; break; }                                  /* (lost: nothing leaves, CB2 as it was) */
 					sr_pend = 1; sr_pend_data = (unsigned char) data;
-					if (g <= 16) sr_pend_at = sr_seq_on + 2 * (g / 2) + 2;                  /* (on the running clock) */
-					else sr_pend_at = sr_now + (g <= 16 + sr_w ? sr_d0 + 2 : sr_d0);
+					/* (SR Test: the dash grows evenly with the gap 18 .. 60 - a write goes out sr_d0 cycles later; while the bits
+					   still leave, on their 2-cycle clock. VT_SRW=n: 2 cycles more up to n cycles after the bits - the first reading) */
+					sr_pend_at = sr_now + sr_d0 + (g <= 16 ? (g & 1) : 0) + (g <= 16 + sr_w ? 2 : 0);
 					break;
 				}
 				via_sr = data;

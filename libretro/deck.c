@@ -142,11 +142,11 @@ static void dk_draw_modern (int slim)
 	double sw, bw, x;
 	if (!slim) { sw = floor ((W - 2 * m) * 0.33); const double kw = ph * 1.09; bw = floor ((W - 2 * m - sw - kw - 4 * gap) / 3); }
 	else { sw = fmin (0.29 * (W - 2 * m), 4.3 * ph); bw = 1.93 * ph; }
-	/* the figures: FPS HZ EMU (EMU coloured), CPU / GPU (full); PAUSED; switched off: -- */
+	/* the figures: INT FPS EMU (EMU coloured), CPU / GPU (full); PAUSED; switched off: -- */
 	dkm_panel (mm, y0, mm + sw, y1, rad, DKM_PANEL, DKM_EDGE, lw);
 	{ const double k = fmin ((slim ? 0.30 : 0.22) * ph / 6.0, 0.88 * sw / (19 * 6.0)), ty = slim ? cy : y0 + 0.32 * ph;
 	  if (paused && on) dkm_ctext ("PAUSED", mm + sw / 2, cy, fmin (0.30 * ph / 6.0, 0.8 * sw / 36.0), DKM_OR);
-	  else if (!on) dkm_ctext ("-- FPS  -- HZ  --", mm + sw / 2, ty, k, DKM_OFF);
+	  else if (!on) dkm_ctext ("-- INT  -- FPS  --", mm + sw / 2, ty, k, DKM_OFF);
 	  else { char a[48]; snprintf (a, sizeof a, "%s  %s  ", dk_osd[0], dk_osd[1]); const double tw = dkm_textw (a, k) + 6 * k + dkm_textw (dk_osd[2], k);
 		const float xe = br_text (a, (float) (mm + (sw - tw) / 2), (float) (ty - 3 * k), (float) k, DKM_HI); br_text (dk_osd[2], xe, (float) (ty - 3 * k), (float) k, (unsigned) dk_osd_col); }
 	  if (!slim && !(paused && on)) { const double k2 = fmin (0.13 * ph / 6.0, 0.7 * k), by = y0 + 0.70 * ph, lx = mm + 0.04 * sw, lw2 = dkm_textw ("CPU", k2);
@@ -317,9 +317,11 @@ static void dk_tick (double busy)
 		if (want != dk_shown) { dk_shown = want; dk_dirty_set = 1; } }
 	{ static clock_t c0; const clock_t c = clock (); if (c0) dk_busy += (double) (c - c0) / CLOCKS_PER_SEC; c0 = c; }   /* (the processor: all the core's threads) */
 	const double now = vt_wall ();
-	if (dk_t0 == 0) { dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; snprintf (dk_osd[0], 24, "-- FPS"); snprintf (dk_osd[1], 24, "-- HZ"); snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; }
+	if (dk_t0 == 0) { dk_t0 = now; dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; snprintf (dk_osd[0], 24, "-- INT"); snprintf (dk_osd[1], 24, "-- FPS"); snprintf (dk_osd[2], 24, "--"); dk_osd_col = DK_G; }
 	if (now - dk_t0 >= 1.0) { const double dt = now - dk_t0;
-		snprintf (dk_osd[0], 24, "%d FPS", (int) ((aq_frames - dk_f0) / dt + 0.5)); snprintf (dk_osd[1], 24, "%d HZ", (int) ((dk_runs - dk_r0) / dt + 0.5));
+		/* (INT: the game's own frames a second - internal, what the 6809 / UVMC2 / PiTrex makes; FPS: the pictures this
+		 *  system gets out a second - the screen's rate when it keeps up, the owner 2026-11-21. Hz is the panel's) */
+		snprintf (dk_osd[0], 24, "%d INT", (int) ((aq_frames - dk_f0) / dt + 0.5)); snprintf (dk_osd[1], 24, "%d FPS", (int) ((dk_runs - dk_r0) / dt + 0.5));
 		dk_rw_e[dk_rw_i] = (double) (run_t - dk_e0) / 1.5e6; dk_rw_t[dk_rw_i] = dt; dk_rw_m[dk_rw_i] = dk_miss; dk_miss = 0;
 		dk_rw_i = (dk_rw_i + 1) % DK_RW; if (dk_rw_n < DK_RW) dk_rw_n++;
 		double se = 0, st = 0; int sm = 0; for (int i = 0; i < dk_rw_n; i++) { se += dk_rw_e[i]; st += dk_rw_t[i]; sm += dk_rw_m[i]; }

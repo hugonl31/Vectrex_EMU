@@ -717,8 +717,8 @@ TOPICS = [
          "overlay should be 162 mm wide and 207 mm high."),
 ('item', 'Rotate screen', "The whole screen turned in 90 degree steps - for a monitor turned on its side "
          "(tate). The overlay, the knob and the display turn with it."),
-('item', 'On-screen display', "Below the picture: INTERNAL (the game's own frames per second), MONITOR "
-         "(your screen's refresh), EMU RATE (green at 100 %; orange or red when the PC can not keep up), "
+('item', 'On-screen display', "Below the picture: INTERNAL (the game's own frames per second), OUTPUT "
+         "(the pictures per second this PC gets to the screen: your screen's refresh rate when it keeps up), EMU RATE (green at 100 %; orange or red when the PC can not keep up), "
          "and ONLINE while you play online (the round trip to the other player, RELAY when it goes through the meeting "
          "point; WAITING before player 2 is there). The volume shows on the knob when you point at it."),
 ('item', 'CPU and GPU meters (how much of each frame is used)', "Two bars below the on-screen display: how much of each "

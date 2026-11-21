@@ -151,7 +151,7 @@ final class Screens {
 		java.util.List<String> top = java.util.Arrays.asList ("vectrex_emu_profile", "vectrex_emu_deck", "vectrex_emu_rotate", "vectrex_emu_rate", "vectrex_emu_size",
 			"vectrex_emu_overlay", "vectrex_emu_ov_glow", "vectrex_emu_scratches", "vectrex_emu_room", "vectrex_emu_ceiling",
 			"vectrex_emu_glow", "vectrex_emu_afterglow", "vectrex_emu_brightness", "vectrex_emu_keys", "vectrex_emu_port2");
-		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look", "vectrex_emu_deck", "vectrex_emu_skip_intro");   /* (the deck, skip intro: under App) */
+		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look", "vectrex_emu_deck", "vectrex_emu_skip_intro", "vectrex_emu_look");   /* (the deck, skip intro: under App) */
 		java.util.ArrayList<Integer> cs = new java.util.ArrayList<> ();
 		for (String k : order) for (int c = 0; c < nc; c++) if (VX.cat (c, 0).equals (k)) cs.add (c);
 		for (int c = 0; c < nc; c++) if (!cs.contains (c)) cs.add (c);

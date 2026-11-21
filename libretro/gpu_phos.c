@@ -264,9 +264,14 @@ static void ph_overlay (void)
 	free (a); ph_ovgen = ov_gen;
 }
 /* this refresh's light: the pieces pl[0..npl), the phosphor one refresh on (dt), into ph_P (the screen's values) */
+/* (the apps' GPU diagnostic: a timed picture's steps - the lines, the phosphor, the glow, the screen's values) */
+int vx_gprof_now; double vx_gpst[4]; static double ph_t0;
+extern double vt_wall (void);
+#define PHT(k) do { if (vx_gprof_now) { glFinish_ (); const double t_ = vt_wall (); vx_gpst[k] += t_ - ph_t0; ph_t0 = t_; } } while (0)
 static int ph_frame (int npl, double dt, int glow, int after, int shot)
 {
 	if (!ph_ok) return 0;
+	if (vx_gprof_now) ph_t0 = vt_wall ();
 	if (FW != ph_w || FH != ph_h || !ph_made || fx_ps != ph_ps_made || fx_lh != ph_lh_made || (vx_hdr_peak > 1.0f || vx_hdr_lift > 1.5f) != ph_hdr_made) { ph_size (); if (!ph_ok) return 0; }
 	const int scaled = ph_pw != FW || ph_ph != FH || ph_fw != FW; const float ls = (float) ph_fw / FW;   /* (the lines' scale: Basic) */
 	const int cur = ph_i, prv = ph_i ^ 1; ph_i ^= 1;
@@ -292,6 +297,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, npl);
 		glBindBuffer_ (GL_ARRAY_BUFFER, 0); glDisable_ (GL_BLEND);
 	}
+	PHT (0);
 	glBindVertexArray_ (g_vao);
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
 	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
@@ -306,6 +312,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
 		ph_bind (ph_comp, "fc", 0, ph_F[cur]); ph_bind (ph_comp, "g1t", 1, ph_G1[cur]); ph_bind (ph_comp, "g2t", 2, ph_G2[cur]);
 		PU1I (ph_comp, "after", after); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
+	PHT (1);
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {
 		const int gd = 2 * S, nf = 2 * gd; double vd = 0;
@@ -324,6 +331,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 			ph_target (ph_B[pass ^ 1], 0, 0, ph_gw, ph_gh); ph_bind (ph_blur, "src", 0, ph_B[pass]);
 			glUniform2i_ (ph_ul (ph_blur, "dir"), pass ? 0 : 1, pass ? 1 : 0); glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 	}
+	PHT (2);
 	/* the screen's values: through the sheet with its effects (gpu_ovfx.c), or as PH_FS_OUT */
 	{ const int ovon = ov && ov_on && !sheet_file && ov_lm; if (ovon) ph_overlay ();
 	  if (ovon && ph_ovm && ox_draw (glow, dt)) goto done;
@@ -337,6 +345,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:
+	PHT (3);
 	glActiveTexture_ (GL_TEXTURE0);
 	if (shot) glReadPixels_ (0, 0, FW, FH, GL_RGBA, GL_UNSIGNED_BYTE, fb);   /* (test: the picture back, B G R A = the CPU's XRGB) */
 	glBindVertexArray_ (0); glUseProgram_ (0); glBindFramebuffer_ (GL_FRAMEBUFFER, 0);

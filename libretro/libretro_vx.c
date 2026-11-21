@@ -2910,14 +2910,16 @@ void retro_run (void)
 		/* (the apps' GPU diagnostic, vx_gprof: one picture in 30 timed with the GPU waited for after each stage - the light, the glass and
 		 *  the case; iOS's OpenGL ES has no timer queries) */
 		extern int vx_gprof; static long gpc; static double gpt[3], gpw; static long gpn; const int gpm = vx_gprof && (++gpc % 30) == 0; double gp0 = 0, gp1 = 0;
+		{ extern int vx_gprof_now; vx_gprof_now = gpm; }
 		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
 		if (ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ())) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
 			if (gpm) { glFinish_ (); gp1 = vt_wall (); }
 			gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
 			if (gpm) { glFinish_ (); const double gp2 = vt_wall (); gpt[0] += gp1 - gp0; gpt[1] += gp2 - gp1; gpn++;
-				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms, the glass and the case %.2f ms - %d x %d px, profile %s%c",
-					gpn, gpt[0] / gpn * 1e3, gpt[1] / gpn * 1e3, FW, FH, opt_profile == 0 ? "auto" : opt_profile == 1 ? "ultra" : opt_profile == 2 ? "high" : opt_profile == 3 ? "medium" : "low", 10); gpt[0] = gpt[1] = 0; gpn = 0; gpw = gp2; } }
+				extern double vx_gpst[4]; extern int vx_gprof_now; vx_gprof_now = 0;
+				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms (lines %.2f, phosphor %.2f, glow %.2f, picture %.2f), the glass and the case %.2f ms - %d x %d px, profile %s%c",
+					gpn, gpt[0] / gpn * 1e3, vx_gpst[0] / gpn * 1e3, vx_gpst[1] / gpn * 1e3, vx_gpst[2] / gpn * 1e3, vx_gpst[3] / gpn * 1e3, gpt[1] / gpn * 1e3, FW, FH, opt_profile == 0 ? "auto" : opt_profile == 1 ? "ultra" : opt_profile == 2 ? "high" : opt_profile == 3 ? "medium" : "low", 10); gpt[0] = gpt[1] = 0; vx_gpst[0] = vx_gpst[1] = vx_gpst[2] = vx_gpst[3] = 0; gpn = 0; gpw = gp2; } }
 			shot_write ();
 			sheet_write ();
 			if (!asy) flash_save (0);

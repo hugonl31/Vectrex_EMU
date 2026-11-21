@@ -2328,7 +2328,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
 			fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) / bk * pw_width;   /* (the glass's scatter: not the beam option's) */
 			kk = BEAM_HALO_K * (cyc / BEAM_HALO_C < 1 ? cyc / BEAM_HALO_C : 1) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl); dot = 1;
-			{ extern float vx_hdr_lift, vx_hdr_hb; if (vx_hdr_lift > 1.5f && vx_hdr_peak <= 1.0f) kk *= vx_hdr_hb; }   /* (the Vectrex look on SDR: the dots' glow up -
+			{ extern float vx_hdr_lift, vx_hdr_hb; extern int vx_app_dots; if (vx_hdr_lift > 1.5f || vx_app_dots) kk *= vx_hdr_hb; }   /* (the Vectrex look on SDR: the dots' glow up -
 			                                                  a dot at white beside a line at white: its glare tells it) */
 		} else if (!zl[i]) {
 			double ee = lp > 1e-9 ? cyc / (lp / gp) : 1e9;
@@ -2345,7 +2345,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
 			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);
 			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
-			fw = fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl); { extern float vx_hdr_lift, vx_hdr_dw; if (vx_hdr_lift > 1.5f && vx_hdr_peak <= 1.0f) fw *= vx_hdr_dw; }   /* (the Vectrex look on SDR: a dot's glare wider - at white, as the line) */
+			fw = fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl); { extern float vx_hdr_lift, vx_hdr_dw; extern int vx_app_dots; if (vx_hdr_lift > 1.5f || vx_app_dots) fw *= vx_hdr_dw; }   /* (the Vectrex look on SDR: a dot's glare wider - at white, as the line) */
 			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
 				kk *= pow (wd, 2.5); hx *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
 		}

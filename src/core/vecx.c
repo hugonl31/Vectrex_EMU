@@ -182,6 +182,7 @@ static double rdly_frac, rdly_frac_t1;   /* the stop delays' fractions (VT_RAMPO
 void vt_set_rampoff (double c)
 {
 	if (c < 0) c = 0; if (c > 40) c = 40;
+	if (getenv ("VT_RAMPDLY")) return;         /* (a test's delays stand: the frontend's setting arrived after them and took the stop delays back to 7) */
 	alg_rdly_off = alg_rdly_off_t1 = (unsigned) c;
 	rdly_frac = rdly_frac_t1 = c - (unsigned) c;
 }

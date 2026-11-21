@@ -26,6 +26,6 @@ for name, ph, title in PAIRS:
         q = np.corrcoef(cs.ravel(), rs.ravel())[0, 1]
         if best is None or q > best[0]: best = (q, cc)
     tiles = [fit(Image.fromarray((best[1] * 255).astype(np.uint8)).convert('RGB'), 1000), fit(Image.fromarray(now[a:b, c:e]), 1000), fit(Image.fromarray(cand[a:b, c:e]), 1000)]
-    for t, n in zip(tiles, ['real Vectrex: ' + title, 'emulator now', 'proposed: 4-stage lag 14, X delay 8, beam-off delay 6']): ImageDraw.Draw(t).text((10, 8), n, fill=(255, 140, 0))
+    for t, n in zip(tiles, ['real Vectrex: ' + title, 'emulator now', 'proposed (Settle + Timer Tests)']): ImageDraw.Draw(t).text((10, 8), n, fill=(255, 140, 0))
     im = np.concatenate([np.array(t) for t in tiles], 1)
     Image.fromarray(im).save(r'G:\AI\Vectrex_EMU\testcart\compare\slew_%s.png' % name); print(name, im.shape)

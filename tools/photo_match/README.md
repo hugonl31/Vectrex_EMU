@@ -226,3 +226,25 @@ settles faster than a long one (the Settle Test's lines are 24-48 cycles) - a pa
 - Found on the way, in the core: a 16-bit store to the VIA (STX / STY / STD <$00) writes both bytes in the instruction's
   last cycle; a 6809 writes the first one (port B: RAMP, the mux) a cycle earlier. Every cart of mine switches RAMP that
   way, the BIOS mostly with 8-bit writes: a cycle of the mismatch between the hand-timed lines and the BIOS's. To fix.
+
+## The Join Test's photos and the setting that fits everything timed (2026-11-21, late night)
+
+- `jt1.py` (the tube), `jt2.py` (the core): the BIOS's line by hand (shift register + timer 1, N 6-13). The tube, N 13, travel
+  to come when the shift register is cleared K = 2 / 5 / 8 / 11 / 14 / 17 / 20 after t0 + N: 10.78 / 8.37 / 6.04 / 4.12 / 2.58 / 1.43 / 0.78;
+  travel done when it is set K = 4 / 8 / 12 / 16 / 20 after t0: 0.96 / 2.41 / 4.72 / 7.68 / 10.64 (at the BIOS's own -4: 0.1).
+  The core with lag 13.3 in 3 stages, VT_RAMPDLY=1,3,5, VT_ZDELAY=2, VT_SRDELAY=2, X delay 3: 10.46 / 8.02 / 5.79 / 3.96 / 2.59 /
+  1.63 / 0.97 and 0.81 / 2.47 / 4.97 / 8.08 / 11.24 - within 0.3-0.6 cycles; the core today 10.31 / 7.74 / 5.01 / 3.00 / 1.78 / 1.05 /
+  0.60 and 0.00 / 0.83 / 3.18 / 6.32 / 9.87.
+- Two rows of page 1 show a hook (N 8 / K 5, N 11 / K 2): the shift register cleared 17 cycles after it was set does not
+  blank - the 6522's shift register written as its eight bits end. Noted, not modelled.
+- Pages 3 and 4 (the Y hold): the second leg starts right for every K from 5 to 24 and with the mux open 7 or 12 cycles -
+  the Y speed is in its hold in time; nothing to change there.
+- **A harness trap**: the frontend's "line gaps" setting (vt_set_rampoff) arrives after VT_RAMPDLY and set both stop
+  delays back to 7 - every `cgrid.py` row with `ramp=` before this line ran with stop 7. Now VT_RAMPDLY, when given, stands.
+- With that fixed, rendered frames (`cgrid.py`; lag 13.3 in 3 stages, VT_RAMPDLY=1,3,4, VT_ZDELAY=2, VT_SRDELAY=3, X / Y delay 3):
+  the Corner Test's cut / leg 0.124 / 0.104 / 0.091 / 0.064 / 0.054 / 0.030 (photo 0.122 / 0.120 / 0.105 / 0.073 / 0.044 / 0.003; today
+  0.092 / 0.058 / 0.052 / 0.036 / 0.026 / 0.019); the Gap Test's dip index 0.066 / 0.066 / 0.076 / 0.086 / 0.107 / 0.129 / 0.133 / 0.047
+  (photo 0.060 / 0.051 / 0.058 / 0.075 / 0.099 / 0.132 / 0.171 / 0.067: rms 0.018, today 0.024); the squares' size nearer the
+  photo's; the font crisp. **What is left is light, not timing**: the tube shows a bright dot at every piece's start (the
+  beam on while the spot only creeps away); the core's rule renderer makes a dot from a rest only, so with the slow
+  start there is none (`testcart/compare/gap_joins_zoom.png`). The beam-on-phosphor light (dwell = light) is the fix.

@@ -434,6 +434,7 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow); on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_brightness", "Brightness (VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
+	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white - bright vectors on a dim screen; Vectrex: as a real Vectrex - dots and slow lines stand out, wants a bright screen); bright|vectrex" },
 	{ "vectrex_emu_corner_dots", "Corner dots (the beam resting); on|off" },
 	{ "vectrex_emu_dwell", "Dwell spots inside strokes; on|off" },
 	{ "vectrex_emu_speed_bright", "Fast sweeps fainter; on|off" },
@@ -518,6 +519,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", NULL, "auto|on|strong|off" },
 	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
+	{ "vectrex_emu_look", "tube", "Look", "Bright: all lines pushed up to white - bright vectors on a dim screen. Vectrex: as a real Vectrex - dots and slow lines stand out; wants a bright screen.", "bright|vectrex" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_brightness", "tube", "Brightness", NULL, "1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "auto|on|off" },
@@ -690,6 +692,8 @@ static void read_options (void)
 	opt_trail = opt_is ("vectrex_emu_afterglow", "long (real Vectrex)") ? 1.0f : opt_is ("vectrex_emu_afterglow", "short") ? 0.3f : 0.6f;
 	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) * VX_TRAIL_DEF : VX_TRAIL_DEF;   /* (1x: the default) */
 	  opt_trail_k = k >= 0.25 && k <= 6.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
+	{ extern int vx_app_noshape, vx_app_dots; extern float vx_hdr_lift, vx_trail_mul;   /* (the look - as the own apps' setting; they set it themselves) */
+	  if (!vx_app_noshape) { const int v = opt_is ("vectrex_emu_look", "vectrex"); vx_hdr_lift = v ? 2.0f : 0.0f; vx_trail_mul = v ? 2.1f : 1.0f; vx_app_dots = 1; } }
 	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
 	  opt_bright = k >= 1.0 && k <= 2.0 ? (float) k : 1.0f; }
 	opt_dots = !opt_is ("vectrex_emu_corner_dots", "off"); opt_dwell = !opt_is ("vectrex_emu_dwell", "off"); opt_speedb = !opt_is ("vectrex_emu_speed_bright", "off");

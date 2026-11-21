@@ -921,6 +921,36 @@ BEAM_PEAK = 0.62             # below clipping, so overlaps add up instead of tur
 BEAM_TRACE_CSAT = 8.5
 BEAM_TRACE_GAIN = 3.0
 BEAM_TRACE_SG = 0.674
+# The phosphor's light along the beam's path (the owner's Dot Test photos, 2026-11-21, ProRAW, linear light; pages 1 and 3):
+# two parts. A fast one that saturates at once - a fixed light for every unit of phosphor the spot sweeps over (BT_A a
+# unit of length) - and a slow one growing with the beam's time on the place (BT_B a cycle; flattening gently with the
+# dose: BT_D0 cycles at intensity 127). Measured: a line's light a unit = 0.72 + 0.21 x (cycles a unit) at 1.0 / 1.6 / 3.2
+# cycles a unit; a resting spot 0.2-0.25 a cycle, linear to ~48 cycles, 0.7 of that at 128. By intensity: the lines' light
+# is the tube's (TUBE_LIGHT, from lines); the slow part falls faster - x TUBE_LIGHT^BT_IP (dots at 5F / 40 / 30: 0.52 /
+# 0.12 / 0.019 of 7F's, the tube's light 0.67 / 0.27 / 0.08) - so the fast part is what is left of a line's light at the
+# speed the tube's light was measured at (BT_UREF). A piece of the path (length l units, t cycles):
+#   light = a(z) (l + BT_WF) + (l + BT_W) / BT_W x BT_B x BT_D0 ln(1 + i(z) tau / BT_D0),   tau = t BT_W / (l + BT_W)
+# (tau: the cycles a point stays under the spot, BT_W its footprint), spread along the piece as the spot's Gaussian
+# (CAPSULE_SHADER, beam). No dot, halo or dwell rules: a rest, a slow corner, a line's speed follow from the path.
+# Units: the reference line (Draw_Line_d, 1.59 cycles a unit, intensity 127) has light 1.054 a unit of length
+BT_A, BT_B, BT_D0, BT_IP = 0.70, 0.29, 150.0, 1.5
+BT_W, BT_WF, BT_UREF = 0.30, 0.10, 1.6
+BT_UNITS = 160.0 / 134.0                    # (Vectrex units - Moveto at scale $7F - a game px)
+BT_EXPO = 0.15                              # (the Vectrex look: the reference line's peak, through our own spot, = white)
+def bt_light(tl, l, t):
+    """a piece's light: tl = the tube's light of its intensity (0..1), l = its length (units), t = cycles (arrays)"""
+    iz = tl ** BT_IP
+    az = _np.maximum(0.0, (BT_A + BT_B * BT_UREF) * tl - BT_B * BT_UREF * iz)
+    tau = t * BT_W / (l + BT_W)
+    return az * (l + BT_WF) + (l + BT_W) / BT_W * BT_B * BT_D0 * _np.log1p(iz * tau / BT_D0)
+BT_HALO_F, BT_HALO_S = 0.04, 1.4            # (the glass: this share of every piece's light spread wide - sigma, units; the photos'
+                                            #  dots: 3-5 % of their light in a glow of sigma ~1.4 units)
+BT_SPOT = 1.0                               # (the spot's width x this; VX_BT_SPOT: tests - 2.5: as wide as through the photos' camera)
+BT_KMAX = 512.0                             # (a piece's light goes to the GPU as a colour, clamped at 1: sent / BT_KMAX, SAT_SHADER x BT_KMAX)
+def bt_eta(tau):
+    """the phosphor's light per cycle of beam, tau = the cycles a point stays under the spot (arrays)"""
+    tau = _np.maximum(tau, 0.02)
+    return _np.where(tau < BT_TAUX, BT_LINE_K * (tau / BT_W) ** -BT_LINE_P, BT_REST_K * _np.log1p(tau / BT_REST_T) / tau)
 SAT_SHADER = b"""
 uniform sampler2D tex;
 uniform float k;
@@ -932,8 +962,8 @@ vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pur
 }
 void main() {
     vec4 c = texture2D(tex, gl_TexCoord[0].st);
-    vec3 l = 1.0 - exp(-max(c.rgb, vec3(0.0)));
-    gl_FragColor = vec4(cold(k * pow(l, vec3(1.0 / 2.2)), wb), c.a);
+    vec3 l = max(c.rgb, vec3(0.0));          // (the pieces' light, added up: the phosphor's law is in each piece - bt_eta)
+    gl_FragColor = vec4(cold(pow(k * l, vec3(1.0 / 2.2)), wb), c.a);
 }
 """
 
@@ -3191,8 +3221,13 @@ class GLBloomRenderer(GLRenderer):
         if len(b) and not getattr(self, 'beam_trace', False):   # (rests joined to lines: see DOT_C0)
             b = mark_joined(L[:, 0], L[:, 1], L[:, 2], L[:, 3], b, L[:, 5], L[:, 6]); L[:, 4] = b
         beam = bool(getattr(self, 'beam_trace', False)) and hasattr(self, 'satprog')
-        if beam:
-            pass                                           # (no halos, joins or rest rules: the energy does it)
+        if beam:                                           # (no joins or rest rules: the light does it; the glass's glow: every
+            hm = ((b & 127) != 0) & ((b & 128) == 0)       #  lit piece once more, wide and faint - bit 256)
+            if hm.any() and BT_HALO_F > 0:
+                H = L[hm].copy(); H[:, 4] = b[hm] | 256
+                L = np.concatenate([H, L]); b = L[:, 4].astype(np.int64)
+                if col is not None:
+                    col = np.concatenate([col[hm], col])
         elif getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False):
             hm = (np.sqrt((L[:, 2] - L[:, 0]) ** 2 + (L[:, 3] - L[:, 1]) ** 2) <= REST_SPEED * L[:, 5] / 8.0) & (L[:, 5] >= 64) & ((b & 127) != 0) & ~(((b & 512) != 0) & (L[:, 5] < 8.0 * REST_DWELL_HALO))
             if hm.any():                                   # (the resting spots' halos, drawn first)
@@ -3206,6 +3241,16 @@ class GLBloomRenderer(GLRenderer):
         zl = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2) <= REST_SPEED * e / 8.0     # (resting spots: see REST_SPEED)
         if beam:
             zl = (x0 == x1) & (y0 == y1)                   # (a piece of zero length: the spot at rest)
+            if len(L) > 1:                                 # (rests in one place, one after the other: one rest of the summed
+                nx_ = zl[1:] & zl[:-1] & (x0[1:] == x0[:-1]) & (y0[1:] == y0[:-1]) & (b[1:] == b[:-1]) & (np.abs(t0[1:] - (t0[:-1] + e[:-1] / 8.0)) <= 1.5)   #  time - the law is not additive)
+                if nx_.any():
+                    e = e.copy(); keep = np.ones(len(L), dtype=bool)
+                    for j in np.nonzero(nx_)[0][::-1]:      # (from the back: a run adds up into its first piece)
+                        e[j] += e[j + 1]; keep[j + 1] = False
+                    L = L[keep].copy(); L[:, 5] = e[keep]; b = b[keep]
+                    if col is not None: col = col[keep]
+                    x0, y0, x1, y1, e, t0 = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
+                    jo = np.zeros(len(L), dtype=np.int64); zl = (x0 == x1) & (y0 == y1)
         elif len(L) > 1:
             nh = (b & 256) == 0
             cont = ((np.abs(x0[1:] - x1[:-1]) <= 1.5) & (np.abs(y0[1:] - y1[:-1]) <= 1.5)
@@ -3312,8 +3357,12 @@ class GLBloomRenderer(GLRenderer):
         mq = 2.6 * sg + 1.0
         if beam:                                           # the spot's energy: the tube's light for the drive x cycles
             fwb = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth
-            sg = np.maximum(0.5, BEAM_TRACE_SG * fwb * gp / 2.355)
-            kk = np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT) * cyc / BEAM_TRACE_CSAT * gain * cgain
+            upx = gp / BT_UNITS                            # (window px a unit)
+            hal = (b & 256) != 0                           # (the glass's glow of a piece)
+            sg = np.maximum(0.5, BEAM_TRACE_SG * fwb * gp / 2.355 * float(os.environ.get('VX_BT_SPOT', BT_SPOT)))
+            sg = np.where(hal, BT_HALO_S * upx, sg)
+            kk = (bt_light(np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT), lp / upx, cyc)
+                  / (2.0 * math.pi * (sg / upx) ** 2) * np.where(hal, BT_HALO_F, 1.0 - BT_HALO_F) * gain * cgain / BT_KMAX)   # (a rest's peak for that light: the shader spreads it)
             kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
             mq = 3.5 * sg + 1.0
         moved = lp > 1e-3
@@ -3978,7 +4027,10 @@ class GLBloomRenderer(GLRenderer):
     def _sat(self, tex, wb=(1.0, 1.0, 1.0)):
         """the beam trace's energy (tex) as light, into the bound frame buffer (SAT_SHADER; wb: crisp, the white balance)"""
         self.UseProgram(self.satprog); self.Uniform1i(self.u_sat['tex'], 0)
-        self.Uniform1f(self.u_sat['k'], BEAM_TRACE_GAIN); self.Uniform3f(self.u_sat['wb'], *wb)
+        ex = float(os.environ.get('VX_BT_EXPO', BT_EXPO))    # (the exposure: light -> the screen; VX_BT_EXPO: tests)
+        ex *= float(os.environ.get('VX_BT_SPOT', BT_SPOT))   # (a wider spot: its peak lower - the reference line stays at white)
+        if self.vlook(): ex /= (LOOK_VSH if getattr(self, 'hdr_hk', 1.0) > 1.0 else LOOK_VS)   # (the tone step scales the light back)
+        self.Uniform1f(self.u_sat['k'], ex * BT_KMAX); self.Uniform3f(self.u_sat['wb'], *wb)
         self.Uniform3f(self.u_sat['wbc'], *(self._wbc() if tuple(wb) != (1.0, 1.0, 1.0) else wb))
         self._quad(tex)
         self.UseProgram(0)
@@ -4411,7 +4463,7 @@ class GLBloomRenderer(GLRenderer):
         self.UseProgram(0)
         gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
         g = self._wb(); gm = max(g)                                # the halo: the white balance's hue, at full
-        self._quad(self.B1[0], g[0] / gm, g[1] / gm, g[2] / gm, self.bloom * (LOOK_GB if self.vlook() and self.hdr_hk <= 1.0 else 1.0))   #  strength (the cores stay white: cold)
+        self._quad(self.B1[0], g[0] / gm, g[1] / gm, g[2] / gm, (float(os.environ.get('VX_BT_BLOOM', 0.0)) if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog') else self.bloom * (LOOK_GB if self.vlook() and self.hdr_hk <= 1.0 else 1.0)))   # (the beam on the phosphor: the glass's glow is in the light itself - BT_HALO_F)   #  strength (the cores stay white: cold)
         if hx or hy:
             gl.glMatrixMode(GL_MODELVIEW); gl.glPopMatrix()
         ov = getattr(self, 'overlay', None)

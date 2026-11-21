@@ -585,8 +585,11 @@ BEAM_HALO_W, BEAM_HALO_K, BEAM_HALO_C = 1.6, 0.014, 18.0  # FWHM (game px), brig
 # a resting spot (the owner's Dot Test photos, 2026-11-21, ProRAW; as the core, libretro_vx.c): as wide as the line at
 # its intensity, its light growing with the rest - A = DOT_A x DOT_T x ln(1 + cycles / DOT_T) times the line's peak (0.8x
 # at 4 cycles, 2.9x at 16, 7x at 48, 13.5x at 128) - never wider; round it a faint glow (REST_HALO of that light, FWHM
-# REST_HALO_W game px). Shots alike, a double shot as one of the summed time; joints and corners as isolated dots
-DOT_K, DOT_A, DOT_T, REST_HALO, REST_HALO_W = 3.0, 0.209, 52.0, 0.005, 1.3
+# REST_HALO_W game px, its light ^ REST_HALO_P). Shots alike, a double shot as one of the summed time; joints and corners as
+# isolated dots. Per look (0 Bright, 1 Vectrex: the lines' light differs), each matched to the photos' dot sizes in this
+# renderer (F12 snapshots at the window's size: within 0.12 unit on average in Bright, 0.14 in Vectrex)
+DOT_A, DOT_T = 0.209, 52.0
+DOT_K, DOT_W, REST_HALO, REST_HALO_W, REST_HALO_P = (1.2, 3.0), (1.4, 1.6), (0.06, 0.12), (0.9, 0.9), 0.8
 def dot_light(cyc):
     if _np is not None and hasattr(cyc, '__len__'):  # (the frame's arrays, _build_np)
         return DOT_A * DOT_T * _np.log1p(_np.asarray(cyc, dtype=float) / DOT_T)
@@ -598,7 +601,6 @@ def dot_light(cyc):
 LOOK_EE, LOOK_EQ, LOOK_EC = 1.4, 0.31, 6.0
 LOOK_VS, LOOK_VSH, LOOK_GB = 0.29, 0.48, 1.3   # (the PC's light before the tone step is higher than the core's: matched on Full Grid Test, 1.00 vs 0.99)
 LOOK_TRAIL, LOOK_TRAIL_HDR = 2.1, 1.25
-DOT_W = 1.6
 # a resting spot: a piece where the beam moved slower than REST_SPEED units a cycle on average (the spot's lag brings it
 # to rest gradually - the last fraction of a unit is the rest; lines are drawn at 1 unit a cycle and more). Drawn
 # where the spot came to rest
@@ -3263,8 +3265,9 @@ class GLBloomRenderer(GLRenderer):
         rest = ~halo & ~moving
         kk = np.zeros(n)
         if halo.any():
-            fw = np.where(halo, REST_HALO_W * zw * cwidth, fw)
-            kk = np.where(halo, getattr(self, 'halo_k', BEAM_HALO_K) / BEAM_HALO_K * (REST_HALO * dot_light(cyc)) ** (1 / 2.2), kk)
+            lk = int(self.vlook())
+            fw = np.where(halo, REST_HALO_W[lk] * zw * cwidth, fw)
+            kk = np.where(halo, getattr(self, 'halo_k', BEAM_HALO_K) / BEAM_HALO_K * (REST_HALO[lk] * dot_light(cyc)) ** REST_HALO_P, kk)
         if getattr(self, 'even_beam', False):
             kk = np.where(halo, kk, BEAM_LINE)
         else:
@@ -3274,11 +3277,11 @@ class GLBloomRenderer(GLRenderer):
             if self.vlook():                               # (the Vectrex look: a slow line brighter by the beam's time)
                 kk = np.where(moving & (ee > LOOK_EE), kk * np.minimum(np.maximum(ee, LOOK_EE) / LOOK_EE, LOOK_EC) ** LOOK_EQ, kk)
             if rest.any():
-                kk = np.where(rest, DOT_K * getattr(self, 'dot_k', 1.0) * dot_light(cyc) ** (1 / 2.2), kk)
+                kk = np.where(rest, DOT_K[int(self.vlook())] * getattr(self, 'dot_k', 1.0) * dot_light(cyc) ** (1 / 2.2), kk)
                 rd = np.maximum(0.0, (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT))
                 zdot = (0.55 + 0.45 * BEAM_LOWZ) * rd ** BEAM_DOTLOWP
                 zk = np.where(rest & (zi < BEAM_LOWZ), np.maximum(zk, zdot * np.minimum(1.0, cyc / BEAM_DOTLOWC)), zk)
-                fw = np.where(rest, fw * DOT_W, fw)       # (brighter with the time, not wider)
+                fw = np.where(rest, fw * DOT_W[int(self.vlook())], fw)   # (brighter with the time, not wider)
                 dw = rest & ((b & 512) != 0)
                 if dw.any():                               # (a dwell: soft while short, see REST_DWELL_C)
                     wd = np.minimum(1.0, cyc / REST_DWELL_C)
@@ -3442,8 +3445,9 @@ class GLBloomRenderer(GLRenderer):
             zk, zw = beam_z(zi)
             fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth    # thin, a little fuller when brighter
             if b & 256:                                    # a resting spot's halo (see BEAM_HALO_W)
-                fw = REST_HALO_W * zw * cwidth
-                k = getattr(self, 'halo_k', BEAM_HALO_K) / BEAM_HALO_K * float(REST_HALO * dot_light(cyc)) ** (1 / 2.2)
+                lk = int(self.vlook())
+                fw = REST_HALO_W[lk] * zw * cwidth
+                k = getattr(self, 'halo_k', BEAM_HALO_K) / BEAM_HALO_K * float(REST_HALO[lk] * dot_light(cyc)) ** REST_HALO_P
             elif getattr(self, 'even_beam', False):       # an ideal display: lines and points alike
                 k = BEAM_LINE
             elif not zlen:
@@ -3451,10 +3455,10 @@ class GLBloomRenderer(GLRenderer):
                 k = BEAM_LINE * (1.0 - BEAM_SPEED * exp(-e / 0.8))   # fast sweeps slightly fainter
                 if e > LOOK_EE and self.vlook(): k *= min(e / LOOK_EE, LOOK_EC) ** LOOK_EQ   # (the Vectrex look)
             else:                                          # the beam resting: a spot
-                k = DOT_K * getattr(self, 'dot_k', 1.0) * float(dot_light(cyc)) ** (1 / 2.2)   # (the Dot Test photos)
+                k = DOT_K[int(self.vlook())] * getattr(self, 'dot_k', 1.0) * float(dot_light(cyc)) ** (1 / 2.2)   # (the Dot Test photos)
                 if zi < BEAM_LOWZ:                         # a long rest crosses the cutoff earlier (beam_zdot)
                     zk = max(zk, beam_zdot(zi) * min(1.0, cyc / BEAM_DOTLOWC))
-                fw *= DOT_W                                # (brighter with the time, not wider)
+                fw *= DOT_W[int(self.vlook())]             # (brighter with the time, not wider)
                 if b & 512:                                # (a dwell: soft while short, see REST_DWELL_C)
                     wd = min(1.0, cyc / REST_DWELL_C)
                     k *= wd ** 2.5; fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd)

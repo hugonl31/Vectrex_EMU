@@ -1413,17 +1413,19 @@ static double hdr_rest (double cyc)
 /* per look (0 Bright, 1 Vectrex - the lines' light differs): the spot's peak (display value) for A = 1, its width (the line's
  * x DOT_W: the photos' camera widens the line more than ours), the glow's share and FWHM - each matched to the photos' dot
  * sizes (Bright: within 0.12 unit on average, Vectrex 0.11) */
-static const double DOT_K[2] = { 1.2, 3.0 }, DOT_W[2] = { 1.4, 1.6 }, DOT_HALO[2] = { 0.003, 0.005 }, DOT_HALO_W[2] = { 1.3, 1.3 };
+static const double DOT_K[2] = { 1.5, 3.0 }, DOT_W[2] = { 1.4, 1.6 }, DOT_HALO[2] = { 0.003, 0.005 }, DOT_HALO_W[2] = { 1.3, 1.3 };
 #define DOT_A 0.209
 #define DOT_T 52.0
-static double dot_light (double cyc) { return DOT_A * DOT_T * log (1.0 + cyc / DOT_T); }
+static double dot_light (double cyc) { return cyc > 0 ? DOT_A * DOT_T * log (1.0 + cyc / DOT_T) : 0; }
+#define DOT_C0 9.0                      /* a rest joined to a lit line (a joint, a corner): the beam slows into it - this many cycles
+                                           less (the photos: a 16-cycle corner 1.3x the line, an isolated 16-cycle dot 2.9x) */
+#define DOT_WL 1.5                      /* the spot's width grows from the line's to DOT_W x up to this light (x the 7F line's):
+                                           a faint or short rest a slight thickening, a bright long one a dot */
 #define REST_SPEED 0.5                  /* slower than this (units a cycle): the spot at rest */
 #define REST_DWELL_SLOW 0.6             /* the dwell inside a stroke (vecrender.py dwell_rests) */
 #define REST_DWELL_D0 3.0
 #define REST_DWELL_MAX 30.0
 #define REST_DWELL_TAU 12.0
-#define REST_DWELL_C 28.0
-#define REST_DWELL_SOFT 1.5
 #define REST_DWELL_HALO 20.0
 #define BEAM_LOWZ 0.5                   /* below this intensity the spot narrows (x LOWW at 0) */
 #define BEAM_LOWW 0.45
@@ -1446,7 +1448,8 @@ static double zk_tab[128];              /* the tube's light for each intensity, 
 
 /* the lines being built: the frame's (or two frames' mixed: Smooth motion), with the resting spots and halos added */
 typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; } wline;   /* (b: intensity | 128 fade
-                                                                                         | 256 halo | 512 dwell) */
+                                                                                         | 256 halo | 512 dwell | 1024 a rest
+                                                                                         joined to a lit line: a joint, a corner) */
 #define NW (MAXL * 3)
 static wline W1[NW], W2[NW];
 /* a piece in picture pixels: the segment (run on past an open end), the ends of its own box, the cuts, the spot */
@@ -2288,11 +2291,23 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 	/* the halos (corner glow) round the long rests: drawn as pieces of their own */
 	static unsigned char zl[NW], jo[NW], halo[NW];
 	int nhalo = 0;
+	for (int i = 0; i < n; i++) {                 /* a rest joined to a lit line (a joint, a corner): 1024 */
+		wline *l = &L[i]; l->b &= ~1024;
+		if (sqrt ((l->x1 - l->x0) * (l->x1 - l->x0) + (l->y1 - l->y0) * (l->y1 - l->y0)) > REST_SPEED * l->cyc) continue;
+		for (int d = -1; d <= 1; d += 2) {
+			const int j = i + d; if (j < 0 || j >= n) continue;
+			const wline *m = &L[j]; if (!(m->b & 127) || (m->b & 128)) continue;
+			if (sqrt ((m->x1 - m->x0) * (m->x1 - m->x0) + (m->y1 - m->y0) * (m->y1 - m->y0)) <= REST_SPEED * m->cyc) continue;
+			const double ex = d < 0 ? m->x1 : m->x0, ey = d < 0 ? m->y1 : m->y0, et = d < 0 ? m->t + m->cyc : m->t, lt = d < 0 ? l->t : l->t + l->cyc;
+			if (fabs (ex - (d < 0 ? l->x0 : l->x1)) <= 0.5 * GAME_PX && fabs (ey - (d < 0 ? l->y0 : l->y1)) <= 0.5 * GAME_PX && fabs (et - lt) <= 2.0) { l->b |= 1024; break; }
+		}
+		if (l->b & 512) l->b |= 1024;
+	}
 	if (opt_halo) {
 		for (int i = 0; i < n; i++) {
 			const wline *l = &L[i]; double ln = sqrt ((l->x1 - l->x0) * (l->x1 - l->x0) + (l->y1 - l->y0) * (l->y1 - l->y0));
 			if (ln <= REST_SPEED * l->cyc && l->cyc >= 8.0 && (l->b & 127) && !((l->b & 512) && l->cyc < REST_DWELL_HALO) && n + nhalo < NW) {
-				W2[nhalo] = *l; W2[nhalo].b = (l->b & 127) | 256; nhalo++; }
+				W2[nhalo] = *l; W2[nhalo].b = (l->b & (127 | 1024)) | 256; nhalo++; }
 		}
 		if (nhalo) { memmove (L + nhalo, L, sizeof (wline) * (n < NW - nhalo ? n : NW - nhalo)); memcpy (L, W2, sizeof (wline) * nhalo); n += nhalo; if (n > NW) n = NW; }
 	}
@@ -2333,7 +2348,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		const double lp = sqrt ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 		if (halo[i]) {
 			fw = DOT_HALO_W[dlk] * zw / bk * pw_width;    /* (the glass's scatter: not the beam option's) */
-			kk = pow (DOT_HALO[dlk] * dot_light (cyc), 1 / 2.2); dot = 1;   /* (as a display value, as the lines' light) */
+			kk = pow (DOT_HALO[dlk] * dot_light ((l->b & 1024) ? cyc - DOT_C0 : cyc), 1 / 2.2); dot = 1;   /* (as a display value, as the lines' light) */
 		} else if (!zl[i]) {
 			double ee = lp > 1e-9 ? cyc / (lp / gp) : 1e9;
 			kk = opt_speedb ? BEAM_LINE * (1.0 - BEAM_SPEED * exp (-ee / 0.8)) : BEAM_LINE * (1.0 - 0.5 * BEAM_SPEED);
@@ -2342,14 +2357,15 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		} else if (!opt_dots) {                   /* (corner dots off: the resting spot as faint as a line's) */
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
-			kk = DOT_K[dlk] * pow (dot_light (cyc), 1 / 2.2); dot = 1;
+			const double ce = (l->b & 1024) ? cyc - DOT_C0 : cyc, al = dot_light (ce);   /* (joined: the beam slows into it - DOT_C0 less) */
+			kk = DOT_K[dlk] * pow (al, 1 / 2.2); dot = 1;
 			{ extern float vx_hdr_lift, vx_hdr_dk, vx_hdr_dx; if (vx_hdr_lift > 1.5f && vx_hdr_peak > 1.0f) { kk *= vx_hdr_dk; if (vx_hdr_peak > 1.0f) hx = hdr_rest (rest_cyc (L, n, i, zl, halo)) * zk * zk * vx_hdr_dx; }
 			  else if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk; }   /* (the Vectrex look, HDR: the dots above the lines in their own channel - the lines keep the lower part) */   /* (HDR: above white, the rest's own light - with the slow beam round it) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
-			fw *= DOT_W[dlk];                          /* (its width: the line's x DOT_W - brighter with the time, not wider) */
-			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
-				kk *= pow (wd, 2.5); hx *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
+			{ const double lr = al * TUBE_LIGHT[z] / DOT_WL;   /* (its width: the line's, up to DOT_W x with its light - a faint or
+			                                                  short rest a slight thickening, a bright long one a dot) */
+			  fw *= 1.0 + (DOT_W[dlk] - 1.0) * (lr < 1 ? lr : 1); }
 		}
 		kk *= zk * BEAM_PEAK * PHOS_GAIN * pw_gain * up_light * (L[i].wq / 255.0);   /* (up_light: the high voltage's light, unit.c) */
 		if ((l->b & 128) && !web) kk *= BEAM_FADE;

@@ -9420,7 +9420,7 @@ class App:
         g = (0.40, 0.667, 0.533)
         idle = self.run.paused or not self.run.power or self.run.frames < 50   # (a new game's first second: --)
         rate = ('0%' if self.run.paused and self.run.power else '--') if idle else '%d%%' % self.speed_shown()   # (paused: 0 %, green)
-        vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('MONITOR', '%d HZ' % round(self.disp_fps), g),
+        vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('OUTPUT', '%d FPS' % round(self.disp_fps), g),
                 ('EMU RATE', rate, g if idle else self.speed_color(2))]
         # (the same rows for every system - a UVMC2 or a PiTrex too: the CPU / GPU meters below them tell the load)
         if getattr(self, 'net_osd', True) and self.net_busy():  # (online: the other player's state)
@@ -9465,7 +9465,7 @@ class App:
                 del h[:-10]
             if TEST_LOG: print('speed %.2f %%  game %.1f fps  screen %.1f Hz' % (self.speed, self.fps, self.disp_fps), flush=True)
             idle = self.run.paused or not self.run.power
-            self.num_a.configure(text='%d FPS  %d HZ  G-SYNC %s  ' % (round(self.fps), round(self.disp_fps),
+            self.num_a.configure(text='%d INT  %d FPS  G-SYNC %s  ' % (round(self.fps), round(self.disp_fps),
                                                                       'ON' if self.vrr else 'OFF'))
             self.num_speed.configure(text=('0%' if self.run.paused and self.run.power else '--') if idle else '%d%%' % self.speed_shown(),
                                      fg='#6a8' if idle else self.speed_color(1))

@@ -1020,8 +1020,8 @@ it does not, or a TV or projector reports it wrong, set **Display > Monitor size
 inches; right click: as the monitor reports it). Check it with a ruler: an overlay should be 162 mm wide
 and 207 mm high. On macOS and Linux set the monitor size first.
 
-**On-screen display** (Display strip, default on): INTERNAL (the game's frames per second), MONITOR
-(the screen's refresh), EMU RATE (green 100 %, orange / red when the PC cannot keep up), VOL, and
+**On-screen display** (Display strip, default on): INTERNAL (the game's frames per second), OUTPUT
+(the pictures per second the PC gets to the screen: the screen's refresh rate when it keeps up), EMU RATE (green 100 %, orange / red when the PC cannot keep up), VOL, and
 SPEECH VOL when a speech module is plugged in - below the picture on the left.
 
 ### Quality: for any PC

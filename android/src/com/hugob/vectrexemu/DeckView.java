@@ -93,7 +93,7 @@ final class DeckView extends View {
 		else {
 			int pct = 100; try { pct = Integer.parseInt (emu.replaceAll ("[^0-9]", "")); } catch (Exception e) { }
 			int ec = !Character.isDigit (emu.isEmpty () ? 'x' : emu.charAt (0)) || pct >= 97 ? Main.G : pct >= 80 ? Main.CHG : 0xffed5454;
-			String f = power != 0 ? fps + "  " + hz + "  " : "-- FPS  -- HZ  ", e = power != 0 ? emu : "--";   /* (the core's figures carry their units: "50 FPS", "60 HZ") */
+			String f = power != 0 ? fps + "  " + hz + "  " : "-- INT  -- FPS  ", e = power != 0 ? emu : "--";   /* (the core's figures carry their units: "50 INT", "60 FPS") */
 			float y0 = full ? rs.top + 14 * d : rs.centerY (), sp = full ? 12 : 11;
 			txt.setTextSize (sp * d); float w1 = txt.measureText (f), w2 = txt.measureText (e), k = Math.min (1f, (rs.width () - 12 * d) / (w1 + w2));
 			txt.setTextSize (sp * d * k); w1 = txt.measureText (f); w2 = txt.measureText (e); float x = rs.centerX () - (w1 + w2) / 2;

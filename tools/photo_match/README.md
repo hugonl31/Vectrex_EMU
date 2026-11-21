@@ -331,3 +331,23 @@ Four DNGs (1/50 s, f/1.48, ISO 64, focus on the left). All 15 rows a page by a p
 Proposed (tests, nothing default): VT_SRMODEL=1 (VT_SRD0 3), lag 13.3 in 3 stages (VT_DEFLAGN=3), VT_RAMPDLY=0,2,3,
 VT_ZDELAY=1, VT_XYZDLY=3,3,8. Owed: the renderer's light (dwell^p by intensity, hits add, a resting dot wider not
 brighter, the slow start's light) - without it the BIOS's corners cannot look like the tube's; fractional delays.
+
+## The light law in the PC's beam-trace renderer (2026-11-22): `lawfit.py`, `bt2_check.py`, `bt2_meas.py`, `pcany.py`
+
+- Read again: the Photo Test's page 4 line is a slow one (Draw_Line_d, 16 units at scale $7F: 8.3 cycles a unit). A
+  20-cycle dot = 2.0 units of THAT line, and its peak (0.44-0.49) is a line's of that dwell (page 1: 0.42 at 16.6 cycles
+  a unit) - **the dot follows the lines' law, with the dwell taken over the spot's footprint (~1 unit)**; "wider, not
+  brighter" was a wrong reading. The line's peak grows with the dwell (0.058 -> 0.65, x 11 from 1 to 33 cycles a unit),
+  its width hardly (6.4-8.8 px).
+- The law (`vecrender.py` BT2_*, `bt2_light`): the measured light a unit against the dwell at $30 / $40 / $5F / $7F as a
+  table (log-log, between intensities by the drive), by intensity at 8.3 cycles a unit 0.022 / 0.12 / 0.51 / 0.76 / 1.
+  `bt2_prepare`: along every run of lit pieces the beam's cycles within 1 unit of a place = its dwell; a long piece
+  gives its ends as pieces of their own, a run's ends get a cap. Separate runs add. VX_BT_LAW=1: the law before.
+- Rendered (beam trace, the proposed timing, low exposure, measured as the photos): page 1 light by speed / the second
+  row $7F 1.33 1.58 2.04 2.42 3.13 5.42 9.51 (tube 1.32 1.60 2.06 2.43 3.18 5.51 9.78), $40 1.44 1.89 2.64 3.30 4.56 8.02
+  13.5 (1.44 1.89 2.67 3.33 4.63 8.19 13.7); page 4 lines by intensity 0.116 / 0.56 / 0.75 / 1, a dot = 1.6-2.0 units of
+  its line (2.0); page 10, the square's corner dot 5.8 x the line (tube 5), the line's end rising to 1.4 (1.4).
+  Still off: the tube's line starts brighter for longer (1.3-1.5 x over ~3 units, ours 1.1 after 2.5), the dip before
+  the corner dot is missing, the dot is rounder / smaller than the tube's (10.5 x 7.6 px against a 6.2 px line).
+- `testcart/compare/photo_p10_vlp_beam.png`: the photo next to it. Tests switch the tube's warm-up off (`pcany.py`).
+Owed: the same law in the core's GPU renderer (phones, RetroArch); Corner / Gap Test and Vectorblade in beam trace.

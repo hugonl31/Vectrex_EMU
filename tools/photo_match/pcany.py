@@ -14,6 +14,10 @@ V.Core.frame_send = frame_send
 args = argparse.Namespace(rom=rom, height_mm=0, scale=1.0, tk=False, fullscreen=False, ideal=False, demo=0, net_host=None, net_join=None, net_online=False)
 V.vecrender.set_dpi_aware()
 V.App.save_settings = lambda self, *a, **k: None      # (tests never save the settings)
+import time as _time
+def _warm(self, off_for=0.0):                             # (tests: the tube warm at once - no fade-in, no bulge)
+    self.crt_on_t = _time.perf_counter() - 100.0; self.crt_fade = 0.3; self.crt_bulge = 0.0
+V.App.crt_on = _warm
 app = V.App(args); app.root.iconify()
 def _back():
     try: ctypes.windll.user32.SetForegroundWindow(_FG)
@@ -43,5 +47,5 @@ def press(k):
     if k >= presses: app.root.after(wait, snap); return
     BTN[0] = btn
     app.root.after(400, lambda: (BTN.__setitem__(0, 0), app.root.after(600, lambda: press(k + 1))))
-app.root.after(5000, lambda: press(0))
+app.root.after(int(os.environ.get("WARM_MS", "5000")), lambda: press(0))   # (the warm-up is off: _warm)
 app.root.mainloop()

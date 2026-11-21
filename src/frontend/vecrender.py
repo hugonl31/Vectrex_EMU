@@ -948,6 +948,84 @@ def bt_light(tl, l, t):
     az = _np.maximum(0.0, (BT_A + BT_B * BT_UREF) * tl - BT_B * BT_UREF * iz)
     tau = t * BT_W / (l + BT_W)
     return az * (l + BT_WF) + (l + BT_W) / BT_W * BT_B * BT_D0 * _np.log1p(iz * tau / BT_D0)
+# The law as the Photo Test measured it (2026-11-21, f/4, unclipped; tools/photo_match README): the light a unit of line
+# against the beam's dwell there (cycles a unit) at intensities $30 / $40 / $5F / $7F (BT2_L, one scale; ~dwell^0.65 at
+# $7F and ^0.9 at $40 up to 8 cycles a unit, ^0.8 beyond at every intensity), by intensity at 8.3 cycles a unit
+# $30 / $3F / $5F / $6F / $7F = 0.022 / 0.12 / 0.51 / 0.76 / 1 (BT2_TLK: against TUBE_LIGHT). A resting dot of 20 cycles has
+# the light of 2.0 units of the 8.3 line and the peak of a line that slow: the same law with the dwell taken over the
+# spot's footprint (BT2_W units). So: along each run of lit pieces the beam's time within BT2_W of every place gives
+# its dwell, the law its light - a rest, a slow start, a line's end follow; separate runs add (measured: repeats and
+# crossings add). VX_BT_LAW=1: the law before (bt_light)
+BT2_W = 1.0
+BT2_D = _np.log(_np.array([1.048, 1.386, 2.080, 2.773, 4.159, 5.546, 8.319, 16.64, 33.28, 48.0, 128.0, 1024.0]))
+def _bt2_row(v, k=1.0):
+    v = [x * k for x in v]; v += [v[-1] * (48.0 / 33.28) ** 0.8]; v += [v[-1] * (128.0 / 48.0) ** 0.64]; v += [v[-1] * 8.0 ** 0.3]   # (rests: lag_test / Dot Test - flattening)
+    return _np.log(_np.array(v))
+BT2_Z = _np.array([48.0, 64.0, 95.0, 127.0])
+BT2_L = _np.stack([_bt2_row([0.0333, 0.0428, 0.0619, 0.08, 0.11, 0.14, 0.21, 0.40, 0.73], 0.194), _bt2_row([0.21, 0.27, 0.39, 0.51, 0.72, 0.90, 1.25, 2.21, 3.70], 0.194),
+                   _bt2_row([0.24, 0.30, 0.41, 0.50, 0.66, 0.79, 1.05, 1.79, 3.20]), _bt2_row([0.49, 0.59, 0.78, 0.94, 1.21, 1.43, 1.87, 3.24, 5.75])])
+BT2_K = 1.054 / 0.647                       # (the reference line - 1.59 cycles a unit, $7F - keeps its light: the exposure stands)
+BT2_TLK = ((0.0, 0.25), (48.0, 0.25), (63.0, 0.48), (95.0, 0.76), (111.0, 0.89), (127.0, 1.0), (255.0, 1.0))   # (the Photo Test's page 4 / TUBE_LIGHT)
+def _bt2_tl(q):
+    return _np.interp(q, _np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT) * _np.interp(q, [a_ for a_, b_ in BT2_TLK], [b_ for a_, b_ in BT2_TLK])
+def bt2_light(z, d):
+    """the light a unit of path: z = the drive (intensity steps, arrays), d = the dwell there (cycles a unit)"""
+    z = _np.asarray(z, dtype=float); ld = _np.log(_np.maximum(d, 1e-3))
+    j = _np.clip(_np.searchsorted(BT2_D, ld) - 1, 0, len(BT2_D) - 2); f = (ld - BT2_D[j]) / (BT2_D[j + 1] - BT2_D[j])   # (below the first: its slope on)
+    rows = BT2_L[:, j] + (BT2_L[:, j + 1] - BT2_L[:, j]) * f          # (4 x n: each intensity's curve at d)
+    zc = _np.clip(z, BT2_Z[0], BT2_Z[-1]); i = _np.clip(_np.searchsorted(BT2_Z, zc) - 1, 0, len(BT2_Z) - 2); g = (zc - BT2_Z[i]) / (BT2_Z[i + 1] - BT2_Z[i])
+    n = _np.arange(len(ld)); out = _np.exp(rows[i, n] + (rows[i + 1, n] - rows[i, n]) * g)
+    out = _np.where(z < BT2_Z[0], out * _bt2_tl(z) / _bt2_tl(BT2_Z[0]), out); out = _np.where(z > BT2_Z[-1], out * _bt2_tl(z) / _bt2_tl(BT2_Z[-1]), out)
+    return BT2_K * out
+def bt2_prepare(L, col=None):
+    """the beam's pieces (rows x0 y0 x1 y1 flags energy t0, in time) -> the pieces to draw and each one's light: along
+    every run of lit pieces that join in place and time the dwell at a place = the beam's cycles within BT2_W of it
+    (along the path) / BT2_W; a long piece gives its two ends (BT2_W / 2) as pieces of their own; a run's two ends get a
+    cap (zero length, the footprint's half beyond the end)"""
+    np = _np; U = 134.0; W = BT2_W
+    b = L[:, 4].astype(np.int64); z = (b & 127).astype(float)
+    lit = (z > 0) & ((b & 128) == 0)
+    x0, y0, x1, y1, t0 = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 6]; t = L[:, 5] / 8.0
+    l = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2) / U
+    out_rows, out_light, out_src = [], [], []
+    o = np.nonzero(~lit)[0]                                # (the others - the dark beam's glow, fades: piece by piece)
+    if len(o):
+        out_rows.append(L[o]); out_light.append((l[o] + W) * bt2_light(z[o], t[o] / (l[o] + W))); out_src.append(o)
+    k = np.nonzero(lit)[0]
+    if len(k):
+        X0, Y0, X1, Y1, T0, T, Ln, Z, B = x0[k], y0[k], x1[k], y1[k], t0[k], t[k], l[k], z[k], b[k]; n = len(k)
+        cont = np.zeros(n, dtype=bool)
+        if n > 1:
+            cont[1:] = ((np.abs(X0[1:] - X1[:-1]) <= 3.0) & (np.abs(Y0[1:] - Y1[:-1]) <= 3.0) & (np.abs(T0[1:] - (T0[:-1] + T[:-1])) <= 1.5) & (B[1:] == B[:-1]) & (k[1:] == k[:-1] + 1))
+        gap = np.where(cont, 0.0, 4.0 * W); S0 = np.cumsum(gap + np.concatenate([[0.0], Ln[:-1]])); S1 = S0 + Ln
+        Tc = np.concatenate([[0.0], np.cumsum(T)[:-1]])
+        xs = np.empty(2 * n); ys = np.empty(2 * n); xs[0::2] = S0; xs[1::2] = S1; ys[0::2] = Tc; ys[1::2] = Tc + T
+        def t_hi(s):                                       # (the beam's cycles up to s, a rest at s counted)
+            i = np.clip(np.searchsorted(xs, s, side='right') - 1, 0, 2 * n - 2); dxs = xs[i + 1] - xs[i]
+            v = ys[i] + np.where(dxs > 1e-9, np.clip((s - xs[i]) / np.where(dxs > 1e-9, dxs, 1.0), 0.0, 1.0), 0.0) * (ys[i + 1] - ys[i])
+            return np.where(s >= xs[-1], ys[-1], np.where(s < xs[0], ys[0], v))
+        def t_lo(s):                                       # (.. a rest at s not counted)
+            i = np.clip(np.searchsorted(xs, s, side='left'), 1, 2 * n - 1); dxs = xs[i] - xs[i - 1]
+            v = ys[i - 1] + np.where(dxs > 1e-9, np.clip((s - xs[i - 1]) / np.where(dxs > 1e-9, dxs, 1.0), 0.0, 1.0), 1.0) * (ys[i] - ys[i - 1])
+            return np.where(s <= xs[0], ys[0], np.where(s > xs[-1], ys[-1], v))
+        dwell = lambda s: (t_hi(s + W / 2) - t_lo(s - W / 2)) / W
+        mv = Ln > 1e-6; lg = mv & (Ln > 1.5 * W)
+        def emit(m, f0, f1):                               # (the pieces m from the share f0 to f1 of their length)
+            sm = S0[m] + Ln[m] * (f0 + f1) / 2.0; R = np.empty((int(m.sum()), 7))
+            R[:, 0] = X0[m] + (X1[m] - X0[m]) * f0; R[:, 1] = Y0[m] + (Y1[m] - Y0[m]) * f0; R[:, 2] = X0[m] + (X1[m] - X0[m]) * f1; R[:, 3] = Y0[m] + (Y1[m] - Y0[m]) * f1
+            R[:, 4] = B[m]; R[:, 5] = T[m] * (f1 - f0) * 8.0; R[:, 6] = T0[m] + T[m] * f0
+            out_rows.append(R); out_light.append(Ln[m] * (f1 - f0) * bt2_light(Z[m], dwell(sm))); out_src.append(k[m])
+        sh = mv & ~lg
+        if sh.any(): emit(sh, 0.0, 1.0)
+        if lg.any():
+            h = (W / 2) / Ln[lg]; emit(lg, 0.0, h); emit(lg, h, 1.0 - h); emit(lg, 1.0 - h, 1.0)
+        first = ~cont; last = np.concatenate([~cont[1:], [True]])
+        for m, px, py, s, tt in ((first, X0, Y0, S0 - W / 4, T0), (last, X1, Y1, S1 + W / 4, T0 + T)):
+            R = np.empty((int(m.sum()), 7)); R[:, 0] = R[:, 2] = px[m]; R[:, 1] = R[:, 3] = py[m]; R[:, 4] = B[m]; R[:, 5] = 8.0; R[:, 6] = tt[m]
+            out_rows.append(R); out_light.append((W / 2) * bt2_light(Z[m], dwell(s[m]))); out_src.append(k[m])
+    if not out_rows: return L[:0], np.zeros(0), (col[:0] if col is not None else None)
+    src = np.concatenate(out_src)
+    return np.concatenate(out_rows), np.concatenate(out_light), (col[src] if col is not None else None)
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_SPOT = 1.85                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
@@ -3231,6 +3309,9 @@ class GLBloomRenderer(GLRenderer):
         if len(b) and not getattr(self, 'beam_trace', False):   # (rests joined to lines: see DOT_C0)
             b = mark_joined(L[:, 0], L[:, 1], L[:, 2], L[:, 3], b, L[:, 5], L[:, 6]); L[:, 4] = b
         beam = bool(getattr(self, 'beam_trace', False)) and hasattr(self, 'satprog')
+        bl = None
+        if beam and os.environ.get('VX_BT_LAW', '2') != '1' and len(L):   # (the measured law: bt2_prepare)
+            L, bl, col = bt2_prepare(L, col); b = L[:, 4].astype(np.int64)
         if beam:                                           # (no joins or rest rules: the light does it; the glass's glow: every
             hm = ((b & 127) != 0) & ((b & 128) == 0)       #  lit piece once more, wide and faint - bit 256)
             if hm.any() and BT_HALO_F > 0:
@@ -3238,6 +3319,7 @@ class GLBloomRenderer(GLRenderer):
                 L = np.concatenate([H, L]); b = L[:, 4].astype(np.int64)
                 if col is not None:
                     col = np.concatenate([col[hm], col])
+                if bl is not None: bl = np.concatenate([bl[hm], bl])
         elif getattr(self, 'halo_on', True) and not getattr(self, 'even_beam', False):
             hm = (np.sqrt((L[:, 2] - L[:, 0]) ** 2 + (L[:, 3] - L[:, 1]) ** 2) <= REST_SPEED * L[:, 5] / 8.0) & (L[:, 5] >= 64) & ((b & 127) != 0) & ~(((b & 512) != 0) & (L[:, 5] < 8.0 * REST_DWELL_HALO))
             if hm.any():                                   # (the resting spots' halos, drawn first)
@@ -3251,7 +3333,7 @@ class GLBloomRenderer(GLRenderer):
         zl = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2) <= REST_SPEED * e / 8.0     # (resting spots: see REST_SPEED)
         if beam:
             zl = (x0 == x1) & (y0 == y1)                   # (a piece of zero length: the spot at rest)
-            if len(L) > 1:                                 # (rests in one place, one after the other: one rest of the summed
+            if len(L) > 1 and bl is None:                                 # (rests in one place, one after the other: one rest of the summed
                 nx_ = zl[1:] & zl[:-1] & (x0[1:] == x0[:-1]) & (y0[1:] == y0[:-1]) & (b[1:] == b[:-1]) & (np.abs(t0[1:] - (t0[:-1] + e[:-1] / 8.0)) <= 1.5)   #  time - the law is not additive)
                 if nx_.any():
                     e = e.copy(); keep = np.ones(len(L), dtype=bool)
@@ -3287,6 +3369,7 @@ class GLBloomRenderer(GLRenderer):
         same = zl[idx]                                    # (a resting spot: where the spot came to rest)
         x0 = np.where(same, x1, x0); y0 = np.where(same, y1, y0)
         e = e[idx] / mm
+        if bl is not None: bl = bl[idx] / mm
         t0 = t0[idx] + (L[idx, 5] / 8.0) * (i - 1) / mm
         b = b[idx]
         op = np.where(i > 1, 1, jo[idx] & 1) | np.where(i < mm, 2, jo[idx] & 2) | np.where(same, 4, 0)
@@ -3372,7 +3455,7 @@ class GLBloomRenderer(GLRenderer):
             sg = np.maximum(0.5, BEAM_TRACE_SG * fwb * gp / 2.355 * float(os.environ.get('VX_BT_SPOT', BT_SPOT)))
             _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F, BT_HALO_S)).split(',')]   # (tests)
             sg = np.where(hal, _hs * upx, sg)
-            kk = (bt_light(np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT), lp / upx, cyc)
+            kk = ((bl if bl is not None else bt_light(np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT), lp / upx, cyc))
                   / (2.0 * math.pi * (sg / upx) ** 2) * np.where(hal, _hf, 1.0 - _hf) * gain * cgain / BT_KMAX)   # (a rest's peak for that light: the shader spreads it)
             kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
             mq = 3.5 * sg + 1.0

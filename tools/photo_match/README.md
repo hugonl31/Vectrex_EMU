@@ -209,3 +209,20 @@ roundness matches (cut / leg 0.124 / 0.104 / 0.091 / 0.064 / 0.054 / 0.030) but 
 photo (dip index 0.09-0.19 against 0.06-0.17) and the dots at the small scales are missing: the BIOS's short pieces (6-13
 cycles) behave as if the spot were 2-3 cycles earlier than the long hand-timed lines say. Open: whether a short move
 settles faster than a long one (the Settle Test's lines are 24-48 cycles) - a page with ramps of 6-13 cycles is owed.
+
+## The Short Test's photos (2026-11-21, 22:xx): `sh1.py` (the tube), `sh2.py` (the core), `st6.py` (X and Y together)
+
+- **A short move settles as a long one**: the travel still to come K cycles after RAMP off, ramps of 6 / 8 / 10 / 13 cycles
+  ($7F): K 5: 4.82 / 6.37 / 7.43 / 8.45, K 12: 2.70 / 3.35 / 3.72 / 4.19, K 20: 0.96 / 1.16 / 1.22 / 1.34 - what the long line's curve
+  (9.36 / 4.07 / 1.13) gives for a ramp that short (the long curve less itself L cycles later: 4.7 / 2.5 / 0.8 for L 6), if
+  anything a little MORE to come, not less. The same at four speeds (page 4: $40 / $60 / $7F within 0.3 cycles). The spot's
+  response is linear - no faster settling for the BIOS's short pieces.
+- Timer 1 with N = 6-13 (page 3): as page 1's curves 1.5-2.2 cycles later, as the Timer Test's long lines.
+- In my hand-timed X lines the X speed is written a cycle after RAMP on: the line does not move until it arrives.
+  `st6.py` (X and Y in px, the scales free, stop - start 2 from the Switch Test's page 1): **the X speed arrives 2.2 cycles
+  after the RAMP's start**; Y in all 11.0-11.6 cycles behind after a start, 13.0-13.6 after a stop; the split between a
+  pure delay and lag stages is NOT settled by these lines (1 stage: start 2.3, lag 9.4; 2: -1.6, 12.7; 3: -4.3, 15.3 - all
+  0.36-0.40 cycles rms): only the corners' roundness by rest tells them apart (it wants the stages).
+- Found on the way, in the core: a 16-bit store to the VIA (STX / STY / STD <$00) writes both bytes in the instruction's
+  last cycle; a 6809 writes the first one (port B: RAMP, the mux) a cycle earlier. Every cart of mine switches RAMP that
+  way, the BIOS mostly with 8-bit writes: a cycle of the mismatch between the hand-timed lines and the BIOS's. To fix.

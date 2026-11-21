@@ -12,9 +12,10 @@ Page 2  X STEP  RAMP on throughout, the Y speed constant: the X speed steps 0 ->
 Page 3  X / RAMP a corner with a long rest (RAMP off 32 cycles) and the X flip written K cycles after RAMP off (top row:
                 K = -12 ... +16) or K cycles after RAMP on again (bottom row: K = -12 ... +12): if the turn starts before
                 the stop the corner is round and the dot sits down the second leg; if after, sharp with the dot on the tip.
-Page 4  DECAY   a dot that moves one step to the right every frame (16 positions, then again): the places it left glow on -
-                the phosphor's decay in 20 ms steps. Dots resting 64 and 16 cycles at intensity $7F, $5F, $40; a short line
-                at $7F and $5F. Photograph at 1/25 s (two frames: two fresh positions and the trail).
+Page 4  DECAY   dots travelling at known speeds: every frame one step to the right (then again from the left); the places a
+                dot left glow on. Rows 1-3: a dot resting 64 cycles at intensity $7F, 8 / 16 / 24 units a frame (400 / 800 /
+                1200 units a second); rows 4-6 at 16 units a frame: resting 16 cycles at $7F, 64 cycles at $5F and at $40;
+                rows 7-8: a short line at $7F and $5F, 16 units a frame. Photograph at 1/25 s (two frames).
 """
 import os
 import make_dot_test as D
@@ -127,26 +128,34 @@ def emit_page3():
         w('; a corner, RAMP off %d cycles: the X flip %+d cycles after RAMP on again' % (P3_R, k))
         corner(k, True, 0x00, -0x60 + i * 0x1F)
 
-P4_STEPS = 16                                           # positions a row; one step a frame: the trail's ages 20, 40 ... 300 ms
-P4_ROWS = [(0x7F, 64, 0x58), (0x7F, 16, 0x40), (0x5F, 64, 0x28), (0x5F, 16, 0x10), (0x40, 64, -0x08), (0x40, 16, -0x20)]   # intensity, rest (cycles), y
-P4_LINES = [(0x7F, -0x40), (0x5F, -0x58)]              # a short vertical line stepping likewise: intensity, y
+# page 4: Frame = 0 .. 29; a row's dot is at (Frame mod P) x S units from the left - S units a frame (50 frames a second)
+P4_ROWS = [(0x7F, 64, 8, 30, 0x58), (0x7F, 64, 16, 15, 0x44), (0x7F, 64, 24, 10, 0x30),      # intensity, rest (cycles), S (units a frame), P (positions), y
+           (0x7F, 16, 16, 15, 0x1C), (0x5F, 64, 16, 15, 0x08), (0x40, 64, 16, 15, -0x0C)]
+P4_LINES = [(0x7F, 16, 15, -0x30), (0x5F, 16, 15, -0x4C)]   # a short vertical line stepping likewise: intensity, S, P, y
+P4_X0 = -0x78
+def p4_pos(S, P):
+    """A = 0, B = (Frame mod P) x S / 2: the move at scale $FF (units x 2)"""
+    w('        lda     Frame')
+    for k in range(30 // P - 1):
+        w('        cmpa    #%d' % P); w('        blo     *+4'); w('        suba    #%d' % P)
+    w('        ldb     #%d' % (S // 2)); w('        mul'); w('        clra')
 def emit_page4():
-    """a dot that moves one step to the right every frame (and starts again): the positions it left glow on - the
-    phosphor's decay at 20 ms steps. Frame = $C881 (0 .. P4_STEPS - 1)"""
-    w('        lda     Frame'); w('        inca'); w('        cmpa    #%d' % P4_STEPS); w('        blo     P4f'); w('        clra')
+    """dots travelling at known speeds: every frame one step to the right (and again from the left): the places a dot left
+    glow on - the trail's length = the speed x the time the phosphor stays visible; its light by place = the decay at
+    20 ms steps. Frame = $C881 (0 .. 29)"""
+    w('        lda     Frame'); w('        inca'); w('        cmpa    #30'); w('        blo     P4f'); w('        clra')
     w('P4f:    sta     Frame')
-    for z, n, y in P4_ROWS:
-        w('; a dot resting %d cycles at intensity $%02X, one step a frame' % (n, z))
-        row_start(z, y, -0x70)
+    for z, n, S, P, y in P4_ROWS:
+        w('; a dot resting %d cycles at intensity $%02X, %d units a frame (%d positions)' % (n, z, S, P))
+        row_start(z, y, P4_X0)
         w('        lda     #$FF'); w('        sta     <$04                ; scale $FF: units x 2')
-        w('        lda     Frame'); w('        ldb     #7'); w('        mul'); w('        clra')
-        w('        jsr     Moveto_d            ; (Frame x 14 units to the right)')
+        p4_pos(S, P); w('        jsr     Moveto_d')
         hand_on(); D.dot(n); hand_off()
-    for z, y in P4_LINES:
-        w('; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $%02X, one step a frame' % z)
-        row_start(z, y, -0x70)
+    for z, S, P, y in P4_LINES:
+        w('; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $%02X, %d units a frame' % (z, S))
+        row_start(z, y, P4_X0)
         w('        lda     #$FF'); w('        sta     <$04')
-        w('        lda     Frame'); w('        ldb     #7'); w('        mul'); w('        clra'); w('        jsr     Moveto_d')
+        p4_pos(S, P); w('        jsr     Moveto_d')
         w('        lda     #$7F'); w('        sta     <$04'); w('        ldd     #$0800'); w('        jsr     Draw_Line_d')
 
 if __name__ == '__main__':
@@ -173,7 +182,7 @@ if __name__ == '__main__':
     w(''); w('Page3:'); emit_page3()
     text('L3A', 0x6C, -0x68); text('L3B', 0x14, -0x68); text('T3', -0x68, -0x50); w('        lbra    Main')
     w(''); w('Page4:'); emit_page4()
-    text('L4', 0x6C, -0x70); text('T4', -0x70, -0x50); w('        lbra    Main')
+    text('L4', 0x6C, -0x78); text('T4', -0x70, -0x50); w('        lbra    Main')
     w('')
     def s(label, t):
         w('%-7s fcc     "%s"' % (label, t)); w('        fcb     $80')
@@ -185,8 +194,8 @@ if __name__ == '__main__':
     s('L3A', 'FLIP AT OFF %d TO %d' % (P3_K1[0], P3_K1[-1]))
     s('L3B', 'FLIP AT ON %d TO %d' % (P3_K2[0], P3_K2[-1]))
     s('T3', '3 X VS RAMP')
-    s('L4', '7F 5F 40 X 64 16  LINES')
-    s('T4', '4 DECAY 20MS STEPS')
+    s('L4', 'SPEED 8 16 24 A FRAME')
+    s('T4', '4 DECAY')
     here = os.path.dirname(os.path.abspath(__file__))
     if '--pack' in os.sys.argv:
         raw = open(os.path.join(here, 'switch_test_raw.bin'), 'rb').read(); assert len(raw) <= 32768, len(raw)

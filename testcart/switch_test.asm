@@ -2399,25 +2399,25 @@ Page3:
 Page4:
         lda     Frame
         inca
-        cmpa    #16
+        cmpa    #30
         blo     P4f
         clra
 P4f:    sta     Frame
-; a dot resting 64 cycles at intensity $7F, one step a frame
+; a dot resting 64 cycles at intensity $7F, 8 units a frame (30 positions)
         jsr     Reset0Ref
         lda     #$7F
         jsr     Intensity_a
         lda     #$7F
         sta     <$04                ; scale $7F for the move
-        ldd     #$5890
+        ldd     #$5888
         jsr     Moveto_d
         lda     #$FF
         sta     <$04                ; scale $FF: units x 2
         lda     Frame
-        ldb     #7
+        ldb     #4
         mul
         clra
-        jsr     Moveto_d            ; (Frame x 14 units to the right)
+        jsr     Moveto_d
         lda     #$81
         sta     <$00                ; ramp off, mux off
         clr     <$0B                ; ACR: RAMP and /BLANK by hand
@@ -2457,21 +2457,141 @@ P4f:    sta     Frame
         stb     <$0C                ; beam off: 64 cycles
         lda     #$98
         sta     <$0B                ; ACR back for the BIOS
-; a dot resting 16 cycles at intensity $7F, one step a frame
+; a dot resting 64 cycles at intensity $7F, 16 units a frame (15 positions)
         jsr     Reset0Ref
         lda     #$7F
         jsr     Intensity_a
         lda     #$7F
         sta     <$04                ; scale $7F for the move
-        ldd     #$4090
+        ldd     #$4488
         jsr     Moveto_d
         lda     #$FF
         sta     <$04                ; scale $FF: units x 2
         lda     Frame
-        ldb     #7
+        cmpa    #15
+        blo     *+4
+        suba    #15
+        ldb     #8
         mul
         clra
-        jsr     Moveto_d            ; (Frame x 14 units to the right)
+        jsr     Moveto_d
+        lda     #$81
+        sta     <$00                ; ramp off, mux off
+        clr     <$0B                ; ACR: RAMP and /BLANK by hand
+        lda     #$EE
+        ldb     #$CE
+        sta     <$0C                ; beam on
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        stb     <$0C                ; beam off: 64 cycles
+        lda     #$98
+        sta     <$0B                ; ACR back for the BIOS
+; a dot resting 64 cycles at intensity $7F, 24 units a frame (10 positions)
+        jsr     Reset0Ref
+        lda     #$7F
+        jsr     Intensity_a
+        lda     #$7F
+        sta     <$04                ; scale $7F for the move
+        ldd     #$3088
+        jsr     Moveto_d
+        lda     #$FF
+        sta     <$04                ; scale $FF: units x 2
+        lda     Frame
+        cmpa    #10
+        blo     *+4
+        suba    #10
+        cmpa    #10
+        blo     *+4
+        suba    #10
+        ldb     #12
+        mul
+        clra
+        jsr     Moveto_d
+        lda     #$81
+        sta     <$00                ; ramp off, mux off
+        clr     <$0B                ; ACR: RAMP and /BLANK by hand
+        lda     #$EE
+        ldb     #$CE
+        sta     <$0C                ; beam on
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        stb     <$0C                ; beam off: 64 cycles
+        lda     #$98
+        sta     <$0B                ; ACR back for the BIOS
+; a dot resting 16 cycles at intensity $7F, 16 units a frame (15 positions)
+        jsr     Reset0Ref
+        lda     #$7F
+        jsr     Intensity_a
+        lda     #$7F
+        sta     <$04                ; scale $7F for the move
+        ldd     #$1C88
+        jsr     Moveto_d
+        lda     #$FF
+        sta     <$04                ; scale $FF: units x 2
+        lda     Frame
+        cmpa    #15
+        blo     *+4
+        suba    #15
+        ldb     #8
+        mul
+        clra
+        jsr     Moveto_d
         lda     #$81
         sta     <$00                ; ramp off, mux off
         clr     <$0B                ; ACR: RAMP and /BLANK by hand
@@ -2487,21 +2607,24 @@ P4f:    sta     Frame
         stb     <$0C                ; beam off: 16 cycles
         lda     #$98
         sta     <$0B                ; ACR back for the BIOS
-; a dot resting 64 cycles at intensity $5F, one step a frame
+; a dot resting 64 cycles at intensity $5F, 16 units a frame (15 positions)
         jsr     Reset0Ref
         lda     #$5F
         jsr     Intensity_a
         lda     #$7F
         sta     <$04                ; scale $7F for the move
-        ldd     #$2890
+        ldd     #$0888
         jsr     Moveto_d
         lda     #$FF
         sta     <$04                ; scale $FF: units x 2
         lda     Frame
-        ldb     #7
+        cmpa    #15
+        blo     *+4
+        suba    #15
+        ldb     #8
         mul
         clra
-        jsr     Moveto_d            ; (Frame x 14 units to the right)
+        jsr     Moveto_d
         lda     #$81
         sta     <$00                ; ramp off, mux off
         clr     <$0B                ; ACR: RAMP and /BLANK by hand
@@ -2541,51 +2664,24 @@ P4f:    sta     Frame
         stb     <$0C                ; beam off: 64 cycles
         lda     #$98
         sta     <$0B                ; ACR back for the BIOS
-; a dot resting 16 cycles at intensity $5F, one step a frame
-        jsr     Reset0Ref
-        lda     #$5F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04                ; scale $7F for the move
-        ldd     #$1090
-        jsr     Moveto_d
-        lda     #$FF
-        sta     <$04                ; scale $FF: units x 2
-        lda     Frame
-        ldb     #7
-        mul
-        clra
-        jsr     Moveto_d            ; (Frame x 14 units to the right)
-        lda     #$81
-        sta     <$00                ; ramp off, mux off
-        clr     <$0B                ; ACR: RAMP and /BLANK by hand
-        lda     #$EE
-        ldb     #$CE
-        sta     <$0C                ; beam on
-        nop
-        nop
-        nop
-        nop
-        nop
-        nop
-        stb     <$0C                ; beam off: 16 cycles
-        lda     #$98
-        sta     <$0B                ; ACR back for the BIOS
-; a dot resting 64 cycles at intensity $40, one step a frame
+; a dot resting 64 cycles at intensity $40, 16 units a frame (15 positions)
         jsr     Reset0Ref
         lda     #$40
         jsr     Intensity_a
         lda     #$7F
         sta     <$04                ; scale $7F for the move
-        ldd     #$F890
+        ldd     #$F488
         jsr     Moveto_d
         lda     #$FF
         sta     <$04                ; scale $FF: units x 2
         lda     Frame
-        ldb     #7
+        cmpa    #15
+        blo     *+4
+        suba    #15
+        ldb     #8
         mul
         clra
-        jsr     Moveto_d            ; (Frame x 14 units to the right)
+        jsr     Moveto_d
         lda     #$81
         sta     <$00                ; ramp off, mux off
         clr     <$0B                ; ACR: RAMP and /BLANK by hand
@@ -2625,48 +2721,21 @@ P4f:    sta     Frame
         stb     <$0C                ; beam off: 64 cycles
         lda     #$98
         sta     <$0B                ; ACR back for the BIOS
-; a dot resting 16 cycles at intensity $40, one step a frame
-        jsr     Reset0Ref
-        lda     #$40
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04                ; scale $7F for the move
-        ldd     #$E090
-        jsr     Moveto_d
-        lda     #$FF
-        sta     <$04                ; scale $FF: units x 2
-        lda     Frame
-        ldb     #7
-        mul
-        clra
-        jsr     Moveto_d            ; (Frame x 14 units to the right)
-        lda     #$81
-        sta     <$00                ; ramp off, mux off
-        clr     <$0B                ; ACR: RAMP and /BLANK by hand
-        lda     #$EE
-        ldb     #$CE
-        sta     <$0C                ; beam on
-        nop
-        nop
-        nop
-        nop
-        nop
-        nop
-        stb     <$0C                ; beam off: 16 cycles
-        lda     #$98
-        sta     <$0B                ; ACR back for the BIOS
-; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $7F, one step a frame
+; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $7F, 16 units a frame
         jsr     Reset0Ref
         lda     #$7F
         jsr     Intensity_a
         lda     #$7F
         sta     <$04                ; scale $7F for the move
-        ldd     #$C090
+        ldd     #$D088
         jsr     Moveto_d
         lda     #$FF
         sta     <$04
         lda     Frame
-        ldb     #7
+        cmpa    #15
+        blo     *+4
+        suba    #15
+        ldb     #8
         mul
         clra
         jsr     Moveto_d
@@ -2674,18 +2743,21 @@ P4f:    sta     Frame
         sta     <$04
         ldd     #$0800
         jsr     Draw_Line_d
-; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $5F, one step a frame
+; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $5F, 16 units a frame
         jsr     Reset0Ref
         lda     #$5F
         jsr     Intensity_a
         lda     #$7F
         sta     <$04                ; scale $7F for the move
-        ldd     #$A890
+        ldd     #$B488
         jsr     Moveto_d
         lda     #$FF
         sta     <$04
         lda     Frame
-        ldb     #7
+        cmpa    #15
+        blo     *+4
+        suba    #15
+        ldb     #8
         mul
         clra
         jsr     Moveto_d
@@ -2701,7 +2773,7 @@ P4f:    sta     Frame
         lda     #$7F
         sta     <$04
         ldu     #L4
-        ldd     #$6C90
+        ldd     #$6C88
         jsr     Print_Str_d
         ldd     #$F836
         std     Vec_Text_HW
@@ -2731,7 +2803,7 @@ L3B     fcc     "FLIP AT ON -12 TO 12"
         fcb     $80
 T3      fcc     "3 X VS RAMP"
         fcb     $80
-L4      fcc     "7F 5F 40 X 64 16  LINES"
+L4      fcc     "SPEED 8 16 24 A FRAME"
         fcb     $80
-T4      fcc     "4 DECAY 20MS STEPS"
+T4      fcc     "4 DECAY"
         fcb     $80

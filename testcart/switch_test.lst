@@ -950,7 +950,7 @@
 0545 BDF2AB           (  switch_test.asm):00948                 jsr     Intensity_a
 0548 867F             (  switch_test.asm):00949                 lda     #$7F
 054A 9704             (  switch_test.asm):00950                 sta     <$04
-054C CE10F4           (  switch_test.asm):00951                 ldu     #L1A
+054C CE1154           (  switch_test.asm):00951                 ldu     #L1A
 054F CC6890           (  switch_test.asm):00952                 ldd     #$6890
 0552 BDF37A           (  switch_test.asm):00953                 jsr     Print_Str_d
 0555 CCF836           (  switch_test.asm):00954                 ldd     #$F836
@@ -960,7 +960,7 @@
 0560 BDF2AB           (  switch_test.asm):00958                 jsr     Intensity_a
 0563 867F             (  switch_test.asm):00959                 lda     #$7F
 0565 9704             (  switch_test.asm):00960                 sta     <$04
-0567 CE1105           (  switch_test.asm):00961                 ldu     #L1B
+0567 CE1165           (  switch_test.asm):00961                 ldu     #L1B
 056A CCE090           (  switch_test.asm):00962                 ldd     #$E090
 056D BDF37A           (  switch_test.asm):00963                 jsr     Print_Str_d
 0570 CCF836           (  switch_test.asm):00964                 ldd     #$F836
@@ -970,7 +970,7 @@
 057B BDF2AB           (  switch_test.asm):00968                 jsr     Intensity_a
 057E 867F             (  switch_test.asm):00969                 lda     #$7F
 0580 9704             (  switch_test.asm):00970                 sta     <$04
-0582 CE1126           (  switch_test.asm):00971                 ldu     #T1
+0582 CE1186           (  switch_test.asm):00971                 ldu     #T1
 0585 CC98B0           (  switch_test.asm):00972                 ldd     #$98B0
 0588 BDF37A           (  switch_test.asm):00973                 jsr     Print_Str_d
 058B 16FA93           (  switch_test.asm):00974                 lbra    Main
@@ -1343,7 +1343,7 @@
 07DF BDF2AB           (  switch_test.asm):01341                 jsr     Intensity_a
 07E2 867F             (  switch_test.asm):01342                 lda     #$7F
 07E4 9704             (  switch_test.asm):01343                 sta     <$04
-07E6 CE112D           (  switch_test.asm):01344                 ldu     #L2
+07E6 CE118D           (  switch_test.asm):01344                 ldu     #L2
 07E9 CC70A0           (  switch_test.asm):01345                 ldd     #$70A0
 07EC BDF37A           (  switch_test.asm):01346                 jsr     Print_Str_d
 07EF CCF836           (  switch_test.asm):01347                 ldd     #$F836
@@ -1353,7 +1353,7 @@
 07FA BDF2AB           (  switch_test.asm):01351                 jsr     Intensity_a
 07FD 867F             (  switch_test.asm):01352                 lda     #$7F
 07FF 9704             (  switch_test.asm):01353                 sta     <$04
-0801 CE1149           (  switch_test.asm):01354                 ldu     #T2
+0801 CE11A9           (  switch_test.asm):01354                 ldu     #T2
 0804 CC98B0           (  switch_test.asm):01355                 ldd     #$98B0
 0807 BDF37A           (  switch_test.asm):01356                 jsr     Print_Str_d
 080A 16F814           (  switch_test.asm):01357                 lbra    Main
@@ -2373,7 +2373,7 @@
 0E7A BDF2AB           (  switch_test.asm):02371                 jsr     Intensity_a
 0E7D 867F             (  switch_test.asm):02372                 lda     #$7F
 0E7F 9704             (  switch_test.asm):02373                 sta     <$04
-0E81 CE1152           (  switch_test.asm):02374                 ldu     #L3A
+0E81 CE11B2           (  switch_test.asm):02374                 ldu     #L3A
 0E84 CC6C98           (  switch_test.asm):02375                 ldd     #$6C98
 0E87 BDF37A           (  switch_test.asm):02376                 jsr     Print_Str_d
 0E8A CCF836           (  switch_test.asm):02377                 ldd     #$F836
@@ -2383,7 +2383,7 @@
 0E95 BDF2AB           (  switch_test.asm):02381                 jsr     Intensity_a
 0E98 867F             (  switch_test.asm):02382                 lda     #$7F
 0E9A 9704             (  switch_test.asm):02383                 sta     <$04
-0E9C CE1168           (  switch_test.asm):02384                 ldu     #L3B
+0E9C CE11C8           (  switch_test.asm):02384                 ldu     #L3B
 0E9F CC1498           (  switch_test.asm):02385                 ldd     #$1498
 0EA2 BDF37A           (  switch_test.asm):02386                 jsr     Print_Str_d
 0EA5 CCF836           (  switch_test.asm):02387                 ldd     #$F836
@@ -2393,7 +2393,7 @@
 0EB0 BDF2AB           (  switch_test.asm):02391                 jsr     Intensity_a
 0EB3 867F             (  switch_test.asm):02392                 lda     #$7F
 0EB5 9704             (  switch_test.asm):02393                 sta     <$04
-0EB7 CE117D           (  switch_test.asm):02394                 ldu     #T3
+0EB7 CE11DD           (  switch_test.asm):02394                 ldu     #T3
 0EBA CC98B0           (  switch_test.asm):02395                 ldd     #$98B0
 0EBD BDF37A           (  switch_test.asm):02396                 jsr     Print_Str_d
 0EC0 16F15E           (  switch_test.asm):02397                 lbra    Main
@@ -2401,25 +2401,25 @@
 0EC3                  (  switch_test.asm):02399         Page4:
 0EC3 B6C881           (  switch_test.asm):02400                 lda     Frame
 0EC6 4C               (  switch_test.asm):02401                 inca
-0EC7 8110             (  switch_test.asm):02402                 cmpa    #16
+0EC7 811E             (  switch_test.asm):02402                 cmpa    #30
 0EC9 2501             (  switch_test.asm):02403                 blo     P4f
 0ECB 4F               (  switch_test.asm):02404                 clra
 0ECC B7C881           (  switch_test.asm):02405         P4f:    sta     Frame
-                      (  switch_test.asm):02406         ; a dot resting 64 cycles at intensity $7F, one step a frame
+                      (  switch_test.asm):02406         ; a dot resting 64 cycles at intensity $7F, 8 units a frame (30 positions)
 0ECF BDF354           (  switch_test.asm):02407                 jsr     Reset0Ref
 0ED2 867F             (  switch_test.asm):02408                 lda     #$7F
 0ED4 BDF2AB           (  switch_test.asm):02409                 jsr     Intensity_a
 0ED7 867F             (  switch_test.asm):02410                 lda     #$7F
 0ED9 9704             (  switch_test.asm):02411                 sta     <$04                ; scale $7F for the move
-0EDB CC5890           (  switch_test.asm):02412                 ldd     #$5890
+0EDB CC5888           (  switch_test.asm):02412                 ldd     #$5888
 0EDE BDF312           (  switch_test.asm):02413                 jsr     Moveto_d
 0EE1 86FF             (  switch_test.asm):02414                 lda     #$FF
 0EE3 9704             (  switch_test.asm):02415                 sta     <$04                ; scale $FF: units x 2
 0EE5 B6C881           (  switch_test.asm):02416                 lda     Frame
-0EE8 C607             (  switch_test.asm):02417                 ldb     #7
+0EE8 C604             (  switch_test.asm):02417                 ldb     #4
 0EEA 3D               (  switch_test.asm):02418                 mul
 0EEB 4F               (  switch_test.asm):02419                 clra
-0EEC BDF312           (  switch_test.asm):02420                 jsr     Moveto_d            ; (Frame x 14 units to the right)
+0EEC BDF312           (  switch_test.asm):02420                 jsr     Moveto_d
 0EEF 8681             (  switch_test.asm):02421                 lda     #$81
 0EF1 9700             (  switch_test.asm):02422                 sta     <$00                ; ramp off, mux off
 0EF3 0F0B             (  switch_test.asm):02423                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
@@ -2459,297 +2459,367 @@
 0F19 D70C             (  switch_test.asm):02457                 stb     <$0C                ; beam off: 64 cycles
 0F1B 8698             (  switch_test.asm):02458                 lda     #$98
 0F1D 970B             (  switch_test.asm):02459                 sta     <$0B                ; ACR back for the BIOS
-                      (  switch_test.asm):02460         ; a dot resting 16 cycles at intensity $7F, one step a frame
+                      (  switch_test.asm):02460         ; a dot resting 64 cycles at intensity $7F, 16 units a frame (15 positions)
 0F1F BDF354           (  switch_test.asm):02461                 jsr     Reset0Ref
 0F22 867F             (  switch_test.asm):02462                 lda     #$7F
 0F24 BDF2AB           (  switch_test.asm):02463                 jsr     Intensity_a
 0F27 867F             (  switch_test.asm):02464                 lda     #$7F
 0F29 9704             (  switch_test.asm):02465                 sta     <$04                ; scale $7F for the move
-0F2B CC4090           (  switch_test.asm):02466                 ldd     #$4090
+0F2B CC4488           (  switch_test.asm):02466                 ldd     #$4488
 0F2E BDF312           (  switch_test.asm):02467                 jsr     Moveto_d
 0F31 86FF             (  switch_test.asm):02468                 lda     #$FF
 0F33 9704             (  switch_test.asm):02469                 sta     <$04                ; scale $FF: units x 2
 0F35 B6C881           (  switch_test.asm):02470                 lda     Frame
-0F38 C607             (  switch_test.asm):02471                 ldb     #7
-0F3A 3D               (  switch_test.asm):02472                 mul
-0F3B 4F               (  switch_test.asm):02473                 clra
-0F3C BDF312           (  switch_test.asm):02474                 jsr     Moveto_d            ; (Frame x 14 units to the right)
-0F3F 8681             (  switch_test.asm):02475                 lda     #$81
-0F41 9700             (  switch_test.asm):02476                 sta     <$00                ; ramp off, mux off
-0F43 0F0B             (  switch_test.asm):02477                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
-0F45 86EE             (  switch_test.asm):02478                 lda     #$EE
-0F47 C6CE             (  switch_test.asm):02479                 ldb     #$CE
-0F49 970C             (  switch_test.asm):02480                 sta     <$0C                ; beam on
-0F4B 12               (  switch_test.asm):02481                 nop
-0F4C 12               (  switch_test.asm):02482                 nop
-0F4D 12               (  switch_test.asm):02483                 nop
-0F4E 12               (  switch_test.asm):02484                 nop
-0F4F 12               (  switch_test.asm):02485                 nop
-0F50 12               (  switch_test.asm):02486                 nop
-0F51 D70C             (  switch_test.asm):02487                 stb     <$0C                ; beam off: 16 cycles
-0F53 8698             (  switch_test.asm):02488                 lda     #$98
-0F55 970B             (  switch_test.asm):02489                 sta     <$0B                ; ACR back for the BIOS
-                      (  switch_test.asm):02490         ; a dot resting 64 cycles at intensity $5F, one step a frame
-0F57 BDF354           (  switch_test.asm):02491                 jsr     Reset0Ref
-0F5A 865F             (  switch_test.asm):02492                 lda     #$5F
-0F5C BDF2AB           (  switch_test.asm):02493                 jsr     Intensity_a
-0F5F 867F             (  switch_test.asm):02494                 lda     #$7F
-0F61 9704             (  switch_test.asm):02495                 sta     <$04                ; scale $7F for the move
-0F63 CC2890           (  switch_test.asm):02496                 ldd     #$2890
-0F66 BDF312           (  switch_test.asm):02497                 jsr     Moveto_d
-0F69 86FF             (  switch_test.asm):02498                 lda     #$FF
-0F6B 9704             (  switch_test.asm):02499                 sta     <$04                ; scale $FF: units x 2
-0F6D B6C881           (  switch_test.asm):02500                 lda     Frame
-0F70 C607             (  switch_test.asm):02501                 ldb     #7
-0F72 3D               (  switch_test.asm):02502                 mul
-0F73 4F               (  switch_test.asm):02503                 clra
-0F74 BDF312           (  switch_test.asm):02504                 jsr     Moveto_d            ; (Frame x 14 units to the right)
-0F77 8681             (  switch_test.asm):02505                 lda     #$81
-0F79 9700             (  switch_test.asm):02506                 sta     <$00                ; ramp off, mux off
-0F7B 0F0B             (  switch_test.asm):02507                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
-0F7D 86EE             (  switch_test.asm):02508                 lda     #$EE
-0F7F C6CE             (  switch_test.asm):02509                 ldb     #$CE
-0F81 970C             (  switch_test.asm):02510                 sta     <$0C                ; beam on
-0F83 12               (  switch_test.asm):02511                 nop
-0F84 12               (  switch_test.asm):02512                 nop
-0F85 12               (  switch_test.asm):02513                 nop
-0F86 12               (  switch_test.asm):02514                 nop
-0F87 12               (  switch_test.asm):02515                 nop
-0F88 12               (  switch_test.asm):02516                 nop
-0F89 12               (  switch_test.asm):02517                 nop
-0F8A 12               (  switch_test.asm):02518                 nop
-0F8B 12               (  switch_test.asm):02519                 nop
-0F8C 12               (  switch_test.asm):02520                 nop
-0F8D 12               (  switch_test.asm):02521                 nop
-0F8E 12               (  switch_test.asm):02522                 nop
-0F8F 12               (  switch_test.asm):02523                 nop
-0F90 12               (  switch_test.asm):02524                 nop
-0F91 12               (  switch_test.asm):02525                 nop
-0F92 12               (  switch_test.asm):02526                 nop
-0F93 12               (  switch_test.asm):02527                 nop
-0F94 12               (  switch_test.asm):02528                 nop
-0F95 12               (  switch_test.asm):02529                 nop
-0F96 12               (  switch_test.asm):02530                 nop
-0F97 12               (  switch_test.asm):02531                 nop
-0F98 12               (  switch_test.asm):02532                 nop
-0F99 12               (  switch_test.asm):02533                 nop
-0F9A 12               (  switch_test.asm):02534                 nop
-0F9B 12               (  switch_test.asm):02535                 nop
-0F9C 12               (  switch_test.asm):02536                 nop
-0F9D 12               (  switch_test.asm):02537                 nop
-0F9E 12               (  switch_test.asm):02538                 nop
-0F9F 12               (  switch_test.asm):02539                 nop
-0FA0 12               (  switch_test.asm):02540                 nop
-0FA1 D70C             (  switch_test.asm):02541                 stb     <$0C                ; beam off: 64 cycles
-0FA3 8698             (  switch_test.asm):02542                 lda     #$98
-0FA5 970B             (  switch_test.asm):02543                 sta     <$0B                ; ACR back for the BIOS
-                      (  switch_test.asm):02544         ; a dot resting 16 cycles at intensity $5F, one step a frame
-0FA7 BDF354           (  switch_test.asm):02545                 jsr     Reset0Ref
-0FAA 865F             (  switch_test.asm):02546                 lda     #$5F
-0FAC BDF2AB           (  switch_test.asm):02547                 jsr     Intensity_a
-0FAF 867F             (  switch_test.asm):02548                 lda     #$7F
-0FB1 9704             (  switch_test.asm):02549                 sta     <$04                ; scale $7F for the move
-0FB3 CC1090           (  switch_test.asm):02550                 ldd     #$1090
-0FB6 BDF312           (  switch_test.asm):02551                 jsr     Moveto_d
-0FB9 86FF             (  switch_test.asm):02552                 lda     #$FF
-0FBB 9704             (  switch_test.asm):02553                 sta     <$04                ; scale $FF: units x 2
-0FBD B6C881           (  switch_test.asm):02554                 lda     Frame
-0FC0 C607             (  switch_test.asm):02555                 ldb     #7
-0FC2 3D               (  switch_test.asm):02556                 mul
-0FC3 4F               (  switch_test.asm):02557                 clra
-0FC4 BDF312           (  switch_test.asm):02558                 jsr     Moveto_d            ; (Frame x 14 units to the right)
-0FC7 8681             (  switch_test.asm):02559                 lda     #$81
-0FC9 9700             (  switch_test.asm):02560                 sta     <$00                ; ramp off, mux off
-0FCB 0F0B             (  switch_test.asm):02561                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
-0FCD 86EE             (  switch_test.asm):02562                 lda     #$EE
-0FCF C6CE             (  switch_test.asm):02563                 ldb     #$CE
-0FD1 970C             (  switch_test.asm):02564                 sta     <$0C                ; beam on
-0FD3 12               (  switch_test.asm):02565                 nop
-0FD4 12               (  switch_test.asm):02566                 nop
-0FD5 12               (  switch_test.asm):02567                 nop
-0FD6 12               (  switch_test.asm):02568                 nop
-0FD7 12               (  switch_test.asm):02569                 nop
-0FD8 12               (  switch_test.asm):02570                 nop
-0FD9 D70C             (  switch_test.asm):02571                 stb     <$0C                ; beam off: 16 cycles
-0FDB 8698             (  switch_test.asm):02572                 lda     #$98
-0FDD 970B             (  switch_test.asm):02573                 sta     <$0B                ; ACR back for the BIOS
-                      (  switch_test.asm):02574         ; a dot resting 64 cycles at intensity $40, one step a frame
-0FDF BDF354           (  switch_test.asm):02575                 jsr     Reset0Ref
-0FE2 8640             (  switch_test.asm):02576                 lda     #$40
-0FE4 BDF2AB           (  switch_test.asm):02577                 jsr     Intensity_a
-0FE7 867F             (  switch_test.asm):02578                 lda     #$7F
-0FE9 9704             (  switch_test.asm):02579                 sta     <$04                ; scale $7F for the move
-0FEB CCF890           (  switch_test.asm):02580                 ldd     #$F890
-0FEE BDF312           (  switch_test.asm):02581                 jsr     Moveto_d
-0FF1 86FF             (  switch_test.asm):02582                 lda     #$FF
-0FF3 9704             (  switch_test.asm):02583                 sta     <$04                ; scale $FF: units x 2
-0FF5 B6C881           (  switch_test.asm):02584                 lda     Frame
-0FF8 C607             (  switch_test.asm):02585                 ldb     #7
-0FFA 3D               (  switch_test.asm):02586                 mul
-0FFB 4F               (  switch_test.asm):02587                 clra
-0FFC BDF312           (  switch_test.asm):02588                 jsr     Moveto_d            ; (Frame x 14 units to the right)
-0FFF 8681             (  switch_test.asm):02589                 lda     #$81
-1001 9700             (  switch_test.asm):02590                 sta     <$00                ; ramp off, mux off
-1003 0F0B             (  switch_test.asm):02591                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
-1005 86EE             (  switch_test.asm):02592                 lda     #$EE
-1007 C6CE             (  switch_test.asm):02593                 ldb     #$CE
-1009 970C             (  switch_test.asm):02594                 sta     <$0C                ; beam on
-100B 12               (  switch_test.asm):02595                 nop
-100C 12               (  switch_test.asm):02596                 nop
-100D 12               (  switch_test.asm):02597                 nop
-100E 12               (  switch_test.asm):02598                 nop
-100F 12               (  switch_test.asm):02599                 nop
-1010 12               (  switch_test.asm):02600                 nop
-1011 12               (  switch_test.asm):02601                 nop
-1012 12               (  switch_test.asm):02602                 nop
-1013 12               (  switch_test.asm):02603                 nop
-1014 12               (  switch_test.asm):02604                 nop
-1015 12               (  switch_test.asm):02605                 nop
-1016 12               (  switch_test.asm):02606                 nop
-1017 12               (  switch_test.asm):02607                 nop
-1018 12               (  switch_test.asm):02608                 nop
-1019 12               (  switch_test.asm):02609                 nop
-101A 12               (  switch_test.asm):02610                 nop
-101B 12               (  switch_test.asm):02611                 nop
-101C 12               (  switch_test.asm):02612                 nop
-101D 12               (  switch_test.asm):02613                 nop
-101E 12               (  switch_test.asm):02614                 nop
-101F 12               (  switch_test.asm):02615                 nop
-1020 12               (  switch_test.asm):02616                 nop
-1021 12               (  switch_test.asm):02617                 nop
-1022 12               (  switch_test.asm):02618                 nop
-1023 12               (  switch_test.asm):02619                 nop
-1024 12               (  switch_test.asm):02620                 nop
-1025 12               (  switch_test.asm):02621                 nop
-1026 12               (  switch_test.asm):02622                 nop
-1027 12               (  switch_test.asm):02623                 nop
-1028 12               (  switch_test.asm):02624                 nop
-1029 D70C             (  switch_test.asm):02625                 stb     <$0C                ; beam off: 64 cycles
-102B 8698             (  switch_test.asm):02626                 lda     #$98
-102D 970B             (  switch_test.asm):02627                 sta     <$0B                ; ACR back for the BIOS
-                      (  switch_test.asm):02628         ; a dot resting 16 cycles at intensity $40, one step a frame
-102F BDF354           (  switch_test.asm):02629                 jsr     Reset0Ref
-1032 8640             (  switch_test.asm):02630                 lda     #$40
-1034 BDF2AB           (  switch_test.asm):02631                 jsr     Intensity_a
-1037 867F             (  switch_test.asm):02632                 lda     #$7F
-1039 9704             (  switch_test.asm):02633                 sta     <$04                ; scale $7F for the move
-103B CCE090           (  switch_test.asm):02634                 ldd     #$E090
-103E BDF312           (  switch_test.asm):02635                 jsr     Moveto_d
-1041 86FF             (  switch_test.asm):02636                 lda     #$FF
-1043 9704             (  switch_test.asm):02637                 sta     <$04                ; scale $FF: units x 2
-1045 B6C881           (  switch_test.asm):02638                 lda     Frame
-1048 C607             (  switch_test.asm):02639                 ldb     #7
-104A 3D               (  switch_test.asm):02640                 mul
-104B 4F               (  switch_test.asm):02641                 clra
-104C BDF312           (  switch_test.asm):02642                 jsr     Moveto_d            ; (Frame x 14 units to the right)
-104F 8681             (  switch_test.asm):02643                 lda     #$81
-1051 9700             (  switch_test.asm):02644                 sta     <$00                ; ramp off, mux off
-1053 0F0B             (  switch_test.asm):02645                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
-1055 86EE             (  switch_test.asm):02646                 lda     #$EE
-1057 C6CE             (  switch_test.asm):02647                 ldb     #$CE
-1059 970C             (  switch_test.asm):02648                 sta     <$0C                ; beam on
-105B 12               (  switch_test.asm):02649                 nop
-105C 12               (  switch_test.asm):02650                 nop
-105D 12               (  switch_test.asm):02651                 nop
-105E 12               (  switch_test.asm):02652                 nop
-105F 12               (  switch_test.asm):02653                 nop
-1060 12               (  switch_test.asm):02654                 nop
-1061 D70C             (  switch_test.asm):02655                 stb     <$0C                ; beam off: 16 cycles
-1063 8698             (  switch_test.asm):02656                 lda     #$98
-1065 970B             (  switch_test.asm):02657                 sta     <$0B                ; ACR back for the BIOS
-                      (  switch_test.asm):02658         ; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $7F, one step a frame
-1067 BDF354           (  switch_test.asm):02659                 jsr     Reset0Ref
-106A 867F             (  switch_test.asm):02660                 lda     #$7F
-106C BDF2AB           (  switch_test.asm):02661                 jsr     Intensity_a
-106F 867F             (  switch_test.asm):02662                 lda     #$7F
-1071 9704             (  switch_test.asm):02663                 sta     <$04                ; scale $7F for the move
-1073 CCC090           (  switch_test.asm):02664                 ldd     #$C090
-1076 BDF312           (  switch_test.asm):02665                 jsr     Moveto_d
-1079 86FF             (  switch_test.asm):02666                 lda     #$FF
-107B 9704             (  switch_test.asm):02667                 sta     <$04
-107D B6C881           (  switch_test.asm):02668                 lda     Frame
-1080 C607             (  switch_test.asm):02669                 ldb     #7
-1082 3D               (  switch_test.asm):02670                 mul
-1083 4F               (  switch_test.asm):02671                 clra
-1084 BDF312           (  switch_test.asm):02672                 jsr     Moveto_d
-1087 867F             (  switch_test.asm):02673                 lda     #$7F
-1089 9704             (  switch_test.asm):02674                 sta     <$04
-108B CC0800           (  switch_test.asm):02675                 ldd     #$0800
-108E BDF3DF           (  switch_test.asm):02676                 jsr     Draw_Line_d
-                      (  switch_test.asm):02677         ; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $5F, one step a frame
-1091 BDF354           (  switch_test.asm):02678                 jsr     Reset0Ref
-1094 865F             (  switch_test.asm):02679                 lda     #$5F
-1096 BDF2AB           (  switch_test.asm):02680                 jsr     Intensity_a
-1099 867F             (  switch_test.asm):02681                 lda     #$7F
-109B 9704             (  switch_test.asm):02682                 sta     <$04                ; scale $7F for the move
-109D CCA890           (  switch_test.asm):02683                 ldd     #$A890
-10A0 BDF312           (  switch_test.asm):02684                 jsr     Moveto_d
-10A3 86FF             (  switch_test.asm):02685                 lda     #$FF
-10A5 9704             (  switch_test.asm):02686                 sta     <$04
-10A7 B6C881           (  switch_test.asm):02687                 lda     Frame
-10AA C607             (  switch_test.asm):02688                 ldb     #7
-10AC 3D               (  switch_test.asm):02689                 mul
-10AD 4F               (  switch_test.asm):02690                 clra
-10AE BDF312           (  switch_test.asm):02691                 jsr     Moveto_d
-10B1 867F             (  switch_test.asm):02692                 lda     #$7F
-10B3 9704             (  switch_test.asm):02693                 sta     <$04
-10B5 CC0800           (  switch_test.asm):02694                 ldd     #$0800
-10B8 BDF3DF           (  switch_test.asm):02695                 jsr     Draw_Line_d
-10BB CCF836           (  switch_test.asm):02696                 ldd     #$F836
-10BE FDC82A           (  switch_test.asm):02697                 std     Vec_Text_HW
-10C1 BDF354           (  switch_test.asm):02698                 jsr     Reset0Ref
-10C4 865F             (  switch_test.asm):02699                 lda     #$5F
-10C6 BDF2AB           (  switch_test.asm):02700                 jsr     Intensity_a
-10C9 867F             (  switch_test.asm):02701                 lda     #$7F
-10CB 9704             (  switch_test.asm):02702                 sta     <$04
-10CD CE1189           (  switch_test.asm):02703                 ldu     #L4
-10D0 CC6C90           (  switch_test.asm):02704                 ldd     #$6C90
-10D3 BDF37A           (  switch_test.asm):02705                 jsr     Print_Str_d
-10D6 CCF836           (  switch_test.asm):02706                 ldd     #$F836
-10D9 FDC82A           (  switch_test.asm):02707                 std     Vec_Text_HW
-10DC BDF354           (  switch_test.asm):02708                 jsr     Reset0Ref
-10DF 865F             (  switch_test.asm):02709                 lda     #$5F
-10E1 BDF2AB           (  switch_test.asm):02710                 jsr     Intensity_a
-10E4 867F             (  switch_test.asm):02711                 lda     #$7F
-10E6 9704             (  switch_test.asm):02712                 sta     <$04
-10E8 CE11A1           (  switch_test.asm):02713                 ldu     #T4
-10EB CC90B0           (  switch_test.asm):02714                 ldd     #$90B0
-10EE BDF37A           (  switch_test.asm):02715                 jsr     Print_Str_d
-10F1 16EF2D           (  switch_test.asm):02716                 lbra    Main
-                      (  switch_test.asm):02717         
-10F4 52414D50204F4646 (  switch_test.asm):02718         L1A     fcc     "RAMP OFF 5 TO 48"
+0F38 810F             (  switch_test.asm):02471                 cmpa    #15
+0F3A 2502             (  switch_test.asm):02472                 blo     *+4
+0F3C 800F             (  switch_test.asm):02473                 suba    #15
+0F3E C608             (  switch_test.asm):02474                 ldb     #8
+0F40 3D               (  switch_test.asm):02475                 mul
+0F41 4F               (  switch_test.asm):02476                 clra
+0F42 BDF312           (  switch_test.asm):02477                 jsr     Moveto_d
+0F45 8681             (  switch_test.asm):02478                 lda     #$81
+0F47 9700             (  switch_test.asm):02479                 sta     <$00                ; ramp off, mux off
+0F49 0F0B             (  switch_test.asm):02480                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
+0F4B 86EE             (  switch_test.asm):02481                 lda     #$EE
+0F4D C6CE             (  switch_test.asm):02482                 ldb     #$CE
+0F4F 970C             (  switch_test.asm):02483                 sta     <$0C                ; beam on
+0F51 12               (  switch_test.asm):02484                 nop
+0F52 12               (  switch_test.asm):02485                 nop
+0F53 12               (  switch_test.asm):02486                 nop
+0F54 12               (  switch_test.asm):02487                 nop
+0F55 12               (  switch_test.asm):02488                 nop
+0F56 12               (  switch_test.asm):02489                 nop
+0F57 12               (  switch_test.asm):02490                 nop
+0F58 12               (  switch_test.asm):02491                 nop
+0F59 12               (  switch_test.asm):02492                 nop
+0F5A 12               (  switch_test.asm):02493                 nop
+0F5B 12               (  switch_test.asm):02494                 nop
+0F5C 12               (  switch_test.asm):02495                 nop
+0F5D 12               (  switch_test.asm):02496                 nop
+0F5E 12               (  switch_test.asm):02497                 nop
+0F5F 12               (  switch_test.asm):02498                 nop
+0F60 12               (  switch_test.asm):02499                 nop
+0F61 12               (  switch_test.asm):02500                 nop
+0F62 12               (  switch_test.asm):02501                 nop
+0F63 12               (  switch_test.asm):02502                 nop
+0F64 12               (  switch_test.asm):02503                 nop
+0F65 12               (  switch_test.asm):02504                 nop
+0F66 12               (  switch_test.asm):02505                 nop
+0F67 12               (  switch_test.asm):02506                 nop
+0F68 12               (  switch_test.asm):02507                 nop
+0F69 12               (  switch_test.asm):02508                 nop
+0F6A 12               (  switch_test.asm):02509                 nop
+0F6B 12               (  switch_test.asm):02510                 nop
+0F6C 12               (  switch_test.asm):02511                 nop
+0F6D 12               (  switch_test.asm):02512                 nop
+0F6E 12               (  switch_test.asm):02513                 nop
+0F6F D70C             (  switch_test.asm):02514                 stb     <$0C                ; beam off: 64 cycles
+0F71 8698             (  switch_test.asm):02515                 lda     #$98
+0F73 970B             (  switch_test.asm):02516                 sta     <$0B                ; ACR back for the BIOS
+                      (  switch_test.asm):02517         ; a dot resting 64 cycles at intensity $7F, 24 units a frame (10 positions)
+0F75 BDF354           (  switch_test.asm):02518                 jsr     Reset0Ref
+0F78 867F             (  switch_test.asm):02519                 lda     #$7F
+0F7A BDF2AB           (  switch_test.asm):02520                 jsr     Intensity_a
+0F7D 867F             (  switch_test.asm):02521                 lda     #$7F
+0F7F 9704             (  switch_test.asm):02522                 sta     <$04                ; scale $7F for the move
+0F81 CC3088           (  switch_test.asm):02523                 ldd     #$3088
+0F84 BDF312           (  switch_test.asm):02524                 jsr     Moveto_d
+0F87 86FF             (  switch_test.asm):02525                 lda     #$FF
+0F89 9704             (  switch_test.asm):02526                 sta     <$04                ; scale $FF: units x 2
+0F8B B6C881           (  switch_test.asm):02527                 lda     Frame
+0F8E 810A             (  switch_test.asm):02528                 cmpa    #10
+0F90 2502             (  switch_test.asm):02529                 blo     *+4
+0F92 800A             (  switch_test.asm):02530                 suba    #10
+0F94 810A             (  switch_test.asm):02531                 cmpa    #10
+0F96 2502             (  switch_test.asm):02532                 blo     *+4
+0F98 800A             (  switch_test.asm):02533                 suba    #10
+0F9A C60C             (  switch_test.asm):02534                 ldb     #12
+0F9C 3D               (  switch_test.asm):02535                 mul
+0F9D 4F               (  switch_test.asm):02536                 clra
+0F9E BDF312           (  switch_test.asm):02537                 jsr     Moveto_d
+0FA1 8681             (  switch_test.asm):02538                 lda     #$81
+0FA3 9700             (  switch_test.asm):02539                 sta     <$00                ; ramp off, mux off
+0FA5 0F0B             (  switch_test.asm):02540                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
+0FA7 86EE             (  switch_test.asm):02541                 lda     #$EE
+0FA9 C6CE             (  switch_test.asm):02542                 ldb     #$CE
+0FAB 970C             (  switch_test.asm):02543                 sta     <$0C                ; beam on
+0FAD 12               (  switch_test.asm):02544                 nop
+0FAE 12               (  switch_test.asm):02545                 nop
+0FAF 12               (  switch_test.asm):02546                 nop
+0FB0 12               (  switch_test.asm):02547                 nop
+0FB1 12               (  switch_test.asm):02548                 nop
+0FB2 12               (  switch_test.asm):02549                 nop
+0FB3 12               (  switch_test.asm):02550                 nop
+0FB4 12               (  switch_test.asm):02551                 nop
+0FB5 12               (  switch_test.asm):02552                 nop
+0FB6 12               (  switch_test.asm):02553                 nop
+0FB7 12               (  switch_test.asm):02554                 nop
+0FB8 12               (  switch_test.asm):02555                 nop
+0FB9 12               (  switch_test.asm):02556                 nop
+0FBA 12               (  switch_test.asm):02557                 nop
+0FBB 12               (  switch_test.asm):02558                 nop
+0FBC 12               (  switch_test.asm):02559                 nop
+0FBD 12               (  switch_test.asm):02560                 nop
+0FBE 12               (  switch_test.asm):02561                 nop
+0FBF 12               (  switch_test.asm):02562                 nop
+0FC0 12               (  switch_test.asm):02563                 nop
+0FC1 12               (  switch_test.asm):02564                 nop
+0FC2 12               (  switch_test.asm):02565                 nop
+0FC3 12               (  switch_test.asm):02566                 nop
+0FC4 12               (  switch_test.asm):02567                 nop
+0FC5 12               (  switch_test.asm):02568                 nop
+0FC6 12               (  switch_test.asm):02569                 nop
+0FC7 12               (  switch_test.asm):02570                 nop
+0FC8 12               (  switch_test.asm):02571                 nop
+0FC9 12               (  switch_test.asm):02572                 nop
+0FCA 12               (  switch_test.asm):02573                 nop
+0FCB D70C             (  switch_test.asm):02574                 stb     <$0C                ; beam off: 64 cycles
+0FCD 8698             (  switch_test.asm):02575                 lda     #$98
+0FCF 970B             (  switch_test.asm):02576                 sta     <$0B                ; ACR back for the BIOS
+                      (  switch_test.asm):02577         ; a dot resting 16 cycles at intensity $7F, 16 units a frame (15 positions)
+0FD1 BDF354           (  switch_test.asm):02578                 jsr     Reset0Ref
+0FD4 867F             (  switch_test.asm):02579                 lda     #$7F
+0FD6 BDF2AB           (  switch_test.asm):02580                 jsr     Intensity_a
+0FD9 867F             (  switch_test.asm):02581                 lda     #$7F
+0FDB 9704             (  switch_test.asm):02582                 sta     <$04                ; scale $7F for the move
+0FDD CC1C88           (  switch_test.asm):02583                 ldd     #$1C88
+0FE0 BDF312           (  switch_test.asm):02584                 jsr     Moveto_d
+0FE3 86FF             (  switch_test.asm):02585                 lda     #$FF
+0FE5 9704             (  switch_test.asm):02586                 sta     <$04                ; scale $FF: units x 2
+0FE7 B6C881           (  switch_test.asm):02587                 lda     Frame
+0FEA 810F             (  switch_test.asm):02588                 cmpa    #15
+0FEC 2502             (  switch_test.asm):02589                 blo     *+4
+0FEE 800F             (  switch_test.asm):02590                 suba    #15
+0FF0 C608             (  switch_test.asm):02591                 ldb     #8
+0FF2 3D               (  switch_test.asm):02592                 mul
+0FF3 4F               (  switch_test.asm):02593                 clra
+0FF4 BDF312           (  switch_test.asm):02594                 jsr     Moveto_d
+0FF7 8681             (  switch_test.asm):02595                 lda     #$81
+0FF9 9700             (  switch_test.asm):02596                 sta     <$00                ; ramp off, mux off
+0FFB 0F0B             (  switch_test.asm):02597                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
+0FFD 86EE             (  switch_test.asm):02598                 lda     #$EE
+0FFF C6CE             (  switch_test.asm):02599                 ldb     #$CE
+1001 970C             (  switch_test.asm):02600                 sta     <$0C                ; beam on
+1003 12               (  switch_test.asm):02601                 nop
+1004 12               (  switch_test.asm):02602                 nop
+1005 12               (  switch_test.asm):02603                 nop
+1006 12               (  switch_test.asm):02604                 nop
+1007 12               (  switch_test.asm):02605                 nop
+1008 12               (  switch_test.asm):02606                 nop
+1009 D70C             (  switch_test.asm):02607                 stb     <$0C                ; beam off: 16 cycles
+100B 8698             (  switch_test.asm):02608                 lda     #$98
+100D 970B             (  switch_test.asm):02609                 sta     <$0B                ; ACR back for the BIOS
+                      (  switch_test.asm):02610         ; a dot resting 64 cycles at intensity $5F, 16 units a frame (15 positions)
+100F BDF354           (  switch_test.asm):02611                 jsr     Reset0Ref
+1012 865F             (  switch_test.asm):02612                 lda     #$5F
+1014 BDF2AB           (  switch_test.asm):02613                 jsr     Intensity_a
+1017 867F             (  switch_test.asm):02614                 lda     #$7F
+1019 9704             (  switch_test.asm):02615                 sta     <$04                ; scale $7F for the move
+101B CC0888           (  switch_test.asm):02616                 ldd     #$0888
+101E BDF312           (  switch_test.asm):02617                 jsr     Moveto_d
+1021 86FF             (  switch_test.asm):02618                 lda     #$FF
+1023 9704             (  switch_test.asm):02619                 sta     <$04                ; scale $FF: units x 2
+1025 B6C881           (  switch_test.asm):02620                 lda     Frame
+1028 810F             (  switch_test.asm):02621                 cmpa    #15
+102A 2502             (  switch_test.asm):02622                 blo     *+4
+102C 800F             (  switch_test.asm):02623                 suba    #15
+102E C608             (  switch_test.asm):02624                 ldb     #8
+1030 3D               (  switch_test.asm):02625                 mul
+1031 4F               (  switch_test.asm):02626                 clra
+1032 BDF312           (  switch_test.asm):02627                 jsr     Moveto_d
+1035 8681             (  switch_test.asm):02628                 lda     #$81
+1037 9700             (  switch_test.asm):02629                 sta     <$00                ; ramp off, mux off
+1039 0F0B             (  switch_test.asm):02630                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
+103B 86EE             (  switch_test.asm):02631                 lda     #$EE
+103D C6CE             (  switch_test.asm):02632                 ldb     #$CE
+103F 970C             (  switch_test.asm):02633                 sta     <$0C                ; beam on
+1041 12               (  switch_test.asm):02634                 nop
+1042 12               (  switch_test.asm):02635                 nop
+1043 12               (  switch_test.asm):02636                 nop
+1044 12               (  switch_test.asm):02637                 nop
+1045 12               (  switch_test.asm):02638                 nop
+1046 12               (  switch_test.asm):02639                 nop
+1047 12               (  switch_test.asm):02640                 nop
+1048 12               (  switch_test.asm):02641                 nop
+1049 12               (  switch_test.asm):02642                 nop
+104A 12               (  switch_test.asm):02643                 nop
+104B 12               (  switch_test.asm):02644                 nop
+104C 12               (  switch_test.asm):02645                 nop
+104D 12               (  switch_test.asm):02646                 nop
+104E 12               (  switch_test.asm):02647                 nop
+104F 12               (  switch_test.asm):02648                 nop
+1050 12               (  switch_test.asm):02649                 nop
+1051 12               (  switch_test.asm):02650                 nop
+1052 12               (  switch_test.asm):02651                 nop
+1053 12               (  switch_test.asm):02652                 nop
+1054 12               (  switch_test.asm):02653                 nop
+1055 12               (  switch_test.asm):02654                 nop
+1056 12               (  switch_test.asm):02655                 nop
+1057 12               (  switch_test.asm):02656                 nop
+1058 12               (  switch_test.asm):02657                 nop
+1059 12               (  switch_test.asm):02658                 nop
+105A 12               (  switch_test.asm):02659                 nop
+105B 12               (  switch_test.asm):02660                 nop
+105C 12               (  switch_test.asm):02661                 nop
+105D 12               (  switch_test.asm):02662                 nop
+105E 12               (  switch_test.asm):02663                 nop
+105F D70C             (  switch_test.asm):02664                 stb     <$0C                ; beam off: 64 cycles
+1061 8698             (  switch_test.asm):02665                 lda     #$98
+1063 970B             (  switch_test.asm):02666                 sta     <$0B                ; ACR back for the BIOS
+                      (  switch_test.asm):02667         ; a dot resting 64 cycles at intensity $40, 16 units a frame (15 positions)
+1065 BDF354           (  switch_test.asm):02668                 jsr     Reset0Ref
+1068 8640             (  switch_test.asm):02669                 lda     #$40
+106A BDF2AB           (  switch_test.asm):02670                 jsr     Intensity_a
+106D 867F             (  switch_test.asm):02671                 lda     #$7F
+106F 9704             (  switch_test.asm):02672                 sta     <$04                ; scale $7F for the move
+1071 CCF488           (  switch_test.asm):02673                 ldd     #$F488
+1074 BDF312           (  switch_test.asm):02674                 jsr     Moveto_d
+1077 86FF             (  switch_test.asm):02675                 lda     #$FF
+1079 9704             (  switch_test.asm):02676                 sta     <$04                ; scale $FF: units x 2
+107B B6C881           (  switch_test.asm):02677                 lda     Frame
+107E 810F             (  switch_test.asm):02678                 cmpa    #15
+1080 2502             (  switch_test.asm):02679                 blo     *+4
+1082 800F             (  switch_test.asm):02680                 suba    #15
+1084 C608             (  switch_test.asm):02681                 ldb     #8
+1086 3D               (  switch_test.asm):02682                 mul
+1087 4F               (  switch_test.asm):02683                 clra
+1088 BDF312           (  switch_test.asm):02684                 jsr     Moveto_d
+108B 8681             (  switch_test.asm):02685                 lda     #$81
+108D 9700             (  switch_test.asm):02686                 sta     <$00                ; ramp off, mux off
+108F 0F0B             (  switch_test.asm):02687                 clr     <$0B                ; ACR: RAMP and /BLANK by hand
+1091 86EE             (  switch_test.asm):02688                 lda     #$EE
+1093 C6CE             (  switch_test.asm):02689                 ldb     #$CE
+1095 970C             (  switch_test.asm):02690                 sta     <$0C                ; beam on
+1097 12               (  switch_test.asm):02691                 nop
+1098 12               (  switch_test.asm):02692                 nop
+1099 12               (  switch_test.asm):02693                 nop
+109A 12               (  switch_test.asm):02694                 nop
+109B 12               (  switch_test.asm):02695                 nop
+109C 12               (  switch_test.asm):02696                 nop
+109D 12               (  switch_test.asm):02697                 nop
+109E 12               (  switch_test.asm):02698                 nop
+109F 12               (  switch_test.asm):02699                 nop
+10A0 12               (  switch_test.asm):02700                 nop
+10A1 12               (  switch_test.asm):02701                 nop
+10A2 12               (  switch_test.asm):02702                 nop
+10A3 12               (  switch_test.asm):02703                 nop
+10A4 12               (  switch_test.asm):02704                 nop
+10A5 12               (  switch_test.asm):02705                 nop
+10A6 12               (  switch_test.asm):02706                 nop
+10A7 12               (  switch_test.asm):02707                 nop
+10A8 12               (  switch_test.asm):02708                 nop
+10A9 12               (  switch_test.asm):02709                 nop
+10AA 12               (  switch_test.asm):02710                 nop
+10AB 12               (  switch_test.asm):02711                 nop
+10AC 12               (  switch_test.asm):02712                 nop
+10AD 12               (  switch_test.asm):02713                 nop
+10AE 12               (  switch_test.asm):02714                 nop
+10AF 12               (  switch_test.asm):02715                 nop
+10B0 12               (  switch_test.asm):02716                 nop
+10B1 12               (  switch_test.asm):02717                 nop
+10B2 12               (  switch_test.asm):02718                 nop
+10B3 12               (  switch_test.asm):02719                 nop
+10B4 12               (  switch_test.asm):02720                 nop
+10B5 D70C             (  switch_test.asm):02721                 stb     <$0C                ; beam off: 64 cycles
+10B7 8698             (  switch_test.asm):02722                 lda     #$98
+10B9 970B             (  switch_test.asm):02723                 sta     <$0B                ; ACR back for the BIOS
+                      (  switch_test.asm):02724         ; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $7F, 16 units a frame
+10BB BDF354           (  switch_test.asm):02725                 jsr     Reset0Ref
+10BE 867F             (  switch_test.asm):02726                 lda     #$7F
+10C0 BDF2AB           (  switch_test.asm):02727                 jsr     Intensity_a
+10C3 867F             (  switch_test.asm):02728                 lda     #$7F
+10C5 9704             (  switch_test.asm):02729                 sta     <$04                ; scale $7F for the move
+10C7 CCD088           (  switch_test.asm):02730                 ldd     #$D088
+10CA BDF312           (  switch_test.asm):02731                 jsr     Moveto_d
+10CD 86FF             (  switch_test.asm):02732                 lda     #$FF
+10CF 9704             (  switch_test.asm):02733                 sta     <$04
+10D1 B6C881           (  switch_test.asm):02734                 lda     Frame
+10D4 810F             (  switch_test.asm):02735                 cmpa    #15
+10D6 2502             (  switch_test.asm):02736                 blo     *+4
+10D8 800F             (  switch_test.asm):02737                 suba    #15
+10DA C608             (  switch_test.asm):02738                 ldb     #8
+10DC 3D               (  switch_test.asm):02739                 mul
+10DD 4F               (  switch_test.asm):02740                 clra
+10DE BDF312           (  switch_test.asm):02741                 jsr     Moveto_d
+10E1 867F             (  switch_test.asm):02742                 lda     #$7F
+10E3 9704             (  switch_test.asm):02743                 sta     <$04
+10E5 CC0800           (  switch_test.asm):02744                 ldd     #$0800
+10E8 BDF3DF           (  switch_test.asm):02745                 jsr     Draw_Line_d
+                      (  switch_test.asm):02746         ; a short line (Draw_Line_d, 8 units up at scale $7F), intensity $5F, 16 units a frame
+10EB BDF354           (  switch_test.asm):02747                 jsr     Reset0Ref
+10EE 865F             (  switch_test.asm):02748                 lda     #$5F
+10F0 BDF2AB           (  switch_test.asm):02749                 jsr     Intensity_a
+10F3 867F             (  switch_test.asm):02750                 lda     #$7F
+10F5 9704             (  switch_test.asm):02751                 sta     <$04                ; scale $7F for the move
+10F7 CCB488           (  switch_test.asm):02752                 ldd     #$B488
+10FA BDF312           (  switch_test.asm):02753                 jsr     Moveto_d
+10FD 86FF             (  switch_test.asm):02754                 lda     #$FF
+10FF 9704             (  switch_test.asm):02755                 sta     <$04
+1101 B6C881           (  switch_test.asm):02756                 lda     Frame
+1104 810F             (  switch_test.asm):02757                 cmpa    #15
+1106 2502             (  switch_test.asm):02758                 blo     *+4
+1108 800F             (  switch_test.asm):02759                 suba    #15
+110A C608             (  switch_test.asm):02760                 ldb     #8
+110C 3D               (  switch_test.asm):02761                 mul
+110D 4F               (  switch_test.asm):02762                 clra
+110E BDF312           (  switch_test.asm):02763                 jsr     Moveto_d
+1111 867F             (  switch_test.asm):02764                 lda     #$7F
+1113 9704             (  switch_test.asm):02765                 sta     <$04
+1115 CC0800           (  switch_test.asm):02766                 ldd     #$0800
+1118 BDF3DF           (  switch_test.asm):02767                 jsr     Draw_Line_d
+111B CCF836           (  switch_test.asm):02768                 ldd     #$F836
+111E FDC82A           (  switch_test.asm):02769                 std     Vec_Text_HW
+1121 BDF354           (  switch_test.asm):02770                 jsr     Reset0Ref
+1124 865F             (  switch_test.asm):02771                 lda     #$5F
+1126 BDF2AB           (  switch_test.asm):02772                 jsr     Intensity_a
+1129 867F             (  switch_test.asm):02773                 lda     #$7F
+112B 9704             (  switch_test.asm):02774                 sta     <$04
+112D CE11E9           (  switch_test.asm):02775                 ldu     #L4
+1130 CC6C88           (  switch_test.asm):02776                 ldd     #$6C88
+1133 BDF37A           (  switch_test.asm):02777                 jsr     Print_Str_d
+1136 CCF836           (  switch_test.asm):02778                 ldd     #$F836
+1139 FDC82A           (  switch_test.asm):02779                 std     Vec_Text_HW
+113C BDF354           (  switch_test.asm):02780                 jsr     Reset0Ref
+113F 865F             (  switch_test.asm):02781                 lda     #$5F
+1141 BDF2AB           (  switch_test.asm):02782                 jsr     Intensity_a
+1144 867F             (  switch_test.asm):02783                 lda     #$7F
+1146 9704             (  switch_test.asm):02784                 sta     <$04
+1148 CE11FF           (  switch_test.asm):02785                 ldu     #T4
+114B CC90B0           (  switch_test.asm):02786                 ldd     #$90B0
+114E BDF37A           (  switch_test.asm):02787                 jsr     Print_Str_d
+1151 16EECD           (  switch_test.asm):02788                 lbra    Main
+                      (  switch_test.asm):02789         
+1154 52414D50204F4646 (  switch_test.asm):02790         L1A     fcc     "RAMP OFF 5 TO 48"
      203520544F203438
-1104 80               (  switch_test.asm):02719                 fcb     $80
-1105 3430204F4E202034 (  switch_test.asm):02720         L1B     fcc     "40 ON  40 BLANK  7F ON  7F BLANK"
+1164 80               (  switch_test.asm):02791                 fcb     $80
+1165 3430204F4E202034 (  switch_test.asm):02792         L1B     fcc     "40 ON  40 BLANK  7F ON  7F BLANK"
      3020424C414E4B20
      203746204F4E2020
      374620424C414E4B
-1125 80               (  switch_test.asm):02721                 fcb     $80
-1126 312052414D50     (  switch_test.asm):02722         T1      fcc     "1 RAMP"
-112C 80               (  switch_test.asm):02723                 fcb     $80
-112D 5820535445502032 (  switch_test.asm):02724         L2      fcc     "X STEP 20 40 7F  0-V / -V-V"
+1185 80               (  switch_test.asm):02793                 fcb     $80
+1186 312052414D50     (  switch_test.asm):02794         T1      fcc     "1 RAMP"
+118C 80               (  switch_test.asm):02795                 fcb     $80
+118D 5820535445502032 (  switch_test.asm):02796         L2      fcc     "X STEP 20 40 7F  0-V / -V-V"
      3020343020374620
      20302D56202F202D
      562D56
-1148 80               (  switch_test.asm):02725                 fcb     $80
-1149 3220582053544550 (  switch_test.asm):02726         T2      fcc     "2 X STEP"
-1151 80               (  switch_test.asm):02727                 fcb     $80
-1152 464C495020415420 (  switch_test.asm):02728         L3A     fcc     "FLIP AT OFF -12 TO 16"
+11A8 80               (  switch_test.asm):02797                 fcb     $80
+11A9 3220582053544550 (  switch_test.asm):02798         T2      fcc     "2 X STEP"
+11B1 80               (  switch_test.asm):02799                 fcb     $80
+11B2 464C495020415420 (  switch_test.asm):02800         L3A     fcc     "FLIP AT OFF -12 TO 16"
      4F4646202D313220
      544F203136
-1167 80               (  switch_test.asm):02729                 fcb     $80
-1168 464C495020415420 (  switch_test.asm):02730         L3B     fcc     "FLIP AT ON -12 TO 12"
+11C7 80               (  switch_test.asm):02801                 fcb     $80
+11C8 464C495020415420 (  switch_test.asm):02802         L3B     fcc     "FLIP AT ON -12 TO 12"
      4F4E202D31322054
      4F203132
-117C 80               (  switch_test.asm):02731                 fcb     $80
-117D 3320582056532052 (  switch_test.asm):02732         T3      fcc     "3 X VS RAMP"
+11DC 80               (  switch_test.asm):02803                 fcb     $80
+11DD 3320582056532052 (  switch_test.asm):02804         T3      fcc     "3 X VS RAMP"
      414D50
-1188 80               (  switch_test.asm):02733                 fcb     $80
-1189 3746203546203430 (  switch_test.asm):02734         L4      fcc     "7F 5F 40 X 64 16  LINES"
-     2058203634203136
-     20204C494E4553
-11A0 80               (  switch_test.asm):02735                 fcb     $80
-11A1 3420444543415920 (  switch_test.asm):02736         T4      fcc     "4 DECAY 20MS STEPS"
-     32304D5320535445
-     5053
-11B3 80               (  switch_test.asm):02737                 fcb     $80
+11E8 80               (  switch_test.asm):02805                 fcb     $80
+11E9 5350454544203820 (  switch_test.asm):02806         L4      fcc     "SPEED 8 16 24 A FRAME"
+     3136203234204120
+     4652414D45
+11FE 80               (  switch_test.asm):02807                 fcb     $80
+11FF 34204445434159   (  switch_test.asm):02808         T4      fcc     "4 DECAY"
+1206 80               (  switch_test.asm):02809                 fcb     $80

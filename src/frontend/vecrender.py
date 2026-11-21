@@ -946,6 +946,10 @@ def bt_light(tl, l, t):
 BT_HALO_F, BT_HALO_S = 0.04, 1.4            # (the glass: this share of every piece's light spread wide - sigma, units; the photos'
                                             #  dots: 3-5 % of their light in a glow of sigma ~1.4 units)
 BT_SPOT = 1.0                               # (the spot's width x this; VX_BT_SPOT: tests - 2.5: as wide as through the photos' camera)
+BT_WB = 0.3                                 # (the beam on the phosphor: one cool white for cores and glow alike - this share of the
+                                            #  way from 6504 K to the White balance setting (12000 K: ~8150 K), red and green lowered, blue
+                                            #  full: ~15 % of the peak's brightness for a white that is cool at every level; the owner,
+                                            #  2026-11-21: the tube a blueish white, the glow was bluer than the lines)
 BT_KMAX = 512.0                             # (a piece's light goes to the GPU as a colour, clamped at 1: sent / BT_KMAX, SAT_SHADER x BT_KMAX)
 def bt_eta(tau):
     """the phosphor's light per cycle of beam, tau = the cycles a point stays under the spot (arrays)"""
@@ -3998,8 +4002,9 @@ class GLBloomRenderer(GLRenderer):
         self.ActiveTexture(0x84C2); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0]); self.ActiveTexture(0x84C0)
         self.UseProgram(self.sprog); self.Uniform1i(self.u_stex, 0); self._phos_uniforms(self.u_sh)
         self.Uniform1i(self.u_sh['g1'], 1); self.Uniform1i(self.u_sh['g2'], 2); self.Uniform1f(self.u_sh['pkd'], 0.0 if full else 1.0)
-        self.Uniform3f(self.u_sh['wb'], *self._wb())
-        self.Uniform3f(self.u_sh['wbc'], *self._wbc())
+        btm = getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')   # (the beam on the phosphor: its white is in the light - BT_WB)
+        self.Uniform3f(self.u_sh['wb'], *((1.0, 1.0, 1.0) if btm else self._wb()))
+        self.Uniform3f(self.u_sh['wbc'], *((1.0, 1.0, 1.0) if btm else self._wbc()))
         self.Uniform1f(self.u_sh['acap'], getattr(self, 'phos_acap', PHOS_ACAP))
         self.Uniform1f(self.u_sh['lifta'], 0.0 if (self.art and self.art_on) else TRAIL_LIFT_A)   # (an overlay shown: its own look)
         self.Uniform1f(self.u_sh['sm'], PHOS_SMOOTH_MAX * min(1.0, getattr(self, 'phos_smooth', PHOS_SMOOTH)) * ph / 820.0
@@ -4030,8 +4035,10 @@ class GLBloomRenderer(GLRenderer):
         ex = float(os.environ.get('VX_BT_EXPO', BT_EXPO))    # (the exposure: light -> the screen; VX_BT_EXPO: tests)
         ex *= float(os.environ.get('VX_BT_SPOT', BT_SPOT))   # (a wider spot: its peak lower - the reference line stays at white)
         if self.vlook(): ex /= (LOOK_VSH if getattr(self, 'hdr_hk', 1.0) > 1.0 else LOOK_VS)   # (the tone step scales the light back)
-        self.Uniform1f(self.u_sat['k'], ex * BT_KMAX); self.Uniform3f(self.u_sat['wb'], *wb)
-        self.Uniform3f(self.u_sat['wbc'], *(self._wbc() if tuple(wb) != (1.0, 1.0, 1.0) else wb))
+        k = float(getattr(self, 'white_k', WHITE_DEFAULT))
+        t = white_gain(6504.0 + BT_WB * (k - 6504.0)); t = tuple(v / max(t) for v in t)   # (see BT_WB)
+        self.Uniform1f(self.u_sat['k'], ex * BT_KMAX); self.Uniform3f(self.u_sat['wb'], *t)
+        self.Uniform3f(self.u_sat['wbc'], *t)
         self._quad(tex)
         self.UseProgram(0)
 

@@ -1660,6 +1660,14 @@ static void alg_sstep_full (void)
 	 * real Mine Storm (2026-10-12) - the ship's lines ~20 % short, the mothership's corners open now and
 	 * then (on the tube less visibly). */
 	double ramp_part = 1.0;                             /* (the last, fractional cycle of a stop delay) */
+	/* VT_RAMPRC=tau,level (a test switch, 2026-11-21): the RAMP line reaches the integrators' switch through an RC - the
+	 * switch closes while its control is above the level. A short RAMP-off pulse does not open it (the owner's Dot Test
+	 * page 4: a corner with a rest of 8 cycles as round as with none, 16 cycles half, 32 sharp - no lag of the spot gives
+	 * that); a long one stops the integrators tau ln (1 / level) cycles late, they start -tau ln (1 - level) late.
+	 * Instead of the fixed start / stop delays below */
+	{ static double rg_tau = -1, rg_lev = 0.4, rg_v = 0, rg_k = 0;
+	  if (rg_tau < 0) { const char *z = getenv ("VT_RAMPRC"); rg_tau = 0; if (z) { sscanf (z, "%lf,%lf", &rg_tau, &rg_lev); if (rg_tau > 0) rg_k = 1.0 - exp (-1.0 / rg_tau); } }
+	  if (rg_tau > 0) { rg_v += ((sig_ramp ? 0.0 : 1.0) - rg_v) * rg_k; sig_ramp = rg_v > rg_lev ? 0 : 0x80; } else
 	{
 	  sd_hist[hp++ & 63] = (sig_ramp ? 1 : 0) | ((via_acr & 0x80) ? 2 : 0);
 	  if (alg_rdly_on | alg_rdly_off) {
@@ -1678,7 +1686,7 @@ static void alg_sstep_full (void)
 		}
 		#undef RAMP_ACT
 		sig_ramp = act ? 0 : 0x80;
-	  } }
+	  } } }
 
 	if (zero_tx < 0) { const char *z = getenv ("VT_ZERON"); zero_n = z ? atoi (z) : ZERO_N; z = getenv ("VT_ZEROTAU"); zero_tx = ZERO_TX; zero_ty = ZERO_TY;
 	                   if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); zero_tx = a; zero_ty = b < 0 ? a : b; } }

@@ -1524,6 +1524,12 @@ static void vxa_net_tick (void)
 - (BOOL) application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
 {
 	vxa_log_start (); vlog ("app start"); vxa_net_watch ();
+	{ /* (the core's own messages - its device measurement, the GPU diagnostic - into this log: they went to stderr, unseen) */
+	  int pp[2]; if (pipe (pp) == 0) { dup2 (pp[1], STDERR_FILENO); close (pp[1]); setvbuf (stderr, NULL, _IOLBF, 0); const int rd = pp[0];
+		dispatch_async (dispatch_get_global_queue (QOS_CLASS_UTILITY, 0), ^{ char buf[1024], line[1100]; size_t ln = 0; ssize_t n;
+			while ((n = read (rd, buf, sizeof buf)) > 0) for (ssize_t i = 0; i < n; i++) {
+				if (buf[i] == '\n' || ln >= sizeof line - 1) { line[ln] = 0; if (ln) vlog ("core: %s", line); ln = 0; } else line[ln++] = buf[i]; } }); }
+	  extern int vx_gprof; vx_gprof = 1; }   /* (the GPU diagnostic: one picture in 30 timed, stage by stage - the stutter at 120 Hz) */
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;
 }

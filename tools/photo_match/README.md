@@ -129,3 +129,10 @@ logo and the Dot Test's corners with a candidate):
   cut rms 0.28 (today 0.65), the logo 1.26 (1.28), the Dot Test's 90 degree corners 2.05 / 1.39 / 0.42 at rests 0 / 8 / 16
   (photo 1.71 / 1.82 / 0.84, today 1.83 / 0.95 / 0.26); the Corner Test round at rests 0-12 and sharp from 24 as the photo;
   the Gap Test's lines and squares, the Lag Test and Vectorblade's logo as today. `VT_XYZDLY=6,9,8 VT_XSLEW=18 VT_DEFLAG=7`.
+- **Correction (the same evening)**: `VT_XSLEW` sat only in the branch without the DAC's bit errors; the app and the libretro
+  core run the other one, so every `slew_*.png` render before this line showed "X delay 5 / 6, no slew" - the X flip a cycle
+  or two before the stop: the hump before the dot (the owner saw it), and the rounding that looked like the photo's. Fixed
+  (both branches), all `slew_*.png` and `corners_proposed.png` rendered again: no hump; on the Corner Test the slew's
+  change is small (rest 0 and 5 a little rounder). The numbers above (Switch Test cuts, logo, Dot Test corners) came from
+  the headless core, where the slew was active - they stand. Lesson: check a core switch in the build that makes the
+  pictures, and look at corners at full size.

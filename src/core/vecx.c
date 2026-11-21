@@ -1626,18 +1626,17 @@ static void alg_sstep_full (void)
 		dly_z[dly_p & 63] = (unsigned char) via_ca2; dly_p++;
 		unsigned xd = dly_x[(dly_p - 1 - dly_nx) & 63], yd = dly_y[(dly_p - 1 - dly_ny) & 63];
 		zero_now = dly_z[(dly_p - 1 - dly_nz) & 63];
-		if (dac_on > 0) {                                   /* (the DAC's bit errors: the hold's value as it charged) */
-			adx = (long) (dacv (xd) * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
-			ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) (dly_yf[(dly_p - 1 - dly_ny) & 63] * ZS) + alg_yofs;
-		} else {
+		double xdv = dac_on > 0 ? dacv (xd) : (double) xd;      /* (the DAC's level for X: with its bit errors, if any) */
 		{ static double xsl_s = -2, xsl; static int xsl_init;   /* VT_XSLEW=S (a test switch, off): the X speed follows the DAC at S
 		    * DAC steps a cycle at most - the owner's Switch Test, 2026-11-21: a turn's cut grows faster than the step (pages 2 and
-		    * 3: X delay 2 + slew 16 fits the corners' cuts and the dots' places; the fixed delay 9 its average) */
+		    * 3); in both branches below (the first version missed the DAC-errors one: the app and the libretro core ran without) */
 		  if (xsl_s < -1) { const char *z = getenv ("VT_XSLEW"); xsl_s = z ? atof (z) : 0.0; }
-		  if (xsl_s > 0.01) { if (!xsl_init) { xsl_init = 1; xsl = xd; } { double d = (double) xd - xsl; xsl += d > xsl_s ? xsl_s : d < -xsl_s ? -xsl_s : d; }
-		    adx = (long) (xsl * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs; }
-		  else
-		adx = (long) xd * ZS - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs; }
+		  if (xsl_s > 0.01) { if (!xsl_init) { xsl_init = 1; xsl = xdv; } { double d = xdv - xsl; xsl += d > xsl_s ? xsl_s : d < -xsl_s ? -xsl_s : d; } xdv = xsl; } }
+		if (dac_on > 0) {                                   /* (the DAC's bit errors: the hold's value as it charged) */
+			adx = (long) (xdv * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
+			ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) (dly_yf[(dly_p - 1 - dly_ny) & 63] * ZS) + alg_yofs;
+		} else {
+		adx = (long) (xdv * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 		ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) yd * ZS + alg_yofs;
 		}
 	}

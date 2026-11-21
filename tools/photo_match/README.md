@@ -190,3 +190,22 @@ every line's lit ends; the whole line (the last row) = L + 2 cycles gives the px
 - **Page 3, pulses** (speed $7F): a lit dash of 4 / 8 / 16 cycles is 3.84 / 8.27 / 17.03 long, a dark gap 3.48 / 7.85 / 16.81;
   a 4-cycle dash reaches 0.91 of the line's level, a 4-cycle gap falls to 0.01: the beam's switch is done well inside a
   cycle or two and the same both ways (off - on = +0.2 cycles).
+
+## The Timer Test's photos (2026-11-21, 22:xx): `tt1.py`, `tt2.py` (the tube), `tt3.py` (the core's own lines)
+
+Eight DNGs (main camera, ISO 64); the same lines as the Settle Test, px a cycle from the hand-RAMP pages. Both speeds agree:
+
+| | the tube | the core today |
+|---|---|---|
+| a timer-driven line of N cycles (a hand RAMP of L: L + 2) | N + 4.8 | N + 7.5 |
+| timer 1's RAMP on, against a port write in the starting write's cycle | 1.3 cycles earlier | 4.9 earlier (the start delay of 5 is not applied to timer 1) |
+| timer 1's RAMP off, against a port write at t0 + N | 1.1 later | 0.0 |
+| the shift register's beam OFF against a PCR write | 2.2 later | 0.0 |
+| the shift register's beam ON against a PCR write | 1.7 later | 0.0 |
+
+So in the core the BIOS's lines run 2.7 cycles too long and the shift register switches the beam 2 cycles too early.
+With all of it set (lag 13.3 in 3 stages, VT_RAMPDLY=1,3,4, VT_ZDELAY=2, VT_SRDELAY=2-3, X delay 3) the Corner Test's
+roundness matches (cut / leg 0.124 / 0.104 / 0.091 / 0.064 / 0.054 / 0.030) but the Gap Test's joins still gape more than the
+photo (dip index 0.09-0.19 against 0.06-0.17) and the dots at the small scales are missing: the BIOS's short pieces (6-13
+cycles) behave as if the spot were 2-3 cycles earlier than the long hand-timed lines say. Open: whether a short move
+settles faster than a long one (the Settle Test's lines are 24-48 cycles) - a page with ramps of 6-13 cycles is owed.

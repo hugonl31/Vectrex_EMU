@@ -205,7 +205,8 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    e += glow * max(h2.y, 0.0) * lc * trans;\n"
 	"    if (rlp.w > 0.0) { vec3 lcol = LIGHTC * mix(vec3(1.0), trans, 0.6); float bc = b.z / max(b.y, 1e-6), bs = b.w / max(b.y, 1e-6);\n"
 	"      for (int i = 0; i < 6; i++) { vec2 dv = (rpt[i] - gl_FragCoord.xy) / rlp.z;\n"   /* (both y down here) */
-	"        float dl = length(dv * vec2(1.0 / 1.25, 1.0)); float ph2 = atan(dv.y, dv.x + 1e-7), c2l = cos(2.0 * ph2), s2l = sin(2.0 * ph2);\n"
+	"        float dl = length(dv * vec2(1.0 / 1.25, 1.0)); if (dl > 1.6) continue;\n"   /* (far: under 0.5 % - most of the six, most pixels) */
+	"        float r2 = dot(dv, dv) + 1e-14, c2l = (dv.x * dv.x - dv.y * dv.y) / r2, s2l = 2.0 * dv.x * dv.y / r2;\n"   /* (cos / sin of twice the angle, without atan, cos, sin: the same) */
 	"        if (D > 0.0) { float acf = pow(clamp(0.5 - 0.5 * (a.y * c2l + a.z * s2l) / D, 0.0, 1.0), 2.0);\n"
 	"          e += rlp.w / 4.0 * (0.9 * exp(-dl / 0.05) + 0.3 * exp(-dl / 0.11)) * mt * acf * 2.5 * lcol; }\n"
 	"        if (b.y > 0.0) { float acr = pow(clamp(0.5 - 0.5 * (bc * c2l + bs * s2l), 0.0, 1.0), 3.0);\n"
@@ -321,10 +322,12 @@ static void ox_scratches (void)
 /* the sheet over this refresh's light (ph_S and the glow ph_B[0]) into ph_P; glow: the tube's glow (PH_FS_OUT's) */
 extern double vt_wall (void);
 static double ox_tt[9], ox_t0; static int ox_prof = -1; static long ox_pn;   /* (test: VX_OXPROF=1 - each pass's time, the GPU waited for: the log) */
-#define OXT(k) do { if (ox_prof > 0) { glFinish_ (); double t_ = vt_wall (); ox_tt[k] += t_ - ox_t0; ox_t0 = t_; } } while (0)
+extern int vx_gprof_now; double vx_oxst[8];   /* (the apps' GPU diagnostic: the sheet's passes on its timed pictures) */
+#define OXT(k) do { if (ox_prof > 0 || vx_gprof_now) { glFinish_ (); double t_ = vt_wall (); if (vx_gprof_now) vx_oxst[k] += t_ - ox_t0; else ox_tt[k] += t_ - ox_t0; ox_t0 = t_; } } while (0)
 static int ox_draw (int glow, double dt)
 {
 	if (ox_prof < 0) ox_prof = getenv ("VX_OXPROF") != NULL;
+	if (vx_gprof_now) { glFinish_ (); ox_t0 = vt_wall (); }
 	if (ox_prof > 0) { glFinish_ (); ox_t0 = vt_wall (); if (++ox_pn % 300 == 0) { fprintf (stderr, "oxprof ms:"); for (int i = 0; i < 8; i++) fprintf (stderr, " %.2f", ox_tt[i] / 300 * 1e3); fprintf (stderr, "\n"); memset (ox_tt, 0, sizeof ox_tt); } }
 	if (!ox_sheet || !ov || !ov_lm) return 0;
 	const int scr = ovfx.scr, pglow = ovfx.glow > 0, ovl = ovfx.ovl > 0;

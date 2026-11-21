@@ -182,6 +182,17 @@ static void ph_reset (void)
 		glVertexAttribDivisor_ ((GLuint) i, 1); }
 	glBindVertexArray_ (0); glBindBuffer_ (GL_ARRAY_BUFFER, 0);
 	ph_ok = 1;
+	{                                                  /* (diagnostic, the log: does this GPU filter a half-float texture itself? An iPhone
+	                                                      read them as nearest - txb does it by hand there, 4 reads for one) */
+		static const float two[8] = { 0, 0, 0, 0, 1, 1, 1, 1 }; unsigned char px[4] = { 0, 0, 0, 0 };
+		GLuint tp = ph_prog (GPU_VS, "uniform sampler2D t; out vec4 fragc; void main() { fragc = texture(t, vec2(0.5)); }\n");
+		if (tp) { GLuint a = ph_tex (2, 1, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, two), b = ph_tex (1, 1, 0x8058, GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST, NULL), t[2];
+			ph_target (b, 0, 0, 1, 1); glDisable_ (GL_BLEND); glUseProgram_ (tp); glBindVertexArray_ (g_vao); glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, a); glUniform1i_ (glGetUniformLocation_ (tp, "t"), 0);
+			glDrawArrays_ (GL_TRIANGLES, 0, 3); glReadPixels_ (0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+			fprintf (stderr, "[vectrex_emu] GPU: a half-float texture read between two texels (0 and 1): %.3f - %s\n", px[0] / 255.0,
+				px[0] > 100 && px[0] < 156 ? "filtered by the GPU" : "not filtered (nearest)");
+			ph_fb_flush (); t[0] = a; t[1] = b; glDeleteTextures_ (2, t); glDeleteProgram_ (tp); }
+	}
 	ox_reset ();                                       /* (the overlay's effects: gpu_ovfx.c) */
 }
 static int ph_nfb;

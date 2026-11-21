@@ -11,7 +11,7 @@
 #include "gpu_tab.h"
 /* (txb: a filtered read of a half-float texture - the glow, the afterglow, the overlay's maps, the glass's light map. On an
  *  iPhone / iPad bilinear by hand: there the GPU read them as nearest - the glow in steps, stripes; elsewhere the GPU's) */
-#if VX_IOS
+#if VX_IOS || defined(VX_BLTEST)                   /* (VX_BLTEST: a test build with the iPhone's reads) */
 #define GL_BL "vec4 txb(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)), L = textureSize(t, 0) - 1;\n" \
 	"  vec2 f = g - floor(g);\n" \
 	"  return mix(mix(texelFetch(t, clamp(i, ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), L), 0), f.x),\n" \
@@ -133,6 +133,7 @@ static const char *GPU_FS_A =
 	"    float Xr = lca * X - lsa * Zr, Z = lsa * X + lca * Zr;\n"
 	"    float wx = soft + 0.8 * fwidth(Xr), wz = soft + 0.8 * fwidth(Z);\n"
 	"    float ins = (1.0 - smoothstep(FIX_W - wx, FIX_W + wx, abs(Xr))) * (1.0 - smoothstep(FIX_L - wz, FIX_L + wz, abs(Z)));\n"
+	"    if (vis * ins <= 0.0) return 0.0;\n"   /* (beside the fixture, most of the glass: nothing - the rest not worked out) */
 	"    float fr = max(smoothstep(FIX_W - 0.05 - wx, FIX_W - 0.05 + wx, abs(Xr)), smoothstep(FIX_L - 0.05 - wz, FIX_L - 0.05 + wz, abs(Z)));\n"
 	"    float cx = (Xr + FIX_W) / (2.0 * FIX_W) * 2.0, cz = (Z + FIX_L) / (2.0 * FIX_L) * 9.0;\n"
 	"    float fx_ = fract(cx), fz = fract(cz);\n"
@@ -247,7 +248,7 @@ static const char *GPU_FS_B =
 	"            vec2 eq = tgt - n * dpos / U;\n"
 	"            vec2 eqn = eq / gsc;\n"
 	"            vec2 mq = vec2((eqn.x - lmr.x) / (lmr.y - lmr.x), (eqn.y - lmr.z) / (lmr.w - lmr.z));\n"
-	"            float mr = txc(lmap, mq).r * mfade(mq);\n"
+	"            float mr = txb(lmap, mq).r * mfade(mq);\n"
 	"            bl = lk * mr * (0.03 * exp(-dpos / 55.0) * (0.25 + 0.75 * pow(top, 0.7)) + 0.035 * exp(-dpos / 16.5) * pow(top, 0.7));\n"
 	"        }\n"
 	"        vec2 sq = vec2((gd.x - smr.x) / (smr.y - smr.x), (gd.y - smr.z) / (smr.w - smr.z));\n"   /* (the map: top row first) */
@@ -309,7 +310,7 @@ static const char *GPU_FS_B =
 	"            add += grey * (1.0 - 0.25 * tq.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);\n"
 	"            if (lk > 0.0) {\n"
 	"                vec2 mc = vec2((tq.x - lmr.x) / (lmr.y - lmr.x), (tq.y - lmr.z) / (lmr.w - lmr.z));\n"
-	"                vec4 m = txc(lmap, mc) * mfade(mc);\n"
+	"                vec4 m = txb(lmap, mc) * mfade(mc);\n"
 	"                float sharp = ceiling((reflp(tq, 0.2) - lpos.xy) / lpos.z, 0.012);\n"
 	"                add += lk * (m.g * (1.0 + 0.018 * gr) * vec3(0.95, 0.96, 1.0) + 0.88 * (0.98 * sharp + m.r) * LIGHTC);\n"
 	"            }\n"
@@ -630,13 +631,32 @@ static void gq_end (void)
 	if (gq_cur < 0) return;
 	gq_endf (0x88BF); gq_busy[gq_cur] = 1; gq_next = (gq_cur + 1) % GQ_N; gq_cur = -1;
 }
+/* The light map spread smoothly, once (a cubic B-spline over 4 x 4 cells, LMAP_UP points a cell): the shader then reads it
+ * bilinear - on an iPhone 4 reads a pixel, it did the spline itself in 16; elsewhere no crease at a cell any more */
+#define LMAP_UP 4
+static void lmap_spread (const float *rg, float *up)
+{
+	const int w = GPU_LMAP_W, h = GPU_LMAP_H, W = w * LMAP_UP, H = h * LMAP_UP;
+	for (int Y = 0; Y < H; Y++) { const float gy = (Y + 0.5f) / LMAP_UP - 0.5f, fy0 = floorf (gy), ty = gy - fy0, sy = 1 - ty;
+		const float wy[4] = { sy * sy * sy / 6, (4 - 6 * ty * ty + 3 * ty * ty * ty) / 6, (1 + 3 * ty + 3 * ty * ty - 3 * ty * ty * ty) / 6, ty * ty * ty / 6 };
+		for (int X = 0; X < W; X++) { const float gx = (X + 0.5f) / LMAP_UP - 0.5f, fx0 = floorf (gx), tx = gx - fx0, sx = 1 - tx;
+			const float wx[4] = { sx * sx * sx / 6, (4 - 6 * tx * tx + 3 * tx * tx * tx) / 6, (1 + 3 * tx + 3 * tx * tx - 3 * tx * tx * tx) / 6, tx * tx * tx / 6 };
+			float a0 = 0, a1 = 0;
+			for (int j = 0; j < 4; j++) { int y = (int) fy0 - 1 + j; y = y < 0 ? 0 : y > h - 1 ? h - 1 : y;
+				for (int i = 0; i < 4; i++) { int x = (int) fx0 - 1 + i; x = x < 0 ? 0 : x > w - 1 ? w - 1 : x;
+					const float k = wx[i] * wy[j]; a0 += k * rg[2 * (y * w + x)]; a1 += k * rg[2 * (y * w + x) + 1]; } }
+			up[2 * (Y * W + X)] = a0; up[2 * (Y * W + X) + 1] = a1; } }
+}
+
 static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float cx0, float cy0, float cx1, float cy1, int ow, int oh, int rot)
 {
 	gq_begin ();                                 /* (a no-op while the picture's query runs) */
 	if (g_lamp_x != g_lamp_done_x || g_lamp_y != g_lamp_done_y) {   /* (the lamp moved, or the first picture: its light map) */
 		float *rg = malloc (sizeof (float) * 2 * GPU_LMAP_W * GPU_LMAP_H);
-		if (rg) { rl_maps (g_lamp_x, g_lamp_y, rg); glBindTexture_ (GL_TEXTURE_2D, g_lmap);
-			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, GPU_LMAP_W, GPU_LMAP_H, 0, GL_RG, GL_FLOAT, rg); free (rg); g_lmap_ok = 1; }
+		float *up = rg ? malloc (sizeof (float) * 2 * GPU_LMAP_W * GPU_LMAP_H * LMAP_UP * LMAP_UP) : NULL;
+		if (rg && up) { rl_maps (g_lamp_x, g_lamp_y, rg); lmap_spread (rg, up); glBindTexture_ (GL_TEXTURE_2D, g_lmap);
+			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, GPU_LMAP_W * LMAP_UP, GPU_LMAP_H * LMAP_UP, 0, GL_RG, GL_FLOAT, up); g_lmap_ok = 1; }
+		free (rg); free (up);
 		rl_light_pos (g_lamp_x, g_lamp_y, g_lpos, g_lc); g_lamp_done_x = g_lamp_x; g_lamp_done_y = g_lamp_y; }
 	GLuint ptex = g_tex;
 	if (!frame) ptex = ph_P;                                          /* (the light made on the GPU: gpu_phos.c) */

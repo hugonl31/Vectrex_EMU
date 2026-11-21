@@ -179,3 +179,14 @@ every line's lit ends; the whole line (the last row) = L + 2 cycles gives the px
   cycles off against the hand-timed one. A later beam for the shift register alone (VT_SRDELAY, a test) closes the gaps at
   6-8 cycles but takes the joins' dots - not it. Owed: the BIOS path's own timing (timer 1's PB7, the shift register's
   first bit) measured the same way - a page with timer-driven ramps and shift-register beam; pages 3 and 4 not yet read.
+- The second set of Settle Test photos (21:41, ISO 80; `st5.py`, `st4.py`) repeats the first to ~0.1 cycle; the line ends as
+  sharp (10-90 % in 5.1 px, 5.3 before). X ($7F), travel to come at beam-off K 5..32: 9.36 / 6.82 / 4.07 / 2.20 / 1.13 / 0.51 / 0.12;
+  travel done at beam-on: 0.88 / 1.51 / 3.09 / 5.50 / 8.60 / 12.12 / 20.02. Fits (rms, cycles): 1 stage 0.26 (start 5.0, stop 7.0,
+  lag 7.8), 2: 0.19, 3: 0.16 (start -0.7, stop 1.2, lag 13.3), 4: 0.14 (start -2.8, stop -0.95, lag 15.4: the beam ~2.8 late);
+  in all 12.6 cycles after a start, 14.45 after a stop.
+- **Page 4, Y** (speed $50): to come 8.08 / 5.77 / 3.15 / 1.66 / 0.61 / 0.27 / 0.00; done 0.89 / 1.86 / 3.91 / 6.29 / 9.55 / 13.11 / 20.76 -
+  the same lag (13.4 in 3 stages) but 1.1 cycles earlier at the start, 1.65 at the stop (11.5 / 12.8 in all): the X speed
+  is written a cycle after RAMP on; stop - start 1.3 in Y, 1.85 in X.
+- **Page 3, pulses** (speed $7F): a lit dash of 4 / 8 / 16 cycles is 3.84 / 8.27 / 17.03 long, a dark gap 3.48 / 7.85 / 16.81;
+  a 4-cycle dash reaches 0.91 of the line's level, a 4-cycle gap falls to 0.01: the beam's switch is done well inside a
+  cycle or two and the same both ways (off - on = +0.2 cycles).

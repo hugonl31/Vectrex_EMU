@@ -2917,9 +2917,9 @@ void retro_run (void)
 			if (gpm) { glFinish_ (); gp1 = vt_wall (); }
 			gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
 			if (gpm) { glFinish_ (); const double gp2 = vt_wall (); gpt[0] += gp1 - gp0; gpt[1] += gp2 - gp1; gpn++;
-				extern double vx_gpst[4]; extern int vx_gprof_now; vx_gprof_now = 0;
-				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms (lines %.2f, phosphor %.2f, glow %.2f, picture %.2f), the glass and the case %.2f ms - %d x %d px, profile %s%c",
-					gpn, gpt[0] / gpn * 1e3, vx_gpst[0] / gpn * 1e3, vx_gpst[1] / gpn * 1e3, vx_gpst[2] / gpn * 1e3, vx_gpst[3] / gpn * 1e3, gpt[1] / gpn * 1e3, FW, FH, opt_profile == 0 ? "auto" : opt_profile == 1 ? "ultra" : opt_profile == 2 ? "high" : opt_profile == 3 ? "medium" : "low", 10); gpt[0] = gpt[1] = 0; vx_gpst[0] = vx_gpst[1] = vx_gpst[2] = vx_gpst[3] = 0; gpn = 0; gpw = gp2; } }
+				extern double vx_gpst[4], vx_oxst[8]; extern int vx_gprof_now; vx_gprof_now = 0;
+				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms (lines %.2f, phosphor %.2f, glow %.2f, picture %.2f), the glass and the case %.2f ms - %d x %d px, profile %s; the sheet's passes %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f%c",
+					gpn, gpt[0] / gpn * 1e3, vx_gpst[0] / gpn * 1e3, vx_gpst[1] / gpn * 1e3, vx_gpst[2] / gpn * 1e3, vx_gpst[3] / gpn * 1e3, gpt[1] / gpn * 1e3, FW, FH, opt_profile == 0 ? "auto" : opt_profile == 1 ? "ultra" : opt_profile == 2 ? "high" : opt_profile == 3 ? "medium" : "low", vx_oxst[0] / gpn * 1e3, vx_oxst[1] / gpn * 1e3, vx_oxst[2] / gpn * 1e3, vx_oxst[3] / gpn * 1e3, vx_oxst[4] / gpn * 1e3, vx_oxst[5] / gpn * 1e3, vx_oxst[6] / gpn * 1e3, vx_oxst[7] / gpn * 1e3, 10); memset (vx_oxst, 0, sizeof vx_oxst); gpt[0] = gpt[1] = 0; vx_gpst[0] = vx_gpst[1] = vx_gpst[2] = vx_gpst[3] = 0; gpn = 0; gpw = gp2; } }
 			shot_write ();
 			sheet_write ();
 			if (!asy) flash_save (0);

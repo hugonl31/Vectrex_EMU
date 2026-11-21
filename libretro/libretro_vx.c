@@ -43,8 +43,8 @@ static unsigned VX_TICKS (void) { struct timespec t; clock_gettime (CLOCK_MONOTO
  * of the beam's path a capsule with a Gaussian cross-section, its width and brightness from the measured tube
  * (TUBE_LIGHT, the narrower spot below intensity 63), fainter the faster it was swept (BEAM_LINE, BEAM_SPEED); the
  * pieces of one stroke cut at their joints along the bisector, so a joint is lit once; the resting spots (the beam
- * slower than REST_SPEED: corners, dots, stars) round spots brighter than the lines by the time they rested (BEAM_DOTMAX,
- * BEAM_DOTC), wider and blooming when long, with a faint halo (Corner glow); the dwells inside strokes found as
+ * slower than REST_SPEED: corners, dots, stars) round spots, brighter the longer they rested (dot_light: the Dot Test
+ * photos), with a faint halo (Corner glow); the dwells inside strokes found as
  * dwell_rests does; brightness bending (the picture grows a little with the beam's load); the hum wobble applied
  * after the tube's map, as vecrender does. The afterglow is the measured one (PHOS_A, at the owner's time scale 0.6):
  * what is no longer lit glows away in two parts. The screen rate option (90 Hz by default, for the Valve Index): each
@@ -1386,11 +1386,6 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 #define BEAM_SPEED 0.35                 /* how much fainter the fastest sweeps get */
 #define BEAM_LINE 1.15                  /* a line: BEAM_LINE x (1 - BEAM_SPEED e^(-e / 0.8)), e = cycles per game px */
 #define BEAM_FADE 0.3                   /* the beam fading out after /BLANK (intensity bit 7) */
-#define BEAM_HALO_W 1.6                 /* a resting spot's halo: FWHM (game px), brightness, cycles for full */
-#define BEAM_HALO_K 0.014
-#define BEAM_HALO_C 18.0
-#define BEAM_DOTC 4.0                   /* a resting spot: BEAM_DOTMAX x min (1, cycles / BEAM_DOTC) */
-#define BEAM_DOTMAX 1.6
 /* the afterglow's faint end lifted: g x (1 + A / (1 + g / G0)) - up to A x G0 more, reached already where it is faint. On
  * black the trail so looks as it did through an overlay, whose plastic glow (added as a screen value) lifted it there;
  * measured on Armor Attack's jeep, overlay on / off, the owner's wish 2026-11-19. The same numbers in gpu_phos.c (lift) */
@@ -1409,12 +1404,19 @@ static double hdr_rest (double cyc)
 	for (int i = 1; i < 6; i++) if (cyc <= C[i]) { r = R[i - 1] + (R[i] - R[i - 1]) * (cyc - C[i - 1]) / (C[i] - C[i - 1]); break; }
 	return 1.055 * pow (r, 1 / 2.4) - 0.055 - 1.0;   /* (as an sRGB value, as the app makes it light: VXApp.m) */
 }
-#define BEAM_DOTW 1.0                   /* its width: the line's x DOTW + DOTWK per cycle (game px) */
-#define BEAM_DOTWK 0.002
-#define BEAM_BLOOM_E0 20.0              /* a long bright rest blooms: wider (x BLOOM_W) and its halo brighter (x BLOOM_H) */
-#define BEAM_BLOOM_E1 38.0
-#define BEAM_BLOOM_W 2.0
-#define BEAM_BLOOM_H 2.5
+/* a resting spot, the owner's Dot Test photos (2026-11-21, ProRAW, isolated dots 4-128 cycles at intensity 7F, 5F, 40, 30):
+ * a spot as wide as the line at that intensity whose light grows with the rest - A = DOT_A x T x ln (1 + cycles / T) times
+ * the line's peak (the tube's light of the intensity), 0.8x at 4 cycles, 2.9x at 16, 7x at 48, 13.5x at 128 - never wider;
+ * round it a faint glow (about 0.4 % of that light). Matched in the picture (SDR, both looks): every dot's radius at 50, 25
+ * and 12 % of white within 0.1 unit of the photo's on average. Shots alike (36-119 cycles,
+ * a double shot as one of the summed time); a rest at a joint or corner as long as an isolated dot of the same time */
+#define DOT_K 3.0                       /* the spot's peak (display value) for A = 1: matched to the photos' dot sizes */
+#define DOT_W 1.6                       /* its width: the line's x DOT_W (the photos: the camera's line wider than ours) */
+#define DOT_A 0.209
+#define DOT_T 52.0
+#define DOT_HALO 0.005
+#define DOT_HALO_W 1.3
+static double dot_light (double cyc) { return DOT_A * DOT_T * log (1.0 + cyc / DOT_T); }
 #define REST_SPEED 0.5                  /* slower than this (units a cycle): the spot at rest */
 #define REST_DWELL_SLOW 0.6             /* the dwell inside a stroke (vecrender.py dwell_rests) */
 #define REST_DWELL_D0 3.0
@@ -2329,11 +2331,8 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * pw_width * up_width, kk, hx = 0; int dot = 0;   /* (up_width: R525's stiffer beam) */
 		const double lp = sqrt ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 		if (halo[i]) {
-			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
-			fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) / bk * pw_width;   /* (the glass's scatter: not the beam option's) */
-			kk = BEAM_HALO_K * (cyc / BEAM_HALO_C < 1 ? cyc / BEAM_HALO_C : 1) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl); dot = 1;
-			{ extern float vx_hdr_lift, vx_hdr_hb, vx_hdr_hw; extern int vx_app_dots; if (vx_hdr_lift > 1.5f || vx_app_dots) { kk *= vx_hdr_hb; fw *= vx_hdr_hw; } }   /* (the Vectrex look on SDR: the dots' glow up -
-			                                                  a dot at white beside a line at white: its glare tells it) */
+			fw = DOT_HALO_W * zw / bk * pw_width;         /* (the glass's scatter: not the beam option's) */
+			kk = pow (DOT_HALO * dot_light (cyc), 1 / 2.2); dot = 1;   /* (as a display value, as the lines' light) */
 		} else if (!zl[i]) {
 			double ee = lp > 1e-9 ? cyc / (lp / gp) : 1e9;
 			kk = opt_speedb ? BEAM_LINE * (1.0 - BEAM_SPEED * exp (-ee / 0.8)) : BEAM_LINE * (1.0 - 0.5 * BEAM_SPEED);
@@ -2342,14 +2341,12 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		} else if (!opt_dots) {                   /* (corner dots off: the resting spot as faint as a line's) */
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
-			kk = BEAM_DOTMAX * (cyc / BEAM_DOTC < 1 ? cyc / BEAM_DOTC : 1); dot = 1;
+			kk = DOT_K * pow (dot_light (cyc), 1 / 2.2); dot = 1;
 			{ extern float vx_hdr_lift, vx_hdr_dk, vx_hdr_dx; if (vx_hdr_lift > 1.5f && vx_hdr_peak > 1.0f) { kk *= vx_hdr_dk; if (vx_hdr_peak > 1.0f) hx = hdr_rest (rest_cyc (L, n, i, zl, halo)) * zk * zk * vx_hdr_dx; }
 			  else if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk; }   /* (the Vectrex look, HDR: the dots above the lines in their own channel - the lines keep the lower part) */   /* (HDR: above white, the rest's own light - with the slow beam round it) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
-			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);
-			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
-			fw = fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl); { extern float vx_hdr_lift, vx_hdr_dw; extern int vx_app_dots; if (vx_hdr_lift > 1.5f || vx_app_dots) fw *= vx_hdr_dw; }   /* (the Vectrex look on SDR: a dot's glare wider - at white, as the line) */
+			fw *= DOT_W;                               /* (its width: the line's x DOT_W - brighter with the time, not wider) */
 			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
 				kk *= pow (wd, 2.5); hx *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
 		}

@@ -36,9 +36,9 @@
 	"       + g1.y * (g0.x * texture(t, vec2(h0.x, h1.y)) + g1.x * texture(t, h1)); }\n"
 #define GL_BL_PLAIN "#define txb texture\n#define txc texture\n"
 #if VX_IOS || defined(VX_BLTEST)                   /* (VX_BLTEST: a test build with the iPhone's reads) */
-static const char *g_bl = GL_BL_HAND;
+static const char *g_bl = GL_BL_HAND; static int g_bl_lin = 0;   /* (g_bl_lin: the GPU filters half-floats) */
 #else
-static const char *g_bl = GL_BL_PLAIN;
+static const char *g_bl = GL_BL_PLAIN; static int g_bl_lin = 1;
 #endif
 static void ph_bltest (void);
 
@@ -202,25 +202,20 @@ static const char *GPU_FS_B =
 	"    float pu = pxs;\n"
 	"    float dg = sdg, dc = -sdC(gd);\n"
 	"    vec2 rp = gd * U;\n"
-	"    float de = dc + pu * 1.6 * (0.5 - 0.65 * vnoise(rp / 9.0 + 41.0) - 0.35 * vnoise(rp / 2.5 + 13.0));\n"
+	"    float de = dc;\n"   /* (the outer edge's wobble, two noises: only within its reach - 0.8 px - and the edge's rim light, 13 units; further in nothing of it is left) */
+	"    if (dc < 1.3 * pu + 13.0 / U) de += pu * 1.6 * (0.5 - 0.65 * vnoise(rp / 9.0 + 41.0) - 0.35 * vnoise(rp / 2.5 + 13.0));\n"
 	"    float wa = clamp(dg / pu + 0.5, 0.0, 1.0) * clamp(de / pu + 0.5, 0.0, 1.0);\n"
 	"    float fa = clamp(0.5 - de / pu, 0.0, 1.0);\n"
 	"    vec3 col = vec3(0.0);\n"
 	"    if (wa > 0.0) {\n"
 	"        float wave = 2.0 * vnoise(rp / 110.0) - 1.0 + 0.5 * (2.0 * vnoise(rp / 40.0 + 17.0) - 1.0);\n"   /* (the wall's own: not worked out for the front) */
 	"        float flow = 2.0 * vnoise(rp / 14.0 + 5.0) - 1.0;\n"
-	"        float th = atan(gd.y, gd.x), a = ang(gd), sg = sign(gd.x * gd.y);\n"
+	"        float a = ang(gd);\n"
 	"        vec2 G = gR(a), C = cR(a);\n"
 	"        float Rg = G.x, D = max(C.x - G.x, 1e-4), rho = length(gd);\n"
-	"        float dRg = G.y * 57.29578 * sg, dD = (C.y - G.y) * 57.29578 * sg;\n"
 	"        float u = clamp((rho - Rg) / D, 0.0, 1.0);\n"
 	"        float k = 1.9712 * D - 0.09864, q = sqrt(k * k + 0.0004);\n"
-	"        float H = 0.10123 + 0.5 * (k + q), dH = 0.9856 * (1.0 + k / q) * dD;\n"
-	"        float cs = cos(th), sn = sin(th);\n"
-	"        vec3 Pu = vec3(D * cs, D * sn, H);\n"
-	"        float dr = dRg + u * dD;\n"
-	"        vec3 Pt = vec3(dr * cs - rho * sn, dr * sn + rho * cs, u * dH);\n"
-	"        vec3 N = normalize(cross(Pt, Pu)); N *= sign(N.z);\n"
+	"        float H = 0.10123 + 0.5 * (k + q);\n"
 	/* (flat walls, the owner's grid photo 2026-11-20: each wall at one angle, square to the case's straight outer edge - the */
 	/* grid mirrored evenly, its lines straight; near the glass the wall follows the glass's curved edge) */
 	"        vec2 e2 = vec2(0.002, 0.0);\n"
@@ -229,7 +224,7 @@ static const char *GPU_FS_B =
 	"        float wpd = smoothstep(0.0, 0.3 * pc.x * pc.x + 1e-3, u); vec2 pd = pc;\n"   /* (the glass edge's direction - four outlines - only where it counts: near the glass on the side walls) */
 	"        if (wpd < 1.0) { vec2 pgl = normalize(vec2(sdG(gd + e2.xy) - sdG(gd - e2.xy), sdG(gd + e2.yx) - sdG(gd - e2.yx)) + 1e-6); pd = normalize(mix(pgl, pc, wpd)); }\n"   /* (only the side walls bend to the glass) */
 	"        float phi = radians(mix(65.5, 68.5, smoothstep(0.3, 0.9, abs(pd.x))));\n"
-	"        N = normalize(vec3(-pd * sin(phi), cos(phi)));\n"
+	"        vec3 N = normalize(vec3(-pd * sin(phi), cos(phi)));\n"
 	"        vec2 n = normalize(gd);\n"
 	"        float wave2 = 2.0 * vnoise(rp / 70.0 + 31.0) - 1.0 + 0.4 * (2.0 * vnoise(rp / 26.0 + 9.0) - 1.0);\n"
 	"        N = normalize(N + vec3(0.006 * wave + 0.003 * flow, 0.006 * wave2 + 0.003 * flow, 0.0));\n"
@@ -243,7 +238,7 @@ static const char *GPU_FS_B =
 	"            vec2 mq = P.xy + Rr.xy * (-P.z / Rr.z);\n"
 	"            back = length(mq - P.xy) * U;\n"
 	"            gm = clamp(0.5 - sdG(mq) / pu, 0.0, 1.0);\n"
-	"            refl = max(disc(mq, 1.6) * gm - 0.02, 0.0);\n"
+	"            if (gm > 0.0) refl = max(disc(mq, 1.6) * gm - 0.02, 0.0);\n"   /* (ten reads: only where it lands on the glass) */
 	"        }\n"
 	"        float fall = 1.0 / (1.0 + pow(back / 130.0, 2.0));\n"
 	"        float side = abs(n.x), bot = max(n.y, 0.0), top = max(-n.y, 0.0);\n"

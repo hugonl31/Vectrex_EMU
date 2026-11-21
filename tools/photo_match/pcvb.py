@@ -32,6 +32,7 @@ V.Core.frame_recv = frame_recv
 args = argparse.Namespace(rom=r'build\Vectrex_EMU\roms\Vectorblade.bin', height_mm=0, scale=1.0, tk=False, fullscreen=False, ideal=False, demo=0,
                           net_host=None, net_join=None, net_online=False)
 V.vecrender.set_dpi_aware()
+V.App.save_settings = lambda self, *a, **k: None      # (tests never save the settings)
 app = V.App(args)
 app.root.iconify()
 def _back():
@@ -61,7 +62,7 @@ def finish():
     except Exception: app.root.destroy()
 def snap(p):
     fold = app.rec_folder(); before = set(glob.glob(os.path.join(fold, '*.png')))
-    app.rec_opts['rec_snap'] = 'window'
+    app.rec_opts['rec_snap'] = os.environ.get('SNAP', 'window')
     app.snapshot()
     def fetch(n=0):
         new = set(glob.glob(os.path.join(fold, '*.png'))) - before

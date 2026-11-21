@@ -936,21 +936,22 @@ BEAM_TRACE_SG = 0.674
 BT_A, BT_B, BT_D0, BT_IP = 0.70, 0.29, 150.0, 1.5
 BT_W, BT_WF, BT_UREF = 0.30, 0.10, 1.6
 BT_UNITS = 160.0 / 134.0                    # (Vectrex units - Moveto at scale $7F - a game px)
-BT_EXPO = 0.24                              # (the Vectrex look: a typical game line just below white - Vectorblade's logo, intensity 79, as the
-                                            #  owner's photo shows it; the Dot Test's slow 7F reference line clips, as the fat lines do on the tube)
+BT_EXPO = 0.16                              # (the Vectrex look: a typical game line just below white, not above - Vectorblade's logo,
+                                            #  intensity 79: its lines 0.6 of the photo's ceiling, unclipped; driven above white the tone step
+                                            #  flattens a line's top and its skirt shows: "an out of focus photo", the owner)
 def bt_light(tl, l, t):
     """a piece's light: tl = the tube's light of its intensity (0..1), l = its length (units), t = cycles (arrays)"""
     iz = tl ** BT_IP
     az = _np.maximum(0.0, (BT_A + BT_B * BT_UREF) * tl - BT_B * BT_UREF * iz)
     tau = t * BT_W / (l + BT_W)
     return az * (l + BT_WF) + (l + BT_W) / BT_W * BT_B * BT_D0 * _np.log1p(iz * tau / BT_D0)
-BT_HALO_F, BT_HALO_S = 0.04, 1.4            # (the glass: this share of every piece's light spread wide - sigma, units; the photos'
-                                            #  dots: 3-5 % of their light in a glow of sigma ~1.4 units)
-BT_SPOT = 2.7                               # (the spot's width x this; VX_BT_SPOT: tests - 2.5: as wide as through the photos' camera)
-BT_WB = 0.3                                 # (the beam on the phosphor: one cool white for cores and glow alike - this share of the
-                                            #  way from 6504 K to the White balance setting (12000 K: ~8150 K), red and green lowered, blue
-                                            #  full: ~15 % of the peak's brightness for a white that is cool at every level; the owner,
-                                            #  2026-11-21: the tube a blueish white, the glow was bluer than the lines)
+BT_HALO_F, BT_HALO_S = 0.015, 1.4           # (the glass: this share of every piece's light spread wide - sigma, units. The Dot Test's
+                                            #  dots: 3-5 %, camera included; Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it)
+BT_SPOT = 2.4                               # (the spot's width x this: Vectorblade's logo in the owner's photo - a Gaussian, 0.92 units at
+                                            #  half height, 1.30 at a quarter, 1.67 at a tenth; ours 0.9 / 1.25 / 1.8)
+BT_TINT = (0.65, 0.86, 1.0)                 # (the beam on the phosphor: one white for cores and glow alike - the tube's own, from the owner's
+                                            #  photos with the camera's white balance (three sessions: red 0.62-0.66 of blue, green 0.83-0.89 as
+                                            #  display values, lines and glow alike): a blueish white, blue full so no brightness is given away)
 BT_KMAX = 512.0                             # (a piece's light goes to the GPU as a colour, clamped at 1: sent / BT_KMAX, SAT_SHADER x BT_KMAX)
 def bt_eta(tau):
     """the phosphor's light per cycle of beam, tau = the cycles a point stays under the spot (arrays)"""
@@ -3365,9 +3366,10 @@ class GLBloomRenderer(GLRenderer):
             upx = gp / BT_UNITS                            # (window px a unit)
             hal = (b & 256) != 0                           # (the glass's glow of a piece)
             sg = np.maximum(0.5, BEAM_TRACE_SG * fwb * gp / 2.355 * float(os.environ.get('VX_BT_SPOT', BT_SPOT)))
-            sg = np.where(hal, BT_HALO_S * upx, sg)
+            _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F, BT_HALO_S)).split(',')]   # (tests)
+            sg = np.where(hal, _hs * upx, sg)
             kk = (bt_light(np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT), lp / upx, cyc)
-                  / (2.0 * math.pi * (sg / upx) ** 2) * np.where(hal, BT_HALO_F, 1.0 - BT_HALO_F) * gain * cgain / BT_KMAX)   # (a rest's peak for that light: the shader spreads it)
+                  / (2.0 * math.pi * (sg / upx) ** 2) * np.where(hal, _hf, 1.0 - _hf) * gain * cgain / BT_KMAX)   # (a rest's peak for that light: the shader spreads it)
             kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
             mq = 3.5 * sg + 1.0
         moved = lp > 1e-3
@@ -4003,7 +4005,7 @@ class GLBloomRenderer(GLRenderer):
         self.ActiveTexture(0x84C2); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0]); self.ActiveTexture(0x84C0)
         self.UseProgram(self.sprog); self.Uniform1i(self.u_stex, 0); self._phos_uniforms(self.u_sh)
         self.Uniform1i(self.u_sh['g1'], 1); self.Uniform1i(self.u_sh['g2'], 2); self.Uniform1f(self.u_sh['pkd'], 0.0 if full else 1.0)
-        btm = getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')   # (the beam on the phosphor: its white is in the light - BT_WB)
+        btm = getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')   # (the beam on the phosphor: its white is in the light - BT_TINT)
         self.Uniform3f(self.u_sh['wb'], *((1.0, 1.0, 1.0) if btm else self._wb()))
         self.Uniform3f(self.u_sh['wbc'], *((1.0, 1.0, 1.0) if btm else self._wbc()))
         self.Uniform1f(self.u_sh['acap'], getattr(self, 'phos_acap', PHOS_ACAP))
@@ -4037,7 +4039,8 @@ class GLBloomRenderer(GLRenderer):
         ex *= float(os.environ.get('VX_BT_SPOT', BT_SPOT))   # (a wider spot: its peak lower - the reference line stays at white)
         if self.vlook(): ex /= (LOOK_VSH if getattr(self, 'hdr_hk', 1.0) > 1.0 else LOOK_VS)   # (the tone step scales the light back)
         k = float(getattr(self, 'white_k', WHITE_DEFAULT))
-        t = white_gain(6504.0 + BT_WB * (k - 6504.0)); t = tuple(v / max(t) for v in t)   # (see BT_WB)
+        t0 = white_gain(WHITE_DEFAULT); tk = white_gain(k)                      # (the tube's white as the owner's photos show it at the default
+        t = tuple(a * b / c for a, b, c in zip(BT_TINT, tk, t0)); t = tuple(v / max(t) for v in t)   #  setting - BT_TINT - moved with the White balance setting)
         self.Uniform1f(self.u_sat['k'], ex * BT_KMAX); self.Uniform3f(self.u_sat['wb'], *t)
         self.Uniform3f(self.u_sat['wbc'], *t)
         self._quad(tex)

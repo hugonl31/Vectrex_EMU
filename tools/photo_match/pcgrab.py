@@ -12,6 +12,7 @@ from PIL import ImageGrab
 args = argparse.Namespace(rom=r'testcart\dot_test.bin', height_mm=0, scale=1.0, tk=False, fullscreen=False, ideal=False, demo=0,
                           net_host=None, net_join=None, net_online=False)
 V.vecrender.set_dpi_aware()
+V.App.save_settings = lambda self, *a, **k: None      # (tests never save the settings)
 app = V.App(args)
 app.root.iconify()
 def _back():

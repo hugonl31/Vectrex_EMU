@@ -20,6 +20,7 @@ def render(c, only='corner,gap_p1'):
     if 'srm' in c: e['VT_SRMODEL'] = str(c['srm'])
     if 'srw' in c: e['VT_SRW'] = str(c['srw'])
     if 'sd' in c: e['VT_SRD0'] = str(c['sd'])
+    if c.get('bt'): e['VX_BEAM'] = '1'
     if 'bd' in c: e['VT_LAGBOX'] = '%g,%g,%g' % (c['bd'], c['bw'], c.get('bt', 0))
     if 'xs' in c: e['VT_XSLEW'] = str(c['xs'])
     if 'ramp' in c: e['VT_RAMPDLY'] = c['ramp']

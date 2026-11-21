@@ -351,3 +351,15 @@ brighter, the slow start's light) - without it the BIOS's corners cannot look li
   the corner dot is missing, the dot is rounder / smaller than the tube's (10.5 x 7.6 px against a 6.2 px line).
 - `testcart/compare/photo_p10_vlp_beam.png`: the photo next to it. Tests switch the tube's warm-up off (`pcany.py`).
 Owed: the same law in the core's GPU renderer (phones, RetroArch); Corner / Gap Test and Vectorblade in beam trace.
+
+## Beam trace in the shared renderer (libretro_vx.c, a test: VX_BEAM=1) - 2026-11-22
+
+`bt2_light` / `bt2_prepare` in C (as vecrender.py); the core sends the spot's path (vt_set_analog 11). This renderer adds
+display values, not light, so pieces must not lie on each other: a run's caps go into its first / last moving piece,
+joined pieces are cut at their bisector. Corner Test (rendered, proposed timing): cut / leg 0.121 0.087 0.093 0.069 0.056
+0.045 0.031 0.011 (photo 0.122 0.120 0.105 0.073 0.044 0.003 0 0); Gap Test: one dot a join (10 a row, as the photo), dips
+0.055-0.068 on display values, 0.09-0.12 as light (photo 0.05-0.17, growing with the scale - ours flat).
+`cmp_show.py` -> `testcart/compare/now_corners.png`, `now_vectorblade.png` (photo | today | new).
+Open: **Vectorblade's logo is 8 % wider / 10 % taller with the proposed timing than today** - to check against the photo
+with a scale reference before anything becomes default; the lines' level by intensity is lower than before ($5F 0.51 of
+$7F, was 0.67): the exposure wants setting again; start dots are short bright pieces (comet-like at 2x); no glass glow.

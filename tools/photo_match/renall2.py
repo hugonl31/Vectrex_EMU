@@ -15,12 +15,13 @@ JOBS = [  # name, rom, [(button, presses)], idle frames before the grab
     ('gap_p3', T + r'\Tests\Gap Test.bin', [('b3', 1)], 120),
     ('lag', T + r'\Tests\Lag Test.bin', [], 120),
     ('vectorblade', T + r'\Vectorblade.bin', [], 400),
+    ('sw_p1', T + r'\Tests\Switch Test.bin', [('b1', 1)], 120), ('sw_p2', T + r'\Tests\Switch Test.bin', [('b2', 1)], 120), ('sw_p3', T + r'\Tests\Switch Test.bin', [('b3', 1)], 120),
     ('dot_p3', T + r'\Tests\Dot Test.bin', [('b3', 1)], 120), ('dot_p4', T + r'\Tests\Dot Test.bin', [('b4', 1)], 120),
 ]
-for name, rom, presses, idle in JOBS:
+for name, rom, presses, idle in [j for j in JOBS if not os.environ.get('ONLY') or j[0] in os.environ['ONLY'].split(',')]:
     h = Host(S + r'\cb\sl.dll', 'G:/AI/Vectrex_EMU/libretro/dist/pkg/system', S + r'\save',
              options={'vectrex_emu_deck': 'off', 'vectrex_emu_rotate': 'off', 'vectrex_emu_skip_intro': 'on', 'vectrex_emu_wobble': 'off',
-                      'vectrex_emu_bending': 'off', 'vectrex_emu_overlay': 'off', 'vectrex_emu_look': look}, size=(1200, 1500))
+                      'vectrex_emu_bending': 'off', 'vectrex_emu_overlay': 'off', 'vectrex_emu_look': look, **dict(kv.split('=') for kv in os.environ.get('LROPT', '').split(',') if kv)}, size=(1200, 1500))
     h.load(rom)
     for i in range(60): h.run()
     for b, n in presses:

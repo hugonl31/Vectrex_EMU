@@ -136,3 +136,23 @@ logo and the Dot Test's corners with a candidate):
   change is small (rest 0 and 5 a little rounder). The numbers above (Switch Test cuts, logo, Dot Test corners) came from
   the headless core, where the slew was active - they stand. Lesson: check a core switch in the build that makes the
   pictures, and look at corners at full size.
+
+## Corner roundness on rendered frames (2026-11-21, late)
+
+`cornerm.py`: a corner's cut as a share of its leg, measured the same way on the photo and on the emulator's rendered
+frame (`renall2.py`: the libretro core through tools/lrhost.py; `cornerm_run.py`, `cgrid.py`: grids; `gapm.py`: the Gap
+Test's joins - dip index and dots). In the libretro core and the app the lag comes from the unit option (analog 9), not
+from VT_DEFLAG: `LROPT=vectrex_emu_unit_lagx=..,vectrex_emu_unit_lagy=..`; VT_DEFLAGN (1-6 stages) and VT_LAGBOX are read.
+
+- Corner Test, cut / leg at rests 0 / 5 / 8 / 12 / 16 / 24: **photo 0.122 / 0.120 / 0.105 / 0.073 / 0.044 / 0.003**; today
+  0.092 / 0.058 / 0.052 / 0.036 / 0.026 / 0.019. The roundness follows the rest's length (the Dot Test's page 4 alike; the
+  Switch Test's corners with a rest of 32 are sharp whenever the flip was written): the spot settles slowly after a stop.
+- A lag of 4 equal stages, 14 cycles in all, X delay 8, the beam 8 cycles later (both edges): 0.120 / 0.110 / 0.090 / 0.064 /
+  0.045 / 0.023, the legs' ratio and the Gap Test's dips as the photo's - **but the dots at the joins are gone** (the photo,
+  `testcart/compare/gap_joins_zoom.png`: a bright dot at each piece's START, the line fading before the gap).
+- The beam's switch-off alone later (6 cycles): corners, legs, dips and dots all fit - **but the BIOS font smears into
+  bars** (the owner saw it). Rejected.
+- No beam delay, lag 10-14 in 3-5 stages: joins and font right, corners at rests 5-16 still too sharp (0.06-0.07 at rest 5).
+- A box-shaped response (VT_LAGBOX): no better than the stages.
+So no setting of this model (stages + pure delays) gives the corners, the joins' dots and the font together. Nothing is
+the default; VT_XSLEW, VT_DEFLAGN > 2, VT_LAGBOX are test switches.

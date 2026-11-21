@@ -1858,7 +1858,10 @@ static void alg_sstep_full (void)
 	alg_curr_y += sig_dy;
 	prot_step (sig_blank == 1 && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f) != 0);   /* (the deflection protect: see prot_step) */
 	alg_cycles++;
-	if (vt_lag < 0) { const char *z = getenv ("VT_DEFLAG"); vt_lag = z ? atof (z) : LAG_TAU; z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; z = getenv ("VT_DEFLAGSPLIT"); if (z) lag_split_k = atof (z); }
+	{ static int lag_env; static double lag_force = -1;      /* (VT_DEFLAG / VT_DEFLAGN given: they win over the frontend's unit
+	   * setting (analog 9) - tests in the app and the libretro core, where the setting arrived first and the variables were never read) */
+	  if (!lag_env) { const char *z = getenv ("VT_DEFLAG"); lag_env = 1; if (z) lag_force = atof (z); z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; z = getenv ("VT_DEFLAGSPLIT"); if (z) lag_split_k = atof (z); }
+	  if (lag_force >= 0) vt_lag = lag_force; else if (vt_lag < 0) vt_lag = LAG_TAU; }
 	if (vt_lag_y < -1.5) { const char *z = getenv ("VT_DEFLAGY"); vt_lag_y = z ? atof (z) : LAG_TAU_Y; }
 	if (ofs_k < 0) { const char *z = getenv ("VT_OFSK"); ofs_k = z ? atof (z) : OFS_K; }
 	{ double ox = beam_x, oy = beam_y;
@@ -1868,12 +1871,29 @@ static void alg_sstep_full (void)
 	  double tx = alg_curr_x - sh, ty = alg_curr_y + sh;
 	  double lx = vt_lag, ly = vt_lag_y >= 0 ? vt_lag_y : vt_lag;
 	  if (lx > 0.05 || ly > 0.05) {
-		int n = vt_lag_n == 2 ? 2 : 1;
+		int n = vt_lag_n < 1 ? 1 : vt_lag_n > 6 ? 6 : vt_lag_n;   /* (VT_DEFLAGN: 1 - 6 equal stages; 3 and more: tests) */
 		double kx = lx > 0.05 ? kexp (&km_mlx, (double) n, lx) : 1.0;   /* (each stage tau / n) */
 		double ky = ly > 0.05 ? kexp (&km_mly, (double) n, ly) : 1.0;
+		static double bx_d = -2, bx_w, bx_t; static double rx[256], ry[256], bsx, bsy, box, boy; static unsigned rp; static int rinit;
+		if (bx_d < -1) { const char *z = getenv ("VT_LAGBOX"); bx_d = -1; if (z) { bx_t = 0; sscanf (z, "%lf,%lf,%lf", &bx_d, &bx_w, &bx_t); if (bx_w < 1) bx_w = 1; if (bx_w > 200) bx_w = 200; if (bx_d > 50) bx_d = 50; } }
+		if (bx_d >= 0) {   /* VT_LAGBOX=delay,width[,tau] (a test): the spot = the integrators' place averaged over `width` cycles, `delay`
+		                    * cycles ago (a response that is over after delay + width), then a short first-order lag tau */
+			int d = (int) bx_d, w = (int) bx_w;
+			if (!rinit) { rinit = 1; for (int i = 0; i < 256; i++) { rx[i] = tx; ry[i] = ty; } bsx = tx * w; bsy = ty * w; box = tx; boy = ty; }
+			rx[rp & 255] = tx; ry[rp & 255] = ty;
+			bsx += rx[(rp - d) & 255] - rx[(rp - d - w) & 255]; bsy += ry[(rp - d) & 255] - ry[(rp - d - w) & 255]; rp++;
+			if ((rp & 1023) == 0) { bsx = bsy = 0; for (int i = 1; i <= w; i++) { bsx += rx[(rp - d - i) & 255]; bsy += ry[(rp - d - i) & 255]; } }   /* (no drift) */
+			{ double k = bx_t > 0.05 ? 1.0 - exp (-1.0 / bx_t) : 1.0; box += (bsx / w - box) * k; boy += (bsy / w - boy) * k; }
+			beam_x = beam_x1 = box; beam_y = beam_y1 = boy;
+		} else
 		if (n == 2) {
 			beam_x1 += (tx - beam_x1) * kx; beam_y1 += (ty - beam_y1) * ky;
 			beam_x += (beam_x1 - beam_x) * kx; beam_y += (beam_y1 - beam_y) * ky;
+		} else if (n > 2) {
+			static double sx[6], sy[6]; static int sinit;
+			if (!sinit) { sinit = 1; for (int i = 0; i < 6; i++) { sx[i] = tx; sy[i] = ty; } }
+			{ double ix = tx, iy = ty; for (int i = 0; i < n; i++) { sx[i] += (ix - sx[i]) * kx; sy[i] += (iy - sy[i]) * ky; ix = sx[i]; iy = sy[i]; }
+			  beam_x = ix; beam_y = iy; beam_x1 = sx[0]; beam_y1 = sy[0]; }
 		} else {
 			beam_x += (tx - beam_x) * kx; beam_y += (ty - beam_y) * ky;
 		}

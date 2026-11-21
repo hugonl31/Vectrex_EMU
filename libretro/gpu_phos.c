@@ -27,7 +27,7 @@ GLFN(void, glFinish, (void)); GLFN(void, glInvalidateFramebuffer, (GLenum, GLsiz
 #define GL_NEAREST 0x2600
 
 static uint32_t *br_img; static int br_shown, br_gen; static GLuint ph_ui, ph_uit; static int ph_uigen = -1, ph_uiw, ph_uih;   /* (browser.c) */
-static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
+static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_down2, ph_blurl, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
 static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1, ph_hdr_made = -1;
 float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_vs = 0.25f, vx_hdr_vss = 0.15f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lt = 0.3f, vx_hdr_sn = 6.0f, vx_hdr_gb = 1.3f, vx_hdr_hb = 2.75f, vx_hdr_hw = 1.0f, vx_hdr_dw = 1.6f;   /* (the apps: the dots' spot 1.6x wide, their halo x2.75 - the owner: x14 too much, as build 134 + 10 %) */   /* (SDR Vectrex: the dots' glow x2.5, their spot x1.6 wide (the photo: 1.2-1.6x the line's width at white) - at white as the lines, their glare tells them) */   /* (SDR: the lines 0.64 of white, the fat ones clipping at white - the owner, 2026-11-21: the grid too dim at 0.08) */   /* (dx: the dots above the lines, HDR; lt: the lines up to this share of the peak - the rest
@@ -99,6 +99,21 @@ static const char *PH_FS_DOWN =                 /* (glow_blur: 2 S x 2 S pixels 
 	"    for (int i = 0; i < nf; i++) { int xx = clamp(c.x * gd + i - s, 0, lim.x); float wx = (i / s == 0 || i / s == 3) ? 1.0 : 3.0;\n"
 	"      a += wx * wy * texelFetch(src, ivec2(xx, yy), 0).rgb; } }\n"
 	"  fragc = vec4(a / (64.0 * float(s * s)), 1.0); }\n";
+/* (the same with the GPU's filter, the scale 2: each pair of pixels one read between them - 16 reads a cell for 64;
+ *  the glow's first step was the costliest of its three on the iPhone) */
+static const char *PH_FS_DOWN2 =
+	"uniform sampler2D src; out vec4 fragc;\n"
+	"void main() { vec2 c = floor(gl_FragCoord.xy) * 4.0, r = 1.0 / vec2(textureSize(src, 0)); vec3 a = vec3(0.0);\n"
+	"  for (int j = 0; j < 4; j++) { float wy = (j == 0 || j == 3) ? 1.0 : 3.0;\n"
+	"    for (int i = 0; i < 4; i++) { float wx = (i == 0 || i == 3) ? 1.0 : 3.0;\n"
+	"      a += wx * wy * texture(src, (c + vec2(float(2 * i) - 1.0, float(2 * j) - 1.0)) * r).rgb; } }\n"
+	"  fragc = vec4(a / 64.0, 1.0); }\n";
+/* (the Gaussian with the GPU's filter: two neighbours in one read between them, by their weights - 8 reads for 15) */
+static const char *PH_FS_BLURL =
+	"uniform sampler2D src; uniform float w[32], o[32]; uniform int m; uniform vec2 dir; out vec4 fragc;\n"
+	"void main() { vec2 c = floor(gl_FragCoord.xy) + 0.5, r = 1.0 / vec2(textureSize(src, 0)); vec3 a = vec3(0.0);\n"
+	"  for (int k = 0; k < m; k++) a += w[k] * texture(src, (c + dir * o[k]) * r).rgb;\n"
+	"  fragc = vec4(a, 1.0); }\n";
 static const char *PH_FS_BLUR =                 /* (the Gaussian, one way: gtw) */
 	"uniform sampler2D src; uniform float w[63]; uniform int n; uniform ivec2 dir, lim; out vec4 fragc;\n"
 	"void main() { ivec2 c = ivec2(gl_FragCoord.xy); vec3 a = vec3(0.0);\n"
@@ -173,7 +188,7 @@ static void ph_reset (void)
 	glInvalidateFramebuffer_ = (pf_glInvalidateFramebuffer) hwr.get_proc_address ("glInvalidateFramebuffer");   /* (optional: GL 4.3 / ES 3) */
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: no instancing / framebuffers - the light on the CPU\n"); return; }
 	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
-	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP); ph_ui = ph_prog (GPU_VS, PH_FS_UI); ph_uit = 0; ph_uigen = -1;
+	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_down2 = ph_prog (GPU_VS, PH_FS_DOWN2); ph_blurl = ph_prog (GPU_VS, PH_FS_BLURL); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP); ph_ui = ph_prog (GPU_VS, PH_FS_UI); ph_uit = 0; ph_uigen = -1;
 	if (!ph_cap || !ph_upd || !ph_down || !ph_blur || !ph_out || !ph_comp) return;
 	glGenBuffers_ (1, &ph_vbo); glGenVertexArrays_ (1, &ph_vao); glGenFramebuffers_ (1, &ph_fbo);
 	glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
@@ -199,7 +214,7 @@ static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint f
 static void ph_bltest (void)
 {
 #if VX_IOS || defined(VX_BLTEST)
-	int ok = 1; g_bl = GL_BL_HAND;
+	int ok = 1; g_bl = GL_BL_HAND; g_bl_lin = 0;
 	GLLOAD (glGenFramebuffers); GLLOAD (glFramebufferTexture2D); GLLOAD (glCheckFramebufferStatus); GLLOAD (glReadPixels); GLLOAD (glDeleteFramebuffers);
 	if (!ok) return;
 	static const float two[8] = { 0, 0, 0, 0, 1, 1, 1, 1 }; unsigned char px[4] = { 0, 0, 0, 0 };
@@ -217,7 +232,7 @@ static void ph_bltest (void)
 		glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, a); glUniform1i_ (glGetUniformLocation_ (tp, "t"), 0);
 		glDrawArrays_ (GL_TRIANGLES, 0, 3); glReadPixels_ (0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
 		const int filt = px[0] > 118 && px[0] < 138, hand = getenv ("VX_BLHAND") && atoi (getenv ("VX_BLHAND"));
-		if (filt && !hand) g_bl = GL_BL_CUBIC;
+		g_bl_lin = filt && !hand; if (g_bl_lin) g_bl = GL_BL_CUBIC;
 		fprintf (stderr, "[vectrex_emu] GPU: a half-float texture read between two texels (0 and 1): %.3f - %s\n", px[0] / 255.0,
 			!filt ? "not filtered (nearest): read by hand" : hand ? "filtered by the GPU, read by hand all the same (VX_BLHAND)" : "filtered by the GPU: its own reads"); }
 	glBindVertexArray_ (0); glBindFramebuffer_ (GL_FRAMEBUFFER, 0); glDeleteFramebuffers_ (1, &fb); glDeleteVertexArrays_ (1, &va);
@@ -352,14 +367,26 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		int n = (int) ceil (3.0 * sc); if (n > 31) n = 31; float w[63]; double t = 0;
 		for (int k = -n; k <= n; k++) { w[k + n] = (float) exp (-0.5 * k * k / (sc * sc)); t += w[k + n]; }
 		for (int k = 0; k <= 2 * n; k++) w[k] = (float) (w[k] / t);
-		ph_target (ph_B[0], 0, 0, ph_gw, ph_gh); glUseProgram_ (ph_down); ph_bind (ph_down, "src", 0, ph_S);
-		PU1I (ph_down, "s", S); PU1I (ph_down, "gd", gd); glUniform2i_ (ph_ul (ph_down, "lim"), FW - 1, FH - 1);
-		glDrawArrays_ (GL_TRIANGLES, 0, 3);
+		const int lin = g_bl_lin && ph_down2 && ph_blurl && !(getenv ("VX_GLOWOLD") && atoi (getenv ("VX_GLOWOLD")));   /* (the GPU's filter: fewer reads, the same glow) */
+		if (lin && S == 2) { ph_target (ph_B[0], 0, 0, ph_gw, ph_gh); glUseProgram_ (ph_down2); ph_bind (ph_down2, "src", 0, ph_S);
+			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glDrawArrays_ (GL_TRIANGLES, 0, 3);
+			glBindTexture_ (GL_TEXTURE_2D, ph_S); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST); }
+		else { ph_target (ph_B[0], 0, 0, ph_gw, ph_gh); glUseProgram_ (ph_down); ph_bind (ph_down, "src", 0, ph_S);
+			PU1I (ph_down, "s", S); PU1I (ph_down, "gd", gd); glUniform2i_ (ph_ul (ph_down, "lim"), FW - 1, FH - 1);
+			glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+		if (lin) { float pw[32], po[32]; int m = 0;
+			for (int k = -n; k <= n; k += 2, m++) { const float w1 = w[k + n], w2 = k + 1 <= n ? w[k + 1 + n] : 0.0f; pw[m] = w1 + w2; po[m] = (float) k + w2 / (w1 + w2); }
+			glUseProgram_ (ph_blurl); glUniform1fv_ (ph_ul (ph_blurl, "w"), m, pw); glUniform1fv_ (ph_ul (ph_blurl, "o"), m, po); PU1I (ph_blurl, "m", m);
+			for (int pass = 0; pass < 2; pass++) {
+				ph_target (ph_B[pass ^ 1], 0, 0, ph_gw, ph_gh); ph_bind (ph_blurl, "src", 0, ph_B[pass]);
+				glUniform2f_ (ph_ul (ph_blurl, "dir"), pass ? 0.0f : 1.0f, pass ? 1.0f : 0.0f); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
+		else {
 		glUseProgram_ (ph_blur); glUniform1fv_ (ph_ul (ph_blur, "w"), 2 * n + 1, w); PU1I (ph_blur, "n", n);
 		glUniform2i_ (ph_ul (ph_blur, "lim"), ph_gw - 1, ph_gh - 1);
 		for (int pass = 0; pass < 2; pass++) {
 			ph_target (ph_B[pass ^ 1], 0, 0, ph_gw, ph_gh); ph_bind (ph_blur, "src", 0, ph_B[pass]);
-			glUniform2i_ (ph_ul (ph_blur, "dir"), pass ? 0 : 1, pass ? 1 : 0); glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+			glUniform2i_ (ph_ul (ph_blur, "dir"), pass ? 0 : 1, pass ? 1 : 0); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	}
 	PHT (2);
 	/* the screen's values: through the sheet with its effects (gpu_ovfx.c), or as PH_FS_OUT */

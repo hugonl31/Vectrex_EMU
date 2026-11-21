@@ -2328,7 +2328,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
 			fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) / bk * pw_width;   /* (the glass's scatter: not the beam option's) */
 			kk = BEAM_HALO_K * (cyc / BEAM_HALO_C < 1 ? cyc / BEAM_HALO_C : 1) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl); dot = 1;
-			{ extern float vx_hdr_lift, vx_hdr_hb; extern int vx_app_dots; if (vx_hdr_lift > 1.5f || vx_app_dots) kk *= vx_hdr_hb; }   /* (the Vectrex look on SDR: the dots' glow up -
+			{ extern float vx_hdr_lift, vx_hdr_hb, vx_hdr_hw; extern int vx_app_dots; if (vx_hdr_lift > 1.5f || vx_app_dots) { kk *= vx_hdr_hb; fw *= vx_hdr_hw; } }   /* (the Vectrex look on SDR: the dots' glow up -
 			                                                  a dot at white beside a line at white: its glare tells it) */
 		} else if (!zl[i]) {
 			double ee = lp > 1e-9 ? cyc / (lp / gp) : 1e9;

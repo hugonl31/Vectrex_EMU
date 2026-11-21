@@ -583,6 +583,14 @@ BEAM_FADE = 0.3              # the beam fading out after /BLANK (intensity bit 7
 # a glow). It softens the dark line ends next to corners without hiding them; text has no resting spots.
 BEAM_HALO_W, BEAM_HALO_K, BEAM_HALO_C = 1.6, 0.014, 18.0  # FWHM (game px), brightness (default, the owner's choice 2026-10-14; Tube > Corner glow strength), cycles for full
 BEAM_DOTC, BEAM_DOTMAX = 4.0, 1.6
+# the look (Tube > Look, as the apps and the core): Bright - all lines up to white; Vectrex - as a real Vectrex, the light as
+# the tube gives it (the owner's photos of Test Cartridge Rev. 4, 2026-11-20/21): a slow line brighter by the beam's time on
+# it (cycles a game px over LOOK_EE, ^LOOK_EQ, at most LOOK_EC), the lines scaled in light (LOOK_VS, an HDR screen LOOK_VSH)
+# and clipping only at white, more bloom (LOOK_GB), the trail x LOOK_TRAIL. Both: the dots' spot x DOT_W, their halo x DOT_HALO
+LOOK_EE, LOOK_EQ, LOOK_EC = 1.4, 0.31, 6.0
+LOOK_VS, LOOK_VSH, LOOK_GB = 0.29, 0.48, 1.3   # (the PC's light before the tone step is higher than the core's: matched on Full Grid Test, 1.00 vs 0.99)
+LOOK_TRAIL, LOOK_TRAIL_HDR = 2.1, 1.25
+DOT_W, DOT_HALO = 1.6, 2.75
 BEAM_DOTW, BEAM_DOTWK = 1.0, 0.002   # its width: the line width x DOTW + DOTWK per cycle (game px)
 # a long, bright rest blooms: Vectorblade's enemy shots (intensity 127, ~38 cycles in one spot) are as
 # bright as the player's shots (short bars) on the owner's tube, on the emulator they were tiny points.
@@ -912,8 +920,11 @@ void main() {
 TONE_SHADER = b"""
 uniform sampler2D tex;
 uniform float hk;
+uniform float vl;                       // (the Vectrex look: the lines scaled in light by vl, clipping only at white / the peak)
 void main() {
     vec3 c = texture2D(tex, gl_TexCoord[0].st).rgb;
+    if (vl > 0.0) { vec3 l = pow(max(c, 0.0), vec3(2.2)) * vl; float p = pow(max(hk, 1.0), 2.2);
+        l = l / pow(1.0 + pow(l / p, vec3(6.0)), vec3(1.0 / 6.0)); gl_FragColor = vec4(pow(l, vec3(1.0 / 2.2)), 1.0); return; }
     vec3 k = 0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6));
     vec3 o = mix(c, k, step(0.55, c));
     if (hk > 1.0) { vec3 x = max(c - o, 0.0); float m = hk - 1.0;
@@ -2234,7 +2245,7 @@ class GLBloomRenderer(GLRenderer):
         self.dprog = program(DITHER_SHADER, 'dither'); self.u_dtex = GetUniform(self.dprog, b'tex')
         self.u_k = {k: GetUniform(self.kprog, k.encode()) for k in ('tex', 'norm', 'ctr', 'cx', 'cy', 'pull', 'glass', 'aw', 'ah', 'goff', 'gsc', 'glut', 'gn', 'edge', 'grey', 'lmap', 'lk', 'bscale', 'pxs', 'lpos', 'lmr', 'hsh', 'gsh', 'lca', 'lsa', 'cse', 'croom', 'crefl', 'cwear', 'clut', 'lc', 'smap', 'smr')}
         self.tprog = program(TONE_SHADER, 'tone')
-        self.u_ttex = GetUniform(self.tprog, b'tex'); self.u_thk = GetUniform(self.tprog, b'hk')
+        self.u_ttex = GetUniform(self.tprog, b'tex'); self.u_thk = GetUniform(self.tprog, b'hk'); self.u_tvl = GetUniform(self.tprog, b'vl')
         self.hdr = None; self.hdr_hk = 1.0                      # (HDR: hdr_start - the picture through DirectX, scRGB)
         try:
             self.hdrprog = program(HDR_OUT_SHADER, 'HDR output')   # (not hprog: the glint's)
@@ -2327,6 +2338,7 @@ class GLBloomRenderer(GLRenderer):
         self.light_ov_k = 1.0        #  its strength
         self.light_tex = None; self.light_key = None; self.light_made_t = 0.0
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
+        self.look = 'bright'         # Tube > Look: 'bright' (all lines up to white) or 'vectrex' (as a real Vectrex, LOOK_*)
         self.white_k = WHITE_DEFAULT # Tube > White balance: the beam's white, kelvin (see white_gain)
         self.beam_trace = False      # Tube > Beam trace: the spot's own path lights the phosphor by the time it spent
                                      #  (BEAM_TRACE_CSAT; the core's beam-trace mode) - off: the line renderer
@@ -3252,13 +3264,15 @@ class GLBloomRenderer(GLRenderer):
         if halo.any():
             bl = np.clip((cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0), 0.0, 1.0)
             fw = np.where(halo, BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) * cwidth, fw)
-            kk = np.where(halo, getattr(self, 'halo_k', BEAM_HALO_K) * np.minimum(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl), kk)
+            kk = np.where(halo, getattr(self, 'halo_k', BEAM_HALO_K) * DOT_HALO * np.minimum(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl), kk)
         if getattr(self, 'even_beam', False):
             kk = np.where(halo, kk, BEAM_LINE)
         else:
             with np.errstate(divide='ignore', invalid='ignore'):
                 ee = np.where(moving, cyc / np.where(moving, lp / gp, 1.0), 0.0)
             kk = np.where(moving, BEAM_LINE * (1.0 - BEAM_SPEED * np.exp(-ee / 0.8)), kk)
+            if self.vlook():                               # (the Vectrex look: a slow line brighter by the beam's time)
+                kk = np.where(moving & (ee > LOOK_EE), kk * np.minimum(np.maximum(ee, LOOK_EE) / LOOK_EE, LOOK_EC) ** LOOK_EQ, kk)
             if rest.any():
                 kk = np.where(rest, BEAM_DOTMAX * getattr(self, 'dot_k', 1.0) * np.minimum(1.0, cyc / BEAM_DOTC), kk)
                 rd = np.maximum(0.0, (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT))
@@ -3266,7 +3280,7 @@ class GLBloomRenderer(GLRenderer):
                 zk = np.where(rest & (zi < BEAM_LOWZ), np.maximum(zk, zdot * np.minimum(1.0, cyc / BEAM_DOTLOWC)), zk)
                 fwr = fw * BEAM_DOTW + BEAM_DOTWK * np.minimum(cyc, 80.0)
                 bl = np.clip((cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0), 0.0, 1.0)
-                fw = np.where(rest, fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl), fw)
+                fw = np.where(rest, fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) * DOT_W, fw)   # (DOT_W: the dots' glare)
                 dw = rest & ((b & 512) != 0)
                 if dw.any():                               # (a dwell: soft while short, see REST_DWELL_C)
                     wd = np.minimum(1.0, cyc / REST_DWELL_C)
@@ -3432,12 +3446,13 @@ class GLBloomRenderer(GLRenderer):
             if b & 256:                                    # a resting spot's halo (see BEAM_HALO_W)
                 bl = min(1.0, max(0.0, (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0)))
                 fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) * cwidth
-                k = getattr(self, 'halo_k', BEAM_HALO_K) * min(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl)
+                k = getattr(self, 'halo_k', BEAM_HALO_K) * DOT_HALO * min(1.0, cyc / BEAM_HALO_C) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl)
             elif getattr(self, 'even_beam', False):       # an ideal display: lines and points alike
                 k = BEAM_LINE
             elif not zlen:
                 e = cyc / (lp / gp)                        # cycles per game pixel
                 k = BEAM_LINE * (1.0 - BEAM_SPEED * exp(-e / 0.8))   # fast sweeps slightly fainter
+                if e > LOOK_EE and self.vlook(): k *= min(e / LOOK_EE, LOOK_EC) ** LOOK_EQ   # (the Vectrex look)
             else:                                          # the beam resting: a spot
                 # corners (16-18 cycles) and dots (60-70) at full brightness, as on the real tube
                 k = BEAM_DOTMAX * getattr(self, 'dot_k', 1.0) * min(1.0, cyc / BEAM_DOTC)
@@ -3445,7 +3460,7 @@ class GLBloomRenderer(GLRenderer):
                     zk = max(zk, beam_zdot(zi) * min(1.0, cyc / BEAM_DOTLOWC))
                 fw = fw * BEAM_DOTW + BEAM_DOTWK * min(cyc, 80.0)
                 bl = min(1.0, max(0.0, (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0)))
-                fw *= 1.0 + (BEAM_BLOOM_W - 1.0) * bl          # (a long bright rest blooms)
+                fw *= (1.0 + (BEAM_BLOOM_W - 1.0) * bl) * DOT_W   # (a long bright rest blooms; DOT_W: the dots' glare)
                 if b & 512:                                # (a dwell: soft while short, see REST_DWELL_C)
                     wd = min(1.0, cyc / REST_DWELL_C)
                     k *= wd ** 2.5; fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd)
@@ -3509,6 +3524,9 @@ class GLBloomRenderer(GLRenderer):
     HOLD_MAX = 0.15                                       # (a game that stops drawing: its picture fades after this)
     HOLD_EPS = 0.004                                      # (the margin: frame times jitter a little, and the phosphor
                                                           #  image keeps a spot's age to ~0.5 ms - 16-bit float)
+    def vlook(self):
+        """the Vectrex look (Tube > Look)"""
+        return getattr(self, 'look', 'bright') == 'vectrex'
     def hold(self):
         """how long a lit spot stays at full brightness: until the game has drawn its next picture. A real tube
         keeps a slow game's picture as bright as a fast one's (the eye averages the flashes); here a spot stays
@@ -3886,7 +3904,8 @@ class GLBloomRenderer(GLRenderer):
                 self.ActiveTexture(0x84C3); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0])
             self.ActiveTexture(0x84C0)
             (fa, ta), (fs, tsl) = PHOS_A
-            self.Uniform2f(u['amp'], fa * TRAIL_K, fs * TRAIL_K); self.Uniform2f(u['tau'], ta * ts, tsl * ts)
+            tk = TRAIL_K * ((LOOK_TRAIL_HDR if self.hdr_hk > 1.0 else LOOK_TRAIL) if self.vlook() else 1.0)   # (the Vectrex look: its trail)
+            self.Uniform2f(u['amp'], fa * tk, fs * tk); self.Uniform2f(u['tau'], ta * ts, tsl * ts)
             self.Uniform2f(u['kd'], *((1.0, 1.0) if od is not None else (math.exp(-dt / (ta * ts)), math.exp(-dt / (tsl * ts)))))
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)
             self.Uniform1f(u['mul'], od if od is not None else 1.0)
@@ -4367,11 +4386,12 @@ class GLBloomRenderer(GLRenderer):
         if hx or hy:
             gl.glMatrixMode(GL_MODELVIEW); gl.glPushMatrix(); gl.glTranslatef(hx / float(w), -hy / float(h), 0.0)
         self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0); self.Uniform1f(self.u_thk, self.hdr_hk)
+        self.Uniform1f(self.u_tvl, (LOOK_VSH if self.hdr_hk > 1.0 else LOOK_VS) if self.vlook() else 0.0)
         self._quad(src)
         self.UseProgram(0)
         gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
         g = self._wb(); gm = max(g)                                # the halo: the white balance's hue, at full
-        self._quad(self.B1[0], g[0] / gm, g[1] / gm, g[2] / gm, self.bloom)   #  strength (the cores stay white: cold)
+        self._quad(self.B1[0], g[0] / gm, g[1] / gm, g[2] / gm, self.bloom * (LOOK_GB if self.vlook() and self.hdr_hk <= 1.0 else 1.0))   #  strength (the cores stay white: cold)
         if hx or hy:
             gl.glMatrixMode(GL_MODELVIEW); gl.glPopMatrix()
         ov = getattr(self, 'overlay', None)

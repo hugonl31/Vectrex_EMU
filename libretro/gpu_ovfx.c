@@ -162,10 +162,11 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	                           black stays black, the faint trail nearly as it was; 0: only the rests above white) */
 	"vec3 hlift(vec3 k) { if (hl < 0.5 || hl > 1.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
 	"uniform float vs, lt, sn, gb;\n"   /* (HDR, the Vectrex look: the bright lines' scale above mid grey - the faint ones and the trail as SDR; a line at white, the slow ones and the dots above) */
-	"vec3 knee(vec3 c) { if (hl > 1.5) {\n"   /* (HDR, the Vectrex look: light as a real tube gives it - no knee, every part
-	                                                   x vs in light (the ratios kept: slow lines, overlaps, dots), softly to the peak only near it) */
+	"vec3 vxl(vec3 c) {\n"   /* (the Vectrex look: the tube's light as a real tube gives it - no knee, every part x vs in light (the
+	                                                   ratios kept: slow lines, overlaps, dots), softly to the peak only near it; the room's light added after it) */
 	"    vec3 l = pow(max(c, 0.0), vec3(2.2)) * vs; float p = pow(max(hk, 1.0), 2.2) * (hk > 1.0 ? lt : 1.0); float kn = hk > 1.0 ? 6.0 : sn; l = l / pow(1.0 + pow(l / p, vec3(kn)), vec3(1.0 / kn));\n"
 	"    return pow(l, vec3(1.0 / 2.2)); }\n"
+	"vec3 knee(vec3 c) { if (hl > 1.5) return c;\n"   /* (the Vectrex look: mapped before the room's light - vxl) */
 	"  return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
 	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
 	                                                   through the overlay's colour; softly up to the screen's peak) */
@@ -173,6 +174,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb; float hx = texelFetch(L, ivec2(gl_FragCoord.xy), 0).a;\n"
 	"  vec3 ag = br * (texture(pS, uv).rgb - texture(pF, uv).rgb), o0 = max(o - ag, 0.0);\n"   /* (the afterglow here, read once: the picture's and the scatter's) */
 	"  vec3 m = texture(ovm, uv).rgb, la = texture(ova, uv).rgb, l = dot(o, vec3(1.0 / 3.0)) * m, l0 = dot(o0, vec3(1.0 / 3.0)) * m;\n"
+	"  if (hl > 1.5) { l = vxl(l); l0 = vxl(l0); }\n"   /* (the Vectrex look: the tube's light only - the room's on the sheet as it is) */
 	"  vec3 c = sqrt(l0 * l0 + la * la), tm = vec3(1.0);\n"   /* (the picture from the light without the afterglow; tm: what the sheet
 	                                              does to the light passing it, the afterglow's too) */
 	"  vec4 ov = texture(art, uv); float sheet = step(0.004, ov.a);\n"

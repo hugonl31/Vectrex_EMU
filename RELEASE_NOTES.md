@@ -5,6 +5,20 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.7.6
 
+* Look (PC: Tube > Look; RetroArch: Tube > Look): Bright, the default - all lines pushed up to white, bright vectors on a
+  dim screen. Vectrex - as a real Vectrex, measured on photos of one: dots and slow lines stand out with a glow, the
+  other lines lower; wants a bright screen.
+* Dots and the beam's resting spots glow more, as on a real Vectrex (Test Cartridge Rev. 4's INTENSITY screen).
+* The case's glossy walls as on a real Vectrex: flat, the picture mirrored straight and evenly, fainter and sharper.
+* Online (PC): rollback for Vectrex games - smooth over real networks; card games (UVMC2, PiTrex) streamed from the
+  host. The host can switch between Vectrex and card games mid-game. Take port 1 / Take port 2; the host's saves
+  (Vectorblade's calibration, Last Human's save chip) go to player 2; chat also while a game is streamed.
+* RetroArch: the control deck on Auto - a slim pop-up deck on a real 4:3 screen, none elsewhere.
+* UVMC2 and PiTrex games use the unit's zero hold; every game starts with its unit's settings (Last Human calibrated
+  right after a UVMC2 game).
+* RESET as on a real Vectrex: the BIOS decides between the title screen and a cold start.
+* PC: F12 and recording in full screen take the case only.
+* The core no longer uses more memory with every game switch.
 * Online: joining a game always starts both players' games anew. Joining a running game sent its state - up to 2 MB
   - which stalled a phone's own network (Wi-Fi Direct) and parted the two games at once (an iPad with an Android
   handheld). A fresh start for both is quick and plays the same on every device.

@@ -1531,7 +1531,7 @@ static void vxa_net_tick (void)
 - (BOOL) application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
 {
 	vxa_log_start (); vlog ("app start"); vxa_net_watch ();
-	{ extern int vx_gprof; vx_gprof = 1; }   /* (the GPU diagnostic: one picture in 30 timed, stage by stage - the stutter at 120 Hz) */
+	{ extern int vx_gprof; vx_gprof = 0; }   /* (the GPU diagnostic, 1: one picture in 30 timed, stage by stage, the log - off: it cost about 4 pictures a second at 120 Hz) */
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;
 }

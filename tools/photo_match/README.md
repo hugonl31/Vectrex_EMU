@@ -66,3 +66,23 @@ So one mechanism rounds the corner test's corners (the X speed flipped at RAMP o
 Vectorblade's vectors (X and Y set inside pauses of 8, 9, 12 cycles). The candidates differ in what they predict for
 the Switch Test: page 2 (an X step with RAMP held on: a slide shows there, a switch effect does not) and page 3 (the
 flip K cycles before / after the RAMP edges: where the dot sits against the tip).
+
+## The phosphor's decay (2026-11-21): Switch Test page 4, ProRes video
+
+The owner's clips (Blackmagic Camera, iPhone 18 Pro Max 24 mm, ProRes 422 HQ 4K, Apple Log, 100 fps, shutter 1/200 s,
+6400 K): `A001_11211859_C007.mov` ISO 64, `A001_11211901_C009.mov` ISO 800 (nothing clips: the brightest code 0.67, black
+0.15 = Apple Log's black). `decay1-4.py`: Apple Log -> linear, the light in a box at every position of the eight rows
+in every frame, sorted by the position's age (the fresh one: the brightest; two camera frames a Vectrex frame, so two
+samples 10 ms apart), the fit.
+
+- **One decay law: light ~ (t + 1 ms)^-1.38** - the stepping lines at intensity 7F and 5F, 10 to 230 ms after the
+  beam, rms 2 % and 6 % (7F: 318 at 10 ms, 128 at 20, 50 at 40, 19.6 at 80, 7.6 at 160; the frame with the beam in it
+  4635 - the 5 ms window that holds the excitation). The dots follow it as far as they rise above the noise (to ~80 ms).
+- A line no longer drawn, as a share of the same line redrawn every frame (the light of one whole 20 ms frame, linear):
+  6.1 % after 1 frame, 2.8 % after 2, 1.7 % after 3, 0.9 % after 5 (100 ms), 0.48 % after 8, 0.28 % after 12, 0.14 % after 20
+  (400 ms), 0.04 % after 50 (1 s).
+- The afterglow's strength is not the prompt light's: line 5F / 7F 0.69 fresh, 0.5 at every age (the slow part of the
+  light law: 0.67^1.5 = 0.55); a dot resting 16 cycles leaves the same trail as one resting 64 (0.9-1.1); dots at 5F as
+  7F (0.9-1.2), at 40 0.4-0.5. It saturates with the dose.
+- Limits: the first sample is 10 ms after the beam (the first 5 ms window mixes excitation and decay); the dots beyond
+  ~100 ms are below the clip's noise (the local background's subtraction, +-0.1).

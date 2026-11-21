@@ -11,8 +11,10 @@
 #include "gpu_tab.h"
 /* (txb: a filtered read of a half-float texture - the glow, the afterglow, the overlay's maps, the glass's light map. On an
  *  iPhone / iPad bilinear by hand: there the GPU read them as nearest - the glow in steps, stripes; elsewhere the GPU's) */
-#if VX_IOS || defined(VX_BLTEST)                   /* (VX_BLTEST: a test build with the iPhone's reads) */
-#define GL_BL "vec4 txb(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)), L = textureSize(t, 0) - 1;\n" \
+/* (GL_BL_HAND: both by hand - GL_BL_CUBIC: the GPU filters, the spline in 4 of its reads (each pair of cells one read
+ *  between them) - GL_BL_PLAIN: the GPU's own. An iPhone / iPad: tried at the start, ph_bltest - the iPhone 17 Pro Max
+ *  filters them itself, 2026-11-21; the hand's 4 and 16 reads a pixel were a good part of its GPU time) */
+#define GL_BL_HAND "vec4 txb(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)), L = textureSize(t, 0) - 1;\n" \
 	"  vec2 f = g - floor(g);\n" \
 	"  return mix(mix(texelFetch(t, clamp(i, ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), L), 0), f.x),\n" \
 	"             mix(texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), L), 0), f.x), f.y); }\n" \
@@ -25,9 +27,20 @@
 	"    for (int x = 0; x < 4; x++) r += wx[x] * texelFetch(t, clamp(i + ivec2(x, y), ivec2(0), L), 0);\n" \
 	"    a += wy[y] * r; }\n" \
 	"  return a; }\n"
+#define GL_BL_CUBIC "#define txb texture\n" \
+	"vec4 bsw(float t) { float s = 1.0 - t; return vec4(s * s * s, 4.0 - 6.0 * t * t + 3.0 * t * t * t, 1.0 + 3.0 * t + 3.0 * t * t - 3.0 * t * t * t, t * t * t) / 6.0; }\n" \
+	"vec4 txc(sampler2D t, vec2 uv) { vec2 sz = vec2(textureSize(t, 0)), g = uv * sz - 0.5, fl = floor(g), f = g - fl;\n" \
+	"  vec4 wx = bsw(f.x), wy = bsw(f.y); vec2 g0 = vec2(wx.x + wx.y, wy.x + wy.y), g1 = 1.0 - g0;\n" \
+	"  vec2 h0 = (fl - 0.5 + vec2(wx.y, wy.y) / g0) / sz, h1 = (fl + 1.5 + vec2(wx.w, wy.w) / g1) / sz;\n" \
+	"  return g0.y * (g0.x * texture(t, h0) + g1.x * texture(t, vec2(h1.x, h0.y)))\n" \
+	"       + g1.y * (g0.x * texture(t, vec2(h0.x, h1.y)) + g1.x * texture(t, h1)); }\n"
+#define GL_BL_PLAIN "#define txb texture\n#define txc texture\n"
+#if VX_IOS || defined(VX_BLTEST)                   /* (VX_BLTEST: a test build with the iPhone's reads) */
+static const char *g_bl = GL_BL_HAND;
 #else
-#define GL_BL "#define txb texture\n#define txc texture\n"
+static const char *g_bl = GL_BL_PLAIN;
 #endif
+static void ph_bltest (void);
 
 typedef unsigned int GLuint; typedef int GLint; typedef unsigned int GLenum; typedef int GLsizei; typedef float GLfloat;
 typedef char GLchar; typedef unsigned char GLboolean; typedef unsigned int GLbitfield;
@@ -459,7 +472,7 @@ static void gpu_reset (void)
 	GLLOAD (glDrawArrays); GLLOAD (glGenVertexArrays); GLLOAD (glBindVertexArray); GLLOAD (glDeleteVertexArrays); GLLOAD (glGetError);
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: the frontend lacks GL functions - the CPU's picture\n"); return; }
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: see gpu_phos.c) */
-	const char *vs[2] = { hdr, GPU_VS }, *fs[4] = { hdr, GL_BL, GPU_FS_A, GPU_FS_B };
+	const char *vs[2] = { hdr, GPU_VS }, *fs[4] = { hdr, (ph_bltest (), g_bl), GPU_FS_A, GPU_FS_B };
 	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 4);
 	if (!v || !f) return;
 	g_prog = glCreateProgram_ (); glAttachShader_ (g_prog, v); glAttachShader_ (g_prog, f); glLinkProgram_ (g_prog);

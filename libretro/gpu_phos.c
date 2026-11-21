@@ -136,7 +136,7 @@ static GLuint ph_prog (const char *vsrc, const char *fsrc)
 {
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: lowp by
 	                                              default in ES - Apple's GPUs then read the glow's faint half-floats in coarse steps, banded) */
-	const char *vs[2] = { hdr, vsrc }, *fs[3] = { hdr, GL_BL, fsrc };
+	const char *vs[2] = { hdr, vsrc }, *fs[3] = { hdr, g_bl, fsrc };
 	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 3);
 	if (!v || !f) return 0;
 	GLuint p = glCreateProgram_ (); glAttachShader_ (p, v); glAttachShader_ (p, f); glLinkProgram_ (p);
@@ -182,17 +182,6 @@ static void ph_reset (void)
 		glVertexAttribDivisor_ ((GLuint) i, 1); }
 	glBindVertexArray_ (0); glBindBuffer_ (GL_ARRAY_BUFFER, 0);
 	ph_ok = 1;
-	{                                                  /* (diagnostic, the log: does this GPU filter a half-float texture itself? An iPhone
-	                                                      read them as nearest - txb does it by hand there, 4 reads for one) */
-		static const float two[8] = { 0, 0, 0, 0, 1, 1, 1, 1 }; unsigned char px[4] = { 0, 0, 0, 0 };
-		GLuint tp = ph_prog (GPU_VS, "uniform sampler2D t; out vec4 fragc; void main() { fragc = texture(t, vec2(0.5)); }\n");
-		if (tp) { GLuint a = ph_tex (2, 1, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, two), b = ph_tex (1, 1, 0x8058, GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST, NULL), t[2];
-			ph_target (b, 0, 0, 1, 1); glDisable_ (GL_BLEND); glUseProgram_ (tp); glBindVertexArray_ (g_vao); glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, a); glUniform1i_ (glGetUniformLocation_ (tp, "t"), 0);
-			glDrawArrays_ (GL_TRIANGLES, 0, 3); glReadPixels_ (0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-			fprintf (stderr, "[vectrex_emu] GPU: a half-float texture read between two texels (0 and 1): %.3f - %s\n", px[0] / 255.0,
-				px[0] > 100 && px[0] < 156 ? "filtered by the GPU" : "not filtered (nearest)");
-			ph_fb_flush (); t[0] = a; t[1] = b; glDeleteTextures_ (2, t); glDeleteProgram_ (tp); }
-	}
 	ox_reset ();                                       /* (the overlay's effects: gpu_ovfx.c) */
 }
 static int ph_nfb;
@@ -204,6 +193,36 @@ static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint f
 	glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexImage2D_ (GL_TEXTURE_2D, 0, ifmt, w, h, 0, fmt, type, data);
 	return t;
+}
+/* (an iPhone / iPad: does its GPU filter a half-float texture itself? Read between two texels, 0 and 1 - if so the
+ *  shaders use its reads, not txb's by hand; the answer in the log. VX_BLHAND=1: by hand whatever it says) */
+static void ph_bltest (void)
+{
+#if VX_IOS || defined(VX_BLTEST)
+	int ok = 1; g_bl = GL_BL_HAND;
+	GLLOAD (glGenFramebuffers); GLLOAD (glFramebufferTexture2D); GLLOAD (glCheckFramebufferStatus); GLLOAD (glReadPixels); GLLOAD (glDeleteFramebuffers);
+	if (!ok) return;
+	static const float two[8] = { 0, 0, 0, 0, 1, 1, 1, 1 }; unsigned char px[4] = { 0, 0, 0, 0 };
+	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";
+	const char *vs[2] = { hdr, GPU_VS }, *fs[2] = { hdr, "uniform sampler2D t; out vec4 fragc; void main() { fragc = texture(t, vec2(0.5)); }\n" };
+	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 2), tp = 0, va = 0, fb = 0;
+	if (v && f) { tp = glCreateProgram_ (); glAttachShader_ (tp, v); glAttachShader_ (tp, f); glLinkProgram_ (tp); }
+	if (v) glDeleteShader_ (v); if (f) glDeleteShader_ (f);
+	if (!tp) return;
+	GLuint a = ph_tex (2, 1, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, two), b = ph_tex (1, 1, 0x8058, GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST, NULL), t[2];
+	glGenVertexArrays_ (1, &va); glGenFramebuffers_ (1, &fb); glBindFramebuffer_ (GL_FRAMEBUFFER, fb);
+	glFramebufferTexture2D_ (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, b, 0);
+	if (glCheckFramebufferStatus_ (GL_FRAMEBUFFER) == 0x8CD5) {
+		glViewport_ (0, 0, 1, 1); glDisable_ (GL_BLEND); glDisable_ (GL_SCISSOR_TEST); glUseProgram_ (tp); glBindVertexArray_ (va);
+		glActiveTexture_ (GL_TEXTURE0); glBindTexture_ (GL_TEXTURE_2D, a); glUniform1i_ (glGetUniformLocation_ (tp, "t"), 0);
+		glDrawArrays_ (GL_TRIANGLES, 0, 3); glReadPixels_ (0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+		const int filt = px[0] > 118 && px[0] < 138, hand = getenv ("VX_BLHAND") && atoi (getenv ("VX_BLHAND"));
+		if (filt && !hand) g_bl = GL_BL_CUBIC;
+		fprintf (stderr, "[vectrex_emu] GPU: a half-float texture read between two texels (0 and 1): %.3f - %s\n", px[0] / 255.0,
+			!filt ? "not filtered (nearest): read by hand" : hand ? "filtered by the GPU, read by hand all the same (VX_BLHAND)" : "filtered by the GPU: its own reads"); }
+	glBindVertexArray_ (0); glBindFramebuffer_ (GL_FRAMEBUFFER, 0); glDeleteFramebuffers_ (1, &fb); glDeleteVertexArrays_ (1, &va);
+	t[0] = a; t[1] = b; glDeleteTextures_ (2, t); glDeleteProgram_ (tp);
+#endif
 }
 /* (each target its own framebuffer, made once: one framebuffer's images changed pass after pass stalled the Nova's
  *  driver - the overlay's passes 9 ms, 2026-11-15) */

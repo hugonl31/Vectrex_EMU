@@ -1567,7 +1567,7 @@ UNIT_PRESETS = {
     # (zofs / drift_x: 0, a typical Vectrex. v1.5.6-v1.5.8 had 0.13 / +0.13, fitted to the owner's own console's BIOS text,
     #  but long moves then land off on other consoles - a player's homebrew (DW2000) put its figures into the platform.
     #  The owner, 2026-11-04: typical console as the default; he trims his own Vectrex to match)
-    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
@@ -1645,7 +1645,7 @@ UNIT_SPREAD = dict(
     drift_y= (('s', 0.0, 0.012),       ('s', 0.015, 0.04)),
     zofs=    (('s', 0.0, 0.04),        ('s', 0.05, 0.10)),   # (the most sensitive: +-0.25 flattens the BIOS's small text)
     ysettle= (('r', 0.60, 0.90),       ('r', 0.45, 0.62)),
-    beamoff= (('r', 0.3, 0.9),         ('r', 0.9, 1.5)),
+    beamoff= (('r', 0.0, 0.4),         ('r', 0.4, 1.0)),
     gap=     (('r', 6.3, 7.7),         ('r', 7.7, 9.3)),
     zerotx=  (('r', 3.8, 5.2),         ('r', 5.2, 6.2)),
     zeroty=  (('r', 2.9, 3.8),         ('r', 3.8, 4.6)),
@@ -2527,6 +2527,9 @@ class App:
             for k in ('zofs', 'drift_x'):                       #  defaults, whatever was set; later changes are the player's own.
                 self.unit[k] = UNIT_PRESETS['owner'][k]         #  v1.5.6's 0.13 values go back to 0 through new_defaults above)
             self.unit_fix = 1
+        if self.unit_fix < 2:                                   # (once (2026-11-23): Beam switch-off delay's fraction acts in the
+            self.unit['beamoff'] = float(int(self.unit.get('beamoff', 0.0)))   #  beam engine again - a saved value keeps the
+            self.unit_fix = 2                                   #  picture it gave: its whole cycles)
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', True) if self.ren else False
@@ -5322,7 +5325,7 @@ class App:
                                           initialdir=ROOT, filetypes=[('Vectrex unit', '*.vxunit'), ('All files', '*.*')])
         if fn:
             try:
-                json.dump(dict(vectrex_unit=1, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
+                json.dump(dict(vectrex_unit=2, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
                 self.show_look('Vectrex unit exported: ' + os.path.basename(fn))
             except OSError as e:
                 self.show_look('could not export: %s' % e)
@@ -5335,6 +5338,7 @@ class App:
         try:
             d = json.load(open(fn))
             u = {k: float(d[k]) for k in UNIT_PRESETS['owner'] if k in d}
+            if 'beamoff' in u and int(d.get('vectrex_unit', 1)) < 2: u['beamoff'] = float(int(u['beamoff']))   # (see unit_fix 2)
         except (OSError, ValueError, TypeError) as e:
             self.show_look('not a Vectrex unit file: %s' % e); return
         for k, v in u.items():
@@ -8873,7 +8877,7 @@ class App:
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name
-            d['unit_fix'] = getattr(self, 'unit_fix', 1)
+            d['unit_fix'] = getattr(self, 'unit_fix', 2)
         d['ultra_rate'] = getattr(self, 'ultra_rate', None)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['run_ahead'] = getattr(self, 'run_ahead', False)

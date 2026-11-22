@@ -18,6 +18,7 @@
 #import <CoreVideo/CoreVideo.h>
 #import <AudioToolbox/AudioToolbox.h>
 #include "testcart.h"
+#include "pitrex_tiles.h"
 #include <dlfcn.h>
 #include <sys/utsname.h>
 #include <sys/time.h>
@@ -1281,6 +1282,13 @@ void ulog (NSString *s) { vlog ("ui %s", s.UTF8String); }
  * brightest light up to that, its knee's top in display gamma */
 /* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost, its lit area so much smaller
  *  than on an iPad or a monitor; on by default on an iPhone, off on an iPad, the setting below the Look) */
+/* (the PiTrex's cartridge and box for the library: written into the thumbs folder - the library calls it when the PiTrex is there) */
+void vxa_pitrex_tiles (void)
+{
+	NSString *th = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/thumbs"];
+	for (NSString *d in @[ @"carts", @"boxes" ]) [NSFileManager.defaultManager createDirectoryAtPath:[th stringByAppendingPathComponent:d] withIntermediateDirectories:YES attributes:nil error:nil];
+	vx_pitrex_tiles_write (th.fileSystemRepresentation);
+}
 UIColor *vx_rgba (double r, double g, double b, double a)
 {
 	extern unsigned vx_pal (unsigned c); const unsigned c = vx_pal ((unsigned) lround (r * 255) << 16 | (unsigned) lround (g * 255) << 8 | (unsigned) lround (b * 255));

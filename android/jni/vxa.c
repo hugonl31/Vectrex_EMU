@@ -27,6 +27,7 @@
 #include <dlfcn.h>
 #include <sys/stat.h>
 #include "../../libretro/testcart.h"
+#include "../../libretro/pitrex_tiles.h"
 #include <zlib.h>
 #include "libretro.h"
 
@@ -697,6 +698,7 @@ JNIEXPORT void JNICALL JF(setHold) (JNIEnv *e, jclass c, jboolean on) { (void) e
 JNIEXPORT void JNICALL JF(setHdr) (JNIEnv *e, jclass c, jboolean can, jfloat headroom, jfloat frac) { (void) e; (void) c; vxa_want_hdr = can; vxa_headroom = headroom; vxa_hdr_frac = frac; }
 JNIEXPORT void JNICALL JF(setTrailMul) (JNIEnv *e, jclass c, jfloat k) { (void) e; (void) c; extern float vx_trail_mul; vx_trail_mul = k; }
 JNIEXPORT void JNICALL JF(testCart) (JNIEnv *e, jclass c, jstring path) { (void) c; JSTR (p, path); if (p) vx_testcart_write (p); JREL (p, path); }   /* (the Test Cart, written into roms/Tests) */
+JNIEXPORT void JNICALL JF(pitrexTiles) (JNIEnv *e, jclass c, jstring thumbs) { (void) c; JSTR (p, thumbs); if (p) vx_pitrex_tiles_write (p); JREL (p, thumbs); }   /* (the PiTrex's cartridge and box, written into the thumbs folder) */
 JNIEXPORT jint JNICALL JF(palette) (JNIEnv *e, jclass c) { (void) e; (void) c; extern int vx_palette; return vx_palette; }   /* (the colour scheme: 0 blue, 1 green) */
 JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on ? 1.0f : 0.0f; { extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */ vlog ("look %s", on ? "Bright" : "Vectrex"); }   /* (the look: Vectrex, or Bright - lifted and wider) */
 JNIEXPORT void JNICALL JF(setHdrLook) (JNIEnv *e, jclass c, jint look) { (void) e; (void) c; extern float vx_hdr_lift; extern int vx_app_dots; vx_hdr_lift = (float) look; vx_app_dots = 1; vlog ("HDR look %d", (int) look); }

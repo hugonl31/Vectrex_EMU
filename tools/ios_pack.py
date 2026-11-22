@@ -65,7 +65,7 @@ print('thumbs:', nt)
 # its box front (the box-art pack there); named after the ROMs, exact names first, then the closest
 import re                                                       # noqa: E402
 from PIL import ImageDraw, ImageFilter                          # noqa: E402
-LBL = 'G:/AI/Vectrex_Labels'
+LBL = 'G:/AI/Vectrex_Artwork'                                    # (was Vectrex_Labels: the folder renamed)
 LAB, BOX = LBL + '/print 4x/labels', LBL + '/original gce/Vectrex 2D Front Cover Box Art - v1.3 Full'
 
 

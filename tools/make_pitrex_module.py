@@ -20,3 +20,4 @@ L += ['}', '', 'def path(root, look):',
       "            with open(p, 'wb') as f:", '                f.write(data)', '        return p', '    except OSError:', '        return None', '']
 io.open(os.path.join(root, 'src', 'frontend', 'pitrex_art.py'), 'w', encoding='utf-8', newline='\n').write('\n'.join(L))
 print('wrote src/frontend/pitrex_art.py')
+

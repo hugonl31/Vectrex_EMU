@@ -45,10 +45,12 @@ float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the r
                                                   brightest lines a little above white; below the knee as SDR) */
 int vx_phone_trail = 0;                        /* (the own phone / tablet apps set it: the afterglow's shape there - a quicker first drop, the faint end about
                                                    twice as long (the owner, his iPhone next to the tube, 2026-11-22). The PC and RetroArch keep the measured one) */
-#define PHOS_A1 (vx_phone_trail ? 0.15f : 0.1404f)
-#define PHOS_T1 (vx_phone_trail ? 0.0583f : 0.0454f)
-#define PHOS_A2 (vx_phone_trail ? 0.022f : 0.0582f)
-#define PHOS_T2 (vx_phone_trail ? 1.25f : 0.350f)
+int vx_trail_new = 1;                          /* (a trial: the setting Afterglow shape - new, or the measured one, to compare on the phone) */
+#define PH_NEW (vx_phone_trail && vx_trail_new)
+#define PHOS_A1 (PH_NEW ? 0.15f : 0.1404f)
+#define PHOS_T1 (PH_NEW ? 0.0583f : 0.0454f)
+#define PHOS_A2 (PH_NEW ? 0.022f : 0.0582f)
+#define PHOS_T2 (PH_NEW ? 1.25f : 0.350f)
 float vx_tail_len = 1.0f, vx_tail_lvl = 1.0f, vx_first_drop = 1.0f;   /* (a trial: the afterglow's shape, the settings Afterglow tail length / level / first drop) */
 float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 1 Bright, for a small screen whose thin lines
                                                    give little light (the owner, 2026-11-22): the tube's light lifted and the beam 1.3 x wider

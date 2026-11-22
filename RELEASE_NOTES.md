@@ -3,6 +3,25 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.0
+
+* A new picture, the same on every platform (PC, iPhone / iPad, Android, RetroArch): the simulated beam lights a simulated
+  phosphor. The light of every place follows from the time the beam spends there, by one law measured on photos of a real
+  Vectrex - a slow line is brighter, a resting dot grows wider, a line's start shows its dot, crossings and repeats add
+  up, the glass round a bright spot glows a little. No separate rules for dots, corners or glow any more.
+* The timing as measured on a real Vectrex (five hand-timed test cartridges, photographed): the spot settles in three
+  stages (lag 13.3 cycles), RAMP's and the beam's delays, the shift register's clock. Corners, joins and small text come
+  out as on the tube.
+* One look. Tube > Look (Bright / Vectrex) is gone, with the line renderer's switches that no longer do anything:
+  bloom and its second pass, Corner glow, Corner dots, Dwell spots, Fast sweeps fainter, Smooth curves at bends, Beam
+  width, Brightness, Even beam.
+* HDR (PC with an HDR monitor, iPhone / iPad, Android 14): the same picture from black to the middle; where an ordinary
+  screen rolls off towards white, the brightest lines and dots go above it, softly up to the screen's peak.
+* The picture's and the Vectrex unit's settings go back to their defaults once with this version (sound, controls,
+  games and overlays stay). A saved deflection lag of 6 becomes 13.3.
+* Online: version 13 - both players need this version.
+* Not yet on the new picture: the EmuVR flavour and the core without a GPU (they draw on the processor).
+
 ## v1.7.6
 
 * Look (PC: Tube > Look; RetroArch: Tube > Look): Bright, the default - all lines pushed up to white, bright vectors on a

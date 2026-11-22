@@ -650,8 +650,21 @@ static void opts_reset_once (void)
 	fprintf (stderr, "[vectrex_emu] settings: the picture's and the unit's back to their defaults, once (%d changed)\n", n);
 }
 #endif
+#ifndef VX_EMUVR
+/* (the line renderer's options, gone 2026-11-22: not asked for - RetroArch logs an error for each unknown name) */
+static int opt_gone (const char *key)
+{
+	static const char *const G[] = { "glow", "look", "brightness", "smooth_bends", "passes", "corner_glow", "corner_dots", "beam", "dwell", "speed_bright", "beam_trace", NULL };
+	if (strncmp (key, "vectrex_emu_", 12)) return 0;
+	for (int i = 0; G[i]; i++) if (!strcmp (key + 12, G[i])) return 1;
+	return 0;
+}
+#else
+#define opt_gone(k) 0
+#endif
 static int opt_is (const char *key, const char *val)
 {
+	if (opt_gone (key)) return 0;
 	struct retro_variable v = { key, NULL };
 	return env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value && !strcmp (v.value, val);
 }
@@ -717,7 +730,7 @@ static void read_options (void)
 	  opt_trail_k = k >= 0.25 && k <= 6.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
 	{ extern int vx_app_noshape, vx_app_dots; extern float vx_hdr_lift, vx_trail_mul;   /* (the look - as the own apps' setting; they set it themselves) */
 	  if (!vx_app_noshape) { const int v = opt_is ("vectrex_emu_look", "vectrex"); vx_hdr_lift = v ? 2.0f : 0.0f; vx_trail_mul = v ? 2.1f : 1.0f; vx_app_dots = 1; } }
-	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
+	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = !opt_gone (v.key) && env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
 	  opt_bright = k >= 1.0 && k <= 2.0 ? (float) k : 1.0f; }
 	opt_dots = !opt_is ("vectrex_emu_corner_dots", "off"); opt_dwell = !opt_is ("vectrex_emu_dwell", "off"); opt_speedb = !opt_is ("vectrex_emu_speed_bright", "off");
 	opt_fill = opt_is ("vectrex_emu_fill", "on");

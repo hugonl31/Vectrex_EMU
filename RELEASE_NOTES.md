@@ -20,6 +20,13 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * iPhone / iPad and the Android app: the afterglow matched by eye to the PC's - its bright start 1.5 times as long, its
   faint end twice as long at three quarters of its level. The PC and RetroArch keep the measured afterglow.
 * Android app: on / off settings show a switch, as the iPhone app's.
+* Colours: the deck, the on-screen controls, the menus and the window in a deeper blue - the default - or green (PC:
+  Display > Colours; phones and RetroArch: Video > Colours). Next to a real Vectrex the green made the vectors look
+  greenish. The PC's and the apps' own menus change at the next start.
+* PC, Pause: the picture stands exactly as it was shown - the bloom no longer fades away while paused.
+* PC, Snapshot (F12): the picture on the screen at that moment, at the window's size - not drawn again some frames
+  later.
+* PC, Authentic size (9): the overlay really 162 x 207 mm (it came out 191 mm).
 * Test Cart, a cartridge to compare the picture between platforms (trail, levels, dots, corners; buttons 1-4): the
   phone apps carry it (Library > Tests), `tools/testcart_compare.py` measures snapshots of it.
 * A new test cartridge, Glow Test: two full-length lines, still or moving at three speeds, the refresh rate from 50

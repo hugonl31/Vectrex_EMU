@@ -473,6 +473,7 @@ static const struct vx_opt OPTS[] = {
 #else
 	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "classic|modern" },
 #endif
+	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green. An app's own menus: from its next start.", "blue|green" },
 #if !VX_IOS                                         /* (an iPhone / iPad: the block takes the screen's own shape - no choice) */
 	{ "vectrex_emu_shape", "video", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
 #endif
@@ -785,6 +786,7 @@ static void read_options (void)
 	  if (size_auto) { if (!scr_short) scr_load (); z = scr_short; }   /* (the screen's short side: gpu_gl.c scr_detect, kept) */
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
+	{ extern int vx_palette; const int pl = opt_is ("vectrex_emu_palette", "green"); if (pl != vx_palette) { vx_palette = pl; dk_dirty_set = 1; } }
 	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }
 	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0;
 	deck_auto = VX_DECK_AUTO && opt_is ("vectrex_emu_deck", "auto"); if (deck_auto) opt_deck = deck_auto_mode (); opt_shape = !VX_IOS && opt_is ("vectrex_emu_shape", "16:9");

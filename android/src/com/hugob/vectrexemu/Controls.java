@@ -56,14 +56,14 @@ final class Controls extends View {
 			p.moveTo (scx - w, scy - R); p.lineTo (scx + w, scy - R); p.lineTo (scx + w, scy - w); p.lineTo (scx + R, scy - w); p.lineTo (scx + R, scy + w); p.lineTo (scx + w, scy + w);
 			p.lineTo (scx + w, scy + R); p.lineTo (scx - w, scy + R); p.lineTo (scx - w, scy + w); p.lineTo (scx - R, scy + w); p.lineTo (scx - R, scy - w); p.lineTo (scx - w, scy - w); p.close ();
 			c.drawPath (p, fill); c.drawPath (p, edge);
-			fill.setColor (0xff24443a); final float in = w * 1.1f, r2 = R - m.dp (4), h = w - m.dp (4), cr = m.dp (4);
+			fill.setColor (Main.pal (0xff24443a)); final float in = w * 1.1f, r2 = R - m.dp (4), h = w - m.dp (4), cr = m.dp (4);
 			if ((padDir & 1) != 0) c.drawRoundRect (new RectF (scx - h, scy - r2, scx + h, scy - in), cr, cr, fill);
 			if ((padDir & 2) != 0) c.drawRoundRect (new RectF (scx - h, scy + in, scx + h, scy + r2), cr, cr, fill);
 			if ((padDir & 4) != 0) c.drawRoundRect (new RectF (scx - r2, scy - h, scx - in, scy + h), cr, cr, fill);
 			if ((padDir & 8) != 0) c.drawRoundRect (new RectF (scx + in, scy - h, scx + r2, scy + h), cr, cr, fill);
 		} else {
 			c.drawCircle (scx, scy, R, fill); c.drawCircle (scx, scy, R, edge);
-			fill.setColor (0xff16302a); edge.setColor (Main.G); c.drawCircle (kx, ky, R * 0.43f, fill); c.drawCircle (kx, ky, R * 0.43f, edge); }
+			fill.setColor (Main.pal (0xff16302a)); edge.setColor (Main.G); c.drawCircle (kx, ky, R * 0.43f, fill); c.drawCircle (kx, ky, R * 0.43f, edge); }
 		fill.setColor (0x990f1c17); edge.setColor (Main.EDGE2); c.drawRoundRect (tog, tog.height () / 2, tog.height () / 2, fill); c.drawRoundRect (tog, tog.height () / 2, tog.height () / 2, edge);   /* (the switch) */
 		{ final float ts = txt.getTextSize (); txt.setTextSize (m.dp (9)); txt.setColor (Main.G);
 		  c.drawText (dpad () ? "STICK" : "D-PAD", tog.centerX (), tog.centerY () - (txt.descent () + txt.ascent ()) / 2, txt); txt.setTextSize (ts); txt.setColor (Main.HI); }

@@ -56,9 +56,26 @@ import java.util.Locale;
 
 public class Main extends Activity implements SurfaceHolder.Callback {
 	/* the theme: the PC app's colours */
-	static final int BG = 0xff05080a, BAR = 0xff0a1210, PANEL = 0xff0b1511, BODY = 0xff0f1c17, EDGE = 0xff1d3329, EDGE2 = 0xff2f5544, SEL = 0xff24443a,
+	static int BG = 0xff05080a, BAR = 0xff0a1210, PANEL = 0xff0b1511, BODY = 0xff0f1c17, EDGE = 0xff1d3329, EDGE2 = 0xff2f5544, SEL = 0xff24443a,
 		G = 0xff66aa88, HI = 0xff88ccbb, HI2 = 0xffbbffee, FG = 0xffc8d6cf, FG2 = 0xffa9bdb3, DIM = 0xff7f978b, CHG = 0xffd9a35e;
-	static Main me;
+	/* The colour scheme (the owner, 2026-11-22): blue, the default, or green - the core's rule (browser.c vx_pal): a green (hue
+	 * 100 - 190 degrees, some colour in it) goes to hue 216, 1.25 x as strong. The scheme of a start: set before the first view
+	 * (app.palgreen: the core's Colours setting as it was when the app went to the background) */
+	static boolean green = false;
+	static int pal (int c)
+	{
+		if (green) return c;
+		float[] h = new float[3]; android.graphics.Color.colorToHSV (c, h);
+		if (h[0] > 100f && h[0] < 190f && h[1] > 0.12f) { h[0] = 216f; h[1] = Math.min (1f, h[1] * 1.25f); return android.graphics.Color.HSVToColor (android.graphics.Color.alpha (c), h); }
+		return c;
+	}
+	static void palette (boolean g)
+	{
+		green = g; if (g) return;
+		BG = pal (BG); BAR = pal (BAR); PANEL = pal (PANEL); BODY = pal (BODY); EDGE = pal (EDGE); EDGE2 = pal (EDGE2); SEL = pal (SEL);
+		G = pal (G); HI = pal (HI); HI2 = pal (HI2); FG = pal (FG); FG2 = pal (FG2); DIM = pal (DIM);
+	}
+	static Main me; static boolean palSet;
 	SharedPreferences prefs; FrameLayout root, screens; SurfaceView sv; Controls ctl; LinearLayout bar, toasts; TextView menuBtn; DeckView deck; View popTab; long popUntil;
 	View welcome; TextView wStatus; ProgressBar wProg;
 	final Handler h = new Handler (Looper.getMainLooper ());
@@ -72,6 +89,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	@Override protected void onCreate (Bundle b)
 	{
 		super.onCreate (b); me = this; prefs = getSharedPreferences ("vx", MODE_PRIVATE);
+		if (!palSet) { palSet = true; palette (prefs.getInt ("app.palgreen", 0) == 1); }
 		files = getFilesDir (); VX.logStart (files.getAbsolutePath ());
 		log ("app start: Vectrex_EMU " + version () + " on " + Build.MANUFACTURER + " " + Build.MODEL + ", Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")");
 		Window w = getWindow (); w.addFlags (WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -199,7 +217,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (!started && welcome.getParent () != null && !Pack.busy) h.postDelayed (this::checkContent, 300);   /* (back from the all-files setting) */
 		if (Online.playing) VX.net (4, stack.isEmpty () ? 0 : 1);   /* (back: playing again - or still in a menu) */
 	}
-	@Override protected void onPause () { super.onPause (); VX.setRunning (false); if (Online.playing) VX.net (4, 2); log ("app in the background"); }   /* (online: the other
+	@Override protected void onPause () { super.onPause (); try { prefs.edit ().putInt ("app.palgreen", VX.palette ()).apply (); } catch (Throwable t) { } VX.setRunning (false); if (Online.playing) VX.net (4, 2); log ("app in the background"); }   /* (online: the other
 	                                                     side sees "in another app") */
 	@Override protected void onDestroy () { super.onDestroy (); Adhoc.stop (this); log ("the app ends"); }
 	@Override public void onRequestPermissionsResult (int code, String[] perms, int[] res) { if (code == 7) Adhoc.onPermission (this, res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED); }

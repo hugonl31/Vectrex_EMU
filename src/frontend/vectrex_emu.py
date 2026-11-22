@@ -30,6 +30,7 @@ trails move smoothly (vsync on a 60 / 120 / 240 Hz monitor, else paced to 60 Hz 
 import argparse, ctypes, ctypes.wintypes as W, json, math, os, queue, random, shutil, struct, subprocess
 import sys, threading, time, datetime, collections, re, gc, platform
 import tkinter as tk
+import palette
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 APP_LOG = collections.deque(maxlen=3000)                # (the program's own messages and errors: the debug report's
 T_START = time.time()                                   #  app_log.txt - the exe has no console, they went nowhere)
@@ -119,7 +120,7 @@ def dark_title(win):
     try:
         hwnd = ctypes.windll.user32.GetParent(win.winfo_id()) or win.winfo_id()
         for a, v in ((20, 1), (35, 0x000e0f0b), (34, 0x00252a1d), (36, 0x00cfd6c8)):   # dark mode, caption, border, text
-            val = ctypes.c_int(v)
+            val = ctypes.c_int(palette.bgr(v) if a != 20 else v)   # (the colour scheme: blue or green)
             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, a, ctypes.byref(val), 4)
     except Exception:   # noqa
         pass
@@ -183,6 +184,11 @@ def _settings_epoch():
     except OSError:
         pass
 _settings_epoch()
+try:                            # (the colour scheme, before the first window: Display > Colours)
+    palette.NAME = 'green' if json.load(open(SETTINGS_F)).get('palette') == 'green' else 'blue'
+except Exception:   # noqa: no settings yet
+    palette.NAME = 'blue'
+PALETTE_SET = palette.NAME      # (the one chosen - in use after a restart)
 # The included game's earlier names (Robot Arena until v1.3.1, Steel Siege until v1.4.2): kept only to move a
 # player's files and settings over to the current name - the owner, 2026-11-01: no trace of the old names
 GAME_NAME = 'Last Human'
@@ -4267,6 +4273,11 @@ class App:
         t.bind('<Escape>', lambda e: t.destroy())
         t.update_idletasks()
         deck.place(t, 'speech_rom', self, lambda: deck.no_close_button(t))
+    def set_palette(self, v):
+        """Display > Colours: 'blue' or 'green' (palette.py) - every window is made in it, so from the next start"""
+        global PALETTE_SET
+        PALETTE_SET = v; self.save_settings()
+        self.show_look('colours: %s - from the next start' % v)
     def set_look2(self, v):
         """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
         if self.ren:
@@ -6578,7 +6589,7 @@ class App:
             if not blink['on']:
                 return
             try:
-                newbar.configure(bg=deck.HI if newbar.cget('bg') != deck.HI else deck.G)
+                newbar.configure(bg=deck.HI if newbar.cget('bg') != palette.hexs(deck.HI) else deck.G)
                 t.after(500, tick)
             except tk.TclError:
                 pass
@@ -8032,6 +8043,20 @@ class App:
             self.rec_say('SNAPSHOT FAILED', 'Snapshot failed: %s' % e); return 'break'
         path = recorder.free_name(self.rec_folder(), '.png')
         deck_on = self.rec_opts.get('rec_deck')
+        # the picture on the screen at this moment, exactly (the owner, 2026-11-22: not some frames later, not drawn again larger -
+        # a picture drawn again has other light in it): the one last shown, kept by the renderer, at the window's size
+        if hasattr(r, 'read_last') and not getattr(r, 'rot', 0):
+            box = self.rec_box(deck_on)
+            data = r.read_last(box)
+            if data:
+                self.flash_until = 0
+                ffp, w_, h_ = recorder.ffmpeg_path(ROOT, RES), box[2], box[3]
+                def work():
+                    ok = recorder.save_png(ffp, path, w_, h_, data, turn=None)
+                    self.root.after(0, lambda: self.rec_say('SNAPSHOT SAVED' if ok else 'SNAPSHOT FAILED',
+                                                            'Snapshot saved: %s (%d x %d)' % (os.path.basename(path), w_, h_) if ok else 'Snapshot failed'))
+                threading.Thread(target=work, daemon=True).start()
+                return 'break'
         big = (k > 1.05 and getattr(r, 'R', None) and getattr(r, 'float_ok', False) and hasattr(r, '_win_wh')
                and not self.rec)                                # (recording: the window's size - a video keeps its size)
         if not big:
@@ -8802,6 +8827,7 @@ class App:
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'
         d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)
+        d['palette'] = PALETTE_SET
         d['settings_epoch'] = SETTINGS_EPOCH
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
@@ -9418,6 +9444,7 @@ class App:
             if flush:
                 self.sm_buf = []
             self.rec_tick()                                     # (Record: the part recorded, the window's size)
+            r.frozen = bool(self.run.paused and self.run.power and not getattr(self, 'snap_job', None))   # (paused: the picture last shown stays - vecrender keep_picture)
             r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
             r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
             self.snap_tick()

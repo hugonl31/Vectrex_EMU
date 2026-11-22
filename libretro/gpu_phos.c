@@ -96,7 +96,7 @@ static const char *PH_FS_SAT =
 	"void main() { vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0);\n"
 	"  fragc = vec4(pow(k * l, vec3(1.0 / 2.2)) * tint, 0.0); }\n";
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
-	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
+	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
 	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
@@ -113,7 +113,7 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  o1 = vec4(g1, 0.0); o2 = vec4(g2, 0.0); os = vec4(f + lift(g1 + g2), fa); }\n";   /* (HDR: the light above white is the spot's own,
 	                                              no trail of it - that trail, up to 8x the ordinary one, gave Last Human's ship a long bright tail) */
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
-	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
+	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
 	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"

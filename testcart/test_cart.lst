@@ -1,0 +1,275 @@
+                      (    test_cart.asm):00001         ; test_cart.asm - Test Cart: four pages to compare the picture between platforms (PC, iPhone / iPad, Android, RetroArch).
+                      (    test_cart.asm):00002         ; Buttons 1-4 choose the page; a snapshot at any moment will do (every mover has a steady speed, its trail the same always).
+                      (    test_cart.asm):00003         ;   1 TRAIL   the afterglow: bars moving right at 1, 2 and 4 units a frame (intensity $7F), one at 2 at $3F, a dot at 2 -
+                      (    test_cart.asm):00004         ;             slow and in a small area (96 x 110 units in the middle): capture it close up
+                      (    test_cart.asm):00005         ;   2 LEVELS  seven lines at intensity $10 .. $70 and one at $7F; the same line drawn fast and slow (scale $FF / $20)
+                      (    test_cart.asm):00006         ;   3 DOTS    rests of 2 8 32 64 128 255 at intensity $7F, the same at $5F
+                      (    test_cart.asm):00007         ;   4 CORNERS a square, a triangle, a cross and a zigzag in joined lines (corner dots, joins)
+                      (    test_cart.asm):00008         ; Build: lwasm --format=raw -o test_cart_raw.bin test_cart.asm, then pad to 32768 bytes with $FF (64 KB: twice).
+                      (    test_cart.asm):00009         
+     F192             (    test_cart.asm):00010         Wait_Recal      equ $F192
+     F1BA             (    test_cart.asm):00011         Read_Btns       equ $F1BA
+     F2AB             (    test_cart.asm):00012         Intensity_a     equ $F2AB
+     F2C3             (    test_cart.asm):00013         Dot_d           equ $F2C3
+     F312             (    test_cart.asm):00014         Moveto_d        equ $F312
+     F354             (    test_cart.asm):00015         Reset0Ref       equ $F354
+     F37A             (    test_cart.asm):00016         Print_Str_d     equ $F37A
+     F3DF             (    test_cart.asm):00017         Draw_Line_d     equ $F3DF
+     F410             (    test_cart.asm):00018         Draw_VLp        equ $F410
+     C811             (    test_cart.asm):00019         Vec_Buttons     equ $C811
+     C828             (    test_cart.asm):00020         Vec_Dot_Dwell   equ $C828
+     C82A             (    test_cart.asm):00021         Vec_Text_HW     equ $C82A
+     C880             (    test_cart.asm):00022         Page            equ $C880
+     C881             (    test_cart.asm):00023         P2              equ $C881
+     C882             (    test_cart.asm):00024         P4              equ $C882
+     C883             (    test_cart.asm):00025         P8              equ $C883
+     C884             (    test_cart.asm):00026         Cnt             equ $C884
+     C885             (    test_cart.asm):00027         Yrow            equ $C885
+                      (    test_cart.asm):00028         
+                      (    test_cart.asm):00029                 org     $0000
+0000 6720474345203230 (    test_cart.asm):00030                 fcc     "g GCE 2026"
+     3236
+000A 80               (    test_cart.asm):00031                 fcb     $80
+000B FD0D             (    test_cart.asm):00032                 fdb     $FD0D
+000D F85020B8         (    test_cart.asm):00033                 fcb     $F8,$50,$20,-$48
+0011 5445535420434152 (    test_cart.asm):00034                 fcc     "TEST CART"
+     54
+001A 80               (    test_cart.asm):00035                 fcb     $80
+001B 00               (    test_cart.asm):00036                 fcb     0
+                      (    test_cart.asm):00037         
+001C                  (    test_cart.asm):00038         Start:
+001C 7FC880           (    test_cart.asm):00039                 clr     Page
+001F 7FC881           (    test_cart.asm):00040                 clr     P2
+0022 7FC882           (    test_cart.asm):00041                 clr     P4
+0025 7FC883           (    test_cart.asm):00042                 clr     P8
+0028                  (    test_cart.asm):00043         Main:
+0028 BDF192           (    test_cart.asm):00044                 jsr     Wait_Recal
+002B BDF1BA           (    test_cart.asm):00045                 jsr     Read_Btns
+002E B6C811           (    test_cart.asm):00046                 lda     Vec_Buttons
+0031 8501             (    test_cart.asm):00047                 bita    #1
+0033 2703             (    test_cart.asm):00048                 beq     B1
+0035 7FC880           (    test_cart.asm):00049                 clr     Page
+0038 8502             (    test_cart.asm):00050         B1      bita    #2
+003A 2705             (    test_cart.asm):00051                 beq     B2
+003C C601             (    test_cart.asm):00052                 ldb     #1
+003E F7C880           (    test_cart.asm):00053                 stb     Page
+0041 8504             (    test_cart.asm):00054         B2      bita    #4
+0043 2705             (    test_cart.asm):00055                 beq     B3
+0045 C602             (    test_cart.asm):00056                 ldb     #2
+0047 F7C880           (    test_cart.asm):00057                 stb     Page
+004A 8508             (    test_cart.asm):00058         B3      bita    #8
+004C 2705             (    test_cart.asm):00059                 beq     B4
+004E C603             (    test_cart.asm):00060                 ldb     #3
+0050 F7C880           (    test_cart.asm):00061                 stb     Page
+0053 B6C880           (    test_cart.asm):00062         B4      lda     Page
+0056 1027000D         (    test_cart.asm):00063                 lbeq    Trail
+005A 4A               (    test_cart.asm):00064                 deca
+005B 10270078         (    test_cart.asm):00065                 lbeq    Levels
+005F 4A               (    test_cart.asm):00066                 deca
+0060 10270105         (    test_cart.asm):00067                 lbeq    Dots
+0064 160146           (    test_cart.asm):00068                 lbra    Corners
+                      (    test_cart.asm):00069         
+                      (    test_cart.asm):00070         ; ---------------------------------------------------------------- 1: the afterglow
+                      (    test_cart.asm):00071         ; (slow and close together - the owner: a small area to capture, more pixels on it. The bars run 96 units, from x = -48,
+                      (    test_cart.asm):00072         ;  and start again at the left)
+0067                  (    test_cart.asm):00073         Trail:
+0067 8EC881           (    test_cart.asm):00074                 ldx     #P2
+006A 8601             (    test_cart.asm):00075                 lda     #1
+006C 8D4A             (    test_cart.asm):00076                 bsr     Step
+006E 8602             (    test_cart.asm):00077                 lda     #2
+0070 8D46             (    test_cart.asm):00078                 bsr     Step
+0072 8604             (    test_cart.asm):00079                 lda     #4
+0074 8D42             (    test_cart.asm):00080                 bsr     Step
+0076 867F             (    test_cart.asm):00081                 lda     #$7F
+0078 BDF2AB           (    test_cart.asm):00082                 jsr     Intensity_a
+007B 8624             (    test_cart.asm):00083                 lda     #36                     ; a bar 20 units tall from y = 36, at x = P2 (1 unit a frame)
+007D F6C881           (    test_cart.asm):00084                 ldb     P2
+0080 8D41             (    test_cart.asm):00085                 bsr     Bar
+0082 860A             (    test_cart.asm):00086                 lda     #10                     ; 2 units a frame
+0084 F6C882           (    test_cart.asm):00087                 ldb     P4
+0087 8D3A             (    test_cart.asm):00088                 bsr     Bar
+0089 86F0             (    test_cart.asm):00089                 lda     #-16                    ; 4 units a frame
+008B F6C883           (    test_cart.asm):00090                 ldb     P8
+008E 8D33             (    test_cart.asm):00091                 bsr     Bar
+0090 863F             (    test_cart.asm):00092                 lda     #$3F
+0092 BDF2AB           (    test_cart.asm):00093                 jsr     Intensity_a
+0095 86D6             (    test_cart.asm):00094                 lda     #-42                    ; 2 units a frame, intensity $3F
+0097 F6C882           (    test_cart.asm):00095                 ldb     P4
+009A 8D27             (    test_cart.asm):00096                 bsr     Bar
+009C 867F             (    test_cart.asm):00097                 lda     #$7F
+009E BDF2AB           (    test_cart.asm):00098                 jsr     Intensity_a
+00A1 8610             (    test_cart.asm):00099                 lda     #16
+00A3 B7C828           (    test_cart.asm):00100                 sta     Vec_Dot_Dwell
+00A6 867F             (    test_cart.asm):00101                 lda     #$7F
+00A8 9704             (    test_cart.asm):00102                 sta     <$04
+00AA 86CC             (    test_cart.asm):00103                 lda     #-52                    ; a dot, 2 units a frame
+00AC F6C882           (    test_cart.asm):00104                 ldb     P4
+00AF BDF2C3           (    test_cart.asm):00105                 jsr     Dot_d
+00B2 BDF354           (    test_cart.asm):00106                 jsr     Reset0Ref
+00B5 16FF70           (    test_cart.asm):00107                 lbra    Main
+00B8                  (    test_cart.asm):00108         Step:                                   ; ,x += a, back to -48 at 48; x on to the next
+00B8 AB84             (    test_cart.asm):00109                 adda    ,x
+00BA 8130             (    test_cart.asm):00110                 cmpa    #48
+00BC 2D02             (    test_cart.asm):00111                 blt     St1
+00BE 8060             (    test_cart.asm):00112                 suba    #96
+00C0 A780             (    test_cart.asm):00113         St1     sta     ,x+
+00C2 39               (    test_cart.asm):00114                 rts
+00C3                  (    test_cart.asm):00115         Bar:                                    ; a = y of its foot, b = x
+00C3 3406             (    test_cart.asm):00116                 pshs    d
+00C5 867F             (    test_cart.asm):00117                 lda     #$7F
+00C7 9704             (    test_cart.asm):00118                 sta     <$04
+00C9 3506             (    test_cart.asm):00119                 puls    d
+00CB BDF312           (    test_cart.asm):00120                 jsr     Moveto_d
+00CE 8614             (    test_cart.asm):00121                 lda     #20
+00D0 5F               (    test_cart.asm):00122                 clrb
+00D1 BDF3DF           (    test_cart.asm):00123                 jsr     Draw_Line_d
+00D4 7EF354           (    test_cart.asm):00124                 jmp     Reset0Ref
+                      (    test_cart.asm):00125         
+                      (    test_cart.asm):00126         ; ---------------------------------------------------------------- 2: the levels
+00D7                  (    test_cart.asm):00127         Levels:
+00D7 8610             (    test_cart.asm):00128                 lda     #$10
+00D9 B7C884           (    test_cart.asm):00129                 sta     Cnt
+00DC 8664             (    test_cart.asm):00130                 lda     #100
+00DE B7C885           (    test_cart.asm):00131                 sta     Yrow
+00E1 B6C884           (    test_cart.asm):00132         Lv1     lda     Cnt
+00E4 BDF2AB           (    test_cart.asm):00133                 jsr     Intensity_a
+00E7 867F             (    test_cart.asm):00134                 lda     #$7F
+00E9 9704             (    test_cart.asm):00135                 sta     <$04
+00EB B6C885           (    test_cart.asm):00136                 lda     Yrow
+00EE C6A6             (    test_cart.asm):00137                 ldb     #-90
+00F0 BDF312           (    test_cart.asm):00138                 jsr     Moveto_d
+00F3 4F               (    test_cart.asm):00139                 clra
+00F4 C664             (    test_cart.asm):00140                 ldb     #100                    ; 100 units at scale $7F
+00F6 BDF3DF           (    test_cart.asm):00141                 jsr     Draw_Line_d
+00F9 BDF354           (    test_cart.asm):00142                 jsr     Reset0Ref
+00FC B6C885           (    test_cart.asm):00143                 lda     Yrow
+00FF 8014             (    test_cart.asm):00144                 suba    #20
+0101 B7C885           (    test_cart.asm):00145                 sta     Yrow
+0104 B6C884           (    test_cart.asm):00146                 lda     Cnt
+0107 8B10             (    test_cart.asm):00147                 adda    #$10
+0109 B7C884           (    test_cart.asm):00148                 sta     Cnt
+010C 8180             (    test_cart.asm):00149                 cmpa    #$80
+010E 25D1             (    test_cart.asm):00150                 blo     Lv1
+0110 867F             (    test_cart.asm):00151                 lda     #$7F                    ; the eighth line: $7F
+0112 BDF2AB           (    test_cart.asm):00152                 jsr     Intensity_a
+0115 867F             (    test_cart.asm):00153                 lda     #$7F
+0117 9704             (    test_cart.asm):00154                 sta     <$04
+0119 86D8             (    test_cart.asm):00155                 lda     #-40
+011B C6A6             (    test_cart.asm):00156                 ldb     #-90
+011D BDF312           (    test_cart.asm):00157                 jsr     Moveto_d
+0120 4F               (    test_cart.asm):00158                 clra
+0121 C664             (    test_cart.asm):00159                 ldb     #100
+0123 BDF3DF           (    test_cart.asm):00160                 jsr     Draw_Line_d
+0126 BDF354           (    test_cart.asm):00161                 jsr     Reset0Ref
+0129 867F             (    test_cart.asm):00162                 lda     #$7F                    ; fast: the same length in one stroke at scale $FF (50 units a cycle... the beam twice as fast)
+012B 9704             (    test_cart.asm):00163                 sta     <$04
+012D 86BA             (    test_cart.asm):00164                 lda     #-70
+012F C6A6             (    test_cart.asm):00165                 ldb     #-90
+0131 BDF312           (    test_cart.asm):00166                 jsr     Moveto_d
+0134 86FF             (    test_cart.asm):00167                 lda     #$FF
+0136 9704             (    test_cart.asm):00168                 sta     <$04
+0138 4F               (    test_cart.asm):00169                 clra
+0139 C632             (    test_cart.asm):00170                 ldb     #50
+013B BDF3DF           (    test_cart.asm):00171                 jsr     Draw_Line_d
+013E BDF354           (    test_cart.asm):00172                 jsr     Reset0Ref
+0141 867F             (    test_cart.asm):00173                 lda     #$7F                    ; slow: four strokes of 100 at scale $20 - the beam four times slower than the fast one... joined
+0143 9704             (    test_cart.asm):00174                 sta     <$04
+0145 869C             (    test_cart.asm):00175                 lda     #-100
+0147 C6A6             (    test_cart.asm):00176                 ldb     #-90
+0149 BDF312           (    test_cart.asm):00177                 jsr     Moveto_d
+014C 8620             (    test_cart.asm):00178                 lda     #$20
+014E 9704             (    test_cart.asm):00179                 sta     <$04
+0150 8E015C           (    test_cart.asm):00180                 ldx     #Slow4
+0153 BDF410           (    test_cart.asm):00181                 jsr     Draw_VLp
+0156 BDF354           (    test_cart.asm):00182                 jsr     Reset0Ref
+0159 16FECC           (    test_cart.asm):00183                 lbra    Main
+015C FF0064           (    test_cart.asm):00184         Slow4   fcb     $FF,0,100
+015F FF0064           (    test_cart.asm):00185                 fcb     $FF,0,100
+0162 FF0064           (    test_cart.asm):00186                 fcb     $FF,0,100
+0165 FF0064           (    test_cart.asm):00187                 fcb     $FF,0,100
+0168 01               (    test_cart.asm):00188                 fcb     $01
+                      (    test_cart.asm):00189         
+                      (    test_cart.asm):00190         ; ---------------------------------------------------------------- 3: the dots
+0169                  (    test_cart.asm):00191         Dots:
+0169 867F             (    test_cart.asm):00192                 lda     #$7F
+016B BDF2AB           (    test_cart.asm):00193                 jsr     Intensity_a
+016E 8628             (    test_cart.asm):00194                 lda     #40
+0170 B7C885           (    test_cart.asm):00195                 sta     Yrow
+0173 8D0F             (    test_cart.asm):00196                 bsr     DotRow
+0175 865F             (    test_cart.asm):00197                 lda     #$5F
+0177 BDF2AB           (    test_cart.asm):00198                 jsr     Intensity_a
+017A 86D8             (    test_cart.asm):00199                 lda     #-40
+017C B7C885           (    test_cart.asm):00200                 sta     Yrow
+017F 8D03             (    test_cart.asm):00201                 bsr     DotRow
+0181 16FEA4           (    test_cart.asm):00202                 lbra    Main
+0184                  (    test_cart.asm):00203         DotRow:
+0184 8E01A7           (    test_cart.asm):00204                 ldx     #Dwells
+0187 C69C             (    test_cart.asm):00205                 ldb     #-100
+0189 A680             (    test_cart.asm):00206         DR1     lda     ,x+
+018B B7C828           (    test_cart.asm):00207                 sta     Vec_Dot_Dwell
+018E 3414             (    test_cart.asm):00208                 pshs    b,x
+0190 867F             (    test_cart.asm):00209                 lda     #$7F
+0192 9704             (    test_cart.asm):00210                 sta     <$04
+0194 B6C885           (    test_cart.asm):00211                 lda     Yrow
+0197 BDF2C3           (    test_cart.asm):00212                 jsr     Dot_d
+019A BDF354           (    test_cart.asm):00213                 jsr     Reset0Ref
+019D 3514             (    test_cart.asm):00214                 puls    b,x
+019F CB28             (    test_cart.asm):00215                 addb    #40
+01A1 8C01AD           (    test_cart.asm):00216                 cmpx    #DwEnd
+01A4 25E3             (    test_cart.asm):00217                 blo     DR1
+01A6 39               (    test_cart.asm):00218                 rts
+01A7 0208204080FF     (    test_cart.asm):00219         Dwells  fcb     2,8,32,64,128,255
+01AD                  (    test_cart.asm):00220         DwEnd
+                      (    test_cart.asm):00221         
+                      (    test_cart.asm):00222         ; ---------------------------------------------------------------- 4: the corners
+01AD                  (    test_cart.asm):00223         Corners:
+01AD 867F             (    test_cart.asm):00224                 lda     #$7F
+01AF BDF2AB           (    test_cart.asm):00225                 jsr     Intensity_a
+01B2 8E01F2           (    test_cart.asm):00226                 ldx     #Square
+01B5 8614             (    test_cart.asm):00227                 lda     #20
+01B7 C69C             (    test_cart.asm):00228                 ldb     #-100
+01B9 8D1E             (    test_cart.asm):00229                 bsr     Shape
+01BB 8E01FF           (    test_cart.asm):00230                 ldx     #Tri
+01BE 8614             (    test_cart.asm):00231                 lda     #20
+01C0 C614             (    test_cart.asm):00232                 ldb     #20
+01C2 8D15             (    test_cart.asm):00233                 bsr     Shape
+01C4 8E0209           (    test_cart.asm):00234                 ldx     #Cross
+01C7 86A6             (    test_cart.asm):00235                 lda     #-90
+01C9 C69C             (    test_cart.asm):00236                 ldb     #-100
+01CB 8D0C             (    test_cart.asm):00237                 bsr     Shape
+01CD 8E0213           (    test_cart.asm):00238                 ldx     #Zig
+01D0 86C4             (    test_cart.asm):00239                 lda     #-60
+01D2 C60A             (    test_cart.asm):00240                 ldb     #10
+01D4 8D03             (    test_cart.asm):00241                 bsr     Shape
+01D6 16FE4F           (    test_cart.asm):00242                 lbra    Main
+01D9                  (    test_cart.asm):00243         Shape:                                  ; x = list, a / b = its start
+01D9 3410             (    test_cart.asm):00244                 pshs    x
+01DB 3406             (    test_cart.asm):00245                 pshs    d
+01DD 867F             (    test_cart.asm):00246                 lda     #$7F
+01DF 9704             (    test_cart.asm):00247                 sta     <$04
+01E1 3506             (    test_cart.asm):00248                 puls    d
+01E3 BDF312           (    test_cart.asm):00249                 jsr     Moveto_d
+01E6 8640             (    test_cart.asm):00250                 lda     #$40
+01E8 9704             (    test_cart.asm):00251                 sta     <$04
+01EA 3510             (    test_cart.asm):00252                 puls    x
+01EC BDF410           (    test_cart.asm):00253                 jsr     Draw_VLp
+01EF 7EF354           (    test_cart.asm):00254                 jmp     Reset0Ref
+01F2 FF7800           (    test_cart.asm):00255         Square  fcb     $FF,120,0
+01F5 FF0078           (    test_cart.asm):00256                 fcb     $FF,0,120
+01F8 FF8800           (    test_cart.asm):00257                 fcb     $FF,-120,0
+01FB FF0088           (    test_cart.asm):00258                 fcb     $FF,0,-120
+01FE 01               (    test_cart.asm):00259                 fcb     $01
+01FF FF783C           (    test_cart.asm):00260         Tri     fcb     $FF,120,60
+0202 FF883C           (    test_cart.asm):00261                 fcb     $FF,-120,60
+0205 FF0088           (    test_cart.asm):00262                 fcb     $FF,0,-120
+0208 01               (    test_cart.asm):00263                 fcb     $01
+0209 FF7878           (    test_cart.asm):00264         Cross   fcb     $FF,120,120
+020C 000088           (    test_cart.asm):00265                 fcb     $00,0,-120
+020F FF8878           (    test_cart.asm):00266                 fcb     $FF,-120,120
+0212 01               (    test_cart.asm):00267                 fcb     $01
+0213 FF641E           (    test_cart.asm):00268         Zig     fcb     $FF,100,30
+0216 FF9C1E           (    test_cart.asm):00269                 fcb     $FF,-100,30
+0219 FF641E           (    test_cart.asm):00270                 fcb     $FF,100,30
+021C FF9C1E           (    test_cart.asm):00271                 fcb     $FF,-100,30
+021F FF641E           (    test_cart.asm):00272                 fcb     $FF,100,30
+0222 01               (    test_cart.asm):00273                 fcb     $01

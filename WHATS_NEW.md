@@ -6,6 +6,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.8.1
 - Look: Vectrex, or Bright for a small screen (brighter, wider lines)
+- The afterglow on phones and RetroArch now as on the PC
 
 ## v1.8.0
 - New picture: the beam on the phosphor, measured on a real Vectrex

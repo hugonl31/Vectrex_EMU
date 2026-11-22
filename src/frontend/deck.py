@@ -1221,7 +1221,7 @@ class Deck:
         t = self.info(text, unit)
         m = info_mark(f, self.bgc, t); m.pack(side='left', padx=(3, 4), after=label_w)
         if t:
-            Tip(m, t, also=(label_w,))
+            Tip(m, t)
         return m
 
     reading = None                                      # (while a check is made: the settings its state reads)
@@ -1633,7 +1633,7 @@ def setup_window(app, first=True):
         nl_ = tk.Label(nf, text=name, fg=HI, bg=PB, font=f9, width=16, anchor='w'); nl_.pack(side='left')
         im = info_mark(nf, PB, info); im.pack(side='left', padx=(0, 6))       # (the long explanation: on hover)
         if info:
-            Tip(im, info, also=(nl_,))
+            Tip(im, info)
         txt = tk.Label(grid, fg=G, bg=PB, font=f9, anchor='w', justify='left', wraplength=520); txt.grid(row=r, column=2, sticky='w')
         side = tk.Frame(grid, bg=PB); side.grid(row=r, column=3, sticky='e', padx=(8, 0))
         return mark, txt, side
@@ -1798,7 +1798,7 @@ def setup_window(app, first=True):
         sl.pack(side='left')
         if usable:
             im = info_mark(rf, PB, expl); im.pack(side='left', padx=(6, 0))
-            Tip(im, expl, also=(sl,))
+            Tip(im, expl)
     def disp_after_test(ms):
         """the quality test: a PC too slow to draw every refresh of a fast screen gets Smooth motion instead"""
         if first and not touched[0] and dv.get() == 'max' and ms and ms * ref > 350.0:

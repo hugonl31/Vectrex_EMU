@@ -20,6 +20,7 @@
 #include "testcart.h"
 #include "pitrex_tiles.h"
 #include <dlfcn.h>
+#include <os/lock.h>
 #include <sys/utsname.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -635,7 +636,7 @@ static void vxa_toast (NSString *s, double secs)
 @implementation VXGameVC {
 	VXGLView *_gl; EAGLContext *_ctx; GLuint _dfbo, _drb; GLint _dw, _dh;
 	id<MTLCommandQueue> _queue; id<MTLRenderPipelineState> _pipe; id<MTLSamplerState> _nearest, _linear;
-	CADisplayLink *_link; double _last, _acc; int _started, _running;
+	CADisplayLink *_link; double _last, _acc; int _started, _running; dispatch_source_t _clk; int _own;   /* (_own: the pictures on the app's own 20 ms clock - the 50 Hz trial) */
 	unsigned _fw, _fh; int _have;                                   /* (the last picture from the core) */
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
@@ -853,10 +854,32 @@ static void vxa_toast (NSString *s, double secs)
 	vxa_audio_start (vxa_av.timing.sample_rate);
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
-	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1; [self viewDidLayoutSubviews]; [self showBar];
+	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1;
+	/* (the 50 Hz trial, 2026-11-22: iOS gives a 48 Hz screen when asked for 50 - two game frames a second share a picture. With the
+	 *  setting at 50 Hz the app's own clock runs the game and hands in a picture every 20 ms, the refresh callback stopped; whether
+	 *  the panel follows is in the log - the pictures' times on the glass (on glass: ...)) */
+	{ extern int vxa_clock50 (void); __weak VXGameVC *ws = self;
+	  _clk = dispatch_source_create (DISPATCH_SOURCE_TYPE_TIMER, 0, DISPATCH_TIMER_STRICT, dispatch_get_main_queue ());
+	  dispatch_source_set_timer (_clk, dispatch_time (DISPATCH_TIME_NOW, 20 * NSEC_PER_MSEC), 20 * NSEC_PER_MSEC, 0);
+	  dispatch_source_set_event_handler (_clk, ^{ VXGameVC *g = ws; if (!g || !g->_link) return;
+		const int want = vxa_clock50 () && fabs (vxa_av.timing.fps - 50) < 0.5;
+		if (want != g->_own) { g->_own = want; g->_link.paused = !g->_running || want; g->_last = 0; vlog ("50 Hz own clock: %s", want ? "on" : "off"); }
+		if (g->_own && g->_running) [g tick:nil]; });
+	  dispatch_resume (_clk); }
+ [self viewDidLayoutSubviews]; [self showBar];
 	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
 	__weak VXGameVC *wn = self; dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (3 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ VXGameVC *g = wn; if (g) vxa_name_first (g); });   /* (the player name) */
+}
+/* the pictures' times on the glass: the gaps between them counted by length (the 5 s log line) - 20.0 ms is a 50 Hz panel,
+ * 20.8 a 48 Hz one, 16.7 / 25 a 120 Hz grid */
+static _Atomic int vxa_gl_n[6]; static _Atomic long vxa_gl_us; static double vxa_gl_last;
+static void vxa_glass (double t)
+{
+	static os_unfair_lock lk = OS_UNFAIR_LOCK_INIT; os_unfair_lock_lock (&lk); const double d = vxa_gl_last > 0 && t > 0 ? (t - vxa_gl_last) * 1000 : -1; if (t > 0) vxa_gl_last = t; os_unfair_lock_unlock (&lk);
+	if (d <= 0 || d > 200) return;
+	const int b = d < 12 ? 0 : d < 18.5 ? 1 : d < 20.4 ? 2 : d < 22.5 ? 3 : d < 27 ? 4 : 5;   /* (8.3, 16.7, 20.0, 20.8, 25, longer) */
+	atomic_fetch_add (&vxa_gl_n[b], 1); atomic_fetch_add (&vxa_gl_us, (long) (d * 1000));
 }
 - (void) present { [self presentSlot:vxa_newest late:NO]; }
 - (void) presentSlot:(int)sl late:(BOOL)late
@@ -902,6 +925,7 @@ static void vxa_toast (NSString *s, double secs)
 		[en setFragmentSamplerState:(k == 1.0 ? _nearest : _linear) atIndex:0];
 		[en drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4]; [en endEncoding];
 		atomic_store (&vxa_busy[sl], 1); [cb addCompletedHandler:^(id<MTLCommandBuffer> b) { (void) b; atomic_store (&vxa_busy[sl], 0); }];
+		[d addPresentedHandler:^(id<MTLDrawable> dr) { vxa_glass (dr.presentedTime); }];   /* (when it reached the glass: the log's 'on glass') */
 		[cb presentDrawable:d]; [cb commit]; _presents++; vxa_presents++; }
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
 	[self placeDeck:pic mode:dmode];
@@ -951,6 +975,8 @@ static void vxa_toast (NSString *s, double secs)
 			vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms (%ld not ready, %ld shown late), Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s; over the picture: bar %d, deck %d",
 			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _notReady, _lateShown, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
 			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "", barOver, deckOver); }
+		{ int c[6], tot = 0; for (int i = 0; i < 6; i++) { c[i] = atomic_exchange (&vxa_gl_n[i], 0); tot += c[i]; } const long us = atomic_exchange (&vxa_gl_us, 0);
+		  if (tot) vlog ("on glass: %d pictures, %.2f ms apart on average; gaps of 8.3 ms %d, 16.7 ms %d, 20.0 ms %d, 20.8 ms %d, 25 ms %d, longer %d; own clock %d", tot, us / 1000.0 / tot, c[0], c[1], c[2], c[3], c[4], c[5], _own); }
 		_notReady = 0; _lateShown = 0;
 		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
@@ -1084,7 +1110,7 @@ static void vxa_set_opt (int i, NSString *v)
 - (void) barModeChanged { [self viewDidLayoutSubviews]; _pic = CGRectZero; [self showBar]; }
 - (void) setRunning:(int)on
 {
-	if (!_link || on == _running) return; _running = on; _link.paused = !on; _last = 0;
+	if (!_link || on == _running) return; _running = on; _link.paused = !on || _own; _last = 0;
 	if (on) [vxa_eng startAndReturnError:nil]; else [vxa_eng pause];
 	vlog ("%s", on ? "resumed" : "paused (the app in the background)");
 	[self layoutControls];   /* (the touch controls shown again: laid out while in the background they stayed hidden until something else changed) */
@@ -1299,6 +1325,7 @@ UIColor *vx_rgba (double r, double g, double b, double a)
 	extern unsigned vx_pal (unsigned c); const unsigned c = vx_pal ((unsigned) lround (r * 255) << 16 | (unsigned) lround (g * 255) << 8 | (unsigned) lround (b * 255));
 	return [UIColor colorWithRed:(c >> 16 & 255) / 255.0 green:(c >> 8 & 255) / 255.0 blue:(c & 255) / 255.0 alpha:a];
 }
+int vxa_clock50 (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.clock50"]; return n ? n.boolValue : 1; }   /* (the 50 Hz trial: on unless switched off) */
 int vxa_trail_boost (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.trailboost"]; return n ? n.boolValue : 0; }   /* (off by default since the afterglow's own shape for the apps, vx_phone_trail) */
 float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIScreen.mainScreen.potentialEDRHeadroom; return 1; }
 void vxa_hdr_update (void)

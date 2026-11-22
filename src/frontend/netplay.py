@@ -185,7 +185,7 @@ def unlz(data, cap):
             out += data[i:i + t]; i += t
     return bytes(out) if len(out) == cap else None
 
-NET_VER = 11                # the online version: both sides must have the same (libretro/netvx.c NV_VER too: the iOS app
+NET_VER = 13                # the online version: both sides must have the same (libretro/netvx.c NV_VER too: the iOS app
                             # plays the PC). Raise it with every change to the
                             # core (anything that could make the same input give another game) or to these packets;
                             # 1 = v1.0.5-v1.0.8 (they send none); 3: the pause both share ('Z'); 4: taking a

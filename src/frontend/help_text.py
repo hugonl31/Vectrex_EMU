@@ -277,7 +277,6 @@ TOPICS = [
 ('p', "The Tube tab is about the picture tube and the analog parts that drive it. Each effect is measured "
       "on a real Vectrex (photos, a video and sound recordings) and can be switched off."),
 ('item', 'Phosphor (afterglow and bloom)', "The glow of the screen's coating. Off: plain lines."),
-('item', 'Look', "Bright: all lines pushed up to white - bright vectors on a dim screen. Vectrex: as a real Vectrex - dots and slow lines stand out; wants a bright screen."),
 ('item', 'Bloom', "How far the brightest lines light up the glass around them."),
 ('more', 'Why the lines glow', "The electron beam excites a coating of phosphor on the inside of the "
          "glass. A spot the beam lingers on gets very bright: dots and line ends glow, fast thin lines stay "
@@ -310,10 +309,6 @@ TOPICS = [
          "5600 K) the same. 12000 K by default: the bluish white of a real Vectrex - a cold glow, and the brightest cores "
          "bluish too; further right even bluer. "
          "Only the lines change colour - the overlay and the case keep theirs."),
-('item', 'Beam trace (the spot lights the phosphor)', "Off by default. The core sends the spot's own path - every "
-         "cycle where it was - and the phosphor lights up by how long the beam stayed in each place: slow is bright, a "
-         "stopped beam builds a dot, fast is faint, and curves are smooth curves, not pieces of straight line. "
-         "One measured rule instead of the line renderer's corner dots and glow."),
 ('item', 'Even beam (an ideal vector display)', "Off by default. Every point as bright and as thin as the lines: "
          "no brighter, fatter corners and dots where the beam rests, no corner glow, no fainter fast lines, and "
          "where lines overlap they do not add up. A vector display without the tube's character - dots such as "

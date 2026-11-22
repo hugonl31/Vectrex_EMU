@@ -37,7 +37,7 @@ typedef int nv_sock_t;
 #define nv_closesock close
 #endif
 
-#define NV_VER 11                    /* (netplay.py NET_VER: both sides the same - raise it with the desktop's) */
+#define NV_VER 13                    /* (netplay.py NET_VER: both sides the same - raise it with the desktop's) */
 #define NV_PORT 7744                 /* (a direct game: the host's port) */
 #define NV_LANPORT 7743              /* (the announcements of a host on this network) */
 #define NV_SERVER "172.233.60.40"    /* (the meeting point, tools/vxrelay.py) */

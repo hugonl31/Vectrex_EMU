@@ -9124,7 +9124,23 @@ class App:
         self.sm_buf = []
         self.save_settings()
         self.show_look('smooth motion: ' + ('on (vectors between game frames, every refresh)' if self.smooth else 'off'))
-    def sm_align(self, A, B):
+    def sm_merge(self, X):
+        """Smooth motion's afterglow: the pieces of one straight line as one line (a copy) - joined end to start, one brightness,
+        one direction; their drawing time together. Where an afterglow starts, how a line was cut in time shows nothing, and a
+        picture of 1200 moving pieces (Mine Storm's mothership) is about a hundred lines: built a second time piece by piece,
+        each game frame, it cost 2.5 ms - the screen's 60 pictures a second became 57 (the owner, 2026-11-22)"""
+        n = len(X)
+        if n < 2: return X.copy()
+        dx = X[:, 2] - X[:, 0]; dy = X[:, 3] - X[:, 1]; ln = _np.hypot(dx, dy); ok = ln > 0
+        ux = _np.where(ok, dx / _np.maximum(ln, 1e-9), 0.0); uy = _np.where(ok, dy / _np.maximum(ln, 1e-9), 0.0)
+        new = _np.ones(n, dtype=bool)
+        new[1:] = ~((X[1:, 0] == X[:-1, 2]) & (X[1:, 1] == X[:-1, 3]) & (X[1:, 4] == X[:-1, 4]) & ok[1:] & ok[:-1]
+                    & (_np.abs(ux[1:] * uy[:-1] - uy[1:] * ux[:-1]) < 0.02) & ((ux[1:] * ux[:-1] + uy[1:] * uy[:-1]) > 0))
+        if X.shape[1] > 7: new[1:] |= X[1:, 7] != X[:-1, 7]         # (the 3D Imager's colour)
+        first = _np.nonzero(new)[0]; last = _np.append(first[1:], n) - 1
+        R = X[first].copy(); R[:, 2] = X[last, 2]; R[:, 3] = X[last, 3]; R[:, 5] = _np.add.reduceat(X[:, 5], first)
+        return R
+    def sm_align(self, A, B, key=None):
         """Smooth motion: where each of frame A's line pieces lies in frame B, and the other way round.
         Returns TA (A's pieces' ends as B draws them), va (which of A's pieces have a partner), TB, vb.
 
@@ -9151,22 +9167,47 @@ class App:
         same = lambda X, Y: ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
                              & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0))
         ma = _np.full(len(SA), -1, dtype=int); mb = _np.full(len(SB), -1, dtype=int)
-        if len(SA) == len(SB):
+        kept = getattr(self, '_al_keep', None)           # (the pairing: worked out once for the two frames, asked for every refresh)
+        if key is not None and kept is not None and kept[0] is key[0] and kept[1] is key[1] and len(kept[2]) == len(SA) and len(kept[3]) == len(SB):
+            ma, mb = kept[2], kept[3]
+        elif len(SA) == len(SB):
             ok = same(SA, SB); idx = _np.nonzero(ok)[0]; ma[idx] = idx; mb[idx] = idx
-        else:                                            # (a stroke more or less: walked side by side, past up to 6)
-            la_, lb_ = len(SA), len(SB); i_ = j_ = 0
-            for _ in range(200):
-                if i_ >= la_ or j_ >= lb_: break
-                m_ = min(la_ - i_, lb_ - j_); bad = _np.nonzero(~same(SA[i_:i_ + m_], SB[j_:j_ + m_]))[0]
-                run = int(bad[0]) if len(bad) else m_
-                if run:
-                    ma[i_:i_ + run] = _np.arange(j_, j_ + run); mb[j_:j_ + run] = _np.arange(i_, i_ + run); i_ += run; j_ += run
-                if i_ >= la_ or j_ >= lb_: break
-                for k_ in range(1, 7):
-                    if j_ + k_ < lb_ and bool(same(SA[i_:i_ + 1], SB[j_ + k_:j_ + k_ + 1])[0]): j_ += k_; break
-                    if i_ + k_ < la_ and bool(same(SA[i_ + k_:i_ + k_ + 1], SB[j_:j_ + 1])[0]): i_ += k_; break
-                else:
-                    i_ += 1; j_ += 1
+        else:
+            # (a stroke more or less: the two lists laid along each other for the least total distance - a stroke paired with the
+            #  one at its place, or left out at the price of a stroke SMOOTH_MATCH away. Walked side by side with 'near enough'
+            #  as the test (an hour, 2026-11-22), a small shape's strokes are all near each other: the lists went on one out of
+            #  step, the shape scrambled for that frame - the owner's recording, Mine Storm's mothership at its smallest)
+            la_, lb_ = len(SA), len(SB); Wb = abs(la_ - lb_) + 6; K = 2 * Wb + 1; INF = 1e18; G = float(M)
+            C = _np.full((la_, K), INF); ia = _np.arange(la_)
+            for k_ in range(K):
+                jb = ia + k_ - Wb; v = (jb >= 0) & (jb < lb_)
+                if not v.any(): continue
+                X = SA[v]; Y = SB[jb[v]]; d = _np.abs(Y[:, :4] - X[:, :4]).max(1)
+                okk = (d < M) & (Y[:, 4] == X[:, 4]) & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0)
+                col = _np.full(int(v.sum()), INF); col[okk] = d[okk]; C[v, k_] = col
+            C = C.tolist()
+            D = [[INF] * K for _ in range(la_ + 1)]; BP = [[0] * K for _ in range(la_ + 1)]
+            D[0][Wb] = 0.0
+            for i_ in range(la_ + 1):
+                Di = D[i_]; Dn = D[i_ + 1] if i_ < la_ else None; Ci = C[i_] if i_ < la_ else None
+                for k_ in range(K):
+                    d = Di[k_]
+                    if d >= INF: continue
+                    j_ = i_ + k_ - Wb
+                    if j_ < 0 or j_ > lb_: continue
+                    if k_ + 1 < K and j_ + 1 <= lb_ and d + G < Di[k_ + 1]: Di[k_ + 1] = d + G; BP[i_][k_ + 1] = 2   # (b's stroke left out)
+                    if Dn is not None:
+                        if j_ < lb_ and Ci[k_] < INF and d + Ci[k_] < Dn[k_]: Dn[k_] = d + Ci[k_]; BP[i_ + 1][k_] = 1   # (paired)
+                        if k_ - 1 >= 0 and d + G < Dn[k_ - 1]: Dn[k_ - 1] = d + G; BP[i_ + 1][k_ - 1] = 3                 # (a's left out)
+            i_ = la_; k_ = lb_ - la_ + Wb
+            if 0 <= k_ < K and D[i_][k_] < INF:
+                while i_ > 0 or (i_ + k_ - Wb) > 0:
+                    t_ = BP[i_][k_]
+                    if t_ == 1: i_ -= 1; ma[i_] = i_ + k_ - Wb; mb[i_ + k_ - Wb] = i_
+                    elif t_ == 2: k_ -= 1
+                    elif t_ == 3: i_ -= 1; k_ += 1
+                    else: break
+        if key is not None: self._al_keep = (key[0], key[1], ma, mb)
         def look(sid, f0, f1, mp, pu, px, py, n):
             v = mp[sid] >= 0; q0 = mp[sid] + 0.999 * f0; q1 = mp[sid] + 0.999 * f1
             T = _np.zeros((n, 4))
@@ -9207,7 +9248,7 @@ class App:
                 B = _np.asarray(arr(b[0]), dtype=_np.float64)
                 if B.ndim == 2 and len(B) and B.shape[1] == A.shape[1]:
                     try:
-                        TA, va, TB, vb = self.sm_align(A, B)
+                        TA, va, TB, vb = self.sm_align(A, B, key=(a, b))
                         dA = _np.where(va, _np.abs(TA - A[:, :4]).max(1), 0.0); still = va & (dA < 1.5)
                         if alpha < 0.5:
                             R = A.copy(); R[va, :4] += (TA[va] - A[va, :4]) * alpha
@@ -9265,7 +9306,7 @@ class App:
                         if X_.ndim == 2 and len(X_) and (not Ps or X_.shape[1] == Ps[0].shape[1]): Ps.append(X_)
                     P_ = _np.concatenate(Ps) if Ps else _np.zeros((0, 7))
                     if P_.ndim == 2 and len(P_):
-                        P_ = P_.copy(); P_[:, 5] *= k; P_[:, 6] *= k
+                        P_ = self.sm_merge(P_); P_[:, 5] *= k; P_[:, 6] *= k
                         f0 = r.frame_t0; r.frame_t0 = pv[2]
                         try: r.ex_built = r._build(P_, load=False)
                         finally: r.frame_t0 = f0

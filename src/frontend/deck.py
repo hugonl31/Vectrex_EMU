@@ -760,7 +760,9 @@ class Deck:
                      ('G-Sync / FreeSync', lambda: a.vrr, lambda: a.set_screen('vrr'))]
             rot = [(n, (lambda d=d: a.rot == d), (lambda d=d: a.set_rotation(d))) for d, n in
                    ((0, 'Normal'), (90, '90 right'), (180, '180'), (270, '90 left'))]
-            return [('group', 'THE SCREEN'), ('choice', 'Screen', rates, None),
+            return [('group', 'THE SCREEN'), ('choice', 'Colours', [(n, (lambda v=v: V.PALETTE_SET == v), (lambda v=v: a.set_palette(v))) for n, v in (('Blue', 'blue'), ('Green', 'green'))], None),
+                    ('in', [('note', lambda: 'from the next start' if V.PALETTE_SET != V.palette.NAME else '')]),
+                    ('choice', 'Screen', rates, None),
                     ('in', [('check', 'Smooth motion', lambda: a.smooth,
                              a.toggle_smooth, lambda: not a.vrr)]),
                     ('choice', 'Rotate', rot, None, lambda: a.rot != 0),

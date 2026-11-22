@@ -5,6 +5,7 @@ twice: a wide faint glow and a bright core (the look of a vector CRT), then copi
 window in one call. Line widths scale with the picture, so any window size looks smooth.
 """
 import ctypes, math, os, sys, time, ctypes.wintypes as W
+import palette
 import roomlight, casemodel, tubemap
 try:                                    # (numpy: the vertex arrays of a frame in one go - _build_np; without it the
     import numpy as _np                 #  same per line in Python, slower: a dense frame of 11000 lines took 13 ms)
@@ -275,7 +276,7 @@ class GLRenderer:
             if i == 0 and m.get('dot'):                   # (a red dot before REC: the group stays centred)
                 d = 1.6 * 6.0 * rk; x += d / 2
                 cr, cx, cy = 2.4 * rk, x - d + 2.6 * rk, y + 3.0 * rk
-                gl.glColor4f(*m['cols'][0], 1.0)
+                gl.glColor4f(*palette.rgb(tuple(m['cols'][0])), 1.0)
                 gl.glBegin(6)                             # (GL_TRIANGLE_FAN)
                 gl.glVertex2f(cx, cy)
                 for n in range(33):
@@ -3882,6 +3883,8 @@ class GLBloomRenderer(GLRenderer):
         if getattr(self, 'D', None) and getattr(self, '_win_wh', None) and (abs(ps - getattr(self, '_ps_alloc', 1.0)) > 1e-6
                                                                           or bool(getattr(self, 'line_half', False)) != getattr(self, '_lh_alloc', False)):
             self.resize(*self._win_wh)                    # (Quality changed the phosphor's size: new targets)
+        if getattr(self, 'frozen', False) and not flush and self.show_last():   # (paused: the picture as it was shown, nothing drawn anew)
+            return None
         self._t_pres = time.perf_counter()
         self._q_cur = self._gpu_begin()
         try:
@@ -3898,7 +3901,62 @@ class GLBloomRenderer(GLRenderer):
             ms = 1000.0 * (time.perf_counter() - t)
             self.cpu_ms = ms if getattr(self, 'cpu_ms', None) is None else 0.9 * self.cpu_ms + 0.1 * ms
             self._t_pres = None
+        if not getattr(self, '_showing_last', False):
+            self.keep_picture()
         return super()._swap()
+
+    # ---------------------------------------------------------------- the picture last shown, kept
+    # Pause and the snapshot need the picture exactly as it was shown (the owner, 2026-11-22): drawn again, a picture differs -
+    # the lines' fresh light, their bloom and the glass's glow are in the frames just drawn, and those are gone a moment later
+    # (paused, the bloom faded away; a snapshot came some frames after the key). So every finished picture is copied into
+    # LAST before it is shown (the window's size; an HDR picture as half floats).
+    def keep_picture(self):
+        try:
+            gl = self.gl
+            w, h = getattr(self, 'real_size', self.size)
+            key = (w, h, bool(getattr(self, 'hdr', None)))
+            if getattr(self, '_last_key', None) != key:
+                old = getattr(self, 'LAST', None)
+                if old:
+                    gl.glDeleteTextures(1, ctypes.byref(ctypes.c_uint(old[0]))); self.DelFB(1, ctypes.byref(ctypes.c_uint(old[1])))
+                self.LAST = self._target(w, h); self._last_key = key
+                if not hasattr(gl.glCopyTexSubImage2D, '_set'):
+                    gl.glCopyTexSubImage2D.argtypes = [ctypes.c_uint] + [ctypes.c_int] * 7
+            self.BindFB(GL_FRAMEBUFFER, 0)
+            self.ActiveTexture(0x84C0); gl.glBindTexture(GL_TEXTURE_2D, self.LAST[0])
+            gl.glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h)
+            gl.glBindTexture(GL_TEXTURE_2D, 0)
+            self.last_ok = True
+        except Exception as e:   # noqa
+            if not getattr(self, '_last_said', False):
+                self._last_said = True; print('the last picture not kept (%s)' % e)
+            self.last_ok = False
+
+    def show_last(self):
+        """the picture last shown, shown again as it is (paused): True if it was"""
+        if not (getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
+            return False
+        gl = self.gl
+        w, h = getattr(self, 'real_size', self.size)
+        self.BindFB(GL_FRAMEBUFFER, 0); gl.glViewport(0, 0, w, h)
+        self.UseProgram(0); gl.glDisable(GL_BLEND); self.ActiveTexture(0x84C0)
+        self._quad(self.LAST[0])
+        self._showing_last = True
+        try:
+            self._swap()
+        finally:
+            self._showing_last = False
+        return True
+
+    def read_last(self, box):
+        """the picture last shown, the part box (x, y from the bottom left, w, h): bgra rows, bottom row first - None if not kept"""
+        if not (getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
+            return None
+        try:
+            px = self.read_px(self.LAST[1], box)
+        finally:
+            self.BindFB(GL_FRAMEBUFFER, 0)
+        return px
 
     # ---------------------------------------------------------------- HDR (Windows): hdrwin.py
     def hdr_start(self, force=False, frac=1.0):
@@ -4216,7 +4274,7 @@ class GLBloomRenderer(GLRenderer):
                 y += 11.0 * rk
             if 'bar' in h:                                # (a bar: how far, e.g. the 3D Imager's disc up to speed)
                 w = 22.0 * 6.0 * hk; x0 = h['cx'] - w / 2; y0 = y + 2.0 * hk; y1 = y0 + 4.0 * hk
-                gl.glColor4f(*col, 1.0)
+                gl.glColor4f(*palette.rgb(tuple(col)), 1.0)
                 self._rect(x0, y0, x0 + w, y1)
                 f = max(0.0, min(1.0, h['bar']))
                 if f > 0:
@@ -4262,7 +4320,8 @@ class GLBloomRenderer(GLRenderer):
         """one row of (text, colour) pieces in the stroke font, 6 k high, top left at x, y"""
         gl = self.gl
         gl.glBegin(GL_LINES)
-        for text, (cr, cg, cb) in segs:
+        for text, col_ in segs:
+            cr, cg, cb = palette.rgb(tuple(col_[:3]))        # (the scheme: blue or green)
             gl.glColor4f(cr, cg, cb, 1.0)
             for ch in text.upper():
                 for a, b, c, d in HUD_FONT.get(ch, []):
@@ -4292,14 +4351,14 @@ class GLBloomRenderer(GLRenderer):
         th = max(1.0, 1.0 * k)
         for i, (name, pct, hist) in enumerate(meters):
             ty = y + (0.5 + i * 2.0) * k
-            gl.glColor4f(0.40, 0.667, 0.533, 0.30)
+            gl.glColor4f(*(palette.rgb((0.40, 0.667, 0.533)) + (0.30,)))
             gl.glBegin(0x0007)
             for px, py in ((x, ty), (x_end, ty), (x_end, ty + th), (x, ty + th)):
                 gl.glVertex2f(px, py)
             gl.glEnd()
             if pct is not None:
                 f = max(0.0, min(1.0, pct / 100.0))
-                c = (0.40, 0.667, 0.533) if pct < 90 else (0.93, 0.60, 0.20) if pct <= 100 else (0.93, 0.33, 0.33)
+                c = palette.rgb((0.40, 0.667, 0.533)) if pct < 90 else (0.93, 0.60, 0.20) if pct <= 100 else (0.93, 0.33, 0.33)
                 gl.glColor4f(c[0], c[1], c[2], 1.0)
                 gl.glBegin(0x0007)
                 for px, py in ((x, ty), (x + (x_end - x) * f, ty), (x + (x_end - x) * f, ty + th), (x, ty + th)):
@@ -4314,7 +4373,7 @@ class GLBloomRenderer(GLRenderer):
         bw = (x_end - x) - (4 + 5) * 6.0 * k                    # (the bar: what the name and the figure leave - the rows
         if bw < 12.0 * k:                                       #  as wide as the OSD's text above them)
             return
-        g = (0.40, 0.667, 0.533)
+        g = palette.rgb((0.40, 0.667, 0.533))
         def col(p):
             return g if p < 90 else (0.93, 0.60, 0.20) if p <= 100 else (0.93, 0.33, 0.33)
         for i, (name, pct, hist) in enumerate(meters):
@@ -4360,7 +4419,7 @@ class GLBloomRenderer(GLRenderer):
         """the cartridge pictogram (click: the ROM browser), CARTRIDGE above it like the panel's labels"""
         gl = self.gl
         cx, cy, r = c['cx'], c['cy'], c['r']
-        gl.glColor4f(0.40, 0.667, 0.533, 1.0)
+        gl.glColor4f(*(palette.rgb((0.40, 0.667, 0.533)) + (1.0,)))
         gl.glLineWidth(max(1.2, r / 45.0))
         s = 2.0 * r / 100.0                                     # (as high as the knob)
         out = c.get('out', 0.0)
@@ -4385,7 +4444,7 @@ class GLBloomRenderer(GLRenderer):
         panel's labels"""
         gl = self.gl
         cx, cy, r = c['cx'], c['cy'], c['r']
-        gl.glColor4f(0.40, 0.667, 0.533, 1.0)
+        gl.glColor4f(*(palette.rgb((0.40, 0.667, 0.533)) + (1.0,)))
         gl.glLineWidth(max(1.2, r / 45.0))
         s = 2.0 * r / 100.0
         oy = cy if c.get('kind') == 'vecvoice' else cy - 0.12 * r  # (the VecVoice's box centred on the cartridge; the others
@@ -4422,7 +4481,7 @@ class GLBloomRenderer(GLRenderer):
         band, the list on the strip colour, the chosen row a filled bar, filled buttons, the keys in a foot band"""
         gl = self.gl
         x0, y0, x1, y1 = b['rect']
-        H = lambda c: tuple(int(c[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
+        H = lambda c: palette.rgb(tuple(int(c[i:i + 2], 16) / 255.0 for i in (1, 3, 5)))
         g, hi, dim = H('#66aa88'), H('#88ccbb'), H('#4a7a62')
         BG_, TOP, PAN, BODY_, SEL_, EDGE_, EDGE2_ = (H(c) for c in ('#05080a', '#0a1210', '#0b1511', '#0f1c17',
                                                                      '#24443a', '#1d3329', '#2f5544'))
@@ -4521,7 +4580,7 @@ class GLBloomRenderer(GLRenderer):
         """the volume knob and RESET button, outlines only (the picture shows through)"""
         gl = self.gl
         cx, cy, r, rx = kb['cx'], kb['cy'], kb['r'], kb['rx']
-        gl.glColor4f(0.40, 0.667, 0.533, 1.0)
+        gl.glColor4f(*(palette.rgb((0.40, 0.667, 0.533)) + (1.0,)))
         gl.glLineWidth(max(1.2, r / 45.0))
         sin, cos, pi = math.sin, math.cos, math.pi
         def at(x, y, rad, deg):                                 # (degrees clockwise from 12 o'clock)

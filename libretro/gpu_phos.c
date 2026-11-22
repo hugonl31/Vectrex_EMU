@@ -59,6 +59,8 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
                                                    roll-off and all, x the screen's top - the same range, higher up (tone: bgh). The room's light
                                                    stays as it is) */
 #define BL_GAIN 1.5f
+#define BT_GLOW_R 1.0f                             /* (the glow's tint against the core's: 1, 1 - none yet; the owner chooses from a preview) */
+#define BT_GLOW_G 1.0f
 float vx_hdr_peak = 1.0f;                       /* (HDR: the brightest lights top, x the screens white - the own iOS app sets it
                                                 from the screens headroom; 1: SDR, as everywhere else) */
 static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
@@ -101,9 +103,11 @@ static const char *PH_FS_BEAM =
 /* (the light as the screen's values - vecrender.py SAT_SHADER: (the exposure x the light)^(1 / 2.2) in the tube's own white; the
  *  glass's glow read from its smaller image) */
 static const char *PH_FS_SAT =
-	"uniform sampler2D lt, ht; uniform float k; uniform vec3 tint; uniform vec2 sz; out vec4 fragc;\n"
+	"uniform sampler2D lt, ht; uniform float k, gs; uniform vec3 tint, tintg; uniform vec2 sz; out vec4 fragc;\n"
 	"void main() { vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0);\n"
-	"  fragc = vec4(pow(k * l, vec3(1.0 / 2.2)) * tint, 0.0); }\n";
+	"  vec3 v = pow(k * l, vec3(1.0 / 2.2)); float m = max(v.r, max(v.g, v.b)) * gs;\n"   /* (the faint light - the lines' skirts, the glass's glow -
+	                                              in the glow's tint, the bright core in the tube's white: vecrender.py SAT_SHADER cold()) */
+	"  fragc = vec4(v * mix(tintg, tint, smoothstep(0.35, 0.9, m)), 0.0); }\n";
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
@@ -435,7 +439,11 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		  glBindVertexArray_ (g_vao); ph_target (ph_F[cur], 0, 0, ph_fw, ph_fh); glUseProgram_ (ph_sat);
 		  ph_bind (ph_sat, "lt", 0, ph_L); ph_bind (ph_sat, "ht", 1, ph_H);
 		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2) * pow (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0, 2.2)));   /* (Bright: the tube's light lifted here - all that comes of it with it) */   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
-		  glUniform3f_ (ph_ul (ph_sat, "tint"), tn[0] / mx, tn[1] / mx, tn[2] / mx); glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
+		  glUniform3f_ (ph_ul (ph_sat, "tint"), tn[0] / mx, tn[1] / mx, tn[2] / mx);
+		  { /* (the glow bluer than the core - the owner, 2026-11-22: next to the tube the phone's vectors looked greenish; BT_GLOW x the tube's white) */
+		    static float gt[3] = { BT_GLOW_R, BT_GLOW_G, 1.0f }; static int rd; if (!rd) { rd = 1; const char *z = getenv ("VX_GLOWTINT"); if (z) sscanf (z, "%f,%f,%f", &gt[0], &gt[1], &gt[2]); }
+		    glUniform3f_ (ph_ul (ph_sat, "tintg"), tn[0] / mx * gt[0], tn[1] / mx * gt[1], tn[2] / mx * gt[2]);
+		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
 		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 	}
 	PHT (0);

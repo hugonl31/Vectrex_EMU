@@ -196,11 +196,35 @@ static void br_geom (void)
 	g.cl[0] = g.x1 - 0.6f * rh - b; g.cl[1] = g.y0 + 0.3f * rh; g.cl[2] = g.x1 - 0.6f * rh; g.cl[3] = g.cl[1] + b;
 	br_g = g;
 }
+/* The colour scheme (the owner, 2026-11-22): everything green may be a deeper blue - the default. Next to a real Vectrex the
+ * green deck made the vectors look greenish; the tube's white is a blue one. A green (hue 100 - 190 degrees, some colour in it)
+ * goes to hue 216, 1.25 x as strong; everything else stays (white, orange, red). The same rule in every interface:
+ * palette.py (the PC), VXApp.m vx_pal, Main.java pal */
+int vx_palette = 0;                                 /* (0 blue, 1 green) */
+unsigned vx_pal (unsigned c)
+{
+	static unsigned li = 0xffffffffu, lo; static int lp = -1;
+	if (vx_palette) return c;
+	if (c == li && lp == vx_palette) return lo;
+	const unsigned A = c & 0xff000000u; const float r = ((c >> 16) & 255) / 255.0f, g = ((c >> 8) & 255) / 255.0f, b = (c & 255) / 255.0f;
+	const float mx = r > g ? (r > b ? r : b) : (g > b ? g : b), mn = r < g ? (r < b ? r : b) : (g < b ? g : b), d = mx - mn;
+	unsigned o = c;
+	if (d > 1e-6f && mx > 0) {
+		float h = mx == r ? (g - b) / d : mx == g ? 2.0f + (b - r) / d : 4.0f + (r - g) / d; h *= 60.0f; if (h < 0) h += 360.0f;
+		float s = d / mx;
+		if (h > 100.0f && h < 190.0f && s > 0.12f) {
+			s *= 1.25f; if (s > 1) s = 1;
+			/* hue 216: between blue (240) and cyan (180) - sector 3 of 6, f = 0.6: r = p, g = q, b = v */
+			const float p = mx * (1 - s), q = mx * (1 - 0.6f * s);
+			o = A | (unsigned) (p * 255 + 0.5f) << 16 | (unsigned) (q * 255 + 0.5f) << 8 | (unsigned) (mx * 255 + 0.5f); } }
+	li = c; lo = o; lp = vx_palette; return o;
+}
 static uint32_t *dr_img; static int dr_w, dr_h;    /* (what br_over draws into: the browser's image, the deck's) */
 static void br_over (int x, int y, unsigned rgb, float a)   /* (premultiplied ARGB, the colour over what is there) */
 {
 	if (x < 0 || y < 0 || x >= dr_w || y >= dr_h || a <= 0) return;
 	if (a > 1) a = 1;
+	rgb = vx_pal (rgb);
 	uint32_t *p = dr_img + (size_t) y * dr_w + x, d = *p; const float ia = 1 - a;
 	const unsigned r = (unsigned) (((rgb >> 16) & 255) * a + ((d >> 16) & 255) * ia + 0.5f), g = (unsigned) (((rgb >> 8) & 255) * a + ((d >> 8) & 255) * ia + 0.5f),
 	               b = (unsigned) ((rgb & 255) * a + (d & 255) * ia + 0.5f), A = (unsigned) (255 * a + (d >> 24) * ia + 0.5f);

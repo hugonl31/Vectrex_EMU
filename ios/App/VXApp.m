@@ -667,9 +667,9 @@ static void vxa_toast (NSString *s, double secs)
 	vlog ("Metal: %s, pipeline %s%s", vxa_mdev.name.UTF8String, _pipe ? "ready" : "FAILED", me ? [@" - " stringByAppendingString:me.localizedDescription].UTF8String : "");
 	[self.view addSubview:_gl];
 	_ctl = [[UIView alloc] initWithFrame:self.view.bounds]; _ctl.autoresizingMask = _gl.autoresizingMask; _ctl.userInteractionEnabled = NO; [self.view addSubview:_ctl];
-	UIColor *g = [UIColor colorWithRed:0x66 / 255.0 green:0xaa / 255.0 blue:0x88 / 255.0 alpha:1];
-	_stickBase = [CAShapeLayer layer]; _stickBase.fillColor = [UIColor colorWithRed:0.06 green:0.11 blue:0.09 alpha:0.6].CGColor; _stickBase.strokeColor = [UIColor colorWithRed:0x2f / 255.0 green:0x55 / 255.0 blue:0x44 / 255.0 alpha:1].CGColor; _stickBase.lineWidth = 1.5;
-	_stickKnob = [CAShapeLayer layer]; _stickKnob.fillColor = [UIColor colorWithRed:0x16 / 255.0 green:0x30 / 255.0 blue:0x2a / 255.0 alpha:1].CGColor; _stickKnob.strokeColor = g.CGColor; _stickKnob.lineWidth = 1.5;
+	UIColor *g = vx_rgba (0x66 / 255.0, 0xaa / 255.0, 0x88 / 255.0, 1);
+	_stickBase = [CAShapeLayer layer]; _stickBase.fillColor = vx_rgba (0.06, 0.11, 0.09, 0.6).CGColor; _stickBase.strokeColor = vx_rgba (0x2f / 255.0, 0x55 / 255.0, 0x44 / 255.0, 1).CGColor; _stickBase.lineWidth = 1.5;
+	_stickKnob = [CAShapeLayer layer]; _stickKnob.fillColor = vx_rgba (0x16 / 255.0, 0x30 / 255.0, 0x2a / 255.0, 1).CGColor; _stickKnob.strokeColor = g.CGColor; _stickKnob.lineWidth = 1.5;
 	[_ctl.layer addSublayer:_stickBase]; [_ctl.layer addSublayer:_stickKnob];
 	_padTog = [CAShapeLayer layer]; _padTog.fillColor = _stickBase.fillColor; _padTog.strokeColor = _stickBase.strokeColor; _padTog.lineWidth = 1.5; [_ctl.layer addSublayer:_padTog];
 	_padTogT = [CATextLayer layer]; _padTogT.fontSize = 9.5; _padTogT.alignmentMode = kCAAlignmentCenter; _padTogT.contentsScale = UIScreen.mainScreen.scale;
@@ -677,14 +677,14 @@ static void vxa_toast (NSString *s, double secs)
 	for (int i = 0; i < 4; i++) {
 		_btn[i] = [CAShapeLayer layer]; _btn[i].fillColor = _stickBase.fillColor; _btn[i].strokeColor = g.CGColor; _btn[i].lineWidth = 1.5; [_ctl.layer addSublayer:_btn[i]];
 		_btnT[i] = [CATextLayer layer]; _btnT[i].string = [NSString stringWithFormat:@"%d", i + 1]; _btnT[i].fontSize = 22; _btnT[i].alignmentMode = kCAAlignmentCenter;
-		_btnT[i].foregroundColor = [UIColor colorWithRed:0x88 / 255.0 green:0xcc / 255.0 blue:0xbb / 255.0 alpha:1].CGColor; _btnT[i].contentsScale = UIScreen.mainScreen.scale; [_ctl.layer addSublayer:_btnT[i]]; }
-	vxa_toast_l = [UILabel new]; vxa_toast_l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium]; vxa_toast_l.textColor = [UIColor colorWithRed:0x88 / 255.0 green:0xcc / 255.0 blue:0xbb / 255.0 alpha:1];
-	vxa_toast_l.backgroundColor = [UIColor colorWithRed:0x0b / 255.0 green:0x15 / 255.0 blue:0x11 / 255.0 alpha:0.92]; vxa_toast_l.layer.cornerRadius = 8; vxa_toast_l.layer.masksToBounds = YES; vxa_toast_l.alpha = 0;
+		_btnT[i].foregroundColor = vx_rgba (0x88 / 255.0, 0xcc / 255.0, 0xbb / 255.0, 1).CGColor; _btnT[i].contentsScale = UIScreen.mainScreen.scale; [_ctl.layer addSublayer:_btnT[i]]; }
+	vxa_toast_l = [UILabel new]; vxa_toast_l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium]; vxa_toast_l.textColor = vx_rgba (0x88 / 255.0, 0xcc / 255.0, 0xbb / 255.0, 1);
+	vxa_toast_l.backgroundColor = vx_rgba (0x0b / 255.0, 0x15 / 255.0, 0x11 / 255.0, 0.92); vxa_toast_l.layer.cornerRadius = 8; vxa_toast_l.layer.masksToBounds = YES; vxa_toast_l.alpha = 0;
 	[self.view addSubview:vxa_toast_l];
 	_menuBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-	[_menuBtn setImage:[UIImage systemImageNamed:@"line.3.horizontal"] forState:UIControlStateNormal]; _menuBtn.tintColor = [UIColor colorWithRed:0x88 / 255.0 green:0xcc / 255.0 blue:0xbb / 255.0 alpha:1];
-	_menuBtn.backgroundColor = [UIColor colorWithRed:0x0b / 255.0 green:0x15 / 255.0 blue:0x11 / 255.0 alpha:0.75]; _menuBtn.layer.cornerRadius = 22;
-	_menuBtn.layer.borderWidth = 1; _menuBtn.layer.borderColor = [UIColor colorWithRed:0x2f / 255.0 green:0x55 / 255.0 blue:0x44 / 255.0 alpha:1].CGColor;
+	[_menuBtn setImage:[UIImage systemImageNamed:@"line.3.horizontal"] forState:UIControlStateNormal]; _menuBtn.tintColor = vx_rgba (0x88 / 255.0, 0xcc / 255.0, 0xbb / 255.0, 1);
+	_menuBtn.backgroundColor = vx_rgba (0x0b / 255.0, 0x15 / 255.0, 0x11 / 255.0, 0.75); _menuBtn.layer.cornerRadius = 22;
+	_menuBtn.layer.borderWidth = 1; _menuBtn.layer.borderColor = vx_rgba (0x2f / 255.0, 0x55 / 255.0, 0x44 / 255.0, 1).CGColor;
 	_menuBtn.accessibilityLabel = @"Menu"; _menuBtn.hidden = YES;
 	__weak VXGameVC *ws = self;
 	(void) ws; [_menuBtn addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
@@ -1179,7 +1179,7 @@ static void vxa_set_opt (int i, NSString *v)
 		if (!_ctl.hidden) {
 			int hit = -1; for (int i = 0; i < 4; i++) if (CGRectContainsPoint (CGRectInset (_btnR[i], -8, -8), p)) hit = i;
 			if (hit >= 0 && !_btnTouch[hit]) { _btnTouch[hit] = t; static const int id4[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A };
-				vxa_tpad.btn |= 1u << id4[hit]; _btn[hit].fillColor = [UIColor colorWithRed:0x24 / 255.0 green:0x44 / 255.0 blue:0x3a / 255.0 alpha:0.9].CGColor;
+				vxa_tpad.btn |= 1u << id4[hit]; _btn[hit].fillColor = vx_rgba (0x24 / 255.0, 0x44 / 255.0, 0x3a / 255.0, 0.9).CGColor;
 				UIImpactFeedbackGenerator *h = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight]; [h impactOccurred]; what = [NSString stringWithFormat:@"button %d", hit + 1]; }
 			else if (CGRectContainsPoint (CGRectInset (_padTogR, -6, -6), p)) {   /* (the stick / D-pad switch) */
 				const BOOL d = ![self dpad]; [NSUserDefaults.standardUserDefaults setBool:d forKey:@"touch.dpad"]; _padDir = 0;
@@ -1281,12 +1281,18 @@ void ulog (NSString *s) { vlog ("ui %s", s.UTF8String); }
  * brightest light up to that, its knee's top in display gamma */
 /* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost, its lit area so much smaller
  *  than on an iPad or a monitor; on by default on an iPhone, off on an iPad, the setting below the Look) */
+UIColor *vx_rgba (double r, double g, double b, double a)
+{
+	extern unsigned vx_pal (unsigned c); const unsigned c = vx_pal ((unsigned) lround (r * 255) << 16 | (unsigned) lround (g * 255) << 8 | (unsigned) lround (b * 255));
+	return [UIColor colorWithRed:(c >> 16 & 255) / 255.0 green:(c >> 8 & 255) / 255.0 blue:(c & 255) / 255.0 alpha:a];
+}
 int vxa_trail_boost (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.trailboost"]; return n ? n.boolValue : 0; }   /* (off by default since the afterglow's own shape for the apps, vx_phone_trail) */
 float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIScreen.mainScreen.potentialEDRHeadroom; return 1; }
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
 	{ extern float vx_bright; NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; vx_bright = !lk || lk.integerValue == 1 ? 1.0f : 0.0f; }   /* (Bright the default here)   /* (the look: Vectrex, or Bright - lifted and wider) */
+	{ extern int vx_palette; if ([NSUserDefaults.standardUserDefaults integerForKey:@"app.palgreen"] != vx_palette) [NSUserDefaults.standardUserDefaults setInteger:vx_palette forKey:@"app.palgreen"]; }
 	{ extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */
 	vx_hdr_lift = 0.0f;   /* (2026-11-22: one picture - the beam on the phosphor; an HDR screen opens its top, no look to choose) */
 	/* (Apple: map to the headroom the screen gives NOW (currentEDRHeadroom) - the most (potential) only while iOS has not yet
@@ -1542,6 +1548,7 @@ static void vxa_net_tick (void)
 @implementation VXAppDelegate
 - (BOOL) application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
 {
+	{ extern int vx_palette; vx_palette = (int) [NSUserDefaults.standardUserDefaults integerForKey:@"app.palgreen"]; }   /* (the colour scheme as last set, before the first view: the core reads its setting later) */
 	vxa_log_start (); vlog ("app start"); vxa_net_watch ();
 	{ NSString *td = [vxa_docs () stringByAppendingPathComponent:@"roms/Tests"];   /* (the Test Cart: the picture compared between platforms - Library > Tests) */
 	  [NSFileManager.defaultManager createDirectoryAtPath:td withIntermediateDirectories:YES attributes:nil error:nil]; vx_testcart_write ([td stringByAppendingPathComponent:@"Test Cart.bin"].fileSystemRepresentation); }

@@ -92,13 +92,13 @@ final class DeckView extends View {
 		} else if (paused != 0 && power != 0) word (c, "PAUSED", rs, rs.centerY (), 13, Main.CHG);
 		else {
 			int pct = 100; try { pct = Integer.parseInt (emu.replaceAll ("[^0-9]", "")); } catch (Exception e) { }
-			int ec = !Character.isDigit (emu.isEmpty () ? 'x' : emu.charAt (0)) || pct >= 97 ? Main.G : pct >= 80 ? Main.CHG : 0xffed5454;
+			int ec = !Character.isDigit (emu.isEmpty () ? 'x' : emu.charAt (0)) || pct >= 97 ? Main.G : pct >= 80 ? Main.CHG : Main.pal (0xffed5454);
 			String f = power != 0 ? fps + "  " + hz + "  " : "-- INT  -- FPS  ", e = power != 0 ? emu : "--";   /* (the core's figures carry their units: "50 INT", "60 FPS") */
 			float y0 = full ? rs.top + 14 * d : rs.centerY (), sp = full ? 12 : 11;
 			txt.setTextSize (sp * d); float w1 = txt.measureText (f), w2 = txt.measureText (e), k = Math.min (1f, (rs.width () - 12 * d) / (w1 + w2));
 			txt.setTextSize (sp * d * k); w1 = txt.measureText (f); w2 = txt.measureText (e); float x = rs.centerX () - (w1 + w2) / 2;
-			txt.setColor (power != 0 ? Main.HI : 0xff4a6658); txt.setTextAlign (Paint.Align.LEFT); float by = y0 - (txt.descent () + txt.ascent ()) / 2;
-			c.drawText (f, x, by, txt); txt.setColor (power != 0 ? ec : 0xff4a6658); c.drawText (e, x + w1, by, txt);
+			txt.setColor (power != 0 ? Main.HI : Main.pal (0xff4a6658)); txt.setTextAlign (Paint.Align.LEFT); float by = y0 - (txt.descent () + txt.ascent ()) / 2;
+			c.drawText (f, x, by, txt); txt.setColor (power != 0 ? ec : Main.pal (0xff4a6658)); c.drawText (e, x + w1, by, txt);
 			if (full) {                                          /* (the CPU and GPU bars) */
 				float by2 = rs.top + 32 * d, lw = 22 * d, bw = (rs.width () - 16 * d - 2 * lw - 16 * d) / 2, x1 = rs.left + 8 * d;
 				text (c, "CPU", x1, by2, 8, Main.DIM, Paint.Align.LEFT); bar (c, x1 + lw, by2, bw, power != 0 ? cpu : 0);
@@ -112,7 +112,7 @@ final class DeckView extends View {
 		String dw = online ? (full ? "ONLINE P" + myPort : "P" + myPort) : W[full ? 1 : 0][kk];
 		iconWord (c, rd, online ? 5 : kk, dw, online ? Main.HI2 : Main.HI);
 		/* the cartridge */
-		panel (c, rc, false); iconWord (c, rc, 6, cartOut != 0 ? "OUT" : "CART", cartOut != 0 ? 0xff4a6658 : Main.HI);
+		panel (c, rc, false); iconWord (c, rc, 6, cartOut != 0 ? "OUT" : "CART", cartOut != 0 ? Main.pal (0xff4a6658) : Main.HI);
 		/* RESET: full - icon and word; slim - the word */
 		panel (c, rr, false); if (full) iconWord (c, rr, 7, "RESET", Main.HI); else word (c, "RESET", rr, rr.centerY (), 11, Main.HI);
 		/* the volume: the knob, or the bar */
@@ -121,7 +121,7 @@ final class DeckView extends View {
 	}
 	void bar (Canvas c, float x, float y, float w, int pct)
 	{
-		pan.setColor (0xff16302a); RectF t = new RectF (x, y - 2 * d, x + w, y + 2 * d); c.drawRoundRect (t, 2 * d, 2 * d, pan);
+		pan.setColor (Main.pal (0xff16302a)); RectF t = new RectF (x, y - 2 * d, x + w, y + 2 * d); c.drawRoundRect (t, 2 * d, 2 * d, pan);
 		pan.setColor (Main.G); t.right = x + w * Math.max (0, Math.min (100, pct)) / 100f; if (t.width () > 0) c.drawRoundRect (t, 2 * d, 2 * d, pan);
 	}
 	/* a panel's icon and word: full - the icon above the word; slim - beside it */
@@ -189,7 +189,7 @@ final class DeckView extends View {
 	void knob (Canvas c)
 	{
 		float r = 18 * d, cx = rv.centerX (), cy = rv.centerY (); RectF a = new RectF (cx - r, cy - r, cx + r, cy + r);
-		ln.setStrokeWidth (4 * d); ln.setColor (0xff16302a); c.drawArc (a, 135, 270, false, ln);
+		ln.setStrokeWidth (4 * d); ln.setColor (Main.pal (0xff16302a)); c.drawArc (a, 135, 270, false, ln);
 		if (power != 0) { ln.setColor (Main.G); c.drawArc (a, 135, 270 * Math.max (0, Math.min (100, vol)) / 100f, false, ln); }
 		ln.setStrokeWidth (1.5f * d); ln.setColor (Main.EDGE2); c.drawCircle (cx, cy, r * 0.62f, ln);
 		text (c, power != 0 ? String.valueOf (vol) : "OFF", cx, cy, 9, power != 0 ? Main.HI : Main.CHG, Paint.Align.CENTER);
@@ -198,7 +198,7 @@ final class DeckView extends View {
 	{
 		final boolean off = power == 0; icon (c, off ? 9 : 8, rv.left + 17 * d, rv.centerY (), 14 * d, off ? Main.CHG : Main.HI);
 		float x = rv.left + 32 * d, w = Math.max (10 * d, rv.width () - 32 * d - 42 * d), y = rv.centerY ();
-		pan.setColor (0xff16302a); c.drawRoundRect (new RectF (x, y - 2.5f * d, x + w, y + 2.5f * d), 2.5f * d, 2.5f * d, pan);
+		pan.setColor (Main.pal (0xff16302a)); c.drawRoundRect (new RectF (x, y - 2.5f * d, x + w, y + 2.5f * d), 2.5f * d, 2.5f * d, pan);
 		if (!off) { pan.setColor (Main.G); c.drawRoundRect (new RectF (x, y - 2.5f * d, x + w * Math.max (0, Math.min (100, vol)) / 100f, y + 2.5f * d), 2.5f * d, 2.5f * d, pan); }
 		text (c, off ? "OFF" : String.valueOf (vol), rv.right - 9 * d, y, 11, off ? Main.CHG : Main.HI, Paint.Align.RIGHT);
 	}

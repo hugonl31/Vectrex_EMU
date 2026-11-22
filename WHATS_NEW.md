@@ -5,7 +5,9 @@ newest on top, each line short enough for that small window (at most about 70 ch
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.8.1
+- Colours: a deeper blue (new, the default) or green
 - Look: Vectrex, or Bright for a small screen (brighter, wider lines)
+- PC: Pause freezes the picture exactly; F12 saves what is on screen
 - The afterglow on phones and RetroArch now as on the PC
 - Phones: Bright the default; a Brighter afterglow setting
 - The overlay's plastic glow no longer trails behind moving things

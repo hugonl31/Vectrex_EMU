@@ -50,7 +50,9 @@ NSString *vxa_net_name (void), *vxa_net_key (void);
 int vxa_net_playing (void);              /* (1 while a game for two runs: no save states) */
 
 /* the theme: the PC app's colours */
-#define VXC(rgb) [UIColor colorWithRed:((rgb) >> 16 & 255) / 255.0 green:((rgb) >> 8 & 255) / 255.0 blue:((rgb) & 255) / 255.0 alpha:1]
+/* (every colour of the interface through the colour scheme - blue, the default, or green: the core's vx_pal, Settings > Video > Colours) */
+UIColor *vx_rgba (double r, double g, double b, double a);
+#define VXC(rgb) vx_rgba (((rgb) >> 16 & 255) / 255.0, ((rgb) >> 8 & 255) / 255.0, ((rgb) & 255) / 255.0, 1)
 #define VX_BG VXC (0x05080a)
 #define VX_BAR VXC (0x0a1210)
 #define VX_PANEL VXC (0x0b1511)

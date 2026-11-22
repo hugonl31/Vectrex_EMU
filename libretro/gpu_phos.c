@@ -384,12 +384,25 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		 * glow's size (so smooth a light needs no more; at the picture's size it was most of the lines' cost), read into the light below */
 		const float hx = (float) ph_gw / FW, hy = (float) ph_gh / FH, hm = 0.5f * (hx + hy), hf = (float) (BT_HALO_F / (1.0 - BT_HALO_F));
 		if ((size_t) npl * 24 > ph_hbufn) { free (ph_hbuf); ph_hbufn = (size_t) npl * 24 + 4096; ph_hbuf = malloc (ph_hbufn * sizeof (float)); }
-		int nh_ = 0;
-		for (int k = 0; k < npl; k++) { const pline *q = &pl[k]; if (!(q->hx > 0)) continue; float *o = ph_hbuf + (size_t) nh_++ * 24; const float ox = (float) (q->to * EW);
-			float sh = q->hx * hm; const float f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf * (sh < 0.5f ? (sh / 0.5f) * (sh / 0.5f) : 1.0f); if (sh < 0.5f) sh = 0.5f;
-			o[0] = o[4] = (q->ax + ox) * hx; o[1] = o[5] = q->ay * hy; o[2] = o[6] = (q->bx + ox) * hx; o[3] = o[7] = q->by * hy;
-			for (int i = 8; i < 16; i++) o[i] = 0;
-			o[16] = 3.5f * sh + 1.0f; o[17] = q->r * f; o[18] = q->g * f; o[19] = q->b * f; o[20] = sh; o[21] = o[22] = o[23] = 0; }
+		/* (pieces that follow each other along one straight line - a line's ends and middle, its caps, the tube's segments - as one
+		 *  piece with their light together: over the glow's width, 2.5 units, where along half a unit the light sat shows nothing - a
+		 *  third of the glow's pieces to draw, its caps and ends together, a short dash one piece - within one unit) */
+		int nh_ = 0, mh = 0; float ma[2] = { 0, 0 }, mb[2] = { 0, 0 }, mc[3] = { 0, 0, 0 }, ms = 0, ml = 0, md[2] = { 0, 0 }; int mt = 0;
+		for (int k = 0; k <= npl; k++) { const pline *q = k < npl ? &pl[k] : NULL; if (q && !(q->hx > 0)) continue;
+			float len = 0, dx = 0, dy = 0, f = 0; int join = 0;
+			if (q) { dx = q->bx - q->ax; dy = q->by - q->ay; len = sqrtf (dx * dx + dy * dy); if (len > 1e-3f) { dx /= len; dy /= len; }
+				f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf;
+				join = mh && q->to == mt && q->hx == ms && fabsf (q->ax - mb[0]) < 0.75f && fabsf (q->ay - mb[1]) < 0.75f && ml + len < 0.4f * ms
+				       && ((len <= 1e-3f && ml <= 1e-3f) || (len > 1e-3f && ml > 1e-3f && dx * md[0] + dy * md[1] > 0.995f)); }   /* (a spot's glow fades out from it, a line's is a Gaussian: spots with spots, moving pieces with moving ones) */
+			if (join) { if (len > 1e-3f) { if (ml <= 1e-3f) { md[0] = dx; md[1] = dy; } mb[0] = q->bx; mb[1] = q->by; ml += len; }
+				mc[0] += q->r * f; mc[1] += q->g * f; mc[2] += q->b * f; continue; }
+			if (mh) { float *o = ph_hbuf + (size_t) nh_++ * 24; const float ox = (float) (mt * EW);
+				float sh = ms * hm; const float c = sh < 0.5f ? (sh / 0.5f) * (sh / 0.5f) : 1.0f; if (sh < 0.5f) sh = 0.5f;
+				o[0] = o[4] = (ma[0] + ox) * hx; o[1] = o[5] = ma[1] * hy; o[2] = o[6] = (mb[0] + ox) * hx; o[3] = o[7] = mb[1] * hy;
+				for (int i = 8; i < 16; i++) o[i] = 0;
+				o[16] = 3.5f * sh + 1.0f; o[17] = mc[0] * c; o[18] = mc[1] * c; o[19] = mc[2] * c; o[20] = sh; o[21] = o[22] = o[23] = 0; mh = 0; }
+			if (q) { mh = 1; mt = q->to; ms = q->hx; ma[0] = q->ax; ma[1] = q->ay; mb[0] = q->bx; mb[1] = q->by; ml = len; md[0] = dx; md[1] = dy;
+				mc[0] = q->r * f; mc[1] = q->g * f; mc[2] = q->b * f; } }
 		ph_target (ph_H, 0, 0, ph_gw, ph_gh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
 		if (nh_) {
 			glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);

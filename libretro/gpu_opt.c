@@ -46,7 +46,7 @@ static int opt_scene (wline *L, int max)
 static double opt_time (const prow *v, wline *sc, int n, int frames)
 {
 	extern double vt_wall (void);
-	fx_force = v; fx_apply ();
+	fx_force = v; fx_apply (); bt_gpu = vx_beam && bt_gpu_ok ();   /* (the first picture: measured as it will be drawn) */
 	const double dt = 1.0 / opt_rate; double t0 = 0;
 	gpu_novideo = 1;
 	double tw = vt_wall ();

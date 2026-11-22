@@ -504,7 +504,7 @@ void main() {
 CAPSULE_SHADER = b"""
 uniform vec2 fcs;                          // (Basic: the lines drawn at the phosphor's size - window px per pixel here)
 uniform float premul;
-uniform float timed, age0, dtw, gain, beam;
+uniform float timed, age0, dtw, gain, beam, hsg;   // (hsg: a spot wider than this, px, is the glass's glow - a plain Gaussian)
 uniform vec3 wb;
 uniform vec3 wbc;
 vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pure white in the bright core: a cold white
@@ -535,7 +535,11 @@ void main() {
         // the spot's profile: flatter on top and steeper at the sides than a Gaussian - exp(-(d / a)^2.6), the same width at half
         // height and the same light (the owner's photo of Vectorblade's logo: a line 0.70 / 1.00 / 1.30 / 1.70 units wide at 75 / 50 /
         // 25 / 10 % of its peak; a Gaussian of that half width 0.64 / 1.00 / 1.41 / 1.82)
-        if (L < 1e-3) g = 1.177 * exp(-pow(length(q) / (1.356 * sg), 2.6));
+        if (sg > hsg) {                     // (the glass's glow: no flat top, no edge - it fades out; the spot's profile on it was a disc that stopped)
+            if (L < 1e-3) g = 4.0 * exp(-length(q) / (0.5 * sg));   // (a spot's glow: brightest at the spot, fading steadily - the same light as the Gaussian's; that one stood round a dot as an even disc with a rim, the screen's last step to black)
+            else { vec2 t = ba / L; float u = dot(q, t), v = q.x * t.y - q.y * t.x;
+                g = 2.5066283 * sg / L * exp(-0.5 * v * v / (sg * sg)) * (Phi(u / sg) - Phi((u - L) / sg)); }
+        } else if (L < 1e-3) g = 1.177 * exp(-pow(length(q) / (1.356 * sg), 2.6));
         else {
             vec2 t = ba / L; float u = dot(q, t), v = q.x * t.y - q.y * t.x;
             g = 2.5066283 * sg / L * 1.041 * exp(-pow(abs(v) / (1.356 * sg), 2.6)) * (Phi(u / sg) - Phi((u - L) / sg));
@@ -940,7 +944,7 @@ BEAM_TRACE_SG = 0.674
 BT_A, BT_B, BT_D0, BT_IP = 0.70, 0.29, 150.0, 1.5
 BT_W, BT_WF, BT_UREF = 0.30, 0.10, 1.6
 BT_UNITS = 160.0 / 134.0                    # (Vectrex units - Moveto at scale $7F - a game px)
-BT_EXPO = 0.20                              # (the Vectrex look: a typical game line's flat top at white, hardly above - Vectorblade's logo,
+BT_EXPO = 0.14                              # (the Vectrex look: a typical game line's flat top at white, hardly above - Vectorblade's logo,
                                             #  intensity 79: its lines 0.6 of the photo's ceiling, unclipped; driven above white the tone step
                                             #  flattens a line's top and its skirt shows: "an out of focus photo", the owner)
 def bt_light(tl, l, t):
@@ -2338,7 +2342,7 @@ class GLBloomRenderer(GLRenderer):
             self.downprog = None
         self.cprog = program(CAPSULE_SHADER, 'capsule')
         self.u_premul = GetUniform(self.cprog, b'premul')
-        self.u_t = {k: GetUniform(self.cprog, k.encode()) for k in ('timed', 'age0', 'dtw', 'gain', 'beam', 'wb', 'wbc', 'fcs')}
+        self.u_t = {k: GetUniform(self.cprog, k.encode()) for k in ('timed', 'age0', 'dtw', 'gain', 'beam', 'hsg', 'wb', 'wbc', 'fcs')}
         self.satprog = program(SAT_SHADER, 'beam trace phosphor')
         self.u_sat = {k: GetUniform(self.satprog, k.encode()) for k in ('tex', 'k', 'wb', 'wbc')}
         self.ClientActiveTexture = proc('glClientActiveTexture', None, u)
@@ -3079,6 +3083,7 @@ class GLBloomRenderer(GLRenderer):
         u = self.u_t
         self.Uniform2f(u['fcs'], *getattr(self, 'fcs', (1.0, 1.0)))
         self.Uniform1f(u['beam'], 1.0 if bt else 0.0)
+        self.Uniform1f(u['hsg'], 0.5 * BT_HALO_S * 160.0 * (self.map[0] if hasattr(self, 'map') else 1.0) / BT_UNITS)
         self.Uniform3f(u['wb'], *(self._wb() if (age0 is None and not bt) else (1.0, 1.0, 1.0)))
         self.Uniform3f(u['wbc'], *(self._wbc() if (age0 is None and not bt) else (1.0, 1.0, 1.0)))   # (crisp lines here; the
                                                                                                  #  rest: SHOW_SHADER / _sat)
@@ -3991,9 +3996,10 @@ class GLBloomRenderer(GLRenderer):
         self.BindFB(GL_FRAMEBUFFER, self.F[1]); gl.glViewport(0, 0, fw, fh)
         gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
         gl.glEnable(GL_BLEND); self.BlendFuncSep(GL_ONE, GL_ONE, GL_ONE, GL_ONE)
-        self.BlendEqSep(0x8008 if getattr(self, 'even_beam', False) else 0x8006, 0x8008)   # (add - even beam: max -, max)
+        _eb = getattr(self, 'even_beam', False) and not (getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'))   # (beam trace: light adds, always)
+        self.BlendEqSep(0x8008 if _eb else 0x8006, 0x8008)   # (add - even beam: max -, max)
         keep = []
-        eq = 0x8008 if getattr(self, 'even_beam', False) else 0x8006
+        eq = 0x8008 if _eb else 0x8006
         avg = len(self.young) > 1 and getattr(self, 'max_frames', True) and getattr(self, 'covprog', None)
         if avg and not getattr(self, 'phos_full', True):  # (High, Medium, Low: not averaged per pixel - four passes at the
             avg = False                                   #  window's size, on the Pi 5 43 ms of Low's 59 a picture; each

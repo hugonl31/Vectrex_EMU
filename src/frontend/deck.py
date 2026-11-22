@@ -463,9 +463,16 @@ class Tip:
     """an info box below widget w while the pointer rests on it (on every widget in `also` too)"""
     def __init__(self, w, text, also=()):
         self.w, self.text, self.win, self.job = w, text, None, None
-        for x in (w,) + tuple(also):
+        mark = isinstance(w, tk.Canvas)                     # (an i mark: a click shows its box at once, a second one closes it -
+        for x in (w,) + tuple(also):                        #  the owner clicked it and nothing came; other widgets: a press closes)
             x.bind('<Enter>', self.enter, add='+'); x.bind('<Leave>', self.leave, add='+')
-            x.bind('<ButtonPress>', self.leave, add='+')
+            x.bind('<ButtonPress>', self.click if (mark and x is w) else self.leave, add='+')
+
+    def click(self, e=None):
+        if self.win is not None:
+            self.leave()
+        else:
+            self.leave(); self.show()
 
     def enter(self, e=None):
         self.leave()

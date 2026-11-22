@@ -25,6 +25,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
   greenish. The PC's and the apps' own menus change at the next start.
 * The glow round the vectors bluer than their bright core, and beside a line three times as bright at the line, falling
   to black at the same distance as before - next to a real Vectrex the vectors looked greenish.
+* PC: the game library, as the phone apps' (L, the deck's cartridge) - tiles as cartridges, boxes or overlays, 2 to 6 a
+  row or titles only, a search, the categories All / Recent / Games / UVMC2 / PiTrex / Tests; it fills the picture's
+  place above the deck. The pictures: your own, in system/vectrex_emu/thumbs/boxes, carts, overlays (PNG, the game's
+  name). Display > Game list switches back to the simple list.
 * PC, Pause: the picture stands exactly as it was shown - the bloom no longer fades away while paused.
 * PC, Snapshot (F12): the picture on the screen at that moment, at the window's size - not drawn again some frames
   later.

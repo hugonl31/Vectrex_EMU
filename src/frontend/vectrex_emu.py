@@ -9480,6 +9480,12 @@ class App:
             T = frames[-1][1] + frames[-1][3] if frames else now
             if frames:
                 self.frame_due = T                              # (the next game frame: about then)
+                # the picture holds the frame's last line too: a frame's length is its sound's (whole samples, 22.02 or
+                # 22.36 ms for a 22.22 ms frame) - shorter than the moment of a line drawn right at its end (22.17 ms),
+                # that line missed this picture and stood in the next one only: one picture in three without it at 45
+                # and 35 frames a second (Glow Test, 2026-11-22). At most 2 ms on
+                if not smooth and r.young:
+                    T = min(max(T, r.young[-1][2] + self.pause_acc), T + 0.002)
         else:
             show = True
             T = now

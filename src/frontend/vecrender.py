@@ -946,10 +946,6 @@ BT_TINT = (0.65, 0.86, 1.0)                 # (the beam on the phosphor: one whi
                                             #  photos with the camera's white balance (three sessions: red 0.62-0.66 of blue, green 0.83-0.89 as
                                             #  display values, lines and glow alike): a blueish white, blue full so no brightness is given away)
 BT_KMAX = 512.0                             # (a piece's light goes to the GPU as a colour, clamped at 1: sent / BT_KMAX, SAT_SHADER x BT_KMAX)
-def bt_eta(tau):
-    """the phosphor's light per cycle of beam, tau = the cycles a point stays under the spot (arrays)"""
-    tau = _np.maximum(tau, 0.02)
-    return _np.where(tau < BT_TAUX, BT_LINE_K * (tau / BT_W) ** -BT_LINE_P, BT_REST_K * _np.log1p(tau / BT_REST_T) / tau)
 SAT_SHADER = b"""
 uniform sampler2D tex;
 uniform float k;
@@ -962,7 +958,7 @@ vec3 cold(vec3 c, vec3 wb) {               // the glow's tint in the faint light
 }
 void main() {
     vec4 c = texture2D(tex, gl_TexCoord[0].st);
-    vec3 l = max(c.rgb, vec3(0.0));          // (the pieces' light, added up: the phosphor's law is in each piece - bt_eta)
+    vec3 l = max(c.rgb, vec3(0.0));          // (the pieces' light, added up: the phosphor's law is in each piece - bt2_light)
     gl_FragColor = vec4(cold(pow(k * l, vec3(1.0 / 2.2)), wb), c.a);
 }
 """
@@ -1814,8 +1810,8 @@ PHOS_GCAP = 1.5
 # the afterglow's spots overlap: the fading light (not the lit lines) is averaged over a spot PHOS_SMOOTH px
 # wide (in an 820 px high window, scaled), so the copies' steps and the wing tips' corner dots blend into a
 # smooth gradient, as overlapping light does on the tube (Tube > Afterglow overlap)
-PHOS_SMOOTH = 0.0               # (0.8 the owner's choice 2026-10-14; 0 and off by default since the two-layer afterglow,
-                                #  2026-10-29: crisp copies - phos_smooth_on)
+PHOS_SMOOTH = 0.8               # (the owner's choice 2026-10-14; off by default since the two-layer afterglow, 2026-10-29:
+                                #  crisp copies - phos_smooth_on. Its default was 0 until 2026-11-23: switched on, nothing changed)
 PHOS_ACAP = 1.0                 # the afterglow's brightest: a line's (the corners' extra light only while lit - SHOW_SHADER)
 # the afterglow's faint end lifted where no overlay is shown: g x (1 + A / (1 + g / G0)) - up to A x G0 more, reached already
 # where it is faint. On black the trail so looks as it does through an overlay, whose plastic glow and scratches (added as
@@ -1826,8 +1822,8 @@ PHOS_GROW_MAX = PHOS_SMOOTH_MAX = 0.8   # (the sliders 0 .. 1 reach this: joinin
                                         #  2026-10-29: more looks wrong)
 PHOS_GAGE = 0.035               # the afterglow grows only this long after its hold (2 display frames: it joins
                                 #  the copies but stays the vector's size - a bullet's glow grew into a splotch)
-PHOS_GROW = 0.0                 # (0.5 the owner's choice 2026-10-14; 0 and off by default since the two-layer afterglow,
-                                #  2026-10-29: crisp copies - phos_grow_on)
+PHOS_GROW = 0.5                 # (the owner's choice 2026-10-14; off by default since the two-layer afterglow, 2026-10-29:
+                                #  crisp copies - phos_grow_on. Its default was 0 until 2026-11-23: switched on, nothing changed)
 
 # A game may draw its picture in two halves, one on each frame (a menu that draws half its lines each frame: they share nothing
 # with the one before and nearly everything with the one before that). On the tube both halves keep glowing;

@@ -1625,6 +1625,10 @@ def old_gap(look):
     if isinstance(look, dict) and 'glass_k' in look and 'glass_curve' not in look:   # (before v1.2.0: the amount of the
         try: look['glass_curve'] = max(0.0, min(1.0, 1.0 - float(look.pop('glass_k'))))   #  curve undone - now the curve
         except (TypeError, ValueError): look.pop('glass_k', None)   #  itself, 1 as on a Vectrex)
+    for k_, d_ in (('phos_grow', vecrender.PHOS_GROW), ('phos_smooth', vecrender.PHOS_SMOOTH)):   # (saved before 2026-11-23 at
+        try:                                            #  the old default 0: switched on, the setting did nothing)
+            if isinstance(look, dict) and k_ in look and float(look[k_]) <= 0.0: look[k_] = d_
+        except (TypeError, ValueError): look.pop(k_, None)
     if isinstance(look, dict) and abs(float(look.get('line_gap', 0)) - 12.3) < 1e-6:
         look['line_gap'] = 7.0
     if isinstance(look, dict) and any(abs(float(look.get('white_k', 0)) - old) < 1e-6 for old in (6400.0, 9300.0)):
@@ -2661,7 +2665,7 @@ class App:
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look2', 'even_beam', 'white_k', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'look2', 'white_k', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'dither_on',
@@ -7478,10 +7482,6 @@ class App:
         if getattr(self, 'title_job', None):
             self.root.after_cancel(self.title_job)
         self.title_job = self.root.after(2000, self.title)
-    def tune(self, what, step, lo, hi):
-        if self.ren and hasattr(self.ren, what):
-            setattr(self.ren, what, round(max(lo, min(hi, getattr(self.ren, what) + step)), 2))
-            self.show_look(what)
     def toggle_phosphor(self, e=None):
         if self.ren and hasattr(self.ren, 'phosphor'):
             self.ren.phosphor = not self.ren.phosphor

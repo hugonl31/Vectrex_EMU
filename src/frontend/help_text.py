@@ -253,8 +253,8 @@ TOPICS = [
                 "drawn at half the window's size while the vectors stay at full size, and 30 pictures a second instead "
                 "of 60. The two switches are also in Display > Weak graphics, for any profile."),
 ('item', 'Medium', "The Vectrex look for laptops: the afterglow, the glow, the corner dots and "
-                   "the overlay's colours stay; the tube curve, glass edge, scratches, plastic glow, parallax, "
-                   "room light, reflections and dither are off, and the glow is drawn at three-quarter size."),
+                   "the overlay's colours stay; the tube curve, glass edge, scratches, plastic glow, "
+                   "room light, reflections and dither are off, and the phosphor is drawn at three-quarter size."),
 ('item', 'High', "All but the room light and its reflections; a lighter afterglow."),
 ('item', 'Ultra', "Every effect on."),
 ('item', 'Custom', "A profile you changed: any picture setting (Tube, Room light, Case, Overlay) set by hand in the tabs below."),

@@ -1028,9 +1028,9 @@ def bt2_prepare(L, col=None):
     return np.concatenate(out_rows), np.concatenate(out_light), (col[src] if col is not None else None)
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
-BT_SPOT = 1.0                               # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
+BT_SPOT = 1.25                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
                                             #  2026-11-22, the owner: 1.85 matched the photos - their lens' blur with it; the BIOS's small text
-                                            #  must show its rows as the tube does: 1.5; Last Human's smaller font too, and a shot's two dots apart: 1.0)
+                                            #  must show its rows as the tube does: 1.5; Last Human's smaller font too, but only barely (the owner): 1.25)
                                             #  Vectorblade's logo (intensity 79) 1.00 units at half height, 0.70 at 75 %, 1.30 at 25 %, 1.70 at 10 %:
                                             #  a Gaussian; the Dot Test's reference line (intensity 127) 1.03-1.16; ours 0.54 x this at 79)
 BT_TINT = (0.65, 0.86, 1.0)                 # (the beam on the phosphor: one white for cores and glow alike - the tube's own, from the owner's

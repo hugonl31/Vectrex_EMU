@@ -9197,7 +9197,7 @@ class App:
             A = _np.asarray(arr(la), dtype=_np.float64)                                                       #  Imager's colours)
             if A.ndim != 2 or not len(A):
                 return
-            A = A.copy(); A0 = A.copy(); dA = _np.zeros(len(A))   # (a's own lines; how far each moves on to b's)
+            A = A.copy(); A0 = A.copy(); still = None; dA = _np.zeros(len(A))   # (a's own lines; how far each moves on to b's)
             # (line for line, as the core's since 2026-11-22: a line that jumped - a thing gone round the screen's edge - stands in
             #  a's place until halfway and in b's after, the others still move; and the two frames need not have as many lines
             #  (the beam's path is cut a little differently each frame): the lines alike from the front and from the back move,
@@ -9208,7 +9208,7 @@ class App:
                 if B.ndim == 2 and len(B) and B.shape[1] == A.shape[1]:
                     try:
                         TA, va, TB, vb = self.sm_align(A, B)
-                        dA = _np.where(va, _np.abs(TA - A[:, :4]).max(1), 0.0)
+                        dA = _np.where(va, _np.abs(TA - A[:, :4]).max(1), 0.0); still = va & (dA < 1.5)
                         if alpha < 0.5:
                             R = A.copy(); R[va, :4] += (TA[va] - A[va, :4]) * alpha
                         else:
@@ -9222,6 +9222,9 @@ class App:
             if getattr(self, 'sm_exf_for', None) is not a or len(getattr(self, 'sm_exf', ())) != len(A0):
                 self.sm_exfp_for, self.sm_exfp = getattr(self, 'sm_exf_for', None), getattr(self, 'sm_exf', None)
                 self.sm_exf_for, self.sm_exf = a, _np.zeros(len(A0), dtype=bool)
+            # (a line the next frame draws in the same place stays lit: no afterglow to start - and nothing to build for it;
+            #  building a whole frame of Mine Storm again each game frame cost 2.6 ms, the screen's 60 pictures became 57)
+            if still is not None and len(still) == len(self.sm_exf): self.sm_exf |= still
             W_ = self.SMOOTH_EXW; now_ = (~self.sm_exf) & (dA >= W_) & (alpha * dA >= W_)
             self.sm_exf |= now_; ex_now = A0[now_]
         else:

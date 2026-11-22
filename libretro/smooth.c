@@ -68,7 +68,8 @@ static int sm_draw (const gframe *a, const gframe *b, double alpha, int n, int e
 			if (first) n = wl_from (W1, n, l, 1, &q, alpha);
 			if (ex && i < sm_exf_n && !sm_exf[i]) { long d = labs (q.x0 - l->x0), e = labs (q.y0 - l->y0); if (e > d) d = e;
 				e = labs (q.x1 - l->x1); if (e > d) d = e; e = labs (q.y1 - l->y1); if (e > d) d = e;
-				if (d >= SM_EXW && alpha * d >= SM_EXW) { sm_exf[i] = 1; sm_exi[sm_exc++] = i; } } } }
+				if (d < 2) sm_exf[i] = 2;                 /* (drawn in the same place by b: it stays lit - no afterglow to start, nothing to build) */
+				else if (d >= SM_EXW && alpha * d >= SM_EXW) { sm_exf[i] = 1; sm_exi[sm_exc++] = i; } } } }
 	if (!first) for (int s = 0; s < nb; s++) { const sm_stk *p = &sm_SB[s]; const int m = sm_mb[s]; int cur = m >= 0 ? sm_SA[m].first : 0;
 		for (int i = p->first; i <= p->last; i++) { const line_t *l = &b->L[i];
 			if (m < 0) { n = wl_from (W1, n, l, 1, NULL, 0); continue; }

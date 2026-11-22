@@ -75,6 +75,8 @@ void vxs_vars_vx (void (*add) (void *p, size_t n, int is_long))
 	add (&score_mul, sizeof score_mul, 0);
 	add (&sel_held, sizeof sel_held, 0);
 	add (&snaps, sizeof snaps, 0);
+	add (&st_fno, sizeof st_fno, 0);
+	add (&st_out, sizeof st_out, 0);
 	add (&total_cycles, sizeof total_cycles, 0);
 	add (&verbose_bank, sizeof verbose_bank, 0);
 	add (&vt_cart_len, sizeof vt_cart_len, 0);

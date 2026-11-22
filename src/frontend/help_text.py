@@ -276,13 +276,12 @@ TOPICS = [
 ('tube', 'Config: Tube', [
 ('p', "The Tube tab is about the picture tube and the analog parts that drive it. Each effect is measured "
       "on a real Vectrex (photos, a video and sound recordings) and can be switched off."),
-('item', 'Phosphor (afterglow and bloom)', "The glow of the screen's coating. Off: plain lines."),
-('item', 'Bloom', "How far the brightest lines light up the glass around them."),
+('item', 'Phosphor', "The screen's coating and its afterglow. Off: the lines without afterglow."),
 ('more', 'Why the lines glow', "The electron beam excites a coating of phosphor on the inside of the "
-         "glass. A spot the beam lingers on gets very bright: dots and line ends glow, fast thin lines stay "
-         "faint. Light scattered in the thick glass front (halation) makes a soft halo around bright "
-         "spots: the bloom. The emulator draws each line as a soft round spot whose brightness and width "
-         "follow how long the beam spent on each point, as the tube does."),
+         "glass. The emulator follows the beam's own path and lights the phosphor by the time the beam spends on "
+         "each place - one law, measured on photos of a real Vectrex. So a slow line is brighter than a fast one, a "
+         "resting dot grows wider, a line shows a dot where it starts, crossings add up, and the thick glass "
+         "round a bright spot glows a little. On an HDR screen the brightest dots go above white."),
 ('item', 'Afterglow / Afterglow length', "The phosphor keeps glowing after the beam has passed. "
          "x1 is the measured length; the default x0.6 was matched to a real Vectrex side by side."),
 ('more', 'The measured afterglow', "Filmed on a real Vectrex: the moment the beam leaves, a spot drops to "
@@ -297,26 +296,13 @@ TOPICS = [
 ('item', 'Afterglow smoothing', "Off by default. On: the fading glow is averaged over a small spot, so the "
          "trail becomes one smooth gradient. Only the fading light; the lines being drawn stay sharp."),
 ('item', 'Smoothing width...', "How wide that spot is when smoothing is on, 0 to 1 (0 by default: turn it up after switching smoothing on)."),
-('item', 'Corner glow (halo where the beam rests)', "Where the beam stops for a moment - every corner, every "
-         "dot such as a shot or a star - the screen glows softly around the spot, as the light scatters in the "
-         "tube's thick glass. It also softens the tiny dark gaps a Vectrex leaves at some corners."),
-('item', 'Corner glow strength...', "How strong that glow is (right click on the slider: the default)."),
-('item', 'Corner dot brightness...', "How much brighter the spot is where the beam stops - corners, dots, the joins "
-         "in a dashed line - than the line itself. x1 = as measured; 0 = no brighter than the line."),
+('item', 'Look', "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen."),
 ('item', 'White balance (colour temperature)', "The middle is neutral: the lines and their glow the screen's own "
          "pure white. Towards cool (up to 16000 K) the glow turns colder while the lines' bright cores stay pure white - "
          "the screen's brightest - and from about 9600 K the cores follow. Towards warm (down to "
          "5600 K) the same. 12000 K by default: the bluish white of a real Vectrex - a cold glow, and the brightest cores "
          "bluish too; further right even bluer. "
          "Only the lines change colour - the overlay and the case keep theirs."),
-('item', 'Beam trace (the spot lights the phosphor)', "Off by default. The core sends the spot's own path - every "
-         "cycle where it was - and the phosphor lights up by how long the beam stayed in each place: slow is bright, a "
-         "stopped beam builds a dot, fast is faint, and curves are smooth curves, not pieces of straight line. "
-         "One measured rule instead of the line renderer's corner dots and glow."),
-('item', 'Even beam (an ideal vector display)', "Off by default. Every point as bright and as thin as the lines: "
-         "no brighter, fatter corners and dots where the beam rests, no corner glow, no fainter fast lines, and "
-         "where lines overlap they do not add up. A vector display without the tube's character - dots such as "
-         "stars stay visible, just no brighter than a line. The gaps stay: they come from the timing."),
 ('item', 'Line gaps (analog delay)...', "The small gaps at line ends and corners: on a real Vectrex the beam "
          "stops moving a few cycles after the game switches it off, and how many differs from one machine to "
          "the next. 7 cycles (the default) is a well-tuned Vectrex; 4 nearly closes the corners, 10 "
@@ -332,10 +318,6 @@ TOPICS = [
          "grid look narrower at the sides and lower at the top and bottom - in front of a real Vectrex too. 1 (the default) "
          "shows it as on a Vectrex (the overlays fit it), 0 takes it away: even squares, the picture a little wider. Separate from the analog "
          "circuits' geometry (Unit and Circuit tabs) and Tube geometry."),
-('item', 'Bend smoothing (curves without facets)', "A curve a game draws as a chain of short lines is drawn as one smooth "
-         "bend, as the tube shows it: no corners where the short lines meet. Off: the lines exactly as the game sends them."),
-('item', 'Second glow pass (a softer, wider glow)', "A second, wider glow on top of the first: softer, closer to the real "
-         "tube's halo. Off saves graphics time on weak graphics."),
 ('item', 'Dither (no bands in soft glows)', "A faint noise in the soft glows, so they fade out smoothly instead of in visible "
          "steps of brightness (bands)."),
 ('item', 'Glass edge (rounded corners)', "The tube's glass face ends in rounded corners with a soft edge: what "
@@ -716,8 +698,8 @@ TOPICS = [
          "overlay should be 162 mm wide and 207 mm high."),
 ('item', 'Rotate screen', "The whole screen turned in 90 degree steps - for a monitor turned on its side "
          "(tate). The overlay, the knob and the display turn with it."),
-('item', 'On-screen display', "Below the picture: INTERNAL (the game's own frames per second), MONITOR "
-         "(your screen's refresh), EMU RATE (green at 100 %; orange or red when the PC can not keep up), "
+('item', 'On-screen display', "Below the picture: INTERNAL (the game's own frames per second), OUTPUT "
+         "(the pictures per second this PC gets to the screen: your screen's refresh rate when it keeps up), EMU RATE (green at 100 %; orange or red when the PC can not keep up), "
          "and ONLINE while you play online (the round trip to the other player, RELAY when it goes through the meeting "
          "point; WAITING before player 2 is there). The volume shows on the knob when you point at it."),
 ('item', 'CPU and GPU meters (how much of each frame is used)', "Two bars below the on-screen display: how much of each "

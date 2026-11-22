@@ -3,6 +3,146 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.1
+
+* Look (PC: Tube > Look; iPhone / iPad and the Android app: Settings > Look): Vectrex, the default - the measured picture.
+  Bright - for a small screen, whose thin lines give little light: the tube's light lifted and the beam 30 % wider.
+  On an ordinary screen the faint lines come up and the top is pressed into white; on an HDR screen the whole
+  ordinary picture moves up to the screen's peak.
+* A new test cartridge, Glow Test: two full-length lines, still or moving at three speeds, the refresh rate from 50
+  down to 25 a second.
+
+## v1.8.0
+
+* A new picture, the same on every platform (PC, iPhone / iPad, Android, RetroArch): the simulated beam lights a simulated
+  phosphor. The light of every place follows from the time the beam spends there, by one law measured on photos of a real
+  Vectrex - a slow line is brighter, a resting dot grows wider, a line's start shows its dot, crossings and repeats add
+  up, the glass round a bright spot glows a little. No separate rules for dots, corners or glow any more.
+* The timing as measured on a real Vectrex (five hand-timed test cartridges, photographed): the spot settles in three
+  stages (lag 13.3 cycles), RAMP's and the beam's delays, the shift register's clock. Corners, joins and small text come
+  out as on the tube.
+* One look. Tube > Look (Bright / Vectrex) is gone, with the line renderer's switches that no longer do anything:
+  bloom and its second pass, Corner glow, Corner dots, Dwell spots, Fast sweeps fainter, Smooth curves at bends, Beam
+  width, Brightness, Even beam.
+* HDR (PC with an HDR monitor, iPhone / iPad, Android 14): the same picture from black to the middle; where an ordinary
+  screen rolls off towards white, the brightest lines and dots go above it, softly up to the screen's peak.
+* The picture's and the Vectrex unit's settings go back to their defaults once with this version (sound, controls,
+  games and overlays stay). A saved deflection lag of 6 becomes 13.3.
+* Online: version 13 - both players need this version.
+* Not yet on the new picture: the EmuVR flavour and the core without a GPU (they draw on the processor).
+
+## v1.7.6
+
+* Look (PC: Tube > Look; RetroArch: Tube > Look): Bright, the default - all lines pushed up to white, bright vectors on a
+  dim screen. Vectrex - as a real Vectrex, measured on photos of one: dots and slow lines stand out with a glow, the
+  other lines lower; wants a bright screen.
+* Dots and the beam's resting spots glow more, as on a real Vectrex (Test Cartridge Rev. 4's INTENSITY screen).
+* The case's glossy walls as on a real Vectrex: flat, the picture mirrored straight and evenly, fainter and sharper.
+* Online (PC): rollback for Vectrex games - smooth over real networks; card games (UVMC2, PiTrex) streamed from the
+  host. The host can switch between Vectrex and card games mid-game. Take port 1 / Take port 2; the host's saves
+  (Vectorblade's calibration, Last Human's save chip) go to player 2; chat also while a game is streamed.
+* RetroArch: the control deck on Auto - a slim pop-up deck on a real 4:3 screen, none elsewhere.
+* UVMC2 and PiTrex games use the unit's zero hold; every game starts with its unit's settings (Last Human calibrated
+  right after a UVMC2 game).
+* RESET as on a real Vectrex: the BIOS decides between the title screen and a cold start.
+* PC: F12 and recording in full screen take the case only.
+* The core no longer uses more memory with every game switch.
+* Online: joining a game always starts both players' games anew. Joining a running game sent its state - up to 2 MB
+  - which stalled a phone's own network (Wi-Fi Direct) and parted the two games at once (an iPad with an Android
+  handheld). A fresh start for both is quick and plays the same on every device.
+* The test builds: the iPhone / iPad app keeps its log while it has no internet (on a phone's own network) and sends
+  it later; the Android app writes its log next to the core's as well.
+
+## v1.7.5
+
+* iPhone and iPad together with no network at all: Online > Nearby - iPhone and iPad > Host for an iPhone / iPad
+  nearby. The other device sees the game in the same list and joins with a tap - through Apple's peer-to-peer Wi-Fi
+  (as AirDrop): no router, no hotspot, no internet, also where a hotel's Wi-Fi keeps its guests apart. Wi-Fi must be
+  switched on (connected or not). Between Apple devices only; with Android and PCs: the Android app's or the PC's own
+  network (Nearby), which an iPhone joins in its Wi-Fi settings.
+
+## v1.7.4
+
+* Online through the meeting point (relayed - a hotel's Wi-Fi, two routers that do not connect): the round trip is
+  measured properly. Its test pings had to come back within 0.5 s; through a hotel's relay none did, 100 ms was
+  guessed, the input delay was far too short and the game ran at a third of its speed. An answer now counts whenever it
+  comes (each ping carries its send time), up to 24 pings until 4 have answered, and a relayed game gets 2 frames more
+  room. The PC version measures the same way.
+* The iPhone / iPad and Android apps: while an online game waits for the other player, no extra runs to fill the
+  sound - they drew pictures nobody saw (115 runs, no pictures a second).
+* Join the nearby host goes only to a host's own network (a phone's hotspot or Wi-Fi Direct group, a PC's); on a
+  hotel's Wi-Fi its address was the hotel's router. On the iPhone, Host on your Personal Hotspot checks that the
+  hotspot is on and says how otherwise (an app can not switch it on).
+
+## v1.7.3
+
+* Player names are tied to the device: its secret key for the meeting point is made from the device (Windows'
+  machine id, Linux's machine-id, Android's id for the app; on an iPhone / iPad kept in the Keychain), hashed with the
+  program's own salt - the meeting point never sees the id. A fresh install on the same device asks the meeting point
+  and gets its name back ("Welcome back") instead of asking for one. Names chosen before keep their key.
+* The iPhone / iPad and Android apps ask for the name once, at the first start, and reserve it at the meeting point
+  (taken: another one is asked for; no connection: kept on the device and reserved at the next online game). A name
+  changed in Online is reserved anew and the old one set free.
+* The meeting point answers which name a key holds (tools/vxrelay.py, 'W'); the core can reserve and look up names
+  (vx_net_claim, vx_net_whoami) for the apps.
+
+## v1.7.2
+
+* The PC version shows HDR on an HDR monitor (Windows with HDR on; View > HDR, on by itself): the picture goes
+  through DirectX in Windows' extended colour space, and the brightest light - what the tone curve's shoulder takes
+  away on an ordinary screen - rises above white, up to the monitor's peak. Ordinary pictures stay at the brightness
+  Windows gives them. The iPhone / iPad and Android apps already had HDR; the RetroArch cores keep RetroArch's.
+* Online player names are capitals and digits only (A-Z, 0-9; letters typed in lower case become capitals, other
+  characters are left out). An earlier name with _ or - loses them and is reserved again. Hosting and joining need a
+  name: the apps say so when it is missing.
+* iPhone / iPad and Android: Settings > Reset all settings (every setting back to its default, after a question); a
+  long press on one setting sets that one back. On the iPhone a slider opens where its value - or its default - is,
+  and a double tap on it gives the default.
+
+## v1.7.1
+
+**Online: Nearby - no router, no internet**
+* Online > Nearby > Make a network and host: the host makes a Wi-Fi network of its own and hosts the game in the slot
+  on it. On Windows a Wi-Fi Direct access point that phones and PCs join as any network (VECTREX-EMU-xxxx), on Linux
+  NetworkManager's hotspot; on a Mac use Internet Sharing, then Host on local network. The Android app makes a Wi-Fi
+  Direct group (DIRECT-VX-VECTREX-xxxx); on an iPhone or iPad turn on Personal Hotspot and host there.
+* The network's name and password ("vectrex" and four digits) are made once and kept on the device: the second time,
+  the other phone or PC knows the network and joins it by itself.
+* The other players join that network in their Wi-Fi settings; the game is then under Games on this network, or
+  Join the nearby host goes straight to it (an ad-hoc network's host is its router).
+* A host's game is announced on every network the device is on, not only the one with the internet: an ad-hoc
+  network's games show in the list too.
+* Joining a running game through the meeting point (relayed) now starts both anew: the running game's state - about
+  2 MB - took some 15 seconds through the meeting point while the host's game stood still. Direct and on a network it
+  is still joined as it runs (well under a second).
+
+**The Android app (a test build)**
+* Our own app around the core, no RetroArch - as the iPhone / iPad app: the picture with HDR where the screen has it,
+  touch controls, controllers (button 3 back, button 4 picks), the core's modern control deck, the library (cartridges,
+  boxes, overlays, 1-5 per row or titles only), the settings, save states and online play with phones and PCs. It
+  reads the Vectrex's files and games from its own folder or from RetroArch's (BIOS/vectrex_emu, ROMs/vectrex).
+
+## v1.7.0
+
+**Online play**
+* The host can change the game while connected: the game picked in the browser starts for both players at the same
+  moment, player 2's copy found by its MD5 (a player without the game is told, and the game goes on). This works
+  between PCs and with the iPhone / iPad app; UVMC2, PiTrex and VecLink games still start a new session.
+* A dropout no longer ends a game: both wait for the connection to come back ("No connection - waiting"), and only
+  Leave ends it. The host's game goes on after the other player leaves, and it is hosted again.
+* The power-on is the same on both sides whatever each machine played before: the RAM's random seed counted the
+  machine's own power-ons, and two machines with a different history powered the same game on differently - out of
+  step soon after the start or after a game change.
+
+**The RetroArch core**
+* A modern control deck (Control deck look; the default on Android and iOS, the classic strip on the PC): rounded
+  panels of one width whatever they show - the figures (PAUSED, OFF), port 2's device, the cartridge (OUT), RESET -
+  and the volume as a knob, or as a bar on the slim deck; the pop-up deck has a tab under the picture.
+* The overlay is drawn with fewer texture reads (the afterglow read once per pixel instead of six times): the same
+  picture (x1.0000 in light, at most 8 of 255 apart in a few pixels), less work for a phone's or handheld's GPU.
+* For the iPhone / iPad app: joining a running game without a reset (app to app), RESET and another game for both
+  players, the deck's states.
+
 ## v1.6.9
 
 * The phosphor trail on black now looks as it did through an overlay: its faint end is lifted, so a moving object's

@@ -29,7 +29,7 @@ LONGS = '''vt_bank_switches vt_via_mirror alg_xofs alg_yofs dark_x0 dark_y0 dark
 alg_dx alg_dy alg_curr_x alg_curr_y alg_vector_x0 alg_vector_y0 alg_vector_x1 alg_vector_y1 alg_vector_dx alg_vector_dy
 vector_draw_cnt vector_erse_cnt fcycles vt_text_shift sj_sil psg_frac sp_phase vl_slice uvm2_n_halt uvm2_n_rd uvm2_n_wr
 uvm2_n_via vt_nlines frames frames_over bankchg_log bad_switches wav_bytes frame_budget dev_x0 dev_y0 dev_dx dev_dy
-prot_dim prot_lines aq_frames'''
+prot_dim prot_lines aq_frames vt_power_n'''
 LONG.update(LONGS.split())
 STRUCT = {'ss_last': ['d', '+l', 'u'], 'alg_lin': ['u', '+l'], 'PSG': ['index', 'ready', 'lastEnable', '@PeriodA..VolTable']}
 

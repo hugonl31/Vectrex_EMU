@@ -207,6 +207,7 @@ void vxs_vars_vecx (void (*add) (void *p, size_t n, int is_long))
 	add (&psg_tcnt, sizeof psg_tcnt, 0);
 	add (&psg_tout, sizeof psg_tout, 0);
 	add (&ram, sizeof ram, 0);
+	add (&rampdly_gap, sizeof rampdly_gap, 0);
 	add (&rdly_frac, sizeof rdly_frac, 0);
 	add (&rdly_frac_t1, sizeof rdly_frac_t1, 0);
 	add (&rom, sizeof rom, 0);
@@ -256,7 +257,16 @@ void vxs_vars_vecx (void (*add) (void *p, size_t n, int is_long))
 	add (&sp_silent, sizeof sp_silent, 0);
 	add (&sp_stack, sizeof sp_stack, 0);
 	add (&sp_tail, sizeof sp_tail, 0);
+	add (&sr_d0, sizeof sr_d0, 0);
 	add (&sr_flagwait, sizeof sr_flagwait, 0);
+	add (&sr_model, sizeof sr_model, 0);
+	add (&sr_now, sizeof sr_now, 0);
+	add (&sr_pend, sizeof sr_pend, 0);
+	add (&sr_pend_at, sizeof sr_pend_at, 0);
+	add (&sr_pend_data, sizeof sr_pend_data, 0);
+	add (&sr_seq, sizeof sr_seq, 0);
+	add (&sr_seq_on, sizeof sr_seq_on, 0);
+	add (&sr_w, sizeof sr_w, 0);
 	add (&ss_have, sizeof ss_have, 0);
 	add (&ss_last.d, sizeof ss_last.d, 0);
 	add (&ss_last.l, sizeof ss_last.l, 1);
@@ -304,6 +314,7 @@ void vxs_vars_vecx (void (*add) (void *p, size_t n, int is_long))
 	add (&vl_slice, sizeof vl_slice, 1);
 	add (&vl_t0, sizeof vl_t0, 0);
 	add (&vlag_init, sizeof vlag_init, 0);
+	add (&vlag_lit, sizeof vlag_lit, 0);
 	add (&vlag_n, sizeof vlag_n, 0);
 	add (&vlag_split_k, sizeof vlag_split_k, 0);
 	add (&vlag_x, sizeof vlag_x, 0);
@@ -332,6 +343,7 @@ void vxs_vars_vecx (void (*add) (void *p, size_t n, int is_long))
 	add (&vt_multicart, sizeof vt_multicart, 0);
 	add (&vt_nocart, sizeof vt_nocart, 0);
 	add (&vt_piece_t0, sizeof vt_piece_t0, 0);
+	add (&vt_power_n, sizeof vt_power_n, 1);
 	add (&vt_sp_rom, sizeof vt_sp_rom, 0);
 	add (&vt_speech_sep, sizeof vt_speech_sep, 0);
 	add (&vt_sr1, sizeof vt_sr1, 0);

@@ -60,6 +60,12 @@ static unsigned via_srb;   /* number of bits shifted so far */
 static unsigned via_src;   /* shift counter */
 static unsigned via_srclk;
 static unsigned via_srphase;      /* system-clock shifting: every other cycle */
+/* VT_SRMODEL=1 (a test, off): the 6522's shift register in the system-clock mode as the owner's Photo Test (page 5)
+ * shows it on the tube - a byte written while the last one's eight bits still leave goes out on their 2-cycle clock (the
+ * second boundary after the write); written 17 cycles after the last one it does not go out at all (CB2 keeps the last
+ * bit); written up to SR_W cycles after the bits ended its first bit leaves 4 cycles after the write, later 2 */
+static int sr_model = -1, sr_pend, sr_w = -100, sr_d0 = 3; static unsigned char sr_pend_data; static unsigned long long sr_now, sr_pend_at, sr_seq_on = 0;
+static int sr_seq = 0;                /* (a sequence has started: sr_seq_on is its first bit's cycle) */
 int vt_sr1;
 static unsigned via_acr;
 static unsigned via_pcr;
@@ -179,9 +185,18 @@ static unsigned alg_rdly_on, alg_rdly_off, alg_rdly_off_t1;
 static double rdly_frac, rdly_frac_t1;   /* the stop delays' fractions (VT_RAMPOFF) */
 /* the frontend's Tube > Line gaps: the integrators' stop delay in cycles (default 7 - the frontend sends it at the start), live - the gaps at
  * line ends and corners grow with it, as they differ between real Vectrexes */
+static double rampdly_gap;
+static void rampdly_env (void)             /* (VT_RAMPDLY=on,off,off_timer1 + the Line gaps setting's difference from 7) */
+{
+	const char *z = getenv ("VT_RAMPDLY"); unsigned on = 0, o1 = 0, o2 = 0; if (!z) return;
+	if (sscanf (z, "%u,%u,%u", &on, &o1, &o2) < 3) o2 = o1;
+	double a = o1 + rampdly_gap, t = o2 + rampdly_gap; if (a < 0) a = 0; if (t < 0) t = 0;
+	alg_rdly_on = on; alg_rdly_off = (unsigned) a; rdly_frac = a - (unsigned) a; alg_rdly_off_t1 = (unsigned) t; rdly_frac_t1 = t - (unsigned) t;
+}
 void vt_set_rampoff (double c)
 {
 	if (c < 0) c = 0; if (c > 40) c = 40;
+	if (getenv ("VT_RAMPDLY")) { rampdly_gap = c - 7.0; rampdly_env (); return; }   /* (a test's delays stand; the frontend's setting moves its stop delays by what it is off 7) */
 	alg_rdly_off = alg_rdly_off_t1 = (unsigned) c;
 	rdly_frac = rdly_frac_t1 = c - (unsigned) c;
 }
@@ -223,6 +238,7 @@ static double ofs_k, zero_tx, zero_ty, vt_lag_y;   /* (see OFS_K) */
  * corner in a curve, while RAMP still starts and stops them at once (the owner's Vectrex, 2026-10-25: testcart/
  * lag_test - lines stop abruptly; testcart/corner_test - corners round off below ~16 cycles of rest) */
 static double vt_vlag = -1, vlag_x, vlag_y, vlag_x1, vlag_y1; static int vlag_init, vlag_n;   /* (VT_VLAGN = 2: two stages) */
+static int vlag_lit = 1;                /* (the speed smoothed only while the beam is lit: VT_VLAGLIT=0 always) */
 static double vlag_split_k = 0.06;      /* (a new line piece once the speed changed by this share of it + 2 DAC steps: VT_VLAGSPLIT) */
 #define VLAG_TAU 0.0                    /* (off: the combined fit of 2026-10-25 (6.0, X/Y delay 7, start 8, stop 11) rounds the corners as the owner's Vectrex but slants text - the moves between its rows lose distance) */
 #define VLAG_N 1
@@ -907,6 +923,18 @@ void write8 (unsigned address, unsigned char data)
 
 				break;
 			case 0xa:
+				if (sr_model < 0) { const char *z = getenv ("VT_SRMODEL"); sr_model = z ? atoi (z) : 0; z = getenv ("VT_SRW"); if (z) sr_w = atoi (z); z = getenv ("VT_SRD0"); if (z) sr_d0 = atoi (z); }
+				if (sr_model && (via_acr & 0x1c) == 0x18) {
+					long long g = sr_seq ? (long long) (sr_now - sr_seq_on) + sr_d0 : 1000;   /* (cycles since the write that started the bits now out) */
+					via_ifr &= 0xfb; sr_flagwait = 0; int_update ();
+					if (sr_pend) { sr_pend_data = (unsigned char) data; break; }           /* (not yet out: the new byte takes its place) */
+					if (g == 17) { via_sr = data; break; }                                  /* (lost: nothing leaves, CB2 as it was) */
+					sr_pend = 1; sr_pend_data = (unsigned char) data;
+					/* (SR Test: the dash grows evenly with the gap 18 .. 60 - a write goes out sr_d0 cycles later; while the bits
+					   still leave, on their 2-cycle clock. VT_SRW=n: 2 cycles more up to n cycles after the bits - the first reading) */
+					sr_pend_at = sr_now + sr_d0 + (g <= 16 ? (g & 1) : 0) + (g <= 16 + sr_w ? 2 : 0);
+					break;
+				}
 				via_sr = data;
 				via_srphase = 1;    /* (system-clock mode: the first bit leaves at the next cycle - one cycle
 				                     * later, a pattern that ends right as the beam is zeroed (Vectorblade's
@@ -992,6 +1020,7 @@ void write8 (unsigned address, unsigned char data)
 
 /* the RESET button: the 6809, the 6522 and the AY are reset, the RAM keeps its contents (the BIOS
  * then does a warm start: no intro); vecx_reset is power-on (the RAM gets a fresh pattern) */
+unsigned long vt_power_n;
 void vecx_reset (void);
 void vecx_reset_button (void)
 {
@@ -1015,7 +1044,7 @@ void vecx_reset (void)
 	{ const char *z = getenv ("VT_HBLATCH"); static unsigned n; vt_hb_latch = z ? (unsigned) atoi (z) & 7 : (unsigned) (time (0) + n++ * 5) & 7; }   /* (the 512K cartridge's latch: whatever it powers up with) */
 	unsigned r;
 	static int ow_ready;
-	if (!ow_ready) { ow_ready = 1; ow_init (); const char *z = getenv ("VT_ZOFS"); if (z) alg_zofs = atof (z); alg_zideal = getenv ("VT_ZIDEAL") != NULL; vt_sr1 = getenv ("VT_SR1") != NULL; z = getenv ("VT_WOBBLE"); if (z) sscanf (z, "%lf,%lf", &alg_wob50, &alg_wob100); z = getenv ("VT_ZTAU"); if (z) { alg_ztau = atof (z); alg_zk = 1.0 - exp (-1.0 / alg_ztau); } z = getenv ("VT_CALSHIFT"); if (z) alg_calshift = atof (z); z = getenv ("VT_ZREFK"); if (z) ZREF_K = atof (z); z = getenv ("VT_RAMPDLY"); if (z) { alg_rdly_off_t1 = 0; if (sscanf (z, "%u,%u,%u", &alg_rdly_on, &alg_rdly_off, &alg_rdly_off_t1) < 3) alg_rdly_off_t1 = alg_rdly_off; } z = getenv ("VT_RAMPOFF"); if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); if (b < 0) b = a; alg_rdly_on = alg_rdly_on ? alg_rdly_on : 12; alg_rdly_off = (unsigned) a; rdly_frac = a - (unsigned) a; alg_rdly_off_t1 = (unsigned) b; rdly_frac_t1 = b - (unsigned) b; } z = getenv ("VT_XYZDLY"); if (z) sscanf (z, "%u,%u,%u", &dly_nx, &dly_ny, &dly_nz); z = getenv ("VT_ANALOGDLY"); alg_adly = !(z && atoi (z) == 0); if (alg_adly && !getenv ("VT_RAMPDLY") && !getenv ("VT_RAMPOFF")) { alg_rdly_on = 5; alg_rdly_off = 7; alg_rdly_off_t1 = 7; rdly_frac = rdly_frac_t1 = 0.0; }   /* (2026-10-25, the combined fit with the spot's lag LAG_TAU: start 5, stop 7 cycles. Before: stop 12.3 cycles with timer 1 one cycle longer (VT_T1EXTRA=1); Malban: 15. Fitted to the owner's test cart photos 2026-10-12 (11.8 fitted the lines best, 12.3 gives Mine Storm's ship its ~15 % short lines): line ends dark only at scales $0B-$0C / $12-$13 as on the tube; Mine Storm's mothership interior closed, ship lines ~25 % short) */ if (alg_adly) { if (!getenv ("VT_TEXTSHIFT")) vt_text_shift = 0; if (!getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = 0; } z = getenv ("VT_HWOFS"); if (z) { double ox = 0, oy = 0; sscanf (z, "%lf,%lf", &ox, &oy); alg_xofs = (long) (ox * ZS); alg_yofs = (long) (oy * ZS); } }
+	if (!ow_ready) { ow_ready = 1; ow_init (); const char *z = getenv ("VT_ZOFS"); if (z) alg_zofs = atof (z); alg_zideal = getenv ("VT_ZIDEAL") != NULL; vt_sr1 = getenv ("VT_SR1") != NULL; z = getenv ("VT_WOBBLE"); if (z) sscanf (z, "%lf,%lf", &alg_wob50, &alg_wob100); z = getenv ("VT_ZTAU"); if (z) { alg_ztau = atof (z); alg_zk = 1.0 - exp (-1.0 / alg_ztau); } z = getenv ("VT_CALSHIFT"); if (z) alg_calshift = atof (z); z = getenv ("VT_ZREFK"); if (z) ZREF_K = atof (z); rampdly_env (); z = getenv ("VT_RAMPOFF"); if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); if (b < 0) b = a; alg_rdly_on = alg_rdly_on ? alg_rdly_on : 12; alg_rdly_off = (unsigned) a; rdly_frac = a - (unsigned) a; alg_rdly_off_t1 = (unsigned) b; rdly_frac_t1 = b - (unsigned) b; } z = getenv ("VT_XYZDLY"); if (z) sscanf (z, "%u,%u,%u", &dly_nx, &dly_ny, &dly_nz); z = getenv ("VT_ANALOGDLY"); alg_adly = !(z && atoi (z) == 0); if (alg_adly && !getenv ("VT_RAMPDLY") && !getenv ("VT_RAMPOFF")) { alg_rdly_on = 5; alg_rdly_off = 7; alg_rdly_off_t1 = 7; rdly_frac = rdly_frac_t1 = 0.0; }   /* (2026-10-25, the combined fit with the spot's lag LAG_TAU: start 5, stop 7 cycles. Before: stop 12.3 cycles with timer 1 one cycle longer (VT_T1EXTRA=1); Malban: 15. Fitted to the owner's test cart photos 2026-10-12 (11.8 fitted the lines best, 12.3 gives Mine Storm's ship its ~15 % short lines): line ends dark only at scales $0B-$0C / $12-$13 as on the tube; Mine Storm's mothership interior closed, ship lines ~25 % short) */ if (alg_adly) { if (!getenv ("VT_TEXTSHIFT")) vt_text_shift = 0; if (!getenv ("VT_TEXTSHIFTW")) vt_text_shift_w = 0; } z = getenv ("VT_HWOFS"); if (z) { double ox = 0, oy = 0; sscanf (z, "%lf,%lf", &ox, &oy); alg_xofs = (long) (ox * ZS); alg_yofs = (long) (oy * ZS); } }
 
 	/* ram */
 
@@ -1026,8 +1055,10 @@ void vecx_reset (void)
 	 * (Vec_Random_Seed, $C87E/$C87F) as it finds it, so Mine Storm's first starfield differs each time.
 	 * VT_POWERSEED=n (the frontend sets it): a different odd seed at every power-on from n (the MiSTer
 	 * core's way, Mathis Rosenhauer's idea); unset: the fixed pattern above (repeatable tests). */
-	{ const char *z = getenv ("VT_POWERSEED"); static unsigned long n;
-	  if (z) { uint32_t x = (uint32_t) strtoul (z, 0, 10) + 0x9E3779B9u * (uint32_t) ++n;   /* (32 bits on every system: a long is 64 bits on Linux and macOS) */ x ^= x >> 15; x *= 0x2C1B3C6Du; x ^= x >> 12;
+	{ const char *z = getenv ("VT_POWERSEED"); extern unsigned long vt_power_n;   /* (the power-ons since the seed was given: online
+	                                              both sides count from the game's start - vt_power_n set 0 there; a count of this
+	                                              machine's own history gave the two different RAM: out of step after a game change) */
+	  if (z) { uint32_t x = (uint32_t) strtoul (z, 0, 10) + 0x9E3779B9u * (uint32_t) ++vt_power_n;   /* (32 bits on every system: a long is 64 bits on Linux and macOS) */ x ^= x >> 15; x *= 0x2C1B3C6Du; x ^= x >> 12;
 	           ram[0x7e] = (unsigned char) (x | 1); ram[0x7f] = (unsigned char) ((x >> 8) | 1); } }
 
 	for (r = 0; r < 16; r++) {
@@ -1177,6 +1208,10 @@ static einline void via_sstep0 (void)
 		}
 	}
 
+	sr_now++;
+	if (sr_pend && sr_now >= sr_pend_at) {              /* (VT_SRMODEL: the byte's first bit leaves in this cycle) */
+		sr_pend = 0; via_sr = sr_pend_data; via_srb = 0; via_srclk = 1; via_srphase = 1; sr_seq = 1; sr_seq_on = sr_now;
+	}
 	/* shift counter */
 
 	via_src--;
@@ -1571,9 +1606,12 @@ static void alg_sstep_full (void)
 	 * reach 98-98.5 %, within the photos' scatter). Measured 2026-10-26 (TODO.md, Clean Sweep): the real wall ends sit
 	 * ~0.4 cycle further along their sweeps, below this switch's whole-cycle step - a test switch, 0 (off) */
 	if (z_delay < 0) { const char *z = getenv ("VT_ZDELAY"); z_delay = z ? atoi (z) : 0; if (z_delay > 30) z_delay = 30; }
-	if (z_delay > 0) {
-		sd_zh[zpos++ & 31] = sig_blank ? 1 : 0;
-		sig_blank = sd_zh[(zpos - 1 - z_delay) & 31]; }
+	{ static int sr_delay = -1;      /* VT_SRDELAY=c (a test): the beam switched by the shift register (the BIOS's lines and text) c cycles
+	   * later than by a PCR write - the Settle Test (hand-timed, PCR) gives the spot's timing against the switch itself */
+	  if (sr_delay < 0) { const char *z = getenv ("VT_SRDELAY"); sr_delay = z ? atoi (z) : 0; if (sr_delay > 30) sr_delay = 30; if (sr_delay > 0 && z_delay == 0) z_delay = 0; }
+	  if (z_delay > 0 || sr_delay > 0) { int zd = z_delay + ((via_acr & 0x10) ? sr_delay : 0); static unsigned zq;
+		sd_zh[zq++ & 31] = sig_blank ? 1 : 0;
+		sig_blank = sd_zh[(zq - 1 - zd) & 31]; } }
 	{ int boff = (int) beam_off;
 	  if (boff) {
 		sd_bh[bpos++ & 15] = sig_blank ? 1 : 0;
@@ -1622,18 +1660,26 @@ static void alg_sstep_full (void)
 		dly_z[dly_p & 63] = (unsigned char) via_ca2; dly_p++;
 		unsigned xd = dly_x[(dly_p - 1 - dly_nx) & 63], yd = dly_y[(dly_p - 1 - dly_ny) & 63];
 		zero_now = dly_z[(dly_p - 1 - dly_nz) & 63];
+		double xdv = dac_on > 0 ? dacv (xd) : (double) xd;      /* (the DAC's level for X: with its bit errors, if any) */
+		{ static double xsl_s = -2, xsl; static int xsl_init;   /* VT_XSLEW=S (a test switch, off): the X speed follows the DAC at S
+		    * DAC steps a cycle at most - the owner's Switch Test, 2026-11-21: a turn's cut grows faster than the step (pages 2 and
+		    * 3); in both branches below (the first version missed the DAC-errors one: the app and the libretro core ran without) */
+		  if (xsl_s < -1) { const char *z = getenv ("VT_XSLEW"); xsl_s = z ? atof (z) : 0.0; }
+		  if (xsl_s > 0.01) { if (!xsl_init) { xsl_init = 1; xsl = xdv; } { double d = xdv - xsl; xsl += d > xsl_s ? xsl_s : d < -xsl_s ? -xsl_s : d; } xdv = xsl; } }
 		if (dac_on > 0) {                                   /* (the DAC's bit errors: the hold's value as it charged) */
-			adx = (long) (dacv (xd) * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
+			adx = (long) (xdv * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 			ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) (dly_yf[(dly_p - 1 - dly_ny) & 63] * ZS) + alg_yofs;
 		} else {
-		adx = (long) xd * ZS - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
+		adx = (long) (xdv * ZS) - (long) ((alg_rshf + alg_zofs) * ZS) + alg_xofs;
 		ady = (long) ((alg_rshf + alg_zofs) * ZS) - (long) yd * ZS + alg_yofs;
 		}
 	}
 	if (vt_vlag < 0) { const char *z = getenv ("VT_VLAG"); vt_vlag = z ? atof (z) : VLAG_TAU; z = getenv ("VT_VLAGN"); vlag_n = z ? atoi (z) : VLAG_N;
-	                   z = getenv ("VT_VLAGSPLIT"); if (z) vlag_split_k = atof (z); }
+	                   z = getenv ("VT_VLAGSPLIT"); if (z) vlag_split_k = atof (z); z = getenv ("VT_VLAGLIT"); if (z) vlag_lit = atoi (z); }
 	if (vt_vlag > 0.05) {                               /* the speed, smoothed (see vt_vlag) */
-		if (!vlag_init) { vlag_init = 1; vlag_x = vlag_x1 = adx; vlag_y = vlag_y1 = ady; }
+		if (!vlag_init || (vlag_lit && !sig_blank)) { vlag_init = 1; vlag_x = vlag_x1 = adx; vlag_y = vlag_y1 = ady; }   /* (VT_VLAGLIT: only
+		                                                  while the beam is lit - a corner, a rest inside a shape; a move with the beam
+		                                                  off starts at its speed, so the text and the moves keep their distance) */
 		if (vlag_n == 2) {                              /* (two stages of tau / 2) */
 			double k = kexp (&km_m2, 2.0, vt_vlag);
 			vlag_x1 += (adx - vlag_x1) * k; vlag_y1 += (ady - vlag_y1) * k;
@@ -1657,6 +1703,40 @@ static void alg_sstep_full (void)
 	 * real Mine Storm (2026-10-12) - the ship's lines ~20 % short, the mothership's corners open now and
 	 * then (on the tube less visibly). */
 	double ramp_part = 1.0;                             /* (the last, fractional cycle of a stop delay) */
+	/* VT_RAMPRC=tau,level (a test switch, 2026-11-21): the RAMP line reaches the integrators' switch through an RC - the
+	 * switch closes while its control is above the level. A short RAMP-off pulse does not open it (the owner's Dot Test
+	 * page 4: a corner with a rest of 8 cycles as round as with none, 16 cycles half, 32 sharp - no lag of the spot gives
+	 * that); a long one stops the integrators tau ln (1 / level) cycles late, they start -tau ln (1 - level) late.
+	 * Instead of the fixed start / stop delays below */
+	{ static double rg_tau = -1, rg_lev = 0.4, rg_v = 0, rg_k = 0;
+	  static int rsw_on = -1, rsw_raw = 0, rsw_act = 0; static long long rsw_t = 0, rsw_off = -100000, rsw_stop = -1, rsw_start = -1;
+	  if (rg_tau < 0) { const char *z = getenv ("VT_RAMPRC"); rg_tau = 0; if (z) { sscanf (z, "%lf,%lf", &rg_tau, &rg_lev); if (rg_tau > 0) rg_k = 1.0 - exp (-1.0 / rg_tau); } }
+	  if (rg_tau > 0) { rg_v += ((sig_ramp ? 0.0 : 1.0) - rg_v) * rg_k; sig_ramp = rg_v > rg_lev ? 0 : 0x80; } else
+	  /* The integrators' switch after a short RAMP-off pulse (a test switch, VT_RAMPSW=1; off by default): the
+	   * owner's Dot Test page 3 (2026-11-21, four lines, the joints' spacing): the beam's travel lost to a RAMP-off pulse of
+	   * 5 / 8 / 11 / 16 / 24 / 32 cycles is 3.5-4.5 / 3.1-4.1 / 3.6-4.6 / 10.1-11.1 / 21.9-22.9 / 31.9 cycles - not the pulse less 2
+	   * as with one start delay: after a short pulse the integrators start again at once, the later the longer they were
+	   * off. They stop RDLY_OFF cycles after RAMP off as before; they start D (R) cycles after RAMP on, R the pulse's length:
+	   * 5 for R <= 6 and R >= 23 (a line after a pause: as fitted in October), down to 0 for R = 10-13. So a joint drawn with a
+	   * short pause is a slight thickening, not a dot (Vectorblade's logo: the joints 1.2x the line in his photo, ours 1.9x) */
+	  if (rsw_on < 0) { const char *z = getenv ("VT_RAMPSW"); rsw_on = z ? atoi (z) : 0;   /* (off: Vectorblade's logo grows 24 % with it - its vectors run through their pauses; the owner's photo shows it at the old size. To settle with the Switch Test, page 3) */ if (!alg_adly || getenv ("VT_RAMPDLY") || getenv ("VT_RAMPOFF")) rsw_on = 0; }
+	  { static int lg = -1, praw = 0; static long long lt = 0, loff = 0; static unsigned hist[66]; static unsigned long nn;   /* VT_RSWLOG: the RAMP-off pulses' lengths (a test) */
+	    if (lg < 0) lg = getenv ("VT_RSWLOG") != NULL;
+	    if (lg) { const int rw = sig_ramp ? 0 : 1; lt++; if (praw && !rw) loff = lt; else if (!praw && rw) { long long R = lt - loff; hist[R < 0 ? 0 : R > 64 ? 65 : R]++; if (++nn % 20000 == 0) { FILE *lf = fopen (getenv ("VT_RSWLOG"), "w"); if (lf) { for (int i = 0; i < 66; i++) if (hist[i]) fprintf (lf, " %d:%u", i, hist[i]); fclose (lf); } } } praw = rw; } }
+	  if (rsw_on > 0) {
+		static unsigned char DR[24] = { 5, 5, 5, 5, 5, 5, 5, 4, 2, 1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5 }; static int dr_init;
+		if (!dr_init) { const char *z = getenv ("VT_RAMPSW_TAB"); dr_init = 1; if (z) { int v[24], k = sscanf (z, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", v, v+1, v+2, v+3, v+4, v+5, v+6, v+7, v+8, v+9, v+10, v+11, v+12, v+13, v+14, v+15, v+16, v+17, v+18, v+19, v+20, v+21, v+22, v+23); for (int i = 0; i < k && i < 24; i++) DR[i] = (unsigned char) v[i]; } }   /* (tests: the table) */
+		const int raw = sig_ramp ? 0 : 1;
+		rsw_t++;
+		if (rsw_raw && !raw) { rsw_off = rsw_t; rsw_stop = rsw_t + (long long) alg_rdly_off; rsw_start = -1; }
+		else if (!rsw_raw && raw) { const long long R = rsw_t - rsw_off; const long long st = rsw_t + (R >= 0 && R < 24 ? DR[R] : (long long) alg_rdly_on);
+			if (rsw_stop >= 0 && st <= rsw_stop) rsw_stop = -1; else rsw_start = st; }
+		rsw_raw = raw;
+		if (rsw_stop >= 0 && rsw_t >= rsw_stop) { rsw_act = 0; rsw_stop = -1; }
+		if (rsw_start >= 0 && rsw_t >= rsw_start) { rsw_act = 1; rsw_start = -1; }
+		sig_ramp = rsw_act ? 0 : 0x80;
+		sd_hist[hp++ & 63] = (raw ? 0 : 1) | ((via_acr & 0x80) ? 2 : 0);
+	  } else
 	{
 	  sd_hist[hp++ & 63] = (sig_ramp ? 1 : 0) | ((via_acr & 0x80) ? 2 : 0);
 	  if (alg_rdly_on | alg_rdly_off) {
@@ -1675,7 +1755,7 @@ static void alg_sstep_full (void)
 		}
 		#undef RAMP_ACT
 		sig_ramp = act ? 0 : 0x80;
-	  } }
+	  } } }
 
 	if (zero_tx < 0) { const char *z = getenv ("VT_ZERON"); zero_n = z ? atoi (z) : ZERO_N; z = getenv ("VT_ZEROTAU"); zero_tx = ZERO_TX; zero_ty = ZERO_TY;
 	                   if (z) { double a = 0, b = -1; sscanf (z, "%lf,%lf", &a, &b); zero_tx = a; zero_ty = b < 0 ? a : b; } }
@@ -1812,7 +1892,11 @@ static void alg_sstep_full (void)
 	alg_curr_y += sig_dy;
 	prot_step (sig_blank == 1 && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f) != 0);   /* (the deflection protect: see prot_step) */
 	alg_cycles++;
-	if (vt_lag < 0) { const char *z = getenv ("VT_DEFLAG"); vt_lag = z ? atof (z) : LAG_TAU; z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; z = getenv ("VT_DEFLAGSPLIT"); if (z) lag_split_k = atof (z); }
+	{ static int lag_env; static double lag_force = -1;      /* (VT_DEFLAG / VT_DEFLAGN given: they win over the frontend's unit
+	   * setting (analog 9) - tests in the app and the libretro core, where the setting arrived first and the variables were never read) */
+	  if (!lag_env) { const char *z = getenv ("VT_DEFLAG"); lag_env = 1; if (z) lag_force = atof (z); z = getenv ("VT_DEFLAGN"); vt_lag_n = z ? atoi (z) : LAG_N; z = getenv ("VT_DEFLAGSPLIT"); if (z) lag_split_k = atof (z); }
+	  if (lag_force >= 0) { static int ly_env = -1; if (ly_env < 0) ly_env = getenv ("VT_DEFLAGY") != NULL; vt_lag = lag_force; if (!ly_env) vt_lag_y = -1; }   /* (.. and Y as X, unless VT_DEFLAGY says otherwise) */
+	  else if (vt_lag < 0) vt_lag = LAG_TAU; }
 	if (vt_lag_y < -1.5) { const char *z = getenv ("VT_DEFLAGY"); vt_lag_y = z ? atof (z) : LAG_TAU_Y; }
 	if (ofs_k < 0) { const char *z = getenv ("VT_OFSK"); ofs_k = z ? atof (z) : OFS_K; }
 	{ double ox = beam_x, oy = beam_y;
@@ -1822,12 +1906,29 @@ static void alg_sstep_full (void)
 	  double tx = alg_curr_x - sh, ty = alg_curr_y + sh;
 	  double lx = vt_lag, ly = vt_lag_y >= 0 ? vt_lag_y : vt_lag;
 	  if (lx > 0.05 || ly > 0.05) {
-		int n = vt_lag_n == 2 ? 2 : 1;
+		int n = vt_lag_n < 1 ? 1 : vt_lag_n > 6 ? 6 : vt_lag_n;   /* (VT_DEFLAGN: 1 - 6 equal stages; 3 and more: tests) */
 		double kx = lx > 0.05 ? kexp (&km_mlx, (double) n, lx) : 1.0;   /* (each stage tau / n) */
 		double ky = ly > 0.05 ? kexp (&km_mly, (double) n, ly) : 1.0;
+		static double bx_d = -2, bx_w, bx_t; static double rx[256], ry[256], bsx, bsy, box, boy; static unsigned rp; static int rinit;
+		if (bx_d < -1) { const char *z = getenv ("VT_LAGBOX"); bx_d = -1; if (z) { bx_t = 0; sscanf (z, "%lf,%lf,%lf", &bx_d, &bx_w, &bx_t); if (bx_w < 1) bx_w = 1; if (bx_w > 200) bx_w = 200; if (bx_d > 50) bx_d = 50; } }
+		if (bx_d >= 0) {   /* VT_LAGBOX=delay,width[,tau] (a test): the spot = the integrators' place averaged over `width` cycles, `delay`
+		                    * cycles ago (a response that is over after delay + width), then a short first-order lag tau */
+			int d = (int) bx_d, w = (int) bx_w;
+			if (!rinit) { rinit = 1; for (int i = 0; i < 256; i++) { rx[i] = tx; ry[i] = ty; } bsx = tx * w; bsy = ty * w; box = tx; boy = ty; }
+			rx[rp & 255] = tx; ry[rp & 255] = ty;
+			bsx += rx[(rp - d) & 255] - rx[(rp - d - w) & 255]; bsy += ry[(rp - d) & 255] - ry[(rp - d - w) & 255]; rp++;
+			if ((rp & 1023) == 0) { bsx = bsy = 0; for (int i = 1; i <= w; i++) { bsx += rx[(rp - d - i) & 255]; bsy += ry[(rp - d - i) & 255]; } }   /* (no drift) */
+			{ double k = bx_t > 0.05 ? 1.0 - exp (-1.0 / bx_t) : 1.0; box += (bsx / w - box) * k; boy += (bsy / w - boy) * k; }
+			beam_x = beam_x1 = box; beam_y = beam_y1 = boy;
+		} else
 		if (n == 2) {
 			beam_x1 += (tx - beam_x1) * kx; beam_y1 += (ty - beam_y1) * ky;
 			beam_x += (beam_x1 - beam_x) * kx; beam_y += (beam_y1 - beam_y) * ky;
+		} else if (n > 2) {
+			static double sx[6], sy[6]; static int sinit;
+			if (!sinit) { sinit = 1; for (int i = 0; i < 6; i++) { sx[i] = tx; sy[i] = ty; } }
+			{ double ix = tx, iy = ty; for (int i = 0; i < n; i++) { sx[i] += (ix - sx[i]) * kx; sy[i] += (iy - sy[i]) * ky; ix = sx[i]; iy = sy[i]; }
+			  beam_x = ix; beam_y = iy; beam_x1 = sx[0]; beam_y1 = sy[0]; }
 		} else {
 			beam_x += (tx - beam_x) * kx; beam_y += (ty - beam_y) * ky;
 		}

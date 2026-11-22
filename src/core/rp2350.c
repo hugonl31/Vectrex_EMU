@@ -1718,7 +1718,8 @@ static void *th_main (void *p)
 		uint64_t tgt = TH_LOAD (&rp->th_target);
 		if (!TH_LOAD (&rp->th_on) || c->cycles >= tgt) {
 			TH_PAUSE (); rp->th_spin_idle++;
-			if (++idle > 2000000u) { TH_SLEEP (); idle = 0; }            /* (the emulation paused: no busy core) */
+			if (++idle > (TH_LOAD (&rp->th_on) ? 2000000u : 20000u)) { TH_SLEEP (); idle = 0; }   /* (the emulation paused: no busy core -
+			                                              stopped (a menu over the game): a 1 ms rest after a short spin, not 2 million) */
 			continue;
 		}
 		idle = 0;
@@ -2134,4 +2135,21 @@ void rp_fast_mode (rp2350_t *rp, int on)
 	cm33_call_hook = on ? fm_call : NULL; cm33_core1_nojit = on; fm_learning = on;
 	if (on) rp_threads (rp, 0);   /* (Fast / Dev: one host thread - core 1's work is gone, and two threads waiting on each
 	                                 other cost more than they save: VecDoom 0.37 of real time on two, 0.22 on one) */
+}
+
+/* (test: VX_DIRTY - the 4 KB pages of the RP2350 (SRAM, PSRAM) that changed since the last call) */
+static int dirty_pages (const uint8_t *m, size_t n, uint32_t **prev, size_t *np)
+{
+	const size_t pages = n >> 12; int c = 0;
+	if (*np != pages) { free (*prev); *prev = calloc (pages, 4); *np = pages; if (!*prev) return -1; }
+	for (size_t i = 0; i < pages; i++) { uint32_t h = 2166136261u; const uint32_t *w = (const uint32_t *) (m + (i << 12));
+		for (int k = 0; k < 1024; k++) h = (h ^ w[k]) * 16777619u;
+		if (h != (*prev)[i]) { c++; (*prev)[i] = h; } }
+	return c;
+}
+int rp_dirty_probe (rp2350_t *rp, int *total)
+{
+	static uint32_t *ps, *pp; static size_t ns, np; if (!rp) return 0;
+	*total = (int) (SRAM_SIZE >> 12) + (int) (PSRAM_SIZE >> 12);
+	return dirty_pages (rp->sram, SRAM_SIZE & ~0xfffu, &ps, &ns) + dirty_pages (rp->psram, PSRAM_SIZE, &pp, &np);
 }

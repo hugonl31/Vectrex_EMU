@@ -11,8 +11,10 @@
 #include "gpu_tab.h"
 /* (txb: a filtered read of a half-float texture - the glow, the afterglow, the overlay's maps, the glass's light map. On an
  *  iPhone / iPad bilinear by hand: there the GPU read them as nearest - the glow in steps, stripes; elsewhere the GPU's) */
-#if VX_IOS
-#define GL_BL "vec4 txb(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)), L = textureSize(t, 0) - 1;\n" \
+/* (GL_BL_HAND: both by hand - GL_BL_CUBIC: the GPU filters, the spline in 4 of its reads (each pair of cells one read
+ *  between them) - GL_BL_PLAIN: the GPU's own. An iPhone / iPad: tried at the start, ph_bltest - the iPhone 17 Pro Max
+ *  filters them itself, 2026-11-21; the hand's 4 and 16 reads a pixel were a good part of its GPU time) */
+#define GL_BL_HAND "vec4 txb(sampler2D t, vec2 uv) { vec2 g = uv * vec2(textureSize(t, 0)) - 0.5; ivec2 i = ivec2(floor(g)), L = textureSize(t, 0) - 1;\n" \
 	"  vec2 f = g - floor(g);\n" \
 	"  return mix(mix(texelFetch(t, clamp(i, ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), L), 0), f.x),\n" \
 	"             mix(texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), L), 0), texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), L), 0), f.x), f.y); }\n" \
@@ -25,9 +27,20 @@
 	"    for (int x = 0; x < 4; x++) r += wx[x] * texelFetch(t, clamp(i + ivec2(x, y), ivec2(0), L), 0);\n" \
 	"    a += wy[y] * r; }\n" \
 	"  return a; }\n"
+#define GL_BL_CUBIC "#define txb texture\n" \
+	"vec4 bsw(float t) { float s = 1.0 - t; return vec4(s * s * s, 4.0 - 6.0 * t * t + 3.0 * t * t * t, 1.0 + 3.0 * t + 3.0 * t * t - 3.0 * t * t * t, t * t * t) / 6.0; }\n" \
+	"vec4 txc(sampler2D t, vec2 uv) { vec2 sz = vec2(textureSize(t, 0)), g = uv * sz - 0.5, fl = floor(g), f = g - fl;\n" \
+	"  vec4 wx = bsw(f.x), wy = bsw(f.y); vec2 g0 = vec2(wx.x + wx.y, wy.x + wy.y), g1 = 1.0 - g0;\n" \
+	"  vec2 h0 = (fl - 0.5 + vec2(wx.y, wy.y) / g0) / sz, h1 = (fl + 1.5 + vec2(wx.w, wy.w) / g1) / sz;\n" \
+	"  return g0.y * (g0.x * texture(t, h0) + g1.x * texture(t, vec2(h1.x, h0.y)))\n" \
+	"       + g1.y * (g0.x * texture(t, vec2(h0.x, h1.y)) + g1.x * texture(t, h1)); }\n"
+#define GL_BL_PLAIN "#define txb texture\n#define txc texture\n"
+#if VX_IOS || defined(VX_BLTEST)                   /* (VX_BLTEST: a test build with the iPhone's reads) */
+static const char *g_bl = GL_BL_HAND; static int g_bl_lin = 0;   /* (g_bl_lin: the GPU filters half-floats) */
 #else
-#define GL_BL "#define txb texture\n#define txc texture\n"
+static const char *g_bl = GL_BL_PLAIN; static int g_bl_lin = 1;
 #endif
+static void ph_bltest (void);
 
 typedef unsigned int GLuint; typedef int GLint; typedef unsigned int GLenum; typedef int GLsizei; typedef float GLfloat;
 typedef char GLchar; typedef unsigned char GLboolean; typedef unsigned int GLbitfield;
@@ -133,6 +146,7 @@ static const char *GPU_FS_A =
 	"    float Xr = lca * X - lsa * Zr, Z = lsa * X + lca * Zr;\n"
 	"    float wx = soft + 0.8 * fwidth(Xr), wz = soft + 0.8 * fwidth(Z);\n"
 	"    float ins = (1.0 - smoothstep(FIX_W - wx, FIX_W + wx, abs(Xr))) * (1.0 - smoothstep(FIX_L - wz, FIX_L + wz, abs(Z)));\n"
+	"    if (vis * ins <= 0.0) return 0.0;\n"   /* (beside the fixture, most of the glass: nothing - the rest not worked out) */
 	"    float fr = max(smoothstep(FIX_W - 0.05 - wx, FIX_W - 0.05 + wx, abs(Xr)), smoothstep(FIX_L - 0.05 - wz, FIX_L - 0.05 + wz, abs(Z)));\n"
 	"    float cx = (Xr + FIX_W) / (2.0 * FIX_W) * 2.0, cz = (Z + FIX_L) / (2.0 * FIX_L) * 9.0;\n"
 	"    float fx_ = fract(cx), fz = fract(cz);\n"
@@ -177,39 +191,43 @@ static const char *GPU_FS_A =
 	"    vec2 s = vec2(0.5) + vec2(q.x, -q.y) / norm;\n"
 	"    float rot_ = 6.2832 * hash(gl_FragCoord.xy);\n"
 	"    vec3 a = vec3(0.0); float ws = 0.0;\n"
-	"    for (int i = 0; i < 40; i++) {\n"
-	"        float f = (float(i) + 0.5) / 40.0, r = rad * sqrt(f), an = rot_ + 2.39996 * float(i);\n"
+	"    for (int i = 0; i < 10; i++) {\n"
+	"        float f = (float(i) + 0.5) / 10.0, r = rad * sqrt(f), an = rot_ + 2.39996 * float(i);\n"
 	"        float w = exp(-1.5 * f);\n"
 	"        a += w * picAt(s + vec2(cos(an), sin(an)) * r / U / norm); ws += w;\n"
 	"    }\n"
 	"    return a / ws; }\n";
 static const char *GPU_FS_B =
-	"vec3 plastic(vec2 gd, vec2 tgt) {\n"
+	"vec3 plastic(vec2 gd, vec2 tgt, float sdg) {\n"   /* (sdg: the glass's outline here, worked out once in main) */
 	"    float pu = pxs;\n"
-	"    float dg = sdG(gd), dc = -sdC(gd);\n"
+	"    float dg = sdg, dc = -sdC(gd);\n"
 	"    vec2 rp = gd * U;\n"
-	"    float de = dc + pu * 1.6 * (0.5 - 0.65 * vnoise(rp / 9.0 + 41.0) - 0.35 * vnoise(rp / 2.5 + 13.0));\n"
+	"    float de = dc;\n"   /* (the outer edge's wobble, two noises: only within its reach - 0.8 px - and the edge's rim light, 13 units; further in nothing of it is left) */
+	"    if (dc < 1.3 * pu + 13.0 / U) de += pu * 1.6 * (0.5 - 0.65 * vnoise(rp / 9.0 + 41.0) - 0.35 * vnoise(rp / 2.5 + 13.0));\n"
 	"    float wa = clamp(dg / pu + 0.5, 0.0, 1.0) * clamp(de / pu + 0.5, 0.0, 1.0);\n"
 	"    float fa = clamp(0.5 - de / pu, 0.0, 1.0);\n"
-	"    float wave = 2.0 * vnoise(rp / 110.0) - 1.0 + 0.5 * (2.0 * vnoise(rp / 40.0 + 17.0) - 1.0);\n"
-	"    float flow = 2.0 * vnoise(rp / 14.0 + 5.0) - 1.0;\n"
 	"    vec3 col = vec3(0.0);\n"
 	"    if (wa > 0.0) {\n"
-	"        float th = atan(gd.y, gd.x), a = ang(gd), sg = sign(gd.x * gd.y);\n"
+	"        float wave = 2.0 * vnoise(rp / 110.0) - 1.0 + 0.5 * (2.0 * vnoise(rp / 40.0 + 17.0) - 1.0);\n"   /* (the wall's own: not worked out for the front) */
+	"        float flow = 2.0 * vnoise(rp / 14.0 + 5.0) - 1.0;\n"
+	"        float a = ang(gd);\n"
 	"        vec2 G = gR(a), C = cR(a);\n"
 	"        float Rg = G.x, D = max(C.x - G.x, 1e-4), rho = length(gd);\n"
-	"        float dRg = G.y * 57.29578 * sg, dD = (C.y - G.y) * 57.29578 * sg;\n"
 	"        float u = clamp((rho - Rg) / D, 0.0, 1.0);\n"
 	"        float k = 1.9712 * D - 0.09864, q = sqrt(k * k + 0.0004);\n"
-	"        float H = 0.10123 + 0.5 * (k + q), dH = 0.9856 * (1.0 + k / q) * dD;\n"
-	"        float cs = cos(th), sn = sin(th);\n"
-	"        vec3 Pu = vec3(D * cs, D * sn, H);\n"
-	"        float dr = dRg + u * dD;\n"
-	"        vec3 Pt = vec3(dr * cs - rho * sn, dr * sn + rho * cs, u * dH);\n"
-	"        vec3 N = normalize(cross(Pt, Pu)); N *= sign(N.z);\n"
+	"        float H = 0.10123 + 0.5 * (k + q);\n"
+	/* (flat walls, the owner's grid photo 2026-11-20: each wall at one angle, square to the case's straight outer edge - the */
+	/* grid mirrored evenly, its lines straight; near the glass the wall follows the glass's curved edge) */
+	"        vec2 e2 = vec2(0.002, 0.0);\n"
+	"        vec2 qc = abs(gd) - vec2(0.69188 - 0.045826, 0.89275 - 0.045826), sgn = vec2(gd.x < 0.0 ? -1.0 : 1.0, gd.y < 0.0 ? -1.0 : 1.0);\n"
+	"        vec2 pc = normalize(exp(clamp((qc - max(qc.x, qc.y)) / 0.045, -30.0, 0.0))) * sgn;\n"
+	"        float wpd = smoothstep(0.0, 0.3 * pc.x * pc.x + 1e-3, u); vec2 pd = pc;\n"   /* (the glass edge's direction - four outlines - only where it counts: near the glass on the side walls) */
+	"        if (wpd < 1.0) { vec2 pgl = normalize(vec2(sdG(gd + e2.xy) - sdG(gd - e2.xy), sdG(gd + e2.yx) - sdG(gd - e2.yx)) + 1e-6); pd = normalize(mix(pgl, pc, wpd)); }\n"   /* (only the side walls bend to the glass) */
+	"        float phi = radians(mix(65.5, 68.5, smoothstep(0.3, 0.9, abs(pd.x))));\n"
+	"        vec3 N = normalize(vec3(-pd * sin(phi), cos(phi)));\n"
 	"        vec2 n = normalize(gd);\n"
 	"        float wave2 = 2.0 * vnoise(rp / 70.0 + 31.0) - 1.0 + 0.4 * (2.0 * vnoise(rp / 26.0 + 9.0) - 1.0);\n"
-	"        N = normalize(N + vec3(0.02 * wave + 0.005 * flow, 0.02 * wave2 + 0.005 * flow, 0.0));\n"
+	"        N = normalize(N + vec3(0.006 * wave + 0.003 * flow, 0.006 * wave2 + 0.003 * flow, 0.0));\n"
 	"        float lip = smoothstep(0.93, 1.0, u);\n"
 	"        N = normalize(mix(N, vec3(0.0, 0.0, 1.0), 0.85 * lip));\n"
 	"        float dpos = (rho - Rg) * U, dout = max(de, 0.0) * U;\n"
@@ -220,11 +238,12 @@ static const char *GPU_FS_B =
 	"            vec2 mq = P.xy + Rr.xy * (-P.z / Rr.z);\n"
 	"            back = length(mq - P.xy) * U;\n"
 	"            gm = clamp(0.5 - sdG(mq) / pu, 0.0, 1.0);\n"
-	"            refl = max(mix(disc(mq, 9.0), disc(mq, 6.0), 0.5) * gm - 0.02, 0.0);\n"
+	"            if (gm > 0.0) refl = max(disc(mq, 1.6) * gm - 0.02, 0.0);\n"   /* (ten reads: only where it lands on the glass) */
 	"        }\n"
 	"        float fall = 1.0 / (1.0 + pow(back / 130.0, 2.0));\n"
 	"        float side = abs(n.x), bot = max(n.y, 0.0), top = max(-n.y, 0.0);\n"
-	"        float strength = crefl * 1.5 * (0.85 * pow(side, 1.5) + 0.40 * bot + 0.35 * top) * fall * (1.0 + 0.06 * flow);\n"
+	"        float strength = crefl * 1.5 * (0.14 * pow(side, 1.5) + 0.15 * bot + 0.14 * top) * fall * (1.0 + 0.06 * flow)\n"
+	"            * (1.0 - smoothstep(0.84, 0.94, u));\n"   /* (none on the rounded outer edge: it turns away from the screen - vecrender.py alike) */
 	"        vec3 Nu = vec3(N.x, -N.y, N.z);\n"
 	"        vec3 Pc = vec3(tgt.x * 11.0, -tgt.y * 11.0, H * u * 11.0);\n"
 	"        vec3 V = normalize(vec3(0.0, 0.0, 50.0) - Pc), L = normalize(lc - Pc);\n"
@@ -237,12 +256,12 @@ static const char *GPU_FS_B =
 	"            vec2 eq = tgt - n * dpos / U;\n"
 	"            vec2 eqn = eq / gsc;\n"
 	"            vec2 mq = vec2((eqn.x - lmr.x) / (lmr.y - lmr.x), (eqn.y - lmr.z) / (lmr.w - lmr.z));\n"
-	"            float mr = txc(lmap, mq).r * mfade(mq);\n"
+	"            float mr = txb(lmap, mq).r * mfade(mq);\n"
 	"            bl = lk * mr * (0.03 * exp(-dpos / 55.0) * (0.25 + 0.75 * pow(top, 0.7)) + 0.035 * exp(-dpos / 16.5) * pow(top, 0.7));\n"
 	"        }\n"
 	"        vec2 sq = vec2((gd.x - smr.x) / (smr.y - smr.x), (gd.y - smr.z) / (smr.w - smr.z));\n"   /* (the map: top row first) */
 	"        vec2 sc = texture(smap, sq).rg;\n"
-	"        float lv = clamp(3.0 * dot(tex9(tgt - n * (dpos + 25.0) / U, 30.0), vec3(0.333)), 0.0, 1.0);\n"
+	"        float lv = cwear * sc.r > 0.0 ? clamp(3.0 * dot(tex9(tgt - n * (dpos + 25.0) / U, 30.0), vec3(0.333)), 0.0, 1.0) : 0.0;\n"   /* (nine reads: only where a scratch is) */
 	"        float scr = cwear * 0.9 * (0.5 * sc.r * lv + sc.g * (0.6 * lit + 0.8 * bl * 30.0));\n"
 	"        col = vec3(base) + refl * strength * vec3(0.85, 0.92, 1.0) + 0.35 * scr * vec3(0.95, 0.97, 1.0)\n"
 	"            + bl * vec3(0.97, 0.98, 1.0) + exp(-pow(dout / 2.0, 2.0)) * 0.26 * lit;\n"
@@ -287,25 +306,25 @@ static const char *GPU_FS_B =
 	"        vec2 tgt = vec2((p.x - 0.5) * norm.x, -(p.y - 0.5) * norm.y);\n"   /* (units round the centre, y down) */
 	"        vec2 gd = tgt;\n"
 	"        float g = 1.0;\n"
+	"        float ga = degrees(atan(abs(gd.y), abs(gd.x) + 1e-9)); vec2 Gm = gR(ga); float sdg = sdist(gd, Gm);\n"   /* (the glass's outline: once for the edge, the case, the wall) */
 	"        if (glass > 0.5) {\n"
-	"            float ga = degrees(atan(abs(gd.y), abs(gd.x) + 1e-9));\n"
-	"            float r = length(gd) / gR(ga).x;\n"
+	"            float r = length(gd) / Gm.x;\n"
 	"            g = smoothstep(0.0, 1.0, clamp((1.0 - r) / edge, 0.0, 1.0));\n"
-	"        } else g = sdG(gd) < 0.0 ? 1.0 : 0.0;\n"                       /* (the case needs the glass's outline: a hard edge) */
+	"        } else g = sdg < 0.0 ? 1.0 : 0.0;\n"                       /* (the case needs the glass's outline: a hard edge) */
 	"        vec3 add = vec3(0.0);\n"
 	"        vec2 tq = tgt / gsc;\n"
-	"        if (grey > 0.0 || lk > 0.0) {\n"
+	"        if ((grey > 0.0 || lk > 0.0) && g > 0.0) {\n"   /* (outside the glass: x 0 anyway) */
 	"            float gr = bumps(gl_FragCoord.xy * bscale);\n"
 	"            add += grey * (1.0 - 0.25 * tq.y) * (1.0 + 0.005 * gr) * vec3(0.92, 0.95, 1.0);\n"
 	"            if (lk > 0.0) {\n"
 	"                vec2 mc = vec2((tq.x - lmr.x) / (lmr.y - lmr.x), (tq.y - lmr.z) / (lmr.w - lmr.z));\n"
-	"                vec4 m = txc(lmap, mc) * mfade(mc);\n"
+	"                vec4 m = txb(lmap, mc) * mfade(mc);\n"
 	"                float sharp = ceiling((reflp(tq, 0.2) - lpos.xy) / lpos.z, 0.012);\n"
 	"                add += lk * (m.g * (1.0 + 0.018 * gr) * vec3(0.95, 0.96, 1.0) + 0.88 * (0.98 * sharp + m.r) * LIGHTC);\n"
 	"            }\n"
 	"        }\n"
 	"        c = sqrt(c * c + add * add) * g;\n"
-	"        if (cse > 0.5) c += sdG(gd) > -3.0 * pxs ? plastic(gd, tgt) : vec3((hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0);\n"
+	"        if (cse > 0.5) c += sdg > -3.0 * pxs ? plastic(gd, tgt, sdg) : vec3((hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0);\n"
 	"    }\n"
 	"    fragc = vec4(c, 1.0);\n"
 	"}\n";
@@ -448,7 +467,7 @@ static void gpu_reset (void)
 	GLLOAD (glDrawArrays); GLLOAD (glGenVertexArrays); GLLOAD (glBindVertexArray); GLLOAD (glDeleteVertexArrays); GLLOAD (glGetError);
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: the frontend lacks GL functions - the CPU's picture\n"); return; }
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: see gpu_phos.c) */
-	const char *vs[2] = { hdr, GPU_VS }, *fs[4] = { hdr, GL_BL, GPU_FS_A, GPU_FS_B };
+	const char *vs[2] = { hdr, GPU_VS }, *fs[4] = { hdr, (ph_bltest (), g_bl), GPU_FS_A, GPU_FS_B };
 	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 4);
 	if (!v || !f) return;
 	g_prog = glCreateProgram_ (); glAttachShader_ (g_prog, v); glAttachShader_ (g_prog, f); glLinkProgram_ (g_prog);
@@ -620,13 +639,32 @@ static void gq_end (void)
 	if (gq_cur < 0) return;
 	gq_endf (0x88BF); gq_busy[gq_cur] = 1; gq_next = (gq_cur + 1) % GQ_N; gq_cur = -1;
 }
+/* The light map spread smoothly, once (a cubic B-spline over 4 x 4 cells, LMAP_UP points a cell): the shader then reads it
+ * bilinear - on an iPhone 4 reads a pixel, it did the spline itself in 16; elsewhere no crease at a cell any more */
+#define LMAP_UP 4
+static void lmap_spread (const float *rg, float *up)
+{
+	const int w = GPU_LMAP_W, h = GPU_LMAP_H, W = w * LMAP_UP, H = h * LMAP_UP;
+	for (int Y = 0; Y < H; Y++) { const float gy = (Y + 0.5f) / LMAP_UP - 0.5f, fy0 = floorf (gy), ty = gy - fy0, sy = 1 - ty;
+		const float wy[4] = { sy * sy * sy / 6, (4 - 6 * ty * ty + 3 * ty * ty * ty) / 6, (1 + 3 * ty + 3 * ty * ty - 3 * ty * ty * ty) / 6, ty * ty * ty / 6 };
+		for (int X = 0; X < W; X++) { const float gx = (X + 0.5f) / LMAP_UP - 0.5f, fx0 = floorf (gx), tx = gx - fx0, sx = 1 - tx;
+			const float wx[4] = { sx * sx * sx / 6, (4 - 6 * tx * tx + 3 * tx * tx * tx) / 6, (1 + 3 * tx + 3 * tx * tx - 3 * tx * tx * tx) / 6, tx * tx * tx / 6 };
+			float a0 = 0, a1 = 0;
+			for (int j = 0; j < 4; j++) { int y = (int) fy0 - 1 + j; y = y < 0 ? 0 : y > h - 1 ? h - 1 : y;
+				for (int i = 0; i < 4; i++) { int x = (int) fx0 - 1 + i; x = x < 0 ? 0 : x > w - 1 ? w - 1 : x;
+					const float k = wx[i] * wy[j]; a0 += k * rg[2 * (y * w + x)]; a1 += k * rg[2 * (y * w + x) + 1]; } }
+			up[2 * (Y * W + X)] = a0; up[2 * (Y * W + X) + 1] = a1; } }
+}
+
 static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float cx0, float cy0, float cx1, float cy1, int ow, int oh, int rot)
 {
 	gq_begin ();                                 /* (a no-op while the picture's query runs) */
 	if (g_lamp_x != g_lamp_done_x || g_lamp_y != g_lamp_done_y) {   /* (the lamp moved, or the first picture: its light map) */
 		float *rg = malloc (sizeof (float) * 2 * GPU_LMAP_W * GPU_LMAP_H);
-		if (rg) { rl_maps (g_lamp_x, g_lamp_y, rg); glBindTexture_ (GL_TEXTURE_2D, g_lmap);
-			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, GPU_LMAP_W, GPU_LMAP_H, 0, GL_RG, GL_FLOAT, rg); free (rg); g_lmap_ok = 1; }
+		float *up = rg ? malloc (sizeof (float) * 2 * GPU_LMAP_W * GPU_LMAP_H * LMAP_UP * LMAP_UP) : NULL;
+		if (rg && up) { rl_maps (g_lamp_x, g_lamp_y, rg); lmap_spread (rg, up); glBindTexture_ (GL_TEXTURE_2D, g_lmap);
+			glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RG16F, GPU_LMAP_W * LMAP_UP, GPU_LMAP_H * LMAP_UP, 0, GL_RG, GL_FLOAT, up); g_lmap_ok = 1; }
+		free (rg); free (up);
 		rl_light_pos (g_lamp_x, g_lamp_y, g_lpos, g_lc); g_lamp_done_x = g_lamp_x; g_lamp_done_y = g_lamp_y; }
 	GLuint ptex = g_tex;
 	if (!frame) ptex = ph_P;                                          /* (the light made on the GPU: gpu_phos.c) */
@@ -655,7 +693,8 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform1f_ (g_u[U_LK], g_lmap_ok ? gfx.lk : 0.0f);
 	glUniform3f_ (g_u[U_LPOS], g_lpos[0], g_lpos[1], g_lpos[2]); glUniform4f_ (g_u[U_LMR], GPU_LMR[0], GPU_LMR[1], GPU_LMR[2], GPU_LMR[3]);
 	glUniform2f_ (g_u[U_GSC], GPU_GSC[0], GPU_GSC[1]);
-	glUniform1f_ (g_u[U_CSE], (float) gfx.cse); glUniform1f_ (g_u[U_CROOM], gfx.croom); glUniform1f_ (g_u[U_CREFL], gfx.crefl);
+	glUniform1f_ (g_u[U_CSE], (float) gfx.cse); glUniform1f_ (g_u[U_CROOM], gfx.croom); { extern float vx_hdr_lift, vx_hdr_peak; glUniform1f_ (g_u[U_CREFL], gfx.crefl * (vx_hdr_lift > 1.5f && vx_hdr_peak > 1.0f ? 1.3f : 1.0f)); }   /* (the Vectrex look, HDR: the walls
+	                                                  mirror the brighter lines as much as SDR does - 0.026 -> 0.04 x a line, the grid photo) */
 	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); glUniform3f_ (g_u[U_LC], g_lc[0], g_lc[1], g_lc[2]);   /* (the light turns with the picture in tate: the screen is turned) */
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));

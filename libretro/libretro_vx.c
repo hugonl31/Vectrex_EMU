@@ -7,6 +7,11 @@
 #else
 #define VX_IOS 0
 #endif
+#if !defined(VX_APP_ANDROID)
+#define VX_DECK_AUTO 1                          /* (the Control deck's auto, every RetroArch: the slim pop-up on a real 4:3 screen, else off - the apps choose their own) */
+#else
+#define VX_DECK_AUTO 0
+#endif
 #ifdef _WIN32
 __declspec(dllimport) unsigned long __stdcall GetTickCount (void);   /* (v0.25: the boot token) */
 #define VX_TICKS() ((unsigned) GetTickCount ())
@@ -38,8 +43,8 @@ static unsigned VX_TICKS (void) { struct timespec t; clock_gettime (CLOCK_MONOTO
  * of the beam's path a capsule with a Gaussian cross-section, its width and brightness from the measured tube
  * (TUBE_LIGHT, the narrower spot below intensity 63), fainter the faster it was swept (BEAM_LINE, BEAM_SPEED); the
  * pieces of one stroke cut at their joints along the bisector, so a joint is lit once; the resting spots (the beam
- * slower than REST_SPEED: corners, dots, stars) round spots brighter than the lines by the time they rested (BEAM_DOTMAX,
- * BEAM_DOTC), wider and blooming when long, with a faint halo (Corner glow); the dwells inside strokes found as
+ * slower than REST_SPEED: corners, dots, stars) round spots, brighter the longer they rested (dot_light: the Dot Test
+ * photos), with a faint halo (Corner glow); the dwells inside strokes found as
  * dwell_rests does; brightness bending (the picture grows a little with the beam's load); the hum wobble applied
  * after the tube's map, as vecrender does. The afterglow is the measured one (PHOS_A, at the owner's time scale 0.6):
  * what is no longer lit glows away in two parts. The screen rate option (90 Hz by default, for the Valve Index): each
@@ -213,6 +218,8 @@ static int opt_overlay = 0, opt_imager = 2, opt_swap = 0, opt_glow = 0, opt_afte
 static int opt_res = 1, opt_wob = 50, opt_buzz = 1, opt_spk = 1, opt_shift = 0; static double opt_sigma = 0.55;
 static int opt_fill;   /* (Fill skipped lines: off - as a real Vectrex) */
 static int opt_rate = 60, opt_smooth = 1, opt_halo = 1, opt_bend = 1, opt_dwell = 1;   /* (v0.9) */
+static int vx_beam;                          /* (the beam on the phosphor: the picture is the light of the spot's own path - bt2_prepare; not EmuVR's flavour) */
+static int bt_gpu;                           /* (.. as light on the GPU - gpu_phos.c: pieces add, the glass's glow; else the CPU's display values) */
 static int opt_dots = 1, opt_speedb = 1; static float opt_trail = 0.6f, opt_trail_k = 1.0f, opt_bright = 1.0f;   /* (v0.10: every look switchable, for slower PCs) */
 static int opt_sbend = 0; static double opt_white = 12000;   /* (v0.14; opt_geom with the tube map above) */
 static int opt_power = 1;                    /* (v0.15: the switch-on / switch-off effects) */
@@ -235,6 +242,9 @@ static void scr_load (void)
   if (v >= 240 && v <= 4320) scr_short = v; }
 uint32_t *dk_cb;
 static int dk_pop, dk_y, dk_shown;   /* (the pop-up deck: over the picture's bottom, dk_y its top in the block; shown now) */
+static int deck_auto;                            /* (Control deck auto: the pop-up on a 4:3 screen, else off - once the screen is known) */
+static int deck_auto_mode (void);
+static int opt_deck_look = 1;                   /* (the control deck: 1 the modern look - the app's panels, 0 the classic strip) */
 static int opt_deck, opt_shape, dk_on, DKH, TW, TH, BX, BY, dk_dirty_set = 1, vx_paused, geo_deck = -1, geo_shape = -1;   /* (the control deck:
                                                   deck.c - the output TW x TH, the picture at BX, BY, the deck DKH high below it) */
 static float vx_vol = 1.0f;                      /* (the volume knob: deck.c) */   /* (opt_area: 0 auto, 1 glass window, 2 overlay sheet) */
@@ -426,6 +436,7 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow); on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_brightness", "Brightness (VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
+	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white - bright vectors on a dim screen; Vectrex: as a real Vectrex - dots and slow lines stand out, wants a bright screen); bright|vectrex" },
 	{ "vectrex_emu_corner_dots", "Corner dots (the beam resting); on|off" },
 	{ "vectrex_emu_dwell", "Dwell spots inside strokes; on|off" },
 	{ "vectrex_emu_speed_bright", "Fast sweeps fainter; on|off" },
@@ -452,7 +463,16 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_profile", "video", "Quality profile",
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|ultra|high|medium|low|basic" },
-	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom or the arrow.", "off|full|slim|pop-up" },
+#if VX_DECK_AUTO                                 /* (every RetroArch: auto - the slim pop-up on a real 4:3 screen, as the apps) */
+	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom. Auto: pop-up where the deck does not fit below the picture (4:3, square), else off.", "auto|off|full|slim|pop-up" },
+#else
+	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom.", "off|full|slim|pop-up" },
+#endif
+#if defined(__ANDROID__) || VX_IOS                  /* (a phone, a handheld: the app's panels by default - easier to read and hit on a small screen) */
+	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "modern|classic" },
+#else
+	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "classic|modern" },
+#endif
 #if !VX_IOS                                         /* (an iPhone / iPad: the block takes the screen's own shape - no choice) */
 	{ "vectrex_emu_shape", "video", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
 #endif
@@ -498,21 +518,12 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_scr_seed", "overlay", "Scratch pattern", "Another random set of scratches.", "1|2|3|4|5|6|7|8|9|10" },
 	{ "vectrex_emu_buzz", "audio", "Vectrex buzz", NULL, "on|off" },
 	{ "vectrex_emu_speaker", "audio", "Vectrex speaker sound", NULL, "on|off" },
-	{ "vectrex_emu_glow", "tube", "Phosphor glow (bloom)", NULL, "auto|on|strong|off" },
 	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
-	{ "vectrex_emu_brightness", "tube", "Brightness", NULL, "1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "auto|on|off" },
 	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
-	{ "vectrex_emu_smooth_bends", "tube", "Smooth curves at bends", NULL, "auto|on|off" },
-	{ "vectrex_emu_passes", "tube", "Second glow pass", "A wider glow (GPU).", "auto|on|off" },
 	{ "vectrex_emu_dither", "tube", "Dither", "No bands in soft glows (GPU).", "auto|on|off" },
-	{ "vectrex_emu_corner_glow", "tube", "Corner glow", NULL, "on|off" },
-	{ "vectrex_emu_corner_dots", "tube", "Corner dots", NULL, "on|off" },
-	{ "vectrex_emu_beam", "tube", "Beam width", NULL, "thin|medium|wide" },
-	{ "vectrex_emu_dwell", "tube", "Dwell spots inside strokes", NULL, "on|off" },
-	{ "vectrex_emu_speed_bright", "tube", "Fast sweeps fainter", NULL, "on|off" },
 	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", NULL, "50 Hz|60 Hz|off" },
 	{ "vectrex_emu_bending", "tube", "Brightness bending", NULL, "on|off" },
 	{ "vectrex_emu_case", "case", "Plastic case", "The case round the glass, without an overlay.", "auto|on|off" },
@@ -572,7 +583,7 @@ static const char *const OPT_CATS[][3] = {   /* (RetroArch's own kind of menus, 
 	{ "controls", "Controls", "Buttons for the ROM browser, pause, RESET and eject; tate; USB keyboard and mouse" },
 	{ "overlay", "Overlay", "The sheet: tint, print, plastic and scratches, parallax" },
 	{ "audio", "Audio", "The Vectrex's sound" },
-	{ "tube", "Tube", "Phosphor, glow and beam, the tube's shape and glass" },
+	{ "tube", "Tube", "Phosphor and afterglow, the tube's shape and glass" },
 	{ "case", "Case & Room light", "The plastic round the glass, the room's light, the ceiling light" },
 	{ "system", "System", "Port 2, the cartridge hardware, UVMC2 and PiTrex, the intro" },
 	{ "unit", "Vectrex Unit", "Which Vectrex; the knob, the pots and the yoke; the picture's shape" },
@@ -615,8 +626,45 @@ static void opts_set (retro_environment_t cb)
 }
 #endif
 
+#ifndef VX_EMUVR
+/* (2026-11-22, the beam on the phosphor: the picture's and the unit's settings - Tube, Overlay, Case & Room light, Unit, Circuit -
+ *  back to their defaults once, as a clean install (the owner). A mark in the system folder says it is done; the frontend takes
+ *  each value through RETRO_ENVIRONMENT_SET_VARIABLE - RetroArch 1.17 on, the own apps) */
+#define VX_OPT_EPOCH 2
+static void opts_reset_once (void)
+{
+	const char *sys = NULL; char f[1024]; int have = 0;
+	if (!env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys) || !sys || !sys[0]) return;
+	snprintf (f, sizeof f, "%s/vectrex_emu_settings_epoch.txt", sys);
+	{ FILE *fp = fopen (f, "r"); if (fp) { if (fscanf (fp, "%d", &have) != 1) have = 0; fclose (fp); } }
+	if (have >= VX_OPT_EPOCH) return;
+	int n = 0;
+	for (size_t i = 0; OPTS[i].key; i++) {
+		const char *c = OPTS[i].cat; if (strcmp (c, "tube") && strcmp (c, "overlay") && strcmp (c, "case") && strcmp (c, "unit") && strcmp (c, "circuit")) continue;
+		if (!strcmp (OPTS[i].key, "vectrex_emu_overlay") || !strcmp (OPTS[i].key, "vectrex_emu_unit")) continue;   /* (the overlay on / off, which Vectrex: a choice, not a tuning) */
+		static char d[128]; const char *v = OPTS[i].vals[0] == '@' ? "auto" : OPTS[i].vals; size_t k = 0; while (v[k] && v[k] != '|' && k < sizeof d - 1) { d[k] = v[k]; k++; } d[k] = 0;
+		struct retro_variable cur = { OPTS[i].key, NULL };
+		if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &cur) && cur.value && !strcmp (cur.value, d)) continue;
+		struct retro_variable sv = { OPTS[i].key, d }; if (env_cb (70, &sv)) n++; }
+	{ FILE *fp = fopen (f, "w"); if (fp) { fprintf (fp, "%d\n", VX_OPT_EPOCH); fclose (fp); } }
+	fprintf (stderr, "[vectrex_emu] settings: the picture's and the unit's back to their defaults, once (%d changed)\n", n);
+}
+#endif
+#ifndef VX_EMUVR
+/* (the line renderer's options, gone 2026-11-22: not asked for - RetroArch logs an error for each unknown name) */
+static int opt_gone (const char *key)
+{
+	static const char *const G[] = { "glow", "look", "brightness", "smooth_bends", "passes", "corner_glow", "corner_dots", "beam", "dwell", "speed_bright", "beam_trace", NULL };
+	if (strncmp (key, "vectrex_emu_", 12)) return 0;
+	for (int i = 0; G[i]; i++) if (!strcmp (key + 12, G[i])) return 1;
+	return 0;
+}
+#else
+#define opt_gone(k) 0
+#endif
 static int opt_is (const char *key, const char *val)
 {
+	if (opt_gone (key)) return 0;
 	struct retro_variable v = { key, NULL };
 	return env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value && !strcmp (v.value, val);
 }
@@ -664,6 +712,15 @@ static void read_options (void)
 #ifdef VX_EMUVR
 	opt_res = opt_is ("vectrex_emu_res", "4x 2496x3200") ? 4 : opt_is ("vectrex_emu_res", "3x 1872x2400") ? 3 : opt_is ("vectrex_emu_res", "2x 1248x1600") ? 2 : 1;
 #endif
+#ifndef VX_EMUVR
+	{ extern void vt_set_analog (int id, double v); const int bt = !(getenv ("VX_BEAM") && !atoi (getenv ("VX_BEAM")));   /* (2026-11-22: as the PC - always; VX_BEAM=0: a test, the rules before) */
+	  if (bt != vx_beam) { vx_beam = bt; vt_set_analog (11, bt ? 1.0 : 0.0); } }
+#endif
+#ifndef VX_EMUVR
+	{ const char *z = getenv ("VX_BRIGHT"); if (z) { extern float vx_bright; vx_bright = (float) atof (z); } }   /* (a test: the Bright look) */
+	{ const char *z = getenv ("VX_HDRPEAK"); if (z) { extern float vx_hdr_peak; vx_hdr_peak = (float) atof (z); } }   /* (a test: an HDR screen's top, x white) */
+	{ const char *z = getenv ("VX_GPROF"); if (z) { extern int vx_gprof; vx_gprof = atoi (z); } }   /* (a test: the GPU diagnostic - each stage's time in the log) */
+#endif
 	opt_wob = opt_is ("vectrex_emu_wobble", "off") ? 0 : opt_is ("vectrex_emu_wobble", "60 Hz") ? 60 : 50;
 	opt_buzz = !opt_is ("vectrex_emu_buzz", "off"); opt_spk = !opt_is ("vectrex_emu_speaker", "off");
 #ifdef VX_EMUVR
@@ -673,7 +730,9 @@ static void read_options (void)
 	opt_trail = opt_is ("vectrex_emu_afterglow", "long (real Vectrex)") ? 1.0f : opt_is ("vectrex_emu_afterglow", "short") ? 0.3f : 0.6f;
 	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) * VX_TRAIL_DEF : VX_TRAIL_DEF;   /* (1x: the default) */
 	  opt_trail_k = k >= 0.25 && k <= 6.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
-	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
+	{ extern int vx_app_noshape, vx_app_dots; extern float vx_hdr_lift, vx_trail_mul;   /* (the look - as the own apps' setting; they set it themselves) */
+	  if (!vx_app_noshape) { const int v = opt_is ("vectrex_emu_look", "vectrex"); vx_hdr_lift = v ? 2.0f : 0.0f; vx_trail_mul = v ? 2.1f : 1.0f; vx_app_dots = 1; } }
+	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = !opt_gone (v.key) && env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
 	  opt_bright = k >= 1.0 && k <= 2.0 ? (float) k : 1.0f; }
 	opt_dots = !opt_is ("vectrex_emu_corner_dots", "off"); opt_dwell = !opt_is ("vectrex_emu_dwell", "off"); opt_speedb = !opt_is ("vectrex_emu_speed_bright", "off");
 	opt_fill = opt_is ("vectrex_emu_fill", "on");
@@ -726,7 +785,9 @@ static void read_options (void)
 	  if (size_auto) { if (!scr_short) scr_load (); z = scr_short; }   /* (the screen's short side: gpu_gl.c scr_detect, kept) */
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
-	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0; opt_shape = !VX_IOS && opt_is ("vectrex_emu_shape", "16:9");
+	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }
+	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0;
+	deck_auto = VX_DECK_AUTO && opt_is ("vectrex_emu_deck", "auto"); if (deck_auto) opt_deck = deck_auto_mode (); opt_shape = !VX_IOS && opt_is ("vectrex_emu_shape", "16:9");
 	opt_trail_k0 = opt_trail_k;                 /* (1.1: one trail brightness - the light added as light: no other one needed) */
 	/* the screen rate changed while a game runs: RetroArch told the new timing (it was only read at a game's start) */
 	if (rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
@@ -790,8 +851,26 @@ static LONG WINAPI vx_crash (EXCEPTION_POINTERS *ep)
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif
+#ifndef VX_EMUVR
+/* (2026-11-22: the timing as the owner's Vectrex measured - vectrex_emu.py Core: the shift register's model, the spot's lag in three
+ *  stages, RAMP's and the beam's delays, the S/H's. The core reads them as its test variables: set here unless a test set them) */
+static void timing_defaults (void)
+{
+	static const char *const kv[5][2] = { { "VT_SRMODEL", "1" }, { "VT_DEFLAGN", "3" }, { "VT_RAMPDLY", "0,2,3" }, { "VT_ZDELAY", "1" }, { "VT_XYZDLY", "3,3,8" } };
+	for (int i = 0; i < 5; i++) if (!getenv (kv[i][0])) {
+#if defined(_WIN32)
+		_putenv_s (kv[i][0], kv[i][1]);
+#else
+		setenv (kv[i][0], kv[i][1], 0);
+#endif
+	}
+}
+#endif
 void retro_init (void)
 {
+#ifndef VX_EMUVR
+	timing_defaults ();
+#endif
 #if defined(_WIN32)
 	if (getenv ("VXPOC_CRASHLOG")) AddVectoredExceptionHandler (1, vx_crash);
 	if (getenv ("VXPOC_STDERR")) { freopen (getenv ("VXPOC_STDERR"), "a", stderr); setvbuf (stderr, NULL, _IONBF, 0); }   /* (test: the core's messages to a file) */
@@ -936,7 +1015,8 @@ static void tate_note (void)
 	f = fopen (p, "w"); if (f) { fputs ("the tate note was shown\n", f); fclose (f); }
 }
 #endif
-void retro_reset (void) { if (ls_state == 2) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
+static int netvx_playing (void);
+void retro_reset (void) { if (ls_state == 2 || netvx_playing ()) { ls_reset_req = 1; return; }   /* (lockstep: both reset in the same game frame - netls.c) */
 	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
 
 /* ---- the overlay by the game's name (vectrex_emu.py find_overlay: the name, its base without (...), its letters) */
@@ -1134,7 +1214,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  im_out = im;
 	  lightpen = (memmem_title (h, 96, "ART") && memmem_title (h, 96, "MASTER")) || memmem_title (h, 96, "MELODY") || memmem_title (h, 96, "ANIMACTION");
 	  /* (1.1, the desktop's Config > Ports: port 2's device - auto (the game's own, above), none, or one by name) */
-	  const char *p2 = optv ("vectrex_emu_port2"); int p2_none = !strcmp (p2, "none"), p2_im = !strcmp (p2, "3D Imager"), p2_lp = !strcmp (p2, "light pen");
+	  const char *p2 = ls_cfg_on && ls_port2[0] ? ls_port2 : optv ("vectrex_emu_port2"); int p2_none = !strcmp (p2, "none"), p2_im = !strcmp (p2, "3D Imager"), p2_lp = !strcmp (p2, "light pen");
 	  const char *p2_sp = !strcmp (p2, "VecVoice") ? "vecvoice" : !strcmp (p2, "VecVox") ? "vecvox" : NULL;
 	  if (p2_none || p2_lp || p2_sp) { im = 0; vx_putenv ("VT_IMAGER="); }
 	  if (p2_im && !im) { const char *b = path; for (const char *q = path; *q; q++) if (*q == '/' || *q == '\\') b = q + 1;   /* (the disc by
@@ -1169,7 +1249,9 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	 *  needed ZERO REF +36. Read at the first reset) */
 	{ const char *e = strrchr (path, '.');
 	  unit_addon = e && (!vx_stricmp (e, ".um2") || !vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit"));
-	  unit_make (unit_preset (), optv); unit_env (unit_addon);
+	  if (ls_cfg_on) nv_sv_apply (path); else { vx_putenv ("VT_FLASH_CLEAN="); vx_putenv ("VT_FLASH_IMG="); }   /* (online: the host's saves -
+	                                              netvx.c, temporary files only; else the player's own) */
+	  unit_make (unit_preset (), optv); unit_env (unit_addon); unit_force (unit_addon);
 	  km_on = unit_addon && !opt_is ("vectrex_emu_usb_hid", "off"); km_n = 0; km_mods = 0; km_dirty = km_on; km_btn = -1;
 	  vx_putenv (km_on ? "VT_USBHID=1" : "VT_USBHID=");   /* (the desktop's usb_hid: a UVMC2 / PiTrex gets the keyboard and mouse) */
 	  km_typing = 0; kb_held = 0; kb_ev = 0;
@@ -1190,12 +1272,14 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  vx_putenv (on ? "VT_THREADS=1" : "VT_THREADS="); }
 	/* (1.1: Last Human's save chip - a DS2431 on PB6: its calibration, difficulty and high scores - in RetroArch's saves
 	 *  folder; a save next to the ROM (the desktop's) is the start) */
-	{ static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };
+	if (!ls_cfg_on) { static char ds[1900]; ds[0] = 0; unsigned char h[96] = { 0 };   /* (online: the host's chip or none - nv_sv_apply) */
 	  { FILE *c = fopen (path, "rb"); if (c) { if (fread (h, 1, 96, c)) {} fclose (c); } }
-	  if (v4e_ds || (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN"))) save_path (path, ".ds2431", ds, sizeof ds);
+	  if (!ls_cfg_on && (v4e_ds || (!memcmp (h, "g GCE", 5) && memmem_title (h, 96, "LAST") && memmem_title (h, 96, "HUMAN")))) save_path (path, ".ds2431", ds, sizeof ds);   /* (online: no chip -
+	                                              both start alike, as the desktop: each player's own calibration parted the games) */
 	  { static char e[1950]; snprintf (e, sizeof e, "VT_DS2431=%s", ds); vx_putenv (e); }
 	  extern void vt_ds2431_reload (void); vt_ds2431_reload ();
 	  if (ds[0]) fprintf (stderr, "[vectrex_emu] save chip %s\n", ds); }
+	else { extern void vt_ds2431_reload (void); vt_ds2431_reload (); }
 	/* (1.1: the SD card of a PiTrex program (.img / .pit) or a UVMC2 game (.um2) - a FAT image, next to the game or in
 	 *  <system>/vectrex_emu: pitrex_sd.img / uvmc2_sd.img, as the desktop Vectrex_EMU builds them from its card folders) */
 	{ const char *e = strrchr (path, '.'); int px = e && (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")), um = e && !vx_stricmp (e, ".um2");
@@ -1358,11 +1442,6 @@ static void pad (unsigned port, unsigned char *jx, unsigned char *jy, unsigned c
 #define BEAM_SPEED 0.35                 /* how much fainter the fastest sweeps get */
 #define BEAM_LINE 1.15                  /* a line: BEAM_LINE x (1 - BEAM_SPEED e^(-e / 0.8)), e = cycles per game px */
 #define BEAM_FADE 0.3                   /* the beam fading out after /BLANK (intensity bit 7) */
-#define BEAM_HALO_W 1.6                 /* a resting spot's halo: FWHM (game px), brightness, cycles for full */
-#define BEAM_HALO_K 0.014
-#define BEAM_HALO_C 18.0
-#define BEAM_DOTC 4.0                   /* a resting spot: BEAM_DOTMAX x min (1, cycles / BEAM_DOTC) */
-#define BEAM_DOTMAX 1.6
 /* the afterglow's faint end lifted: g x (1 + A / (1 + g / G0)) - up to A x G0 more, reached already where it is faint. On
  * black the trail so looks as it did through an overlay, whose plastic glow (added as a screen value) lifted it there;
  * measured on Armor Attack's jeep, overlay on / off, the owner's wish 2026-11-19. The same numbers in gpu_phos.c (lift) */
@@ -1381,19 +1460,28 @@ static double hdr_rest (double cyc)
 	for (int i = 1; i < 6; i++) if (cyc <= C[i]) { r = R[i - 1] + (R[i] - R[i - 1]) * (cyc - C[i - 1]) / (C[i] - C[i - 1]); break; }
 	return 1.055 * pow (r, 1 / 2.4) - 0.055 - 1.0;   /* (as an sRGB value, as the app makes it light: VXApp.m) */
 }
-#define BEAM_DOTW 1.0                   /* its width: the line's x DOTW + DOTWK per cycle (game px) */
-#define BEAM_DOTWK 0.002
-#define BEAM_BLOOM_E0 20.0              /* a long bright rest blooms: wider (x BLOOM_W) and its halo brighter (x BLOOM_H) */
-#define BEAM_BLOOM_E1 38.0
-#define BEAM_BLOOM_W 2.0
-#define BEAM_BLOOM_H 2.5
+/* a resting spot, the owner's Dot Test photos (2026-11-21, ProRAW, isolated dots 4-128 cycles at intensity 7F, 5F, 40, 30):
+ * a spot as wide as the line at that intensity whose light grows with the rest - A = DOT_A x T x ln (1 + cycles / T) times
+ * the line's peak (the tube's light of the intensity), 0.8x at 4 cycles, 2.9x at 16, 7x at 48, 13.5x at 128 - never wider;
+ * round it a faint glow (about 0.4 % of that light). Matched in the picture (SDR, both looks): every dot's radius at 50, 25
+ * and 12 % of white within about 0.1 unit of the photo's on average, each look. Shots alike (36-119 cycles,
+ * a double shot as one of the summed time); a rest at a joint or corner as long as an isolated dot of the same time */
+/* per look (0 Bright, 1 Vectrex - the lines' light differs): the spot's peak (display value) for A = 1, its width (the line's
+ * x DOT_W: the photos' camera widens the line more than ours), the glow's share and FWHM - each matched to the photos' dot
+ * sizes (Bright: within 0.12 unit on average, Vectrex 0.11) */
+static const double DOT_K[2] = { 1.5, 3.0 }, DOT_W[2] = { 1.4, 1.6 }, DOT_HALO[2] = { 0.003, 0.005 }, DOT_HALO_W[2] = { 1.3, 1.3 };
+#define DOT_A 0.209
+#define DOT_T 52.0
+static double dot_light (double cyc) { return cyc > 0 ? DOT_A * DOT_T * log (1.0 + cyc / DOT_T) : 0; }
+#define DOT_C0 9.0                      /* a rest joined to a lit line (a joint, a corner): the beam slows into it - this many cycles
+                                           less (the photos: a 16-cycle corner 1.3x the line, an isolated 16-cycle dot 2.9x) */
+#define DOT_WL 1.5                      /* the spot's width grows from the line's to DOT_W x up to this light (x the 7F line's):
+                                           a faint or short rest a slight thickening, a bright long one a dot */
 #define REST_SPEED 0.5                  /* slower than this (units a cycle): the spot at rest */
 #define REST_DWELL_SLOW 0.6             /* the dwell inside a stroke (vecrender.py dwell_rests) */
 #define REST_DWELL_D0 3.0
 #define REST_DWELL_MAX 30.0
 #define REST_DWELL_TAU 12.0
-#define REST_DWELL_C 28.0
-#define REST_DWELL_SOFT 1.5
 #define REST_DWELL_HALO 20.0
 #define BEAM_LOWZ 0.5                   /* below this intensity the spot narrows (x LOWW at 0) */
 #define BEAM_LOWW 0.45
@@ -1415,8 +1503,9 @@ static const double TUBE_LIGHT[] = {
 static double zk_tab[128];              /* the tube's light for each intensity, as a display value (^(1 / 2.2)) */
 
 /* the lines being built: the frame's (or two frames' mixed: Smooth motion), with the resting spots and halos added */
-typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; } wline;   /* (b: intensity | 128 fade
-                                                                                         | 256 halo | 512 dwell) */
+typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; float lt; } wline;   /* (lt: beam trace - the piece's light, bt2_prepare; < 0: by the rules) */   /* (b: intensity | 128 fade
+                                                                                         | 256 halo | 512 dwell | 1024 a rest
+                                                                                         joined to a lit line: a joint, a corner) */
 #define NW (MAXL * 3)
 static wline W1[NW], W2[NW];
 /* a piece in picture pixels: the segment (run on past an open end), the ends of its own box, the cuts, the spot */
@@ -1972,7 +2061,7 @@ static void frame_push (unsigned long long p0)
 	                                              VecDoom's 66 a second were all joined, 2 ms a refresh on the Nova) */
 	  if (nh && !vt_imager && !vt_uvm2 && !vt_pitrex) {
 		gframe *h = &hist[nh - 1]; const double pt = nh > 1 ? hist[nh - 2].t : have_prev ? prevf.t : -1;
-		if (pt >= 0 && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
+		if (pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
 			const unsigned sh = (unsigned) (p0 - h->p0);
 			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
 			h->n += nlast; h->t = total_cycles / 1.5e6; frame_keys (h);
@@ -2146,7 +2235,7 @@ static int wl_from (wline *o, int m, const line_t *L, int n, const line_t *B, do
 		const line_t *l = &L[i]; wline *w = &o[m++];
 		w->x0 = l->x0; w->y0 = l->y0; w->x1 = l->x1; w->y1 = l->y1;
 		if (B) { w->x0 += (B[i].x0 - l->x0) * alpha; w->y0 += (B[i].y0 - l->y0) * alpha; w->x1 += (B[i].x1 - l->x1) * alpha; w->y1 += (B[i].y1 - l->y1) * alpha; }
-		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb; w->wq = 255;
+		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb; w->wq = 255; w->lt = -1;
 	}
 	return m;
 }
@@ -2221,7 +2310,7 @@ static int tube_split (const wline *L, int n, wline *o)
 			wline *q = &o[m++]; *q = *l; double s0 = j / (double) k, s1 = (j + 1) / (double) k;
 			q->x0 = l->x0 + (l->x1 - l->x0) * s0; q->y0 = l->y0 + (l->y1 - l->y0) * s0;
 			q->x1 = j == k - 1 ? l->x1 : l->x0 + (l->x1 - l->x0) * s1; q->y1 = j == k - 1 ? l->y1 : l->y0 + (l->y1 - l->y0) * s1;
-			q->cyc = l->cyc / k; q->t = l->t + l->cyc * j / k;
+			q->cyc = l->cyc / k; q->t = l->t + l->cyc * j / k; if (l->lt > 0) q->lt = l->lt / k;
 		}
 	}
 	return m;
@@ -2229,30 +2318,195 @@ static int tube_split (const wline *L, int n, wline *o)
 #define ART_PARALLAX 0.008
 static double par_dy (void)                  /* (vecrender.py par_dy: the overlay's parallax, emulator units - up) */
 { return opt_par && ov && ov_on && !sheet_file ? -ART_PARALLAX * 0.924 * ALG_MAX_Y : 0.0; }
+/* HDR: a rest's light with the beam's slow parts round it - the end of the stroke before, the start of the one after (the
+ * integrators slowing down and speeding up: Test Cartridge Rev. 4's joints rest 11 cycles, with ~20 more cycles within one
+ * spot; the owner's photos, 2026-11-20, ProRAW: the joint 3.5x the line's peak at every intensity). Weighted by distance (the
+ * spot: sigma half a game px) and by intensity; other rests not (their own spots) */
+static double rest_cyc (const wline *L, int n, int i, const unsigned char *zl, const unsigned char *halo)
+{
+	const double px = L[i].x1, py = L[i].y1, sg = 0.5 * GAME_PX, z = L[i].b & 127; double c = L[i].cyc;
+	for (int d = -1; d <= 1; d += 2)
+		for (int j = i + d, k = 0; j >= 0 && j < n && k < 12; j += d, k++) {
+			const wline *l = &L[j]; if (halo[j] || zl[j]) { if (zl[j]) break; continue; }
+			const double mx = (l->x0 + l->x1) / 2 - px, my = (l->y0 + l->y1) / 2 - py, dd = mx * mx + my * my;
+			if (dd > 9 * sg * sg) break;
+			if (!(l->b & 127) || (l->b & 128)) continue;
+			c += l->cyc * exp (-dd / (2 * sg * sg)) * ((l->b & 127) < z ? (l->b & 127) / z : 1.0); }
+	return c;
+}
+/* ---- Beam trace (a test: VX_BEAM=1 / the option vectrex_emu_beam_trace on; vecrender.py bt2_light / bt2_prepare). The core
+ * sends the spot's own path (vt_set_analog 11); the light follows the Photo Test's law: the light a unit of line against
+ * the beam's dwell there (cycles a unit) at intensities $30 / $40 / $5F / $7F, by intensity at 8.3 cycles a unit 0.022 /
+ * 0.12 / 0.51 / 0.76 / 1. Along every run of lit pieces that join in place and time the dwell at a place = the beam's cycles
+ * within BT2_W units of it along the path: a rest, a slow start, a line's end follow from the one law; runs add */
+#define BT2_W 1.0
+#define BT2_ND 12
+static const double BT2_DW[BT2_ND] = { 1.048, 1.386, 2.080, 2.773, 4.159, 5.546, 8.319, 16.64, 33.28, 48.0, 128.0, 1024.0 };
+static const double BT2_Z[4] = { 48, 64, 95, 127 };
+static const double BT2_L9[4][9] = { { 0.0333 * 0.194, 0.0428 * 0.194, 0.0619 * 0.194, 0.08 * 0.194, 0.11 * 0.194, 0.14 * 0.194, 0.21 * 0.194, 0.40 * 0.194, 0.73 * 0.194 },
+	{ 0.21 * 0.194, 0.27 * 0.194, 0.39 * 0.194, 0.51 * 0.194, 0.72 * 0.194, 0.90 * 0.194, 1.25 * 0.194, 2.21 * 0.194, 3.70 * 0.194 },
+	{ 0.24, 0.30, 0.41, 0.50, 0.66, 0.79, 1.05, 1.79, 3.20 }, { 0.49, 0.59, 0.78, 0.94, 1.21, 1.43, 1.87, 3.24, 5.75 } };
+static double bt2_ld[BT2_ND], bt2_ll[4][BT2_ND]; static int bt2_ready;
+#define BT2_K (1.054 / 0.647)           /* (the reference line - 1.59 cycles a unit, $7F: light 1.054 a unit) */
+#define BT_EXPO 0.20                    /* (vecrender.py: the exposure, the spot's width x, the spot's share of the display width) */
+#define BT_SPOT 1.25
+#define BT_SG 0.674
+#define BT_HALO_F 0.008                 /* (the glass: this share of every piece's light spread wide - sigma BT_HALO_S units) */
+#define BT_HALO_S 2.5
+static double bt2_tl (double z)            /* (the tube's light by the drive: TUBE_LIGHT x the Photo Test's page 4 against it) */
+{
+	static const double ZK[][2] = { { 0, 0.25 }, { 48, 0.25 }, { 63, 0.48 }, { 95, 0.76 }, { 111, 0.89 }, { 127, 1.0 } };
+	if (z < 0) z = 0; if (z > 127) z = 127;
+	const int i = z >= 126 ? 126 : (int) z; double k = 1.0;
+	for (int j = 1; j < 6; j++) if (z <= ZK[j][0]) { k = ZK[j - 1][1] + (ZK[j][1] - ZK[j - 1][1]) * (z - ZK[j - 1][0]) / (ZK[j][0] - ZK[j - 1][0]); break; }
+	return (TUBE_LIGHT[i] + (TUBE_LIGHT[i + 1] - TUBE_LIGHT[i]) * (z - i)) * k;
+}
+static double bt2_light (double z, double d)   /* (the light a unit of path: the drive in intensity steps, the dwell in cycles a unit) */
+{
+	if (!bt2_ready) { bt2_ready = 1;
+		for (int j = 0; j < BT2_ND; j++) bt2_ld[j] = log (BT2_DW[j]);
+		for (int r = 0; r < 4; r++) { double v = 0;
+			for (int j = 0; j < BT2_ND; j++) { v = j < 9 ? BT2_L9[r][j] : j == 9 ? v * pow (48.0 / 33.28, 0.8) : j == 10 ? v * pow (128.0 / 48.0, 0.64) : v * pow (8.0, 0.3); bt2_ll[r][j] = log (v); } } }
+	const double ld = log (d > 1e-3 ? d : 1e-3);
+	int j = 0; while (j < BT2_ND - 2 && ld >= bt2_ld[j + 1]) j++;
+	const double f = (ld - bt2_ld[j]) / (bt2_ld[j + 1] - bt2_ld[j]);
+	const double zc = z < BT2_Z[0] ? BT2_Z[0] : z > BT2_Z[3] ? BT2_Z[3] : z;
+	int i = 0; while (i < 2 && zc >= BT2_Z[i + 1]) i++;
+	const double g = (zc - BT2_Z[i]) / (BT2_Z[i + 1] - BT2_Z[i]);
+	const double a = bt2_ll[i][j] + (bt2_ll[i][j + 1] - bt2_ll[i][j]) * f, b = bt2_ll[i + 1][j] + (bt2_ll[i + 1][j + 1] - bt2_ll[i + 1][j]) * f;
+	double o = exp (a + (b - a) * g);
+	if (z < BT2_Z[0]) o *= bt2_tl (z) / bt2_tl (BT2_Z[0]);
+	return BT2_K * o;
+}
+static double bt2_xs[2 * NW], bt2_ys[2 * NW], bt2_s0[NW]; static int bt2_nk; static unsigned char bt2_fl[NW];   /* (bt2_fl: 1 lit, 2 joins the lit piece before) */
+static double bt2_thi (double s)           /* (the beam's cycles up to s along the path, a rest at s counted) */
+{
+	const int n = bt2_nk; if (s >= bt2_xs[n - 1]) return bt2_ys[n - 1]; if (s < bt2_xs[0]) return bt2_ys[0];
+	int lo = 0, hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] <= s) lo = m; else hi = m; }   /* (the last knot <= s) */
+	const double dx = bt2_xs[lo + 1] - bt2_xs[lo]; return bt2_ys[lo] + (dx > 1e-9 ? (s - bt2_xs[lo]) / dx : 0.0) * (bt2_ys[lo + 1] - bt2_ys[lo]);
+}
+static double bt2_tlo (double s)           /* (.. a rest at s not counted) */
+{
+	const int n = bt2_nk; if (s <= bt2_xs[0]) return bt2_ys[0]; if (s > bt2_xs[n - 1]) return bt2_ys[n - 1];
+	int lo = 0, hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] < s) lo = m; else hi = m; }   /* (hi: the first knot >= s) */
+	const double dx = bt2_xs[hi] - bt2_xs[lo]; return bt2_ys[lo] + (dx > 1e-9 ? (s - bt2_xs[lo]) / dx : 1.0) * (bt2_ys[hi] - bt2_ys[lo]);
+}
+static double bt2_dwell (double s) { return (bt2_thi (s + BT2_W / 2) - bt2_tlo (s - BT2_W / 2)) / BT2_W; }
+static int bt2_prepare_cpu (const wline *L, int n, wline *o, double kb)
+{
+	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0;
+	for (int i = 0; i < n; i++) {
+		const wline *l = &L[i]; const int z = l->b & 127; bt2_fl[i] = 0;
+		if (!z || (l->b & 128)) continue;
+		const double len = hypot (l->x1 - l->x0, l->y1 - l->y0) / 134.0;
+		const int cont = prev == i - 1 && prev >= 0 && fabs (l->x0 - L[prev].x1) <= 3.0 && fabs (l->y0 - L[prev].y1) <= 3.0
+		                 && fabs (l->t - (L[prev].t + L[prev].cyc)) <= 1.5 && l->b == L[prev].b;
+		if (!cont) S += 4.0 * BT2_W;
+		bt2_fl[i] = cont ? 3 : 1; bt2_s0[i] = S;
+		bt2_xs[bt2_nk] = S; bt2_ys[bt2_nk++] = T; S += len; T += l->cyc; bt2_xs[bt2_nk] = S; bt2_ys[bt2_nk++] = T; prev = i;
+	}
+	/* (the picture adds display values, not light: pieces must not lie on each other - a run's caps go into its first and
+	    last moving piece (their round ends carry them); a run that never moves is one spot) */
+	double cap = 0; int mv = -1;
+	for (int i = 0; i < n && m < NW - 5; i++) {
+		const wline *l = &L[i];
+		if (!bt2_fl[i]) { o[m] = *l; o[m++].lt = -1; continue; }
+		const double z = (l->b & 127) + kb * 127.0, len = hypot (l->x1 - l->x0, l->y1 - l->y0) / 134.0, s0 = bt2_s0[i];
+		const int last = i + 1 >= n || !(bt2_fl[i + 1] & 2);
+		if (!(bt2_fl[i] & 2)) { cap = BT2_W / 2 * bt2_light (z, bt2_dwell (s0 - BT2_W / 4)); mv = -1; }
+		if (len > 1e-6) {
+			const int np = len > BT2_W ? 3 : len > BT2_W / 2 ? 2 : 1; const double h = np == 3 ? (BT2_W / 2) / len : 0.5, F[4] = { 0, np == 1 ? 1 : h, np == 3 ? 1 - h : 1, 1 };
+			for (int k = 0; k < np; k++) {
+				const double f0 = F[k], f1 = F[k + 1]; wline *q = &o[m]; *q = *l;
+				q->x0 = l->x0 + (l->x1 - l->x0) * f0; q->y0 = l->y0 + (l->y1 - l->y0) * f0; q->x1 = l->x0 + (l->x1 - l->x0) * f1; q->y1 = l->y0 + (l->y1 - l->y0) * f1;
+				q->cyc = l->cyc * (f1 - f0); q->t = l->t + l->cyc * f0;
+				q->lt = (float) (len * (f1 - f0) * bt2_light (z, bt2_dwell (s0 + len * (f0 + f1) / 2)) + cap); cap = 0; mv = m++;
+			}
+		}
+		if (last) { const double c1 = BT2_W / 2 * bt2_light (z, bt2_dwell (s0 + len + BT2_W / 4));
+			if (mv >= 0) o[mv].lt += (float) c1;
+			else { wline *q = &o[m++]; *q = *l; q->x0 = l->x1; q->y0 = l->y1; q->cyc = 1; q->lt = (float) (cap + c1); }
+			cap = 0; }
+	}
+	return m;
+}
+/* (vecrender.py bt2_prepare as it is - for the GPU's light image, where pieces add as light: every lit piece of a run (a long
+ *  one as its two ends, BT2_W / 2 each, and its middle), a cap at each end of a run (no length, half the footprint beyond the
+ *  end); the others - the beam fading, the blanked beam - piece by piece) */
+static int bt2_prepare (const wline *L, int n, wline *o)
+{
+	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0;
+	for (int i = 0; i < n; i++) {
+		const wline *l = &L[i]; const int z = l->b & 127; bt2_fl[i] = 0;
+		if (!z || (l->b & 128)) continue;
+		const double len = hypot (l->x1 - l->x0, l->y1 - l->y0) / 134.0;
+		const int cont = prev == i - 1 && prev >= 0 && fabs (l->x0 - L[prev].x1) <= 3.0 && fabs (l->y0 - L[prev].y1) <= 3.0
+		                 && fabs (l->t - (L[prev].t + L[prev].cyc)) <= 1.5 && l->b == L[prev].b;
+		if (!cont) S += 4.0 * BT2_W;
+		bt2_fl[i] = cont ? 3 : 1; bt2_s0[i] = S;
+		bt2_xs[bt2_nk] = S; bt2_ys[bt2_nk++] = T; S += len; T += l->cyc; bt2_xs[bt2_nk] = S; bt2_ys[bt2_nk++] = T; prev = i;
+	}
+	for (int i = 0; i < n && m < NW - 6; i++) {
+		const wline *l = &L[i]; const double z = l->b & 127, len = hypot (l->x1 - l->x0, l->y1 - l->y0) / 134.0;
+		if (!bt2_fl[i]) { o[m] = *l; o[m++].lt = (float) ((len + BT2_W) * bt2_light (z, l->cyc / (len + BT2_W))); continue; }
+		const double s0 = bt2_s0[i]; const int last = i + 1 >= n || !(bt2_fl[i + 1] & 2);
+		if (!(bt2_fl[i] & 2)) { wline *q = &o[m++]; *q = *l; q->x1 = l->x0; q->y1 = l->y0; q->cyc = 1;   /* (the run's first cap) */
+			q->lt = (float) (BT2_W / 2 * bt2_light (z, bt2_dwell (s0 - BT2_W / 4))); }
+		if (len > 1e-6) {
+			const int np = len > 1.5 * BT2_W ? 3 : 1; const double h = (BT2_W / 2) / len, F[4] = { 0, np == 1 ? 1 : h, np == 3 ? 1 - h : 1, 1 };
+			for (int k = 0; k < np; k++) {
+				const double f0 = F[k], f1 = F[k + 1]; wline *q = &o[m++]; *q = *l;
+				q->x0 = l->x0 + (l->x1 - l->x0) * f0; q->y0 = l->y0 + (l->y1 - l->y0) * f0; q->x1 = l->x0 + (l->x1 - l->x0) * f1; q->y1 = l->y0 + (l->y1 - l->y0) * f1;
+				q->cyc = l->cyc * (f1 - f0); q->t = l->t + l->cyc * f0;
+				q->lt = (float) (len * (f1 - f0) * bt2_light (z, bt2_dwell (s0 + len * (f0 + f1) / 2)));
+			}
+		}
+		if (last) { wline *q = &o[m++]; *q = *l; q->x0 = l->x1; q->y0 = l->y1; q->t = l->t + l->cyc; q->cyc = 1;   /* (.. and its last) */
+			q->lt = (float) (BT2_W / 2 * bt2_light (z, bt2_dwell (s0 + len + BT2_W / 4))); }
+	}
+	return m;
+}
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
+static int bt_gpu_ok (void);
 static int build_lines (wline *L, int n, int to, double esh, int npl)
 {
 	extern int vt_imager;
 	if (vx_nobuild) return npl;
 	if (up_xf) for (int i = 0; i < n; i++) { picture_apply (&L[i].x0, &L[i].y0); picture_apply (&L[i].x1, &L[i].y1); }   /* (unit.c: the
 	                                                    picture's pots and the yoke, after the integrators) */
+	if (vx_beam) { if (n) n = bt_gpu ? bt2_prepare (L, n, W2) : bt2_prepare_cpu (L, n, W2, up_kb), memcpy (L, W2, sizeof (wline) * n); }   /* (the light from the path - no rest, dwell or bend rules) */
+	else {
 	if (opt_dwell && n > 1) n = dwell_rests (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
 	if (opt_sbend && n > 1) n = smooth_bends (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
+	}
 	if (opt_geom && n) n = tube_split (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
 	/* the halos (corner glow) round the long rests: drawn as pieces of their own */
 	static unsigned char zl[NW], jo[NW], halo[NW];
 	int nhalo = 0;
-	if (opt_halo) {
+	for (int i = 0; i < n; i++) {                 /* a rest joined to a lit line (a joint, a corner): 1024 */
+		wline *l = &L[i]; l->b &= ~1024;
+		if (sqrt ((l->x1 - l->x0) * (l->x1 - l->x0) + (l->y1 - l->y0) * (l->y1 - l->y0)) > REST_SPEED * l->cyc) continue;
+		for (int d = -1; d <= 1; d += 2) {
+			const int j = i + d; if (j < 0 || j >= n) continue;
+			const wline *m = &L[j]; if (!(m->b & 127) || (m->b & 128)) continue;
+			if (sqrt ((m->x1 - m->x0) * (m->x1 - m->x0) + (m->y1 - m->y0) * (m->y1 - m->y0)) <= REST_SPEED * m->cyc) continue;
+			const double ex = d < 0 ? m->x1 : m->x0, ey = d < 0 ? m->y1 : m->y0, et = d < 0 ? m->t + m->cyc : m->t, lt = d < 0 ? l->t : l->t + l->cyc;
+			if (fabs (ex - (d < 0 ? l->x0 : l->x1)) <= 0.5 * GAME_PX && fabs (ey - (d < 0 ? l->y0 : l->y1)) <= 0.5 * GAME_PX && fabs (et - lt) <= 2.0) { l->b |= 1024; break; }
+		}
+		if (l->b & 512) l->b |= 1024;
+	}
+	if (opt_halo && !vx_beam) {
 		for (int i = 0; i < n; i++) {
 			const wline *l = &L[i]; double ln = sqrt ((l->x1 - l->x0) * (l->x1 - l->x0) + (l->y1 - l->y0) * (l->y1 - l->y0));
 			if (ln <= REST_SPEED * l->cyc && l->cyc >= 8.0 && (l->b & 127) && !((l->b & 512) && l->cyc < REST_DWELL_HALO) && n + nhalo < NW) {
-				W2[nhalo] = *l; W2[nhalo].b = (l->b & 127) | 256; nhalo++; }
+				W2[nhalo] = *l; W2[nhalo].b = (l->b & (127 | 1024)) | 256; nhalo++; }
 		}
 		if (nhalo) { memmove (L + nhalo, L, sizeof (wline) * (n < NW - nhalo ? n : NW - nhalo)); memcpy (L, W2, sizeof (wline) * nhalo); n += nhalo; if (n > NW) n = NW; }
 	}
 	for (int i = 0; i < n; i++) {
 		const wline *l = &L[i];
 		zl[i] = sqrt ((l->x1 - l->x0) * (l->x1 - l->x0) + (l->y1 - l->y0) * (l->y1 - l->y0)) <= REST_SPEED * l->cyc;
+		if (vx_beam && l->lt >= 0) zl[i] = l->x0 == l->x1 && l->y0 == l->y1;   /* (beam trace: only a piece without length is a spot) */
 		halo[i] = (l->b & 256) != 0; jo[i] = 0;
 	}
 	for (int i = 1; i < n; i++)                   /* one stroke in several pieces: the joined ends open */
@@ -2283,28 +2537,52 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			zk = pow (TUBE_LIGHT[ii] + (TUBE_LIGHT[ii + 1] - TUBE_LIGHT[ii]) * (d - ii), 1 / 2.2); }
 		const double zw = zi >= BEAM_LOWZ ? 1.0 : BEAM_LOWW + (1.0 - BEAM_LOWW) * zi / BEAM_LOWZ;
 		double fw = (BEAM_W0 + BEAM_WZ * zi) * zw * pw_width * up_width, kk, hx = 0; int dot = 0;   /* (up_width: R525's stiffer beam) */
+		extern float vx_hdr_lift; const int dlk = vx_hdr_lift > 1.5f;   /* (the look: 1 Vectrex, 0 Bright) */
 		const double lp = sqrt ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
-		if (halo[i]) {
-			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
-			fw = BEAM_HALO_W * zw * (1.0 + (BEAM_BLOOM_W - 1.0) * bl) / bk * pw_width;   /* (the glass's scatter: not the beam option's) */
-			kk = BEAM_HALO_K * (cyc / BEAM_HALO_C < 1 ? cyc / BEAM_HALO_C : 1) * (1.0 + (BEAM_BLOOM_H - 1.0) * bl); dot = 1;
+		const int bt = vx_beam && l->lt >= 0;
+		if (bt && bt_gpu) {                       /* (vecrender.py _build_np, beam: the light image takes the piece's light spread by its spot -
+		                                             PH_FS_BEAM; the glass's glow from the same pieces, ph_frame) */
+			const double upx = 134.0 * sy; double sb = BT_SG * fw * gp / 2.355 * BT_SPOT; if (sb < 0.5) sb = 0.5;
+			double P = l->lt / (6.283185307 * (sb / upx) * (sb / upx)) * (1.0 - BT_HALO_F) * pw_gain * up_light * (L[i].wq / 255.0);
+			if ((l->b & 128) && !web) P *= BEAM_FADE;
+			if (!(P > 1e-7)) continue;
+			float r = (float) P, g = r, b = r;
+			if (vt_imager && opt_imager) { r = (l->rgb & 1) ? r : 0; g = (l->rgb & 2) ? g : 0; b = (l->rgb & 4) ? b : 0; if (!(l->rgb & 7)) r = g = b = 0; }
+			pline *q = &pl[npl++];
+			q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
+			q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
+			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= 1.3; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
+			q->k2 = (float) sb; q->R = (float) (3.5 * sb + 1.0); q->r = r; q->g = g; q->b = b; q->hx = (float) (BT_HALO_S * upx);   /* (k2: the spot's sigma, hx: the glow's - px) */
+			q->cut = 0; q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;
+			continue;
+		}
+		if (bt) {                                 /* (beam trace: the piece's light as its peak - a line's a unit / (sigma sqrt 2 pi), a spot's / (2 pi sigma^2),
+		                                             sigma the light's (the display's / sqrt 2.2, here BT_SG x), as a display value) */
+			fw *= BT_SPOT; const double su = BT_SG * fw / 2.355 * (GAME_PX / 134.0), lu = hypot (l->x1 - l->x0, l->y1 - l->y0) / 134.0;
+			const double P = zl[i] || lu < 1e-6 ? l->lt / (6.283185307 * su * su) : l->lt / lu / (su * 2.506628275);
+			kk = pow (BT_EXPO * BT_SPOT * P, 1 / 2.2) / OV_LINE_GAIN; dot = zl[i];   /* (the PC's screen value / the sheet's gain: the scale the picture's last step works in) */
+		} else if (halo[i]) {
+			fw = DOT_HALO_W[dlk] * zw / bk * pw_width;    /* (the glass's scatter: not the beam option's) */
+			kk = pow (DOT_HALO[dlk] * dot_light ((l->b & 1024) ? cyc - DOT_C0 : cyc), 1 / 2.2); dot = 1;   /* (as a display value, as the lines' light) */
 		} else if (!zl[i]) {
 			double ee = lp > 1e-9 ? cyc / (lp / gp) : 1e9;
 			kk = opt_speedb ? BEAM_LINE * (1.0 - BEAM_SPEED * exp (-ee / 0.8)) : BEAM_LINE * (1.0 - 0.5 * BEAM_SPEED);
+			{ extern float vx_hdr_lift, vx_hdr_ee, vx_hdr_eq, vx_hdr_ec; if (vx_hdr_lift > 1.5f && ee > vx_hdr_ee) kk *= pow (fmin (ee / vx_hdr_ee, vx_hdr_ec), vx_hdr_eq); }   /* (HDR, the Vectrex look:
+			                                                  a slow line brighter by the beam's time on it - a real tube, the test cartridge's bars) */
 		} else if (!opt_dots) {                   /* (corner dots off: the resting spot as faint as a line's) */
 			kk = BEAM_LINE * (1.0 - BEAM_SPEED);
 		} else {
-			kk = BEAM_DOTMAX * (cyc / BEAM_DOTC < 1 ? cyc / BEAM_DOTC : 1); dot = 1;
-			if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk;   /* (HDR: above white, the rest's own light) */
+			const double ce = (l->b & 1024) ? cyc - DOT_C0 : cyc, al = dot_light (ce);   /* (joined: the beam slows into it - DOT_C0 less) */
+			kk = DOT_K[dlk] * pow (al, 1 / 2.2); dot = 1;
+			{ extern float vx_hdr_lift, vx_hdr_dk, vx_hdr_dx; if (vx_hdr_lift > 1.5f && vx_hdr_peak > 1.0f) { kk *= vx_hdr_dk; if (vx_hdr_peak > 1.0f) hx = hdr_rest (rest_cyc (L, n, i, zl, halo)) * zk * zk * vx_hdr_dx; }
+			  else if (vx_hdr_peak > 1.0f) hx = hdr_rest (cyc) * zk; }   /* (the Vectrex look, HDR: the dots above the lines in their own channel - the lines keep the lower part) */   /* (HDR: above white, the rest's own light - with the slow beam round it) */
 			if (zi < BEAM_LOWZ) { double rd = (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT); rd = rd < 0 ? 0 : rd;
 				double zd = (0.55 + 0.45 * BEAM_LOWZ) * rd * (cyc / BEAM_DOTLOWC < 1 ? cyc / BEAM_DOTLOWC : 1); if (zd > zk) zk = zd; }
-			double fwr = fw * BEAM_DOTW + BEAM_DOTWK * (cyc < 80 ? cyc : 80);
-			double bl = (cyc * zk - BEAM_BLOOM_E0) / (BEAM_BLOOM_E1 - BEAM_BLOOM_E0); bl = bl < 0 ? 0 : bl > 1 ? 1 : bl;
-			fw = fwr * (1.0 + (BEAM_BLOOM_W - 1.0) * bl);
-			if (l->b & 512) { double wd = cyc / REST_DWELL_C < 1 ? cyc / REST_DWELL_C : 1;   /* (a dwell: soft while short) */
-				kk *= pow (wd, 2.5); hx *= pow (wd, 2.5); fw *= 1.0 + REST_DWELL_SOFT * (1.0 - wd); }
+			{ const double lr = al * TUBE_LIGHT[z] / DOT_WL;   /* (its width: the line's, up to DOT_W x with its light - a faint or
+			                                                  short rest a slight thickening, a bright long one a dot) */
+			  fw *= 1.0 + (DOT_W[dlk] - 1.0) * (lr < 1 ? lr : 1); }
 		}
-		kk *= zk * BEAM_PEAK * PHOS_GAIN * pw_gain * up_light * (L[i].wq / 255.0);   /* (up_light: the high voltage's light, unit.c) */
+		kk *= (bt ? 1.0 : zk * BEAM_PEAK * PHOS_GAIN) * pw_gain * up_light * (L[i].wq / 255.0);   /* (up_light: the high voltage's light, unit.c) */
 		if ((l->b & 128) && !web) kk *= BEAM_FADE;
 		double sg = fw * gp / 2.355 * bk, sw = sg < 0.5 ? 0.5 : sg;   /* (at least half a pixel: a thinner spot as wide, its light kept) */
 		kk *= dot ? (sg / sw) * (sg / sw) : sg / sw;
@@ -2361,6 +2639,11 @@ static float *pb[2][3], *g1b[3], *g2b[3]; static int pbi;
 
 /* the picture's buffers at its size (a game's start; a new size, area or rotation): the lit light now and a refresh ago,
  * the afterglow's two parts, one colour channel or three - all dark again */
+static int deck_auto_mode (void)
+{
+	const int a = scr_w > scr_h ? scr_w : scr_h, b = scr_w > scr_h ? scr_h : scr_w;
+	return b > 0 && a < 1.4 * b ? 3 : 0;   /* (the deck does not fit below the picture: a 4:3 or a square screen (RGB30) - the pop-up) */
+}
 int vx_app_pich;                                /* (the own iOS app: the picture height it has room for, px; 0: the screen's) */
 int vx_app_noshape;                            /* (set by a host that lays out the picture itself: the deck block exactly the
                                                 picture and the deck, no bars to the screen's shape - the own iOS app) */
@@ -2450,6 +2733,7 @@ static void fx_apply (void)
 	#undef PICK
 }
 #include "gpu_opt.c"
+static int bt_gpu_ok (void) { return gpu_asked && gpu_ok && ph_ok && ph_beam && ph_sat && !stereo && !sheet_file; }   /* (as retro_run's gph) */
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
 #else
 int gpu_frame_shown (void) { return 0; }
@@ -2484,6 +2768,9 @@ static pthread_mutex_t emu_mx = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t
 static void *emu_main (void *p)
 {
 	(void) p;
+#ifdef __ANDROID__
+	pthread_setname_np (pthread_self (), "vx-emu");      /* (named: the Android app's thread figures) */
+#endif
 	for (;;) {
 		pthread_mutex_lock (&emu_mx); while (!emu_req) pthread_cond_wait (&emu_cv, &emu_mx); emu_req = 0; pthread_mutex_unlock (&emu_mx);
 		emu_loop ();
@@ -2503,26 +2790,43 @@ static void emu_join (void) { pthread_mutex_lock (&emu_mx); while (!emu_fin) pth
 static void run_t_next (void)               /* (the emulated time this refresh has to reach: one refresh on) */
 {
 	if (!run_t) run_t = total_cycles;
-	run_t += (unsigned long long) (1.5e6 / opt_rate + 0.5);
-	run_frac += 1.5e6 / opt_rate - (double) (unsigned long long) (1.5e6 / opt_rate + 0.5);
+	double st = 1.5e6 / opt_rate;
+	if (netvx_playing ()) { extern double netvx_pace (void); st *= 1.0 - netvx_pace (); }   /* (online: the side ahead a little slower - netvx.c) */
+	run_t += (unsigned long long) (st + 0.5);
+	run_frac += st - (double) (unsigned long long) (st + 0.5);
 	if (run_frac >= 1) { run_t++; run_frac -= 1; } else if (run_frac <= -1) { run_t--; run_frac += 1; }
 	if (!pw_on) run_t = total_cycles;
 }
+static int emu_stood;                      /* (online: this run waited for the other side's input and made no game frame) */
 static void emu_loop (void)                 /* (game frames until the emulated time has reached run_t) */
 {
 	extern int vt_imager;
-	for (int k = 0; total_cycles < run_t && k < 8; k++) {
+	emu_stood = 0;
+	uint32_t replay_to = 0; int most = 8;
+	if (netvx_playing () && nv_stream && nv_role == 2) { netvx_stream_guest (); return; }   /* (streamed: player 2 runs nothing - the host's frames) */
+	if (netvx_playing ()) { replay_to = netvx_rollback (); if (replay_to) most = 8 + NV_RB_W; }   /* (online: a guess was wrong - back
+	                                              to that frame's state, the frames since run again with the right input, unheard) */
+	for (int k = 0; total_cycles < run_t && k < most; k++) {
 		extern unsigned long long vt_piece_t0;
 		unsigned long long p0 = vt_piece_t0;   /* (the frame being drawn began here: its lines' times count from it) */
 		if (ls_state == 2 || netvx_playing ()) { unsigned char lm[8];   /* (online in lockstep: a game frame only with both players' input for it) */
-			if (!(ls_state == 2 ? netls_frame (lm) : netvx_frame (lm))) { run_t = total_cycles; break; }
+			if (!(ls_state == 2 ? netls_frame (lm) : nv_stream ? netvx_stream_input (lm) : netvx_frame (lm))) { run_t = total_cycles; emu_stood = !k; break; }
 			apply_input (lm); }
 		abuf_n = 0;
-		run_frame ();
-		if (ls_state == 2) netls_after (); else if (netvx_playing ()) netvx_after ();
+		{ static int dp = -1; if (dp < 0) dp = getenv ("VX_DIRTY") != NULL;   /* (test: a card game's frame - its time, the memory pages it changed) */
+		  if (dp) { extern int vt_uvm2, vt_pitrex, uvm2_dirty_probe (int *), pitrex_dirty_probe (int *); static double tsum, tmax; static long fn, psum, pmax; static int tot;
+			const double t0 = vt_wall (); run_frame (); const double t1 = vt_wall () - t0;
+			const int pg = vt_uvm2 ? uvm2_dirty_probe (&tot) : vt_pitrex ? pitrex_dirty_probe (&tot) : 0;
+			if (fn > 0) { tsum += t1; if (t1 > tmax) tmax = t1; psum += pg; if (pg > pmax) pmax = pg; }
+			if (++fn % 200 == 0) { fprintf (stderr, "DIRTY frames %ld: emulation %.2f ms a frame (most %.2f), pages changed %.1f a frame (most %ld) of %d - %.0f KB a frame%c",
+				fn, tsum / 199 * 1e3, tmax * 1e3, psum / 199.0, pmax, tot, psum / 199.0 * 4, 10); tsum = tmax = 0; psum = pmax = 0; } }
+		  else run_frame (); }
+		const int replay = replay_to && nv_f < replay_to;   /* (a frame run again: its sound was heard the first time) */
+		if (ls_state == 2) netls_after (); else if (netvx_playing () && !nv_stream) netvx_after ();
 		frame_push (p0);
 		if (vt_imager) eyes_take ();
-		audio_frame ();
+		{ const int a0 = aq_w; if (!replay) audio_frame ();
+		  if (nv_stream && netvx_playing ()) netvx_stream_send (p0, a0); }   /* (streamed: the host's frame to player 2) */
 	}
 	if (total_cycles + 3000000 < run_t) run_t = total_cycles;   /* (far behind - a stall: on from here) */
 }
@@ -2627,6 +2931,7 @@ void retro_run (void)
 			if (sw_eject != 1) { snprintf (br_game, sizeof br_game, "%s", p); br_rec_note (p); }
 #endif
 		} sw_eject = 0; }
+	netvx_hot_apply ();                         /* (online: the host's running game, once its cartridge is in) */
 	const int asy = emu_threaded (), primed = asy && emu_primed;
 	bool upd = false;
 	if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &upd) && upd) { read_options (); input_names (); }
@@ -2655,17 +2960,18 @@ void retro_run (void)
 	dk_pointer (); dk_tick (0);
 	{ static int l2, r2; const int ri = btn_id ("vectrex_emu_btn_reset"), ei = btn_id ("vectrex_emu_btn_eject");
 	  const int a = ri >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ri) != 0, b = ei >= 0 && ei != ri && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) ei) != 0;
-	  if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button;
+	  if (a && !l2 && !br_open && netvx_playing ()) ls_reset_req = 1;   /* (online, the app's: both players, the same game frame) */
+	  else if (a && !l2 && !br_open && !net_on ()) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }   /* (the RESET button;
 	                                              netplay: RetroArch's own Reset, sent to both) */
-	  if (b && !r2 && !br_open && !net_on ()) eject_toggle ();
+	  if (b && !r2 && !br_open && !net_on () && !netvx_playing ()) eject_toggle ();
 	  l2 = a; r2 = b; }
 	if (kb_ev) { const unsigned e = kb_ev; kb_ev = 0;   /* (the desktop's shortcut keys - usbkm.c kb_desk; netplay: none, as the buttons) */
 		if (!net_on ()) {
 			if (e & KE_BROWSER) br_show (!br_open);
 			if (e & KE_ESC && br_open) br_show (0);
 			if (e & KE_PAUSE && !br_open) { vx_paused = !vx_paused; dk_dirty_set = 1; }
-			if (e & KE_RESET && !br_open) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); }
-			if (e & KE_EJECT && !br_open) eject_toggle ();
+			if (e & KE_RESET && !br_open) { if (netvx_playing ()) ls_reset_req = 1; else { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); } }
+			if (e & KE_EJECT && !br_open && !netvx_playing ()) eject_toggle ();
 			if (e & KE_OVERLAY && ovl_manual != 1 && (opt_overlay || !sheet_file)) ov_flip ("O"); }
 		if (e & KE_VOLUP) turn_volume (0.05);
 		if (e & KE_VOLDN) turn_volume (-0.05); }
@@ -2682,6 +2988,7 @@ void retro_run (void)
 	                                              Picture size auto follows it, 1:1, as the layout changes) */
 	  if (size_auto && vx_app_pich >= 200 && vx_app_pich != opt_size) { opt_size = vx_app_pich; fprintf (stderr, "[vectrex_emu] picture size: the app's %d px\n", vx_app_pich); scr_new = 0; } }
 	if (scr_new && !(size_auto && vx_app_pich >= 200)) { scr_new = 0; if (size_auto && scr_short && scr_short != opt_size) { opt_size = scr_short; fprintf (stderr, "[vectrex_emu] picture size: the screen's %d px\n", scr_short); } }
+	if (deck_auto) opt_deck = deck_auto_mode ();   /* (the screen known or turned: auto chooses again) */
 	if (area_glass () != geo_glass || opt_rot != geo_rot || opt_size != geo_size || opt_deck != geo_deck || opt_shape != geo_shape
 	    || (dk_on && (scr_w != geo_sw || scr_h != geo_sh))) { pic_setup (); geo_tell (); }   /* (with the deck: the screen turned - its shape) */
 	if (ov && ov_on && !sheet_file) { if (!ov_made) ov_make (); ov_tabs (); }
@@ -2722,11 +3029,15 @@ void retro_run (void)
 	const double dt = 1.0 / opt_rate;
 	if (pf_on) pf1 = pf_now ();
 	if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; }
+	const int stood = emu_stood && (ls_state == 2 || netvx_playing ());   /* (read before the next run starts) */
 	if (pf_on) pf2 = pf_now ();
 	{ int av = 3; vx_nobuild = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1); }
 	/* the picture: which lines, from which game frames */
 	const double now = run_t / 1.5e6;
 	int npl = 0; unsigned long long ft0 = nh ? hist[nh - 1].p0 : 0;
+#ifndef VX_EMUVR
+	bt_gpu = vx_beam && bt_gpu_ok ();
+#endif
 	pw_gain = 1; pw_sx = 1; pw_width = 1;
 	if (opt_power && pw_on && pw_t < pw_fade) {   /* (switched on: the light comes up, slowly at first; a warm tube bulges) */
 		double f = pw_t / pw_fade; pw_gain = pow (f * f * (3 - 2 * f), 2.6);
@@ -2812,6 +3123,15 @@ void retro_run (void)
 	const int gph = gpu_asked && gpu_ok && ph_ok && !stereo && !sheet_file;
 	static int half_skip; static double half_dt;
 	if (gph) gq_begin ();                      /* (the GPU meter: this picture's GPU time, the light and the glass) */
+	if (stood && !shot_due && (!gph || ph_made)) {   /* (online, waiting for the other side: the picture as it was, as paused - the
+		                                       *  held frame's light added each refresh made it glow brighter and brighter) */
+		if (gph) gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+		else frame_out (0, NULL, NULL, NULL);
+		if (nv_stream && nv_role == 2 && !nv_pause) half_dt += dt;   /* (streamed, player 2: the host's time goes on between its frames
+		                                       *  (50 a second, 120 refreshes here) - the afterglow fades over it too; it lasted 2.5x long) */
+		sheet_write (); if (!asy) flash_save (0); if (!asy) audio_out ();
+		return;
+	}
 	if (gph && fx_half && (half_skip ^= 1) && ph_made && !shot_due) {   /* (Low: 30 pictures a second - this one the last again) */
 		half_dt += dt;
 		gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
@@ -2820,9 +3140,27 @@ void retro_run (void)
 	}
 	if (gph) {
 		const double pdt = dt + half_dt; half_dt = 0;
+		/* (the apps' GPU diagnostic, vx_gprof: one picture in 30 timed with the GPU waited for after each stage - the light, the glass and
+		 *  the case; iOS's OpenGL ES has no timer queries) */
+		extern int vx_gprof; static long gpc; static double gpt[3], gpw; static long gpn; const int gpm = vx_gprof && (++gpc % 30) == 0; double gp0 = 0, gp1 = 0;
+		{ extern int vx_gprof_now; vx_gprof_now = gpm; }
+		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
 		if (ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ())) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
+			if (gpm) { glFinish_ (); gp1 = vt_wall (); }
+			/* (the diagnostic, no overlay: the glass and the case drawn once more with a part off - not shown, the real one after it -
+			 *  what each part costs: 0 no case, 1 no case and no room light on the glass, 2 the case without its reflections) */
+			static double gvt[3]; static long gvn[3];
+			if (gpm && gfx.cse) { const int vi = (int) ((gpc / 30) % 3), kc = gfx.cse, kn = gpu_novideo; const float kl = gfx.lk, kg = gfx.grey, kr = gfx.crefl;
+				if (vi <= 1) gfx.cse = 0; if (vi == 1) { gfx.lk = 0; gfx.grey = 0; } if (vi == 2) gfx.crefl = 0;
+				gpu_novideo = 1; gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+				glFinish_ (); { const double tv = vt_wall (); gvt[vi] += tv - gp1; gvn[vi]++; gp1 = tv; }
+				gfx.cse = kc; gfx.lk = kl; gfx.grey = kg; gfx.crefl = kr; gpu_novideo = kn; }
 			gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+			if (gpm) { glFinish_ (); const double gp2 = vt_wall (); gpt[0] += gp1 - gp0; gpt[1] += gp2 - gp1; gpn++;
+				extern double vx_gpst[4], vx_oxst[8]; extern int vx_gprof_now; vx_gprof_now = 0;
+				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms (lines %.2f, phosphor %.2f, glow %.2f, picture %.2f), the glass and the case %.2f ms - %d x %d px, profile %s; the sheet's passes %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f; the glass and case with a part off: no case %.2f, no case nor room light %.2f, no reflections %.2f ms%c",
+					gpn, gpt[0] / gpn * 1e3, vx_gpst[0] / gpn * 1e3, vx_gpst[1] / gpn * 1e3, vx_gpst[2] / gpn * 1e3, vx_gpst[3] / gpn * 1e3, gpt[1] / gpn * 1e3, FW, FH, opt_profile == 0 ? "auto" : opt_profile == 1 ? "ultra" : opt_profile == 2 ? "high" : opt_profile == 3 ? "medium" : "low", vx_oxst[0] / gpn * 1e3, vx_oxst[1] / gpn * 1e3, vx_oxst[2] / gpn * 1e3, vx_oxst[3] / gpn * 1e3, vx_oxst[4] / gpn * 1e3, vx_oxst[5] / gpn * 1e3, vx_oxst[6] / gpn * 1e3, vx_oxst[7] / gpn * 1e3, gvn[0] ? gvt[0] / gvn[0] * 1e3 : 0.0, gvn[1] ? gvt[1] / gvn[1] * 1e3 : 0.0, gvn[2] ? gvt[2] / gvn[2] * 1e3 : 0.0, 10); memset (vx_oxst, 0, sizeof vx_oxst); memset (gvt, 0, sizeof gvt); memset (gvn, 0, sizeof gvn); gpt[0] = gpt[1] = 0; vx_gpst[0] = vx_gpst[1] = vx_gpst[2] = vx_gpst[3] = 0; gpn = 0; gpw = gp2; } }
 			shot_write ();
 			sheet_write ();
 			if (!asy) flash_save (0);
@@ -2841,7 +3179,7 @@ void retro_run (void)
 	const int painted = paint_all;             /* (the overlay painted in, or the glass grey: every pixel has colour) */
 	const int ry0 = glow ? 0 : CY0, ry1 = glow ? H - 1 : CY0 + CH - 1;   /* (no glow: only the window's rows are sent) */
 	const int cx0 = glow ? 0 : CX0, cx1 = glow ? Wd - 1 : (FW - EW) + CX0 + CW - 1;
-	const float tk = ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0;   /* (1.0: its own without an overlay) */
+	extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;   /* (1.0: its own without an overlay; the apps' look) */
 	const float a1 = 0.1404f * tk, a2 = 0.0582f * tk,   /* (v0.16: x the trail brightness option) */
 	             ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;   /* (the trail's time scale: Vectrex_EMU's 0.6, a real Vectrex 1.0) */
 	const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2), e1 = a1 * kd1, e2 = a2 * kd2;
@@ -3070,12 +3408,10 @@ static int net_dbg = -1;
 /* (the cartridge in the slot, in each save state: its first 64K as loaded - the image, $FF after its end) */
 static uint32_t cart_id;
 static void cart_id_set (void) { uint32_t h = 2166136261u; for (int k = 0; k < 65536; k++) h = (h ^ cart[k]) * 16777619u; cart_id = h | 1; }
-bool retro_serialize (void *d, size_t sz)
+static size_t vx_save_to (unsigned char *d)   /* (the state into d - at most vx_size bytes; its length: online's rollback saves
+                                                these from inside the emulation, netvx.c) */
 {
-	emu_wait_ext (); net_mark ();
-	{ static long n; if (++n % 120 == 1) NDBG ("[netdbg] serialize #%ld sz %zu vx_size %zu run %ld\n", n, sz, vx_size, net_runs); }
-	if (!vx_ok () || !vx_size) vx_state_init ();
-	if (!vx_ok () || sz < vx_size) return false;
+	if (!vx_size) vx_state_init ();
 	unsigned char *o = d; uint32_t h[4] = { VX_MAGIC, (uint32_t) vx_raw, (uint32_t) extern_cart_len (), cart_id };
 	PUT (h, 16);
 	o = vxv_save (o);
@@ -3085,13 +3421,40 @@ bool retro_serialize (void *d, size_t sz)
 	PUT (&nh, sizeof (int)); PUT (&have_prev, sizeof (int));
 	if (have_prev) o = put_frame (o, &prevf);
 	for (int k = 0; k < nh; k++) o = put_frame (o, &hist[k]);
-	memset (o, 0, (unsigned char *) d + sz - o);   /* (the rest: zeros, so two saves of one moment compare equal) */
-	return true;
+	return (size_t) (o - d);
 }
-bool retro_unserialize (const void *d, size_t sz)
+bool retro_serialize (void *d, size_t sz)
 {
 	emu_wait_ext (); net_mark ();
+	{ static long n; if (++n % 120 == 1) NDBG ("[netdbg] serialize #%ld sz %zu vx_size %zu run %ld\n", n, sz, vx_size, net_runs); }
+	if (!vx_ok () || !vx_size) vx_state_init ();
+	if (!vx_ok () || sz < vx_size) return false;
+	const size_t n = vx_save_to (d);
+	memset ((unsigned char *) d + n, 0, sz - n);   /* (the rest: zeros, so two saves of one moment compare equal) */
+	return true;
+}
+static bool vx_load_from (const void *d, size_t sz);
+bool retro_unserialize (const void *d, size_t sz)
+{
+	if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] a saved state: not during an online game\n"); return false; }   /* (it would part the two games - the apps' buttons, any way in) */
+	emu_wait_ext (); net_mark ();
 	unser_seen = 1; runs_since_unser = 0;
+	return vx_load_from (d, sz);
+}
+/* (online's rollback: what the state holds for RetroArch's run-ahead but that belongs to now - the time to reach, the sound
+ *  queue and its filters (the frames run again are not heard), the tube's warm-up, the overlay switch - kept through the load:
+ *  the time went back with the state and every rollback cost its frames' time, the game ran a third slow) */
+static void vx_rb_keep (int back)
+{
+	static int16_t k_aq[AQ * 2]; static int k_r, k_w, k_fm, k_ov, k_sel; static double k_fr, k_rf, k_pw; static long k_fs; static unsigned long long k_rt;
+	static biquad k_b[8], k_s[6], k_v[2];
+	if (!back) { memcpy (k_aq, aq, sizeof aq); k_r = aq_r; k_w = aq_w; k_fr = aq_frac; k_fs = aq_frames; memcpy (k_b, f_buzz, sizeof f_buzz); memcpy (k_s, f_spk, sizeof f_spk);
+		memcpy (k_v, f_voice, sizeof f_voice); k_fm = filters_made; k_rt = run_t; k_rf = run_frac; k_pw = pw_t; k_ov = ov_on; k_sel = sel_held; }
+	else { memcpy (aq, k_aq, sizeof aq); aq_r = k_r; aq_w = k_w; aq_frac = k_fr; aq_frames = k_fs; memcpy (f_buzz, k_b, sizeof f_buzz); memcpy (f_spk, k_s, sizeof f_spk);
+		memcpy (f_voice, k_v, sizeof f_voice); filters_made = k_fm; run_t = k_rt; run_frac = k_rf; pw_t = k_pw; ov_on = k_ov; sel_held = k_sel; }
+}
+static bool vx_load_from (const void *d, size_t sz)   /* (retro_unserialize's work - also online's rollback, from inside the emulation) */
+{
 	if (!vx_ok () || !vx_size) vx_state_init ();
 	const unsigned char *i = d; uint32_t h[4];
 	if (!vx_ok () || sz < 16) { NDBG ("[netdbg] unserialize: no (ok %d sz %zu)\n", vx_ok (), sz); return false; }
@@ -3171,6 +3534,9 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	snprintf (g_bios, sizeof g_bios, "%s", bios); snprintf (g_sys, sizeof g_sys, "%s", sys ? sys : ""); snprintf (g_dir, sizeof g_dir, "%s", dir);
 	{ const char *ce = getenv ("VECTREX_CART"); cart_file = ce && *ce ? ce : NULL; cart_seq = -1; }
 	if (first) rate_set = 0;                    /* (each game: the screen rate read anew - not a game the browser loads) */
+#ifndef VX_EMUVR
+	opts_reset_once ();
+#endif
 	read_options ();
 	const char *gp = v4e_open (gpath);           /* (a .v4e: its unpacked image) */
 	if (!gp) return false;
@@ -3187,6 +3553,9 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	if (!f) { fprintf (stderr, "[vectrex_emu] no folder to write in (system, saves, the game's)\n"); return false; } fclose (f);
 	char *argv[] = { "vx", bios, (char *) gp, scr, tmpdir, NULL };
 	{ extern const char *vt_flash_file; vt_flash_file = NULL; }
+	if (ls_cfg_on) { extern unsigned long vt_power_n; total_cycles = frame_start_cycles = last_busframe = last_recal = idle_cycles = idle_frame = 0; vt_power_n = 0; }   /* (online: the game from cycle 0 on both
+	                                              sides, the frame counters with it - a switch kept the last game's, which the checksum and the frames' ends have:
+	                                              out of step at frame 0; after a join into a running game, at the next game) */
 	int rc = vtest_main (5, argv);
 	remove (scr); cart_id_set ();
 	if (rc != 2) flash_to_saves (gp);
@@ -3199,6 +3568,9 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	for (int k = 0; k < GTAB + 1; k++) gtab[k] = (float) exp (-(double) k * GX / GTAB);
 	for (int z = 0; z < 128; z++) zk_tab[z] = pow (TUBE_LIGHT[z], 1 / 2.2);
 	run_t = 0; run_frac = 0; load_f = -1; while (nh) frame_pop (); aq_r = aq_w = 0; aq_frac = 0;
+	if (have_prev) { if (spare.L) { free (prevf.L); free (prevf.keys); } else spare = prevf; have_prev = 0; }   /* (the last game's last frame
+	                                              too: online the time starts at 0 again - its later time joined every new frame
+	                                              into one, ever more lines drawn at once: a growing glow, the iPhone 2026-11-20) */
 	vx_size = 0; if (vx_ok ()) vx_state_init ();   /* (v0.13: the save state's layout, for this game) */
 	/* v0.15: switched on - the tube warming up for the time it was off (a first start: cold), the power sound */
 	{ char sp[1100]; double off_for = 1e9; pw_stamp_path (sp, sizeof sp); FILE *f = fopen (sp, "r"); long long ts;
@@ -3228,11 +3600,19 @@ static int game_switch (const char *path) { snprintf (sw_next, sizeof sw_next, "
 /* (the own iOS app: its own game library in place of the ROM browser - asked for (the deck's cartridge, a button, L)
  *  the browser is closed again at once and the app shows its library; a game it picks loads as the browser's do) */
 int vx_app_browser_wanted (void) { if (br_open) { br_show (0); return 1; } return 0; }
-void vx_app_load (const char *path) { game_switch (path); }
+void vx_app_load (const char *path) { if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] another game: not during an online game\n"); return; } game_switch (path); }
 const char *vx_app_game (void) { return cur_game; }
 static void eject_toggle (void);
-void vx_app_reset (void) { extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET (the app)\n"); }
-void vx_app_eject (void) { eject_toggle (); }   /* (as Ctrl+E: the switch at the next refresh) */
+void vx_app_reset (void)
+{
+	if (netvx_playing ()) { ls_reset_req = 1; fprintf (stderr, "[vectrex_emu] RESET (the app) - online: both players, in the same game frame\n"); return; }
+	extern void vecx_reset_button (void); emu_wait_ext (); vecx_reset_button (); fprintf (stderr, "[vectrex_emu] RESET (the app)\n");
+}
+int vx_app_port2 (void) { return dk_p2; }        /* (port 2's device: 0 controller, 1 VecVox, 2 VecVoice, 3 3D Imager, 4 light pen) */
+int vx_app_cart_out (void) { return ej_out; }
+int vx_app_power_on (void) { return pw_on; }
+int vx_app_paused (void) { return vx_paused; }
+void vx_app_eject (void) { if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] eject: not during an online game\n"); return; } eject_toggle (); }   /* (as Ctrl+E: the switch at the next refresh) */
 static int game_switch_now (const char *path)
 {
 	fprintf (stderr, "[vectrex_emu] switching to %s (from %s)\n", path, cur_game);   /* (a crash on a switch: its log says which) */
@@ -3243,7 +3623,7 @@ static int game_switch_now (const char *path)
 	{ extern int vt_vb, vt_hb512, vt_multicart, vt_uvm2, vt_uvm2_cart, vt_pitrex; extern const char *vt_flash_file;   /* (the last cartridge's
 	                                              boards and modes out: vtest's main only sets them - Vectorblade then Scramble ran Scramble on
 	                                              Vectorblade's board: Mine Storm, the owner 2026-11-15) */
-	  extern int vt_uvm2_intro, vt_uvm2_go; vt_vb = vt_hb512 = vt_multicart = 0; vt_uvm2 = vt_uvm2_cart = vt_uvm2_intro = vt_uvm2_go = vt_pitrex = 0; vt_flash_file = NULL; }
+	  extern int vt_uvm2_intro, vt_uvm2_go; extern void uvm2_close (void); uvm2_close (); vt_vb = vt_hb512 = vt_multicart = 0; vt_uvm2 = vt_uvm2_cart = vt_uvm2_intro = vt_uvm2_go = vt_pitrex = 0; vt_flash_file = NULL; }
 	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
 	if (!game_open (path, sys, 0)) { fprintf (stderr, "[vectrex_emu] could not load %s\n", path);
 		struct retro_message msg = { "Vectrex_EMU: this game could not be loaded", 180 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &msg); return 0; }

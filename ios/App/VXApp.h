@@ -8,6 +8,9 @@ const char *vxa_okey (int i), *vxa_odesc (int i), *vxa_ocat (int i), *vxa_oinfo 
 int vxa_ofind (const char *key);
 void vxa_oset (int i, const char *value);
 int vxa_ncats (void);
+int vxa_squarish (void);               /* the top bar and the full deck do not both fit: the slim deck pops up by default */
+int vxa_popdef (void);                 /* the slim deck does not fit with the bar either: it pops up by default */
+int vxa_tight (void);                  /* the top bar does not fit either: it hides itself by default */
 const char *vxa_ckey (int i), *vxa_cdesc (int i), *vxa_cinfo (int i);
 
 /* actions */
@@ -27,8 +30,22 @@ int vx_net_join (const char *where, const char *gamer, const char *key);
 void vx_net_accept (int ok), vx_net_prepare (void), vx_net_go (void), vx_net_leave (void), vx_net_chat (const char *text);
 void vx_net_pause (int on), vx_net_room (void), vx_net_lan (int on);
 const char *vx_net_status (void);
+int vx_net_regame (const char *rom, int skip_boot, const char *cart_hw, double dacofs); void vx_net_regame_answer (const char *path);
+int vx_net_go_hot (void); void vx_net_prepare_hot (void), vx_net_take_port (int k);   /* (joining a running game; a port taken) */
+int vx_app_port2 (void), vx_app_cart_out (void), vx_app_power_on (void), vx_app_paused (void);   /* (the deck's states) */
+double vx_app_volume (void); void vx_app_turn (double d), vx_app_power (void);
+int vxa_is_held (void); void vxa_toast_ext (NSString *s);
 int vx_net_md5_file (const char *path, char *out33, long long *size);
+int vx_net_claim (const char *name, const char *key, const char *old, char *out, int outn);   /* (1 reserved, 0 another's, -1 not allowed, -2 no answer) */
+int vx_net_whoami (const char *key, char *out, int outn);                                  /* (1 found, 0 none, -2 no answer) */
+void vxa_name_first (UIViewController *vc);  /* the first start: this device's name back, or asked for once */
 NSString *vxa_net_ip (void);           /* this phone's address on its network */
+NSString *vxa_net_gateway (void);      /* the nearby host: an ad-hoc network's host (.1), nil: not on one */
+int vxa_hotspot_on (void);             /* this iPhone's Personal Hotspot is up */
+/* iPhone / iPad nearby without a network (VXP2P.m: Apple's peer-to-peer Wi-Fi) */
+void vxp_host_start (NSString *name), vxp_stop (void), vxp_browse (int on);
+int vxp_hosting (void), vxp_join (NSString *name);
+NSArray<NSString *> *vxp_games (void);
 NSString *vxa_net_name (void), *vxa_net_key (void);
 int vxa_net_playing (void);              /* (1 while a game for two runs: no save states) */
 
@@ -76,4 +93,9 @@ int vxa_net_playing (void);              /* (1 while a game for two runs: no sav
 @end
 @interface VXUI (Online)
 + (void) showOnlineFrom:(UIViewController *)vc;
+@end
+@interface VXDeck : UIView
+@property (nonatomic, weak) UIViewController *game;
+@property (nonatomic) int mode;                  /* (1 full, 2 slim) */
+- (void) tick;
 @end

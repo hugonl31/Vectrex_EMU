@@ -514,7 +514,7 @@ do. It looks clean, and it is exactly what Vectrex_EMU avoids: the character is 
 <img src="docs/images/emu_ship_mine_perfect.png" height="230" alt="a perfect vector display: even lines, no dots">
 <img src="docs/images/emu_ship_mine.png" height="230" alt="the same with the Vectrex's character"><br>
 <em>Left: a perfect vector display - what we avoid. Right: the Vectrex's character, as Vectrex_EMU draws
-it. (Anyone who prefers the perfect look can have it: <b>Tube > Even beam</b>.)</em>
+it.</em>
 </p>
 
 <p align="center">
@@ -957,7 +957,7 @@ opens it over the picture while the game runs on; Tab or Esc closes it. On top, 
 
 | Strip | |
 |---|---|
-| **Tube** | phosphor, bloom, afterglow, the tube's geometry, the glass edge, corner glow, an even (ideal) beam, the mains wobble, brightness bending |
+| **Tube** | phosphor, afterglow, white balance, the tube's geometry, the glass edge, the mains wobble, brightness bending |
 | **Room light** | the room's light, the ceiling light's reflections on the glass and the overlay, the lamp's position |
 | **Case** | the plastic case round the tube (without an overlay): on / off, its reflections, its wear |
 | **Overlay** | on / off, choosing one per game, tint, printed art, parallax, the plastic glow, the scratches, position and size |
@@ -1020,8 +1020,8 @@ it does not, or a TV or projector reports it wrong, set **Display > Monitor size
 inches; right click: as the monitor reports it). Check it with a ruler: an overlay should be 162 mm wide
 and 207 mm high. On macOS and Linux set the monitor size first.
 
-**On-screen display** (Display strip, default on): INTERNAL (the game's frames per second), MONITOR
-(the screen's refresh), EMU RATE (green 100 %, orange / red when the PC cannot keep up), VOL, and
+**On-screen display** (Display strip, default on): INTERNAL (the game's frames per second), OUTPUT
+(the pictures per second the PC gets to the screen: the screen's refresh rate when it keeps up), EMU RATE (green 100 %, orange / red when the PC cannot keep up), VOL, and
 SPEECH VOL when a speech module is plugged in - below the picture on the left.
 
 ### Quality: for any PC
@@ -1467,7 +1467,7 @@ server: `--net-host` on the host (its router forwards UDP port 7744) and `--net-
 **The game room**: Online > *Host public game* lists your game under your player name (asked once, reserved for you
 at the meeting point) for anyone to join; Online > *Find public games* shows the games waiting for a player 2 and joins one with a click (the meeting point holds at most 100 waiting games). **Chat** (Online > Chat, Ctrl+T): write to the other player while you play - Enter sends, Esc gives the keyboard back
 to the game, and a controller plays on while you type. The window opens by itself when the other player writes, and
-their line shows briefly in the picture too. Player 2 needs the same ROM in its `roms` folder (found by checksum). **UVMC2 games and PiTrex programs** play online too: player 2 needs the same game file, and the two SD cards are compared file by file - the game runs from the files both have the same (nothing is copied between the PCs; the chat says when files differ). While online the UVMC2 runs on one PC thread and the PiTrex's JIT in its exact mode, so both PCs stay identical; the PC's keyboard and mouse do not reach the cartridge. Twice a second both sides compare a checksum of the whole emulated machine: ONLINE: OUT OF SYNC would show if they ever differed. The host measures the round trip and sets the
+their line shows briefly in the picture too. Player 2 needs the same ROM in its `roms` folder (found by checksum). **Smooth over real networks**: 6809 games play with *rollback* - your own controls act at once (2 frames of input delay), the other player's input is guessed when it is late and the game is quietly run again when the guess was wrong, so a Wi-Fi's or mobile network's pauses no longer freeze the game (Windows; the Mac and Linux builds and older versions keep the lockstep). UVMC2 games and PiTrex programs are *streamed*: the host plays them and sends each frame's lines and sound (a few KB), player 2 shows them without emulating anything - the host never waits, player 2 sees the game one network trip late. Both work between PCs, iPhones, iPads and Android. **Saves and calibration**: a cartridge that keeps its calibration and high scores (Vectorblade's flash, Last Human's save chip) plays online with the host's - sent to player 2 at the start (a few KB at most) and used for that game only, in files of their own; player 2's own saves are never touched, and R302 is the factory setting on both. **UVMC2 games and PiTrex programs** play online too: player 2 needs the same game file, and the two SD cards are compared file by file - the game runs from the files both have the same (nothing is copied between the PCs; the chat says when files differ). While online the UVMC2 runs on one PC thread and the PiTrex's JIT in its exact mode, so both PCs stay identical; the PC's keyboard and mouse do not reach the cartridge. Twice a second both sides compare a checksum of the whole emulated machine: ONLINE: OUT OF SYNC would show if they ever differed. The host measures the round trip and sets the
 input delay accordingly (3 frames on a LAN, up to 12); lost packets are covered by the next. Tested on one PC and
 through a simulated bad connection (40-60 ms each way, 10 % packet loss): identical pictures throughout.
 

@@ -44,8 +44,8 @@ static const unit_par UNIT_P[] = {
 	{ "zerotx", 12, NULL, "Zeroing time X", "ZERO is an RC.", 0, 30, 0.5, "%.1f cycles", 4.5, 3.3, 'c', 'r', 3.8, 5.2, 'r', 5.2, 6.2 },
 	{ "zeroty", 13, NULL, "Zeroing time Y", "ZERO is an RC.", 0, 30, 0.5, "%.1f cycles", 3.3, 3.3, 'c', 'r', 2.9, 3.8, 'r', 3.8, 4.6 },
 	{ "ofsk", 14, "VT_OFSK", "Offset shift", "The zero reference.", 0, 300, 5, "%.0f", 166, 166, 'c', 'r', 158, 174, 'r', 150, 182 },
-	{ "lagx", 9, "VT_DEFLAG", "Deflection lag X", NULL, 0, 20, 0.5, "%.1f cycles", 6, 6, 'c', 'r', 5.5, 6.8, 'r', 6.8, 8.0 },
-	{ "lagy", 15, "VT_DEFLAGY", "Deflection lag Y", NULL, 0, 20, 0.5, "%.1f cycles", 6, 6, 'c', 'r', 5.5, 6.8, 'r', 6.8, 8.0 },
+	{ "lagx", 9, "VT_DEFLAG", "Deflection lag X", NULL, 0, 20, 0.5, "%.1f cycles", 13.3, 13.3, 'c', 'r', 12.5, 13.8, 'r', 13.8, 15.0 },
+	{ "lagy", 15, "VT_DEFLAGY", "Deflection lag Y", NULL, 0, 20, 0.5, "%.1f cycles", 13.3, 13.3, 'c', 'r', 12.5, 13.8, 'r', 13.8, 15.0 },
 	{ "dac0", 16, NULL, "DAC bit 0 error", NULL, -0.03, 0.03, 0.001, "%+.4f", 0.0170, 0, 'c', 's', 0, 0.012, 's', 0.012, 0.025 },
 	{ "dac1", 17, NULL, "DAC bit 1 error", NULL, -0.03, 0.03, 0.001, "%+.4f", 0.0069, 0, 'c', 's', 0, 0.008, 's', 0.008, 0.015 },
 	{ "dac2", 18, NULL, "DAC bit 2 error", NULL, -0.03, 0.03, 0.001, "%+.4f", -0.0089, 0, 'c', 's', 0, 0.008, 's', 0.008, 0.012 },
@@ -87,6 +87,9 @@ static void unit_make (const char *preset, const char *(*get) (const char *))
 		const char *o = get (key); if (o && o[0] && strcmp (o, "auto")) v = atof (o);
 		unit_v[i] = v; }
 	#undef URND
+	{ const int lx = unit_idx ("lagx"), ly = unit_idx ("lagy");   /* (2026-11-22, the measured timing: lag 13.3 in three stages - a saved 6 / 6, the default
+	                                                 before, is moved over as the desktop does) */
+	  if (unit_v[lx] == 6.0 && unit_v[ly] == 6.0) unit_v[lx] = unit_v[ly] = 13.3; }
 	/* unit_picture */
 	double hv = unit_v[unit_idx ("hv")] * (1.0 - 0.08 * unit_v[unit_idx ("ring")] * unit_v[unit_idx ("ring")]);
 	const double stiff = sqrt (HV_FACTORY / (hv > 1 ? hv : 1));
@@ -103,7 +106,8 @@ static void unit_make (const char *preset, const char *(*get) (const char *))
 static void unit_env (int addon)
 {
 	static char e[NUNIT + 3][96]; int n = 0;
-	for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i]; if (!p->env || (addon && p->id == 1)) continue;
+	(void) addon; for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i]; if (!p->env) continue;   /* (the UVMC2 / PiTrex too: the console's zero
+	                                                 hold, as the desktop since 2026-11-13 - the zero test cartridge drew sharp at 0-8 on the owner's Vectrex) */
 		snprintf (e[n], sizeof e[n], "%s=%.4f", p->env, p->id == 8 ? knob_bias (unit_v[i]) : unit_v[i]); vx_putenv (e[n]); n++; }
 	snprintf (e[n], sizeof e[n], "VT_HWOFS=%.4f,%.4f", unit_v[unit_idx ("drift_x")], unit_v[unit_idx ("drift_y")]); vx_putenv (e[n]); n++;
 	snprintf (e[n], sizeof e[n], "VT_ZEROTAU=%.3f,%.3f", unit_v[unit_idx ("zerotx")], unit_v[unit_idx ("zeroty")]); vx_putenv (e[n]); n++;
@@ -111,12 +115,22 @@ static void unit_env (int addon)
 	vx_putenv (e[n]); n++;
 	for (int i = 0; i < (int) NUNIT; i++) unit_sent[i] = unit_v[i];
 }
+/* (a game's start: every analog part to the core at once - the core reads its VT_ variables only once, at the first game: a
+ *  UVMC2 game first (the standard zero hold, an add-on's) left every 6809 game after it at that, and Last Human's calibration
+ *  screen drew slanted boxes and an open octagon at its defaults (the iPhone 2026-11-20). Every game the unit's, the UVMC2 /
+ *  PiTrex too (the desktop's rule since 2026-11-13) */
+static void unit_force (int addon)
+{
+	extern void vt_set_analog (int id, double v);
+	for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i]; if (p->id < 0) continue;
+		vt_set_analog (p->id, p->id == 8 ? knob_bias (unit_v[i]) : unit_v[i]); unit_sent[i] = unit_v[i]; }
+}
 /* (while running: the parts changed since sent, to the core) */
 static void unit_live (int addon)
 {
 	extern void vt_set_analog (int id, double v);
 	for (int i = 0; i < (int) NUNIT; i++) { const unit_par *p = &UNIT_P[i];
-		if (p->id < 0 || unit_v[i] == unit_sent[i] || (addon && p->id == 1)) continue;
+		(void) addon; if (p->id < 0 || unit_v[i] == unit_sent[i]) continue;
 		vt_set_analog (p->id, p->id == 8 ? knob_bias (unit_v[i]) : unit_v[i]); unit_sent[i] = unit_v[i]; }
 }
 static void picture_apply (double *x, double *y)       /* (vectrex_emu.py picture_apply: emulator units) */

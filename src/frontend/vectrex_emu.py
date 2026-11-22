@@ -155,6 +155,34 @@ def _move_old_settings():
                 pass
             return
 _move_old_settings()
+# 2026-11-22, the beam on the phosphor: the picture's and the unit's settings back to their defaults once, as a clean install (the
+# owner) - the sound, the controls, the games' overlays and everything about the PC stay
+SETTINGS_EPOCH = 2
+SOUND_KEYS = ('buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full', 'jack_mode', 'jack_vol', 'motor_on', 'motor_vol')
+def _settings_epoch():
+    try:
+        d = json.load(open(SETTINGS_F))
+    except Exception:           # noqa: first run
+        return
+    if not isinstance(d, dict) or d.get('settings_epoch', 0) >= SETTINGS_EPOCH:
+        return
+    if isinstance(d.get('display'), dict):
+        d['display'] = {k: v for k, v in d['display'].items() if k in SOUND_KEYS}
+    if isinstance(d.get('defaults'), dict):
+        d['defaults'].pop('unit', None)
+        if isinstance(d['defaults'].get('display'), dict):
+            d['defaults']['display'] = {k: v for k, v in d['defaults']['display'].items() if k in SOUND_KEYS}
+    d.pop('unit', None); d['unit_name'] = 'owner'
+    for g in (d.get('per_game') or {}).values():
+        if isinstance(g, dict) and isinstance(g.get('look'), dict):
+            g['look'] = {k: v for k, v in g['look'].items() if k in SOUND_KEYS}
+    d['settings_epoch'] = SETTINGS_EPOCH
+    try:
+        tmp = SETTINGS_F + '.tmp'
+        json.dump(d, open(tmp, 'w'), indent=1); os.replace(tmp, SETTINGS_F)
+    except OSError:
+        pass
+_settings_epoch()
 # The included game's earlier names (Robot Arena until v1.3.1, Steel Siege until v1.4.2): kept only to move a
 # player's files and settings over to the current name - the owner, 2026-11-01: no trace of the old names
 GAME_NAME = 'Last Human'
@@ -1496,7 +1524,7 @@ UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0
                ('dac1', 17, 'DAC bit 1 error', -0.03, 0.03, '%+.4f', None),
                ('dac2', 18, 'DAC bit 2 error', -0.03, 0.03, '%+.4f', None),
                ('dac3', 19, 'DAC bit 3 error', -0.03, 0.03, '%+.4f', None))
-UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0)           # (the owner's, measured; lag 6: testcart/gap_test)
+UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3)           # (the owner's, measured; lag 6: testcart/gap_test)
 UNIT_DAC_OWNER = dict(dac0=0.0170, dac1=0.0069, dac2=-0.0089, dac3=-0.0014)       # (the owner's: half the slant pattern)
 # the picture's pots and the yoke (the frontend's: they act after the integrators, see unit_picture): R401 / R408 the
 # deflection amplifiers' input dividers (2K pot over 1.5K: 0.43..1 of the signal; 100 % = the pot's middle, 60..140 %),
@@ -1534,7 +1562,7 @@ UNIT_PRESETS = {
     'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
                    **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
-                   zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
+                   zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
                    **UNIT_FACTORY_PICTURE)}       # (Random and Cranky: made new each time, random_unit / UNIT_SPREAD)
 def unit_picture(unit):
     """the picture's pots and the yoke -> (the lines' transform or None, the light's share, the spot's width share).
@@ -1614,8 +1642,8 @@ UNIT_SPREAD = dict(
     zerotx=  (('r', 3.8, 5.2),         ('r', 5.2, 6.2)),
     zeroty=  (('r', 2.9, 3.8),         ('r', 3.8, 4.6)),
     ofsk=    (('r', 158.0, 174.0),     ('r', 150.0, 182.0)),
-    lagx=    (('r', 5.5, 6.8),         ('r', 6.8, 8.0)),
-    lagy=    (('r', 5.5, 6.8),         ('r', 6.8, 8.0)),
+    lagx=    (('r', 12.5, 13.8),       ('r', 13.8, 15.0)),
+    lagy=    (('r', 12.5, 13.8),       ('r', 13.8, 15.0)),
     dac0=    (('s', 0.0, 0.012),       ('s', 0.012, 0.025)),
     dac1=    (('s', 0.0, 0.008),       ('s', 0.008, 0.015)),
     dac2=    (('s', 0.0, 0.008),       ('s', 0.008, 0.012)),
@@ -1805,6 +1833,7 @@ class Core:
                                                         #  replayed natively, for slower PCs, or 'dev' - fast plus an ideal
                                                         #  beam drawing clean lines; set_uvm2_mode. Online: exact)
     force_seed = None                                   # (online play, netplay.py: the power-on seed both sides use)
+    net_save = None                                     # (online: the host's saves - the package, netplay.save_blob - this start only)
     veclink = None                                      # (the VecLink cable: (file, 'A' / 'B') - veclink.c; None: unplugged)
     veclink_slice = 0                                   # (online VecLink: both consoles of the PC in 30000-cycle slices)
     headless = False                                    # (online VecLink's other console: no picture sent)
@@ -1814,10 +1843,14 @@ class Core:
                                                         #  sides have the same) - the card both play from)
     def __init__(self, rom, ideal=False, cart_hw='auto', speech='off', sd_dir=None, px_dir=None, unit=None, usb=False):
         env = dict(os.environ)
-        env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})  # perfect / a real Vectrex
+        env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})
+        if not getattr(Core, 'old_timing', False):                 # (2026-11-22: the timing as the owner's Vectrex measured - the Settle / Timer /
+            for k_, v_ in (('VT_SRMODEL', '1'), ('VT_DEFLAGN', '3'), ('VT_RAMPDLY', '0,2,3'), ('VT_ZDELAY', '1'), ('VT_XYZDLY', '3,3,8')):   #  Short / Join / SR Tests; a variable set
+                env.setdefault(k_, v_)                             #  already - a test - stands. Online too: netplay.NET_VER 12 - both machines this version)  # perfect / a real Vectrex
         self.picture = unit_picture(unit)[0] if unit and not ideal else None   # (the size / centring pots, the yoke: frame)
         if unit and not ideal:                                     # (the Vectrex unit: the analog parts at the start)
             for key, i, label, lo, hi, fmt, var in UNIT_PARAMS:
+                if var in ('VT_DEFLAG', 'VT_DEFLAGY') and 'VT_DEFLAG' in os.environ: continue   # (a test's lag stands: the unit's would replace it)
                 if var and key in unit:
                     env[var] = '%.4f' % (knob_bias(unit[key]) if key == 'knob' else unit[key])
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
@@ -1835,6 +1868,7 @@ class Core:
         #  state at every power-on; online play: the host's, the same on both sides)
         if Core.force_seed is not None:                             # (online: the 512K cartridge's latch powers up the same on
             env['VT_HBLATCH'] = str(Core.force_seed & 7)            #  both sides - otherwise from the clock, vecx.c)
+            env['VT_FLASH_CLEAN'] = '1'                             # (a flash cartridge as it came: each player's saves differ)
         if Core.veclink:                                            # (the VecLink cable in port 2: nothing else there)
             env['VT_VECLINK'] = '%s,%s' % Core.veclink
             speech = 'off'
@@ -1854,6 +1888,10 @@ class Core:
                 env['VT_SPEECHDEV'] = speech                        # (a speech accessory on port 2 now)
         # no input recording, no log: the core records to NUL, its messages are discarded
         env.update(V4E_ENV.get(rom, {}))                           # (a .v4e cartridge's save chip)
+        if Core.force_seed is not None:                             # (online: no save of this player's own - the host's, or none)
+            env.pop('VT_DS2431', None)
+            import tempfile, netplay
+            env.update(netplay.save_env(Core.net_save, rom, tempfile.gettempdir()))
         if 'VT_DS2431' not in env and Core.force_seed is None and last_human_rom(rom):   # (Last Human's save chip: its
             env['VT_DS2431'] = rom + '.ds2431'                     #  calibration and high scores; not online - both start alike)
         # a UVMC2 game: its SD card is the folder sd_dir, as a FAT32 image (fatimg.py), copied back at the end
@@ -1959,7 +1997,8 @@ class Core:
                     elif (t.startswith('UVMC2:') or t.startswith('PITREX: the program stopped')) and len(out) < 20:
                         out.append(t.split(':', 1)[1].strip())          # (a PiTrex's own text, its UART, is not shown)
                     elif t.startswith('STAT: runahead '):              # (run-ahead: 'ready' or 'unsupported' - live.c)
-                        self.ra_ok = t.split()[2] == 'ready'
+                        self.ra_ok = t.split()[2].startswith('ready')   # ('ready, N bytes a save': the comma)
+                        if os.environ.get('VX_STATLOG'): print('CORE', t, flush=True)
                     elif t.startswith('STAT: threads '):               # (the core: its UVMC2 runs on 1 or 2 host threads)
                         try: self.threads = int(t.split()[2])
                         except (ValueError, IndexError): pass
@@ -2024,6 +2063,10 @@ class Core:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags | 0x40, p2[0] + 128, p2[1] + 128, p2[2]]) + extra)
         else:
             self.p.stdin.write(bytes([jx + 128, jy + 128, btn, flags]) + extra)
+    def stream_frame(self, payload):
+        """line streaming, player 2: the host's frame (packed by its core) shown - this core runs no game (live.c 0x90)"""
+        self.p.stdin.write(bytes([0, 0, 0, 0x90]) + struct.pack('<I', len(payload)) + payload)
+        return self.frame_recv()
     def frame_recv(self):
         tw = time.perf_counter()
         h = self._read(14)
@@ -2068,6 +2111,9 @@ class Core:
                     return (int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))) + tuple(r[4:])
                 lines = [_p(r) for r in lines]
         self.sig = hash(body[:n * 13])                          # (the picture: a new one, or the last drawn again)
+        if getattr(self, 'st_on', False):                       # (line streaming, the host: its packed frame follows)
+            vs = self._read(6)
+            self.st_payload = self._read(struct.unpack_from('<I', vs, 2)[0]) if vs[:2] == b'VS' else None
         if not two:
             return lines, body[n * 13:], None
         from array import array
@@ -2128,6 +2174,7 @@ class Runner(threading.Thread):
         self.power = True
         self.net = None                     # online play (netplay.py): the other player's input each frame
         self.net_lost = False
+        self.ports_at = {}                  # (rollback: the ports as they were before each frame)
     def demo_input(self):
         import random
         f = self.frames
@@ -2145,10 +2192,31 @@ class Runner(threading.Thread):
             self.d = (random.randint(-127, 127), random.randint(-127, 127), random.choice(DIR_MASK))
         return getattr(self, 'd', (0, 0, 0))
 
+    def rb_replay(self):
+        """rollback: a guess was wrong - that frame's state back in the core (live.c 0x7D, with the next frame sent), the
+        frames since run again with the inputs now (0x7B: unseen, unheard)"""
+        import netplay
+        g, end = self.net.rb_begin()
+        if g in self.ports_at:
+            self.ports = dict(self.ports_at[g]) if self.ports_at[g] is not None else None
+        self.core.set_analog(0x7D, float(g % netplay.RB_SLOTS))
+        while self.net.f < end:
+            fno = self.net.f
+            r = self.net.rb_next()
+            if r is None:                                       # (a game switch's frame: the normal frames take it)
+                break
+            (a, b), pred, sure = r
+            self.ports_at[fno] = dict(self.ports) if self.ports else None
+            (jx, jy, btn), p2 = self.port_inputs(a, b)
+            if pred:
+                self.core.set_analog(0x7C, float(fno % netplay.RB_SLOTS))
+            self.core.set_analog(0x7B, 1.0)
+            self.core.frame(jx, jy, btn, (1 if self.inf else 0) | ((a[3] | b[3]) & 4), p2)
+            self.net.mark_rb(fno, getattr(self.core, 'state_sum', 0), sure)
     def port_inputs(self, a, b):
         """online: the controller in each port this frame from the two players' inputs (a: the host's, b: the joiner's).
         A player's 'take port' (flags 0x10 / 0x20, sent with the input: on the same frame on both sides) puts their
-        controller in that port and the other's out of it (one player a port: a stick at rest still drifts a little);
+        controller in that port and the other's to the other port (one player a port: a stick at rest still drifts a little);
         a port nobody holds: at rest"""
         if self.ports is None:
             self.ports = {'host': 1, 'join': 2}
@@ -2156,8 +2224,8 @@ class Runner(threading.Thread):
             k = 1 if inp[3] & 0x10 else 2 if inp[3] & 0x20 else 0
             if k:
                 self.ports[who] = k
-                if self.ports[other] == k:
-                    self.ports[other] = 0
+                if self.ports[other] == k:              # (the other player had it: pushed to the other port - all platforms alike)
+                    self.ports[other] = 3 - k
                 self.port_events.append((who, k))
         out = []
         for k in (1, 2):
@@ -2189,9 +2257,45 @@ class Runner(threading.Thread):
                     (jx, jy, btn), p2 = self.inp.read()                 # (both players)
                 fl, self.flags = self.flags, getattr(self, 'then_flags', 0)
                 self.then_flags = 0                     # (a flag for the frame after: App.restart's RESET)
-                if self.net is not None:                # online: both players' input for this frame (the RESET button
+                st_guest = False
+                if self.net is not None and getattr(self.net, 'stream', False):   # (line streaming: a card game)
+                    req, self.port_req = self.port_req, 0
+                    if self.net.lost:
+                        self.net = None; self.net_lost = True
+                    elif self.net.role == 'host':       # (the host plays: player 2's controller with its own)
+                        if not getattr(self.core, 'st_on', False):
+                            self.core.set_analog(0x7A, 1.0); self.core.st_on = True
+                        mine_, theirs_ = (jx, jy, btn, (fl & 4) | req), self.net.st_input()
+                        (jx, jy, btn), p2 = self.port_inputs(mine_, theirs_)
+                        fl = (fl & ~4) | ((mine_[3] | theirs_[3]) & 4)   # (a RESET from either player)
+                    else:                               # (player 2: its controller to the host, the host's frame shown)
+                        self.net.st_send_input(jx, jy, btn, (fl & 4) | req)
+                        st_guest = True
+                elif self.net is not None:                # online: both players' input for this frame (the RESET button
                     req, self.port_req = self.port_req, 0              #  too: it reaches both machines on one frame;
-                    got = self.net.exchange((jx, jy, btn, (fl & 4) | req))   #  so does a 'take port', 0x10 / 0x20)
+                    rg, self.rg_flag = getattr(self, 'rg_flag', 0), 0              #  another game: the host's flag 8)
+                    rb_pred = rb_sure = False; rb_f = -1
+                    if getattr(self.net, 'rb', False):     # (rollback - 6809 games, a core with saved frames: netplay.py)
+                        import netplay as _np_
+                        if not getattr(self, 'rb_probe', False):           # (the core asked once whether it can: its
+                            self.rb_probe = True; self.core.set_analog(0x7C, float(_np_.RB_SLOTS - 1))   #  STAT line)
+                        self.net.rb_ok = getattr(self.core, 'ra_ok', None) is True
+                        if self.net.rb_from is not None:
+                            self.rb_replay()
+                        got = self.net.exchange_rb((jx, jy, btn, (fl & 4) | req | rg))
+                        if got == 'wait':                  # (not yet: a moment, then again - nothing lost, the buttons kept)
+                            time.sleep(0.002); t_next = time.perf_counter(); continue
+                        if got is not None:
+                            got, rb_pred, rb_sure = got; rb_f = self.net.f - 1
+                            self.ports_at[rb_f] = dict(self.ports) if self.ports else None
+                            for old in [k for k in self.ports_at if k < rb_f - 64]: del self.ports_at[old]
+                            if rb_pred:                        # (on a guess: this frame's state kept first)
+                                self.core.set_analog(0x7C, float(rb_f % _np_.RB_SLOTS))
+                    else:
+                        got = self.pending_got if getattr(self, 'pending_got', None) is not None else self.net.exchange((jx, jy, btn, (fl & 4) | req | rg))
+                    self.pending_got = None
+                    if got is not None and (got[0][3] & 8) and getattr(self, 'rg_due', None) is not None and not getattr(self, 'rg_switched', False):
+                        self.rg_switched = True; self.rg_got = got; self.stop = True; break   # (both: the next game before this frame)
                     if got is None:
                         self.net = None; self.net_lost = True
                     else:
@@ -2232,20 +2336,35 @@ class Runner(threading.Thread):
                                 self.audio.play(self.crt.idle(RATE // 100))
                             time.sleep(0.004)
                     feed = threading.Thread(target=fill, daemon=True); feed.start()
+                st_payload = None
+                if st_guest:
+                    st_payload = self.net.st_take(False)
+                    if st_payload is None:              # (none came yet: the picture stands a moment)
+                        time.sleep(0.002); t_next = time.perf_counter(); continue
                 try:
                     c2 = self.core2
                     if c2 is not None:                  # (online VecLink: the other console's slice, at the same time)
                         o = self.other_in
                         c2.frame_send(o[0], o[1], o[2], (fl & ~4) | o[3])
-                    lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
+                    if st_payload is not None:
+                        lines, pcm, speech = self.core.stream_frame(st_payload)
+                    else:
+                        lines, pcm, speech = self.core.frame(jx, jy, btn, (1 if self.inf else 0) | fl, p2)
                     sync = getattr(self.core, 'state_sum', 0)
+                    if self.net is not None and getattr(self.net, 'stream', False):   # (streamed: no sync check - one game)
+                        if self.net.role == 'host' and getattr(self.core, 'st_payload', None):
+                            self.net.stream_send(self.core.st_payload)
+                        sync = None
                     if c2 is not None:
                         c2.frame_recv()                 # (its picture and sound: nobody's - VT_NOLINES, dropped)
                         s2 = getattr(c2, 'state_sum', 0) & 0xffffffff
                         a_sum, b_sum = (sync, s2) if self.vl_role == 'host' else (s2, sync)   # (the same order on both PCs)
                         sync = (a_sum ^ ((b_sum << 7 | b_sum >> 25) & 0xffffffff)) & 0xffffffff
-                    if self.net is not None:            # (online: the sync check - this frame's state against the other's)
-                        self.net.mark(self.net.f - 1, sync)
+                    if self.net is not None and sync is not None:   # (online: the sync check - this frame's state against the other's)
+                        if getattr(self.net, 'rb', False) and rb_f >= 0:
+                            self.net.mark_rb(rb_f, sync, rb_sure)   # (rollback: only frames both are sure of)
+                        else:
+                            self.net.mark(self.net.f - 1, sync)
                 finally:
                     if feed:
                         done.set(); feed.join()
@@ -2388,6 +2507,8 @@ class App:
         u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
         u = new_defaults(u, (c0.get('defaults') or {}).get('unit'), UNIT_PRESETS['owner'])
         self.unit = dict(UNIT_PRESETS['owner'], **{k: float(v) for k, v in u.items() if k in UNIT_PRESETS['owner']})
+        if self.unit.get('lagx') == 6.0 and self.unit.get('lagy') == 6.0:      # (2026-11-22: the measured timing - lag 13.3 in three stages)
+            self.unit['lagx'] = self.unit['lagy'] = UNIT_BEAM['lagx']
         if self.unit.get('lagx') == 8.0 and self.unit.get('lagy') == 8.0:      # (the lag's first default, a day: now 6 -
             self.unit['lagx'] = self.unit['lagy'] = UNIT_BEAM['lagx']          #  testcart/gap_test; a value chosen stays)
         if self.unit.get('zerotx') == 12.0 and self.unit.get('zeroty') == 8.0:  # (ZERO's first default, a day: too slow -
@@ -2400,7 +2521,7 @@ class App:
             self.unit_fix = 1
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
-        self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', False) if self.ren else False
+        self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', True) if self.ren else False
         self.run.ra_of = lambda: getattr(self, 'run_ahead', False)
         self.run.ff_of = self.ff_wanted
         self.run.crt.jack = bool(args.rom and args.rom.lower().endswith('.um2'))   # (a UVMC2: its headphone jack)
@@ -2456,8 +2577,9 @@ class App:
         self.report_email = str(conf0.get('report_email', '') or '')[:120]   # (Debug report: the user's email, optional)
         self.gamer_ok = bool(conf0.get('gamer_ok', False))      # (reserved at the meeting point for player_key)
         import netplay as _np
-        if self.gamer and not _np.gamer_name(self.gamer):      # (a name from before names had 10 characters at most:
-            self.gamer_ok = False                               #  asked again, once)
+        if self.gamer and _np.gamer_name(self.gamer, own=True) != self.gamer:   # (a name from before: over 10 characters, or
+            self.gamer = _np.gamer_name(self.gamer, own=True) or ''    #  with _ or - (A-Z 0-9 only since 1.7.1): without them,
+            self.gamer_ok = False                               #  reserved again at the next online game)
         self.player_key = conf0.get('player_key', '')           # (the secret that makes the name this player's)
         self.net_osd = conf0.get('net_osd', True)               # (the online state as an OSD row)
         self.update_check = conf0.get('update_check', True)     # (a new version on GitHub: told at start)
@@ -2524,12 +2646,14 @@ class App:
                 self.ren = vecrender.make_renderer(self.screen.winfo_id(), self.screen)
                 self.ren.reserve = self.knob_reserve()
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
+                self.hdr_mode = c0.get('hdr', 'auto'); self.hdr_frac = float(c0.get('hdr_frac', 1.0))   # (View > HDR)
+                self.root.after(400, self.hdr_apply)
             except Exception as e:                              # noqa: fall back to the Tk canvas
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'even_beam', 'beam_trace', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look', 'look2', 'even_beam', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
@@ -2737,6 +2861,10 @@ class App:
         self.net_vl_want = bool(getattr(args, 'net_veclink', False))   # (--net-veclink: a VecLink game offered)
         if getattr(args, 'net_host', None) or getattr(args, 'net_join', None) or getattr(args, 'net_online', False):   # (online play: netplay.py)
             self.root.after(600, self.net_start)
+        if os.environ.get('VECTREX_TEST_ONLINE'):              # (test: the Online window opened, as from the menu)
+            if os.environ['VECTREX_TEST_ONLINE'] != '1':       # (a name for the test: the window itself, not the name window)
+                self.gamer, self.gamer_ok = os.environ['VECTREX_TEST_ONLINE'], True
+            self.root.after(1500, lambda: (self.online_window(), print('test: online window open: %s' % bool(getattr(self, 'net_win', None)), flush=True)))
         self.win_q = []                                         # (from the window procedure: dropped files, the close button)
         self.root.after(400, self.win_hooks)
         self.root.after(3000, self.update_start)                # (a new version on GitHub: asked once, a moment after start)
@@ -2801,12 +2929,22 @@ class App:
                                                 '  [OFF - turn the volume knob up (Page Up) to switch on]' if not self.run.power else ''))
         self.title_t = int(rec.seconds()) if rec else -1
     def toggle_pause(self, e=None):
-        self.set_paused(not self.run.paused)
         net = getattr(self, 'net', None)
-        if net is not None and getattr(self, 'net_game', None):  # (online: the pause is both players')
-            net.set_pause(self.run.paused)
-            self.net_flash('ONLINE: PAUSED FOR BOTH PLAYERS' if self.run.paused else 'ONLINE: GOING ON',
-                           'P GOES ON' if self.run.paused else '', secs=600 if self.run.paused else 2)
+        if net is not None and getattr(self, 'net_game', None):  # (online: this side's own pause - the game stands while
+            net.set_pause(not net.my_pause)                      #  either player has paused)
+            self.set_paused(net.pause_on)
+            self.net_pause_say(net)
+            return
+        self.set_paused(not self.run.paused)
+    def net_pause_say(self, net):
+        other = getattr(net, 'peer_name', '') or 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
+        where = {2: 'IN ANOTHER APP'}.get(net.their_pause, 'IN THE MENU' if net.their_pause else '')
+        if net.my_pause:
+            self.net_flash('ONLINE: PAUSED FOR BOTH PLAYERS', 'P GOES ON', secs=600)
+        elif net.their_pause:
+            self.net_flash('PAUSED BY ' + other.upper(), where or 'WAITING', secs=600)
+        else:
+            self.net_flash('ONLINE: GOING ON', '', secs=2)
     def set_paused(self, on):
         if bool(on) == bool(self.run.paused):
             return
@@ -2979,6 +3117,10 @@ class App:
             item(m, 'Quit', '', self.quit)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='View', menu=m, underline=1)
             check(m, 'Full screen', 'F11', lambda: self.full, self.toggle_full)
+            if IS_WIN and self.ren and hasattr(self.ren, 'hdr_start'):
+                check(m, 'HDR', '', lambda: getattr(self, 'hdr_mode', 'auto') != 'off', self.toggle_hdr,
+                      "An HDR monitor (Windows: Settings > Display > Use HDR): the brightest light above white, up to the "
+                      "monitor's peak; the rest as on any screen. Off: an ordinary picture.")
             check(m, 'Always on top', '', lambda: self.on_top, self.toggle_on_top,
                   "The emulator's window stays above every other program's window, also when you click elsewhere.")
             item(m, 'Bigger', '+', lambda: self.zoom_step(1.1))
@@ -4125,6 +4267,14 @@ class App:
         t.bind('<Escape>', lambda e: t.destroy())
         t.update_idletasks()
         deck.place(t, 'speech_rom', self, lambda: deck.no_close_button(t))
+    def set_look2(self, v):
+        """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
+        if self.ren:
+            self.ren.look2 = v; self.show_look('look: ' + ('Bright' if v == 'bright' else 'Vectrex')); self.save_settings()
+    def set_look(self, v):
+        """Tube > Look: 'bright' or 'vectrex' (vecrender.LOOK_*)"""
+        if self.ren:
+            self.ren.look = v; self.show_look('look')
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True
@@ -5393,6 +5543,24 @@ class App:
         return 'break'
 
     # ---------------------------------------------------------------- online play (netplay.py, a prototype)
+    def hdr_apply(self):
+        """View > HDR: the picture through an HDR monitor's headroom when Windows has HDR on (vecrender.hdr_start)"""
+        r = self.ren
+        if not r or not hasattr(r, 'hdr_start'):
+            return
+        if getattr(self, 'hdr_mode', 'auto') == 'off':
+            if r.hdr:
+                r.hdr_stop(); print('HDR: off', flush=True)
+            return
+        msg = r.hdr_start(force=bool(os.environ.get('VECTREX_TEST_HDR')), frac=getattr(self, 'hdr_frac', 1.0))
+        if msg:
+            print(msg, flush=True)
+        if r.hdr is None and getattr(self, 'hdr_mode', 'auto') == 'auto':
+            self.root.after(5000, self.hdr_apply)                # (HDR switched on in Windows later: taken up)
+    def toggle_hdr(self):
+        self.hdr_mode = 'off' if getattr(self, 'hdr_mode', 'auto') != 'off' else 'auto'
+        self.hdr_apply(); self.save_settings()
+        self.flash('HDR: ' + ('ON' if self.ren and self.ren.hdr else 'OFF' if self.hdr_mode == 'off' else 'NO HDR MONITOR'), secs=2)
     def net_start(self):
         """--net-host / --net-join / --net-online: as the Online window's Host and Join"""
         a = self.args
@@ -5603,8 +5771,13 @@ class App:
         self.net_msg = (' - '.join(r.lower() for r in rows if r) + '.').capitalize()
         self.flash(*rows, secs=secs)
     def net_leave(self):
-        """Online > Leave: the game goes on here alone (or the waiting stops)"""
+        """Online > Leave: the game goes on here alone (or the waiting stops); this PC's own network ends too"""
         self.net_rehost_left = 0
+        try:
+            import adhoc
+            adhoc.stop()
+        except Exception:
+            pass
         if getattr(self, 'net_pending', None) is not None:
             self.net_cancel = True
             self.net_msg = 'Stopped waiting.'
@@ -5680,8 +5853,13 @@ class App:
                 g, rom = None, 'missing'
             elif g == 'version':                                # (the other side has another emulator version)
                 g, rom = None, 'version'
+            elif g == 'bios':                                   # (player 2 has another BIOS)
+                g, rom = None, 'bios'
             elif isinstance(g, str):                            # (no meeting point, or its answer: no such code...)
                 g, rom = None, 'server:' + g
+            elif g and role == 'join' and g.get('bios') and netplay.rom_md5(BIOS) and g['bios'] != netplay.rom_md5(BIOS):
+                net.accept(False, netplay.BIOS_NO.decode('latin-1'))   # (another BIOS here: the games would part)
+                g, rom = None, 'bios_here'
             elif g and role == 'join':
                 here = a.rom if (a.rom and netplay.rom_md5(a.rom) == g.get('md5')) else None
                 dirs = [os.path.join(ROOT, 'roms')] + ([os.path.dirname(os.path.abspath(a.rom))] if a.rom else [])
@@ -5691,10 +5869,19 @@ class App:
                 g['jit_fast'] = bool(rom is not None and g.get('arch') and g.get('arch') == netplay.arch())
                 g['uvm2_net'] = netplay.uvm2_agree(g.get('uvm2', 'exact'), getattr(self, 'uvm2_mode', 'exact'))
                 net.accept(rom is not None, g.get('name', '') + (netplay.JIT_FAST.decode() if g['jit_fast'] else '')
+                           + netplay.REGAME_TAG.decode() + netplay.RGMODE_TAG.decode() + netplay.SAVE_TAG.decode()
+                           + (netplay.RB_TAG.decode('latin-1') if IS_WIN else '')
+                           + (netplay.STREAM_TAG.decode('latin-1') if g.get('card') and g.get('stream') else '')
                            + (netplay.UVM2_TAG + g['uvm2_net'].encode()).decode())
+                net.rb_peer = bool(g.get('rb'))                     # (the host runs on guesses too)
+                net.stream = bool(g.get('card') and g.get('stream'))   # (a card game: the host's lines shown here)
+                if rom and g.get('sv') and not g.get('card'):           # (the host's saves - its calibration - for this game)
+                    g['save_blob'] = net.recv_save(int(g['sv']), int(g.get('svi', 0)), stop=stop)
+                    if g['save_blob'] is None:
+                        g = None                                    # (they did not come: no game - both would differ)
                                                                     # (the same processor type on both sides: the PiTrex JIT
                                                                     #  runs at full speed - its blocks fall the same on both)
-                if rom and g.get('card'):                           # (the host's card list: which files are the same here)
+                if rom and g and g.get('card') and not net.stream:  # (the host's card list: which files are the same here)
                     folder = self.card_dir(rom); mine = {}
                     def answer(m):
                         mine['ok'] = netplay.card_matches(m, folder, CARD_CACHE); return mine['ok']
@@ -5703,7 +5890,12 @@ class App:
                                       0 if m is None else len(m))
             elif g:
                 rom = net.offer_rom or a.rom                        # (the game offered when player 2 came)
-                if g.get('card'):                                   # (ours to player 2: the files both have)
+                sv = getattr(self, 'net_sv_out', None)
+                if not g.get('card') and sv and g.get('sv') and getattr(net, 'save_peer', False):   # (ours to player 2)
+                    g['save_blob'] = sv[0] if net.send_save(sv[0], sv[1], stop=stop) else None
+                    if g['save_blob'] is None:
+                        g = None
+                if g and g.get('card') and not getattr(net, 'stream', False):   # (ours to player 2: the files both have)
                     folder = self.card_dir(rom)
                     m = netplay.card_manifest(folder, CARD_CACHE)
                     ok = net.send_card(m, stop=stop)
@@ -5914,6 +6106,26 @@ class App:
         meeting point did not answer: a LAN without internet) is enough there"""
         if getattr(self, 'gamer', '') and (getattr(self, 'gamer_ok', False) or (lan and getattr(self, 'gamer_local', False))):
             return True
+        if not getattr(self, 'gamer', '') and not getattr(self, 'whoami_asked', False):   # (a fresh install: this PC's name back?)
+            self.whoami_asked = True
+            import netplay
+            if not self.player_key:
+                self.player_key = netplay.machine_key(); self.save_settings()
+            server, key = self.net_server(), self.player_key
+            def work():
+                got = netplay.whoami(server, key)
+                def ui():
+                    if got:
+                        self.gamer, self.gamer_ok = got, True; self.save_settings()
+                        print('online: welcome back %s' % got, flush=True)
+                        self.flash('WELCOME BACK,', got, secs=3)
+                        if then:
+                            self.root.after(50, then)
+                    else:
+                        self.name_window(then)
+                self.root.after(0, ui)
+            threading.Thread(target=work, daemon=True).start()
+            return False
         self.name_window(then)
         return False
     def name_window(self, then=None, change=False):
@@ -5936,17 +6148,17 @@ class App:
         e.pack(side='left')
         e.bind('<FocusIn>', lambda ev: setattr(self.inp, 'block', True))
         e.bind('<FocusOut>', lambda ev: setattr(self.inp, 'block', False))
-        tk.Label(r1, text='  up to 10: A-Z 0-9 _ -', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
+        tk.Label(r1, text='  up to 10: A-Z 0-9', fg=deck.DIM, bg=bg, font=(MONO, 9)).pack(side='left')
         msg = tk.Label(body, text='', fg=deck.WARN, bg=bg, font=(MONO, 9), anchor='w'); msg.pack(fill='x', padx=10, pady=(0, 8))
         busy = {'on': False}
         def take():
             if busy['on']:
                 return
-            name = netplay.gamer_name(nv.get())
+            name = netplay.gamer_name(nv.get(), own=True)
             if not name:
-                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9'); return
             if not self.player_key:
-                self.player_key = secrets.token_hex(16); self.save_settings()
+                self.player_key = netplay.machine_key(); self.save_settings()   # (from the machine: a reinstall gets the name back)
             old = self.gamer if (change and self.gamer_ok and self.gamer != name) else None
             busy['on'] = True; msg.configure(text='Asking the meeting point...'); nv.set(name)
             server, key = self.net_server(), self.player_key
@@ -5967,16 +6179,16 @@ class App:
             elif res and res[0] == 'taken':
                 msg.configure(text='That name belongs to another player. Pick another.')
             elif res:
-                msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9 _ -')
+                msg.configure(text='That name is not allowed: 1 to 10 of A-Z 0-9')
             else:
                 msg.configure(text='The meeting point did not answer (no internet?). Try again in a moment - or, to play '
                                    'on this network now, Use on this network.')
                 if not local_b.winfo_ismapped():
                     local_b.pack(side='left', padx=(6, 0))
         def local():                                            # (a LAN without internet - the owner, 2026-11-13: the name
-            name = netplay.gamer_name(nv.get())                 #  for this network, this session; reserved once the
+            name = netplay.gamer_name(nv.get(), own=True)       #  for this network, this session; reserved once the
             if not name:                                        #  meeting point answers again)
-                msg.configure(text='A name: 1 to 10 of A-Z 0-9 _ -'); return
+                msg.configure(text='A name: 1 to 10 of A-Z 0-9'); return
             self.gamer, self.gamer_local = name, True; self.save_settings()
             close()
             self.flash('YOUR PLAYER NAME:', name, 'ON THIS NETWORK', secs=3)
@@ -6011,13 +6223,25 @@ class App:
             h = [('you' if w == me else them) for w in ('host', 'join') if ports.get(w) == k]
             return ' + '.join(h) if h else 'nobody'
         return 'Port 1: %s     Port 2: %s' % (holder(1), holder(2))
+    def net_save_pack(self, rom):
+        """the host's saves of rom for player 2: (package, its number)"""
+        import netplay
+        chip = rom + '.ds2431' if last_human_rom(rom) else V4E_ENV.get(rom, {}).get('VT_DS2431')
+        self.net_sv_n = (getattr(self, 'net_sv_n', 0) + 1) & 0x7FFF or 1
+        return netplay.save_blob(rom, self.cart_hw, chip), self.net_sv_n
     def net_offer(self, rom):
         """the game a host offers (the ROM's identity and what must be the same on both sides), and its note (net_note)"""
         import netplay
         game = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw,   # (R302 moves the joystick
-                                          dacofs=float(self.unit.get('dacofs', 0.0))))     #  comparator: the host's on both)
+                                          dacofs=0.0,                                     #  comparator: online the factory's on both - no unit value copied)
+                                          bios=netplay.rom_md5(BIOS) or ''))               # (the BIOS: the same on both)
         if self.card_dir(rom):
-            game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after)
+            game['card'] = True                                 # (a UVMC2 / PiTrex: the SD card is agreed after -
+            game['stream'] = True                               #  or streamed: this PC plays it, its lines to player 2)
+        elif IS_WIN:
+            game['rb'] = True                                   # (rollback: this PC's core keeps saved frames)
+        else:                                                   # (its saves - the calibration - for player 2: netplay.save_blob)
+            self.net_sv_out = self.net_save_pack(rom); game['sv'], game['svi'] = len(self.net_sv_out[0]), self.net_sv_out[1]
         if game_turns(rom):
             game['turns'] = True                                # (the players take turns on port 1: a note)
         if getattr(self, 'net_vl_want', False):
@@ -6043,8 +6267,80 @@ class App:
             self.flash('ONLINE CODE: ' + ' '.join(net.code), *rows, secs=WAIT_MSG_S)
         else:
             self.flash('ONLINE: WAITING FOR PLAYER 2', *rows, secs=WAIT_MSG_S)
+    def net_regame(self, rom):
+        """the host, online: another game for both (the iOS app's way, R / r and a flag 8 in the host's input) - True
+        when offered; False: not possible (player 2 can not follow, a card game, VecLink) - online play ends as before"""
+        net = getattr(self, 'net', None)
+        import netplay
+        if net is None or net.lost or getattr(self, 'net_role', '') != 'host' or not getattr(net, 'peer_regame', False):
+            return False
+        card = bool(self.card_dir(rom)); was_card = bool(self.card_dir(getattr(self, 'net_rom', '') or ''))
+        if ((card or was_card) and not getattr(net, 'rgm_peer', False)) or getattr(self.run, 'core2', None) is not None:
+            return False                                        # (to or from a card game: player 2 must follow that - streamed)
+        g = netplay.new_game(rom, dict(skip_boot=self.skip_boot, cart_hw=self.cart_hw, dacofs=0.0))   # (R302: online the factory's)
+        if game_turns(rom): g['turns'] = True
+        g['delay'] = net.delay
+        if card:                                                # (a card game: streamed - this PC plays it, its lines to player 2)
+            g['card'] = True; g['stream'] = True; g['uvm2'] = getattr(self, 'uvm2_mode', 'exact'); sv = (b'', 0); g['sv'], g['svi'] = 0, 0
+        else:
+            sv = self.net_save_pack(rom); g['sv'], g['svi'] = len(sv[0]), sv[1]   # (its saves along - player 2's yes waits for them)
+        if IS_WIN and not card: g['rb'] = True
+        net.regame_offer(g, sv); self.net_rg_pick = (os.path.abspath(rom), g)
+        self.net_flash('ONLINE: STARTING %s' % os.path.splitext(os.path.basename(rom))[0].upper()[:24], 'FOR BOTH...', secs=3)
+        return True
+    def net_regame_poll(self):
+        """(the Tk side, each poll: the host's offer answered; player 2's offer looked up; the flag: both switch)"""
+        net = getattr(self, 'net', None)
+        if net is None or not getattr(self, 'net_game', None):
+            return
+        import netplay
+        tr = os.environ.get('VECTREX_TEST_REGAME')               # (test: "frame:rom" - the host picks that game then)
+        if tr and not getattr(self, 'test_rg_done', False) and getattr(self, 'net_role', '') == 'host':
+            fr, _, trom = tr.partition(':')
+            if net.f >= int(fr): self.test_rg_done = True; self.restart(trom)
+        if net.rg_answer is not None:                          # (the host: player 2 has it - the flag in the next input)
+            ok, net.rg_answer = net.rg_answer, None
+            pick = getattr(self, 'net_rg_pick', None)
+            if ok and pick and getattr(net, 'stream', False):    # (streamed: no input frames - switched here now, the word sent)
+                net.x_seq = net.rg_seq; net.x_until = time.perf_counter() + 3.0
+                self.run.rg_due = pick; self.run.rg_switched = True
+            elif ok and pick:
+                self.run.rg_due = pick; self.run.rg_flag = 8
+            else:
+                self.net_flash('ONLINE: THE OTHER PLAYER', 'DOES NOT HAVE THAT GAME', secs=5); self.net_rg_pick = None
+        if net.rg_offer is not None:                           # (player 2: the host's next game - here?)
+            g = net.rg_offer[1]
+            dirs = [os.path.join(ROOT, 'roms')] + ([os.path.dirname(os.path.abspath(self.args.rom))] if self.args.rom else [])
+            rom = netplay.find_rom(g.get('md5'), g.get('size', -1), dirs)
+            net.regame_reply(rom is not None)
+            if rom is not None:
+                self.net_rg_pick = (os.path.abspath(rom), g); self.run.rg_due = self.net_rg_pick
+            else:
+                self.net_flash('ONLINE: YOU DO NOT HAVE', os.path.splitext(g.get('name', '?'))[0].upper()[:24], secs=5)
+        run = self.run
+        if getattr(net, 'x_got', None) is not None and getattr(run, 'rg_due', None) is not None:   # (player 2: the host switched out of
+            net.x_got = None; run.rg_switched = True                                             #  its streamed game)
+        if getattr(run, 'rg_switched', False) and getattr(run, 'rg_due', None) is not None:   # (both: the switch, at the flag's frame)
+            rom, g = run.rg_due; run.rg_due = None; net.rg_ans_out = None
+            self.net_game, self.net_rom = g, rom; self.net_rg_pick = None
+            Core.force_seed = g.get('seed'); self.net_rg_now = True
+            Core.net_save = (net.rg_sv[0] if net.rg_sv else None) if getattr(self, 'net_role', '') == 'host' else net.rg_sv_blob   # (the host's saves)
+            new_stream = bool(g.get('card') and g.get('stream'))
+            if new_stream or getattr(net, 'stream', False):     # (to or from a streamed game: frame 0 again, streamed or in step)
+                net.reset_mode(new_stream)
+            net.rb = IS_WIN and not new_stream and not os.environ.get('VX_NO_ROLLBACK'); net.rb_ok = False
+            if getattr(self, 'net_role', '') != 'host': net.rb_peer = bool(g.get('rb'))   # (the host runs it on guesses too)
+            if new_stream:                                      # (streamed: each side as offline - the host plays its own way)
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'; Core.net_save = None
+            try:
+                self.restart(rom)
+            finally:
+                Core.force_seed = None; self.net_rg_now = False; Core.net_save = None
+            self.flash('ONLINE: NOW PLAYING', os.path.splitext(os.path.basename(rom))[0].upper()[:24], secs=3)
+            self.chat_add('sys', 'Both switched to %s.' % os.path.splitext(os.path.basename(rom))[0])
     def net_poll(self):
         """the Tk side: the connection made (the game loaded, both switched on at once), or lost"""
+        self.net_regame_poll()
         res = getattr(self, 'net_result', None)
         if res is not None:
             self.net_result = None
@@ -6064,6 +6360,11 @@ class App:
                     return
                 self.net_flash('ONLINE: NO MEETING POINT' if why == 'server' else 'ONLINE: THE MEETING POINT SAYS', ('THE SERVER DID NOT ANSWER' if why == 'server' else why)[:34].upper(), secs=8)
                 return
+            if not g and rom in ('bios', 'bios_here'):
+                net.close(); self.net_flash('ONLINE: THE BIOS DIFFERS', "THE HOST'S" if rom == 'bios_here' else "PLAYER 2'S", secs=8)
+                self.chat_add('sys', 'The two players have different BIOS files (system/bios.bin): online, both need the same one, '
+                              'or the two games would differ from the start.')
+                return
             if not g and rom == 'version':
                 net.close(); self.net_flash('ONLINE: THE OTHER PLAYER HAS', 'ANOTHER EMULATOR VERSION', secs=8)
                 self.chat_add('sys', 'The other player has another version of Vectrex_EMU: online, both need the same '
@@ -6078,7 +6379,7 @@ class App:
                 net.close(); self.net_flash('ONLINE: YOU DO NOT HAVE', os.path.splitext(g.get('name', '?'))[0].upper(), secs=8)
                 return
             card = g.get('card_only')
-            if g.get('card') and (not card or card[1] is None):
+            if g.get('card') and not getattr(net, 'stream', False) and (not card or card[1] is None):
                 net.close(); self.net_flash('ONLINE: THE SD CARDS', 'COULD NOT BE COMPARED', secs=8)
                 return
             if role == 'join' and g.get('host_name'):
@@ -6095,10 +6396,15 @@ class App:
             Core.net_card = (card[0], card[1]) if card else None
             Core.net_jitfast = bool(g.get('jit_fast'))
             Core.net_uvm2 = g.get('uvm2_net', 'exact')          # (this game only: the Config setting stays as it is)
+            Core.net_save = g.get('save_blob')                  # (the host's saves: this start only)
+            if getattr(net, 'stream', False):                   # (streamed: each side as offline - the host plays its own
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'; Core.net_save = None   #  way)
+            net.rb = IS_WIN and not g.get('card') and not os.environ.get('VX_NO_ROLLBACK')   # (rollback: a 6809 game, this
+                                                                #  PC's core with saved frames - checked with it at the start)
             try:
                 self.restart(rom)
             finally:
-                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'
+                Core.force_seed = None; Core.net_card = None; Core.net_jitfast = False; Core.net_uvm2 = 'exact'; Core.net_save = None
             um2 = self.net_uvm2_note(rom, g)
             if um2:
                 self.chat_add('sys', um2)
@@ -6122,11 +6428,8 @@ class App:
         net = getattr(self, 'net', None)
         if net is not None and getattr(self, 'net_game', None) and net.pause_peer:   # (the other side paused, or went on)
             net.pause_peer = False
-            if net.pause_on != bool(self.run.paused):
-                self.set_paused(net.pause_on)
-                other = 'PLAYER %d' % (2 if getattr(self, 'net_role', 'host') == 'host' else 1)
-                self.net_flash(('PAUSED BY ' if net.pause_on else 'GOING ON: ') + other, 'P GOES ON' if net.pause_on else '',
-                               secs=600 if net.pause_on else 2)
+            self.set_paused(net.pause_on)
+            self.net_pause_say(net)
         if net is not None and net.desync is not None and not getattr(net, 'desync_told', False):
             net.desync_told = True                              # (the two games have parted: say so, once)
             self.net_flash('ONLINE: OUT OF SYNC', 'THE GAMES DIFFER NOW', secs=8)
@@ -6135,12 +6438,11 @@ class App:
         if net is not None and getattr(self, 'net_game', None) and not net.lost:
             import netplay
             out = net.out_s()
-            if out > 0:                                         # (the connection gone: both wait - how long still)
-                left_s = max(0, int(math.ceil(netplay.TIMEOUT - out)))
+            if out > 0:                                         # (the connection gone: both wait for it - only Leave ends a game)
                 if not getattr(self, 'net_out', False):
                     self.net_out = True
-                    self.chat_add('sys', 'The connection is gone - waiting %d seconds for %s.' % (int(netplay.TIMEOUT), self.peer_label()))
-                self.flash('CONNECTION LOST', 'WAITING FOR %s' % self.peer_label().upper()[:22], '%d' % left_s, secs=0.6)
+                    self.chat_add('sys', 'No connection - waiting for %s. Online > Leave to stop.' % self.peer_label())
+                self.flash('NO CONNECTION', 'WAITING FOR %s' % self.peer_label().upper()[:22], 'LEAVE TO STOP', secs=0.6)
             elif getattr(self, 'net_out', False):
                 self.net_out = False
                 self.chat_add('sys', 'The connection is back.')
@@ -6661,6 +6963,37 @@ class App:
             t.after(1000, lan_refresh)
         g_col = g
         t.after(300, lan_refresh)
+        # nearby: no router, no internet - this PC's own Wi-Fi network (adhoc.py), or the nearby host's
+        import adhoc
+        nb = box('NEARBY: NO ROUTER, NO INTERNET')
+        r5 = tk.Frame(nb, bg=bg); r5.pack(fill='x')
+        ah_ssid, ah_pw = adhoc.creds(os.path.dirname(SETTINGS_F))
+        ah_l = tk.Label(nb, text='Network %s   password %s   (kept on this PC: the next time the other device knows it)' % (ah_ssid, ah_pw),
+                        fg=dim, bg=bg, font=f9, anchor='w', justify='left', wraplength=560)
+        def ah_host():
+            if self.net_busy():
+                return self.flash('ONLINE: LEAVE THE GAME FIRST', secs=2)
+            ah_l.config(text='Making the network %s...' % ah_ssid, fg=deck.HI)
+            def done(ok, msg):
+                def ui():
+                    if ok:
+                        ah_l.config(text='Your network: %s   password: %s\nPlayers join it in their Wi-Fi settings, then pick your game '
+                                         '(Games on this network, or Join the nearby host).' % (ah_ssid, ah_pw), fg=deck.HI)
+                        self.net_begin('host', direct_port=netplay.PORT); sync()
+                    else:
+                        ah_l.config(text=msg, fg=deck.WARN)
+                    print('online: ad hoc %s' % ('up: ' + ah_ssid if ok else msg), flush=True)
+                self.root.after(0, ui)
+            adhoc.start(os.path.dirname(SETTINGS_F), done)
+        def ah_join():
+            a = adhoc.host_addr(netplay.lan_addresses())
+            if not a:
+                return ah_l.config(text="Not on a network: join the host's network first (DIRECT-VX-VECTREX-..., VECTREX-EMU-... or "
+                                        "the host phone's hotspot)", fg=deck.WARN)
+            self.net_last_join = a; self.net_via_room = False; self.net_begin('join', target=a); sync()
+        ah_host_b = deck._button(r5, 'Make a network and host', ah_host, self, small=True); ah_host_b.pack(side='left')
+        ah_join_b = deck._button(r5, 'Join the nearby host', ah_join, self, small=True); ah_join_b.pack(side='left', padx=(6, 0))
+        ah_l.pack(fill='x', pady=(4, 0))
         # now
         n = box('NOW')
         now_l = tk.Label(n, text='', fg=g, bg=bg, font=f9, anchor='w', justify='left', wraplength=560); now_l.pack(fill='x')
@@ -6721,6 +7054,10 @@ class App:
                 (lan_host_b, "Host on the local network, no internet needed: your game shows in player 2's Online window "
                              "under Games on this network (or they type your address). Tick VecLink game for a game made "
                              "for two consoles."),
+                (ah_host_b, "This PC makes a Wi-Fi network of its own (no router, no internet) and hosts the game in the slot on "
+                            "it: players join the network in their Wi-Fi settings."),
+                (ah_join_b, "This PC is on a nearby host's network (a phone's, a PC's): join its game - the network's host is "
+                            "its router."),
                 (se, "The server that introduces the two players and passes the game on when two routers will not "
                      "connect directly. Both players need the same one."))
         for w, txt in tips:
@@ -7045,7 +7382,7 @@ class App:
     LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining strength', '%.2f'), phos_smooth=('afterglow smoothing width', '%.2f'), phos_grow_on=('afterglow joining', None), phos_smooth_on=('afterglow smoothing', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining strength', '%.2f'), phos_smooth=('afterglow smoothing width', '%.2f'), phos_grow_on=('afterglow joining', None), phos_smooth_on=('afterglow smoothing', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
@@ -7107,14 +7444,17 @@ class App:
             except (ValueError, OSError) as e:
                 self.rom_error('%s:\n%s' % (os.path.basename(rom), e)); return
         net_ = getattr(self, 'net', None)
-        if getattr(self, 'net_game', None) and net_ is not None and not net_.lost and net_.f > 0 and \
+        if getattr(self, 'net_game', None) and net_ is not None and not net_.lost and net_.f > 0 and not getattr(self, 'net_rg_now', False) and \
                 os.path.abspath(rom or '') == os.path.abspath(getattr(self, 'net_rom', '') or ''):
             self.net_flash('ONLINE: NOT WHILE CONNECTED', 'IT STARTS THE GAME AGAIN HERE', 'ONLY: KEPT FOR THE NEXT GAME', secs=5)
             self.chat_add('sys', 'That setting starts the game again - on this PC only, so the two games would part. It '
                           'is kept for the next game.')
             return                                              # (the same game started again on one side: refused -
                                                                 #  Cartridge hardware, USB keys, a tab's reset...)
-        if getattr(self, 'net_game', None) and os.path.abspath(rom or '') != os.path.abspath(getattr(self, 'net_rom', '') or ''):
+        if getattr(self, 'net_game', None) and os.path.abspath(rom or '') != os.path.abspath(getattr(self, 'net_rom', '') or '') \
+                and not getattr(self, 'net_rg_now', False):
+            if self.net_regame(rom):                            # (the host's pick: started for both - the other side follows)
+                return
             self.net_end('ONLINE: GAME CHANGED')                # (the other side would not follow: online play ends)
         old = self.run
         old.stop = True; old.join(timeout=2)
@@ -7196,7 +7536,11 @@ class App:
         net = getattr(self, 'net', None)
         if ng and net is not None and not net.lost:             # (online: on, and the frames counted from this power-on)
             run.power = True; run.crt.volume = run.crt.volume or 0.5
-            net.reset(); run.net = net
+            if getattr(self, 'net_rg_now', False):              # (another game in a game: the frames go on - the old
+                run.pending_got = getattr(old, 'rg_got', None)  #  game's last input runs the new game's first frame)
+            else:
+                net.reset()
+            run.net = net
             run.ports = {'host': 1, 'join': 2}                  # (one player a port, always: a resting stick drifts)
         if run.power:
             run.flags = self.power_flags()
@@ -7562,8 +7906,14 @@ class App:
         if not deck_on and (size or not getattr(r, 'rot', 0)) and (self.knob_on or self.fps_on or self.cart_on):
             pl, pt, pr, pb = self.pic_rect()
             bot = int(min(rh, max(16, pb + vecrender.PAD_BOT * (pb - pt))))   # (the case's bottom: the strip starts there)
-        w, h = rw & ~1, bot & ~1
-        return (0, rh - h, w, h)
+        x0, w = 0, rw
+        if not getattr(r, 'rot', 0) and hasattr(r, 'map'):     # (full screen: the case's width only, as in a window - not the
+            pl, pt, pr, pb = self.pic_rect()                    #  black of the rest of the screen)
+            cw = int((pb - pt) * vecrender.VIEW_AW)
+            if 0 < cw < rw:
+                x0 = max(0, int((pl + pr) / 2 - cw / 2)); w = min(cw, rw - x0)
+        w, h = w & ~1, bot & ~1
+        return (x0, rh - h, w, h)
     def rec_ok(self):
         r = self.ren
         if not (r and hasattr(r, '_rec_grab') and hasattr(r, 'real_size') and hasattr(r, 'map')):
@@ -8432,6 +8782,8 @@ class App:
         d['imager_note'] = getattr(self, 'imager_note', True)
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'
+        d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)
+        d['settings_epoch'] = SETTINGS_EPOCH
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name
@@ -9107,7 +9459,7 @@ class App:
         g = (0.40, 0.667, 0.533)
         idle = self.run.paused or not self.run.power or self.run.frames < 50   # (a new game's first second: --)
         rate = ('0%' if self.run.paused and self.run.power else '--') if idle else '%d%%' % self.speed_shown()   # (paused: 0 %, green)
-        vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('MONITOR', '%d HZ' % round(self.disp_fps), g),
+        vals = [('INTERNAL', '%d FPS' % round(self.fps), g), ('OUTPUT', '%d FPS' % round(self.disp_fps), g),
                 ('EMU RATE', rate, g if idle else self.speed_color(2))]
         # (the same rows for every system - a UVMC2 or a PiTrex too: the CPU / GPU meters below them tell the load)
         if getattr(self, 'net_osd', True) and self.net_busy():  # (online: the other player's state)
@@ -9152,7 +9504,7 @@ class App:
                 del h[:-10]
             if TEST_LOG: print('speed %.2f %%  game %.1f fps  screen %.1f Hz' % (self.speed, self.fps, self.disp_fps), flush=True)
             idle = self.run.paused or not self.run.power
-            self.num_a.configure(text='%d FPS  %d HZ  G-SYNC %s  ' % (round(self.fps), round(self.disp_fps),
+            self.num_a.configure(text='%d INT  %d FPS  G-SYNC %s  ' % (round(self.fps), round(self.disp_fps),
                                                                       'ON' if self.vrr else 'OFF'))
             self.num_speed.configure(text=('0%' if self.run.paused and self.run.power else '--') if idle else '%d%%' % self.speed_shown(),
                                      fg='#6a8' if idle else self.speed_color(1))

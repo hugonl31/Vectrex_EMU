@@ -158,13 +158,24 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"float dh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }\n"
 	"float lum(vec3 c) { return max(max(c.r, c.g), c.b); }\n"
 	"uniform float hk;\n"   /* (HDR: as PH_FS_OUT) */
-	"vec3 knee(vec3 c) { return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
+	"uniform float hl;\n"   /* (HDR, the whole picture (the own iOS app's default): the brighter a part, the closer to the screen's peak -
+	                           black stays black, the faint trail nearly as it was; 0: only the rests above white) */
+	"vec3 hlift(vec3 k) { if (hl < 0.5 || hl > 1.5 || hk <= 1.0) return k; float m = clamp(max(k.r, max(k.g, k.b)), 0.0, 1.0); return k * (1.0 + (hk - 1.0) * m * m); }\n"
+	"uniform float vs, lt, sn, gb;\n"   /* (HDR, the Vectrex look: the bright lines' scale above mid grey - the faint ones and the trail as SDR; a line at white, the slow ones and the dots above) */
+	"vec3 vxl(vec3 c) {\n"   /* (the Vectrex look: the tube's light as a real tube gives it - no knee, every part x vs in light (the
+	                                                   ratios kept: slow lines, overlaps, dots), softly to the peak only near it; the room's light added after it) */
+	"    vec3 l = pow(max(c, 0.0), vec3(2.2)) * vs; float p = pow(max(hk, 1.0), 2.2) * (hk > 1.0 ? lt : 1.0); float kn = hk > 1.0 ? 6.0 : sn; l = l / pow(1.0 + pow(l / p, vec3(kn)), vec3(1.0 / kn));\n"
+	"    return pow(l, vec3(1.0 / 2.2)); }\n"
+	"vec3 knee(vec3 c) { if (hl > 1.5) return c;\n"   /* (the Vectrex look: mapped before the room's light - vxl) */
+	"  return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
+	PH_TONE
 	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
 	                                                   through the overlay's colour; softly up to the screen's peak) */
 	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"
 	"void main() { vec2 size = vec2(textureSize(L, 0)), uv = gl_FragCoord.xy / size; vec3 o = texelFetch(L, ivec2(gl_FragCoord.xy), 0).rgb; float hx = texelFetch(L, ivec2(gl_FragCoord.xy), 0).a;\n"
-	"  vec3 o0 = sg(o, uv);\n"
+	"  vec3 ag = br * (texture(pS, uv).rgb - texture(pF, uv).rgb), o0 = max(o - ag, 0.0);\n"   /* (the afterglow here, read once: the picture's and the scatter's) */
 	"  vec3 m = texture(ovm, uv).rgb, la = texture(ova, uv).rgb, l = dot(o, vec3(1.0 / 3.0)) * m, l0 = dot(o0, vec3(1.0 / 3.0)) * m;\n"
+	"  if (hl > 1.5) { l = vxl(l); l0 = vxl(l0); }\n"   /* (the Vectrex look: the tube's light only - the room's on the sheet as it is) */
 	"  vec3 c = sqrt(l0 * l0 + la * la), tm = vec3(1.0);\n"   /* (the picture from the light without the afterglow; tm: what the sheet
 	                                              does to the light passing it, the afterglow's too) */
 	"  vec4 ov = texture(art, uv); float sheet = step(0.004, ov.a);\n"
@@ -181,8 +192,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    float D = max(a.x, 0.0), mt = D > 0.0 ? (1.0 - exp(-1.5 * D / ref)) / (1.0 - exp(-1.5)) : 0.0;\n"
 	"    vec2 px = vec2(pxo) / size;\n"
 	"    vec2 p2 = vec2(px.x, -px.y);\n"   /* (the scatter from the fresh light only: the fading trail lights the plastic hardly at all) */
-	"    vec3 near = (sg(texture(L, uv).rgb, uv) * 2.0 + sg(texture(L, uv + px).rgb, uv + px) + sg(texture(L, uv - px).rgb, uv - px)\n"
-	"                 + sg(texture(L, uv + p2).rgb, uv + p2) + sg(texture(L, uv - p2).rgb, uv - p2)) / 6.0;\n"
+	"    vec3 near = max((o * 2.0 + texture(L, uv + px).rgb + texture(L, uv - px).rgb + texture(L, uv + p2).rgb + texture(L, uv - p2).rgb) / 6.0 - ag, 0.0);\n"
 	"    vec3 mid = texture(M, uv).rgb, far = texture(F, uv).rgb; float k = scrk * mt;\n"
 	"    c *= vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq)); tm *= vec3(1.0 - 0.25 * clamp(k, 0.0, 1.0) * (1.0 - opq));\n"
 	"    vec3 halo = (0.6 * near + 0.8 * mid + 0.5 * far) * trans;\n"
@@ -194,9 +204,10 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    float dd = clamp(b.y * 0.6, 0.0, 1.4);\n"
 	"    e += (mt * df * df + 2.0 * dd * ds * ds) * Rl * gk * glint * lc * trans + dd * room * 0.9 * own;\n"
 	"    e += glow * max(h2.y, 0.0) * lc * trans;\n"
-	"    if (rlp.w > 0.0) { vec3 lcol = LIGHTC * mix(vec3(1.0), trans, 0.6); float bc = b.z / max(b.y, 1e-6), bs = b.w / max(b.y, 1e-6);\n"
+	"    if (rlp.w > 0.0 && (D > 0.0 || b.y > 0.0)) { vec3 lcol = LIGHTC * mix(vec3(1.0), trans, 0.6); float bc = b.z / max(b.y, 1e-6), bs = b.w / max(b.y, 1e-6);\n"
 	"      for (int i = 0; i < 6; i++) { vec2 dv = (rpt[i] - gl_FragCoord.xy) / rlp.z;\n"   /* (both y down here) */
-	"        float dl = length(dv * vec2(1.0 / 1.25, 1.0)); float ph2 = atan(dv.y, dv.x + 1e-7), c2l = cos(2.0 * ph2), s2l = sin(2.0 * ph2);\n"
+	"        float dl = length(dv * vec2(1.0 / 1.25, 1.0)); if (dl > 1.6) continue;\n"   /* (far: under 0.5 % - most of the six, most pixels) */
+	"        float r2 = dot(dv, dv) + 1e-14, c2l = (dv.x * dv.x - dv.y * dv.y) / r2, s2l = 2.0 * dv.x * dv.y / r2;\n"   /* (cos / sin of twice the angle, without atan, cos, sin: the same) */
 	"        if (D > 0.0) { float acf = pow(clamp(0.5 - 0.5 * (a.y * c2l + a.z * s2l) / D, 0.0, 1.0), 2.0);\n"
 	"          e += rlp.w / 4.0 * (0.9 * exp(-dl / 0.05) + 0.3 * exp(-dl / 0.11)) * mt * acf * 2.5 * lcol; }\n"
 	"        if (b.y > 0.0) { float acr = pow(clamp(0.5 - 0.5 * (bc * c2l + bs * s2l), 0.0, 1.0), 3.0);\n"
@@ -207,7 +218,7 @@ static const char *OX_FS_SHEET =                /* (the sheet: the core's filter
 	"    c += e; }\n"
 	"  c = sqrt(c * c + max(l * l - l0 * l0, 0.0) * tm * tm);\n"   /* (the afterglow added as light: the sheet's own light lifts it no more -
 	                                              added on it as a screen value it did, 2026-11-19; with no afterglow the picture as before) */
-	"  fragc = vec4((hdrx(knee(c), hx, m) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
+	"  fragc = vec4((min(beam != 0 ? tone(c) : hdrx(hlift(knee(c)), hx, m), vec3(max(hk, 1.0))) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ox_prog (const char *vsrc, const char *a, const char *b)
 {
@@ -312,10 +323,12 @@ static void ox_scratches (void)
 /* the sheet over this refresh's light (ph_S and the glow ph_B[0]) into ph_P; glow: the tube's glow (PH_FS_OUT's) */
 extern double vt_wall (void);
 static double ox_tt[9], ox_t0; static int ox_prof = -1; static long ox_pn;   /* (test: VX_OXPROF=1 - each pass's time, the GPU waited for: the log) */
-#define OXT(k) do { if (ox_prof > 0) { glFinish_ (); double t_ = vt_wall (); ox_tt[k] += t_ - ox_t0; ox_t0 = t_; } } while (0)
+extern int vx_gprof_now; double vx_oxst[8];   /* (the apps' GPU diagnostic: the sheet's passes on its timed pictures) */
+#define OXT(k) do { if (ox_prof > 0 || vx_gprof_now) { glFinish_ (); double t_ = vt_wall (); if (vx_gprof_now) vx_oxst[k] += t_ - ox_t0; else ox_tt[k] += t_ - ox_t0; ox_t0 = t_; } } while (0)
 static int ox_draw (int glow, double dt)
 {
 	if (ox_prof < 0) ox_prof = getenv ("VX_OXPROF") != NULL;
+	if (vx_gprof_now) { glFinish_ (); ox_t0 = vt_wall (); }
 	if (ox_prof > 0) { glFinish_ (); ox_t0 = vt_wall (); if (++ox_pn % 300 == 0) { fprintf (stderr, "oxprof ms:"); for (int i = 0; i < 8; i++) fprintf (stderr, " %.2f", ox_tt[i] / 300 * 1e3); fprintf (stderr, "\n"); memset (ox_tt, 0, sizeof ox_tt); } }
 	if (!ox_sheet || !ov || !ov_lm) return 0;
 	const int scr = ovfx.scr, pglow = ovfx.glow > 0, ovl = ovfx.ovl > 0;
@@ -334,16 +347,16 @@ static int ox_draw (int glow, double dt)
 	ph_target (ox_L, 0, 0, FW, FH); glUseProgram_ (ox_light);
 	ph_bind (ox_light, "s", 0, ph_S); ph_bind (ox_light, "gt", 1, ph_B[0]); ph_bind (ox_light, "art", 2, ox_art);
 	{ const float gk = GLOW_K * (glow == 2 ? 2.0f : 1.0f);
-	  OU1I (ox_light, "glow", glow); OU1I (ox_light, "wbon", wb_on);
+	  OU1I (ox_light, "glow", glow); OU1I (ox_light, "wbon", wb_on && !bt_gpu);
 	  glUniform3f_ (ph_ul (ox_light, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
 	  glUniform3f_ (ph_ul (ox_light, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (ph_ul (ox_light, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
-	  OU1F (ox_light, "bright", opt_bright); OU1F (ox_light, "k2", ovl && scr ? 0.6 * ovfx.ovl : 0.0);
+	  OU1F (ox_light, "bright", bt_gpu ? 1.0f : opt_bright); OU1F (ox_light, "k2", ovl && scr ? 0.6 * ovfx.ovl : 0.0);
 	  glUniform2f_ (ph_ul (ox_light, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glUniform3f_ (ph_ul (ox_light, "lpos"), fxp, fyp, 0.42f); glUniform3f_ (ph_ul (ox_light, "pic"), FW / 2.0f, FH / 2.0f, hh);
 	  OU1F (ox_light, "lca", cos (20 * M_PI / 180)); OU1F (ox_light, "lsa", sin (20 * M_PI / 180)); ox_quad (); } OXT (1);
 	const float qs[2] = { (float) ox_qw, (float) ox_qh };
 	/* the light at quarter size: smoothed (the glints, the glow), blurred (M: once, F: three times) */
-	ph_target (ox_Q0, 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_down); ph_bind (ox_down, "tex", 0, ox_L); ph_bind (ox_down, "pS", 1, ph_S); ph_bind (ox_down, "pF", 2, ph_F[ph_i ^ 1]); OU1F (ox_down, "br", opt_bright);
+	ph_target (ox_Q0, 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_down); ph_bind (ox_down, "tex", 0, ox_L); ph_bind (ox_down, "pS", 1, ph_S); ph_bind (ox_down, "pF", 2, ph_F[ph_i ^ 1]); OU1F (ox_down, "br", bt_gpu ? 1.0f : opt_bright);
 	glUniform2f_ (ph_ul (ox_down, "sp"), 1.0f / FW, 1.0f / FH); glUniform2f_ (ph_ul (ox_down, "qs"), qs[0], qs[1]); ox_quad (); OXT (2);
 	{ double a = 1.0 - exp (-(dt < 0 ? 0 : dt > 1 ? 1 : dt) / 0.15); if (ox_t_prev < 0) a = 1; ox_t_prev = 1;
 	  ph_target (ox_Q1[ox_q1i ^ 1], 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_q1); ph_bind (ox_q1, "q0", 0, ox_Q0); ph_bind (ox_q1, "q1", 1, ox_Q1[ox_q1i]);
@@ -382,7 +395,7 @@ static int ox_draw (int glow, double dt)
 	ph_target (ph_P, 0, 0, FW, FH); glUseProgram_ (ox_sheet);
 	ph_bind (ox_sheet, "L", 0, ox_L); ph_bind (ox_sheet, "ovm", 1, ph_ovm); ph_bind (ox_sheet, "ova", 2, ph_ova); ph_bind (ox_sheet, "art", 3, ox_art);
 	ph_bind (ox_sheet, "A", 4, scr ? ox_S[0] : ox_art); ph_bind (ox_sheet, "B", 5, scr ? ox_S[1] : ox_art); ph_bind (ox_sheet, "C", 6, scr ? ox_S[2] : ox_art);
-	ph_bind (ox_sheet, "M", 7, ox_B[2]); ph_bind (ox_sheet, "F", 8, ox_B[0]); ph_bind (ox_sheet, "V1", 9, ox_V[0]); ph_bind (ox_sheet, "V2", 10, ox_V[1]); ph_bind (ox_sheet, "pS", 11, ph_S); ph_bind (ox_sheet, "pF", 12, ph_F[ph_i ^ 1]); OU1F (ox_sheet, "br", opt_bright);
+	ph_bind (ox_sheet, "M", 7, ox_B[2]); ph_bind (ox_sheet, "F", 8, ox_B[0]); ph_bind (ox_sheet, "V1", 9, ox_V[0]); ph_bind (ox_sheet, "V2", 10, ox_V[1]); ph_bind (ox_sheet, "pS", 11, ph_S); ph_bind (ox_sheet, "pF", 12, ph_F[ph_i ^ 1]); OU1F (ox_sheet, "br", bt_gpu ? 1.0f : opt_bright);
 	const double room = 0.0648 * 0.0648 / 0.075 * opt_room * opt_room;   /* (vecrender.py room_light: the default x the setting squared) */
 	OU1F (ox_sheet, "glint", scr ? ovfx.glint * SCR_BASE[2] : 0.0); OU1F (ox_sheet, "room", room);
 	OU1F (ox_sheet, "scrk", scr ? 2.5 * 0.85 * 0.5 : 0.0); OU1F (ox_sheet, "scron", scr ? 1.0 : 0.0);
@@ -392,7 +405,7 @@ static int ox_draw (int glow, double dt)
 	glUniform4f_ (ph_ul (ox_sheet, "pen"), 0.45f, 0.85f, 1.5f, 0.0f);
 	glUniform4f_ (ph_ul (ox_sheet, "rlp"), 0.0f, 0.0f, hh, scr ? ovfx.ovl : 0.0f);
 	glUniform3f_ (ph_ul (ox_sheet, "lpos"), fxp, fyp, 0.42f); glUniform3f_ (ph_ul (ox_sheet, "pic"), FW / 2.0f, FH / 2.0f, hh);
-	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f);
+	OU1F (ox_sheet, "lca", cos (20 * M_PI / 180)); OU1F (ox_sheet, "lsa", sin (20 * M_PI / 180)); OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); { extern float vx_bright; OU1F (ox_sheet, "bgh", bt_gpu && vx_bright > 0.5f && vx_hdr_peak > 1.0f ? vx_hdr_peak : 0.0f); } { extern float vx_hdr_lift, vx_hdr_vs, vx_hdr_vss; OU1F (ox_sheet, "hl", bt_gpu ? 0.0f : vx_hdr_lift); OU1I (ox_sheet, "beam", bt_gpu); OU1F (ox_sheet, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); { extern float vx_hdr_lt, vx_hdr_sn; OU1F (ox_sheet, "lt", vx_hdr_lt); OU1F (ox_sheet, "sn", vx_hdr_sn); } }
 	if (scr && ovfx.ovl > 0) {                                     /* (roomlight.flat_points: the light's area as six points) */
 		static float key_x = -1, key_y = -1, pts[12];
 		if (key_x != g_lamp_x || key_y != g_lamp_y) { key_x = g_lamp_x; key_y = g_lamp_y; rl_flat_points (g_lamp_x, g_lamp_y, pts); }

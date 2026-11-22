@@ -4,6 +4,54 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.1
+- Look: Vectrex, or Bright for a small screen (brighter, wider lines)
+
+## v1.8.0
+- New picture: the beam on the phosphor, measured on a real Vectrex
+- The same picture on PC, iPhone / iPad, Android and RetroArch
+- HDR screens: the same picture, the brightest dots above white
+- Online: everyone needs this version (the timing is new)
+- The picture's and the unit's settings start at their new defaults
+
+## v1.7.6
+- Online: joining a game starts both anew (steadier across devices)
+
+## v1.7.5
+- iPhone / iPad: play nearby with no network (peer-to-peer Wi-Fi)
+
+## v1.7.4
+- Online through the meeting point: full speed (the delay was guessed)
+- Online: no picture stalls while waiting for the other player
+- Nearby: Join the nearby host only on a host's own network
+- iPhone: hosting on the hotspot checks that it is on
+
+## v1.7.3
+- Online: your player name is asked once and kept for every mode
+- Online: a fresh install on the same device gets its name back
+- Apps: the name is reserved at the first start
+
+## v1.7.2
+- PC: HDR on an HDR monitor (View > HDR) - as on phones
+- Player names: A-Z and 0-9 only; needed to host or join
+- iPhone / Android: Reset all settings; a long press resets one
+- iPhone: double-tap a slider for its default; it opens there
+
+## v1.7.1
+- Online > Nearby: play without a router - the host makes the Wi-Fi
+- Nearby: the network's name and password stay the same each time
+- Nearby: Join the nearby host - one click on the host's network
+- Online: a game seen on every network, ad-hoc ones too
+- Online: through the meeting point both start anew (no 15 s wait)
+- New: the Android app (test build) - as the iPhone / iPad app
+
+## v1.7.0
+- Online: the host can change the game for both players
+- Online: no ending after a dropout - waits until a player leaves
+- Online: the same power-on on both sides (no early out of step)
+- RetroArch: a modern control deck - panels, words, a volume bar
+- RetroArch: the overlay drawn faster on phones and handhelds
+
 ## v1.6.9
 - Phosphor trail on black: as long as through an overlay
 - RetroArch: the overlay no longer brightens the trail

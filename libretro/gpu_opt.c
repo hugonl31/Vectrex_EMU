@@ -89,7 +89,7 @@ static void opt_check (void)
 	if (opt_profile || !gpu_ok || !ph_ok || stereo || opt_busy || vx_nobuild) { if (opt_profile) opt_row_ok = 0; return; }
 	if (!glGetString_) glGetString_ = (pf_glGetString) hwr.get_proc_address ("glGetString");
 	const char *gr = glGetString_ ? (const char *) glGetString_ (0x1F01) : "";
-	snprintf (opt_key, sizeof opt_key, "%s %dx%d %d Hz%s", gr ? gr : "", FW, FH, opt_rate, ov && ov_on && !sheet_file ? " overlay" : "");
+	snprintf (opt_key, sizeof opt_key, "b2 %s %dx%d %d Hz%s", gr ? gr : "", FW, FH, opt_rate, ov && ov_on && !sheet_file ? " overlay" : "");   /* (b2: the beam on the phosphor, 2026-11-22 - its costs are other ones: measured anew) */
 	for (char *q = opt_key; *q; q++) if (*q == '|' || *q == '\n' || *q == '\r') *q = ' ';
 	if (!strcmp (opt_key, opt_key_seen)) return;
 	snprintf (opt_key_seen, sizeof opt_key_seen, "%s", opt_key);

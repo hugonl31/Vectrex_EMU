@@ -244,7 +244,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	float trailLast = -1; final Runnable trailR = this::trailTick;
 	/* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost; on by default on a
 	 *  phone (its shorter side under 600 dp), off on a tablet, the setting below the Look) */
-	boolean trailBoost () { return prefs.getBoolean ("app.trailboost", getResources ().getConfiguration ().smallestScreenWidthDp < 600); }
+	boolean trailBoost () { return prefs.getBoolean ("app.trailboost", false); }   /* (off by default since the afterglow's own shape for the apps) */
 	void trailTick ()
 	{
 		h.removeCallbacks (trailR);

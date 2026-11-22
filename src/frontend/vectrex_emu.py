@@ -7344,20 +7344,39 @@ class App:
         if not inch:                                            # (unknown: ask for it)
             return self.slider('monitor_inch')
         ppmm = math.hypot(*px) / (inch * 25.4)
-        h = REAL_PIC_MM * ppmm
-        self.real_on = True
+        h = REAL_PIC_MM * ppmm                                  # (the sheet's height on this monitor, px)
+        hp = h / vecrender.ART_TUBE_K                           # (the picture's: the sheet is ART_TUBE_K of it - since the real sizes,
+        self.real_on = True                                     #  2026-10-28, the sheet came out 0.924 of 207 mm: 191 mm, the owner 2026-11-22)
         if self.full:
             sh = self.root.winfo_screenheight()
-            self.full_scale = max(0.2, min(1.0, h * (1.0 + self.knob_reserve()) / float(sh)))
+            self.full_scale = max(0.2, min(1.0, hp * (1.0 + self.knob_reserve()) / float(sh)))
             self.apply_scale(); self.save_settings()
         else:
-            self.set_zoom(h / float(self.H0))
+            self.set_zoom(hp / float(self.H0))
             self.root.after(120, self.center_vertically)        # (left / right: where the player keeps it)
+        self.root.after(250, lambda: self.real_fit(h, 2))       # (measured on the picture as laid out, and set right)
         self.save_settings()
         if quiet:
             return
         self.show_look('real size: overlay %d x %d mm (%d px high) on a %.1f inch monitor%s' % (
             round(REAL_PIC_MM * 846 / 1080.0), REAL_PIC_MM, round(h), inch, '' if self.monitor_inch else ' (as it reports it)'))
+    def real_fit(self, want, tries):
+        """Real size: the sheet's height as the renderer lays it out (art_rect: ART_TUBE_K of the picture's) against the
+        height wanted, px - the window's size (full screen: its scale) corrected by what is missing; the layout's pads and
+        the case change the picture's share of the window"""
+        r = self.ren
+        if not (self.real_on and r is not None and hasattr(r, 'map')):
+            return
+        have = r.map[0] * ALG_MAX_Y * vecrender.ART_TUBE_K
+        if getattr(r, 'rot', 0) in (90, 270) or have <= 0 or abs(have / want - 1.0) < 0.004 or tries <= 0:
+            return
+        k = want / have
+        if self.full:
+            self.full_scale = max(0.2, min(1.0, self.full_scale * k)); self.apply_scale()
+        else:
+            self.set_zoom(self.zoom * k); self.root.after(120, self.center_vertically)
+        self.save_settings()
+        self.root.after(250, lambda: self.real_fit(want, tries - 1))
     def look_text(self):
         r = self.ren
         if not self.look_keys:

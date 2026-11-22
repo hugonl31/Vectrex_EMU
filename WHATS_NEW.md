@@ -7,9 +7,9 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 ## v1.8.1
 - Look: Vectrex, or Bright for a small screen (brighter, wider lines)
 - The afterglow on phones and RetroArch now as on the PC
-- Phones: Bright the default, the afterglow 20 % brighter (a setting)
+- Phones: Bright the default; a Brighter afterglow setting
 - The overlay's plastic glow no longer trails behind moving things
-- Phones: the afterglow drops quicker, its faint end lasts longer
+- Phones: the afterglow as long as the PC's looks
 
 ## v1.8.0
 - New picture: the beam on the phosphor, measured on a real Vectrex

@@ -9,7 +9,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - The afterglow on phones and RetroArch now as on the PC
 - Phones: Bright the default, the afterglow 20 % brighter (a setting)
 - The overlay's plastic glow no longer trails behind moving things
-- Afterglow: a quicker first drop, the faint end lasts twice as long
+- Phones: the afterglow drops quicker, its faint end lasts longer
 
 ## v1.8.0
 - New picture: the beam on the phosphor, measured on a real Vectrex

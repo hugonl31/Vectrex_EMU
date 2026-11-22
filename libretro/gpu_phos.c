@@ -43,10 +43,12 @@ float vx_trail_mul = 1.0f;                     /* (the own apps: the trail for t
 float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture
                                                   lifted towards the peak, 2 the measured Vectrex - dots with the slow beam round them, the
                                                   brightest lines a little above white; below the knee as SDR) */
-#define PHOS_A1 0.15f
-#define PHOS_T1 0.0583f
-#define PHOS_A2 0.022f
-#define PHOS_T2 1.25f
+int vx_phone_trail = 0;                        /* (the own phone / tablet apps set it: the afterglow's shape there - a quicker first drop, the faint end about
+                                                   twice as long (the owner, his iPhone next to the tube, 2026-11-22). The PC and RetroArch keep the measured one) */
+#define PHOS_A1 (vx_phone_trail ? 0.15f : 0.1404f)
+#define PHOS_T1 (vx_phone_trail ? 0.0583f : 0.0454f)
+#define PHOS_A2 (vx_phone_trail ? 0.022f : 0.0582f)
+#define PHOS_T2 (vx_phone_trail ? 1.25f : 0.350f)
 float vx_tail_len = 1.0f, vx_tail_lvl = 1.0f, vx_first_drop = 1.0f;   /* (a trial: the afterglow's shape, the settings Afterglow tail length / level / first drop) */
 float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 1 Bright, for a small screen whose thin lines
                                                    give little light (the owner, 2026-11-22): the tube's light lifted and the beam 1.3 x wider
@@ -438,8 +440,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	glBindVertexArray_ (g_vao);
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
 	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
-	  /* (the afterglow's two parts - vecrender.py PHOS_A. 2026-11-22, the owner next to the tube: it drops quicker, then lingers - its
-	   *  faintest light about twice as far; before: 0.1404 / 45.4 ms and 0.0582 / 350 ms) */
+	  /* (the afterglow's two parts - vecrender.py PHOS_A; the phone apps' own shape: vx_phone_trail) */
 	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk * vx_tail_lvl, ta1 = PHOS_T1 * opt_trail * vx_first_drop, ta2 = PHOS_T2 * opt_trail * vx_tail_len;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);

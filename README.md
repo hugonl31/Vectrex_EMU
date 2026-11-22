@@ -514,7 +514,7 @@ do. It looks clean, and it is exactly what Vectrex_EMU avoids: the character is 
 <img src="docs/images/emu_ship_mine_perfect.png" height="230" alt="a perfect vector display: even lines, no dots">
 <img src="docs/images/emu_ship_mine.png" height="230" alt="the same with the Vectrex's character"><br>
 <em>Left: a perfect vector display - what we avoid. Right: the Vectrex's character, as Vectrex_EMU draws
-it. (Anyone who prefers the perfect look can have it: <b>Tube > Even beam</b>.)</em>
+it.</em>
 </p>
 
 <p align="center">
@@ -957,7 +957,7 @@ opens it over the picture while the game runs on; Tab or Esc closes it. On top, 
 
 | Strip | |
 |---|---|
-| **Tube** | phosphor, bloom, afterglow, the tube's geometry, the glass edge, corner glow, an even (ideal) beam, the mains wobble, brightness bending |
+| **Tube** | phosphor, afterglow, white balance, the tube's geometry, the glass edge, the mains wobble, brightness bending |
 | **Room light** | the room's light, the ceiling light's reflections on the glass and the overlay, the lamp's position |
 | **Case** | the plastic case round the tube (without an overlay): on / off, its reflections, its wear |
 | **Overlay** | on / off, choosing one per game, tint, printed art, parallax, the plastic glow, the scratches, position and size |

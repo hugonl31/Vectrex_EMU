@@ -1038,6 +1038,7 @@ BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every pi
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
                                         #  the faint light - the lines' skirts, the glass's glow - bluer, the bright core the tube's white)
+LIB_ART = 0.7                           # (the library's pictures 30 % less bright - the owner, 2026-11-22: the eyes stay used to the vectors' level)
 BL_GAIN = 1.5; BL_WIDTH = 1.3             # (the Bright look: blook)
 BT_SPOT = 1.25                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
                                             #  2026-11-22, the owner: 1.85 matched the photos - their lens' blur with it; the BIOS's small text
@@ -4555,7 +4556,7 @@ class GLBloomRenderer(GLRenderer):
                     iw, ih = im[1], im[2]; sc = min(tw / float(iw), th / float(ih)); dw, dh = iw * sc, ih * sc
                     ix, iy = tx + (tw - dw) / 2, ty + (th - dh) / 2
                     gl.glDisable(GL_BLEND)                               # (the picture as it is: the PNG reader gives a picture without alpha an overlay's 51 - it showed dim)
-                    gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, im[0]); gl.glColor4f(1.0, 1.0, 1.0, 1.0)
+                    gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, im[0]); gl.glColor4f(LIB_ART, LIB_ART, LIB_ART, 1.0)
                     gl.glBegin(GL_QUADS)
                     for (a_, c_), (px_, py_) in (((0, 0), (ix, iy)), ((1, 0), (ix + dw, iy)), ((1, 1), (ix + dw, iy + dh)), ((0, 1), (ix, iy + dh))):
                         gl.glTexCoord2f(a_, c_); gl.glVertex2f(px_, py_)

@@ -624,28 +624,10 @@ def dot_light(cyc):
     if _np is not None and hasattr(cyc, '__len__'):  # (the frame's arrays, _build_np)
         return DOT_A * DOT_T * _np.log1p(_np.maximum(_np.asarray(cyc, dtype=float), 0.0) / DOT_T)
     return DOT_A * DOT_T * math.log1p(max(cyc, 0.0) / DOT_T)
-# the look (Tube > Look, as the apps and the core): Bright - all lines up to white; Vectrex - as a real Vectrex, the light as
-# the tube gives it (the owner's photos of Test Cartridge Rev. 4, 2026-11-20/21): a slow line brighter by the beam's time on
-# it (cycles a game px over LOOK_EE, ^LOOK_EQ, at most LOOK_EC), the lines scaled in light (LOOK_VS, an HDR screen LOOK_VSH)
-# and clipping only at white, more bloom (LOOK_GB), the trail x LOOK_TRAIL. Both: the dots' spot x DOT_W
-LOOK_EE, LOOK_EQ, LOOK_EC = 1.4, 0.31, 6.0
-LOOK_VS, LOOK_VSH, LOOK_GB = 0.29, 0.48, 1.3   # (the PC's light before the tone step is higher than the core's: matched on Full Grid Test, 1.00 vs 0.99)
-LOOK_TRAIL, LOOK_TRAIL_HDR = 2.1, 1.25
 # a resting spot: a piece where the beam moved slower than REST_SPEED units a cycle on average (the spot's lag brings it
 # to rest gradually - the last fraction of a unit is the rest; lines are drawn at 1 unit a cycle and more). Drawn
 # where the spot came to rest
 REST_SPEED = 0.5
-# a spot that slows down inside a stroke (a rest between two vectors of one shape, a corner): with the deflection's lag
-# it never stops for rests up to ~30 cycles - it slows to a fraction of the line speed and speeds up again - yet the
-# owner's Corner Test photo (2026-10-26) shows a dot in the middle of the line from a 16-cycle rest on, growing with
-# the rest (peak over the line ~2.3x at 16, 3.2x at 24, 4.9x at 32, 7-9x at 48-96 cycles). The dwell: per stroke (joined
-# pieces, one brightness) its line speed (the mean over its pieces at 80 % of the mean speed or more); a zone of pieces
-# slower than REST_DWELL_SLOW x that, not at the stroke's start or end, held the spot this much longer than the line
-# speed would: sum(cycles - length / speed). Less REST_DWELL_D0 cycles (short dips: Draw_VL's joins in curves - no
-# dots), it becomes a resting spot (the rules above: brightness, halo, bloom) where the spot was slowest, of
-# REST_DWELL_MAX x (1 - e^(-d / REST_DWELL_TAU)) cycles: on the photo the dots grow up to a 32-cycle rest and hardly
-# after (the moving spot's own glow, not a bloom); the zone's own resting pieces (REST_SPEED) go in it.
-REST_DWELL_SLOW, REST_DWELL_D0, REST_DWELL_MAX, REST_DWELL_TAU = 0.6, 3.0, 30.0, 12.0
 # such a spot (brightness bit 512) is weaker than a true rest while short: the owner (2026-10-26): the 12- and 16-cycle
 # rests "a slight bulge of the line", a faint glow, not a defined dot. Brightness x w^2.5, width x (1 + REST_DWELL_SOFT
 # (1 - w)), w = its cycles / REST_DWELL_C (at most 1)
@@ -653,144 +635,6 @@ REST_DWELL_SLOW, REST_DWELL_D0, REST_DWELL_MAX, REST_DWELL_TAU = 0.6, 3.0, 30.0,
 # REST_DWELL_HALO cycles)
 REST_DWELL_C, REST_DWELL_SOFT, REST_DWELL_HALO = 28.0, 1.5, 20.0
 
-
-def dwell_rests(L):
-    """the lines (a numpy array, 7 columns: x0 y0 x1 y1 brightness e t) with each stroke's dwell zones as resting
-    spots (see REST_DWELL_SLOW); unchanged when there are none"""
-    np = _np
-    x0, y0, x1, y1, e, t = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
-    b = L[:, 4].astype(np.int64)
-    cyc = e / 8.0
-    ln = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
-    n = len(L)
-    cont = np.zeros(n, dtype=bool)
-    cont[1:] = ((np.abs(x0[1:] - x1[:-1]) <= 1.5) & (np.abs(y0[1:] - y1[:-1]) <= 1.5)
-                & (np.abs(t[1:] - (t[:-1] + cyc[:-1])) <= 1.5) & (b[1:] == b[:-1]) & ((b[1:] & 127) != 0))
-    sid = np.cumsum(~cont) - 1
-    ns = int(sid[-1]) + 1
-    with np.errstate(divide='ignore', invalid='ignore'):
-        sp = np.where(cyc > 0, ln / np.where(cyc > 0, cyc, 1.0), 0.0)
-        v1 = np.bincount(sid, ln, ns) / np.maximum(np.bincount(sid, cyc, ns), 1e-9)
-        fast = sp >= 0.8 * v1[sid]
-        vr = np.bincount(sid, ln * fast, ns) / np.maximum(np.bincount(sid, cyc * fast, ns), 1e-9)
-    v = vr[sid]
-    slow = (sp < REST_DWELL_SLOW * v) & (v > 0)
-    if not slow.any():
-        return L
-    first = np.r_[True, sid[1:] != sid[:-1]]
-    last = np.r_[sid[1:] != sid[:-1], True]
-    zs = slow & (first | ~np.r_[False, slow[:-1]])
-    nz = int(zs.sum())
-    zid = np.where(slow, np.cumsum(zs) - 1, -1)
-    m = zid >= 0
-    zi = zid[m]
-    ex = np.bincount(zi, (cyc - ln / np.maximum(v, 1e-9))[m], nz)
-    edge = np.bincount(zi, (first | last)[m].astype(np.float64), nz) > 0
-    D = ex - REST_DWELL_D0
-    keep = ~edge & (D > 0)
-    if not keep.any():
-        return L
-    idx = np.nonzero(m)[0]
-    o = np.lexsort((sp[idx], zi))
-    idx, zz = idx[o], zi[o]
-    pick = idx[np.r_[True, zz[1:] != zz[:-1]]]          # (per zone its slowest piece: the spot's end there)
-    zk = np.nonzero(keep)[0]
-    pk = pick[zk]
-    drop = m & keep[np.maximum(zid, 0)] & (ln <= REST_SPEED * cyc)
-    R = L[pk].copy()
-    R[:, 0] = R[:, 2] = x1[pk]; R[:, 1] = R[:, 3] = y1[pk]
-    R[:, 4] = b[pk] | 512                              # (a dwell, see REST_DWELL_C)
-    R[:, 5] = 8.0 * REST_DWELL_MAX * (1.0 - np.exp(-D[zk] / REST_DWELL_TAU)); R[:, 6] = t[pk] + cyc[pk]
-    return np.concatenate([L[~drop], R])
-
-
-# a bend drawn as straight pieces (the core's pieces of the lagging spot: a point every few cycles) shows its facets
-# when zoomed in (the owner, 2026-10-26). The spot's real path is smooth between those points: where a stroke turns by
-# more than BEND_STEP degrees at a piece's ends, the piece is cut into up to BEND_MAX pieces along the centripetal
-# Catmull-Rom curve through its neighbours' points (no overshoot on pieces of unequal lengths), the cycles shared
-# evenly; the joints' cuts then keep the width even
-BEND_STEP, BEND_MAX = 3.0, 8
-
-
-BEND_SAG = 0.2                  # (only where the straight pieces would stray this many screen pixels from the curve)
-
-
-def smooth_bends(L, unit_px=None):
-    """the lines (numpy, 7+ columns) with the strokes' bent pieces cut along a smooth curve (see BEND_STEP). unit_px
-    (screen pixels per core unit): each piece cut only as finely as the screen can show - a short piece or a gentle
-    turn not at all (the facets would stray less than BEND_SAG pixels: Vectorblade's curves, 3449 lines, cost 1.9 ms
-    a frame cut by the angle alone, the line building twice as long)"""
-    np = _np
-    n = len(L)
-    if n < 2:
-        return L
-    x0, y0, x1, y1, e, t = L[:, 0], L[:, 1], L[:, 2], L[:, 3], L[:, 5], L[:, 6]
-    b = L[:, 4].astype(np.int64)
-    cyc = e / 8.0
-    dx, dy = x1 - x0, y1 - y0
-    ln = np.sqrt(dx * dx + dy * dy)
-    mv = ln > 0.5
-    cont = np.zeros(n, dtype=bool)                     # (piece i continues piece i - 1)
-    cont[1:] = ((np.abs(x0[1:] - x1[:-1]) <= 1.5) & (np.abs(y0[1:] - y1[:-1]) <= 1.5)
-                & (np.abs(t[1:] - (t[:-1] + cyc[:-1])) <= 1.5) & (b[1:] == b[:-1]) & mv[1:] & mv[:-1])
-    if not cont.any():
-        return L
-    ux = np.where(mv, dx / np.where(mv, ln, 1.0), 0.0); uy = np.where(mv, dy / np.where(mv, ln, 1.0), 0.0)
-    turn = np.zeros(n)                                  # (the turn at piece i's start, degrees)
-    turn[1:] = np.where(cont[1:], np.degrees(np.arccos(np.clip(ux[1:] * ux[:-1] + uy[1:] * uy[:-1], -1.0, 1.0))), 0.0)
-    nxt = np.r_[cont[1:], False]
-    tend = np.r_[turn[1:], 0.0]
-    big = np.maximum(turn, tend)
-    k = np.where((big > BEND_STEP) & (big < 120.0), np.minimum(BEND_MAX, np.ceil(big / BEND_STEP)), 1).astype(np.int64)
-    if unit_px:                                         # (how far the chord strays from the arc: its length x turn / 8)
-        sag = ln * np.radians(np.minimum(big, 120.0)) / 8.0 * unit_px
-        k = np.minimum(k, np.maximum(1, np.ceil(np.sqrt(sag / BEND_SAG)))).astype(np.int64)
-    if (k == 1).all():
-        return L
-    # the four points: the previous piece's start, this piece, the next piece's end (or mirrored)
-    P1x, P1y, P2x, P2y = x0, y0, x1, y1
-    P0x = np.where(cont, np.r_[0.0, x0[:-1]], 2 * x0 - x1); P0y = np.where(cont, np.r_[0.0, y0[:-1]], 2 * y0 - y1)
-    P3x = np.where(nxt, np.r_[x1[1:], 0.0], 2 * x1 - x0); P3y = np.where(nxt, np.r_[y1[1:], 0.0], 2 * y1 - y0)
-    # (a sharp turn at one end - kept as it is there: the next point straight on)
-    sharp0 = turn >= 120.0; sharp1 = tend >= 120.0
-    P0x = np.where(sharp0, 2 * x0 - x1, P0x); P0y = np.where(sharp0, 2 * y0 - y1, P0y)
-    P3x = np.where(sharp1, 2 * x1 - x0, P3x); P3y = np.where(sharp1, 2 * y1 - y0, P3y)
-    idx = np.repeat(np.arange(n), k)
-    st = np.cumsum(k) - k
-    j = np.arange(len(idx)) - np.repeat(st, k)
-    kk = k[idx].astype(np.float64)
-    def curve(s, w):
-        """the curve's points at s for the cut pieces' rows w (only those: most pieces are not cut)"""
-        i = idx[w]
-        d01 = np.maximum(np.hypot(P1x[i] - P0x[i], P1y[i] - P0y[i]), 1e-3) ** 0.5
-        d12 = np.maximum(ln[i], 1e-3) ** 0.5
-        d23 = np.maximum(np.hypot(P3x[i] - P2x[i], P3y[i] - P2y[i]), 1e-3) ** 0.5
-        t0_ = 0.0; t1_ = d01; t2_ = t1_ + d12; t3_ = t2_ + d23
-        u = t1_ + s * d12
-        out = []
-        for a0, a1, a2, a3 in ((P0x[i], P1x[i], P2x[i], P3x[i]), (P0y[i], P1y[i], P2y[i], P3y[i])):
-            A1 = ((t1_ - u) * a0 + (u - t0_) * a1) / (t1_ - t0_)
-            A2 = ((t2_ - u) * a1 + (u - t1_) * a2) / (t2_ - t1_)
-            A3 = ((t3_ - u) * a2 + (u - t2_) * a3) / (t3_ - t2_)
-            B1 = ((t2_ - u) * A1 + (u - t0_) * A2) / (t2_ - t0_)
-            B2 = ((t3_ - u) * A2 + (u - t1_) * A3) / (t3_ - t1_)
-            out.append(((t2_ - u) * B1 + (u - t1_) * B2) / (t2_ - t1_))
-        return out
-    ax, ay = x0[idx], y0[idx]                           # (a piece's own ends where it is not cut, and at its first
-    bx, by = x1[idx], y1[idx]                           #  start and last end; the curve between)
-    wa = np.nonzero(j > 0)[0]
-    wb = np.nonzero(j < kk - 1)[0]
-    if len(wa):
-        ax = ax.copy(); ay = ay.copy()
-        ax[wa], ay[wa] = curve(j[wa] / kk[wa], wa)
-    if len(wb):
-        bx = bx.copy(); by = by.copy()
-        bx[wb], by[wb] = curve((j[wb] + 1) / kk[wb], wb)
-    R = L[idx].copy()
-    R[:, 0], R[:, 1], R[:, 2], R[:, 3] = ax, ay, bx, by
-    R[:, 5] = e[idx] / kk
-    R[:, 6] = t[idx] + cyc[idx] * j / kk
-    return R
 
 # the beam's width with its intensity (Z/127; its brightness: TUBE_LIGHT): below intensity 63 the tube is close
 # to its cutoff and the spot shrinks fast: the owner (2026-10-12): Vectorblade's background stars (intensity 15-47) are much
@@ -1964,7 +1808,7 @@ TRAIL_K = 1.5                                   # its brightness on the screen (
 # the afterglow joins up: a fading spot (older than the hold) spreads to its neighbours each display frame,
 # keeping PHOS_GROW of its brightness, so the copies a moving object leaves join into one smooth trail -
 # the owner (2026-10-14): Mine Storm's big mothership leaves "a singular trail, not a bunch of snapshots";
-# sharp, not blurred (PHOS_SPREAD). Light brighter than PHOS_GCAP (corner spots) spreads only as a line
+# sharp, not blurred. Light brighter than PHOS_GCAP (corner spots) spreads only as a line
 # does. One step per display frame of 1 px in an 820 px high window at 60 Hz (scaled). Tube > Afterglow joining
 PHOS_GCAP = 1.5
 # the afterglow's spots overlap: the fading light (not the lit lines) is averaged over a spot PHOS_SMOOTH px
@@ -1984,10 +1828,6 @@ PHOS_GAGE = 0.035               # the afterglow grows only this long after its h
                                 #  the copies but stays the vector's size - a bullet's glow grew into a splotch)
 PHOS_GROW = 0.0                 # (0.5 the owner's choice 2026-10-14; 0 and off by default since the two-layer afterglow,
                                 #  2026-10-29: crisp copies - phos_grow_on)
-PHOS_SPREAD = 0.0               # how much the afterglow diffuses per display frame (0 = crisp copies, the earlier
-                                #  look: a fast object left a ripple of sharp outlines; the owner, 2026-10-14: the
-                                #  tube's trail is smooth - Mine Storm's big mothership; no longer in the menu: no visible
-                                #  effect, the glow fades first - Afterglow overlap smooths it)
 
 # A game may draw its picture in two halves, one on each frame (a menu that draws half its lines each frame: they share nothing
 # with the one before and nearly everything with the one before that). On the tube both halves keep glowing;
@@ -2320,10 +2160,8 @@ PAD_BOT = (FRAME_Y + FRAME_M) / 2 - 0.5 + GLASS_DY / 2                  # (the s
 KNOB_STRIP = 3.7 * KNOB_R   # the strip below the picture: a little black space, the labels, the knob, black space
 
 class GLBloomRenderer(GLRenderer):
-    """Phosphor and bloom on the graphics card. The picture lives in a phosphor image (16-bit float,
-    see PHOS_A): every spot is lit by the beam and fades as measured on a real Vectrex. A quarter-size
-    copy is blurred (separable Gaussian shader, `passes` times) and added on top with `bloom` strength.
-    B switches phosphor + bloom off (crisp lines), F5/F6 bloom -/+, F7/F8 trail -/+, T trail on/off."""
+    """The phosphor on the graphics card. The picture lives in a phosphor image (16-bit float,
+    see PHOS_A): every spot is lit by the beam and fades as measured on a real Vectrex."""
     def __init__(self, hwnd, widget=None):
         super().__init__(hwnd, widget)
         gl = self.gl
@@ -2511,7 +2349,6 @@ class GLBloomRenderer(GLRenderer):
         self.trail_on = True         # the phosphor trail (T)
         self.trail = 0.6             # the afterglow's time scale: 1 = as measured on a real Vectrex (F7 / F8); 0.6 the
                                      #  owner's choice side by side with the tube (2026-10-14)
-        self.bloom = 0.55            # bloom strength (the owner's choice, 2026-10-08)
         self.wob_on = True           # mains hum wobble (see HUM_AXES)
         self.wob_strength = 0.1074   # rms offset, game px (the owner's choice, 2026-10-08)
         self.line_gap = 7.0          # the integrators' stop delay in cycles (the core's; Tube > Line gaps): the gaps at
@@ -2552,7 +2389,6 @@ class GLBloomRenderer(GLRenderer):
         self.light_tex = None; self.light_key = None; self.light_made_t = 0.0
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
         self.look2 = 'vectrex'       # Tube > Look: 'vectrex' (the measured picture) or 'bright' (the tube's light lifted, the beam wider - blook)
-        self.look = 'bright'         # Tube > Look: 'bright' (all lines up to white) or 'vectrex' (as a real Vectrex, LOOK_*)
         self.white_k = WHITE_DEFAULT # Tube > White balance: the beam's white, kelvin (see white_gain)
         self.beam_trace = True       # (2026-11-22: the picture is the beam's path lighting the phosphor - always; the line renderer's rules are not used any more): the spot's own path lights the phosphor by the time it spent
                                      #  (BEAM_TRACE_CSAT; the core's beam-trace mode) - off: the line renderer
@@ -2560,16 +2396,12 @@ class GLBloomRenderer(GLRenderer):
                                      #  line, no corner glow, overlapping light not adding up (off: the real tube)
         self.halo_k = BEAM_HALO_K    # its brightness (Tube > Corner glow strength)
         self.dot_k = 1.0             # the resting spots' brightness, x DOT_K (Tube > Corner dot brightness)
-        self.dwell_on = True         # the spot slowing inside a stroke lights a resting spot (REST_DWELL_SLOW)
-        self.bend_smooth = True      # bends cut along a smooth curve (BEND_STEP)
         self.dither_on = True        # the picture dithered from 16 bits to the window's 8 (no bands in soft glows)
-        self.phos_spread = PHOS_SPREAD  # the afterglow's softness (0; not in the menu)
         self.phos_grow = PHOS_GROW      # how the afterglow joins up (Tube > Afterglow joining)
         self.phos_smooth = PHOS_SMOOTH  # the afterglow's smoothing, 0 .. 1 (Tube > Afterglow smoothing)
         self.phos_grow_on = False       # (their switches: off - crisp copies, the owner's choice 2026-10-29; on for a
         self.phos_smooth_on = False     #  softer trail, some screens show it better)
         self.frame_no = 0; self.frame_t0 = 0.0
-        self.passes = 2
         self.young = []              # frames still lighting up: [built, real start, real end, lit up to]
         self.last = None             # the newest frame (phosphor off: shown as it is)
         self.T_prev = None
@@ -3238,19 +3070,6 @@ class GLBloomRenderer(GLRenderer):
         """the vertex arrays for these lines (window pixels): (v, t, c, tt, n), or None"""
         if lines is None or len(lines) == 0:                 # (a list, or a numpy array: Smooth motion)
             return None
-        if (_np is not None and getattr(self, 'dwell_on', True) and not getattr(self, 'even_beam', False)
-                and not (getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'))):
-            try:                                           # (the spot slowing inside a stroke: a resting spot, see REST_DWELL_SLOW)
-                A = getattr(lines, 'np', None)               # (the core's frame: its array made already)
-                if A is None or len(A) != len(lines):
-                    A = _np.asarray(lines, dtype=_np.float64)
-                if A.ndim == 2 and A.shape[1] >= 7 and len(A) > 2:
-                    A2 = dwell_rests(A)
-                    if getattr(self, 'bend_smooth', True):
-                        A2 = smooth_bends(A2, self.map[0] if hasattr(self, 'map') else None)
-                    lines = A2                             # (the array: not converted a second time)
-            except (ValueError, TypeError, IndexError):
-                pass
         _bt = bool(getattr(self, 'beam_trace', False)) and hasattr(self, 'satprog')
         if _np is not None and not getattr(self, 'np_off', False) and not any(   # (beam trace: the switch-on bulge - the size alone - in _build_np too)
                 getattr(self, a, d) != d for a, d in ((() if _bt else (('crt_sx', 1.0), ('crt_sy', 1.0))) + (('crt_skew', 0.0), ('crt_shift', 0.0),
@@ -3584,7 +3403,7 @@ class GLBloomRenderer(GLRenderer):
         rest = ~halo & ~moving
         kk = np.zeros(n)
         if halo.any():
-            lk = int(self.vlook())
+            lk = 0
             fw = np.where(halo, REST_HALO_W[lk] * zw * cwidth, fw)
             ce = np.where((b & 1024) != 0, cyc - DOT_C0, cyc)
             kk = np.where(halo, getattr(self, 'halo_k', BEAM_HALO_K) / BEAM_HALO_K * (REST_HALO[lk] * dot_light(ce)) ** REST_HALO_P, kk)
@@ -3594,16 +3413,14 @@ class GLBloomRenderer(GLRenderer):
             with np.errstate(divide='ignore', invalid='ignore'):
                 ee = np.where(moving, cyc / np.where(moving, lp / gp, 1.0), 0.0)
             kk = np.where(moving, BEAM_LINE * (1.0 - BEAM_SPEED * np.exp(-ee / 0.8)), kk)
-            if self.vlook():                               # (the Vectrex look: a slow line brighter by the beam's time)
-                kk = np.where(moving & (ee > LOOK_EE), kk * np.minimum(np.maximum(ee, LOOK_EE) / LOOK_EE, LOOK_EC) ** LOOK_EQ, kk)
             if rest.any():
                 al = dot_light(np.where((b & 1024) != 0, cyc - DOT_C0, cyc))   # (joined: DOT_C0 less)
                 tl = zk ** 2.2                             # (the intensity's light, x the 7F line's)
-                kk = np.where(rest, DOT_K[int(self.vlook())] * getattr(self, 'dot_k', 1.0) * al ** (1 / 2.2), kk)
+                kk = np.where(rest, DOT_K[0] * getattr(self, 'dot_k', 1.0) * al ** (1 / 2.2), kk)
                 rd = np.maximum(0.0, (zi - BEAM_Z0DOT) / (BEAM_LOWZ - BEAM_Z0DOT))
                 zdot = (0.55 + 0.45 * BEAM_LOWZ) * rd ** BEAM_DOTLOWP
                 zk = np.where(rest & (zi < BEAM_LOWZ), np.maximum(zk, zdot * np.minimum(1.0, cyc / BEAM_DOTLOWC)), zk)
-                fw = np.where(rest, fw * (1.0 + (DOT_W[int(self.vlook())] - 1.0) * np.minimum(1.0, al * tl / DOT_WL)), fw)   # (see DOT_WL)
+                fw = np.where(rest, fw * (1.0 + (DOT_W[0] - 1.0) * np.minimum(1.0, al * tl / DOT_WL)), fw)   # (see DOT_WL)
         sg = np.maximum(0.6, fw * gp / 2.355)
         kk = kk * zk * gain * BEAM_PEAK * cgain
         kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
@@ -3773,7 +3590,7 @@ class GLBloomRenderer(GLRenderer):
             zk, zw = beam_z(zi)
             fw = (BEAM_W0 + BEAM_WZ * zi) * zw * cwidth    # thin, a little fuller when brighter
             if b & 256:                                    # a resting spot's halo (see BEAM_HALO_W)
-                lk = int(self.vlook())
+                lk = 0
                 fw = REST_HALO_W[lk] * zw * cwidth
                 k = getattr(self, 'halo_k', BEAM_HALO_K) / BEAM_HALO_K * float(REST_HALO[lk] * dot_light(cyc - DOT_C0 if b & 1024 else cyc)) ** REST_HALO_P
             elif getattr(self, 'even_beam', False):       # an ideal display: lines and points alike
@@ -3781,13 +3598,12 @@ class GLBloomRenderer(GLRenderer):
             elif not zlen:
                 e = cyc / (lp / gp)                        # cycles per game pixel
                 k = BEAM_LINE * (1.0 - BEAM_SPEED * exp(-e / 0.8))   # fast sweeps slightly fainter
-                if e > LOOK_EE and self.vlook(): k *= min(e / LOOK_EE, LOOK_EC) ** LOOK_EQ   # (the Vectrex look)
             else:                                          # the beam resting: a spot
                 al = float(dot_light(cyc - DOT_C0 if b & 1024 else cyc)); tl = zk ** 2.2   # (joined: DOT_C0 less)
-                k = DOT_K[int(self.vlook())] * getattr(self, 'dot_k', 1.0) * al ** (1 / 2.2)   # (the Dot Test photos)
+                k = DOT_K[0] * getattr(self, 'dot_k', 1.0) * al ** (1 / 2.2)   # (the Dot Test photos)
                 if zi < BEAM_LOWZ:                         # a long rest crosses the cutoff earlier (beam_zdot)
                     zk = max(zk, beam_zdot(zi) * min(1.0, cyc / BEAM_DOTLOWC))
-                fw *= 1.0 + (DOT_W[int(self.vlook())] - 1.0) * min(1.0, al * tl / DOT_WL)   # (see DOT_WL)
+                fw *= 1.0 + (DOT_W[0] - 1.0) * min(1.0, al * tl / DOT_WL)   # (see DOT_WL)
             sg = max(0.6, fw * gp / 2.355)                 # sigma, window px
             k *= zk * gain * BEAM_PEAK * cgain
             if b & 128 and not web:                        # (the beam fading out: a faint trace)
@@ -3856,9 +3672,6 @@ class GLBloomRenderer(GLRenderer):
     def bgain(self):
         """the Bright look's lift of the tube's light as a screen value (1.0: the Vectrex look)"""
         return (self.hdr_hk if getattr(self, 'hdr_hk', 1.0) > 1.0 else BL_GAIN) if self.blook() else 1.0
-    def vlook(self):
-        """the line renderer's Vectrex look - gone with it (2026-11-22: one picture, the beam on the phosphor; an HDR screen opens its top)"""
-        return False
     def hold(self):
         """how long a lit spot stays at full brightness: until the game has drawn its next picture. A real tube
         keeps a slow game's picture as bright as a fast one's (the eye averages the flashes); here a spot stays
@@ -3952,26 +3765,18 @@ class GLBloomRenderer(GLRenderer):
 
     # Quality profiles (the control deck, Vectrex > Quality): each sets these switches - the costly refinements - and
     # leaves the rest of the look alone; a switch changed by hand makes the profile Custom (the app's
-    # current_profile). What makes it a Vectrex stays in every profile: the phosphor's afterglow, the beam's glow, the
-    # corner dots and their glow, the overlay's colours. High: all on (the defaults). Medium: the room's light and its
-    # reflections off, one bloom pass. Low (best looks for the work): also the tube's curved geometry and glass edge,
-    # the overlay's scratches, plastic glow and parallax, the case's reflections, the bends' smoothing (smooth_bends)
-    # and the dither (dither_on: the picture straight to the window). Chosen by hand, or suggested by Test this PC
-    # (pctest.py) - nothing switches by itself while playing.
-    # Four tiers (2026-10-27, measured on a Raspberry Pi 5's V3D and an RTX 5090): Ultra - everything on (the defaults).
-    # High - the room's light and its reflections off, one bloom pass. Medium - also the tube's curved geometry and
-    # glass edge, the overlay's scratches, plastic glow and parallax, the case's reflections, the bends' smoothing and
-    # the dither. Low - Medium, and the phosphor image (the afterglow, the display pass, the bloom's source) kept at
-    # half the window's size while the lines themselves are still drawn at full size (phos_scale: the GPU cost of
-    # those passes is per pixel - a quarter of the work, the vectors as sharp), and 30 pictures a second instead of
-    # 60 (half_rate: every pass runs per picture; the phosphor model takes any spacing).
-    PROFILE_KEYS = ('passes', 'curve_on', 'glass_on', 'glass_room', 'light_on', 'light_ov', 'art_glow', 'scr_on',
-                    'art_parallax', 'case_refl', 'bend_smooth', 'dither_on', 'phos_scale', 'half_rate', 'phos_full', 'line_half')
-    _MEDIUM = dict(passes=1, curve_on=False, glass_on=False, glass_room=False, light_on=False, light_ov=False,
+    # current_profile). Chosen by hand, or suggested by Test this PC (pctest.py) - nothing switches by itself while
+    # playing. Ultra - everything on (the defaults). High - the room's light and its reflections off, the afterglow
+    # packed in one image. Medium - also the tube's curved geometry and glass edge, the overlay's scratches and plastic
+    # glow, the case's reflections and the dither, the phosphor at three-quarter size. Low - Medium, the phosphor
+    # image (the afterglow, the display pass) at half the window's size while the lines themselves are still drawn at
+    # full size (phos_scale: the GPU cost of those passes is per pixel), and 30 pictures a second instead of 60
+    # (half_rate). Basic - Low, the lines at the phosphor's size too (line_half).
+    PROFILE_KEYS = ('curve_on', 'glass_on', 'glass_room', 'light_on', 'light_ov', 'art_glow', 'scr_on',
+                    'art_parallax', 'case_refl', 'dither_on', 'phos_scale', 'half_rate', 'phos_full', 'line_half')
+    _MEDIUM = dict(curve_on=False, glass_on=False, glass_room=False, light_on=False, light_ov=False,
                    art_glow=False, scr_on=False, case_refl=0.0, dither_on=False, phos_full=False)   # (parallax kept)
-    # (bend smoothing stays on in Medium and Low - the owner wants corners closed: no cost measured on the Pi 5's V3D,
-    #  Medium 62-64 ms a picture with or without it, 2026-10-27)
-    PROFILE_OFF = {'high': dict(passes=1, light_on=False, light_ov=False, glass_room=False, phos_full=False),
+    PROFILE_OFF = {'high': dict(light_on=False, light_ov=False, glass_room=False, phos_full=False),
                    'medium': dict(_MEDIUM, phos_scale=0.75),     # (three-quarter phosphor: Pi 5 V3D at 1080p 62 -> 37 ms
                                                                     #  a picture, 16 -> 27 a second; a slightly softer glow)
                    'low': dict(_MEDIUM, phos_scale=0.5, half_rate=True),
@@ -4315,7 +4120,7 @@ class GLBloomRenderer(GLRenderer):
                 self.ActiveTexture(0x84C3); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0])
             self.ActiveTexture(0x84C0)
             (fa, ta), (fs, tsl) = PHOS_A
-            tk = TRAIL_K * ((LOOK_TRAIL_HDR if self.hdr_hk > 1.0 else LOOK_TRAIL) if self.vlook() else 1.0)   # (the Vectrex look: its trail)
+            tk = TRAIL_K
             self.Uniform2f(u['amp'], fa * tk, fs * tk); self.Uniform2f(u['tau'], ta * ts, tsl * ts)
             self.Uniform2f(u['kd'], *((1.0, 1.0) if od is not None else (math.exp(-dt / (ta * ts)), math.exp(-dt / (tsl * ts)))))
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)
@@ -4373,7 +4178,6 @@ class GLBloomRenderer(GLRenderer):
         ex = float(os.environ.get('VX_BT_EXPO', BT_EXPO))    # (the exposure: light -> the screen; VX_BT_EXPO: tests)
         ex *= float(os.environ.get('VX_BT_SPOT', BT_SPOT))   # (a wider spot: its peak lower - the reference line stays at white)
         if self.blook(): ex *= (self.hdr_hk if getattr(self, 'hdr_hk', 1.0) > 1.0 else BL_GAIN) ** 2.2   # (Bright: the light lifted here)
-        if self.vlook(): ex /= (LOOK_VSH if getattr(self, 'hdr_hk', 1.0) > 1.0 else LOOK_VS)   # (the tone step scales the light back)
         k = float(getattr(self, 'white_k', WHITE_DEFAULT))
         t0 = white_gain(WHITE_DEFAULT); tk = white_gain(k)                      # (the tube's white as the owner's photos show it at the default
         t = tuple(a * b / c for a, b, c in zip(BT_TINT, tk, t0)); t = tuple(v / max(t) for v in t)   #  setting - BT_TINT - moved with the White balance setting)
@@ -4894,22 +4698,12 @@ class GLBloomRenderer(GLRenderer):
         text('RESET', rx, cy - 1.5 * r - lh, lh)
 
     def _finish(self, src):
-        """bloom from the picture `src`, then the screen: picture, bloom, overlay, counter"""
+        """the picture `src` onto the screen: picture, overlay, counter"""
         gl = self.gl
         w, h = self.size
         gl.glDisableClientState(GL_COLOR_ARRAY); gl.glDisableClientState(GL_VERTEX_ARRAY)
-        # 2. bloom: quarter size copy, blurred
         gl.glDisable(GL_BLEND)
-        self.BindFB(GL_FRAMEBUFFER, self.B1[1]); gl.glViewport(0, 0, self.qw, self.qh)
-        self._down(src, getattr(self, 'psize', None) if src == self.D[0] else None)   # (D: the phosphor's own size)
-        self.UseProgram(self.prog); self.Uniform1i(self.u_tex, 0)
-        for _ in range(self.passes):
-            self.BindFB(GL_FRAMEBUFFER, self.B2[1]); self.Uniform2f(self.u_dir, 1.0 / self.qw, 0.0)
-            self._quad(self.B1[0])
-            self.BindFB(GL_FRAMEBUFFER, self.B1[1]); self.Uniform2f(self.u_dir, 0.0, 1.0 / self.qh)
-            self._quad(self.B2[0])
-        self.UseProgram(0)
-        # 3. the screen: the picture plus the bloom (curved tube: first into E, bent onto the screen)
+        # the screen: the picture (curved tube: first into E, bent onto the screen)
         curve = getattr(self, 'curve_on', False) or getattr(self, 'glass_on', False)   # (the glass pass: the glass edge)
         pw, ph = getattr(self, 'psize', (w, h))
         self.BindFB(GL_FRAMEBUFFER, self.E[1] if curve else self.out); gl.glViewport(0, 0, *((pw, ph) if curve else (w, h)))
@@ -4919,12 +4713,10 @@ class GLBloomRenderer(GLRenderer):
             gl.glMatrixMode(GL_MODELVIEW); gl.glPushMatrix(); gl.glTranslatef(hx / float(w), -hy / float(h), 0.0)
         self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0); self.Uniform1f(self.u_thk, self.hdr_hk)
         self.Uniform1f(self.u_tbgh, self.hdr_hk if (self.blook() and self.hdr_hk > 1.0) else 0.0)
-        self.Uniform1f(self.u_tvl, (LOOK_VSH if self.hdr_hk > 1.0 else LOOK_VS) if self.vlook() else 0.0)
+        self.Uniform1f(self.u_tvl, 0.0)
         self._quad(src)
         self.UseProgram(0)
         gl.glEnable(GL_BLEND); gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-        g = self._wb(); gm = max(g)                                # the halo: the white balance's hue, at full
-        self._quad(self.B1[0], g[0] / gm, g[1] / gm, g[2] / gm, (float(os.environ.get('VX_BT_BLOOM', 0.0)) if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog') else self.bloom * (LOOK_GB if self.vlook() and self.hdr_hk <= 1.0 else 1.0)))   # (the beam on the phosphor: the glass's glow is in the light itself - BT_HALO_F)   #  strength (the cores stay white: cold)
         if hx or hy:
             gl.glMatrixMode(GL_MODELVIEW); gl.glPopMatrix()
         ov = getattr(self, 'overlay', None)

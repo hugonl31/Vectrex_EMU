@@ -1329,9 +1329,9 @@ class Deck:
         if attr == 'volume':
             default = 1.0
         default = V.ART_ADJ_DEFAULT.get(attr, default)
-        rel = attr not in ('volume', 'line_gap', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
+        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
         if rel:
-            lo, hi, log = default * (1 - V.SLIDER_SPAN), default * (1 + V.SLIDER_SPAN), False
+            lo, hi, log = max(V.SLIDER_LOW.get(attr, 0.0), default * (1 - V.SLIDER_SPAN)), default * (1 + V.SLIDER_SPAN), False
         return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default)
 
     def mk_slider(self, name, dep):

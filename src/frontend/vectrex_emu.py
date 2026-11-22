@@ -3763,7 +3763,7 @@ class App:
                "Not allowed: F11, Esc, Page Up / Down, + - 0 9, P L O C and Ctrl+... (the emulator's shortcuts).")
         him = deck.info_mark(top, deck.TOPBG, how); him.pack(side='left')
         hl = tk.Label(top, text=' how it works', fg=deck.DIM, bg=deck.TOPBG, font=(MONO, 9)); hl.pack(side='left')
-        deck.Tip(him, how, also=(hl,))
+        deck.Tip(him, how)
         sc = deck.Scroller(t, deck.BG); sc.frame.pack(padx=10, pady=(10, 0)); sc.bind_wheel(t)   # (a short screen: it scrolls)
         area = tk.Frame(sc.holder, bg=bg, highlightthickness=1, highlightbackground=deck.EDGE2); area.pack()
         body = tk.Frame(area, bg=bg); body.pack(padx=12, pady=10)
@@ -4147,7 +4147,7 @@ class App:
             cb = tk.Checkbutton(of, text=text, variable=v, command=cmd, fg=g, bg=bg, selectcolor=bg, activebackground=bg,
                                 activeforeground=hi, font=f9, anchor='w', highlightthickness=0, bd=0); cb.pack(side='left')
             im = deck.info_mark(of, bg, info); im.pack(side='left', padx=(4, 0))
-            deck.Tip(im, info, also=(cb,))
+            deck.Tip(im, info)
         bar.pack(fill='x', pady=(10, 0))
         t.bind('<KeyPress>', key_pressed)
         t.bind('<Escape>', lambda e: (cap.update(what=None), refresh(), 'break')[2] if cap['what'] else close())

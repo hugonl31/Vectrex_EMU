@@ -135,7 +135,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		curHz = d.getRefreshRate ();
 		log ("screen: " + d.getRefreshRate () + " Hz (up to " + best + "), HDR " + (hdrCan ? "yes, headroom " + hdrRoom : hdrScreen ? "screen yes, but not on this Android (before 14): off" : "no") + ", " + getResources ().getDisplayMetrics ().widthPixels + " x " + getResources ().getDisplayMetrics ().heightPixels + " px, density " + getResources ().getDisplayMetrics ().density);
 		VX.setHdr (hdrCan && prefs.getFloat ("app.hdr", 1f) > 0.01f, hdrRoom, prefs.getFloat ("app.hdr", 1f));
-		VX.setBright (prefs.getInt ("app.look", 0));
+		VX.setBright (prefs.getInt ("app.look", 1));   /* (Bright the default on phones and tablets) */
 		VX.setHdrLook (0);   /* (2026-11-22: one picture - no look to choose) */   /* (Bright the default everywhere) */   /* (1, the whole picture lifted: gone) */   /* (the look: Vectrex the default with HDR, Bright without - as iOS) */
 		trailTick ();
 	}
@@ -242,6 +242,9 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	/* the trail for the look and the screen's brightness, every 2 s (the owner's Nova next to a real Vectrex, 2026-11-21: Vectrex on
 	 * SDR 2x, on HDR 1.25x; Bright at full brightness a bit too bright - 0.75x, easing with the slider) */
 	float trailLast = -1; final Runnable trailR = this::trailTick;
+	/* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost; on by default on a
+	 *  phone (its shorter side under 600 dp), off on a tablet, the setting below the Look) */
+	boolean trailBoost () { return prefs.getBoolean ("app.trailboost", getResources ().getConfiguration ().smallestScreenWidthDp < 600); }
 	void trailTick ()
 	{
 		h.removeCallbacks (trailR);
@@ -249,7 +252,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		try { b = android.provider.Settings.System.getInt (getContentResolver (), android.provider.Settings.System.SCREEN_BRIGHTNESS, 128) / 255f; } catch (Throwable t) { }
 		b = Math.max (0f, Math.min (1f, b));
 		final int md = 0;
-		final float tm = 1f;   /* (2026-11-22: as the PC, the master - was scaled down with the screen's brightness) */  //   /* (SDR Vectrex 2.8: 40 % more - the owner's Nova, iPad and iPhone without HDR) */
+		final float tm = trailBoost () ? 1.2f : 1f;   /* (2026-11-22: as the PC, the master - was scaled down with the screen's brightness) */  //   /* (SDR Vectrex 2.8: 40 % more - the owner's Nova, iPad and iPhone without HDR) */
 		if (Math.abs (tm - trailLast) > 0.02f) { trailLast = tm; VX.setTrailMul (tm); log ("trail x" + tm + " (look " + md + ", brightness " + Math.round (b * 100) + " %)"); }
 		h.postDelayed (trailR, 2000);
 	}

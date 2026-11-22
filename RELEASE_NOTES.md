@@ -5,12 +5,18 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.8.1
 
-* Look (PC: Tube > Look; iPhone / iPad and the Android app: Settings > Look): Vectrex, the default - the measured picture.
+* Look (PC: Tube > Look; iPhone / iPad and the Android app: Settings > Look): Vectrex - the measured picture, the default
+  on the PC. Bright is the default on phones and tablets.
   Bright - for a small screen, whose thin lines give little light: the tube's light lifted and the beam 30 % wider.
   On an ordinary screen the faint lines come up and the top is pressed into white; on an HDR screen the whole
   ordinary picture moves up to the screen's peak.
 * The afterglow on iPhone / iPad, Android and RetroArch as on the PC: its faint end was a little too bright there, and
   the phone apps dimmed the whole trail with the screen's brightness (to half at full brightness).
+* Brighter afterglow (iPhone / iPad and the Android app, below the Look): the trail 20 % brighter - on a phone's small
+  picture it is lost. On by default on phones, off on tablets.
+* The Bright look lifts the afterglow with the lines, on the PC too (there the bright lines' trail stayed as it was).
+* The overlay's plastic glow and glints follow the picture at once: they were smoothed over 0.15 s and trailed behind
+  moving things.
 * Test Cart, a cartridge to compare the picture between platforms (trail, levels, dots, corners; buttons 1-4): the
   phone apps carry it (Library > Tests), `tools/testcart_compare.py` measures snapshots of it.
 * A new test cartridge, Glow Test: two full-length lines, still or moving at three speeds, the refresh rate from 50

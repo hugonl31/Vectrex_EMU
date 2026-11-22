@@ -1279,11 +1279,14 @@ const char *vxa_cinfo (int i) { return vxa_cat[i].info; }
 void ulog (NSString *s) { vlog ("ui %s", s.UTF8String); }
 /* HDR (Settings > App, HDR brightness 0..1 of the screen's headroom; the default 1 where the screen has HDR): the core's
  * brightest light up to that, its knee's top in display gamma */
+/* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost, its lit area so much smaller
+ *  than on an iPad or a monitor; on by default on an iPhone, off on an iPad, the setting below the Look) */
+int vxa_trail_boost (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.trailboost"]; return n ? n.boolValue : UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone; }
 float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIScreen.mainScreen.potentialEDRHeadroom; return 1; }
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
-	{ extern float vx_bright; vx_bright = [NSUserDefaults.standardUserDefaults integerForKey:@"app.look"] == 1 ? 1.0f : 0.0f; }   /* (the look: Vectrex, or Bright - lifted and wider) */
+	{ extern float vx_bright; NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; vx_bright = !lk || lk.integerValue == 1 ? 1.0f : 0.0f; }   /* (Bright the default here)   /* (the look: Vectrex, or Bright - lifted and wider) */
 	vx_hdr_lift = 0.0f;   /* (2026-11-22: one picture - the beam on the phosphor; an HDR screen opens its top, no look to choose) */
 	/* (Apple: map to the headroom the screen gives NOW (currentEDRHeadroom) - the most (potential) only while iOS has not yet
 	 *  raised it for our light; at full brightness the iPhone's white is near its peak already, ~1.6x left: mapped to 8x, all
@@ -1293,7 +1296,7 @@ void vxa_hdr_update (void)
 	{ /* (the trail for the look and the screen's brightness - the owner next to a real Vectrex, 2026-11-21: Vectrex on HDR 1.25x,
 	   *  on SDR 2x; Bright at full brightness 0.5x - easing with the slider) */
 	  extern float vx_trail_mul; extern int vx_app_dots; vx_app_dots = 1; const double b = UIScreen.mainScreen.brightness;
-	  const float tm = 1.0f; (void) b;   /* (2026-11-22: as the PC, the master - the trail was scaled down with the screen's brightness, to half at full: the old look's) */   /* (SDR Vectrex 2.8: the owner's iPad and iPhone without HDR, 40 % more than 2) */
+	  const float tm = vxa_trail_boost () ? 1.2f : 1.0f; (void) b;   /* (2026-11-22: as the PC, the master - the trail was scaled down with the screen's brightness, to half at full: the old look's) */   /* (SDR Vectrex 2.8: the owner's iPad and iPhone without HDR, 40 % more than 2) */
 	  if (fabsf (tm - vx_trail_mul) > 0.02f) { vlog ("trail x%.2f (look %.0f, brightness %.0f %%)", tm, vx_hdr_lift, b * 100); vx_trail_mul = tm; } }
 	const double use = hr <= 1.05 ? 1.0 : cur > 1.05 ? fmin (cur, hr) : hr;
 	float pk = use > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (use - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */

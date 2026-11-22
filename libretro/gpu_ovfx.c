@@ -359,7 +359,8 @@ static int ox_draw (int glow, double dt)
 	ph_target (ox_Q0, 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_down); ph_bind (ox_down, "tex", 0, ox_L); ph_bind (ox_down, "pS", 1, ph_S); ph_bind (ox_down, "pF", 2, ph_F[ph_i ^ 1]); OU1F (ox_down, "br", bt_gpu ? 1.0f : opt_bright);
 	glUniform2f_ (ph_ul (ox_down, "sp"), 1.0f / FW, 1.0f / FH); glUniform2f_ (ph_ul (ox_down, "qs"), qs[0], qs[1]); ox_quad (); OXT (2);
 	{ double a = 1.0 - exp (-(dt < 0 ? 0 : dt > 1 ? 1 : dt) / 0.15); if (ox_t_prev < 0) a = 1; ox_t_prev = 1;
-	  a = 1;   /* (a trial, 2026-11-22: the smoothing off - the plastic's glow trailed 40-150 px behind a moving line; the owner tries it) */
+	  a = 1;   /* (2026-11-22: not smoothed in time any more - the plastic's glow trailed 40-150 px behind a moving line, and without it
+	             neither the glow nor the glints flicker while the vectors are steady: measured with the Glow Test cart, the owner's choice) */
 	  ph_target (ox_Q1[ox_q1i ^ 1], 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_q1); ph_bind (ox_q1, "q0", 0, ox_Q0); ph_bind (ox_q1, "q1", 1, ox_Q1[ox_q1i]);
 	  OU1F (ox_q1, "a", a); ox_quad (); ox_q1i ^= 1; } OXT (3);
 	{ const double s1 = 4.0 * kpx, s2 = 12.0 * kpx, r = ovfx.reach < 0 ? 0 : ovfx.reach > 2 ? 2 : ovfx.reach;

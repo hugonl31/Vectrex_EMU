@@ -1896,7 +1896,9 @@ PHOS_GAIN = 1.0 / (1.0 - 0.40)  # a still picture as bright as with the earlier 
 PHOS_HOLD = 0.021               # a lit spot is at full brightness at least this long (a 50 fps frame;
                                 #  longer for a slower game: see hold())
 PHOS_HOLD_OFF = 0.021           # trail off: a spot holds until the game draws it again, then is gone
-PHOS_A = ((0.1404, 0.0454), (0.0582, 0.350))   # the measured afterglow (share, time constant s)
+PHOS_A = ((0.15, 0.0583), (0.022, 1.25))        # the afterglow (share, time constant s). 2026-11-22, the owner next to the tube: it drops
+                                                #  quicker, then lingers - its faintest light about twice as far (the measured one
+                                                #  before: (0.1404, 0.0454), (0.0582, 0.350); the core: gpu_phos.c PHOS_A1 ..)
 TRAIL_K = 1.5                                   # its brightness on the screen (the owner, 2026-11-15: the trail on black as
                                                 #  it looked through an overlay - the light now added as light everywhere)
 # the afterglow joins up: a fading spot (older than the hold) spreads to its neighbours each display frame,

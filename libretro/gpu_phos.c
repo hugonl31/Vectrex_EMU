@@ -29,6 +29,12 @@ GLFN(void, glFinish, (void)); GLFN(void, glInvalidateFramebuffer, (GLenum, GLsiz
 static uint32_t *br_img; static int br_shown, br_gen; static GLuint ph_ui, ph_uit; static int ph_uigen = -1, ph_uiw, ph_uih;   /* (browser.c) */
 static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_down2, ph_blurl, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
+/* Smooth motion's afterglow (2026-11-22): the in-between pictures move a line 2.4 places a game frame at 120 Hz, and every place
+ * it left started an afterglow - 2.4 trail lines where a Vectrex has one (the owner's iPhone, the Test Cart). So the afterglow
+ * starts only where the game itself drew: once a game frame its real lines are drawn into ph_E (pieces npl .. npl + ph_ex_n,
+ * built after the picture's), and that - not the last picture - is what the afterglow starts from; the other refreshes none
+ * (ph_ex_mode: Smooth motion is drawing in-betweens; set by libretro_vx.c each refresh, taken here) */
+static int ph_ex_mode, ph_ex_n; static GLuint ph_E;
 static GLuint ph_beam, ph_sat, ph_L, ph_H; static float *ph_hbuf; static size_t ph_hbufn;   /* (the beam on the phosphor: the light image, the glass's glow) */
 static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1, ph_hdr_made = -1;
 float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_vs = 0.25f, vx_hdr_vss = 0.15f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lt = 0.3f, vx_hdr_sn = 6.0f, vx_hdr_gb = 1.3f, vx_hdr_hb = 2.75f, vx_hdr_hw = 1.0f, vx_hdr_dw = 1.6f;   /* (the apps: the dots' spot 1.6x wide, their halo x2.75 - the owner: x14 too much, as build 134 + 10 %) */   /* (SDR Vectrex: the dots' glow x2.5, their spot x1.6 wide (the photo: 1.2-1.6x the line's width at white) - at white as the lines, their glare tells them) */   /* (SDR: the lines 0.64 of white, the fat ones clipping at white - the owner, 2026-11-21: the grid too dim at 0.08) */   /* (dx: the dots above the lines, HDR; lt: the lines up to this share of the peak - the rest
@@ -114,12 +120,12 @@ static const char *PH_FS_SAT =
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2, acap; uniform int after; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2, acap, pex; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
 	"  float fa = txb(fc, uv).a;\n"
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, fa); return; }\n"
-	"  vec3 p = txb(fp, uv).rgb, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
+	"  vec3 p = txb(fp, uv).rgb * pex, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
 	"  float cap = pv && lp > acap ? acap / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
 	"  g1 += l * e1; g2 += l * e2;\n"
@@ -234,7 +240,7 @@ static int ph_gw, ph_gh; static GLuint ph_S, ph_B[2], ph_ovm, ph_ova;
 /* (gpu_reset's end: the functions, the programs) */
 static void ph_reset (void)
 {
-	int ok = 1; memset (ph_uc, 0, sizeof ph_uc); ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = 0;   /* (a new context: the old names mean nothing in it) */
+	int ok = 1; memset (ph_uc, 0, sizeof ph_uc); ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = ph_E = 0;   /* (a new context: the old names mean nothing in it) */
 	if (getenv ("VX_GPUPHOS") && !atoi (getenv ("VX_GPUPHOS"))) { fprintf (stderr, "[vectrex_emu] GPU: the light on the CPU (VX_GPUPHOS=0)\n"); return; }
 	GLLOAD (glGenBuffers); GLLOAD (glBindBuffer); GLLOAD (glBufferData); GLLOAD (glVertexAttribPointer); GLLOAD (glEnableVertexAttribArray);
 	GLLOAD (glVertexAttribDivisor); GLLOAD (glDrawArraysInstanced); GLLOAD (glGenFramebuffers); GLLOAD (glFramebufferTexture2D);
@@ -255,7 +261,7 @@ static void ph_reset (void)
 	ox_reset ();                                       /* (the overlay's effects: gpu_ovfx.c) */
 }
 static int ph_nfb;
-static void ph_lost (void) { memset (ph_uc, 0, sizeof ph_uc); ox_lost (); ph_nfb = 0; ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = 0; }   /* (the context gone: its objects with it) */
+static void ph_lost (void) { memset (ph_uc, 0, sizeof ph_uc); ox_lost (); ph_nfb = 0; ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = ph_E = 0; }   /* (the context gone: its objects with it) */
 static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint filt, const void *data)
 {
 	GLuint t; glGenTextures_ (1, &t); glBindTexture_ (GL_TEXTURE_2D, t);
@@ -326,11 +332,12 @@ static void ph_bind (GLuint prog, const char *name, int unit, GLuint tex)
 static void ph_size (void)
 {
 	ph_fb_flush ();
+	if (ph_E) { glDeleteTextures_ (1, &ph_E); ph_E = 0; }
 	if (ph_F[0]) {                                      /* (the old images out whenever there are any - not ph_made: a new game and a
 	                                                       new profile set it 0 for a dark phosphor, the images stayed: +160 MB a game
 	                                                       switch at 1640 x 2096, the iPad 2026-11-19) */
 		GLuint t[13] = { ph_F[0], ph_F[1], ph_G1[0], ph_G1[1], ph_G2[0], ph_G2[1], ph_S, ph_B[0], ph_B[1], ph_P, ph_L, ph_H, 0 };
-		glDeleteTextures_ (ph_L ? 12 : 10, t); ph_L = ph_H = 0; }
+		glDeleteTextures_ (ph_L ? 12 : 10, t); ph_L = ph_H = ph_E = 0; }
 	const int gd = 2 * S; ph_gw = FW / gd; ph_gh = FH / gd; if (ph_gw < 2) ph_gw = 2; if (ph_gh < 2) ph_gh = 2;
 	ph_pw = (int) (FW * fx_ps + 0.5); ph_ph = (int) (FH * fx_ps + 0.5); if (ph_pw < 2) ph_pw = 2; if (ph_ph < 2) ph_ph = 2;
 	ph_fw = fx_lh ? ph_pw : FW; ph_fh = fx_lh ? ph_ph : FH; ph_ps_made = fx_ps; ph_lh_made = fx_lh;
@@ -377,9 +384,11 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	if (FW != ph_w || FH != ph_h || !ph_made || fx_ps != ph_ps_made || fx_lh != ph_lh_made || (vx_hdr_peak > 1.0f || vx_hdr_lift > 1.5f) != ph_hdr_made) { ph_size (); if (!ph_ok) return 0; }
 	const int scaled = ph_pw != FW || ph_ph != FH || ph_fw != FW; const float ls = (float) ph_fw / FW;   /* (the lines' scale: Basic) */
 	const int cur = ph_i, prv = ph_i ^ 1; ph_i ^= 1;
+	const int ex_mode = ph_ex_mode, ex_n = ph_ex_mode ? ph_ex_n : 0, ntot = npl + ex_n; ph_ex_mode = ph_ex_n = 0;
+	if (ex_n && !ph_E) ph_E = ph_tex (ph_fw, ph_fh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
 	/* the pieces: 24 floats each */
-	if ((size_t) npl * 24 > ph_bufn) { free (ph_buf); ph_bufn = (size_t) npl * 24 + 4096; ph_buf = malloc (ph_bufn * sizeof (float)); }
-	for (int k = 0; k < npl; k++) { const pline *q = &pl[k]; float *o = ph_buf + (size_t) k * 24; const float ox = (float) (q->to * EW);
+	if ((size_t) ntot * 24 > ph_bufn) { free (ph_buf); ph_bufn = (size_t) ntot * 24 + 4096; ph_buf = malloc (ph_bufn * sizeof (float)); }
+	for (int k = 0; k < ntot; k++) { const pline *q = &pl[k]; float *o = ph_buf + (size_t) k * 24; const float ox = (float) (q->to * EW);
 		o[0] = q->ax + ox; o[1] = q->ay; o[2] = q->bx + ox; o[3] = q->by;
 		o[4] = q->x0 + ox; o[5] = q->y0; o[6] = q->x1 + ox; o[7] = q->y1;
 		o[8] = q->n0x; o[9] = q->n0y; o[10] = q->c0 + q->n0x * ox; o[11] = (q->cut & 1) ? 1.0f : 0.0f;
@@ -394,25 +403,27 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	/* the fresh light */
 	if (beam && !ph_L) { ph_made = 0; ph_size (); if (!ph_ok) return 0; }
 	const GLuint capp = beam ? ph_beam : ph_cap;
-	ph_target (beam ? ph_L : ph_F[cur], 0, 0, ph_fw, ph_fh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
-	if (npl) {
+	for (int pass = 0; pass < (ex_n ? 2 : 1); pass++) {   /* (the picture; then, Smooth motion, the game frame's own lines for the afterglow) */
+	const int p0 = pass ? npl : 0, pc = pass ? ex_n : npl; const GLuint dstF = pass ? ph_E : ph_F[cur];
+	ph_target (beam ? ph_L : dstF, 0, 0, ph_fw, ph_fh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
+	if (pc) {
 		glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
 		glUseProgram_ (capp); glUniform2f_ (ph_ul (capp, "sz"), (float) ph_fw, (float) ph_fh); if (beam) PU1I (capp, "halo", 0);
 		glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
-		glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) npl * 24 * sizeof (float)), ph_buf, GL_STREAM_DRAW);
-		glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, npl);
+		glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) pc * 24 * sizeof (float)), ph_buf + (size_t) p0 * 24, GL_STREAM_DRAW);
+		glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, pc);
 		glBindBuffer_ (GL_ARRAY_BUFFER, 0); glDisable_ (GL_BLEND);
 	}
 	if (beam) {
 		/* the glass's glow: every piece once more, wide and faint (BT_HALO_F of its light, sigma BT_HALO_S units) - into an image the
 		 * glow's size (so smooth a light needs no more; at the picture's size it was most of the lines' cost), read into the light below */
 		const float hx = (float) ph_gw / FW, hy = (float) ph_gh / FH, hm = 0.5f * (hx + hy), hf = (float) (BT_HALO_F / (1.0 - BT_HALO_F));
-		if ((size_t) npl * 24 > ph_hbufn) { free (ph_hbuf); ph_hbufn = (size_t) npl * 24 + 4096; ph_hbuf = malloc (ph_hbufn * sizeof (float)); }
+		if ((size_t) ntot * 24 > ph_hbufn) { free (ph_hbuf); ph_hbufn = (size_t) ntot * 24 + 4096; ph_hbuf = malloc (ph_hbufn * sizeof (float)); }
 		/* (pieces that follow each other along one straight line - a line's ends and middle, its caps, the tube's segments - as one
 		 *  piece with their light together: over the glow's width, 2.5 units, where along half a unit the light sat shows nothing - a
 		 *  third of the glow's pieces to draw, its caps and ends together, a short dash one piece - within one unit) */
 		int nh_ = 0, mh = 0; float ma[2] = { 0, 0 }, mb[2] = { 0, 0 }, mc[3] = { 0, 0, 0 }, ms = 0, ml = 0, md[2] = { 0, 0 }; int mt = 0;
-		for (int k = 0; k <= npl; k++) { const pline *q = k < npl ? &pl[k] : NULL; if (q && !(q->hx > 0)) continue;
+		for (int k = p0; k <= p0 + pc; k++) { const pline *q = k < p0 + pc ? &pl[k] : NULL; if (q && !(q->hx > 0)) continue;
 			float len = 0, dx = 0, dy = 0, f = 0; int join = 0;
 			if (q) { dx = q->bx - q->ax; dy = q->by - q->ay; len = sqrtf (dx * dx + dy * dy); if (len > 1e-3f) { dx /= len; dy /= len; }
 				f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf;
@@ -439,7 +450,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		{ float tg[3], t0[3], tn[3], mx = 0; static const float BT_TINT[3] = { 0.65f, 0.86f, 1.0f };
 		  white_gain (opt_white, tg); white_gain (12000.0, t0);
 		  for (int k = 0; k < 3; k++) { tn[k] = BT_TINT[k] * tg[k] / t0[k]; if (tn[k] > mx) mx = tn[k]; }
-		  glBindVertexArray_ (g_vao); ph_target (ph_F[cur], 0, 0, ph_fw, ph_fh); glUseProgram_ (ph_sat);
+		  glBindVertexArray_ (g_vao); ph_target (dstF, 0, 0, ph_fw, ph_fh); glUseProgram_ (ph_sat);
 		  ph_bind (ph_sat, "lt", 0, ph_L); ph_bind (ph_sat, "ht", 1, ph_H);
 		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2) * pow (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0, 2.2)));   /* (Bright: the tube's light lifted here - all that comes of it with it) */   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
 		  glUniform3f_ (ph_ul (ph_sat, "tint"), tn[0] / mx, tn[1] / mx, tn[2] / mx);
@@ -448,6 +459,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		    glUniform3f_ (ph_ul (ph_sat, "tintg"), tn[0] / mx * gt[0], tn[1] / mx * gt[1], tn[2] / mx * gt[2]);
 		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
 		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+	}
 	}
 	PHT (0);
 	glBindVertexArray_ (g_vao);
@@ -458,7 +470,8 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
 	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);
-	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
+	  PU1F (ph_upd, "pex", ex_mode && !ex_n ? 0.0f : 1.0f);
+	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ex_n ? ph_E : ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
 	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "e1", a1 * kd1); PU1F (ph_upd, "e2", a2 * kd2);
 	  PU1F (ph_upd, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam && vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
 	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);

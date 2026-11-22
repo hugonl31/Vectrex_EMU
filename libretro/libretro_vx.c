@@ -2474,6 +2474,7 @@ static int bt2_prepare (const wline *L, int n, wline *o)
 	}
 	return m;
 }
+static unsigned long long sm_ex_shown, sm_ex_next;   /* (Smooth motion's afterglow: the game frame the last drawn picture started it for, this refresh's) */
 int vx_owe_hidden;                         /* (set by the apps: a hidden catch-up run's frame is drawn with the next picture) */
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
 static int bt_gpu_ok (void);
@@ -3078,7 +3079,7 @@ void retro_run (void)
 			npl = build_lines (W1, n, to, esh, npl);
 		}
 	} else if (nh) {
-		int n = 0;
+		int n = 0; int sm_ex = 0; const gframe *sm_ex_a = NULL;
 		const double hper = nh > 1 ? (hist[nh - 1].t - hist[0].t) / (nh - 1) : 0;
 		const int slow = nh > 1 && hper > HOLD_SLOW * dt;   /* (a game slower than the screen: hold_lines) */
 		if (opt_smooth && opt_rate != 50) {
@@ -3104,6 +3105,7 @@ void retro_run (void)
 			 *  are walked side by side, a piece without a partner within SM_LOOK is such a standing line) */
 			if (b && alpha > 0) B = b->L;
 			sm_runs++; if (B) sm_mixed++;
+			if (B) { sm_ex = 1; sm_ex_next = a->p0; if (a->p0 != sm_ex_shown) sm_ex_a = pa; }   /* (the afterglow: from the game's own frames - the one before a, as its place is left a whole step behind: gpu_phos.c ph_ex_mode) */
 			if (slow && !B) n = vx_nobuild ? 0 : hold_lines (D, dt);   /* (run-ahead's hidden runs: no picture, no hold) */
 			else {
 				if (a->alt && pa) n = wl_from (W1, n, pa->L, pa->n, NULL, 0);   /* (a picture in halves: both) */
@@ -3144,6 +3146,11 @@ void retro_run (void)
 		}
 		if (opt_wob) hum_coeffs (ft0 / 1.5e6, opt_wob);
 		npl = build_lines (W1, n, 0, 0, npl);
+#ifndef VX_EMUVR
+		/* (Smooth motion: the game frame's own lines, once a frame, after the picture's - where the afterglow starts: gpu_phos.c ph_ex_mode) */
+		ph_ex_mode = sm_ex && !vx_nobuild; ph_ex_n = 0;
+		if (ph_ex_mode && sm_ex_a) { const int n2 = wl_from (W1, 0, sm_ex_a->L, sm_ex_a->n, NULL, 0); ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
+#endif
 	}
 	/* v0.13: a refresh RetroArch does not show (run-ahead's hidden runs: the video off) draws no picture - after the
 	 * choice of frames above, which keeps the kept frames' list the same whether a refresh is shown or not */
@@ -3181,6 +3188,7 @@ void retro_run (void)
 		extern int vx_gprof; static long gpc; static double gpt[3], gpw; static long gpn; const int gpm = vx_gprof && (++gpc % 30) == 0; double gp0 = 0, gp1 = 0;
 		{ extern int vx_gprof_now; vx_gprof_now = gpm; }
 		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
+		if (ph_ex_mode) sm_ex_shown = sm_ex_next;       /* (this picture is drawn - Low leaves every other one out: its game frame's afterglow with the next) */
 		if (ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ())) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
 			if (gpm) { glFinish_ (); gp1 = vt_wall (); }

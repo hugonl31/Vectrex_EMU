@@ -1496,7 +1496,7 @@ UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0
                ('dac1', 17, 'DAC bit 1 error', -0.03, 0.03, '%+.4f', None),
                ('dac2', 18, 'DAC bit 2 error', -0.03, 0.03, '%+.4f', None),
                ('dac3', 19, 'DAC bit 3 error', -0.03, 0.03, '%+.4f', None))
-UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0)           # (the owner's, measured; lag 6: testcart/gap_test)
+UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3)           # (the owner's, measured; lag 6: testcart/gap_test)
 UNIT_DAC_OWNER = dict(dac0=0.0170, dac1=0.0069, dac2=-0.0089, dac3=-0.0014)       # (the owner's: half the slant pattern)
 # the picture's pots and the yoke (the frontend's: they act after the integrators, see unit_picture): R401 / R408 the
 # deflection amplifiers' input dividers (2K pot over 1.5K: 0.43..1 of the signal; 100 % = the pot's middle, 60..140 %),
@@ -1534,7 +1534,7 @@ UNIT_PRESETS = {
     'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
                    **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
-                   zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=6.0, lagy=6.0, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
+                   zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
                    **UNIT_FACTORY_PICTURE)}       # (Random and Cranky: made new each time, random_unit / UNIT_SPREAD)
 def unit_picture(unit):
     """the picture's pots and the yoke -> (the lines' transform or None, the light's share, the spot's width share).
@@ -1614,8 +1614,8 @@ UNIT_SPREAD = dict(
     zerotx=  (('r', 3.8, 5.2),         ('r', 5.2, 6.2)),
     zeroty=  (('r', 2.9, 3.8),         ('r', 3.8, 4.6)),
     ofsk=    (('r', 158.0, 174.0),     ('r', 150.0, 182.0)),
-    lagx=    (('r', 5.5, 6.8),         ('r', 6.8, 8.0)),
-    lagy=    (('r', 5.5, 6.8),         ('r', 6.8, 8.0)),
+    lagx=    (('r', 12.5, 13.8),       ('r', 13.8, 15.0)),
+    lagy=    (('r', 12.5, 13.8),       ('r', 13.8, 15.0)),
     dac0=    (('s', 0.0, 0.012),       ('s', 0.012, 0.025)),
     dac1=    (('s', 0.0, 0.008),       ('s', 0.008, 0.015)),
     dac2=    (('s', 0.0, 0.008),       ('s', 0.008, 0.012)),
@@ -1815,7 +1815,10 @@ class Core:
                                                         #  sides have the same) - the card both play from)
     def __init__(self, rom, ideal=False, cart_hw='auto', speech='off', sd_dir=None, px_dir=None, unit=None, usb=False):
         env = dict(os.environ)
-        env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})  # perfect / a real Vectrex
+        env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})
+        if not getattr(Core, 'old_timing', False):                 # (2026-11-22: the timing as the owner's Vectrex measured - the Settle / Timer /
+            for k_, v_ in (('VT_SRMODEL', '1'), ('VT_DEFLAGN', '3'), ('VT_RAMPDLY', '0,2,3'), ('VT_ZDELAY', '1'), ('VT_XYZDLY', '3,3,8')):   #  Short / Join / SR Tests; a variable set
+                env.setdefault(k_, v_)                             #  already - a test - stands. Online: Core.old_timing - both machines the same)  # perfect / a real Vectrex
         self.picture = unit_picture(unit)[0] if unit and not ideal else None   # (the size / centring pots, the yoke: frame)
         if unit and not ideal:                                     # (the Vectrex unit: the analog parts at the start)
             for key, i, label, lo, hi, fmt, var in UNIT_PARAMS:
@@ -1825,6 +1828,7 @@ class Core:
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
             env['VT_ZEROTAU'] = '%.3f,%.3f' % (unit.get('zerotx', UNIT_BEAM['zerotx']), unit.get('zeroty', UNIT_BEAM['zeroty']))
             env['VT_DACBITS'] = ','.join('%.5f' % unit.get('dac%d' % b, 0.0) for b in range(4))
+        if getattr(Core, 'old_timing', False): env['VT_DEFLAG'] = env['VT_DEFLAGY'] = '6.0'   # (online: the old timing whole - its lag too)
         # (every cartridge, the UVMC2 and the PiTrex too, with the console's own zero reference - VT_ZREFK as the unit
         # sets it: until 2026-11-13 those two got a faster one (0.597) for their short zero pulses. The zero test
         # cartridge (testcart/zero_test) on the owner's Vectrex drew Last Human's zero and the UVMC2 SDK's sharp at
@@ -2476,6 +2480,8 @@ class App:
         u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
         u = new_defaults(u, (c0.get('defaults') or {}).get('unit'), UNIT_PRESETS['owner'])
         self.unit = dict(UNIT_PRESETS['owner'], **{k: float(v) for k, v in u.items() if k in UNIT_PRESETS['owner']})
+        if self.unit.get('lagx') == 6.0 and self.unit.get('lagy') == 6.0:      # (2026-11-22: the measured timing - lag 13.3 in three stages)
+            self.unit['lagx'] = self.unit['lagy'] = UNIT_BEAM['lagx']
         if self.unit.get('lagx') == 8.0 and self.unit.get('lagy') == 8.0:      # (the lag's first default, a day: now 6 -
             self.unit['lagx'] = self.unit['lagy'] = UNIT_BEAM['lagx']          #  testcart/gap_test; a value chosen stays)
         if self.unit.get('zerotx') == 12.0 and self.unit.get('zeroty') == 8.0:  # (ZERO's first default, a day: too slow -
@@ -2488,7 +2494,7 @@ class App:
             self.unit_fix = 1
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
-        self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', False) if self.ren else False
+        self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', True) if self.ren else False
         self.run.ra_of = lambda: getattr(self, 'run_ahead', False)
         self.run.ff_of = self.ff_wanted
         self.run.crt.jack = bool(args.rom and args.rom.lower().endswith('.um2'))   # (a UVMC2: its headphone jack)
@@ -2620,7 +2626,7 @@ class App:
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look', 'even_beam', 'beam_trace', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look', 'even_beam', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
@@ -7481,6 +7487,7 @@ class App:
             self.vl_online = True
         elif getattr(self, 'vl_online', False):                 # (the online VecLink game is over: the cable out)
             Core.veclink = None; Core.veclink_slice = 0; self.vl_online = False
+        Core.old_timing = bool(ng)                              # (online: the shift register as every platform's core has it today)
         self.core = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw) if ng else self.cart_hw, self.speech,   #  the rest
                          self.sd_dir, self.px_dir, unit, self.usb_hid)                                                  #  only moves the picture)
         self.usb_typing_off()

@@ -377,3 +377,13 @@ $7F, was 0.67): the exposure wants setting again; start dots are short bright pi
   exposure), a dot can only get wider. Owed with the exposure.
 - The switch-on bulge sent the frame through _build_py (screen values into the light shader: bright, bold, half a second
   after a load): _build_np scales now. Tube > Line gaps under VT_RAMPDLY: moves the test's stop delays by (setting - 7).
+
+## The PC app's default (2026-11-22, the owner: "this model is superior already", no switch back)
+
+Beam trace always (the Tube menu's switch gone, the setting no longer saved or read); the measured timing as the PC
+core's start variables (Core: VT_SRMODEL=1, VT_DEFLAGN=3, VT_RAMPDLY=0,2,3, VT_ZDELAY=1, VT_XYZDLY=3,3,8 - a variable
+already set stands), the unit's lag 13.3 (a saved 6 moved over). Online games keep the old timing whole (Core.old_timing:
+the shift register model changes what the CPU can read; the other platforms' cores do not have it on). The spot
+BT_SPOT 1.85 -> 1.5: the BIOS's standard text shows its rows (valley / peak between rows 0.37 -> 0.18 in a 4x snapshot);
+1.85 had the photos' lens in it. Tests: one app at a time (two at once took each other's snapshot and one stayed
+open), each with a 90 s kill of its process tree (`pcany.py`). Other platforms: unchanged until their renderer has it.

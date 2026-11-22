@@ -2296,7 +2296,7 @@ static const double BT2_L9[4][9] = { { 0.0333 * 0.194, 0.0428 * 0.194, 0.0619 * 
 static double bt2_ld[BT2_ND], bt2_ll[4][BT2_ND]; static int bt2_ready;
 #define BT2_K (1.054 / 0.647)           /* (the reference line - 1.59 cycles a unit, $7F: light 1.054 a unit) */
 #define BT_EXPO 0.20                    /* (vecrender.py: the exposure, the spot's width x, the spot's share of the display width) */
-#define BT_SPOT 1.85
+#define BT_SPOT 1.5
 #define BT_SG 0.674
 static double bt2_tl (double z)            /* (the tube's light by the drive: TUBE_LIGHT x the Photo Test's page 4 against it) */
 {

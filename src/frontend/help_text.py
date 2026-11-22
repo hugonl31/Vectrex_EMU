@@ -310,10 +310,6 @@ TOPICS = [
          "5600 K) the same. 12000 K by default: the bluish white of a real Vectrex - a cold glow, and the brightest cores "
          "bluish too; further right even bluer. "
          "Only the lines change colour - the overlay and the case keep theirs."),
-('item', 'Beam trace (the spot lights the phosphor)', "Off by default. The core sends the spot's own path - every "
-         "cycle where it was - and the phosphor lights up by how long the beam stayed in each place: slow is bright, a "
-         "stopped beam builds a dot, fast is faint, and curves are smooth curves, not pieces of straight line. "
-         "One measured rule instead of the line renderer's corner dots and glow."),
 ('item', 'Even beam (an ideal vector display)', "Off by default. Every point as bright and as thin as the lines: "
          "no brighter, fatter corners and dots where the beam rests, no corner glow, no fainter fast lines, and "
          "where lines overlap they do not add up. A vector display without the tube's character - dots such as "

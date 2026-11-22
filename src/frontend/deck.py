@@ -673,7 +673,6 @@ class Deck:
                     ('in', [('slider', 'halo_k', lambda: A('halo_on') and not A('even_beam'))]),
                     ('slider', 'dot_k', lambda: not A('even_beam')),
                     ('check', 'Even beam', lambda: A('even_beam'), flip('even_beam'), lambda: not A('beam_trace')),
-                    ('check', 'Beam trace', lambda: A('beam_trace'), flip('beam_trace'), lambda: has('beam_trace')),
                     ('group', 'SIGNAL'),
                     ('check', 'Mains hum wobble', lambda: A('wob_on'), a.toggle_wobble, None),
                     ('in', [('slider', 'wob_strength', lambda: A('wob_on')),

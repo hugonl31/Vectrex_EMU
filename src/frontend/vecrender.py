@@ -1028,7 +1028,9 @@ def bt2_prepare(L, col=None):
     return np.concatenate(out_rows), np.concatenate(out_light), (col[src] if col is not None else None)
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
-BT_SPOT = 1.85                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
+BT_SPOT = 1.5                               # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
+                                            #  2026-11-22, the owner: 1.85 matched the photos - their lens' blur with it; the BIOS's small text
+                                            #  must show its rows as the tube does: 1.5)
                                             #  Vectorblade's logo (intensity 79) 1.00 units at half height, 0.70 at 75 %, 1.30 at 25 %, 1.70 at 10 %:
                                             #  a Gaussian; the Dot Test's reference line (intensity 127) 1.03-1.16; ours 0.54 x this at 79)
 BT_TINT = (0.65, 0.86, 1.0)                 # (the beam on the phosphor: one white for cores and glow alike - the tube's own, from the owner's
@@ -2480,7 +2482,7 @@ class GLBloomRenderer(GLRenderer):
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
         self.look = 'bright'         # Tube > Look: 'bright' (all lines up to white) or 'vectrex' (as a real Vectrex, LOOK_*)
         self.white_k = WHITE_DEFAULT # Tube > White balance: the beam's white, kelvin (see white_gain)
-        self.beam_trace = bool(os.environ.get('VX_BEAM_TRACE'))   # Tube > Beam trace (VX_BEAM_TRACE=1: on at the start - the test launcher): the spot's own path lights the phosphor by the time it spent
+        self.beam_trace = True       # (2026-11-22: the picture is the beam's path lighting the phosphor - always; the line renderer's rules are not used any more): the spot's own path lights the phosphor by the time it spent
                                      #  (BEAM_TRACE_CSAT; the core's beam-trace mode) - off: the line renderer
         self.even_beam = False       # Tube > Even beam: an ideal vector display - every point as bright and wide as a
                                      #  line, no corner glow, overlapping light not adding up (off: the real tube)

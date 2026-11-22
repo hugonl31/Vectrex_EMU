@@ -2,6 +2,10 @@
 argv: out.png rom button presses [wait_ms]; env LOOK, BEAM=1"""
 import sys, os, argparse, glob, shutil, ctypes
 S = os.path.dirname(os.path.abspath(__file__))
+import threading, subprocess
+def _dead():                                             # (a test never stays open: after 90 s the whole process tree goes - the app and its core)
+    subprocess.call('taskkill /F /T /PID %d' % os.getpid(), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); os._exit(3)
+_wd = threading.Timer(float(os.environ.get('TEST_MAX_S', '90')), _dead); _wd.daemon = True; _wd.start()
 out, rom, btn, presses = os.path.join(S, sys.argv[1]), sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 wait = int(sys.argv[5]) if len(sys.argv) > 5 else 1500
 sys.path.insert(0, r'G:\AI\Vectrex_EMU\src\frontend'); os.chdir(r'G:\AI\Vectrex_EMU')

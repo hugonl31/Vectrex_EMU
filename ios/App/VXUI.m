@@ -228,9 +228,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 13; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 12; }
 /* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, HDR, look, afterglow, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[13] = { 0, 1, 7, 8, 9, 2, 3, 10, 11, 12, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 12 ? -1 : m[ip.row]; }   /* (10, the look: Vectrex or Bright, 2026-11-22) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[12] = { 0, 1, 7, 8, 9, 2, 3, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 11 ? -1 : m[ip.row]; }   /* (10, the look: Vectrex or Bright, 2026-11-22) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
@@ -282,13 +282,6 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_trail_boost ();
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.trailboost"];
 			ulog ([NSString stringWithFormat:@"brighter afterglow %d", (int) on]); vxa_hdr_update (); }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sw; return c; }
-	if (R == 12) {                                  /* (a trial, 2026-11-22: at the 50 Hz screen rate the pictures on the app's own 20 ms clock - iOS gives 48 Hz when asked for 50) */
-		extern int vxa_clock50 (void);
-		UITableViewCell *c = vxs_cell (@"50 Hz own clock (test)");
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_clock50 ();
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.clock50"];
-			ulog ([NSString stringWithFormat:@"50 Hz own clock %d", (int) on]); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
 	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
 		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");

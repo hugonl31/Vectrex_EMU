@@ -636,7 +636,7 @@ static void vxa_toast (NSString *s, double secs)
 @implementation VXGameVC {
 	VXGLView *_gl; EAGLContext *_ctx; GLuint _dfbo, _drb; GLint _dw, _dh;
 	id<MTLCommandQueue> _queue; id<MTLRenderPipelineState> _pipe; id<MTLSamplerState> _nearest, _linear;
-	CADisplayLink *_link; double _last, _acc; int _started, _running; dispatch_source_t _clk; int _own;   /* (_own: the pictures on the app's own 20 ms clock - the 50 Hz trial) */
+	CADisplayLink *_link; double _last, _acc; int _started, _running; dispatch_source_t _clk; int _own;   /* (_own: the pictures on the app's own 20 ms clock - the 50 Hz screen rate) */
 	unsigned _fw, _fh; int _have;                                   /* (the last picture from the core) */
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
@@ -855,15 +855,19 @@ static void vxa_toast (NSString *s, double secs)
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
 	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1;
-	/* (the 50 Hz trial, 2026-11-22: iOS gives a 48 Hz screen when asked for 50 - two game frames a second share a picture. With the
-	 *  setting at 50 Hz the app's own clock runs the game and hands in a picture every 20 ms, the refresh callback stopped; whether
-	 *  the panel follows is in the log - the pictures' times on the glass (on glass: ...)) */
-	{ extern int vxa_clock50 (void); __weak VXGameVC *ws = self;
+	/* (the 50 Hz screen rate, 2026-11-22: iOS gives a 48 Hz screen when asked for 50 - two game frames a second shared a picture,
+	 *  their copies missing from the trails. So at 50 Hz the app's own clock runs the game and hands in a picture every 20 ms: each
+	 *  game frame one picture of its own (the owner's iPhone: 50 of 50, the trails whole). The refresh callback keeps running, asked
+	 *  for 120 Hz and doing nothing: on a 120 Hz grid the pictures lie 16.7 and 25 ms apart - on the 60 Hz one iOS chose without it,
+	 *  16.7 and 33. What the glass shows is in the log (on glass: ...)) */
+	{ __weak VXGameVC *ws = self;
 	  _clk = dispatch_source_create (DISPATCH_SOURCE_TYPE_TIMER, 0, DISPATCH_TIMER_STRICT, dispatch_get_main_queue ());
 	  dispatch_source_set_timer (_clk, dispatch_time (DISPATCH_TIME_NOW, 20 * NSEC_PER_MSEC), 20 * NSEC_PER_MSEC, 0);
 	  dispatch_source_set_event_handler (_clk, ^{ VXGameVC *g = ws; if (!g || !g->_link) return;
-		const int want = vxa_clock50 () && fabs (vxa_av.timing.fps - 50) < 0.5;
-		if (want != g->_own) { g->_own = want; g->_link.paused = !g->_running || want; g->_last = 0; vlog ("50 Hz own clock: %s", want ? "on" : "off"); }
+		const int want = fabs (vxa_av.timing.fps - 50) < 0.5;
+		if (want != g->_own) { g->_own = want; g->_last = 0; const float f = want ? 120 : (float) vxa_av.timing.fps;
+			if (@available (iOS 15.0, *)) g->_link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f);
+			vlog ("50 Hz on the app's own clock: %s", want ? "on (the screen asked for 120 Hz)" : "off"); }
 		if (g->_own && g->_running) [g tick:nil]; });
 	  dispatch_resume (_clk); }
  [self viewDidLayoutSubviews]; [self showBar];
@@ -934,6 +938,7 @@ static void vxa_glass (double t)
 - (void) gotFrame:(unsigned)w :(unsigned)h { (void) w; (void) h; _have = 1; }
 - (void) tick:(CADisplayLink *)l
 {
+	if (l && _own) return;                           /* (50 Hz: the app's own clock calls - the refresh callback only keeps the screen at 120 Hz) */
 	double now = CACurrentMediaTime(), dt = _last ? now - _last : 0; _last = now; _ticks++;
 	{ extern int vx_owe_hidden; vx_owe_hidden = 1;   /* (a catch-up run's game frame: drawn with the next picture - no gap in a trail) */
 	  /* (the rate chosen in the settings: the screen asked for it at once - it stayed at the old one until the app's next start:
@@ -1110,7 +1115,7 @@ static void vxa_set_opt (int i, NSString *v)
 - (void) barModeChanged { [self viewDidLayoutSubviews]; _pic = CGRectZero; [self showBar]; }
 - (void) setRunning:(int)on
 {
-	if (!_link || on == _running) return; _running = on; _link.paused = !on || _own; _last = 0;
+	if (!_link || on == _running) return; _running = on; _link.paused = !on; _last = 0;
 	if (on) [vxa_eng startAndReturnError:nil]; else [vxa_eng pause];
 	vlog ("%s", on ? "resumed" : "paused (the app in the background)");
 	[self layoutControls];   /* (the touch controls shown again: laid out while in the background they stayed hidden until something else changed) */
@@ -1325,7 +1330,6 @@ UIColor *vx_rgba (double r, double g, double b, double a)
 	extern unsigned vx_pal (unsigned c); const unsigned c = vx_pal ((unsigned) lround (r * 255) << 16 | (unsigned) lround (g * 255) << 8 | (unsigned) lround (b * 255));
 	return [UIColor colorWithRed:(c >> 16 & 255) / 255.0 green:(c >> 8 & 255) / 255.0 blue:(c & 255) / 255.0 alpha:a];
 }
-int vxa_clock50 (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.clock50"]; return n ? n.boolValue : 1; }   /* (the 50 Hz trial: on unless switched off) */
 int vxa_trail_boost (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.trailboost"]; return n ? n.boolValue : 0; }   /* (off by default since the afterglow's own shape for the apps, vx_phone_trail) */
 float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIScreen.mainScreen.potentialEDRHeadroom; return 1; }
 void vxa_hdr_update (void)

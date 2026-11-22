@@ -718,6 +718,7 @@ static void read_options (void)
 #endif
 #ifndef VX_EMUVR
 	{ const char *z = getenv ("VX_HDRPEAK"); if (z) { extern float vx_hdr_peak; vx_hdr_peak = (float) atof (z); } }   /* (a test: an HDR screen's top, x white) */
+	{ const char *z = getenv ("VX_GPROF"); if (z) { extern int vx_gprof; vx_gprof = atoi (z); } }   /* (a test: the GPU diagnostic - each stage's time in the log) */
 #endif
 	opt_wob = opt_is ("vectrex_emu_wobble", "off") ? 0 : opt_is ("vectrex_emu_wobble", "60 Hz") ? 60 : 50;
 	opt_buzz = !opt_is ("vectrex_emu_buzz", "off"); opt_spk = !opt_is ("vectrex_emu_speaker", "off");

@@ -17,6 +17,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * The Bright look lifts the afterglow with the lines, on the PC too (there the bright lines' trail stayed as it was).
 * The overlay's plastic glow and glints follow the picture at once: they were smoothed over 0.15 s and trailed behind
   moving things.
+* The afterglow's shape nearer the tube's: it drops quicker at first and its faint end lasts about twice as long. Three
+  trial settings to dial it in (phones and RetroArch, Tube): Afterglow tail length, tail level, first drop.
+* Android app: on / off settings show a switch, as the iPhone app's.
 * Test Cart, a cartridge to compare the picture between platforms (trail, levels, dots, corners; buttons 1-4): the
   phone apps carry it (Library > Tests), `tools/testcart_compare.py` measures snapshots of it.
 * A new test cartridge, Glow Test: two full-length lines, still or moving at three speeds, the refresh rate from 50

@@ -57,9 +57,24 @@ final class Screens {
 		LinearLayout r = new LinearLayout (m); r.setOrientation (LinearLayout.VERTICAL); r.setPadding ((int) m.dp (14), (int) m.dp (11), (int) m.dp (14), (int) m.dp (11));
 		r.setBackground (states (m, Main.PANEL, Main.EDGE, m.dp (10)));
 		TextView t = m.text (title, 16, go != null ? Main.HI : Main.FG, go != null); t.setTag ("t"); r.addView (t);
-		if (detail != null && !detail.isEmpty ()) { TextView d = m.text (detail, 13, Main.DIM, false); d.setTag ("d"); r.addView (d); }
+		final boolean tog = go != null && detail != null && (detail.equalsIgnoreCase ("on") || detail.equalsIgnoreCase ("off"));
+		if (tog) {                                 /* (an on / off row: a switch at its right, as the iOS app's - the owner, 2026-11-22; the row's tap turns it) */
+			r.setOrientation (LinearLayout.HORIZONTAL); r.setGravity (Gravity.CENTER_VERTICAL);
+			t.setLayoutParams (new LinearLayout.LayoutParams (0, -2, 1f));
+			TextView d = m.text (detail, 13, Main.DIM, false); d.setTag ("d"); d.setVisibility (View.GONE); r.addView (d);
+			r.addView (new Toggle (m, detail.equalsIgnoreCase ("on")), new LinearLayout.LayoutParams ((int) m.dp (46), (int) m.dp (26))); }
+		else if (detail != null && !detail.isEmpty ()) { TextView d = m.text (detail, 13, Main.DIM, false); d.setTag ("d"); r.addView (d); }
 		if (go != null) { r.setFocusable (true); r.setClickable (true); r.setOnClickListener (v -> { Main.log ("ui " + title); go.run (); }); }
 		return r;
+	}
+	/* the switch of an on / off row: a pill, its knob right and the pill green when on */
+	static class Toggle extends View {
+		final boolean on; final android.graphics.Paint pt = new android.graphics.Paint (android.graphics.Paint.ANTI_ALIAS_FLAG);
+		Toggle (Main m, boolean on) { super (m); this.on = on; }
+		@Override protected void onDraw (android.graphics.Canvas c) {
+			float w = getWidth (), h = getHeight (), r = h / 2f;
+			pt.setColor (on ? Main.G : Main.EDGE2); c.drawRoundRect (0, 0, w, h, r, r, pt);
+			pt.setColor (on ? Main.HI2 : Main.FG2); c.drawCircle (on ? w - r : r, r, r - h * 0.12f, pt); }
 	}
 	static TextView button (Main m, String s, boolean on)
 	{
@@ -166,7 +181,8 @@ final class Screens {
 			p.header (c >= 0 ? VX.cat (c, 1) : "General");
 			for (int i : rows) {
 				final int ix = i; String v = VX.opt (i, 5); boolean chg = !v.equals (VX.opt (i, 6));
-				LinearLayout r = p.row (VX.opt (i, 1), v, () -> choice (m, ix)); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG);
+				final String vals = VX.opt (i, 4); final boolean onoff = vals.equals ("on|off") || vals.equals ("off|on");   /* (on / off: the row's switch turns it) */
+				LinearLayout r = p.row (VX.opt (i, 1), v, onoff ? (Runnable) () -> { VX.oset (ix, VX.opt (ix, 5).equals ("on") ? "off" : "on"); reopenSettings (m); } : (Runnable) () -> choice (m, ix)); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG);
 				r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true;   /* (a long press: back to the default) */
 					VX.oset (ix, VX.opt (ix, 6)); Main.log ("settings: " + VX.opt (ix, 0) + " back to the default"); x.performHapticFeedback (android.view.HapticFeedbackConstants.LONG_PRESS);
 					m.toast (VX.opt (ix, 1) + ": " + VX.opt (ix, 6) + " (the default)", 2); reopenSettings (m); return true; }); }

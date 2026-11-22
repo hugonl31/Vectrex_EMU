@@ -9164,17 +9164,30 @@ class App:
                         if alpha >= 0.5: R[~ok] = B[~ok]
                         A = R
                     else:
-                        m = min(len(A), len(B)); okp = same(A[:m], B[:m]); bad = _np.nonzero(~okp)[0]
-                        p = int(bad[0]) if len(bad) else m
-                        oks = same(A[len(A) - m:], B[len(B) - m:])[::-1]; bad = _np.nonzero(~oks)[0]
-                        s_ = min(int(bad[0]) if len(bad) else m, m - p)
-                        dA[:p] = _np.abs(B[:p, :4] - A[:p, :4]).max(1)
-                        if s_: dA[len(A) - s_:] = _np.abs(B[len(B) - s_:, :4] - A[len(A) - s_:, :4]).max(1)
-                        head = A[:p].copy(); head[:, :4] += (B[:p, :4] - A[:p, :4]) * alpha
-                        tail = A[len(A) - s_:].copy()
-                        if s_: tail[:, :4] += (B[len(B) - s_:, :4] - tail[:, :4]) * alpha
-                        mid = (A[p:len(A) - s_] if alpha < 0.5 else B[p:len(B) - s_]).copy()
-                        A = _np.concatenate([head, mid, tail])
+                        # (the two lists walked side by side, as the core's: runs of lines alike, then past a line more or
+                        #  less on either side - up to 6 on - and on. Matched only from the front and the back (until
+                        #  2026-11-22), everything between two such places stood still and jumped at halfway: with the Test
+                        #  Cart's 146 / 145 / 144 lines that was a bar or two most frames - its trail's newest line late)
+                        la_, lb_ = len(A), len(B); i_ = j_ = 0; IA = []; IB = []
+                        one = lambda x, y: bool(_np.abs(y[:4] - x[:4]).max() < M and y[4] == x[4])
+                        for _ in range(96):
+                            if i_ >= la_ or j_ >= lb_: break
+                            m = min(la_ - i_, lb_ - j_); bad = _np.nonzero(~same(A[i_:i_ + m], B[j_:j_ + m]))[0]
+                            run = int(bad[0]) if len(bad) else m
+                            if run: IA.append(_np.arange(i_, i_ + run)); IB.append(_np.arange(j_, j_ + run)); i_ += run; j_ += run
+                            if i_ >= la_ or j_ >= lb_: break
+                            for k_ in range(1, 7):
+                                if j_ + k_ < lb_ and one(A[i_], B[j_ + k_]): j_ += k_; break
+                                if i_ + k_ < la_ and one(A[i_ + k_], B[j_]): i_ += k_; break
+                            else:
+                                i_ += 1; j_ += 1
+                        IA = _np.concatenate(IA) if IA else _np.zeros(0, dtype=int); IB = _np.concatenate(IB) if IB else _np.zeros(0, dtype=int)
+                        dA[IA] = _np.abs(B[IB, :4] - A[IA, :4]).max(1)
+                        if alpha < 0.5:
+                            R = A.copy(); R[IA, :4] += (B[IB, :4] - A[IA, :4]) * alpha
+                        else:
+                            R = B.copy(); R[IB, :4] = A[IA, :4] + (B[IB, :4] - A[IA, :4]) * alpha
+                        A = R
             A[:, 5] *= k; A[:, 6] *= k
             lines = A
             # (the lines of a the gliding ones have just cleared: their afterglow starts now - see below)

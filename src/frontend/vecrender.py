@@ -1801,29 +1801,12 @@ PHOS_A = ((0.1404, 0.0454), (0.0582, 0.350))   # the measured afterglow (share, 
                                                 #  the PC's is right as it is)
 TRAIL_K = 1.5                                   # its brightness on the screen (the owner, 2026-11-15: the trail on black as
                                                 #  it looked through an overlay - the light now added as light everywhere)
-# the afterglow joins up: a fading spot (older than the hold) spreads to its neighbours each display frame,
-# keeping PHOS_GROW of its brightness, so the copies a moving object leaves join into one smooth trail -
-# the owner (2026-10-14): Mine Storm's big mothership leaves "a singular trail, not a bunch of snapshots";
-# sharp, not blurred. Light brighter than PHOS_GCAP (corner spots) spreads only as a line
-# does. One step per display frame of 1 px in an 820 px high window at 60 Hz (scaled). Tube > Afterglow joining
-PHOS_GCAP = 1.5
-# the afterglow's spots overlap: the fading light (not the lit lines) is averaged over a spot PHOS_SMOOTH px
-# wide (in an 820 px high window, scaled), so the copies' steps and the wing tips' corner dots blend into a
-# smooth gradient, as overlapping light does on the tube (Tube > Afterglow overlap)
-PHOS_SMOOTH = 0.8               # (the owner's choice 2026-10-14; off by default since the two-layer afterglow, 2026-10-29:
-                                #  crisp copies - phos_smooth_on. Its default was 0 until 2026-11-23: switched on, nothing changed)
 PHOS_ACAP = 1.0                 # the afterglow's brightest: a line's (the corners' extra light only while lit - SHOW_SHADER)
 # the afterglow's faint end lifted where no overlay is shown: g x (1 + A / (1 + g / G0)) - up to A x G0 more, reached already
 # where it is faint. On black the trail so looks as it does through an overlay, whose plastic glow and scratches (added as
 # screen values) lift it there; measured with the RetroArch core on Armor Attack's jeep, overlay on / off (the owner,
 # 2026-11-19). The core lifts it always and adds the sheet's own light to the trail as light instead - the same look
 TRAIL_LIFT_A, TRAIL_LIFT_G0 = 3.0, 0.00625
-PHOS_GROW_MAX = PHOS_SMOOTH_MAX = 0.8   # (the sliders 0 .. 1 reach this: joining's spread, smoothing's px - the owner,
-                                        #  2026-10-29: more looks wrong)
-PHOS_GAGE = 0.035               # the afterglow grows only this long after its hold (2 display frames: it joins
-                                #  the copies but stays the vector's size - a bullet's glow grew into a splotch)
-PHOS_GROW = 0.5                 # (the owner's choice 2026-10-14; off by default since the two-layer afterglow, 2026-10-29:
-                                #  crisp copies - phos_grow_on. Its default was 0 until 2026-11-23: switched on, nothing changed)
 
 # A game may draw its picture in two halves, one on each frame (a menu that draws half its lines each frame: they share nothing
 # with the one before and nearly everything with the one before that). On the tube both halves keep glowing;
@@ -1909,12 +1892,11 @@ void main() {
 # part's share at its age, added to what still glows (light adds up: a new line's glow over an old trail, two trails
 # crossing). Started while the flash is still lit, a still line drawn again and again would add to itself. The light at
 # most a line's: the beam's corners (it dwells there) fade as their line does - kept brighter, every copy a fast-turning
-# shape left ended in dots (PHOS_ACAP). The fast part may spread to its neighbours (grow, Afterglow joining)
+# shape left ended in dots (PHOS_ACAP)
 GLOW_COMMON = b"""
 uniform sampler2D oldp, newp;
-uniform float mul, acap, grow, gn, hold, dt;
+uniform float mul, acap, hold, dt;
 uniform vec2 amp, tau;                                  // (the two parts: fast, slow)
-uniform vec2 px;
 float lum(vec3 c) { return dot(c, vec3(0.3, 0.5, 0.2)); }
 vec4 leaving(vec2 uv) {                                 // a flash that starts fading here now: its light, its age
     vec4 o = texture2D(oldp, uv), n = texture2D(newp, uv);
@@ -1923,22 +1905,9 @@ vec4 leaving(vec2 uv) {                                 // a flash that starts f
     if (n.a > 0.0 && -log(n.a) < hold) c = max(c - n.rgb, vec3(0.0));   // (taken over: the light it does not replace)
     return vec4(c, -log(o.a) + dt);
 }
-void excite(vec2 uv, out vec3 e1, out vec3 e2) {       // the excitation of both parts here (joining: from the neighbours
-    vec4 l = leaving(uv);                               //  too, once, as a flash starts fading - up to gn pixels, grow^i)
+void excite(vec2 uv, out vec3 e1, out vec3 e2) {       // the excitation of both parts here, as a flash starts fading
+    vec4 l = leaving(uv);
     e1 = l.rgb * amp.x * exp(-l.a / tau.x); e2 = l.rgb * amp.y * exp(-l.a / tau.y);
-    if (grow > 0.0) {
-        for (int i = 1; i <= 4; i++) {
-            if (float(i) > gn) break;
-            vec2 d = px * float(i); float w = pow(grow, float(i));
-            vec4 q[4];
-            q[0] = leaving(uv + vec2(d.x, 0.0)); q[1] = leaving(uv - vec2(d.x, 0.0));
-            q[2] = leaving(uv + vec2(0.0, d.y)); q[3] = leaving(uv - vec2(0.0, d.y));
-            for (int k = 0; k < 4; k++) {
-                e1 = max(e1, w * q[k].rgb * amp.x * exp(-q[k].a / tau.x));
-                e2 = max(e2, w * q[k].rgb * amp.y * exp(-q[k].a / tau.y));
-            }
-        }
-    }
 }
 """
 # Ultra: both parts in full colour, written at once (two outputs)
@@ -1977,9 +1946,7 @@ void main() {
 # what the phosphor shows now: the lit layer's light while held, else the afterglow (alpha: the bloom weight)
 SHOW_SHADER = b"""
 uniform sampler2D tex, g1, g2;
-uniform float sm;
 uniform vec3 wb;
-uniform vec2 px;
 """ + PHOS_FUNC + b"""
 uniform vec3 wbc;
 uniform float acap, lifta;
@@ -2000,12 +1967,6 @@ void main() {
     vec4 p = texture2D(tex, uv);
     vec3 lit = (p.a > 0.0 && -log(p.a) < hold) ? p.rgb : vec3(0.0);
     vec3 g = glow(uv);
-    if (sm > 0.0) {                         // the afterglow's spots overlap (PHOS_SMOOTH): it is averaged over
-        vec2 d = px * sm;                   //  a spot about the copies' spacing; the lit lines stay sharp
-        g = 0.25 * g
-          + 0.125 * (glow(uv + vec2(d.x, 0.0)) + glow(uv - vec2(d.x, 0.0)) + glow(uv + vec2(0.0, d.y)) + glow(uv - vec2(0.0, d.y)))
-          + 0.0625 * (glow(uv + d) + glow(uv - d) + glow(uv + vec2(d.x, -d.y)) + glow(uv + vec2(-d.x, d.y)));
-    }
     g *= 1.0 + lifta / (1.0 + g / 0.00625);   // (the faint end lifted with no overlay shown: TRAIL_LIFT_A, TRAIL_LIFT_G0)
     gl_FragColor = vec4(cold(lit + g, wb), 0.7);   // (they add up: a new line's glow over a trail - the brighter of the two
                                                    //  only, its glow ended in an edge there. White balance: see cold)
@@ -2256,7 +2217,7 @@ class GLBloomRenderer(GLRenderer):
         self.BlendFuncSep = proc('glBlendFuncSeparate', None, u, u, u, u)
         self.uprog = program(UPDATE_SHADER, 'phosphor update')
         self.u_up = {k: GetUniform(self.uprog, k.encode()) for k in ('oldt', 'fresh', 'kf', 'mul', 'hold', 'tscale', 'toff', 'rel')}
-        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'grow', 'gn', 'hold', 'dt', 'px')
+        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt')
         try:                                            # (Ultra: both afterglow parts at once - two outputs)
             self.DrawBuffers = proc('glDrawBuffers', None, i, ctypes.POINTER(u))
             self.glowprog = program(GLOW_SHADER, 'phosphor afterglow')   # (its own name: gprog is taken)
@@ -2267,7 +2228,7 @@ class GLBloomRenderer(GLRenderer):
         self.u_gp = {k: GetUniform(self.glowpack, k.encode()) for k in GK}
         self.sprog = program(SHOW_SHADER, 'phosphor show')
         self.u_stex = GetUniform(self.sprog, b'tex')
-        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'sm', 'px', 'wb', 'wbc', 'acap', 'g1', 'g2', 'pkd', 'lifta')}
+        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'wb', 'wbc', 'acap', 'g1', 'g2', 'pkd', 'lifta')}
         try:                                                    # (max blending: overlaps do not add up)
             self.BlendEq = proc('glBlendEquation', None, u)
         except OSError:
@@ -2393,10 +2354,7 @@ class GLBloomRenderer(GLRenderer):
         self.halo_k = BEAM_HALO_K    # its brightness (Tube > Corner glow strength)
         self.dot_k = 1.0             # the resting spots' brightness, x DOT_K (Tube > Corner dot brightness)
         self.dither_on = True        # the picture dithered from 16 bits to the window's 8 (no bands in soft glows)
-        self.phos_grow = PHOS_GROW      # how the afterglow joins up (Tube > Afterglow joining)
-        self.phos_smooth = PHOS_SMOOTH  # the afterglow's smoothing, 0 .. 1 (Tube > Afterglow smoothing)
-        self.phos_grow_on = False       # (their switches: off - crisp copies, the owner's choice 2026-10-29; on for a
-        self.phos_smooth_on = False     #  softer trail, some screens show it better)
+
         self.frame_no = 0; self.frame_t0 = 0.0
         self.young = []              # frames still lighting up: [built, real start, real end, lit up to]
         self.last = None             # the newest frame (phosphor off: shown as it is)
@@ -4122,10 +4080,6 @@ class GLBloomRenderer(GLRenderer):
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)
             self.Uniform1f(u['mul'], od if od is not None else 1.0)
             self.Uniform1f(u['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
-            self.Uniform2f(u['px'], 1.0 / max(1, pw), 1.0 / max(1, ph))
-            self.Uniform1f(u['gn'], float(max(1, min(4, round(ph / 820.0 * 2.0)))))   # (joining's reach: 2 px in an 820
-            self.Uniform1f(u['grow'], PHOS_GROW_MAX * min(1.0, getattr(self, 'phos_grow', PHOS_GROW))   #  px high window)
-                           if (od is None and getattr(self, 'phos_grow_on', False)) else 0.0)
             if full:
                 self.BindFB(GL_FRAMEBUFFER, self.AGfb[a1]); gl.glViewport(0, 0, pw, ph)
                 bufs = (ctypes.c_uint * 2)(GL_COLOR_ATT0, GL_COLOR_ATT0 + 1); self.DrawBuffers(2, bufs)
@@ -4146,9 +4100,7 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform3f(self.u_sh['wbc'], *((1.0, 1.0, 1.0) if btm else self._wbc()))
         self.Uniform1f(self.u_sh['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
         self.Uniform1f(self.u_sh['lifta'], 0.0 if (self.art and self.art_on) else TRAIL_LIFT_A)   # (an overlay shown: its own look)
-        self.Uniform1f(self.u_sh['sm'], PHOS_SMOOTH_MAX * min(1.0, getattr(self, 'phos_smooth', PHOS_SMOOTH)) * ph / 820.0
-                       if (self.trail_on and getattr(self, 'phos_smooth_on', False)) else 0.0)
-        self.Uniform2f(self.u_sh['px'], 1.0 / max(1, pw), 1.0 / max(1, ph))
+
         self._quad(self.P[0])
         self.UseProgram(0)
         for unit in (0x84C1, 0x84C2):

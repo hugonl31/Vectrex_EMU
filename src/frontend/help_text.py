@@ -289,13 +289,6 @@ TOPICS = [
          "about 2 seconds. That is why fast objects leave fading copies or a faint trail, and why a game "
          "running at 25 frames a second flickers less than you might expect. A spot drawn again is lit "
          "again; it does not add up."),
-('item', 'Afterglow joining', "Off by default: every position a fast object was drawn at leaves its own "
-         "crisp fading copy, as each flash does on the tube. On: the fading glow spreads a little every frame, "
-         "so the copies merge into one softer trail - some screens and some players like that better."),
-('item', 'Joining strength...', "How far the glow spreads when joining is on, 0 to 1 (0 by default: turn it up after switching joining on)."),
-('item', 'Afterglow smoothing', "Off by default. On: the fading glow is averaged over a small spot, so the "
-         "trail becomes one smooth gradient. Only the fading light; the lines being drawn stay sharp."),
-('item', 'Smoothing width...', "How wide that spot is when smoothing is on, 0 to 1 (0 by default: turn it up after switching smoothing on)."),
 ('item', 'Game list', "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder."),
 ('item', 'Colours', "The deck's, the menus' and the windows' colour: a deeper blue, or green. From the next start."),
 ('item', 'Look', "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen."),

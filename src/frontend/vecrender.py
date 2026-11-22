@@ -944,7 +944,7 @@ BEAM_TRACE_SG = 0.674
 BT_A, BT_B, BT_D0, BT_IP = 0.70, 0.29, 150.0, 1.5
 BT_W, BT_WF, BT_UREF = 0.30, 0.10, 1.6
 BT_UNITS = 160.0 / 134.0                    # (Vectrex units - Moveto at scale $7F - a game px)
-BT_EXPO = 0.14                              # (the Vectrex look: a typical game line's flat top at white, hardly above - Vectorblade's logo,
+BT_EXPO = 0.20                              # (the Vectrex look: a typical game line's flat top at white, hardly above - Vectorblade's logo,
                                             #  intensity 79: its lines 0.6 of the photo's ceiling, unclipped; driven above white the tone step
                                             #  flattens a line's top and its skirt shows: "an out of focus photo", the owner)
 def bt_light(tl, l, t):

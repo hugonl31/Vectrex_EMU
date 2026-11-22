@@ -2639,6 +2639,9 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
  * afterglow measured on the owner's Vectrex, at the owner's time scale 0.6): what was lit and is not lit again starts
  * to glow away, in two parts (14 % fading with 27 ms, 5.8 % with 210 ms) */
 #define SMOOTH_MATCH 2500
+#define SM_LOOK 6                         /* (Smooth motion: how far on in the other frame's list a line's partner is looked for) */
+static int sm_ok (const line_t *p, const line_t *q)   /* (the same line a frame on: its colour, its ends near) */
+{ return p->c == q->c && labs (q->x0 - p->x0) < SMOOTH_MATCH && labs (q->y0 - p->y0) < SMOOTH_MATCH && labs (q->x1 - p->x1) < SMOOTH_MATCH && labs (q->y1 - p->y1) < SMOOTH_MATCH; }
 VXS_ON
 static unsigned long long run_t; static double run_frac;   /* (v0.13: saved) */
 VXS_OFF
@@ -3092,18 +3095,32 @@ void retro_run (void)
 			const gframe *pa = ia ? &hist[ia - 1] : have_prev ? &prevf : NULL;
 			double alpha = b ? (D - a->t) / (b->t - a->t) : 0; alpha = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
 			const line_t *B = NULL;
-			if (b && alpha > 0 && b->n == a->n) {
-				int ok = 1;
-				for (int i = 0; i < a->n && ok; i++) { const line_t *p = &a->L[i], *q = &b->L[i];
-					if (p->c != q->c || labs (q->x0 - p->x0) >= SMOOTH_MATCH || labs (q->y0 - p->y0) >= SMOOTH_MATCH
-					    || labs (q->x1 - p->x1) >= SMOOTH_MATCH || labs (q->y1 - p->y1) >= SMOOTH_MATCH) ok = 0; }
-				if (ok) B = b->L;
-			}
+			/* (line for line: a line that jumped - a thing gone round the screen's edge, a new shape in its place - is not
+			 *  moved, it stands in a's place until halfway and in b's after; the others still move. One such line took the
+			 *  in-between away from the whole picture before: that refresh every moving thing stood at a game frame's place
+			 *  instead of between two - gaps and pairs in every trail, a stutter (the owner's iPhone, 2026-11-22) */
+			 /* (and the two frames need not have as many lines: the beam's path is cut into pieces a little differently each
+			 *  frame - the Test Cart's 146, 145, 144 - and a piece more or less took the in-between away as well; the lists
+			 *  are walked side by side, a piece without a partner within SM_LOOK is such a standing line) */
+			if (b && alpha > 0) B = b->L;
 			sm_runs++; if (B) sm_mixed++;
 			if (slow && !B) n = vx_nobuild ? 0 : hold_lines (D, dt);   /* (run-ahead's hidden runs: no picture, no hold) */
 			else {
 				if (a->alt && pa) n = wl_from (W1, n, pa->L, pa->n, NULL, 0);   /* (a picture in halves: both) */
-				n = wl_from (W1, n, a->L, a->n, B, alpha); }
+				if (!B) n = wl_from (W1, n, a->L, a->n, NULL, 0);
+				else {
+					const int an = a->n, bn = b->n, first = alpha < 0.5; int i = 0, j = 0;
+					while (i < an && j < bn) { const line_t *p = &a->L[i], *q = &B[j];
+						if (sm_ok (p, q)) { n = wl_from (W1, n, p, 1, q, alpha); i++; j++; continue; }
+						int k, hit = 0;
+						for (k = 1; k <= SM_LOOK && j + k < bn; k++) if (sm_ok (p, &B[j + k])) { hit = 1; break; }
+						if (hit) { if (!first) n = wl_from (W1, n, q, k, NULL, 0); j += k; continue; }   /* (b's pieces without a partner) */
+						for (k = 1; k <= SM_LOOK && i + k < an; k++) if (sm_ok (&a->L[i + k], q)) { hit = 1; break; }
+						if (hit) { if (first) n = wl_from (W1, n, p, k, NULL, 0); i += k; continue; }   /* (a's) */
+						n = wl_from (W1, n, first ? p : q, 1, NULL, 0); i++; j++; }
+					if (first && i < an) n = wl_from (W1, n, &a->L[i], an - i, NULL, 0);
+					if (!first && j < bn) n = wl_from (W1, n, &B[j], bn - j, NULL, 0);
+				} }
 			/* (the hum at the nearest real frame's moment: the beam draws only when the game draws) */
 			ft0 = (b && alpha >= 0.5) ? b->p0 : a->p0;
 		} else if (slow) {

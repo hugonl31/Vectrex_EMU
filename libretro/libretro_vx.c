@@ -436,10 +436,6 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow); on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_brightness", "Brightness (VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
-	{ "vectrex_emu_trail_shape", "Afterglow shape (trial, the phone apps); new|measured" },
-	{ "vectrex_emu_tail_len", "Afterglow tail length (trial); 1x|0.5x|0.75x|1.5x|2x|3x" },
-	{ "vectrex_emu_tail_lvl", "Afterglow tail level (trial); 1x|0.5x|0.75x|1.5x|2x|3x" },
-	{ "vectrex_emu_first_drop", "Afterglow first drop (trial); 1x|0.5x|0.75x|1.5x|2x" },
 	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white - bright vectors on a dim screen; Vectrex: as a real Vectrex - dots and slow lines stand out, wants a bright screen); bright|vectrex" },
 	{ "vectrex_emu_corner_dots", "Corner dots (the beam resting); on|off" },
 	{ "vectrex_emu_dwell", "Dwell spots inside strokes; on|off" },
@@ -524,10 +520,6 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_speaker", "audio", "Vectrex speaker sound", NULL, "on|off" },
 	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
-	{ "vectrex_emu_trail_shape", "tube", "Afterglow shape (trial)", "New: a quicker drop, a long faint end. Measured: as the PC. The phone apps only.", "new|measured" },
-	{ "vectrex_emu_tail_len", "tube", "Afterglow tail length (trial)", "How long the faint end of the trail lasts.", "1x|0.5x|0.75x|1.5x|2x|3x" },
-	{ "vectrex_emu_tail_lvl", "tube", "Afterglow tail level (trial)", "How bright the faint end of the trail is.", "1x|0.5x|0.75x|1.5x|2x|3x" },
-	{ "vectrex_emu_first_drop", "tube", "Afterglow first drop (trial)", "How long the trail's bright start lasts: lower drops quicker.", "1x|0.5x|0.75x|1.5x|2x" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "auto|on|off" },
 	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
@@ -738,11 +730,6 @@ static void read_options (void)
 	opt_trail = opt_is ("vectrex_emu_afterglow", "long (real Vectrex)") ? 1.0f : opt_is ("vectrex_emu_afterglow", "short") ? 0.3f : 0.6f;
 	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) * VX_TRAIL_DEF : VX_TRAIL_DEF;   /* (1x: the default) */
 	  opt_trail_k = k >= 0.25 && k <= 6.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
-	{ extern int vx_trail_new; vx_trail_new = !opt_is ("vectrex_emu_trail_shape", "measured"); }
-	{ extern float vx_tail_len, vx_tail_lvl, vx_first_drop; struct retro_variable v = { "vectrex_emu_tail_len", NULL };   /* (a trial, 2026-11-22: the afterglow's shape dialled in next to the tube) */
-	  vx_tail_len = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value && atof (v.value) > 0 ? (float) atof (v.value) : 1.0f;
-	  v.key = "vectrex_emu_tail_lvl"; v.value = NULL; vx_tail_lvl = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value && atof (v.value) > 0 ? (float) atof (v.value) : 1.0f;
-	  v.key = "vectrex_emu_first_drop"; v.value = NULL; vx_first_drop = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value && atof (v.value) > 0 ? (float) atof (v.value) : 1.0f; }
 	{ extern int vx_app_noshape, vx_app_dots; extern float vx_hdr_lift, vx_trail_mul;   /* (the look - as the own apps' setting; they set it themselves) */
 	  if (!vx_app_noshape) { const int v = opt_is ("vectrex_emu_look", "vectrex"); vx_hdr_lift = v ? 2.0f : 0.0f; vx_trail_mul = v ? 2.1f : 1.0f; vx_app_dots = 1; } }
 	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = !opt_gone (v.key) && env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;

@@ -13,13 +13,12 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * The afterglow on iPhone / iPad, Android and RetroArch as on the PC: its faint end was a little too bright there, and
   the phone apps dimmed the whole trail with the screen's brightness (to half at full brightness).
 * Brighter afterglow (iPhone / iPad and the Android app, below the Look): the trail 20 % brighter - on a phone's small
-  picture it is lost. On by default on phones, off on tablets.
+  picture it is lost. Off by default.
 * The Bright look lifts the afterglow with the lines, on the PC too (there the bright lines' trail stayed as it was).
 * The overlay's plastic glow and glints follow the picture at once: they were smoothed over 0.15 s and trailed behind
   moving things.
-* iPhone / iPad and the Android app: the afterglow's shape nearer the tube's as seen on a phone - it drops quicker at
-  first and its faint end lasts about twice as long. Three trial settings to dial it in (Tube): Afterglow tail
-  length, tail level, first drop. The PC and RetroArch keep the measured afterglow.
+* iPhone / iPad and the Android app: the afterglow matched by eye to the PC's - its bright start 1.5 times as long, its
+  faint end twice as long at three quarters of its level. The PC and RetroArch keep the measured afterglow.
 * Android app: on / off settings show a switch, as the iPhone app's.
 * Test Cart, a cartridge to compare the picture between platforms (trail, levels, dots, corners; buttons 1-4): the
   phone apps carry it (Library > Tests), `tools/testcart_compare.py` measures snapshots of it.

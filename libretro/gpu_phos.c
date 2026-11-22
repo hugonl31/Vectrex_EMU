@@ -43,15 +43,15 @@ float vx_trail_mul = 1.0f;                     /* (the own apps: the trail for t
 float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture
                                                   lifted towards the peak, 2 the measured Vectrex - dots with the slow beam round them, the
                                                   brightest lines a little above white; below the knee as SDR) */
-int vx_phone_trail = 0;                        /* (the own phone / tablet apps set it: the afterglow's shape there - a quicker first drop, the faint end about
-                                                   twice as long (the owner, his iPhone next to the tube, 2026-11-22). The PC and RetroArch keep the measured one) */
-int vx_trail_new = 1;                          /* (a trial: the setting Afterglow shape - new, or the measured one, to compare on the phone) */
-#define PH_NEW (vx_phone_trail && vx_trail_new)
-#define PHOS_A1 (PH_NEW ? 0.15f : 0.1404f)
-#define PHOS_T1 (PH_NEW ? 0.0583f : 0.0454f)
-#define PHOS_A2 (PH_NEW ? 0.022f : 0.0582f)
-#define PHOS_T2 (PH_NEW ? 1.25f : 0.350f)
-float vx_tail_len = 1.0f, vx_tail_lvl = 1.0f, vx_first_drop = 1.0f;   /* (a trial: the afterglow's shape, the settings Afterglow tail length / level / first drop) */
+int vx_phone_trail = 0;                        /* (the own phone / tablet apps set it: the afterglow there. The owner matched his iPhone and iPad to the
+                                                   PC's Vectrex look by eye, 2026-11-22 (it held in both looks, HDR on and off): the measured afterglow with
+                                                   its bright start 1.5 x as long and its faint end twice as long at 0.75 of its level - a phone shows 120
+                                                   pictures a second, each ghost along its whole fade, where the PC shows it fresh. The PC and RetroArch:
+                                                   the measured one, vecrender.py PHOS_A) */
+#define PHOS_A1 0.1404f
+#define PHOS_T1 (vx_phone_trail ? 0.0454f * 1.5f : 0.0454f)
+#define PHOS_A2 (vx_phone_trail ? 0.0582f * 0.75f : 0.0582f)
+#define PHOS_T2 (vx_phone_trail ? 0.350f * 2.0f : 0.350f)
 float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 1 Bright, for a small screen whose thin lines
                                                    give little light (the owner, 2026-11-22): the tube's light lifted and the beam 1.3 x wider
                                                    (libretro_vx.c). An ordinary screen: its values x BL_GAIN before the roll-off - the faint lines
@@ -443,7 +443,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
 	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
 	  /* (the afterglow's two parts - vecrender.py PHOS_A; the phone apps' own shape: vx_phone_trail) */
-	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk * vx_tail_lvl, ta1 = PHOS_T1 * opt_trail * vx_first_drop, ta2 = PHOS_T2 * opt_trail * vx_tail_len;
+	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk, ta1 = PHOS_T1 * opt_trail, ta2 = PHOS_T2 * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
 	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);

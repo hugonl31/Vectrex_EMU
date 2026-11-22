@@ -53,7 +53,8 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 @interface VXAdjust : UIView
 @property (nonatomic) int opt; @property (nonatomic, weak) UIViewController *vc; @property (nonatomic) BOOL fromSettings;
 @end
-@implementation VXAdjust { UILabel *_cat, *_name, *_info, *_val; UISlider *_sl; UIStackView *_extra; NSArray<NSString *> *_nums; int _last; }
+#define VX_ADJ_HDR (-2)                           /* (not a core setting: the app's HDR brightness, 0 .. 1 - the same panel over the running game) */
+@implementation VXAdjust { UILabel *_cat, *_name, *_info, *_val; UISlider *_sl; UIStackView *_extra; NSArray<NSString *> *_nums; int _last; UIButton *_prev, *_next; }
 - (instancetype) initWithOpt:(int)i vc:(UIViewController *)vc
 {
 	self = [super initWithFrame:CGRectZero]; _vc = vc;
@@ -62,7 +63,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	_cat.textAlignment = _name.textAlignment = _info.textAlignment = NSTextAlignmentCenter; _info.numberOfLines = 2;
 	__weak VXAdjust *ws = self;
 	UIButton *prev = VB (@"", @"chevron.left", NO, ^{ [ws step:-1]; }), *next = VB (@"", @"chevron.right", NO, ^{ [ws step:1]; });
-	prev.accessibilityLabel = @"Previous setting"; next.accessibilityLabel = @"Next setting";
+	prev.accessibilityLabel = @"Previous setting"; next.accessibilityLabel = @"Next setting"; _prev = prev; _next = next;
 	UIStackView *mid = [[UIStackView alloc] initWithArrangedSubviews:@[ _cat, _name ]]; mid.axis = UILayoutConstraintAxisVertical; mid.spacing = 2;
 	UIStackView *top = [[UIStackView alloc] initWithArrangedSubviews:@[ prev, mid, next ]]; top.alignment = UIStackViewAlignmentCenter; top.spacing = 8;
 	[prev.widthAnchor constraintEqualToConstant:44].active = YES; [next.widthAnchor constraintEqualToConstant:44].active = YES;
@@ -71,7 +72,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[_sl addTarget:self action:@selector(slid) forControlEvents:UIControlEventValueChanged];
 	{ UITapGestureRecognizer *dt = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toDefault)]; dt.numberOfTapsRequired = 2; [_sl addGestureRecognizer:dt]; }   /* (a double tap: the default) */
 	_extra = [UIStackView new]; _extra.spacing = 8; _extra.distribution = UIStackViewDistributionFillEqually;
-	UIButton *def = VB (@"Default", nil, NO, ^{ [ws setValue:@(vxa_odef (ws.opt))]; }), *done = VB (@"Done", nil, YES, ^{ [ws close]; });
+	UIButton *def = VB (@"Default", nil, NO, ^{ if (ws.opt == VX_ADJ_HDR) [ws hdrSet:1.0]; else [ws setValue:@(vxa_odef (ws.opt))]; }), *done = VB (@"Done", nil, YES, ^{ [ws close]; });
 	UIButton *allb = VB (@"", @"list.bullet", NO, ^{ [ws closeTo:YES]; }); allb.accessibilityLabel = @"All settings";   /* (the full list, at this setting) */
 	[allb.widthAnchor constraintEqualToConstant:44].active = YES; [allb.heightAnchor constraintEqualToConstant:40].active = YES;
 	UIStackView *bot = [[UIStackView alloc] initWithArrangedSubviews:@[ _val, [UIView new], allb, def, done ]]; bot.alignment = UIStackViewAlignmentCenter; bot.spacing = 8;
@@ -82,8 +83,26 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 		[all.topAnchor constraintEqualToAnchor:self.topAnchor constant:12], [all.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:-14] ]];
 	[self show:i]; return self;
 }
+/* (HDR brightness - the owner, 2026-11-22: over the running game, the picture changes as the slider moves; it sat in the settings list, which covers it) */
+- (void) hdrSet:(double)v
+{
+	extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void); const double hr = vxa_hdr_headroom ();
+	if (v >= 0) { [NSUserDefaults.standardUserDefaults setObject:@(v) forKey:@"app.hdr"]; vxa_hdr_update (); }
+	NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; const double fr = f ? f.doubleValue : 1.0;
+	if (v < 0 || v == 1.0) _sl.value = (float) fr;
+	_val.text = fr > 0.01 ? [NSString stringWithFormat:@"up to %.1fx white", 1 + (hr - 1) * fr] : @"Off"; _val.textColor = fr < 0.995 ? VX_CHG : VX_HI;
+}
+- (void) showHdr
+{
+	_opt = VX_ADJ_HDR; _nums = @[]; _cat.text = @"APP"; _name.text = @"HDR brightness"; _info.text = @"The brightest lines and dots above the screen's white.";
+	_sl.minimumValue = 0; _sl.maximumValue = 1; _sl.alpha = 1; _prev.hidden = _next.hidden = YES;
+	for (UIView *v in _extra.arrangedSubviews) [v removeFromSuperview];
+	_extra.hidden = YES; [self hdrSet:-1]; ulog (@"adjust hdr");
+}
 - (void) show:(int)i
 {
+	if (i == VX_ADJ_HDR) { [self showHdr]; return; }
+	_prev.hidden = _next.hidden = NO;
 	_opt = i; NSArray *ex = nil; NSArray *n = nil; VSlider (i, &n, &ex); _nums = n ?: @[];
 	NSString *cat = @""; for (int c = 0; c < vxa_ncats (); c++) if (!strcmp (vxa_ckey (c), vxa_ocat (i))) cat = @(vxa_cdesc (c));
 	_cat.text = cat.uppercaseString; _name.text = @(vxa_odesc (i)); _info.text = @(vxa_oinfo (i));
@@ -106,13 +125,15 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 - (void) slid
 {
+	if (_opt == VX_ADJ_HDR) { [self hdrSet:_sl.value]; return; }
 	int k = (int) lroundf (_sl.value); if (k < 0 || k >= (int) _nums.count) return;
 	if (k != _last) { _last = k; [[UISelectionFeedbackGenerator new] selectionChanged]; vxa_oset (_opt, _nums[k].UTF8String); [self refresh]; [self show:_opt]; }
 }
 - (void) setValue:(NSString *)v { vxa_oset (_opt, v.UTF8String); [self show:_opt]; }
-- (void) toDefault { ulog ([NSString stringWithFormat:@"adjust %s: double tap - the default", vxa_okey (_opt)]); [[UIImpactFeedbackGenerator new] impactOccurred]; [self setValue:@(vxa_odef (_opt))]; }
+- (void) toDefault { if (_opt == VX_ADJ_HDR) { [[UIImpactFeedbackGenerator new] impactOccurred]; [self hdrSet:1.0]; return; } ulog ([NSString stringWithFormat:@"adjust %s: double tap - the default", vxa_okey (_opt)]); [[UIImpactFeedbackGenerator new] impactOccurred]; [self setValue:@(vxa_odef (_opt))]; }
 - (void) step:(int)d                                 /* (the next setting with a slider in the same group) */
 {
+	if (_opt < 0) return;
 	int n = vxa_nopts ();
 	for (int k = 1; k < n; k++) { int j = ((_opt + d * k) % n + n) % n; if (!strcmp (vxa_ocat (j), vxa_ocat (_opt)) && VSlider (j, NULL, NULL)) { [self show:j]; return; } }
 }
@@ -121,7 +142,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (void) closeTo:(BOOL)list
 {
 	ulog (list ? @"adjust done: back to the settings" : @"adjust done"); UIViewController *g = self.vc; int i = self.opt;
-	[UIView animateWithDuration:0.2 animations:^{ self.alpha = 0; } completion:^(BOOL f) { (void) f; [self removeFromSuperview]; if (list && g) [VXUI showSettingsFrom:g at:i]; }];
+	[UIView animateWithDuration:0.2 animations:^{ self.alpha = 0; } completion:^(BOOL f) { (void) f; [self removeFromSuperview]; if (list && g) [VXUI showSettingsFrom:g at:i < 0 ? -1 : i]; }];
 }
 @end
 
@@ -289,12 +310,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 		if (hr <= 1.05) { c.detailTextLabel.text = @"Not on this screen (it shows no HDR)"; return c; }
 		NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0;
 		c.detailTextLabel.text = fr > 0.01 ? [NSString stringWithFormat:@"The brightest dots up to %.1fx white", 1 + (hr - 1) * fr] : @"Off: as an ordinary screen";
-		UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake (0, 0, 130, 30)]; sl.value = (float) fr; sl.minimumTrackTintColor = VX_G; sl.maximumTrackTintColor = VX_SEL; sl.thumbTintColor = VX_HI;
-		__weak UITableViewCell *wc = c;
-		[sl addAction:[UIAction actionWithHandler:^(UIAction *a) { double v = ((UISlider *) a.sender).value; [NSUserDefaults.standardUserDefaults setObject:@(v) forKey:@"app.hdr"]; vxa_hdr_update ();
-			wc.detailTextLabel.text = v > 0.01 ? [NSString stringWithFormat:@"The brightest dots up to %.1fx white", 1 + (hr - 1) * v] : @"Off: as an ordinary screen"; }] forControlEvents:UIControlEventValueChanged];
-		[sl addAction:[UIAction actionWithHandler:^(UIAction *a) { ulog ([NSString stringWithFormat:@"HDR %.0f %%", ((UISlider *) a.sender).value * 100]); }] forControlEvents:UIControlEventTouchUpInside];
-		c.accessoryView = sl; return c; }
+		c.textLabel.textColor = VX_HI; c.selectionStyle = UITableViewCellSelectionStyleDefault; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; return c; }   /* (a tap: the slider over the running game) */
 	if (R == 2) {                                   /* (the downloads: which parts are here, add or remove) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 		c.textLabel.text = @"Downloads"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"games, boxes, UVMC2, PiTrex"; c.detailTextLabel.textColor = VX_DIM;
@@ -326,6 +342,8 @@ static UITableViewCell *vxs_cell (NSString *title)
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
 	const NSInteger R = vxs_app (ip);
+	if (R == 3) { extern float vxa_hdr_headroom (void); [t deselectRowAtIndexPath:ip animated:YES]; if (vxa_hdr_headroom () <= 1.05) return;
+		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:VX_ADJ_HDR over:g fromSettings:YES]; }]; return; }
 	if (R == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
 	if (R == 6) { [t deselectRowAtIndexPath:ip animated:YES]; __weak VXSettings *ws = self;
 		UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Reset all settings?" message:@"Every setting of the picture, the overlay, the sound and the controls back to its default." preferredStyle:UIAlertControllerStyleAlert];
@@ -744,7 +762,7 @@ static void vxu_release (UIViewController *game)
 + (void) adjustOption:(int)i over:(UIViewController *)vc { [self adjustOption:i over:vc fromSettings:NO]; }
 + (void) adjustOption:(int)i over:(UIViewController *)vc fromSettings:(BOOL)fs
 {
-	if (i < 0) return; vxa_hold (0);
+	if (i < 0 && i != VX_ADJ_HDR) return; vxa_hold (0);
 	for (UIView *v in vc.view.subviews) if ([v isKindOfClass:VXAdjust.class]) [v removeFromSuperview];
 	VXAdjust *a = [[VXAdjust alloc] initWithOpt:i vc:vc]; a.fromSettings = fs; a.translatesAutoresizingMaskIntoConstraints = NO; [vc.view addSubview:a];
 	UILayoutGuide *sa = vc.view.safeAreaLayoutGuide;

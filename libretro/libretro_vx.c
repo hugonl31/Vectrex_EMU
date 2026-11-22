@@ -372,7 +372,7 @@ enum { KB_UP = 1, KB_DOWN = 2, KB_LEFT = 4, KB_RIGHT = 8, KB_B1 = 16, KB_B2 = 32
        KB_ENTER = 512, KB_BACK = 1024, KB_CTRL = 2048 };
 enum { KE_PAUSE = 1, KE_BROWSER = 2, KE_OVERLAY = 4, KE_RESET = 8, KE_EJECT = 16, KE_VOLUP = 32, KE_VOLDN = 64, KE_ESC = 128 };
 static int kb_on, km_typing; static volatile unsigned kb_held, kb_ev;
-static int br_open;                                 /* (browser.c) */
+static int br_open;                                 /* (browser.c) */ static int lib_on; static void br_show (int on);   /* (library.c) */
 static void RETRO_CALLCONV km_key (bool down, unsigned keycode, uint32_t character, uint16_t mods);
 static const char *optv (const char *key);
 static const char *unit_preset (void)               /* (the Unit option: owner, ideal, random N, cranky N) */
@@ -473,6 +473,7 @@ static const struct vx_opt OPTS[] = {
 #else
 	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "classic|modern" },
 #endif
+	{ "vectrex_emu_gamelist", "video", "Game list", "Library: tiles with the games' pictures (system/vectrex_emu/thumbs), categories. Simple: the folder list.", "library|simple" },
 	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green. An app's own menus: from its next start.", "blue|green" },
 #if !VX_IOS                                         /* (an iPhone / iPad: the block takes the screen's own shape - no choice) */
 	{ "vectrex_emu_shape", "video", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
@@ -788,6 +789,7 @@ static void read_options (void)
 	  if (size_auto) { if (!scr_short) scr_load (); z = scr_short; }   /* (the screen's short side: gpu_gl.c scr_detect, kept) */
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
+	{ const int lo = !opt_is ("vectrex_emu_gamelist", "simple"); if (lo != lib_on) { lib_on = lo; if (br_open) br_show (1); } }
 	{ extern int vx_palette; const int pl = opt_is ("vectrex_emu_palette", "green"); if (pl != vx_palette) { vx_palette = pl; dk_dirty_set = 1; } }
 	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }
 	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0;
@@ -2956,7 +2958,7 @@ void retro_run (void)
 #ifndef VX_EMUVR
 	if (br_input (m)) { m[0] = m[1] = 128; m[2] = 0; }   /* (the browser reads player 1 as the game does: turned in tate) */   /* (the ROM browser open, or just closed by a button: the game gets none) */
 	if (px_redo) { const int r = px_redo; px_redo = 0;   /* (the PiTrex's download: its progress; done - the list again, it chosen) */
-		if (r & 1 && br_open) { char px[1200]; br_px_boot (px, sizeof px); br_scan (br_dir, px); }
+		if (r & 1 && br_open) { char px[1200]; br_px_boot (px, sizeof px); if (lib_on) lib_scan (px); else br_scan (br_dir, px); }
 		br_dirty = 1; }
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
 	dbg_tick ();

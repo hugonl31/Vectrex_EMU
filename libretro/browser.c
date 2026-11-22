@@ -153,9 +153,11 @@ static void br_move (int d)
 	if (br_sel < br_top) br_top = br_sel; if (br_sel >= br_top + BR_NVIS) br_top = br_sel - BR_NVIS + 1;
 	br_dirty = 1;
 }
+static void lib_scan (const char *select); static int lib_on;   /* (library.c: the library, Video > Game list) */
 static void br_show (int on)
 {
 	br_open = on; br_dirty = 1; br_prev_ok = 0; br_t_toggle = vt_wall (); fprintf (stderr, "[vectrex_emu] ROM browser %s\n", on ? "open" : "closed");
+	if (on && lib_on) { lib_scan (br_game); return; }
 	if (on) { char d[1100], cur[1100]; snprintf (cur, sizeof cur, "%s", br_game); br_parent (cur, d, sizeof d);
 		if (br_from[0] && !strcmp (br_from_game, cur)) { br_scan (br_from, cur); return; }   /* (loaded from the browser: where it was chosen) */
 		br_scan (d[0] ? d : br_dir[0] ? br_dir : ".", cur); }   /* (each time: the running game's folder, the game chosen) */
@@ -219,10 +221,11 @@ unsigned vx_pal (unsigned c)
 			o = A | (unsigned) (p * 255 + 0.5f) << 16 | (unsigned) (q * 255 + 0.5f) << 8 | (unsigned) (mx * 255 + 0.5f); } }
 	li = c; lo = o; lp = vx_palette; return o;
 }
+static int dr_cy0 = 0, dr_cy1 = 1 << 30;         /* (rows drawn into: the library's grid cuts its tiles there) */
 static uint32_t *dr_img; static int dr_w, dr_h;    /* (what br_over draws into: the browser's image, the deck's) */
 static void br_over (int x, int y, unsigned rgb, float a)   /* (premultiplied ARGB, the colour over what is there) */
 {
-	if (x < 0 || y < 0 || x >= dr_w || y >= dr_h || a <= 0) return;
+	if (x < 0 || y < 0 || x >= dr_w || y >= dr_h || a <= 0 || y < dr_cy0 || y >= dr_cy1) return;
 	if (a > 1) a = 1;
 	rgb = vx_pal (rgb);
 	uint32_t *p = dr_img + (size_t) y * dr_w + x, d = *p; const float ia = 1 - a;
@@ -255,6 +258,8 @@ static float br_text (const char *t, float x, float y, float k, unsigned c)   /*
 		x += 6 * k; }
 	return x;
 }
+static int game_switch (const char *path);
+#include "library.c"
 static void br_draw (void)
 {
 	const size_t n = (size_t) FW * FH;
@@ -264,6 +269,7 @@ static void br_draw (void)
 	if (br_shown) for (int y = br_by0; y <= br_by1; y++) if (y >= 0 && y < FH) memset (br_img + (size_t) y * FW + (br_bx0 > 0 ? br_bx0 : 0), 0, (size_t) ((br_bx1 < FW ? br_bx1 : FW - 1) - (br_bx0 > 0 ? br_bx0 : 0) + 1) * 4);
 	br_shown = 0; br_dirty = 0; br_gen++;
 	if (!br_open) return;
+	if (lib_on) { lib_draw (); return; }
 	br_geom (); const br_geo *g = &br_g; const float k = g->k, rh = g->rh;
 	const unsigned GRN = 0x66aa88, HI = 0x88ccbb, DIM = 0x4a7a62, BG = 0x05080a, TOP = 0x0a1210, PAN = 0x0b1511, BODY = 0x0f1c17, SEL = 0x24443a,
 	               EDGE = 0x1d3329, EDGE2 = 0x2f5544, UM = 0x66a4b8, UMH = 0x8ac8dc, PX = 0xaa9c88, PXH = 0xd0c0aa;
@@ -383,9 +389,20 @@ static int br_input (const unsigned char *m)
 	if (d) { int step = 0;
 		if (d != br_dprev) { br_dprev = d; br_t_next = now + 0.40; step = 1; }
 		else if (now >= br_t_next) { br_t_next = now + (dy ? 0.08 : 0.25); step = 1; }
-		if (step) br_move (dy ? dy : dx * BR_NVIS); }
+		if (step && lib_on) lib_input (0, dx, dy, 1);
+		else if (step) br_move (dy ? dy : dx * BR_NVIS); }
 	else br_dprev = 0;
 	const unsigned nw = b & ~br_prevb; br_prevb = b;
+	if (lib_on) {                                       /* (the library: its own buttons and touch - library.c) */
+		lib_input (nw, 0, 0, 0); lib_tick ();
+		const int tp = br_open && input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0; static float lx, ly;
+		if (tp) { double fx = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X) + 32768) / 65536.0, fy = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y) + 32768) / 65536.0;
+			const double ax_ = fx, ay_ = fy;
+			if (opt_rot == 1) { fx = 1 - ay_; fy = ax_; } else if (opt_rot == 2) { fx = 1 - ax_; fy = 1 - ay_; } else if (opt_rot == 3) { fx = ay_; fy = 1 - ax_; }
+			lx = (float) (CX0 + fx * TW - BX); ly = (float) (CY0 + fy * TH - BY); }
+		if (tp && !br_prevtouch) br_ate = 1;
+		if (br_open && vt_wall () - br_t_toggle >= 0.3) lib_touch (lx, ly, tp && !br_prevtouch, tp && br_prevtouch, !tp && br_prevtouch);
+		br_prevtouch = tp; return 1; }
 	if (nw & 8) br_activate ();                           /* (button 4) */
 	else if (nw & 1) br_back ();                          /* (button 1) */
 	/* touch: a row, the buttons; outside: closed */

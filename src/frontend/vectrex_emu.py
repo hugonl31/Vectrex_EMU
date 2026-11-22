@@ -9518,11 +9518,15 @@ class App:
                         f.write('%s  %s\ngraphics: %s\n' % (datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), platform.platform(), gpu))
                     sz = getattr(r, 'size', (0, 0))
                     on = [k for k in getattr(r, 'PROFILE_KEYS', ()) if getattr(r, k, None)]
-                    f.write('%s  %s  picture %dx%d  quality %s  overlay %s  %.0f fps  card %s ms  processor %s ms  emu %.0f %%  on: %s\n' % (
+                    pw_, self.pf_work = sorted(getattr(self, 'pf_work', [])), []; pl_, self.pf_late = getattr(self, 'pf_late', 0), 0
+                    scr_ = 'G-Sync' if self.vrr else '%s Hz%s' % (getattr(self, 'refresh', '?'), ' Smooth motion' if self.smooth_on() else '')
+                    wk_ = ('work %.1f / %.1f / %.1f ms (half / 99 %% / worst), late %d of %d' % (
+                        1000 * pw_[len(pw_) // 2], 1000 * pw_[int(len(pw_) * 0.99)], 1000 * pw_[-1], pl_, len(pw_))) if pw_ else 'work -'
+                    f.write('%s  %s  picture %dx%d  quality %s  overlay %s  %.0f fps  card %s ms  processor %s ms  emu %.0f %%  screen %s  %s  on: %s' % (
                         datetime.datetime.now().strftime('%H:%M:%S'), os.path.basename(self.args.rom or 'Mine Storm'),
                         sz[0], sz[1], self.current_profile(), 'on' if (getattr(r, 'art_on', False) and getattr(r, 'art', None)) else 'off',
                         fps, ('%.1f' % r.gpu_ms) if getattr(r, 'gpu_ms', None) else '-',
-                        ('%.1f' % r.cpu_ms) if getattr(r, 'cpu_ms', None) else '-', getattr(self, 'speed', 0.0), ' '.join(on)))
+                        ('%.1f' % r.cpu_ms) if getattr(r, 'cpu_ms', None) else '-', getattr(self, 'speed', 0.0), scr_, wk_, ' '.join(on)) + chr(10))
             except OSError:
                 pass
     def tick(self):
@@ -9663,6 +9667,7 @@ class App:
             if self.vsync and not vrr:
                 t_fin = time.perf_counter()
                 self.draw_cost = max(t_fin - t_work, 0.9 * getattr(self, 'draw_cost', 0.002) + 0.1 * (t_fin - t_work))
+                self.pf_work = getattr(self, 'pf_work', []); self.pf_work.append(t_fin - t_work)   # (the log: the work for a picture)
                 # the picture is handed in; the refresh it goes out with is about `due`: sleep until just before it
                 # (glFinish spins a whole core while it waits - 3.5 ms of every 16.7 on this PC's driver, measured
                 # 2026-10-27, and on a slow laptop that spin starves the emulation thread and the core), then
@@ -9680,6 +9685,7 @@ class App:
                 # 2-3 in full screen; D3DKMTWaitForVerticalBlankEvent then glFinish - 80-100 missed; neither saved CPU
                 # under load. This sleep-then-glFinish keeps every refresh: 0-2 missed in 900)
                 now_f = time.perf_counter()
+                if now_f - t_fin <= 0.0005: self.pf_late = getattr(self, 'pf_late', 0) + 1   # (the log: came back at once - its refresh was gone)
                 # (the refresh: when glFinish came back after a wait - a frame that came back at once missed it)
                 self.vbl = now_f if now_f - t_fin > 0.0005 or not getattr(self, 'vbl', 0.0) else                     self.vbl + self.vsync / float(self.refresh if getattr(self, 'refresh', 0) >= 50 else 60)
             self.presents.append(time.perf_counter())

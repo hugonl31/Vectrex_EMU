@@ -911,6 +911,11 @@ static void vxa_toast (NSString *s, double secs)
 - (void) tick:(CADisplayLink *)l
 {
 	double now = CACurrentMediaTime(), dt = _last ? now - _last : 0; _last = now; _ticks++;
+	{ extern int vx_owe_hidden; vx_owe_hidden = 1;   /* (a catch-up run's game frame: drawn with the next picture - no gap in a trail) */
+	  /* (the rate chosen in the settings: the screen asked for it at once - it stayed at the old one until the app's next start:
+	   *  120 runs a second on a 48 Hz screen after 50 Hz had been chosen, the owner's iPhone 2026-11-22) */
+	  static double link_fps; if (vxa_av.timing.fps > 0 && vxa_av.timing.fps != link_fps) { link_fps = vxa_av.timing.fps;
+		if (@available (iOS 15.0, *)) { const float f = (float) link_fps; l.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); } vlog ("screen asked for %.0f Hz", link_fps); } }
 	if (dt > 1.5 / (vxa_av.timing.fps > 0 ? vxa_av.timing.fps : 60)) _late++;
 	if (dt > 0.25) dt = 0.25;
 	_acc += dt * vxa_av.timing.fps; int n = (int) _acc; _acc -= n;

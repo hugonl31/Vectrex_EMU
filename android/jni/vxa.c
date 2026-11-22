@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
+#include "../../libretro/testcart.h"
 #include <zlib.h>
 #include "libretro.h"
 
@@ -695,6 +696,7 @@ JNIEXPORT void JNICALL JF(setRunning) (JNIEnv *e, jclass c, jboolean on) { (void
 JNIEXPORT void JNICALL JF(setHold) (JNIEnv *e, jclass c, jboolean on) { (void) e; (void) c; if (vxa_holding != on) { vxa_holding = on; vlog ("game %s", on ? "held (a screen over it)" : "running again"); } }
 JNIEXPORT void JNICALL JF(setHdr) (JNIEnv *e, jclass c, jboolean can, jfloat headroom, jfloat frac) { (void) e; (void) c; vxa_want_hdr = can; vxa_headroom = headroom; vxa_hdr_frac = frac; }
 JNIEXPORT void JNICALL JF(setTrailMul) (JNIEnv *e, jclass c, jfloat k) { (void) e; (void) c; extern float vx_trail_mul; vx_trail_mul = k; }
+JNIEXPORT void JNICALL JF(testCart) (JNIEnv *e, jclass c, jstring path) { (void) c; JSTR (p, path); if (p) vx_testcart_write (p); JREL (p, path); }   /* (the Test Cart, written into roms/Tests) */
 JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on ? 1.0f : 0.0f; vlog ("look %s", on ? "Bright" : "Vectrex"); }   /* (the look: Vectrex, or Bright - lifted and wider) */
 JNIEXPORT void JNICALL JF(setHdrLook) (JNIEnv *e, jclass c, jint look) { (void) e; (void) c; extern float vx_hdr_lift; extern int vx_app_dots; vx_hdr_lift = (float) look; vx_app_dots = 1; vlog ("HDR look %d", (int) look); }
 JNIEXPORT void JNICALL JF(snap) (JNIEnv *e, jclass c, jint n, jstring path) { (void) c; JSTR (s, path); snprintf (vxa_snap_path, sizeof vxa_snap_path, "%s", s ? s : ""); JREL (s, path); vx_app_pich = 0; vxa_snap_fixed = 1; vxa_snap_n = n; }   /* (the picture at the size the options give - Picture size - as any frontend) */

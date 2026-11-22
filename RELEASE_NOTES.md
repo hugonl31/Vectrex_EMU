@@ -9,6 +9,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
   Bright - for a small screen, whose thin lines give little light: the tube's light lifted and the beam 30 % wider.
   On an ordinary screen the faint lines come up and the top is pressed into white; on an HDR screen the whole
   ordinary picture moves up to the screen's peak.
+* The afterglow on iPhone / iPad, Android and RetroArch as on the PC: its faint end was a little too bright there, and
+  the phone apps dimmed the whole trail with the screen's brightness (to half at full brightness).
+* Test Cart, a cartridge to compare the picture between platforms (trail, levels, dots, corners; buttons 1-4): the
+  phone apps carry it (Library > Tests), `tools/testcart_compare.py` measures snapshots of it.
 * A new test cartridge, Glow Test: two full-length lines, still or moving at three speeds, the refresh rate from 50
   down to 25 a second.
 

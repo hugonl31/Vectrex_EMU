@@ -17,6 +17,7 @@
 #import <Metal/Metal.h>
 #import <CoreVideo/CoreVideo.h>
 #import <AudioToolbox/AudioToolbox.h>
+#include "testcart.h"
 #include <dlfcn.h>
 #include <sys/utsname.h>
 #include <sys/time.h>
@@ -1292,7 +1293,7 @@ void vxa_hdr_update (void)
 	{ /* (the trail for the look and the screen's brightness - the owner next to a real Vectrex, 2026-11-21: Vectrex on HDR 1.25x,
 	   *  on SDR 2x; Bright at full brightness 0.5x - easing with the slider) */
 	  extern float vx_trail_mul; extern int vx_app_dots; vx_app_dots = 1; const double b = UIScreen.mainScreen.brightness;
-	  const float tm = (float) (1.0 - 0.5 * b * b);   /* (SDR Vectrex 2.8: the owner's iPad and iPhone without HDR, 40 % more than 2) */
+	  const float tm = 1.0f; (void) b;   /* (2026-11-22: as the PC, the master - the trail was scaled down with the screen's brightness, to half at full: the old look's) */   /* (SDR Vectrex 2.8: the owner's iPad and iPhone without HDR, 40 % more than 2) */
 	  if (fabsf (tm - vx_trail_mul) > 0.02f) { vlog ("trail x%.2f (look %.0f, brightness %.0f %%)", tm, vx_hdr_lift, b * 100); vx_trail_mul = tm; } }
 	const double use = hr <= 1.05 ? 1.0 : cur > 1.05 ? fmin (cur, hr) : hr;
 	float pk = use > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (use - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */
@@ -1538,6 +1539,8 @@ static void vxa_net_tick (void)
 - (BOOL) application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
 {
 	vxa_log_start (); vlog ("app start"); vxa_net_watch ();
+	{ NSString *td = [vxa_docs () stringByAppendingPathComponent:@"roms/Tests"];   /* (the Test Cart: the picture compared between platforms - Library > Tests) */
+	  [NSFileManager.defaultManager createDirectoryAtPath:td withIntermediateDirectories:YES attributes:nil error:nil]; vx_testcart_write ([td stringByAppendingPathComponent:@"Test Cart.bin"].fileSystemRepresentation); }
 	{ extern int vx_gprof; vx_gprof = 0; }   /* (the GPU diagnostic, 1: one picture in 30 timed, stage by stage, the log - off: it cost about 4 pictures a second at 120 Hz) */
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;

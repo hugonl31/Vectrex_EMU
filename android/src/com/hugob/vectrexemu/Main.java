@@ -165,6 +165,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void findContent ()
 	{
 		romRoots.clear (); sysDir = null; savesDir = null; File e = ext ();
+		try { File td = new File (e, "roms/Tests"); td.mkdirs (); VX.testCart (new File (td, "Test Cart.bin").getAbsolutePath ()); } catch (Throwable t) { }   /* (the Test Cart: the picture compared between platforms - Library > Tests) */
 		if (new File (e, "system/vectrex_emu/bios.bin").exists () || new File (e, "system/vectrex_emu").isDirectory ()) sysDir = new File (e, "system");
 		if (new File (e, "roms").isDirectory ()) romRoots.add (new File (e, "roms"));
 		if (allFiles ()) for (File v : volumes ()) {
@@ -248,7 +249,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		try { b = android.provider.Settings.System.getInt (getContentResolver (), android.provider.Settings.System.SCREEN_BRIGHTNESS, 128) / 255f; } catch (Throwable t) { }
 		b = Math.max (0f, Math.min (1f, b));
 		final int md = 0;
-		final float tm = md == 2 ? (hdrCan ? 1.25f : 2.1f) : 1f - 0.25f * b * b;   /* (SDR Vectrex 2.8: 40 % more - the owner's Nova, iPad and iPhone without HDR) */
+		final float tm = 1f;   /* (2026-11-22: as the PC, the master - was scaled down with the screen's brightness) */  //   /* (SDR Vectrex 2.8: 40 % more - the owner's Nova, iPad and iPhone without HDR) */
 		if (Math.abs (tm - trailLast) > 0.02f) { trailLast = tm; VX.setTrailMul (tm); log ("trail x" + tm + " (look " + md + ", brightness " + Math.round (b * 100) + " %)"); }
 		h.postDelayed (trailR, 2000);
 	}

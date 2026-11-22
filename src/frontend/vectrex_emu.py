@@ -1818,7 +1818,7 @@ class Core:
         env.update({'VT_ZIDEAL': '1'} if ideal else {'VT_ZREFK': '0.38', 'VT_CALSHIFT': '2.9'})
         if not getattr(Core, 'old_timing', False):                 # (2026-11-22: the timing as the owner's Vectrex measured - the Settle / Timer /
             for k_, v_ in (('VT_SRMODEL', '1'), ('VT_DEFLAGN', '3'), ('VT_RAMPDLY', '0,2,3'), ('VT_ZDELAY', '1'), ('VT_XYZDLY', '3,3,8')):   #  Short / Join / SR Tests; a variable set
-                env.setdefault(k_, v_)                             #  already - a test - stands. Online: Core.old_timing - both machines the same)  # perfect / a real Vectrex
+                env.setdefault(k_, v_)                             #  already - a test - stands. Online too: netplay.NET_VER 12 - both machines this version)  # perfect / a real Vectrex
         self.picture = unit_picture(unit)[0] if unit and not ideal else None   # (the size / centring pots, the yoke: frame)
         if unit and not ideal:                                     # (the Vectrex unit: the analog parts at the start)
             for key, i, label, lo, hi, fmt, var in UNIT_PARAMS:
@@ -1828,7 +1828,6 @@ class Core:
             env['VT_HWOFS'] = '%.4f,%.4f' % (unit.get('drift_x', 0.0), unit.get('drift_y', 0.0))
             env['VT_ZEROTAU'] = '%.3f,%.3f' % (unit.get('zerotx', UNIT_BEAM['zerotx']), unit.get('zeroty', UNIT_BEAM['zeroty']))
             env['VT_DACBITS'] = ','.join('%.5f' % unit.get('dac%d' % b, 0.0) for b in range(4))
-        if getattr(Core, 'old_timing', False): env['VT_DEFLAG'] = env['VT_DEFLAGY'] = '6.0'   # (online: the old timing whole - its lag too)
         # (every cartridge, the UVMC2 and the PiTrex too, with the console's own zero reference - VT_ZREFK as the unit
         # sets it: until 2026-11-13 those two got a faster one (0.597) for their short zero pulses. The zero test
         # cartridge (testcart/zero_test) on the owner's Vectrex drew Last Human's zero and the UVMC2 SDK's sharp at
@@ -7487,7 +7486,6 @@ class App:
             self.vl_online = True
         elif getattr(self, 'vl_online', False):                 # (the online VecLink game is over: the cable out)
             Core.veclink = None; Core.veclink_slice = 0; self.vl_online = False
-        Core.old_timing = bool(ng)                              # (online: the shift register as every platform's core has it today)
         self.core = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw) if ng else self.cart_hw, self.speech,   #  the rest
                          self.sd_dir, self.px_dir, unit, self.usb_hid)                                                  #  only moves the picture)
         self.usb_typing_off()

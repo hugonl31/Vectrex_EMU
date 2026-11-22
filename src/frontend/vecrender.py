@@ -459,9 +459,10 @@ void main() {                          // (8 x 8 pixels, weighted 1 3 3 1 per pa
 # strength: a moving line was twice as wide and bright in some display frames, its bloom pulsing (2026-10-29)
 FRESH_COV = b"""
 uniform sampler2D tex;
+uniform float ck;                       // (beam trace: the frame holds light, not screen values - x this first; else 1)
 void main() {
     vec4 c = texture2D(tex, gl_TexCoord[0].st);
-    gl_FragColor = vec4(0.25 * clamp(max(c.r, max(c.g, c.b)) / 0.5, 0.0, 1.0), 0.0, 0.0, 0.0);   // (a faint edge counts for
+    gl_FragColor = vec4(0.25 * clamp(ck * max(c.r, max(c.g, c.b)) / 0.5, 0.0, 1.0), 0.0, 0.0, 0.0);   // (a faint edge counts for
                                         //  little: counted whole, a bright line where another frame's faint edge lay was
                                         //  halved - gaps in a moving shape, the rotor test cart, 2026-10-29)   // (quarters: an 8-bit buffer counts to 4
 }
@@ -2327,7 +2328,7 @@ class GLBloomRenderer(GLRenderer):
         self.u_dir = GetUniform(self.prog, b'dir')
         try:
             self.covprog = program(FRESH_COV, 'fresh coverage'); self.avgprog = program(FRESH_NORM, 'fresh average')
-            self.u_c = GetUniform(self.covprog, b'tex'); self.u_n = (GetUniform(self.avgprog, b'tex'), GetUniform(self.avgprog, b'cnt'))
+            self.u_c = GetUniform(self.covprog, b'tex'); self.u_ck = GetUniform(self.covprog, b'ck'); self.u_n = (GetUniform(self.avgprog, b'tex'), GetUniform(self.avgprog, b'cnt'))
         except Exception:   # noqa: (without them: added up, as before; names of their own - cprog is the capsules')
             self.covprog = None
         try:
@@ -3084,7 +3085,7 @@ class GLBloomRenderer(GLRenderer):
         if age0 is None:
             self.Uniform1f(u['timed'], 0.0)
         else:
-            for k, x in (('timed', 2.0 if imm else 1.0), ('age0', age0), ('dtw', dtw), ('gain', 1.0 if bt else PHOS_GAIN * getattr(self, 'frame_w', 1.0))):
+            for k, x in (('timed', 2.0 if imm else 1.0), ('age0', age0), ('dtw', dtw), ('gain', getattr(self, 'frame_w', 1.0) if bt else PHOS_GAIN * getattr(self, 'frame_w', 1.0))):
                 self.Uniform1f(u[k], x)
         # (in pieces: the Raspberry Pi 5's Mesa / V3D driver crashed inside one glDrawArrays of 13788 client-array
         #  vertices, 2026-10-27 - gdb backtrace in libgallium; a few calls more cost nothing elsewhere)
@@ -3788,6 +3789,7 @@ class GLBloomRenderer(GLRenderer):
             # (its first line's moment, its drawing span, second half)
             self.lit = (getattr(self, 'lit', []) + [(t_start + tmin, max(0.0, tdraw - tmin), alt)])[-8:]
             self.young.append([b, t_start, t_start + (b[5] if len(b) > 5 else max(b[3])), -1e9])
+            if os.environ.get('VX_TEST_DOUBLE'): self.young.append(list(self.young[-1]))   # (a test: every frame twice in a picture - the averaging)
 
     # Quality profiles (the control deck, Vectrex > Quality): each sets these switches - the costly refinements - and
     # leaves the rest of the look alone; a switch changed by hand makes the profile Custom (the app's
@@ -4014,7 +4016,9 @@ class GLBloomRenderer(GLRenderer):
                 self._quad(self.F3[0])
                 self.BindFB(GL_FRAMEBUFFER, self.Fc[1])   # (and who drew where)
                 self.BlendEqSep(0x8006, 0x8006)
-                self.UseProgram(self.covprog); self.Uniform1i(self.u_c, 0); self._quad(self.F3[0]); self.UseProgram(0)
+                self.UseProgram(self.covprog); self.Uniform1i(self.u_c, 0)
+                self.Uniform1f(self.u_ck, float(os.environ.get('VX_BT_CK', 8.0)) * BT_EXPO * BT_SPOT * BT_KMAX if (getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')) else 1.0)
+                self._quad(self.F3[0]); self.UseProgram(0)
             f[3] = T
             if not flush and T < t1:
                 keep.append(f)

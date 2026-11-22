@@ -28,8 +28,15 @@ static int sm_build (const gframe *g, sm_stk **S, float **F, int **M, int *cap)
 static int sm_same (const gframe *a, const sm_stk *p, const gframe *b, const sm_stk *q)   /* (the same stroke a frame on) */
 {
 	const line_t *a0 = &a->L[p->first], *a1 = &a->L[p->last], *b0 = &b->L[q->first], *b1 = &b->L[q->last]; const double mt = p->tot > q->tot ? p->tot : q->tot;
+	/* (and going the same way about as far: a line and the one next to it, a side of the same shape, are near each other too -
+	 *  the Ship Test, 2026-11-22: as its scale steps, two frames have as many strokes grouped differently, a line was paired
+	 *  with its neighbour and slid between the two for some pictures) */
+	const long ax = a1->x1 - a0->x0, ay = a1->y1 - a0->y0, bx = b1->x1 - b0->x0, by = b1->y1 - b0->y0;
+	long lx = labs (ax), e = labs (ay); if (e > lx) lx = e; e = labs (bx); if (e > lx) lx = e; e = labs (by); if (e > lx) lx = e;
+	long ex = labs (ax - bx); e = labs (ay - by); if (e > ex) ex = e;
 	return a0->c == b0->c && labs (b0->x0 - a0->x0) < SMOOTH_MATCH && labs (b0->y0 - a0->y0) < SMOOTH_MATCH
-	       && labs (b1->x1 - a1->x1) < SMOOTH_MATCH && labs (b1->y1 - a1->y1) < SMOOTH_MATCH && fabs (p->tot - q->tot) <= 0.35 * mt + 16.0;
+	       && labs (b1->x1 - a1->x1) < SMOOTH_MATCH && labs (b1->y1 - a1->y1) < SMOOTH_MATCH && fabs (p->tot - q->tot) <= 0.35 * mt + 16.0
+	       && ex <= 0.35 * lx + 200.0;
 }
 /* the point of stroke s at the share f of its time (cur: the piece last looked at - the shares asked for go up) */
 static void sm_at (const gframe *g, const sm_stk *s, const float *F, int *cur, double f, double *x, double *y)
@@ -49,7 +56,9 @@ static int sm_draw (const gframe *a, const gframe *b, double alpha, int n, int e
 	if (na < 0 || nb < 0) return wl_from (W1, n, a->L, a->n, NULL, 0);
 	for (int i = 0; i < na; i++) sm_ma[i] = -1;
 	for (int j = 0; j < nb; j++) sm_mb[j] = -1;
-	if (na == nb) { for (int k = 0; k < na; k++) if (sm_same (a, &sm_SA[k], b, &sm_SB[k])) sm_ma[k] = sm_mb[k] = k; }
+	int fit = na == nb;                             /* (stroke for stroke - unless one does not fit: laid along each other, below) */
+	for (int k = 0; fit && k < na; k++) if (!sm_same (a, &sm_SA[k], b, &sm_SB[k])) fit = 0;
+	if (fit) { for (int k = 0; k < na; k++) sm_ma[k] = sm_mb[k] = k; }
 	else {
 		/* (a stroke more or less: the two lists laid along each other for the least total distance - a stroke paired with the
 		 *  one at its place, or left out at the price of a stroke SMOOTH_MATCH away; within a band of the count's difference

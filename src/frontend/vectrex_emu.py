@@ -9164,14 +9164,22 @@ class App:
             S = _np.stack([X[first, 0], X[first, 1], X[last, 2], X[last, 3], X[first, 4], tot], 1)   # (a stroke: its ends, brightness, time)
             return sid, f0, f1, pu, px, py, S
         sa, fa0, fa1, pua, pxa, pya, SA = strokes(A); sb, fb0, fb1, pub, pxb, pyb, SB = strokes(B)
-        same = lambda X, Y: ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
-                             & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0))
+        # (the same stroke a frame on: its ends near, its brightness the same, about as long to draw - and going the same way
+        #  about as far: a line and the one next to it, a side of the same shape, are near each other too. The Ship Test,
+        #  2026-11-22: as its scale steps, two frames have as many strokes grouped differently - a line was paired with its
+        #  neighbour and slid between the two for some pictures)
+        def same(X, Y):
+            ex = (X[:, 2] - X[:, 0]) - (Y[:, 2] - Y[:, 0]); ey = (X[:, 3] - X[:, 1]) - (Y[:, 3] - Y[:, 1])
+            lx = _np.maximum(_np.maximum(_np.abs(X[:, 2] - X[:, 0]), _np.abs(X[:, 3] - X[:, 1])), _np.maximum(_np.abs(Y[:, 2] - Y[:, 0]), _np.abs(Y[:, 3] - Y[:, 1])))
+            return ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
+                    & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0)
+                    & (_np.maximum(_np.abs(ex), _np.abs(ey)) <= 0.35 * lx + 200.0))
         ma = _np.full(len(SA), -1, dtype=int); mb = _np.full(len(SB), -1, dtype=int)
         kept = getattr(self, '_al_keep', None)           # (the pairing: worked out once for the two frames, asked for every refresh)
         if key is not None and kept is not None and kept[0] is key[0] and kept[1] is key[1] and len(kept[2]) == len(SA) and len(kept[3]) == len(SB):
             ma, mb = kept[2], kept[3]
-        elif len(SA) == len(SB):
-            ok = same(SA, SB); idx = _np.nonzero(ok)[0]; ma[idx] = idx; mb[idx] = idx
+        elif len(SA) == len(SB) and bool(same(SA, SB).all()):   # (stroke for stroke; one that does not fit: laid along each other, below)
+            idx = _np.arange(len(SA)); ma[idx] = idx; mb[idx] = idx
         else:
             # (a stroke more or less: the two lists laid along each other for the least total distance - a stroke paired with the
             #  one at its place, or left out at the price of a stroke SMOOTH_MATCH away. Walked side by side with 'near enough'
@@ -9183,7 +9191,7 @@ class App:
                 jb = ia + k_ - Wb; v = (jb >= 0) & (jb < lb_)
                 if not v.any(): continue
                 X = SA[v]; Y = SB[jb[v]]; d = _np.abs(Y[:, :4] - X[:, :4]).max(1)
-                okk = (d < M) & (Y[:, 4] == X[:, 4]) & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0)
+                okk = same(X, Y)
                 col = _np.full(int(v.sum()), INF); col[okk] = d[okk]; C[v, k_] = col
             C = C.tolist()
             D = [[INF] * K for _ in range(la_ + 1)]; BP = [[0] * K for _ in range(la_ + 1)]
@@ -9257,6 +9265,13 @@ class App:
                         A = R
                     except Exception as e:   # noqa
                         if not getattr(self, '_al_said', False): self._al_said = True; print('smooth motion: %s' % e)
+            # (the whole frame inside the refresh it is shown in: its lines' times are squeezed by the average frame's length,
+            #  and a frame a little longer than that - or a line drawn right at its end - reached past the refresh: that line
+            #  came in pieces, a part now and the rest a picture later - the Ship Test's last line, a dash sliding along its
+            #  place, 2026-11-22)
+            span_ = float((A0[:, 6] + A0[:, 5]).max())
+            if b is not None and alpha > 0 and len(A) and A.shape[1] > 6: span_ = max(span_, float((A[:, 6] + A[:, 5]).max()))
+            if span_ > 0.97 * per * 1.5e6: k *= 0.97 * per * 1.5e6 / span_
             A[:, 5] *= k; A[:, 6] *= k
             lines = A
             # (the lines of a the gliding ones have just cleared: their afterglow starts now - see below)

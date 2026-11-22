@@ -159,13 +159,25 @@ static void vx_putenv (const char *s)       /* (as Windows' _putenv: "NAME=" tak
 #define UNMAPX(X) (ALG_MAX_X / 2.0 + ((((X) - ALG_MAX_X / 2.0) / TU - LIN_B) / LIN_A) * TU)
 #define UNMAPY(Y) (ALG_MAX_Y / 2.0 + ((((Y) - ALG_MAX_Y / 2.0) / TU - LIN_D) / LIN_C) * TU)
 /* v0.14: the Tube geometry (vecrender.py tube_map, k 1: the owner's tube): the straight map plus the measured
- * imperfections (tubemap_tab.h, from tubemap.py), bilinear between the table's points */
+ * imperfections (tubemap_tab.h, from tubemap.py), bilinear between the table's points - x the Tube geometry strength.
+ * Then the glass's curve undone (vecrender.py glass_flat, Glass curvature: 1 as seen on a Vectrex, 0 even squares): the
+ * tube's face curves away towards its edges, a point a distance s along it shows at R sin (s / R) - R 97 mm across,
+ * 205 mm up and down; undone with strength g: R / g. Only the lines (and the light pen): the glass, overlay and case stay */
 #include "tubemap_tab.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 #define TUBE_SEG 1200.0                     /* (lines longer than this, emulator units, are bent in pieces) */
 static int opt_geom = 1;
+static double opt_geom_k = 1.0, opt_glass_g;   /* (the strength; the glass's curve undone: 1 - Glass curvature) */
+#define GLASS_RX_U (97.0 / (103.5 / 0.924))   /* (the face's radii in half picture heights: mm / MM_UNIT) */
+#define GLASS_RY_U (205.0 / (103.5 / 0.924))
+#define GLASS_T_MAX 0.95                    /* (past 95 % of the radius: straight on with the slope there) */
+static double glass_flat (double p, double r0)
+{
+	const double R = r0 / opt_glass_g, t = p / R, tc = t < -GLASS_T_MAX ? -GLASS_T_MAX : t > GLASS_T_MAX ? GLASS_T_MAX : t;
+	return R * (asin (tc) + (t - tc) / sqrt (1 - GLASS_T_MAX * GLASS_T_MAX));
+}
 #include "unit.c"
 static void tube_pt (double x, double y, double *X, double *Y)
 {
@@ -173,16 +185,17 @@ static void tube_pt (double x, double y, double *X, double *Y)
 	double u = (x - XM) / TU, v = (y - YM) / TU;
 	if (uw_on) unit_wp (&u, &v);                 /* (this Vectrex's own picture shape: unit.c) */
 	double Xu = LIN_A * u + LIN_B, Yv = LIN_C * v + LIN_D;
-	if (opt_geom) {
+	if (opt_geom && opt_geom_k > 0) {
 		const double SU = (TM_NU - 1) / (TM_U1 - TM_U0), SV = (TM_NV - 1) / (TM_V1 - TM_V0);
 		double fu = (u - TM_U0) * SU, fv = (v - TM_V0) * SV;
 		if (fu < 0) fu = 0; if (fu > TM_NU - 1.000001) fu = TM_NU - 1.000001;
 		if (fv < 0) fv = 0; if (fv > TM_NV - 1.000001) fv = TM_NV - 1.000001;
 		const int i = (int) fu, j = (int) fv, k = j * TM_NU + i; const double a = fu - i, b = fv - j;
 		const short *DX = TM_D, *DY = TM_D + TM_NU * TM_NV;
-		Xu += ((DX[k] * (1 - a) + DX[k + 1] * a) * (1 - b) + (DX[k + TM_NU] * (1 - a) + DX[k + TM_NU + 1] * a) * b) * TM_Q;
-		Yv += ((DY[k] * (1 - a) + DY[k + 1] * a) * (1 - b) + (DY[k + TM_NU] * (1 - a) + DY[k + TM_NU + 1] * a) * b) * TM_Q;
+		Xu += ((DX[k] * (1 - a) + DX[k + 1] * a) * (1 - b) + (DX[k + TM_NU] * (1 - a) + DX[k + TM_NU + 1] * a) * b) * TM_Q * opt_geom_k;
+		Yv += ((DY[k] * (1 - a) + DY[k + 1] * a) * (1 - b) + (DY[k + TM_NU] * (1 - a) + DY[k + TM_NU + 1] * a) * b) * TM_Q * opt_geom_k;
 	}
+	if (opt_glass_g > 0) { Xu = glass_flat (Xu, GLASS_RX_U); Yv = glass_flat (Yv, GLASS_RY_U); }
 	*X = XM + Xu * TU; *Y = YM + Yv * TU;
 }
 static void tube_inv (double X, double Y, double *x, double *y)   /* (the light pen: the map undone, vecrender's 8 steps) */
@@ -429,6 +442,8 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_corner_glow", "Corner glow; on|off" },
 	{ "vectrex_emu_bending", "Brightness bending; on|off" },
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
+	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
+	{ "vectrex_emu_glass_curve", "Glass curvature (1: as on a Vectrex, 0: even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (fine detail, off: VR hardly shows it); off|on" },
 	{ "vectrex_emu_white", "White balance; 12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
@@ -524,6 +539,8 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
 	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "auto|on|off" },
+	{ "vectrex_emu_geometry_k", "tube", "Tube geometry strength", "1x: the measured Vectrex. 0x: ideal.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_glass_curve", "tube", "Glass curvature", "1: as seen on a Vectrex. 0: even squares.", "1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
 	{ "vectrex_emu_dither", "tube", "Dither", "No bands in soft glows (GPU).", "auto|on|off" },
 	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", NULL, "50 Hz|60 Hz|off" },
@@ -742,6 +759,8 @@ static void read_options (void)
 	opt_fill = opt_is ("vectrex_emu_fill", "on");
 	opt_smooth = !opt_is ("vectrex_emu_smooth", "off"); raw_smooth = opt_is ("vectrex_emu_smooth", "auto") ? -1 : opt_smooth; opt_halo = !opt_is ("vectrex_emu_corner_glow", "off"); opt_bend = !opt_is ("vectrex_emu_bending", "off");
 	raw_geom = TRI ("vectrex_emu_geometry"); opt_geom = raw_geom != 0;
+	{ double k = optx ("vectrex_emu_geometry_k", 1.0), c = optn ("vectrex_emu_glass_curve", 1.0);
+	  opt_geom_k = k >= 0 && k <= 2 ? k : 1.0; opt_glass_g = c >= 0 && c <= 1 ? 1.0 - c : 0.0; }
 	raw_passes = TRI ("vectrex_emu_passes"); raw_dith = TRI ("vectrex_emu_dither"); opt_sbend = opt_is ("vectrex_emu_smooth_bends", "on");
 	raw_sbend = opt_is ("vectrex_emu_smooth_bends", "auto") ? -1 : opt_sbend;
 	{ const char *pv = optv ("vectrex_emu_profile"); opt_profile = !strcmp (pv, "ultra") ? 1 : !strcmp (pv, "high") ? 2 : !strcmp (pv, "medium") ? 3
@@ -2496,7 +2515,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 	if (opt_dwell && n > 1) n = dwell_rests (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
 	if (opt_sbend && n > 1) n = smooth_bends (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
 	}
-	if (opt_geom && n) n = tube_split (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
+	if (((opt_geom && opt_geom_k > 0) || opt_glass_g > 0) && n) n = tube_split (L, n, W2), memcpy (L, W2, sizeof (wline) * n);
 	/* the halos (corner glow) round the long rests: drawn as pieces of their own */
 	static unsigned char zl[NW], jo[NW], halo[NW];
 	int nhalo = 0;

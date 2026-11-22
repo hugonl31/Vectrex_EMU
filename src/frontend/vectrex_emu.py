@@ -9124,6 +9124,49 @@ class App:
         self.sm_buf = []
         self.save_settings()
         self.show_look('smooth motion: ' + ('on (vectors between game frames, every refresh)' if self.smooth else 'off'))
+    def sm_lib(self):
+        """Smooth motion's array work in C (native/vxsmooth.c, in the line build's library vxbuild.dll), or None: numpy"""
+        if getattr(self, 'sm_c_off', False): return None
+        lib = vecrender._vxb_get()
+        return lib if lib and getattr(lib, 'vxs', False) else None
+    def sm_c_stop(self, why):
+        """.. switched off, said once"""
+        self.sm_c_off = True; print('smooth motion: numpy (%s)' % why)
+    def sm_frame_c(self, A, a, b, alpha, k, per):
+        """smooth_frame's array work in C (native/vxsmooth.c vxs_frame: sm_align, the in-between picture, the lines whose
+        afterglow starts now, the frame squeezed into the refresh - the same arithmetic, the same results).
+        Returns the picture's lines, those of a starting their afterglow, k - or None: the numpy way"""
+        lib = self.sm_lib()
+        if lib is None or A.shape[1] < 7: return None
+        try:
+            np = _np
+            A = np.ascontiguousarray(A); na, cols = A.shape; B = None
+            if b is not None and alpha > 0:
+                lb = b[0]; lb = lb.np if getattr(lb, 'np', None) is not None and len(lb.np) == len(lb) else lb
+                B = np.ascontiguousarray(lb, dtype=np.float64)
+                if not (B.ndim == 2 and len(B) and B.shape[1] == cols): B = None
+            if getattr(self, 'sm_exf_for', None) is not a or len(getattr(self, 'sm_exf', ())) != na:
+                self.sm_exfp_for, self.sm_exfp = getattr(self, 'sm_exf_for', None), getattr(self, 'sm_exf', None)
+                self.sm_exf_for, self.sm_exf = a, np.zeros(na, dtype=bool)
+            kma = kmb = None; kept = getattr(self, '_al_keep', None)   # (the pairing: kept here, as sm_align's)
+            if B is not None and kept is not None and kept[0] is a and kept[1] is b:
+                kma = np.ascontiguousarray(kept[2], dtype=np.int64); kmb = np.ascontiguousarray(kept[3], dtype=np.int64)
+            R = np.empty((len(B) if B is not None and alpha >= 0.5 else na, cols)); now_ = np.zeros(na, dtype=bool)
+            kc = ctypes.c_double(k); info = (ctypes.c_int * 5)()
+            with vecrender._vxb_lock:                   # (the library keeps its work between calls)
+                if lib.vxs_frame(A.ctypes.data, na, B.ctypes.data if B is not None else None, len(B) if B is not None else 0, cols,
+                                 alpha, float(self.SMOOTH_MATCH), float(self.SMOOTH_EXW), 0.97 * per * 1.5e6, ctypes.byref(kc),
+                                 kma.ctypes.data if kma is not None else None, len(kma) if kma is not None else 0,
+                                 kmb.ctypes.data if kmb is not None else None, len(kmb) if kmb is not None else 0,
+                                 R.ctypes.data, self.sm_exf.ctypes.data, now_.ctypes.data, info) < 0 or info[0] != len(R):
+                    return None
+                if info[4] == 0:                        # (two frames newly paired: the pairing, for every refresh between them)
+                    ma = np.empty(info[2], dtype=np.int64); mb = np.empty(info[3], dtype=np.int64)
+                    lib.vxs_pair(ma.ctypes.data, mb.ctypes.data); self._al_keep = (a, b, ma, mb)
+            return R, (A[now_] if info[1] else A[:0].copy()), kc.value
+        except Exception as e:   # noqa
+            self.sm_c_stop(e)
+            return None
     def sm_merge(self, X):
         """Smooth motion's afterglow: the pieces of one straight line as one line (a copy) - joined end to start, one brightness,
         one direction; their drawing time together. Where an afterglow starts, how a line was cut in time shows nothing, and a
@@ -9131,6 +9174,15 @@ class App:
         each game frame, it cost 2.5 ms - the screen's 60 pictures a second became 57 (the owner, 2026-11-22)"""
         n = len(X)
         if n < 2: return X.copy()
+        lib = self.sm_lib()                              # (in C: native/vxsmooth.c vxs_merge - the same lines)
+        if lib is not None and X.ndim == 2 and X.shape[1] >= 7:
+            try:
+                Xc = _np.ascontiguousarray(X, dtype=_np.float64); R = _np.empty_like(Xc)
+                with vecrender._vxb_lock:
+                    m = lib.vxs_merge(Xc.ctypes.data, n, Xc.shape[1], R.ctypes.data)
+                if m > 0: return R[:m]
+            except Exception as e:   # noqa
+                self.sm_c_stop(e)
         dx = X[:, 2] - X[:, 0]; dy = X[:, 3] - X[:, 1]; ln = _np.hypot(dx, dy); ok = ln > 0
         ux = _np.where(ok, dx / _np.maximum(ln, 1e-9), 0.0); uy = _np.where(ok, dy / _np.maximum(ln, 1e-9), 0.0)
         new = _np.ones(n, dtype=bool)
@@ -9246,43 +9298,47 @@ class App:
             A = _np.asarray(arr(la), dtype=_np.float64)                                                       #  Imager's colours)
             if A.ndim != 2 or not len(A):
                 return
-            A = A.copy(); A0 = A.copy(); still = None; dA = _np.zeros(len(A))   # (a's own lines; how far each moves on to b's)
-            # (line for line, as the core's since 2026-11-22: a line that jumped - a thing gone round the screen's edge - stands in
-            #  a's place until halfway and in b's after, the others still move; and the two frames need not have as many lines
-            #  (the beam's path is cut a little differently each frame): the lines alike from the front and from the back move,
-            #  those between stand. One such line took the in-between away from the whole picture before - that refresh every
-            #  moving thing stood at a game frame's place: gaps and pairs in the trails)
-            if b is not None and alpha > 0:
-                B = _np.asarray(arr(b[0]), dtype=_np.float64)
-                if B.ndim == 2 and len(B) and B.shape[1] == A.shape[1]:
-                    try:
-                        TA, va, TB, vb = self.sm_align(A, B, key=(a, b))
-                        dA = _np.where(va, _np.abs(TA - A[:, :4]).max(1), 0.0); still = va & (dA < 1.5)
-                        if alpha < 0.5:
-                            R = A.copy(); R[va, :4] += (TA[va] - A[va, :4]) * alpha
-                        else:
-                            R = B.copy(); R[vb, :4] += (TB[vb] - B[vb, :4]) * (1.0 - alpha)
-                        A = R
-                    except Exception as e:   # noqa
-                        if not getattr(self, '_al_said', False): self._al_said = True; print('smooth motion: %s' % e)
-            # (the whole frame inside the refresh it is shown in: its lines' times are squeezed by the average frame's length,
-            #  and a frame a little longer than that - or a line drawn right at its end - reached past the refresh: that line
-            #  came in pieces, a part now and the rest a picture later - the Ship Test's last line, a dash sliding along its
-            #  place, 2026-11-22)
-            span_ = float((A0[:, 6] + A0[:, 5]).max())
-            if b is not None and alpha > 0 and len(A) and A.shape[1] > 6: span_ = max(span_, float((A[:, 6] + A[:, 5]).max()))
-            if span_ > 0.97 * per * 1.5e6: k *= 0.97 * per * 1.5e6 / span_
-            A[:, 5] *= k; A[:, 6] *= k
-            lines = A
-            # (the lines of a the gliding ones have just cleared: their afterglow starts now - see below)
-            if getattr(self, 'sm_exf_for', None) is not a or len(getattr(self, 'sm_exf', ())) != len(A0):
-                self.sm_exfp_for, self.sm_exfp = getattr(self, 'sm_exf_for', None), getattr(self, 'sm_exf', None)
-                self.sm_exf_for, self.sm_exf = a, _np.zeros(len(A0), dtype=bool)
-            # (a line the next frame draws in the same place stays lit: no afterglow to start - and nothing to build for it;
-            #  building a whole frame of Mine Storm again each game frame cost 2.6 ms, the screen's 60 pictures became 57)
-            if still is not None and len(still) == len(self.sm_exf): self.sm_exf |= still
-            W_ = self.SMOOTH_EXW; now_ = (~self.sm_exf) & (dA >= W_) & (alpha * dA >= W_)
-            self.sm_exf |= now_; ex_now = A0[now_]
+            cw = self.sm_frame_c(A, a, b, alpha, k, per)   # (the arrays' work in C: native/vxsmooth.c; None: numpy, below)
+            if cw is not None:
+                lines, ex_now, k = cw
+            else:
+                A = A.copy(); A0 = A.copy(); still = None; dA = _np.zeros(len(A))   # (a's own lines; how far each moves on to b's)
+                # (line for line, as the core's since 2026-11-22: a line that jumped - a thing gone round the screen's edge - stands in
+                #  a's place until halfway and in b's after, the others still move; and the two frames need not have as many lines
+                #  (the beam's path is cut a little differently each frame): the lines alike from the front and from the back move,
+                #  those between stand. One such line took the in-between away from the whole picture before - that refresh every
+                #  moving thing stood at a game frame's place: gaps and pairs in the trails)
+                if b is not None and alpha > 0:
+                    B = _np.asarray(arr(b[0]), dtype=_np.float64)
+                    if B.ndim == 2 and len(B) and B.shape[1] == A.shape[1]:
+                        try:
+                            TA, va, TB, vb = self.sm_align(A, B, key=(a, b))
+                            dA = _np.where(va, _np.abs(TA - A[:, :4]).max(1), 0.0); still = va & (dA < 1.5)
+                            if alpha < 0.5:
+                                R = A.copy(); R[va, :4] += (TA[va] - A[va, :4]) * alpha
+                            else:
+                                R = B.copy(); R[vb, :4] += (TB[vb] - B[vb, :4]) * (1.0 - alpha)
+                            A = R
+                        except Exception as e:   # noqa
+                            if not getattr(self, '_al_said', False): self._al_said = True; print('smooth motion: %s' % e)
+                # (the whole frame inside the refresh it is shown in: its lines' times are squeezed by the average frame's length,
+                #  and a frame a little longer than that - or a line drawn right at its end - reached past the refresh: that line
+                #  came in pieces, a part now and the rest a picture later - the Ship Test's last line, a dash sliding along its
+                #  place, 2026-11-22)
+                span_ = float((A0[:, 6] + A0[:, 5]).max())
+                if b is not None and alpha > 0 and len(A) and A.shape[1] > 6: span_ = max(span_, float((A[:, 6] + A[:, 5]).max()))
+                if span_ > 0.97 * per * 1.5e6: k *= 0.97 * per * 1.5e6 / span_
+                A[:, 5] *= k; A[:, 6] *= k
+                lines = A
+                # (the lines of a the gliding ones have just cleared: their afterglow starts now - see below)
+                if getattr(self, 'sm_exf_for', None) is not a or len(getattr(self, 'sm_exf', ())) != len(A0):
+                    self.sm_exfp_for, self.sm_exfp = getattr(self, 'sm_exf_for', None), getattr(self, 'sm_exf', None)
+                    self.sm_exf_for, self.sm_exf = a, _np.zeros(len(A0), dtype=bool)
+                # (a line the next frame draws in the same place stays lit: no afterglow to start - and nothing to build for it;
+                #  building a whole frame of Mine Storm again each game frame cost 2.6 ms, the screen's 60 pictures became 57)
+                if still is not None and len(still) == len(self.sm_exf): self.sm_exf |= still
+                W_ = self.SMOOTH_EXW; now_ = (~self.sm_exf) & (dA >= W_) & (alpha * dA >= W_)
+                self.sm_exf |= now_; ex_now = A0[now_]
         else:
             match = b is not None and alpha > 0 and len(b[0]) == len(la) and all(
                 p[4] == q[4] and max(abs(p[j] - q[j]) for j in range(4)) < self.SMOOTH_MATCH for p, q in zip(la, b[0]))

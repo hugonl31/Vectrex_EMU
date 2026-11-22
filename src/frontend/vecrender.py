@@ -1065,6 +1065,15 @@ def _vxb_get():
         lib.vxb_pieces.argtypes = [vp, ci, ci, vp]; lib.vxb_pieces.restype = ci
         lib.vxb_load.argtypes = []; lib.vxb_load.restype = vp
         lib.vxb_fill.argtypes = [vp] * 7 + [ctypes.POINTER(ctypes.c_double)]; lib.vxb_fill.restype = ci
+        try:                                    # (Smooth motion's work, native/vxsmooth.c: vectrex_emu.py sm_frame_c, sm_merge)
+            cd = ctypes.c_double
+            lib.vxs_frame.argtypes = [vp, ci, vp, ci, ci, cd, cd, cd, cd, ctypes.POINTER(cd), vp, ci, vp, ci, vp, vp, vp, vp]
+            lib.vxs_frame.restype = ci
+            lib.vxs_pair.argtypes = [vp, vp]; lib.vxs_pair.restype = ci
+            lib.vxs_merge.argtypes = [vp, ci, ci, vp]; lib.vxs_merge.restype = ci
+            lib.vxs = True
+        except AttributeError:                  # (an older library: the numpy way for that)
+            lib.vxs = False
         f8 = lambda a: _np.ascontiguousarray(a, dtype=_np.float64)
         tl, kx, ky = f8(TUBE_LIGHT), f8([a_ for a_, b_ in BT2_TLK]), f8([b_ for a_, b_ in BT2_TLK])
         d, z, l_, tx, ty = f8(BT2_D), f8(BT2_Z), f8(BT2_L), f8(tubemap.DX), f8(tubemap.DY)

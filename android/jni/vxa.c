@@ -568,6 +568,7 @@ static void *vxa_main (void *u)
 		if (!vxa_holding) {
 			const double t0 = vxa_now ();
 			struct timespec c0, c1; clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c0);
+			{ extern int vx_owe_hidden; vx_owe_hidden = 1; }   /* (a catch-up run's game frame: drawn with the next picture - no gap in a trail) */
 			for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); runs++; vxa_since_load++; }
 			clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c1); t_cpu += (c1.tv_sec - c0.tv_sec) + (c1.tv_nsec - c0.tv_nsec) * 1e-9;   /* (the thread's own processor time: waiting for the GPU is not) */
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;

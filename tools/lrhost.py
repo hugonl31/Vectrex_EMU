@@ -144,8 +144,8 @@ class Host:
                 ctypes.cast(data, ctypes.POINTER(HWR))[0] = h; self.hwr = ctypes.cast(data, ctypes.POINTER(HWR))[0]
                 self.reset_fn = ctypes.CFUNCTYPE(None)(h.context_reset); return True
             if cmd == 10: return True                            # SET_PIXEL_FORMAT
-            if cmd == 47:                                        # GET_AUDIO_VIDEO_ENABLE
-                ctypes.cast(data, ctypes.POINTER(ctypes.c_int))[0] = 3; return True
+            if cmd in (47, 47 | 0x10000):                                        # GET_AUDIO_VIDEO_ENABLE
+                ctypes.cast(data, ctypes.POINTER(ctypes.c_int))[0] = getattr(self, "av_enable", 3); return True
             if cmd in (32, 37, 18, 11, 35, 8, 3, 0x10000 | 70, 70): return True
             if cmd == 6 and self.log:                            # SET_MESSAGE
                 print('[msg]', ctypes.cast(data, ctypes.POINTER(ctypes.c_char_p))[0]); return True

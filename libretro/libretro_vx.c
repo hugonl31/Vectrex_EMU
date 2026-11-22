@@ -2474,6 +2474,7 @@ static int bt2_prepare (const wline *L, int n, wline *o)
 	}
 	return m;
 }
+int vx_owe_hidden;                         /* (set by the apps: a hidden catch-up run's frame is drawn with the next picture) */
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
 static int bt_gpu_ok (void);
 static int build_lines (wline *L, int n, int to, double esh, int npl)
@@ -3109,6 +3110,16 @@ void retro_run (void)
 			n = vx_nobuild ? 0 : hold_lines (now, dt); ft0 = hist[nh - 1].p0;
 		} else {
 			const gframe *a = &hist[nh - 1];
+			/* (the apps: a game frame that a catch-up run hid - two runs in one refresh, the first without a picture: the screen
+			 *  slower than the game, an iPhone's 48 Hz for 50 - is owed its light: its lines that the newest frame does not draw
+			 *  again (they moved) go into this picture too. Without it that frame's copy was missing from every trail, twice a
+			 *  second - the owner's iPhone, 2026-11-22. A still line is in the newest frame: not drawn twice) */
+			{ static unsigned long long shown_p0;
+			  if (vx_owe_hidden && !vx_nobuild && !a->alt && nh > 1 && shown_p0 && hist[nh - 2].p0 > shown_p0) { const gframe *h = &hist[nh - 2];
+				if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; }
+				for (int q = 0; q < a->n; q++) if (a->L[q].c & 127) hold_put (&a->L[q], 1.0);
+				for (int q = 0; q < h->n; q++) if ((h->L[q].c & 127) && hold_find (&h->L[q], 0.0) < 0) n = wl_from (W1, n, &h->L[q], 1, NULL, 0); }
+			  if (!vx_nobuild) shown_p0 = a->p0; }
 			if (a->alt) { const gframe *p = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL; if (p) n = wl_from (W1, n, p->L, p->n, NULL, 0); }
 			n = wl_from (W1, n, a->L, a->n, NULL, 0);
 			ft0 = hist[nh - 1].p0;

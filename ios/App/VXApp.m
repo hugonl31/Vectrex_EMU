@@ -941,7 +941,8 @@ static void vxa_glass (double t)
 	/* (50 Hz: a game frame every 20 ms counted off on the screen's own refreshes - at 120 Hz every 2nd or 3rd, the pictures 16.7
 	 *  and 25 ms apart. A separate 20 ms timer (build 169) missed its refresh for one picture in ten: 33 ms) */
 	if (_own) { static double a50; const double per = l.targetTimestamp - l.timestamp; a50 += 50.0 * (per > 0.004 && per < 0.05 ? per : 1.0 / 120);
-		if (a50 < 1) return; a50 -= 1; if (a50 > 1) a50 = 0; }
+		if (a50 < 1) { if (!vxa_holding && !_welcome.superview) [self present]; return; }   /* (a refresh between two game frames: the picture drawn in the last one goes out now - always one refresh after its run; handed in at the next run, or late in its own, it lay 8, 17, 25 or 33 ms from the last: build 172) */
+		a50 -= 1; if (a50 > 1) a50 = 0; }
 	double now = CACurrentMediaTime(), dt = _last ? now - _last : 0; _last = now; _ticks++;
 	{ extern int vx_owe_hidden; vx_owe_hidden = 1;   /* (a catch-up run's game frame: drawn with the next picture - no gap in a trail) */
 	  /* (the rate chosen in the settings: the screen asked for it at once - it stayed at the old one until the app's next start:
@@ -976,7 +977,7 @@ static void vxa_glass (double t)
 	_tRun += CACurrentMediaTime () - tr0; _tLinkDur += l.targetTimestamp - l.timestamp;
 	{ static double hdr_t; if (now - hdr_t > 1.0) { hdr_t = now; vxa_hdr_update (); } }   /* (HDR: the screen's headroom now - brightness, Low Power Mode) */
 	vxa_nodraw = 0;
-	if (vxa_pending >= 0) [self presentSlot:vxa_pending late:YES];   /* (the one not ready at the start: now, in this refresh still) */
+	if (vxa_pending >= 0 && !_own) [self presentSlot:vxa_pending late:YES];   /* (the one not ready at the start: now, in this refresh still) */
 	if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); [VXUI showLibraryFrom:self]; }
 	{ const double tt = CACurrentMediaTime () - now; if (tt > _tMax) _tMax = tt; }
 	if (now - _stat_t >= 5) {

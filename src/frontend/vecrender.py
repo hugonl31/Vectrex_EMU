@@ -4289,7 +4289,7 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform1f(self.u_up['kf'], 1.0 if od is not None else math.exp(-dt))
         self._phos_uniforms(self.u_up)
         self.Uniform1f(self.u_up['mul'], od if od is not None else 1.0)
-        self.Uniform1f(self.u_up['rel'], 1.0 if ((getattr(self, 'whole_pictures', False) or (getattr(self, 'whole_plain', False) and not self.young)) and getattr(self, 'phos_release', True)
+        self.Uniform1f(self.u_up['rel'], 1.0 if (getattr(self, 'whole_pictures', False) and getattr(self, 'phos_release', True)
                                                  and od is None) else 0.0)   # (see UPDATE_SHADER: set by the app per picture)
         self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, fresh); self.ActiveTexture(0x84C0)
         self._quad(src[0])

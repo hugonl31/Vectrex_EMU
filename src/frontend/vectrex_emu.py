@@ -9723,11 +9723,6 @@ class App:
             self.rec_tick()                                     # (Record: the part recorded, the window's size)
             r.frozen = bool(self.run.paused and self.run.power and not getattr(self, 'snap_job', None))   # (paused: the picture last shown stays - vecrender keep_picture)
             r.frozen_box = None if (not r.frozen or self.browser or getattr(r, 'rot', 0)) else self.rec_box(False)   # (its tube part; the ROM browser lies over it: all drawn anew)
-            # (the screen's own rate, Smooth motion off: a picture that brings a whole new game frame is one too - a line that moved
-            #  hands over to its new copy. Its old copy stayed lit its whole hold, 20 ms, the next picture came after 16.7: every
-            #  moving thing drawn double in most pictures at 60 Hz - the owner's recording of Mine Storm's mothership, 2026-11-22;
-            #  the renderer checks that the frame was drawn to its end: whole_plain)
-            r.whole_plain = bool(frames) and not smooth and not vrr and self.run.power and not self.run.paused
             r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
             r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
             self.snap_tick()

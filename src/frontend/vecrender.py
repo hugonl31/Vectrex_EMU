@@ -1542,8 +1542,9 @@ SCR_GLINT_SIG = ((4.0, 1.0), (12.0, 0.7))    # the glint's reach: (sigma in quar
 SCR_GLOW_SIG = 12.0                     # the plastic's glow (quarter px; the wider glint sigma's Gaussian)
 SCR_GLINT_K = 2.0                       # the glint's strength at Glint strength x1
 ART_GLOW_K = 0.718                        # the plastic glow's strength
-GLOW_SMOOTH_S = 0.15                      # (the light it and the glints gather: smoothed over this - see _scratches;
-                                          #  150 ms: its flicker as the picture moves against the sheet -60 %, 2026-10-29)
+GLOW_SMOOTH_S = 0.0                       # (the light it and the glints gather: not smoothed in time any more, 2026-11-22 - at 0.15 s
+                                          #  the plastic's glow trailed 40-150 px behind a moving line; without it neither flickers
+                                          #  while the vectors are steady: the Glow Test cart, the owner's choice)
 def scr_lobe(width):
     """Glint width (x1 = |sin|^4; wider = a lower power): the lobe's harmonics a2, a4 (1 - a2 cos 2x + a4 cos 4x)"""
     import math
@@ -3712,6 +3713,9 @@ class GLBloomRenderer(GLRenderer):
         the beam BL_WIDTH x wider. An ordinary screen: its values x BL_GAIN before the roll-off - the faint lines come up, the top is
         pressed into white. An HDR screen: the ordinary screen's whole picture, roll-off and all, x the screen's top (TONE_SHADER: bgh)"""
         return getattr(self, 'look2', 'vectrex') == 'bright'
+    def bgain(self):
+        """the Bright look's lift of the tube's light as a screen value (1.0: the Vectrex look)"""
+        return (self.hdr_hk if getattr(self, 'hdr_hk', 1.0) > 1.0 else BL_GAIN) if self.blook() else 1.0
     def vlook(self):
         """the line renderer's Vectrex look - gone with it (2026-11-22: one picture, the beam on the phosphor; an HDR screen opens its top)"""
         return False
@@ -4101,7 +4105,7 @@ class GLBloomRenderer(GLRenderer):
             self.Uniform2f(u['kd'], *((1.0, 1.0) if od is not None else (math.exp(-dt / (ta * ts)), math.exp(-dt / (tsl * ts)))))
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)
             self.Uniform1f(u['mul'], od if od is not None else 1.0)
-            self.Uniform1f(u['acap'], getattr(self, 'phos_acap', PHOS_ACAP))
+            self.Uniform1f(u['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
             self.Uniform2f(u['px'], 1.0 / max(1, pw), 1.0 / max(1, ph))
             self.Uniform1f(u['gn'], float(max(1, min(4, round(ph / 820.0 * 2.0)))))   # (joining's reach: 2 px in an 820
             self.Uniform1f(u['grow'], PHOS_GROW_MAX * min(1.0, getattr(self, 'phos_grow', PHOS_GROW))   #  px high window)
@@ -4124,7 +4128,7 @@ class GLBloomRenderer(GLRenderer):
         btm = getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')   # (the beam on the phosphor: its white is in the light - BT_TINT)
         self.Uniform3f(self.u_sh['wb'], *((1.0, 1.0, 1.0) if btm else self._wb()))
         self.Uniform3f(self.u_sh['wbc'], *((1.0, 1.0, 1.0) if btm else self._wbc()))
-        self.Uniform1f(self.u_sh['acap'], getattr(self, 'phos_acap', PHOS_ACAP))
+        self.Uniform1f(self.u_sh['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
         self.Uniform1f(self.u_sh['lifta'], 0.0 if (self.art and self.art_on) else TRAIL_LIFT_A)   # (an overlay shown: its own look)
         self.Uniform1f(self.u_sh['sm'], PHOS_SMOOTH_MAX * min(1.0, getattr(self, 'phos_smooth', PHOS_SMOOTH)) * ph / 820.0
                        if (self.trail_on and getattr(self, 'phos_smooth_on', False)) else 0.0)

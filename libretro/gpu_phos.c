@@ -98,14 +98,14 @@ static const char *PH_FS_SAT =
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2; uniform int after; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2, acap; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
 	"  float fa = txb(fc, uv).a;\n"
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, fa); return; }\n"
 	"  vec3 p = txb(fp, uv).rgb, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
-	"  float cap = pv && lp > 1.0 ? 1.0 / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
+	"  float cap = pv && lp > acap ? acap / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
 	"  g1 += l * e1; g2 += l * e2;\n"
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
 	"  g1 = mix(g1, max(g1 - f * a1, 0.0), lit); g2 = mix(g2, max(g2 - f * a2, 0.0), lit);\n"
@@ -439,6 +439,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);
 	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
 	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "e1", a1 * kd1); PU1F (ph_upd, "e2", a2 * kd2);
+	  PU1F (ph_upd, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam && vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
 	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);

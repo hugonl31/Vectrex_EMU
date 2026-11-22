@@ -2474,6 +2474,13 @@ static int bt2_prepare (const wline *L, int n, wline *o)
 	}
 	return m;
 }
+/* (and when: a line that moves on by SM_EXW or more a frame starts its afterglow as soon as the gliding line is that far past
+ *  its place - the trail's newest line then lies within a step of it, as with one picture a game frame; started a whole frame
+ *  later it lay one to two steps behind, an uneven gap (the owner's PC, 2026-11-22). The others - slow, still, gone - a frame
+ *  later, when the next frame has taken over. sm_exf: a's lines started already; sm_exfp: the frame's before) */
+#define SM_EXW 96
+static unsigned char *sm_exf, *sm_exfp; static int sm_exf_n, sm_exfp_n, sm_exf_cap, sm_exfp_cap, *sm_exi, sm_exi_cap, sm_exc;
+static unsigned long long sm_exf_id, sm_exfp_id;
 static unsigned long long sm_ex_shown, sm_ex_next;   /* (Smooth motion's afterglow: the game frame the last drawn picture started it for, this refresh's) */
 int vx_owe_hidden;                         /* (set by the apps: a hidden catch-up run's frame is drawn with the next picture) */
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
@@ -3079,7 +3086,7 @@ void retro_run (void)
 			npl = build_lines (W1, n, to, esh, npl);
 		}
 	} else if (nh) {
-		int n = 0; int sm_ex = 0; const gframe *sm_ex_a = NULL;
+		int n = 0; int sm_ex = 0; const gframe *sm_ex_a = NULL, *sm_ex_cur = NULL;
 		const double hper = nh > 1 ? (hist[nh - 1].t - hist[0].t) / (nh - 1) : 0;
 		const int slow = nh > 1 && hper > HOLD_SLOW * dt;   /* (a game slower than the screen: hold_lines) */
 		if (opt_smooth && opt_rate != 50) {
@@ -3105,6 +3112,13 @@ void retro_run (void)
 			 *  are walked side by side, a piece without a partner within SM_LOOK is such a standing line) */
 			if (b && alpha > 0) B = b->L;
 			sm_runs++; if (B) sm_mixed++;
+			sm_exc = 0;
+			if (B && !fx_half && !vx_nobuild) {             /* (Low draws every other picture: all a frame later there) */
+				if (a->p0 != sm_exf_id) { unsigned char *t = sm_exfp; const int tc = sm_exfp_cap; sm_exfp = sm_exf; sm_exfp_cap = sm_exf_cap; sm_exfp_n = sm_exf_n; sm_exfp_id = sm_exf_id;
+					sm_exf = t; sm_exf_cap = tc; if (sm_exf_cap < a->n) { free (sm_exf); sm_exf_cap = a->n + 256; sm_exf = malloc ((size_t) sm_exf_cap); }
+					if (sm_exf) memset (sm_exf, 0, (size_t) a->n); sm_exf_n = sm_exf ? a->n : 0; sm_exf_id = a->p0; }
+				if (sm_exi_cap < a->n) { free (sm_exi); sm_exi_cap = a->n + 256; sm_exi = malloc (sizeof (int) * (size_t) sm_exi_cap); }
+				sm_ex_cur = sm_exf && sm_exi && sm_exf_id == a->p0 ? a : NULL; }
 			if (B) { sm_ex = 1; sm_ex_next = a->p0; if (a->p0 != sm_ex_shown) sm_ex_a = pa; }   /* (the afterglow: from the game's own frames - the one before a, as its place is left a whole step behind: gpu_phos.c ph_ex_mode) */
 			if (slow && !B) n = vx_nobuild ? 0 : hold_lines (D, dt);   /* (run-ahead's hidden runs: no picture, no hold) */
 			else {
@@ -3113,7 +3127,11 @@ void retro_run (void)
 				else {
 					const int an = a->n, bn = b->n, first = alpha < 0.5; int i = 0, j = 0;
 					while (i < an && j < bn) { const line_t *p = &a->L[i], *q = &B[j];
-						if (sm_ok (p, q)) { n = wl_from (W1, n, p, 1, q, alpha); i++; j++; continue; }
+						if (sm_ok (p, q)) { n = wl_from (W1, n, p, 1, q, alpha);
+							if (sm_ex_cur && i < sm_exf_n && !sm_exf[i]) { long d = labs (q->x0 - p->x0), e = labs (q->y0 - p->y0); if (e > d) d = e;
+								e = labs (q->x1 - p->x1); if (e > d) d = e; e = labs (q->y1 - p->y1); if (e > d) d = e;
+								if (d >= SM_EXW && alpha * d >= SM_EXW) { sm_exf[i] = 1; sm_exi[sm_exc++] = i; } }
+							i++; j++; continue; }
 						int k, hit = 0;
 						for (k = 1; k <= SM_LOOK && j + k < bn; k++) if (sm_ok (p, &B[j + k])) { hit = 1; break; }
 						if (hit) { if (!first) n = wl_from (W1, n, q, k, NULL, 0); j += k; continue; }   /* (b's pieces without a partner) */
@@ -3149,7 +3167,11 @@ void retro_run (void)
 #ifndef VX_EMUVR
 		/* (Smooth motion: the game frame's own lines, once a frame, after the picture's - where the afterglow starts: gpu_phos.c ph_ex_mode) */
 		ph_ex_mode = sm_ex && !vx_nobuild; ph_ex_n = 0;
-		if (ph_ex_mode && sm_ex_a) { const int n2 = wl_from (W1, 0, sm_ex_a->L, sm_ex_a->n, NULL, 0); ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
+		if (ph_ex_mode) { int n2 = 0;
+			if (sm_ex_cur) for (int k = 0; k < sm_exc; k++) n2 = wl_from (W1, n2, &sm_ex_cur->L[sm_exi[k]], 1, NULL, 0);   /* (a's lines the gliding ones have just cleared) */
+			if (sm_ex_a) { const int fl = sm_exfp && sm_exfp_id == sm_ex_a->p0;   /* (the frame before: what has not started yet) */
+				for (int i = 0; i < sm_ex_a->n; i++) if (!(fl && i < sm_exfp_n && sm_exfp[i])) n2 = wl_from (W1, n2, &sm_ex_a->L[i], 1, NULL, 0); }
+			if (n2) ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
 #endif
 	}
 	/* v0.13: a refresh RetroArch does not show (run-ahead's hidden runs: the video off) draws no picture - after the

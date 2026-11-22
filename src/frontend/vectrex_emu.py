@@ -9114,6 +9114,8 @@ class App:
     # G-Sync / FreeSync) every refresh gets a picture of its own - the vectors where they are between the two game
     # frames around that moment (one game frame later: ~20 ms more delay). The game runs at its own speed. Where
     # two frames do not match line for line (other lines, objects appearing), the earlier one is shown as is.
+    SMOOTH_EXW = 96                                     # (Smooth motion: a line that moves on by this or more a frame starts its
+                                                        #  afterglow as soon as the gliding line is that far past its place - the core's SM_EXW)
     SMOOTH_MATCH = 2500                                 # (a line moved by more: not the same line - 7 % of the screen)
     def smooth_on(self):
         return getattr(self, 'smooth', False) and not self.vrr and bool(self.ren) and hasattr(self.ren, 'present')
@@ -9145,7 +9147,7 @@ class App:
             A = _np.asarray(arr(la), dtype=_np.float64)                                                       #  Imager's colours)
             if A.ndim != 2 or not len(A):
                 return
-            A = A.copy()
+            A = A.copy(); A0 = A.copy(); dA = _np.zeros(len(A))   # (a's own lines; how far each moves on to b's)
             # (line for line, as the core's since 2026-11-22: a line that jumped - a thing gone round the screen's edge - stands in
             #  a's place until halfway and in b's after, the others still move; and the two frames need not have as many lines
             #  (the beam's path is cut a little differently each frame): the lines alike from the front and from the back move,
@@ -9157,7 +9159,7 @@ class App:
                     M = self.SMOOTH_MATCH
                     same = lambda X, Y: (_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
                     if len(B) == len(A):
-                        ok = same(A, B); R = A.copy()
+                        ok = same(A, B); R = A.copy(); dA = _np.where(ok, _np.abs(B[:, :4] - A[:, :4]).max(1), 0.0)
                         R[ok, :4] += (B[ok, :4] - A[ok, :4]) * alpha
                         if alpha >= 0.5: R[~ok] = B[~ok]
                         A = R
@@ -9166,6 +9168,8 @@ class App:
                         p = int(bad[0]) if len(bad) else m
                         oks = same(A[len(A) - m:], B[len(B) - m:])[::-1]; bad = _np.nonzero(~oks)[0]
                         s_ = min(int(bad[0]) if len(bad) else m, m - p)
+                        dA[:p] = _np.abs(B[:p, :4] - A[:p, :4]).max(1)
+                        if s_: dA[len(A) - s_:] = _np.abs(B[len(B) - s_:, :4] - A[len(A) - s_:, :4]).max(1)
                         head = A[:p].copy(); head[:, :4] += (B[:p, :4] - A[:p, :4]) * alpha
                         tail = A[len(A) - s_:].copy()
                         if s_: tail[:, :4] += (B[len(B) - s_:, :4] - tail[:, :4]) * alpha
@@ -9173,6 +9177,12 @@ class App:
                         A = _np.concatenate([head, mid, tail])
             A[:, 5] *= k; A[:, 6] *= k
             lines = A
+            # (the lines of a the gliding ones have just cleared: their afterglow starts now - see below)
+            if getattr(self, 'sm_exf_for', None) is not a or len(getattr(self, 'sm_exf', ())) != len(A0):
+                self.sm_exfp_for, self.sm_exfp = getattr(self, 'sm_exf_for', None), getattr(self, 'sm_exf', None)
+                self.sm_exf_for, self.sm_exf = a, _np.zeros(len(A0), dtype=bool)
+            W_ = self.SMOOTH_EXW; now_ = (~self.sm_exf) & (dA >= W_) & (alpha * dA >= W_)
+            self.sm_exf |= now_; ex_now = A0[now_]
         else:
             match = b is not None and alpha > 0 and len(b[0]) == len(la) and all(
                 p[4] == q[4] and max(abs(p[j] - q[j]) for j in range(4)) < self.SMOOTH_MATCH for p, q in zip(la, b[0]))
@@ -9200,12 +9210,14 @@ class App:
         #  leaves the two shown, its own lines; a whole step behind the moving line by then)
         if _np is not None and hasattr(r, 'E'):
             r.ex_mode = True
-            if popped:
+            if popped or len(ex_now):
                 try:
-                    pv = popped[-1]; Ps = []
+                    pv = popped[-1] if popped else a; Ps = [ex_now] if len(ex_now) else []
                     for q_ in popped[-3:]:               # (a late refresh: more than one - each one's lines)
                         pl_ = q_[0]; pl_ = pl_.np if getattr(pl_, 'np', None) is not None and len(pl_.np) == len(pl_) else pl_
                         X_ = _np.asarray(pl_, dtype=_np.float64)
+                        fl_ = getattr(self, 'sm_exfp', None) if getattr(self, 'sm_exfp_for', None) is q_ else (self.sm_exf if self.sm_exf_for is q_ else None)
+                        if X_.ndim == 2 and fl_ is not None and len(fl_) == len(X_): X_ = X_[~fl_]   # (not those started already)
                         if X_.ndim == 2 and len(X_) and (not Ps or X_.shape[1] == Ps[0].shape[1]): Ps.append(X_)
                     P_ = _np.concatenate(Ps) if Ps else _np.zeros((0, 7))
                     if P_.ndim == 2 and len(P_):

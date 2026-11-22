@@ -9124,6 +9124,56 @@ class App:
         self.sm_buf = []
         self.save_settings()
         self.show_look('smooth motion: ' + ('on (vectors between game frames, every refresh)' if self.smooth else 'off'))
+    def sm_align(self, A, B):
+        """Smooth motion: where each of frame A's line pieces lies in frame B, and the other way round.
+        Returns TA (A's pieces' ends as B draws them), va (which of A's pieces have a partner), TB, vb.
+
+        The beam draws a stroke - pieces joined end to start, one brightness - and the core cuts it into pieces by time, a
+        little differently each frame (16 24 40 200 8 8 ... cycles in one, 16 16 24 40 192 8 8 ... in the next): the pieces of
+        two frames do not pair up, the strokes do. So strokes are matched (their ends near, their brightness the same), and a
+        piece's ends are looked up along the other frame's stroke at the same share of its drawing time. Matching piece to
+        piece (2026-11-22, a day) paired neighbours wherever a frame had a piece more: shapes broke into dashes - the owner's
+        recording of Mine Storm's mothership"""
+        M = self.SMOOTH_MATCH
+        def strokes(X):
+            n = len(X); st = _np.ones(n, dtype=bool)
+            st[1:] = ~((X[1:, 0] == X[:-1, 2]) & (X[1:, 1] == X[:-1, 3]) & (X[1:, 4] == X[:-1, 4]))
+            sid = _np.cumsum(st) - 1; first = _np.nonzero(st)[0]; last = _np.append(first[1:], n) - 1
+            cyc = _np.maximum(X[:, 5], 1e-3); c = _np.cumsum(cyc); base = (c - cyc)[first]; tot = c[last] - base
+            f0 = (c - cyc - base[sid]) / tot[sid]; f1 = (c - base[sid]) / tot[sid]
+            u0 = sid + 0.999 * f0; u1 = sid + 0.999 * f1
+            pu = _np.empty(2 * n); pu[0::2] = u0; pu[1::2] = u1
+            px = _np.empty(2 * n); px[0::2] = X[:, 0]; px[1::2] = X[:, 2]
+            py = _np.empty(2 * n); py[0::2] = X[:, 1]; py[1::2] = X[:, 3]
+            S = _np.stack([X[first, 0], X[first, 1], X[last, 2], X[last, 3], X[first, 4], tot], 1)   # (a stroke: its ends, brightness, time)
+            return sid, f0, f1, pu, px, py, S
+        sa, fa0, fa1, pua, pxa, pya, SA = strokes(A); sb, fb0, fb1, pub, pxb, pyb, SB = strokes(B)
+        same = lambda X, Y: ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
+                             & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0))
+        ma = _np.full(len(SA), -1, dtype=int); mb = _np.full(len(SB), -1, dtype=int)
+        if len(SA) == len(SB):
+            ok = same(SA, SB); idx = _np.nonzero(ok)[0]; ma[idx] = idx; mb[idx] = idx
+        else:                                            # (a stroke more or less: walked side by side, past up to 6)
+            la_, lb_ = len(SA), len(SB); i_ = j_ = 0
+            for _ in range(200):
+                if i_ >= la_ or j_ >= lb_: break
+                m_ = min(la_ - i_, lb_ - j_); bad = _np.nonzero(~same(SA[i_:i_ + m_], SB[j_:j_ + m_]))[0]
+                run = int(bad[0]) if len(bad) else m_
+                if run:
+                    ma[i_:i_ + run] = _np.arange(j_, j_ + run); mb[j_:j_ + run] = _np.arange(i_, i_ + run); i_ += run; j_ += run
+                if i_ >= la_ or j_ >= lb_: break
+                for k_ in range(1, 7):
+                    if j_ + k_ < lb_ and bool(same(SA[i_:i_ + 1], SB[j_ + k_:j_ + k_ + 1])[0]): j_ += k_; break
+                    if i_ + k_ < la_ and bool(same(SA[i_ + k_:i_ + k_ + 1], SB[j_:j_ + 1])[0]): i_ += k_; break
+                else:
+                    i_ += 1; j_ += 1
+        def look(sid, f0, f1, mp, pu, px, py, n):
+            v = mp[sid] >= 0; q0 = mp[sid] + 0.999 * f0; q1 = mp[sid] + 0.999 * f1
+            T = _np.zeros((n, 4))
+            T[:, 0] = _np.interp(q0, pu, px); T[:, 1] = _np.interp(q0, pu, py); T[:, 2] = _np.interp(q1, pu, px); T[:, 3] = _np.interp(q1, pu, py)
+            return T, v
+        TA, va = look(sa, fa0, fa1, ma, pub, pxb, pyb, len(A)); TB, vb = look(sb, fb0, fb1, mb, pua, pxa, pya, len(B))
+        return TA, va, TB, vb
     def smooth_frame(self, r, T):
         """this refresh's picture: the game frames a and b around the moment shown, the vectors in between"""
         buf = self.sm_buf
@@ -9156,25 +9206,16 @@ class App:
             if b is not None and alpha > 0:
                 B = _np.asarray(arr(b[0]), dtype=_np.float64)
                 if B.ndim == 2 and len(B) and B.shape[1] == A.shape[1]:
-                    M = self.SMOOTH_MATCH
-                    same = lambda X, Y: (_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
-                    if len(B) == len(A):
-                        ok = same(A, B); R = A.copy(); dA = _np.where(ok, _np.abs(B[:, :4] - A[:, :4]).max(1), 0.0)
-                        R[ok, :4] += (B[ok, :4] - A[ok, :4]) * alpha
-                        if alpha >= 0.5: R[~ok] = B[~ok]
+                    try:
+                        TA, va, TB, vb = self.sm_align(A, B)
+                        dA = _np.where(va, _np.abs(TA - A[:, :4]).max(1), 0.0)
+                        if alpha < 0.5:
+                            R = A.copy(); R[va, :4] += (TA[va] - A[va, :4]) * alpha
+                        else:
+                            R = B.copy(); R[vb, :4] += (TB[vb] - B[vb, :4]) * (1.0 - alpha)
                         A = R
-                    else:
-                        m = min(len(A), len(B)); okp = same(A[:m], B[:m]); bad = _np.nonzero(~okp)[0]
-                        p = int(bad[0]) if len(bad) else m
-                        oks = same(A[len(A) - m:], B[len(B) - m:])[::-1]; bad = _np.nonzero(~oks)[0]
-                        s_ = min(int(bad[0]) if len(bad) else m, m - p)
-                        dA[:p] = _np.abs(B[:p, :4] - A[:p, :4]).max(1)
-                        if s_: dA[len(A) - s_:] = _np.abs(B[len(B) - s_:, :4] - A[len(A) - s_:, :4]).max(1)
-                        head = A[:p].copy(); head[:, :4] += (B[:p, :4] - A[:p, :4]) * alpha
-                        tail = A[len(A) - s_:].copy()
-                        if s_: tail[:, :4] += (B[len(B) - s_:, :4] - tail[:, :4]) * alpha
-                        mid = (A[p:len(A) - s_] if alpha < 0.5 else B[p:len(B) - s_]).copy()
-                        A = _np.concatenate([head, mid, tail])
+                    except Exception as e:   # noqa
+                        if not getattr(self, '_al_said', False): self._al_said = True; print('smooth motion: %s' % e)
             A[:, 5] *= k; A[:, 6] *= k
             lines = A
             # (the lines of a the gliding ones have just cleared: their afterglow starts now - see below)
@@ -9563,6 +9604,11 @@ class App:
             self.rec_tick()                                     # (Record: the part recorded, the window's size)
             r.frozen = bool(self.run.paused and self.run.power and not getattr(self, 'snap_job', None))   # (paused: the picture last shown stays - vecrender keep_picture)
             r.frozen_box = None if (not r.frozen or self.browser or getattr(r, 'rot', 0)) else self.rec_box(False)   # (its tube part; the ROM browser lies over it: all drawn anew)
+            # (the screen's own rate, Smooth motion off: a picture that brings a whole new game frame is one too - a line that moved
+            #  hands over to its new copy. Its old copy stayed lit its whole hold, 20 ms, the next picture came after 16.7: every
+            #  moving thing drawn double in most pictures at 60 Hz - the owner's recording of Mine Storm's mothership, 2026-11-22;
+            #  the renderer checks that the frame was drawn to its end: whole_plain)
+            r.whole_plain = bool(frames) and not smooth and not vrr and self.run.power and not self.run.paused
             r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
             r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
             self.snap_tick()

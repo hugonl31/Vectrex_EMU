@@ -122,6 +122,9 @@ class Library:
         rw, rh = r.real_size
         bx = a.rec_box(False)                                           # (the picture's part of the window: above the deck)
         x0, x1 = bx[0], bx[0] + bx[2]; y1 = rh - bx[1]; y0 = y1 - bx[3]
+        if a.knob_on or a.fps_on or a.cart_on:                          # (the deck's labels begin above the case's bottom edge: the library ends
+            cx_, cy_, r_, rx_ = a.knob_geom()                           #  clear of them - it lay over their tops, the owner 2026-11-22)
+            y1 = min(y1, cy_ - 2.3 * r_)
         W = x1 - x0; u = W / 60.0; k = 0.15 * u                         # (k: the stroke font's unit - a letter 6 k)
         m = 1.2 * u
         g = dict(rect=(x0, y0, x1, y1), u=u, k=k)

@@ -59,8 +59,10 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
                                                    roll-off and all, x the screen's top - the same range, higher up (tone: bgh). The room's light
                                                    stays as it is) */
 #define BL_GAIN 1.5f
-#define BT_GLOW_R 1.0f                             /* (the glow's tint against the core's: 1, 1 - none yet; the owner chooses from a preview) */
-#define BT_GLOW_G 1.0f
+#define BT_GLOW_R 0.62f                            /* (the glow's tint against the core's - the owner's choice from the previews, 2026-11-22; vecrender.py BT_GLOW) */
+#define BT_GLOW_G 0.80f
+#define BT_HALO_A 3.0f                             /* (the glass's glow beside a line: 0 the Gaussian; else its level at the line and its power - PH_FS_BEAM hsh) */
+#define BT_HALO_N 3.0f
 float vx_hdr_peak = 1.0f;                       /* (HDR: the brightest lights top, x the screens white - the own iOS app sets it
                                                 from the screens headroom; 1: SDR, as everywhere else) */
 static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
@@ -89,7 +91,8 @@ static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gauss
  * integral: pieces of one line add up to an even line, ends are soft. The glass's glow (halo 1): a line's a plain Gaussian,
  * a spot's fading out from the spot. vrc.yzw: the peak of the piece's light as a spot's (light / (2 pi sigma^2)), vk: sigma, px */
 static const char *PH_FS_BEAM =
-	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx; out vec4 fragc; uniform int halo;\n"
+	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx; out vec4 fragc; uniform int halo; uniform vec2 hsh;\n"   /* (hsh: the glass's glow beside a line - x > 0: x (1 - v / 3 sigma)^y, brighter
+	                                              at the line and down to black at the same reach as the Gaussian's; 0: the Gaussian) */
 	"float Phi(float x) { float z = abs(x) * 0.70710678, t = 1.0 / (1.0 + 0.3275911 * z);\n"
 	"  float e = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-z * z);\n"
 	"  return 0.5 + 0.5 * (x < 0.0 ? -e : e); }\n"
@@ -98,7 +101,7 @@ static const char *PH_FS_BEAM =
 	"    g = halo != 0 ? 4.0 * exp(-r / (0.5 * sg)) : 1.177 * exp(-pow(r / (1.356 * sg), 2.6)); }\n"
 	"  else { vec2 t = ba / L; float u = dot(q, t), v = abs(q.x * t.y - q.y * t.x);\n"
 	"    if (v >= vrc.x || u <= -vrc.x || u >= L + vrc.x) discard;\n"
-	"    g = 2.5066283 * sg / L * (Phi(u / sg) - Phi((u - L) / sg)) * (halo != 0 ? exp(-0.5 * v * v / (sg * sg)) : 1.041 * exp(-pow(v / (1.356 * sg), 2.6))); }\n"
+	"    g = 2.5066283 * sg / L * (Phi(u / sg) - Phi((u - L) / sg)) * (halo != 0 ? (hsh.x > 0.0 ? hsh.x * pow(max(1.0 - v / (3.0 * sg), 0.0), hsh.y) : exp(-0.5 * v * v / (sg * sg))) : 1.041 * exp(-pow(v / (1.356 * sg), 2.6))); }\n"
 	"  fragc = vec4(vrc.yzw * g, 0.0); }\n";
 /* (the light as the screen's values - vecrender.py SAT_SHADER: (the exposure x the light)^(1 / 2.2) in the tube's own white; the
  *  glass's glow read from its smaller image) */
@@ -427,7 +430,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		ph_target (ph_H, 0, 0, ph_gw, ph_gh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
 		if (nh_) {
 			glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
-			glUseProgram_ (ph_beam); glUniform2f_ (ph_ul (ph_beam, "sz"), (float) ph_gw, (float) ph_gh); PU1I (ph_beam, "halo", 1);
+			glUseProgram_ (ph_beam); glUniform2f_ (ph_ul (ph_beam, "sz"), (float) ph_gw, (float) ph_gh); PU1I (ph_beam, "halo", 1); { static float hs[2] = { BT_HALO_A, BT_HALO_N }; static int rd; if (!rd) { rd = 1; const char *z = getenv ("VX_HALOSHAPE"); if (z) sscanf (z, "%f,%f", &hs[0], &hs[1]); } glUniform2f_ (ph_ul (ph_beam, "hsh"), hs[0], hs[1]); }
 			glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
 			glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) nh_ * 24 * sizeof (float)), ph_hbuf, GL_STREAM_DRAW);
 			glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, nh_);

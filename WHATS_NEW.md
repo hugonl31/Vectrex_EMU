@@ -6,6 +6,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.8.1
 - Colours: a deeper blue (new, the default) or green
+- The vectors' glow bluer, and brighter close to the line
 - Look: Vectrex, or Bright for a small screen (brighter, wider lines)
 - PC: Pause freezes the picture exactly; F12 saves what is on screen
 - The afterglow on phones and RetroArch now as on the PC

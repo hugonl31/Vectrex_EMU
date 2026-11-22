@@ -539,7 +539,9 @@ void main() {
         if (sg > hsg) {                     // (the glass's glow: no flat top, no edge - it fades out; the spot's profile on it was a disc that stopped)
             if (L < 1e-3) g = 4.0 * exp(-length(q) / (0.5 * sg));   // (a spot's glow: brightest at the spot, fading steadily - the same light as the Gaussian's; that one stood round a dot as an even disc with a rim, the screen's last step to black)
             else { vec2 t = ba / L; float u = dot(q, t), v = q.x * t.y - q.y * t.x;
-                g = 2.5066283 * sg / L * exp(-0.5 * v * v / (sg * sg)) * (Phi(u / sg) - Phi((u - L) / sg)); }
+                // (beside a line: 3 x as bright at the line as the Gaussian and down to black at the same reach, 3 sigma - the owner,
+                //  2026-11-22: BT_HALO_A, BT_HALO_N; the core: gpu_phos.c PH_FS_BEAM hsh)
+                g = 2.5066283 * sg / L * 3.0 * pow(max(1.0 - abs(v) / (3.0 * sg), 0.0), 3.0) * (Phi(u / sg) - Phi((u - L) / sg)); }
         } else if (L < 1e-3) g = 1.177 * exp(-pow(length(q) / (1.356 * sg), 2.6));
         else {
             vec2 t = ba / L; float u = dot(q, t), v = q.x * t.y - q.y * t.x;
@@ -1034,6 +1036,8 @@ def bt2_prepare(L, col=None):
     return np.concatenate(out_rows), np.concatenate(out_light), (col[src] if col is not None else None)
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
+BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
+                                        #  the faint light - the lines' skirts, the glass's glow - bluer, the bright core the tube's white)
 BL_GAIN = 1.5; BL_WIDTH = 1.3             # (the Bright look: blook)
 BT_SPOT = 1.25                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
                                             #  2026-11-22, the owner: 1.85 matched the photos - their lens' blur with it; the BIOS's small text
@@ -1053,8 +1057,9 @@ uniform sampler2D tex;
 uniform float k;
 uniform vec3 wb;
 uniform vec3 wbc;
-vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pure white in the bright core: a cold white
-    float m = max(c.r, max(c.g, c.b));      //  line that keeps the screen's full brightness (WB_CORE)
+uniform float gs;                       // (the Bright look's lift taken out: the split by the Vectrex look's screen value)
+vec3 cold(vec3 c, vec3 wb) {               // the glow's tint in the faint light, the tube's white in the bright core (BT_GLOW)
+    float m = max(c.r, max(c.g, c.b)) * gs;
     return c * mix(wb, wbc, smoothstep(0.35, 0.9, m));
 }
 void main() {
@@ -2351,7 +2356,7 @@ class GLBloomRenderer(GLRenderer):
         self.u_premul = GetUniform(self.cprog, b'premul')
         self.u_t = {k: GetUniform(self.cprog, k.encode()) for k in ('timed', 'age0', 'dtw', 'gain', 'beam', 'hsg', 'wb', 'wbc', 'fcs')}
         self.satprog = program(SAT_SHADER, 'beam trace phosphor')
-        self.u_sat = {k: GetUniform(self.satprog, k.encode()) for k in ('tex', 'k', 'wb', 'wbc')}
+        self.u_sat = {k: GetUniform(self.satprog, k.encode()) for k in ('tex', 'k', 'wb', 'wbc', 'gs')}
         self.ClientActiveTexture = proc('glClientActiveTexture', None, u)
         self.MultiTexCoord4f = proc('glMultiTexCoord4f', None, u, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float)
         self.ActiveTexture = proc('glActiveTexture', None, u)
@@ -4222,7 +4227,8 @@ class GLBloomRenderer(GLRenderer):
         k = float(getattr(self, 'white_k', WHITE_DEFAULT))
         t0 = white_gain(WHITE_DEFAULT); tk = white_gain(k)                      # (the tube's white as the owner's photos show it at the default
         t = tuple(a * b / c for a, b, c in zip(BT_TINT, tk, t0)); t = tuple(v / max(t) for v in t)   #  setting - BT_TINT - moved with the White balance setting)
-        self.Uniform1f(self.u_sat['k'], ex * BT_KMAX); self.Uniform3f(self.u_sat['wb'], *t)
+        self.Uniform1f(self.u_sat['k'], ex * BT_KMAX); self.Uniform3f(self.u_sat['wb'], *(a * b for a, b in zip(t, BT_GLOW)))   # (the glow bluer than the core)
+        self.Uniform1f(self.u_sat['gs'], 1.0 / self.bgain())
         self.Uniform3f(self.u_sat['wbc'], *t)
         self._quad(tex)
         self.UseProgram(0)

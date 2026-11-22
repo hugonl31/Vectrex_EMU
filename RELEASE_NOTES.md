@@ -23,6 +23,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * Colours: the deck, the on-screen controls, the menus and the window in a deeper blue - the default - or green (PC:
   Display > Colours; phones and RetroArch: Video > Colours). Next to a real Vectrex the green made the vectors look
   greenish. The PC's and the apps' own menus change at the next start.
+* The glow round the vectors bluer than their bright core, and beside a line three times as bright at the line, falling
+  to black at the same distance as before - next to a real Vectrex the vectors looked greenish.
 * PC, Pause: the picture stands exactly as it was shown - the bloom no longer fades away while paused.
 * PC, Snapshot (F12): the picture on the screen at that moment, at the window's size - not drawn again some frames
   later.

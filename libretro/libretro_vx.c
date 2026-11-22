@@ -663,6 +663,7 @@ static int opt_gone (const char *key)
 #else
 #define opt_gone(k) 0
 #endif
+static double bt_halo_f, bt_halo_s;            /* (defined with the beam's constants below) */
 static int opt_is (const char *key, const char *val)
 {
 	if (opt_gone (key)) return 0;
@@ -718,6 +719,7 @@ static void read_options (void)
 	  if (bt != vx_beam) { vx_beam = bt; vt_set_analog (11, bt ? 1.0 : 0.0); } }
 #endif
 #ifndef VX_EMUVR
+	{ const char *z = getenv ("VX_HALO"); if (z) sscanf (z, "%lf,%lf", &bt_halo_f, &bt_halo_s); }   /* (a test: the glass's glow - its share of the light, its sigma in units) */
 	{ const char *z = getenv ("VX_BRIGHT"); if (z) { extern float vx_bright; vx_bright = (float) atof (z); } }   /* (a test: the Bright look) */
 	{ const char *z = getenv ("VX_HDRPEAK"); if (z) { extern float vx_hdr_peak; vx_hdr_peak = (float) atof (z); } }   /* (a test: an HDR screen's top, x white) */
 	{ const char *z = getenv ("VX_GPROF"); if (z) { extern int vx_gprof; vx_gprof = atoi (z); } }   /* (a test: the GPU diagnostic - each stage's time in the log) */
@@ -2353,8 +2355,10 @@ static double bt2_ld[BT2_ND], bt2_ll[4][BT2_ND]; static int bt2_ready;
 #define BT_EXPO 0.20                    /* (vecrender.py: the exposure, the spot's width x, the spot's share of the display width) */
 #define BT_SPOT 1.25
 #define BT_SG 0.674
-#define BT_HALO_F 0.008                 /* (the glass: this share of every piece's light spread wide - sigma BT_HALO_S units) */
-#define BT_HALO_S 2.5
+static double bt_halo_f = 0.008, bt_halo_s = 2.5;   /* (the two below: a test may set them - VX_HALO=share,sigma) */
+#define BT_HALO_F_ 0.008                 /* (the glass: this share of every piece's light spread wide - sigma BT_HALO_S units) */
+#define BT_HALO_F bt_halo_f
+#define BT_HALO_S bt_halo_s
 static double bt2_tl (double z)            /* (the tube's light by the drive: TUBE_LIGHT x the Photo Test's page 4 against it) */
 {
 	static const double ZK[][2] = { { 0, 0.25 }, { 48, 0.25 }, { 63, 0.48 }, { 95, 0.76 }, { 111, 0.89 }, { 127, 1.0 } };

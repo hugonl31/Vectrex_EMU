@@ -366,6 +366,15 @@ static UITableViewCell *vxs_cell (NSString *title)
 @end
 
 /* ------------------------------------------------ the game library */
+/* the PiTrex's pictogram of the PC's simple list: a raspberry, in lines (10 x 6.4 units) */
+static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
+{
+	const CGFloat k = h / 6.4; UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake (10 * k, 6.4 * k)];
+	return [r imageWithActions:^(UIGraphicsImageRendererContext *x) { CGContextRef c = x.CGContext; [col setStroke]; CGContextSetLineWidth (c, MAX (1.2, k * 0.42)); CGContextSetLineCap (c, kCGLineCapRound);
+		CGContextTranslateCTM (c, 0, 0.5 * k); CGContextStrokeEllipseInRect (c, CGRectMake (2.4 * k, 1.2 * k, 5.2 * k, 4.8 * k));
+		static const CGFloat L[6][4] = { { 5, 1.2, 2.8, -0.2 }, { 5, 1.2, 7.2, -0.2 }, { 2.8, -0.2, 4.2, 0.6 }, { 7.2, -0.2, 5.8, 0.6 }, { 3.6, 3.4, 6.4, 3.4 }, { 5, 1.6, 5, 5.6 } };
+		for (int i = 0; i < 6; i++) { CGContextMoveToPoint (c, L[i][0] * k, L[i][1] * k); CGContextAddLineToPoint (c, L[i][2] * k, L[i][3] * k); } CGContextStrokePath (c); }];
+}
 @interface VXGameCell : UICollectionViewCell
 @property (nonatomic, strong) UIImageView *img; @property (nonatomic, strong) UILabel *name, *ph, *kind;
 @property (nonatomic) BOOL titles, focusOn;       /* (titles only: a row of the list; focusOn: the highlight - a controller, the keys) */
@@ -422,7 +431,10 @@ static UITableViewCell *vxs_cell (NSString *title)
 		[a addObject:@{ @"name": rel.lastPathComponent.stringByDeletingPathExtension, @"path": [roms stringByAppendingPathComponent:rel], @"kind": kind }]; }
 	NSString *px = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/pitrex/pitrex.img"];
 	if ([NSFileManager.defaultManager fileExistsAtPath:px]) [a addObject:@{ @"name": @"PiTrex", @"path": px, @"kind": @"PiTrex" }];
-	[a sortUsingComparator:^NSComparisonResult (NSDictionary *x, NSDictionary *y) { return [x[@"name"] localizedCaseInsensitiveCompare:y[@"name"]]; }];
+	/* (the PiTrex itself first, as in the PC's list - the owner, 2026-11-22; then by name) */
+	[a sortUsingComparator:^NSComparisonResult (NSDictionary *x, NSDictionary *y) { const BOOL px = [x[@"kind"] isEqualToString:@"PiTrex"], py = [y[@"kind"] isEqualToString:@"PiTrex"];
+		if (px != py) return px ? NSOrderedAscending : NSOrderedDescending; return [x[@"name"] localizedCaseInsensitiveCompare:y[@"name"]]; }];
+	if ([NSFileManager.defaultManager fileExistsAtPath:px]) { extern void vxa_pitrex_tiles (void); vxa_pitrex_tiles (); }   /* (its cartridge and box: in the thumbs folder) */
 	_all = a; ulog ([NSString stringWithFormat:@"library: %lu games", (unsigned long) a.count]);
 }
 /* (your own games: picked in Files - from iCloud, the phone, a USB stick - and copied into roms/Imported) */
@@ -616,6 +628,11 @@ static UITableViewCell *vxs_cell (NSString *title)
 	c.img.backgroundColor = im ? UIColor.clearColor : VX_PANEL;
 	const BOOL titles = [VXLibrary perRow] == 0; c.titles = titles; c.kind.text = [g[@"kind"] isEqualToString:@"Games"] ? @"" : [g[@"kind"] uppercaseString];
 	BOOL now = [g[@"path"] isEqualToString:vxa_game ()]; c.name.textColor = now ? VX_HI : VX_FG; c.name.font = VF (titles ? 15 : 12, now ? UIFontWeightBold : UIFontWeightMedium);
+	if (titles) {                                   /* (titles only, as the PC's list: UVMC2 games in their own colour, the PiTrex with its raspberry) */
+		if ([g[@"kind"] isEqualToString:@"UVMC2"]) c.name.textColor = now ? VXC (0x8ac8dc) : VXC (0x66a4b8);
+		if ([g[@"kind"] isEqualToString:@"PiTrex"]) { UIColor *col = now ? VX_HI2 : VX_HI; NSTextAttachment *at = [NSTextAttachment new]; at.image = vxs_raspberry (col, 15); at.bounds = CGRectMake (0, -2, at.image.size.width, at.image.size.height);
+			NSMutableAttributedString *as = [[NSMutableAttributedString alloc] initWithAttributedString:[NSAttributedString attributedStringWithAttachment:at]];
+			[as appendAttributedString:[[NSAttributedString alloc] initWithString:[@"  " stringByAppendingString:n] attributes:@{ NSForegroundColorAttributeName: col, NSFontAttributeName: c.name.font }]]; c.name.attributedText = as; } }
 	c.img.contentMode = [[VXLibrary look] isEqualToString:@"overlays"] ? UIViewContentModeScaleToFill : UIViewContentModeScaleAspectFit;   /* (an overlay: always the sheet's own 162:207, whatever its picture's size) */
 	c.img.layer.borderColor = (now ? VX_HI : VX_EDGE).CGColor; c.img.layer.borderWidth = im ? (now ? 2 : 0) : 1;
 	c.focusOn = NO; if (ip.item == _sel) [self paint:c on:YES]; else [c setNeedsLayout];

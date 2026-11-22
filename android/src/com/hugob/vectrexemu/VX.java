@@ -18,6 +18,7 @@ final class VX {
 	static native void setHdr (boolean can, float headroom, float frac);
 	static native void setTrailMul (float k);                   /* (the trail for the look and the screen's brightness) */
 	static native void testCart (String path);                  /* (the Test Cart's file made) */
+	static native void pitrexTiles (String thumbs);            /* (the PiTrex's cartridge and box made there) */
 	static native int palette ();                               /* (the core's colour scheme now: 0 blue, 1 green) */
 	static native void setBright (int on);                      /* (the look: 0 Vectrex, 1 Bright - the lines lifted and wider) */
 	static native void setHdrLook (int look);                   /* (0 bright - as SDR, 1 the whole picture, 2 the Vectrex: iOS alike) */

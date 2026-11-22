@@ -36,8 +36,10 @@ final class Library extends LinearLayout implements Screens.Closing {
 	{
 		List<Game> a = new ArrayList<> ();
 		for (File r : m.romRoots) walk (r, r, a, 0);
-		File px = new File (m.sysDir, "vectrex_emu/pitrex/pitrex.img"); if (px.exists ()) { Game g = new Game (); g.name = "PiTrex"; g.path = px.getAbsolutePath (); g.kind = "PiTrex"; a.add (g); }
-		Collections.sort (a, (x, y) -> x.name.compareToIgnoreCase (y.name));
+		File px = new File (m.sysDir, "vectrex_emu/pitrex/pitrex.img"); if (px.exists ()) { Game g = new Game (); g.name = "PiTrex"; g.path = px.getAbsolutePath (); g.kind = "PiTrex"; a.add (g);
+			try { File th = new File (m.sysDir, "vectrex_emu/thumbs"); new File (th, "carts").mkdirs (); new File (th, "boxes").mkdirs (); VX.pitrexTiles (th.getAbsolutePath ()); } catch (Throwable t) { } }   /* (its cartridge and box) */
+		/* (the PiTrex itself first, as in the PC's list - the owner, 2026-11-22; then by name) */
+		Collections.sort (a, (x, y) -> { boolean px_ = x.kind.equals ("PiTrex"), py_ = y.kind.equals ("PiTrex"); return px_ != py_ ? (px_ ? -1 : 1) : x.name.compareToIgnoreCase (y.name); });
 		ArrayList<Game> u = new ArrayList<> (); ArrayList<String> seen = new ArrayList<> ();   /* (the same game in two folders: once) */
 		for (Game g : a) { String k = g.name.toLowerCase (Locale.ROOT) + "|" + g.kind; if (!seen.contains (k)) { seen.add (k); u.add (g); } }
 		return u;
@@ -160,6 +162,17 @@ final class Library extends LinearLayout implements Screens.Closing {
 		for (int i = 0; i < chips.getChildCount (); i++) { TextView c = (TextView) chips.getChildAt (i); boolean on = c.getTag ().equals (filter);
 			c.setTextColor (on ? Main.HI2 : Main.FG2); c.setBackground (Screens.states (m, on ? Main.SEL : 0, Main.EDGE2, m.dp (17))); }
 	}
+	/* the PiTrex's pictogram of the PC's simple list: a raspberry, in lines (10 x 6.4 units) */
+	android.graphics.drawable.Drawable raspberry (int col)
+	{
+		final float k = m.dp (16) / 6.4f; int w = (int) Math.ceil (10 * k), h = (int) Math.ceil (6.4f * k);
+		Bitmap b = Bitmap.createBitmap (w, h, Bitmap.Config.ARGB_8888); android.graphics.Canvas c = new android.graphics.Canvas (b);
+		android.graphics.Paint p = new android.graphics.Paint (android.graphics.Paint.ANTI_ALIAS_FLAG); p.setStyle (android.graphics.Paint.Style.STROKE); p.setColor (col); p.setStrokeWidth (Math.max (2f, k * 0.42f)); p.setStrokeCap (android.graphics.Paint.Cap.ROUND);
+		c.translate (0, 0.5f * k); c.drawOval (2.4f * k, 1.2f * k, 7.6f * k, 6.0f * k, p);
+		final float[][] L = { { 5, 1.2f, 2.8f, -0.2f }, { 5, 1.2f, 7.2f, -0.2f }, { 2.8f, -0.2f, 4.2f, 0.6f }, { 7.2f, -0.2f, 5.8f, 0.6f }, { 3.6f, 3.4f, 6.4f, 3.4f }, { 5, 1.6f, 5, 5.6f } };
+		for (float[] l : L) c.drawLine (l[0] * k, l[1] * k, l[2] * k, l[3] * k, p);
+		android.graphics.drawable.BitmapDrawable d = new android.graphics.drawable.BitmapDrawable (getResources (), b); d.setBounds (0, 0, w, h); return d;
+	}
 	Bitmap tile (String n)
 	{
 		String key = look () + "/" + n; Bitmap b = cache.get (key); if (b != null) return b;
@@ -202,6 +215,10 @@ final class Library extends LinearLayout implements Screens.Closing {
 			name = c.findViewWithTag ("n"); name.setText (g.name); name.setTextColor (now ? Main.HI : Main.FG); name.setTypeface (null, now ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
 			final boolean on = i == sel; if (on) { name.setTextColor (Main.HI2); name.setTypeface (null, android.graphics.Typeface.BOLD); }
 			if (titles) { kind = c.findViewWithTag ("k"); kind.setText (g.kind.equals ("Games") ? "" : g.kind.toUpperCase (Locale.ROOT));
+				/* (as the PC's list: UVMC2 games in their own colour, the PiTrex with its raspberry) */
+				if (g.kind.equals ("UVMC2")) name.setTextColor (on || now ? 0xff8ac8dc : 0xff66a4b8);
+				if (g.kind.equals ("PiTrex")) { int col = on ? Main.HI2 : Main.HI; name.setTextColor (col); name.setCompoundDrawablePadding ((int) m.dp (8)); name.setCompoundDrawables (raspberry (col), null, null, null); }
+				else name.setCompoundDrawables (null, null, null, null);
 				c.setBackground (on ? Screens.focus (m, m.dp (8)) : now ? Main.round (Main.PANEL, Main.EDGE, m.dp (8)) : null); return c; }
 			box = c.findViewWithTag ("b"); img = c.findViewWithTag ("i"); ph = c.findViewWithTag ("p");
 			int cols = Math.max (1, perRow ()); int w = (par.getWidth () - par.getPaddingLeft () - par.getPaddingRight () - (int) m.dp (12) * (cols - 1)) / cols;

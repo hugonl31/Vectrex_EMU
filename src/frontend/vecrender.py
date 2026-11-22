@@ -4495,6 +4495,7 @@ class GLBloomRenderer(GLRenderer):
         H = lambda c: palette.rgb(tuple(int(c[i:i + 2], 16) / 255.0 for i in (1, 3, 5)))
         hi, hi2, dim, fg = H('#88ccbb'), H('#bbffee'), H('#7f978b'), H('#c8d6cf')
         BG_, TOP, PAN, BODY_, SEL_, EDGE_, EDGE2_ = (H(c) for c in ('#05080a', '#0a1210', '#0b1511', '#0f1c17', '#24443a', '#1d3329', '#2f5544'))
+        tints = {'UVMC2': (H('#66a4b8'), H('#8ac8dc')), 'PiTrex': (H('#aa9c88'), H('#d0c0aa'))}
         def fill(ax0, ay0, ax1, ay1, c, a=1.0):
             gl.glColor4f(*c, a); gl.glBegin(GL_QUADS)
             for x, y in ((ax0, ay0), (ax1, ay0), (ax1, ay1), (ax0, ay1)):
@@ -4549,7 +4550,19 @@ class GLBloomRenderer(GLRenderer):
                 if b['text_only']:
                     rowh = g['tile'][3]
                     if t['sel']: fill(tx, ty, tx + tw, ty + rowh - 2, SEL_)
-                    text(t['name'][:int(tw / (6 * k)) - 2].upper(), tx + 0.8 * u, ty + (rowh - 6 * k) / 2 - 1, k, hi2 if t['sel'] else fg)
+                    # (UVMC2 games and PiTrex programs tinted, the PiTrex itself with its raspberry - as the simple list)
+                    tc = tints.get(t['kind'])
+                    c_ = (hi2 if t['sel'] else hi) if t.get('boot') else tc[1 if t['sel'] else 0] if tc else hi2 if t['sel'] else fg
+                    ty_ = ty + (rowh - 6 * k) / 2 - 1; ind = 2.4 * 6 * k if t.get('boot') else 0.0
+                    text(t['name'][:int(tw / (6 * k)) - 5].upper(), tx + 0.8 * u + ind, ty_, k, c_)
+                    if t.get('boot'):
+                        P_ = lambda a_, b_: (tx + 0.8 * u + a_ * k, ty_ + b_ * k)
+                        pts = [P_(5 + 2.6 * math.cos(2 * math.pi * q / 14), 3.6 + 2.4 * math.sin(2 * math.pi * q / 14)) for q in range(15)]
+                        seg = [(a_[0], a_[1], b_[0], b_[1]) for a_, b_ in zip(pts, pts[1:])]
+                        for (ax, ay), (bx_, by_) in (((5, 1.2), (2.8, -0.2)), ((5, 1.2), (7.2, -0.2)), ((2.8, -0.2), (4.2, 0.6)),
+                                                     ((7.2, -0.2), (5.8, 0.6)), ((3.6, 3.4), (6.4, 3.4)), ((5, 1.6), (5, 5.6))):
+                            seg.append((*P_(ax, ay), *P_(bx_, by_)))
+                        gl.glColor4f(*c_, 1.0); self._lines(seg)
                     continue
                 im = tex.get(t['img']) if t['img'] else None
                 if im:

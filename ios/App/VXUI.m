@@ -374,7 +374,8 @@ static UITableViewCell *vxs_cell (NSString *title)
 - (instancetype) initWithFrame:(CGRect)f
 {
 	self = [super initWithFrame:f];
-	_img = [UIImageView new]; _img.contentMode = UIViewContentModeScaleAspectFit; _img.clipsToBounds = YES; _img.layer.cornerRadius = 8;   /* (a cartridge: its own clear outline) */
+	_img = [UIImageView new]; _img.alpha = 0.7;   /* (the pictures 30 % less bright, as the PC's library: the eyes stay used to the vectors' level - the owner, 2026-11-22) */
+	_img.contentMode = UIViewContentModeScaleAspectFit; _img.clipsToBounds = YES; _img.layer.cornerRadius = 8;   /* (a cartridge: its own clear outline) */
 	_ph = VL (@"", VT (15), VX_G); _ph.textAlignment = NSTextAlignmentCenter;
 	_name = VL (@"", VF (12, UIFontWeightMedium), VX_FG); _name.numberOfLines = 2;
 	_kind = VL (@"", VF (10, UIFontWeightSemibold), VX_DIM); _kind.numberOfLines = 1; _kind.textAlignment = NSTextAlignmentRight;

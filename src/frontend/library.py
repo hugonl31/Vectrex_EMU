@@ -50,8 +50,8 @@ class Library:
                 out.append(dict(name=os.path.splitext(f)[0], path=os.path.join(dp, f), kind=kind))
         boot = os.path.join(getattr(a, 'px_dir', '') or '', 'pitrex.img')
         if V.PITREX_UI and os.path.isfile(boot):
-            out.append(dict(name='PiTrex', path=boot, kind='PiTrex'))
-        out.sort(key=lambda g: g['name'].lower())
+            out.append(dict(name='PiTrex', path=boot, kind='PiTrex', boot=True))
+        out.sort(key=lambda g: (not g.get('boot'), g['name'].lower()))   # (the PiTrex itself: first - the owner, 2026-11-22)
         self.games = out
         th = os.path.join(V.ROOT, 'system', 'vectrex_emu', 'thumbs'); self.files = {}
         for _, lk in LOOKS:
@@ -78,10 +78,15 @@ class Library:
             g = [x for x in g if t in x['name'].lower()]
         return g
 
-    def tile(self, name):
-        """the picture's file for a game in the look chosen (its name, else its name without a (...) part) or None"""
+    def tile(self, name, boot=False):
+        """the picture's file for a game in the look chosen (its name, else its name without a (...) part) or None; the
+        PiTrex itself: its own picture in every look, the program's (pitrex_art.py) unless the folder has one"""
         m = self.files.get(self.look) or {}
-        return m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+        p = m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+        if not p and boot:
+            import pitrex_art
+            p = pitrex_art.path(self.V.ROOT, self.look)
+        return p
 
     def _reader(self):
         import vart
@@ -185,11 +190,11 @@ class Library:
         for i in range(r0 * c, min(n, r1 * c)):
             r, col = divmod(i, c)
             x = gx0 + col * (tw + gap); y = gy0 + r * rowh - self.scroll
-            p = self.tile(games[i]['name']) if self.cols else None
+            p = self.tile(games[i]['name'], games[i].get('boot')) if self.cols else None
             if p and p not in self.asked and p not in self.missing:
                 self.asked.add(p); self.want.put(p)
             tiles.append(dict(x=x, y=y, w=tw, h=th, name=games[i]['name'], img=p if p and p not in self.missing else None,
-                              sel=i == self.sel, kind=games[i]['kind']))
+                              sel=i == self.sel, kind=games[i]['kind'], boot=bool(games[i].get('boot'))))
         new = {}
         for p in list(self.done):
             new[p] = self.done.pop(p)

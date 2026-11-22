@@ -28,7 +28,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * PC: the game library, as the phone apps' (L, the deck's cartridge) - tiles as cartridges, boxes or overlays, 2 to 6 a
   row or titles only, a search, the categories All / Recent / Games / UVMC2 / PiTrex / Tests; it fills the picture's
   place above the deck. The pictures: your own, in system/vectrex_emu/thumbs/boxes, carts, overlays (PNG, the game's
-  name). Display > Game list switches back to the simple list.
+  name). Display > Game list switches back to the simple list. The PiTrex is first in it, with a cartridge and a box of
+  its own; in the titles-only view it and the UVMC2 / PiTrex programs are marked as in the simple list.
+* The library's pictures 30 % less bright on every platform: the eyes stay used to the vectors' level.
 * PC, Pause: the picture stands exactly as it was shown - the bloom no longer fades away while paused.
 * PC, Snapshot (F12): the picture on the screen at that moment, at the window's size - not drawn again some frames
   later.

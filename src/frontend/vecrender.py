@@ -3888,8 +3888,7 @@ class GLBloomRenderer(GLRenderer):
         if getattr(self, 'D', None) and getattr(self, '_win_wh', None) and (abs(ps - getattr(self, '_ps_alloc', 1.0)) > 1e-6
                                                                           or bool(getattr(self, 'line_half', False)) != getattr(self, '_lh_alloc', False)):
             self.resize(*self._win_wh)                    # (Quality changed the phosphor's size: new targets)
-        if getattr(self, 'frozen', False) and not flush and self.show_last():   # (paused: the picture as it was shown, nothing drawn anew)
-            return None
+        self._showing_last = bool(getattr(self, 'frozen', False) and not flush and getattr(self, 'last_ok', False))   # (paused: see put_last)
         self._t_pres = time.perf_counter()
         self._q_cur = self._gpu_begin()
         try:
@@ -3906,7 +3905,10 @@ class GLBloomRenderer(GLRenderer):
             ms = 1000.0 * (time.perf_counter() - t)
             self.cpu_ms = ms if getattr(self, 'cpu_ms', None) is None else 0.9 * self.cpu_ms + 0.1 * ms
             self._t_pres = None
-        if not getattr(self, '_showing_last', False):
+        if getattr(self, '_showing_last', False):
+            self.put_last(getattr(self, 'frozen_box', None))   # (paused: the picture's part as it was shown, over what was drawn anew)
+            self.keep_picture('SHOWN')                          # (what is on the screen now - the snapshot's; LAST stays the tube's picture)
+        else:
             self.keep_picture()
         return super()._swap()
 
@@ -3915,50 +3917,51 @@ class GLBloomRenderer(GLRenderer):
     # the lines' fresh light, their bloom and the glass's glow are in the frames just drawn, and those are gone a moment later
     # (paused, the bloom faded away; a snapshot came some frames after the key). So every finished picture is copied into
     # LAST before it is shown (the window's size; an HDR picture as half floats).
-    def keep_picture(self):
+    def keep_picture(self, name='LAST'):
         try:
             gl = self.gl
             w, h = getattr(self, 'real_size', self.size)
             key = (w, h, bool(getattr(self, 'hdr', None)))
-            if getattr(self, '_last_key', None) != key:
-                old = getattr(self, 'LAST', None)
+            if getattr(self, '_key_' + name, None) != key:
+                old = getattr(self, name, None)
                 if old:
                     gl.glDeleteTextures(1, ctypes.byref(ctypes.c_uint(old[0]))); self.DelFB(1, ctypes.byref(ctypes.c_uint(old[1])))
-                self.LAST = self._target(w, h); self._last_key = key
+                setattr(self, name, self._target(w, h)); setattr(self, '_key_' + name, key)
                 if not hasattr(gl.glCopyTexSubImage2D, '_set'):
                     gl.glCopyTexSubImage2D.argtypes = [ctypes.c_uint] + [ctypes.c_int] * 7
             self.BindFB(GL_FRAMEBUFFER, 0)
-            self.ActiveTexture(0x84C0); gl.glBindTexture(GL_TEXTURE_2D, self.LAST[0])
+            self.ActiveTexture(0x84C0); gl.glBindTexture(GL_TEXTURE_2D, getattr(self, name)[0])
             gl.glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h)
             gl.glBindTexture(GL_TEXTURE_2D, 0)
-            self.last_ok = True
+            if name == 'LAST': self.last_ok = True
+            self.shown = getattr(self, name)
         except Exception as e:   # noqa
             if not getattr(self, '_last_said', False):
                 self._last_said = True; print('the last picture not kept (%s)' % e)
             self.last_ok = False
 
-    def show_last(self):
-        """the picture last shown, shown again as it is (paused): True if it was"""
-        if not (getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
-            return False
+    def put_last(self, box):
+        """paused: the part box (x, y from the bottom left, w, h) of the picture last shown put over the window's - the tube's
+        picture stands as it was, the deck round it is drawn anew (PAUSED, the knob); no box: nothing (the ROM browser lies over it)"""
+        if not (box and getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
+            return
         gl = self.gl
         w, h = getattr(self, 'real_size', self.size)
         self.BindFB(GL_FRAMEBUFFER, 0); gl.glViewport(0, 0, w, h)
         self.UseProgram(0); gl.glDisable(GL_BLEND); self.ActiveTexture(0x84C0)
-        self._quad(self.LAST[0])
-        self._showing_last = True
+        gl.glEnable(0x0C11); gl.glScissor(int(box[0]), int(box[1]), int(box[2]), int(box[3]))   # (GL_SCISSOR_TEST)
         try:
-            self._swap()
+            self._quad(self.LAST[0])
         finally:
-            self._showing_last = False
-        return True
+            gl.glDisable(0x0C11)
 
     def read_last(self, box):
         """the picture last shown, the part box (x, y from the bottom left, w, h): bgra rows, bottom row first - None if not kept"""
-        if not (getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
+        sh = getattr(self, 'shown', None)
+        if not (getattr(self, 'last_ok', False) and sh):
             return None
         try:
-            px = self.read_px(self.LAST[1], box)
+            px = self.read_px(sh[1], box)
         finally:
             self.BindFB(GL_FRAMEBUFFER, 0)
         return px

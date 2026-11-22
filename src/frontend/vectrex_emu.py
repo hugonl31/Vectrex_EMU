@@ -9445,6 +9445,7 @@ class App:
                 self.sm_buf = []
             self.rec_tick()                                     # (Record: the part recorded, the window's size)
             r.frozen = bool(self.run.paused and self.run.power and not getattr(self, 'snap_job', None))   # (paused: the picture last shown stays - vecrender keep_picture)
+            r.frozen_box = None if (not r.frozen or self.browser or getattr(r, 'rot', 0)) else self.rec_box(False)   # (its tube part; the ROM browser lies over it: all drawn anew)
             r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
             r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
             self.snap_tick()

@@ -2630,6 +2630,8 @@ class GLBloomRenderer(GLRenderer):
         self.F3 = self._target(fw, fh)                    # (a second game frame in one display frame: see _present)
         self.Fc = self._target(fw, fh, True)              # (how many of them lit each pixel)
         self.F4 = self._target(fw, fh)                    # (their light averaged)
+        self.E = self._target(fw, fh)                     # (Smooth motion: the game frame's own lines - where the afterglow
+        self.E2 = self._target(fw, fh)                    #  starts, see _present; E2: as light, beam trace)
         self.D = self._target(pw, ph)                     # what the screen shows
         self.E = self._target(pw, ph)                     # (the curved tube: the screen before bending)
         self.young = []; self.last = None   # (built in window pixels: from now on)
@@ -4132,6 +4134,21 @@ class GLBloomRenderer(GLRenderer):
         if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'):   # (beam trace: the energy as light)
             self.BindFB(GL_FRAMEBUFFER, self.F2[1]); gl.glDisable(GL_BLEND)
             self._sat(fresh); fresh = self.F2[0]
+        # Smooth motion's afterglow (2026-11-22, as the core's gpu_phos.c ph_ex_mode): the in-between pictures move a line several
+        # places a game frame, and every place it left started an afterglow - 2.4 trail lines at 120 Hz where a Vectrex has one.
+        # So the afterglow starts only where the game itself drew: once a game frame the app hands in that frame's own lines
+        # (ex_built), drawn here into E, and the afterglow starts from that instead of from the lit layer; the other refreshes none
+        ex_tex = None
+        if getattr(self, 'ex_mode', False) and getattr(self, 'E', None):
+            self.BindFB(GL_FRAMEBUFFER, self.E[1]); gl.glViewport(0, 0, fw, fh)
+            gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
+            ex_tex = self.E[0]; exb = getattr(self, 'ex_built', None)
+            if exb:
+                gl.glEnable(GL_BLEND); self.BlendFuncSep(GL_ONE, GL_ONE, GL_ONE, GL_ONE); self.BlendEqSep(eq, 0x8008)
+                self._draw_built(exb, 0.0, 1.0, imm=True)
+                self.BlendEq(0x8006); gl.glDisable(GL_BLEND)
+                if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'):
+                    self.BindFB(GL_FRAMEBUFFER, self.E2[1]); self._sat(self.E[0]); ex_tex = self.E2[0]
         self.fcs = (1.0, 1.0)
         # 2. the phosphor image: aged, lit again where the fresh light is brighter
         od = getattr(self, 'decay_override', None)        # (switching off: frozen, dimmed by the curve)
@@ -4163,7 +4180,7 @@ class GLBloomRenderer(GLRenderer):
             u = self.u_gl if full else self.u_gp; ts = max(0.05, self.trail)
             self.UseProgram(self.glowprog if full else self.glowpack)
             self.Uniform1i(u['oldg1'], 0); self.Uniform1i(u['oldg2'], 3); self.Uniform1i(u['oldp'], 1); self.Uniform1i(u['newp'], 2)
-            self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, self.P2[0])      # (the lit layer before this frame
+            self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, ex_tex if (ex_tex is not None and od is None) else self.P2[0])      # (the lit layer before this frame - Smooth motion: the game frame's own lines
             self.ActiveTexture(0x84C2); gl.glBindTexture(GL_TEXTURE_2D, self.P[0])       #  and after it)
             if full:
                 self.ActiveTexture(0x84C3); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0])

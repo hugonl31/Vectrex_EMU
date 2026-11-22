@@ -9130,8 +9130,9 @@ class App:
         per = (buf[-1][1] - buf[0][1]) / (len(buf) - 1) if len(buf) > 1 else 0.02
         per = min(0.1, max(0.01, per))
         D = T - self.pause_acc - per - 1.0 / max(1.0, self.hz)     # (one game frame and one refresh back)
+        popped = []                                      # (the frames that leave the two shown now: their afterglow starts)
         while len(buf) > 2 and buf[1][1] <= D:
-            self.sm_prev = buf.pop(0)
+            self.sm_prev = buf.pop(0); popped.append(self.sm_prev)
         a = buf[0]
         if D < a[1] - 0.25:                              # (far behind: after a pause or a stall, start again)
             del buf[:-1]; a = buf[0]
@@ -9145,10 +9146,31 @@ class App:
             if A.ndim != 2 or not len(A):
                 return
             A = A.copy()
-            if b is not None and alpha > 0 and len(b[0]) == len(la):
+            # (line for line, as the core's since 2026-11-22: a line that jumped - a thing gone round the screen's edge - stands in
+            #  a's place until halfway and in b's after, the others still move; and the two frames need not have as many lines
+            #  (the beam's path is cut a little differently each frame): the lines alike from the front and from the back move,
+            #  those between stand. One such line took the in-between away from the whole picture before - that refresh every
+            #  moving thing stood at a game frame's place: gaps and pairs in the trails)
+            if b is not None and alpha > 0:
                 B = _np.asarray(arr(b[0]), dtype=_np.float64)
-                if (_np.abs(B[:, :4] - A[:, :4]).max() < self.SMOOTH_MATCH) and (B[:, 4] == A[:, 4]).all():
-                    A[:, :4] += (B[:, :4] - A[:, :4]) * alpha
+                if B.ndim == 2 and len(B) and B.shape[1] == A.shape[1]:
+                    M = self.SMOOTH_MATCH
+                    same = lambda X, Y: (_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
+                    if len(B) == len(A):
+                        ok = same(A, B); R = A.copy()
+                        R[ok, :4] += (B[ok, :4] - A[ok, :4]) * alpha
+                        if alpha >= 0.5: R[~ok] = B[~ok]
+                        A = R
+                    else:
+                        m = min(len(A), len(B)); okp = same(A[:m], B[:m]); bad = _np.nonzero(~okp)[0]
+                        p = int(bad[0]) if len(bad) else m
+                        oks = same(A[len(A) - m:], B[len(B) - m:])[::-1]; bad = _np.nonzero(~oks)[0]
+                        s_ = min(int(bad[0]) if len(bad) else m, m - p)
+                        head = A[:p].copy(); head[:, :4] += (B[:p, :4] - A[:p, :4]) * alpha
+                        tail = A[len(A) - s_:].copy()
+                        if s_: tail[:, :4] += (B[len(B) - s_:, :4] - tail[:, :4]) * alpha
+                        mid = (A[p:len(A) - s_] if alpha < 0.5 else B[p:len(B) - s_]).copy()
+                        A = _np.concatenate([head, mid, tail])
             A[:, 5] *= k; A[:, 6] *= k
             lines = A
         else:
@@ -9174,6 +9196,25 @@ class App:
         # moment: the beam draws only when the game draws - in between, the 50 Hz hum went through all its phase, and the
         # in-between pictures swept the whole picture with it, a 10 Hz shake (the owner, 2026-10-29); the lines' places
         # are still in between)
+        # (the afterglow starts only where the game itself drew - vecrender.py _present, ex_mode: once a game frame, as a frame
+        #  leaves the two shown, its own lines; a whole step behind the moving line by then)
+        if _np is not None and hasattr(r, 'E'):
+            r.ex_mode = True
+            if popped:
+                try:
+                    pv = popped[-1]; Ps = []
+                    for q_ in popped[-3:]:               # (a late refresh: more than one - each one's lines)
+                        pl_ = q_[0]; pl_ = pl_.np if getattr(pl_, 'np', None) is not None and len(pl_.np) == len(pl_) else pl_
+                        X_ = _np.asarray(pl_, dtype=_np.float64)
+                        if X_.ndim == 2 and len(X_) and (not Ps or X_.shape[1] == Ps[0].shape[1]): Ps.append(X_)
+                    P_ = _np.concatenate(Ps) if Ps else _np.zeros((0, 7))
+                    if P_.ndim == 2 and len(P_):
+                        P_ = P_.copy(); P_[:, 5] *= k; P_[:, 6] *= k
+                        f0 = r.frame_t0; r.frame_t0 = pv[2]
+                        try: r.ex_built = r._build(P_, load=False)
+                        finally: r.frame_t0 = f0
+                except Exception as e:   # noqa
+                    if not getattr(self, '_ex_said', False): self._ex_said = True; print('smooth afterglow: %s' % e)
         r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
     def pen_live(self):
         """the light pen in port 2, the game running: the mouse is the pen"""
@@ -9501,6 +9542,7 @@ class App:
             r.port1 = self.port1_state()
             r.browser = self.browser_state()
             r.hint = self.hint_state()
+            r.ex_mode = False; r.ex_built = None       # (Smooth motion's afterglow: set by smooth_frame)
             if smooth and not self.run.paused:
                 self.smooth_frame(r, T)
             flush, self.flush = getattr(self, 'flush', False), False

@@ -296,6 +296,7 @@ TOPICS = [
 ('item', 'Afterglow smoothing', "Off by default. On: the fading glow is averaged over a small spot, so the "
          "trail becomes one smooth gradient. Only the fading light; the lines being drawn stay sharp."),
 ('item', 'Smoothing width...', "How wide that spot is when smoothing is on, 0 to 1 (0 by default: turn it up after switching smoothing on)."),
+('item', 'Game list', "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder."),
 ('item', 'Colours', "The deck's, the menus' and the windows' colour: a deeper blue, or green. From the next start."),
 ('item', 'Look', "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen."),
 ('item', 'White balance (colour temperature)', "The middle is neutral: the lines and their glow the screen's own "

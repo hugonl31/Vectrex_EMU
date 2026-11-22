@@ -762,6 +762,7 @@ class Deck:
                    ((0, 'Normal'), (90, '90 right'), (180, '180'), (270, '90 left'))]
             return [('group', 'THE SCREEN'), ('choice', 'Colours', [(n, (lambda v=v: V.PALETTE_SET == v), (lambda v=v: a.set_palette(v))) for n, v in (('Blue', 'blue'), ('Green', 'green'))], None),
                     ('in', [('note', lambda: 'from the next start' if V.PALETTE_SET != V.palette.NAME else '')]),
+                    ('choice', 'Game list', [(n, (lambda v=v: bool(getattr(a, 'lib_on', True)) == v), (lambda v=v: a.set_lib(v))) for n, v in (('Library', True), ('Simple', False))], None),
                     ('choice', 'Screen', rates, None),
                     ('in', [('check', 'Smooth motion', lambda: a.smooth,
                              a.toggle_smooth, lambda: not a.vrr)]),

@@ -1038,6 +1038,7 @@ BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every pi
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
                                         #  the faint light - the lines' skirts, the glass's glow - bluer, the bright core the tube's white)
+LIB_ART = 0.7                           # (the library's pictures 30 % less bright - the owner, 2026-11-22: the eyes stay used to the vectors' level)
 BL_GAIN = 1.5; BL_WIDTH = 1.3             # (the Bright look: blook)
 BT_SPOT = 1.25                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
                                             #  2026-11-22, the owner: 1.85 matched the photos - their lens' blur with it; the BIOS's small text
@@ -3888,8 +3889,7 @@ class GLBloomRenderer(GLRenderer):
         if getattr(self, 'D', None) and getattr(self, '_win_wh', None) and (abs(ps - getattr(self, '_ps_alloc', 1.0)) > 1e-6
                                                                           or bool(getattr(self, 'line_half', False)) != getattr(self, '_lh_alloc', False)):
             self.resize(*self._win_wh)                    # (Quality changed the phosphor's size: new targets)
-        if getattr(self, 'frozen', False) and not flush and self.show_last():   # (paused: the picture as it was shown, nothing drawn anew)
-            return None
+        self._showing_last = bool(getattr(self, 'frozen', False) and not flush and getattr(self, 'last_ok', False))   # (paused: see put_last)
         self._t_pres = time.perf_counter()
         self._q_cur = self._gpu_begin()
         try:
@@ -3906,7 +3906,10 @@ class GLBloomRenderer(GLRenderer):
             ms = 1000.0 * (time.perf_counter() - t)
             self.cpu_ms = ms if getattr(self, 'cpu_ms', None) is None else 0.9 * self.cpu_ms + 0.1 * ms
             self._t_pres = None
-        if not getattr(self, '_showing_last', False):
+        if getattr(self, '_showing_last', False):
+            self.put_last(getattr(self, 'frozen_box', None))   # (paused: the picture's part as it was shown, over what was drawn anew)
+            self.keep_picture('SHOWN')                          # (what is on the screen now - the snapshot's; LAST stays the tube's picture)
+        else:
             self.keep_picture()
         return super()._swap()
 
@@ -3915,50 +3918,51 @@ class GLBloomRenderer(GLRenderer):
     # the lines' fresh light, their bloom and the glass's glow are in the frames just drawn, and those are gone a moment later
     # (paused, the bloom faded away; a snapshot came some frames after the key). So every finished picture is copied into
     # LAST before it is shown (the window's size; an HDR picture as half floats).
-    def keep_picture(self):
+    def keep_picture(self, name='LAST'):
         try:
             gl = self.gl
             w, h = getattr(self, 'real_size', self.size)
             key = (w, h, bool(getattr(self, 'hdr', None)))
-            if getattr(self, '_last_key', None) != key:
-                old = getattr(self, 'LAST', None)
+            if getattr(self, '_key_' + name, None) != key:
+                old = getattr(self, name, None)
                 if old:
                     gl.glDeleteTextures(1, ctypes.byref(ctypes.c_uint(old[0]))); self.DelFB(1, ctypes.byref(ctypes.c_uint(old[1])))
-                self.LAST = self._target(w, h); self._last_key = key
+                setattr(self, name, self._target(w, h)); setattr(self, '_key_' + name, key)
                 if not hasattr(gl.glCopyTexSubImage2D, '_set'):
                     gl.glCopyTexSubImage2D.argtypes = [ctypes.c_uint] + [ctypes.c_int] * 7
             self.BindFB(GL_FRAMEBUFFER, 0)
-            self.ActiveTexture(0x84C0); gl.glBindTexture(GL_TEXTURE_2D, self.LAST[0])
+            self.ActiveTexture(0x84C0); gl.glBindTexture(GL_TEXTURE_2D, getattr(self, name)[0])
             gl.glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h)
             gl.glBindTexture(GL_TEXTURE_2D, 0)
-            self.last_ok = True
+            if name == 'LAST': self.last_ok = True
+            self.shown = getattr(self, name)
         except Exception as e:   # noqa
             if not getattr(self, '_last_said', False):
                 self._last_said = True; print('the last picture not kept (%s)' % e)
             self.last_ok = False
 
-    def show_last(self):
-        """the picture last shown, shown again as it is (paused): True if it was"""
-        if not (getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
-            return False
+    def put_last(self, box):
+        """paused: the part box (x, y from the bottom left, w, h) of the picture last shown put over the window's - the tube's
+        picture stands as it was, the deck round it is drawn anew (PAUSED, the knob); no box: nothing (the ROM browser lies over it)"""
+        if not (box and getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
+            return
         gl = self.gl
         w, h = getattr(self, 'real_size', self.size)
         self.BindFB(GL_FRAMEBUFFER, 0); gl.glViewport(0, 0, w, h)
         self.UseProgram(0); gl.glDisable(GL_BLEND); self.ActiveTexture(0x84C0)
-        self._quad(self.LAST[0])
-        self._showing_last = True
+        gl.glEnable(0x0C11); gl.glScissor(int(box[0]), int(box[1]), int(box[2]), int(box[3]))   # (GL_SCISSOR_TEST)
         try:
-            self._swap()
+            self._quad(self.LAST[0])
         finally:
-            self._showing_last = False
-        return True
+            gl.glDisable(0x0C11)
 
     def read_last(self, box):
         """the picture last shown, the part box (x, y from the bottom left, w, h): bgra rows, bottom row first - None if not kept"""
-        if not (getattr(self, 'last_ok', False) and getattr(self, 'LAST', None)):
+        sh = getattr(self, 'shown', None)
+        if not (getattr(self, 'last_ok', False) and sh):
             return None
         try:
-            px = self.read_px(self.LAST[1], box)
+            px = self.read_px(sh[1], box)
         finally:
             self.BindFB(GL_FRAMEBUFFER, 0)
         return px
@@ -4482,9 +4486,120 @@ class GLBloomRenderer(GLRenderer):
         pts = [(x0 + 0.25 * w - 0.25 * w * (i / 8.0), y0 + 0.5 * h + 0.3 * h * math.sin(math.pi * i / 8.0)) for i in range(9)]
         self._lines([(a[0], a[1], b[0], b[1]) for a, b in zip(pts, pts[1:])])
 
+    def _library(self, b):
+        """the game library over the picture's place (library.py: as the phone apps') - a head with the title, the looks,
+        the tiles a row and the categories; below it the tiles, each its picture (a texture, made here from what the
+        library's reader hands over in b['new']) and its name, the chosen one framed bright"""
+        gl = self.gl
+        g = b['g']; x0, y0, x1, y1 = g['rect']; u, k = g['u'], g['k']
+        H = lambda c: palette.rgb(tuple(int(c[i:i + 2], 16) / 255.0 for i in (1, 3, 5)))
+        hi, hi2, dim, fg = H('#88ccbb'), H('#bbffee'), H('#7f978b'), H('#c8d6cf')
+        BG_, TOP, PAN, BODY_, SEL_, EDGE_, EDGE2_ = (H(c) for c in ('#05080a', '#0a1210', '#0b1511', '#0f1c17', '#24443a', '#1d3329', '#2f5544'))
+        tints = {'UVMC2': (H('#66a4b8'), H('#8ac8dc')), 'PiTrex': (H('#aa9c88'), H('#d0c0aa'))}
+        def fill(ax0, ay0, ax1, ay1, c, a=1.0):
+            gl.glColor4f(*c, a); gl.glBegin(GL_QUADS)
+            for x, y in ((ax0, ay0), (ax1, ay0), (ax1, ay1), (ax0, ay1)):
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+        def frame(ax0, ay0, ax1, ay1, c):
+            gl.glColor4f(*c, 1.0); self._rect(ax0, ay0, ax1, ay1)
+        def text(t, x, y, kk, c):
+            gl.glLineWidth(max(1.0, kk * 0.42)); self._text_row([(t, c)], x, y, kk)
+        def ctext(t, cx, cy, kk, c):
+            text(t, cx - len(t) * 3.0 * kk, cy - 3.0 * kk, kk, c)
+        def button(box, word, on, kk=None):
+            kk = kk or k
+            fill(box[0], box[1], box[2], box[3], SEL_ if on else BODY_); gl.glLineWidth(1.0); frame(box[0], box[1], box[2], box[3], EDGE2_)
+            ctext(word, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2, kk, hi2 if on else hi)
+        # the pictures handed over: textures (kept while the program runs - a few hundred small ones)
+        tex = self.__dict__.setdefault('_lib_tex', {})
+        for p, (w, h, px) in (b.get('new') or {}).items():
+            try:
+                t = ctypes.c_uint(); gl.glGenTextures(1, ctypes.byref(t)); gl.glBindTexture(GL_TEXTURE_2D, t.value)
+                for kk_, v in ((GL_TEX_MIN, GL_LINEAR), (GL_TEX_MAG, GL_LINEAR), (GL_WRAP_S, GL_CLAMP_EDGE), (GL_WRAP_T, GL_CLAMP_EDGE)):
+                    gl.glTexParameteri(GL_TEXTURE_2D, kk_, v)
+                gl.glPixelStorei(0x0CF5, 1)                             # (GL_UNPACK_ALIGNMENT)
+                gl.glTexImage2D(GL_TEXTURE_2D, 0, 0x8058, w, h, 0, GL_RGBA, 0x1401, px)
+                tex[p] = (t.value, w, h)
+            except Exception as e:   # noqa
+                print('library: picture not shown (%s)' % e)
+        gl.glBindTexture(GL_TEXTURE_2D, 0)
+        fill(x0, y0, x1, y1, BG_)
+        fill(x0, y0, x1, g['head'], TOP)
+        gl.glLineWidth(1.0); gl.glColor4f(*EDGE_, 1.0); self._lines([(x0, g['head'], x1, g['head'])])
+        text(b['title'], g['title'][0], g['title'][1], 1.25 * k, hi)
+        cb = g['close']; button(cb, 'X', False)
+        for box, word, v in g['looks']:
+            button(box, word, v == b['look'], 0.85 * k)
+        text('PER ROW', g['per'][0], g['per'][1], 0.8 * k, dim)
+        for box, word, v in g['cols']:
+            button(box, word, v == b['cols'], 0.8 * k)
+        for box, word, v in g['cats']:
+            button(box, word, v == b['cat'], 0.85 * k)
+        text(b['help'], g['help'][0], g['help'][1], 0.6 * k, dim)
+        # the tiles: cut at the grid's edges
+        gx0, gy0, gx1, gy1 = g['grid']
+        rh = getattr(self, 'real_size', self.size)[1]
+        gl.glEnable(0x0C11); gl.glScissor(int(x0), int(rh - gy1), int(x1 - x0), int(gy1 - gy0))
+        try:
+            if not b['tiles']:
+                for i, line in enumerate(b['empty'].split('\n')):
+                    text(line, gx0 + u, gy0 + (1.0 + 1.8 * i) * u, k, dim)
+            for t in b['tiles']:
+                tx, ty, tw, th = t['x'], t['y'], t['w'], t['h']
+                if b['text_only']:
+                    rowh = g['tile'][3]
+                    if t['sel']: fill(tx, ty, tx + tw, ty + rowh - 2, SEL_)
+                    # (UVMC2 games and PiTrex programs tinted, the PiTrex itself with its raspberry - as the simple list)
+                    tc = tints.get(t['kind'])
+                    c_ = (hi2 if t['sel'] else hi) if t.get('boot') else tc[1 if t['sel'] else 0] if tc else hi2 if t['sel'] else fg
+                    ty_ = ty + (rowh - 6 * k) / 2 - 1; ind = 2.4 * 6 * k if t.get('boot') else 0.0
+                    text(t['name'][:int(tw / (6 * k)) - 5].upper(), tx + 0.8 * u + ind, ty_, k, c_)
+                    if t.get('boot'):
+                        P_ = lambda a_, b_: (tx + 0.8 * u + a_ * k, ty_ + b_ * k)
+                        pts = [P_(5 + 2.6 * math.cos(2 * math.pi * q / 14), 3.6 + 2.4 * math.sin(2 * math.pi * q / 14)) for q in range(15)]
+                        seg = [(a_[0], a_[1], b_[0], b_[1]) for a_, b_ in zip(pts, pts[1:])]
+                        for (ax, ay), (bx_, by_) in (((5, 1.2), (2.8, -0.2)), ((5, 1.2), (7.2, -0.2)), ((2.8, -0.2), (4.2, 0.6)),
+                                                     ((7.2, -0.2), (5.8, 0.6)), ((3.6, 3.4), (6.4, 3.4)), ((5, 1.6), (5, 5.6))):
+                            seg.append((*P_(ax, ay), *P_(bx_, by_)))
+                        gl.glColor4f(*c_, 1.0); self._lines(seg)
+                    continue
+                im = tex.get(t['img']) if t['img'] else None
+                if im:
+                    iw, ih = im[1], im[2]; sc = min(tw / float(iw), th / float(ih)); dw, dh = iw * sc, ih * sc
+                    ix, iy = tx + (tw - dw) / 2, ty + (th - dh) / 2
+                    gl.glDisable(GL_BLEND)                               # (the picture as it is: the PNG reader gives a picture without alpha an overlay's 51 - it showed dim)
+                    gl.glEnable(GL_TEXTURE_2D); gl.glBindTexture(GL_TEXTURE_2D, im[0]); gl.glColor4f(LIB_ART, LIB_ART, LIB_ART, 1.0)
+                    gl.glBegin(GL_QUADS)
+                    for (a_, c_), (px_, py_) in (((0, 0), (ix, iy)), ((1, 0), (ix + dw, iy)), ((1, 1), (ix + dw, iy + dh)), ((0, 1), (ix, iy + dh))):
+                        gl.glTexCoord2f(a_, c_); gl.glVertex2f(px_, py_)
+                    gl.glEnd()
+                    gl.glBindTexture(GL_TEXTURE_2D, 0); gl.glDisable(GL_TEXTURE_2D); gl.glEnable(GL_BLEND)
+                else:                                                   # (no picture in this look, or not read yet: the name's tile)
+                    fill(tx, ty, tx + tw, ty + th, PAN); gl.glLineWidth(1.0); frame(tx, ty, tx + tw, ty + th, EDGE2_)
+                    words = t['name'].upper().split(); kk = min(k, tw / (6.0 * 12)); per = max(4, int(tw / (6 * kk)) - 2); lines = ['']
+                    for w_ in words:
+                        if lines[-1] and len(lines[-1]) + 1 + len(w_) > per: lines.append('')
+                        lines[-1] = (lines[-1] + ' ' + w_).strip()[:per]
+                    for i, ln in enumerate(lines[:4]):
+                        ctext(ln, tx + tw / 2, ty + th / 2 + (i - (min(len(lines), 4) - 1) / 2.0) * 9 * kk, kk, hi if not t['img'] else dim)
+                if t['sel']:
+                    gl.glLineWidth(max(2.0, 0.22 * u)); frame(tx - 0.2 * u, ty - 0.2 * u, tx + tw + 0.2 * u, ty + th + 0.2 * u, hi2)
+                kn = min(0.8 * k, tw / (6.0 * 16)); nm = t['name'].upper()[:max(3, int(tw / (6 * kn)))]
+                ctext(nm, tx + tw / 2, ty + th + 1.2 * u, kn, hi2 if t['sel'] else fg)
+        finally:
+            gl.glDisable(0x0C11)
+        sc_, tot = b['scroll']                                           # (how far down: a bar at the right edge)
+        if tot > (gy1 - gy0) + 1:
+            bh = (gy1 - gy0) * (gy1 - gy0) / tot; by = gy0 + (gy1 - gy0 - bh) * sc_ / max(1.0, tot - (gy1 - gy0))
+            fill(x1 - 0.5 * u, by, x1 - 0.2 * u, by + bh, EDGE2_)
+        gl.glLineWidth(1.0); frame(x0, y0, x1, y1, EDGE_)
+
     def _browser(self, b):
         """the ROM browser over the picture, in the dark style of the windows (Config, Controls, Help): a title
         band, the list on the strip colour, the chosen row a filled bar, filled buttons, the keys in a foot band"""
+        if b.get('lib'):
+            return self._library(b)
         gl = self.gl
         x0, y0, x1, y1 = b['rect']
         H = lambda c: palette.rgb(tuple(int(c[i:i + 2], 16) / 255.0 for i in (1, 3, 5)))

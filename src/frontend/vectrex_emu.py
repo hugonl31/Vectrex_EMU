@@ -31,6 +31,7 @@ import argparse, ctypes, ctypes.wintypes as W, json, math, os, queue, random, sh
 import sys, threading, time, datetime, collections, re, gc, platform
 import tkinter as tk
 import palette
+import library
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 APP_LOG = collections.deque(maxlen=3000)                # (the program's own messages and errors: the debug report's
 T_START = time.time()                                   #  app_log.txt - the exe has no console, they went nowhere)
@@ -2752,6 +2753,8 @@ class App:
             conf = {}
         self.full_scale = conf.get('full_scale')
         self.recent = [g for g in conf.get('recent', []) if isinstance(g, str)][:10]
+        self.lib_on = bool(conf.get('lib_on', True)); self.lib = None   # (Display > Game list: the library, or the simple list)
+        self.lib_keep = {k_: conf[k_] for k_ in ('lib_look', 'lib_cols', 'lib_cat') if k_ in conf}
         self.note_recent(self.args.rom)
         self.deck_pos = tuple(conf['deck_pos']) if isinstance(conf.get('deck_pos'), list) and len(conf['deck_pos']) == 2 else None
         self.ctl_pos = tuple(conf['ctl_pos']) if isinstance(conf.get('ctl_pos'), list) and len(conf['ctl_pos']) == 2 else None
@@ -2785,9 +2788,17 @@ class App:
         self.screen.bind('<ButtonRelease-2>', lambda e: self.mouse_button(2, False), add='+')
         self.screen.bind('<Double-Button-1>', self.browse_double)
         vis = lambda: self.browser_geom()[3]
+        LB = self.lib_mode                                      # (the library: a grid - library.py)
         for key, f in (('<Up>', lambda: self.browse(-1)), ('<Down>', lambda: self.browse(1)),
-                       ('<Left>', lambda: self.browse(-vis())), ('<Right>', lambda: self.browse(vis())),
-                       ('<Return>', self.browse_load), ('<BackSpace>', self.browser_back)):
+                       ('<Left>', lambda: self.lib.move(-1, 0) if LB() else self.browse(-vis())),
+                       ('<Right>', lambda: self.lib.move(1, 0) if LB() else self.browse(vis())),
+                       ('<Return>', self.browse_load), ('<BackSpace>', self.browser_back),
+                       ('<Prior>', lambda: self.lib.page(-1) if LB() else self.browse(-vis())),
+                       ('<Next>', lambda: self.lib.page(1) if LB() else self.browse(vis())),
+                       ('<Home>', lambda: self.lib.home() if LB() else self.browse(-10 ** 6)),
+                       ('<End>', lambda: self.lib.home(True) if LB() else self.browse(10 ** 6)),
+                       ('<slash>', lambda: self.lib.focus_search() if LB() else None),
+                       ('<Tab>', lambda: self.lib.next_cat() if LB() else None)):
             self.root.bind(key, lambda e, f=f: (f(), 'break')[1] if self.browser else None)
         self.screen.bind('<Button-1>', self.knob_click)
         self.screen.bind('<Motion>', self.knob_motion, add='+')
@@ -4273,6 +4284,11 @@ class App:
         t.bind('<Escape>', lambda e: t.destroy())
         t.update_idletasks()
         deck.place(t, 'speech_rom', self, lambda: deck.no_close_button(t))
+    def set_lib(self, on):
+        """Display > Game list: the library (as the phone apps') or the simple list"""
+        if self.browser:
+            self.close_browser()
+        self.lib_on = bool(on); self.save_settings(); self.show_look('game list: ' + ('library' if on else 'simple list'))
     def set_palette(self, v):
         """Display > Colours: 'blue' or 'green' (palette.py) - every window is made in it, so from the next start"""
         global PALETTE_SET
@@ -4729,13 +4745,31 @@ class App:
     def browser_dir(self, d, select=None):
         """show folder d in the ROM browser; select: the path to choose (else the first entry after BACK)"""
         b = self.browser
+        if b and b.get('lib'):
+            return self.lib.scan()
         b['dir'] = d; b['roms'] = self.scan_roms(d); b['top'] = 0
         hit = [i for i, (_, p, _k) in enumerate(b['roms']) if select and os.path.abspath(p) == os.path.abspath(select)]
         b['sel'] = hit[0] if hit else (1 if b['roms'] and b['roms'][0][2] == 'up' and len(b['roms']) > 1 else 0)
         self.scroll(b['sel'] - 3)
+    def lib_mode(self):
+        b = self.browser
+        return bool(b and b.get('lib'))
+    def open_library(self):
+        """L, the deck's cartridge: the game library over the picture, as the phone apps' (library.py; Display > Game list)"""
+        if getattr(self, 'lib', None) is None:
+            self.lib = library.Library(self, sys.modules[__name__])
+        cur = os.path.abspath(self.args.rom) if self.args.rom else None
+        self.browser = self.lib.open(cur)
+        self.inp.block = True
+        self.browser_paused = False
+        if self.run.power and not self.run.paused and not getattr(self, 'net_game', None):
+            self.set_paused(True); self.browser_paused = True
+        self.root.after(30, lambda bb=self.browser: self.browser_pad(bb))
     def open_browser(self):
         if not self.ren:                                        # (no OpenGL: the browser is drawn in the picture -
             return self.open_rom()                              #  the file dialog instead, GitHub issue 3)
+        if getattr(self, 'lib_on', True) and not getattr(self, 'rot', 0) and hasattr(self.ren, 'real_size'):
+            return self.open_library()
         top = os.path.join(ROOT, 'roms')
         cur = os.path.abspath(self.args.rom) if self.args.rom else None
         d = top                                                 # (the folder of the ROM in the slot, if it is in roms)
@@ -4788,7 +4822,8 @@ class App:
                 b['pad_t'] = now + (0.08 if d[0] else 0.25); step = True
             if step:
                 b['pad'] = True
-                self.browse(d[0] if d[0] else d[1] * self.browser_geom()[3])
+                if b.get('lib'): self.lib.move(d[1], d[0])
+                else: self.browse(d[0] if d[0] else d[1] * self.browser_geom()[3])
         else:
             b['pad_d'] = None
         new = btn & ~b.get('pad_btn', btn)                      # (pressed now: held when it opened does not count)
@@ -4798,6 +4833,9 @@ class App:
             self.browse_load()
             if not self.browser:
                 return self.hold_until_released()
+        elif b.get('lib') and new & 5:                          # (the library: button 3 goes back, as the apps; button 1 too, as the list)
+            self.close_browser()
+            return self.hold_until_released()
         elif new & 1:                                           # button 1: the roms folder; there: close
             b['pad'] = True
             top = os.path.join(ROOT, 'roms')
@@ -4842,12 +4880,16 @@ class App:
     def browser_back(self, e=None):
         """Backspace / BACK: the folder above (the folder you came from chosen)"""
         b = self.browser
+        if b and b.get('lib'):
+            return
         if b and b.get('stack'):                                # (the way you came: an alias's folder lies elsewhere)
             return self.browser_dir(b['stack'].pop(), b['dir'])
         if b and os.path.abspath(b['dir']) != os.path.abspath(os.path.join(ROOT, 'roms')):
             self.browser_dir(os.path.dirname(b['dir']), b['dir'])
     def close_browser(self):
         b = self.browser
+        if b and b.get('lib'):
+            self.lib.closed()
         if b and b.get('dir'):                                  # (it opens there again: the folder, the way back, the row)
             sel = b['roms'][b['sel']][1] if b['roms'] and 0 <= b['sel'] < len(b['roms']) else None
             self.browse_last = (b['dir'], [x for x in b.get('stack', []) if isinstance(x, str)], sel, b.get('top', 0))
@@ -4876,6 +4918,8 @@ class App:
         b = self.browser
         if not (b and self.ren and hasattr(self.ren, 'map')):
             return None
+        if b.get('lib'):
+            return self.lib.state()
         rect, lst, plug, n, rh, k, up, dn, cl = self.browser_geom()
         rel = os.path.relpath(b['dir'], os.path.join(ROOT, 'roms'))
         where = 'ROMS' if rel == '.' else 'ROMS / RECENT' if rel == ':recent' else 'ROMS / ' + rel.replace(os.sep, ' / ').upper()
@@ -4890,6 +4934,8 @@ class App:
     def browse(self, d):
         """move the choice by d rows (and keep it in view)"""
         b = self.browser
+        if b and b.get('lib'):
+            return self.lib.move(0, d)
         if b and b['roms']:
             vis = self.browser_geom()[3]
             b['sel'] = max(0, min(len(b['roms']) - 1, b['sel'] + d))
@@ -4898,6 +4944,8 @@ class App:
     def scroll(self, d):
         """scroll the list by d rows"""
         b = self.browser
+        if b and b.get('lib'):
+            return self.lib.wheel(d)
         if b:
             vis = self.browser_geom()[3]
             b['top'] = max(0, min(max(0, len(b['roms']) - vis), b['top'] + d))
@@ -4908,6 +4956,8 @@ class App:
             return j if j < len(self.browser['roms']) else None
         return None
     def browser_click(self, e):
+        if self.lib_mode():
+            return self.lib.click(e)
         rect, lst, plug, n, rh, k, up, dn, cl = self.browser_geom()
         inside = lambda bx: bx[0] <= e.x <= bx[2] and bx[1] <= e.y <= bx[3]
         if plug[0] - 6 * 6 * k <= e.x <= plug[2] and plug[1] <= e.y <= plug[3]:
@@ -4924,12 +4974,14 @@ class App:
             return self.close_browser()
     def browse_double(self, e):
         e = self.px_event(e)
-        if self.browser and self.browser_row(e) is not None:
+        if self.browser and not self.lib_mode() and self.browser_row(e) is not None:
             self.browser['sel'] = self.browser_row(e)
             self.browse_load()
     def browse_load(self):
         """plug the chosen cartridge in (a power cycle with it); a folder: open it; BACK: the folder above"""
         b = self.browser
+        if b and b.get('lib'):
+            return self.lib.load()
         if b and b['roms']:
             name, path, kind = b['roms'][b['sel']]
             if kind == 'up':
@@ -8828,6 +8880,11 @@ class App:
         d['quality'] = self.current_profile() if self.ren else 'ultra'
         d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)
         d['palette'] = PALETTE_SET
+        d['lib_on'] = bool(getattr(self, 'lib_on', True))
+        if getattr(self, 'lib', None) is not None:
+            self.lib.save(d)
+        else:
+            d.update(getattr(self, 'lib_keep', {}))
         d['settings_epoch'] = SETTINGS_EPOCH
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
@@ -9445,6 +9502,7 @@ class App:
                 self.sm_buf = []
             self.rec_tick()                                     # (Record: the part recorded, the window's size)
             r.frozen = bool(self.run.paused and self.run.power and not getattr(self, 'snap_job', None))   # (paused: the picture last shown stays - vecrender keep_picture)
+            r.frozen_box = None if (not r.frozen or self.browser or getattr(r, 'rot', 0)) else self.rec_box(False)   # (its tube part; the ROM browser lies over it: all drawn anew)
             r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
             r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
             self.snap_tick()

@@ -7,6 +7,8 @@ cd /d "%~dp0"
 set PY=python
 if exist "C:\Program Files\Python312\python.exe" set PY="C:\Program Files\Python312\python.exe"
 if not exist core\vectrex_core.exe (call "%~dp0build_core.bat" || exit /b 1)
+rem (the renderer's line build in C, inside the exe as native\vxbuild.dll: vecrender.py loads it; without it the numpy way)
+if not exist src\frontend\native\vxbuild.dll (call "%~dp0src\frontend\native\build_win.bat" || exit /b 1)
 %PY% -c "import PyInstaller" 2>nul || (%PY% -m pip install --user pyinstaller || exit /b 1)
 rem the core and the power sounds go inside the exe; the BIOS (system\bios.bin) and Mine Storm's overlay
 rem (the overlays) sit next to it, as on Mac and Linux
@@ -24,7 +26,7 @@ rem (left out: libraries this PC may have that the release build does not - GitH
 rem  numpy, and the code uses Pillow only when it is there - so a local exe holds what the release holds)
 %PY% -m PyInstaller --noconfirm --onefile --windowed --name Vectrex_EMU --distpath "%OUT%" --workpath build\pyi --specpath build --paths src\frontend ^
   --exclude-module PIL --exclude-module yaml --exclude-module psutil --exclude-module charset_normalizer --exclude-module requests ^
-  --add-binary "%D%core\vectrex_core.exe;core" ^
+  --add-binary "%D%core\vectrex_core.exe;core" --add-binary "%D%src\frontend\native\vxbuild.dll;native" ^
   --add-data "%D%sounds\on.wav;sounds" --add-data "%D%sounds\off.wav;sounds" --add-data "%D%icons\vectrex_emu.png;icons" --add-data "%D%VERSION;." --add-data "%D%build\BUILD_INFO;." ^
   --icon "%D%icons\vectrex_emu.ico" src\frontend\vectrex_emu.py || exit /b 1
 rem (ffmpeg for Record > videos and snapshots: next to the exe in system, not inside it - one 90 MB file unpacked

@@ -1034,6 +1034,50 @@ def bt2_prepare(L, col=None):
     if not out_rows: return L[:0], np.zeros(0), (col[:0] if col is not None else None)
     src = np.concatenate(out_src)
     return np.concatenate(out_rows), np.concatenate(out_light), (col[src] if col is not None else None)
+# The line build in C (native/vxbuild.c -> vxbuild.dll, native\build_win.bat): _build_np's beam trace - bt2_prepare, the
+# tube's map, the vertex arrays - piece by piece, the same arithmetic (a picture of ~1700 pieces: 2.6 ms in numpy).
+# Loaded once, when the first picture is built; not there, not loadable or VX_NO_NATIVE=1: the numpy way (macOS and
+# Linux have no library yet). Its tables and constants are handed over from here
+_vxb = None                                 # (None: not tried yet; False: the numpy way)
+_vxb_lock = None
+def _vxb_off(why):
+    """the C line build switched off, said once"""
+    global _vxb
+    if _vxb is not False: print('line build: numpy (%s)' % why)
+    _vxb = False
+def _vxb_get():
+    """the C line build's library with its tables set, or False"""
+    global _vxb, _vxb_lock
+    if _vxb is not None:
+        return _vxb
+    if _np is None or os.environ.get('VX_NO_NATIVE', '') not in ('', '0'):
+        _vxb = False
+        return _vxb
+    try:
+        import threading
+        name = 'vxbuild.dll' if IS_WIN else ('libvxbuild.dylib' if sys.platform == 'darwin' else 'libvxbuild.so')
+        path = os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))), 'native', name)
+        if not os.path.exists(path):
+            raise OSError('no %s' % name)
+        lib = ctypes.CDLL(path)
+        vp, ci = ctypes.c_void_p, ctypes.c_int
+        lib.vxb_tables.argtypes = [vp, ci, vp, vp, ci, vp, ci, vp, ci, vp, vp, vp, ci, ci]; lib.vxb_tables.restype = ci
+        lib.vxb_pieces.argtypes = [vp, ci, ci, vp]; lib.vxb_pieces.restype = ci
+        lib.vxb_load.argtypes = []; lib.vxb_load.restype = vp
+        lib.vxb_fill.argtypes = [vp] * 7 + [ctypes.POINTER(ctypes.c_double)]; lib.vxb_fill.restype = ci
+        f8 = lambda a: _np.ascontiguousarray(a, dtype=_np.float64)
+        tl, kx, ky = f8(TUBE_LIGHT), f8([a_ for a_, b_ in BT2_TLK]), f8([b_ for a_, b_ in BT2_TLK])
+        d, z, l_, tx, ty = f8(BT2_D), f8(BT2_Z), f8(BT2_L), f8(tubemap.DX), f8(tubemap.DY)
+        p = lambda a: a.ctypes.data
+        if lib.vxb_tables(p(tl), len(tl), p(kx), p(ky), len(kx), p(d), len(d), p(z), len(z), p(l_), p(tx), p(ty),
+                          tubemap.NU, tubemap.NV) != _VXB_NP:
+            raise ValueError('tables')
+        _vxb_lock = threading.Lock()
+        _vxb = lib
+    except Exception as e:   # noqa
+        _vxb_off(e)
+    return _vxb
+_VXB_NP = 98                              # (the parameters a picture: vxbuild.c's P_COUNT, the order in Renderer._build_c)
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
@@ -3203,6 +3247,10 @@ class GLBloomRenderer(GLRenderer):
                 getattr(self, a, d) != d for a, d in ((() if _bt else (('crt_sx', 1.0), ('crt_sy', 1.0))) + (('crt_skew', 0.0), ('crt_shift', 0.0),
                                                       ('crt_garble', 0.0), ('crt_warp', 0.0)))):
             try:                                           # (the tube switching on or off - collapse, garble: below)
+                if _bt and _vxb is not False:              # (the beam trace: in C when its library is there)
+                    b = self._build_c(lines, gain, load)
+                    if b is not None:
+                        return b
                 return self._build_np(lines, gain, load)
             except (ValueError, TypeError, IndexError):
                 pass                                       # (lines of other shapes: the per-line way)
@@ -3210,6 +3258,78 @@ class GLBloomRenderer(GLRenderer):
             lines = [tuple(r[:4]) + (int(r[4]),) + tuple(r[5:]) for r in lines.tolist()]   #  the brightness a whole number)
         if _bt: gain = gain * 0.0035                       # (beam trace, the tube collapsing: these are screen values, the picture takes light - about the same look)
         return self._build_py(lines, gain, load)
+
+    def _build_c(self, lines, gain=1.0, load=True):
+        """_build_np's beam trace in C (native/vxbuild.c: the same arithmetic piece by piece, the same arrays back).
+        None: not for these lines or settings, or no library - the numpy way then"""
+        lib = _vxb_get()
+        if not lib or os.environ.get('VX_BT_LAW', '2') == '1' or os.environ.get('VX_BT_DUMP'):
+            return None
+        np = _np
+        try:
+            src = getattr(lines, 'np', None)               # (the core's frame as an array: with the 3D Imager's colours)
+            L = np.ascontiguousarray(src if src is not None and len(src) == len(lines) else lines, dtype=np.float64)
+        except (ValueError, TypeError, IndexError):
+            return None                                    # (lines of other shapes: _build_np says so)
+        try:
+            if L.ndim != 2 or L.shape[1] < 7 or not len(L):
+                return None
+            k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
+            w = getattr(self, 'unit_warp', None)
+            wv = tuple(float(x) for x in w) if w else (0.0,) * 6
+            if len(wv) != 6:
+                return None
+            ps, pdx, pdy = self.pic_adj()
+            wob = bool(getattr(self, 'wob_on', False) and self.wob_strength > 0)
+            a0, k50, hum = 0.0, 0.0, (0.0,) * 12
+            if wob:                                        # (the hum: its phase and weights now)
+                a0, ((PX, QX), (PY, QY)) = hum_coeffs(self.frame_t0 / 1.5e6, self.wob_strength, WOBBLE_SPEED, self.mains_hz)
+                k50 = 2 * math.pi * self.mains_hz / 1.5e6
+                hum = tuple(PX[1:4]) + tuple(QX[1:4]) + tuple(PY[1:4]) + tuple(QY[1:4])
+            _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F, BT_HALO_S)).split(',')]   # (tests)
+            rgb = [1.0] * 24
+            for code, c3 in self.IMAGER_RGB.items():
+                rgb[3 * code:3 * code + 3] = c3
+            sc, ox, oy = self.map
+            P = getattr(self, '_vxb_p', None)
+            if P is None:
+                P = self._vxb_p = np.zeros(_VXB_NP)
+            P[:] = ((BT2_W, BT2_K, 1.0 if BT_HALO_F > 0 else 0.0, k, self.glass_undo(), 1.0 if w else 0.0) + wv + tuple(TUBE_LIN)
+                    + (ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0, UW, tubemap.U0, tubemap.V0, tubemap.SU, tubemap.SV,
+                       MM_UNIT, GLASS_RX_MM, GLASS_RY_MM, GLASS_T_MAX, ps, pdx, pdy, TUBE_SEG, 0.0, 1.0, 0.0,
+                       1.0 if wob else 0.0, a0, k50) + hum
+                    + (getattr(self, 'crt_sx', 1.0), getattr(self, 'crt_sy', 1.0), self.size[1], sc, ox, oy,
+                       getattr(self, 'crt_gain', 1.0) * getattr(self, 'hv_light', 1.0),
+                       getattr(self, 'crt_width', 1.0) * getattr(self, 'hv_width', 1.0), getattr(self, 'knob_bright', 0.0), gain,
+                       BEAM_LOWZ, BEAM_LOWW, BEAM_W0, BEAM_WZ, BEAM_TRACE_SG, float(os.environ.get('VX_BT_SPOT', BT_SPOT)), _hf, _hs,
+                       BT_UNITS, BT_KMAX, BEAM_FADE, 1.0 if self.blook() else 0.0, BL_WIDTH, 1.0 if L.shape[1] > 7 else 0.0)
+                    + tuple(rgb))
+            with _vxb_lock:                                # (the library keeps the pieces between its calls)
+                n = lib.vxb_pieces(L.ctypes.data, len(L), L.shape[1], P.ctypes.data)
+                if n <= 0:
+                    return None
+                # brightness bending: this frame's beam load, smoothed (numpy's own sum: the same number)
+                ld_ = float(np.sum(np.frombuffer((ctypes.c_double * n).from_address(lib.vxb_load()), dtype=np.float64))) / 30000.0
+                lf = getattr(self, 'load_f', ld_)
+                if load:
+                    lf += (ld_ - lf) * 0.3
+                if getattr(self, 'bend_on', False) and self.bend_strength > 0:
+                    btype = BEND_TYPES[self.bend_type % len(BEND_TYPES)]
+                    amt = self.bend_strength * lf * 10.0
+                    P[32:35] = (1.0, 1.0 + (amt / 128.0 if btype != 'shift' else 0.0), amt * 160.0 * 0.5 if btype != 'grow' else 0.0)
+                V = np.empty(n * 8, dtype=np.float32); T = np.empty(n * 16, dtype=np.float32); C = np.empty(n * 16, dtype=np.float32)
+                TT = np.empty(n * 4, dtype=np.float32); T2 = np.empty(n * 16, dtype=np.float32); T3 = np.empty(n * 8, dtype=np.float32)
+                tmax = ctypes.c_double(0.0)
+                if lib.vxb_fill(P.ctypes.data, V.ctypes.data, T.ctypes.data, C.ctypes.data, TT.ctypes.data, T2.ctypes.data,
+                                T3.ctypes.data, ctypes.byref(tmax)) != n:
+                    return None
+            self._tube_open = np.zeros(n, dtype=np.int64)  # (the soft ends add up: none open)
+            self.load_f = lf
+            cv = lambda a: (ctypes.c_float * a.size).from_buffer(a)   # (the arrays as they are: no copy)
+            return cv(V), cv(T), cv(C), cv(TT), n, tmax.value, True, cv(T2), cv(T3)
+        except Exception as e:   # noqa
+            _vxb_off(e)
+            return None
 
     def par_dy(self):
         """the overlay's parallax as the picture's shift (emulator units, up): the picture behind the glass seen a

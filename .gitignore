@@ -45,3 +45,7 @@ system/al2.bin
 ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png
 ios/*.xcodeproj/
 system/adhoc.json
+/src/frontend/native/*.dll
+/src/frontend/native/*.obj
+/src/frontend/native/*.lib
+/src/frontend/native/*.exp

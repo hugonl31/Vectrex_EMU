@@ -50,14 +50,33 @@ static int sm_draw (const gframe *a, const gframe *b, double alpha, int n, int e
 	for (int i = 0; i < na; i++) sm_ma[i] = -1;
 	for (int j = 0; j < nb; j++) sm_mb[j] = -1;
 	if (na == nb) { for (int k = 0; k < na; k++) if (sm_same (a, &sm_SA[k], b, &sm_SB[k])) sm_ma[k] = sm_mb[k] = k; }
-	else { int i = 0, j = 0;                         /* (a stroke more or less: walked side by side, past up to SM_LOOK) */
-		while (i < na && j < nb) {
-			if (sm_same (a, &sm_SA[i], b, &sm_SB[j])) { sm_ma[i] = j; sm_mb[j] = i; i++; j++; continue; }
-			int hit = 0;
-			for (int k = 1; k <= SM_LOOK && !hit; k++) {
-				if (j + k < nb && sm_same (a, &sm_SA[i], b, &sm_SB[j + k])) { j += k; hit = 1; }
-				else if (i + k < na && sm_same (a, &sm_SA[i + k], b, &sm_SB[j])) { i += k; hit = 1; } }
-			if (!hit) { i++; j++; } } }
+	else {
+		/* (a stroke more or less: the two lists laid along each other for the least total distance - a stroke paired with the
+		 *  one at its place, or left out at the price of a stroke SMOOTH_MATCH away; within a band of the count's difference
+		 *  + SM_LOOK. Walked side by side with "near enough" as the test (an hour, 2026-11-22), a small shape's strokes are
+		 *  all near each other: the lists went on one out of step, the shape scrambled for that frame - the owner's
+		 *  recording, Mine Storm's mothership at its smallest) */
+		const int Wb = abs (na - nb) + SM_LOOK, K = 2 * Wb + 1; const double INF = 1e18, G = SMOOTH_MATCH;
+		static double *D; static unsigned char *BP; static size_t cap; const size_t need = (size_t) (na + 1) * K;
+		if (cap < need) { free (D); free (BP); cap = need + 4096; D = malloc (sizeof (double) * cap); BP = malloc (cap); if (!D || !BP) { free (D); free (BP); D = NULL; BP = NULL; cap = 0; } }
+		if (D && BP) {
+			for (size_t q = 0; q < need; q++) { D[q] = INF; BP[q] = 0; }
+			D[Wb] = 0;
+			for (int i = 0; i <= na; i++) for (int k = 0; k < K; k++) { const double d = D[(size_t) i * K + k]; const int j = i + k - Wb;
+				if (d >= INF || j < 0 || j > nb) continue;
+				if (k + 1 < K && j + 1 <= nb && d + G < D[(size_t) i * K + k + 1]) { D[(size_t) i * K + k + 1] = d + G; BP[(size_t) i * K + k + 1] = 2; }   /* (b's stroke left out) */
+				if (i < na) {
+					if (j < nb && sm_same (a, &sm_SA[i], b, &sm_SB[j])) { const line_t *a0 = &a->L[sm_SA[i].first], *a1 = &a->L[sm_SA[i].last], *b0 = &b->L[sm_SB[j].first], *b1 = &b->L[sm_SB[j].last];
+						long c = labs (b0->x0 - a0->x0), e = labs (b0->y0 - a0->y0); if (e > c) c = e; e = labs (b1->x1 - a1->x1); if (e > c) c = e; e = labs (b1->y1 - a1->y1); if (e > c) c = e;
+						if (d + c < D[(size_t) (i + 1) * K + k]) { D[(size_t) (i + 1) * K + k] = d + c; BP[(size_t) (i + 1) * K + k] = 1; } }   /* (paired) */
+					if (k - 1 >= 0 && d + G < D[(size_t) (i + 1) * K + k - 1]) { D[(size_t) (i + 1) * K + k - 1] = d + G; BP[(size_t) (i + 1) * K + k - 1] = 3; } } }   /* (a's left out) */
+			int i = na, k = nb - na + Wb;
+			if (k >= 0 && k < K && D[(size_t) i * K + k] < INF)
+				while (i > 0 || i + k - Wb > 0) { const int t = BP[(size_t) i * K + k];
+					if (t == 1) { i--; sm_ma[i] = i + k - Wb; sm_mb[i + k - Wb] = i; }
+					else if (t == 2) k--;
+					else if (t == 3) { i--; k++; }
+					else break; } } }
 	const int first = alpha < 0.5;
 	for (int s = 0; s < na; s++) { const sm_stk *p = &sm_SA[s]; const int m = sm_ma[s]; int cur = m >= 0 ? sm_SB[m].first : 0;
 		for (int i = p->first; i <= p->last; i++) { const line_t *l = &a->L[i];
@@ -68,7 +87,8 @@ static int sm_draw (const gframe *a, const gframe *b, double alpha, int n, int e
 			if (first) n = wl_from (W1, n, l, 1, &q, alpha);
 			if (ex && i < sm_exf_n && !sm_exf[i]) { long d = labs (q.x0 - l->x0), e = labs (q.y0 - l->y0); if (e > d) d = e;
 				e = labs (q.x1 - l->x1); if (e > d) d = e; e = labs (q.y1 - l->y1); if (e > d) d = e;
-				if (d >= SM_EXW && alpha * d >= SM_EXW) { sm_exf[i] = 1; sm_exi[sm_exc++] = i; } } } }
+				if (d < 2) sm_exf[i] = 2;                 /* (drawn in the same place by b: it stays lit - no afterglow to start, nothing to build) */
+				else if (d >= SM_EXW && alpha * d >= SM_EXW) { sm_exf[i] = 1; sm_exi[sm_exc++] = i; } } } }
 	if (!first) for (int s = 0; s < nb; s++) { const sm_stk *p = &sm_SB[s]; const int m = sm_mb[s]; int cur = m >= 0 ? sm_SA[m].first : 0;
 		for (int i = p->first; i <= p->last; i++) { const line_t *l = &b->L[i];
 			if (m < 0) { n = wl_from (W1, n, l, 1, NULL, 0); continue; }

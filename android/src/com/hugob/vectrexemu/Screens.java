@@ -141,7 +141,7 @@ final class Screens {
 		  if (si >= 0) p.row ("Skip intro", VX.opt (si, 5).equals ("on") ? "On" : "Off", () -> { VX.oset (si, VX.opt (si, 5).equals ("on") ? "off" : "on"); reopenSettings (m); }); }
 		p.row ("Downloads", Pack.token (m) != null ? "games, boxes, UVMC2, PiTrex" : "Not in this build (no server key)", () -> { if (Pack.token (m) == null) { m.toast ("This build has no server key: no downloads", 2.5); return; } m.pop (); Pack.choose (m, false); });
 		if (m.hdrCan) p.row ("HDR brightness", m.prefs.getFloat ("app.hdr", 1f) > 0.01f ? "The brightest dots up to " + String.format (java.util.Locale.ROOT, "%.1fx", 1 + (m.hdrRoom - 1) * m.prefs.getFloat ("app.hdr", 1f)) + " white" : "Off: as an ordinary screen",
-			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
+			() -> Adjust.showHdr (m));   /* (a slider over the running game) */
 		else p.row ("HDR brightness", m.hdrScreen ? "Not on this Android version (HDR needs Android 14)" : "Not on this screen (it shows no HDR)", null);
 		{ final int lk = m.prefs.getInt ("app.look", 1);   /* (the look - iOS alike) */
 			p.row ("Look", lk == 1 ? "Bright: brighter, wider lines - for a small screen" : "Vectrex: as a real Vectrex",

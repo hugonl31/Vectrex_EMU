@@ -70,6 +70,33 @@ final class Adjust {
 		fl.bottomMargin = m.insBot + (int) m.dp (8);
 		panel = p; m.root.addView (p, fl); p.setAlpha (0); p.animate ().alpha (1).setDuration (200);
 	}
+	/* HDR brightness: a slider over the running game - the picture changes as it moves (the owner, 2026-11-22; it was a list of five) */
+	static void showHdr (Main m)
+	{
+		close (m); m.popAll (); opt = -1; Main.log ("adjust hdr");
+		LinearLayout p = new LinearLayout (m); p.setOrientation (LinearLayout.VERTICAL); p.setPadding ((int) m.dp (14), (int) m.dp (12), (int) m.dp (14), (int) m.dp (14));
+		p.setBackground (Main.round ((Main.BAR & 0x00ffffff) | 0xf2000000, Main.EDGE2, m.dp (22))); p.setClickable (true);
+		TextView tc = m.text ("APP", 11, Main.DIM, true), tn = m.text ("HDR brightness", 17, Main.HI, true); tc.setGravity (Gravity.CENTER); tn.setGravity (Gravity.CENTER); p.addView (tc); p.addView (tn);
+		final float f0 = m.prefs.getFloat ("app.hdr", 1f);
+		final java.util.function.Function<Float, String> say = f -> f > 0.01f ? String.format (java.util.Locale.ROOT, "up to %.1fx white", 1 + (m.hdrRoom - 1) * f) : "Off";
+		final TextView val = m.text (say.apply (f0), 20, Main.HI, true);
+		final SeekBar sb = new SeekBar (m); sb.setMax (100); sb.setProgress (Math.round (f0 * 100));
+		sb.setOnSeekBarChangeListener (new SeekBar.OnSeekBarChangeListener () {
+			public void onProgressChanged (SeekBar s, int v, boolean user) { if (!user) return; float f = v / 100f; m.prefs.edit ().putFloat ("app.hdr", f).apply (); m.hdrChanged (); val.setText (say.apply (f)); }
+			public void onStartTrackingTouch (SeekBar s) {}
+			public void onStopTrackingTouch (SeekBar s) { Main.log ("HDR " + s.getProgress () + " %"); } });
+		LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams (-1, (int) m.dp (44)); sl.topMargin = (int) m.dp (6); p.addView (sb, sl);
+		LinearLayout bot = new LinearLayout (m); bot.setGravity (Gravity.CENTER_VERTICAL); bot.addView (val, new LinearLayout.LayoutParams (0, -2, 1));
+		TextView all = Screens.button (m, "☰", false), def = Screens.button (m, "Default", false), done = Screens.button (m, "Done", true);
+		for (TextView b : new TextView[] { all, def, done }) { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (b == all ? (int) m.dp (48) : -2, (int) m.dp (40)); lp.leftMargin = (int) m.dp (8); bot.addView (b, lp); }
+		LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams (-1, -2); bl.topMargin = (int) m.dp (10); p.addView (bot, bl);
+		def.setOnClickListener (v -> { m.prefs.edit ().putFloat ("app.hdr", 1f).apply (); m.hdrChanged (); showHdr (m); });
+		done.setOnClickListener (v -> close (m));
+		all.setOnClickListener (v -> { close (m); Screens.settings (m); });
+		FrameLayout.LayoutParams fl = new FrameLayout.LayoutParams (Math.min ((int) m.dp (560), m.root.getWidth () - (int) m.dp (20)), -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+		fl.bottomMargin = m.insBot + (int) m.dp (8);
+		panel = p; m.root.addView (p, fl); p.setAlpha (0); p.animate ().alpha (1).setDuration (200);
+	}
 	/* (the next / previous number setting of the same group) */
 	static void step (Main m, int i, int d)
 	{

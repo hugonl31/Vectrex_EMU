@@ -128,6 +128,10 @@ final class Screens {
 		if (m.hdrCan) p.row ("HDR brightness", m.prefs.getFloat ("app.hdr", 1f) > 0.01f ? "The brightest dots up to " + String.format (java.util.Locale.ROOT, "%.1fx", 1 + (m.hdrRoom - 1) * m.prefs.getFloat ("app.hdr", 1f)) + " white" : "Off: as an ordinary screen",
 			() -> pickF (m, "HDR brightness", "app.hdr", new float[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, 1f));
 		else p.row ("HDR brightness", m.hdrScreen ? "Not on this Android version (HDR needs Android 14)" : "Not on this screen (it shows no HDR)", null);
+		{ final int lk = m.prefs.getInt ("app.look", 0);   /* (the look - iOS alike) */
+			p.row ("Look", lk == 1 ? "Bright: brighter, wider lines - for a small screen" : "Vectrex: as a real Vectrex",
+				() -> pick (m, "Look", new String[] { "0", "1" }, new String[] { "Vectrex", "Bright" }, String.valueOf (lk), s -> {
+					m.prefs.edit ().putInt ("app.look", Integer.parseInt (s)).apply (); VX.setBright (Integer.parseInt (s)); Main.log ("look " + s); reopenSettings (m); })); }
 		p.row ("Controls", "controllers, touch, keyboard", () -> { m.pop (); controls (m); });
 		p.row ("About and help", "how to play, online, credits", () -> about (m));
 		{ int n = 0; for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) n++; final int changed = n;

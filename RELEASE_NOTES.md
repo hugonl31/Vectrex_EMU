@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.1
+
+* Look (PC: Tube > Look; iPhone / iPad and the Android app: Settings > Look): Vectrex, the default - the measured picture.
+  Bright - for a small screen, whose thin lines give little light: the tube's light lifted and the beam 30 % wider.
+  On an ordinary screen the faint lines come up and the top is pressed into white; on an HDR screen the whole
+  ordinary picture moves up to the screen's peak.
+* A new test cartridge, Glow Test: two full-length lines, still or moving at three speeds, the refresh rate from 50
+  down to 25 a second.
+
 ## v1.8.0
 
 * A new picture, the same on every platform (PC, iPhone / iPad, Android, RetroArch): the simulated beam lights a simulated

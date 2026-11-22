@@ -1282,6 +1282,7 @@ float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIS
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
+	{ extern float vx_bright; vx_bright = [NSUserDefaults.standardUserDefaults integerForKey:@"app.look"] == 1 ? 1.0f : 0.0f; }   /* (the look: Vectrex, or Bright - lifted and wider) */
 	vx_hdr_lift = 0.0f;   /* (2026-11-22: one picture - the beam on the phosphor; an HDR screen opens its top, no look to choose) */
 	/* (Apple: map to the headroom the screen gives NOW (currentEDRHeadroom) - the most (potential) only while iOS has not yet
 	 *  raised it for our light; at full brightness the iPhone's white is near its peak already, ~1.6x left: mapped to 8x, all

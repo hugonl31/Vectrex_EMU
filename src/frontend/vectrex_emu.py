@@ -2653,7 +2653,7 @@ class App:
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
         self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look', 'even_beam', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look', 'look2', 'even_beam', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
@@ -4267,6 +4267,10 @@ class App:
         t.bind('<Escape>', lambda e: t.destroy())
         t.update_idletasks()
         deck.place(t, 'speech_rom', self, lambda: deck.no_close_button(t))
+    def set_look2(self, v):
+        """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
+        if self.ren:
+            self.ren.look2 = v; self.show_look('look: ' + ('Bright' if v == 'bright' else 'Vectrex')); self.save_settings()
     def set_look(self, v):
         """Tube > Look: 'bright' or 'vectrex' (vecrender.LOOK_*)"""
         if self.ren:

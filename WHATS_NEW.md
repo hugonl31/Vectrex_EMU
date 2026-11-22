@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.1
+- Look: Vectrex, or Bright for a small screen (brighter, wider lines)
+
 ## v1.8.0
 - New picture: the beam on the phosphor, measured on a real Vectrex
 - The same picture on PC, iPhone / iPad, Android and RetroArch

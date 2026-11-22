@@ -43,6 +43,13 @@ float vx_trail_mul = 1.0f;                     /* (the own apps: the trail for t
 float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture
                                                   lifted towards the peak, 2 the measured Vectrex - dots with the slow beam round them, the
                                                   brightest lines a little above white; below the knee as SDR) */
+float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 1 Bright, for a small screen whose thin lines
+                                                   give little light (the owner, 2026-11-22): the tube's light lifted and the beam 1.3 x wider
+                                                   (libretro_vx.c). An ordinary screen: its values x BL_GAIN before the roll-off - the faint lines
+                                                   come up, the top is pressed into white. An HDR screen: the ordinary screen's whole picture,
+                                                   roll-off and all, x the screen's top - the same range, higher up (tone: bgh). The room's light
+                                                   stays as it is) */
+#define BL_GAIN 1.5f
 float vx_hdr_peak = 1.0f;                       /* (HDR: the brightest lights top, x the screens white - the own iOS app sets it
                                                 from the screens headroom; 1: SDR, as everywhere else) */
 static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
@@ -145,8 +152,9 @@ static const char *PH_FS_BLUR =                 /* (the Gaussian, one way: gtw) 
 /* (vecrender.py TONE_SHADER: the picture as it is up to 0.55, then rolling off towards white - bright slow shapes keep their detail;
  *  an HDR screen: what the roll-off took given back above it, softly up to the screen's peak hk - the same picture from black to
  *  the middle, the top open) */
-#define PH_TONE "uniform int beam;\n" \
-	"vec3 tone(vec3 c) { vec3 k = 0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6)); vec3 o = mix(c, k, step(0.55, c));\n" \
+#define PH_TONE "uniform int beam; uniform float bgh;\n" \
+	"vec3 tone(vec3 c) { if (bgh > 0.0) { vec3 d = c / bgh, e = 0.55 + 0.45 * (1.0 - exp(-(d - 0.55) / 0.6)); return mix(d, e, step(0.55, d)) * bgh; }\n" \
+	"  vec3 k =0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6)); vec3 o = mix(c, k, step(0.55, c));\n" \
 	"  if (hk > 1.0) { vec3 x = max(c - o, 0.0); float m = hk - 1.0; o += x / pow(1.0 + pow(x / m, vec3(8.0)), vec3(0.125)); }\n" \
 	"  return o; }\n"
 static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gpu_present reads the CPU's XRGB bytes) */
@@ -417,7 +425,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		  for (int k = 0; k < 3; k++) { tn[k] = BT_TINT[k] * tg[k] / t0[k]; if (tn[k] > mx) mx = tn[k]; }
 		  glBindVertexArray_ (g_vao); ph_target (ph_F[cur], 0, 0, ph_fw, ph_fh); glUseProgram_ (ph_sat);
 		  ph_bind (ph_sat, "lt", 0, ph_L); ph_bind (ph_sat, "ht", 1, ph_H);
-		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2)));   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
+		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2) * pow (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0, 2.2)));   /* (Bright: the tube's light lifted here - all that comes of it with it) */   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
 		  glUniform3f_ (ph_ul (ph_sat, "tint"), tn[0] / mx, tn[1] / mx, tn[2] / mx); glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
 		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 	}
@@ -477,7 +485,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  PU1I (ph_out, "glow", glow); PU1I (ph_out, "ovon", ovon && ph_ovm); PU1I (ph_out, "wbon", wb_on && !beam); PU1I (ph_out, "beam", beam);
 	  glUniform3f_ (ph_ul (ph_out, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
 	  glUniform3f_ (ph_ul (ph_out, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (ph_ul (ph_out, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
-	  PU1F (ph_out, "bright", beam ? 1.0f : opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0); PU1F (ph_out, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); PU1F (ph_out, "hl", beam ? 0.0f : vx_hdr_lift); PU1F (ph_out, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); PU1F (ph_out, "lt", vx_hdr_lt); PU1F (ph_out, "sn", vx_hdr_sn); PU1F (ph_out, "gb", vx_hdr_gb);
+	  PU1F (ph_out, "bright", beam ? 1.0f : opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0); PU1F (ph_out, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); PU1F (ph_out, "bgh", beam && vx_bright > 0.5f && vx_hdr_peak > 1.0f ? vx_hdr_peak : 0.0f); PU1F (ph_out, "hl", beam ? 0.0f : vx_hdr_lift); PU1F (ph_out, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); PU1F (ph_out, "lt", vx_hdr_lt); PU1F (ph_out, "sn", vx_hdr_sn); PU1F (ph_out, "gb", vx_hdr_gb);
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:

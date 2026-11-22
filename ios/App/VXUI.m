@@ -207,9 +207,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 10; }
-/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, HDR, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[10] = { 0, 1, 7, 8, 9, 2, 3, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 9 ? -1 : m[ip.row]; }   /* (10, the look: gone 2026-11-22 - one picture) */
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 11; }
+/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, HDR, look, controls, about, reset - as numbered below) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[11] = { 0, 1, 7, 8, 9, 2, 3, 10, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 10 ? -1 : m[ip.row]; }   /* (10, the look: Vectrex or Bright, 2026-11-22) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
@@ -240,20 +240,20 @@ static UITableViewCell *vxs_cell (NSString *title)
 		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_sel (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
-	if (R == 10) {                                  /* (the look: Vectrex - as the real tube - or Bright, as before 2026-11-20) */
-		extern float vxa_hdr_headroom (void); extern void vxa_hdr_update (void);
-		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"HDR look"; c.textLabel.textColor = VX_FG;
+	if (R == 10) {                                  /* (the look: Vectrex - the measured picture - or Bright: the lines lifted and wider, for a small screen) */
+		extern void vxa_hdr_update (void);
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"Look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		const BOOL can = vxa_hdr_headroom () > 1.05; NSNumber *wl = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdrmode"]; const NSInteger md = wl && wl.integerValue != 1 ? wl.integerValue : 0; if (!can) c.textLabel.text = @"Look";
-		c.detailTextLabel.text = md == 2 ? @"As a real Vectrex: dots and slow lines stand out. Wants a bright screen" : @"All lines pushed up to white: bright vectors on a dim screen";
+		const NSInteger md = [NSUserDefaults.standardUserDefaults integerForKey:@"app.look"];
+		c.detailTextLabel.text = md == 1 ? @"Brighter, wider lines: for a small screen" : @"As a real Vectrex";
 		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Vectrex", @"Bright" ]];
-		sg.selectedSegmentIndex = md == 2 ? 0 : 1; sg.selectedSegmentTintColor = VX_G;
+		sg.selectedSegmentIndex = md == 1 ? 1 : 0; sg.selectedSegmentTintColor = VX_G;
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG } forState:UIControlStateNormal];
 		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: UIColor.blackColor } forState:UIControlStateSelected];
 		[sg sizeToFit];
-		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger x = ((UISegmentedControl *) a.sender).selectedSegmentIndex, v = x == 0 ? 2 : 0;
-			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.hdrmode"];
-			ulog ([NSString stringWithFormat:@"HDR look %@", v == 2 ? @"Vectrex" : @"bright"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
+		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger v = ((UISegmentedControl *) a.sender).selectedSegmentIndex == 1 ? 1 : 0;
+			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.look"];
+			ulog ([NSString stringWithFormat:@"look %@", v ? @"Bright" : @"Vectrex"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sg; return c; }
 	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
 		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");

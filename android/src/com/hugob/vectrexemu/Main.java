@@ -135,6 +135,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		curHz = d.getRefreshRate ();
 		log ("screen: " + d.getRefreshRate () + " Hz (up to " + best + "), HDR " + (hdrCan ? "yes, headroom " + hdrRoom : hdrScreen ? "screen yes, but not on this Android (before 14): off" : "no") + ", " + getResources ().getDisplayMetrics ().widthPixels + " x " + getResources ().getDisplayMetrics ().heightPixels + " px, density " + getResources ().getDisplayMetrics ().density);
 		VX.setHdr (hdrCan && prefs.getFloat ("app.hdr", 1f) > 0.01f, hdrRoom, prefs.getFloat ("app.hdr", 1f));
+		VX.setBright (prefs.getInt ("app.look", 0));
 		VX.setHdrLook (0);   /* (2026-11-22: one picture - no look to choose) */   /* (Bright the default everywhere) */   /* (1, the whole picture lifted: gone) */   /* (the look: Vectrex the default with HDR, Bright without - as iOS) */
 		trailTick ();
 	}

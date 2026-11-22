@@ -717,6 +717,7 @@ static void read_options (void)
 	  if (bt != vx_beam) { vx_beam = bt; vt_set_analog (11, bt ? 1.0 : 0.0); } }
 #endif
 #ifndef VX_EMUVR
+	{ const char *z = getenv ("VX_BRIGHT"); if (z) { extern float vx_bright; vx_bright = (float) atof (z); } }   /* (a test: the Bright look) */
 	{ const char *z = getenv ("VX_HDRPEAK"); if (z) { extern float vx_hdr_peak; vx_hdr_peak = (float) atof (z); } }   /* (a test: an HDR screen's top, x white) */
 	{ const char *z = getenv ("VX_GPROF"); if (z) { extern int vx_gprof; vx_gprof = atoi (z); } }   /* (a test: the GPU diagnostic - each stage's time in the log) */
 #endif
@@ -2550,6 +2551,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			pline *q = &pl[npl++];
 			q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
 			q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
+			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= 1.3; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
 			q->k2 = (float) sb; q->R = (float) (3.5 * sb + 1.0); q->r = r; q->g = g; q->b = b; q->hx = (float) (BT_HALO_S * upx);   /* (k2: the spot's sigma, hx: the glow's - px) */
 			q->cut = 0; q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;
 			continue;

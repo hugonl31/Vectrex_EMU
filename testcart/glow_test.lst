@@ -1,0 +1,123 @@
+                      (    glow_test.asm):00001         ; glow_test.asm - Glow Test: one vertical and one horizontal line, full length, moving across the screen and back -
+                      (    glow_test.asm):00002         ; still, slow, medium, fast (256 frames each, then again). Buttons 1-4 hold one speed (still / slow / medium / fast).
+                      (    glow_test.asm):00003         ; For the overlay's plastic glow: does it stay on the line as it moves, does it flicker.
+                      (    glow_test.asm):00004         ; Build: lwasm --format=raw -o glow_test_raw.bin glow_test.asm, then pad to 32768 bytes with $FF (64 KB: twice).
+                      (    glow_test.asm):00005         
+     F192             (    glow_test.asm):00006         Wait_Recal      equ $F192
+     F1BA             (    glow_test.asm):00007         Read_Btns       equ $F1BA
+     F2AB             (    glow_test.asm):00008         Intensity_a     equ $F2AB
+     F312             (    glow_test.asm):00009         Moveto_d        equ $F312
+     F354             (    glow_test.asm):00010         Reset0Ref       equ $F354
+     F3DF             (    glow_test.asm):00011         Draw_Line_d     equ $F3DF
+     C811             (    glow_test.asm):00012         Vec_Buttons     equ $C811
+     C80F             (    glow_test.asm):00013         Vec_Btn_State   equ $C80F
+     C880             (    glow_test.asm):00014         Pos             equ $C880
+     C881             (    glow_test.asm):00015         Dir             equ $C881
+     C882             (    glow_test.asm):00016         Frame           equ $C882
+     C883             (    glow_test.asm):00017         Phase           equ $C883
+     C884             (    glow_test.asm):00018         Hold            equ $C884
+     C885             (    glow_test.asm):00019         Rate            equ $C885
+     C83D             (    glow_test.asm):00020         Vec_Rfrsh       equ $C83D
+     0060             (    glow_test.asm):00021         LIM             equ 96
+                      (    glow_test.asm):00022         
+                      (    glow_test.asm):00023                 org     $0000
+0000 6720474345203230 (    glow_test.asm):00024                 fcc     "g GCE 2026"
+     3236
+000A 80               (    glow_test.asm):00025                 fcb     $80
+000B FD0D             (    glow_test.asm):00026                 fdb     $FD0D
+000D F85020B8         (    glow_test.asm):00027                 fcb     $F8,$50,$20,-$48
+0011 474C4F5720544553 (    glow_test.asm):00028                 fcc     "GLOW TEST"
+     54
+001A 80               (    glow_test.asm):00029                 fcb     $80
+001B 00               (    glow_test.asm):00030                 fcb     0
+                      (    glow_test.asm):00031         
+001C                  (    glow_test.asm):00032         Start:
+001C 7FC880           (    glow_test.asm):00033                 clr     Pos
+001F 7FC881           (    glow_test.asm):00034                 clr     Dir
+0022 7FC882           (    glow_test.asm):00035                 clr     Frame
+0025 7FC883           (    glow_test.asm):00036                 clr     Phase
+0028 7FC885           (    glow_test.asm):00037                 clr     Rate
+002B 86FF             (    glow_test.asm):00038                 lda     #$FF
+002D B7C884           (    glow_test.asm):00039                 sta     Hold
+0030                  (    glow_test.asm):00040         Main:
+0030 BDF192           (    glow_test.asm):00041                 jsr     Wait_Recal
+0033 BDF1BA           (    glow_test.asm):00042                 jsr     Read_Btns
+0036 B6C811           (    glow_test.asm):00043                 lda     Vec_Buttons             ; a button just pressed: that speed held
+0039 8501             (    glow_test.asm):00044                 bita    #1
+003B 271F             (    glow_test.asm):00045                 beq     B1
+003D 7DC884           (    glow_test.asm):00046                 tst     Hold
+0040 2617             (    glow_test.asm):00047                 bne     Still
+0042 F6C885           (    glow_test.asm):00048                 ldb     Rate                    ; still already: the next refresh rate (50 45 40 35 30 25 a second)
+0045 5C               (    glow_test.asm):00049                 incb
+0046 C106             (    glow_test.asm):00050                 cmpb    #6
+0048 2501             (    glow_test.asm):00051                 blo     R1
+004A 5F               (    glow_test.asm):00052                 clrb
+004B F7C885           (    glow_test.asm):00053         R1      stb     Rate
+004E 58               (    glow_test.asm):00054                 aslb
+004F 8E00E8           (    glow_test.asm):00055                 ldx     #Rates
+0052 AE85             (    glow_test.asm):00056                 ldx     b,x
+0054 BFC83D           (    glow_test.asm):00057                 stx     Vec_Rfrsh
+0057 2003             (    glow_test.asm):00058                 bra     B1
+0059 7FC884           (    glow_test.asm):00059         Still   clr     Hold
+005C 8502             (    glow_test.asm):00060         B1      bita    #2
+005E 2705             (    glow_test.asm):00061                 beq     B2
+0060 C601             (    glow_test.asm):00062                 ldb     #1
+0062 F7C884           (    glow_test.asm):00063                 stb     Hold
+0065 8504             (    glow_test.asm):00064         B2      bita    #4
+0067 2705             (    glow_test.asm):00065                 beq     B3
+0069 C602             (    glow_test.asm):00066                 ldb     #2
+006B F7C884           (    glow_test.asm):00067                 stb     Hold
+006E 8508             (    glow_test.asm):00068         B3      bita    #8
+0070 2705             (    glow_test.asm):00069                 beq     B4
+0072 C603             (    glow_test.asm):00070                 ldb     #3
+0074 F7C884           (    glow_test.asm):00071                 stb     Hold
+0077 7CC882           (    glow_test.asm):00072         B4      inc     Frame                   ; every 256 frames the next speed
+007A 2603             (    glow_test.asm):00073                 bne     NoPh
+007C 7CC883           (    glow_test.asm):00074                 inc     Phase
+007F B6C884           (    glow_test.asm):00075         NoPh    lda     Hold
+0082 2A05             (    glow_test.asm):00076                 bpl     Held
+0084 B6C883           (    glow_test.asm):00077                 lda     Phase
+0087 8403             (    glow_test.asm):00078                 anda    #3
+0089 8E00E4           (    glow_test.asm):00079         Held    ldx     #Speeds
+008C A686             (    glow_test.asm):00080                 lda     a,x
+008E 7DC881           (    glow_test.asm):00081                 tst     Dir
+0091 2A01             (    glow_test.asm):00082                 bpl     Fwd
+0093 40               (    glow_test.asm):00083                 nega
+0094 BBC880           (    glow_test.asm):00084         Fwd     adda    Pos
+0097 B7C880           (    glow_test.asm):00085                 sta     Pos
+009A 8160             (    glow_test.asm):00086                 cmpa    #LIM
+009C 2D05             (    glow_test.asm):00087                 blt     C1
+009E C6FF             (    glow_test.asm):00088                 ldb     #$FF
+00A0 F7C881           (    glow_test.asm):00089                 stb     Dir
+00A3 81A0             (    glow_test.asm):00090         C1      cmpa    #-LIM
+00A5 2E03             (    glow_test.asm):00091                 bgt     C2
+00A7 7FC881           (    glow_test.asm):00092                 clr     Dir
+00AA 867F             (    glow_test.asm):00093         C2      lda     #$7F
+00AC BDF2AB           (    glow_test.asm):00094                 jsr     Intensity_a
+00AF 867F             (    glow_test.asm):00095                 lda     #$7F                    ; the vertical line at x = Pos
+00B1 9704             (    glow_test.asm):00096                 sta     <$04
+00B3 869C             (    glow_test.asm):00097                 lda     #-100
+00B5 F6C880           (    glow_test.asm):00098                 ldb     Pos
+00B8 BDF312           (    glow_test.asm):00099                 jsr     Moveto_d
+00BB 86FF             (    glow_test.asm):00100                 lda     #$FF
+00BD 9704             (    glow_test.asm):00101                 sta     <$04
+00BF 8664             (    glow_test.asm):00102                 lda     #100
+00C1 5F               (    glow_test.asm):00103                 clrb
+00C2 BDF3DF           (    glow_test.asm):00104                 jsr     Draw_Line_d
+00C5 BDF354           (    glow_test.asm):00105                 jsr     Reset0Ref
+00C8 867F             (    glow_test.asm):00106                 lda     #$7F                    ; the horizontal line at y = Pos
+00CA 9704             (    glow_test.asm):00107                 sta     <$04
+00CC B6C880           (    glow_test.asm):00108                 lda     Pos
+00CF C69C             (    glow_test.asm):00109                 ldb     #-100
+00D1 BDF312           (    glow_test.asm):00110                 jsr     Moveto_d
+00D4 86FF             (    glow_test.asm):00111                 lda     #$FF
+00D6 9704             (    glow_test.asm):00112                 sta     <$04
+00D8 4F               (    glow_test.asm):00113                 clra
+00D9 C664             (    glow_test.asm):00114                 ldb     #100
+00DB BDF3DF           (    glow_test.asm):00115                 jsr     Draw_Line_d
+00DE BDF354           (    glow_test.asm):00116                 jsr     Reset0Ref
+00E1 16FF4C           (    glow_test.asm):00117                 lbra    Main
+                      (    glow_test.asm):00118         
+00E4 00010308         (    glow_test.asm):00119         Speeds  fcb     0,1,3,8
+00E8 307535827C9269A7 (    glow_test.asm):00120         Rates   fdb     $3075,$3582,$7C92,$69A7,$50C3,$60EA     ; timer 2, low byte first: 30000 33333 37500 42857 50000 60000 cycles
+     50C360EA

@@ -868,7 +868,7 @@ static void vxa_toast (NSString *s, double secs)
 		if (want != g->_own) { g->_own = want; g->_last = 0; const float f = want ? 120 : (float) vxa_av.timing.fps;
 			if (@available (iOS 15.0, *)) g->_link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f);
 			vlog ("50 Hz on the app's own clock: %s", want ? "on (the screen asked for 120 Hz)" : "off"); }
-		if (g->_own && g->_running) [g tick:nil]; });
+		});
 	  dispatch_resume (_clk); }
  [self viewDidLayoutSubviews]; [self showBar];
 	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
@@ -938,7 +938,10 @@ static void vxa_glass (double t)
 - (void) gotFrame:(unsigned)w :(unsigned)h { (void) w; (void) h; _have = 1; }
 - (void) tick:(CADisplayLink *)l
 {
-	if (l && _own) return;                           /* (50 Hz: the app's own clock calls - the refresh callback only keeps the screen at 120 Hz) */
+	/* (50 Hz: a game frame every 20 ms counted off on the screen's own refreshes - at 120 Hz every 2nd or 3rd, the pictures 16.7
+	 *  and 25 ms apart. A separate 20 ms timer (build 169) missed its refresh for one picture in ten: 33 ms) */
+	if (_own) { static double a50; const double per = l.targetTimestamp - l.timestamp; a50 += 50.0 * (per > 0.004 && per < 0.05 ? per : 1.0 / 120);
+		if (a50 < 1) return; a50 -= 1; if (a50 > 1) a50 = 0; }
 	double now = CACurrentMediaTime(), dt = _last ? now - _last : 0; _last = now; _ticks++;
 	{ extern int vx_owe_hidden; vx_owe_hidden = 1;   /* (a catch-up run's game frame: drawn with the next picture - no gap in a trail) */
 	  /* (the rate chosen in the settings: the screen asked for it at once - it stayed at the old one until the app's next start:
@@ -952,6 +955,7 @@ static void vxa_glass (double t)
 	 *  refresh a little short gave no run and the next one two, one picture for both: 12-18 pictures a second lost at
 	 *  120 runs with the GPU in time, 1.7.6 (150); which sessions had it was chance - where the fraction started) */
 	if (n == 1 && fabs (dt * vxa_av.timing.fps - 1) < 0.3) _acc += (0.5 - _acc) * 0.1;
+	if (_own) { n = 1; _acc = 0.5; }                 /* (50 Hz: one run for each of its pictures - the sound's rule below may still add or drop one) */
 	if (n == 0) _zero++; else if (n > 1) _multi++;
 	double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
 	const int onl = vxa_net_playing ();                     /* (VXApp.h: vxa_net_on is declared further down) */

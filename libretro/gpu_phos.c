@@ -29,6 +29,7 @@ GLFN(void, glFinish, (void)); GLFN(void, glInvalidateFramebuffer, (GLenum, GLsiz
 static uint32_t *br_img; static int br_shown, br_gen; static GLuint ph_ui, ph_uit; static int ph_uigen = -1, ph_uiw, ph_uih;   /* (browser.c) */
 static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_down2, ph_blurl, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
+static GLuint ph_beam, ph_sat, ph_L, ph_H; static float *ph_hbuf; static size_t ph_hbufn;   /* (the beam on the phosphor: the light image, the glass's glow) */
 static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1, ph_hdr_made = -1;
 float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_vs = 0.25f, vx_hdr_vss = 0.15f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lt = 0.3f, vx_hdr_sn = 6.0f, vx_hdr_gb = 1.3f, vx_hdr_hb = 2.75f, vx_hdr_hw = 1.0f, vx_hdr_dw = 1.6f;   /* (the apps: the dots' spot 1.6x wide, their halo x2.75 - the owner: x14 too much, as build 134 + 10 %) */   /* (SDR Vectrex: the dots' glow x2.5, their spot x1.6 wide (the photo: 1.2-1.6x the line's width at white) - at white as the lines, their glare tells them) */   /* (SDR: the lines 0.64 of white, the fat ones clipping at white - the owner, 2026-11-21: the grid too dim at 0.08) */   /* (dx: the dots above the lines, HDR; lt: the lines up to this share of the peak - the rest
                                                   the dots' room: 3.6x a line at every intensity, the owner: the dots not bright enough next to the lines) */   /* (vss: the Vectrex look on an SDR screen -
@@ -65,6 +66,28 @@ static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gauss
 	"  if (vc0.w > 0.5 && dot(p, vc0.xy) < vc0.z) discard;\n"
 	"  if (vc1.w > 0.5 && dot(p, vc1.xy) > vc1.z) discard;\n"
 	"  float sh = exp(-d2 * vk); fragc = vec4(vrc.yzw * sh, sh * vx); }\n";
+/* The beam on the phosphor (vecrender.py CAPSULE_SHADER, beam): a piece's light spread by the spot - flatter on top and steeper at
+ * the sides than a Gaussian, exp(-(d / a)^2.6) (the owner's photo of Vectorblade's logo), along the piece the Gaussian's
+ * integral: pieces of one line add up to an even line, ends are soft. The glass's glow (halo 1): a line's a plain Gaussian,
+ * a spot's fading out from the spot. vrc.yzw: the peak of the piece's light as a spot's (light / (2 pi sigma^2)), vk: sigma, px */
+static const char *PH_FS_BEAM =
+	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx; out vec4 fragc; uniform int halo;\n"
+	"float Phi(float x) { float z = abs(x) * 0.70710678, t = 1.0 / (1.0 + 0.3275911 * z);\n"
+	"  float e = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-z * z);\n"
+	"  return 0.5 + 0.5 * (x < 0.0 ? -e : e); }\n"
+	"void main() { vec2 p = gl_FragCoord.xy, a = vab.xy, ba = vab.zw - vab.xy, q = p - a; float L = length(ba), sg = vk, g;\n"
+	"  if (L < 1e-3) { float r = length(q); if (r >= vrc.x) discard;\n"
+	"    g = halo != 0 ? 4.0 * exp(-r / (0.5 * sg)) : 1.177 * exp(-pow(r / (1.356 * sg), 2.6)); }\n"
+	"  else { vec2 t = ba / L; float u = dot(q, t), v = abs(q.x * t.y - q.y * t.x);\n"
+	"    if (v >= vrc.x || u <= -vrc.x || u >= L + vrc.x) discard;\n"
+	"    g = 2.5066283 * sg / L * (Phi(u / sg) - Phi((u - L) / sg)) * (halo != 0 ? exp(-0.5 * v * v / (sg * sg)) : 1.041 * exp(-pow(v / (1.356 * sg), 2.6))); }\n"
+	"  fragc = vec4(vrc.yzw * g, 0.0); }\n";
+/* (the light as the screen's values - vecrender.py SAT_SHADER: (the exposure x the light)^(1 / 2.2) in the tube's own white; the
+ *  glass's glow read from its smaller image) */
+static const char *PH_FS_SAT =
+	"uniform sampler2D lt, ht; uniform float k; uniform vec3 tint; uniform vec2 sz; out vec4 fragc;\n"
+	"void main() { vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0);\n"
+	"  fragc = vec4(pow(k * l, vec3(1.0 / 2.2)) * tint, 0.0); }\n";
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
@@ -119,6 +142,13 @@ static const char *PH_FS_BLUR =                 /* (the Gaussian, one way: gtw) 
 	"void main() { ivec2 c = ivec2(gl_FragCoord.xy); vec3 a = vec3(0.0);\n"
 	"  for (int k = -n; k <= n; k++) a += w[k + n] * texelFetch(src, clamp(c + dir * k, ivec2(0), lim), 0).rgb;\n"
 	"  fragc = vec4(a, 1.0); }\n";
+/* (vecrender.py TONE_SHADER: the picture as it is up to 0.55, then rolling off towards white - bright slow shapes keep their detail;
+ *  an HDR screen: what the roll-off took given back above it, softly up to the screen's peak hk - the same picture from black to
+ *  the middle, the top open) */
+#define PH_TONE "uniform int beam;\n" \
+	"vec3 tone(vec3 c) { vec3 k = 0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6)); vec3 o = mix(c, k, step(0.55, c));\n" \
+	"  if (hk > 1.0) { vec3 x = max(c - o, 0.0); float m = hk - 1.0; o += x / pow(1.0 + pow(x / m, vec3(8.0)), vec3(0.125)); }\n" \
+	"  return o; }\n"
 static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gpu_present reads the CPU's XRGB bytes) */
 	"uniform sampler2D s, gt, ovm, ova; uniform int glow, ovon, wbon; uniform vec3 tint, wbg, wbc; uniform float bright, grey;\n"
 	"uniform vec2 gsz; uniform float dith; out vec4 fragc;\n"
@@ -134,6 +164,7 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"    return pow(l, vec3(1.0 / 2.2)); }\n"
 	"vec3 knee(vec3 c) { if (hl > 1.5) return c;\n"   /* (the Vectrex look: mapped before the room's light - vxl) */
 	"  return mix(c, 1.0 - 0.25 * exp(-(c - 0.75) / 0.25), step(0.75, c)); }\n"
+	PH_TONE
 	"vec3 hdrx(vec3 k, float x, vec3 t) { if (hk <= 1.0 || x <= 0.0) return k; float m = hk - 1.0;\n"   /* (the rests' light above white,
 	                                                   through the overlay's colour; softly up to the screen's peak) */
 	"  return k + t * (x / pow(1.0 + pow(x / m, 8.0), 0.125)); }\n"
@@ -145,7 +176,7 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"    vec3 l = dot(o, vec3(1.0 / 3.0)) * m; if (hl > 1.5) l = vxl(l); o = sqrt(l * l + la * la); }\n"
 	"  else { o *= 1.6; if (hl > 1.5) o = vxl(o); if (grey > 0.0) { vec3 g = grey * vec3(0.92, 0.95, 1.0); o = sqrt(o * o + g * g); } }\n"
 	"  vec3 ht = ovon != 0 ? txb(ovm, gl_FragCoord.xy / vec2(textureSize(s, 0))).rgb : vec3(1.0);\n"
-	"  fragc = vec4((min(hdrx(hlift(knee(o)), hx, ht), vec3(max(hk, 1.0))) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
+	"  fragc = vec4((min(beam != 0 ? tone(o) : hdrx(hlift(knee(o)), hx, ht), vec3(max(hk, 1.0))) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
 static GLuint ph_prog (const char *vsrc, const char *fsrc)
 {
@@ -179,7 +210,7 @@ static int ph_gw, ph_gh; static GLuint ph_S, ph_B[2], ph_ovm, ph_ova;
 /* (gpu_reset's end: the functions, the programs) */
 static void ph_reset (void)
 {
-	int ok = 1; memset (ph_uc, 0, sizeof ph_uc); ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0;   /* (a new context: the old names mean nothing in it) */
+	int ok = 1; memset (ph_uc, 0, sizeof ph_uc); ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = 0;   /* (a new context: the old names mean nothing in it) */
 	if (getenv ("VX_GPUPHOS") && !atoi (getenv ("VX_GPUPHOS"))) { fprintf (stderr, "[vectrex_emu] GPU: the light on the CPU (VX_GPUPHOS=0)\n"); return; }
 	GLLOAD (glGenBuffers); GLLOAD (glBindBuffer); GLLOAD (glBufferData); GLLOAD (glVertexAttribPointer); GLLOAD (glEnableVertexAttribArray);
 	GLLOAD (glVertexAttribDivisor); GLLOAD (glDrawArraysInstanced); GLLOAD (glGenFramebuffers); GLLOAD (glFramebufferTexture2D);
@@ -187,7 +218,7 @@ static void ph_reset (void)
 	GLLOAD (glClear); GLLOAD (glUniform1fv); GLLOAD (glUniform2fv); GLLOAD (glUniform4fv); GLLOAD (glReadPixels); GLLOAD (glDeleteFramebuffers); GLLOAD (glFinish);
 	glInvalidateFramebuffer_ = (pf_glInvalidateFramebuffer) hwr.get_proc_address ("glInvalidateFramebuffer");   /* (optional: GL 4.3 / ES 3) */
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: no instancing / framebuffers - the light on the CPU\n"); return; }
-	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
+	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_beam = ph_prog (PH_VS_CAP, PH_FS_BEAM); ph_sat = ph_prog (GPU_VS, PH_FS_SAT); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
 	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_down2 = ph_prog (GPU_VS, PH_FS_DOWN2); ph_blurl = ph_prog (GPU_VS, PH_FS_BLURL); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP); ph_ui = ph_prog (GPU_VS, PH_FS_UI); ph_uit = 0; ph_uigen = -1;
 	if (!ph_cap || !ph_upd || !ph_down || !ph_blur || !ph_out || !ph_comp) return;
 	glGenBuffers_ (1, &ph_vbo); glGenVertexArrays_ (1, &ph_vao); glGenFramebuffers_ (1, &ph_fbo);
@@ -200,7 +231,7 @@ static void ph_reset (void)
 	ox_reset ();                                       /* (the overlay's effects: gpu_ovfx.c) */
 }
 static int ph_nfb;
-static void ph_lost (void) { memset (ph_uc, 0, sizeof ph_uc); ox_lost (); ph_nfb = 0; ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; }   /* (the context gone: its objects with it) */
+static void ph_lost (void) { memset (ph_uc, 0, sizeof ph_uc); ox_lost (); ph_nfb = 0; ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = 0; }   /* (the context gone: its objects with it) */
 static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint filt, const void *data)
 {
 	GLuint t; glGenTextures_ (1, &t); glBindTexture_ (GL_TEXTURE_2D, t);
@@ -274,8 +305,8 @@ static void ph_size (void)
 	if (ph_F[0]) {                                      /* (the old images out whenever there are any - not ph_made: a new game and a
 	                                                       new profile set it 0 for a dark phosphor, the images stayed: +160 MB a game
 	                                                       switch at 1640 x 2096, the iPad 2026-11-19) */
-		GLuint t[13] = { ph_F[0], ph_F[1], ph_G1[0], ph_G1[1], ph_G2[0], ph_G2[1], ph_S, ph_B[0], ph_B[1], ph_P, 0, 0, 0 };
-		glDeleteTextures_ (10, t); }
+		GLuint t[13] = { ph_F[0], ph_F[1], ph_G1[0], ph_G1[1], ph_G2[0], ph_G2[1], ph_S, ph_B[0], ph_B[1], ph_P, ph_L, ph_H, 0 };
+		glDeleteTextures_ (ph_L ? 12 : 10, t); ph_L = ph_H = 0; }
 	const int gd = 2 * S; ph_gw = FW / gd; ph_gh = FH / gd; if (ph_gw < 2) ph_gw = 2; if (ph_gh < 2) ph_gh = 2;
 	ph_pw = (int) (FW * fx_ps + 0.5); ph_ph = (int) (FH * fx_ps + 0.5); if (ph_pw < 2) ph_pw = 2; if (ph_ph < 2) ph_ph = 2;
 	ph_fw = fx_lh ? ph_pw : FW; ph_fh = fx_lh ? ph_ph : FH; ph_ps_made = fx_ps; ph_lh_made = fx_lh;
@@ -285,6 +316,7 @@ static void ph_size (void)
 		ph_G2[k] = ph_tex (ph_pw, ph_ph, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL);
 		ph_B[k] = ph_tex (ph_gw, ph_gh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL); }
 	ph_S = ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL);
+	if (ph_beam && ph_sat) { ph_L = ph_tex (ph_fw, ph_fh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST, NULL); ph_H = ph_tex (ph_gw, ph_gh, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL); }
 	ph_P = (vx_hdr_peak > 1.0f || vx_hdr_lift > 1.5f) ? ph_tex (FW, FH, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, NULL)   /* (HDR: room above white) */
 	                          : ph_tex (FW, FH, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, NULL); ph_hdr_made = vx_hdr_peak > 1.0f || vx_hdr_lift > 1.5f;
 	ph_made = 1; ph_w = FW; ph_h = FH;
@@ -315,6 +347,7 @@ extern double vt_wall (void);
 #define PHT(k) do { if (vx_gprof_now) { glFinish_ (); const double t_ = vt_wall (); vx_gpst[k] += t_ - ph_t0; ph_t0 = t_; } } while (0)
 static int ph_frame (int npl, double dt, int glow, int after, int shot)
 {
+	const int beam = bt_gpu && ph_beam && ph_sat; if (beam) glow = 0;   /* (the beam on the phosphor: the glass's glow is in the light itself) */
 	if (!ph_ok) return 0;
 	if (vx_gprof_now) ph_t0 = vt_wall ();
 	if (FW != ph_w || FH != ph_h || !ph_made || fx_ps != ph_ps_made || fx_lh != ph_lh_made || (vx_hdr_peak > 1.0f || vx_hdr_lift > 1.5f) != ph_hdr_made) { ph_size (); if (!ph_ok) return 0; }
@@ -328,19 +361,52 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		o[8] = q->n0x; o[9] = q->n0y; o[10] = q->c0 + q->n0x * ox; o[11] = (q->cut & 1) ? 1.0f : 0.0f;
 		o[12] = q->n1x; o[13] = q->n1y; o[14] = q->c1 + q->n1x * ox; o[15] = (q->cut & 2) ? 1.0f : 0.0f;
 		o[16] = q->R; o[17] = q->r; o[18] = q->g; o[19] = q->b; o[20] = q->k2; o[21] = q->hx; o[22] = o[23] = 0;
+		if (beam) { if (ls != 1.0f) { for (int i = 0; i < 8; i++) o[i] *= ls; float sw = q->k2 * ls; if (sw < 0.5f) { const float f = (sw / 0.5f) * (sw / 0.5f); o[17] *= f; o[18] *= f; o[19] *= f; sw = 0.5f; }
+			o[20] = sw; o[16] = 3.5f * sw + 1.0f; } o[21] = 0; continue; }
 		if (ls != 1.0f) { for (int i = 0; i < 8; i++) o[i] *= ls; o[10] *= ls; o[14] *= ls;
 			float sw = sqrtf (0.5f / q->k2) * ls; if (sw < 0.5f) { o[17] *= sw / 0.5f; o[18] *= sw / 0.5f; o[19] *= sw / 0.5f; o[21] *= sw / 0.5f; sw = 0.5f; }
 			o[16] = sw * 3.0f; o[20] = 0.5f / (sw * sw); } }
 	glDisable_ (GL_DEPTH_TEST); glDisable_ (GL_SCISSOR_TEST); glDisable_ (GL_CULL_FACE); glDisable_ (GL_STENCIL_TEST);
 	/* the fresh light */
-	ph_target (ph_F[cur], 0, 0, ph_fw, ph_fh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
+	if (beam && !ph_L) { ph_made = 0; ph_size (); if (!ph_ok) return 0; }
+	const GLuint capp = beam ? ph_beam : ph_cap;
+	ph_target (beam ? ph_L : ph_F[cur], 0, 0, ph_fw, ph_fh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
 	if (npl) {
 		glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
-		glUseProgram_ (ph_cap); glUniform2f_ (ph_ul (ph_cap, "sz"), (float) ph_fw, (float) ph_fh);
+		glUseProgram_ (capp); glUniform2f_ (ph_ul (capp, "sz"), (float) ph_fw, (float) ph_fh); if (beam) PU1I (capp, "halo", 0);
 		glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
 		glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) npl * 24 * sizeof (float)), ph_buf, GL_STREAM_DRAW);
 		glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, npl);
 		glBindBuffer_ (GL_ARRAY_BUFFER, 0); glDisable_ (GL_BLEND);
+	}
+	if (beam) {
+		/* the glass's glow: every piece once more, wide and faint (BT_HALO_F of its light, sigma BT_HALO_S units) - into an image the
+		 * glow's size (so smooth a light needs no more; at the picture's size it was most of the lines' cost), read into the light below */
+		const float hx = (float) ph_gw / FW, hy = (float) ph_gh / FH, hm = 0.5f * (hx + hy), hf = (float) (BT_HALO_F / (1.0 - BT_HALO_F));
+		if ((size_t) npl * 24 > ph_hbufn) { free (ph_hbuf); ph_hbufn = (size_t) npl * 24 + 4096; ph_hbuf = malloc (ph_hbufn * sizeof (float)); }
+		int nh_ = 0;
+		for (int k = 0; k < npl; k++) { const pline *q = &pl[k]; if (!(q->hx > 0)) continue; float *o = ph_hbuf + (size_t) nh_++ * 24; const float ox = (float) (q->to * EW);
+			float sh = q->hx * hm; const float f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf * (sh < 0.5f ? (sh / 0.5f) * (sh / 0.5f) : 1.0f); if (sh < 0.5f) sh = 0.5f;
+			o[0] = o[4] = (q->ax + ox) * hx; o[1] = o[5] = q->ay * hy; o[2] = o[6] = (q->bx + ox) * hx; o[3] = o[7] = q->by * hy;
+			for (int i = 8; i < 16; i++) o[i] = 0;
+			o[16] = 3.5f * sh + 1.0f; o[17] = q->r * f; o[18] = q->g * f; o[19] = q->b * f; o[20] = sh; o[21] = o[22] = o[23] = 0; }
+		ph_target (ph_H, 0, 0, ph_gw, ph_gh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
+		if (nh_) {
+			glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
+			glUseProgram_ (ph_beam); glUniform2f_ (ph_ul (ph_beam, "sz"), (float) ph_gw, (float) ph_gh); PU1I (ph_beam, "halo", 1);
+			glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
+			glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) nh_ * 24 * sizeof (float)), ph_hbuf, GL_STREAM_DRAW);
+			glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, nh_);
+			glBindBuffer_ (GL_ARRAY_BUFFER, 0); glDisable_ (GL_BLEND); }
+		/* the light as the screen's values: the exposure, the tube's white (BT_TINT, moved with the White balance) */
+		{ float tg[3], t0[3], tn[3], mx = 0; static const float BT_TINT[3] = { 0.65f, 0.86f, 1.0f };
+		  white_gain (opt_white, tg); white_gain (12000.0, t0);
+		  for (int k = 0; k < 3; k++) { tn[k] = BT_TINT[k] * tg[k] / t0[k]; if (tn[k] > mx) mx = tn[k]; }
+		  glBindVertexArray_ (g_vao); ph_target (ph_F[cur], 0, 0, ph_fw, ph_fh); glUseProgram_ (ph_sat);
+		  ph_bind (ph_sat, "lt", 0, ph_L); ph_bind (ph_sat, "ht", 1, ph_H);
+		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2)));   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
+		  glUniform3f_ (ph_ul (ph_sat, "tint"), tn[0] / mx, tn[1] / mx, tn[2] / mx); glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
+		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 	}
 	PHT (0);
 	glBindVertexArray_ (g_vao);
@@ -395,10 +461,10 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  ph_target (ph_P, 0, 0, FW, FH); glUseProgram_ (ph_out);
 	  ph_bind (ph_out, "s", 0, ph_S); ph_bind (ph_out, "gt", 1, ph_B[0]); ph_bind (ph_out, "ovm", 2, ph_ovm); ph_bind (ph_out, "ova", 3, ph_ova);
 	  const float gk = GLOW_K * (glow == 2 ? 2.0f : 1.0f);
-	  PU1I (ph_out, "glow", glow); PU1I (ph_out, "ovon", ovon && ph_ovm); PU1I (ph_out, "wbon", wb_on);
+	  PU1I (ph_out, "glow", glow); PU1I (ph_out, "ovon", ovon && ph_ovm); PU1I (ph_out, "wbon", wb_on && !beam); PU1I (ph_out, "beam", beam);
 	  glUniform3f_ (ph_ul (ph_out, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
 	  glUniform3f_ (ph_ul (ph_out, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (ph_ul (ph_out, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
-	  PU1F (ph_out, "bright", opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0); PU1F (ph_out, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); PU1F (ph_out, "hl", vx_hdr_lift); PU1F (ph_out, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); PU1F (ph_out, "lt", vx_hdr_lt); PU1F (ph_out, "sn", vx_hdr_sn); PU1F (ph_out, "gb", vx_hdr_gb);
+	  PU1F (ph_out, "bright", beam ? 1.0f : opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0); PU1F (ph_out, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); PU1F (ph_out, "hl", beam ? 0.0f : vx_hdr_lift); PU1F (ph_out, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); PU1F (ph_out, "lt", vx_hdr_lt); PU1F (ph_out, "sn", vx_hdr_sn); PU1F (ph_out, "gb", vx_hdr_gb);
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:

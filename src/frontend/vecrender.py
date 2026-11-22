@@ -3703,8 +3703,8 @@ class GLBloomRenderer(GLRenderer):
     HOLD_EPS = 0.004                                      # (the margin: frame times jitter a little, and the phosphor
                                                           #  image keeps a spot's age to ~0.5 ms - 16-bit float)
     def vlook(self):
-        """the Vectrex look (Tube > Look)"""
-        return getattr(self, 'look', 'bright') == 'vectrex'
+        """the line renderer's Vectrex look - gone with it (2026-11-22: one picture, the beam on the phosphor; an HDR screen opens its top)"""
+        return False
     def hold(self):
         """how long a lit spot stays at full brightness: until the game has drawn its next picture. A real tube
         keeps a slow game's picture as bright as a fast one's (the eye averages the flashes); here a spot stays

@@ -277,7 +277,6 @@ TOPICS = [
 ('p', "The Tube tab is about the picture tube and the analog parts that drive it. Each effect is measured "
       "on a real Vectrex (photos, a video and sound recordings) and can be switched off."),
 ('item', 'Phosphor (afterglow and bloom)', "The glow of the screen's coating. Off: plain lines."),
-('item', 'Look', "Bright: all lines pushed up to white - bright vectors on a dim screen. Vectrex: as a real Vectrex - dots and slow lines stand out; wants a bright screen."),
 ('item', 'Bloom', "How far the brightest lines light up the glass around them."),
 ('more', 'Why the lines glow', "The electron beam excites a coating of phosphor on the inside of the "
          "glass. A spot the beam lingers on gets very bright: dots and line ends glow, fast thin lines stay "

@@ -207,9 +207,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 11; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 10; }
 /* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, HDR, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[11] = { 0, 1, 7, 8, 9, 2, 3, 10, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 10 ? -1 : m[ip.row]; }
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[10] = { 0, 1, 7, 8, 9, 2, 3, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 9 ? -1 : m[ip.row]; }   /* (10, the look: gone 2026-11-22 - one picture) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;

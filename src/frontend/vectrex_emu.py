@@ -155,6 +155,34 @@ def _move_old_settings():
                 pass
             return
 _move_old_settings()
+# 2026-11-22, the beam on the phosphor: the picture's and the unit's settings back to their defaults once, as a clean install (the
+# owner) - the sound, the controls, the games' overlays and everything about the PC stay
+SETTINGS_EPOCH = 2
+SOUND_KEYS = ('buzz_on', 'buzz_vol', 'speaker_on', 'volume', 'voice_vol', 'voice_full', 'jack_mode', 'jack_vol', 'motor_on', 'motor_vol')
+def _settings_epoch():
+    try:
+        d = json.load(open(SETTINGS_F))
+    except Exception:           # noqa: first run
+        return
+    if not isinstance(d, dict) or d.get('settings_epoch', 0) >= SETTINGS_EPOCH:
+        return
+    if isinstance(d.get('display'), dict):
+        d['display'] = {k: v for k, v in d['display'].items() if k in SOUND_KEYS}
+    if isinstance(d.get('defaults'), dict):
+        d['defaults'].pop('unit', None)
+        if isinstance(d['defaults'].get('display'), dict):
+            d['defaults']['display'] = {k: v for k, v in d['defaults']['display'].items() if k in SOUND_KEYS}
+    d.pop('unit', None); d['unit_name'] = 'owner'
+    for g in (d.get('per_game') or {}).values():
+        if isinstance(g, dict) and isinstance(g.get('look'), dict):
+            g['look'] = {k: v for k, v in g['look'].items() if k in SOUND_KEYS}
+    d['settings_epoch'] = SETTINGS_EPOCH
+    try:
+        tmp = SETTINGS_F + '.tmp'
+        json.dump(d, open(tmp, 'w'), indent=1); os.replace(tmp, SETTINGS_F)
+    except OSError:
+        pass
+_settings_epoch()
 # The included game's earlier names (Robot Arena until v1.3.1, Steel Siege until v1.4.2): kept only to move a
 # player's files and settings over to the current name - the owner, 2026-11-01: no trace of the old names
 GAME_NAME = 'Last Human'
@@ -8751,6 +8779,7 @@ class App:
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'
         d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)
+        d['settings_epoch'] = SETTINGS_EPOCH
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name

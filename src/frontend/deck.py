@@ -648,8 +648,6 @@ class Deck:
         snd = self.sound_changed
         if s == 'Tube':
             return [('group', 'PHOSPHOR'),
-                    ('choice', 'Look', [(n, (lambda v=v: A('look', 'bright') == v), (lambda v=v: a.set_look(v))) for n, v in (('Bright', 'bright'), ('Vectrex', 'vectrex'))],
-                     None, lambda: self.changed('look')),
                     ('check', 'Phosphor', PH, a.toggle_phosphor, None),
                     ('in', [('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
                             ('in', [('slider', 'trail', AG),

@@ -9119,6 +9119,17 @@ class App:
     SM_OTHER = (2.0, 300.0)
     def smooth_on(self):
         return getattr(self, 'smooth', False) and not self.vrr and bool(self.ren) and hasattr(self.ren, 'present')
+    def sm_moment(self, now):
+        """Smooth motion on a fixed refresh (vsync): the moment of this refresh's picture - the refresh it goes out with
+        (the one after the last, vbl - as tick_timed counts them; the next one when the tick began after it: that one is
+        gone), not when the tick's work began. That moment moved with the work before it - the sleep's margin follows the
+        drawing time - and the glide went in uneven steps (the Ship Test while recording: 7 2 7 2 px). A refresh apart:
+        even steps. The refresh not known, or far from now (a stall, just switched): now"""
+        per = self.vsync / float(self.refresh if getattr(self, 'refresh', 0) >= 50 else 60)
+        due = self.vbl + per
+        if not now - per < due < now + 2 * per:
+            return now
+        return due if due > now else due + per
     def toggle_smooth(self):
         self.smooth = not self.smooth
         self.sm_buf = []
@@ -9732,6 +9743,9 @@ class App:
         else:
             show = True
             T = now
+            if smooth and self.vsync and getattr(self, 'vbl', 0.0):
+                T = self.sm_moment(now)                         # (Smooth motion off: now, as before - the game's
+                                                                #  lines light at their own moments)
         if show:
             imm = None
             if not self.run.power:                              # power off: the tube collapses, fades

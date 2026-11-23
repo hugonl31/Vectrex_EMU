@@ -69,6 +69,7 @@ GLFN(void, glEnable_d, (GLenum)); GLFN(void, glBlendFunc_d, (GLenum, GLenum)); G
 GLFN(void, glDisable, (GLenum)); GLFN(void, glDrawArrays, (GLenum, GLint, GLsizei));
 GLFN(void, glGenVertexArrays, (GLsizei, GLuint *)); GLFN(void, glBindVertexArray, (GLuint));
 GLFN(void, glDeleteVertexArrays, (GLsizei, const GLuint *)); GLFN(GLenum, glGetError, (void));
+GLFN(void, glInvalidateFramebuffer, (GLenum, GLsizei, const GLenum *));   /* (optional: loaded by gpu_phos.c ph_reset) */
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_TEXTURE0 0x84C0
 #define GL_RGBA 0x1908
@@ -673,10 +674,15 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, pitch);
 	glTexSubImage2D_ (GL_TEXTURE_2D, 0, 0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, frame);
 	glPixelStorei_ (GL_UNPACK_ROW_LENGTH, 0); }
-	glBindFramebuffer_ (GL_FRAMEBUFFER, (GLuint) hwr.get_current_framebuffer ());
+	const GLuint ofb = (GLuint) hwr.get_current_framebuffer ();
+	glBindFramebuffer_ (GL_FRAMEBUFFER, ofb);
 	if (dk_on || dk_pop) { ow = TW; oh = TH; }                           /* (the control deck: the block, deck.c) */
 	const int dw = rot & 1 ? oh : ow, dh = rot & 1 ? ow : oh;
 	glViewport_ (0, 0, dw, dh);
+	/* (the picture below covers all it shows, opaque: what the frontend's image held is not needed - a tiled GPU (Apple's, Mali,
+	 *  Adreno) then does not load it into its tile memory first, a whole picture read for nothing each refresh. Its own
+	 *  framebuffer only: the window's own (0) is named otherwise; the deck's block is cleared, the same) */
+	if (glInvalidateFramebuffer_ && ofb && !dk_on) { static const GLenum ca[1] = { 0x8CE0 }; glInvalidateFramebuffer_ (GL_FRAMEBUFFER, 1, ca); }
 	if (dk_on) { glDisable_ (GL_SCISSOR_TEST); glClearColor_d_ (0, 0, 0, 1); glClear_d_ (0x4000); gpu_vp (BX, BY, BX + CW, BY + CH, rot, dw, dh); }
 	glDisable_ (GL_BLEND); glDisable_ (GL_DEPTH_TEST); glDisable_ (GL_SCISSOR_TEST); glDisable_ (GL_CULL_FACE); glDisable_ (GL_STENCIL_TEST);
 	glUseProgram_ (g_prog); glBindVertexArray_ (g_vao);

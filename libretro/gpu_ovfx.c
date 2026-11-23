@@ -358,11 +358,13 @@ static int ox_draw (int glow, double dt)
 	/* the light at quarter size: smoothed (the glints, the glow), blurred (M: once, F: three times) */
 	ph_target (ox_Q0, 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_down); ph_bind (ox_down, "tex", 0, ox_L); ph_bind (ox_down, "pS", 1, ph_S); ph_bind (ox_down, "pF", 2, ph_F[ph_i ^ 1]); OU1F (ox_down, "br", bt_gpu ? 1.0f : opt_bright);
 	glUniform2f_ (ph_ul (ox_down, "sp"), 1.0f / FW, 1.0f / FH); glUniform2f_ (ph_ul (ox_down, "qs"), qs[0], qs[1]); ox_quad (); OXT (2);
+	GLuint q1src = ox_Q0;
 	{ double a = 1.0 - exp (-(dt < 0 ? 0 : dt > 1 ? 1 : dt) / 0.15); if (ox_t_prev < 0) a = 1; ox_t_prev = 1;
 	  a = 1;   /* (2026-11-22: not smoothed in time any more - the plastic's glow trailed 40-150 px behind a moving line, and without it
 	             neither the glow nor the glints flicker while the vectors are steady: measured with the Glow Test cart, the owner's choice) */
-	  ph_target (ox_Q1[ox_q1i ^ 1], 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_q1); ph_bind (ox_q1, "q0", 0, ox_Q0); ph_bind (ox_q1, "q1", 1, ox_Q1[ox_q1i]);
-	  OU1F (ox_q1, "a", a); ox_quad (); ox_q1i ^= 1; } OXT (3);
+	  if (a < 1) { ph_target (ox_Q1[ox_q1i ^ 1], 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_q1); ph_bind (ox_q1, "q0", 0, ox_Q0); ph_bind (ox_q1, "q1", 1, ox_Q1[ox_q1i]);
+		  OU1F (ox_q1, "a", a); ox_quad (); ox_q1i ^= 1; q1src = ox_Q1[ox_q1i]; } } OXT (3);   /* (not smoothed: the light at quarter
+		                                                    size itself - its copy, a pass a picture, was the same) */
 	{ const double s1 = 4.0 * kpx, s2 = 12.0 * kpx, r = ovfx.reach < 0 ? 0 : ovfx.reach > 2 ? 2 : ovfx.reach;
 	  const int nn = (int) ceil (5.0 * s2), st = (nn + 31) / 32, n = (nn + st - 1) / st;   /* (65 taps at most: every st-th cell) */
 	  float w1[65 * 4], w2[65 * 4], w4[65 * 2], qa[65 * 4], qb[65 * 4], q4[65 * 2];
@@ -376,7 +378,7 @@ static int ox_draw (int glow, double dt)
 		qa[4 * k] = (float) (n1 * g1); qa[4 * k + 1] = (float) (n1 * g1 * u1); qa[4 * k + 2] = (float) (n1 * g1 * u1 * u1); qa[4 * k + 3] = (float) (n1 * g1 * u1 * u1 * u1);
 		qb[4 * k] = (float) (n2 * g2); qb[4 * k + 1] = (float) (n2 * g2 * u2); qb[4 * k + 2] = (float) (n2 * g2 * u2 * u2); qb[4 * k + 3] = (float) (n2 * g2 * u2 * u2 * u2);
 		q4[2 * k] = (float) (n1 * g1 * u1 * u1 * u1 * u1); q4[2 * k + 1] = (float) (n2 * g2 * u2 * u2 * u2 * u2); }
-	  ph_target (ox_H[0], ox_H[1], ox_H[2], ox_qw, ox_qh); glUseProgram_ (ox_hh); ph_bind (ox_hh, "src", 0, ox_Q1[ox_q1i]);
+	  ph_target (ox_H[0], ox_H[1], ox_H[2], ox_qw, ox_qh); glUseProgram_ (ox_hh); ph_bind (ox_hh, "src", 0, q1src);
 	  OU1I (ox_hh, "n", n); OU1I (ox_hh, "st", st);
 	  glUniform4fv_ (ph_ul (ox_hh, "w1"), 2 * n + 1, w1); glUniform4fv_ (ph_ul (ox_hh, "w2"), 2 * n + 1, w2);
 	  glUniform2fv_ (ph_ul (ox_hh, "w4"), 2 * n + 1, w4); ox_quad (); OXT (4);
@@ -385,14 +387,13 @@ static int ox_draw (int glow, double dt)
 	  glUniform4fv_ (ph_ul (ox_hv, "qa"), 2 * n + 1, qa); glUniform4fv_ (ph_ul (ox_hv, "qb"), 2 * n + 1, qb);
 	  glUniform2fv_ (ph_ul (ox_hv, "q4"), 2 * n + 1, q4); ox_quad (); OXT (5); }
 	glUseProgram_ (ox_blur); glUniform2f_ (ph_ul (ox_blur, "qs"), qs[0], qs[1]);
-	/* (B[0]: the light blurred, across into B[1] and back; B[2] (M) a copy after the first round, B[0] (F) after the third) */
+	/* (the light blurred, across into B[1] and back: B[2] (M) after the first round, B[0] (F) after the third - the first round's
+	 *  written into B[2] itself and read from there: its copy, a pass a picture, gone) */
 	{ for (int it = 0; it < 3; it++) {
-		ph_target (ox_B[1], 0, 0, ox_qw, ox_qh); ph_bind (ox_blur, "tex", 0, it ? ox_B[0] : ox_Q0);
+		ph_target (ox_B[1], 0, 0, ox_qw, ox_qh); ph_bind (ox_blur, "tex", 0, it == 0 ? ox_Q0 : it == 1 ? ox_B[2] : ox_B[0]);
 		glUniform2f_ (ph_ul (ox_blur, "dir"), (float) (kpx / ox_qw), 0.0f); ox_quad ();
-		ph_target (ox_B[0], 0, 0, ox_qw, ox_qh); ph_bind (ox_blur, "tex", 0, ox_B[1]);
-		glUniform2f_ (ph_ul (ox_blur, "dir"), 0.0f, (float) (kpx / ox_qh)); ox_quad ();
-		if (it == 0) { ph_target (ox_B[2], 0, 0, ox_qw, ox_qh); glUseProgram_ (ox_q1); ph_bind (ox_q1, "q0", 0, ox_B[0]); ph_bind (ox_q1, "q1", 1, ox_B[0]);
-			OU1F (ox_q1, "a", 1.0); ox_quad (); glUseProgram_ (ox_blur); glUniform2f_ (ph_ul (ox_blur, "qs"), qs[0], qs[1]); } } } OXT (6);
+		ph_target (it == 0 ? ox_B[2] : ox_B[0], 0, 0, ox_qw, ox_qh); ph_bind (ox_blur, "tex", 0, ox_B[1]);
+		glUniform2f_ (ph_ul (ox_blur, "dir"), 0.0f, (float) (kpx / ox_qh)); ox_quad (); } } OXT (6);
 	/* the sheet */
 	ph_target (ph_P, 0, 0, FW, FH); glUseProgram_ (ox_sheet);
 	ph_bind (ox_sheet, "L", 0, ox_L); ph_bind (ox_sheet, "ovm", 1, ph_ovm); ph_bind (ox_sheet, "ova", 2, ph_ova); ph_bind (ox_sheet, "art", 3, ox_art);

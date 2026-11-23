@@ -3320,6 +3320,7 @@ static void retro_run_one (void)
 		{ extern int vx_gprof_now; vx_gprof_now = gpm; }
 		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
 		if (ph_ex_mode) sm_ex_shown = sm_ex_next;       /* (this picture is drawn - Low leaves every other one out: its game frame's afterglow with the next) */
+		const int gb_exm = ph_ex_mode, gb_exn = ph_ex_n; (void) gb_exm; (void) gb_exn;   /* (VX_GPUBENCH below) */
 		const double c0 = vt_wall (); const int phd = ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ()); cs_now[4] += vt_wall () - c0;
 		if (phd) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
@@ -3333,6 +3334,19 @@ static void retro_run_one (void)
 				glFinish_ (); { const double tv = vt_wall (); gvt[vi] += tv - gp1; gvn[vi]++; gp1 = tv; }
 				gfx.cse = kc; gfx.lk = kl; gfx.grey = kg; gfx.crefl = kr; gpu_novideo = kn; }
 			{ const double c1 = vt_wall (); gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot); cs_now[4] += vt_wall () - c1; }
+			{ /* (a test, VX_GPUBENCH=K: one refresh in 30 this picture's GPU work - the light, the sheet, the glass and the case - done K times
+			   *  more back to back, timed by a GL_TIME_ELAPSED query: the GPU's own time a picture, no gaps for the CPU. It moves the phosphor
+			   *  on K refreshes: for timing runs only. The log: GPUBENCH) */
+			  static int gbk = -1; if (gbk < 0) { const char *z = getenv ("VX_GPUBENCH"); gbk = z ? atoi (z) : 0; }
+			  static long gbc, gbn; static double gbs, gbw;
+			  if (gbk > 0 && gq_ok > 0 && gq_cur < 0 && (++gbc % 30) == 0) {
+				  const int kn = gpu_novideo; GLuint q = gq_id[(gq_next + GQ_N - 1) % GQ_N]; unsigned long long ns = 0;
+				  for (int k = 0; k < GQ_N; k++) if (!gq_busy[k]) { q = gq_id[k]; break; }
+				  glFinish_ (); gq_beg (0x88BF, q); gpu_novideo = 1; const double gw0 = vt_wall ();
+				  for (int k = 0; k < gbk; k++) { ph_ex_mode = gb_exm; ph_ex_n = gb_exn; ph_frame (npl, pdt, opt_glow, opt_after, 0);
+					  gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot); }
+				  gq_endf (0x88BF); gbw += (vt_wall () - gw0) * 1e3 / gbk; gpu_novideo = kn; gq_u64 (q, 0x8866, &ns);
+				  gbs += ns / 1e6 / gbk; if (++gbn % 20 == 0) { fprintf (stderr, "GPUBENCH %d x %d px: %.3f ms a picture on the GPU, %.3f ms the CPU's commands (%ld timed)\n", FW, FH, gbs / 20, gbw / 20, gbn); gbs = gbw = 0; } } }
 			if (gpm) { glFinish_ (); const double gp2 = vt_wall (); gpt[0] += gp1 - gp0; gpt[1] += gp2 - gp1; gpn++;
 				extern double vx_gpst[4], vx_oxst[8]; extern int vx_gprof_now; vx_gprof_now = 0;
 				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms (lines %.2f, phosphor %.2f, glow %.2f, picture %.2f), the glass and the case %.2f ms - %d x %d px, profile %s; the sheet's passes %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f; the glass and case with a part off: no case %.2f, no case nor room light %.2f, no reflections %.2f ms%c",

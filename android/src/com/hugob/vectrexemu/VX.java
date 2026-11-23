@@ -23,6 +23,8 @@ final class VX {
 	static native int[] genlabel (String path, int width);     /* (the cartridge with the player's own label on it: the same) */
 	static native int gensize (int px);                        /* (the width to make a tile shown px wide at: 256 / 384 / 512 / 640 / 840) */
 	static native int[] genfit (String path, int maxw);        /* (a picture of the player's own, at most maxw wide: the same) */
+	static native int[] genlabelb (byte[] pic, int width);     /* (genlabel / genfit from a picture's bytes, PNG or JPEG: the app's own, assets/shipped) */
+	static native int[] genfitb (byte[] pic, int maxw);
 	static native int palette ();                               /* (the core's colour scheme now: 0 blue, 1 green) */
 	static native void setBright (int on);                      /* (the look: 0 Vectrex, 1 Bright - the lines lifted and wider) */
 	static native void setHdrLook (int look);                   /* (0 bright - as SDR, 1 the whole picture, 2 the Vectrex: iOS alike) */

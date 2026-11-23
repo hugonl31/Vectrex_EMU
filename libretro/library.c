@@ -1,7 +1,11 @@
 /* library.c - the game library over the picture, as the phone apps' and the PC's (src/frontend/library.py): the tiles' look
  * (cartridges, boxes, overlays), 2 - 6 a row or titles only, the categories (All, Recent, Games, UVMC2, PiTrex, Tests);
- * it fills the picture. The pictures: system/vectrex_emu/thumbs/{carts,boxes,overlays}/<game>.png, else a cartridge with
- * the player's own label from thumbs/labels/<game>.png (genart.c), the PiTrex's own from pitrex_tiles.h; a game without one gets a cartridge / box drawn for it (genart.c: its title in the blue pill), an overlay its name. Included by browser.c (its image, its drawing, its input); the setting
+ * it fills the picture. The pictures: system/vectrex_emu/thumbs/{carts,boxes,overlays}/<game>.png or .jpg, else a cartridge
+ * with the player's own label from thumbs/labels/<game>.png / .jpg (genart.c) - each also by the box art's name for the
+ * game (thumbs/shipped/index.txt by the game's key, genart.c vx_genart_key: the full artwork set's names) -, else the ones
+ * that come with the emulator (thumbs/shipped: a label on our cartridge, a box), the PiTrex's
+ * own from pitrex_tiles.h; a game without one gets a cartridge / box drawn for it (genart.c: its title in the blue pill), an
+ * overlay its name. Included by browser.c (its image, its drawing, its input); the setting
  * Video > Game list chooses it or the simple list.
  *
  * The controller: the stick or the d-pad moves the choice - up from the top row into the head (categories, then the looks and
@@ -95,16 +99,39 @@ static lib_pic lib_pc[LIB_PICS]; static int lib_npc, lib_pc_look = -1, lib_pc_tw
 static void lib_pics_clear (void) { for (int i = 0; i < lib_npc; i++) free (lib_pc[i].px); lib_npc = 0; free (lib_missing); lib_missing = NULL; lib_missing_n = 0; }
 static lib_pic *lib_pic_of (int ent) { for (int i = 0; i < lib_npc; i++) if (lib_pc[i].ent == ent) return &lib_pc[i]; return NULL; }
 static int lib_is_missing (int ent) { for (int i = 0; i < lib_missing_n; i++) if (lib_missing[i] == ent) return 1; return 0; }
+/* (the box art's name for a game: thumbs/shipped/index.txt, "<key>\t<name>" a line (tools/make_shipped_art.py) - the
+ *  pictures that come with the emulator (thumbs/shipped/labels, boxes: <name>.jpg) and the full set's (the player's
+ *  thumbs/labels, boxes); read once) */
+typedef struct { char key[96], name[160]; } lib_shp;
+static lib_shp *lib_sh; static int lib_nsh, lib_sh_read;
+static const char *lib_shipped (const char *sys, const char *game)
+{
+	if (!lib_sh_read) { lib_sh_read = 1; char p[1400]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "shipped" SEP "index.txt", sys);
+		FILE *f = fopen (p, "rb"); char ln[400]; int cap = 0;
+		while (f && fgets (ln, sizeof ln, f)) { char *t = strchr (ln, '\t'); if (ln[0] == '#' || !t) continue; *t++ = 0; t[strcspn (t, "\r\n")] = 0;
+			if (lib_nsh == cap) { cap = cap ? cap * 2 : 128; lib_shp *n = realloc (lib_sh, sizeof (lib_shp) * (size_t) cap); if (!n) break; lib_sh = n; }
+			snprintf (lib_sh[lib_nsh].key, sizeof lib_sh[0].key, "%s", ln); snprintf (lib_sh[lib_nsh].name, sizeof lib_sh[0].name, "%s", t); lib_nsh++; }
+		if (f) fclose (f); }
+	char k[96]; if (!vx_genart_key (game, k, (int) sizeof k)) return NULL;
+	for (int i = 0; i < lib_nsh; i++) if (!strcmp (lib_sh[i].key, k)) return lib_sh[i].name;
+	return NULL;
+}
 static void lib_pic_load (int ent, int tw, int th)
 {
 	const lib_ent *e = &lib_all[ent]; int w = 0, h = 0, n; unsigned char *im = NULL; const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
 	char base[200]; snprintf (base, sizeof base, "%s", e->name); { char *q = strstr (base, " ("); if (q) *q = 0; }
-	for (int t = 0; t < 2 && !im && sys; t++) { char p[1400]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "%s" SEP "%s.png", sys, LIB_LOOK[lib_look], t ? base : e->name);
+	/* (by its name, without its (...) part, and the box art's name for it - index.txt: the full set's pictures; PNG or JPEG) */
+	static const char *const EXT[2] = { "png", "jpg" }; const char *art = sys && lib_look != 2 ? lib_shipped (sys, e->name) : NULL;
+	const char *nm[3] = { e->name, base, art }; const int nn = art ? 3 : 2;
+	for (int t = 0; t < nn * 2 && !im && sys; t++) { char p[1400]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "%s" SEP "%s.%s", sys, LIB_LOOK[lib_look], nm[t >> 1], EXT[t & 1]);
 		im = stbi_load (p, &w, &h, &n, 4); }
 	int gen = 0;
-	for (int t = 0; t < 2 && !im && sys && lib_look == 0; t++) { char p[1400];   /* (no cartridge picture: the player's own label on our cartridge - genart.c) */
-		snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "labels" SEP "%s.png", sys, t ? base : e->name);
+	for (int t = 0; t < nn * 2 && !im && sys && lib_look == 0; t++) { char p[1400];   /* (no cartridge picture: the player's own label on our cartridge - genart.c) */
+		snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "labels" SEP "%s.%s", sys, nm[t >> 1], EXT[t & 1]);
 		im = vx_genart_label_w (p, vx_genart_size (tw), &w, &h); gen = im != NULL; }
+	if (!im && art) {                                 /* (none of the player's own: the one that comes with the emulator, if it is one of those) */
+		char p[1400]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "shipped" SEP "%s" SEP "%s.jpg", sys, lib_look ? "boxes" : "labels", art);
+		if (lib_look) im = stbi_load (p, &w, &h, &n, 4); else { im = vx_genart_label_w (p, vx_genart_size (tw), &w, &h); gen = im != NULL; } }
 	if (!im && e->boot)                               /* (the PiTrex: its own cartridge and box, the program's) */
 		im = lib_look == 1 ? stbi_load_from_memory (VX_PITREX_BOX, (int) sizeof VX_PITREX_BOX, &w, &h, &n, 4) : stbi_load_from_memory (VX_PITREX_CART, (int) sizeof VX_PITREX_CART, &w, &h, &n, 4);
 	if (!im && lib_look != 2) { im = vx_genart_make_w (lib_look, e->name, vx_genart_size (tw), &w, &h); gen = im != NULL; }   /* (none of its own: drawn - genart.c, as every platform; at about the tile's width) */

@@ -276,7 +276,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	}
 	void startCore ()
 	{
-		if (started) return; started = true; findContent (); showBar ();   /* (the bar hiding itself: shown a while at the start) */
+		if (started) return; started = true; findContent (); Pack.retire (this); showBar ();   /* (the bar hiding itself: shown a while at the start) */
 		String g = prefs.getString ("lastGame", ""); if (g.isEmpty () || !new File (g).exists ()) g = firstGame ();
 		log ("starting with " + g);
 		VX.start (sysDir.getAbsolutePath (), savesDir.getAbsolutePath (), g, defaults ());

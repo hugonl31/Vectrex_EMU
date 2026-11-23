@@ -104,10 +104,10 @@ static void lib_pic_load (int ent, int tw, int th)
 	int gen = 0;
 	for (int t = 0; t < 2 && !im && sys && lib_look == 0; t++) { char p[1400];   /* (no cartridge picture: the player's own label on our cartridge - genart.c) */
 		snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "labels" SEP "%s.png", sys, t ? base : e->name);
-		im = vx_genart_label (p, &w, &h); gen = im != NULL; }
+		im = vx_genart_label_w (p, vx_genart_size (tw), &w, &h); gen = im != NULL; }
 	if (!im && e->boot)                               /* (the PiTrex: its own cartridge and box, the program's) */
 		im = lib_look == 1 ? stbi_load_from_memory (VX_PITREX_BOX, (int) sizeof VX_PITREX_BOX, &w, &h, &n, 4) : stbi_load_from_memory (VX_PITREX_CART, (int) sizeof VX_PITREX_CART, &w, &h, &n, 4);
-	if (!im && lib_look != 2) { im = vx_genart_make (lib_look, e->name, &w, &h); gen = im != NULL; }   /* (none of its own: drawn - genart.c, as every platform) */
+	if (!im && lib_look != 2) { im = vx_genart_make_w (lib_look, e->name, vx_genart_size (tw), &w, &h); gen = im != NULL; }   /* (none of its own: drawn - genart.c, as every platform; at about the tile's width) */
 	if (!im || w < 2 || h < 2) { if (im) { if (gen) vx_genart_free (im); else stbi_image_free (im); }
 		lib_missing = realloc (lib_missing, sizeof (int) * (size_t) (lib_missing_n + 1)); if (lib_missing) lib_missing[lib_missing_n++] = ent; return; }
 	if (lib_npc == LIB_PICS) lib_pics_clear ();

@@ -701,7 +701,8 @@ JNIEXPORT void JNICALL JF(setTrailMul) (JNIEnv *e, jclass c, jfloat k) { (void) 
 JNIEXPORT void JNICALL JF(testCart) (JNIEnv *e, jclass c, jstring path) { (void) c; JSTR (p, path); if (p) vx_testcart_write (p); JREL (p, path); }   /* (the Test Cart, written into roms/Tests) */
 JNIEXPORT void JNICALL JF(pitrexTiles) (JNIEnv *e, jclass c, jstring thumbs) { (void) c; JSTR (p, thumbs); if (p) vx_pitrex_tiles_write (p); JREL (p, thumbs); }   /* (the PiTrex's cartridge and box, written into the thumbs folder) */
 unsigned char *vx_genart_make (int look, const char *name, int *w, int *h); void vx_genart_free (void *p);   /* (libretro/genart.c, in the core) */
-unsigned char *vx_genart_label (const char *path, int *w, int *h); unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h);
+unsigned char *vx_genart_make_w (int look, const char *name, int width, int *w, int *h); unsigned char *vx_genart_label_w (const char *path, int width, int *w, int *h);
+unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h); int vx_genart_size (int px);
 /* (genart.c's RGBA as { width, height, the pixels as ARGB } - Bitmap's colours; the pixels freed) */
 static jintArray ga_argb (JNIEnv *e, unsigned char *px, int w, int h)
 {
@@ -713,20 +714,21 @@ static jintArray ga_argb (JNIEnv *e, unsigned char *px, int w, int h)
 		free (a); }
 	vx_genart_free (px); return r;
 }
-/* (a cartridge (0) or box (1) for a game with no picture of its own) */
-JNIEXPORT jintArray JNICALL JF(genart) (JNIEnv *e, jclass c, jint look, jstring name)
+/* (a cartridge (0) or box (1) for a game with no picture of its own, width px wide) */
+JNIEXPORT jintArray JNICALL JF(genart) (JNIEnv *e, jclass c, jint look, jstring name, jint width)
 {
 	(void) c; jintArray r = NULL; JSTR (p, name);
-	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_make ((int) look, p, &w, &h); r = ga_argb (e, px, w, h); }
+	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_make_w ((int) look, p, (int) width, &w, &h); r = ga_argb (e, px, w, h); }
 	JREL (p, name); return r;
 }
 /* (the cartridge with the player's own label, thumbs/labels/<game>.png) */
-JNIEXPORT jintArray JNICALL JF(genlabel) (JNIEnv *e, jclass c, jstring path)
+JNIEXPORT jintArray JNICALL JF(genlabel) (JNIEnv *e, jclass c, jstring path, jint width)
 {
 	(void) c; jintArray r = NULL; JSTR (p, path);
-	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_label (p, &w, &h); r = ga_argb (e, px, w, h); }
+	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_label_w (p, (int) width, &w, &h); r = ga_argb (e, px, w, h); }
 	JREL (p, path); return r;
 }
+JNIEXPORT jint JNICALL JF(gensize) (JNIEnv *e, jclass c, jint px) { (void) e; (void) c; return vx_genart_size ((int) px); }
 /* (a picture of the player's own (cartridge, box, overlay) made at most maxw wide, once) */
 JNIEXPORT jintArray JNICALL JF(genfit) (JNIEnv *e, jclass c, jstring path, jint maxw)
 {

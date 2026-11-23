@@ -102,29 +102,28 @@ class Library:
         return p
 
     def _reader(self):
-        import vart
+        """the pictures asked for: (what, width) - each made once at the width its tile is shown at (genart.size: a few
+        steps, so another number a row finds most made already), never kept at its full size"""
+        import vart, genart
         while True:
-            p = self.want.get()
+            key = self.want.get(); p, tw = key
             try:
                 if p.startswith('gen:'):                            # (a cartridge / box drawn for it: genart.c)
-                    import genart
-                    _, look, name = p.split(':', 2); r = genart.make(look, name)
+                    _, look, name = p.split(':', 2); r = genart.make(look, name, tw)
                     if not r:
                         raise ValueError('not drawn')
                     w, h, px = r
                 elif p.startswith('lab:'):                          # (the player's own label on our cartridge: genart.c)
-                    import genart
-                    r = genart.label(p[4:])
+                    r = genart.label(p[4:], tw)
                     if not r:
                         raise ValueError('not a label')
                     w, h, px = r
-                else:                                               # (a big picture: made tile-sized once, never kept whole)
-                    import genart
-                    r = genart.fit(p, 840)
+                else:                                               # (a picture: made tile-sized once)
+                    r = genart.fit(p, tw)
                     w, h, px = r if r else vart.load_png(p)
-                self.done[p] = (w, h, px)
+                self.done[key] = (w, h, px)
             except Exception:   # noqa: not a picture
-                self.missing.add(p)
+                self.missing.add(key)
 
     # ---------------------------------------------------------------- open, close
     def open(self, select=None):
@@ -219,6 +218,9 @@ class Library:
             r, col = divmod(i, c)
             x = gx0 + col * (tw + gap); y = gy0 + r * rowh - self.scroll
             p = self.tile(games[i]['name'], games[i].get('boot')) if self.cols else None
+            if p:
+                import genart
+                p = (p, genart.size(int(math.ceil(tw))))                # (the picture at the width it is shown at)
             if p and p not in self.asked and p not in self.missing:
                 self.asked.add(p); self.want.put(p)
             tiles.append(dict(x=x, y=y, w=tw, h=th, name=games[i]['name'], img=p if p and p not in self.missing else None,

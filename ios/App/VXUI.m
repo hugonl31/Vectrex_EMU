@@ -7,8 +7,10 @@
 #include <ctype.h>
 unsigned char *vx_genart_make (int look, const char *name, int *w, int *h);   /* (libretro/genart.c, in the core) */
 void vx_genart_free (void *p);
-unsigned char *vx_genart_label (const char *path, int *w, int *h);   /* (the player's own label on our cartridge) */
+unsigned char *vx_genart_make_w (int look, const char *name, int width, int *w, int *h);   /* (drawn at a tile's width) */
+unsigned char *vx_genart_label_w (const char *path, int width, int *w, int *h);   /* (the player's own label on our cartridge) */
 unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h);   /* (a picture made at most maxw wide) */
+int vx_genart_size (int px);   /* (the width to make a tile shown px wide at: 256 / 384 / 512 / 640 / 840) */
 #import <GameController/GameController.h>
 
 static UIFont *VF (CGFloat s, UIFontWeight w) { return [UIFont systemFontOfSize:s weight:w]; }
@@ -415,49 +417,51 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
  *  a game without one in that look takes the next: cartridge, box, overlay; Last Human (UVMC2) takes Last Human's) */
 + (NSString *) look { return [NSUserDefaults.standardUserDefaults stringForKey:@"lib.look"] ?: @"boxes"; }   /* (the default: the boxes - the owner, 2026-11-19) */
 + (CGFloat) aspect { NSString *l = [self look]; return [l isEqualToString:@"carts"] ? 0.96 : [l isEqualToString:@"boxes"] ? 1.39 : 207.0 / 162; }
-+ (UIImage *) tileFor:(NSString *)n
+/* (n's picture in the look chosen, made at about px pixels wide - the tile's width on the screen, a few steps) */
++ (UIImage *) tileFor:(NSString *)n px:(int)px
 {
+	const int tw = vx_genart_size (px);
 	NSString *th = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/thumbs"], *base = [n componentsSeparatedByString:@" ("].firstObject;
 	/* (each look its own pictures only - no mixing (the owner: carts, boxes and overlays mixed); none: the name's tile) */
 	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"overlays", @"" ] : @[ @"carts" ];
 	for (NSString *d in dirs) for (NSString *nm in @[ n, base ]) {
 		NSString *p = [[th stringByAppendingPathComponent:d] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]];
-		if ([NSFileManager.defaultManager fileExistsAtPath:p]) { UIImage *im = [self fileTileFor:p]; if (im) return im; } }
+		if ([NSFileManager.defaultManager fileExistsAtPath:p]) { UIImage *im = [self fileTileFor:p w:tw]; if (im) return im; } }
 	if ([[self look] isEqualToString:@"carts"]) for (NSString *nm in @[ n, base ]) {   /* (no cartridge picture: the player's own label on our cartridge) */
 		NSString *p = [[th stringByAppendingPathComponent:@"labels"] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]];
-		if ([NSFileManager.defaultManager fileExistsAtPath:p]) { UIImage *im = [self labelTileFor:p]; if (im) return im; } }
-	return [self drawnTileFor:n];
+		if ([NSFileManager.defaultManager fileExistsAtPath:p]) { UIImage *im = [self labelTileFor:p w:tw]; if (im) return im; } }
+	return [self drawnTileFor:n w:tw];
 }
-/* (the pictures genart.c makes, kept while memory allows) */
+/* (the tiles, each at its width: kept while memory allows - 64 MB, e.g. ~60 cartridges at 512 px (1 MB each), ~24 at 840 (2.7 MB)) */
 + (NSCache *) made { static NSCache *made; static dispatch_once_t once; dispatch_once (&once, ^{ made = [NSCache new]; made.totalCostLimit = 64 << 20; }); return made; }
-/* (a picture in the thumbs folder: made at most 840 px wide once (genart.c) - a big one never kept whole; again when it changes) */
-+ (UIImage *) fileTileFor:(NSString *)p
+/* (a picture in the thumbs folder: made at most tw px wide once (genart.c) - never kept whole; again when it changes) */
++ (UIImage *) fileTileFor:(NSString *)p w:(int)tw
 {
 	NSDate *mt = [[NSFileManager.defaultManager attributesOfItemAtPath:p error:nil] fileModificationDate];
-	NSString *key = [NSString stringWithFormat:@"F/%@/%.0f", p, mt.timeIntervalSince1970]; UIImage *im = [[self made] objectForKey:key]; if (im) return im;
-	int w = 0, h = 0; unsigned char *px = vx_genart_fit (p.fileSystemRepresentation, 840, &w, &h);
+	NSString *key = [NSString stringWithFormat:@"F%d/%@/%.0f", tw, p, mt.timeIntervalSince1970]; UIImage *im = [[self made] objectForKey:key]; if (im) return im;
+	int w = 0, h = 0; unsigned char *px = vx_genart_fit (p.fileSystemRepresentation, tw, &w, &h);
 	im = px ? [self imageOfGenart:px w:w h:h] : [UIImage imageWithContentsOfFile:p];   /* (not a PNG stb reads: as before) */
 	if (im && px) [[self made] setObject:im forKey:key cost:(NSUInteger) w * (NSUInteger) h * 4];
 	return im;
 }
 /* (a cartridge with the player's own label, thumbs/labels/<game>.png: put on our cartridge by the core's libretro/genart.c -
  *  as the PC, RetroArch and Android; made again when the file changes) */
-+ (UIImage *) labelTileFor:(NSString *)p
++ (UIImage *) labelTileFor:(NSString *)p w:(int)tw
 {
 	NSDate *mt = [[NSFileManager.defaultManager attributesOfItemAtPath:p error:nil] fileModificationDate];
-	NSString *key = [NSString stringWithFormat:@"L/%@/%.0f", p, mt.timeIntervalSince1970]; UIImage *im = [[self made] objectForKey:key]; if (im) return im;
-	int w = 0, h = 0; unsigned char *px = vx_genart_label (p.fileSystemRepresentation, &w, &h); if (!px) return nil;
+	NSString *key = [NSString stringWithFormat:@"L%d/%@/%.0f", tw, p, mt.timeIntervalSince1970]; UIImage *im = [[self made] objectForKey:key]; if (im) return im;
+	int w = 0, h = 0; unsigned char *px = vx_genart_label_w (p.fileSystemRepresentation, tw, &w, &h); if (!px) return nil;
 	im = [self imageOfGenart:px w:w h:h]; if (im) [[self made] setObject:im forKey:key cost:(NSUInteger) w * (NSUInteger) h * 4];
 	return im;
 }
 /* (a cartridge or box for a game with none of its own: drawn by the core's libretro/genart.c - the same pictures as the PC,
  *  RetroArch and Android; kept while memory allows. Overlays: none - the name's tile) */
-+ (UIImage *) drawnTileFor:(NSString *)n
++ (UIImage *) drawnTileFor:(NSString *)n w:(int)tw
 {
 	NSString *lk = [self look]; const int look = [lk isEqualToString:@"carts"] ? 0 : [lk isEqualToString:@"boxes"] ? 1 : -1;
 	if (look < 0 || !n.length) return nil;
-	NSString *key = [NSString stringWithFormat:@"%d/%@", look, n]; UIImage *im = [[self made] objectForKey:key]; if (im) return im;
-	int w = 0, h = 0; unsigned char *px = vx_genart_make (look, n.UTF8String, &w, &h); if (!px) return nil;
+	NSString *key = [NSString stringWithFormat:@"%d/%d/%@", look, tw, n]; UIImage *im = [[self made] objectForKey:key]; if (im) return im;
+	int w = 0, h = 0; unsigned char *px = vx_genart_make_w (look, n.UTF8String, tw, &w, &h); if (!px) return nil;
 	im = [self imageOfGenart:px w:w h:h]; if (im) [[self made] setObject:im forKey:key cost:(NSUInteger) w * (NSUInteger) h * 4];
 	return im;
 }
@@ -685,7 +689,9 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 - (UICollectionViewCell *) collectionView:(UICollectionView *)cv cellForItemAtIndexPath:(NSIndexPath *)ip
 {
 	VXGameCell *c = [cv dequeueReusableCellWithReuseIdentifier:@"g" forIndexPath:ip]; NSDictionary *g = _shown[(NSUInteger) ip.item]; NSString *n = g[@"name"];
-	UIImage *im = [VXLibrary tileFor:n];
+	const CGSize it = [self collectionView:cv layout:cv.collectionViewLayout sizeForItemAtIndexPath:ip];   /* (the tile's width in pixels) */
+	const CGFloat sc = cv.traitCollection.displayScale > 0 ? cv.traitCollection.displayScale : UIScreen.mainScreen.scale;
+	UIImage *im = [VXLibrary tileFor:n px:(int) ceil (it.width * sc)];
 	c.img.image = im; c.ph.text = im ? @"" : n.uppercaseString; c.name.text = n;
 	c.img.backgroundColor = im ? UIColor.clearColor : VX_PANEL;
 	const BOOL titles = [VXLibrary perRow] == 0; c.titles = titles; c.kind.text = [g[@"kind"] isEqualToString:@"Games"] ? @"" : [g[@"kind"] uppercaseString];

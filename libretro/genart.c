@@ -1,7 +1,7 @@
 /* genart.c - the game library's pictures for a game with none of its own: a cartridge with the game's title in the blue
- * pill on the label, and a box (the owner's "B1" v2: grid paper, the Vectrex furniture, the pill, a portrait screen in a
- * coloured frame as the real boxes' with one of 12 vector scenes of our own - chosen with its colours by the title -, the
- * small print and the GCE logo at the foot as on the box-art pack's fronts). One implementation for every platform, so they all look the
+ * pill on the label, and a box (the owner's approved look: laid out on his real Clean Sweep box, silver paper with a
+ * highlight and a slightly bent carton, the pill, a portrait screen in a coloured frame with one of 12 vector scenes of
+ * our own, his small print and GCE at the foot, a little wear - all chosen per game by its title). One implementation for every platform, so they all look the
  * same: the RetroArch core (library.c includes it), the iPhone and Android apps (compiled with the core), the PC (inside
  * src/frontend/native's vxbuild library: genart.py). Overlays get none.
  *
@@ -17,6 +17,8 @@
  *       shipped/labels: the label alone, 840 x 458 or any size at about 1.835:1) - by the file's path or its bytes (PNG or
  *       JPEG); as vx_genart_make_w's (vx_genart_label(_png): at 840)
  *   unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h)    (and vx_genart_fit_png: its bytes)
+ *   unsigned char *vx_genart_boxpaper_w (int width, int well, int *w, int *h)      the box's paper, furniture and foot alone
+ *   void vx_genart_wear (unsigned char *rgba, int w, int h, const char *name)      the box's wear for name, in place
  *       a picture of the player's own (a PNG or JPEG: cartridge, box, overlay) made at most maxw wide, once; as vx_genart_make's
  *   int vx_genart_key (const char *name, char *out, int n)
  *       a game's key in the pictures that come with the emulator (thumbs/shipped/index.txt: "<key>\t<picture's name>",
@@ -564,48 +566,167 @@ static unsigned char *ga_cart (const ga_font *g, const char *title, int width, i
 	ga_pill (g, title, o, *w, *h, GA_CART_X0 * k, GA_CART_Y0 * k, GA_CART_S * k, GA_LBL_W / 2, GA_PILL_CY_CART);
 	return o;
 }
-/* (the box as two real GCE boxes of the owner's, photos of Polar Rescue and Clean Sweep averaged, in the 800 x 1024 front's
- * px: the pill centred at y 205 between the furniture and the picture, at most 2860 x 0.22 = 629 px wide (79 %: Clean
- * Sweep's pill 125..662, its badge with the leaves 84 %, Polar Rescue's title 87 %), a line 111 px high; the picture's
- * frame 190..615 x 310..855 (corners 24, a 10 px edge) in a 16 px grid-free well) */
-#define GA_BOX_PS 0.22f
-#define GA_BOX_PY 205.0f
-#define GA_FR_X 190.0f
-#define GA_FR_Y 310.0f
-#define GA_FR_W 425.0f
-#define GA_FR_H 545.0f
+/* ---- the box (the owner's approved look, 2026-11-23: B1v14): laid out on his real Clean Sweep box (his photo, 2022 x
+ * 2576: box px = 400 + (photo x - 997) x 800 / 2022, photo y x 800 / 2022 - 6 - the content 6 px higher than on the
+ * photo), on silver paper. In the 800 x 1024 front's px:
+ *   the grid: the photo's - a line every 15.47 px (39.1 photo px), 1.78 px wide, pure white; the paper (190, 192, 200)
+ *     with a fine grain, lit from the upper left (+-14 levels), a steep highlight streak at the upper left (32 levels,
+ *     0.08 W across, fading out along 0.25 H), a slightly bent carton (a bow of 6 levels across, a ripple of 3, the
+ *     corners 6 darker, the grid and the streak bent by up to 1.2 px) - all computed once per box
+ *   the well (no grid): 29 x 37 cells, its edges on grid lines, centred on the box; the picture's frame in it (photo x
+ *     455..1498, y 780..2150, centred with the well), corners 11.9 px, a 10 px edge
+ *   the pill: one line 91 px high, centred on the photo's badge body (y 201.7); the furniture and the foot: genart_data.h
+ *   the wear (per game, from its title's hash): the edges a little darker (the top most), some corners rubbed light and
+ *     slightly rounded, and on about 2 in 3 boxes a faint crease / tear in from an edge */
+#define GA_BX_S (800.0 / 2022.0)
+#define GA_BX_P (39.1 * GA_BX_S)                     /* grid pitch, line width */
+#define GA_BX_LW (4.5 * GA_BX_S)
+#define GA_BX_DXW (20.5 * GA_BX_S)                   /* (the well and frame centred: 20.5 photo px right of the photo's place) */
+#define GA_BX_GX0 (400.0 + (410 - 997) * GA_BX_S + GA_BX_DXW)   /* a grid line on the well's left edge, one on its top */
+#define GA_BX_GY0 (745 * GA_BX_S - 6.0)
+#define GA_BOX_PS (230 * GA_BX_S / (2.65f * 190))     /* (the pill: a line 91 px high) */
+#define GA_BOX_PY (525 * GA_BX_S - 6.0)
+static const float GA_FRM[4] = { (float) (400 + (455 - 997) * GA_BX_S + GA_BX_DXW), (float) (780 * GA_BX_S - 6), (float) (400 + (1498 - 997) * GA_BX_S + GA_BX_DXW), (float) (2150 * GA_BX_S - 6) };
+#define GA_FRM_R ((float) (30 * GA_BX_S))
+static uint32_t ga_title_hash (const char *t)
+{
+	uint32_t h = 2166136261u; for (const char *p = t; *p; p++) h = (h ^ (unsigned char) *p) * 16777619u;   /* (FNV-1a, then mixed: every bit counts) */
+	h ^= h >> 16; h *= 0x85ebca6bu; h ^= h >> 13; h *= 0xc2b2ae35u; h ^= h >> 16; return h;
+}
+static float ga_grain (int x, int y)                 /* (-1 .. 1 from the pixel's place: no pattern, no seams) */
+{
+	uint32_t h = ((uint32_t) x * 73856093u) ^ ((uint32_t) y * 19349663u); h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+	return (float) (h & 0xffff) / 65535.0f * 2 - 1;
+}
+/* (the silver paper with its grid into o (BW x BH, k = BW / 800); well: leave the well's lines out) */
+static void ga_paper (unsigned char *o, int BW, int BH, float k, int well)
+{
+	const double P = GA_BX_P * k, lw = GA_BX_LW * k, ph_x = GA_BX_GX0 * k, ph_y = GA_BX_GY0 * k, sh = 1.2 * k;
+	const double wx0 = ph_x + lw / 2 + 0.5, wy0 = ph_y + lw / 2 + 0.5, wx1 = ph_x + 29 * P - lw / 2 - 0.5, wy1 = ph_y + 37 * P - lw / 2 - 0.5;
+	double *dx = malloc (sizeof (double) * (size_t) (BW + BH)); if (!dx) return;   /* (the bend's shift: across, varying down; down, varying across) */
+	double *dy = dx + BH;
+	for (int y = 0; y < BH; y++) dx[y] = sh * sin (3.14159265358979 * ((y + 0.5) / BH) * 1.1 + 0.3);
+	for (int x = 0; x < BW; x++) dy[x] = 0.6 * sh * sin (3.14159265358979 * ((x + 0.5) / BW) * 0.9);
+	const double SX = 0.39, SY = 0.92, scx = 0.22 * BW, scy = 0.20 * BH, saw = 0.08 * BW, sal = 0.25 * BH;   /* (the streak: H's steep direction) */
+	for (int y = 0; y < BH; y++) for (int x = 0; x < BW; x++) {
+		const double xv = x + 0.5, yv = y + 0.5, xw = xv + dx[y], yw = yv + dy[x], nx = xv / BW - 0.5, ny = yv / BH - 0.5;
+		double t = fmod (xw - ph_x, P); if (t < 0) t += P; double d = t < P - t ? t : P - t; double cx = lw / 2 + 0.5 - d; cx = cx < 0 ? 0 : cx > 1 ? 1 : cx;
+		t = fmod (yw - ph_y, P); if (t < 0) t += P; d = t < P - t ? t : P - t; double cy = lw / 2 + 0.5 - d; cy = cy < 0 ? 0 : cy > 1 ? 1 : cy;
+		double c = 1 - (1 - cx) * (1 - cy);
+		if (well && xv > wx0 && xv < wx1 && yv > wy0 && yv < wy1) c = 0;
+		const double tl = xv / BW * 0.35 + yv / BH * 0.65;
+		double light = (0.5 - tl) * 2 * 14;
+		{ const double px = xw - scx, py = yw - scy, u = px * SX + py * SY; double v = px * SY - py * SX; v += 0.18 * u * u / BW;
+		  light += 32 * exp (-(v / saw) * (v / saw)) * exp (-(u / sal) * (u / sal)); }
+		light += -6 * (2 * nx) * (2 * nx) + 3 * sin (2 * 3.14159265358979 * (0.7 * nx + 0.45 * ny) * 1.3 + 0.8) - 6 * (2 * nx) * (2 * nx) * (2 * ny) * (2 * ny);
+		light += ga_grain (x, y) * 6;
+		static const double PAPER[3] = { 190, 192, 200 };
+		unsigned char *p = o + ((size_t) y * BW + x) * 4;
+		for (int q = 0; q < 3; q++) { const double v = (PAPER[q] + light) * (1 - c) + 255 * c; p[q] = (unsigned char) (v < 0 ? 0 : v > 255 ? 255 : v + 0.5); }
+		p[3] = 255; }
+	free (dx);
+}
+/* (the furniture on top and the foot, from genart_data.h, at the box's size) */
+static void ga_box_print (unsigned char *o, int BW, int BH, float k)
+{
+	const float ks = BW / (float) GA_W; int fw, fh, gr; unsigned char *f;
+	if ((f = ga_mask (GA_FURN_PNG, (int) sizeof GA_FURN_PNG, ks, &fw, &fh, &gr))) { ga_stamp (o, BW, BH, f, fw, fh, gr, (int) floorf (GA_FURN_X * k + 0.5f), (int) floorf (GA_FURN_Y * k + 0.5f), NULL); free (f); }
+	if ((f = ga_mask (GA_FOOT_PNG, (int) sizeof GA_FOOT_PNG, ks, &fw, &fh, &gr))) { static const unsigned char BLACK[3] = { 0, 0, 0 };
+		ga_stamp (o, BW, BH, f, fw, fh, gr, (int) floorf (GA_FOOT_X * k + 0.5f), (int) floorf (GA_FOOT_Y * k + 0.5f), BLACK); free (f); }
+}
+/* (a soft line into a float layer: max of v x coverage of a capsule of half width hw; soft: a Gaussian of sigma hw) */
+static void ga_fline (float *L, int w, int h, double ax, double ay, double bx, double by, double hw, float v, int soft)
+{
+	const double r = soft ? 3 * hw : hw + 1; const int x0 = (int) floor (fmin (ax, bx) - r), x1 = (int) ceil (fmax (ax, bx) + r), y0 = (int) floor (fmin (ay, by) - r), y1 = (int) ceil (fmax (ay, by) + r);
+	const double dx = bx - ax, dy = by - ay, ll = dx * dx + dy * dy;
+	for (int y = y0 < 0 ? 0 : y0; y <= y1 && y < h; y++) for (int x = x0 < 0 ? 0 : x0; x <= x1 && x < w; x++) {
+		const double px = x + 0.5 - ax, py = y + 0.5 - ay; double t = ll > 0 ? (px * dx + py * dy) / ll : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+		const double ex = px - t * dx, ey = py - t * dy, d = sqrt (ex * ex + ey * ey);
+		const float c = (float) (soft ? exp (-(d / hw) * (d / hw)) : fmin (1, fmax (0, hw + 0.5 - d))) * v;
+		if (L[(size_t) y * w + x] < c) L[(size_t) y * w + x] = c; }
+}
+/* (the wear, from the title's hash: edges, corners, perhaps a crease - over everything already drawn) */
+static void ga_wear (unsigned char *o, int W, int H, float k, const char *title)
+{
+	ga_rng r = { ga_title_hash (title) ^ 0x2545F491u }; if (!r.s) r.s = 0x9e3779b9u; for (int i = 0; i < 3; i++) ga_u (&r, 0, 1);
+	float *A = calloc ((size_t) W * H, sizeof (float)); if (!A) return;    /* (the change in levels) */
+	unsigned char *al = malloc ((size_t) W * H); if (!al) { free (A); return; } memset (al, 255, (size_t) W * H);
+	const double e_amt = ga_u (&r, 18, 30), t_amt = ga_u (&r, 12, 22);
+	for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+		const double xv = x + 0.5, yv = y + 0.5, dist = fmin (fmin (xv, W - xv), fmin (yv, H - yv));
+		A[(size_t) y * W + x] = (float) (-e_amt * exp (-dist / (5 * k)) - t_amt * exp (-yv / (10 * k))); }
+	for (int ci = 0; ci < 4; ci++) {                 /* (the corners: rubbed light, slightly rounded) */
+		if (ga_u (&r, 0, 1) >= 0.75) continue;
+		const double cx = ci & 1 ? W : 0, cy = ci & 2 ? H : 0, rc = ga_u (&r, 8, 24) * k, amt = ga_u (&r, 18, 34), rr = ga_u (&r, 2.5, 6.0) * k;
+		const int bx0 = ci & 1 ? (int) (W - 3 * rc) : 0, bx1 = ci & 1 ? W : (int) (3 * rc) + 1, by0 = ci & 2 ? (int) (H - 3 * rc) : 0, by1 = ci & 2 ? H : (int) (3 * rc) + 1;
+		const double cell = 3 * k;                  /* (the rub's patchiness: a soft value noise) */
+		for (int y = by0 < 0 ? 0 : by0; y < by1 && y < H; y++) for (int x = bx0 < 0 ? 0 : bx0; x < bx1 && x < W; x++) {
+			const double xv = x + 0.5, yv = y + 0.5, d2 = (xv - cx) * (xv - cx) + (yv - cy) * (yv - cy);
+			const double gx = xv / cell, gy = yv / cell; const int ix = (int) gx, iy = (int) gy; const double fx = gx - ix, fy = gy - iy;
+			const double g = (ga_grain (ix, iy) * (1 - fx) + ga_grain (ix + 1, iy) * fx) * (1 - fy) + (ga_grain (ix, iy + 1) * (1 - fx) + ga_grain (ix + 1, iy + 1) * fx) * fy;
+			const double m = fmin (1, fmax (0, 0.6 + g * 1.5));
+			A[(size_t) y * W + x] += (float) (exp (-d2 / (rc * rc)) * m * amt);
+			const double qx = fmax (rr - fmin (xv, W - xv), 0), qy = fmax (rr - fmin (yv, H - yv), 0), dd = sqrt (qx * qx + qy * qy) - rr;
+			const double a = fmin (1, fmax (0, 0.5 - dd)) * 255; if (al[(size_t) y * W + x] > a) al[(size_t) y * W + x] = (unsigned char) a; } }
+	float *L = NULL, *D = NULL, *B = NULL;
+	if (ga_u (&r, 0, 1) < 0.65 && (L = calloc ((size_t) W * H * 3, sizeof (float)))) {   /* (a crease from an edge inward) */
+		D = L + (size_t) W * H; B = D + (size_t) W * H;
+		const double side = ga_u (&r, 0, 4); double x, y, ang;
+		if (side < 2) { x = ga_u (&r, 0.55, 0.95) * W; y = 0; ang = ga_u (&r, 100, 140) * 3.14159265358979 / 180; }
+		else if (side < 3) { x = W; y = ga_u (&r, 0.04, 0.35) * H; ang = ga_u (&r, 115, 160) * 3.14159265358979 / 180; }
+		else { x = 0; y = ga_u (&r, 0.04, 0.30) * H; ang = ga_u (&r, 20, 65) * 3.14159265358979 / 180; }
+		const double length = ga_u (&r, 0.12, 0.40) * H, step = 5 * k; const int n = (int) (length / step);
+		for (int i = 0; i < n; i++) {
+			ang += ga_u (&r, -0.12, 0.12); const double x1 = x + cos (ang) * step, y1 = y + sin (ang) * step, nx = -(y1 - y) / step, ny = (x1 - x) / step;
+			const float fade = (float) fmin (1.0, (n - i) / 6.0), v = fade * (float) ga_u (&r, 0.45, 1.0);
+			ga_fline (L, W, H, x, y, x1, y1, 0.65 * k, v, 0);
+			ga_fline (D, W, H, x + nx * 1.6 * k, y + ny * 1.6 * k, x1 + nx * 1.6 * k, y1 + ny * 1.6 * k, 0.5 * k, v * 0.8f, 0);
+			ga_fline (B, W, H, x - nx * 7 * k, y - ny * 7 * k, x1 - nx * 7 * k, y1 - ny * 7 * k, 8 * k, fade, 1);
+			x = x1; y = y1; }
+	}
+	for (size_t i = 0, n = (size_t) W * H; i < n; i++) {
+		unsigned char *p = o + i * 4;
+		for (int q = 0; q < 3; q++) { double v = p[q] + A[i];
+			if (L) { v = v * (1 - 0.85 * L[i]) + 252 * 0.85 * L[i] - 55 * D[i] + 7 * B[i]; }
+			p[q] = (unsigned char) (v < 0 ? 0 : v > 255 ? 255 : v + 0.5); }
+		if (al[i] < 255) p[3] = (unsigned char) (p[3] * al[i] / 255); }
+	free (L); free (A); free (al);
+}
 static unsigned char *ga_box (const ga_font *g, const char *title, int width, int *w, int *h)
 {
 	const float k = width / 800.0f; const int BW = width, BH = (int) (1024 * k + 0.5f);
 	unsigned char *o = malloc ((size_t) BW * BH * 4); if (!o) return NULL; *w = BW; *h = BH;
-	{ float *cx = malloc (sizeof (float) * (size_t) (BW + BH)); if (!cx) { free (o); return NULL; }   /* (the grid paper: 18 px squares, 2 px white lines) */
-	  float *cy = cx + BW; const float P = 18 * k, lw = 2 * k;
-	  for (int a = 0; a < 2; a++) { const int n = a ? BH : BW; float *c = a ? cy : cx; const float ph = (a ? 7 : 12) * k;
-		for (int i = 0; i < n; i++) { const float t = fmodf (i - ph + 100 * P, P);   /* (the pixel [i, i+1) against the line [0, lw) of its square) */
-			c[i] = fminf (1.0f, fmaxf (0, fminf (t + 1, lw) - fmaxf (t, 0)) + fmaxf (0, fminf (t + 1, P + lw) - fmaxf (t, P))); } }
-	  for (int y = 0; y < BH; y++) for (int x = 0; x < BW; x++) { const float c = 1 - (1 - cx[x]) * (1 - cy[y]); unsigned char *p = o + ((size_t) y * BW + x) * 4;
-		p[0] = p[1] = p[2] = (unsigned char) (174 + 81 * c + 0.5f); p[3] = 255; }
-	  free (cx); }
-	const float ks = BW / (float) GA_W;                 /* (the furniture and the foot: made for 840) */
-	{ int fw, fh, gr; unsigned char *f = ga_mask (GA_FURN_PNG, (int) sizeof GA_FURN_PNG, ks, &fw, &fh, &gr);   /* (the furniture on top) */
-	  if (f) { ga_stamp (o, BW, BH, f, fw, fh, gr, (int) floorf (GA_FURN_X * k + 0.5f), (int) floorf (GA_FURN_Y * k + 0.5f), NULL); free (f); } }
-	ga_pill (g, title, o, BW, BH, BW / 2.0f - GA_LBL_W / 2 * GA_BOX_PS * k, GA_BOX_PY * k - GA_PILL_CY * GA_BOX_PS * k, GA_BOX_PS * k, GA_LBL_W / 2, GA_PILL_CY);
+	ga_paper (o, BW, BH, k, 1);
+	ga_box_print (o, BW, BH, k);
+	ga_pill (g, title, o, BW, BH, BW / 2.0f - GA_LBL_W / 2 * GA_BOX_PS * k, (float) GA_BOX_PY * k - GA_PILL_CY * GA_BOX_PS * k, GA_BOX_PS * k, GA_LBL_W / 2, GA_PILL_CY);
 	static const unsigned char FRAMES[6][3] = { { 226, 38, 34 }, { 30, 100, 200 }, { 244, 128, 22 }, { 250, 222, 34 }, { 58, 168, 60 }, { 128, 62, 156 } },
 	                           ACCENTS[6][3] = { { 90, 205, 255 }, { 255, 80, 200 }, { 255, 150, 40 }, { 255, 232, 90 }, { 255, 72, 60 }, { 100, 140, 255 } },
-	                           CREAM[3] = { 240, 232, 214 }, INK[3] = { 10, 10, 10 };
-	uint32_t hs = 2166136261u; for (const char *p = title; *p; p++) hs = (hs ^ (unsigned char) *p) * 16777619u;   /* (FNV-1a, then mixed: every bit counts) */
-	hs ^= hs >> 16; hs *= 0x85ebca6bu; hs ^= hs >> 13; hs *= 0xc2b2ae35u; hs ^= hs >> 16;
+	                           CREAM[3] = { 240, 232, 214 };
+	const uint32_t hs = ga_title_hash (title);
 	const int theme = (int) (hs % 12), fc = (int) (hs / 12 % 6), ac = (int) (hs / 72 % 6), cream = (int) (hs >> 20 & 1);
-	{ const int wx0 = (int) floorf ((GA_FR_X - 16) * k + 0.5f), wy0 = (int) floorf ((GA_FR_Y - 16) * k + 0.5f), wx1 = (int) floorf ((GA_FR_X + GA_FR_W + 16) * k + 0.5f), wy1 = (int) floorf ((GA_FR_Y + GA_FR_H + 16) * k + 0.5f);   /* (the well: no grid) */
-	  for (int y = wy0; y < wy1 && y < BH; y++) for (int x = wx0; x < wx1 && x < BW; x++) { unsigned char *p = o + ((size_t) y * BW + x) * 4; p[0] = p[1] = p[2] = 174; p[3] = 255; } }
-	const float fx = GA_FR_X * k, fy = GA_FR_Y * k, fw = GA_FR_W * k, fh = GA_FR_H * k; float e = 10 * k;   /* (the frame) */
-	ga_rrect (o, BW, BH, fx, fy, fx + fw, fy + fh, 24 * k, FRAMES[fc]);
-	if (cream) { ga_rrect (o, BW, BH, fx + e, fy + e, fx + fw - e, fy + fh - e, 16 * k, CREAM); e += 3 * k; }
-	{ const int sx0 = (int) floorf (fx + e + 0.5f), sy0 = (int) floorf (fy + e + 0.5f), sx1 = (int) floorf (fx + fw - e + 0.5f), sy1 = (int) floorf (fy + fh - e + 0.5f);
-	  ga_scene (o, BW, BH, sx0, sy0, sx1 - sx0, sy1 - sy0, 14 * k, hs ^ 0x5bd1e995u, k, theme, ACCENTS[ac]); }
-	{ int fw2, fh2, gr; unsigned char *f = ga_mask (GA_FOOT_PNG, (int) sizeof GA_FOOT_PNG, ks, &fw2, &fh2, &gr);   /* (the foot: the small print and GCE, on the grid, as the pack's boxes) */
-	  if (f) { static const unsigned char BLACK[3] = { 0, 0, 0 }; ga_stamp (o, BW, BH, f, fw2, fh2, gr, (int) floorf (GA_FOOT_X * k + 0.5f), (int) floorf (GA_FOOT_Y * k + 0.5f), BLACK); free (f); } }
+	const float fx0 = GA_FRM[0] * k, fy0 = GA_FRM[1] * k, fx1 = GA_FRM[2] * k, fy1 = GA_FRM[3] * k; float e = 10 * k;   /* (the frame) */
+	ga_rrect (o, BW, BH, fx0, fy0, fx1, fy1, GA_FRM_R * k, FRAMES[fc]);
+	if (cream) { ga_rrect (o, BW, BH, fx0 + e, fy0 + e, fx1 - e, fy1 - e, fmaxf (2, GA_FRM_R - 6) * k, CREAM); e += 3 * k; }
+	{ const int sx0 = (int) floorf (fx0 + e + 0.5f), sy0 = (int) floorf (fy0 + e + 0.5f), sx1 = (int) floorf (fx1 - e + 0.5f), sy1 = (int) floorf (fy1 - e + 0.5f);
+	  ga_scene (o, BW, BH, sx0, sy0, sx1 - sx0, sy1 - sy0, fmaxf (2, GA_FRM_R - 8) * k, hs ^ 0x5bd1e995u, k, theme, ACCENTS[ac]); }
+	ga_wear (o, BW, BH, k, title);
 	return o;
+}
+/* the box's paper alone, at width px (800 x 1024 scaled): the silver, its grid (well: 1 leaves the well's lines out), the
+ * furniture on top and the foot - for a box made elsewhere (the PiTrex's, Last Human's: tools/make_pitrex_box.py,
+ * make_lh_box.py), which then puts its own title and picture on it and calls vx_genart_wear */
+VX_GENART_API unsigned char *vx_genart_boxpaper_w (int width, int well, int *w, int *h)
+{
+	const int BW = width <= 0 || width > 2400 ? 800 : width; const float k = BW / 800.0f; const int BH = (int) (1024 * k + 0.5f);
+	unsigned char *o = malloc ((size_t) BW * BH * 4); if (w) *w = 0; if (h) *h = 0; if (!o) return NULL;
+	ga_paper (o, BW, BH, k, well); ga_box_print (o, BW, BH, k);
+	if (w) *w = BW; if (h) *h = BH; return o;
+}
+/* the wear of the box for name (its title's hash) on an RGBA box picture, in place (w: its width, 800 x 1024 scaled) */
+VX_GENART_API void vx_genart_wear (unsigned char *rgba, int w, int h, const char *name)
+{
+	char t[1024]; if (!rgba || w < 8 || h < 8 || !name || !vx_genart_title (name, t, (int) sizeof t)) return;
+	ga_wear (rgba, w, h, w / 800.0f, t);
 }
 
 /* ---- the player's own label on the cartridge (thumbs/labels/<game>.png): pasted into the label's place on the shell as

@@ -9,11 +9,9 @@ a cartridge and a box for every game with no picture of its own, the same on the
                 (the pill's frame); GA_CART_LY0 / LH: the label's top and height there exactly (the shrink's rows are
                 rounded down: a little less than x k down) - the player's own labels go there (genart.c)
   GA_FURN_PNG   the box's furniture (the Vectrex logo + TM, ARCADE SYSTEM CARTRIDGE), drawn from the SVG at 840 px,
-                placed as the Last Human box's (make_lh_box.py): GA_FURN_X / Y its top left in the 800 px front's px
-  GA_FOOT_PNG   the box's foot: the small print and ENTERTAINING NEW IDEAS from the owner's picture
-                (gce_box_bottom_source.webp), its GCE + TM drawn from the label project's SVG ('gce v5'), a mask at
-                840 px, placed as on the box-art pack's GCE fronts (ink 223..577 x 896..1005 of 800 x 1024) and as the
-                Last Human box's; GA_FOOT_X / Y its top left in the 800 px front's px
+                placed as on his real Clean Sweep box: GA_FURN_X / Y its top left in the 800 px front's px
+  GA_FOOT_PNG   the box's foot: the owner's finished artwork (art/GCE_bottom_text.tif) as one mask at 840 px, fitted to
+                his real Clean Sweep box's foot (foot_fit); GA_FOOT_X / Y its top left in the 800 px front's px
   GA_FONT       Archivo Black (SIL OFL 1.1, libretro/fonts), cut to Latin-1 and the typographic quotes
   GA_TITLES     libretro/genart_titles.txt: titles set by hand
 
@@ -36,7 +34,6 @@ LEGAL = 'FOR USE WITH THE VECTREX ARCADE SYSTEM'
 CART_W = 840                                                         # the cartridge tiles' width (the owner, 2026-11-23)
 BOX_K = 840 / 800.0                                                  # the box: the pack's 800 x 1024 front, at 840 wide
 FONT = os.path.join(root, 'libretro', 'fonts', 'ArchivoBlack-Regular.ttf')
-FOOT = ART + '/boxart_labels/gen/gce_box_bottom_source.webp'            # (the owner's: the small print and GCE, black on clear)
 REG = next(p for p in ('C:/Windows/Fonts/LiberationSans-Regular.ttf', 'C:/Windows/Fonts/arial.ttf',
                        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf') if os.path.exists(p))   # (the legal line: drawn into the pictures)
 
@@ -62,15 +59,54 @@ def furniture_body(gce=False):
     return fb
 
 
-# the box's top and foot as two real boxes of the owner's (photos of Polar Rescue and Clean Sweep, 2026-11-23; the
-# 800 x 1024 front's px, the two averaged): the furniture (Vectrex + TM, ARCADE SYSTEM CARTRIDGE from shared furniture
-# v6) with ARCADE SYSTEM CARTRIDGE as wide as on Clean Sweep (x 242..558) and the ink from y 37 (the SVG's ink x
-# 821..2299, y 89..); the foot: the owner's block image scaled to the real boxes' block (y 888..1010, centred: x 206..594),
-# its GCE + TM rows (440..570) taken out and drawn from the 'gce v5' SVG instead - the GCE symbol as wide as the image's
-# (x 692..1226), standing on its line (y 561). The Last Human box (make_lh_box.py) uses the same numbers.
-FURN_S = (558 - 242 + 1) / (2299 - 821 + 1); FURN_T = (242 - 821 * FURN_S, 37 - 89 * FURN_S)
-GCE_INK = (206, 888, 594, 1010); GCE_ROWS = (440, 570); GCE_SYM = (692, 448, 1226, 561); SVG_SYM = (1213, 1283, 1805, 1400)
+# the box laid out on the owner's real Clean Sweep box (his photo, 2022 x 2576 px: box px = 400 + (photo x - 997) x S,
+# photo y x S - 6, S = 800 / 2022 - the content 6 px higher than on the photo, the owner's framing; genart.c's GA_BX_*):
+# the furniture (Vectrex + TM, ARCADE SYSTEM CARTRIDGE from shared furniture v6) where the photo has it - ARCADE SYSTEM
+# CARTRIDGE across photo x 611..1411, the ink from photo y 90 (the SVG's ink x 821..2299, y 89..); the foot: the owner's
+# finished artwork (art/GCE_bottom_text.tif: THIS PACKAGE ... / GCE / ENTERTAINING NEW IDEAS) as one piece, scaled
+# uniformly and moved so its FOR USE line (the photo's own words) and its GCE symbol sit on the photo's (least squares
+# on their ends and baselines). The Last Human box (make_lh_box.py) takes the same paper and foot from genart.c.
+S_PH = 800 / 2022.0
+def PX(xp): return 400 + (xp - 997.0) * S_PH
+def PY(yp): return yp * S_PH - 6.0
+FURN_S = (PX(1411) - PX(611)) / (2299 - 821 + 1); FURN_T = (PX(611) - 821 * FURN_S, PY(90) - 89 * FURN_S)
+FOOT_ART = os.path.join(root, 'art', 'GCE_bottom_text.tif')
+PH_FORUSE = (549, 1464, 2387); PH_GCE = (869, 1138, 2507)          # (photo px: the FOR USE line's ends and baseline; the GCE's sides and bottom)
 SH = ART + '/print 4x/reconstructed2/shared-svg'
+
+
+def foot_fit():
+    """the artwork's mask (ink 0..1, its soft edges kept) and its fit art px -> photo px: (mask, s, tx, ty)"""
+    a = np.asarray(Image.open(FOOT_ART).convert('RGBA')).astype(np.float32)
+    m = (a[..., 3] / 255) * (1 - a[..., :3].mean(2) / 255)
+    rows = (m > 0.5).any(1); bands = []; i = 0
+    while i < len(rows):
+        if rows[i]:
+            j = i
+            while j < len(rows) and rows[j]: j += 1
+            bands.append((i, j)); i = j
+        else: i += 1
+    assert len(bands) == 5, bands
+    y0, y1 = bands[2]; sub = m[y0:y1] > 0.5; xs = np.nonzero(sub.any(0))[0]
+    base = y0 + float(np.percentile([np.nonzero(sub[:, c])[0].max() for c in xs], 60)) + 1
+    l3 = (int(xs.min()), int(xs.max()) + 1, base)
+    y0, y1 = bands[3]; xs = np.nonzero((m[y0:y1] > 0.5).any(0))[0]; gaps = np.nonzero(np.diff(xs) > 4)[0]
+    sx1 = int(xs[gaps[-1]]) + 1 if len(gaps) else int(xs.max()) + 1
+    sr = np.nonzero((m[y0:y1, xs.min():sx1] > 0.5).any(1))[0]; sym = (int(xs.min()), sx1, y0 + int(sr.max()) + 1)
+    ax = np.array([l3[0], l3[1], sym[0], sym[1]], float); px = np.array([PH_FORUSE[0], PH_FORUSE[1], PH_GCE[0], PH_GCE[1]], float)
+    ay = np.array([l3[2], sym[2]], float); py = np.array([PH_FORUSE[2], PH_GCE[2]], float)
+    A = np.vstack([np.column_stack([ax, np.ones(4), np.zeros(4)]), np.column_stack([ay, np.zeros(2), np.ones(2)])])
+    (sf, tx, ty), *_ = np.linalg.lstsq(A, np.concatenate([px, py]), rcond=None)
+    return m, sf, tx, ty
+
+
+def box_foot(kb):
+    """the box's foot at kb x the 800 px front, a mask: (L, its x, y in the front's px)"""
+    m, sf, tx, ty = foot_fit(); k = sf * S_PH * kb
+    x0, y0 = PX(tx) * kb, PY(ty) * kb
+    im = Image.fromarray((m * 255).astype(np.uint8)).resize((max(1, int(round(m.shape[1] * k))), max(1, int(round(m.shape[0] * k)))), Image.LANCZOS)
+    print('foot: art px x %.5f -> photo px at (%.1f, %.1f): %d x %d at the box\'s (%.2f, %.2f)' % (sf, tx, ty, im.width, im.height, PX(tx), PY(ty)))
+    return im, int(round(x0)) / kb, int(round(y0)) / kb
 
 
 def svg_layer(body, k, t, w, h):
@@ -85,26 +121,6 @@ def box_top(kb):
     f = open(SH + '/shared furniture v6.svg', encoding='utf-8').read(); body = f[f.index('<g id="vectrex-logo">'):f.index('<g id="gce-symbol">')]
     im = svg_layer(body, FURN_S * kb, (FURN_T[0] * kb, FURN_T[1] * kb), int(800 * kb), int(200 * kb)); bb = im.getchannel('A').getbbox()
     return im.crop(bb), bb[0] / kb, bb[1] / kb
-
-
-def box_foot(kb):
-    """the box's foot at kb x the 800 px front, a mask: (L cropped, its x, y in the front's px)"""
-    b = Image.open(FOOT).convert('RGBA'); bx0, by0, bx1, by1 = b.getchannel('A').getbbox()
-    s = (GCE_INK[2] - GCE_INK[0]) / (bx1 - bx0)
-    a = np.asarray(b).copy(); a[GCE_ROWS[0]:GCE_ROWS[1], :, 3] = 0; b = Image.fromarray(a)
-    ow = b.width; b = b.resize((int(round(b.width * s)), int(round(b.height * s))), Image.LANCZOS); s = b.width / ow
-    cx, cy = (GCE_INK[0] + GCE_INK[2]) / 2, (GCE_INK[1] + GCE_INK[3]) / 2
-    x = int(round(cx - (bx0 + bx1) / 2 * s)); y = int(round(cy - (by0 + by1) / 2 * s))
-    Wd, Hd = int(round(800 * kb)), int(round(1024 * kb))
-    lay = Image.new('L', (Wd, Hd), 0)
-    bb = b.getchannel('A').resize((int(round(b.width * kb)), int(round(b.height * kb))), Image.LANCZOS) if kb != 1 else b.getchannel('A')
-    lay.paste(bb, (int(round(x * kb)), int(round(y * kb))))
-    g = open(SH + '/gce v5 (GCE + TM bottom-aligned).svg', encoding='utf-8').read(); gbody = g[g.index('<g id="gce-symbol">'):g.rindex('</svg>')]
-    k = s * (GCE_SYM[2] - GCE_SYM[0] + 1) / (SVG_SYM[2] - SVG_SYM[0] + 1)
-    tx = x + GCE_SYM[0] * s - SVG_SYM[0] * k; ty = y + (GCE_SYM[3] + 1) * s - (SVG_SYM[3] + 1) * k
-    gl = svg_layer(gbody, k * kb, (tx * kb, ty * kb), Wd, Hd).getchannel('A')
-    lay = Image.fromarray(np.maximum(np.asarray(lay), np.asarray(gl)))
-    bb = lay.getbbox(); return lay.crop(bb), bb[0] / kb, bb[1] / kb
 
 
 def render_svg(body, w=W, h=H):

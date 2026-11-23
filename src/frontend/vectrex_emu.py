@@ -2146,7 +2146,8 @@ class Core:
         n, ns, ft, self.state_sum = struct.unpack('<HHII', h[2:])     # (+ the state's checksum: online play compares it)
         if ft < self.ft_last: self.ft_hi += 1 << 32                   # (32-bit cycle counter wraps)
         self.ft_last = ft; self.frame_t0 = self.ft_hi + ft
-        two = ns & 0x8000; ns &= 0x7fff                # (bit 15: two channels - the console, the speech module)
+        two = ns & 0x8000                              # (bit 15: two channels - the console, the speech module)
+        self.piece_cut = (ns >> 13) & 3; ns &= 0x1fff  # (bits 13-14: how the piece ended - vtest.c vt_piece_cut; see the frame queue)
         body = self._read(n * 13 + (n + 2 if col else 0) + ns * (4 if two else 2))   # 16-bit samples
         if col:                                                 # (the colours and the disc's speed out of the way: the rest as always)
             cols = body[n * 13:n * 14]
@@ -2233,7 +2234,7 @@ class Runner(threading.Thread):
         self.cpu_ms = None                              # (the Python work per game frame, its core's wait not counted)
         self.emu_share = None                           # (the share of a game frame's length this thread and the core take)
         self.latest = None; self.frames = 0; self.error = None
-        self.pend = None; self.dframes = 0              # (screen frames: see the queue)
+        self.pend = None; self.pend_open = False; self.dframes = 0   # (screen frames: see the queue)
         self.gframes = 0                                # (frames with a new picture: the game's own frame rate)
         self.queue = collections.deque(maxlen=16)
         self.emu_time = 0.0; self.emu_mark = None   # (lines, real start time, start cycle) per frame
@@ -2450,8 +2451,23 @@ class Runner(threading.Thread):
                     self.latest_len = max(len(pcm) // 2, 1) / RATE     # this frame's emulated length
                     # a screen frame per refresh period: a game that calls Wait_Recal twice in one (Mine
                     # Storm does) would split it into a short and a long piece - pieces shorter than
-                    # 15 ms join the next one (its line times shifted to the first piece's start)
+                    # 15 ms join the next one (its line times shifted to the first piece's start). And a
+                    # piece the budget cut while the game ends its own frames (cut 2, vtest.c vt_piece_cut)
+                    # joins the rest of that frame - the next piece, if that one ends where the game ends
+                    # its frame (cut 0), else it stands alone: the Test Cartridge Rev. 4's screen 1 (42000-
+                    # cycle frames by timer 2, cut at 33000) had its 6 ms rest joined to the next frame's
+                    # start - the cut moved through the picture, a line twice in one frame and gone from the
+                    # next (libretro_vx.c frame_push: the same rule)
                     t0 = self.core.frame_t0
+                    cut = getattr(self.core, 'piece_cut', 0)
+                    def flush():
+                        if ff and self.frames % FAST_FORWARD:           # (fast forward: every 4th frame shown - 4 in
+                            self.pend = None                            #  the phosphor at once lit it 4 times as much)
+                        else:
+                            self.queue.append(tuple(self.pend)); self.pend = None   # (t_next: its start)
+                            self.dframes += 1
+                    if self.pend is not None and self.pend_open and cut:
+                        flush()                                         # (not the rest of its frame: alone)
                     if self.pend is None:
                         rec = getattr(self.latest, '_rec', None)   # (not turned into tuples yet: shares the records)
                         cp = Lines.lazy(rec) if rec is not None else Lines(self.latest); cp.np = getattr(self.latest, 'np', None)
@@ -2465,12 +2481,9 @@ class Runner(threading.Thread):
                             pb = pb.copy(); pb[:, 6] += sh
                             self.pend[0].np = _np.concatenate([pa, pb])
                         self.pend[3] += self.latest_len
-                    if self.pend[3] >= 0.015:
-                        if ff and self.frames % FAST_FORWARD:           # (fast forward: every 4th frame shown - 4 in
-                            self.pend = None                            #  the phosphor at once lit it 4 times as much)
-                        else:
-                            self.queue.append(tuple(self.pend)); self.pend = None   # (t_next: its start)
-                            self.dframes += 1
+                    self.pend_open = cut == 2
+                    if self.pend[3] >= 0.015 and not self.pend_open:
+                        flush()
                 snd = self.crt.process(pcm, lines, speech, getattr(self.core, 'arr', None))
                 if not ff:
                     self.audio.play(snd)

@@ -2141,8 +2141,9 @@ static void bg_make (void)
  * (emulated seconds), where its lines' times count from, and whether it is the other half of a picture drawn in two
  * halves on alternate frames (vecrender.py frame_alternates) */
 #define NH 6
-typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; } gframe;   /* (gen: this content's
-                                                own number - a new one each push, join or state load; Smooth motion's kept work, smooth.c) */
+typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; int open; } gframe;   /* (gen: this content's
+                                                own number - a new one each push, join or state load; Smooth motion's kept work, smooth.c;
+                                                open: its last piece was cut short by the budget, the game's frame goes on - frame_push) */
 static unsigned long long frame_gen;       /* (not in the save state: the frames get new numbers when one is loaded) */
 #define SHORT_PIECE 0.015
 #define HOLD_SLOW 1.1                     /* (the hold below for a game this much slower than the screen: Vectrexians 45 fps at 60 Hz) */
@@ -2176,20 +2177,26 @@ static double frame_overlap (const gframe *a, const gframe *b)
 }
 static gframe spare;                    /* (the buffers of the frame that drops out, for the next) */
 static void frame_pop (void);
-static void frame_push (unsigned long long p0)
+static void frame_push (unsigned long long p0, int cut)
 {
 	gframe f;
 	/* (a piece shorter than SHORT_PIECE joins the next one, as the desktop's frame queue does (vectrex_emu.py, "pieces
 	 *  shorter than 15 ms"): a game that calls Wait_Recal twice in one frame - Last Human in arena 2 with many shots -
-	 *  made a short frame with nothing drawn, and the refreshes that showed it were black, ~0.1 s, the Nova 2026-11-17) */
+	 *  made a short frame with nothing drawn, and the refreshes that showed it were black, ~0.1 s, the Nova 2026-11-17.
+	 *  And a piece the budget cut (cut 2, vtest.c vt_piece_cut) joins the rest of the game's frame - the next piece, if that
+	 *  one ends where the game ends its frame (cut 0); else it stands alone. The Test Cartridge Rev. 4's screen 1 (its frames
+	 *  timed by timer 2, 42000 cycles) was cut at 33000 and the 6 ms rest joined the next frame's start: the cut moved through
+	 *  the picture, one frame had the line at x 11211 twice and the next none - with Smooth motion a line gone for 2-3
+	 *  refreshes every 0.3 s; on the real Vectrex it is steady (the owner, 2026-11-23)) */
 	{ extern int vt_imager, vt_uvm2, vt_pitrex;   /* (a UVMC2 / PiTrex ends its frames itself, on its bus: not joined -
 	                                              VecDoom's 66 a second were all joined, 2 ms a refresh on the Nova) */
 	  if (nh && !vt_imager && !vt_uvm2 && !vt_pitrex) {
 		gframe *h = &hist[nh - 1]; const double pt = nh > 1 ? hist[nh - 2].t : have_prev ? prevf.t : -1;
-		if (pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
+		const int join = h->open ? cut == 0 : pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE;
+		if (join && h->n + nlast <= MAXL && p0 >= h->p0) {
 			const unsigned sh = (unsigned) (p0 - h->p0);
 			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
-			h->n += nlast; h->t = total_cycles / 1.5e6; h->gen = ++frame_gen; frame_keys (h);
+			h->n += nlast; h->t = total_cycles / 1.5e6; h->gen = ++frame_gen; h->open = cut == 2; frame_keys (h);
 			{ const gframe *f1 = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL, *f2 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL);
 			  double o1 = f1 ? frame_overlap (h, f1) : -1, o2 = f2 ? frame_overlap (h, f2) : -1;
 			  h->alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
@@ -2197,7 +2204,7 @@ static void frame_push (unsigned long long p0)
 	if (nh == NH) frame_pop ();
 	if (spare.L) { f = spare; spare.L = NULL; }
 	else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
-	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0; f.gen = ++frame_gen;
+	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0; f.gen = ++frame_gen; f.open = cut == 2;
 	frame_keys (&f);
 	{ const gframe *f1 = nh ? &hist[nh - 1] : NULL, *f2 = nh > 1 ? &hist[nh - 2] : (nh == 1 && have_prev ? &prevf : NULL);
 	  double o1 = f1 ? frame_overlap (&f, f1) : -1, o2 = f2 ? frame_overlap (&f, f2) : -1;
@@ -2996,7 +3003,7 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 		  else run_frame (); }
 		const int replay = replay_to && nv_f < replay_to;   /* (a frame run again: its sound was heard the first time) */
 		if (ls_state == 2) netls_after (); else if (netvx_playing () && !nv_stream) netvx_after ();
-		frame_push (p0);
+		{ extern int vt_piece_cut; frame_push (p0, vt_piece_cut); }
 		if (vt_imager) eyes_take ();
 		{ const int a0 = aq_w; if (!replay) audio_frame ();
 		  if (nv_stream && netvx_playing ()) netvx_stream_send (p0, a0); }   /* (streamed: the host's frame to player 2) */
@@ -3652,7 +3659,8 @@ static unsigned char *put_frame (unsigned char *o, const gframe *f)
 {
 	int nk = f->nk > 0 ? f->nk : 0;
 	if (nk > 6000) nk = 6000;
-	PUT (&f->n, sizeof (int)); PUT (&nk, sizeof (int)); PUT (&f->alt, sizeof (int)); PUT (&f->t, sizeof (double)); PUT (&f->p0, sizeof (unsigned long long));
+	const int ao = (f->alt ? 1 : 0) | (f->open ? 2 : 0);   /* (bit 1: open, frame_push - in alt's place: the state's size and older states as they were) */
+	PUT (&f->n, sizeof (int)); PUT (&nk, sizeof (int)); PUT (&ao, sizeof (int)); PUT (&f->t, sizeof (double)); PUT (&f->p0, sizeof (unsigned long long));
 	o = put_lines (o, f->L, f->n, ST_L); PUT (f->keys, sizeof (long long) * nk);
 	return o;
 }
@@ -3739,6 +3747,7 @@ static bool vx_load_from (const void *d, size_t sz)   /* (retro_unserialize's wo
 		if (np) f = pool[--np]; else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
 		int fn; GET (&fn, sizeof (int)); GET (&f.nk, sizeof (int)); GET (&f.alt, sizeof (int)); GET (&f.t, sizeof (double)); GET (&f.p0, sizeof (unsigned long long));
 		i = get_lines (i, f.L, &f.n); (void) fn; GET (f.keys, sizeof (long long) * (f.nk > 0 ? f.nk : 0));
+		f.open = (f.alt & 2) != 0; f.alt &= 1;   /* (open in alt's bit 1: put_frame) */
 		f.gen = ++frame_gen;                       /* (loaded: new content - Smooth motion's kept work does not apply) */
 		*dst[k] = f;
 	}

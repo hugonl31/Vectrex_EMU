@@ -2,7 +2,8 @@
 
 The owner, 2026-11-22: the PC's loader like the phones' - the tiles' look (cartridges, boxes, overlays), how many a row or
 titles only, a search, the categories; it fills the picture's place above the control deck. The pictures: the apps' own
-folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png (nothing is downloaded: there, or the name's tile).
+folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png (nothing is downloaded); a game with no cartridge or
+box there gets one drawn (genart.py: libretro/genart.c, the same as every platform's), an overlay its name's tile.
 
 The app holds one Library; while it is open App.browser is its dict (lib=True), so everything that asks "is the loader
 open" works as before. The renderer draws state() (vecrender._library); the pictures are read by a thread (the PNG reader
@@ -86,6 +87,10 @@ class Library:
         if not p and boot:
             import pitrex_art
             p = pitrex_art.path(self.V.ROOT, self.look)
+        if not p and self.look in ('carts', 'boxes'):               # (none of its own: drawn - the reader makes it)
+            import genart
+            if genart.lib():
+                p = 'gen:%s:%s' % (self.look, name)
         return p
 
     def _reader(self):
@@ -93,7 +98,14 @@ class Library:
         while True:
             p = self.want.get()
             try:
-                w, h, px = vart.load_png(p)
+                if p.startswith('gen:'):                            # (a cartridge / box drawn for it: genart.c)
+                    import genart
+                    _, look, name = p.split(':', 2); r = genart.make(look, name)
+                    if not r:
+                        raise ValueError('not drawn')
+                    w, h, px = r
+                else:
+                    w, h, px = vart.load_png(p)
                 self.done[p] = (w, h, px)
             except Exception:   # noqa: not a picture
                 self.missing.add(p)

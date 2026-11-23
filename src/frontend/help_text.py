@@ -720,8 +720,8 @@ TOPICS = [
 ('item', 'Smooth motion', "For 60 Hz screens without G-Sync / FreeSync (most laptops): a Vectrex game makes 50 pictures a second, a 60 Hz "
       "screen shows 60, so every fifth refresh repeats one and moving things stutter slightly. Smooth motion gives every refresh a picture "
       "of its own, with the vectors where they are between the two game frames around it - the game keeps its own speed and sound, the "
-      "picture comes about 20 ms later. Where two frames do not match line for line (things appearing, other lines), the earlier one is "
-      "shown as is. Off by default (the purist 50 pictures a second)."),
+      "picture comes about 20 ms later. A shape that cannot be matched with certainty in the next frame is shown as drawn. On by "
+      "default; off: the purist 50 pictures a second."),
 ('item', "The monitor's full rate", "Every refresh of a 120, 144 or 240 Hz monitor: the afterglow fades in "
          "finer steps and moving things update more often."),
 ('item', 'G-Sync / FreeSync', "One screen picture per game frame, with no tearing - needs such a monitor. "

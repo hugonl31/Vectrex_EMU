@@ -1,6 +1,7 @@
 /* genart.c - the game library's pictures for a game with none of its own: a cartridge with the game's title in the blue
- * pill on the label, and a box (the owner's choice "B1": grid paper, the Vectrex furniture, the pill, a black screen in a
- * blue frame with a vector scene of our own, the legal line). One implementation for every platform, so they all look the
+ * pill on the label, and a box (the owner's "B1" v2: grid paper, the Vectrex furniture, the pill, a portrait screen in a
+ * coloured frame as the real boxes' with one of 12 vector scenes of our own - chosen with its colours by the title -, the
+ * legal line). One implementation for every platform, so they all look the
  * same: the RetroArch core (library.c includes it), the iPhone and Android apps (compiled with the core), the PC (inside
  * src/frontend/native's vxbuild library: genart.py). Overlays get none.
  *
@@ -217,10 +218,17 @@ static float ga_rrect_cov (float x, float y, float w, float h, float rad)
 	const float qx = fmaxf (fabsf (x - w / 2) - (w / 2 - rad), 0), qy = fmaxf (fabsf (y - h / 2) - (h / 2 - rad), 0);
 	return ga_clamp01 (0.5f - (sqrtf (qx * qx + qy * qy) - rad));
 }
-/* (the vector scene: a perspective floor to the horizon, a mountain line, stars, perhaps a moon - from the title's hash,
- *  the same everywhere; phosphor green with its glow) */
+/* ---- the box's picture (v2, the owner's choice 2026-11-23): a portrait screen as the real boxes' (measured on the 22 GCE
+ * fronts of the box-art pack: the template's grid-free well 176, 279, 448 x 574 of 800 x 1024; the picture's frame in it
+ * 192, 295, 416 x 542, corners 24, a coloured edge ~10 px), with one of 12 vector scenes of our own. Per game, from its
+ * title's hash (FNV-1a, mixed): the scene (12), the frame's colour (6), the colour of the scene's second set of lines (6),
+ * a cream line inside the frame or not, and the scene's own randomness - so a library of them looks like a collection.
+ * The lines as the preview drew them (G:/AI/Vectrex_Artwork/boxart_labels/gen/make_b1v2_previews.py): each a capsule of
+ * the preview's width (drawn there at 3x: its width in thirds of a pixel), circles and ellipses drawn inside their
+ * outline, phosphor green and the accent colour, each with its glow (a blur of sigma 4 px at 800 wide) */
 typedef struct { uint32_t s; } ga_rng;
-static float ga_u (ga_rng *r, float a, float b) { r->s ^= r->s << 13; r->s ^= r->s >> 17; r->s ^= r->s << 5; return a + (b - a) * (float) ((r->s >> 8) / 16777216.0); }
+static double ga_u (ga_rng *r, double a, double b) { r->s ^= r->s << 13; r->s ^= r->s >> 17; r->s ^= r->s << 5; return a + (b - a) * ((r->s >> 8) / 16777216.0); }
+static int ga_i (ga_rng *r, int a, int b) { return (int) ga_u (r, a, b + 0.999); }
 static void ga_seg (float *L, int w, int h, float ax, float ay, float bx, float by, float hw, float v)
 {
 	const int x0 = (int) floorf (fminf (ax, bx) - hw - 1), x1 = (int) ceilf (fmaxf (ax, bx) + hw + 1), y0 = (int) floorf (fminf (ay, by) - hw - 1), y1 = (int) ceilf (fmaxf (ay, by) + hw + 1);
@@ -228,22 +236,15 @@ static void ga_seg (float *L, int w, int h, float ax, float ay, float bx, float 
 	for (int y = y0 < 0 ? 0 : y0; y <= y1 && y < h; y++) for (int x = x0 < 0 ? 0 : x0; x <= x1 && x < w; x++) {
 		const float px = x + 0.5f - ax, py = y + 0.5f - ay; float t = ll > 0 ? (px * dx + py * dy) / ll : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
 		const float ex = px - t * dx, ey = py - t * dy, c = ga_clamp01 (hw + 0.5f - sqrtf (ex * ex + ey * ey)) * v;
-		if (L[y * w + x] < c) L[y * w + x] = c; }
-}
-static void ga_ring (float *L, int w, int h, float cx, float cy, float r, float hw, float v, int filled)
-{
-	for (int y = (int) (cy - r - hw - 2); y <= (int) (cy + r + hw + 2); y++) { if (y < 0 || y >= h) continue;
-		for (int x = (int) (cx - r - hw - 2); x <= (int) (cx + r + hw + 2); x++) { if (x < 0 || x >= w) continue;
-			const float d = sqrtf ((x + 0.5f - cx) * (x + 0.5f - cx) + (y + 0.5f - cy) * (y + 0.5f - cy));
-			const float c = ga_clamp01 (hw + 0.5f - (filled ? fmaxf (d - r, 0) : fabsf (d - r))) * v; if (L[y * w + x] < c) L[y * w + x] = c; } }
+		if (L[(size_t) y * w + x] < c) L[(size_t) y * w + x] = c; }
 }
 static void ga_blur (float *a, int w, int h, int rad)        /* (three box blurs: about a Gaussian) */
 {
-	float *t = malloc (sizeof (float) * (size_t) (w > h ? w : h)); if (!t) return;
+	float *t = malloc (sizeof (float) * (size_t) (w > h ? w : h)); if (!t || rad < 1) { free (t); return; }
 	for (int pass = 0; pass < 3; pass++) {
-		for (int y = 0; y < h; y++) { float *row = a + (size_t) y * w; float acc = 0; int cnt = 0;
+		for (int y = 0; y < h; y++) { float *row = a + (size_t) y * w; float acc = 0;
 			for (int x = -rad; x < w + rad; x++) { const int xa = x + rad, xr = x - rad - 1;
-				if (xa < w && xa >= 0) { acc += row[xa]; cnt++; } if (xr >= 0 && xr < w) { acc -= row[xr]; cnt--; }
+				if (xa < w && xa >= 0) acc += row[xa]; if (xr >= 0 && xr < w) acc -= row[xr];
 				if (x >= 0 && x < w) t[x] = acc / (2 * rad + 1); }
 			memcpy (row, t, sizeof (float) * (size_t) w); }
 		for (int x = 0; x < w; x++) { float acc = 0;
@@ -253,30 +254,207 @@ static void ga_blur (float *a, int w, int h, int rad)        /* (three box blurs
 			for (int y = 0; y < h; y++) a[(size_t) y * w + x] = t[y]; } }
 	free (t);
 }
-static void ga_scene (unsigned char *img, int iw, int ih, int ax, int ay, int w, int h, float rad, uint32_t seed, float k)
+typedef struct { float *L[2]; int w, h; double k, W, H; ga_rng r; } ga_pen;
+static float ga_hw (const ga_pen *P, double width) { double s = floor (width * P->k * 3 + 0.5); if (s < 1) s = 1; return (float) (s / 6.0); }   /* (half the line's width) */
+static void ga_ln (ga_pen *P, double ax, double ay, double bx, double by, int layer, int v, double width)
 {
-	float *L = calloc ((size_t) w * h, sizeof (float)), *G = malloc (sizeof (float) * (size_t) w * h); if (!L || !G) { free (L); free (G); return; }
-	ga_rng r = { seed ? seed : 0x9e3779b9u }; for (int i = 0; i < 4; i++) ga_u (&r, 0, 1);
-	const float W = (float) w, H = (float) h, hz = H * ga_u (&r, 0.52f, 0.62f), vx = W * ga_u (&r, 0.35f, 0.65f), fl = 0.75f * k;
-	for (int i = -9; i <= 9; i++) ga_seg (L, w, h, vx, hz, W / 2 + i * W * 0.16f, H, fl, 150 / 255.0f);
-	{ float y = hz + 6 * k, st = 5 * k; while (y < H) { ga_seg (L, w, h, 0, y, W, y, fl, 150 / 255.0f); st *= 1.32f; y += st; } }
-	{ float x = 0, yy = hz - ga_u (&r, 0.04f, 0.12f) * H, px = 0, py = yy; int first = 1;
-	  while (x < W) { if (!first) ga_seg (L, w, h, px, py, x, yy, 1.0f * k, 230 / 255.0f); first = 0; px = x; py = yy;
-		x += ga_u (&r, 0.05f, 0.14f) * W; yy = hz - ga_u (&r, 0.02f, 0.22f) * H; }
-	  ga_seg (L, w, h, px, py, W, hz - 0.05f * H, 1.0f * k, 230 / 255.0f); }
-	ga_seg (L, w, h, 0, hz, W, hz, fl, 230 / 255.0f);
-	{ const int ns = 18 + (int) ga_u (&r, 0, 12.999f);
-	  for (int i = 0; i < ns; i++) { const float sx = ga_u (&r, 0, W), sy = ga_u (&r, 0, fmaxf (1, hz - 0.24f * H)), sr = (ga_u (&r, 0, 3) < 2 ? 1.0f : 2.0f) * k;
-		ga_ring (L, w, h, sx, sy, sr * 0.5f, 0.5f, 1.0f, 1); } }
-	if (ga_u (&r, 0, 1) < 0.7f) { const float cx = ga_u (&r, 0.15f, 0.85f) * W, cy = ga_u (&r, 0.12f, 0.3f) * H, rr = ga_u (&r, 0.05f, 0.09f) * W;
-		ga_ring (L, w, h, cx, cy, rr, 1.0f * k, 230 / 255.0f, 0); }
-	memcpy (G, L, sizeof (float) * (size_t) w * h); ga_blur (G, w, h, (int) (4 * k + 0.5f));
+	ga_seg (P->L[layer], P->w, P->h, (float) ax, (float) ay, (float) bx, (float) by, ga_hw (P, width), v / 255.0f);
+}
+static void ga_poly (ga_pen *P, const double *xy, int n, int closed, int layer, int v, double width)
+{
+	for (int i = 0; i + 1 < n; i++) ga_ln (P, xy[2 * i], xy[2 * i + 1], xy[2 * i + 2], xy[2 * i + 3], layer, v, width);
+	if (closed && n > 2) ga_ln (P, xy[2 * n - 2], xy[2 * n - 1], xy[0], xy[1], layer, v, width);
+}
+/* (an ellipse's outline - inside rx, ry, as the preview's - or an arc of it: a0..a1 degrees from 3 o'clock, clockwise) */
+static void ga_ell (ga_pen *P, double cx, double cy, double rx, double ry, int layer, int v, double width, double a0, double a1)
+{
+	const float hw = ga_hw (P, width); const double ex = rx - hw, ey = ry - hw; if (ex <= 0.3 || ey <= 0.3) return;
+	float *L = P->L[layer]; const float vv = v / 255.0f; const int arc = !(a0 <= 0 && a1 >= 360);
+	for (int y = (int) floor (cy - ry - 2); y <= (int) ceil (cy + ry + 2); y++) { if (y < 0 || y >= P->h) continue;
+		for (int x = (int) floor (cx - rx - 2); x <= (int) ceil (cx + rx + 2); x++) { if (x < 0 || x >= P->w) continue;
+			const double dx = x + 0.5 - cx, dy = y + 0.5 - cy, g = (dx / ex) * (dx / ex) + (dy / ey) * (dy / ey) - 1;
+			const double gx = 2 * dx / (ex * ex), gy = 2 * dy / (ey * ey), gl = sqrt (gx * gx + gy * gy); if (gl <= 0) continue;
+			const float c = ga_clamp01 (hw + 0.5f - (float) (fabs (g) / gl)) * vv; if (c <= 0) continue;
+			if (arc) { double a = atan2 (dy / ey, dx / ex) * 57.29577951308232; if (a < 0) a += 360; if (a < a0 || a > a1) continue; }
+			if (L[(size_t) y * P->w + x] < c) L[(size_t) y * P->w + x] = c; } }
+}
+static void ga_circ (ga_pen *P, double cx, double cy, double r, int layer, int v, double width) { ga_ell (P, cx, cy, r, r, layer, v, width, 0, 360); }
+static void ga_dot (ga_pen *P, double x, double y, double r, int layer)
+{
+	r *= P->k; float *L = P->L[layer];
+	for (int yy = (int) floor (y - r - 2); yy <= (int) ceil (y + r + 2); yy++) { if (yy < 0 || yy >= P->h) continue;
+		for (int xx = (int) floor (x - r - 2); xx <= (int) ceil (x + r + 2); xx++) { if (xx < 0 || xx >= P->w) continue;
+			const float c = ga_clamp01 ((float) (r + 0.5 - sqrt ((xx + 0.5 - x) * (xx + 0.5 - x) + (yy + 0.5 - y) * (yy + 0.5 - y))));
+			if (L[(size_t) yy * P->w + xx] < c) L[(size_t) yy * P->w + xx] = c; } }
+}
+static void ga_stars (ga_pen *P, int n, double ymax, int layer)
+{
+	for (int i = 0; i < n; i++) { const double x = ga_u (&P->r, 0, P->W), y = ga_u (&P->r, 0, ymax), r = ga_u (&P->r, 0.6, 1.4); ga_dot (P, x, y, r, layer); }
+}
+static void ga_floor (ga_pen *P, double hz, double vx, int layer, int v)
+{
+	const double W = P->W, H = P->H;
+	for (int i = -9; i <= 9; i++) ga_ln (P, vx, hz, W / 2 + i * W * 0.18, H, layer, v, 1.2);
+	double y = hz + 5 * P->k, st = 4 * P->k;
+	while (y < H) { ga_ln (P, 0, y, W, y, layer, v, 1.2); st *= 1.3; y += st; }
+}
+#define GA_PI 3.14159265358979323846
+static void ga_theme (ga_pen *P, int theme)
+{
+	ga_rng *r = &P->r; const double W = P->W, H = P->H, k = P->k; double xy[512];
+	const double hz = H * ga_u (r, 0.55, 0.64);
+	switch (theme) {
+	case 0: {                                        /* grid floor, mountains, moon */
+		const int n = ga_i (r, 25, 45); ga_stars (P, n, hz - 0.2 * H, 0); ga_floor (P, hz, W * ga_u (r, 0.35, 0.65), 0, 150);
+		int m = 0; double x = 0;
+		while (x < W && m < 250) { xy[2 * m] = x; xy[2 * m + 1] = hz - ga_u (r, 0.03, 0.24) * H; m++; x += ga_u (r, 0.06, 0.15) * W; }
+		xy[2 * m] = W; xy[2 * m + 1] = hz - 0.05 * H; m++;
+		ga_poly (P, xy, m, 0, 0, 235, 2.0); ga_ln (P, 0, hz, W, hz, 0, 230, 1.5);
+		{ const double cx = ga_u (r, 0.2, 0.8) * W, cy = ga_u (r, 0.1, 0.28) * H, rr = ga_u (r, 0.07, 0.12) * W; ga_circ (P, cx, cy, rr, 1, 235, 2.0); }
+		break; }
+	case 1: {                                        /* a ringed planet in a starfield, a small moon */
+		ga_stars (P, ga_i (r, 60, 90), H, 0);
+		const double cx = ga_u (r, 0.35, 0.65) * W, cy = ga_u (r, 0.38, 0.55) * H, R = ga_u (r, 0.18, 0.26) * W;
+		ga_circ (P, cx, cy, R, 0, 235, 2.0);
+		for (int j = 0; j < 3; j++) ga_ell (P, cx, cy, R * (1.55 + 0.18 * j), R * (0.36 + 0.05 * j), 1, 220, 1.6, 200, 340);
+		for (int j = 0; j < 3; j++) ga_ell (P, cx, cy, R * (1.55 + 0.18 * j), R * (0.36 + 0.05 * j), 1, 220, 1.6, 0, 160);
+		for (int t = -2; t <= 2; t++) ga_ell (P, cx, cy + t * R * 0.3, R * sqrt (fmax (0.05, 1 - (t * 0.3) * (t * 0.3))), R * 0.08, 0, 120, 1.0, 0, 360);
+		{ const double mx = cx > W / 2 ? ga_u (r, 0.1, 0.3) * W : ga_u (r, 0.7, 0.9) * W, my = ga_u (r, 0.1, 0.25) * H, mr = ga_u (r, 0.03, 0.05) * W; ga_circ (P, mx, my, mr, 0, 230, 1.5); }
+		break; }
+	case 2: {                                        /* an asteroid field and a ship */
+		ga_stars (P, ga_i (r, 30, 50), H, 0);
+		const int na = ga_i (r, 7, 11);
+		for (int i = 0; i < na; i++) {
+			const double cx = ga_u (r, 0, W), cy = ga_u (r, 0, H), R = ga_u (r, 0.04, 0.13) * W; const int n = ga_i (r, 7, 10);
+			for (int j = 0; j < n; j++) { const double a = 2 * GA_PI * j / n, fx = ga_u (r, 0.7, 1.1), fy = ga_u (r, 0.7, 1.1); xy[2 * j] = cx + R * fx * cos (a); xy[2 * j + 1] = cy + R * fy * sin (a); }
+			ga_poly (P, xy, n, 1, 0, 230, 1.7); }
+		{ const double sx = ga_u (r, 0.3, 0.7) * W, sy = ga_u (r, 0.6, 0.85) * H, a = ga_u (r, -0.6, 0.6) - GA_PI / 2, b = a + GA_PI / 2;
+		  static const double SH[8] = { 0, -18, 11, 12, 0, 6, -11, 12 };
+		  for (int j = 0; j < 4; j++) { xy[2 * j] = sx + (SH[2 * j] * cos (b) - SH[2 * j + 1] * sin (b)) * k; xy[2 * j + 1] = sy + (SH[2 * j] * sin (b) + SH[2 * j + 1] * cos (b)) * k; }
+		  ga_poly (P, xy, 4, 1, 1, 240, 1.8);
+		  for (int j = 0; j < 4; j++) ga_dot (P, sx + cos (a) * (30 + 14 * j) * k, sy + sin (a) * (30 + 14 * j) * k, 1.3, 1); }
+		break; }
+	case 3: {                                        /* a city skyline under a moon */
+		ga_stars (P, ga_i (r, 30, 50), hz * 0.7, 0);
+		const double base = H * ga_u (r, 0.72, 0.8); double x = 0;
+		while (x < W) {
+			const double bw = ga_u (r, 0.07, 0.16) * W, bh = ga_u (r, 0.12, 0.42) * H;
+			xy[0] = x; xy[1] = base; xy[2] = x; xy[3] = base - bh; xy[4] = x + bw; xy[5] = base - bh; xy[6] = x + bw; xy[7] = base; ga_poly (P, xy, 4, 0, 0, 230, 1.6);
+			const double y0 = base - bh + 8 * k, y1 = base - 6 * k, st = 11 * k;
+			for (int i = 0; ; i++) { const double wy = y0 + i * st; if (wy >= y1) break;
+				if (ga_u (r, 0, 1) < 0.55) ga_ln (P, x + bw * 0.25, wy, x + bw * 0.45, wy, 1, 200, 1.2);
+				if (ga_u (r, 0, 1) < 0.55) ga_ln (P, x + bw * 0.55, wy, x + bw * 0.75, wy, 1, 200, 1.2); }
+			if (ga_u (r, 0, 1) < 0.3) { const double ah = ga_u (r, 10, 30) * k; ga_ln (P, x + bw / 2, base - bh, x + bw / 2, base - bh - ah, 0, 230, 1.2); }
+			x += bw + ga_u (r, 0, 0.03) * W; }
+		ga_ln (P, 0, base, W, base, 0, 230, 1.6);
+		for (int j = 1; j < 5; j++) ga_ln (P, 0, base + j * j * 3 * k, W, base + j * j * 3 * k, 0, 110, 1.0);
+		{ const double cx = ga_u (r, 0.15, 0.85) * W, cy = ga_u (r, 0.08, 0.2) * H, rr = ga_u (r, 0.05, 0.08) * W; ga_circ (P, cx, cy, rr, 0, 235, 1.8); }
+		break; }
+	case 4: {                                        /* a tunnel of nested polygons, turning */
+		const double cx = W * ga_u (r, 0.4, 0.6), cy = H * ga_u (r, 0.4, 0.6); const int n = ga_i (r, 4, 6); const double tw = ga_u (r, 0.08, 0.2);
+		for (int j = 0; j < 14; j++) { const double R = (0.95 * pow (0.78, j)) * fmax (W, H) * 0.7, a0 = j * tw;
+			for (int q = 0; q < n; q++) { xy[2 * q] = cx + R * cos (a0 + 2 * GA_PI * q / n); xy[2 * q + 1] = cy + R * sin (a0 + 2 * GA_PI * q / n); }
+			ga_poly (P, xy, n, 1, j % 2, 235 - j * 8, 1.7); }
+		for (int q = 0; q < n; q++) { const double a0 = 2 * GA_PI * q / n; ga_ln (P, cx, cy, cx + W * cos (a0), cy + W * sin (a0), 0, 90, 1.0); }
+		ga_stars (P, 12, H, 0);
+		break; }
+	case 5: {                                        /* a wireframe cube / pyramid over the grid */
+		ga_stars (P, ga_i (r, 25, 40), hz - 0.15 * H, 0); ga_floor (P, hz, W / 2, 0, 130); ga_ln (P, 0, hz, W, hz, 0, 220, 1.5);
+		const double cx = W * ga_u (r, 0.4, 0.6), cy = hz - H * ga_u (r, 0.15, 0.22), s = W * ga_u (r, 0.16, 0.22), ay = ga_u (r, 0.3, 1.2), ax = ga_u (r, 0.3, 0.6);
+		double V[8][3]; int E[16][2], nv, ne = 0;
+		if (ga_u (r, 0, 1) < 0.5) { nv = 8;
+			for (int i = 0; i < 8; i++) { V[i][0] = i & 4 ? 1 : -1; V[i][1] = i & 2 ? 1 : -1; V[i][2] = i & 1 ? 1 : -1; }
+			for (int a = 0; a < 8; a++) for (int b = a + 1; b < 8; b++) { int d = 0; for (int q = 0; q < 3; q++) d += V[a][q] != V[b][q]; if (d == 1) { E[ne][0] = a; E[ne][1] = b; ne++; } } }
+		else { static const double PV[5][3] = { { -1, 1, -1 }, { 1, 1, -1 }, { 1, 1, 1 }, { -1, 1, 1 }, { 0, -1.2, 0 } }; static const int PE[8][2] = { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 0, 4 }, { 1, 4 }, { 2, 4 }, { 3, 4 } };
+			nv = 5; memcpy (V, PV, sizeof PV); ne = 8; memcpy (E, PE, sizeof PE); }
+		double S2[8][2];
+		for (int i = 0; i < nv; i++) { double x = V[i][0], y = V[i][1], z = V[i][2], x2 = x * cos (ay) - z * sin (ay), z2 = x * sin (ay) + z * cos (ay);
+			const double y3 = y * cos (ax) - z2 * sin (ax), z3 = y * sin (ax) + z2 * cos (ax), f = 4 / (4 + z3); S2[i][0] = cx + x2 * s * f; S2[i][1] = cy + y3 * s * f; }
+		for (int i = 0; i < ne; i++) ga_ln (P, S2[E[i][0]][0], S2[E[i][0]][1], S2[E[i][1]][0], S2[E[i][1]][1], 1, 245, 2.0);
+		ga_ell (P, cx, hz + 0.05 * H, s * 0.9, s * 0.12, 0, 120, 1.0, 0, 360);
+		break; }
+	case 6: {                                        /* the sun setting over the grid */
+		ga_floor (P, hz, W * ga_u (r, 0.4, 0.6), 0, 150); ga_ln (P, 0, hz, W, hz, 0, 230, 1.5);
+		const double cx = W * ga_u (r, 0.4, 0.6), R = W * ga_u (r, 0.26, 0.34);
+		ga_ell (P, cx, hz, R, R, 1, 240, 2.0, 180, 360);
+		for (int j = 1; j < 8; j++) { const double y = hz - R * pow (j / 8.0, 0.8), dx = sqrt (fmax (0, R * R - (hz - y) * (hz - y)));
+			if (j % 2) ga_ln (P, cx - dx, y, cx + dx, y, 1, 200, 1.4); }
+		ga_stars (P, ga_i (r, 20, 35), hz - R - 10 * k, 0);
+		break; }
+	case 7: {                                        /* a space station: a wheel, spokes, panels */
+		ga_stars (P, ga_i (r, 50, 80), H, 0);
+		const double cx = W * ga_u (r, 0.4, 0.6), cy = H * ga_u (r, 0.38, 0.52), R = W * ga_u (r, 0.26, 0.32), t = ga_u (r, 0.25, 0.45);
+		ga_ell (P, cx, cy, R, R * t, 0, 235, 2.0, 0, 360); ga_ell (P, cx, cy, R * 0.82, R * t * 0.82, 0, 160, 1.2, 0, 360);
+		for (int q = 0; q < 8; q++) { const double a = GA_PI * q / 4; ga_ln (P, cx, cy, cx + R * 0.82 * cos (a), cy + R * t * 0.82 * sin (a), 0, 170, 1.2); }
+		ga_circ (P, cx, cy, R * 0.12, 1, 240, 1.8); ga_ln (P, cx, cy - R * 0.12, cx, cy - R * 0.9, 1, 220, 1.6);
+		for (int sg = -1; sg <= 1; sg += 2) { const double px = cx + sg * R * 1.25, py = cy + R * t * 1.2;
+			xy[0] = px - R * 0.22; xy[1] = py - R * 0.1; xy[2] = px + R * 0.22; xy[3] = py - R * 0.1; xy[4] = px + R * 0.22; xy[5] = py + R * 0.1; xy[6] = px - R * 0.22; xy[7] = py + R * 0.1;
+			ga_poly (P, xy, 4, 1, 1, 220, 1.4); ga_ln (P, px, py - R * 0.1, px, py + R * 0.1, 1, 180, 1.0); ga_ln (P, cx + sg * R, cy + R * t * 0.4, px - sg * R * 0.22, py, 0, 160, 1.0); }
+		{ const double mx = W * ga_u (r, 0.15, 0.85), my = H * ga_u (r, 0.8, 0.9), mr = W * ga_u (r, 0.08, 0.12); ga_circ (P, mx, my, mr, 0, 200, 1.6); }
+		break; }
+	case 8: {                                        /* rolling wireframe hills */
+		ga_stars (P, ga_i (r, 30, 50), hz - 0.18 * H, 0);
+		double ph[3]; for (int i = 0; i < 3; i++) ph[i] = ga_u (r, 0, 6.28);
+		for (int j = 0; j < 14; j++) { const double y0 = hz - 0.12 * H + (H - hz + 0.12 * H) * pow (j / 13.0, 1.6), amp = (0.03 + 0.07 * j / 14.0) * H;
+			for (int i = 0; i < 60; i++) { const double x = W * i / 59.0; xy[2 * i] = x; xy[2 * i + 1] = y0 - amp * (0.6 * sin (x / W * 6 + ph[0] + j * 0.3) + 0.4 * sin (x / W * 13 + ph[1])); }
+			ga_poly (P, xy, 60, 0, 0, 120 + 8 * j, 1.3); }
+		{ const double mx = W * ga_u (r, 0.2, 0.8), my = H * ga_u (r, 0.1, 0.25), mr = W * ga_u (r, 0.06, 0.1); ga_circ (P, mx, my, mr, 1, 235, 1.8); }
+		break; }
+	case 9: {                                        /* a corridor in one-point perspective */
+		const double cx = W * ga_u (r, 0.42, 0.58), cy = H * ga_u (r, 0.42, 0.52); static const double D[7] = { 1.0, 0.72, 0.52, 0.37, 0.26, 0.18, 0.12 };
+		double R[7][4];
+		for (int j = 0; j < 7; j++) { R[j][0] = cx - D[j] * W * 0.55; R[j][1] = cy - D[j] * H * 0.55; R[j][2] = cx + D[j] * W * 0.55; R[j][3] = cy + D[j] * H * 0.55;
+			xy[0] = R[j][0]; xy[1] = R[j][1]; xy[2] = R[j][2]; xy[3] = R[j][1]; xy[4] = R[j][2]; xy[5] = R[j][3]; xy[6] = R[j][0]; xy[7] = R[j][3]; ga_poly (P, xy, 4, 1, 0, 200, 1.4); }
+		for (int c = 0; c < 4; c++) { const int ix = (c == 0 || c == 3) ? 0 : 2, iy = c < 2 ? 1 : 3; ga_ln (P, R[0][ix], R[0][iy], R[6][ix], R[6][iy], 0, 220, 1.6); }
+		for (int j = 1; j < 6; j++) if (ga_u (r, 0, 1) < 0.5) {
+			const int side = ga_u (r, 0, 1) < 0.5; const double xa = side ? R[j][0] : R[j][2], xb = side ? R[j + 1][0] : R[j + 1][2];
+			xy[0] = xa; xy[1] = R[j][3]; xy[2] = xa; xy[3] = R[j][1] + (R[j][3] - R[j][1]) * 0.35; xy[4] = xb; xy[5] = R[j + 1][1] + (R[j + 1][3] - R[j + 1][1]) * 0.35; xy[6] = xb; xy[7] = R[j + 1][3];
+			ga_poly (P, xy, 4, 0, 1, 230, 1.6); }
+		ga_dot (P, cx, cy, 2.5, 1);
+		break; }
+	case 10: {                                       /* a comet over a horizon line */
+		ga_stars (P, ga_i (r, 60, 90), H, 0);
+		const double hx = W * ga_u (r, 0.55, 0.8), hy = H * ga_u (r, 0.2, 0.35), R = W * ga_u (r, 0.03, 0.05), a = ga_u (r, 2.4, 2.9);
+		ga_circ (P, hx, hy, R, 0, 255, 2.0);
+		for (int j = -4; j <= 4; j++) { const double L = W * ga_u (r, 0.55, 0.9), aa = a + j * 0.035; const int aj = j < 0 ? -j : j;
+			ga_ln (P, hx + R * cos (aa), hy + R * sin (aa), hx + L * cos (aa), hy + L * sin (aa), aj % 2 ? 1 : 0, 200 - aj * 15, 1.2); }
+		for (int i = 0; i < 40; i++) { const double x = W * i / 39.0; xy[2 * i] = x; xy[2 * i + 1] = H * 0.86 - 0.03 * H * sin (x / W * 5); }
+		ga_poly (P, xy, 40, 0, 0, 200, 1.6);
+		break; }
+	default: {                                       /* a moonscape with craters, the earth in the sky */
+		ga_stars (P, ga_i (r, 40, 70), hz - 0.1 * H, 0);
+		const double ph0 = ga_u (r, 0, 6);
+		for (int i = 0; i < 40; i++) { const double x = W * i / 39.0; xy[2 * i] = x; xy[2 * i + 1] = hz + 0.02 * H * sin (x / W * 3 + ph0); }
+		ga_poly (P, xy, 40, 0, 0, 230, 1.8);
+		const int nc = ga_i (r, 6, 9);
+		for (int i = 0; i < nc; i++) { const double t = ga_u (r, 0.05, 1), y = hz + (H - hz) * t, rx = W * (0.05 + 0.14 * t) * ga_u (r, 0.6, 1.2);
+			const double x1 = ga_u (r, 0, W); ga_ell (P, x1, y, rx, rx * 0.28, 0, 200, 1.4, 0, 360);
+			const double x2 = ga_u (r, 0, W); ga_ell (P, x2, y, rx * 0.6, rx * 0.15, 0, 120, 1.0, 180, 360); }
+		const double ex = W * ga_u (r, 0.2, 0.8), ey = H * ga_u (r, 0.12, 0.28), er = W * ga_u (r, 0.09, 0.13);
+		ga_circ (P, ex, ey, er, 1, 240, 1.8);
+		for (int j = -1; j <= 1; j++) { const double f = j * 0.5; ga_ell (P, ex, ey + f * er, er * sqrt (1 - f * f) * 0.95, er * 0.12, 1, 150, 1.0, 0, 360); }
+		break; }
+	}
+}
+/* (the scene drawn into img at ax, ay, w x h, its corners rounded rad; k: the box's scale against 800 wide) */
+static void ga_scene (unsigned char *img, int iw, int ih, int ax, int ay, int w, int h, float rad, uint32_t seed, double k, int theme, const unsigned char *accent)
+{
+	ga_pen P; memset (&P, 0, sizeof P); P.w = w; P.h = h; P.W = w; P.H = h; P.k = k; P.r.s = seed ? seed : 0x9e3779b9u;
+	float *G[2] = { NULL, NULL }; P.L[0] = calloc ((size_t) w * h, sizeof (float)); P.L[1] = calloc ((size_t) w * h, sizeof (float));
+	G[0] = malloc (sizeof (float) * (size_t) w * h); G[1] = malloc (sizeof (float) * (size_t) w * h);
+	if (!P.L[0] || !P.L[1] || !G[0] || !G[1] || w < 4 || h < 4) { free (P.L[0]); free (P.L[1]); free (G[0]); free (G[1]); return; }
+	for (int i = 0; i < 3; i++) ga_u (&P.r, 0, 1);
+	ga_theme (&P, theme);
+	const double sg = 4 * k; const int br = (int) ((-1 + sqrt (1 + 4 * sg * sg)) / 2 + 0.5);   /* (three box blurs of br: variance br (br + 1) = sigma^2) */
+	for (int l = 0; l < 2; l++) { memcpy (G[l], P.L[l], sizeof (float) * (size_t) w * h); ga_blur (G[l], w, h, br); }
+	const float core[3] = { 136, 204, 187 }, halo[3] = { 102, 170, 136 }, bg[3] = { 2, 4, 4 };
 	for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
 		const int X = ax + x, Y = ay + y; if (X < 0 || Y < 0 || X >= iw || Y >= ih) continue;
-		const float a = L[(size_t) y * w + x], gl = G[(size_t) y * w + x] * 0.9f, m = ga_rrect_cov (x + 0.5f, y + 0.5f, W, H, rad);
-		const unsigned char c[3] = { (unsigned char) fminf (255, a * 136 + gl * 102 + 3), (unsigned char) fminf (255, a * 204 + gl * 170 + 6), (unsigned char) fminf (255, a * 187 + gl * 136 + 5) };
-		ga_mix (img + ((size_t) Y * iw + X) * 4, c, m); }
-	free (L); free (G);
+		const size_t i = (size_t) y * w + x; const float a0 = P.L[0][i], g0 = G[0][i], a1 = P.L[1][i], g1 = G[1][i];
+		unsigned char c[3];
+		for (int q = 0; q < 3; q++) { const float v = bg[q] + a0 * core[q] + g0 * halo[q] * 0.9f + a1 * accent[q] + g1 * accent[q] * 0.75f * 0.9f; c[q] = (unsigned char) (v > 255 ? 255 : v); }
+		ga_mix (img + ((size_t) Y * iw + X) * 4, c, ga_rrect_cov (x + 0.5f, y + 0.5f, (float) w, (float) h, rad)); }
+	free (P.L[0]); free (P.L[1]); free (G[0]); free (G[1]);
 }
 
 /* ---- resampling (Lanczos 3, as PIL's): the pictures drawn smaller, the player's own pictures made tile-sized */
@@ -396,16 +574,19 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	{ int fw, fh, gr; unsigned char *f = ga_mask (GA_FURN_PNG, (int) sizeof GA_FURN_PNG, ks, &fw, &fh, &gr);   /* (the furniture on top) */
 	  if (f) { ga_stamp (o, BW, BH, f, fw, fh, gr, (BW - fw) / 2, (int) (18 * k), NULL); free (f); } }
 	ga_pill (g, title, o, BW, BH, BW / 2.0f - GA_LBL_W / 2 * 0.205f * k, 205 * k - GA_PILL_CY * 0.205f * k, 0.205f * k, GA_LBL_W / 2, GA_PILL_CY);
-	const float x0 = 92 * k, y0 = 292 * k, x1 = BW - 92 * k, y1 = 832 * k;
-	static const unsigned char FRAME[3] = { 28, 104, 196 }, BLACK[3] = { 0, 0, 0 }, WHITE[3] = { 255, 255, 255 }, GREY[3] = { 174, 174, 174 }, INK[3] = { 10, 10, 10 };
-	ga_rrect (o, BW, BH, x0, y0, x1, y1, 26 * k, FRAME); ga_rrect (o, BW, BH, x0 + 12 * k, y0 + 12 * k, x1 - 12 * k, y1 - 50 * k, 20 * k, BLACK);
-	{ uint32_t hsh = 2166136261u; for (const char *p = title; *p; p++) hsh = (hsh ^ (unsigned char) *p) * 16777619u;   /* (FNV-1a: the scene's seed) */
-	  ga_scene (o, BW, BH, (int) (x0 + 22 * k), (int) (y0 + 22 * k), (int) (x1 - x0 - 44 * k), (int) (y1 - y0 - 82 * k), 14 * k, hsh, k); }
-	{ int cp[320]; char t1[640]; int m = 0;          /* (the title in the frame, one line) */
-	  for (const char *p = title; *p && m < (int) sizeof t1 - 1; p++) t1[m++] = *p == '|' ? ' ' : *p; t1[m] = 0;
-	  const int n = ga_cps (t1, cp, 320); float cap = 15 * k; const float wmax = x1 - x0 - 40 * k, w1 = ga_width1 (g, cp, n, NULL);
-	  if (w1 * cap > wmax && w1 > 0) cap = wmax / w1;
-	  ga_text (g, o, BW, BH, cp, n, cap, 1.0f, BW / 2.0f, y1 - 25 * k + cap / 2, WHITE); }
+	static const unsigned char FRAMES[6][3] = { { 226, 38, 34 }, { 30, 100, 200 }, { 244, 128, 22 }, { 250, 222, 34 }, { 58, 168, 60 }, { 128, 62, 156 } },
+	                           ACCENTS[6][3] = { { 90, 205, 255 }, { 255, 80, 200 }, { 255, 150, 40 }, { 255, 232, 90 }, { 255, 72, 60 }, { 100, 140, 255 } },
+	                           CREAM[3] = { 240, 232, 214 }, GREY[3] = { 174, 174, 174 }, INK[3] = { 10, 10, 10 };
+	uint32_t hs = 2166136261u; for (const char *p = title; *p; p++) hs = (hs ^ (unsigned char) *p) * 16777619u;   /* (FNV-1a, then mixed: every bit counts) */
+	hs ^= hs >> 16; hs *= 0x85ebca6bu; hs ^= hs >> 13; hs *= 0xc2b2ae35u; hs ^= hs >> 16;
+	const int theme = (int) (hs % 12), fc = (int) (hs / 12 % 6), ac = (int) (hs / 72 % 6), cream = (int) (hs >> 20 & 1);
+	{ const int wx0 = (int) floorf (176 * k + 0.5f), wy0 = (int) floorf (279 * k + 0.5f), wx1 = (int) floorf ((176 + 448) * k + 0.5f), wy1 = (int) floorf ((279 + 574) * k + 0.5f);   /* (the well: no grid) */
+	  for (int y = wy0; y < wy1 && y < BH; y++) for (int x = wx0; x < wx1 && x < BW; x++) { unsigned char *p = o + ((size_t) y * BW + x) * 4; p[0] = p[1] = p[2] = 174; p[3] = 255; } }
+	const float fx = 192 * k, fy = 295 * k, fw = 416 * k, fh = 542 * k; float e = 10 * k;   /* (the frame) */
+	ga_rrect (o, BW, BH, fx, fy, fx + fw, fy + fh, 24 * k, FRAMES[fc]);
+	if (cream) { ga_rrect (o, BW, BH, fx + e, fy + e, fx + fw - e, fy + fh - e, 16 * k, CREAM); e += 3 * k; }
+	{ const int sx0 = (int) floorf (fx + e + 0.5f), sy0 = (int) floorf (fy + e + 0.5f), sx1 = (int) floorf (fx + fw - e + 0.5f), sy1 = (int) floorf (fy + fh - e + 0.5f);
+	  ga_scene (o, BW, BH, sx0, sy0, sx1 - sx0, sy1 - sy0, 14 * k, hs ^ 0x5bd1e995u, k, theme, ACCENTS[ac]); }
 	ga_rrect (o, BW, BH, 96 * k, 870 * k, BW - 96 * k, 914 * k, 0.01f, GREY);   /* (the legal line) */
 	{ int lw2, lh2, gr; unsigned char *l = ga_mask (GA_LEGAL_PNG, (int) sizeof GA_LEGAL_PNG, ks, &lw2, &lh2, &gr);
 	  if (l) { ga_stamp (o, BW, BH, l, lw2, lh2, gr, (BW - lw2) / 2, (int) (892 * k) - lh2 / 2, INK); free (l); } }

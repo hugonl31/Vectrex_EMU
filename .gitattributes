@@ -1,0 +1,4 @@
+# the UVMC2 calibration: 512 bytes exactly as made (a Windows checkout's CRLF would make it another file - the core and
+# the PC compare it byte for byte, libretro/make_uvm2_cfg.py --check)
+package/uvmc2/.conf/uvm2.cfg -text
+package/uvmc2/config/uvm2.cfg -text

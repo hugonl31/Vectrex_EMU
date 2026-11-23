@@ -91,6 +91,8 @@ jobs:
           sudo apt-get install -y -q xvfb libgl1-mesa-dri libglx-mesa0 libxrandr2 x11-utils
           python -m pip install -q pyinstaller pysdl2 pysdl2-dll numpy   # (numpy: the lines and the sound in one go)
           python -c "import tkinter, sdl2; print('Tk', tkinter.TkVersion)"
+      - name: the UVMC2 calibration alike in the package, the PC program and the core (libretro/uvm2_cfg_tab.h)
+        run: python libretro/make_uvm2_cfg.py --check
       - name: build
         run: PY=python sh build_linux.sh
       - name: the BIOS and the overlay next to the program (tests only; the zips carry them)
@@ -107,7 +109,8 @@ jobs:
       - name: pack the program
         run: |
           rm -f dist-linux/Vectrex_EMU.conf dist-linux/system/settings.json
-          cp -r package/. dist-linux/
+          rm -f dist-linux/uvmc2/.conf/vectrex_emu_cal dist-linux/uvmc2/*/uvm2.cfg.before_*   # (the test run's UVMC2 calibration
+          cp -r package/. dist-linux/                                       #  marker: never shipped - the updater would add it)
           cd dist-linux && zip -q -r ../Vectrex_EMU-linux-bin.zip Vectrex_EMU system roms overlays uvmc2   # (the program, system, roms, overlays, the UVMC2 card)
       - uses: actions/upload-artifact@v7
         with:

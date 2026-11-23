@@ -1167,6 +1167,63 @@ static int vx_ncpu (void)
 }
 #include "sdcard.c"                         /* (1.1: a folder as the UVMC2's / PiTrex's SD card - the desktop's fatimg.py) */
 static char sd_img[1900], sd_folder[1800];     /* (the card in use: its image, its folder - written back at the end) */
+/* (2026-11-23, as the desktop's uvm2_cfg_force: v1.8.1 and earlier shipped a wrong UVMC2 calibration) the card folder
+ * <base>/vectrex_emu/uvmc2 gets the calibration that comes with the emulator (uvm2_cfg_tab.h, from
+ * package/uvmc2/.conf/uvm2.cfg by make_uvm2_cfg.py) once per UVM2_CFG_VERSION, in .conf/ and config/, whatever is there -
+ * a player's own file too, or none; a different file kept beside it as uvm2.cfg.before_<version> (the first one only).
+ * The marker .conf/vectrex_emu_cal (the version) written last: the player's later calibrations stay. No card folder:
+ * one made (in an existing <base>/vectrex_emu) - with an old card image there (uvmc2_sd.img) its files copied into it
+ * first; an image next to the game is the player's own card: left. Before the card is built (sdc_prepare) */
+#include "uvm2_cfg_tab.h"
+typedef char uvm2_cfg_is_512[sizeof uvm2_cfg_new == 512 ? 1 : -1];
+static int uvm2_isdir (const char *p) { sdc_st st; return !sdc_stat (p, &st) && (st.st_mode & S_IFMT) == S_IFDIR; }
+static int uvm2_isfile (const char *p) { sdc_st st; return !sdc_stat (p, &st) && (st.st_mode & S_IFMT) == S_IFREG; }
+static int uvm2_cal_force (const char *base, const char *game_dir)   /* (returns 1 when it wrote) */
+{
+	char vd[1700], fo[1760], mk[1900], d[1800], p[1900], bk[1950];
+	char ver[16]; int vn = 0; for (const char *q = UVM2_CFG_VERSION; *q && vn < 15; q++) if (*q != '-') ver[vn++] = *q; ver[vn] = 0;
+	snprintf (vd, sizeof vd, "%s" SEP "vectrex_emu", base); snprintf (fo, sizeof fo, "%s" SEP "uvmc2", vd);
+	snprintf (mk, sizeof mk, "%s" SEP ".conf" SEP "vectrex_emu_cal", fo);
+	{ FILE *m = fopen (mk, "rb"); if (m) { char b[64] = { 0 }; size_t n = fread (b, 1, 63, m); fclose (m);
+		while (n && (b[n - 1] == '\n' || b[n - 1] == '\r' || b[n - 1] == ' ')) b[--n] = 0;
+		if (!strcmp (b, UVM2_CFG_VERSION)) return 0; } }
+	if (!uvm2_isdir (fo)) {
+		if (!uvm2_isdir (vd)) return 0;                      /* (no vectrex_emu folder: not set up here - nothing made) */
+		snprintf (p, sizeof p, "%s" SEP "uvmc2_sd.img", game_dir);
+		if (uvm2_isfile (p)) { fprintf (stderr, "[vectrex_emu] UVMC2 calibration: the card is %s - left as it is\n", p); return 0; }
+		vx_mkdir (fo); if (!uvm2_isdir (fo)) return 0;
+		snprintf (p, sizeof p, "%s" SEP "uvmc2_sd.img", vd);
+		if (uvm2_isfile (p)) { sdc_older_than = 0; int n = sdc_sync_back (p, fo);
+			fprintf (stderr, "[vectrex_emu] UVMC2 card: %s into the folder %s (%d files)\n", p, fo, n);
+			if (n <= 0) {                                    /* (an image it cannot read: the image stays the card) */
+#ifdef _WIN32
+				extern int _rmdir (const char *); _rmdir (fo);
+#else
+				rmdir (fo);
+#endif
+				return 0; } } }
+	int ok = 1;
+	for (int k = 0; k < 2; k++) {
+		snprintf (d, sizeof d, "%s" SEP "%s", fo, k ? "config" : ".conf"); vx_mkdir (d);
+		snprintf (p, sizeof p, "%s" SEP "uvm2.cfg", d);
+		unsigned char b[sizeof uvm2_cfg_new + 1]; size_t n = 0; FILE *f = fopen (p, "rb"); int had = f != NULL;
+		if (f) { n = fread (b, 1, sizeof b, f); fclose (f); }
+		if (had && n == sizeof uvm2_cfg_new && !memcmp (b, uvm2_cfg_new, n)) continue;
+		snprintf (bk, sizeof bk, "%s" SEP "uvm2.cfg.before_%s", d, ver);
+		if (had && !uvm2_isfile (bk)) { FILE *i = fopen (p, "rb"), *o = i ? fopen (bk, "wb") : NULL;
+			if (o) { char c[4096]; size_t r; while ((r = fread (c, 1, sizeof c, i)) > 0) if (fwrite (c, 1, r, o) != r) { ok = 0; break; }
+				if (fclose (o)) ok = 0; }
+			else ok = 0;
+			if (i) fclose (i);
+			if (!ok) break; }
+		FILE *o = fopen (p, "wb"); if (!o) { ok = 0; break; }
+		if (fwrite (uvm2_cfg_new, 1, sizeof uvm2_cfg_new, o) != sizeof uvm2_cfg_new) ok = 0;
+		if (fclose (o)) ok = 0;
+		if (!ok) break; }
+	if (ok) { FILE *m = fopen (mk, "wb"); ok = m && fprintf (m, "%s\n", UVM2_CFG_VERSION) > 0; if (m && fclose (m)) ok = 0; }
+	fprintf (stderr, "[vectrex_emu] UVMC2 calibration %s on the card %s%s\n", UVM2_CFG_VERSION, fo, ok ? "" : " - FAILED");
+	return ok;
+}
 /* (1.1) a save's file: RetroArch's saves folder (else the game's), <game file><ext>; a save next to the ROM and none
  * there yet: copied over as the start */
 static void save_path (const char *rom, const char *ext, char *out, size_t n)
@@ -1344,6 +1401,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	 *  <system>/vectrex_emu: pitrex_sd.img / uvmc2_sd.img, as the desktop Vectrex_EMU builds them from its card folders) */
 	{ const char *e = strrchr (path, '.'); int px = e && (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")), um = e && !vx_stricmp (e, ".um2");
 	  sd_img[0] = sd_folder[0] = 0;
+	  if (um) uvm2_cal_force (sys ? sys : dir, dir);   /* (this version's calibration on the card, once) */
 	  if (px || um) { /* (1.1, as the desktop: the card is a folder - <system>/vectrex_emu/uvmc2 or pitrex - built into an image in
 	                     RetroArch's saves folder before the game and what the game wrote copied back after it) */
 		char fo[1800]; snprintf (fo, sizeof fo, "%s" SEP "vectrex_emu" SEP "%s", sys ? sys : dir, px ? "pitrex" : "uvmc2"); sdc_st st;

@@ -1,7 +1,7 @@
 /* genart.c - the game library's pictures for a game with none of its own: a cartridge with the game's title in the blue
  * pill on the label, and a box (the owner's "B1" v2: grid paper, the Vectrex furniture, the pill, a portrait screen in a
  * coloured frame as the real boxes' with one of 12 vector scenes of our own - chosen with its colours by the title -, the
- * legal line). One implementation for every platform, so they all look the
+ * small print and the GCE logo at the foot as on the box-art pack's fronts). One implementation for every platform, so they all look the
  * same: the RetroArch core (library.c includes it), the iPhone and Android apps (compiled with the core), the PC (inside
  * src/frontend/native's vxbuild library: genart.py). Overlays get none.
  *
@@ -575,13 +575,13 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	  for (int y = 0; y < BH; y++) for (int x = 0; x < BW; x++) { const float c = 1 - (1 - cx[x]) * (1 - cy[y]); unsigned char *p = o + ((size_t) y * BW + x) * 4;
 		p[0] = p[1] = p[2] = (unsigned char) (174 + 81 * c + 0.5f); p[3] = 255; }
 	  free (cx); }
-	const float ks = BW / (float) GA_W;                 /* (the furniture and the legal line: made for 840) */
+	const float ks = BW / (float) GA_W;                 /* (the furniture and the foot: made for 840) */
 	{ int fw, fh, gr; unsigned char *f = ga_mask (GA_FURN_PNG, (int) sizeof GA_FURN_PNG, ks, &fw, &fh, &gr);   /* (the furniture on top) */
 	  if (f) { ga_stamp (o, BW, BH, f, fw, fh, gr, (BW - fw) / 2, (int) (18 * k), NULL); free (f); } }
 	ga_pill (g, title, o, BW, BH, BW / 2.0f - GA_LBL_W / 2 * 0.205f * k, 205 * k - GA_PILL_CY * 0.205f * k, 0.205f * k, GA_LBL_W / 2, GA_PILL_CY);
 	static const unsigned char FRAMES[6][3] = { { 226, 38, 34 }, { 30, 100, 200 }, { 244, 128, 22 }, { 250, 222, 34 }, { 58, 168, 60 }, { 128, 62, 156 } },
 	                           ACCENTS[6][3] = { { 90, 205, 255 }, { 255, 80, 200 }, { 255, 150, 40 }, { 255, 232, 90 }, { 255, 72, 60 }, { 100, 140, 255 } },
-	                           CREAM[3] = { 240, 232, 214 }, GREY[3] = { 174, 174, 174 }, INK[3] = { 10, 10, 10 };
+	                           CREAM[3] = { 240, 232, 214 }, INK[3] = { 10, 10, 10 };
 	uint32_t hs = 2166136261u; for (const char *p = title; *p; p++) hs = (hs ^ (unsigned char) *p) * 16777619u;   /* (FNV-1a, then mixed: every bit counts) */
 	hs ^= hs >> 16; hs *= 0x85ebca6bu; hs ^= hs >> 13; hs *= 0xc2b2ae35u; hs ^= hs >> 16;
 	const int theme = (int) (hs % 12), fc = (int) (hs / 12 % 6), ac = (int) (hs / 72 % 6), cream = (int) (hs >> 20 & 1);
@@ -592,9 +592,8 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	if (cream) { ga_rrect (o, BW, BH, fx + e, fy + e, fx + fw - e, fy + fh - e, 16 * k, CREAM); e += 3 * k; }
 	{ const int sx0 = (int) floorf (fx + e + 0.5f), sy0 = (int) floorf (fy + e + 0.5f), sx1 = (int) floorf (fx + fw - e + 0.5f), sy1 = (int) floorf (fy + fh - e + 0.5f);
 	  ga_scene (o, BW, BH, sx0, sy0, sx1 - sx0, sy1 - sy0, 14 * k, hs ^ 0x5bd1e995u, k, theme, ACCENTS[ac]); }
-	ga_rrect (o, BW, BH, 96 * k, 870 * k, BW - 96 * k, 914 * k, 0.01f, GREY);   /* (the legal line) */
-	{ int lw2, lh2, gr; unsigned char *l = ga_mask (GA_LEGAL_PNG, (int) sizeof GA_LEGAL_PNG, ks, &lw2, &lh2, &gr);
-	  if (l) { ga_stamp (o, BW, BH, l, lw2, lh2, gr, (BW - lw2) / 2, (int) (892 * k) - lh2 / 2, INK); free (l); } }
+	{ int fw2, fh2, gr; unsigned char *f = ga_mask (GA_FOOT_PNG, (int) sizeof GA_FOOT_PNG, ks, &fw2, &fh2, &gr);   /* (the foot: the small print and GCE, on the grid, as the pack's boxes) */
+	  if (f) { ga_stamp (o, BW, BH, f, fw2, fh2, gr, (int) floorf (GA_FOOT_CX * k - fw2 / 2.0f + 0.5f), (int) floorf (GA_FOOT_CY * k - fh2 / 2.0f + 0.5f), INK); free (f); } }
 	return o;
 }
 

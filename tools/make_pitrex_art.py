@@ -101,15 +101,16 @@ def shrink(im, W=420):
     a = np.asarray(im.resize((W, int(W * im.height / im.width)), Image.LANCZOS)).copy()
     al = a[:, :, 3]; semi = (al > 0) & (al < 250)
     a[semi, :3] = np.minimum(a[semi, :3], (40, 42, 46)); a[al < 48] = 0
-    return Image.fromarray(dark_edge(a), 'RGBA')
-def dark_edge(a):
-    """the outline in the shell's dark plastic (as ios_pack.py: half-clear pixels and four rings capped, premultiplied)"""
+    return Image.fromarray(dark_edge(a, max(1, round(W / 420))), 'RGBA')
+def dark_edge(a, k=1):
+    """the outline in the shell's dark plastic (as ios_pack.py: half-clear pixels and four rings capped, premultiplied;
+    k each ring's width in pixels - 2 at 840 wide, as ios_pack.py)"""
     al = a[:, :, 3].astype(np.float32); rgb = a[:, :, :3].astype(np.float32)
-    inside = al >= 128; pad = 5
+    inside = al >= 128; pad = 4 * k + 1
     ring = np.full(al.shape, 99, np.int32); ring[(al > 0) & ~inside] = 0
     cur = Image.fromarray(np.pad(inside, pad).astype(np.uint8) * 255, 'L')
     for i in (1, 2, 3, 4):
-        er = cur.filter(ImageFilter.MinFilter(3)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
+        er = cur.filter(ImageFilter.MinFilter(2 * k + 1)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
         ring[r[pad:-pad, pad:-pad]] = i; cur = er
     mx = rgb.max(2)
     for i, cap in ((0, 14.0), (1, 20.0), (2, 28.0), (3, 36.0), (4, 44.0)):

@@ -8,7 +8,9 @@ a cartridge and a box for every game with no picture of its own, the same on the
                 (the pill's frame); GA_CART_LY0 / LH: the label's top and height there exactly (the shrink's rows are
                 rounded down: a little less than x k down) - the player's own labels go there (genart.c)
   GA_FURN_PNG   the furniture alone (the Vectrex logo + TM, ARCADE SYSTEM CARTRIDGE) at the box's scale
-  GA_LEGAL_PNG  the box's legal line, as a mask
+  GA_FOOT_PNG   the box's foot: the small print and the GCE logo (the owner's picture, gce_box_bottom_source.webp), a
+                mask, placed and sized as on the box-art pack's GCE fronts: its ink 223, 896, 354 x 109 of 800 x 1024
+                (the same on all of them), on the grid paper; GA_FOOT_CX / CY its centre in those px
   GA_FONT       Archivo Black (SIL OFL 1.1, libretro/fonts), cut to Latin-1 and the typographic quotes
   GA_TITLES     libretro/genart_titles.txt: titles set by hand
 
@@ -31,6 +33,8 @@ LEGAL = 'FOR USE WITH THE VECTREX ARCADE SYSTEM'
 CART_W = 840                                                         # the cartridge tiles' width (the owner, 2026-11-23)
 BOX_K = 840 / 800.0                                                  # the box: the pack's 800 x 1024 front, at 840 wide
 FONT = os.path.join(root, 'libretro', 'fonts', 'ArchivoBlack-Regular.ttf')
+FOOT = ART + '/boxart_labels/gen/gce_box_bottom_source.webp'            # (the owner's: the small print and GCE, black on clear)
+FOOT_BOX = (223, 896, 354, 109)                                      # (its ink on the pack's GCE fronts, 800 x 1024)
 REG = next(p for p in ('C:/Windows/Fonts/LiberationSans-Regular.ttf', 'C:/Windows/Fonts/arial.ttf',
                        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf') if os.path.exists(p))   # (the legal line: drawn into the pictures)
 
@@ -67,14 +71,15 @@ def base_label():
     return render_svg(gb + furniture_body() + legal).convert('RGB')
 
 
-def dark_edge(a):
-    """the outline in the shell's dark plastic (tools/ios_pack.py's)"""
+def dark_edge(a, k=1):
+    """the outline in the shell's dark plastic (tools/ios_pack.py's): k, each ring's width in pixels (1 at 420 wide, 2 at
+    840 - the same edge at either size, as ios_pack.py's)"""
     al = a[:, :, 3].astype(np.float32); rgb = a[:, :, :3].astype(np.float32)
-    inside = al >= 128; pad = 5
+    inside = al >= 128; pad = 4 * k + 1
     ring = np.full(al.shape, 99, np.int32); ring[(al > 0) & ~inside] = 0
     cur = Image.fromarray(np.pad(inside, pad).astype(np.uint8) * 255, 'L')
     for i in (1, 2, 3, 4):
-        er = cur.filter(ImageFilter.MinFilter(3)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
+        er = cur.filter(ImageFilter.MinFilter(2 * k + 1)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
         ring[r[pad:-pad, pad:-pad]] = i; cur = er
     mx = rgb.max(2)
     for i, cap in ((0, 14.0), (1, 20.0), (2, 28.0), (3, 36.0), (4, 44.0)):
@@ -109,7 +114,7 @@ def shrink(im, Wd):
     a = np.asarray(im.resize((Wd, int(Wd * im.height / im.width)), Image.LANCZOS)).copy()
     al = a[:, :, 3]; semi = (al > 0) & (al < 250)
     a[semi, :3] = np.minimum(a[semi, :3], (40, 42, 46)); a[al < 48] = 0
-    return Image.fromarray(dark_edge(a), 'RGBA'), left, top, k, a.shape[0] / im.height
+    return Image.fromarray(dark_edge(a, max(1, round(Wd / 420))), 'RGBA'), left, top, k, a.shape[0] / im.height
 
 
 def shell_box(sh):
@@ -155,8 +160,9 @@ if __name__ == '__main__':
     # the box's furniture and legal line
     fu = render_svg(furniture_body(), int(W * 0.255 * BOX_K), int(H * 0.255 * BOX_K)); fu = fu.crop(fu.getchannel('A').getbbox())
     furn_png = png(fu)
-    f = ImageFont.truetype(REG, int(round(13 * BOX_K))); l, t, r, b = f.getbbox(LEGAL)
-    lg = Image.new('L', (r - l + 2, b - t + 2), 0); ImageDraw.Draw(lg).text((1 - l, 1 - t), LEGAL, font=f, fill=255)
+    src = Image.open(FOOT).convert('RGBA').getchannel('A'); src = src.crop(src.getbbox())
+    fs = ((FOOT_BOX[2] / src.width) * (FOOT_BOX[3] / src.height)) ** 0.5 * BOX_K   # (between fitting its width and its height)
+    lg = src.resize((max(1, round(src.width * fs)), max(1, round(src.height * fs))), Image.LANCZOS)
     legal_png = png(lg)
     # the font: Latin-1 and the typographic quotes / dashes
     opt = subset.Options(); opt.layout_features = ['kern']; opt.name_IDs = ['*']; opt.notdef_outline = True
@@ -176,10 +182,11 @@ if __name__ == '__main__':
          ' * The font: Archivo Black, (c) 2017 The Archivo Black Project Authors, SIL Open Font License 1.1 (libretro/fonts/OFL.txt). */',
          '#define GA_CART_X0 %.4ff' % cx0, '#define GA_CART_Y0 %.4ff' % cy0, '#define GA_CART_S %.6ff' % cs,
          '#define GA_CART_LY0 %.4ff' % ((y0 - top) * ky), '#define GA_CART_LH %.4ff' % (lh * ky),
-         '#define GA_FONT_CAP %d' % cap, '#define GA_FONT_UPM %d' % upm]
-    L += c_bytes('GA_CART_PNG', cart_png) + c_bytes('GA_FURN_PNG', furn_png) + c_bytes('GA_LEGAL_PNG', legal_png) + c_bytes('GA_FONT', font)
+         '#define GA_FONT_CAP %d' % cap, '#define GA_FONT_UPM %d' % upm,
+         '#define GA_FOOT_CX %.2ff' % (FOOT_BOX[0] + FOOT_BOX[2] / 2), '#define GA_FOOT_CY %.2ff' % (FOOT_BOX[1] + FOOT_BOX[3] / 2)]
+    L += c_bytes('GA_CART_PNG', cart_png) + c_bytes('GA_FURN_PNG', furn_png) + c_bytes('GA_FOOT_PNG', legal_png) + c_bytes('GA_FONT', font)
     L.append('static const char *const GA_TITLES[][2] = {')
     L += ['\t{ %s, %s },' % (c_str(a), c_str(v)) for a, v in titles] + ['\t{ 0, 0 }', '};', '']
     io.open(os.path.join(root, 'libretro', 'genart_data.h'), 'w', encoding='utf-8', newline='\n').write('\n'.join(L))
-    print('cartridge %d x %d (%d B), label at %.2f, %.2f x %.5f; furniture %s (%d B); legal %s (%d B); font %d B; %d titles'
+    print('cartridge %d x %d (%d B), label at %.2f, %.2f x %.5f; furniture %s (%d B); foot %s (%d B); font %d B; %d titles'
           % (cart.width, cart.height, len(cart_png), cx0, cy0, cs, fu.size, len(furn_png), lg.size, len(legal_png), len(font), len(titles)))

@@ -4823,14 +4823,22 @@ class App:
         else:
             b['pad_d'] = None
         new = btn & ~b.get('pad_btn', btn)                      # (pressed now: held when it opened does not count)
+        gone = b.get('pad_btn', btn) & ~btn                     # (let go now)
         b['pad_btn'] = btn
+        # the library's button 3 (back) acts when it is let go, and only if no other button was pressed meanwhile:
+        # held with button 2 it is a game's start-up chord - 2 + 3 held while button 4 starts a UVMC2 game opens its
+        # calibration (Last Human: its own), as on the real cartridge; those buttons reach the game held (hold_until_released)
+        if new & 4:
+            b['b3_solo'] = not (btn & 3)
+        elif btn & 4 and new:
+            b['b3_solo'] = False
         if new & 8:                                             # button 4: load / open
             b['pad'] = True
             self.browse_load()
             if not self.browser:
                 return self.hold_until_released()
-        elif b.get('lib') and new & 5:                          # (the library: button 3 goes back, as the apps; button 1 too, as the list)
-            self.close_browser()
+        elif b.get('lib') and (new & 1 or (gone & 4 and b.pop('b3_solo', False))):   # (the library: button 3 goes back, as
+            self.close_browser()                                #  the apps; button 1 too, as the list)
             return self.hold_until_released()
         elif new & 1:                                           # button 1: the roms folder; there: close
             b['pad'] = True

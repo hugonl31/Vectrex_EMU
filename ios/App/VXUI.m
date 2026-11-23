@@ -403,7 +403,7 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 @interface VXLibrary : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate, UIDocumentPickerDelegate>
 @end
 @implementation VXLibrary { UICollectionView *_cv; UITextField *_search; UIStackView *_chips; NSArray<NSDictionary *> *_all, *_shown; NSString *_filter; UISegmentedControl *_look;
-	UIButton *_size; NSInteger _sel; BOOL _atCur; CADisplayLink *_pad; uint32_t _padPrev; double _padNext; }
+	UIButton *_size; NSInteger _sel; BOOL _atCur, _ready; CADisplayLink *_pad; uint32_t _padPrev; double _padNext; }
 /* (the tiles a row: 1-5, 0 titles only - one setting for every look, the same on an iPhone and an iPad (the owner); 3 at first) */
 + (int) perRow { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"lib.perrow"]; return n ? MAX (0, MIN (5, n.intValue)) : 3; }
 - (int) cols { const int k = [VXLibrary perRow]; return k ? k : 1; }
@@ -458,12 +458,17 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 }
 - (void) applyFilter
 {
+	NSString *keep = _sel >= 0 && _sel < (NSInteger) _shown.count ? _shown[(NSUInteger) _sel][@"path"] : nil;   /* (the game highlighted) */
 	NSString *q = _search.text.lowercaseString; NSArray *rec = [NSUserDefaults.standardUserDefaults arrayForKey:@"recent"] ?: @[];
 	NSMutableArray *r = [NSMutableArray array];
 	if ([_filter isEqualToString:@"Recent"]) { for (NSString *p in rec) for (NSDictionary *g in _all) if ([g[@"path"] isEqualToString:p]) [r addObject:g]; }
 	else for (NSDictionary *g in _all) if (([_filter isEqualToString:@"All"] && ![g[@"kind"] isEqualToString:@"Tests"]) || [g[@"kind"] isEqualToString:_filter]) [r addObject:g];
 	if (q.length) [r filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL (NSDictionary *g, NSDictionary *b) { (void) b; return [[g[@"name"] lowercaseString] containsString:q]; }]];
-	_shown = r; if (_sel >= (NSInteger) r.count) _sel = (NSInteger) r.count - 1; [_cv reloadData];
+	/* (the highlight in the new list: the same game while it is in it, else the first) */
+	NSInteger ns = -1; if (keep) for (NSUInteger i = 0; i < r.count; i++) if ([r[i][@"path"] isEqualToString:keep]) { ns = (NSInteger) i; break; }
+	if (ns < 0 && _ready && r.count) ns = 0;
+	_shown = r; _sel = ns; [_cv reloadData];
+	if (_ready && _sel >= 0 && _cv.window) { [_cv layoutIfNeeded]; [_cv scrollToItemAtIndexPath:[NSIndexPath indexPathForItem:_sel inSection:0] atScrollPosition:UICollectionViewScrollPositionCenteredVertically animated:NO]; }
 	for (UIButton *b in _chips.arrangedSubviews) { BOOL on = [b.accessibilityLabel isEqualToString:_filter];
 		UIButtonConfiguration *c = b.configuration; c.baseForegroundColor = on ? VX_HI2 : VX_FG2; c.background.backgroundColor = on ? VX_SEL : UIColor.clearColor;
 		c.background.strokeColor = on ? VX_EDGE2 : VX_EDGE2; b.configuration = c; }
@@ -517,6 +522,7 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 		[_cv.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor] ]];
 	_sel = -1; [self applyFilter];
 	{ NSString *cur = vxa_game (); for (NSUInteger i = 0; i < _shown.count; i++) if ([_shown[i][@"path"] isEqualToString:cur]) { _sel = (NSInteger) i; break; } }   /* (opened at the game playing) */
+	_ready = YES;
 }
 /* the size menu: 1-5 per row, titles only */
 - (void) sizeMenu
@@ -564,6 +570,8 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	const uint32_t dirs = b & ((1u << UP) | (1u << DN) | (1u << LT) | (1u << RT) | (1u << L) | (1u << R));
 	BOOL rep = NO; if (dirs && (dirs & ~_padPrev)) _padNext = now + 0.38; else if (dirs && now >= _padNext) { rep = YES; _padNext = now + 0.09; }   /* (held: repeated) */
 	const uint32_t act = (dirs & ~_padPrev) | (rep ? dirs : 0);
+	if ((act || (down >> A & 1)) && _search.isFirstResponder) {   /* (a controller: always the highlight - the search field and its keyboard let go) */
+		[_search resignFirstResponder]; [self becomeFirstResponder]; ulog (@"library: the controller takes over from the search field"); }
 	if (act >> UP & 1) [self moveSel:0]; if (act >> DN & 1) [self moveSel:1]; if (act >> LT & 1) [self moveSel:2]; if (act >> RT & 1) [self moveSel:3];
 	if (act >> L & 1) [self page:-1]; if (act >> R & 1) [self page:1];
 	if (down >> A & 1) [self playSel];             /* (button 1, back: the game's own tick closes the library - one button for back everywhere) */
@@ -607,7 +615,7 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	if (_sel < 0 || _sel >= (NSInteger) _shown.count) return;
 	[self collectionView:_cv didSelectItemAtIndexPath:[NSIndexPath indexPathForItem:_sel inSection:0]];
 }
-- (void) pick:(NSString *)f { _filter = f; _sel = -1; [self applyFilter]; }
+- (void) pick:(NSString *)f { _filter = f; [self applyFilter]; }
 - (void) reload { [_cv.collectionViewLayout invalidateLayout]; [_cv reloadData]; }
 - (void) viewDidDisappear:(BOOL)a { [super viewDidDisappear:a]; vxa_hold (0); }
 - (BOOL) textFieldShouldReturn:(UITextField *)t { [t resignFirstResponder]; return YES; }

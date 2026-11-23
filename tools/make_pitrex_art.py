@@ -101,15 +101,37 @@ def shrink(im, W=420):
     a = np.asarray(im.resize((W, int(W * im.height / im.width)), Image.LANCZOS)).copy()
     al = a[:, :, 3]; semi = (al > 0) & (al < 250)
     a[semi, :3] = np.minimum(a[semi, :3], (40, 42, 46)); a[al < 48] = 0
-    return Image.fromarray(a, 'RGBA')
+    return Image.fromarray(dark_edge(a), 'RGBA')
+def dark_edge(a):
+    """the outline in the shell's dark plastic (as ios_pack.py: half-clear pixels and four rings capped, premultiplied)"""
+    al = a[:, :, 3].astype(np.float32); rgb = a[:, :, :3].astype(np.float32)
+    inside = al >= 128; pad = 5
+    ring = np.full(al.shape, 99, np.int32); ring[(al > 0) & ~inside] = 0
+    cur = Image.fromarray(np.pad(inside, pad).astype(np.uint8) * 255, 'L')
+    for i in (1, 2, 3, 4):
+        er = cur.filter(ImageFilter.MinFilter(3)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
+        ring[r[pad:-pad, pad:-pad]] = i; cur = er
+    mx = rgb.max(2)
+    for i, cap in ((0, 14.0), (1, 20.0), (2, 28.0), (3, 36.0), (4, 44.0)):
+        s = ring == i; rgb[s] *= np.minimum(1.0, cap / np.maximum(mx[s], 1.0))[:, None]
+    semi = (al > 0) & (al < 255); rgb[semi] *= (al[semi] / 255.0)[:, None]
+    a = a.copy(); a[:, :, :3] = np.clip(rgb + 0.5, 0, 255).astype(np.uint8)
+    return a
 sh = Image.open(os.path.join(ART, 'original gce', 'Armor..Attack (World).png')).convert('RGBA'); w, h = sh.size; pxs = sh.load()
 def light(x, y):
     r, g, b, a_ = pxs[x, y]; return a_ > 200 and r > 150 and g > 150 and b > 150
 y0 = int(h * 0.35)
 rows = [y for y in range(y0, h) if sum(light(x, y) for x in range(0, w, 3)) > w / 3 * 0.6]
+yb = max(y for y in range(h) if (np.asarray(sh)[y, :, 3] > 128).mean() > 0.5)   # (not the shell's bottom scan line: as ios_pack.py)
+runs = []
+for y in rows:
+    if runs and y == runs[-1][1] + 1: runs[-1][1] = y
+    else: runs.append([y, y])
+rows = [y for r0, r1 in runs if yb - r1 > 12 for y in range(r0, r1 + 1)]
 cols = [x for x in range(w) if sum(light(x, y) for y in range(rows[0], rows[-1], 3)) > (rows[-1] - rows[0]) / 3 * 0.6]
 x0, y0, x1, y1 = cols[0], rows[0], cols[-1], rows[-1]
-im = sh.copy(); im.paste(lab.convert('RGBA').resize((x1 - x0 + 1, y1 - y0 + 1), Image.LANCZOS), (x0, y0))
+lw = x1 - x0 + 1; lh = int(round(lw * lab.height / lab.width))   # (the label at its own aspect, top-aligned)
+im = sh.copy(); im.paste(lab.convert('RGBA').resize((lw, lh), Image.LANCZOS), (x0, y0))
 shrink(im).save(os.path.join(out, 'pitrex_cart.png'), optimize=True)
 
 # ---- the box: the owner's box art (icons/pitrex_box_src.png -> icons/pitrex_box.png, 390 wide: made once by hand, kept)

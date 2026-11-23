@@ -40,7 +40,7 @@ static const unit_par UNIT_P[] = {
 	{ "zcal", 2, "VT_CALSHIFT", "Zero calibration shift", NULL, 0, 6, 0.1, "%.1f", 2.9, 0, 'c', 'r', 2.0, 3.6, 'r', 3.4, 4.6 },
 	{ "zofs", 7, "VT_ZOFS", "Zero offset", "The reference against the integrators.", -2, 2, 0.05, "%+.2f", 0, 0, 'c', 's', 0, 0.04, 's', 0.05, 0.10 },
 	{ "ysettle", 5, "VT_YSHK", "Y hold settling", "1 = instant.", 0.20, 1.00, 0.02, "%.2f", 0.70, 1.0, 'c', 'r', 0.60, 0.90, 'r', 0.45, 0.62 },
-	{ "beamoff", 6, "VT_BEAMOFF", "Beam switch-off delay", NULL, 0, 3, 0.1, "%.1f cycles", 0.5, 0, 'c', 'r', 0.3, 0.9, 'r', 0.9, 1.5 },
+	{ "beamoff", 6, "VT_BEAMOFF", "Beam switch-off delay", "How long the beam stays lit after a game blanks it: longer, and lines get tails.", 0, 3, 0.1, "%.1f cycles", 0.0, 0, 'c', 'r', 0.0, 0.4, 'r', 0.4, 1.0 },   /* (2026-11-23, as the desktop: its fraction acts in the beam engine again - the owner's 0 (his 0.5 acted as 0); the spreads round it) */
 	{ "zerotx", 12, NULL, "Zeroing time X", "ZERO is an RC.", 0, 30, 0.5, "%.1f cycles", 4.5, 3.3, 'c', 'r', 3.8, 5.2, 'r', 5.2, 6.2 },
 	{ "zeroty", 13, NULL, "Zeroing time Y", "ZERO is an RC.", 0, 30, 0.5, "%.1f cycles", 3.3, 3.3, 'c', 'r', 2.9, 3.8, 'r', 3.8, 4.6 },
 	{ "ofsk", 14, "VT_OFSK", "Offset shift", "The zero reference.", 0, 300, 5, "%.0f", 166, 166, 'c', 'r', 158, 174, 'r', 150, 182 },

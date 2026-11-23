@@ -2087,6 +2087,9 @@ typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *k
 #define HOLD_SLOW 1.1                     /* (the hold below for a game this much slower than the screen: Vectrexians 45 fps at 60 Hz) */
 #define HOLD_GRACE 2.0                    /* (a line not found again: lit this many of its frames - one may leave it out) */
 #define HOLD_LIFE 0.15                    /* (vecrender.py HOLD_MAX: a line no frame draws again goes out after this) */
+#define HOLD_EPS 0.004                    /* (vecrender.py HOLD_EPS: a line stays lit this long past the moment it is drawn again - at
+                                             60 Hz the old copy so stands in one refresh in four more, and its afterglow starts that much
+                                             older: the PC's Test Cart page 1, 2026-11-23) */
 static gframe hist[NH]; static int nh; static gframe prevf; static int have_prev;
 VXS_ON
 static double load_f = -1;              /* (brightness bending: the beam's load, smoothed) */
@@ -2254,7 +2257,7 @@ static int hold_lines (double T, double dt)
 			if (e < tau) e = k == nf - 1 ? tau + HOLD_LIFE : tau + (opt_fill ? HOLD_GRACE : 1.0) * len;   /* (not drawn again: on, through one
 			                                              frame left out; off, out after its frame - as a real tube) */
 			if (e > tau + HOLD_LIFE) e = tau + HOLD_LIFE;
-			if (e <= T) continue;                  /* (drawn again by now, or gone out) */
+			if (e + HOLD_EPS <= T) continue;       /* (drawn again by now, or gone out) */
 			n = wl_from (W1, n, l, 1, NULL, 0); }
 	}
 	return n;

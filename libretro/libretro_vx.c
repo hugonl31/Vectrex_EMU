@@ -138,6 +138,7 @@ static void vx_putenv (const char *s)       /* (as Windows' _putenv: "NAME=" tak
 #endif
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG                              /* (the games list's pictures: PNG or JPEG - the shipped ones JPEG) */
 #include "stb_image.h"
 #include "genart.c"                                 /* (the library's pictures for a game with none: a cartridge, a box - library.c, the apps) */
 

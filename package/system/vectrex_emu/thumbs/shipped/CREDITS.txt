@@ -1,0 +1,3 @@
+Box art and title artwork: Simon Quincey's Vectrex 2D Front Cover Box Art pack (v1.3), used with permission.
+The labels are made from the boxes' title artwork; games without real artwork in the pack get the emulator's own
+drawn cartridge and box. Your own pictures (thumbs/carts, thumbs/labels, thumbs/boxes) always come first.

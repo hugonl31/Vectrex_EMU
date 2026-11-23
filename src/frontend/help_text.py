@@ -813,6 +813,9 @@ TOPICS = [
       "drift, the AY sound chip at its own clock, and the bank-switching cartridges. The front end draws "
       "the beam with OpenGL in real time - at your monitor's full resolution - and models the tube, the "
       "phosphor and the speaker from measurements of a real Vectrex."),
+('p', "Box art and title artwork: Simon Quincey's Vectrex 2D Front Cover Box Art pack, used with permission. The games list's boxes, and the cartridge labels "
+      "made from them, for the 112 games with real artwork come with the emulator; the full set is a separate "
+      "download (the README: your own pictures for the games list)."),
 ('p', "The settings live in system\\settings.json next to Vectrex_EMU.exe (or in %APPDATA%\\Vectrex_EMU "
       "when that folder can not be written)."),
 ]),

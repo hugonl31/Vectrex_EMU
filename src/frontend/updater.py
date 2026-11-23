@@ -1,8 +1,9 @@
 """The one-click update (the owner, 2026-10-29): the newest release's zip for this system downloaded and unpacked to a
 temporary folder; a small script waits for the emulator to close, puts the new program in place of the old one, adds
 the new release's files that are missing in system, overlays, roms and uvmc2 (the player's ROMs, overlays, SD cards and
-BIOS are never overwritten - except the included game's ROMs and overlay (BUNDLED): always replaced by the new
-release's, so every update brings its latest version; its saves are other files and stay), keeps the settings as
+BIOS are never overwritten - except the included game's ROMs and overlay (BUNDLED) and the games list's shipped
+pictures (SHIPPED): always replaced by the new release's, so every update brings its latest version; its saves are other
+files and stay), keeps the settings as
 they are (since v1.2.7: the new version moves the ones the player never changed to its own defaults -
 vectrex_emu.new_defaults; a copy stays next to them as a backup) and starts the new version.
 
@@ -18,6 +19,9 @@ BUNDLED = (('roms', 'Last Human.bin'), ('roms', 'Last Human (UVMC2).um2'),      
                                                                               #  edition back in v1.4.8) -
 # the owner, 2026-11-01; only these files, never a save. Its earlier names' files and settings are moved over by the
 # new version itself at its start - vectrex_emu._rename_included_game: this script is the old version's)
+SHIPPED = os.path.join('system', 'vectrex_emu', 'thumbs', 'shipped')   # (the games list's pictures that come with it: the
+#                                                                         release's own folder, always made as the new one's -
+#                                                                         the player's own pictures are in thumbs/carts, labels, boxes)
 
 
 def can_update(root):
@@ -134,6 +138,8 @@ def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):
         for f in FOLDERS:                             # (/XC /XN /XO: only files that are not there yet)
             lines.append(r'if exist "%s" "%%S%%\robocopy.exe" "%s" "%s" /E /XC /XN /XO /NFL /NDL /NJH /NJS /NP >nul' % (
                 os.path.join(new, f), os.path.join(new, f), os.path.join(root, f)))
+        lines.append(r'if exist "%s" "%%S%%\robocopy.exe" "%s" "%s" /MIR /NFL /NDL /NJH /NJS /NP >nul' % (
+            os.path.join(new, SHIPPED), os.path.join(new, SHIPPED), os.path.join(root, SHIPPED)))
         for d, f in BUNDLED:
             lines.append('if exist "%s" copy /y "%s" "%s" >nul' % (
                 os.path.join(new, d, f), os.path.join(new, d, f), os.path.join(root, d, f)))
@@ -163,6 +169,9 @@ def prepare(zip_path, root, settings_f, pid, tag, exe_path=None):
         src = os.path.join(new, f)
         lines.append('[ -d %s ] && mkdir -p %s && cp -R -n %s/. %s/ 2>/dev/null' % (q(src), q(os.path.join(root, f)), q(src),
                                                                                    q(os.path.join(root, f))))
+    src = os.path.join(new, SHIPPED)
+    lines.append('[ -d %s ] && rm -rf %s && mkdir -p %s && cp -R %s %s' % (q(src), q(os.path.join(root, SHIPPED)), q(os.path.dirname(os.path.join(root, SHIPPED))),
+                                                                    q(src), q(os.path.join(root, SHIPPED))))
     for d, f in BUNDLED:
         src = os.path.join(new, d, f)
         lines.append('[ -f %s ] && mkdir -p %s && cp -f %s %s' % (q(src), q(os.path.join(root, d)), q(src),

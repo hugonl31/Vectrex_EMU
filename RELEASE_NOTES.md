@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.5
+
+* Real box art in the games list: the box fronts, and cartridge labels made from their title artwork, of the 112
+  games with real artwork in Simon Quincey's Vectrex 2D Front Cover Box Art pack (used with permission) come with
+  the emulator on every platform (system/vectrex_emu/thumbs/shipped, ~25 MB). Matched to your ROMs by name (case,
+  punctuation and "(...)" parts don't matter; other known spellings in its index.txt); the other games keep the
+  drawn cartridge and box. The full set (all 280 games) is a separate download, the GitHub release artwork-1.
+* Your own pictures may be JPEG as well as PNG, and still come first.
+
 ## v1.8.4
 
 * Drawn boxes: the picture now portrait, in the place and shape of the real boxes' pictures, one of 12 vector scenes

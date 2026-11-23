@@ -10,6 +10,7 @@ void vx_genart_free (void *p);
 unsigned char *vx_genart_make_w (int look, const char *name, int width, int *w, int *h);   /* (drawn at a tile's width) */
 unsigned char *vx_genart_label_w (const char *path, int width, int *w, int *h);   /* (the player's own label on our cartridge) */
 unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h);   /* (a picture made at most maxw wide) */
+int vx_genart_key (const char *name, char *out, int n);   /* (a game's key in the shipped pictures' index) */
 int vx_genart_size (int px);   /* (the width to make a tile shown px wide at: 256 / 384 / 512 / 640 / 840) */
 #import <GameController/GameController.h>
 
@@ -424,13 +425,32 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	NSString *th = [vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/thumbs"], *base = [n componentsSeparatedByString:@" ("].firstObject;
 	/* (each look its own pictures only - no mixing (the owner: carts, boxes and overlays mixed); none: the name's tile) */
 	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"overlays", @"" ] : @[ @"carts" ];
-	for (NSString *d in dirs) for (NSString *nm in @[ n, base ]) {
-		NSString *p = [[th stringByAppendingPathComponent:d] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]];
+	NSString *sh = [[self look] isEqualToString:@"overlays"] ? nil : [self shippedFor:n];   /* (the box art's name for it: the full artwork set's pictures) */
+	NSArray *names = sh ? @[ n, base, sh ] : @[ n, base ];
+	for (NSString *d in dirs) for (NSString *nm in names) for (NSString *x in @[ @"png", @"jpg" ]) {
+		NSString *p = [[th stringByAppendingPathComponent:d] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:x]];
 		if ([NSFileManager.defaultManager fileExistsAtPath:p]) { UIImage *im = [self fileTileFor:p w:tw]; if (im) return im; } }
-	if ([[self look] isEqualToString:@"carts"]) for (NSString *nm in @[ n, base ]) {   /* (no cartridge picture: the player's own label on our cartridge) */
-		NSString *p = [[th stringByAppendingPathComponent:@"labels"] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]];
+	if ([[self look] isEqualToString:@"carts"]) for (NSString *nm in names) for (NSString *x in @[ @"png", @"jpg" ]) {   /* (no cartridge picture: the player's own label on our cartridge) */
+		NSString *p = [[th stringByAppendingPathComponent:@"labels"] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:x]];
 		if ([NSFileManager.defaultManager fileExistsAtPath:p]) { UIImage *im = [self labelTileFor:p w:tw]; if (im) return im; } }
+	if (sh) {                                         /* (none of the player's own: the one that comes with the app) */
+		NSString *p = [[[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"shipped"] stringByAppendingPathComponent:[[self look] isEqualToString:@"boxes"] ? @"boxes" : @"labels"]
+			stringByAppendingPathComponent:[sh stringByAppendingPathExtension:@"jpg"]];
+		UIImage *im = [[self look] isEqualToString:@"boxes"] ? [self fileTileFor:p w:tw] : [self labelTileFor:p w:tw]; if (im) return im; }
 	return [self drawnTileFor:n w:tw];
+}
+/* (the pictures that come with the app - Simon Quincey's box art, with his permission: the bundle's shipped folder - labels/<name>.jpg,
+ *  boxes/<name>.jpg - and its index.txt, "<key>\t<name>" a line (tools/make_shipped_art.py); the game's key: genart.c's) */
++ (NSString *) shippedFor:(NSString *)n
+{
+	static NSDictionary<NSString *, NSString *> *ix; static dispatch_once_t once;
+	dispatch_once (&once, ^{ NSMutableDictionary *d = [NSMutableDictionary dictionary];
+		NSString *t = [NSString stringWithContentsOfFile:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"shipped/index.txt"] encoding:NSUTF8StringEncoding error:nil];
+		for (NSString *ln in [t componentsSeparatedByString:@"\n"]) { NSArray *f = [ln componentsSeparatedByString:@"\t"];
+			if (f.count == 2 && ![ln hasPrefix:@"#"]) d[f[0]] = [f[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; }
+		ix = d; });
+	char k[96]; if (!vx_genart_key (n.UTF8String, k, (int) sizeof k)) return nil;
+	return ix[@(k)];
 }
 /* (the tiles, each at its width: kept while memory allows - 64 MB, e.g. ~60 cartridges at 512 px (1 MB each), ~24 at 840 (2.7 MB)) */
 + (NSCache *) made { static NSCache *made; static dispatch_once_t once; dispatch_once (&once, ^{ made = [NSCache new]; made.totalCostLimit = 64 << 20; }); return made; }

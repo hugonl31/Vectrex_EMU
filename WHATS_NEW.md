@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.5
+- Real box art and labels for 112 games (Simon Quincey's, with permission)
+- The full set of 280 games: a separate download (README)
+- Your own pictures may be JPEG too
+
 ## v1.8.4
 - Drawn boxes: a portrait picture, 12 vector scenes, a colour per game
 - Your own labels (thumbs/labels) go on the cartridge by themselves

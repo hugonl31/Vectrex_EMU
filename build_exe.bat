@@ -9,6 +9,8 @@ if exist "C:\Program Files\Python312\python.exe" set PY="C:\Program Files\Python
 if not exist core\vectrex_core.exe (call "%~dp0build_core.bat" || exit /b 1)
 rem (the renderer's line build in C, inside the exe as native\vxbuild.dll: vecrender.py loads it; without it the numpy way)
 if not exist src\frontend\native\vxbuild.dll (call "%~dp0src\frontend\native\build_win.bat" || exit /b 1)
+rem (and again when its C (genart.c: the games list's pictures, JPEG since v1.8.5) is newer than it)
+%PY% -c "import os,sys;t=os.path.getmtime('src/frontend/native/vxbuild.dll');sys.exit(any(os.path.getmtime(f)>t for f in ('libretro/genart.c','src/frontend/native/vxbuild.c','src/frontend/native/vxsmooth.c')))" || (call "%~dp0src\frontend\native\build_win.bat" || exit /b 1)
 %PY% -c "import PyInstaller" 2>nul || (%PY% -m pip install --user pyinstaller || exit /b 1)
 rem the core and the power sounds go inside the exe; the BIOS (system\bios.bin) and Mine Storm's overlay
 rem (the overlays) sit next to it, as on Mac and Linux

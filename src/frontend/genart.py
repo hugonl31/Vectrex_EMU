@@ -4,8 +4,8 @@ drawn by libretro/genart.c - the same code as RetroArch's, the iPhone's and Andr
 
     make(look, name, width=840) -> (w, h, RGBA bytes) or None   look 'carts' or 'boxes'; name: the file's name without
                                                                 extension; width: the tile's (size())
-    label(path, width=840) -> (w, h, RGBA bytes) or None        the cartridge with the player's own label (a PNG) on it
-    fit(path, maxw) -> (w, h, RGBA bytes) or None               a picture (a PNG) at most maxw wide
+    label(path, width=840) -> (w, h, RGBA bytes) or None        the cartridge with the player's own label (a PNG or JPEG) on it
+    fit(path, maxw) -> (w, h, RGBA bytes) or None               a picture (a PNG or JPEG) at most maxw wide
     size(px) -> the width to make a tile shown px wide at: 256, 384, 512, 640 or 840 (as genart.c's vx_genart_size)
     title(name) -> the title the pill shows"""
 import ctypes, os, sys
@@ -77,7 +77,7 @@ def label(path, width=840):
 
 
 def fit(path, maxw=840):
-    """a picture of the player's own (a PNG) at most maxw wide, made smaller once -> (w, h, RGBA bytes) or None"""
+    """a picture of the player's own (a PNG or JPEG) at most maxw wide, made smaller once -> (w, h, RGBA bytes) or None"""
     return _file('vx_genart_fit_png', path, maxw)
 
 

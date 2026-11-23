@@ -13,10 +13,14 @@
  *   int vx_genart_title (const char *name, char *out, int n)   the title the pill shows (UTF-8; "|" where a line breaks)
  *   unsigned char *vx_genart_label_w (const char *path, int width, int *w, int *h)
  *   unsigned char *vx_genart_label_png_w (const unsigned char *png, int len, int width, int *w, int *h)
- *       the cartridge with the player's own label on it (thumbs/labels/<game>.png: the label alone, 1000 x 545 or any
- *       size at about 1.835:1) - by the file's path or its bytes; as vx_genart_make_w's (vx_genart_label(_png): at 840)
+ *       the cartridge with the player's own label on it (thumbs/labels/<game>.png or .jpg - or a shipped one, thumbs/
+ *       shipped/labels: the label alone, 840 x 458 or any size at about 1.835:1) - by the file's path or its bytes (PNG or
+ *       JPEG); as vx_genart_make_w's (vx_genart_label(_png): at 840)
  *   unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h)    (and vx_genart_fit_png: its bytes)
- *       a picture of the player's own (a PNG: cartridge, box, overlay) made at most maxw wide, once; as vx_genart_make's
+ *       a picture of the player's own (a PNG or JPEG: cartridge, box, overlay) made at most maxw wide, once; as vx_genart_make's
+ *   int vx_genart_key (const char *name, char *out, int n)
+ *       a game's key in the pictures that come with the emulator (thumbs/shipped/index.txt: "<key>\t<picture's name>",
+ *       tools/make_shipped_art.py): the name without its "(...)" and "[...]" parts, lower case, only a-z and 0-9; its length
  *
  * The title: the file's name without brackets ("(Proto)", "[b1]"), a trailing " 4x" or version ("_v199", " v1.2"), "_" as
  * a space, in capitals - or what libretro/genart_titles.txt sets for it. The pill: one line (cap height up to 190 of the
@@ -36,6 +40,7 @@
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG                                      /* (the pictures: PNG or JPEG) */
 #include "stb_image.h"
 #endif
 #define STBTT_STATIC
@@ -639,7 +644,7 @@ static unsigned char *ga_read (const char *path, int *len)
 	if (fread (b, 1, (size_t) n, f) != (size_t) n) { fclose (f); free (b); return NULL; }
 	fclose (f); *len = (int) n; return b;
 }
-/* (its file: a PNG - by its bytes, or its path) */
+/* (its file: a PNG or JPEG - by its bytes, or its path) */
 VX_GENART_API unsigned char *vx_genart_label_png_w (const unsigned char *png, int len, int width, int *w, int *h)
 {
 	int lw, lh, n, ww = 0, hh = 0; unsigned char *lab, *o; if (w) *w = 0; if (h) *h = 0; if (!png || len < 8) return NULL;
@@ -676,6 +681,19 @@ VX_GENART_API unsigned char *vx_genart_fit (const char *path, int maxw, int *w, 
 	int len = 0; unsigned char *b = ga_read (path, &len), *o; if (w) *w = 0; if (h) *h = 0; if (!b) return NULL;
 	o = vx_genart_fit_png (b, len, maxw, w, h); free (b);
 	return o;
+}
+
+/* ---- a game's key in the shipped pictures' index (thumbs/shipped/index.txt - tools/make_shipped_art.py's key()):
+ * "Armor..Attack (World)", "Armor Attack" and "armor attack [b1]" are all "armorattack". Every platform the same: the PC
+ * (library.py), RetroArch (library.c), the iPhone (VXUI.m), Android (Library.java) */
+VX_GENART_API int vx_genart_key (const char *name, char *out, int n)
+{
+	int k = 0; if (!out || n < 1) return 0; out[0] = 0; if (!name) return 0;
+	for (const char *p = name; *p; p++) {
+		if (*p == '(' || *p == '[') { const char *q = strchr (p + 1, *p == '(' ? ')' : ']'); if (q) { p = q; continue; } }   /* (a "(...)" / "[...]" part left out) */
+		char c = *p; if (c >= 'A' && c <= 'Z') c = (char) (c - 'A' + 'a');
+		if (((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) && k < n - 1) out[k++] = c; }
+	out[k] = 0; return k;
 }
 
 VX_GENART_API unsigned char *vx_genart_make_w (int look, const char *name, int width, int *w, int *h)

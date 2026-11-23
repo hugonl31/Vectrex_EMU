@@ -428,6 +428,7 @@ class Input:
         self.block = False             # (the ROM browser is open: the game runs on without input)
         self.pad_needs_focus = False   # (VecLink: controllers too only for the window in front)
         self.hold = None               # (player 1's buttons (mask) and stick kept from the game until let go: App.hold_until_released)
+        self.held = None               # (player 1's buttons held for the player until a moment: (mask, perf_counter) - a UVMC2 calibration)
         self.mouse = None              # (jx, jy, buttons) from the mouse / touchpad when it steers player 1 (App)
         self.device = 'keyboard'
         self._names = {}
@@ -665,6 +666,11 @@ class Input:
         if self.hold:                                                              #  player 2 plays in the other window)                                           # (the button that loaded a game, held: not the game's yet;
             mask, still = self.hold                             #  the other buttons are - 2 + 3 held at a load)
             a = (0 if still else a[0], 0 if still else a[1], a[2] & ~mask, a[3])
+        if self.held:                                           # (the library's Calibration (2 + 3 held): held a while)
+            if time.perf_counter() < self.held[1]:
+                a = (a[0], a[1], a[2] | self.held[0], a[3])
+            else:
+                self.held = None
         self.device = 'pad' if a[3] else 'keyboard'
         ms = self.mouse                                         # (the mouse / touchpad as player 1's stick)
         if ms:
@@ -4673,6 +4679,8 @@ class App:
         """a right click on the cartridge: out of the slot (the Vectrex plays Mine Storm); again: the same cartridge
         back in"""
         e = self.px_event(e)
+        if self.browser and self.lib_mode():                    # (the library: a UVMC2 game's Play / Calibration)
+            return self.lib.right_click(e)
         if self.browser or not self.cart_state():
             return None
         x, y, r = self.cart_geom()

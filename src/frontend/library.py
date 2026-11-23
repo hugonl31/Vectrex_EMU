@@ -203,7 +203,8 @@ class Library:
         return dict(lib=True, g=g, tiles=tiles, new=new, text_only=not self.cols, n=n, look=self.look, cols=self.cols, cat=self.cat,
                     title='GAMES  (%d)' % n, scroll=(self.scroll, self.rows(n) * rowh),
                     empty=('NO GAMES FOUND.\nPUT YOUR ROMS IN THE FOLDER\nROMS NEXT TO THE PROGRAM.' if not self.games else 'NOTHING HERE.'),
-                    help='STICK: CHOOSE   BUTTON 4: PLAY   BUTTON 1: CLOSE' if pad else 'ARROWS: CHOOSE   ENTER: PLAY   /: SEARCH   ESC: CLOSE')
+                    help='STICK: CHOOSE   BUTTON 4: PLAY (2 + 3 HELD: UVMC2 CALIBRATION)   BUTTON 1: CLOSE' if pad
+                    else 'ARROWS: CHOOSE   ENTER: PLAY   /: SEARCH   ESC: CLOSE   RIGHT CLICK UVMC2: CALIBRATION')
 
     # ---------------------------------------------------------------- the search field: a real entry over the picture
     def _entry(self):
@@ -310,14 +311,50 @@ class Library:
             if ins(box): return self.set('cat', v)
         gx0, gy0, gx1, gy1 = g['grid']
         if gx0 <= e.x <= gx1 and gy0 <= e.y <= gy1:
-            tw, th, gap, rowh = g['tile']; c = self.cols or 1
-            col = int((e.x - gx0) // (tw + gap)) if self.cols else 0
-            if col >= c or (self.cols and (e.x - gx0) - col * (tw + gap) > tw):
-                return
-            i = int((e.y - gy0 + self.scroll) // rowh) * c + col
-            if 0 <= i < len(self.shown()):
+            i = self.tile_at(g, e)
+            if i is not None:
                 self.sel = i
                 return self.load()                                      # (a click plays, as a tap on the phone)
+            return
         x0, y0, x1, y1 = g['rect']
         if not (x0 <= e.x <= x1 and y0 <= e.y <= y1):                   # (outside: the deck's cartridge - closed)
             return self.a.close_browser()
+
+    def tile_at(self, g, e):
+        """the game (its place in shown()) under the mouse, or None"""
+        gx0, gy0, gx1, gy1 = g['grid']
+        if not (gx0 <= e.x <= gx1 and gy0 <= e.y <= gy1):
+            return None
+        tw, th, gap, rowh = g['tile']; c = self.cols or 1
+        col = int((e.x - gx0) // (tw + gap)) if self.cols else 0
+        if col >= c or (self.cols and (e.x - gx0) - col * (tw + gap) > tw):
+            return None
+        i = int((e.y - gy0 + self.scroll) // rowh) * c + col
+        return i if 0 <= i < len(self.shown()) else None
+
+    def right_click(self, e):
+        """a right click on a UVMC2 game: Play, or Calibration - the game started with buttons 2 + 3 held (30 s: with
+        the intro on they must still be held when it ends), as the phone apps' long press"""
+        g = self.geom(); i = self.tile_at(g, e); games = self.shown()
+        if i is None or games[i]['kind'] != 'UVMC2':
+            return None
+        self.sel = i
+        m = tk.Menu(self.a.root, tearoff=0)
+        m.add_command(label='Play', command=self.load)
+        m.add_command(label='Calibration (2 + 3 held)', command=self.calibrate)
+        try:
+            m.tk_popup(int(e.x_root), int(e.y_root))
+        finally:
+            m.grab_release()
+        return 'break'
+
+    def calibrate(self):
+        """the chosen UVMC2 game started with buttons 2 + 3 held for 30 s: its calibration screen, as on the cartridge"""
+        g = self.shown()
+        if not g:
+            return
+        p = g[max(0, min(self.sel, len(g) - 1))]['path']
+        print('library: %s with buttons 2 + 3 held (calibration)' % os.path.basename(p), flush=True)
+        self.a.close_browser()
+        self.a.inp.held = (6, time.perf_counter() + 30.0)
+        self.a.restart(p)

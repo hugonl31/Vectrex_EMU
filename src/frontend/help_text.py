@@ -289,7 +289,8 @@ TOPICS = [
          "about 2 seconds. That is why fast objects leave fading copies or a faint trail, and why a game "
          "running at 25 frames a second flickers less than you might expect. A spot drawn again is lit "
          "again; it does not add up."),
-('item', 'Game list', "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder."),
+('item', 'Game list', "Library: the games as tiles - cartridges, boxes or overlays, a search, categories; button 1 closes it. "
+         "A right click on a UVMC2 game: Calibration (2 + 3 held). Simple: the plain list of the roms folder."),
 ('item', 'Colours', "The deck's, the menus' and the windows' colour: a deeper blue, or green. From the next start."),
 ('item', 'Look', "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen."),
 ('item', 'White balance (colour temperature)', "The middle is neutral: the lines and their glow the screen's own "

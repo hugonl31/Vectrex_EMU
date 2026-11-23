@@ -53,7 +53,7 @@ environment variables of the core, for experiments.
   froze the game for seconds. (MAME has the same symptom open, bug 05784.)
 * **The UVMC2's JIT** (`src/core/cm33_jit.c`, 2026-10-27): the RP2350's two Cortex-M33 cores run their Thumb code as
   native x86-64 or ARM64 code, a block at a time, **giving exactly the interpreter's result** - checked frame by frame
-  (the vectors drawn at three points of 20 s of play) on VecDoom, Veccy Road and the UVMC2 Demo, on Windows, Linux x86-64
+  (the vectors drawn at three points of 20 s of play) on VecDoom and Veccy Road, on Windows, Linux x86-64
   and a Raspberry Pi 5. The interpreter already decoded every instruction once into a handler; the JIT compiles the
   common ones inline (moves, adds, compares, logic, shifts, extends, loads and stores with a fast path for SRAM and
   PSRAM - keeping the spin detector's bookkeeping exactly as the memory functions do - PUSH / POP / LDM / STM / LDRD,
@@ -68,7 +68,7 @@ environment variables of the core, for experiments.
   (Linux) a `/tmp/perf-PID.map` so `perf` names the blocks. Measured, 20 s of game time each (one host thread / two):
   VecDoom on the 9800X3D 20.0 -> 14.8 s / 15.4 -> 9.9 s; on a Ryzen 7840HS laptop chip at 28 W 21.9 -> 17.2 s / -> 10.8 s;
   on a Raspberry Pi 5 47.9 -> 41.4 s (one thread). What remains is mostly the RP2350's peripherals: the PIO state
-  machines, the DMA, the pins - a game that bit-bangs the Vectrex's bus from the CPU (the UVMC2 Demo) spends its time
+  machines, the DMA, the pins - a game that bit-bangs the Vectrex's bus from the CPU spends its time
   in GPIO reads and the spin detector, not in its instructions.
   Fixed 2026-10-27: the flag "a core holds an exclusive monitor" (LDREX) was never cleared, so after a program's first
   LDREX every compiled store and PUSH took the slow way for good (h_push alone was 4 % of VecDoom's time); it now
@@ -77,9 +77,9 @@ environment variables of the core, for experiments.
   is 1. The PIO's run loop (`pio_run_sm`) now works out a state machine's settings once per run and keeps its registers
   (PC, X, Y, the shift registers, the delay) in a local for the run, so the host keeps them in registers; while the PIO
   has its part of a slice, the pin levels are kept until one of its own pin writes. PIO 17 -> 15.6 % of VecDoom's time; with it
-  VecDoom on the 7840HS at 28 W 17.1 -> 15.5 s, the UVMC2 Demo 14.6 -> 13.5 s (the JIT; today's changes together).
+  VecDoom on the 7840HS at 28 W 17.1 -> 15.5 s (the JIT; today's changes together).
   Before the PIO change, VecDoom with the JIT, one thread: 9800X3D 14.8 -> 14.4 s, Ryzen 7840HS at 28 W 17.2 -> 16.2 s, Raspberry Pi 5
-  41.4 -> 38.6 s; the three games' frames the same as the interpreter's on all three machines. The PIO itself is now the largest piece (17 %: the bus
+  41.4 -> 38.6 s; the games' frames the same as the interpreter's on all three machines. The PIO itself is now the largest piece (17 %: the bus
   state machine waits on the Vectrex's E clock, ~5 instructions an edge).
   Tried and dropped (no gain within 2 %): the known PIO programs (VecDoom's bus player, the PT8211 audio program) with
   their instructions as compile-time constants, and skipping state machines stalled on an empty FIFO before the call.

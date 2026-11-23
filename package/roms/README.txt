@@ -8,8 +8,7 @@ overlay in the overlays folder. "Last Human (UVMC2).um2" is its UVMC2 edition, w
 2-player co-op; it saves on the SD card folder uvmc2. More: https://github.com/hugonl31/Last_Human
 
 Ultimate Vectrex Multicart 2 (UVMC2) games (.um2) go here too - the emulator runs them on its own UVMC2,
-plug and play. "UVMC2 Demo.um2" is a small demo that shows it working: a rotating 3D cube computed on the
-cartridge's RP2350 chip. Some UVMC2 games read data from the cartridge's SD card: that is the folder uvmc2
+plug and play. Some UVMC2 games read data from the cartridge's SD card: that is the folder uvmc2
 next to the program (see the README in it).
 "UVMC2 Movie Player.um2" plays Vectrex vector movies (the PiTrex / VecFever ones, such as Bad Apple) from the SD
 card folder movies (uvmc2/movies here). Bad Apple is included (by Malban, with his permission); more movies

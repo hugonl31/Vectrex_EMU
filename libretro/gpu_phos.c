@@ -420,6 +420,9 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		/* the glass's glow: every piece once more, wide and faint (BT_HALO_F of its light, sigma BT_HALO_S units) - into an image the
 		 * glow's size (so smooth a light needs no more; at the picture's size it was most of the lines' cost), read into the light below */
 		const float hx = (float) ph_gw / FW, hy = (float) ph_gh / FH, hm = 0.5f * (hx + hy), hf = (float) (BT_HALO_F / (1.0 - BT_HALO_F));
+		/* (Bright widens the spot, its peak kept (build_lines): the piece's light x BL_WIDTH^2 - the glass's glow is the light of the spot as
+		 *  measured, as the PC's (vecrender.py _build_np: the glow's piece from the light before the widening). It came 1.7 x the PC's) */
+		const float bwk = vx_bright > 0.5f ? (float) (1.0 / (BL_WIDTH * BL_WIDTH)) : 1.0f;
 		if ((size_t) ntot * 24 > ph_hbufn) { free (ph_hbuf); ph_hbufn = (size_t) ntot * 24 + 4096; ph_hbuf = malloc (ph_hbufn * sizeof (float)); }
 		/* (pieces that follow each other along one straight line - a line's ends and middle, its caps, the tube's segments - as one
 		 *  piece with their light together: over the glow's width, 2.5 units, where along half a unit the light sat shows nothing - a
@@ -428,7 +431,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		for (int k = p0; k <= p0 + pc; k++) { const pline *q = k < p0 + pc ? &pl[k] : NULL; if (q && !(q->hx > 0)) continue;
 			float len = 0, dx = 0, dy = 0, f = 0; int join = 0;
 			if (q) { dx = q->bx - q->ax; dy = q->by - q->ay; len = sqrtf (dx * dx + dy * dy); if (len > 1e-3f) { dx /= len; dy /= len; }
-				f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf;
+				f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf * bwk;
 				join = mh && q->to == mt && q->hx == ms && fabsf (q->ax - mb[0]) < 0.75f && fabsf (q->ay - mb[1]) < 0.75f && ml + len < 0.4f * ms
 				       && ((len <= 1e-3f && ml <= 1e-3f) || (len > 1e-3f && ml > 1e-3f && dx * md[0] + dy * md[1] > 0.995f)); }   /* (a spot's glow fades out from it, a line's is a Gaussian: spots with spots, moving pieces with moving ones) */
 			if (join) { if (len > 1e-3f) { if (ml <= 1e-3f) { md[0] = dx; md[1] = dy; } mb[0] = q->bx; mb[1] = q->by; ml += len; }

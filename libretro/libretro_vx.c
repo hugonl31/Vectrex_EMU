@@ -2563,6 +2563,7 @@ static unsigned long long sm_ex_shown, sm_ex_next;   /* (Smooth motion's aftergl
 int vx_owe_hidden;                         /* (set by the apps: a hidden catch-up run's frame is drawn with the next picture) */
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
 static int bt_gpu_ok (void);
+#define BL_WIDTH 1.3                        /* (the Bright look: the beam this much wider - vecrender.py BL_WIDTH; its glass's glow not: gpu_phos.c) */
 static int build_lines (wline *L, int n, int to, double esh, int npl)
 {
 	extern int vt_imager;
@@ -2646,7 +2647,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			pline *q = &pl[npl++];
 			q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
 			q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
-			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= 1.3; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
+			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= BL_WIDTH; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
 			q->k2 = (float) sb; q->R = (float) (3.5 * sb + 1.0); q->r = r; q->g = g; q->b = b; q->hx = (float) (BT_HALO_S * upx);   /* (k2: the spot's sigma, hx: the glow's - px) */
 			{ const double a = l->ag > 0 ? l->ag - l->t / 1.5e6 : 0; q->ag = (float) (a < 0 ? 0 : a > 1 ? 1 : a); }   /* (the light's age: wl_from) */
 			q->cut = 0; q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;

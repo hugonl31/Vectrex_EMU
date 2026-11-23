@@ -1,7 +1,8 @@
 """make_pitrex_label.py - the PiTrex cartridge label, composed as the owner's label project does it
 (G:/AI/Vectrex_Artwork/print 4x/reconstructed2/compose_label.py, README there):
 
-  the exact silver grid (reconstructed/shared-svg/silver-grid.svg)
+  the drawn labels' silver paper (tools/make_genart_h.py silver_paper: the exact silver grid in white, grain, light, the
+  highlight streak; the legal box plain) under
   + the artwork (icons/pitrex_logo.png) in the 3120 x 1700 label frame, centred between the bottom of ARCADE SYSTEM
     CARTRIDGE (y 495) and the legal box's top
   + the shared furniture v6 (the Vectrex logo with its TM, ARCADE SYSTEM CARTRIDGE) - no GCE: a homebrew label
@@ -44,22 +45,20 @@ y = int(round((ASC_BOTTOM + BOX[1]) / 2 - (at + ab) / 2))
 frame.paste(lg, ((W - lw) // 2, y), lg)
 buf = io.BytesIO(); frame.save(buf, 'PNG'); b64 = base64.b64encode(buf.getvalue()).decode()
 
-grid = open(ART + '/reconstructed/shared-svg/silver-grid.svg', encoding='utf-8').read()
-gbody = grid[grid.index('<g id="silver-grid">'):grid.index('</svg>')]
 furn = open(ART + '/reconstructed2/shared-svg/shared furniture v6.svg', encoding='utf-8').read()
 fbody = furn[furn.index('<g id="vectrex-logo">'):furn.index('</svg>')]
 fbody = re.sub(r'<g id="gce-(?:symbol|tm)"[^>]*>.*?</g>', '', fbody, flags=re.S)       # (homebrew: no GCE)
 assert 'gce-' not in fbody
 cx = BOX[0] + BOX[2] / 2
-legal = ('<rect id="legal-box" x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="%s"/>' % BOX
-         + '<path d="%s" fill="black"/>' % text_path(LINE1, 'C:/Windows/Fonts/arialbd.ttf', CAP, cx, BASE1)
+legal = ('<path d="%s" fill="black"/>' % text_path(LINE1, 'C:/Windows/Fonts/arialbd.ttf', CAP, cx, BASE1)
          + '<path d="%s" fill="black"/>' % text_path(LINE2, 'C:/Windows/Fonts/arial.ttf', CAP, cx, BASE2))
 svg = ('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="66.04mm" height="35.983333333mm" viewBox="0 0 %d %d">\n' % (W, H)
-       + gbody + '\n<g id="artwork"><image x="0" y="0" width="%d" height="%d" xlink:href="data:image/png;base64,%s"/></g>\n' % (W, H, b64)
+       + '\n<g id="artwork"><image x="0" y="0" width="%d" height="%d" xlink:href="data:image/png;base64,%s"/></g>\n' % (W, H, b64)
        + fbody + '\n<g id="legal">' + legal + '</g>\n</svg>')
 open(os.path.join(root, 'icons', 'pitrex_label.svg'), 'w', encoding='utf-8').write(svg)
 png = bytes(resvg_py.svg_to_bytes(svg_string=re.sub(r'width="[^"]*mm" height="[^"]*mm"', 'width="%d" height="%d"' % (W, H), svg, count=1)))
-im = Image.open(io.BytesIO(png)).convert('RGB')
+import sys; sys.path.insert(0, here); import make_genart_h as G   # (the paper: the drawn labels' silver, its grid white, the legal box plain)
+im = G.silver_paper(BOX).convert('RGBA'); im.alpha_composite(Image.open(io.BytesIO(png)).convert('RGBA')); im = im.convert('RGB')
 im.save(os.path.join(root, 'icons', 'pitrex_label_4x.png'), optimize=True)
 im.resize((780, 425), Image.LANCZOS).save(os.path.join(root, 'icons', 'pitrex_label.png'), optimize=True)
 print('artwork rows %d..%d of the logo at y %d; wrote icons/pitrex_label.svg, _4x.png, .png' % (at, ab, y))

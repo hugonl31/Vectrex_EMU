@@ -2,7 +2,8 @@
 a cartridge and a box for every game with no picture of its own, the same on the PC, RetroArch, iPhone and Android).
 
   GA_CART_PNG   the cartridge without a title (840 px): the real shell (original gce/Armor..Attack, the one the PiTrex's
-                cartridge already ships with) + a label composed the label project's way - the exact silver grid, the
+                cartridge already ships with) + a label composed the label project's way - on the boxes' silver paper
+                (silver_paper: grain, light, the highlight streak, the grid pure white, the legal box plain), the
                 shared furniture v6 with the GCE logo + TM as the GCE labels have it (the owner, 2026-11-23), Last
                 Human's legal box with one line - cut out as
                 tools/ios_pack.py's shrink() / dark_edge(); GA_CART_X0 / Y0 / S: where the 3120 x 1700 label lies in it
@@ -128,13 +129,34 @@ def render_svg(body, w=W, h=H):
     return Image.open(io.BytesIO(bytes(resvg_py.svg_to_bytes(svg_string=svg)))).convert('RGBA')
 
 
-def base_label():
+def silver_paper(box=BOX):
+    """the label's paper as the drawn boxes' silver (the owner, 2026-11-23): (190, 192, 200) with a fine grain, lit from
+    the upper left (+-14), the boxes' S1 highlight streak scaled to the label (32 levels, 0.08 W across, fading along
+    0.25 H); no bend, no wear. The label's own grid (silver-grid.svg) in pure white; box: the legal box, plain (no grid).
+    RGB 3120 x 1700"""
     grid = open(ART + '/print 4x/reconstructed/shared-svg/silver-grid.svg', encoding='utf-8').read()
     gb = grid[grid.index('<g id="silver-grid">'):grid.index('</svg>')]
+    g = np.asarray(render_svg(gb).convert('L'), np.float32)
+    lo = np.percentile(g, 5); c = np.clip((g - lo) / (255.0 - lo), 0, 1)               # (the white lines' coverage)
+    if box:
+        bx, by, bw, bh = box[:4]; xx = np.arange(W) + 0.5; yy = np.arange(H) + 0.5
+        c[np.ix_((yy > by) & (yy < by + bh), (xx > bx) & (xx < bx + bw))] = 0
+    yv, xv = np.mgrid[0:H, 0:W].astype(np.float32) + 0.5
+    light = (0.5 - (xv / W * 0.35 + yv / H * 0.65)) * 2 * 14
+    px, py = xv - 0.22 * W, yv - 0.20 * H; u = px * 0.39 + py * 0.92; v = px * 0.92 - py * 0.39
+    light += 32 * np.exp(-(v / (0.08 * W)) ** 2) * np.exp(-(u / (0.25 * H)) ** 2)
+    yi, xi = np.mgrid[0:H, 0:W].astype(np.uint32)                  # (the grain: the boxes' hash; ~4x stronger here, the label is made
+    q = (xi * np.uint32(73856093)) ^ (yi * np.uint32(19349663)); q ^= q >> np.uint32(13); q *= np.uint32(0x5bd1e995); q ^= q >> np.uint32(15)
+    light += ((q & np.uint32(0xffff)).astype(np.float32) / 65535 * 2 - 1) * 6 * 3.2   #  ~4x smaller on the cartridge)
+    p = np.array((190, 192, 200), np.float32)[None, None, :] + light[..., None]
+    return Image.fromarray(np.clip(p * (1 - c[..., None]) + 255 * c[..., None], 0, 255).astype(np.uint8))
+
+
+def base_label():
     cx = BOX[0] + BOX[2] / 2; cy = BOX[1] + BOX[3] / 2
-    legal = ('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="%s"/>' % BOX
-             + '<path d="%s" fill="black"/>' % text_path(LEGAL, REG, 47.0, cx, cy + 23.5))
-    return render_svg(gb + furniture_body(gce=True) + legal).convert('RGB')
+    lab = silver_paper().convert('RGBA')
+    lab.alpha_composite(render_svg(furniture_body(gce=True) + '<path d="%s" fill="black"/>' % text_path(LEGAL, REG, 47.0, cx, cy + 23.5)))
+    return lab.convert('RGB')
 
 
 def dark_edge(a, k=1):

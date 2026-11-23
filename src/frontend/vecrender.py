@@ -910,6 +910,11 @@ def _vxb_get():
         lib.vxb_pieces.argtypes = [vp, ci, ci, vp]; lib.vxb_pieces.restype = ci
         lib.vxb_load.argtypes = []; lib.vxb_load.restype = vp
         lib.vxb_fill.argtypes = [vp] * 7 + [ctypes.POINTER(ctypes.c_double)]; lib.vxb_fill.restype = ci
+        try:                                    # (the cores it shares a picture's pieces out over; tests: VX_BUILD_THREADS=1)
+            lib.vxb_threads.argtypes = [ci]; lib.vxb_threads.restype = ci
+            if os.environ.get('VX_BUILD_THREADS'): lib.vxb_threads(int(os.environ['VX_BUILD_THREADS']))
+        except AttributeError:
+            pass
         try:                                    # (Smooth motion's work, native/vxsmooth.c: vectrex_emu.py sm_frame_c, sm_merge)
             cd = ctypes.c_double
             lib.vxs_frame.argtypes = [vp, ci, vp, ci, ci, cd, cd, cd, cd, ctypes.POINTER(cd), vp, ci, vp, ci, vp, vp, vp, vp, cd, cd, cd]
@@ -932,6 +937,35 @@ def _vxb_get():
         _vxb_off(e)
     return _vxb
 _VXB_NP = 99                              # (the parameters a picture: vxbuild.c's P_COUNT, the order in Renderer._build_c)
+class _VxbOut:
+    """the C line build's vertex arrays (V T C TT T2 T3: 68 floats a piece) in one block, a block used again once nothing holds any
+    of its arrays any more - the picture gone from the young frames, the hand-over, the afterglow. A new block each picture cost
+    its first touch: Vectrexians' 28000 pieces, 7.6 MB, 0.6 ms of the build's 2 ms just for Windows to hand out fresh memory.
+    The arrays are the same; only where they lie is not new"""
+    SPARE = 3                               # (blocks nothing holds, kept for the next pictures)
+    def __init__(self):
+        self.blocks = []                    # ([floats, array]: nothing else holding the array - its count as a new one's - it is free)
+        b = [0, _np.empty(1, dtype=_np.float32)] if _np is not None else [0, object()]
+        self.rc_free = sys.getrefcount(b[1])   # (the count of an array held by its pair alone, seen the same way)
+    def arrays(self, n):
+        """V, T, C, TT, T2, T3 for n pieces (numpy float32, contiguous: views of a block)"""
+        need = 68 * n
+        free = [b for b in self.blocks if sys.getrefcount(b[1]) == self.rc_free]   # (any view of it, any ctypes array on
+        fit = [b for b in free if b[0] >= need]                                    #  one - the picture's - counts)
+        if fit:
+            blk = min(fit, key=lambda b: b[0])
+        else:
+            m = 68 * (n + n // 4 + 1024)    # (a little room: the next pictures are a little bigger or smaller)
+            blk = [m, _np.empty(m, dtype=_np.float32)]; self.blocks.append(blk)
+        rest = sorted((b for b in free if b is not blk), key=lambda b: b[0])
+        if len(rest) > self.SPARE:          # (more free than kept: the smallest go)
+            drop = rest[:len(rest) - self.SPARE]
+            self.blocks = [b for b in self.blocks if not any(b is d for d in drop)]
+        a = blk[1]; o = 0; out = []
+        for k in (8, 16, 16, 4, 16, 8):
+            out.append(a[o:o + k * n]); o += k * n
+        return out
+_vxb_out = _VxbOut()
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
@@ -3133,8 +3167,7 @@ class GLBloomRenderer(GLRenderer):
                     btype = BEND_TYPES[self.bend_type % len(BEND_TYPES)]
                     amt = self.bend_strength * lf * 10.0
                     P[32:35] = (1.0, 1.0 + (amt / 128.0 if btype != 'shift' else 0.0), amt * 160.0 * 0.5 if btype != 'grow' else 0.0)
-                V = np.empty(n * 8, dtype=np.float32); T = np.empty(n * 16, dtype=np.float32); C = np.empty(n * 16, dtype=np.float32)
-                TT = np.empty(n * 4, dtype=np.float32); T2 = np.empty(n * 16, dtype=np.float32); T3 = np.empty(n * 8, dtype=np.float32)
+                V, T, C, TT, T2, T3 = _vxb_out.arrays(n)   # (memory a picture before had: see _VxbOut)
                 tmax = ctypes.c_double(0.0)
                 if lib.vxb_fill(P.ctypes.data, V.ctypes.data, T.ctypes.data, C.ctypes.data, TT.ctypes.data, T2.ctypes.data,
                                 T3.ctypes.data, ctypes.byref(tmax)) != n:

@@ -7,6 +7,10 @@
    (vecrender.py beam_load) - the pieces hold the glass's glow copies and the caps too.
    The tables and all constants come from Python (vxb_tables once, the array P every call): one place to tune them.
    Doubles throughout, float only in the output, no fused multiply-add: the results match numpy's.
+   The work piece by piece - each piece's light, its place on the tube, its vertices - is shared out over a few of the
+   processor's cores (Windows' thread pool; elsewhere one): each piece's arithmetic is the same whichever core does it, the
+   pieces land where they would one by one - the arrays are the same to the last bit with 1 core or 8 (Vectrexians' 28000
+   pieces a picture: 1.8 ms on one core).
    Part of Vectrex_EMU; see LICENSE.md. */
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +24,62 @@
 #pragma STDC FP_CONTRACT OFF
 #define VXB_API __attribute__((visibility("default")))
 #endif
+
+/* ---- a loop shared out: fn(ctx, chunk, chunks) for chunk 0 .. chunks - 1, each once, the caller working too; back when all
+   are done. The chunks write apart (each its own pieces): the order they run in shows nowhere */
+typedef void (*ParFn)(void *ctx, int chunk, int chunks);
+static int g_thr = -1;                                              /* cores to use (-1: not decided yet) */
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+typedef struct { ParFn fn; void *ctx; int n; volatile LONG next; } ParJob;
+static ParJob g_job; static PTP_WORK g_work; static int g_work_bad;
+static void par_chunks(ParJob *j)
+{
+    LONG c;
+    while ((c = InterlockedIncrement(&j->next) - 1) < j->n) j->fn(j->ctx, (int)c, j->n);
+}
+static VOID CALLBACK par_cb(PTP_CALLBACK_INSTANCE inst, PVOID p, PTP_WORK w) { (void)inst; (void)w; par_chunks((ParJob *)p); }
+static int par_threads(void)
+{
+    if (g_thr < 0) {                                                /* (half the cores, 2 to 8: the emulation, the sound and the
+                                                                       core's process keep theirs) */
+        DWORD n = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS); int t = (int)(n / 2);
+        g_thr = t < 2 ? (n >= 2 ? 2 : 1) : (t > 8 ? 8 : t);
+    }
+    if (g_thr > 1 && !g_work && !g_work_bad) {
+        g_work = CreateThreadpoolWork(par_cb, &g_job, NULL);
+        if (!g_work) g_work_bad = 1;
+    }
+    return g_work ? g_thr : 1;
+}
+static void par_run(int chunks, ParFn fn, void *ctx)
+{
+    int i;
+    if (chunks <= 1 || par_threads() <= 1) { for (i = 0; i < chunks; i++) fn(ctx, i, chunks); return; }
+    g_job.fn = fn; g_job.ctx = ctx; g_job.n = chunks; g_job.next = 0;
+    for (i = 1; i < (chunks < g_thr ? chunks : g_thr); i++) SubmitThreadpoolWork(g_work);
+    par_chunks(&g_job);
+    WaitForThreadpoolWorkCallbacks(g_work, TRUE);                   /* (the chunks all taken: those not started yet are not needed) */
+}
+#else
+static int par_threads(void) { return 1; }
+static void par_run(int chunks, ParFn fn, void *ctx) { int i; for (i = 0; i < chunks; i++) fn(ctx, i, chunks); }
+#endif
+/* how many chunks for n pieces: about 2000 a chunk, at most 4 a core */
+static int par_chunks_for(size_t n)
+{
+    int t = par_threads(); size_t c = (n + 1999) / 2000;
+    if (t <= 1 || c <= 1) return 1;
+    return c > (size_t)(4 * t) ? 4 * t : (int)c;
+}
+/* the cores used (tests: 1 - the work as before, on the caller's core alone; 0: as decided at the start) */
+VXB_API int vxb_threads(int n)
+{
+    if (n >= 1) g_thr = n > 64 ? 64 : n;
+    else if (n == 0) { g_thr = -1; }
+    return par_threads();
+}
 
 /* the parameters (P), as Renderer._build_c fills them - the same order there */
 enum {
@@ -129,7 +189,10 @@ static double bt2_light(double z, double d, double K)
 }
 
 /* ---- the work space: kept between calls, grown when needed */
-typedef struct { double x0, y0, x1, y1, e, t0, bl; int64_t b; int col; } Row;      /* a piece from bt2_prepare */
+typedef struct {                                                    /* a piece from bt2_prepare */
+    double x0, y0, x1, y1, e, t0, bl; int64_t b; int col;
+    double lz, ld, ls; int at;                                      /* (its light, worked out after: bl x bt2_light(lz, the dwell) - */
+} Row;                                                              /*  ld, or at ls when at >= 0) */
 typedef struct { double x0, y0, x1, y1, e, t0, bl; int64_t b; int col, same; } Piece;   /* .. through the tube's map */
 static Row *g_rows; static size_t g_nrows, g_crows;
 static Piece *g_pc; static size_t g_npc, g_cpc;
@@ -146,16 +209,6 @@ static Row *row_new(void)
         g_rows = p; g_crows = c;
     }
     return &g_rows[g_nrows++];
-}
-
-static Piece *piece_new(void)
-{
-    if (g_npc == g_cpc) {
-        size_t c = g_cpc ? g_cpc * 2 : 8192; Piece *p = (Piece *)realloc(g_pc, c * sizeof(Piece));
-        if (!p) return NULL;
-        g_pc = p; g_cpc = c;
-    }
-    return &g_pc[g_npc++];
 }
 
 static double clip01(double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); }
@@ -208,7 +261,8 @@ static int prepare(const double *L, int rows, int cols, const double *P)
             double dx = r[2] - r[0], dy = r[3] - r[1], l = sqrt(dx * dx + dy * dy) / U, t = r[5] / 8.0;
             Row *o = row_new(); if (!o) return -1;
             o->x0 = r[0]; o->y0 = r[1]; o->x1 = r[2]; o->y1 = r[3]; o->b = b; o->e = r[5]; o->t0 = r[6];
-            o->bl = (l + W) * bt2_light(z, t * DK / (l + W), K); o->col = cols > 7 ? (int)(int64_t)r[7] : 0;
+            o->bl = l + W; o->lz = z; o->ld = t * DK / (l + W); o->at = -1;          /* (x bt2_light(z, ld): lights) */
+            o->col = cols > 7 ? (int)(int64_t)r[7] : 0;
         }
     }
     if (!n) return 0;
@@ -256,7 +310,7 @@ static int prepare(const double *L, int rows, int cols, const double *P)
             o = row_new(); if (!o) return -1;
             o->x0 = X0[j] + ddx * f0; o->y0 = Y0[j] + ddy * f0; o->x1 = X0[j] + ddx * f1; o->y1 = Y0[j] + ddy * f1;
             o->b = B[j]; o->e = T[j] * fd * 8.0; o->t0 = T0[j] + T[j] * f0;
-            o->bl = Ln[j] * fd * bt2_light(Z[j], dwell(sm, W, 2 * j + 1), K);
+            o->bl = Ln[j] * fd; o->lz = Z[j]; o->ls = sm; o->at = 2 * j + 1;       /* (x bt2_light(Z, dwell(sm)): lights) */
             o->col = cols > 7 ? (int)(int64_t)L[(size_t)k[j] * cols + 7] : 0;
         }
     }
@@ -268,7 +322,7 @@ static int prepare(const double *L, int rows, int cols, const double *P)
             else { if (j < n - 1 && (fl[j + 1] & 1)) continue; px = X1[j]; py = Y1[j]; s = S1[j] + W / 4; tt = T0[j] + T[j]; }
             o = row_new(); if (!o) return -1;
             o->x0 = o->x1 = px; o->y0 = o->y1 = py; o->b = B[j]; o->e = 8.0; o->t0 = tt;
-            o->bl = (W / 2) * bt2_light(Z[j], dwell(s, W, 2 * j + 1), K);
+            o->bl = W / 2; o->lz = Z[j]; o->ls = s; o->at = 2 * j + 1;             /* (x bt2_light(Z, dwell(s)): lights) */
             o->col = cols > 7 ? (int)(int64_t)L[(size_t)k[j] * cols + 7] : 0;
         }
     }
@@ -309,65 +363,108 @@ static void tube_f(double x, double y, const double *P, double *ox, double *oy)
     *ox = XM + X * U * P[P_PS] + P[P_PDX]; *oy = YM + Y * U * P[P_PS] + P[P_PDY];
 }
 
-/* .. the point before kept: a piece mostly starts where the one before ended (the same numbers: the same place) */
-static double g_cx, g_cy, g_cox, g_coy; static int g_chave;
-static void tube_fc(double x, double y, const double *P, double *ox, double *oy)
+/* .. the point before kept: a piece mostly starts where the one before ended (the same numbers: the same place). One a
+   chunk of the work: a place mapped again where a chunk starts is the same place */
+typedef struct { double cx, cy, cox, coy; int have; } TubeC;
+static void tube_fc(TubeC *c, double x, double y, const double *P, double *ox, double *oy)
 {
-    if (g_chave && x == g_cx && y == g_cy) { *ox = g_cox; *oy = g_coy; return; }
+    if (c->have && x == c->cx && y == c->cy) { *ox = c->cox; *oy = c->coy; return; }
     tube_f(x, y, P, ox, oy);
-    g_cx = x; g_cy = y; g_cox = *ox; g_coy = *oy; g_chave = 1;
+    c->cx = x; c->cy = y; c->cox = *ox; c->coy = *oy; c->have = 1;
 }
 
-/* a row through the tube's map, a long one in pieces */
-static int tube_row(const Row *r, int bend, const double *P)
+/* a row through the tube's map, a long one in m pieces: into p; h: their copies for the glass's glow (bit 256), or none */
+static void tube_row(TubeC *c, const Row *r, int64_t m, const double *P, Piece *p, Piece *h)
 {
-    double ddx = r->x1 - r->x0, ddy = r->y1 - r->y0, Ls = sqrt(ddx * ddx + ddy * ddy), seg = P[P_TUBE_SEG], mm;
-    int64_t m = (Ls > seg && bend) ? (int64_t)(Ls / seg) + 1 : 1, i;
+    double ddx = r->x1 - r->x0, ddy = r->y1 - r->y0, mm;
+    int64_t i;
     int same = (r->x0 == r->x1) && (r->y0 == r->y1);
     mm = (double)m;
-    for (i = 1; i <= m; i++) {
+    for (i = 1; i <= m; i++, p++) {
         double s0 = (double)(i - 1) / mm, s1 = (double)i / mm, ax, ay, bx, by;
-        Piece *p = piece_new(); if (!p) return -1;
         ax = r->x0 + ddx * s0; ay = r->y0 + ddy * s0;
         if (m == 1) { bx = r->x1; by = r->y1; } else { bx = r->x0 + ddx * s1; by = r->y0 + ddy * s1; }
-        tube_fc(ax, ay, P, &p->x0, &p->y0); tube_fc(bx, by, P, &p->x1, &p->y1);
+        tube_fc(c, ax, ay, P, &p->x0, &p->y0); tube_fc(c, bx, by, P, &p->x1, &p->y1);
         if (same) { p->x0 = p->x1; p->y0 = p->y1; }                 /* (a resting spot: where the spot came to rest) */
         p->e = r->e / mm; p->bl = r->bl / mm; p->t0 = r->t0 + (r->e / 8.0) * (double)(i - 1) / mm;
         p->b = r->b; p->col = r->col; p->same = same;
+        if (h) { *h = *p; h->b |= 256; h++; }
     }
-    return 0;
+}
+
+/* each row: how many pieces on the tube, and where they go (the glow's copies first, then all the pieces, row by row) */
+static int64_t *g_rm, *g_roff, *g_rhoff; static size_t g_crm;
+typedef struct { const double *P; int bend, halo; size_t nh; } Job;
+
+/* the rows' light (bt2_light at their dwell, as bt2_prepare) and their pieces' count on the tube */
+static void job_lights(void *ctx, int c, int nc)
+{
+    const Job *j = (const Job *)ctx; const double *P = j->P, W = P[P_BT2_W], K = P[P_BT2_K], seg = P[P_TUBE_SEG];
+    size_t i, i0 = g_nrows * (size_t)c / (size_t)nc, i1 = g_nrows * (size_t)(c + 1) / (size_t)nc;
+    for (i = i0; i < i1; i++) {
+        Row *r = &g_rows[i]; double d = r->at < 0 ? r->ld : dwell(r->ls, W, r->at), ddx, ddy, Ls;
+        r->bl = r->bl * bt2_light(r->lz, d, K);
+        ddx = r->x1 - r->x0; ddy = r->y1 - r->y0; Ls = sqrt(ddx * ddx + ddy * ddy);
+        g_rm[i] = (Ls > seg && j->bend) ? (int64_t)(Ls / seg) + 1 : 1;
+    }
+}
+
+/* the rows through the tube's map */
+static void job_tube(void *ctx, int c, int nc)
+{
+    const Job *j = (const Job *)ctx; TubeC tc; size_t i, i0 = g_nrows * (size_t)c / (size_t)nc, i1 = g_nrows * (size_t)(c + 1) / (size_t)nc;
+    tc.have = 0; tc.cx = tc.cy = tc.cox = tc.coy = 0.0;
+    for (i = i0; i < i1; i++) {
+        const Row *r = &g_rows[i]; int lit = j->halo && (r->b & 127) != 0 && (r->b & 128) == 0;
+        tube_row(&tc, r, g_rm[i], j->P, g_pc + j->nh + g_roff[i], lit ? g_pc + g_rhoff[i] : NULL);
+    }
 }
 
 /* the pieces to draw for these lines: their count (0: none, below 0: no memory or no tables) */
 VXB_API int vxb_pieces(const double *L, int rows, int cols, const double *P)
 {
-    size_t i, j, nh = 0; int bend;
+    size_t i, np = 0, nh = 0; Job job;
     if (!g_tl || rows <= 0 || cols < 7) return -1;
     if (prepare(L, rows, cols, P) < 0) return -2;
-    bend = P[P_TUBE_K] > 0 || P[P_GLASS_G] > 0 || P[P_WARP_ON] != 0.0;
-    g_npc = 0; g_chave = 0;
-    for (i = 0; i < g_nrows; i++)
-        if (tube_row(&g_rows[i], bend, P) < 0) return -2;
-    if (P[P_HALO_ON] != 0.0)                                        /* the glass's glow: every lit piece once more (bit 256), */
-        for (i = 0; i < g_npc; i++)                                 /*  before all the pieces - the same places, so copies */
-            if ((g_pc[i].b & 127) != 0 && (g_pc[i].b & 128) == 0) nh++;
-    if (nh) {
-        if (g_cpc < g_npc + nh) { Piece *p = (Piece *)realloc(g_pc, (g_npc + nh) * sizeof(Piece)); if (!p) return -2; g_pc = p; g_cpc = g_npc + nh; }
-        memmove(g_pc + nh, g_pc, g_npc * sizeof(Piece));
-        for (i = 0, j = 0; i < g_npc; i++)
-            if ((g_pc[nh + i].b & 127) != 0 && (g_pc[nh + i].b & 128) == 0) { g_pc[j] = g_pc[nh + i]; g_pc[j].b |= 256; j++; }
-        g_npc += nh;
+    job.P = P; job.bend = P[P_TUBE_K] > 0 || P[P_GLASS_G] > 0 || P[P_WARP_ON] != 0.0; job.halo = P[P_HALO_ON] != 0.0;
+    if (g_crm < g_nrows) {
+        size_t c = g_nrows + 4096; int64_t *a = (int64_t *)malloc(3 * c * sizeof(int64_t));
+        if (!a) return -2;
+        free(g_rm); g_rm = a; g_roff = a + c; g_rhoff = a + 2 * c; g_crm = c;
     }
-    if (g_cld < g_npc) { double *p = (double *)realloc(g_ld, g_npc * sizeof(double)); if (!p) return -2; g_ld = p; g_cld = g_npc; }
-    for (i = 0; i < g_npc; i++)                                     /* the beam load: cycles x the intensity's share */
-        g_ld[i] = (g_pc[i].e / 8.0) * ((double)(g_pc[i].b & 127) / 127.0);
+    par_run(par_chunks_for(g_nrows), job_lights, &job);
+    for (i = 0; i < g_nrows; i++) {                                 /* (the glass's glow: every lit piece once more, bit 256,
+                                                                       before all the pieces - the same places, so copies) */
+        const Row *r = &g_rows[i];
+        g_roff[i] = (int64_t)np; g_rhoff[i] = (int64_t)nh; np += (size_t)g_rm[i];
+        if (job.halo && (r->b & 127) != 0 && (r->b & 128) == 0) nh += (size_t)g_rm[i];
+    }
+    if (g_cpc < np + nh) {
+        size_t c = np + nh + 8192; Piece *p = (Piece *)realloc(g_pc, c * sizeof(Piece));
+        if (!p) return -2;
+        g_pc = p; g_cpc = c;
+    }
+    job.nh = nh;
+    par_run(par_chunks_for(g_nrows), job_tube, &job);
+    g_npc = np + nh;
     return (int)g_npc;
 }
 
-VXB_API const double *vxb_load(void) { return g_ld; }
+/* each piece's beam load (cycles x the intensity's share) - not used (see above): worked out when asked for */
+VXB_API const double *vxb_load(void)
+{
+    size_t i;
+    if (g_cld < g_npc) { double *p = (double *)realloc(g_ld, g_npc * sizeof(double)); if (!p) return NULL; g_ld = p; g_cld = g_npc; }
+    for (i = 0; i < g_npc; i++)
+        g_ld[i] = (g_pc[i].e / 8.0) * ((double)(g_pc[i].b & 127) / 127.0);
+    return g_ld;
+}
 
-/* the vertex arrays of the pieces vxb_pieces made: V 8, T 16, C 16, TT 4, T2 16, T3 8 floats a piece; the count */
-VXB_API int vxb_fill(const double *P, float *V, float *T, float *C, float *TT, float *T2, float *T3, double *tmax)
+/* the vertex arrays of pieces i0 .. i1 - 1; their latest moment (*tmax: the largest TT, the first of equals; *have 0: all
+   NaN) */
+typedef struct { const double *P; float *V, *T, *C, *TT, *T2, *T3; float tm[256]; int have[256]; } FillJob;
+static void fill(const double *P, size_t i0, size_t i1, float *V, float *T, float *C, float *TT, float *T2, float *T3,
+                 float *tmax, int *have)
 {
     const double XM = P[P_XM], YM = P[P_YM];
     const int bend = P[P_BEND_ON] != 0.0, wob = P[P_WOB_ON] != 0.0, crt = P[P_CSX] != 1.0 || P[P_CSY] != 1.0;
@@ -376,8 +473,10 @@ VXB_API int vxb_fill(const double *P, float *V, float *T, float *C, float *TT, f
     const double csx = P[P_CSX], csy = P[P_CSY], h = P[P_H], sc = P[P_SC], ox = P[P_OX], oy = P[P_OY];
     const double cgain = P[P_CGAIN], cwidth = P[P_CWIDTH], kb = P[P_KB], gain = P[P_GAIN];
     const double gp = 160.0 * sc, upx = gp / P[P_UNITS], hf = P[P_HF], hsu = P[P_HS] * upx, twopi = 2.0 * 3.141592653589793;
-    float tm = 0.0f; size_t i, n = g_npc; int q;
-    for (i = 0; i < n; i++) {
+    float tm = 0.0f; int hv = 0; size_t i; int q;
+    uint64_t hum_t = 0; double hum_wx = 0.0, hum_wy = 0.0; int hum_have = 0;
+    V += 8 * i0; T += 16 * i0; C += 16 * i0; TT += 4 * i0; T2 += 16 * i0; T3 += 8 * i0;
+    for (i = i0; i < i1; i++) {
         const Piece *p = &g_pc[i];
         double x0 = p->x0, y0 = p->y0, x1 = p->x1, y1 = p->y1, cyc = p->e / 8.0;
         double ax, ay, bx, by, dx, dy, lp, zi, zw, fwb, sg, kk, mq, ux, uy, nx, ny, lps, al, r, g, b;
@@ -389,10 +488,17 @@ VXB_API int vxb_fill(const double *P, float *V, float *T, float *C, float *TT, f
         if (wob) {                                                  /* the hum: offsets at each end */
             int e_;
             for (e_ = 0; e_ < 2; e_++) {
-                double a = a0 + (e_ ? p->t0 + cyc : p->t0) * k50, s1 = sin(a), c1 = cos(a);
-                double s2 = 2 * s1 * c1, c2 = c1 * c1 - s1 * s1, s3 = s2 * c1 + c2 * s1, c3 = c2 * c1 - s2 * s1;
-                double wx = hm[0] * s1 + hm[3] * c1 + hm[1] * s2 + hm[4] * c2 + hm[2] * s3 + hm[5] * c3;
-                double wy = hm[6] * s1 + hm[9] * c1 + hm[7] * s2 + hm[10] * c2 + hm[8] * s3 + hm[11] * c3;
+                double t = e_ ? p->t0 + cyc : p->t0, wx, wy; uint64_t tb;
+                memcpy(&tb, &t, sizeof tb);
+                if (hum_have && tb == hum_t) { wx = hum_wx; wy = hum_wy; }   /* (a piece mostly starts at the moment the one
+                                                                       before ended: the same moment, the same offset) */
+                else {
+                    double a = a0 + t * k50, s1 = sin(a), c1 = cos(a);
+                    double s2 = 2 * s1 * c1, c2 = c1 * c1 - s1 * s1, s3 = s2 * c1 + c2 * s1, c3 = c2 * c1 - s2 * s1;
+                    wx = hm[0] * s1 + hm[3] * c1 + hm[1] * s2 + hm[4] * c2 + hm[2] * s3 + hm[5] * c3;
+                    wy = hm[6] * s1 + hm[9] * c1 + hm[7] * s2 + hm[10] * c2 + hm[8] * s3 + hm[11] * c3;
+                    hum_t = tb; hum_wx = wx; hum_wy = wy; hum_have = 1;
+                }
                 if (e_) { x1 = x1 + wx; y1 = y1 + wy; } else { x0 = x0 + wx; y0 = y0 + wy; }
             }
         }
@@ -422,7 +528,7 @@ VXB_API int vxb_fill(const double *P, float *V, float *T, float *C, float *TT, f
         if (colon) { const double *c3 = P + P_RGB0 + 3 * (p->col & 7); r = kk * c3[0]; g = kk * c3[1]; b = kk * c3[2]; }
         else r = g = b = kk;
         al = sg / 16.0; if (!(al < 1.0)) al = 1.0;
-        f = (float)(p->t0 / 1.5e6); if (i == 0 || f > tm) tm = f;
+        f = (float)(p->t0 / 1.5e6); if (f == f && (!hv || f > tm)) { tm = f; hv = 1; }
         for (q = 0; q < 4; q++) {
             T[0] = (float)ax; T[1] = (float)ay; T[2] = (float)bx; T[3] = (float)by; T += 4;      /* (no end open: the soft ends add up) */
             T2[0] = T2[1] = T2[2] = T2[3] = 0.0f; T2 += 4;          /* (so no joints' cuts either) */
@@ -431,6 +537,32 @@ VXB_API int vxb_fill(const double *P, float *V, float *T, float *C, float *TT, f
             *TT++ = f;
         }
     }
-    if (tmax) *tmax = n ? (double)tm : 0.0;
-    return (int)n;
+    *tmax = tm; *have = hv;
+}
+
+static void job_fill(void *ctx, int c, int nc)
+{
+    FillJob *j = (FillJob *)ctx;
+    fill(j->P, g_npc * (size_t)c / (size_t)nc, g_npc * (size_t)(c + 1) / (size_t)nc, j->V, j->T, j->C, j->TT, j->T2, j->T3, &j->tm[c], &j->have[c]);
+}
+
+/* the vertex arrays of the pieces vxb_pieces made: V 8, T 16, C 16, TT 4, T2 16, T3 8 floats a piece; the count. *tmax:
+   the latest moment, as one loop over the pieces finds it - the first's, then any later one larger */
+VXB_API int vxb_fill(const double *P, float *V, float *T, float *C, float *TT, float *T2, float *T3, double *tmax)
+{
+    FillJob j; int c, nc = par_chunks_for(g_npc); float tm;
+    j.P = P; j.V = V; j.T = T; j.C = C; j.TT = TT; j.T2 = T2; j.T3 = T3;
+    if (nc > 256) nc = 256;
+    par_run(nc, job_fill, &j);
+    if (tmax) {
+        if (!g_npc) *tmax = 0.0;
+        else {
+            tm = TT[0];                                             /* (the first: NaN - nothing is larger, it stays) */
+            if (tm == tm)
+                for (c = 0; c < nc; c++)
+                    if (j.have[c] && j.tm[c] > tm) tm = j.tm[c];
+            *tmax = (double)tm;
+        }
+    }
+    return (int)g_npc;
 }

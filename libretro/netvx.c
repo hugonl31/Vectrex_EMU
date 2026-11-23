@@ -926,7 +926,7 @@ static void nv_thread (void)
 #endif
 static int16_t aq[AQ * 2]; static int aq_r, aq_w; static long aq_frames; static int emu_stood; static unsigned long long run_t;   /* (defined in
                                                  libretro_vx.c further down - the sound queue, the time to reach) */
-static int aq_fill (void); static void frame_push (unsigned long long p0);
+static int aq_fill (void); static void frame_push (unsigned long long p0, int cut);
 #define NV_ST_MAXL 6000
 #define NV_ST_MAXA 1200
 #define NV_ST_MAXC 240                                         /* (pieces a frame at most, the repair ones with them) */
@@ -1085,7 +1085,7 @@ static void netvx_stream_guest (void)
 		nv_stfr_t q = nv_stq[0]; memmove (nv_stq, nv_stq + 1, sizeof nv_stq[0] * (size_t) (nv_stq_n - 1)); nv_stq_n--;
 		nv_unlock ();
 		memcpy (last, q.L, sizeof (line_t) * (size_t) q.nl); nlast = q.nl; total_cycles = q.tc;
-		frame_push (q.p0);
+		frame_push (q.p0, 0);   /* (a card game's frames: its own, never cut - vtest.c vt_piece_cut) */
 		for (int i = 0; i < q.na; i++) for (int r = 0; r < 2; r++) if (aq_fill () < AQ - 1) { aq[2 * aq_w] = aq[2 * aq_w + 1] = q.a[i]; aq_w = (aq_w + 1) % AQ; }
 		aq_frames++;
 		free (q.L); free (q.a);

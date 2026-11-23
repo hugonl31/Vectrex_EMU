@@ -51,6 +51,10 @@ static const unit_par UNIT_P[] = {
 	{ "dac2", 18, NULL, "DAC bit 2 error", NULL, -0.03, 0.03, 0.001, "%+.4f", -0.0089, 0, 'c', 's', 0, 0.008, 's', 0.008, 0.012 },
 	{ "dac3", 19, NULL, "DAC bit 3 error", NULL, -0.03, 0.03, 0.001, "%+.4f", -0.0014, 0, 'c', 's', 0, 0.004, 's', 0.004, 0.006 },
 	{ "gap", 0, NULL, "Line gaps (stop delay)", "The integrators' stop delay.", 4, 10, 0.1, "%.1f cycles", 7, 7, 'c', 'r', 6.3, 7.7, 'r', 7.7, 9.3 },
+	/* (the integrators' rate one way against the other, %: vecx.c rate_by - the owner's Y measured, 2026-11-23; random / cranky about 0.
+	 *  Last: a random or cranky unit's other parts as before) */
+	{ "xrate", 29, "VT_XRATE", "X rate right vs left", "Right faster than left: +.", -3, 3, 0.1, "%+.1f %%", 0, 0, 'c', 's', 0, 1.2, 's', 1.2, 2.5 },
+	{ "yrate", 28, "VT_YRATE", "Y rate up vs down", "Up faster than down: +.", -3, 3, 0.1, "%+.1f %%", 1.16, 0, 'c', 's', 0, 1.2, 's', 1.2, 2.5 },
 	{ NULL } };
 #define NUNIT (sizeof UNIT_P / sizeof UNIT_P[0] - 1)
 static double unit_v[NUNIT], unit_sent[NUNIT]; static int unit_known;
@@ -81,7 +85,7 @@ static void unit_make (const char *preset, const char *(*get) (const char *))
 		if ((rnd || crank) && (crank ? p->ck : p->rk)) {      /* (vectrex_emu.py random_unit) */
 			const char k = crank ? p->ck : p->rk; const double a = crank ? p->ca : p->ra, b = crank ? p->cb : p->rb;
 			if (k == 'r') v = a + (b - a) * URND ();
-			else { const double c = !strncmp (p->key, "dac", 3) ? 0.0 : p->owner; v = c + (URND () < 0.5 ? -1 : 1) * (a + (b - a) * URND ()); }
+			else { const double c = !strncmp (p->key, "dac", 3) || strstr (p->key, "rate") ? 0.0 : p->owner; v = c + (URND () < 0.5 ? -1 : 1) * (a + (b - a) * URND ()); }
 			v = v < p->lo ? p->lo : v > p->hi ? p->hi : v; }
 		char key[64]; snprintf (key, sizeof key, "vectrex_emu_unit_%s", p->key);
 		const char *o = get (key); if (o && o[0] && strcmp (o, "auto")) v = atof (o);

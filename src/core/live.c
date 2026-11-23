@@ -347,8 +347,9 @@ static int live_main (const char *recfn, const char *symfn)
 		unsigned char *p = out;
 		{ extern int vt_speech_sep, vt_vecvoice; extern int vt_uvm2_cart; extern int vt_imager; int two = (vt_speech_sep && vt_vecvoice) || vt_uvm2_cart || vt_imager;   /* (bit 15: two channels -
 		  the console and the speech module, interleaved) */
-		  extern int vt_imager;
-		  *p++ = 'V'; *p++ = vt_imager ? 'C' : 'F'; put16 (p, n); p += 2;   /* ('VC': each line's colour follows the lines) */ put16 (p, two ? (abuf_n / 4) | 0x8000 : abuf_n / 2); p += 2; }   /* 16-bit samples */
+		  extern int vt_imager, vt_piece_cut; const unsigned cut = quiet ? 0 : (unsigned) vt_piece_cut << 13;   /* (bits 13-14: how the piece
+		  ended, vtest.c vt_piece_cut - the frontend joins a cut one to the rest of its frame) */
+		  *p++ = 'V'; *p++ = vt_imager ? 'C' : 'F'; put16 (p, n); p += 2;   /* ('VC': each line's colour follows the lines) */ put16 (p, (two ? (abuf_n / 4) | 0x8000 : abuf_n / 2) | cut); p += 2; }   /* 16-bit samples */
 		{ unsigned t = (unsigned) piece0;               /* the frame's start (absolute cycles): its lines' times count from it */
 		  put16 (p, t & 0xffff); put16 (p + 2, t >> 16); p += 4; }
 		put16 (p, s & 0xffff); put16 (p + 2, s >> 16); p += 4;   /* the state's checksum */

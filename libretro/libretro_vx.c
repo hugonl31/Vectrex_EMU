@@ -117,6 +117,7 @@ VXS_ON
 #include "vtest.c"
 #undef main
 VXS_OFF
+#include <float.h>
 #include "libretro.h"
 #ifdef _WIN32
 #define SEP "\\"                           /* (the folder separator in paths) */
@@ -614,6 +615,8 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_unit_dac1", "circuit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_dac2", "circuit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_dac3", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_xrate", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_yrate", "circuit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_gap", "circuit", NULL, NULL, "@" },
 	{ NULL, NULL, NULL, NULL, NULL } };
 static const char *const OPT_CATS[][3] = {   /* (RetroArch's own kind of menus, the most used first - the owner, 2026-11-15) */
@@ -625,7 +628,7 @@ static const char *const OPT_CATS[][3] = {   /* (RetroArch's own kind of menus, 
 	{ "case", "Case & Room light", "The plastic round the glass, the room's light, the ceiling light" },
 	{ "system", "System", "The cartridge hardware, port 2, USB keyboard and mouse, UVMC2 and PiTrex" },
 	{ "unit", "Vectrex Unit", "Which Vectrex, the intro; the knob, the pots and the yoke; the picture's shape" },
-	{ "circuit", "Vectrex Circuit", "The service trim pots; its parts: zero reference, beam, zeroing, lag, DAC" } };
+	{ "circuit", "Vectrex Circuit", "The service trim pots; its parts: zero reference, beam, zeroing, lag, DAC, rates" } };
 #define NOPT (sizeof OPTS / sizeof OPTS[0])
 static struct retro_variable vars[NOPT];
 /* (libretro.h's core options v2 - not in this core's older header: the same layout) */
@@ -2142,8 +2145,9 @@ static void bg_make (void)
  * (emulated seconds), where its lines' times count from, and whether it is the other half of a picture drawn in two
  * halves on alternate frames (vecrender.py frame_alternates) */
 #define NH 6
-typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; } gframe;   /* (gen: this content's
-                                                own number - a new one each push, join or state load; Smooth motion's kept work, smooth.c) */
+typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; int open; } gframe;   /* (gen: this content's
+                                                own number - a new one each push, join or state load; Smooth motion's kept work, smooth.c;
+                                                open: its last piece was cut short by the budget, the game's frame goes on - frame_push) */
 static unsigned long long frame_gen;       /* (not in the save state: the frames get new numbers when one is loaded) */
 #define SHORT_PIECE 0.015
 #define HOLD_SLOW 1.1                     /* (the hold below for a game this much slower than the screen: Vectrexians 45 fps at 60 Hz) */
@@ -2177,20 +2181,26 @@ static double frame_overlap (const gframe *a, const gframe *b)
 }
 static gframe spare;                    /* (the buffers of the frame that drops out, for the next) */
 static void frame_pop (void);
-static void frame_push (unsigned long long p0)
+static void frame_push (unsigned long long p0, int cut)
 {
 	gframe f;
 	/* (a piece shorter than SHORT_PIECE joins the next one, as the desktop's frame queue does (vectrex_emu.py, "pieces
 	 *  shorter than 15 ms"): a game that calls Wait_Recal twice in one frame - Last Human in arena 2 with many shots -
-	 *  made a short frame with nothing drawn, and the refreshes that showed it were black, ~0.1 s, the Nova 2026-11-17) */
+	 *  made a short frame with nothing drawn, and the refreshes that showed it were black, ~0.1 s, the Nova 2026-11-17.
+	 *  And a piece the budget cut (cut 2, vtest.c vt_piece_cut) joins the rest of the game's frame - the next piece, if that
+	 *  one ends where the game ends its frame (cut 0); else it stands alone. The Test Cartridge Rev. 4's screen 1 (its frames
+	 *  timed by timer 2, 42000 cycles) was cut at 33000 and the 6 ms rest joined the next frame's start: the cut moved through
+	 *  the picture, one frame had the line at x 11211 twice and the next none - with Smooth motion a line gone for 2-3
+	 *  refreshes every 0.3 s; on the real Vectrex it is steady (the owner, 2026-11-23)) */
 	{ extern int vt_imager, vt_uvm2, vt_pitrex;   /* (a UVMC2 / PiTrex ends its frames itself, on its bus: not joined -
 	                                              VecDoom's 66 a second were all joined, 2 ms a refresh on the Nova) */
 	  if (nh && !vt_imager && !vt_uvm2 && !vt_pitrex) {
 		gframe *h = &hist[nh - 1]; const double pt = nh > 1 ? hist[nh - 2].t : have_prev ? prevf.t : -1;
-		if (pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
+		const int join = h->open ? cut == 0 : pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE;
+		if (join && h->n + nlast <= MAXL && p0 >= h->p0) {
 			const unsigned sh = (unsigned) (p0 - h->p0);
 			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
-			h->n += nlast; h->t = total_cycles / 1.5e6; h->gen = ++frame_gen; frame_keys (h);
+			h->n += nlast; h->t = total_cycles / 1.5e6; h->gen = ++frame_gen; h->open = cut == 2; frame_keys (h);
 			{ const gframe *f1 = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL, *f2 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL);
 			  double o1 = f1 ? frame_overlap (h, f1) : -1, o2 = f2 ? frame_overlap (h, f2) : -1;
 			  h->alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
@@ -2198,7 +2208,7 @@ static void frame_push (unsigned long long p0)
 	if (nh == NH) frame_pop ();
 	if (spare.L) { f = spare; spare.L = NULL; }
 	else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
-	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0; f.gen = ++frame_gen;
+	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0; f.gen = ++frame_gen; f.open = cut == 2;
 	frame_keys (&f);
 	{ const gframe *f1 = nh ? &hist[nh - 1] : NULL, *f2 = nh > 1 ? &hist[nh - 2] : (nh == 1 && have_prev ? &prevf : NULL);
 	  double o1 = f1 ? frame_overlap (&f, f1) : -1, o2 = f2 ? frame_overlap (&f, f2) : -1;
@@ -2227,22 +2237,49 @@ static int wl_from (wline *o, int m, const line_t *L, int n, const line_t *B, do
  *  cut into pieces differently in each frame (8 to 32 cycles), so a line is found again by its place, not its piece) */
 #define HOLD_CELL 128
 #define HGW 448
-static double hgt[HGW * HGW]; static unsigned hgg[HGW * HGW], hgen;
+/* (and by its own drawing: of the drawings along the line (its direction, or the two beside it: four 45 degrees apart; a spot
+ *  - a resting beam - by spots) on or next to its middle, the one nearest the line's own moment in that frame - a still line's
+ *  copy is drawn where it was in the frame, a moved one's too. The earliest drawing there, of anything, ended a line's hold
+ *  where something else was drawn first: the Test Cartridge Rev. 4's grid, Smooth motion off - the centre lines dark from
+ *  where a line across them or a stub beside them was drawn until their own copy, a third of the refreshes (2026-11-23)) */
+#define HOLD_SPOT 32.0                    /* (a piece shorter than this (units): a spot, no direction) */
+typedef struct { float t; int next; unsigned char d; } hold_ent;   /* (a drawing in a cell: its moment (s after hgb), the cell's next, its direction) */
+static int hgh[HGW * HGW]; static unsigned hgg[HGW * HGW], hgen; static double hgb; static hold_ent *hge; static int hge_n, hge_cap;
 static int hold_cell (long x, long y) { const long cx = (x + 4096) / HOLD_CELL, cy = (y + 4096) / HOLD_CELL;
 	return cx < 0 || cy < 0 || cx >= HGW || cy >= HGW ? -1 : (int) (cy * HGW + cx); }
-static double hold_find (const line_t *l, double after)   /* (the earliest later drawing on or next to the line's middle, else -1) */
+static void hold_new (double base) { if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; } hgb = base; hge_n = 0; }   /* (an empty grid) */
+static int hold_dir (const line_t *l)   /* (0 along x, 1 and 3 the diagonals, 2 along y; 4 a spot) */
 {
-	const long mx = (l->x0 + l->x1) / 2, my = (l->y0 + l->y1) / 2; double best = -1;
+	const double dx = (double) l->x1 - l->x0, dy = (double) l->y1 - l->y0, ax = fabs (dx), ay = fabs (dy);
+	if (dx * dx + dy * dy < HOLD_SPOT * HOLD_SPOT) return 4;
+	if (ay <= 0.41421356 * ax) return 0;
+	if (ax <= 0.41421356 * ay) return 2;
+	return (dx > 0) == (dy > 0) ? 1 : 3;
+}
+/* (a later drawing on or next to the line's middle, after `after`: want < 0 the earliest of any; else, along the line, the one
+ *  nearest want (the line's own moment in that frame) - -1: none) */
+static double hold_find (const line_t *l, double after, double want)
+{
+	const long mx = (l->x0 + l->x1) / 2, my = (l->y0 + l->y1) / 2; const int d = want < 0 ? -1 : hold_dir (l); double best = -1, bd = 0;
 	for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { const int c = hold_cell (mx + ox * HOLD_CELL, my + oy * HOLD_CELL);
-		if (c >= 0 && hgg[c] == hgen && hgt[c] > after && (best < 0 || hgt[c] < best)) best = hgt[c]; }
+		if (c < 0 || hgg[c] != hgen) continue;
+		for (int q = hgh[c]; q >= 0; q = hge[q].next) { const hold_ent *h = &hge[q];
+			if (d >= 0 && (d == 4 || h->d == 4 ? h->d != d : ((h->d - d) & 3) == 2)) continue;   /* (not along the line) */
+			const double e = hgb + h->t; if (e <= after) continue;
+			const double k = want < 0 ? e : fabs (e - want);
+			if (best < 0 || k < bd) { best = e; bd = k; } } }
 	return best;
 }
 static void hold_put (const line_t *l, double tau)          /* (the cells along the line: drawn at tau) */
 {
 	const double dx = l->x1 - l->x0, dy = l->y1 - l->y0; const int k = 1 + (int) (sqrt (dx * dx + dy * dy) / (HOLD_CELL / 2));
+	const unsigned char d = (unsigned char) hold_dir (l); const float v = (float) (tau - hgb); int was = -1;
 	for (int i = 0; i <= k; i++) { const int c = hold_cell (l->x0 + (long) (dx * i / k), l->y0 + (long) (dy * i / k));
-		if (c < 0) continue;
-		if (hgg[c] != hgen || tau < hgt[c]) { hgg[c] = hgen; hgt[c] = tau; } }
+		if (c < 0 || c == was) continue;
+		was = c;
+		if (hge_n == hge_cap) { const int nc = hge_cap ? hge_cap * 2 : 16384; hold_ent *ne = realloc (hge, sizeof (hold_ent) * (size_t) nc); if (!ne) return; hge = ne; hge_cap = nc; }
+		if (hgg[c] != hgen) { hgg[c] = hgen; hgh[c] = -1; }
+		hge[hge_n].t = v; hge[hge_n].d = d; hge[hge_n].next = hgh[c]; hgh[c] = hge_n++; }
 }
 /* (as the desktop's renderer (vecrender.py hold): each line lit from the moment the beam drew it until the game draws it
  *  again - found in a later frame (hold_find): a still line stays lit through a frame that left it out, a moved one
@@ -2298,12 +2335,18 @@ static int hold_lines (double T, double dt)
 		for (int k = 0; k < j; k++) { if (E[k] < 0 || (!opt_fill && j != k + 1)) continue;   /* (off: the next frame only) */
 			int done = 0; for (int a = 0; a < hec[E[k]].nap; a++) if (hec[E[k]].ap[a] == ID[j]) done = 1;
 			if (done) continue;
-			if (grid_of != j) { if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; }
+			if (grid_of != j) { hold_new (S[j]);
 				for (int q = 0; q < F[j]->n; q++) if (F[j]->L[q].c & 127) hold_put (&F[j]->L[q], S[j] + F[j]->L[q].t0 / 1.5e6);
 				grid_of = j; }
 			float *en = hec[E[k]].end; const gframe *f = F[k];
-			for (int q = 0; q < f->n; q++) { if (en[q] >= 0) continue; const double tau = S[k] + f->L[q].t0 / 1.5e6;
-				const double e = hold_find (&f->L[q], tau); if (e > tau) en[q] = (float) (e - S[k]); }   /* (kept from the frame's start) */
+			/* (the newest frame not whole yet - a piece the next one joins, frame_push: a line whose moment lies past its end is
+			 *  not drawn again in it yet; matched to what is there, the Test Cartridge Rev. 4's right edge went dark until the
+			 *  rest came) */
+			extern int vt_uvm2, vt_pitrex;
+			const int grows = j == nf - 1 && !vt_uvm2 && !vt_pitrex && (F[j]->open || F[j]->t - S[j] < SHORT_PIECE);
+			for (int q = 0; q < f->n; q++) { if (en[q] >= 0) continue; const double tau = S[k] + f->L[q].t0 / 1.5e6, want = S[j] + f->L[q].t0 / 1.5e6;
+				if (grows && want > F[j]->t) continue;
+				const double e = hold_find (&f->L[q], tau, want); if (e > tau) en[q] = (float) (e - S[k]); }   /* (kept from the frame's start) */
 			if (hec[E[k]].nap < HOLD_AP) hec[E[k]].ap[hec[E[k]].nap++] = ID[j]; }
 	}
 	int n = 0;
@@ -2997,7 +3040,7 @@ static void emu_loop (void)                 /* (game frames until the emulated t
 		  else run_frame (); }
 		const int replay = replay_to && nv_f < replay_to;   /* (a frame run again: its sound was heard the first time) */
 		if (ls_state == 2) netls_after (); else if (netvx_playing () && !nv_stream) netvx_after ();
-		frame_push (p0);
+		{ extern int vt_piece_cut; frame_push (p0, vt_piece_cut); }
 		if (vt_imager) eyes_take ();
 		{ const int a0 = aq_w; if (!replay) audio_frame ();
 		  if (nv_stream && netvx_playing ()) netvx_stream_send (p0, a0); }   /* (streamed: the host's frame to player 2) */
@@ -3319,9 +3362,8 @@ static void retro_run_one (void)
 			 *  second - the owner's iPhone, 2026-11-22. A still line is in the newest frame: not drawn twice) */
 			{ static unsigned long long shown_p0;
 			  if (vx_owe_hidden && !vx_nobuild && !a->alt && nh > 1 && shown_p0 && hist[nh - 2].p0 > shown_p0) { const gframe *h = &hist[nh - 2];
-				if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; }
-				for (int q = 0; q < a->n; q++) if (a->L[q].c & 127) hold_put (&a->L[q], 1.0);
-				for (int q = 0; q < h->n; q++) if ((h->L[q].c & 127) && hold_find (&h->L[q], 0.0) < 0) n = wl_from (W1, n, &h->L[q], 1, NULL, 0); }
+				hold_new (0); for (int q = 0; q < a->n; q++) if (a->L[q].c & 127) hold_put (&a->L[q], 1.0);
+				for (int q = 0; q < h->n; q++) if ((h->L[q].c & 127) && hold_find (&h->L[q], 0.0, -1) < 0) n = wl_from (W1, n, &h->L[q], 1, NULL, 0); }
 			  if (!vx_nobuild) shown_p0 = a->p0; }
 			if (a->alt) { const gframe *p = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL; if (p) n = wl_from (W1, n, p->L, p->n, NULL, 0); }
 			n = wl_from (W1, n, a->L, a->n, NULL, 0);
@@ -3653,7 +3695,8 @@ static unsigned char *put_frame (unsigned char *o, const gframe *f)
 {
 	int nk = f->nk > 0 ? f->nk : 0;
 	if (nk > 6000) nk = 6000;
-	PUT (&f->n, sizeof (int)); PUT (&nk, sizeof (int)); PUT (&f->alt, sizeof (int)); PUT (&f->t, sizeof (double)); PUT (&f->p0, sizeof (unsigned long long));
+	const int ao = (f->alt ? 1 : 0) | (f->open ? 2 : 0);   /* (bit 1: open, frame_push - in alt's place: the state's size and older states as they were) */
+	PUT (&f->n, sizeof (int)); PUT (&nk, sizeof (int)); PUT (&ao, sizeof (int)); PUT (&f->t, sizeof (double)); PUT (&f->p0, sizeof (unsigned long long));
 	o = put_lines (o, f->L, f->n, ST_L); PUT (f->keys, sizeof (long long) * nk);
 	return o;
 }
@@ -3740,6 +3783,7 @@ static bool vx_load_from (const void *d, size_t sz)   /* (retro_unserialize's wo
 		if (np) f = pool[--np]; else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
 		int fn; GET (&fn, sizeof (int)); GET (&f.nk, sizeof (int)); GET (&f.alt, sizeof (int)); GET (&f.t, sizeof (double)); GET (&f.p0, sizeof (unsigned long long));
 		i = get_lines (i, f.L, &f.n); (void) fn; GET (f.keys, sizeof (long long) * (f.nk > 0 ? f.nk : 0));
+		f.open = (f.alt & 2) != 0; f.alt &= 1;   /* (open in alt's bit 1: put_frame) */
 		f.gen = ++frame_gen;                       /* (loaded: new content - Smooth motion's kept work does not apply) */
 		*dst[k] = f;
 	}

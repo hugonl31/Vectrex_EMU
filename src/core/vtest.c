@@ -362,13 +362,19 @@ static FILE *recf;                      /* "recstart": log every frame's input l
  * itself) ends one after frame_budget cycles: 200000 in scripts (frame counts stay as they were),
  * 33000 in --live play, so such effects show at ~45 Hz like on the tube instead of 7.5 Hz */
 static long frame_budget = 200000;
+/* how the last piece (run_frame) ended: 0 the game's own frame end (Wait_Recal, its timer 2, a card's frame), 1 cut by the
+ * budget, 2 cut by the budget while the game ends its own frames (one in the last 100000 cycles) - the game's frame goes on in
+ * the next piece: the display joins the two (libretro_vx.c frame_push, vectrex_emu.py's frame queue - the same rule). The Test
+ * Cartridge Rev. 4's screen 1 times its 42000-cycle frames with timer 2 and was cut at 33000: the cut moved through its
+ * picture, and a joined frame had a line twice and the next none (the owner, 2026-11-23: steady on the real Vectrex) */
+int vt_piece_cut;
 static void run_frame (void)
 {
 	if (recf) {
 		unsigned char m[4] = { alg_jch0, alg_jch1, (~snd_regs[14]) & 15, 0 };
 		fwrite (m, 1, 4, recf);
 	}
-	frame_done = 0;
+	frame_done = 0; vt_piece_cut = 0;
 	/* online VecLink: a slice of the cable's clock, not the game's frame - both consoles of a PC stop at the same
 	 * cable time (veclink.c) */
 	{ extern int vt_veclink; extern long vl_slice;
@@ -408,7 +414,8 @@ static void run_frame (void)
 	    if (vt_protect_f () < 0.98) { long ymin = 1 << 30, ymax = -1, xmin = 1 << 30, xmax = -1; for (int i = 0; i < ncur; i++) { if (cur[i].y0 < ymin) ymin = cur[i].y0; if (cur[i].y1 < ymin) ymin = cur[i].y1; if (cur[i].y0 > ymax) ymax = cur[i].y0; if (cur[i].y1 > ymax) ymax = cur[i].y1; if (cur[i].x0 < xmin) xmin = cur[i].x0; if (cur[i].x0 > xmax) xmax = cur[i].x0; }
 	      fprintf (stderr, "PROT frame %lu f=%.2f v=%.2f lines=%d y %ld..%ld x %ld..%ld\n", fno, vt_protect_f (), vt_protect_v (), ncur, ymin, ymax, xmin, xmax); } } }
 	if (!frame_done) {                  /* no Wait_Recal: show what was drawn and start a new frame */
-		extern unsigned long long alg_cycles, vt_frame_t0;
+		extern unsigned long long alg_cycles, vt_frame_t0; extern int vt_uvm2, vt_pitrex, vt_imager;
+		vt_piece_cut = !vt_uvm2 && !vt_pitrex && !vt_imager && frames > 0 && total_cycles - frame_start_cycles < 100000 ? 2 : 1;   /* (see vt_piece_cut) */
 		memcpy (last, cur, sizeof (line_t) * ncur); nlast = ncur; ncur = 0; beam_swap ();
 		vt_frame_t0 = alg_cycles;
 		{ extern unsigned long long vt_piece_t0; vt_piece_t0 = alg_cycles; }

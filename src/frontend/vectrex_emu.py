@@ -1539,9 +1539,16 @@ UNIT_PARAMS = (('zhold', 1, 'Zero hold (how well the zero reference charges)', 0
                ('dac0', 16, 'DAC bit 0 error', -0.03, 0.03, '%+.4f', None),
                ('dac1', 17, 'DAC bit 1 error', -0.03, 0.03, '%+.4f', None),
                ('dac2', 18, 'DAC bit 2 error', -0.03, 0.03, '%+.4f', None),
-               ('dac3', 19, 'DAC bit 3 error', -0.03, 0.03, '%+.4f', None))
+               ('dac3', 19, 'DAC bit 3 error', -0.03, 0.03, '%+.4f', None),
+               # the integrators' rate one way against the other, in % (vecx.c rate_by: one way 1 + d / 200, the other 1 - d / 200)
+               ('xrate', 29, 'X rate right vs left (right faster than left: +)', -3.0, 3.0, '%+.1f %%', 'VT_XRATE'),
+               ('yrate', 28, 'Y rate up vs down (up faster than down: +)', -3.0, 3.0, '%+.1f %%', 'VT_YRATE'))
 UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3)           # (the owner's, measured; lag 6: testcart/gap_test)
 UNIT_DAC_OWNER = dict(dac0=0.0170, dac1=0.0069, dac2=-0.0089, dac3=-0.0014)       # (the owner's: half the slant pattern)
+# (the owner's, the Full Grid Test 50 fps photo 2026-11-23: Y up 1.16 % faster than down - beta 0.0058 = 1.16 / 200, from
+#  the column start dots' slant and the two-dot gaps; X not measured)
+UNIT_RATE_OWNER = dict(xrate=0.0, yrate=1.16)
+UNIT_ZERO_CENTRED = ('dac0', 'dac1', 'dac2', 'dac3', 'xrate', 'yrate')   # (random / cranky: about none - the owner's are one unit's)
 # the picture's pots and the yoke (the frontend's: they act after the integrators, see unit_picture): R401 / R408 the
 # deflection amplifiers' input dividers (2K pot over 1.5K: 0.43..1 of the signal; 100 % = the pot's middle, 60..140 %),
 # R525 the high voltage (5.8 kV at the factory), R526 the flyback's tuning (0 = minimum ringing), the ring magnets
@@ -1576,9 +1583,10 @@ UNIT_PRESETS = {
     #  but long moves then land off on other consoles - a player's homebrew (DW2000) put its figures into the platform.
     #  The owner, 2026-11-04: typical console as the default; he trims his own Vectrex to match)
     'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
-                   **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
+                   **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_RATE_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
+                   xrate=0.0, yrate=0.0,
                    **UNIT_FACTORY_PICTURE)}       # (Random and Cranky: made new each time, random_unit / UNIT_SPREAD)
 def unit_picture(unit):
     """the picture's pots and the yoke -> (the lines' transform or None, the light's share, the spot's width share).
@@ -1669,6 +1677,8 @@ UNIT_SPREAD = dict(
     dac1=    (('s', 0.0, 0.008),       ('s', 0.008, 0.015)),
     dac2=    (('s', 0.0, 0.008),       ('s', 0.008, 0.012)),
     dac3=    (('s', 0.0, 0.004),       ('s', 0.004, 0.006)),
+    xrate=   (('s', 0.0, 1.2),         ('s', 1.2, 2.5)),     # (in %, about 0: the owner's Y 1.16 is one unit's)
+    yrate=   (('s', 0.0, 1.2),         ('s', 1.2, 2.5)),
     sizex=   (('s', 0.0, 2.5),         ('s', 2.5, 6.0)),
     sizey=   (('s', 0.0, 2.5),         ('s', 2.5, 6.0)),
     hv=      (('s', 0.0, 0.12),        ('s', 0.12, 0.35)),
@@ -1696,8 +1706,8 @@ def random_unit(cranky=False):
         if kind == 'r':
             v = random.uniform(a, b)
         else:
-            c = 0.0 if k.startswith('dac') else own[k]                      # (the DAC's bit errors: about none - the
-            v = c + random.choice((-1.0, 1.0)) * random.uniform(a, b)       #  owner's are one unit's)
+            c = 0.0 if k in UNIT_ZERO_CENTRED else own[k]                   # (the DAC's bit errors, the rates: about none -
+            v = c + random.choice((-1.0, 1.0)) * random.uniform(a, b)       #  the owner's are one unit's)
         lo, hi = UNIT_RANGE.get(k, (v, v))
         u[k] = round(min(hi, max(lo, v)), 4)
     u['dacofs'] = 0.0   # (R302 stays at the factory setting: see above)
@@ -2089,7 +2099,8 @@ class Core:
         self.set_analog(0, cycles)
     def set_analog(self, i, v):
         """a Vectrex unit setting (vt_set_analog: 0 stop delay, 1 zero hold, 2 zero calibration, 3 / 4 drift
-        X / Y, 5 Y hold settling, 6 beam off delay, 7 zero offset): to the core with the next frames, one a frame"""
+        X / Y, 5 Y hold settling, 6 beam off delay, 7 zero offset, 28 / 29 rate up / down, right / left): to the core
+        with the next frames, one a frame"""
         q = getattr(self, 'analog_q', None)
         if q is None:
             q = self.analog_q = {}
@@ -2593,6 +2604,11 @@ class App:
         if self.unit_fix < 2:                                   # (once (2026-11-23): Beam switch-off delay's fraction acts in the
             self.unit['beamoff'] = float(int(self.unit.get('beamoff', 0.0)))   #  beam engine again - a saved value keeps the
             self.unit_fix = 2                                   #  picture it gave: its whole cycles)
+        if self.unit_fix < 3:                                   # (once (2026-11-23): the integrators' rates up / down, right / left
+            for k in UNIT_RATE_OWNER:                           #  are new - a unit saved without them: 0 (even), the owner's
+                if k not in u:                                  #  Vectrex its measured values)
+                    self.unit[k] = UNIT_PRESETS['owner'][k] if self.unit_name == 'owner' else 0.0
+            self.unit_fix = 3
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', True) if self.ren else False
@@ -5391,7 +5407,7 @@ class App:
                                           initialdir=ROOT, filetypes=[('Vectrex unit', '*.vxunit'), ('All files', '*.*')])
         if fn:
             try:
-                json.dump(dict(vectrex_unit=2, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
+                json.dump(dict(vectrex_unit=3, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
                 self.show_look('Vectrex unit exported: ' + os.path.basename(fn))
             except OSError as e:
                 self.show_look('could not export: %s' % e)
@@ -5405,6 +5421,8 @@ class App:
             d = json.load(open(fn))
             u = {k: float(d[k]) for k in UNIT_PRESETS['owner'] if k in d}
             if 'beamoff' in u and int(d.get('vectrex_unit', 1)) < 2: u['beamoff'] = float(int(u['beamoff']))   # (see unit_fix 2)
+            for k in UNIT_RATE_OWNER:                           # (a file from before the rates: even - see unit_fix 3)
+                u.setdefault(k, 0.0)
         except (OSError, ValueError, TypeError) as e:
             self.show_look('not a Vectrex unit file: %s' % e); return
         for k, v in u.items():
@@ -8946,7 +8964,7 @@ class App:
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name
-            d['unit_fix'] = getattr(self, 'unit_fix', 2)
+            d['unit_fix'] = getattr(self, 'unit_fix', 3)
         d['ultra_rate'] = getattr(self, 'ultra_rate', None)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['run_ahead'] = getattr(self, 'run_ahead', False)

@@ -614,6 +614,8 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_unit_dac1", "circuit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_dac2", "circuit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_dac3", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_xrate", "circuit", NULL, NULL, "@" },
+	{ "vectrex_emu_unit_yrate", "circuit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_gap", "circuit", NULL, NULL, "@" },
 	{ NULL, NULL, NULL, NULL, NULL } };
 static const char *const OPT_CATS[][3] = {   /* (RetroArch's own kind of menus, the most used first - the owner, 2026-11-15) */
@@ -625,7 +627,7 @@ static const char *const OPT_CATS[][3] = {   /* (RetroArch's own kind of menus, 
 	{ "case", "Case & Room light", "The plastic round the glass, the room's light, the ceiling light" },
 	{ "system", "System", "The cartridge hardware, port 2, USB keyboard and mouse, UVMC2 and PiTrex" },
 	{ "unit", "Vectrex Unit", "Which Vectrex, the intro; the knob, the pots and the yoke; the picture's shape" },
-	{ "circuit", "Vectrex Circuit", "The service trim pots; its parts: zero reference, beam, zeroing, lag, DAC" } };
+	{ "circuit", "Vectrex Circuit", "The service trim pots; its parts: zero reference, beam, zeroing, lag, DAC, rates" } };
 #define NOPT (sizeof OPTS / sizeof OPTS[0])
 static struct retro_variable vars[NOPT];
 /* (libretro.h's core options v2 - not in this core's older header: the same layout) */

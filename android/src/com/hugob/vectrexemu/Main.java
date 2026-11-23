@@ -431,7 +431,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	{
 		if (stack.isEmpty ()) return; View v = stack.remove (stack.size () - 1); screens.removeView (v);
 		if (v instanceof Screens.Closing) ((Screens.Closing) v).closed ();
-		if (stack.isEmpty ()) { hold (false); immersive (); } else stack.get (stack.size () - 1).requestFocus ();
+		if (stack.isEmpty ()) { hold (false); immersive (); if (started) Input.sendAll (); } else stack.get (stack.size () - 1).requestFocus ();   /* (buttons 2 + 3 held at a game's start: a UVMC2 calibration) */
 	}
 	void popAll () { while (!stack.isEmpty ()) pop (); }
 	View top () { return stack.isEmpty () ? null : stack.get (stack.size () - 1); }

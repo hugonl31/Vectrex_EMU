@@ -372,10 +372,12 @@ static int br_input (const unsigned char *m)
 	if (sel && !sel_was) br_show (!br_open);
 	sel_was = sel;
 	if (!br_open) {
-		if (br_hold) {                                  /* (closed by a button: the game gets the buttons and the stick only once let go) */
-			const int any = (m[2] & 15) || abs ((int) m[0] - 128) >= 64 || abs ((int) m[1] - 128) >= 64;
+		if (br_hold) {                                  /* (closed by a button: the game gets buttons 1 and 4 and the stick only once let go;
+			                                                    2 and 3 at once - held at the load they count as held at power on: a UVMC2
+			                                                    game's calibration, as the desktop's hold_until_released) */
+			const int any = (m[2] & 9) || abs ((int) m[0] - 128) >= 64 || abs ((int) m[1] - 128) >= 64;
 			if (!any || vt_wall () - br_hold_t > 1.5) br_hold = 0;
-			return br_hold;
+			return br_hold ? 2 : 0;
 		}
 		return 0;
 	}
@@ -389,12 +391,12 @@ static int br_input (const unsigned char *m)
 	if (d) { int step = 0;
 		if (d != br_dprev) { br_dprev = d; br_t_next = now + 0.40; step = 1; }
 		else if (now >= br_t_next) { br_t_next = now + (dy ? 0.08 : 0.25); step = 1; }
-		if (step && lib_on) lib_input (0, dx, dy, 1);
+		if (step && lib_on) lib_input (b, 0, dx, dy, 1);
 		else if (step) br_move (dy ? dy : dx * BR_NVIS); }
 	else br_dprev = 0;
 	const unsigned nw = b & ~br_prevb; br_prevb = b;
 	if (lib_on) {                                       /* (the library: its own buttons and touch - library.c) */
-		lib_input (nw, 0, 0, 0); lib_tick ();
+		lib_input (b, nw, 0, 0, 0); lib_tick ();
 		const int tp = br_open && input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0; static float lx, ly;
 		if (tp) { double fx = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X) + 32768) / 65536.0, fy = (input_cb (0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y) + 32768) / 65536.0;
 			const double ax_ = fx, ay_ = fy;

@@ -1,7 +1,7 @@
 /* Screens.java - the screens over the game, as the iOS app's (ios/App/VXUI.m): the game menu (save states, the games,
  * RESET, the overlay, the room light, all settings, online, the Vectrex's hardware), the settings (the app's own and every
  * core setting in its group, in the iOS app's order, each value with its help), a setting's values, the controller's buttons. Plain views,
- * the PC app's colours; every row reachable with a controller (the highlight), button 4 picks, button 3 goes back.
+ * the PC app's colours; every row reachable with a controller (the highlight), button 4 picks, button 1 goes back.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 package com.hugob.vectrexemu;
 
@@ -268,7 +268,7 @@ final class Screens {
 		String[][] parts = {
 			{ "Vectrex_EMU", "Version " + m.version () + ". The Vectrex as it looks on a real tube: the beam, the phosphor's afterglow, the glow, the overlays, the glass and the case." },
 			{ "Playing", "MENU (top bar) opens the game menu: save and load, games, RESET, overlay, room light, all settings. With a controller: Select + X; with a keyboard: M.\nThe knob below the picture: the volume; hold it to switch the Vectrex off and on.\nTouch a setting and hold: back to its default." },
-			{ "Controls", "The touch controls show while no controller or keyboard is connected (Settings > Controls: always, never, their size and side). Controller buttons 1-4 are chosen there too." },
+			{ "Controls", "The touch controls show while no controller or keyboard is connected (Settings > Controls: always, never, their size and side). Controller buttons 1-4 are chosen there too. In a menu or the games: button 4 picks, button 1 goes back.\nA UVMC2 game's calibration: hold buttons 2 + 3 while button 4 starts it, or touch and hold the game: Calibration (2 + 3 held)." },
 			{ "Online", "Game menu > Online: host your game in the game room (anyone can join), with a code (only who you tell), or on this Wi-Fi (no internet needed); join with a code or from the lists. Phones and PCs play together - both need the same game and the same version of Vectrex_EMU. A menu open pauses both players." },
 			{ "Your own games", "Copy ROMs (.bin .vec .gam .um2) with a file manager to " + new File (m.ext (), "roms") + "." },
 			{ "Credits", "Vectrex_EMU by Hugo Bokhorst, started from vecx, the open-source Vectrex emulator. Overlays: the libretro overlay-borders collection and their creators (the full list: overlays/CREDITS.md in the app's files). Last Human and the UVMC2 games with their makers' permission.\nVectrex is a trademark of its owners; this app is not affiliated with them." },

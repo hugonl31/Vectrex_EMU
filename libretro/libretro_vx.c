@@ -3076,7 +3076,11 @@ static void retro_run_one (void)
 	ls_pad[0] = m[0]; ls_pad[1] = m[1]; ls_pad[2] = m[2];   /* (online in lockstep: this side's controller - netls.c) */
 	netls_solo_tick ();
 #ifndef VX_EMUVR
-	if (br_input (m)) { m[0] = m[1] = 128; m[2] = 0; }   /* (the browser reads player 1 as the game does: turned in tate) */   /* (the ROM browser open, or just closed by a button: the game gets none) */
+	{ const int bi = br_input (m);              /* (the browser reads player 1 as the game does: turned in tate) */
+	  if (bi) { m[0] = m[1] = 128; m[2] = bi == 2 ? m[2] & 6 : 0; }   /* (the ROM browser open: the game gets none; just closed by a button:
+	                                              buttons 2 and 3 only, until 1, 4 and the stick are let go) */
+	  if (lib_cal_until > 0) { if (vt_wall () < lib_cal_until) m[2] |= 6; else lib_cal_until = 0; } }   /* (the library's Calibration
+	                                              (2 + 3 held): held 30 s - library.c) */
 	if (px_redo) { const int r = px_redo; px_redo = 0;   /* (the PiTrex's download: its progress; done - the list again, it chosen) */
 		if (r & 1 && br_open) { char px[1200]; br_px_boot (px, sizeof px); if (lib_on) lib_scan (px); else br_scan (br_dir, px); }
 		br_dirty = 1; }

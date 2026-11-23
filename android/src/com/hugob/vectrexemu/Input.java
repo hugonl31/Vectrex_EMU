@@ -1,7 +1,8 @@
 /* Input.java - controllers and keyboards, as the iOS app: the Vectrex's buttons 1-4 (the core's RetroPad Y X B A) on a
  * modern pad's diamond as the Vectrex controller's row - 1 left (X), 2 top (Y), 3 bottom (A), 4 right (B) - or the
  * player's own (Settings > Controls); the first controller port 1, the second port 2. Over a screen: the stick / pad
- * moves the highlight, button 4 picks, button 3 goes back (the owner: one button for back everywhere), L / R a page.
+ * moves the highlight, button 4 picks, button 1 goes back (the owner: one button for back everywhere, button 1 on every
+ * platform - 2 and 3 stay free: held while button 4 starts a UVMC2 game they reach it, its calibration), L / R a page.
  * A keyboard: the core's keys (Keyboard as on the PC), M the game menu.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 package com.hugob.vectrexemu;
@@ -114,11 +115,15 @@ final class Input {
 		int ch = down ? e.getUnicodeChar () : 0; int mods = (e.isShiftPressed () ? 1 : 0) | (e.isCtrlPressed () ? 2 : 0) | (e.isAltPressed () ? 4 : 0);
 		VX.key (k, down, ch, mods); return true;
 	}
-	/* over a screen: the pad as the arrows, button 4 picks, button 3 back, L / R a page */
+	/* over a screen: the pad as the arrows, button 4 picks, button 1 back, L / R a page. The Vectrex's buttons kept as the
+	 * game would have them: 2 and 3 pressed here are held when the last screen closes (sendAll) - 2 + 3 held while button 4
+	 * starts a UVMC2 game open its calibration, as on the cartridge; 1 and 4 (back, pick) reach the game only pressed anew */
 	static boolean screenKey (Main m, KeyEvent e, int code, boolean down)
 	{
 		int b = pbit (code); View root = m.top ();
-		if (b == B) { if (down && e.getRepeatCount () == 0) { Main.log ("pad: back"); Screens.back (m); } return true; }
+		if (b == Y || b == X || b == B || b == A) { int p = port (e.getDeviceId ());
+			if (p >= 0) { int t = turnButton (p, code, b); if (!down) btn[p] &= ~(1 << t); else if (t == X || t == B) btn[p] |= 1 << t; } }
+		if (b == Y) { if (down && e.getRepeatCount () == 0) { Main.log ("pad: back"); Screens.back (m); } return true; }
 		if (b == A && root instanceof Library) { root.dispatchKeyEvent (new KeyEvent (e.getDownTime (), e.getEventTime (), e.getAction (), KeyEvent.KEYCODE_ENTER, e.getRepeatCount ())); return true; }
 		if (b == A) { if (root != null) { View f = root.findFocus (); KeyEvent k = new KeyEvent (e.getDownTime (), e.getEventTime (), e.getAction (), KeyEvent.KEYCODE_DPAD_CENTER, e.getRepeatCount ());
 			if (f != null) f.dispatchKeyEvent (k); else root.dispatchKeyEvent (k); } return true; }
@@ -128,6 +133,7 @@ final class Input {
 		if (b == UP || b == DOWN || b == LEFT || b == RIGHT) return false;   /* (the screen's own focus moving) */
 		return b >= 0;                                                      /* (the rest: nothing over a screen) */
 	}
+	static void sendAll () { for (int p = 0; p < 2; p++) send (p); }   /* (the last screen closed: the buttons as held now) */
 	static boolean motion (Main m, MotionEvent e)
 	{
 		if (!isPad (e.getDevice ()) || (e.getSource () & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK || e.getAction () != MotionEvent.ACTION_MOVE) return false;

@@ -329,10 +329,13 @@ them in one click: the original GCE games, free homebrew games that have an over
 Malban's Telengard, and Vectorblade and the Neon Hawk demo as the MiSTer project shares them with their authors'
 permission), the speech ROM and the PiTrex's SD card files - unpacked into `roms`, `system` and the PiTrex folder
 and named as the ROM browser lists them; files you already have are kept. Each has a chain of sources tried in
-turn: the games and the speech ROM, which never change, from the project's own copy first, then archive.org,
+turn: the games and the speech ROM, which never change, from the project's own copy first (Google Drive, and the
+same files on archive.org), then archive.org,
 GitHub, Joe Zbiciak's page and the Wayback Machine; the PiTrex from the newest download on Malban's page first
 (the project's copy of the last version only when you ask for it). Should all of them fail, the window says
-where to get it, and **Add file...** takes your own download and names it the same way. None of it comes with
+where to get it, and **Add file...** takes your own download and names it the same way. Every download is checked
+before it is unpacked (the project's copies by their hash, the game sets by the games' fingerprints); one that is
+not what it should be is left and the next source tried. All the links are checked weekly on GitHub. None of it comes with
 the emulator. *The maintainer of Vectrex_EMU does not take responsibility for the sharing of these files: you
 download them yourself and take that responsibility.* The disclaimer is shown once, with every file and its
 sources; accepted, the downloads go without asking.

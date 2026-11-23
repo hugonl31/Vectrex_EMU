@@ -132,7 +132,7 @@ cols = [x for x in range(w) if sum(light(x, y) for y in range(rows[0], rows[-1],
 x0, y0, x1, y1 = cols[0], rows[0], cols[-1], rows[-1]
 lw = x1 - x0 + 1; lh = int(round(lw * lab.height / lab.width))   # (the label at its own aspect, top-aligned)
 im = sh.copy(); im.paste(lab.convert('RGBA').resize((lw, lh), Image.LANCZOS), (x0, y0))
-shrink(im).save(os.path.join(out, 'pitrex_cart.png'), optimize=True)
+shrink(im, 840).save(os.path.join(out, 'pitrex_cart.png'), optimize=True)   # (840: the tiles' width, as the generated ones)
 
 # ---- the box: the owner's box art (icons/pitrex_box_src.png -> icons/pitrex_box.png, 390 wide: made once by hand, kept)
 print('ok')

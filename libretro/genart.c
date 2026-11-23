@@ -564,6 +564,10 @@ static unsigned char *ga_cart (const ga_font *g, const char *title, int width, i
 	ga_pill (g, title, o, *w, *h, GA_CART_X0 * k, GA_CART_Y0 * k, GA_CART_S * k, GA_LBL_W / 2, GA_PILL_CY_CART);
 	return o;
 }
+/* (the box's pill: as a real box's title - the widest 86 % of the width (2860 x 0.24 = 686 of 800), a line 121 px high,
+ * centred at y 197 between the furniture and the picture, as the title on a real GCE box front (photo: 58..760 x 140..255)) */
+#define GA_BOX_PS 0.24f
+#define GA_BOX_PY 197.0f
 static unsigned char *ga_box (const ga_font *g, const char *title, int width, int *w, int *h)
 {
 	const float k = width / 800.0f; const int BW = width, BH = (int) (1024 * k + 0.5f);
@@ -579,7 +583,7 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	const float ks = BW / (float) GA_W;                 /* (the furniture and the foot: made for 840) */
 	{ int fw, fh, gr; unsigned char *f = ga_mask (GA_FURN_PNG, (int) sizeof GA_FURN_PNG, ks, &fw, &fh, &gr);   /* (the furniture on top) */
 	  if (f) { ga_stamp (o, BW, BH, f, fw, fh, gr, (int) floorf (GA_FURN_X * k + 0.5f), (int) floorf (GA_FURN_Y * k + 0.5f), NULL); free (f); } }
-	ga_pill (g, title, o, BW, BH, BW / 2.0f - GA_LBL_W / 2 * 0.205f * k, 205 * k - GA_PILL_CY * 0.205f * k, 0.205f * k, GA_LBL_W / 2, GA_PILL_CY);
+	ga_pill (g, title, o, BW, BH, BW / 2.0f - GA_LBL_W / 2 * GA_BOX_PS * k, GA_BOX_PY * k - GA_PILL_CY * GA_BOX_PS * k, GA_BOX_PS * k, GA_LBL_W / 2, GA_PILL_CY);
 	static const unsigned char FRAMES[6][3] = { { 226, 38, 34 }, { 30, 100, 200 }, { 244, 128, 22 }, { 250, 222, 34 }, { 58, 168, 60 }, { 128, 62, 156 } },
 	                           ACCENTS[6][3] = { { 90, 205, 255 }, { 255, 80, 200 }, { 255, 150, 40 }, { 255, 232, 90 }, { 255, 72, 60 }, { 100, 140, 255 } },
 	                           CREAM[3] = { 240, 232, 214 }, INK[3] = { 10, 10, 10 };

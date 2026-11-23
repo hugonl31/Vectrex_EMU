@@ -4,6 +4,8 @@
 #define GA_CART_X0 40.4944f
 #define GA_CART_Y0 350.9518f
 #define GA_CART_S 0.243273f
+#define GA_CART_LY0 350.5828f
+#define GA_CART_LH 412.8164f
 #define GA_FONT_CAP 688
 #define GA_FONT_UPM 1000
 static const unsigned char GA_CART_PNG[752038] = {

@@ -4,6 +4,13 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.4
+- Drawn boxes: a portrait picture, 12 vector scenes, a colour per game
+- Your own labels (thumbs/labels) go on the cartridge by themselves
+- The games list loads faster: pictures made at the size shown
+- iPhone / iPad: the first download much faster while the app is open
+- README: how to make your own labels and boxes (sizes, templates)
+
 ## v1.8.3
 - Games list: every game gets a cartridge and a box, drawn with its title
 - Your own pictures (thumbs folder) still come first

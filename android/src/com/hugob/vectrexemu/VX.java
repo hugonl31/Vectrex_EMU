@@ -19,7 +19,10 @@ final class VX {
 	static native void setTrailMul (float k);                   /* (the trail for the look and the screen's brightness) */
 	static native void testCart (String path);                  /* (the Test Cart's file made) */
 	static native void pitrexTiles (String thumbs);            /* (the PiTrex's cartridge and box made there) */
-	static native int[] genart (int look, String name);        /* (a cartridge (0) / box (1) drawn for a game with none: { w, h, ARGB... } - libretro/genart.c) */
+	static native int[] genart (int look, String name, int width);   /* (a cartridge (0) / box (1) drawn for a game with none, width px wide: { w, h, ARGB... } - libretro/genart.c) */
+	static native int[] genlabel (String path, int width);     /* (the cartridge with the player's own label on it: the same) */
+	static native int gensize (int px);                        /* (the width to make a tile shown px wide at: 256 / 384 / 512 / 640 / 840) */
+	static native int[] genfit (String path, int maxw);        /* (a picture of the player's own, at most maxw wide: the same) */
 	static native int palette ();                               /* (the core's colour scheme now: 0 blue, 1 green) */
 	static native void setBright (int on);                      /* (the look: 0 Vectrex, 1 Bright - the lines lifted and wider) */
 	static native void setHdrLook (int look);                   /* (0 bright - as SDR, 1 the whole picture, 2 the Vectrex: iOS alike) */

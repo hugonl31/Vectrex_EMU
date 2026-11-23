@@ -2,8 +2,9 @@
 
 The owner, 2026-11-22: the PC's loader like the phones' - the tiles' look (cartridges, boxes, overlays), how many a row or
 titles only, a search, the categories; it fills the picture's place above the control deck. The pictures: the apps' own
-folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png (nothing is downloaded); a game with no cartridge or
-box there gets one drawn (genart.py: libretro/genart.c, the same as every platform's), an overlay its name's tile.
+folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png (nothing is downloaded); a cartridge from the
+player's own label, thumbs/labels/<game>.png, when there is no cartridge picture; a game with no cartridge or box gets one
+drawn (genart.py: libretro/genart.c, the same as every platform's), an overlay its name's tile.
 
 The app holds one Library; while it is open App.browser is its dict (lib=True), so everything that asks "is the loader
 open" works as before. The renderer draws state() (vecrender._library); the pictures are read by a thread (the PNG reader
@@ -55,7 +56,7 @@ class Library:
         out.sort(key=lambda g: (not g.get('boot'), g['name'].lower()))   # (the PiTrex itself: first - the owner, 2026-11-22)
         self.games = out
         th = os.path.join(V.ROOT, 'system', 'vectrex_emu', 'thumbs'); self.files = {}
-        for _, lk in LOOKS:
+        for lk in [x[1] for x in LOOKS] + ['labels']:
             d = os.path.join(th, lk); m = {}
             try:
                 for f in os.listdir(d):
@@ -84,6 +85,13 @@ class Library:
         PiTrex itself: its own picture in every look, the program's (pitrex_art.py) unless the folder has one"""
         m = self.files.get(self.look) or {}
         p = m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+        if not p and self.look == 'carts':                          # (no cartridge picture: the player's own label on our cartridge)
+            m = self.files.get('labels') or {}
+            q = m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+            if q:
+                import genart
+                if genart.lib():
+                    p = 'lab:' + q
         if not p and boot:
             import pitrex_art
             p = pitrex_art.path(self.V.ROOT, self.look)
@@ -94,21 +102,28 @@ class Library:
         return p
 
     def _reader(self):
-        import vart
+        """the pictures asked for: (what, width) - each made once at the width its tile is shown at (genart.size: a few
+        steps, so another number a row finds most made already), never kept at its full size"""
+        import vart, genart
         while True:
-            p = self.want.get()
+            key = self.want.get(); p, tw = key
             try:
                 if p.startswith('gen:'):                            # (a cartridge / box drawn for it: genart.c)
-                    import genart
-                    _, look, name = p.split(':', 2); r = genart.make(look, name)
+                    _, look, name = p.split(':', 2); r = genart.make(look, name, tw)
                     if not r:
                         raise ValueError('not drawn')
                     w, h, px = r
-                else:
-                    w, h, px = vart.load_png(p)
-                self.done[p] = (w, h, px)
+                elif p.startswith('lab:'):                          # (the player's own label on our cartridge: genart.c)
+                    r = genart.label(p[4:], tw)
+                    if not r:
+                        raise ValueError('not a label')
+                    w, h, px = r
+                else:                                               # (a picture: made tile-sized once)
+                    r = genart.fit(p, tw)
+                    w, h, px = r if r else vart.load_png(p)
+                self.done[key] = (w, h, px)
             except Exception:   # noqa: not a picture
-                self.missing.add(p)
+                self.missing.add(key)
 
     # ---------------------------------------------------------------- open, close
     def open(self, select=None):
@@ -203,6 +218,9 @@ class Library:
             r, col = divmod(i, c)
             x = gx0 + col * (tw + gap); y = gy0 + r * rowh - self.scroll
             p = self.tile(games[i]['name'], games[i].get('boot')) if self.cols else None
+            if p:
+                import genart
+                p = (p, genart.size(int(math.ceil(tw))))                # (the picture at the width it is shown at)
             if p and p not in self.asked and p not in self.missing:
                 self.asked.add(p); self.want.put(p)
             tiles.append(dict(x=x, y=y, w=tw, h=th, name=games[i]['name'], img=p if p and p not in self.missing else None,

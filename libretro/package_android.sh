@@ -36,6 +36,8 @@ SHARE=${SHARE-"/mnt/g/Google Drive/#Sharing/Vectrex/Android_Core"}
 if [ -n "$SHARE" ] && [ -d "$SHARE" ]; then
 	rm -rf "$SHARE/system" "$SHARE/ES-DE"
 	cp -r dist/pkg/. "$SHARE/"
+	# the owner's own library pictures (the desktop install's thumbs - private, never in the zip) back in their place
+	[ -d ../build/Vectrex_EMU/system/vectrex_emu/thumbs ] && cp -r ../build/Vectrex_EMU/system/vectrex_emu/thumbs "$SHARE/system/vectrex_emu/"
 	date '+built %Y-%m-%d %H:%M' > "$SHARE/BUILD.txt"
 	git log -1 --format='commit %h %s' >> "$SHARE/BUILD.txt" 2>/dev/null || true
 	echo "copied to $SHARE"

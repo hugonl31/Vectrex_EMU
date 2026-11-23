@@ -3,6 +3,19 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.4
+
+* Drawn boxes: the picture now portrait, in the place and shape of the real boxes' pictures, one of 12 vector scenes
+  (grid and mountains, ringed planet, asteroids, city, tunnel, wireframe object, sunset, space station, hills,
+  corridor, comet, moonscape) with its own frame and accent colour per game - the title only in the pill.
+* Your own labels: put just the label in system/vectrex_emu/thumbs/labels (PNG, the game's name; 1000 x 545, 1.835:1)
+  and the emulator puts it on the cartridge itself, on every platform. A picture of the whole cartridge in carts still
+  comes first. The README's "Your own pictures for the games list" has the sizes and templates for labels and boxes.
+* The games list's pictures are made at the size they are shown (256 to 840 px): faster to open, much less memory -
+  on the PC 360 -> 43 ms and 98 -> 9 MB for a full list at 6 a row.
+* iPhone / iPad: the content download runs over a normal connection at full speed while the app is open, and goes on
+  in the background (from where it was) when you leave the app.
+
 ## v1.8.3
 
 * Games list (PC, iPhone / iPad, Android, RetroArch): a game without a picture of its own gets a cartridge with its

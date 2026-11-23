@@ -203,20 +203,32 @@ final class Library extends LinearLayout implements Screens.Closing {
 		for (float[] l : L) c.drawLine (l[0] * k, l[1] * k, l[2] * k, l[3] * k, p);
 		android.graphics.drawable.BitmapDrawable d = new android.graphics.drawable.BitmapDrawable (getResources (), b); d.setBounds (0, 0, w, h); return d;
 	}
-	Bitmap tile (String n)
+	/* (n's picture in the look chosen, made at about px pixels wide - the tile's width on the screen, in a few steps, so
+	 *  another number a row or a turn of the screen finds most made already; never kept at its full size) */
+	Bitmap tile (String n, int px)
 	{
-		String key = look () + "/" + n; Bitmap b = cache.get (key); if (b != null) return b;
+		final int tw = VX.gensize (px);
+		String key = look () + "/" + tw + "/" + n; Bitmap b = cache.get (key); if (b != null) return b;
 		File th = new File (m.sysDir, "vectrex_emu/thumbs"); String base = n.split (" \\(")[0];
 		String[] dirs = look ().equals ("boxes") ? new String[] { "boxes" } : look ().equals ("overlays") ? new String[] { "overlays", "" } : new String[] { "carts" };
 		for (String d : dirs) for (String nm : new String[] { n, base }) { File f = new File (new File (th, d), nm + ".png");
-			if (f.exists ()) { BitmapFactory.Options o = new BitmapFactory.Options (); o.inSampleSize = perRow () <= 2 ? 1 : 2; b = BitmapFactory.decodeFile (f.getAbsolutePath (), o); if (b != null) { cache.put (key, b); return b; } } }
+			if (f.exists ()) { try { b = bitmapOf (VX.genfit (f.getAbsolutePath (), tw), tw); } catch (Throwable t) { Main.log ("library: genfit " + t); }
+				if (b == null) { BitmapFactory.Options o = new BitmapFactory.Options (); o.inSampleSize = tw <= 420 ? 2 : 1; b = BitmapFactory.decodeFile (f.getAbsolutePath (), o); }
+				if (b != null) { cache.put (key, b); return b; } } }
+		if (look ().equals ("carts")) for (String nm : new String[] { n, base }) {   /* (no cartridge picture: the player's own label on our cartridge - genart.c) */
+			File f = new File (new File (th, "labels"), nm + ".png");
+			if (f.exists ()) try { b = bitmapOf (VX.genlabel (f.getAbsolutePath (), tw), tw); if (b != null) { cache.put (key, b); return b; } } catch (Throwable t) { Main.log ("library: genlabel " + t); } }
 		if (!look ().equals ("overlays")) {               /* (none of its own: a cartridge / box drawn by the core's genart.c - as the iPhone, the PC, RetroArch) */
-			try { int[] g = VX.genart (look ().equals ("boxes") ? 1 : 0, n);
-				if (g != null && g.length > 2 && g[0] > 0 && g[1] > 0) {
-					Bitmap full = Bitmap.createBitmap (g, 2, g[0], g[0], g[1], Bitmap.Config.ARGB_8888);
-					b = perRow () <= 2 ? full : Bitmap.createScaledBitmap (full, g[0] / 2, g[1] / 2, true); if (b != full) full.recycle ();
-					cache.put (key, b); return b; } } catch (Throwable t) { Main.log ("library: genart " + t); } }
+			try { b = bitmapOf (VX.genart (look ().equals ("boxes") ? 1 : 0, n, tw), tw); if (b != null) { cache.put (key, b); return b; } } catch (Throwable t) { Main.log ("library: genart " + t); } }
 		return null;
+	}
+	/* (genart.c's { w, h, ARGB... } as a Bitmap at most tw wide) */
+	static Bitmap bitmapOf (int[] g, int tw)
+	{
+		if (g == null || g.length < 3 || g[0] <= 0 || g[1] <= 0) return null;
+		Bitmap full = Bitmap.createBitmap (g, 2, g[0], g[0], g[1], Bitmap.Config.ARGB_8888);
+		if (g[0] <= tw) return full;
+		Bitmap b = Bitmap.createScaledBitmap (full, tw, Math.max (1, Math.round (g[1] * (float) tw / g[0])), true); if (b != full) full.recycle (); return b;
 	}
 	void play (int pos)
 	{
@@ -259,7 +271,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 			box = c.findViewWithTag ("b"); img = c.findViewWithTag ("i"); ph = c.findViewWithTag ("p");
 			int cols = Math.max (1, perRow ()); int w = (par.getWidth () - par.getPaddingLeft () - par.getPaddingRight () - (int) m.dp (12) * (cols - 1)) / cols;
 			LayoutParams bl = (LayoutParams) box.getLayoutParams (); int hh = (int) (Math.max (w, 50) * aspect ()); if (bl.height != hh) { bl.height = hh; box.setLayoutParams (bl); }
-			Bitmap b = tile (g.name); img.setImageBitmap (b); ph.setText (b == null ? g.name.toUpperCase (Locale.ROOT) : "");
+			Bitmap b = tile (g.name, Math.max (w, 50)); img.setImageBitmap (b); ph.setText (b == null ? g.name.toUpperCase (Locale.ROOT) : "");
 			img.setScaleType (look ().equals ("overlays") ? ImageView.ScaleType.FIT_XY : ImageView.ScaleType.FIT_CENTER);
 			box.setBackground (b == null ? Main.round (Main.PANEL, on ? Main.HI2 : now ? Main.HI : Main.EDGE, m.dp (8)) : on || now ? Main.round (0, on ? Main.HI2 : Main.HI, m.dp (8)) : null);
 			box.setForeground (on ? Screens.ring (m, m.dp (8)) : null);

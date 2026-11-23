@@ -27,7 +27,8 @@ Telegram (optional): each new report to the author's chat - a summary and the zi
 in /etc/vxreport.env (root only, never in git): TELEGRAM_TOKEN=... and TELEGRAM_CHAT=..., and in the unit
 EnvironmentFile=/etc/vxreport.env
 """
-import os, json, time, secrets, threading, zipfile, io, urllib.request
+import os, re, json, time, secrets, threading, zipfile, io, urllib.request
+from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TG_TOKEN, TG_CHAT = os.environ.get('TELEGRAM_TOKEN', ''), os.environ.get('TELEGRAM_CHAT', '')
@@ -130,16 +131,47 @@ class H(BaseHTTPRequestHandler):
             p = os.path.join(DIR, 'iosextra', IOSX[self.path])
             if not os.path.isfile(p):
                 return self.reply(404, 'none')
-            self.send_response(200); self.send_header('Content-Type', 'application/octet-stream')
-            self.send_header('Content-Length', str(os.path.getsize(p))); self.end_headers()
-            with open(p, 'rb') as f:               # (streamed: the pack is ~130 MB)
-                while True:
-                    b = f.read(1 << 20)
+            return self.send_file(p)
+        self.reply(200, 'Vectrex_EMU debug reports: use Help > Debug report in the emulator.\n')
+
+    def send_file(self, p):
+        """a file, streamed (the pack is ~130 MB), with byte ranges: a download moved from the iOS app's normal
+        connection to iOS's background transfer goes on where it was (Range: bytes=N-, If-Range with the ETag or
+        Last-Modified below - a changed file: all of it again, 200)"""
+        st = os.stat(p); size = st.st_size
+        etag = '"%x-%x"' % (int(st.st_mtime), size); lastmod = formatdate(st.st_mtime, usegmt=True)
+        start, end, code = 0, size - 1, 200
+        rng, ifr = self.headers.get('Range', ''), self.headers.get('If-Range', '')
+        if rng and (not ifr or ifr in (etag, lastmod)):
+            m = re.fullmatch(r'bytes=(\d*)-(\d*)', rng.strip())   # (one range only; several: all of it, 200)
+            if m and (m.group(1) or m.group(2)):
+                if m.group(1):
+                    start = int(m.group(1)); end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+                else:                                       # (bytes=-N: the last N)
+                    start = max(size - int(m.group(2)), 0)
+                if start >= size:
+                    self.send_response(416); self.send_header('Content-Range', 'bytes */%d' % size)
+                    self.send_header('Content-Length', '0'); self.end_headers()
+                    return
+                if start <= end:                            # (N-M with M < N: no valid range - all of it)
+                    code = 206
+                else:
+                    start, end = 0, size - 1
+        self.send_response(code); self.send_header('Content-Type', 'application/octet-stream')
+        self.send_header('Accept-Ranges', 'bytes'); self.send_header('ETag', etag); self.send_header('Last-Modified', lastmod)
+        if code == 206:
+            self.send_header('Content-Range', 'bytes %d-%d/%d' % (start, end, size))
+        self.send_header('Content-Length', str(end - start + 1)); self.end_headers()
+        try:
+            with open(p, 'rb') as f:
+                f.seek(start); left = end - start + 1
+                while left > 0:
+                    b = f.read(min(1 << 20, left))
                     if not b:
                         break
-                    self.wfile.write(b)
-            return
-        self.reply(200, 'Vectrex_EMU debug reports: use Help > Debug report in the emulator.\n')
+                    self.wfile.write(b); left -= len(b)
+        except (BrokenPipeError, ConnectionResetError):   # (the app cancelled: moved to the background, or closed)
+            pass
 
     def do_POST(self):
         if self.path == '/ioslog':

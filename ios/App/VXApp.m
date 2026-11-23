@@ -580,9 +580,11 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 	*files = u.files; return r == Z_STREAM_END && !u.bad ? 0 : -3;
 }
 
-/* ---------------------------------------------------------------- the content pack, fetched by iOS's background transfer
- * service: it goes on while the user is in another app (or the app is suspended); iOS wakes the app to unpack it and a
- * notification says the games are ready */
+/* ---------------------------------------------------------------- the content pack: while the app is open, fetched over a
+ * normal connection at full speed (iOS's background transfer daemon offered a ~6 KB receive window: 50-300 KB/s); when
+ * the app leaves the foreground the fetch goes to the background transfer service (resumed where it was when the server
+ * takes ranges, else from the start): it goes on while the user is in another app (or the app is suspended); iOS wakes
+ * the app to unpack it and a notification says the games are ready. One serial queue for every callback (_q) */
 #import <UserNotifications/UserNotifications.h>
 @interface VXPack : NSObject <NSURLSessionDownloadDelegate>
 @property (nonatomic, copy) void (^progress) (int64_t, int64_t); @property (nonatomic, copy) void (^unpacking) (void); @property (nonatomic, copy) void (^done) (BOOL); @property (nonatomic, copy) void (^bgDone) (void);
@@ -591,14 +593,29 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 + (instancetype) shared;
 @end
 long vxa_presents;                         /* (the pictures handed to the screen so far: the deck's HZ figure) */
-@implementation VXPack { int _lastpc; double _t0; }
+@implementation VXPack {
+	int _lastpc; double _t0; NSOperationQueue *_q;
+	NSURLSession *_fg, *_fgWifi;                    /* (the normal sessions, while the app is open: any network / Wi-Fi only) */
+	NSURLSessionDownloadTask *_fgTask;              /* (the part being fetched in the foreground - one at a time) */
+	BOOL _fgIsWifi, _inBg;                          /* (_inBg: the app is not in the foreground - a new fetch goes to the background session) */
+	NSURLSessionDownloadTask *_moving; int _moveSteps; NSData *_moveData; void (^_moveEnd) (void);   /* (the move to the background: the cancel's
+	                                                   resume data and the task's end both in, then on in the background session) */
+}
 + (instancetype) shared { static VXPack *p; static dispatch_once_t o; dispatch_once (&o, ^{ p = [VXPack new]; }); return p; }
+- (instancetype) init
+{
+	if (!(self = [super init])) return nil;
+	_q = [NSOperationQueue new]; _q.maxConcurrentOperationCount = 1; _q.name = @"vx.pack";
+	[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(toBackground:) name:UIApplicationDidEnterBackgroundNotification object:nil];
+	[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(toForeground:) name:UIApplicationWillEnterForegroundNotification object:nil];
+	return self;
+}
 - (NSURLSession *) session
 {
 	if (!_session) {
 		NSURLSessionConfiguration *c = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"com.hugob.vectrexemu.pack"];
 		c.sessionSendsLaunchEvents = YES; c.discretionary = NO; c.timeoutIntervalForResource = 6 * 3600;
-		_session = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:nil]; }
+		_session = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:_q]; }
 	return _session;
 }
 - (NSURLSession *) wifiSession                  /* (Wait for Wi-Fi: a session that may not use mobile data - iOS starts it on Wi-Fi) */
@@ -606,8 +623,59 @@ long vxa_presents;                         /* (the pictures handed to the screen
 	if (!_wifiSession) {
 		NSURLSessionConfiguration *c = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"com.hugob.vectrexemu.pack.wifi"];
 		c.sessionSendsLaunchEvents = YES; c.discretionary = NO; c.allowsCellularAccess = NO; c.allowsExpensiveNetworkAccess = NO; c.timeoutIntervalForResource = 7 * 24 * 3600;
-		_wifiSession = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:nil]; }
+		_wifiSession = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:_q]; }
 	return _wifiSession;
+}
+- (NSURLSession *) fgSession:(BOOL)wifi         /* (while the app is open: a normal connection, full speed; it waits for a network as the
+                                                   background one does - Wait for Wi-Fi: no mobile data here either) */
+{
+	if (wifi ? !_fgWifi : !_fg) {
+		NSURLSessionConfiguration *c = NSURLSessionConfiguration.defaultSessionConfiguration;
+		c.waitsForConnectivity = YES; c.URLCache = nil; c.timeoutIntervalForResource = wifi ? 7 * 24 * 3600 : 6 * 3600;
+		if (wifi) { c.allowsCellularAccess = NO; c.allowsExpensiveNetworkAccess = NO; }
+		NSURLSession *s = [NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:_q];
+		if (wifi) _fgWifi = s; else _fg = s; }
+	return wifi ? _fgWifi : _fg;
+}
+- (void) toBgSession:(NSURLSessionTask *)t data:(NSData *)d wifi:(BOOL)wifi why:(const char *)why   /* (on _q: a foreground fetch on in the
+                                                   background session - from the resume data when there is some, else from the start) */
+{
+	NSURLSession *ses = wifi ? self.wifiSession : self.session; NSURLSessionDownloadTask *n = d ? [ses downloadTaskWithResumeData:d] : nil;
+	if (n) vlog ("part %s: %s (resumed at %.1f MB)", t.taskDescription.UTF8String, why, t.countOfBytesReceived / 1e6);
+	else { n = [ses downloadTaskWithRequest:t.originalRequest];
+		vlog ("part %s: %s (from the start: %s)", t.taskDescription.UTF8String, why,
+			d ? "the resume data not taken" : t.countOfBytesReceived > 0 ? "no resume data - the server takes no ranges?" : "nothing fetched yet"); }
+	n.taskDescription = t.taskDescription; _lastpc = -1; [n resume];
+}
+- (void) moveEnded                              /* (on _q: the move done or given up - iOS's extra time for it ends) */
+{
+	void (^end) (void) = _moveEnd; _moving = nil; _moveData = nil; _moveEnd = nil; _moveSteps = 0;
+	if (end) dispatch_async (dispatch_get_main_queue (), end);
+}
+- (void) moveStep                               /* (on _q: one of the two answers in - both: on in the background session) */
+{
+	if (++_moveSteps < 2) return;
+	NSURLSessionDownloadTask *t = _moving; NSData *d = _moveData; BOOL wifi = _fgIsWifi;
+	[self toBgSession:t data:d wifi:wifi why:"moved to the background"]; [self moveEnded];
+}
+- (void) toBackground:(NSNotification *)nt      /* (the app leaves the foreground: its fetch handed to the background session, so it still finishes) */
+{
+	(void) nt; UIApplication *a = UIApplication.sharedApplication;
+	__block UIBackgroundTaskIdentifier bt = UIBackgroundTaskInvalid; __block int on = 0;
+	void (^end) (void) = ^{ if (on) { on = 0; [a endBackgroundTask:bt]; } };   /* (main thread only) */
+	bt = [a beginBackgroundTaskWithName:@"pack" expirationHandler:^{ vlog ("pack: the move to the background cut short by iOS"); end (); }]; on = bt != UIBackgroundTaskInvalid;
+	[_q addOperationWithBlock:^{
+		self->_inBg = YES; NSURLSessionDownloadTask *t = self->_fgTask;
+		if (!t || t.state != NSURLSessionTaskStateRunning || self->_moving) { dispatch_async (dispatch_get_main_queue (), end); return; }
+		self->_fgTask = nil; self->_moving = t; self->_moveSteps = 0; self->_moveData = nil; self->_moveEnd = end;
+		vlog ("part %s: the app leaves the foreground at %.1f MB - moving the fetch to the background", t.taskDescription.UTF8String, t.countOfBytesReceived / 1e6);
+		[t cancelByProducingResumeData:^(NSData *d) {
+			[self->_q addOperationWithBlock:^{ if (t != self->_moving) return; if (d) self->_moveData = d; [self moveStep]; }]; }];
+	}];
+}
+- (void) toForeground:(NSNotification *)nt      /* (back in the foreground: a fetch moved to the background goes on there - never two for one part) */
+{
+	(void) nt; [_q addOperationWithBlock:^{ self->_inBg = NO; }];
 }
 /* (the parts fetched: Documents/parts.json, id -> version) */
 + (NSString *) partsFile { return [NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:@"parts.json"]; }
@@ -620,17 +688,23 @@ long vxa_presents;                         /* (the pictures handed to the screen
 - (void) fetchPart:(NSString *)pid version:(NSString *)ver wifiOnly:(BOOL)wifi progress:(void (^) (int64_t, int64_t))prog unpacking:(void (^) (void))unp done:(void (^) (BOOL))done
 {
 	self.ver = [NSString stringWithFormat:@"%@:%@", pid, ver]; self.progress = prog; self.unpacking = unp; self.done = done; NSURLSession *ses = wifi ? self.wifiSession : self.session; _lastpc = -1; _t0 = CACurrentMediaTime();
+	NSString *key = self.ver; const BOOL active = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+	[_q addOperationWithBlock:^{ self->_inBg = !active; }];   /* (in order with the foreground / background notifications: all on _q) */
 	[UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
 		completionHandler:^(BOOL g, NSError *e) { (void) e; vlog ("notifications %s", g ? "allowed" : "not allowed"); }];
-	[ses getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> *ts) {
-		for (NSURLSessionTask *t in ts) if ([t.taskDescription isEqualToString:self.ver]) { vlog ("part %s: the fetch already running goes on", self.ver.UTF8String); return; }   /* (after a restart) */
+	[ses getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> *ts) { [self->_q addOperationWithBlock:^{
+		for (NSURLSessionTask *t in ts) if ([t.taskDescription isEqualToString:key]) { vlog ("part %s: the fetch already running goes on", key.UTF8String); return; }   /* (after a restart) */
+		if ([self->_fgTask.taskDescription isEqualToString:key] || [self->_moving.taskDescription isEqualToString:key]) { vlog ("part %s: the fetch already running goes on (foreground)", key.UTF8String); return; }
 #ifdef VX_LOG_TOKEN
 		NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[@"http://172.233.60.40:7746/iosextra/part/" stringByAppendingString:pid]]];
 		[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"];
-		NSURLSessionDownloadTask *t = [ses downloadTaskWithRequest:rq]; t.taskDescription = self.ver; [t resume];
-		vlog ("part %s: fetching in the background%s", self.ver.UTF8String, wifi ? ", Wi-Fi only" : "");
+		if (!self->_inBg) {                          /* (the app open: full speed; to the background session when it leaves the foreground) */
+			NSURLSessionDownloadTask *t = [[self fgSession:wifi] downloadTaskWithRequest:rq]; t.taskDescription = key; self->_fgTask = t; self->_fgIsWifi = wifi; [t resume];
+			vlog ("part %s: fetching (foreground)%s", key.UTF8String, wifi ? ", Wi-Fi only" : ""); return; }
+		NSURLSessionDownloadTask *t = [ses downloadTaskWithRequest:rq]; t.taskDescription = key; [t resume];
+		vlog ("part %s: fetching in the background%s", key.UTF8String, wifi ? ", Wi-Fi only" : "");
 #endif
-	}];
+	}]; }];
 }
 - (void) URLSession:(NSURLSession *)s downloadTask:(NSURLSessionDownloadTask *)t didWriteData:(int64_t)w totalBytesWritten:(int64_t)tw totalBytesExpectedToWrite:(int64_t)te
 {
@@ -641,11 +715,12 @@ long vxa_presents;                         /* (the pictures handed to the screen
 - (void) URLSession:(NSURLSession *)s downloadTask:(NSURLSessionDownloadTask *)t didFinishDownloadingToURL:(NSURL *)loc
 {
 	long code = [t.response isKindOfClass:NSHTTPURLResponse.class] ? (long) ((NSHTTPURLResponse *) t.response).statusCode : 0;
-	if (code != 200) { vlog ("pack: fetch failed (%ld)", code); return; }
+	if (code != 200 && code != 206) { vlog ("pack: fetch failed (%ld)", code); return; }   /* (206: a fetch resumed in the background session) */
 	NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"part.tgz"]; [NSFileManager.defaultManager removeItemAtPath:tmp error:nil];
 	[NSFileManager.defaultManager moveItemAtURL:loc toURL:[NSURL fileURLWithPath:tmp] error:nil];   /* (now: the file goes when this returns) */
 	long long sz = [[NSFileManager.defaultManager attributesOfItemAtPath:tmp error:nil] fileSize];
-	vlog ("pack: %.1f MB in %.0f s; unpacking%s", sz / 1e6, CACurrentMediaTime () - _t0, UIApplication.sharedApplication.applicationState == UIApplicationStateBackground ? " (in the background)" : "");
+	vlog ("pack: %.1f MB in %.0f s (%s); unpacking%s", sz / 1e6, CACurrentMediaTime () - _t0, s == _fg || s == _fgWifi ? "foreground" : "background session",
+		UIApplication.sharedApplication.applicationState == UIApplicationStateBackground ? " (in the background)" : "");
 	{ void (^u) (void) = self.unpacking; if (u) dispatch_async (dispatch_get_main_queue (), u); }
 	__block UIBackgroundTaskIdentifier bt = [UIApplication.sharedApplication beginBackgroundTaskWithExpirationHandler:^{ vlog ("pack: unpacking cut short by iOS"); }];
 	NSString *docs = NSSearchPathForDirectoriesInDomains (NSDocumentDirectory, NSUserDomainMask, YES).firstObject; int files = 0; double t1 = CACurrentMediaTime ();
@@ -656,9 +731,27 @@ long vxa_presents;                         /* (the pictures handed to the screen
 	if (!bad && c.location != NSNotFound) [VXPack setInstalled:[key substringToIndex:c.location] version:[key substringFromIndex:c.location + 1]];
 	void (^d) (BOOL) = self.done; dispatch_async (dispatch_get_main_queue (), ^{ if (d) d (!bad); [UIApplication.sharedApplication endBackgroundTask:bt]; });
 }
+- (void) URLSession:(NSURLSession *)s downloadTask:(NSURLSessionDownloadTask *)t didResumeAtOffset:(int64_t)off expectedTotalBytes:(int64_t)te
+{
+	vlog ("part %s: resumed at %.1f of %.1f MB", t.taskDescription.UTF8String, off / 1e6, te / 1e6);
+}
+- (void) URLSession:(NSURLSession *)s taskIsWaitingForConnectivity:(NSURLSessionTask *)t
+{
+	vlog ("part %s: waiting for a connection%s", t.taskDescription.UTF8String, s == _fgWifi ? " (Wi-Fi only)" : "");
+}
 - (void) URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)e
 {
-	if (!e) return; vlog ("pack: fetch failed - %s", e.localizedDescription.UTF8String);
+	const BOOL fg = s == _fg || s == _fgWifi;
+	if (t == _fgTask) _fgTask = nil;
+	if (t == _moving) {                             /* (the move to the background: the cancel's end - else it finished or broke first) */
+		if (e && [e.domain isEqualToString:NSURLErrorDomain] && e.code == NSURLErrorCancelled) {
+			_moveData = _moveData ?: e.userInfo[NSURLSessionDownloadTaskResumeData]; [self moveStep]; return; }
+		[self moveEnded]; }
+	if (!e) return;
+	if (fg) {                                       /* (the normal connection broke: the background session takes it over - it rides out gaps) */
+		vlog ("pack: the foreground fetch broke - %s", e.localizedDescription.UTF8String);
+		[self toBgSession:t data:e.userInfo[NSURLSessionDownloadTaskResumeData] wifi:s == _fgWifi why:"on in the background session"]; return; }
+	vlog ("pack: fetch failed - %s", e.localizedDescription.UTF8String);
 	void (^d) (BOOL) = self.done; dispatch_async (dispatch_get_main_queue (), ^{ if (d) d (NO); });
 }
 - (void) URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)s

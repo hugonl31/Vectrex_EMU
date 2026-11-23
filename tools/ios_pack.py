@@ -112,25 +112,62 @@ def shrink(im, W=420):
     al = a[:, :, 3]; semi = (al > 0) & (al < 250)
     a[semi, :3] = np.minimum(a[semi, :3], (40, 42, 46))
     a[al < 48] = 0
-    return Image.fromarray(a, 'RGBA')
+    return Image.fromarray(dark_edge(a), 'RGBA')
+
+
+def dark_edge(a):
+    """the cartridge's outline in the shell's dark plastic, no light line round it on a dark background (the owner,
+    2026-11-23): the half-clear pixels and the first four opaque rings capped 14 / 20 / 28 / 36 / 44 (the plastic ~40),
+    the half-clear ones premultiplied - dark whether the picture is blended (the phones, RetroArch) or not (the PC)"""
+    import numpy as np
+    from PIL import ImageFilter as _F
+    al = a[:, :, 3].astype(np.float32); rgb = a[:, :, :3].astype(np.float32)
+    inside = al >= 128; pad = 5
+    ring = np.full(al.shape, 99, np.int32); ring[(al > 0) & ~inside] = 0
+    cur = Image.fromarray(np.pad(inside, pad).astype(np.uint8) * 255, 'L')
+    for i in (1, 2, 3, 4):
+        er = cur.filter(_F.MinFilter(3)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
+        ring[r[pad:-pad, pad:-pad]] = i; cur = er
+    mx = rgb.max(2)
+    for i, cap in ((0, 14.0), (1, 20.0), (2, 28.0), (3, 36.0), (4, 44.0)):
+        s = ring == i; rgb[s] *= np.minimum(1.0, cap / np.maximum(mx[s], 1.0))[:, None]
+    semi = (al > 0) & (al < 255); rgb[semi] *= (al[semi] / 255.0)[:, None]
+    a = a.copy(); a[:, :, :3] = np.clip(rgb + 0.5, 0, 255).astype(np.uint8)
+    return a
 
 
 SHELL = None                                                    # (the real shell, its label's place: for a label alone)
 LAB_ANY = None
+LAB_ASPECT = 3120 / 1700                                        # (every label of print 4x\labels)
+
+
+def shell_box(sh):
+    """the label's place on the shell: the rows and columns mostly light grey - not the light scan line along the
+    shell's bottom (Armor..Attack rows 773-776: taken as label, every label ran over the bottom plastic to the edge)"""
+    import numpy as np
+    w, h = sh.size; px = sh.load()
+    def light(x, y):
+        r, g, b, a = px[x, y]; return a > 200 and r > 150 and g > 150 and b > 150   # (the clear surround is white too)
+    y0 = int(h * 0.35)
+    rows = [y for y in range(y0, h) if sum(light(x, y) for x in range(0, w, 3)) > w / 3 * 0.6]
+    al = np.asarray(sh)[:, :, 3]; yb = max(y for y in range(h) if (al[y] > 128).mean() > 0.5)   # (the shell's last row)
+    runs = []
+    for y in rows:
+        if runs and y == runs[-1][1] + 1: runs[-1][1] = y
+        else: runs.append([y, y])
+    rows = [y for r0, r1 in runs if yb - r1 > 12 for y in range(r0, r1 + 1)]
+    cols = [x for x in range(w) if sum(light(x, y) for y in range(rows[0], rows[-1], 3)) > (rows[-1] - rows[0]) / 3 * 0.6]
+    return cols[0], rows[0], cols[-1], rows[-1]                 # (Armor..Attack: 39, 338, 769, 727)
 
 
 def cart(label):
     global SHELL
     if SHELL is None:
-        sh = Image.open(os.path.join(GCE, 'Armor..Attack (World).png')).convert('RGBA'); w, h = sh.size; px = sh.load()
-        def light(x, y):
-            r, g, b, a = px[x, y]; return a > 200 and r > 150 and g > 150 and b > 150   # (the clear surround is white too)
-        y0 = int(h * 0.35)                                      # (the label: the rows and columns mostly light grey)
-        rows = [y for y in range(y0, h) if sum(light(x, y) for x in range(0, w, 3)) > w / 3 * 0.6]
-        cols = [x for x in range(w) if sum(light(x, y) for y in range(rows[0], rows[-1], 3)) > (rows[-1] - rows[0]) / 3 * 0.6]
-        SHELL = (sh, (cols[0], rows[0], cols[-1], rows[-1]))
+        sh = Image.open(os.path.join(GCE, 'Armor..Attack (World).png')).convert('RGBA')
+        SHELL = (sh, shell_box(sh))
     sh, (x0, y0, x1, y1) = SHELL; im = sh.copy()
-    lab = (label if isinstance(label, Image.Image) else Image.open(label)).convert('RGBA').resize((x1 - x0 + 1, y1 - y0 + 1), Image.LANCZOS); im.paste(lab, (x0, y0))
+    lw = x1 - x0 + 1; lh = int(round(lw / LAB_ASPECT))           # (the label at its own aspect, top-aligned: as Robot Arena, the owner's)
+    lab = (label if isinstance(label, Image.Image) else Image.open(label)).convert('RGBA').resize((lw, lh), Image.LANCZOS); im.paste(lab, (x0, y0))
     return shrink(im)
 
 
@@ -139,8 +176,8 @@ def name_label(name):
     CARTRIDGE), then the label's grey grid with the game's name in bold black - no GCE (homebrew)"""
     from PIL import ImageFont
     cart(LAB_ANY)                                               # (SHELL measured)
-    sh, (x0, y0, x1, y1) = SHELL; w, h = x1 - x0 + 1, y1 - y0 + 1
-    src = sh.crop((x0, y0, x1 + 1, y1 + 1)).convert('RGB')
+    sh, (x0, y0, x1, y1) = SHELL; w = x1 - x0 + 1; h = int(round(w / LAB_ASPECT))   # (a label's size: 731 x 398)
+    src = sh.crop((x0, y0, x1 + 1, y0 + h)).convert('RGB')
     bg = (214, 214, 214)                                        # (the real labels' light grey)
     lab = Image.new('RGB', (w, h), bg); d = ImageDraw.Draw(lab)
     step = max(4, w // 27)

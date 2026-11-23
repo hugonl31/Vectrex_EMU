@@ -223,28 +223,101 @@ static void vxa_corelog (enum retro_log_level l, const char *fmt, ...)
 {
 	char b[1500]; va_list a; va_start (a, fmt); vsnprintf (b, sizeof b, fmt, a); va_end (a); (void) l; fputs (b, stderr);
 }
-/* the core's framebuffer: three IOSurfaces taking turns - the core draws into one with OpenGL ES while Metal shows the
+/* the core's framebuffer: IOSurfaces taking turns (four: below) - the core draws into one with OpenGL ES while Metal shows the
  * one finished at the refresh before (no copy). One surface made them take turns: glFinish each refresh, OpenGL and Metal
- * never at once - "starts smooth, then choppy" (builds 47-59). A picture is shown one refresh after it is drawn. Half
+ * never at once - "starts smooth, then choppy" (builds 47-59). A picture is shown one refresh after it is drawn (two at 90 Hz and up: below). Half
  * floats: room above white for HDR (8-bit BGRA where the device will not) */
 #include <stdatomic.h>
-#define VXA_NS 3
+/* (2026-11-23, two pictures in flight - the owner's iPhone at 120 Hz, Vectrexians: the emulator 3.2 ms of 8.3, yet 598 of 600
+ *  pictures not finished by the GPU at the next refresh and 5-15 % dropped (half with the overlay on in places): the GPU's time
+ *  from a picture's commands to its end was longer than a refresh, its work a picture shorter (Optimize, back to back: 3.0 ms,
+ *  5.2 with the overlay). So at 90 Hz and up a picture is shown two refreshes after its run, not one: the GPU has two refreshes
+ *  for it while still finishing one a refresh - one refresh (8.3 ms) more from the stick to the glass, the owner's choice. Four
+ *  surfaces: the one shown, the one held back, the newest, and one free to draw into while Metal still reads the last) */
+#define VXA_NS 4
 static CVPixelBufferRef vxa_pbs[VXA_NS]; static CVOpenGLESTextureCacheRef vxa_gcache; static CVOpenGLESTextureRef vxa_gtexs[VXA_NS];
 static CVMetalTextureCacheRef vxa_mcache; static CVMetalTextureRef vxa_mtexs[VXA_NS]; static id<MTLDevice> vxa_mdev; static int vxa_half;
 static GLuint vxa_fbos[VXA_NS]; static GLsync vxa_fence[VXA_NS]; static atomic_int vxa_busy[VXA_NS];   /* (busy: Metal still reading it) */
 static unsigned vxa_sw[VXA_NS], vxa_sh[VXA_NS];          /* (each slot's picture size) */
 static int vxa_pending = -1; static unsigned vxa_slot_seq[VXA_NS];   /* (a picture not finished at its refresh: kept, shown later in the same refresh) */
 static int vxa_draw, vxa_newest = -1; static unsigned vxa_seq;   /* (vxa_seq: pictures finished, counted) */                    /* (the slot the core draws into; the last one finished) */
-static uintptr_t vxa_get_fb (void) { return vxa_fbos[vxa_draw]; }
-static void vxa_pick_draw (void)                         /* (a slot that is not the newest picture and not being shown) */
+static int vxa_prev = -1, vxa_deep;                      /* (the picture finished before the newest; two in flight: 90 Hz and up) */
+static unsigned long vxa_slot_tick[VXA_NS], vxa_tickno;  /* (the refresh each picture was finished in; the refreshes the game ran, counted) */
+static unsigned vxa_shown_seq;                           /* (the number of the last picture handed to Metal) */
+static int vxa_slot_free (int s)                         /* (not the newest, not one waiting to be shown, not being shown) */
+{
+	if (s == vxa_newest || s == vxa_pending || atomic_load (&vxa_busy[s])) return 0;
+	return !(vxa_deep && s == vxa_prev && (int) (vxa_slot_seq[s] - vxa_shown_seq) > 0);   /* (two in flight: the one held back) */
+}
+static void vxa_pick_draw (int wait)                     /* (wait 0: none free now - chosen when the core asks for it, vxa_get_fb) */
 {
 	for (int tries = 0; tries < 400; tries++) {
-		for (int k = 1; k <= VXA_NS; k++) { const int s2 = (vxa_draw + k) % VXA_NS;
-			if (s2 != vxa_newest && s2 != vxa_pending && !atomic_load (&vxa_busy[s2])) { vxa_draw = s2; vxa_cfbo = vxa_fbos[s2]; return; } }
+		for (int k = 1; k <= VXA_NS; k++) { const int s2 = (vxa_draw + k) % VXA_NS;   /* (vxa_draw -1: from 0) */
+			if (vxa_slot_free (s2)) { vxa_draw = s2; vxa_cfbo = vxa_fbos[s2]; return; } }
 		if (vxa_pending >= 0 && vxa_pending != vxa_newest && !atomic_load (&vxa_busy[vxa_pending])) {   /* (no other: the late one given up) */
 			vxa_draw = vxa_pending; vxa_pending = -1; vxa_cfbo = vxa_fbos[vxa_draw]; return; }
+		if (vxa_deep && tries >= 30 && vxa_prev >= 0 && vxa_prev != vxa_newest && !atomic_load (&vxa_busy[vxa_prev])) {   /* (3 ms and still none: the held one given up) */
+			vxa_draw = vxa_prev; vxa_prev = -1; vxa_cfbo = vxa_fbos[vxa_draw]; return; }
+		if (!wait) { vxa_draw = -1; return; }
 		usleep (100); }                                  /* (all shown or about to: a moment - rare) */
 	vxa_draw = (vxa_newest + 1) % VXA_NS; vxa_cfbo = vxa_fbos[vxa_draw];
+}
+static uintptr_t vxa_get_fb (void) { if (vxa_draw < 0 || !vxa_slot_free (vxa_draw)) vxa_pick_draw (1); return vxa_fbos[vxa_draw]; }
+/* the GPU's time for each picture (the 5 s log line "GPU a picture"): iOS's OpenGL ES has no timer queries (the old diagnostic
+ * waited for the GPU after each stage - 4 pictures a second lost), so a second fence after each picture, waited for on a thread
+ * of its own with a GL context in the same share group: the moment the picture's drawing is done, nothing waits on the main
+ * thread. busy: from the picture's flush - or the last one's end, if later - to its end: the GPU's time a picture as it works
+ * them one after another; flush to done: how long after its commands it was ready. Metal's copy to the screen: its command
+ * buffer's own GPU times */
+#include <pthread.h>
+#define VXA_GQN 16
+static struct { GLsync f; double t; } vxa_gq[VXA_GQN]; static unsigned vxa_gq_r, vxa_gq_w; static int vxa_gq_on;
+static pthread_mutex_t vxa_gq_mx = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t vxa_gq_cv = PTHREAD_COND_INITIALIZER;
+static EAGLContext *vxa_gq_ctx;
+static double vxa_gt_last, vxa_gt_busy, vxa_gt_bmax, vxa_gt_lat, vxa_gt_lmax, vxa_mt_sum, vxa_mt_max; static long vxa_gt_n, vxa_gt_lost, vxa_mt_n;
+static void *vxa_gq_main (void *u)
+{
+	(void) u;
+	@autoreleasepool { [EAGLContext setCurrentContext:vxa_gq_ctx]; }
+	for (;;) {
+		pthread_mutex_lock (&vxa_gq_mx);
+		while (vxa_gq_r == vxa_gq_w) pthread_cond_wait (&vxa_gq_cv, &vxa_gq_mx);
+		const GLsync f = vxa_gq[vxa_gq_r % VXA_GQN].f; const double tf = vxa_gq[vxa_gq_r % VXA_GQN].t; vxa_gq_r++;
+		pthread_mutex_unlock (&vxa_gq_mx);
+		const GLenum r = glClientWaitSync (f, 0, 200000000ull);   /* (200 ms at most) */
+		const double td = CACurrentMediaTime ();
+		glDeleteSync (f);
+		pthread_mutex_lock (&vxa_gq_mx);
+		if (r == GL_ALREADY_SIGNALED || r == GL_CONDITION_SATISFIED) {
+			const double b = td - (tf > vxa_gt_last ? tf : vxa_gt_last), l = td - tf;
+			vxa_gt_busy += b; if (b > vxa_gt_bmax) vxa_gt_bmax = b; vxa_gt_lat += l; if (l > vxa_gt_lmax) vxa_gt_lmax = l; vxa_gt_n++; vxa_gt_last = td; }
+		else vxa_gt_lost++;
+		pthread_mutex_unlock (&vxa_gq_mx); }
+	return NULL;
+}
+static void vxa_gq_start (EAGLContext *main_ctx)
+{
+	if (vxa_gq_on || !main_ctx) return;
+	vxa_gq_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3 sharegroup:main_ctx.sharegroup];
+	if (!vxa_gq_ctx) { vlog ("GPU timing: no second GL context - not timed"); return; }
+	pthread_attr_t a; pthread_attr_init (&a); pthread_attr_setdetachstate (&a, PTHREAD_CREATE_DETACHED);
+	pthread_attr_set_qos_class_np (&a, QOS_CLASS_USER_INTERACTIVE, 0);   /* (woken at once when a picture is done) */
+	pthread_t th; vxa_gq_on = pthread_create (&th, &a, vxa_gq_main, NULL) == 0; pthread_attr_destroy (&a);
+	vlog ("GPU timing: %s", vxa_gq_on ? "on - a fence after each picture, waited for on a thread of its own" : "no thread - not timed");
+}
+static void vxa_gq_push (GLsync f)                       /* (a picture's fence, just flushed: to the timing thread) */
+{
+	const double t = CACurrentMediaTime (); int ok;
+	pthread_mutex_lock (&vxa_gq_mx);
+	ok = vxa_gq_w - vxa_gq_r < VXA_GQN;
+	if (ok) { vxa_gq[vxa_gq_w % VXA_GQN].f = f; vxa_gq[vxa_gq_w % VXA_GQN].t = t; vxa_gq_w++; pthread_cond_signal (&vxa_gq_cv); } else vxa_gt_lost++;
+	pthread_mutex_unlock (&vxa_gq_mx);
+	if (!ok) glDeleteSync (f);
+}
+static void vxa_mt_add (double s)                        /* (Metal's copy to the screen: its GPU time, from its completion handler) */
+{
+	if (s <= 0 || s > 1) return;
+	pthread_mutex_lock (&vxa_gq_mx); vxa_mt_sum += s; if (s > vxa_mt_max) vxa_mt_max = s; vxa_mt_n++; pthread_mutex_unlock (&vxa_gq_mx);
 }
 static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's framebuffers at least w x h) */
 {
@@ -266,7 +339,7 @@ static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's fra
 			CVReturn r = hf ? CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pbs[i], NULL, GL_TEXTURE_2D, GL_RGBA16F, (GLsizei) w, (GLsizei) h, GL_RGBA, GL_HALF_FLOAT, 0, &vxa_gtexs[i])
 			                : CVOpenGLESTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_gcache, vxa_pbs[i], NULL, GL_TEXTURE_2D, GL_RGBA, (GLsizei) w, (GLsizei) h, GL_BGRA_EXT, GL_UNSIGNED_BYTE, 0, &vxa_gtexs[i]);
 			if (r != kCVReturnSuccess) { vxa_gtexs[i] = NULL; continue; }
-			half = hf;                                   /* (the first's format: all three the same) */
+			half = hf;                                   /* (the first's format: all the same) */
 			if (vxa_mcache) CVMetalTextureCacheCreateTextureFromImage (kCFAllocatorDefault, vxa_mcache, vxa_pbs[i], NULL, hf ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm, w, h, 0, &vxa_mtexs[i]); }
 		const GLuint tx = vxa_gtexs[i] ? CVOpenGLESTextureGetName (vxa_gtexs[i]) : 0;
 		glBindTexture (GL_TEXTURE_2D, tx);
@@ -279,7 +352,7 @@ static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's fra
 			glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, vxa_cdepth); }
 		ok &= glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE && vxa_mtexs[i] != NULL;
 		vxa_sw[i] = vxa_sh[i] = 0; atomic_store (&vxa_busy[i], 0); }
-	vxa_half = half; vxa_newest = -1; vxa_pending = -1; vxa_draw = 0; vxa_cfbo = vxa_fbos[0];
+	vxa_half = half; vxa_newest = -1; vxa_pending = -1; vxa_prev = -1; vxa_draw = 0; vxa_cfbo = vxa_fbos[0];
 	vxa_cw = w; vxa_ch = h; vlog ("core framebuffers: %d of %u x %u, %s, shared with Metal: %s", VXA_NS, w, h, vxa_half ? "half floats (HDR room)" : "8-bit", ok ? "yes" : "NOT ALL");
 }
 static bool vxa_env (unsigned cmd, void *data)
@@ -645,7 +718,7 @@ static void vxa_toast (NSString *s, double secs)
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	UIButton *_popTab; double _popUntil;           /* (the pop-up deck: its tab, shown until) */
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
-	long _runs, _presents, _late, _ticks, _zero, _multi; double _stat_t; unsigned _shownSeq; long _notReady, _lateShown;
+	long _runs, _presents, _late, _ticks, _zero, _multi; double _stat_t; long _notReady, _lateShown;
 	double _tRun, _tFin, _tDraw, _tMax, _tLinkDur;               /* (where a refresh's time goes: the stat line - "starts smooth, then choppy") */
 }
 - (BOOL) prefersStatusBarHidden { return ![NSUserDefaults.standardUserDefaults boolForKey:@"app.statusbar"]; }   /* (Settings > App: the clock and battery) */
@@ -834,6 +907,7 @@ static void vxa_toast (NSString *s, double secs)
 	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];   /* (OpenGL ES: the core's; no layer of its own) */
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
+	vxa_gq_start (_ctx);                            /* (the GPU's time a picture, measured without waiting: the 5 s log line) */
 	[NSUserDefaults.standardUserDefaults removeObjectForKey:@"resk.land"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"resk.up"];   /* (a smaller drawing tried in a test: gone) */
 	extern int vx_app_osd_on; vx_app_osd_on = 1; vxa_hdr_update ();     /* (the figures measured for the native deck) */
 	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
@@ -885,12 +959,18 @@ static void vxa_glass (double t)
 	const int b = d < 12 ? 0 : d < 18.5 ? 1 : d < 20.4 ? 2 : d < 22.5 ? 3 : d < 27 ? 4 : 5;   /* (8.3, 16.7, 20.0, 20.8, 25, longer) */
 	atomic_fetch_add (&vxa_gl_n[b], 1); atomic_fetch_add (&vxa_gl_us, (long) (d * 1000));
 }
-- (void) present { [self presentSlot:vxa_newest late:NO]; }
+- (void) present
+{
+	int sl = vxa_newest;                                 /* (the picture finished at the refresh before) */
+	if (vxa_deep && sl >= 0 && vxa_slot_tick[sl] + 2 > vxa_tickno)   /* (two in flight: the one finished two refreshes ago - the newest waits) */
+		sl = vxa_prev >= 0 && vxa_slot_tick[vxa_prev] + 2 <= vxa_tickno ? vxa_prev : -1;
+	[self presentSlot:sl late:NO];
+}
 - (void) presentSlot:(int)sl late:(BOOL)late
 {
 	if (!_have) return;
 	if (sl < 0 || !vxa_mtexs[sl] || !_pipe) return;
-	if (vxa_slot_seq[sl] == _shownSeq || (int) (vxa_slot_seq[sl] - _shownSeq) < 0) return;   /* (nothing new; older than the one shown) */
+	if (vxa_slot_seq[sl] == vxa_shown_seq || (int) (vxa_slot_seq[sl] - vxa_shown_seq) < 0) return;   /* (nothing new; older than the one shown) */
 	double tf0 = CACurrentMediaTime ();
 	if (vxa_fence[sl]) {                                /* (its drawing done - normally long since. Not done at the refresh's start: kept,
 	                                                       tried again after the emulator's step in the same refresh (tick) - dropped, it was
@@ -904,7 +984,7 @@ static void vxa_glass (double t)
 		glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }
 	_tFin += CACurrentMediaTime () - tf0; if (late) _lateShown++;
 	if (vxa_pending == sl) vxa_pending = -1;
-	_fw = vxa_sw[sl]; _fh = vxa_sh[sl]; _shownSeq = vxa_slot_seq[sl];
+	_fw = vxa_sw[sl]; _fh = vxa_sh[sl]; vxa_shown_seq = vxa_slot_seq[sl];
 	/* (fit the picture, its own pixels if it fits: upright always at the same place - under the top row with the menu
 	 *  button, the deck right below it when on, 150 pt kept for the touch controls; sideways in the middle) */
 	double sc = _gl.contentScaleFactor; UIEdgeInsets s = self.view.safeAreaInsets; CGSize v = self.view.bounds.size;
@@ -931,7 +1011,7 @@ static void vxa_glass (double t)
 		[en setFragmentBytes:cfg length:sizeof cfg atIndex:0]; [en setFragmentTexture:CVMetalTextureGetTexture (vxa_mtexs[sl]) atIndex:0];
 		[en setFragmentSamplerState:(k == 1.0 ? _nearest : _linear) atIndex:0];
 		[en drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4]; [en endEncoding];
-		atomic_store (&vxa_busy[sl], 1); [cb addCompletedHandler:^(id<MTLCommandBuffer> b) { (void) b; atomic_store (&vxa_busy[sl], 0); }];
+		atomic_store (&vxa_busy[sl], 1); [cb addCompletedHandler:^(id<MTLCommandBuffer> b) { vxa_mt_add (b.GPUEndTime - b.GPUStartTime); atomic_store (&vxa_busy[sl], 0); }];
 		[d addPresentedHandler:^(id<MTLDrawable> dr) { vxa_glass (dr.presentedTime); }];   /* (when it reached the glass: the log's 'on glass') */
 		[cb presentDrawable:d]; [cb commit]; _presents++; vxa_presents++; }
 	CGRect pic = CGRectMake (x / sc, top / sc, w / sc, h / sc);
@@ -943,6 +1023,8 @@ static void vxa_glass (double t)
 {
 	/* (50 Hz: a game frame every 20 ms counted off on the screen's own refreshes - at 120 Hz every 2nd or 3rd, the pictures 16.7
 	 *  and 25 ms apart. A separate 20 ms timer (build 169) missed its refresh for one picture in ten: 33 ms) */
+	{ const int dp = !_own && vxa_av.timing.fps >= 89.5;   /* (two pictures in flight: 90 Hz and up - at 60 the GPU has 16.7 ms already) */
+	  if (dp != vxa_deep) { vxa_deep = dp; vlog ("pictures shown %s after their run (%.0f Hz)", dp ? "two refreshes" : "one refresh", vxa_av.timing.fps); } }
 	if (_own) { static double a50; static int since; since++;   /* (since: refreshes since the last run) */ const double per = l.targetTimestamp - l.timestamp; a50 += 50.0 * (per > 0.004 && per < 0.05 ? per : 1.0 / 120);
 		if (a50 < 1) { if (since >= 2 && !vxa_holding && !_welcome.superview) [self present]; return; }   /* (two refreshes after its run, always: at one the picture was ready only sometimes - 8 and 33 ms gaps, build 173) */   /* (a refresh between two game frames: the picture drawn in the last one goes out now - always one refresh after its run; handed in at the next run, or late in its own, it lay 8, 17, 25 or 33 ms from the last: build 172) */
 		a50 -= 1; if (a50 > 1) a50 = 0; since = 0; }
@@ -971,8 +1053,9 @@ static void vxa_glass (double t)
 	if (vxa_holding) [self padBack];               /* (a screen over the game: the Vectrex's button 3 goes back) */
 	if (vxa_holding || _welcome.superview) return; /* (a screen over the game, or a download on the start screen: it waits - no playing while downloading) */
 	[EAGLContext setCurrentContext:_ctx];
-	[self present];                                  /* (the picture finished at the last refresh: shown while the core draws the next) */
-	vxa_pick_draw ();
+	vxa_tickno++;                                    /* (this refresh's number: its picture's, vxa_video) */
+	[self present];                                  /* (the picture finished at the last refresh - two in flight: the one before it - shown while the core draws the next) */
+	vxa_pick_draw (!vxa_deep);                       /* (two in flight: none free now - the core's request waits for one, vxa_get_fb) */
 	/* (behind: the runs before the last emulate only - drawing each one's picture as well, that no one sees, kept the GPU
 	 *  behind for good: 3 runs a tick, ~20 pictures a second until a screen was opened) */
 	const double tr0 = CACurrentMediaTime ();
@@ -996,6 +1079,14 @@ static void vxa_glass (double t)
 			cm[0], cx[0], cm[1], cx[1], cm[2], cx[2], cm[3], cx[3], cm[4], cx[4]); }
 		{ int c[6], tot = 0; for (int i = 0; i < 6; i++) { c[i] = atomic_exchange (&vxa_gl_n[i], 0); tot += c[i]; } const long us = atomic_exchange (&vxa_gl_us, 0);
 		  if (tot) vlog ("on glass: %d pictures, %.2f ms apart on average; gaps of 8.3 ms %d, 16.7 ms %d, 20.0 ms %d, 20.8 ms %d, 25 ms %d, longer %d; own clock %d", tot, us / 1000.0 / tot, c[0], c[1], c[2], c[3], c[4], c[5], _own); }
+		{ /* (the GPU's time a picture - vxa_gq_main; busy x pictures over the 5 s: how much of the time the GPU worked on ours) */
+		  double bs, bm, ls, lm, ms, mm; long gn, gl, mn;
+		  pthread_mutex_lock (&vxa_gq_mx);
+		  bs = vxa_gt_busy; bm = vxa_gt_bmax; ls = vxa_gt_lat; lm = vxa_gt_lmax; gn = vxa_gt_n; gl = vxa_gt_lost; ms = vxa_mt_sum; mm = vxa_mt_max; mn = vxa_mt_n;
+		  vxa_gt_busy = vxa_gt_bmax = vxa_gt_lat = vxa_gt_lmax = vxa_mt_sum = vxa_mt_max = 0; vxa_gt_n = vxa_gt_lost = vxa_mt_n = 0;
+		  pthread_mutex_unlock (&vxa_gq_mx);
+		  if (gn || gl || mn) vlog ("GPU a picture (%ld timed, %ld lost): busy %.2f ms mean, %.2f most - the GPU on ours %.0f %% of the time; flush to done %.2f ms mean, %.2f most; Metal's copy to the screen %.2f ms mean, %.2f most; shown %d refresh%s after its run",
+			gn, gl, gn ? bs * 1000 / gn : 0.0, bm * 1000, t > 0 ? bs * 100 / t : 0.0, gn ? ls * 1000 / gn : 0.0, lm * 1000, mn ? ms * 1000 / mn : 0.0, mm * 1000, vxa_deep ? 2 : 1, vxa_deep ? "es" : ""); }
 		_notReady = 0; _lateShown = 0;
 		_tRun = _tFin = _tDraw = _tMax = _tLinkDur = 0;
 		vlog ("stat: %.0f runs/s, %.0f pictures/s, %ld late of %ld ticks (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped, %.0f MB, heat %ld, controllers %lu, keyboard %d",
@@ -1273,9 +1364,14 @@ static void vxa_video (const void *d, unsigned w, unsigned h, size_t pitch)
 {
 	(void) pitch;
 	if (d == RETRO_HW_FRAME_BUFFER_VALID) {
+		if (vxa_draw < 0) return;                          /* (no surface asked for - not drawn into one: never so) */
 		if (vxa_fence[vxa_draw]) glDeleteSync (vxa_fence[vxa_draw]);
-		vxa_fence[vxa_draw] = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0); glFlush ();   /* (sent to the GPU now - not waited for) */
-		vxa_sw[vxa_draw] = w; vxa_sh[vxa_draw] = h; vxa_newest = vxa_draw; vxa_seq++; vxa_slot_seq[vxa_draw] = vxa_seq; vxa_pick_draw ();
+		vxa_fence[vxa_draw] = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+		GLsync tf = vxa_gq_on ? glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0) : NULL;   /* (the GPU timing's own: its thread waits for it) */
+		glFlush ();                                        /* (sent to the GPU now - not waited for) */
+		if (tf) vxa_gq_push (tf);
+		vxa_sw[vxa_draw] = w; vxa_sh[vxa_draw] = h; if (vxa_newest >= 0 && vxa_newest != vxa_draw) vxa_prev = vxa_newest;
+		vxa_newest = vxa_draw; vxa_seq++; vxa_slot_seq[vxa_draw] = vxa_seq; vxa_slot_tick[vxa_draw] = vxa_tickno; vxa_pick_draw (!vxa_deep);
 		[vxa_vc gotFrame:w :h]; return; }
 	if (!d) return;                                    /* (the same picture again) */
 	static int told; if (!told) { told = 1; vlog ("a picture without the GPU (%u x %u) - not shown in this step", w, h); }

@@ -1625,6 +1625,11 @@ def old_gap(look):
     if isinstance(look, dict) and 'glass_k' in look and 'glass_curve' not in look:   # (before v1.2.0: the amount of the
         try: look['glass_curve'] = max(0.0, min(1.0, 1.0 - float(look.pop('glass_k'))))   #  curve undone - now the curve
         except (TypeError, ValueError): look.pop('glass_k', None)   #  itself, 1 as on a Vectrex)
+    for k_, lo_, hi_ in (('glass_curve', 0.0, 1.0), ('trail', 0.05, None)):   # (the sliders' ranges since 2026-11-23: an older
+        try:                                            #  value outside them gave the same picture as the end - stored as the end)
+            if isinstance(look, dict) and k_ in look:
+                v_ = max(lo_, float(look[k_])); look[k_] = min(hi_, v_) if hi_ is not None else v_
+        except (TypeError, ValueError): look.pop(k_, None)
     if isinstance(look, dict) and abs(float(look.get('line_gap', 0)) - 12.3) < 1e-6:
         look['line_gap'] = 7.0
     if isinstance(look, dict) and any(abs(float(look.get('white_k', 0)) - old) < 1e-6 for old in (6400.0, 9300.0)):

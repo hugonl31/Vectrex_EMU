@@ -3,7 +3,7 @@ changes): everything the PC has, laid out as the core's folders - system/vectrex
 the overlays, the UVMC2's SD card folder with Doom, Quake, the movies and Last Human, the PiTrex's SD card files with the
 owner's calibration, the speech ROM) and roms (every game). The app stays a few MB, each new build quick; the pack sits
 on the project's server behind the log token (vxreport.py GET /iosextra/pack, /iosextra/packver).
-  python ios_pack.py <out folder>   -> <out>/pack.tgz, <out>/pack.ver
+  python ios_pack.py <out folder> [part ...]   -> <out>/pack-<part>.tgz, <out>/pack.json (only the parts named, if any)
 Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md."""
 import os, shutil, sys, tarfile, time
 
@@ -13,6 +13,7 @@ PKG = os.path.join(R, 'libretro', 'dist', 'pkg', 'system', 'vectrex_emu')   # (t
 SKIP = ('printf.log', 'settings.json')
 
 out = sys.argv[1]
+ONLY = sys.argv[2:]                                             # (parts to pack: none named, all)
 os.makedirs(out, exist_ok=True)
 parts = [(os.path.join(PKG, 'bios.bin'), 'system/vectrex_emu/bios.bin'),
          (os.path.join(PKG, 'gpu'), 'system/vectrex_emu/gpu'),
@@ -88,7 +89,10 @@ def find(d, n):
 GCE = LBL + '/original gce'                                     # (the real cartridges seen from above, label and all)
 
 
-def shrink(im, W=420):
+CART_W = 840                                                    # (the tiles' width: sharp at 2 per row on a big tablet; the PiTrex's too)
+
+
+def shrink(im, W=CART_W):
     """the cartridge at the tile's size, a clean cutout: only the cartridge on a clear background - the edge's half-clear
     pixels in the shell's dark colour (the sources left a light grey line along the bottom), the faintest ones clear"""
     import numpy as np
@@ -119,21 +123,22 @@ def shrink(im, W=420):
     al = a[:, :, 3]; semi = (al > 0) & (al < 250)
     a[semi, :3] = np.minimum(a[semi, :3], (40, 42, 46))
     a[al < 48] = 0
-    return Image.fromarray(dark_edge(a), 'RGBA')
+    return Image.fromarray(dark_edge(a, max(1, round(W / 420))), 'RGBA')
 
 
-def dark_edge(a):
+def dark_edge(a, k=1):
     """the cartridge's outline in the shell's dark plastic, no light line round it on a dark background (the owner,
     2026-11-23): the half-clear pixels and the first four opaque rings capped 14 / 20 / 28 / 36 / 44 (the plastic ~40),
-    the half-clear ones premultiplied - dark whether the picture is blended (the phones, RetroArch) or not (the PC)"""
+    the half-clear ones premultiplied - dark whether the picture is blended (the phones, RetroArch) or not (the PC).
+    k: each ring's width in pixels (1 at 420 wide, 2 at 840: the same edge at either size)"""
     import numpy as np
     from PIL import ImageFilter as _F
     al = a[:, :, 3].astype(np.float32); rgb = a[:, :, :3].astype(np.float32)
-    inside = al >= 128; pad = 5
+    inside = al >= 128; pad = 4 * k + 1
     ring = np.full(al.shape, 99, np.int32); ring[(al > 0) & ~inside] = 0
     cur = Image.fromarray(np.pad(inside, pad).astype(np.uint8) * 255, 'L')
     for i in (1, 2, 3, 4):
-        er = cur.filter(_F.MinFilter(3)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
+        er = cur.filter(_F.MinFilter(2 * k + 1)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
         ring[r[pad:-pad, pad:-pad]] = i; cur = er
     mx = rgb.max(2)
     for i, cap in ((0, 14.0), (1, 20.0), (2, 28.0), (3, 36.0), (4, 44.0)):
@@ -258,6 +263,8 @@ def files_of(src, arc):
 
 man = {'made': ver, 'parts': []}
 for pid, name, req, srcs in PARTS:
+    if ONLY and pid not in ONLY:
+        continue
     h = hashlib.sha1(); fl = []
     for src, arc in srcs:
         if not os.path.exists(src):

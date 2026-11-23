@@ -274,14 +274,14 @@ static void sm_look (const gframe *g, const sm_fr *f, const int *mp, const sm_fr
 		j1 = sm_find (q1, o->pu, len, j1); t[2] = sm_at (q1, j1, o->pu, o->px, len); t[3] = sm_at (q1, j1, o->pu, o->py, len);
 		if (d) d[i] = m < 0 ? 0.0 : sm_max (sm_max (sm_max (fabs (t[0] - (double) l->x0), fabs (t[1] - (double) l->y0)), fabs (t[2] - (double) l->x1)), fabs (t[3] - (double) l->y1)); }
 }
-static double *sm_T, *sm_d; static size_t sm_cT;
+static double *sm_T, *sm_Tb, *sm_d; static size_t sm_cT;   /* (sm_T: a's pieces looked up along b, sm_Tb: b's along a) */
 /* .. frame g's pieces into W1 (from n; the new n back): those with a partner moved by w towards where the other frame draws
  * them, the others as drawn */
-static int sm_put (int n, const gframe *g, const sm_fr *f, const int *mp, double w)
+static int sm_put (int n, const gframe *g, const sm_fr *f, const int *mp, double w, const double *T)
 {
 	for (int i = 0; i < g->n && n < NW; i++) {
 		const line_t *l = &g->L[i]; n = wl_from (W1, n, l, 1, NULL, 0);
-		if (mp[f->sid[i]] >= 0) { wline *o = &W1[n - 1]; const double *t = sm_T + 4 * (size_t) i;
+		if (mp[f->sid[i]] >= 0) { wline *o = &W1[n - 1]; const double *t = T + 4 * (size_t) i;
 			o->x0 = (double) l->x0 + (t[0] - (double) l->x0) * w; o->y0 = (double) l->y0 + (t[1] - (double) l->y0) * w;
 			o->x1 = (double) l->x1 + (t[2] - (double) l->x1) * w; o->y1 = (double) l->y1 + (t[3] - (double) l->y1) * w; } }
 	return n;
@@ -290,20 +290,28 @@ static int sm_put (int n, const gframe *g, const sm_fr *f, const int *mp, double
  * them, after it b's pieces moved back towards a's; a stroke without a certain partner stands, in the nearer frame only.
  * ex: a's pieces the moving line has cleared by SM_EXW start their afterglow now (sm_exf, sm_exi: libretro_vx.c); a piece
  * b draws in the same place stays lit - none to start */
+/* (the work that depends on the two frames only - their strokes, the pairing, the lookups - kept while a and b stay the same:
+ *  a pair of game frames serves two or three refreshes at 120 Hz (Vectrexians: 0.45 -> 0.22 ms a refresh on the PC, the same
+ *  lines). Known by the frames' numbers (gframe gen: new at each push, join and state load - online's rollback too) */
+static unsigned long long sm_kga, sm_kgb; static int sm_kok, sm_kbok;
 static int sm_draw (const gframe *a, const gframe *b, double alpha, int n, int ex)
 {
 	const size_t need = (size_t) (a->n > b->n ? a->n : b->n) + 1;
-	if (sm_cT < need) { free (sm_T); free (sm_d); sm_cT = need + 256; sm_T = malloc (4 * sm_cT * sizeof (double)); sm_d = malloc (sm_cT * sizeof (double));
-		if (!sm_T || !sm_d) { free (sm_T); free (sm_d); sm_T = sm_d = NULL; sm_cT = 0; } }
-	if (!sm_T || a->n <= 0 || b->n <= 0 || sm_strokes (a, &sm_FA) < 0 || sm_strokes (b, &sm_FB) < 0 || sm_pairing (SMOOTH_MATCH) < 0)
-		return wl_from (W1, n, a->L, a->n, NULL, 0);   /* (as the PC: b without lines - or no memory - a as drawn) */
-	sm_look (a, &sm_FA, sm_ma, &sm_FB, sm_T, sm_d);
+	if (sm_cT < need) { free (sm_T); free (sm_Tb); free (sm_d); sm_cT = need + 256; sm_kok = 0;
+		sm_T = malloc (4 * sm_cT * sizeof (double)); sm_Tb = malloc (4 * sm_cT * sizeof (double)); sm_d = malloc (sm_cT * sizeof (double));
+		if (!sm_T || !sm_Tb || !sm_d) { free (sm_T); free (sm_Tb); free (sm_d); sm_T = sm_Tb = sm_d = NULL; sm_cT = 0; } }
+	if (!sm_T || a->n <= 0 || b->n <= 0) { sm_kok = 0; return wl_from (W1, n, a->L, a->n, NULL, 0); }   /* (as the PC: b without lines - or no memory - a as drawn) */
+	if (!sm_kok || sm_kga != a->gen || sm_kgb != b->gen) {
+		sm_kok = 0;
+		if (sm_strokes (a, &sm_FA) < 0 || sm_strokes (b, &sm_FB) < 0 || sm_pairing (SMOOTH_MATCH) < 0) return wl_from (W1, n, a->L, a->n, NULL, 0);
+		sm_look (a, &sm_FA, sm_ma, &sm_FB, sm_T, sm_d);
+		sm_kga = a->gen; sm_kgb = b->gen; sm_kok = 1; sm_kbok = 0; }
 	if (ex) for (int i = 0; i < a->n && i < sm_exf_n; i++) if (!sm_exf[i] && sm_ma[sm_FA.sid[i]] >= 0) { const double d = sm_d[i];
 		if (d < 1.5) sm_exf[i] = 2;          /* (drawn in the same place by b: it stays lit - no afterglow to start, nothing to build) */
 		else if (d >= SM_EXW && alpha * d >= SM_EXW) { sm_exf[i] = 1; sm_exi[sm_exc++] = i; } }
-	if (alpha < 0.5) return sm_put (n, a, &sm_FA, sm_ma, alpha);
-	sm_look (b, &sm_FB, sm_mb, &sm_FA, sm_T, NULL);
-	return sm_put (n, b, &sm_FB, sm_mb, 1.0 - alpha);
+	if (alpha < 0.5) return sm_put (n, a, &sm_FA, sm_ma, alpha, sm_T);
+	if (!sm_kbok) { sm_look (b, &sm_FB, sm_mb, &sm_FA, sm_Tb, NULL); sm_kbok = 1; }
+	return sm_put (n, b, &sm_FB, sm_mb, 1.0 - alpha, sm_Tb);
 }
 
 /* the afterglow's lines (vxsmooth.c vxs_merge, vectrex_emu.py sm_merge): the pieces of one straight line as one line - joined

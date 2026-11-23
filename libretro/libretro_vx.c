@@ -2082,7 +2082,9 @@ static void bg_make (void)
  * (emulated seconds), where its lines' times count from, and whether it is the other half of a picture drawn in two
  * halves on alternate frames (vecrender.py frame_alternates) */
 #define NH 6
-typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; } gframe;
+typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; } gframe;   /* (gen: this content's
+                                                own number - a new one each push, join or state load; Smooth motion's kept work, smooth.c) */
+static unsigned long long frame_gen;       /* (not in the save state: the frames get new numbers when one is loaded) */
 #define SHORT_PIECE 0.015
 #define HOLD_SLOW 1.1                     /* (the hold below for a game this much slower than the screen: Vectrexians 45 fps at 60 Hz) */
 #define HOLD_GRACE 2.0                    /* (a line not found again: lit this many of its frames - one may leave it out) */
@@ -2131,7 +2133,7 @@ static void frame_push (unsigned long long p0)
 		if (pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
 			const unsigned sh = (unsigned) (p0 - h->p0);
 			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
-			h->n += nlast; h->t = total_cycles / 1.5e6; frame_keys (h);
+			h->n += nlast; h->t = total_cycles / 1.5e6; h->gen = ++frame_gen; frame_keys (h);
 			{ const gframe *f1 = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL, *f2 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL);
 			  double o1 = f1 ? frame_overlap (h, f1) : -1, o2 = f2 ? frame_overlap (h, f2) : -1;
 			  h->alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
@@ -2139,7 +2141,7 @@ static void frame_push (unsigned long long p0)
 	if (nh == NH) frame_pop ();
 	if (spare.L) { f = spare; spare.L = NULL; }
 	else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
-	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0;
+	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0; f.gen = ++frame_gen;
 	frame_keys (&f);
 	{ const gframe *f1 = nh ? &hist[nh - 1] : NULL, *f2 = nh > 1 ? &hist[nh - 2] : (nh == 1 && have_prev ? &prevf : NULL);
 	  double o1 = f1 ? frame_overlap (&f, f1) : -1, o2 = f2 ? frame_overlap (&f, f2) : -1;
@@ -2465,22 +2467,32 @@ static double bt2_light (double z, double d)   /* (the light a unit of path: the
 	return BT2_K * o;
 }
 static double bt2_xs[2 * NW], bt2_ys[2 * NW], bt2_s0[NW]; static int bt2_nk; static unsigned char bt2_fl[NW];   /* (bt2_fl: 1 lit, 2 joins the lit piece before) */
+/* (the knots looked up from where the last lookup ended: a picture's lookups only go forward along the path - the same knot as a
+ *  search from the start finds, in a step or two instead of ~15; one going back searches from the start. Vectrexians at 120 Hz:
+ *  bt2_prepare 1.24 -> 0.45 ms a refresh on the PC, the pieces bit for bit the same) */
+static int bt2_ch, bt2_cl;
 static double bt2_thi (double s)           /* (the beam's cycles up to s along the path, a rest at s counted) */
 {
 	const int n = bt2_nk; if (s >= bt2_xs[n - 1]) return bt2_ys[n - 1]; if (s < bt2_xs[0]) return bt2_ys[0];
-	int lo = 0, hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] <= s) lo = m; else hi = m; }   /* (the last knot <= s) */
+	int lo = bt2_ch;                       /* (the last knot <= s) */
+	if (lo < 0 || lo > n - 2 || bt2_xs[lo] > s) { int hi = n - 1; lo = 0; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] <= s) lo = m; else hi = m; } }
+	else while (bt2_xs[lo + 1] <= s) lo++;
+	bt2_ch = lo;
 	const double dx = bt2_xs[lo + 1] - bt2_xs[lo]; return bt2_ys[lo] + (dx > 1e-9 ? (s - bt2_xs[lo]) / dx : 0.0) * (bt2_ys[lo + 1] - bt2_ys[lo]);
 }
 static double bt2_tlo (double s)           /* (.. a rest at s not counted) */
 {
 	const int n = bt2_nk; if (s <= bt2_xs[0]) return bt2_ys[0]; if (s > bt2_xs[n - 1]) return bt2_ys[n - 1];
-	int lo = 0, hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] < s) lo = m; else hi = m; }   /* (hi: the first knot >= s) */
+	int lo, hi = bt2_cl;                   /* (hi: the first knot >= s) */
+	if (hi < 1 || hi > n - 1 || bt2_xs[hi - 1] >= s) { lo = 0; hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] < s) lo = m; else hi = m; } }
+	else while (bt2_xs[hi] < s) hi++;
+	lo = hi - 1; bt2_cl = hi;
 	const double dx = bt2_xs[hi] - bt2_xs[lo]; return bt2_ys[lo] + (dx > 1e-9 ? (s - bt2_xs[lo]) / dx : 1.0) * (bt2_ys[hi] - bt2_ys[lo]);
 }
 static double bt2_dwell (double s) { return (bt2_thi (s + BT2_W / 2) - bt2_tlo (s - BT2_W / 2)) / BT2_W; }
 static int bt2_prepare_cpu (const wline *L, int n, wline *o, double kb)
 {
-	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0;
+	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0; bt2_ch = bt2_cl = 0;
 	for (int i = 0; i < n; i++) {
 		const wline *l = &L[i]; const int z = l->b & 127; bt2_fl[i] = 0;
 		if (!z || (l->b & 128)) continue;
@@ -2521,7 +2533,7 @@ static int bt2_prepare_cpu (const wline *L, int n, wline *o, double kb)
  *  end); the others - the beam fading, the blanked beam - piece by piece) */
 static int bt2_prepare (const wline *L, int n, wline *o)
 {
-	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0;
+	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0; bt2_ch = bt2_cl = 0;
 	for (int i = 0; i < n; i++) {
 		const wline *l = &L[i]; const int z = l->b & 127; bt2_fl[i] = 0;
 		if (!z || (l->b & 128)) continue;
@@ -2579,7 +2591,8 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 	/* the halos (corner glow) round the long rests: drawn as pieces of their own */
 	static unsigned char zl[NW], jo[NW], halo[NW];
 	int nhalo = 0;
-	for (int i = 0; i < n; i++) {                 /* a rest joined to a lit line (a joint, a corner): 1024 */
+	const int bgpu = vx_beam && bt_gpu;            /* (the beam on the GPU: its pieces use no joint marks, open ends or cuts - not made) */
+	if (!bgpu) for (int i = 0; i < n; i++) {                 /* a rest joined to a lit line (a joint, a corner): 1024 */
 		wline *l = &L[i]; l->b &= ~1024;
 		if (sqrt ((l->x1 - l->x0) * (l->x1 - l->x0) + (l->y1 - l->y0) * (l->y1 - l->y0)) > REST_SPEED * l->cyc) continue;
 		for (int d = -1; d <= 1; d += 2) {
@@ -2605,7 +2618,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		if (vx_beam && l->lt >= 0) zl[i] = l->x0 == l->x1 && l->y0 == l->y1;   /* (beam trace: only a piece without length is a spot) */
 		halo[i] = (l->b & 256) != 0; jo[i] = 0;
 	}
-	for (int i = 1; i < n; i++)                   /* one stroke in several pieces: the joined ends open */
+	if (!bgpu) for (int i = 1; i < n; i++)                   /* one stroke in several pieces: the joined ends open */
 		if (fabs (L[i].x0 - L[i - 1].x1) <= 1.5 && fabs (L[i].y0 - L[i - 1].y1) <= 1.5 && fabs (L[i].t - (L[i - 1].t + L[i - 1].cyc)) <= 1.5
 		    && !halo[i] && !halo[i - 1]) { if (!zl[i]) jo[i] |= 1; if (!zl[i - 1]) jo[i - 1] |= 2; }
 	const double sx = EW / SHEET_W, sy = FH / SHEET_H, gp = GAME_PX * sy, bk = opt_sigma / 0.689;   /* (px per game px;
@@ -2614,15 +2627,21 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 	const double par = par_dy ();
 	const double gs = (opt_bend && load_f > 0) ? 1.0 + 0.6 * opt_bend_k * load_f * 10.0 / 128.0 : 1.0;   /* (bending: grow - x Bending strength) */
 	const int n0 = npl;
+	double tk_x = 0, tk_y = 0, tv_x = 0, tv_y = 0, hk_t = 0, hv_x = 0, hv_y = 0; int tk_ok = 0, hk_ok = 0;   /* (the last end: where it was, its map, its hum -
+	                                                    the next piece starts at the same place and moment: the same values, done once) */
 	for (int i = 0; i < n && npl < NW; i++) {
 		const wline *l = &L[i];
 		int z = l->b & 127; const int web = (l->b & 255) == 128;   /* (the blanked beam: drawn while the knob is up) */
 		if (!z && !(web && up_kb > 0)) continue;         /* (intensity 0: dark) */
-		double x0, y0, x1, y1; tube_pt (l->x0, l->y0, &x0, &y0); tube_pt (l->x1, l->y1, &x1, &y1);
+		double x0, y0, x1, y1;
+		if (tk_ok && l->x0 == tk_x && l->y0 == tk_y) { x0 = tv_x; y0 = tv_y; } else tube_pt (l->x0, l->y0, &x0, &y0);
+		tube_pt (l->x1, l->y1, &x1, &y1); tk_x = l->x1; tk_y = l->y1; tv_x = x1; tv_y = y1; tk_ok = 1;
 		if (zl[i]) { x0 = x1; y0 = y1; }                /* (a resting spot: where the spot came to rest) */
 		x0 = cxm + (x0 - cxm) * gs; x1 = cxm + (x1 - cxm) * gs; y0 = cym + (y0 - cym) * gs; y1 = cym + (y1 - cym) * gs;
 		if (pw_sx != 1.0) { x0 = cxm + (x0 - cxm) * pw_sx; x1 = cxm + (x1 - cxm) * pw_sx; y0 = cym + (y0 - cym) * pw_sx; y1 = cym + (y1 - cym) * pw_sx; }
-		if (opt_wob) { double ax, ay, bx, by; hum_at (l->t, opt_wob, &ax, &ay); hum_at (l->t + l->cyc, opt_wob, &bx, &by);
+		if (opt_wob) { double ax, ay, bx, by; const double te = l->t + l->cyc;
+			if (hk_ok && l->t == hk_t) { ax = hv_x; ay = hv_y; } else hum_at (l->t, opt_wob, &ax, &ay);
+			hum_at (te, opt_wob, &bx, &by); hk_t = te; hv_x = bx; hv_y = by; hk_ok = 1;
 			if (zl[i]) { ax = bx; ay = by; } x0 += ax; y0 += ay; x1 += bx; y1 += by; }
 		x0 = (x0 - SHEET_X0) * sx + esh; x1 = (x1 - SHEET_X0) * sx + esh; y0 = (y0 - SHEET_Y0 + par) * sy; y1 = (y1 - SHEET_Y0 + par) * sy;
 		/* the brightness and width (game px, FWHM) */
@@ -2696,7 +2715,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;
 	}
 	/* the joints' cuts: the bisector of the two pieces' directions (a turn sharper than ~120 degrees: round ends) */
-	for (int k = n0 + 1; k < npl; k++) {
+	if (!bgpu) for (int k = n0 + 1; k < npl; k++) {
 		pline *p = &pl[k - 1], *q = &pl[k];
 		if (!(p->cut & 2) || !(q->cut & 1)) { continue; }
 		double pdx = p->bx - p->ax, pdy = p->by - p->ay, pl_ = sqrt (pdx * pdx + pdy * pdy);
@@ -2708,7 +2727,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		q->n0x = (float) ux; q->n0y = (float) uy; q->c0 = (float) (ux * q->ax + uy * q->ay);
 		p->cut |= 4; q->cut |= 8;                       /* (marks: this end really cut) */
 	}
-	for (int k = n0; k < npl; k++) {                    /* (an open end without a cut: round; a cut end: the segment
+	if (!bgpu) for (int k = n0; k < npl; k++) {                    /* (an open end without a cut: round; a cut end: the segment
 	                                                        runs on past it, the cut ends it) */
 		pline *q = &pl[k]; int c = 0;
 		double dx = q->bx - q->ax, dy = q->by - q->ay, L = sqrt (dx * dx + dy * dy);
@@ -3012,7 +3031,21 @@ static void shot_write (void)                /* (the GPU's picture, read back in
 }
 /* (test: VXPOC_PROF=1 - where a refresh's time goes, printed at the game's end) */
 static double pf_now (void) { return vt_wall (); }   /* (vtest.c: the wall clock, every system) */
+/* (the own apps' log: where a refresh's processor time goes - emulation, Smooth motion, the picture's lines, the afterglow's lines,
+ *  the GPU's commands - each refresh's added up, their largest kept; the app reads and restarts them every 5 s: vx_app_cpu_split) */
+static double cs_now[5], cs_sum[5], cs_max[5]; static long cs_n;
+void vx_app_cpu_split (double mean[5], double most[5])   /* (ms a refresh, since the last call) */
+{
+	for (int k = 0; k < 5; k++) { mean[k] = cs_n ? cs_sum[k] / cs_n * 1e3 : 0; most[k] = cs_max[k] * 1e3; cs_sum[k] = cs_max[k] = 0; }
+	cs_n = 0;
+}
+static void retro_run_one (void);
 void retro_run (void)
+{
+	memset (cs_now, 0, sizeof cs_now); retro_run_one ();
+	for (int k = 0; k < 5; k++) { cs_sum[k] += cs_now[k]; if (cs_now[k] > cs_max[k]) cs_max[k] = cs_now[k]; } cs_n++;
+}
+static void retro_run_one (void)
 {
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
@@ -3126,7 +3159,7 @@ void retro_run (void)
 	extern int vt_imager;
 	const double dt = 1.0 / opt_rate;
 	if (pf_on) pf1 = pf_now ();
-	if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; }
+	{ const double c0 = vt_wall (); if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; } cs_now[0] += vt_wall () - c0; }
 	const int stood = emu_stood && (ls_state == 2 || netvx_playing ());   /* (read before the next run starts) */
 	if (pf_on) pf2 = pf_now ();
 	{ int av = 3; vx_nobuild = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1); }
@@ -3210,7 +3243,7 @@ void retro_run (void)
 				if (a->alt && pa) n = wl_from (W1, n, pa->L, pa->n, NULL, 0);   /* (a picture in halves: both) */
 				if (!B) n = wl_from (W1, n, a->L, a->n, NULL, 0);
 				else {
-					n = sm_draw (a, b, alpha, n, sm_ex_cur != NULL);   /* (stroke by stroke: smooth.c) */
+					const double c0 = vt_wall (); n = sm_draw (a, b, alpha, n, sm_ex_cur != NULL); cs_now[1] += vt_wall () - c0;   /* (stroke by stroke: smooth.c) */
 				} }
 			/* (the hum at the nearest real frame's moment: the beam draws only when the game draws) */
 			ft0 = (b && alpha >= 0.5) ? b->p0 : a->p0;
@@ -3235,9 +3268,10 @@ void retro_run (void)
 			while (nh > 4) frame_pop ();
 		}
 		if (opt_wob) hum_coeffs (ft0 / 1.5e6, opt_wob);
-		npl = build_lines (W1, n, 0, 0, npl);
+		{ const double c0 = vt_wall (); npl = build_lines (W1, n, 0, 0, npl); cs_now[2] += vt_wall () - c0; }
 #ifndef VX_EMUVR
 		/* (Smooth motion: the game frame's own lines, once a frame, after the picture's - where the afterglow starts: gpu_phos.c ph_ex_mode) */
+		const double c0 = vt_wall ();
 		ph_ex_mode = sm_ex && !vx_nobuild; ph_ex_n = 0;
 		if (ph_ex_mode) { int n2 = 0, ne = 0;
 			/* (the pieces of one straight line as one line, as the PC's: smooth.c sm_merge) */
@@ -3249,6 +3283,7 @@ void retro_run (void)
 					for (int i = 0; i < sm_ex_a->n; i++) if (!(fl && i < sm_exfp_n && sm_exfp[i])) exl[ne++] = sm_ex_a->L[i]; }
 				n2 = sm_merge (0, exl, ne); }
 			if (n2) ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
+		cs_now[3] += vt_wall () - c0;
 #endif
 	}
 	/* v0.13: a refresh RetroArch does not show (run-ahead's hidden runs: the video off) draws no picture - after the
@@ -3288,7 +3323,8 @@ void retro_run (void)
 		{ extern int vx_gprof_now; vx_gprof_now = gpm; }
 		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
 		if (ph_ex_mode) sm_ex_shown = sm_ex_next;       /* (this picture is drawn - Low leaves every other one out: its game frame's afterglow with the next) */
-		if (ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ())) {
+		const double c0 = vt_wall (); const int phd = ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ()); cs_now[4] += vt_wall () - c0;
+		if (phd) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
 			if (gpm) { glFinish_ (); gp1 = vt_wall (); }
 			/* (the diagnostic, no overlay: the glass and the case drawn once more with a part off - not shown, the real one after it -
@@ -3299,7 +3335,7 @@ void retro_run (void)
 				gpu_novideo = 1; gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
 				glFinish_ (); { const double tv = vt_wall (); gvt[vi] += tv - gp1; gvn[vi]++; gp1 = tv; }
 				gfx.cse = kc; gfx.lk = kl; gfx.grey = kg; gfx.crefl = kr; gpu_novideo = kn; }
-			gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+			{ const double c1 = vt_wall (); gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot); cs_now[4] += vt_wall () - c1; }
 			if (gpm) { glFinish_ (); const double gp2 = vt_wall (); gpt[0] += gp1 - gp0; gpt[1] += gp2 - gp1; gpn++;
 				extern double vx_gpst[4], vx_oxst[8]; extern int vx_gprof_now; vx_gprof_now = 0;
 				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms (lines %.2f, phosphor %.2f, glow %.2f, picture %.2f), the glass and the case %.2f ms - %d x %d px, profile %s; the sheet's passes %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f; the glass and case with a part off: no case %.2f, no case nor room light %.2f, no reflections %.2f ms%c",
@@ -3629,6 +3665,7 @@ static bool vx_load_from (const void *d, size_t sz)   /* (retro_unserialize's wo
 		if (np) f = pool[--np]; else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
 		int fn; GET (&fn, sizeof (int)); GET (&f.nk, sizeof (int)); GET (&f.alt, sizeof (int)); GET (&f.t, sizeof (double)); GET (&f.p0, sizeof (unsigned long long));
 		i = get_lines (i, f.L, &f.n); (void) fn; GET (f.keys, sizeof (long long) * (f.nk > 0 ? f.nk : 0));
+		f.gen = ++frame_gen;                       /* (loaded: new content - Smooth motion's kept work does not apply) */
 		*dst[k] = f;
 	}
 	nh = n_h; have_prev = n_p;

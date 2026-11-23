@@ -266,7 +266,7 @@ sessions of 20 minutes, every ROM with random input, cross-machine games between
 * [Using it](#using-it) - [the first start](#the-first-start-the-setup), [switching on](#switching-on),
   [menus and the Config window](#menus-and-the-config-window), [quality](#quality-for-any-pc),
   [the screen](#the-screen-60-hz-high-refresh-g-sync), [keys](#keys), [TV mode shortcuts](#tv-mode-shortcuts),
-  [controls](#controls), [overlays](#overlays), [head tracking](#head-tracking), [speech modules](#speech-modules),
+  [controls](#controls), [overlays](#overlays), [your own pictures](#your-own-pictures-for-the-games-list), [head tracking](#head-tracking), [speech modules](#speech-modules),
   [the 3D Imager and the light pen](#the-3d-imager-and-the-light-pen),
   [cartridge hardware](#cartridge-hardware), [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2),
   [the PiTrex](#the-pitrex-a-raspberry-pi-in-the-cartridge-slot), [Mac and Linux notes](#mac-and-linux-notes)
@@ -319,6 +319,7 @@ to send along when something is wrong - `core_log.txt` (the emulator core's mess
 |---|---|---|
 | **Cartridge ROMs** (`.bin`, `.vec`, `.gam`, `.rom`, VecFever `.v4e`) | `roms` (subfolders too) | your own cartridges |
 | **Overlays** (more of them, optional) | `overlays` | they come with the emulator; your own `.art` / PNGs - see [Overlays](#overlays) |
+| **Labels, boxes** for the games list (optional) | `system/vectrex_emu/thumbs` | your own pictures - see [your own pictures](#your-own-pictures-for-the-games-list) |
 | **Speech ROM** (optional, for the VecVoice / VecVox speech modules) | `system` | `al2.bin`, a free download - see [Speech modules](#speech-modules) |
 | **UVMC2 games** (`.um2`, optional) | `roms` | made for the Ultimate Vectrex Multicart 2 - see [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2) |
 | **Game data** for UVMC2 games that need it (Doom's WAD, Quake's `pak0.pak`, vector movies) | `uvmc2` (`uvmc2/doom`, `uvmc2/quake`, `uvmc2/movies`) | your own copy (the shareware Doom and Quake files work) |
@@ -1189,6 +1190,8 @@ Put overlay files in the folder **`overlays`** next to the program, named like t
   whole 1360 x 1080 MiSTer frame with the sheet in the middle. Alpha 255 is solid print, 1 - 254 coloured
   see-through plastic (MiSTer's tools use 51), 0 clear; without transparency it is all see-through, black clear.
 
+The games list's Overlays view shows a small picture of its own: [your own pictures for the games list](#your-own-pictures-for-the-games-list).
+
 Several overlays for one game (`Spike.art`, `Spike (red).art`): the plain one is chosen; pick another with
 **Overlay > Choose overlay...** (remembered per game). (Overlays in `roms/overlays`, where they went
 before, are still found.)
@@ -1208,6 +1211,33 @@ project (`Mine_Storm.art` in its `overlays.zip`).
 to its creators and is included unchanged as a courtesy, for non-commercial use. Vectrex is a trademark
 of its owners; this project is not affiliated with them, Libretro or MiSTer. On request it will be
 removed. The other overlays are the MiSTer project's set as it shares them, each credited in `overlays/CREDITS.md`.*
+
+### Your own pictures for the games list
+
+Pictures that come with the emulator are matched to your ROMs by file name, so they show as soon as you add the
+ROM. For your own ROMs and homebrew, add your own: a PNG named like the ROM without its extension
+(`Mine Storm.bin` -> `Mine Storm.png`; `Dark Tower (Proto).bin` also finds `Dark Tower.png`), in a folder under
+`system/vectrex_emu/thumbs`:
+
+| Kind | Folder | Size | Notes |
+|---|---|---|---|
+| **Label** | `labels` | **1000 x 545** px (1.835:1); 600 x 327 and up works | just the label, not the cartridge: the emulator puts it on its cartridge every time. Another shape is fitted in, centred, not stretched; the edge's colour fills the rest |
+| **Box** | `boxes` | **800 x 1024** px (25:32); up to 1000 x 1280 | the front of the box |
+| **Cartridge** | `carts` | 840 px wide | a finished picture of the whole cartridge; used instead of a label |
+| **Overlay** | `overlays` | 324 x 414 px (162:207) | the Overlays view's tile only; the overlay you play with goes in `overlays` next to the program - see [Overlays](#overlays) |
+
+Keep text 30 px from a label's edge (24 px on a box); bigger pictures are fine but not sharper, the emulator makes
+them tile-sized once. Games without pictures get a drawn cartridge and box with their title.
+
+<p align="center">
+  <img src="docs/images/label_template.png" width="45%" alt="Label template, 1000 x 545">
+  <img src="docs/images/label_on_cart.png" width="22%" alt="The label template on the emulator's cartridge">
+  <img src="docs/images/box_template.png" width="22%" alt="Box template, 800 x 1024">
+</p>
+
+`system/vectrex_emu/thumbs` is in the program's folder on Windows, Mac and Linux; in RetroArch's `system` folder for
+the RetroArch core; on iPhone and iPad in the Files app under **On My iPhone > Vectrex_EMU > system**; on Android
+in the app's `system` folder (`Android/data/com.hugob.vectrexemu/files/system`).
 
 ### Head tracking
 

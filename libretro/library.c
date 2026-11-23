@@ -1,7 +1,7 @@
 /* library.c - the game library over the picture, as the phone apps' and the PC's (src/frontend/library.py): the tiles' look
  * (cartridges, boxes, overlays), 2 - 6 a row or titles only, the categories (All, Recent, Games, UVMC2, PiTrex, Tests);
- * it fills the picture. The pictures: system/vectrex_emu/thumbs/{carts,boxes,overlays}/<game>.png, the PiTrex's own from
- * pitrex_tiles.h; a game without one gets a cartridge / box drawn for it (genart.c: its title in the blue pill), an overlay its name. Included by browser.c (its image, its drawing, its input); the setting
+ * it fills the picture. The pictures: system/vectrex_emu/thumbs/{carts,boxes,overlays}/<game>.png, else a cartridge with
+ * the player's own label from thumbs/labels/<game>.png (genart.c), the PiTrex's own from pitrex_tiles.h; a game without one gets a cartridge / box drawn for it (genart.c: its title in the blue pill), an overlay its name. Included by browser.c (its image, its drawing, its input); the setting
  * Video > Game list chooses it or the simple list.
  *
  * The controller: the stick or the d-pad moves the choice - up from the top row into the head (categories, then the looks and
@@ -101,9 +101,12 @@ static void lib_pic_load (int ent, int tw, int th)
 	char base[200]; snprintf (base, sizeof base, "%s", e->name); { char *q = strstr (base, " ("); if (q) *q = 0; }
 	for (int t = 0; t < 2 && !im && sys; t++) { char p[1400]; snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "%s" SEP "%s.png", sys, LIB_LOOK[lib_look], t ? base : e->name);
 		im = stbi_load (p, &w, &h, &n, 4); }
-	if (!im && e->boot)                                /* (the PiTrex: its own cartridge and box, the program's) */
-		im = lib_look == 1 ? stbi_load_from_memory (VX_PITREX_BOX, (int) sizeof VX_PITREX_BOX, &w, &h, &n, 4) : stbi_load_from_memory (VX_PITREX_CART, (int) sizeof VX_PITREX_CART, &w, &h, &n, 4);
 	int gen = 0;
+	for (int t = 0; t < 2 && !im && sys && lib_look == 0; t++) { char p[1400];   /* (no cartridge picture: the player's own label on our cartridge - genart.c) */
+		snprintf (p, sizeof p, "%s" SEP "vectrex_emu" SEP "thumbs" SEP "labels" SEP "%s.png", sys, t ? base : e->name);
+		im = vx_genart_label (p, &w, &h); gen = im != NULL; }
+	if (!im && e->boot)                               /* (the PiTrex: its own cartridge and box, the program's) */
+		im = lib_look == 1 ? stbi_load_from_memory (VX_PITREX_BOX, (int) sizeof VX_PITREX_BOX, &w, &h, &n, 4) : stbi_load_from_memory (VX_PITREX_CART, (int) sizeof VX_PITREX_CART, &w, &h, &n, 4);
 	if (!im && lib_look != 2) { im = vx_genart_make (lib_look, e->name, &w, &h); gen = im != NULL; }   /* (none of its own: drawn - genart.c, as every platform) */
 	if (!im || w < 2 || h < 2) { if (im) { if (gen) vx_genart_free (im); else stbi_image_free (im); }
 		lib_missing = realloc (lib_missing, sizeof (int) * (size_t) (lib_missing_n + 1)); if (lib_missing) lib_missing[lib_missing_n++] = ent; return; }

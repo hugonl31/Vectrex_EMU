@@ -5,6 +5,8 @@ a cartridge and a box for every game with no picture of its own, the same on the
                 cartridge already ships with) + a label composed the label project's way - the exact silver grid, the
                 shared furniture v6 WITHOUT the GCE logo, Last Human's legal box with one line - cut out as
                 tools/ios_pack.py's shrink() / dark_edge(); GA_CART_X0 / Y0 / S: where the 3120 x 1700 label lies in it
+                (the pill's frame); GA_CART_LY0 / LH: the label's top and height there exactly (the shrink's rows are
+                rounded down: a little less than x k down) - the player's own labels go there (genart.c)
   GA_FURN_PNG   the furniture alone (the Vectrex logo + TM, ARCADE SYSTEM CARTRIDGE) at the box's scale
   GA_LEGAL_PNG  the box's legal line, as a mask
   GA_FONT       Archivo Black (SIL OFL 1.1, libretro/fonts), cut to Latin-1 and the typographic quotes
@@ -83,7 +85,8 @@ def dark_edge(a):
 
 
 def shrink(im, Wd):
-    """tools/ios_pack.py's shrink(), also giving where the picture's (0, 0) went and the scale: (picture, left, top, k)"""
+    """tools/ios_pack.py's shrink(), also giving where the picture's (0, 0) went and the scale across and down:
+    (picture, left, top, k, ky)"""
     src = np.asarray(im.convert('RGBA')).copy(); left = top = 0
     def light_line(px):
         op = px[px[:, 3] > 128]; return len(op) > 0 and op[:, :3].mean() > 100
@@ -106,7 +109,7 @@ def shrink(im, Wd):
     a = np.asarray(im.resize((Wd, int(Wd * im.height / im.width)), Image.LANCZOS)).copy()
     al = a[:, :, 3]; semi = (al > 0) & (al < 250)
     a[semi, :3] = np.minimum(a[semi, :3], (40, 42, 46)); a[al < 48] = 0
-    return Image.fromarray(dark_edge(a), 'RGBA'), left, top, k
+    return Image.fromarray(dark_edge(a), 'RGBA'), left, top, k, a.shape[0] / im.height
 
 
 def shell_box(sh):
@@ -146,7 +149,7 @@ if __name__ == '__main__':
     sh = Image.open(ART + '/original gce/Armor..Attack (World).png').convert('RGBA')
     x0, y0, x1, y1 = shell_box(sh); lw = x1 - x0 + 1; lh = int(round(lw * H / W))
     im = sh.copy(); im.paste(base_label().convert('RGBA').resize((lw, lh), Image.LANCZOS), (x0, y0))
-    cart, left, top, k = shrink(im, CART_W)
+    cart, left, top, k, ky = shrink(im, CART_W)
     cx0, cy0, cs = (x0 - left) * k, (y0 - top) * k, lw / W * k     # (label px -> cartridge px: x = cx0 + lx * cs)
     cart_png = png(cart)
     # the box's furniture and legal line
@@ -172,6 +175,7 @@ if __name__ == '__main__':
          ' * cartridges and boxes from. Do not edit: change the tool, genart_titles.txt or the pictures and run it again.',
          ' * The font: Archivo Black, (c) 2017 The Archivo Black Project Authors, SIL Open Font License 1.1 (libretro/fonts/OFL.txt). */',
          '#define GA_CART_X0 %.4ff' % cx0, '#define GA_CART_Y0 %.4ff' % cy0, '#define GA_CART_S %.6ff' % cs,
+         '#define GA_CART_LY0 %.4ff' % ((y0 - top) * ky), '#define GA_CART_LH %.4ff' % (lh * ky),
          '#define GA_FONT_CAP %d' % cap, '#define GA_FONT_UPM %d' % upm]
     L += c_bytes('GA_CART_PNG', cart_png) + c_bytes('GA_FURN_PNG', furn_png) + c_bytes('GA_LEGAL_PNG', legal_png) + c_bytes('GA_FONT', font)
     L.append('static const char *const GA_TITLES[][2] = {')

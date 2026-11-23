@@ -701,18 +701,38 @@ JNIEXPORT void JNICALL JF(setTrailMul) (JNIEnv *e, jclass c, jfloat k) { (void) 
 JNIEXPORT void JNICALL JF(testCart) (JNIEnv *e, jclass c, jstring path) { (void) c; JSTR (p, path); if (p) vx_testcart_write (p); JREL (p, path); }   /* (the Test Cart, written into roms/Tests) */
 JNIEXPORT void JNICALL JF(pitrexTiles) (JNIEnv *e, jclass c, jstring thumbs) { (void) c; JSTR (p, thumbs); if (p) vx_pitrex_tiles_write (p); JREL (p, thumbs); }   /* (the PiTrex's cartridge and box, written into the thumbs folder) */
 unsigned char *vx_genart_make (int look, const char *name, int *w, int *h); void vx_genart_free (void *p);   /* (libretro/genart.c, in the core) */
-/* (a cartridge (0) or box (1) for a game with no picture of its own: { width, height, the pixels as ARGB } - Bitmap's colours) */
+unsigned char *vx_genart_label (const char *path, int *w, int *h); unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h);
+/* (genart.c's RGBA as { width, height, the pixels as ARGB } - Bitmap's colours; the pixels freed) */
+static jintArray ga_argb (JNIEnv *e, unsigned char *px, int w, int h)
+{
+	jintArray r = NULL; if (!px) return NULL;
+	const size_t n = (size_t) w * (size_t) h; jint *a = malloc ((n + 2) * sizeof (jint));
+	if (a) { a[0] = w; a[1] = h;
+		for (size_t i = 0; i < n; i++) { const unsigned char *q = px + i * 4; a[i + 2] = (jint) ((uint32_t) q[3] << 24 | (uint32_t) q[0] << 16 | (uint32_t) q[1] << 8 | (uint32_t) q[2]); }
+		r = (*e)->NewIntArray (e, (jsize) (n + 2)); if (r) (*e)->SetIntArrayRegion (e, r, 0, (jsize) (n + 2), a);
+		free (a); }
+	vx_genart_free (px); return r;
+}
+/* (a cartridge (0) or box (1) for a game with no picture of its own) */
 JNIEXPORT jintArray JNICALL JF(genart) (JNIEnv *e, jclass c, jint look, jstring name)
 {
 	(void) c; jintArray r = NULL; JSTR (p, name);
-	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_make ((int) look, p, &w, &h);
-		if (px) { const size_t n = (size_t) w * (size_t) h; jint *a = malloc ((n + 2) * sizeof (jint));
-			if (a) { a[0] = w; a[1] = h;
-				for (size_t i = 0; i < n; i++) { const unsigned char *q = px + i * 4; a[i + 2] = (jint) ((uint32_t) q[3] << 24 | (uint32_t) q[0] << 16 | (uint32_t) q[1] << 8 | (uint32_t) q[2]); }
-				r = (*e)->NewIntArray (e, (jsize) (n + 2)); if (r) (*e)->SetIntArrayRegion (e, r, 0, (jsize) (n + 2), a);
-				free (a); }
-			vx_genart_free (px); } }
+	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_make ((int) look, p, &w, &h); r = ga_argb (e, px, w, h); }
 	JREL (p, name); return r;
+}
+/* (the cartridge with the player's own label, thumbs/labels/<game>.png) */
+JNIEXPORT jintArray JNICALL JF(genlabel) (JNIEnv *e, jclass c, jstring path)
+{
+	(void) c; jintArray r = NULL; JSTR (p, path);
+	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_label (p, &w, &h); r = ga_argb (e, px, w, h); }
+	JREL (p, path); return r;
+}
+/* (a picture of the player's own (cartridge, box, overlay) made at most maxw wide, once) */
+JNIEXPORT jintArray JNICALL JF(genfit) (JNIEnv *e, jclass c, jstring path, jint maxw)
+{
+	(void) c; jintArray r = NULL; JSTR (p, path);
+	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_fit (p, (int) maxw, &w, &h); r = ga_argb (e, px, w, h); }
+	JREL (p, path); return r;
 }
 JNIEXPORT jint JNICALL JF(palette) (JNIEnv *e, jclass c) { (void) e; (void) c; extern int vx_palette; return vx_palette; }   /* (the colour scheme: 0 blue, 1 green) */
 JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on ? 1.0f : 0.0f; { extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */ vlog ("look %s", on ? "Bright" : "Vectrex"); }   /* (the look: Vectrex, or Bright - lifted and wider) */

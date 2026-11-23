@@ -8,6 +8,12 @@
  *       look 0 the cartridge (840 x 808), 1 the box (840 x 1075); name: the game's file name without its extension (UTF-8).
  *       RGBA, straight alpha, rows top down; NULL if it could not be made. Free it with vx_genart_free.
  *   int vx_genart_title (const char *name, char *out, int n)   the title the pill shows (UTF-8; "|" where a line breaks)
+ *   unsigned char *vx_genart_label (const char *path, int *w, int *h)
+ *   unsigned char *vx_genart_label_png (const unsigned char *png, int len, int *w, int *h)
+ *       the cartridge (840 x 808) with the player's own label on it (thumbs/labels/<game>.png: the label alone, 3120 x 1700
+ *       or any size at about 1.835:1) - by the file's path or its bytes; as vx_genart_make's
+ *   unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h)    (and vx_genart_fit_png: its bytes)
+ *       a picture of the player's own (a PNG: cartridge, box, overlay) made at most maxw wide, once; as vx_genart_make's
  *
  * The title: the file's name without brackets ("(Proto)", "[b1]"), a trailing " 4x" or version ("_v199", " v1.2"), "_" as
  * a space, in capitals - or what libretro/genart_titles.txt sets for it. The pill: one line (cap height up to 190 of the
@@ -15,6 +21,9 @@
  * pill as wide as its text (at least 2.4 x its height). Its data: genart_data.h (tools/make_genart_h.py). The font: Archivo
  * Black (SIL OFL 1.1, libretro/fonts), drawn by stb_truetype (public domain). Copyright (c) 2026 Hugo Bokhorst. Part of
  * Vectrex_EMU; see LICENSE.md. */
+#if defined (_MSC_VER) && !defined (_CRT_SECURE_NO_WARNINGS)
+#define _CRT_SECURE_NO_WARNINGS                             /* (fopen: built alone, MSVC) */
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -316,6 +325,120 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int *w, int *
 	ga_rrect (o, BW, BH, 96 * k, 870 * k, BW - 96 * k, 914 * k, 0.01f, GREY);   /* (the legal line) */
 	{ int lw2, lh2, n; unsigned char *l = stbi_load_from_memory (GA_LEGAL_PNG, (int) sizeof GA_LEGAL_PNG, &lw2, &lh2, &n, 4);
 	  if (l) { stbi_image_free (l); ga_stamp (o, BW, BH, GA_LEGAL_PNG, (int) sizeof GA_LEGAL_PNG, (BW - lw2) / 2, (int) (892 * k) - lh2 / 2, INK); } }
+	return o;
+}
+
+/* ---- the player's own label on the cartridge (thumbs/labels/<game>.png): pasted into the label's place on the shell as
+ * tools/ios_pack.py's cart() + shrink() does it (3120 x 1700 there: the whole place, top-aligned), resampled once straight
+ * to the cartridge's pixels (Lanczos 3, as PIL's). Another aspect (more than 2 % off): fitted inside the place, centred, not
+ * stretched; the strips left over and the label's clear pixels take the colour of the label's outer edge. The cartridge's
+ * plastic and its dark edge: GA_CART_PNG's, untouched. */
+static float ga_lanczos (float x) { x = fabsf (x); if (x >= 3) return 0; if (x < 1e-6f) return 1; const float p = 3.14159265f * x; return 3 * sinf (p) * sinf (p / 3) / (p * p); }
+typedef struct { int lo, n; float *w; } ga_tap;
+/* (for each picture pixel o0 .. o0+no-1: the source pixels under it; the source's n pixels lie at [r0, r0 + rn) in the picture) */
+static ga_tap *ga_taps (int n, float r0, float rn, int o0, int no)
+{
+	const float scale = n / rn, fs = scale > 1 ? scale : 1, sup = 3 * fs; const int maxn = (int) ceilf (2 * sup) + 2;
+	ga_tap *t = malloc (sizeof (ga_tap) * (size_t) no); float *w = malloc (sizeof (float) * (size_t) no * (size_t) maxn); if (!t || !w) { free (t); free (w); return NULL; }
+	for (int i = 0; i < no; i++) {
+		float c = (o0 + i + 0.5f - r0) * scale; c = c < 0 ? 0 : c > n ? (float) n : c;
+		int lo = (int) (c - sup + 0.5f), hi = (int) (c + sup + 0.5f); if (lo < 0) lo = 0; if (hi > n) hi = n; if (hi - lo > maxn) hi = lo + maxn; if (hi <= lo) { lo = (int) fminf (c, n - 1.0f); hi = lo + 1; }
+		float *k = w + (size_t) i * maxn, sum = 0;
+		for (int j = lo; j < hi; j++) { k[j - lo] = ga_lanczos ((j + 0.5f - c) / fs); sum += k[j - lo]; }
+		if (sum == 0) { k[0] = 1; hi = lo + 1; sum = 1; }
+		for (int j = lo; j < hi; j++) k[j - lo] /= sum;
+		t[i].lo = lo; t[i].n = hi - lo; t[i].w = k; }
+	return t;
+}
+static float ga_cov (int p, float a, float b) { return ga_clamp01 (fminf (p + 1.0f, b) - fmaxf ((float) p, a)); }   /* (how much of pixel p lies in [a, b)) */
+static unsigned char *ga_label_cart (const unsigned char *lab, int lw, int lh, int *w, int *h)
+{
+	int n; if (!lab || lw < 2 || lh < 2) return NULL;
+	unsigned char *o = stbi_load_from_memory (GA_CART_PNG, (int) sizeof GA_CART_PNG, w, h, &n, 4); if (!o) return NULL;
+	const int W = *w, H = *h;
+	/* the place (cartridge px) and the label in it */
+	const float ax = GA_CART_X0, ay = GA_CART_LY0, aw = GA_LBL_W * GA_CART_S, ah = GA_CART_LH, r = lw / (float) lh, ra = aw / ah;
+	float rx = ax, ry = ay, dw = aw, dh = ah;
+	if (fabsf (r / ra - 1) > 0.02f) { if (r > ra) { dh = aw / r; ry = ay + (ah - dh) / 2; } else { dw = ah * r; rx = ax + (aw - dw) / 2; } }
+	/* the outer edge's colour (its clear pixels left out) */
+	float fill[3] = { 205, 205, 205 }; { double s[3] = { 0, 0, 0 }, sa = 0; const int e = lw < lh ? (lw / 100 > 1 ? lw / 100 : 1) : (lh / 100 > 1 ? lh / 100 : 1);
+	  for (int y = 0; y < lh; y++) for (int x = 0; x < lw; x++) { if (y >= e && y < lh - e && x >= e && x < lw - e) { x = lw - e - 1; continue; }
+		const unsigned char *q = lab + ((size_t) y * lw + x) * 4; for (int c = 0; c < 3; c++) s[c] += q[c] * (double) q[3]; sa += q[3]; }
+	  if (sa > 255.0 * e * 4) for (int c = 0; c < 3; c++) fill[c] = (float) (s[c] / sa); }
+	const int X0 = (int) floorf (ax), X1 = (int) ceilf (ax + aw), Y0 = (int) floorf (ay), Y1 = (int) ceilf (ay + ah), nx = X1 - X0, ny = Y1 - Y0;
+	ga_tap *tx = ga_taps (lw, rx, dw, X0, nx), *ty = ga_taps (lh, ry, dh, Y0, ny);
+	float *t = malloc (sizeof (float) * 3 * (size_t) lw);   /* (one row at a time: never the label at its full size in floats) */
+	if (!tx || !ty || !t) { if (tx) free (tx[0].w); if (ty) free (ty[0].w); free (tx); free (ty); free (t); stbi_image_free (o); return NULL; }
+	for (int i = 0; i < ny; i++) { const int Y = Y0 + i; if (Y < 0 || Y >= H) continue;
+		const float cya = ga_cov (Y, ay, ay + ah), cyl = ga_cov (Y, ry, ry + dh); const ga_tap *k = &ty[i]; if (cya <= 0) continue;
+		memset (t, 0, sizeof (float) * 3 * (size_t) lw);   /* (down: the source rows under it, each over the edge's colour) */
+		for (int j = 0; j < k->n; j++) { const unsigned char *q = lab + (size_t) (k->lo + j) * lw * 4; const float wt = k->w[j];
+			for (int x = 0; x < lw; x++, q += 4) { const float a = q[3] / 255.0f; for (int c = 0; c < 3; c++) t[x * 3 + c] += wt * (q[c] * a + fill[c] * (1 - a)); } }
+		for (int x = 0; x < nx; x++) { const int X = X0 + x; if (X < 0 || X >= W) continue;   /* (across, then into the cartridge) */
+			unsigned char *p = o + ((size_t) Y * W + X) * 4; if (p[3] < 255) continue;   /* (the plastic only) */
+			const float ca = cya * ga_cov (X, ax, ax + aw), cl = cyl * ga_cov (X, rx, rx + dw); if (ca <= 0) continue;
+			float acc[3] = { 0, 0, 0 }; const ga_tap *kx = &tx[x];
+			for (int j = 0; j < kx->n; j++) { const float *s = t + (size_t) (kx->lo + j) * 3; for (int c = 0; c < 3; c++) acc[c] += kx->w[j] * s[c]; }
+			for (int c = 0; c < 3; c++) { const float v = acc[c] * cl + fill[c] * (ca - cl) + p[c] * (1 - ca); p[c] = (unsigned char) (v < 0 ? 0 : v > 255 ? 255 : v + 0.5f); } } }
+	free (tx[0].w); free (ty[0].w); free (tx); free (ty); free (t);
+	return o;
+}
+/* (its file: a PNG - by its path, or its bytes) */
+VX_GENART_API unsigned char *vx_genart_label_png (const unsigned char *png, int len, int *w, int *h)
+{
+	int lw, lh, n; unsigned char *lab, *o; if (w) *w = 0; if (h) *h = 0; if (!png || len < 8) return NULL;
+	if (!stbi_info_from_memory (png, len, &lw, &lh, &n) || lw < 2 || lh < 2 || (double) lw * lh > 64e6) return NULL;
+	if (!(lab = stbi_load_from_memory (png, len, &lw, &lh, &n, 4))) return NULL;
+	int ww = 0, hh = 0; o = ga_label_cart (lab, lw, lh, &ww, &hh); stbi_image_free (lab);
+	if (!o) return NULL;
+	{ unsigned char *c = malloc ((size_t) ww * hh * 4); if (c) memcpy (c, o, (size_t) ww * hh * 4); stbi_image_free (o); o = c; }   /* (freed by vx_genart_free) */
+	if (o) { if (w) *w = ww; if (h) *h = hh; }
+	return o;
+}
+static unsigned char *ga_read (const char *path, int *len)
+{
+	FILE *f; long n; unsigned char *b;
+	if (!path || !(f = fopen (path, "rb"))) return NULL;
+	if (fseek (f, 0, SEEK_END) || (n = ftell (f)) < 8 || n > (256L << 20) || fseek (f, 0, SEEK_SET) || !(b = malloc ((size_t) n))) { fclose (f); return NULL; }
+	if (fread (b, 1, (size_t) n, f) != (size_t) n) { fclose (f); free (b); return NULL; }
+	fclose (f); *len = (int) n; return b;
+}
+VX_GENART_API unsigned char *vx_genart_label (const char *path, int *w, int *h)
+{
+	int len = 0; unsigned char *b = ga_read (path, &len), *o; if (w) *w = 0; if (h) *h = 0; if (!b) return NULL;
+	o = vx_genart_label_png (b, len, w, h); free (b);
+	return o;
+}
+
+/* ---- a picture of the player's own (a cartridge, a box, an overlay) at most maxw wide: read once, made smaller once
+ * (Lanczos 3 over premultiplied alpha), never kept at its full size - the library's tiles are at most ~840 px wide */
+VX_GENART_API unsigned char *vx_genart_fit_png (const unsigned char *png, int len, int maxw, int *w, int *h)
+{
+	int sw, sh, n; unsigned char *im, *o; if (w) *w = 0; if (h) *h = 0; if (!png || len < 8 || maxw < 1) return NULL;
+	if (!stbi_info_from_memory (png, len, &sw, &sh, &n) || sw < 1 || sh < 1 || (double) sw * sh > 64e6) return NULL;
+	if (!(im = stbi_load_from_memory (png, len, &sw, &sh, &n, 4))) return NULL;
+	if (sw <= maxw) { o = malloc ((size_t) sw * sh * 4); if (o) { memcpy (o, im, (size_t) sw * sh * 4); if (w) *w = sw; if (h) *h = sh; } stbi_image_free (im); return o; }
+	const int dw = maxw, dh = (int) ((double) sh * maxw / sw + 0.5) < 1 ? 1 : (int) ((double) sh * maxw / sw + 0.5);
+	ga_tap *tx = ga_taps (sw, 0, (float) dw, 0, dw), *ty = ga_taps (sh, 0, (float) dh, 0, dh);
+	float *t = malloc (sizeof (float) * 4 * (size_t) sw); o = malloc ((size_t) dw * dh * 4);   /* (one row at a time) */
+	if (!tx || !ty || !t || !o) { if (tx) free (tx[0].w); if (ty) free (ty[0].w); free (tx); free (ty); free (t); free (o); stbi_image_free (im); return NULL; }
+	for (int y = 0; y < dh; y++) { const ga_tap *k = &ty[y];
+		memset (t, 0, sizeof (float) * 4 * (size_t) sw);   /* (down: premultiplied) */
+		for (int j = 0; j < k->n; j++) { const unsigned char *q = im + (size_t) (k->lo + j) * sw * 4; const float wt = k->w[j];
+			for (int x = 0; x < sw; x++, q += 4) { const float a = q[3] * wt; t[x * 4] += q[0] * a; t[x * 4 + 1] += q[1] * a; t[x * 4 + 2] += q[2] * a; t[x * 4 + 3] += a; } }
+		for (int x = 0; x < dw; x++) { float acc[4] = { 0, 0, 0, 0 }; const ga_tap *kx = &tx[x];   /* (across) */
+			for (int j = 0; j < kx->n; j++) { const float *s = t + (size_t) (kx->lo + j) * 4; for (int c = 0; c < 4; c++) acc[c] += kx->w[j] * s[c]; }
+			unsigned char *d = o + ((size_t) y * dw + x) * 4; const float a = acc[3];
+			for (int c = 0; c < 3; c++) { const float v = a > 0.5f ? acc[c] / a : 0; d[c] = (unsigned char) (v < 0 ? 0 : v > 255 ? 255 : v + 0.5f); }
+			d[3] = (unsigned char) (a < 0 ? 0 : a > 255 ? 255 : a + 0.5f); } }
+	free (tx[0].w); free (ty[0].w); free (tx); free (ty); free (t); stbi_image_free (im);
+	if (w) *w = dw; if (h) *h = dh;
+	return o;
+}
+VX_GENART_API unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h)
+{
+	int len = 0; unsigned char *b = ga_read (path, &len), *o; if (w) *w = 0; if (h) *h = 0; if (!b) return NULL;
+	o = vx_genart_fit_png (b, len, maxw, w, h); free (b);
 	return o;
 }
 

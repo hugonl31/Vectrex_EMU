@@ -2,8 +2,9 @@
 
 The owner, 2026-11-22: the PC's loader like the phones' - the tiles' look (cartridges, boxes, overlays), how many a row or
 titles only, a search, the categories; it fills the picture's place above the control deck. The pictures: the apps' own
-folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png (nothing is downloaded); a game with no cartridge or
-box there gets one drawn (genart.py: libretro/genart.c, the same as every platform's), an overlay its name's tile.
+folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png (nothing is downloaded); a cartridge from the
+player's own label, thumbs/labels/<game>.png, when there is no cartridge picture; a game with no cartridge or box gets one
+drawn (genart.py: libretro/genart.c, the same as every platform's), an overlay its name's tile.
 
 The app holds one Library; while it is open App.browser is its dict (lib=True), so everything that asks "is the loader
 open" works as before. The renderer draws state() (vecrender._library); the pictures are read by a thread (the PNG reader
@@ -55,7 +56,7 @@ class Library:
         out.sort(key=lambda g: (not g.get('boot'), g['name'].lower()))   # (the PiTrex itself: first - the owner, 2026-11-22)
         self.games = out
         th = os.path.join(V.ROOT, 'system', 'vectrex_emu', 'thumbs'); self.files = {}
-        for _, lk in LOOKS:
+        for lk in [x[1] for x in LOOKS] + ['labels']:
             d = os.path.join(th, lk); m = {}
             try:
                 for f in os.listdir(d):
@@ -84,6 +85,13 @@ class Library:
         PiTrex itself: its own picture in every look, the program's (pitrex_art.py) unless the folder has one"""
         m = self.files.get(self.look) or {}
         p = m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+        if not p and self.look == 'carts':                          # (no cartridge picture: the player's own label on our cartridge)
+            m = self.files.get('labels') or {}
+            q = m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+            if q:
+                import genart
+                if genart.lib():
+                    p = 'lab:' + q
         if not p and boot:
             import pitrex_art
             p = pitrex_art.path(self.V.ROOT, self.look)
@@ -104,8 +112,16 @@ class Library:
                     if not r:
                         raise ValueError('not drawn')
                     w, h, px = r
-                else:
-                    w, h, px = vart.load_png(p)
+                elif p.startswith('lab:'):                          # (the player's own label on our cartridge: genart.c)
+                    import genart
+                    r = genart.label(p[4:])
+                    if not r:
+                        raise ValueError('not a label')
+                    w, h, px = r
+                else:                                               # (a big picture: made tile-sized once, never kept whole)
+                    import genart
+                    r = genart.fit(p, 840)
+                    w, h, px = r if r else vart.load_png(p)
                 self.done[p] = (w, h, px)
             except Exception:   # noqa: not a picture
                 self.missing.add(p)

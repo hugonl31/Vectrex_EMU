@@ -50,7 +50,7 @@ static unsigned VX_TICKS (void) { struct timespec t; clock_gettime (CLOCK_MONOTO
  * what is no longer lit glows away in two parts. The screen rate option (90 Hz by default, for the Valve Index): each
  * retro_run is one refresh, the emulator runs whole game frames until the emulated time has caught up, and the sound
  * goes out evenly through a queue. Smooth motion (vectrex_emu.py smooth_frame): each refresh shows the moment one game
- * frame and one refresh back, its lines between the two game frames around it where they match line for line. A 3D
+ * frame and one refresh back, its lines between the two game frames around it, stroke by stroke (smooth.c). A 3D
  * Imager game is not mixed between frames (its two half turns' pictures are shown as they are). The buffers are made at
  * the picture's size, one colour channel unless the game is a 3D Imager game.
  *
@@ -2661,16 +2661,12 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 /* ---- the screen rate and Smooth motion. Each retro_run is one refresh of the screen (the rate option): it runs the
  * emulator on until the emulated time has caught up with it (no game frame, one, or two), then draws a picture of its
  * own. Smooth motion (vectrex_emu.py smooth_frame): the picture of the moment one game frame and one refresh back,
- * the lines between the two game frames around it, where the two match line for line (as many, the same intensities,
- * none moved more than SMOOTH_MATCH units); else the earlier frame as it is. The phosphor (vecrender.py PHOS_A, the
+ * the lines between the two game frames around it, stroke by stroke where a stroke's partner in the other frame is
+ * certain (smooth.c: paired by place; none moved more than SMOOTH_MATCH units); the others as drawn. The phosphor (vecrender.py PHOS_A, the
  * afterglow measured on the owner's Vectrex, at the owner's time scale 0.6): what was lit and is not lit again starts
  * to glow away, in two parts (14 % fading with 27 ms, 5.8 % with 210 ms) */
 #define SMOOTH_MATCH 2500
-#define SM_LOOK 6                         /* (Smooth motion: how far on in the other frame's list a line's partner is looked for) */
-static int sm_draw (const gframe *a, const gframe *b, double alpha, int n, int ex);   /* (smooth.c, included below the things it uses) */
-static int sm_ok (const line_t *p, const line_t *q)   /* (the same line a frame on: its colour, its ends near) */
-{ return p->c == q->c && labs (q->x0 - p->x0) < SMOOTH_MATCH && labs (q->y0 - p->y0) < SMOOTH_MATCH && labs (q->x1 - p->x1) < SMOOTH_MATCH && labs (q->y1 - p->y1) < SMOOTH_MATCH; }
-#include "smooth.c"
+#include "smooth.c"                       /* (sm_draw, sm_merge: included below the things they use) */
 VXS_ON
 static unsigned long long run_t; static double run_frac;   /* (v0.13: saved) */
 VXS_OFF
@@ -3112,8 +3108,8 @@ void retro_run (void)
 		const int slow = nh > 1 && hper > HOLD_SLOW * dt;   /* (a game slower than the screen: hold_lines) */
 		if (opt_smooth && opt_rate != 50) {
 			/* (Smooth motion, as the desktop's: one game frame and one refresh back, the frames a and b round that moment -
-			 *  their lines in between where the two match line for line; where they do not, a slow game's lines as held
-			 *  (hold_lines) at the same moment) */
+			 *  their lines in between, stroke by stroke where a stroke's partner is certain (smooth.c); without a b, a slow
+			 *  game's lines as held (hold_lines) at the same moment) */
 			double per = nh > 1 ? (hist[nh - 1].t - hist[0].t) / (nh - 1) : 0.02;
 			per = per < 0.01 ? 0.01 : per > 0.1 ? 0.1 : per;
 			const double D = now - per - dt;
@@ -3129,8 +3125,8 @@ void retro_run (void)
 			 *  in-between away from the whole picture before: that refresh every moving thing stood at a game frame's place
 			 *  instead of between two - gaps and pairs in every trail, a stutter (the owner's iPhone, 2026-11-22) */
 			 /* (and the two frames need not have as many lines: the beam's path is cut into pieces a little differently each
-			 *  frame - the Test Cart's 146, 145, 144 - and a piece more or less took the in-between away as well; the lists
-			 *  are walked side by side, a piece without a partner within SM_LOOK is such a standing line) */
+			 *  frame - the Test Cart's 146, 145, 144 - and a piece more or less took the in-between away as well; strokes are
+			 *  paired by place, smooth.c - one without a certain partner is such a standing line) */
 			if (b && alpha > 0) B = b->L;
 			sm_runs++; if (B) sm_mixed++;
 			sm_exc = 0;
@@ -3174,10 +3170,15 @@ void retro_run (void)
 #ifndef VX_EMUVR
 		/* (Smooth motion: the game frame's own lines, once a frame, after the picture's - where the afterglow starts: gpu_phos.c ph_ex_mode) */
 		ph_ex_mode = sm_ex && !vx_nobuild; ph_ex_n = 0;
-		if (ph_ex_mode) { int n2 = 0;
-			if (sm_ex_cur) for (int k = 0; k < sm_exc; k++) n2 = wl_from (W1, n2, &sm_ex_cur->L[sm_exi[k]], 1, NULL, 0);   /* (a's lines the gliding ones have just cleared) */
-			if (sm_ex_a) { const int fl = sm_exfp && sm_exfp_id == sm_ex_a->p0;   /* (the frame before: what has not started yet) */
-				for (int i = 0; i < sm_ex_a->n; i++) if (!(fl && i < sm_exfp_n && sm_exfp[i])) n2 = wl_from (W1, n2, &sm_ex_a->L[i], 1, NULL, 0); }
+		if (ph_ex_mode) { int n2 = 0, ne = 0;
+			/* (the pieces of one straight line as one line, as the PC's: smooth.c sm_merge) */
+			static line_t *exl; static int exl_cap; const int want = (sm_ex_cur ? sm_exc : 0) + (sm_ex_a ? sm_ex_a->n : 0);
+			if (exl_cap < want) { free (exl); exl_cap = want + 256; exl = malloc (sizeof (line_t) * (size_t) exl_cap); if (!exl) exl_cap = 0; }
+			if (exl) {
+				if (sm_ex_cur) for (int k = 0; k < sm_exc; k++) exl[ne++] = sm_ex_cur->L[sm_exi[k]];   /* (a's lines the gliding ones have just cleared) */
+				if (sm_ex_a) { const int fl = sm_exfp && sm_exfp_id == sm_ex_a->p0;   /* (the frame before: what has not started yet) */
+					for (int i = 0; i < sm_ex_a->n; i++) if (!(fl && i < sm_exfp_n && sm_exfp[i])) exl[ne++] = sm_ex_a->L[i]; }
+				n2 = sm_merge (0, exl, ne); }
 			if (n2) ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
 #endif
 	}

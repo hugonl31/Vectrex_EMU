@@ -9487,16 +9487,20 @@ class App:
                     P_ = _np.concatenate(Ps) if Ps else _np.zeros((0, 7))
                     if P_.ndim == 2 and len(P_):
                         P_ = self.sm_merge(P_); P_[:, 5] *= k; P_[:, 6] *= k
-                        f0 = r.frame_t0; r.frame_t0 = pv[2]
+                        f0 = r.frame_t0; r.frame_t0 = pv[2]; r.dwell_k = 1.0 / k
                         try: r.ex_built = r._build(P_, load=False)
-                        finally: r.frame_t0 = f0
+                        finally: r.frame_t0 = f0; r.dwell_k = 1.0
                 except Exception as e:   # noqa
                     if not getattr(self, '_ex_said', False): self._ex_said = True; print('smooth afterglow: %s' % e)
         r.load_pic = ld_pic                              # (the brightness bending: the game frame's own load - see above)
+        # (the frame's light as the beam drew it: its times and cycles are squeezed into the refresh, x k, and the beam's light
+        #  a place grows with its time there - built so, a moving line was dimmer than the game frame shown whole (G-Sync, or
+        #  Smooth motion off): Test Cart page 1's bars' heads 0.791 against 0.814. The dwell x 1 / k: vecrender bt2_prepare)
+        r.dwell_k = 1.0 / k if k > 0 else 1.0
         try:
             r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
         finally:
-            r.load_pic = None
+            r.load_pic = None; r.dwell_k = 1.0
     def pen_live(self):
         """the light pen in port 2, the game running: the mouse is the pen"""
         return (getattr(self, 'speech', 'off') == 'lightpen' and self.run.power and not self.browser

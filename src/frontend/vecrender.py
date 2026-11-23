@@ -829,11 +829,12 @@ def bt2_light(z, d):
     n = _np.arange(len(ld)); out = _np.exp(rows[i, n] + (rows[i + 1, n] - rows[i, n]) * g)
     out = _np.where(z < BT2_Z[0], out * _bt2_tl(z) / _bt2_tl(BT2_Z[0]), out); out = _np.where(z > BT2_Z[-1], out * _bt2_tl(z) / _bt2_tl(BT2_Z[-1]), out)
     return BT2_K * out
-def bt2_prepare(L, col=None):
+def bt2_prepare(L, col=None, dk=1.0):
     """the beam's pieces (rows x0 y0 x1 y1 flags energy t0, in time) -> the pieces to draw and each one's light: along
     every run of lit pieces that join in place and time the dwell at a place = the beam's cycles within BT2_W of it
     (along the path) / BT2_W; a long piece gives its two ends (BT2_W / 2) as pieces of their own; a run's two ends get a
-    cap (zero length, the footprint's half beyond the end)"""
+    cap (zero length, the footprint's half beyond the end). dk: the dwell from the cycles x this - a frame squeezed into a
+    refresh (Smooth motion: its times and cycles x k) lit as drawn, x 1 / k; its times and places as they are"""
     np = _np; U = 134.0; W = BT2_W
     b = L[:, 4].astype(np.int64); z = (b & 127).astype(float)
     lit = (z > 0) & ((b & 128) == 0)
@@ -842,7 +843,7 @@ def bt2_prepare(L, col=None):
     out_rows, out_light, out_src = [], [], []
     o = np.nonzero(~lit)[0]                                # (the others - the dark beam's glow, fades: piece by piece)
     if len(o):
-        out_rows.append(L[o]); out_light.append((l[o] + W) * bt2_light(z[o], t[o] / (l[o] + W))); out_src.append(o)
+        out_rows.append(L[o]); out_light.append((l[o] + W) * bt2_light(z[o], t[o] * dk / (l[o] + W))); out_src.append(o)
     k = np.nonzero(lit)[0]
     if len(k):
         X0, Y0, X1, Y1, T0, T, Ln, Z, B = x0[k], y0[k], x1[k], y1[k], t0[k], t[k], l[k], z[k], b[k]; n = len(k)
@@ -851,7 +852,7 @@ def bt2_prepare(L, col=None):
             cont[1:] = ((np.abs(X0[1:] - X1[:-1]) <= 3.0) & (np.abs(Y0[1:] - Y1[:-1]) <= 3.0) & (np.abs(T0[1:] - (T0[:-1] + T[:-1])) <= 1.5) & (B[1:] == B[:-1]) & (k[1:] == k[:-1] + 1))
         gap = np.where(cont, 0.0, 4.0 * W); S0 = np.cumsum(gap + np.concatenate([[0.0], Ln[:-1]])); S1 = S0 + Ln
         Tc = np.concatenate([[0.0], np.cumsum(T)[:-1]])
-        xs = np.empty(2 * n); ys = np.empty(2 * n); xs[0::2] = S0; xs[1::2] = S1; ys[0::2] = Tc; ys[1::2] = Tc + T
+        xs = np.empty(2 * n); ys = np.empty(2 * n); xs[0::2] = S0; xs[1::2] = S1; ys[0::2] = Tc * dk; ys[1::2] = (Tc + T) * dk
         def t_hi(s):                                       # (the beam's cycles up to s, a rest at s counted)
             i = np.clip(np.searchsorted(xs, s, side='right') - 1, 0, 2 * n - 2); dxs = xs[i + 1] - xs[i]
             v = ys[i] + np.where(dxs > 1e-9, np.clip((s - xs[i]) / np.where(dxs > 1e-9, dxs, 1.0), 0.0, 1.0), 0.0) * (ys[i + 1] - ys[i])
@@ -930,7 +931,7 @@ def _vxb_get():
     except Exception as e:   # noqa
         _vxb_off(e)
     return _vxb
-_VXB_NP = 98                              # (the parameters a picture: vxbuild.c's P_COUNT, the order in Renderer._build_c)
+_VXB_NP = 99                              # (the parameters a picture: vxbuild.c's P_COUNT, the order in Renderer._build_c)
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
@@ -3118,7 +3119,7 @@ class GLBloomRenderer(GLRenderer):
                        getattr(self, 'crt_width', 1.0) * getattr(self, 'hv_width', 1.0), getattr(self, 'knob_bright', 0.0), gain,
                        BEAM_LOWZ, BEAM_LOWW, BEAM_W0, BEAM_WZ, BEAM_TRACE_SG, float(os.environ.get('VX_BT_SPOT', BT_SPOT)), _hf, _hs,
                        BT_UNITS, BT_KMAX, BEAM_FADE, 1.0 if self.blook() else 0.0, BL_WIDTH, 1.0 if L.shape[1] > 7 else 0.0)
-                    + tuple(rgb))
+                    + tuple(rgb) + (float(getattr(self, 'dwell_k', 1.0)),))   # (dwell_k: see bt2_prepare)
             with _vxb_lock:                                # (the library keeps the pieces between its calls)
                 n = lib.vxb_pieces(L.ctypes.data, len(L), L.shape[1], P.ctypes.data)
                 if n <= 0:
@@ -3274,7 +3275,7 @@ class GLBloomRenderer(GLRenderer):
         bl = None
         if beam and os.environ.get('VX_BT_LAW', '2') != '1' and len(L):   # (the measured law: bt2_prepare)
             if os.environ.get('VX_BT_DUMP'): np.save(os.environ['VX_BT_DUMP'], L)
-            L, bl, col = bt2_prepare(L, col); b = L[:, 4].astype(np.int64)
+            L, bl, col = bt2_prepare(L, col, float(getattr(self, 'dwell_k', 1.0))); b = L[:, 4].astype(np.int64)
         if beam:                                           # (no joins or rest rules: the light does it; the glass's glow: every
             hm = ((b & 127) != 0) & ((b & 128) == 0)       #  lit piece once more, wide and faint - bit 256)
             if hm.any() and BT_HALO_F > 0:

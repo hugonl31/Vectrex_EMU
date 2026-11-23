@@ -38,7 +38,8 @@ enum {
     P_LOWZ, P_LOWW, P_W0, P_WZ, P_SG, P_SPOT, P_HF, P_HS, P_UNITS, P_KMAX, P_FADE,
     P_BLOOK, P_BL_WIDTH,
     P_COL_ON, P_RGB0,                                               /* the 3D Imager: the filter of codes 0..7 (r g b each) */
-    P_COUNT = P_RGB0 + 24
+    P_DWK = P_RGB0 + 24,                                            /* the beam's dwell from its cycles x this (Smooth motion: x 1 / k) */
+    P_COUNT
 };
 
 /* ---- the tables (vxb_tables) */
@@ -193,7 +194,8 @@ static double dwell(double s, double W, int at) { return (t_hi(s + W / 2, at) - 
 /* bt2_prepare: the core's pieces (rows of `cols` doubles: x0 y0 x1 y1 flags energy t0 [colour]) -> g_rows */
 static int prepare(const double *L, int rows, int cols, const double *P)
 {
-    const double U = 134.0, W = P[P_BT2_W], K = P[P_BT2_K];
+    const double U = 134.0, W = P[P_BT2_W], K = P[P_BT2_K], DK = P[P_DWK];   /* (DK: a frame squeezed into a refresh - Smooth motion, its
+                                                                    times and cycles x k - lights as drawn: its dwell x 1 / k) */
     int i, j, n = 0, any_lg = 0, pass;
     double *X0, *Y0, *X1, *Y1, *T0, *T, *Ln, *Z, *S0, *S1, *Tc, *H; int64_t *B; int *k, *fl;
     size_t need;
@@ -206,7 +208,7 @@ static int prepare(const double *L, int rows, int cols, const double *P)
             double dx = r[2] - r[0], dy = r[3] - r[1], l = sqrt(dx * dx + dy * dy) / U, t = r[5] / 8.0;
             Row *o = row_new(); if (!o) return -1;
             o->x0 = r[0]; o->y0 = r[1]; o->x1 = r[2]; o->y1 = r[3]; o->b = b; o->e = r[5]; o->t0 = r[6];
-            o->bl = (l + W) * bt2_light(z, t / (l + W), K); o->col = cols > 7 ? (int)(int64_t)r[7] : 0;
+            o->bl = (l + W) * bt2_light(z, t * DK / (l + W), K); o->col = cols > 7 ? (int)(int64_t)r[7] : 0;
         }
     }
     if (!n) return 0;
@@ -234,7 +236,7 @@ static int prepare(const double *L, int rows, int cols, const double *P)
             S0[j] = s; S1[j] = s + Ln[j];
             Tc[j] = j > 0 ? cs : 0.0;
             cs = j > 0 ? cs + T[j] : T[j];
-            g_xs[2 * j] = S0[j]; g_xs[2 * j + 1] = S1[j]; g_ys[2 * j] = Tc[j]; g_ys[2 * j + 1] = Tc[j] + T[j];
+            g_xs[2 * j] = S0[j]; g_xs[2 * j + 1] = S1[j]; g_ys[2 * j] = Tc[j] * DK; g_ys[2 * j + 1] = (Tc[j] + T[j]) * DK;
             fl[j] = (cont ? 1 : 0) | (mv ? 2 : 0) | (lg ? 4 : 0);
             if (lg) { any_lg = 1; H[j] = (W / 2) / Ln[j]; }
         }

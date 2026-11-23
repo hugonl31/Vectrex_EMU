@@ -530,8 +530,8 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	[_size setTitle:(k ? [NSString stringWithFormat:@"%d PER ROW \u25BE", k] : @"TITLES ONLY \u25BE") forState:UIControlStateNormal];
 }
 /* a controller or the keys: up / down / left / right move the highlight (titles only: up / down one, left / right a page),
- * L / R (Page Up / Down) a page, the Vectrex's button 4 (Return) plays, button 3 (Esc) goes back - the player's own buttons
- * (Settings > Controls) */
+ * L / R (Page Up / Down) a page, the Vectrex's button 4 (Return) plays, button 1 (Esc) goes back - the player's own buttons
+ * (Settings > Controls); 2 and 3 are free: held while button 4 starts a UVMC2 game they reach it (its calibration) */
 - (void) viewDidLayoutSubviews
 {
 	[super viewDidLayoutSubviews];
@@ -566,7 +566,7 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	const uint32_t act = (dirs & ~_padPrev) | (rep ? dirs : 0);
 	if (act >> UP & 1) [self moveSel:0]; if (act >> DN & 1) [self moveSel:1]; if (act >> LT & 1) [self moveSel:2]; if (act >> RT & 1) [self moveSel:3];
 	if (act >> L & 1) [self page:-1]; if (act >> R & 1) [self page:1];
-	if (down >> A & 1) [self playSel];             /* (button 3, back: the game's own tick closes the library - one button for back everywhere) */
+	if (down >> A & 1) [self playSel];             /* (button 1, back: the game's own tick closes the library - one button for back everywhere) */
 	_padPrev = b;
 }
 - (NSInteger) pageItems                         /* (a screenful: the rows that fit, times the tiles a row) */

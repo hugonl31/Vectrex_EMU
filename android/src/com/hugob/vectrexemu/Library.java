@@ -1,7 +1,8 @@
 /* Library.java - the games, as the iOS app's library: the looks (Cartridges, Boxes, Overlays - each its own pictures, a
  * game without one shows its name), 1-5 per row or Titles only (one setting for every look), the filters (All, Recent,
  * Games, UVMC2, PiTrex, Tests), the search; a controller or the keys move the highlight, L / R a page, button 4 plays,
- * button 3 goes back. Online, only the host changes the game - it starts for both.
+ * button 1 goes back (2 + 3 held with button 4: a UVMC2 game's calibration; touch and hold one: Play / Calibration).
+ * Online, only the host changes the game - it starts for both.
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 package com.hugob.vectrexemu;
 

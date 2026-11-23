@@ -135,6 +135,7 @@ final class Controls extends View {
 		for (int i = 0; i < 4; i++) if (btnPtr[i] == id) { btnPtr[i] = -1; tbtn &= ~(1 << ID4[i]); send (); invalidate (); }
 	}
 	int held;                                                   /* (buttons held for the player a while: a UVMC2 game's calibration) */
-	void holdFor (int mask, long ms) { held = mask; send (); android.util.Log.i ("VectrexEMU", "buttons held " + mask + " for " + ms + " ms"); postDelayed (() -> { held = 0; send (); android.util.Log.i ("VectrexEMU", "buttons let go"); }, ms); }
+	final Runnable letGo = () -> { held = 0; send (); android.util.Log.i ("VectrexEMU", "buttons let go"); };
+	void holdFor (int mask, long ms) { removeCallbacks (letGo); held = mask; send (); android.util.Log.i ("VectrexEMU", "buttons held " + mask + " for " + ms + " ms"); postDelayed (letGo, ms); }   /* (again within the time: the full time again) */
 	void send () { VX.setTouchPad (tbtn | held, tax, tay); }
 }

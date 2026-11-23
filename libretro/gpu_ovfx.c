@@ -312,10 +312,13 @@ static void ox_scratches (void)
 	glClearColor_ (0, 0, 0, 0);
 	for (int c = 0; c < 3; c++) { ph_target (ox_S[c], 0, 0, SCR_TW, SCR_TH); glClear_ (GL_COLOR_BUFFER_BIT);
 		if (c < 2) OX_DRAW (fine_n, 0, 0, 0, 5.0, 80.0, 0.3, 1.0, fw, c, 0.0); }
+	ph_keep = 1;                                /* (drawn over the fine scratches / the cleared base: kept - on a tiled GPU
+	                                             *  (phones) an invalidate threw them away; the PC never dropped them) */
 	for (int c = 2; c <= 3; c++) { ph_target (ox_S[c - 1], 0, 0, SCR_TW, SCR_TH);
 		for (int i = 0; i < 9; i++) { const double kn = kn_[i + 2], kd = kd_[i + 2]; if (kn <= 0) continue;
 			const double depth = (0.02 + 1.58 * pow (i / 8.0, 3)) * (i >= 6 ? 1.1 : 1.0);
 			OX_DRAW (SCR_COUNTS[i + 1] * kn, i + 1, 1, 1, 5.0, 80.0, 0.75, 1.25, depth * kd * SCR_STEP_W * SCR_TPM, c, 0.0); } }
+	ph_keep = 0;
 	#undef OX_DRAW
 	glDisable_ (GL_BLEND); glBindVertexArray_ (0);
 	ox_scr_ok = 1;

@@ -235,7 +235,7 @@ static GLint ph_ul (GLuint p, const char *n)
 	return glGetUniformLocation_ (p, n);
 }
 static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint filt, const void *data);
-static void ph_target (GLuint t0, GLuint t1, GLuint t2, int w, int h); static void ph_fb_flush (void);
+static void ph_target (GLuint t0, GLuint t1, GLuint t2, int w, int h); static void ph_fb_flush (void); static int ph_keep;
 static void ph_bind (GLuint prog, const char *name, int unit, GLuint tex);
 static int ph_gw, ph_gh; static GLuint ph_S, ph_B[2], ph_ovm, ph_ova;
 #include "gpu_ovfx.c"
@@ -304,7 +304,7 @@ static void ph_bltest (void)
 }
 /* (each target its own framebuffer, made once: one framebuffer's images changed pass after pass stalled the Nova's
  *  driver - the overlay's passes 9 ms, 2026-11-15) */
-static struct { GLuint t0, t1, t2, fbo; } ph_fbs[64]; static int ph_keep;   /* (ph_keep: a pass drawn over what is there) */
+static struct { GLuint t0, t1, t2, fbo; } ph_fbs[64];   /* (ph_keep: a pass drawn over what is there) */
 static void ph_fb_flush (void) { for (int i = 0; i < ph_nfb; i++) glDeleteFramebuffers_ (1, &ph_fbs[i].fbo); ph_nfb = 0; }
 static void ph_target (GLuint t0, GLuint t1, GLuint t2, int w, int h)
 {

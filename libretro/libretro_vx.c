@@ -117,6 +117,7 @@ VXS_ON
 #include "vtest.c"
 #undef main
 VXS_OFF
+#include <float.h>
 #include "libretro.h"
 #ifdef _WIN32
 #define SEP "\\"                           /* (the folder separator in paths) */
@@ -2233,22 +2234,49 @@ static int wl_from (wline *o, int m, const line_t *L, int n, const line_t *B, do
  *  cut into pieces differently in each frame (8 to 32 cycles), so a line is found again by its place, not its piece) */
 #define HOLD_CELL 128
 #define HGW 448
-static double hgt[HGW * HGW]; static unsigned hgg[HGW * HGW], hgen;
+/* (and by its own drawing: of the drawings along the line (its direction, or the two beside it: four 45 degrees apart; a spot
+ *  - a resting beam - by spots) on or next to its middle, the one nearest the line's own moment in that frame - a still line's
+ *  copy is drawn where it was in the frame, a moved one's too. The earliest drawing there, of anything, ended a line's hold
+ *  where something else was drawn first: the Test Cartridge Rev. 4's grid, Smooth motion off - the centre lines dark from
+ *  where a line across them or a stub beside them was drawn until their own copy, a third of the refreshes (2026-11-23)) */
+#define HOLD_SPOT 32.0                    /* (a piece shorter than this (units): a spot, no direction) */
+typedef struct { float t; int next; unsigned char d; } hold_ent;   /* (a drawing in a cell: its moment (s after hgb), the cell's next, its direction) */
+static int hgh[HGW * HGW]; static unsigned hgg[HGW * HGW], hgen; static double hgb; static hold_ent *hge; static int hge_n, hge_cap;
 static int hold_cell (long x, long y) { const long cx = (x + 4096) / HOLD_CELL, cy = (y + 4096) / HOLD_CELL;
 	return cx < 0 || cy < 0 || cx >= HGW || cy >= HGW ? -1 : (int) (cy * HGW + cx); }
-static double hold_find (const line_t *l, double after)   /* (the earliest later drawing on or next to the line's middle, else -1) */
+static void hold_new (double base) { if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; } hgb = base; hge_n = 0; }   /* (an empty grid) */
+static int hold_dir (const line_t *l)   /* (0 along x, 1 and 3 the diagonals, 2 along y; 4 a spot) */
 {
-	const long mx = (l->x0 + l->x1) / 2, my = (l->y0 + l->y1) / 2; double best = -1;
+	const double dx = (double) l->x1 - l->x0, dy = (double) l->y1 - l->y0, ax = fabs (dx), ay = fabs (dy);
+	if (dx * dx + dy * dy < HOLD_SPOT * HOLD_SPOT) return 4;
+	if (ay <= 0.41421356 * ax) return 0;
+	if (ax <= 0.41421356 * ay) return 2;
+	return (dx > 0) == (dy > 0) ? 1 : 3;
+}
+/* (a later drawing on or next to the line's middle, after `after`: want < 0 the earliest of any; else, along the line, the one
+ *  nearest want (the line's own moment in that frame) - -1: none) */
+static double hold_find (const line_t *l, double after, double want)
+{
+	const long mx = (l->x0 + l->x1) / 2, my = (l->y0 + l->y1) / 2; const int d = want < 0 ? -1 : hold_dir (l); double best = -1, bd = 0;
 	for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { const int c = hold_cell (mx + ox * HOLD_CELL, my + oy * HOLD_CELL);
-		if (c >= 0 && hgg[c] == hgen && hgt[c] > after && (best < 0 || hgt[c] < best)) best = hgt[c]; }
+		if (c < 0 || hgg[c] != hgen) continue;
+		for (int q = hgh[c]; q >= 0; q = hge[q].next) { const hold_ent *h = &hge[q];
+			if (d >= 0 && (d == 4 || h->d == 4 ? h->d != d : ((h->d - d) & 3) == 2)) continue;   /* (not along the line) */
+			const double e = hgb + h->t; if (e <= after) continue;
+			const double k = want < 0 ? e : fabs (e - want);
+			if (best < 0 || k < bd) { best = e; bd = k; } } }
 	return best;
 }
 static void hold_put (const line_t *l, double tau)          /* (the cells along the line: drawn at tau) */
 {
 	const double dx = l->x1 - l->x0, dy = l->y1 - l->y0; const int k = 1 + (int) (sqrt (dx * dx + dy * dy) / (HOLD_CELL / 2));
+	const unsigned char d = (unsigned char) hold_dir (l); const float v = (float) (tau - hgb); int was = -1;
 	for (int i = 0; i <= k; i++) { const int c = hold_cell (l->x0 + (long) (dx * i / k), l->y0 + (long) (dy * i / k));
-		if (c < 0) continue;
-		if (hgg[c] != hgen || tau < hgt[c]) { hgg[c] = hgen; hgt[c] = tau; } }
+		if (c < 0 || c == was) continue;
+		was = c;
+		if (hge_n == hge_cap) { const int nc = hge_cap ? hge_cap * 2 : 16384; hold_ent *ne = realloc (hge, sizeof (hold_ent) * (size_t) nc); if (!ne) return; hge = ne; hge_cap = nc; }
+		if (hgg[c] != hgen) { hgg[c] = hgen; hgh[c] = -1; }
+		hge[hge_n].t = v; hge[hge_n].d = d; hge[hge_n].next = hgh[c]; hgh[c] = hge_n++; }
 }
 /* (as the desktop's renderer (vecrender.py hold): each line lit from the moment the beam drew it until the game draws it
  *  again - found in a later frame (hold_find): a still line stays lit through a frame that left it out, a moved one
@@ -2304,12 +2332,18 @@ static int hold_lines (double T, double dt)
 		for (int k = 0; k < j; k++) { if (E[k] < 0 || (!opt_fill && j != k + 1)) continue;   /* (off: the next frame only) */
 			int done = 0; for (int a = 0; a < hec[E[k]].nap; a++) if (hec[E[k]].ap[a] == ID[j]) done = 1;
 			if (done) continue;
-			if (grid_of != j) { if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; }
+			if (grid_of != j) { hold_new (S[j]);
 				for (int q = 0; q < F[j]->n; q++) if (F[j]->L[q].c & 127) hold_put (&F[j]->L[q], S[j] + F[j]->L[q].t0 / 1.5e6);
 				grid_of = j; }
 			float *en = hec[E[k]].end; const gframe *f = F[k];
-			for (int q = 0; q < f->n; q++) { if (en[q] >= 0) continue; const double tau = S[k] + f->L[q].t0 / 1.5e6;
-				const double e = hold_find (&f->L[q], tau); if (e > tau) en[q] = (float) (e - S[k]); }   /* (kept from the frame's start) */
+			/* (the newest frame not whole yet - a piece the next one joins, frame_push: a line whose moment lies past its end is
+			 *  not drawn again in it yet; matched to what is there, the Test Cartridge Rev. 4's right edge went dark until the
+			 *  rest came) */
+			extern int vt_uvm2, vt_pitrex;
+			const int grows = j == nf - 1 && !vt_uvm2 && !vt_pitrex && (F[j]->open || F[j]->t - S[j] < SHORT_PIECE);
+			for (int q = 0; q < f->n; q++) { if (en[q] >= 0) continue; const double tau = S[k] + f->L[q].t0 / 1.5e6, want = S[j] + f->L[q].t0 / 1.5e6;
+				if (grows && want > F[j]->t) continue;
+				const double e = hold_find (&f->L[q], tau, want); if (e > tau) en[q] = (float) (e - S[k]); }   /* (kept from the frame's start) */
 			if (hec[E[k]].nap < HOLD_AP) hec[E[k]].ap[hec[E[k]].nap++] = ID[j]; }
 	}
 	int n = 0;
@@ -3325,9 +3359,8 @@ static void retro_run_one (void)
 			 *  second - the owner's iPhone, 2026-11-22. A still line is in the newest frame: not drawn twice) */
 			{ static unsigned long long shown_p0;
 			  if (vx_owe_hidden && !vx_nobuild && !a->alt && nh > 1 && shown_p0 && hist[nh - 2].p0 > shown_p0) { const gframe *h = &hist[nh - 2];
-				if (++hgen == 0) { memset (hgg, 0, sizeof hgg); hgen = 1; }
-				for (int q = 0; q < a->n; q++) if (a->L[q].c & 127) hold_put (&a->L[q], 1.0);
-				for (int q = 0; q < h->n; q++) if ((h->L[q].c & 127) && hold_find (&h->L[q], 0.0) < 0) n = wl_from (W1, n, &h->L[q], 1, NULL, 0); }
+				hold_new (0); for (int q = 0; q < a->n; q++) if (a->L[q].c & 127) hold_put (&a->L[q], 1.0);
+				for (int q = 0; q < h->n; q++) if ((h->L[q].c & 127) && hold_find (&h->L[q], 0.0, -1) < 0) n = wl_from (W1, n, &h->L[q], 1, NULL, 0); }
 			  if (!vx_nobuild) shown_p0 = a->p0; }
 			if (a->alt) { const gframe *p = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL; if (p) n = wl_from (W1, n, p->L, p->n, NULL, 0); }
 			n = wl_from (W1, n, a->L, a->n, NULL, 0);

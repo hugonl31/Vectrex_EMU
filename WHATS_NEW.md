@@ -4,6 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.3
+- Games list: every game gets a cartridge and a box, drawn with its title
+- Your own pictures (thumbs folder) still come first
+
 ## v1.8.2
 - UVMC2: a new default calibration, hand-tuned - check the new look
 - It replaces your UVMC2 calibration once (old: uvm2.cfg.before_20261123)

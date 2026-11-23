@@ -3,6 +3,15 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.3
+
+* Games list (PC, iPhone / iPad, Android, RetroArch): a game without a picture of its own gets a cartridge with its
+  title in a blue pill on the label and a box with its title, drawn by the emulator - the same on every platform. The
+  title is the file's name without brackets and version marks; libretro/genart_titles.txt sets a title by hand. Your own
+  pictures in system/vectrex_emu/thumbs (boxes, carts, PNG, the game's name) come first; overlays have no stand-in.
+* The PiTrex's box on its own grid paper.
+* Fonts: Archivo Black (SIL Open Font License 1.1); stb_truetype (public domain).
+
 ## v1.8.2
 
 * UVMC2: a new default calibration - the one shipped before was wrong; this one is hand-tuned (scale 150, tail 1016,

@@ -57,7 +57,10 @@ The emulator's files are compiled with their data in sections of their own (`src
 ## Files
 
 - `libretro_vx.c` - the core (from the EmuVR core v0.36, made portable 2026-11-15)
-- `libretro.h`, `stb_image.h` - third-party headers (libretro API: MIT; stb_image: public domain / MIT)
+- `libretro.h`, `stb_image.h`, `stb_truetype.h` - third-party headers (libretro API: MIT; stb: public domain / MIT)
+- `genart.c`, `genart_data.h`, `genart_titles.txt` - the library's cartridge and box for a game with no picture (its title
+  in the blue pill); `genart_data.h` is made by `tools/make_genart_h.py`, titles set by hand go in `genart_titles.txt`;
+  the font: `fonts/ArchivoBlack-Regular.ttf` (SIL Open Font License 1.1, `fonts/OFL.txt`)
 - `tubemap_tab.h`, `glass_cut_lut.h` - the measured tube and the glass's edge (generated tables)
 - `vectrex_emu_libretro.info` - RetroArch's core info
 - `netls.c` - UVMC2 / PiTrex netplay (lockstep); `vars_vx.h`, `tools/gen_state_vars.py` - the portable save state

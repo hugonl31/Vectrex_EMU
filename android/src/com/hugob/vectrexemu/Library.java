@@ -210,6 +210,12 @@ final class Library extends LinearLayout implements Screens.Closing {
 		String[] dirs = look ().equals ("boxes") ? new String[] { "boxes" } : look ().equals ("overlays") ? new String[] { "overlays", "" } : new String[] { "carts" };
 		for (String d : dirs) for (String nm : new String[] { n, base }) { File f = new File (new File (th, d), nm + ".png");
 			if (f.exists ()) { BitmapFactory.Options o = new BitmapFactory.Options (); o.inSampleSize = perRow () <= 2 ? 1 : 2; b = BitmapFactory.decodeFile (f.getAbsolutePath (), o); if (b != null) { cache.put (key, b); return b; } } }
+		if (!look ().equals ("overlays")) {               /* (none of its own: a cartridge / box drawn by the core's genart.c - as the iPhone, the PC, RetroArch) */
+			try { int[] g = VX.genart (look ().equals ("boxes") ? 1 : 0, n);
+				if (g != null && g.length > 2 && g[0] > 0 && g[1] > 0) {
+					Bitmap full = Bitmap.createBitmap (g, 2, g[0], g[0], g[1], Bitmap.Config.ARGB_8888);
+					b = perRow () <= 2 ? full : Bitmap.createScaledBitmap (full, g[0] / 2, g[1] / 2, true); if (b != full) full.recycle ();
+					cache.put (key, b); return b; } } catch (Throwable t) { Main.log ("library: genart " + t); } }
 		return null;
 	}
 	void play (int pos)

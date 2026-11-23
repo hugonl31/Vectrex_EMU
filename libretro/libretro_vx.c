@@ -139,6 +139,7 @@ static void vx_putenv (const char *s)       /* (as Windows' _putenv: "NAME=" tak
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #include "stb_image.h"
+#include "genart.c"                                 /* (the library's pictures for a game with none: a cartridge, a box - library.c, the apps) */
 
 #define PW 624                          /* one eye's picture: the overlay sheet, 162 x 207 mm */
 #define PH 800

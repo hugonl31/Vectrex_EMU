@@ -1,0 +1,10 @@
+# genart_titles.txt - the generated cartridges' and boxes' titles set by hand: one place for every platform (the PC,
+# RetroArch, iPhone, Android). tools/make_genart_h.py builds it into libretro/genart_data.h - run it after a change.
+#
+#   KEY = TITLE
+#
+# KEY: the title as the rules make it from the file's name (brackets, "_v123" versions and the extension gone, "_" as a
+# space, capitals) - e.g. "VecDoom (v2).um2" -> VECDOOM. TITLE: what the pill shows instead; a | breaks the line there.
+VECDOOM = VEC DOOM
+STARNOAH = STAR NOAH
+STAR TREK - THE MOTION PICTURE = STAR TREK|THE MOTION PICTURE

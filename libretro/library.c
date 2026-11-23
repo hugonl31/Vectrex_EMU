@@ -1,7 +1,7 @@
 /* library.c - the game library over the picture, as the phone apps' and the PC's (src/frontend/library.py): the tiles' look
  * (cartridges, boxes, overlays), 2 - 6 a row or titles only, the categories (All, Recent, Games, UVMC2, PiTrex, Tests);
  * it fills the picture. The pictures: system/vectrex_emu/thumbs/{carts,boxes,overlays}/<game>.png, the PiTrex's own from
- * pitrex_tiles.h; a game without one shows its name. Included by browser.c (its image, its drawing, its input); the setting
+ * pitrex_tiles.h; a game without one gets a cartridge / box drawn for it (genart.c: its title in the blue pill), an overlay its name. Included by browser.c (its image, its drawing, its input); the setting
  * Video > Game list chooses it or the simple list.
  *
  * The controller: the stick or the d-pad moves the choice - up from the top row into the head (categories, then the looks and
@@ -103,18 +103,20 @@ static void lib_pic_load (int ent, int tw, int th)
 		im = stbi_load (p, &w, &h, &n, 4); }
 	if (!im && e->boot)                                /* (the PiTrex: its own cartridge and box, the program's) */
 		im = lib_look == 1 ? stbi_load_from_memory (VX_PITREX_BOX, (int) sizeof VX_PITREX_BOX, &w, &h, &n, 4) : stbi_load_from_memory (VX_PITREX_CART, (int) sizeof VX_PITREX_CART, &w, &h, &n, 4);
-	if (!im || w < 2 || h < 2) { if (im) stbi_image_free (im);
+	int gen = 0;
+	if (!im && lib_look != 2) { im = vx_genart_make (lib_look, e->name, &w, &h); gen = im != NULL; }   /* (none of its own: drawn - genart.c, as every platform) */
+	if (!im || w < 2 || h < 2) { if (im) { if (gen) vx_genart_free (im); else stbi_image_free (im); }
 		lib_missing = realloc (lib_missing, sizeof (int) * (size_t) (lib_missing_n + 1)); if (lib_missing) lib_missing[lib_missing_n++] = ent; return; }
 	if (lib_npc == LIB_PICS) lib_pics_clear ();
 	float sc = fminf (tw / (float) w, th / (float) h); int dw = (int) (w * sc + 0.5f), dh = (int) (h * sc + 0.5f); if (dw < 1) dw = 1; if (dh < 1) dh = 1;
-	uint32_t *px = malloc ((size_t) dw * dh * 4); if (!px) { stbi_image_free (im); return; }
+	uint32_t *px = malloc ((size_t) dw * dh * 4); if (!px) { if (gen) vx_genart_free (im); else stbi_image_free (im); return; }
 	for (int y = 0; y < dh; y++) for (int x = 0; x < dw; x++) {   /* (each tile pixel: the mean of the picture's pixels under it) */
 		int sx0 = x * w / dw, sx1 = (x + 1) * w / dw, sy0 = y * h / dh, sy1 = (y + 1) * h / dh; if (sx1 <= sx0) sx1 = sx0 + 1; if (sy1 <= sy0) sy1 = sy0 + 1;
 		unsigned r = 0, g = 0, b = 0, a = 0, cnt = 0;
 		for (int sy = sy0; sy < sy1; sy++) for (int sx = sx0; sx < sx1; sx++) { const unsigned char *q = im + ((size_t) sy * w + sx) * 4; r += q[0] * q[3]; g += q[1] * q[3]; b += q[2] * q[3]; a += q[3]; cnt++; }
 		const unsigned A = a / cnt; r = a ? (unsigned) (r / (float) a * 0.7f) : 0; g = a ? (unsigned) (g / (float) a * 0.7f) : 0; b = a ? (unsigned) (b / (float) a * 0.7f) : 0;
 		px[(size_t) y * dw + x] = A << 24 | r << 16 | g << 8 | b; }
-	stbi_image_free (im);
+	if (gen) vx_genart_free (im); else stbi_image_free (im);
 	lib_pic *p = &lib_pc[lib_npc++]; p->ent = ent; p->w = dw; p->h = dh; p->px = px;
 }
 static void lib_blit (const lib_pic *p, float fx, float fy, int cy0, int cy1)

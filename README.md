@@ -1584,5 +1584,8 @@ license of the vecx emulator it is built on.
 * **The Vectrex BIOS**: Smith Engineering allows it to be copied freely for non-commercial use.
 * **FFmpeg** (GPL) - the static FFmpeg 7 builds from the imageio-ffmpeg package make the videos and snapshots;
   its source is at [ffmpeg.org](https://ffmpeg.org/download.html).
+* **Archivo Black** (c) 2017 The Archivo Black Project Authors, under the SIL Open Font License 1.1
+  (`libretro/fonts/OFL.txt`) - the titles on the game library's drawn cartridges and boxes.
+* **stb_truetype** and **stb_image** by Sean Barrett (public domain / MIT) - drawing those titles, reading pictures.
 
 Vectrex_EMU by Hugo Bokhorst, developed with Claude (Anthropic) as development assistant and programmer.

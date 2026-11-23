@@ -5,7 +5,7 @@ What is here (the zip, or the Google Drive folder: the same files, unpacked)
   vectrex_emu_libretro_android.so      the core
   vectrex_emu_libretro.info            its name and details for RetroArch
   system/vectrex_emu/                  the BIOS (Mine Storm built in), the overlays, the UVMC2's SD card folder
-  roms/                                Last Human, its UVMC2 edition, the UVMC2 demo and movie player - put them
+  roms/                                Last Human, its UVMC2 edition, the UVMC2 movie player - put them
                                        with your games
   ES-DE/custom_systems/es_systems.xml  ES-DE: Vectrex_EMU as the Vectrex system's emulator
   config/                              this core's settings for RetroArch: Max Users 2, ports 1 and 2 as

@@ -260,8 +260,10 @@ def _rename_included_game():
 _rename_included_game()
 # The included game's UVMC2 edition (v1.4.3 to v1.4.5) is out until its text is fixed (the owner, 2026-11-01): the file
 # those versions put in roms is removed once - only that exact file (its checksum), never a player's other copy or
-# its saves (uvmc2/lasthuman/ stays)
-RETIRED_ROMS = {'Last Human (UVMC2).um2': 'cfac241a619e0436cf8a9de054429773'}
+# its saves (uvmc2/lasthuman/ stays). Likewise the small UVMC2 program v1.0.2 - v1.8.1 shipped beside it (the owner,
+# 2026-11-23: no longer part of the emulator) - only the file those versions put there
+RETIRED_ROMS = {'Last Human (UVMC2).um2': 'cfac241a619e0436cf8a9de054429773',
+                'UVMC2 Demo.um2': 'a5a8fddb38477db65497449b040beb78'}
 def _retire_roms():
     import hashlib
     for f, md5 in RETIRED_ROMS.items():

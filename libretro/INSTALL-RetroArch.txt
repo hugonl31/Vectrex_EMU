@@ -7,7 +7,7 @@ What is here (laid out as RetroArch's own folders)
   system/     vectrex_emu/: the BIOS (Mine Storm built in), the overlays, the UVMC2's SD card folder
   config/     this core's settings for RetroArch: Max Users 2, ports 1 and 2 as "Vectrex controller" (the sticks
               in netplay)
-  roms/       Last Human, its UVMC2 edition, the UVMC2 demo and movie player - put them with your games
+  roms/       Last Human, its UVMC2 edition, the UVMC2 movie player - put them with your games
 
 1. Copy the folders cores, info, system and config into RetroArch's folders of those names
    (Settings > Directory shows where they are: Cores, Core Info, System/BIOS, Configuration). You then have

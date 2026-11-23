@@ -5,6 +5,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.8.1
 
+* UVMC2: a new calibration, made by hand on this emulator - the one that came with it was wrong. Every UVMC2 SD card
+  gets it once (PC: at the start; RetroArch, iPhone / iPad, Android: at the first UVMC2 game), whatever file it had;
+  the old file is kept beside it as uvm2.cfg.before_20261123. A calibration made after that stays.
 * Look (PC: Tube > Look; iPhone / iPad and the Android app: Settings > Look): Vectrex - the measured picture, the default
   on the PC. Bright is the default on phones and tablets.
   Bright - for a small screen, whose thin lines give little light: the tube's light lifted and the beam 30 % wider.

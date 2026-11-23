@@ -109,6 +109,7 @@ kokosretribution	Kokos Retribution
 kolonie	Kolonie
 labyrinthrev4vectorrouge	Labyrinth Rev 4 Vector Rouge
 lastbattle	Last Battle
+lasthuman	Last Human
 lichtbringer	Lichtbringer
 lineart	Lineart
 lordsofcode	Lords Of Code
@@ -169,6 +170,7 @@ repulse	Repulse
 revector	Revector
 ripoff	Rip Off
 robhop	RobHop
+robotarena	Robot Arena
 rockaroidsremix	Rockaroids Remix
 rocketsledge	Rocket Sledge
 roundersdemo	Rounders Demo

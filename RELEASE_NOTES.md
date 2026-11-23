@@ -10,6 +10,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
   the emulator on every platform (system/vectrex_emu/thumbs/shipped, ~25 MB). Matched to your ROMs by name (case,
   punctuation and "(...)" parts don't matter; other known spellings in its index.txt); the other games keep the
   drawn cartridge and box. The full set (all 280 games) is a separate download, the GitHub release artwork-1.
+* Last Human's label and box and Robot Arena's label (label art by Hugo Bokhorst) come with the emulator too; the full
+  set has an extras folder with his labels (PNG), his SVG label reconstructions and the Vectrex logo (SVG).
 * Your own pictures may be JPEG as well as PNG, and still come first.
 
 ## v1.8.4

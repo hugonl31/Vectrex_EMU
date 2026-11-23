@@ -818,6 +818,8 @@ TOPICS = [
 ('p', "Box art and title artwork: Simon Quincey's Vectrex 2D Front Cover Box Art pack, used with permission. The games list's boxes, and the cartridge labels "
       "made from them, for the 112 games with real artwork come with the emulator; the full set is a separate "
       "download (the README: your own pictures for the games list)."),
+('p', "Label art and reconstructions by Hugo Bokhorst: Last Human's label and box and Robot Arena's label come with the "
+      "emulator; the full set's extras folder has all his labels, their SVG reconstructions and the Vectrex logo."),
 ('p', "The settings live in system\\settings.json next to Vectrex_EMU.exe (or in %APPDATA%\\Vectrex_EMU "
       "when that folder can not be written)."),
 ]),

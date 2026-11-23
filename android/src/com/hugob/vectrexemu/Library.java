@@ -58,7 +58,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 	static void show (Main m) { if (!m.stack.isEmpty () || !m.started) return; Main.log ("ui library opened"); m.push (new Library (m)); }
 
 	final Main m; final GridView grid; final EditText search; final LinearLayout chips; final TextView size; final TextView[] looks = new TextView[3];
-	List<Game> all, shown = new ArrayList<> (); String filter = "All"; int sel = -1;   /* (the highlight: a controller or the keys) */
+	List<Game> all, shown = new ArrayList<> (); String filter = "All"; int sel = -1; boolean ready;   /* (the highlight: a controller or the keys) */
 	final LruCache<String, Bitmap> cache = new LruCache<String, Bitmap> (48 << 20) { @Override protected int sizeOf (String k, Bitmap b) { return b.getByteCount (); } };
 	int perRow () { return Math.max (0, Math.min (5, m.prefs.getInt ("lib.perrow", 3))); }
 	String look () { return m.prefs.getString ("lib.look", "boxes"); }
@@ -103,8 +103,11 @@ final class Library extends LinearLayout implements Screens.Closing {
 				else play (pos); });
 			return true; });
 		grid.setAdapter (adapter); addView (grid, new LayoutParams (-1, 0, 1));
-		paintLooks (); sizeLabel (); reload (); apply ();
-		post (() -> { int cur = current (); if (cur >= 0) { sel = cur; adapter.notifyDataSetChanged (); grid.setSelection (Math.max (0, cur - Math.max (1, perRow ()))); } });   /* (opened at the game playing, selected) */
+		paintLooks (); sizeLabel (); reload (); apply (); ready = true;
+		/* (the library itself holds the focus, not the search field - opened by touch the field took it, and a controller's
+		 *  keys went into it; the field takes keys once it is tapped) */
+		setFocusable (true); setFocusableInTouchMode (true); setDescendantFocusability (FOCUS_BEFORE_DESCENDANTS); if (android.os.Build.VERSION.SDK_INT >= 26) setDefaultFocusHighlightEnabled (false);
+		post (() -> { requestFocus (); int cur = current (); if (cur >= 0) { sel = cur; adapter.notifyDataSetChanged (); grid.setSelection (Math.max (0, cur - Math.max (1, perRow ()))); } });   /* (opened at the game playing, selected) */
 	}
 	@Override public void closed () { cache.evictAll (); }
 	/* the keys and the pad (Input.java hands a controller's here as the arrows, Page Up / Down, Enter): the highlight -
@@ -116,12 +119,32 @@ final class Library extends LinearLayout implements Screens.Closing {
 		final int c = e.getKeyCode (); if (e.getAction () != KeyEvent.ACTION_DOWN) return c == KeyEvent.KEYCODE_DPAD_UP || c == KeyEvent.KEYCODE_DPAD_DOWN || c == KeyEvent.KEYCODE_DPAD_LEFT || c == KeyEvent.KEYCODE_DPAD_RIGHT
 			|| c == KeyEvent.KEYCODE_PAGE_UP || c == KeyEvent.KEYCODE_PAGE_DOWN || c == KeyEvent.KEYCODE_DPAD_CENTER || c == KeyEvent.KEYCODE_ENTER || super.dispatchKeyEvent (e);
 		switch (c) {
-		case KeyEvent.KEYCODE_DPAD_UP: move (0); return true; case KeyEvent.KEYCODE_DPAD_DOWN: if (search.hasFocus ()) search.clearFocus (); move (1); return true;
+		case KeyEvent.KEYCODE_DPAD_UP: move (0); return true; case KeyEvent.KEYCODE_DPAD_DOWN: if (search.hasFocus ()) requestFocus (); move (1); return true;
 		case KeyEvent.KEYCODE_DPAD_LEFT: move (2); return true; case KeyEvent.KEYCODE_DPAD_RIGHT: move (3); return true;
 		case KeyEvent.KEYCODE_PAGE_UP: page (-1); return true; case KeyEvent.KEYCODE_PAGE_DOWN: page (1); return true;
 		case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER: case KeyEvent.KEYCODE_NUMPAD_ENTER: if (sel >= 0) play (sel); return true;
 		}
 		return super.dispatchKeyEvent (e);
+	}
+	/* (a controller's keys while the search field is typed in: before the on-screen keyboard can take them) */
+	@Override public boolean dispatchKeyEventPreIme (KeyEvent e)
+	{
+		if (search.hasFocus () && (Input.isPad (e.getDevice ()) || KeyEvent.isGamepadButton (e.getKeyCode ())) && Input.key (m, e)) return true;
+		return super.dispatchKeyEventPreIme (e);
+	}
+	/* a controller's (Input.screenKey): always the highlight - the search field lets go of the focus and its keyboard */
+	boolean padKey (KeyEvent e, int b)
+	{
+		if (search.hasFocus ()) { ((android.view.inputmethod.InputMethodManager) m.getSystemService (android.content.Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow (search.getWindowToken (), 0);
+			Main.log ("library: the controller takes over from the search field"); }
+		if (!isFocused ()) requestFocus ();
+		if (e.getAction () != KeyEvent.ACTION_DOWN) return true;
+		switch (b) {
+		case Input.UP: move (0); break; case Input.DOWN: move (1); break; case Input.LEFT: move (2); break; case Input.RIGHT: move (3); break;
+		case Input.L: page (-1); break; case Input.R: page (1); break;
+		case Input.A: if (e.getRepeatCount () == 0 && sel >= 0) play (sel); break;
+		}
+		return true;
 	}
 	int pageItems () { View v = grid.getChildAt (0); int ih = v != null ? v.getHeight () + grid.getVerticalSpacing () : (int) m.dp (200); return Math.max (1, grid.getHeight () / Math.max (1, ih)) * cols (); }
 	void move (int d)
@@ -155,11 +178,17 @@ final class Library extends LinearLayout implements Screens.Closing {
 	}
 	void apply ()
 	{
+		final String keep = sel >= 0 && sel < shown.size () ? shown.get (sel).path : null;   /* (the game highlighted) */
 		String q = search.getText ().toString ().toLowerCase (Locale.ROOT); List<Game> r = new ArrayList<> ();
 		if (filter.equals ("Recent")) { for (String p : m.prefs.getString ("recent", "").split ("\n")) for (Game g : all) if (g.path.equals (p)) r.add (g); }
 		else for (Game g : all) if ((filter.equals ("All") && !g.kind.equals ("Tests")) || g.kind.equals (filter)) r.add (g);
 		if (!q.isEmpty ()) { List<Game> f = new ArrayList<> (); for (Game g : r) if (g.name.toLowerCase (Locale.ROOT).contains (q)) f.add (g); r = f; }
-		shown = r; adapter.notifyDataSetChanged ();
+		/* (the highlight in the new list: the same game while it is in it, else the first - past the list's end button 4 and
+		 *  the stick did nothing) */
+		int ns = -1; if (keep != null) for (int i = 0; i < r.size (); i++) if (r.get (i).path.equals (keep)) { ns = i; break; }
+		if (ns < 0 && ready && !r.isEmpty ()) ns = 0;
+		shown = r; sel = ns; adapter.notifyDataSetChanged ();
+		if (ready && sel >= 0) { final int s0 = sel; grid.post (() -> grid.setSelection (Math.max (0, s0 - cols ()))); }
 		for (int i = 0; i < chips.getChildCount (); i++) { TextView c = (TextView) chips.getChildAt (i); boolean on = c.getTag ().equals (filter);
 			c.setTextColor (on ? Main.HI2 : Main.FG2); c.setBackground (Screens.states (m, on ? Main.SEL : 0, Main.EDGE2, m.dp (17))); }
 	}

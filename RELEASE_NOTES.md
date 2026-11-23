@@ -3,6 +3,22 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.2
+
+* UVMC2: a new default calibration - the one shipped before was wrong; this one is hand-tuned (scale 150, tail 1016,
+  brightness 100, aspect 278, window 13250 x 16750). It is written once to every UVMC2 SD card the emulator uses, on
+  every platform (PC: at the start; RetroArch, iPhone / iPad, Android: at the first UVMC2 game), also over a
+  calibration of your own: your old file is kept beside it as uvm2.cfg.before_20261123. A calibration made after that
+  stays. Please check the new look of your UVMC2 games; to calibrate again, start the game with buttons 2 + 3 held.
+* The calibration is now also in .conf/uvm2.cfg on the card, where games built with the newer UVMC2 SDK read it
+  (config/uvm2.cfg stays for older games).
+* Games list (PC, iPhone / iPad, Android, RetroArch): button 1 goes back, button 3 no longer - buttons 2 + 3 can be held
+  while button 4 starts a game, which opens a UVMC2 game's calibration, as on the real cartridge. In the phone apps
+  button 1 is back on every screen.
+* UVMC2 games: Calibration (2 + 3 held) in the games list - PC: right click; RetroArch: hold button 4 or the game's
+  tile; iPhone / iPad and Android: touch and hold the game.
+* The UVMC2 Demo is no longer included.
+
 ## v1.8.1
 
 * Look (PC: Tube > Look; iPhone / iPad and the Android app: Settings > Look): Vectrex - the measured picture, the default

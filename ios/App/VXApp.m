@@ -690,6 +690,19 @@ long vxa_presents;                         /* (the pictures handed to the screen
 + (Class) layerClass { return [CAMetalLayer class]; }   /* (Metal shows the picture; the core still draws with OpenGL ES) */
 @end
 
+/* files no longer shipped: a pack update only adds, so they stay on a phone - removed at the start and after an update (as
+ * the PC's RETIRED_ROMS): a game only as it was shipped (its MD5 - a player's own copy stays), its pictures */
+static void vxa_retire (void)
+{
+	NSArray<NSArray<NSString *> *> *list = @[ @[ @"roms/UVMC2 Demo.um2", @"a5a8fddb38477db65497449b040beb78" ], @[ @"system/vectrex_emu/thumbs/carts/UVMC2 Demo.png", @"" ] ];
+	for (NSArray<NSString *> *r in list) {
+		NSString *p = [vxa_docs () stringByAppendingPathComponent:r[0]]; if (![NSFileManager.defaultManager fileExistsAtPath:p]) continue;
+		if (r[1].length) { char h[33] = ""; long long n = 0;
+			if (!vx_net_md5_file (p.fileSystemRepresentation, h, &n) || [@(h) caseInsensitiveCompare:r[1]] != NSOrderedSame) { vlog ("retired: %s kept (not the shipped file)", r[0].UTF8String); continue; } }
+		const BOOL ok = [NSFileManager.defaultManager removeItemAtPath:p error:nil];
+		vlog ("retired: %s %s", r[0].UTF8String, ok ? "removed" : "could not be removed"); }
+}
+
 @interface VXGameVC : UIViewController
 - (void) gotFrame:(unsigned)w :(unsigned)h;
 - (void) setRunning:(int)on;
@@ -867,7 +880,7 @@ static void vxa_toast (NSString *s, double secs)
 - (void) nextPart
 {
 	if (!_qIds.count) {                                  /* (all here) */
-		_prog.hidden = YES; vlog ("parts: all fetched");
+		_prog.hidden = YES; vlog ("parts: all fetched"); vxa_retire ();
 		if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
 			UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
 			[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
@@ -904,6 +917,7 @@ static void vxa_toast (NSString *s, double secs)
 - (void) startCore
 {
 	if (_link) return;                              /* (running already: a download from Settings while playing) */
+	vxa_retire ();                                  /* (before the last game is looked for: it may be one of them) */
 	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];   /* (OpenGL ES: the core's; no layer of its own) */
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));

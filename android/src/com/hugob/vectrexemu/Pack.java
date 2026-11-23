@@ -60,6 +60,16 @@ final class Pack {
 				else { busy = false; m.startCore (); } });
 		}).start ();
 	}
+	/* files no longer shipped: a pack update only adds, so they stay on a phone - removed here at the start and after an
+	 * update (as the PC's RETIRED_ROMS): a game only as it was shipped (its MD5 - a player's own copy stays), its pictures */
+	static final String[][] RETIRED = { { "roms/UVMC2 Demo.um2", "a5a8fddb38477db65497449b040beb78" }, { "system/vectrex_emu/thumbs/carts/UVMC2 Demo.png", null } };
+	static void retire (Main m)
+	{
+		for (String[] r : RETIRED) { File f = new File (m.ext (), r[0]); if (!f.isFile ()) continue;
+			try { if (r[1] != null && !r[1].equalsIgnoreCase (VX.md5 (f.getAbsolutePath ()))) { Main.log ("retired: " + r[0] + " kept (not the shipped file)"); continue; }
+				Main.log ("retired: " + r[0] + (f.delete () ? " removed" : " could not be removed")); }
+			catch (Exception e) { Main.log ("retired: " + r[0] + " - " + e); } }
+	}
 	/* the choice of parts: the needed ones always (the first start), the rest chosen */
 	static void choose (Main m, boolean first)
 	{
@@ -102,7 +112,7 @@ final class Pack {
 					setInstalled (m, id, x.optString ("version")); done += x.optLong ("size"); Main.log ("part " + id + ": " + files + " files"); }
 				catch (Exception e) { Main.log ("part " + id + ": failed - " + e); ok = false; break; } }
 			final boolean fine = ok;
-			m.h.post (() -> { m.wProg.setVisibility (View.GONE); busy = false;
+			m.h.post (() -> { m.wProg.setVisibility (View.GONE); busy = false; retire (m);
 				if (!fine && installed (m).length () == 0) { m.status ("The games could not be fetched. Close the app and try again."); return; }
 				if (!fine) m.status ("The download failed - on with the files here; try again later in Settings > Downloads.");
 				if (!m.started) m.h.postDelayed (m::startCore, fine ? 0 : 3000);

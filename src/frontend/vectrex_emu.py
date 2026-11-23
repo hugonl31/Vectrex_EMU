@@ -1795,37 +1795,51 @@ def ensure_sd_dir(d):
 UVM2_CFG_DEFAULT = ('scale 150\nt1_tail_q8 1016\nzero 3\nbright 100\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
                     'neg_rate_y 0\ndrift_x 0\ndrift_y 0\naspect_q8 278\nwin_x 13250\nwin_y 16750\n').encode().ljust(511, b' ') + b'\n'
 UVM2_CFG_FILES = (('.conf', 'uvm2.cfg'), ('config', 'uvm2.cfg'))
-# the calibrations the earlier versions shipped (their uvm2.cfg's MD5): a card that still has one byte for byte was never
-# calibrated by its player - it gets the new one at the start (uvm2_cfg_update); any other file is the player's and stays
-UVM2_CFG_OLD = ('9ed414c3e40b0719a4b526bb1d7a978f',    # (v1.6.2 - v1.8.1: scale 160, zero 3)
-                'a577e3a5cd6895b909001338f34df13a')    # (v1.5.2 - v1.6.1: zero 34)
+# the calibration's version: every card gets UVM2_CFG_DEFAULT once (uvm2_cfg_force), whatever it had - v1.8.1 and
+# earlier shipped a wrong one. The card's marker file (UVM2_CFG_MARK) holds the version it got; a new calibration
+# shipped later: a new version here (and libretro/make_uvm2_cfg.py run: the core has the same) - every card again.
+# Never in a release's uvmc2 folder: the updater adds missing files - the marker first would skip the step
+UVM2_CFG_VERSION = '2026-11-23'
+UVM2_CFG_MARK = ('.conf', 'vectrex_emu_cal')
 
 
-def uvm2_cfg_update(d):
-    """the SD card folder d's calibration at the start: each of its two files (UVM2_CFG_FILES) that is a calibration an
-    earlier version shipped, untouched since, becomes UVM2_CFG_DEFAULT; then a card without .conf/uvm2.cfg whose
-    config/uvm2.cfg is the default gets it there too. A player's own file (any other) and a card with none stay"""
-    import hashlib
-    new, old = (os.path.join(d, *f) for f in UVM2_CFG_FILES)
-    def put(p):
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p + '.tmp', 'wb') as f:
-            f.write(UVM2_CFG_DEFAULT)
-        os.replace(p + '.tmp', p)
-    def read(p):
-        try:
-            return open(p, 'rb').read() if os.path.getsize(p) <= 4096 else None
-        except OSError:
-            return None
+def uvm2_cfg_force(d):
+    """the SD card folder d gets the emulator's calibration (UVM2_CFG_DEFAULT, both UVM2_CFG_FILES) once per
+    UVM2_CFG_VERSION, whatever it has - a player's own file too, or none; a different file is kept beside it as
+    uvm2.cfg.before_<version> (the first one only). The marker (UVM2_CFG_MARK) written last: the player's later
+    calibrations stay. No folder d: nothing. Returns whether it wrote"""
+    if not d or not os.path.isdir(d):
+        return False
+    mark = os.path.join(d, *UVM2_CFG_MARK)
     try:
-        for p in (new, old):
-            b = read(p)
-            if b is not None and hashlib.md5(b).hexdigest() in UVM2_CFG_OLD:
-                put(p)
-        if not os.path.exists(new) and read(old) == UVM2_CFG_DEFAULT:
-            put(new)
+        with open(mark, 'rb') as f:
+            if f.read(64).decode('ascii', 'replace').strip() == UVM2_CFG_VERSION:
+                return False
     except OSError:
         pass
+    bak = 'uvm2.cfg.before_' + UVM2_CFG_VERSION.replace('-', '')
+    try:
+        for f in UVM2_CFG_FILES:
+            p = os.path.join(d, *f)
+            try:
+                with open(p, 'rb') as g:
+                    b = g.read(len(UVM2_CFG_DEFAULT) + 1)
+            except FileNotFoundError:
+                b = None
+            if b == UVM2_CFG_DEFAULT:
+                continue
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            if b is not None and not os.path.exists(os.path.join(os.path.dirname(p), bak)):
+                shutil.copy2(p, os.path.join(os.path.dirname(p), bak))
+            with open(p + '.tmp', 'wb') as g:
+                g.write(UVM2_CFG_DEFAULT)
+            os.replace(p + '.tmp', p)
+        os.makedirs(os.path.dirname(mark), exist_ok=True)
+        with open(mark, 'w', encoding='ascii') as f:
+            f.write(UVM2_CFG_VERSION + '\n')
+        return True
+    except OSError:
+        return False
 
 
 def c1_setup_done(fn):
@@ -2002,6 +2016,7 @@ class Core:
             except (OSError, ValueError):
                 pass
         if sd_dir and rom.lower().endswith('.um2'):
+            uvm2_cfg_force(sd_dir)                                  # (a card chosen since the start: the calibration, once)
             img = os.path.join(CACHE_DIR, 'uvmc2_sd.img')
             try:
                 fatimg.build(sd_dir, img)
@@ -2557,7 +2572,8 @@ class App:
         self.speech = self.port2_auto(args.rom)
         self.sd_dir = _card_dir(c0.get('uvm2_sd_dir'), SD_DEFAULT)   # the UVMC2's SD card
         ensure_sd_dir(self.sd_dir)                              # (plug and play: there from the first start)
-        uvm2_cfg_update(self.sd_dir)                            # (an earlier version's shipped calibration: the new one)
+        for d in {SD_DEFAULT, self.sd_dir}:                     # (this version's calibration on the card, once -
+            uvm2_cfg_force(d)                                   #  the default card and the chosen one)
         self.px_dir = _card_dir(c0.get('pitrex_sd_dir'), PX_DEFAULT)   # Add-ons: the PiTrex's SD card
         u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
         u = new_defaults(u, (c0.get('defaults') or {}).get('unit'), UNIT_PRESETS['owner'])
@@ -8618,6 +8634,7 @@ class App:
         to the calibration that comes with the emulator (UVM2_CFG_DEFAULT) - for a file a calibration went wrong in. The
         old ones are kept beside them (uvm2.cfg.bak); a UVMC2 game in the slot starts again with it"""
         paths = [os.path.join(self.sd_dir, *f) for f in UVM2_CFG_FILES]
+        mark = (os.path.join(self.sd_dir, *UVM2_CFG_MARK), (UVM2_CFG_VERSION + '\n').encode())   # (this version's: done)
         if not deck.dialog('question', 'Reset UVMC2 calibration',
                            'Put the UVMC2 calibration that comes with the emulator back on the SD card?' + chr(10) + chr(10) +
                            chr(10).join(paths) + chr(10) + chr(10) + 'The current files are kept as uvm2.cfg.bak.',
@@ -8631,14 +8648,14 @@ class App:
             except OSError:
                 pass
         if (self.args.rom or '').lower().endswith('.um2'):      # (the game has the card: written when it gives it back)
-            self.card_writes = getattr(self, 'card_writes', []) + [(path, UVM2_CFG_DEFAULT) for path in paths]
+            self.card_writes = getattr(self, 'card_writes', []) + [(path, UVM2_CFG_DEFAULT) for path in paths] + [mark]
             self.restart(self.args.rom)
         else:
-            for path in paths:
+            for path, data in [(path, UVM2_CFG_DEFAULT) for path in paths] + [mark]:
                 try:
                     os.makedirs(os.path.dirname(path), exist_ok=True)
                     with open(path, 'wb') as f:
-                        f.write(UVM2_CFG_DEFAULT)
+                        f.write(data)
                 except OSError as e:
                     return self.rom_error('%s:\n%s' % (path, e))
         self.show_look('UVMC2 calibration: as it comes with the emulator')

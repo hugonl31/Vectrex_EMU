@@ -1,0 +1,64 @@
+# The download links of Vectrex > Get games & extras (src/frontend/getter.py) checked every Monday: every source of
+# every item tried and its file checked (tools/linkcheck.py; the whole big files in a month's first week). Problems:
+# one issue "Download links: problems found" opened or updated with the table; closed when all is well again.
+# The run fails only when an item has no working source left.
+name: linkcheck
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: 'Download the big files whole'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: check the links
+        id: check
+        continue-on-error: true
+        run: python tools/linkcheck.py --full ${{ inputs.full && 'yes' || 'auto' }} --md report.md
+      - name: the issue
+        if: always() && hashFiles('report.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROBLEMS: ${{ steps.check.outputs.problems }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE='Download links: problems found'
+          printf '\n[The run](%s)\n' "$RUN_URL" >> report.md
+          num=$(gh issue list --state open --limit 100 --json number,title \
+                --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n1)
+          if [ "$PROBLEMS" = "true" ]; then
+            if [ -n "$num" ]; then
+              gh issue view "$num" --json body --jq .body | grep '^- ' > old.txt || true
+              grep '^- ' report.md > new.txt || true
+              gh issue edit "$num" --body-file report.md
+              if ! cmp -s old.txt new.txt; then      # (a comment - a notification - only when the problems changed)
+                gh issue comment "$num" --body "The problems changed ($(date -u +%F)): see the table above. [The run]($RUN_URL)"
+              fi
+            else
+              gh issue create --title "$TITLE" --body-file report.md
+            fi
+          elif [ -n "$num" ]; then
+            gh issue comment "$num" --body "All download links work again ($(date -u +%F)). [The run]($RUN_URL)"
+            gh issue close "$num"
+          fi
+      - name: the result
+        if: steps.check.outcome == 'failure'
+        run: |
+          echo "An item has no working source left: see report.md / the issue"
+          exit 1

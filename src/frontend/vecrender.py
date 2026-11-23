@@ -1776,6 +1776,21 @@ def hum_coeffs(t, strength, speed, hz=50):
 # brightness bending: the beam current loads the high voltage; when much is lit it sags, slower
 # electrons deflect more and the picture grows (or shifts); the supply smooths it over ~60 ms.
 BEND_TYPES = ['grow', 'shift', 'grow+shift']
+# The load: a picture's beam time x its intensity's share, from the core's lines as they come - each line once, not the
+# pieces drawn (the beam trace adds a glass's-glow copy of every lit piece and a cap at each run's end: counted, they
+# made the load ~1.9 x, screen 1 0.696). Its unit: the Test Cartridge's grid (screen 1) 0.366, as when the tube map was
+# measured (tubemap: / 1.0172) - the line renderer then counted its resting spots' halos too, 1.056 x the lines alone
+# (the Full Grid Tests the same 1.056).
+BEND_LOAD_CYC = 30000.0 / 1.0556
+
+def beam_load(L, k=1.0):
+    """a picture's beam load for the brightness bending (BEND_LOAD_CYC): its lines' cycles x intensity share; L the
+    core's lines (an array n x 7+, or tuples - those without energy left out); k: their times squeezed by that (Smooth
+    motion's refresh) - the game frame's own load all the same"""
+    k = k if k and k > 0 else 1.0
+    if _np is not None and getattr(L, 'ndim', 0) == 2:
+        return float(_np.sum(L[:, 5] / 8.0 * ((L[:, 4].astype(_np.int64) & 127) / 127.0))) / BEND_LOAD_CYC / k
+    return sum((ln[5] / 8.0) * ((int(ln[4]) & 127) / 127.0) for ln in L if len(ln) > 5) / BEND_LOAD_CYC / k
 
 # ------------------------------------------------------------------ phosphor in real time
 # The screen is shown at a fixed rate (60 Hz), whatever the game's frame rate. Each beam line lights
@@ -3041,6 +3056,12 @@ class GLBloomRenderer(GLRenderer):
         if _bt: gain = gain * 0.0035                       # (beam trace, the tube collapsing: these are screen values, the picture takes light - about the same look)
         return self._build_py(lines, gain, load)
 
+    def _pic_load(self, lines):
+        """the brightness bending's load of the picture being built: beam_load of its lines, or load_pic - Smooth motion's,
+        the game frame's own (the lines it hands over are squeezed into the refresh, an alternate frame's other half added)"""
+        ld = getattr(self, 'load_pic', None)
+        return beam_load(lines) if ld is None else ld
+
     def _build_c(self, lines, gain=1.0, load=True):
         """_build_np's beam trace in C (native/vxbuild.c: the same arithmetic piece by piece, the same arrays back).
         None: not for these lines or settings, or no library - the numpy way then"""
@@ -3090,8 +3111,8 @@ class GLBloomRenderer(GLRenderer):
                 n = lib.vxb_pieces(L.ctypes.data, len(L), L.shape[1], P.ctypes.data)
                 if n <= 0:
                     return None
-                # brightness bending: this frame's beam load, smoothed (numpy's own sum: the same number)
-                ld_ = float(np.sum(np.frombuffer((ctypes.c_double * n).from_address(lib.vxb_load()), dtype=np.float64))) / 30000.0
+                # brightness bending: this picture's beam load (the core's lines: beam_load), smoothed
+                ld_ = self._pic_load(L)
                 lf = getattr(self, 'load_f', ld_)
                 if load:
                     lf += (ld_ - lf) * 0.3
@@ -3233,6 +3254,7 @@ class GLBloomRenderer(GLRenderer):
             raise ValueError('lines')
         col = L[:, 7].astype(np.int64) if L.shape[1] > 7 else None
         L = L[:, :7]
+        ld_ = self._pic_load(L)                                  # (brightness bending: the core's lines, before any are added)
         b = L[:, 4].astype(np.int64)
         if len(b) and not getattr(self, 'beam_trace', False):   # (rests joined to lines: see DOT_C0)
             b = mark_joined(L[:, 0], L[:, 1], L[:, 2], L[:, 3], b, L[:, 5], L[:, 6]); L[:, 4] = b
@@ -3309,8 +3331,7 @@ class GLBloomRenderer(GLRenderer):
         w, h = self.size
         sc, ox, oy = self.map
         cyc = e / 8.0
-        # brightness bending: this frame's beam load, smoothed
-        ld_ = float(np.sum(cyc * ((b & 127) / 127.0))) / 30000.0
+        # brightness bending: this picture's beam load (ld_, above), smoothed
         self.load_f = getattr(self, 'load_f', ld_)
         if load:
             self.load_f += (ld_ - self.load_f) * 0.3
@@ -3448,6 +3469,7 @@ class GLBloomRenderer(GLRenderer):
         tube switches on or off)"""
         if not lines:
             return None
+        ld = self._pic_load(lines)                         # (brightness bending: the core's lines, before the halos)
         if _np is not None and len(lines) and all(len(ln) > 6 for ln in lines):   # (rests joined to lines: see DOT_C0)
             A = _np.asarray([ln[:7] for ln in lines], dtype=float)
             bj = mark_joined(A[:, 0], A[:, 1], A[:, 2], A[:, 3], A[:, 4].astype(_np.int64), A[:, 5], A[:, 6])
@@ -3475,12 +3497,10 @@ class GLBloomRenderer(GLRenderer):
                 s3, c3 = s2 * c1 + c2 * s1, c2 * c1 - s2 * s1
                 return (PX[1] * s1 + QX[1] * c1 + PX[2] * s2 + QX[2] * c2 + PX[3] * s3 + QX[3] * c3,
                         PY[1] * s1 + QY[1] * c1 + PY[2] * s2 + QY[2] * c2 + PY[3] * s3 + QY[3] * c3)
-        # brightness bending: this frame's beam load (energy x intensity per frame time), smoothed
-        do_load = load
-        load = sum((ln[5] / 8.0) * ((ln[4] & 127) / 127.0) for ln in lines if len(ln) > 5) / 30000.0
-        self.load_f = getattr(self, 'load_f', load)
-        if do_load:
-            self.load_f += (load - self.load_f) * 0.3
+        # brightness bending: this picture's beam load (ld, above: beam_load), smoothed
+        self.load_f = getattr(self, 'load_f', ld)
+        if load:
+            self.load_f += (ld - self.load_f) * 0.3
         bend = getattr(self, 'bend_on', False) and self.bend_strength > 0
         # the tube switching on / off: brightness (warm-up) and picture size (bulge, collapse)
         cgain = getattr(self, 'crt_gain', 1.0) * getattr(self, 'hv_light', 1.0)   # (R525: the high voltage, see unit_picture)

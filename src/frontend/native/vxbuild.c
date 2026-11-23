@@ -2,8 +2,9 @@
    and bt2_light, the tube's map _tube_f / tubemap.imp_np / unit_warp / glass_flat): the same arithmetic in the same
    order, piece by piece instead of numpy array by array (a picture of ~1700 pieces: 2.6 ms in numpy). Loaded with
    ctypes (Renderer._build_c); the numpy code stays as the reference and the way without this library.
-   Three calls a picture: vxb_pieces (the pieces to draw, their count), vxb_load (each piece's beam load: numpy sums
-   it, so the brightness bending's load is the same number), vxb_fill (the vertex arrays, into the caller's buffers).
+   Two calls a picture: vxb_pieces (the pieces to draw, their count), vxb_fill (the vertex arrays, into the caller's
+   buffers). vxb_load (each piece's beam load) is not used: the brightness bending's load is the core's lines', each once
+   (vecrender.py beam_load) - the pieces hold the glass's glow copies and the caps too.
    The tables and all constants come from Python (vxb_tables once, the array P every call): one place to tune them.
    Doubles throughout, float only in the output, no fused multiply-add: the results match numpy's.
    Part of Vectrex_EMU; see LICENSE.md. */

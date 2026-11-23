@@ -1781,10 +1781,29 @@ def ensure_sd_dir(d):
 
 
 # the UVMC2's calibration as it comes with the emulator (package/uvmc2/config/uvm2.cfg: the owner's, made on this
-# emulator's console, 2026-11-03; zero 3 since 2026-11-13: what a real Vectrex wants, the zero test cartridge) - Config > Ports > Reset UVMC2 calibration writes it back to the card. The SDK's
-# file: its lines, padded with spaces to 512 bytes (the last a newline)
-UVM2_CFG_DEFAULT = ('scale 160\nt1_tail_q8 752\nzero 3\nbright 80\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
-                    'neg_rate_y 0\ndrift_x 0\ndrift_y 0\naspect_q8 268\nwin_x 13500\nwin_y 14750\n').encode().ljust(511, b' ') + b'\n'
+# emulator, 2026-11-23) - Config > Ports > Reset UVMC2 calibration writes it back to the card. The SDK's file: its
+# lines, padded with spaces to 512 bytes (the last a newline)
+UVM2_CFG_DEFAULT = ('scale 150\nt1_tail_q8 1016\nzero 3\nbright 100\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
+                    'neg_rate_y 0\ndrift_x 0\ndrift_y 0\naspect_q8 278\nwin_x 13250\nwin_y 16750\n').encode().ljust(511, b' ') + b'\n'
+# the calibrations the earlier versions shipped (their uvm2.cfg's MD5): a card that still has one byte for byte was never
+# calibrated by its player - it gets the new one at the start (uvm2_cfg_update); any other file is the player's and stays
+UVM2_CFG_OLD = ('9ed414c3e40b0719a4b526bb1d7a978f',    # (v1.6.2 - v1.8.1: scale 160, zero 3)
+                'a577e3a5cd6895b909001338f34df13a')    # (v1.5.2 - v1.6.1: zero 34)
+
+
+def uvm2_cfg_update(d):
+    """the SD card folder d's config/uvm2.cfg: a calibration an earlier version shipped, untouched since, becomes
+    UVM2_CFG_DEFAULT; a player's own (any other file) and a card with none stay as they are"""
+    import hashlib
+    p = os.path.join(d, 'config', 'uvm2.cfg')
+    try:
+        if os.path.getsize(p) <= 4096 and hashlib.md5(open(p, 'rb').read()).hexdigest() in UVM2_CFG_OLD:
+            tmp = p + '.tmp'
+            with open(tmp, 'wb') as f:
+                f.write(UVM2_CFG_DEFAULT)
+            os.replace(tmp, p)
+    except OSError:
+        pass
 
 
 def c1_setup_done(fn):
@@ -2516,6 +2535,7 @@ class App:
         self.speech = self.port2_auto(args.rom)
         self.sd_dir = _card_dir(c0.get('uvm2_sd_dir'), SD_DEFAULT)   # the UVMC2's SD card
         ensure_sd_dir(self.sd_dir)                              # (plug and play: there from the first start)
+        uvm2_cfg_update(self.sd_dir)                            # (an earlier version's shipped calibration: the new one)
         self.px_dir = _card_dir(c0.get('pitrex_sd_dir'), PX_DEFAULT)   # Add-ons: the PiTrex's SD card
         u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
         u = new_defaults(u, (c0.get('defaults') or {}).get('unit'), UNIT_PRESETS['owner'])

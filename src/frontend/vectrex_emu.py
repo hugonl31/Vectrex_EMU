@@ -9353,6 +9353,17 @@ class App:
         np = _np
         if np is None or A.ndim != 2 or B.ndim != 2 or A.shape[1] != B.shape[1] or A.shape[1] < 7 or not len(A) or not len(B):
             return None
+        lib = self.sm_lib()                              # (in C: native/vxsmooth.c vxs_hold - the pairing as sm_pair's, the
+        if lib is not None and getattr(lib, 'vxs_hold_ok', False):   #  rest as below, the same numbers; 1.7 ms -> 0.4 a
+            try:                                                      #  game frame, Vectrexians' 13000 pieces)
+                Ac = np.ascontiguousarray(A, dtype=np.float64); Bc = np.ascontiguousarray(B, dtype=np.float64)
+                sel = np.empty(len(Ac), dtype=np.int64); sh = np.empty(len(Ac))
+                with vecrender._vxb_lock:
+                    n = lib.vxs_hold(Ac.ctypes.data, len(Ac), Bc.ctypes.data, len(Bc), Ac.shape[1], float(dmin), float(self.SMOOTH_MATCH),
+                                     float(self.SM_NEAR), float(self.SM_OTHER[0]), float(self.SM_OTHER[1]), sel.ctypes.data, sh.ctypes.data)
+                return (A[sel[:n]], sh[:n]) if n > 0 else None
+            except Exception as e:   # noqa
+                self.sm_c_stop(e)
         ma = self.sm_pair(A, B)
         if ma is None:
             return None

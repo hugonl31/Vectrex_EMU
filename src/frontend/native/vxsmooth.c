@@ -421,6 +421,45 @@ VXB_API int vxs_pair(int64_t *ma, int64_t *mb)
     return 0;
 }
 
+/* the hand-over (vectrex_emu.py hold_pairs: the screen's own rate, Smooth motion off): a's pieces that b draws again dmin or
+   more away - paired as vxs_frame pairs (sm_pair) -, their rows into sel, and how much later b draws each one's place on
+   its partner stroke into sh (cycles: b's moment, a's own taken off). The count (0: none; below 0: not done). numpy's
+   order of the work kept: each end looked up for every piece of a (interp over all of them, its search going on from the
+   last place), the moments for the chosen ones alone (an interp of those) */
+static double *g_pt; static size_t g_cpt;
+VXB_API int vxs_hold(const double *A, int na, const double *B, int nb, int cols, double dmin, double M, double nearr, double ok,
+                     double oa, int64_t *sel, double *sh)
+{
+    int i, j0 = 0, j1 = 0, js = 0, len = 2 * nb, m = 0, k;
+    const double *pu, *px, *py;
+    if (!A || !B || na <= 0 || nb <= 0 || cols < 7 || !sel || !sh) return -1;
+    if (strokes(A, na, cols, &g_fa) < 0 || strokes(B, nb, cols, &g_fb) < 0) return -2;
+    if (g_cma < (size_t)na) { int64_t *p = (int64_t *)realloc(g_ma, ((size_t)na + 256) * sizeof(int64_t)); if (!p) return -2; g_ma = p; g_cma = (size_t)na + 256; }
+    if (g_cmb < (size_t)nb) { int64_t *p = (int64_t *)realloc(g_mb, ((size_t)nb + 256) * sizeof(int64_t)); if (!p) return -2; g_mb = p; g_cmb = (size_t)nb + 256; }
+    if (pairing(M, nearr, ok, oa) < 0) return -2;
+    if (g_cpt < (size_t)len) { double *p = (double *)realloc(g_pt, ((size_t)len + 512) * sizeof(double)); if (!p) return -2; g_pt = p; g_cpt = (size_t)len + 512; }
+    for (i = 0; i < nb; i++) {                                      /* (b's path in time: a piece's start and end, cycles) */
+        const double *b = B + (size_t)i * cols;
+        g_pt[2 * i] = b[6]; g_pt[2 * i + 1] = b[6] + b[5] / 8.0;
+    }
+    pu = g_fb.pu; px = g_fb.px; py = g_fb.py;
+    for (i = 0; i < na; i++) {
+        const double *a = A + (size_t)i * cols;
+        int64_t mm = g_ma[g_fa.sid[i]]; double q0 = (double)mm + 0.999 * g_fa.f0[i], q1 = (double)mm + 0.999 * g_fa.f1[i], T[4], d;
+        if (q0 == q0) { j0 = find(q0, pu, len, j0); T[0] = at(q0, j0, pu, px, len); T[1] = at(q0, j0, pu, py, len); } else T[0] = T[1] = q0;
+        if (q1 == q1) { j1 = find(q1, pu, len, j1); T[2] = at(q1, j1, pu, px, len); T[3] = at(q1, j1, pu, py, len); } else T[2] = T[3] = q1;
+        d = max2(max2(fabs(T[0] - a[0]), fabs(T[1] - a[1])), max2(fabs(T[2] - a[2]), fabs(T[3] - a[3])));
+        if (mm >= 0 && d >= dmin && ((int64_t)a[4] & 127) > 0) sel[m++] = i;
+    }
+    for (k = 0; k < m; k++) {
+        const double *a = A + (size_t)sel[k] * cols;
+        double q0 = (double)g_ma[g_fa.sid[sel[k]]] + 0.999 * g_fa.f0[sel[k]], t;
+        if (q0 == q0) { js = find(q0, pu, len, js); t = at(q0, js, pu, g_pt, len); } else t = q0;
+        sh[k] = t - a[6];
+    }
+    return m;
+}
+
 /* numpy's sum of a run (add.reduceat, as add.reduce: the first, then the rest summed in pairs) */
 static double pw_sum(const double *a, int n, int st)
 {

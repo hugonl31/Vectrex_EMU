@@ -924,6 +924,12 @@ def _vxb_get():
             lib.vxs = True
         except AttributeError:                  # (an older library: the numpy way for that)
             lib.vxs = False
+        try:                                    # (the hand-over's pairing: vectrex_emu.py hold_pairs)
+            cd = ctypes.c_double
+            lib.vxs_hold.argtypes = [vp, ci, vp, ci, ci, cd, cd, cd, cd, cd, vp, vp]; lib.vxs_hold.restype = ci
+            lib.vxs_hold_ok = bool(lib.vxs)
+        except AttributeError:
+            lib.vxs_hold_ok = False
         f8 = lambda a: _np.ascontiguousarray(a, dtype=_np.float64)
         tl, kx, ky = f8(TUBE_LIGHT), f8([a_ for a_, b_ in BT2_TLK]), f8([b_ for a_, b_ in BT2_TLK])
         d, z, l_, tx, ty = f8(BT2_D), f8(BT2_Z), f8(BT2_L), f8(tubemap.DX), f8(tubemap.DY)

@@ -1596,7 +1596,7 @@ Build outputs (`core/`, `build/`, `Vectrex_EMU.exe`, `dist-*`) are not in the re
 ## Credits and license
 
 Vectrex_EMU is free software under the **GNU General Public License v3** ([LICENSE.md](LICENSE.md)), the
-license of the vecx emulator it is built on.
+license of the vecx emulator it is built on. What the program sends over the internet, and when: [PRIVACY.md](PRIVACY.md).
 
 * **vecx** - the original emulator core.
 * **MAME** - the SP0256 synthesizer in `src/core/sp0256.c` is ported from MAME's sp0256.cpp

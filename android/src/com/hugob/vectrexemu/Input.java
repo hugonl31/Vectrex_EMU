@@ -124,11 +124,10 @@ final class Input {
 		if (b == Y || b == X || b == B || b == A) { int p = port (e.getDeviceId ());
 			if (p >= 0) { int t = turnButton (p, code, b); if (!down) btn[p] &= ~(1 << t); else if (t == X || t == B) btn[p] |= 1 << t; } }
 		if (b == Y) { if (down && e.getRepeatCount () == 0) { Main.log ("pad: back"); Screens.back (m); } return true; }
-		if (b == A && root instanceof Library) { root.dispatchKeyEvent (new KeyEvent (e.getDownTime (), e.getEventTime (), e.getAction (), KeyEvent.KEYCODE_ENTER, e.getRepeatCount ())); return true; }
+		if (root instanceof Library && (b == A || b == L || b == R || b == UP || b == DOWN || b == LEFT || b == RIGHT)) return ((Library) root).padKey (e, b);   /* (the library: always its highlight, never the search field) */
 		if (b == A) { if (root != null) { View f = root.findFocus (); KeyEvent k = new KeyEvent (e.getDownTime (), e.getEventTime (), e.getAction (), KeyEvent.KEYCODE_DPAD_CENTER, e.getRepeatCount ());
 			if (f != null) f.dispatchKeyEvent (k); else root.dispatchKeyEvent (k); } return true; }
 		if (b == L || b == R) { KeyEvent k = new KeyEvent (e.getDownTime (), e.getEventTime (), e.getAction (), b == L ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN, e.getRepeatCount ());
-			if (root instanceof Library) { root.dispatchKeyEvent (k); return true; }
 			View f = root != null ? root.findFocus () : null; if (f != null) f.dispatchKeyEvent (k); return true; }
 		if (b == UP || b == DOWN || b == LEFT || b == RIGHT) return false;   /* (the screen's own focus moving) */
 		return b >= 0;                                                      /* (the rest: nothing over a screen) */

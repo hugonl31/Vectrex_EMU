@@ -60,6 +60,36 @@ jobs:
           screencapture -x mac-app-screen.png || true
           wait $! ; echo "exit $?" >> mac-app.log
           cat mac-app.log
+      - name: sign and notarize the app (Developer ID - skipped without the secrets)
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}                 # (the Developer ID Application certificate, .p12, base64)
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}                         # (notarization: the Apple ID, its app-specific password, the team)
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$MAC_CERT_P12" ]; then echo "no signing secrets: the app stays unsigned"; exit 0; fi
+          KC=$RUNNER_TEMP/sign.keychain-db; KP=$(uuidgen)
+          echo "$MAC_CERT_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security create-keychain -p "$KP" $KC && security set-keychain-settings -lut 3600 $KC && security unlock-keychain -p "$KP" $KC
+          security import $RUNNER_TEMP/cert.p12 -k $KC -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" $KC > /dev/null
+          security list-keychains -d user -s $KC $(security list-keychains -d user | tr -d '"')
+          ID=$(security find-identity -v -p codesigning $KC | grep -o '"Developer ID Application[^"]*"' | head -1 | tr -d '"')
+          echo "signing as: $ID"
+          # (the hardened runtime, as notarization needs; Python's ctypes and the bundled libraries need these two)
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' '<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>' \
+            '<key>com.apple.security.cs.disable-library-validation</key><true/>' '</dict></plist>' > $RUNNER_TEMP/ent.plist
+          APP=dist-mac/Vectrex_EMU.app
+          find "$APP/Contents" -type f \( -name '*.dylib' -o -name '*.so' -o -perm -u+x \) ! -path '*/Contents/MacOS/Vectrex_EMU' -print0 |
+            xargs -0 -I{} codesign --force --timestamp --options runtime --entitlements $RUNNER_TEMP/ent.plist --sign "$ID" {} 2>/dev/null || true
+          codesign --force --timestamp --options runtime --entitlements $RUNNER_TEMP/ent.plist --sign "$ID" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          ditto -c -k --keepParent "$APP" $RUNNER_TEMP/notarize.zip
+          xcrun notarytool submit $RUNNER_TEMP/notarize.zip --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --timeout 30m
+          xcrun stapler staple "$APP"
+          spctl --assess --type execute --verbose=2 "$APP"
       - name: pack the app
         run: |
           mkdir -p pkg                                                      # (the app, system, roms, overlays)

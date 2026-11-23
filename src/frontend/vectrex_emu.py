@@ -9117,6 +9117,13 @@ class App:
     SMOOTH_EXW = 96                                     # (Smooth motion: a line that moves on by this or more a frame starts its
                                                         #  afterglow as soon as the gliding line is that far past its place - the core's SM_EXW)
     SMOOTH_MATCH = 2500                                 # (a line moved by more: not the same line - 7 % of the screen)
+    # (a stroke glides only when its partner in the next frame is certain: identical shapes in a formation, a row of them
+    #  left out of a frame - Vectrexians' aliens - and the stroke at the same place in the list is the same shape one row
+    #  on: drawn halfway between, the aliens deformed, rows missing (the owner's recording, 2026-11-23). Certain: it moved
+    #  SM_NEAR at most, or no other stroke that could be its partner lies within SM_OTHER[0] x its own move + SM_OTHER[1]
+    #  - sm_align; handed to the C version, vxs_frame)
+    SM_NEAR = 400
+    SM_OTHER = (2.0, 300.0)
     def smooth_on(self):
         return getattr(self, 'smooth', False) and not self.vrr and bool(self.ren) and hasattr(self.ren, 'present')
     def toggle_smooth(self):
@@ -9158,7 +9165,8 @@ class App:
                                  alpha, float(self.SMOOTH_MATCH), float(self.SMOOTH_EXW), 0.97 * per * 1.5e6, ctypes.byref(kc),
                                  kma.ctypes.data if kma is not None else None, len(kma) if kma is not None else 0,
                                  kmb.ctypes.data if kmb is not None else None, len(kmb) if kmb is not None else 0,
-                                 R.ctypes.data, self.sm_exf.ctypes.data, now_.ctypes.data, info) < 0 or info[0] != len(R):
+                                 R.ctypes.data, self.sm_exf.ctypes.data, now_.ctypes.data, info,
+                                 float(self.SM_NEAR), float(self.SM_OTHER[0]), float(self.SM_OTHER[1])) < 0 or info[0] != len(R):
                     return None
                 if info[4] == 0:                        # (two frames newly paired: the pairing, for every refresh between them)
                     ma = np.empty(info[2], dtype=np.int64); mb = np.empty(info[3], dtype=np.int64)
@@ -9198,10 +9206,10 @@ class App:
 
         The beam draws a stroke - pieces joined end to start, one brightness - and the core cuts it into pieces by time, a
         little differently each frame (16 24 40 200 8 8 ... cycles in one, 16 16 24 40 192 8 8 ... in the next): the pieces of
-        two frames do not pair up, the strokes do. So strokes are matched (their ends near, their brightness the same), and a
-        piece's ends are looked up along the other frame's stroke at the same share of its drawing time. Matching piece to
-        piece (2026-11-22, a day) paired neighbours wherever a frame had a piece more: shapes broke into dashes - the owner's
-        recording of Mine Storm's mothership"""
+        two frames do not pair up, the strokes do. So strokes are matched (their ends near, their brightness the same, the
+        partner certain: SM_NEAR), and a piece's ends are looked up along the other frame's stroke at the same share of its
+        drawing time. Matching piece to piece (2026-11-22, a day) paired neighbours wherever a frame had a piece more: shapes
+        broke into dashes - the owner's recording of Mine Storm's mothership"""
         M = self.SMOOTH_MATCH
         def strokes(X):
             n = len(X); st = _np.ones(n, dtype=bool)
@@ -9230,43 +9238,31 @@ class App:
         kept = getattr(self, '_al_keep', None)           # (the pairing: worked out once for the two frames, asked for every refresh)
         if key is not None and kept is not None and kept[0] is key[0] and kept[1] is key[1] and len(kept[2]) == len(SA) and len(kept[3]) == len(SB):
             ma, mb = kept[2], kept[3]
-        elif len(SA) == len(SB) and bool(same(SA, SB).all()):   # (stroke for stroke; one that does not fit: laid along each other, below)
-            idx = _np.arange(len(SA)); ma[idx] = idx; mb[idx] = idx
-        else:
-            # (a stroke more or less: the two lists laid along each other for the least total distance - a stroke paired with the
-            #  one at its place, or left out at the price of a stroke SMOOTH_MATCH away. Walked side by side with 'near enough'
-            #  as the test (an hour, 2026-11-22), a small shape's strokes are all near each other: the lists went on one out of
-            #  step, the shape scrambled for that frame - the owner's recording, Mine Storm's mothership at its smallest)
-            la_, lb_ = len(SA), len(SB); Wb = abs(la_ - lb_) + 6; K = 2 * Wb + 1; INF = 1e18; G = float(M)
-            C = _np.full((la_, K), INF); ia = _np.arange(la_)
-            for k_ in range(K):
-                jb = ia + k_ - Wb; v = (jb >= 0) & (jb < lb_)
-                if not v.any(): continue
-                X = SA[v]; Y = SB[jb[v]]; d = _np.abs(Y[:, :4] - X[:, :4]).max(1)
-                okk = same(X, Y)
-                col = _np.full(int(v.sum()), INF); col[okk] = d[okk]; C[v, k_] = col
-            C = C.tolist()
-            D = [[INF] * K for _ in range(la_ + 1)]; BP = [[0] * K for _ in range(la_ + 1)]
-            D[0][Wb] = 0.0
-            for i_ in range(la_ + 1):
-                Di = D[i_]; Dn = D[i_ + 1] if i_ < la_ else None; Ci = C[i_] if i_ < la_ else None
-                for k_ in range(K):
-                    d = Di[k_]
-                    if d >= INF: continue
-                    j_ = i_ + k_ - Wb
-                    if j_ < 0 or j_ > lb_: continue
-                    if k_ + 1 < K and j_ + 1 <= lb_ and d + G < Di[k_ + 1]: Di[k_ + 1] = d + G; BP[i_][k_ + 1] = 2   # (b's stroke left out)
-                    if Dn is not None:
-                        if j_ < lb_ and Ci[k_] < INF and d + Ci[k_] < Dn[k_]: Dn[k_] = d + Ci[k_]; BP[i_ + 1][k_] = 1   # (paired)
-                        if k_ - 1 >= 0 and d + G < Dn[k_ - 1]: Dn[k_ - 1] = d + G; BP[i_ + 1][k_ - 1] = 3                 # (a's left out)
-            i_ = la_; k_ = lb_ - la_ + Wb
-            if 0 <= k_ < K and D[i_][k_] < INF:
-                while i_ > 0 or (i_ + k_ - Wb) > 0:
-                    t_ = BP[i_][k_]
-                    if t_ == 1: i_ -= 1; ma[i_] = i_ + k_ - Wb; mb[i_ + k_ - Wb] = i_
-                    elif t_ == 2: k_ -= 1
-                    elif t_ == 3: i_ -= 1; k_ += 1
-                    else: break
+        elif len(SA) == len(SB):
+            # (stroke for stroke, each only where its partner is certain - SM_NEAR, above; a stroke that is not stands where
+            #  the game drew it, a's until halfway and b's after. Two frames with different numbers of strokes: none paired,
+            #  each frame shown as drawn. Laid along each other for the least total distance instead (2026-11-22, a day),
+            #  Vectrexians' aliens were paired with the same alien a row away)
+            ok = same(SA, SB); d = _np.abs(SB[:, :4] - SA[:, :4]).max(1)
+            sure = ok & (d <= self.SM_NEAR); nk = _np.nonzero(ok & ~sure)[0]
+            if len(nk):                                  # (moved further: is there another it could be as well?)
+                lim = self.SM_OTHER[0] * d[nk] + self.SM_OTHER[1]
+                def other(X, Y, nk, lim):
+                    # (which of X's strokes nk have another of Y's strokes - not their own - the same by same() and within lim;
+                    #  looked for among those whose start is near enough across: Y's in order of that)
+                    o = _np.argsort(Y[:, 0], kind='stable'); xs = Y[o, 0]; x = X[nk, 0]
+                    lo = _np.searchsorted(xs, x - lim - 1.0, 'left'); cnt = _np.searchsorted(xs, x + lim + 1.0, 'right') - lo
+                    tot = int(cnt.sum()); r = _np.zeros(len(nk), dtype=bool)
+                    if not tot: return r
+                    w = _np.repeat(_np.arange(len(nk)), cnt)
+                    j = o[_np.arange(tot) - _np.repeat(_np.cumsum(cnt) - cnt - lo, cnt)]
+                    m = (j != nk[w]) & (_np.abs(Y[j, 1] - X[nk[w], 1]) < lim[w]); w = w[m]; j = j[m]
+                    P = X[nk[w]]; Q = Y[j]
+                    r[w[(_np.abs(Q[:, :4] - P[:, :4]).max(1) < lim[w]) & same(P, Q)]] = True
+                    return r
+                un = ~other(SA, SB, nk, lim); nk = nk[un]; lim = lim[un]       # (b's strokes, then a's for those left)
+                if len(nk): sure[nk[~other(SB, SA, nk, lim)]] = True
+            idx = _np.nonzero(sure)[0]; ma[idx] = idx; mb[idx] = idx
         if key is not None: self._al_keep = (key[0], key[1], ma, mb)
         def look(sid, f0, f1, mp, pu, px, py, n):
             v = mp[sid] >= 0; q0 = mp[sid] + 0.999 * f0; q1 = mp[sid] + 0.999 * f1

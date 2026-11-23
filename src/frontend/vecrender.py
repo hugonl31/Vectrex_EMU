@@ -1067,7 +1067,7 @@ def _vxb_get():
         lib.vxb_fill.argtypes = [vp] * 7 + [ctypes.POINTER(ctypes.c_double)]; lib.vxb_fill.restype = ci
         try:                                    # (Smooth motion's work, native/vxsmooth.c: vectrex_emu.py sm_frame_c, sm_merge)
             cd = ctypes.c_double
-            lib.vxs_frame.argtypes = [vp, ci, vp, ci, ci, cd, cd, cd, cd, ctypes.POINTER(cd), vp, ci, vp, ci, vp, vp, vp, vp]
+            lib.vxs_frame.argtypes = [vp, ci, vp, ci, ci, cd, cd, cd, cd, ctypes.POINTER(cd), vp, ci, vp, ci, vp, vp, vp, vp, cd, cd, cd]
             lib.vxs_frame.restype = ci
             lib.vxs_pair.argtypes = [vp, vp]; lib.vxs_pair.restype = ci
             lib.vxs_merge.argtypes = [vp, ci, ci, vp]; lib.vxs_merge.restype = ci

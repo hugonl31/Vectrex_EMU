@@ -92,7 +92,7 @@ static void lib_scan (const char *select)
 	lib_focus = 2; lib_menu = 0; lib_b4_t = -1; lib_press_i = -1;
 }
 
-/* ---- the pictures: read on demand (one a refresh), kept at the tile's size, 30 % less bright (as every library) */
+/* ---- the pictures: read on demand (one a refresh), kept at the tile's size, at 80 % brightness (as every library) */
 typedef struct { int ent, w, h; uint32_t *px; } lib_pic;
 #define LIB_PICS 160
 static lib_pic lib_pc[LIB_PICS]; static int lib_npc, lib_pc_look = -1, lib_pc_tw, lib_missing_n; static int *lib_missing;
@@ -144,7 +144,7 @@ static void lib_pic_load (int ent, int tw, int th)
 		int sx0 = x * w / dw, sx1 = (x + 1) * w / dw, sy0 = y * h / dh, sy1 = (y + 1) * h / dh; if (sx1 <= sx0) sx1 = sx0 + 1; if (sy1 <= sy0) sy1 = sy0 + 1;
 		unsigned r = 0, g = 0, b = 0, a = 0, cnt = 0;
 		for (int sy = sy0; sy < sy1; sy++) for (int sx = sx0; sx < sx1; sx++) { const unsigned char *q = im + ((size_t) sy * w + sx) * 4; r += q[0] * q[3]; g += q[1] * q[3]; b += q[2] * q[3]; a += q[3]; cnt++; }
-		const unsigned A = a / cnt; r = a ? (unsigned) (r / (float) a * 0.7f) : 0; g = a ? (unsigned) (g / (float) a * 0.7f) : 0; b = a ? (unsigned) (b / (float) a * 0.7f) : 0;
+		const unsigned A = a / cnt; r = a ? (unsigned) (r / (float) a * 0.8f) : 0; g = a ? (unsigned) (g / (float) a * 0.8f) : 0; b = a ? (unsigned) (b / (float) a * 0.8f) : 0;
 		px[(size_t) y * dw + x] = A << 24 | r << 16 | g << 8 | b; }
 	if (gen) vx_genart_free (im); else stbi_image_free (im);
 	lib_pic *p = &lib_pc[lib_npc++]; p->ent = ent; p->w = dw; p->h = dh; p->px = px;

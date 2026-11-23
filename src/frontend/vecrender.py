@@ -976,7 +976,7 @@ BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every pi
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
                                         #  the faint light - the lines' skirts, the glass's glow - bluer, the bright core the tube's white)
-LIB_ART = 0.7                           # (the library's pictures 30 % less bright - the owner, 2026-11-22: the eyes stay used to the vectors' level)
+LIB_ART = 0.8                           # (the library's pictures at 80 % brightness - the owner: 70 % on 2026-11-22 (the eyes stay used to the vectors' level), 80 % on 2026-11-23)
 BL_GAIN = 1.5; BL_WIDTH = 1.3             # (the Bright look: blook)
 BT_SPOT = 1.25                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
                                             #  2026-11-22, the owner: 1.85 matched the photos - their lens' blur with it; the BIOS's small text

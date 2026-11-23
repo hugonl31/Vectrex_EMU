@@ -389,7 +389,7 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 - (instancetype) initWithFrame:(CGRect)f
 {
 	self = [super initWithFrame:f];
-	_img = [UIImageView new]; _img.alpha = 0.7;   /* (the pictures 30 % less bright, as the PC's library: the eyes stay used to the vectors' level - the owner, 2026-11-22) */
+	_img = [UIImageView new]; _img.alpha = 0.8;   /* (the pictures at 80 % brightness, as the PC's library: the eyes stay used to the vectors' level - the owner, 2026-11-23) */
 	_img.contentMode = UIViewContentModeScaleAspectFit; _img.clipsToBounds = YES; _img.layer.cornerRadius = 8;   /* (a cartridge: its own clear outline) */
 	_ph = VL (@"", VT (15), VX_G); _ph.textAlignment = NSTextAlignmentCenter;
 	_name = VL (@"", VF (12, UIFontWeightMedium), VX_FG); _name.numberOfLines = 2;

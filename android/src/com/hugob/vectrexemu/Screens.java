@@ -161,13 +161,11 @@ final class Screens {
 		  if (n > 0) ((TextView) r.findViewWithTag ("t")).setTextColor (Main.CHG); }
 		p.foot ("Auto: what fits this screen with the picture at its full width. Top bar auto-hide: tap the top of the screen to bring it back. Deck pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away.");
 		/* the core's settings by its groups, in the iOS app's order (VXSettings): the most used first, in each group the
-		 * usual ones on top; settings that mean nothing here left out */
+		 * rows in the core's order - the desktop's Config tab's (2026-11-23); settings that mean nothing here left out */
 		final int n = VX.nopts (), nc = VX.ncats ();
 		java.util.List<String> order = java.util.Arrays.asList ("video", "overlay", "case", "tube", "controls", "audio", "system", "unit", "circuit");
-		java.util.List<String> top = java.util.Arrays.asList ("vectrex_emu_profile", "vectrex_emu_deck", "vectrex_emu_rotate", "vectrex_emu_rate", "vectrex_emu_size",
-			"vectrex_emu_overlay", "vectrex_emu_ov_glow", "vectrex_emu_scratches", "vectrex_emu_room", "vectrex_emu_ceiling",
-			"vectrex_emu_glow", "vectrex_emu_afterglow", "vectrex_emu_brightness", "vectrex_emu_keys", "vectrex_emu_port2");
-		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look", "vectrex_emu_deck", "vectrex_emu_skip_intro", "vectrex_emu_look");   /* (the deck, skip intro: under App) */
+		java.util.List<String> top = java.util.Arrays.asList ("vectrex_emu_profile");
+		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look", "vectrex_emu_deck", "vectrex_emu_skip_intro", "vectrex_emu_tube_look");   /* (the deck, skip intro, the look: under App) */
 		java.util.ArrayList<Integer> cs = new java.util.ArrayList<> ();
 		for (String k : order) for (int c = 0; c < nc; c++) if (VX.cat (c, 0).equals (k)) cs.add (c);
 		for (int c = 0; c < nc; c++) if (!cs.contains (c)) cs.add (c);

@@ -20,8 +20,6 @@
 #define VXB_API __attribute__((visibility("default")))
 #endif
 
-#define INF 1e18
-
 /* a frame's strokes (sm_align: strokes) */
 typedef struct {
     int n, ns;                                                      /* pieces, strokes */
@@ -34,7 +32,6 @@ typedef struct {
 } Fr;
 static Fr g_fa, g_fb;
 static int64_t *g_ma, *g_mb; static size_t g_cma, g_cmb;            /* the pairing: a's stroke -> b's or -1, b's -> a's */
-static double *g_C, *g_D; static unsigned char *g_BP; static size_t g_cdp;
 static double *g_dA; static size_t g_cdA;
 
 static int fr_room(Fr *f, int n)
@@ -110,62 +107,169 @@ static int same(const double *X, const double *Y, double M)
            && max2(fabs(ex), fabs(ey)) <= 0.35 * lx + 200.0;
 }
 
-/* the pairing of the two frames' strokes -> g_ma, g_mb */
-static int pairing(double M)
+/* the pairing's work: the strokes by their square (by their start), and for each stroke of a and of b the nearest of the
+   other frame's strokes alike, its distance and the next nearest's */
+#define SQ_OFF ((int64_t)1 << 21)
+#define SQ_W ((int64_t)1 << 23)
+typedef struct { int64_t k; int i; } Sq;
+static Sq *g_qa, *g_qb, *g_qt; static int *g_ba, *g_bb; static double *g_da1, *g_da2, *g_fa1, *g_db1, *g_db2, *g_fb1;
+static size_t g_cp;
+
+/* in order of their square, those in one square in the order given (a radix sort, 12 bits a pass: the squares' numbers
+   are below 2^48); t: room for n */
+static void sq_sort(Sq *g, int n, Sq *t)
 {
-    const double *SA = g_fa.S, *SB = g_fb.S; int la = g_fa.ns, lb = g_fb.ns, i, k, all = (la == lb);
+    int cnt[4096], pass, i, b, sum;
+    for (pass = 0; pass < 4; pass++) {
+        int sh = 12 * pass; Sq *x;
+        memset(cnt, 0, sizeof cnt);
+        for (i = 0; i < n; i++) cnt[(g[i].k >> sh) & 4095]++;
+        for (b = 0, sum = 0; b < 4096; b++) { int c = cnt[b]; cnt[b] = sum; sum += c; }
+        for (i = 0; i < n; i++) t[cnt[(g[i].k >> sh) & 4095]++] = g[i];
+        x = g; g = t; t = x;
+    }
+}
+
+/* a stroke's square of side s by its start (0: far off, none) */
+static int square(const double *S, double s, int64_t *cx, int64_t *cy)
+{
+    if (!(fabs(S[0]) <= 1e9) || !(fabs(S[1]) <= 1e9)) return 0;
+    *cx = (int64_t)floor(S[0] / s); *cy = (int64_t)floor(S[1] / s);
+    return 1;
+}
+
+/* a frame's strokes by their squares of side s, in order (the count) */
+static int grid(const double *S, int n, double s, Sq *g)
+{
+    int i, m = 0; int64_t cx, cy;
+    for (i = 0; i < n; i++)
+        if (square(S + 6 * (size_t)i, s, &cx, &cy)) { g[m].k = (cy + SQ_OFF) * SQ_W + cx + SQ_OFF; g[m].i = i; m++; }
+    sq_sort(g, m, g_qt);
+    return m;
+}
+
+/* how far apart two strokes are, for the nearest: their ends moved + the stroke itself changed (sm_align: dist) */
+static double dist(const double *X, const double *Y)
+{
+    double ex = (X[2] - X[0]) - (Y[2] - Y[0]), ey = (X[3] - X[1]) - (Y[3] - Y[1]);
+    return far4(X, Y) + max2(fabs(ex), fabs(ey));
+}
+
+/* stroke q of the other frame, d away (its ends f), for stroke p: the nearest (between equals the one nearer p's place in
+   the list), the next nearest's distance, how far its ends are from the nearest's */
+static void nearest(int *bq, double *d1, double *d2, double *f1, int p, int q, double d, double f)
+{
+    int b = bq[p];
+    if (b < 0 || d < d1[p] || (d == d1[p] && (abs(q - p) < abs(b - p) || (abs(q - p) == abs(b - p) && q < b)))) {
+        d2[p] = d1[p]; d1[p] = d; f1[p] = f; bq[p] = q;
+    }
+    else if (d < d2[p]) d2[p] = d;
+}
+
+/* the first of g's squares (ng of them) numbered k0 or more */
+static int sq_find(const Sq *g, int ng, int64_t k0)
+{
+    int lo = 0, hi = ng;
+    while (lo < hi) { int mid = lo + ((hi - lo) >> 1); if (g[mid].k < k0) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+
+/* .. stroke p of SP against SQ's strokes alike in the 3 x 3 squares of side s around it (g: SQ's squares, ng of them) */
+static void side(const double *SP, int p, const double *SQ, const Sq *g, int ng, double s, double M, int *bq, double *d1,
+                 double *d2, double *f1)
+{
+    const double *X = SP + 6 * (size_t)p; int64_t cx, cy; int dy, lo;
+    if (!square(X, s, &cx, &cy)) return;
+    for (dy = -1; dy <= 1; dy++) {
+        int64_t k0 = (cy + dy + SQ_OFF) * SQ_W + cx - 1 + SQ_OFF, k1 = k0 + 2;
+        for (lo = sq_find(g, ng, k0); lo < ng && g[lo].k <= k1; lo++) {
+            int q = g[lo].i; const double *Y = SQ + 6 * (size_t)q;
+            if (same(X, Y, M)) nearest(bq, d1, d2, f1, p, q, dist(X, Y), far4(X, Y));
+        }
+    }
+}
+
+/* another stroke of S alike to stroke p within lim of it (g: S's squares of side M, R squares each way)? */
+static int crowd(const double *S, int p, const Sq *g, int ng, double M, int R, double lim)
+{
+    const double *X = S + 6 * (size_t)p; int64_t cx, cy; int dy, lo;
+    if (!square(X, M, &cx, &cy)) return 0;
+    for (dy = -R; dy <= R; dy++) {
+        int64_t k0 = (cy + dy + SQ_OFF) * SQ_W + cx - R + SQ_OFF, k1 = k0 + 2 * R;
+        for (lo = sq_find(g, ng, k0); lo < ng && g[lo].k <= k1; lo++) {
+            int q = g[lo].i; const double *Y = S + 6 * (size_t)q;
+            if (q != p && same(X, Y, lim) && dist(X, Y) < lim) return 1;
+        }
+    }
+    return 0;
+}
+
+/* not settled by the squares of side s1: the nearest, or whether the next nearest is far enough, could lie further off
+   (any stroke outside the 3 x 3 squares is more than s1 away) */
+static int open_(double d1, double d2, double f1, double s1, double nearr, double ok, double oa)
+{
+    double lim = ok * d1 + oa, need = f1 <= nearr ? d1 : (d2 < lim ? d2 : lim);
+    return s1 - 1.0 < need;
+}
+
+/* the pairing of the two frames' strokes -> g_ma, g_mb (sm_align): by place - each stroke with the nearest of the other
+   frame's strokes alike, where each is the other's nearest and the pair is certain: its ends moved no further than `nearr`, or no
+   other stroke alike within `ok` x the move + `oa` of either, in the other frame or its own (identical shapes in a
+   formation, a row left out of a frame: vectrex_emu.py SM_NEAR, SM_OTHER). Looked for within M / 4 first, within M where
+   that does not settle it */
+static int pairing(double M, double nearr, double ok, double oa)
+{
+    const double *SA = g_fa.S, *SB = g_fb.S; int la = g_fa.ns, lb = g_fb.ns, i, na, nb, ua = 0, ub = 0, coarse = 0;
+    double s1 = M / 4.0; size_t c = (size_t)(la > lb ? la : lb);
     for (i = 0; i < la; i++) g_ma[i] = -1;
     for (i = 0; i < lb; i++) g_mb[i] = -1;
-    for (i = 0; all && i < la; i++) if (!same(SA + 6 * (size_t)i, SB + 6 * (size_t)i, M)) all = 0;
-    if (all) {                                                      /* stroke for stroke */
-        for (i = 0; i < la; i++) { g_ma[i] = i; g_mb[i] = i; }
-        return 0;
+    if (g_cp < c) {
+        c += 256;
+        free(g_qa); free(g_qb); free(g_qt); free(g_ba); free(g_bb);
+        free(g_da1); free(g_da2); free(g_fa1); free(g_db1); free(g_db2); free(g_fb1);
+        g_qa = (Sq *)malloc(c * sizeof(Sq)); g_qb = (Sq *)malloc(c * sizeof(Sq)); g_qt = (Sq *)malloc(c * sizeof(Sq));
+        g_ba = (int *)malloc(c * sizeof(int)); g_bb = (int *)malloc(c * sizeof(int));
+        g_da1 = (double *)malloc(c * sizeof(double)); g_da2 = (double *)malloc(c * sizeof(double)); g_fa1 = (double *)malloc(c * sizeof(double));
+        g_db1 = (double *)malloc(c * sizeof(double)); g_db2 = (double *)malloc(c * sizeof(double)); g_fb1 = (double *)malloc(c * sizeof(double));
+        if (!g_qa || !g_qb || !g_qt || !g_ba || !g_bb || !g_da1 || !g_da2 || !g_fa1 || !g_db1 || !g_db2 || !g_fb1) {
+            free(g_qa); free(g_qb); free(g_qt); free(g_ba); free(g_bb);
+            free(g_da1); free(g_da2); free(g_fa1); free(g_db1); free(g_db2); free(g_fb1);
+            g_qa = g_qb = g_qt = NULL; g_ba = g_bb = NULL; g_da1 = g_da2 = g_fa1 = g_db1 = g_db2 = g_fb1 = NULL; g_cp = 0;
+            return -1;
+        }
+        g_cp = c;
     }
-    {
-        /* a stroke more or less: the two lists laid along each other for the least total distance (k: b's stroke - a's + Wb) */
-        int Wb = abs(la - lb) + 6, K = 2 * Wb + 1; size_t need = (size_t)(la + 1) * K; double G = M;
-        double *C, *D; unsigned char *BP;
-        if (g_cdp < need) {
-            free(g_C); free(g_D); free(g_BP);
-            g_C = (double *)malloc(need * sizeof(double)); g_D = (double *)malloc(need * sizeof(double));
-            g_BP = (unsigned char *)malloc(need);
-            if (!g_C || !g_D || !g_BP) { free(g_C); free(g_D); free(g_BP); g_C = g_D = NULL; g_BP = NULL; g_cdp = 0; return -1; }
-            g_cdp = need;
-        }
-        C = g_C; D = g_D; BP = g_BP;
+    for (i = 0; i < la; i++) { g_ba[i] = -1; g_da1[i] = g_da2[i] = g_fa1[i] = HUGE_VAL; }
+    for (i = 0; i < lb; i++) { g_bb[i] = -1; g_db1[i] = g_db2[i] = g_fb1[i] = HUGE_VAL; }
+    na = grid(SA, la, s1, g_qa); nb = grid(SB, lb, s1, g_qb);
+    for (i = 0; i < la; i++) side(SA, i, SB, g_qb, nb, s1, M, g_ba, g_da1, g_da2, g_fa1);
+    for (i = 0; i < lb; i++) side(SB, i, SA, g_qa, na, s1, M, g_bb, g_db1, g_db2, g_fb1);
+    for (i = 0; i < la; i++) ua += open_(g_da1[i], g_da2[i], g_fa1[i], s1, nearr, ok, oa);
+    for (i = 0; i < lb; i++) ub += open_(g_db1[i], g_db2[i], g_fb1[i], s1, nearr, ok, oa);
+    if (ua || ub) {                                                 /* (those: among all within M) */
+        unsigned char *oa_ = (unsigned char *)malloc((size_t)la + 1), *ob_ = (unsigned char *)malloc((size_t)lb + 1);
+        if (!oa_ || !ob_) { free(oa_); free(ob_); return -1; }
+        for (i = 0; i < la; i++) oa_[i] = (unsigned char)open_(g_da1[i], g_da2[i], g_fa1[i], s1, nearr, ok, oa);
+        for (i = 0; i < lb; i++) ob_[i] = (unsigned char)open_(g_db1[i], g_db2[i], g_fb1[i], s1, nearr, ok, oa);
+        na = grid(SA, la, M, g_qa); nb = grid(SB, lb, M, g_qb); coarse = 1;
         for (i = 0; i < la; i++)
-            for (k = 0; k < K; k++) {
-                int jb = i + k - Wb; double v = INF;
-                if (jb >= 0 && jb < lb) {
-                    const double *X = SA + 6 * (size_t)i, *Y = SB + 6 * (size_t)jb;
-                    if (same(X, Y, M)) v = far4(X, Y);
-                }
-                C[(size_t)i * K + k] = v;
-            }
-        for (i = 0; i < (la + 1) * K; i++) { D[i] = INF; BP[i] = 0; }
-        D[Wb] = 0.0;
-        for (i = 0; i <= la; i++) {
-            double *Di = D + (size_t)i * K, *Dn = i < la ? Di + K : NULL; const double *Ci = i < la ? C + (size_t)i * K : NULL;
-            for (k = 0; k < K; k++) {
-                double d = Di[k]; int j = i + k - Wb;
-                if (d >= INF) continue;
-                if (j < 0 || j > lb) continue;
-                if (k + 1 < K && j + 1 <= lb && d + G < Di[k + 1]) { Di[k + 1] = d + G; BP[(size_t)i * K + k + 1] = 2; }    /* b's stroke left out */
-                if (Dn) {
-                    if (j < lb && Ci[k] < INF && d + Ci[k] < Dn[k]) { Dn[k] = d + Ci[k]; BP[(size_t)(i + 1) * K + k] = 1; }   /* paired */
-                    if (k - 1 >= 0 && d + G < Dn[k - 1]) { Dn[k - 1] = d + G; BP[(size_t)(i + 1) * K + k - 1] = 3; }          /* a's left out */
-                }
-            }
+            if (oa_[i]) { g_ba[i] = -1; g_da1[i] = g_da2[i] = g_fa1[i] = HUGE_VAL; side(SA, i, SB, g_qb, nb, M, M, g_ba, g_da1, g_da2, g_fa1); }
+        for (i = 0; i < lb; i++)
+            if (ob_[i]) { g_bb[i] = -1; g_db1[i] = g_db2[i] = g_fb1[i] = HUGE_VAL; side(SB, i, SA, g_qa, na, M, M, g_bb, g_db1, g_db2, g_fb1); }
+        free(oa_); free(ob_);
+    }
+    for (i = 0; i < la; i++) {
+        int j = g_ba[i]; double d = g_da1[i], lim;
+        if (j < 0 || g_bb[j] != i) continue;
+        lim = ok * d + oa;
+        if (g_fa1[i] <= nearr) { g_ma[i] = j; g_mb[j] = i; continue; }
+        if (!(g_da2[i] >= lim && g_db2[j] >= lim)) continue;
+        if (!coarse) { na = grid(SA, la, M, g_qa); nb = grid(SB, lb, M, g_qb); coarse = 1; }
+        {                                                           /* (moved further: another like it that near in its own frame?) */
+            int R = (int)(ok + oa / M) + 1;
+            if (crowd(SA, i, g_qa, na, M, R, lim) || crowd(SB, j, g_qb, nb, M, R, lim)) continue;
         }
-        i = la; k = lb - la + Wb;
-        if (k >= 0 && k < K && D[(size_t)i * K + k] < INF)
-            while (i > 0 || (i + k - Wb) > 0) {
-                int t = BP[(size_t)i * K + k];
-                if (t == 1) { i--; g_ma[i] = i + k - Wb; g_mb[i + k - Wb] = i; }
-                else if (t == 2) k--;
-                else if (t == 3) { i--; k++; }
-                else break;
-            }
+        g_ma[i] = j; g_mb[j] = i;
     }
     return 0;
 }
@@ -230,10 +334,11 @@ static double at(double x, int j, const double *dx, const double *dy, int len)
    R: the picture's lines, their times squeezed by k (*k: made smaller when the frame reaches past the refresh, lim);
    exf: a's pieces whose afterglow has started (kept by the caller, brought up to date); now: those starting it now.
    kma, kmb: the pairing kept from the last call for these two frames (or none). info: R's rows, how many start
-   their afterglow now, a's strokes, b's strokes, the pairing 1 kept / 0 new (vxs_pair) / -1 none. Below 0: not done */
+   their afterglow now, a's strokes, b's strokes, the pairing 1 kept / 0 new (vxs_pair) / -1 none. nearr, ok, oa: when
+   a stroke's partner is certain (pairing). Below 0: not done */
 VXB_API int vxs_frame(const double *A, int na, const double *B, int nb, int cols, double alpha, double M, double exw,
                       double lim, double *k, const int64_t *kma, int nkma, const int64_t *kmb, int nkmb,
-                      double *R, unsigned char *exf, unsigned char *now, int *info)
+                      double *R, unsigned char *exf, unsigned char *now, int *info, double nearr, double ok, double oa)
 {
     int i, j, nr = na, nnow = 0, al = B != NULL && nb > 0, kept = -1, useb;
     double span = 0.0, kk;
@@ -253,7 +358,7 @@ VXB_API int vxs_frame(const double *A, int na, const double *B, int nb, int cols
             for (i = 0; i < nkma; i++) if (kma[i] < -1 || kma[i] >= nkmb) return -3;
             for (i = 0; i < nkmb; i++) if (kmb[i] < -1 || kmb[i] >= nkma) return -3;
         }
-        else { if (pairing(M) < 0) return -2; ma = g_ma; mb = g_mb; kept = 0; }
+        else { if (pairing(M, nearr, ok, oa) < 0) return -2; ma = g_ma; mb = g_mb; kept = 0; }
         /* a's pieces' ends as b draws them: looked up along b's stroke at the same share of its drawing time */
         {
             int j0 = 0, j1 = 0, len = 2 * nb; const double *pu = g_fb.pu, *px = g_fb.px, *py = g_fb.py;

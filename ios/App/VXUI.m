@@ -186,12 +186,11 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	self.tableView.backgroundColor = VX_BG; self.tableView.separatorColor = VX_EDGE;
 	_rows = [NSMutableArray array]; _cats = [NSMutableArray array];
 	/* (the most used first: the groups as a phone player reaches for them, the service trim pots last; in each group the
-	 *  usual ones on top; settings that mean nothing here left out - the screen's shape, RetroArch's ROM browser button) */
+	 *  rows in the core's order - the desktop's Config tab's (2026-11-23); settings that mean nothing here left out - the
+	 *  screen's shape, RetroArch's ROM browser button) */
 	NSArray *order = @[ @"video", @"overlay", @"case", @"tube", @"controls", @"audio", @"system", @"unit", @"circuit" ];
-	NSArray *top = @[ @"vectrex_emu_profile", @"vectrex_emu_deck", @"vectrex_emu_rotate", @"vectrex_emu_rate", @"vectrex_emu_size",
-	                  @"vectrex_emu_overlay", @"vectrex_emu_ov_glow", @"vectrex_emu_scratches", @"vectrex_emu_room", @"vectrex_emu_ceiling",
-	                  @"vectrex_emu_glow", @"vectrex_emu_afterglow", @"vectrex_emu_brightness", @"vectrex_emu_keys", @"vectrex_emu_port2" ];
-	NSSet *hide = [NSSet setWithArray:@[ @"vectrex_emu_shape", @"vectrex_emu_btn_browser", @"vectrex_emu_deck", @"vectrex_emu_skip_intro", @"vectrex_emu_look" ]];   /* (the deck, skip intro: under App, on top) */
+	NSArray *top = @[ @"vectrex_emu_profile" ];
+	NSSet *hide = [NSSet setWithArray:@[ @"vectrex_emu_shape", @"vectrex_emu_btn_browser", @"vectrex_emu_deck", @"vectrex_emu_skip_intro", @"vectrex_emu_tube_look" ]];   /* (the deck, skip intro, the look: under App, on top) */
 	NSMutableArray *cs = [NSMutableArray array];
 	for (NSString *k in order) for (int c = 0; c < vxa_ncats (); c++) if ([k isEqualToString:@(vxa_ckey (c))]) [cs addObject:@(c)];
 	for (int c = 0; c < vxa_ncats (); c++) if (![cs containsObject:@(c)]) [cs addObject:@(c)];

@@ -78,13 +78,13 @@ static const char *PH_VS_CAP =                  /* (a piece: its box, in picture
 	"layout(location = 0) in vec4 ab; layout(location = 1) in vec4 box; layout(location = 2) in vec4 c0;\n"
 	"layout(location = 3) in vec4 c1; layout(location = 4) in vec4 rc; layout(location = 5) in vec4 kx;\n"
 	"uniform vec2 sz;\n"
-	"flat out vec4 vab, vc0, vc1, vrc; flat out float vk, vx;\n"
+	"flat out vec4 vab, vc0, vc1, vrc; flat out float vk, vx, va;\n"
 	"void main() { int k = gl_VertexID; vec2 q = vec2((k == 1 || k == 2 || k == 4) ? 1.0 : 0.0, (k == 2 || k == 4 || k == 5) ? 1.0 : 0.0);\n"
 	"  vec2 lo = min(box.xy, box.zw) - vec2(rc.x + 1.0), hi = max(box.xy, box.zw) + vec2(rc.x + 1.0);\n"
-	"  vec2 p = mix(lo, hi, q); vab = ab; vc0 = c0; vc1 = c1; vrc = rc; vk = kx.x; vx = kx.y;\n"
+	"  vec2 p = mix(lo, hi, q); vab = ab; vc0 = c0; vc1 = c1; vrc = rc; vk = kx.x; vx = kx.y; va = kx.z;\n"
 	"  gl_Position = vec4(p / sz * 2.0 - 1.0, 0.0, 1.0); }\n";
 static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gaussian round the segment, the joints' cuts) */
-	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx; out vec4 fragc;\n"
+	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx, va; out vec4 fragc;\n"
 	"void main() { vec2 p = gl_FragCoord.xy, a = vab.xy, d = vab.zw - vab.xy;\n"
 	"  float L2 = dot(d, d), t = L2 > 0.0 ? clamp(dot(p - a, d) / L2, 0.0, 1.0) : 0.0;\n"
 	"  vec2 e = p - (a + d * t); float d2 = dot(e, e);\n"
@@ -97,7 +97,7 @@ static const char *PH_FS_CAP =                  /* (splat_band: the spot's Gauss
  * integral: pieces of one line add up to an even line, ends are soft. The glass's glow (halo 1): a line's a plain Gaussian,
  * a spot's fading out from the spot. vrc.yzw: the peak of the piece's light as a spot's (light / (2 pi sigma^2)), vk: sigma, px */
 static const char *PH_FS_BEAM =
-	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx; out vec4 fragc; uniform int halo; uniform vec2 hsh;\n"   /* (hsh: the glass's glow beside a line - x > 0: x (1 - v / 3 sigma)^y, brighter
+	"flat in vec4 vab, vc0, vc1, vrc; flat in float vk, vx, va; out vec4 fragc; uniform int halo; uniform vec2 hsh;\n"   /* (hsh: the glass's glow beside a line - x > 0: x (1 - v / 3 sigma)^y, brighter
 	                                              at the line and down to black at the same reach as the Gaussian's; 0: the Gaussian) */
 	"float Phi(float x) { float z = abs(x) * 0.70710678, t = 1.0 / (1.0 + 0.3275911 * z);\n"
 	"  float e = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-z * z);\n"
@@ -108,7 +108,7 @@ static const char *PH_FS_BEAM =
 	"  else { vec2 t = ba / L; float u = dot(q, t), v = abs(q.x * t.y - q.y * t.x);\n"
 	"    if (v >= vrc.x || u <= -vrc.x || u >= L + vrc.x) discard;\n"
 	"    g = 2.5066283 * sg / L * (Phi(u / sg) - Phi((u - L) / sg)) * (halo != 0 ? (hsh.x > 0.0 ? hsh.x * pow(max(1.0 - v / (3.0 * sg), 0.0), hsh.y) : exp(-0.5 * v * v / (sg * sg))) : 1.041 * exp(-pow(v / (1.356 * sg), 2.6))); }\n"
-	"  fragc = vec4(vrc.yzw * g, 0.0); }\n";
+	"  vec3 c = vrc.yzw * g; fragc = vec4(c, dot(c, vec3(1.0 / 3.0)) * va); }\n";   /* (alpha: the light x its age, s - PH_FS_SAT: the age) */
 /* (the light as the screen's values - vecrender.py SAT_SHADER: (the exposure x the light)^(1 / 2.2) in the tube's own white; the
  *  glass's glow read from its smaller image) */
 static const char *PH_FS_SAT =
@@ -116,16 +116,18 @@ static const char *PH_FS_SAT =
 	"void main() { vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0);\n"
 	"  vec3 v = pow(k * l, vec3(1.0 / 2.2)); float m = max(v.r, max(v.g, v.b)) * gs;\n"   /* (the faint light - the lines' skirts, the glass's glow -
 	                                              in the glow's tint, the bright core in the tube's white: vecrender.py SAT_SHADER cold()) */
-	"  fragc = vec4(v * mix(tintg, tint, smoothstep(0.35, 0.9, m)), 0.0); }\n";
+	"  vec4 lr = texelFetch(lt, ivec2(gl_FragCoord.xy), 0); float ll = dot(max(lr.rgb, 0.0), vec3(1.0 / 3.0));\n"
+	"  fragc = vec4(v * mix(tintg, tint, smoothstep(0.35, 0.9, m)), ll > 0.0 ? max(lr.a, 0.0) / ll : 0.0); }\n";   /* (alpha: the light's age, s - PH_FS_UPD) */
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, e1, e2, kd1, kd2, acap, pex; uniform int after; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, t1, t2, dtv, usea, fak, kd1, kd2, acap, pex; uniform int after; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
-	"  float fa = txb(fc, uv).a;\n"
+	"  float fa = txb(fc, uv).a * fak;\n"   /* (fak 0: the beam on the phosphor - alpha is the light's age there, not the HDR rests' light) */
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, fa); return; }\n"
-	"  vec3 p = txb(fp, uv).rgb * pex, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
+	"  vec4 pp = txb(fp, uv); vec3 p = pp.rgb * pex, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
+	"  float age = usea * max(pp.a, 0.0) + dtv, e1 = a1 * exp(-age / t1), e2 = a2 * exp(-age / t2);\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
 	"  float cap = pv && lp > acap ? acap / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
 	"  g1 += l * e1; g2 += l * e2;\n"
@@ -137,9 +139,9 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; out vec4 fragc;\n"
+	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; uniform float fak; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"
-	"  float a = txb(fc, uv).a;\n"
+	"  float a = txb(fc, uv).a * fak;\n"
 	"  if (after != 0) { o += lift(txb(g1t, uv).rgb + txb(g2t, uv).rgb); a += txb(g1t, uv).a + txb(g2t, uv).a; }\n"
 	"  fragc = vec4(o, a); }\n";
 static const char *PH_FS_UI =                   /* (the ROM browser's panel: premultiplied, over the picture) */
@@ -393,7 +395,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		o[4] = q->x0 + ox; o[5] = q->y0; o[6] = q->x1 + ox; o[7] = q->y1;
 		o[8] = q->n0x; o[9] = q->n0y; o[10] = q->c0 + q->n0x * ox; o[11] = (q->cut & 1) ? 1.0f : 0.0f;
 		o[12] = q->n1x; o[13] = q->n1y; o[14] = q->c1 + q->n1x * ox; o[15] = (q->cut & 2) ? 1.0f : 0.0f;
-		o[16] = q->R; o[17] = q->r; o[18] = q->g; o[19] = q->b; o[20] = q->k2; o[21] = q->hx; o[22] = o[23] = 0;
+		o[16] = q->R; o[17] = q->r; o[18] = q->g; o[19] = q->b; o[20] = q->k2; o[21] = q->hx; o[22] = beam ? q->ag : 0; o[23] = 0;
 		if (beam) { if (ls != 1.0f) { for (int i = 0; i < 8; i++) o[i] *= ls; float sw = q->k2 * ls; if (sw < 0.5f) { const float f = (sw / 0.5f) * (sw / 0.5f); o[17] *= f; o[18] *= f; o[19] *= f; sw = 0.5f; }
 			o[20] = sw; o[16] = 3.5f * sw + 1.0f; } o[21] = 0; continue; }
 		if (ls != 1.0f) { for (int i = 0; i < 8; i++) o[i] *= ls; o[10] *= ls; o[14] *= ls;
@@ -418,6 +420,9 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		/* the glass's glow: every piece once more, wide and faint (BT_HALO_F of its light, sigma BT_HALO_S units) - into an image the
 		 * glow's size (so smooth a light needs no more; at the picture's size it was most of the lines' cost), read into the light below */
 		const float hx = (float) ph_gw / FW, hy = (float) ph_gh / FH, hm = 0.5f * (hx + hy), hf = (float) (BT_HALO_F / (1.0 - BT_HALO_F));
+		/* (Bright widens the spot, its peak kept (build_lines): the piece's light x BL_WIDTH^2 - the glass's glow is the light of the spot as
+		 *  measured, as the PC's (vecrender.py _build_np: the glow's piece from the light before the widening). It came 1.7 x the PC's) */
+		const float bwk = vx_bright > 0.5f ? (float) (1.0 / (BL_WIDTH * BL_WIDTH)) : 1.0f;
 		if ((size_t) ntot * 24 > ph_hbufn) { free (ph_hbuf); ph_hbufn = (size_t) ntot * 24 + 4096; ph_hbuf = malloc (ph_hbufn * sizeof (float)); }
 		/* (pieces that follow each other along one straight line - a line's ends and middle, its caps, the tube's segments - as one
 		 *  piece with their light together: over the glow's width, 2.5 units, where along half a unit the light sat shows nothing - a
@@ -426,7 +431,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		for (int k = p0; k <= p0 + pc; k++) { const pline *q = k < p0 + pc ? &pl[k] : NULL; if (q && !(q->hx > 0)) continue;
 			float len = 0, dx = 0, dy = 0, f = 0; int join = 0;
 			if (q) { dx = q->bx - q->ax; dy = q->by - q->ay; len = sqrtf (dx * dx + dy * dy); if (len > 1e-3f) { dx /= len; dy /= len; }
-				f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf;
+				f = (q->k2 / q->hx) * (q->k2 / q->hx) * hf * bwk;
 				join = mh && q->to == mt && q->hx == ms && fabsf (q->ax - mb[0]) < 0.75f && fabsf (q->ay - mb[1]) < 0.75f && ml + len < 0.4f * ms
 				       && ((len <= 1e-3f && ml <= 1e-3f) || (len > 1e-3f && ml > 1e-3f && dx * md[0] + dy * md[1] > 0.995f)); }   /* (a spot's glow fades out from it, a line's is a Gaussian: spots with spots, moving pieces with moving ones) */
 			if (join) { if (len > 1e-3f) { if (ml <= 1e-3f) { md[0] = dx; md[1] = dy; } mb[0] = q->bx; mb[1] = q->by; ml += len; }
@@ -472,13 +477,18 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);
 	  PU1F (ph_upd, "pex", ex_mode && !ex_n ? 0.0f : 1.0f);
 	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ex_n ? ph_E : ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
-	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "e1", a1 * kd1); PU1F (ph_upd, "e2", a2 * kd2);
+	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "t1", ta1); PU1F (ph_upd, "t2", ta2); PU1F (ph_upd, "dtv", (float) dt);
+	  /* (the afterglow starts at the leaving light's age (its alpha: libretro_vx.c wl_from) + this refresh - vecrender.py GLOW_COMMON;
+	   *  Smooth motion's game-frame lines (ph_E): one refresh, as before. VX_PHAGE=0: one refresh always - the core before 2026-11-23) */
+	  { static int ua = -1; if (ua < 0) ua = !(getenv ("VX_PHAGE") && !atoi (getenv ("VX_PHAGE")));
+	    PU1F (ph_upd, "usea", beam && ua && !ex_n ? 1.0f : 0.0f); }
+	  PU1F (ph_upd, "fak", beam ? 0.0f : 1.0f);
 	  PU1F (ph_upd, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam && vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
 	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
 		ph_bind (ph_comp, "fc", 0, ph_F[cur]); ph_bind (ph_comp, "g1t", 1, ph_G1[cur]); ph_bind (ph_comp, "g2t", 2, ph_G2[cur]);
-		PU1I (ph_comp, "after", after); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
+		PU1I (ph_comp, "after", after); PU1F (ph_comp, "fak", beam ? 0.0f : 1.0f); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	PHT (1);
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {

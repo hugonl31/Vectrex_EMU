@@ -50,7 +50,7 @@ static unsigned VX_TICKS (void) { struct timespec t; clock_gettime (CLOCK_MONOTO
  * what is no longer lit glows away in two parts. The screen rate option (90 Hz by default, for the Valve Index): each
  * retro_run is one refresh, the emulator runs whole game frames until the emulated time has caught up, and the sound
  * goes out evenly through a queue. Smooth motion (vectrex_emu.py smooth_frame): each refresh shows the moment one game
- * frame and one refresh back, its lines between the two game frames around it where they match line for line. A 3D
+ * frame and one refresh back, its lines between the two game frames around it, stroke by stroke (smooth.c). A 3D
  * Imager game is not mixed between frames (its two half turns' pictures are shown as they are). The buffers are made at
  * the picture's size, one colour channel unless the game is a 3D Imager game.
  *
@@ -230,6 +230,7 @@ static retro_input_state_t input_cb;
 static int opt_overlay = 0, opt_imager = 2, opt_swap = 0, opt_glow = 0, opt_after = 1;
 static int opt_res = 1, opt_wob = 50, opt_buzz = 1, opt_spk = 1, opt_shift = 0; static double opt_sigma = 0.55;
 static int opt_fill;   /* (Fill skipped lines: off - as a real Vectrex) */
+static double opt_wob_k = 1, opt_bend_k = 1, opt_buzz_k = 1, opt_voice_k = 1, opt_motor_k = 1, opt_jack_k = 1; static int opt_jack = 1;   /* (2026-11-23: the desktop's sliders - Tube, Sound, Ports) */
 static int opt_rate = 60, opt_smooth = 1, opt_halo = 1, opt_bend = 1, opt_dwell = 1;   /* (v0.9) */
 static int vx_beam;                          /* (the beam on the phosphor: the picture is the light of the spot's own path - bt2_prepare; not EmuVR's flavour) */
 static int bt_gpu;                           /* (.. as light on the GPU - gpu_phos.c: pieces add, the glass's glow; else the CPU's display values) */
@@ -466,18 +467,32 @@ static struct retro_variable vars[] = {
  *  each name led by its submenu's) */
 struct vx_opt { const char *key, *cat, *desc, *info, *vals; };
 static const struct vx_opt OPTS[] = {
-	{ "vectrex_emu_size", "video", "Picture size",
-	  "Auto: the screen's height, as RetroArch shows it (the sharpest lines, with Integer Scale on). Or a height of its own.",
-	  "auto|800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
+	/* (2026-11-23: each submenu's rows in the order of the desktop's Config tab - Display, Overlay, Case and Room light, Tube,
+	 *  Ports, Sound, Unit, Circuit - with its labels, ranges and defaults; rows only RetroArch or the apps have after them) */
+	{ "vectrex_emu_profile", "video", "Quality profile",
+	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
+	  "auto|basic|low|medium|high|ultra" },
+	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green. An app's own menus: from its next start.", "blue|green" },
+	{ "vectrex_emu_gamelist", "video", "Game list", "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder.", "library|simple" },
+	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
+	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
+	{ "vectrex_emu_smooth", "video", "Smooth motion", "Every refresh a picture of its own: the lines where they are between two game frames (not at 50 Hz).", "auto|on|off" },
+	{ "vectrex_emu_fill", "video", "Fill skipped lines", "A line a game leaves out of a frame stays lit until the game draws it again. Steadier than a real Vectrex.", "off|on" },
 	{ "vectrex_emu_rotate", "video", "Rotation (tate)", "Turns the picture for playing with the device held upright.",
 #if VX_IOS                                          /* (an iPhone / iPad: its screen upright already - the picture as it is) */
 	  "off|90 (turn the device right)|270 (turn the device left)|180" },
 #else
 	  "90 (turn the device right)|off|270 (turn the device left)|180" },
 #endif
-	{ "vectrex_emu_profile", "video", "Quality profile",
-	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
-	  "auto|ultra|high|medium|low|basic" },
+	{ "vectrex_emu_size", "video", "Picture size",
+	  "Auto: the screen's height, as RetroArch shows it (the sharpest lines, with Integer Scale on). Or a height of its own.",
+	  "auto|800 px|480 px|540 px|600 px|720 px|768 px|900 px|960 px|1080 px|1200 px|1440 px|1600 px|2160 px" },
+	{ "vectrex_emu_area", "video", "Picture area",
+	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
+	  "auto|glass window|overlay sheet" },
+#if !VX_IOS                                         /* (an iPhone / iPad: the block takes the screen's own shape - no choice) */
+	{ "vectrex_emu_shape", "video", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
+#endif
 #if VX_DECK_AUTO                                 /* (every RetroArch: auto - the slim pop-up on a real 4:3 screen, as the apps) */
 	{ "vectrex_emu_deck", "video", "Control deck", "The desktop's deck below the picture (mouse or touch). Slim: one low row. Pop-up: over the picture, tap its bottom. Auto: pop-up where the deck does not fit below the picture (4:3, square), else off.", "auto|off|full|slim|pop-up" },
 #else
@@ -488,18 +503,6 @@ static const struct vx_opt OPTS[] = {
 #else
 	{ "vectrex_emu_deck_look", "video", "Control deck look", "Modern: the app's panels, a word under each. Classic: the desktop's strip.", "classic|modern" },
 #endif
-	{ "vectrex_emu_gamelist", "video", "Game list", "Library: tiles with the games' pictures (system/vectrex_emu/thumbs), categories. Simple: the folder list.", "library|simple" },
-	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green. An app's own menus: from its next start.", "blue|green" },
-#if !VX_IOS                                         /* (an iPhone / iPad: the block takes the screen's own shape - no choice) */
-	{ "vectrex_emu_shape", "video", "Screen shape", "With the control deck: the picture and the deck fitted to a 4:3 or a 16:9 screen.", "4:3|16:9" },
-#endif
-	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
-	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
-	{ "vectrex_emu_smooth", "video", "Smooth motion", "Lines move smoothly between game frames.", "auto|on|off" },
-	{ "vectrex_emu_fill", "video", "Fill skipped lines", "A line a game leaves out of a frame stays lit until the game draws it again. Steadier than a real Vectrex: Vectrexians skips a row of aliens each frame, a real tube shows it dimmer for a moment.", "off|on" },
-	{ "vectrex_emu_area", "video", "Picture area",
-	  "Auto: the whole sheet while an overlay or the case is shown, else the glass window (a larger picture).",
-	  "auto|glass window|overlay sheet" },
 	{ "vectrex_emu_renderer", "video", "Renderer (next game start)", "GPU adds the glass and case effects (video driver gl / glcore).",
 	  "auto|GPU|CPU only" },
 	{ "vectrex_emu_power_fx", "video", "Switching on / off", "Tube warm-up and switch-off effects.", "on|off" },
@@ -511,7 +514,6 @@ static const struct vx_opt OPTS[] = {
 #else
 	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
 #endif
-	{ "vectrex_emu_usb_hid", "controls", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 #if VX_IOS                                          /* (an iPhone / iPad: a controller does not turn with the screen) */
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "off|on" },
 	{ "vectrex_emu_keys", "controls", "Keyboard as on the PC", "Arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L ROM browser, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+K typing to a UVMC2 / PiTrex.", "on|off" },
@@ -519,50 +521,65 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "on|off" },
 	{ "vectrex_emu_keys", "controls", "Keyboard as on the PC", "Arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L ROM browser, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+K typing to a UVMC2 / PiTrex.", "off|on" },
 #endif
-	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's overlay. START switches it (any button: Quick Menu > Controls).", "on|off" },
-	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How strongly the overlay colours the lines.", "1x|0.5x|0.75x|1.25x|1.5x|2x|0x" },
-	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "The overlay's opaque printed parts.", "1x|1.5x|2x|3x|4x|6x|0.5x|0.25x|0x" },
-	{ "vectrex_emu_parallax", "overlay", "Parallax", "The picture a little higher than the sheet, as seen from the usual height.", "auto|on|off" },
-	{ "vectrex_emu_ov_glow", "overlay", "Plastic glow", "The plastic spreads the light softly around bright lines (GPU).", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_scratches", "overlay", "Scratches", "The sheet's scratches catch the light (GPU).", "auto|on|off" },
-	{ "vectrex_emu_scr_wear", "overlay", "Scratches: wear", "How much the sheet was handled (all of them).", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_scr_fine", "overlay", "Fine scratches", "Steps 1-3: the matte buff.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_scr_medium", "overlay", "Medium scratches", "Steps 4-7.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_scr_damage", "overlay", "Damage", "Steps 8-10: deep, through the colour.", "0.1x|0x|0.25x|0.5x|0.75x|1x|1.5x|2x" },
+	{ "vectrex_emu_overlay", "overlay", "Overlay", "The game's printed plastic sheet in front of the screen. START switches it (any button: Quick Menu > Controls).", "on|off" },
+	{ "vectrex_emu_ov_tint", "overlay", "Tint strength", "How strongly the coloured plastic colours the lines.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_ov_print", "overlay", "Printed art brightness", "How bright the sheet's printed artwork shows in the room's light.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_parallax", "overlay", "Parallax", "The sheet sits a little in front of the tube: seen from the usual height the picture sits a little higher on it.", "auto|on|off" },
+	{ "vectrex_emu_ov_glow", "overlay", "Plastic glow", "The plastic spreads a little of the light: a soft glow in the sheet's colour around bright lines (GPU). 0x: off.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scratches", "overlay", "Scratches", "Decades of handling: the vectors light up the sheet's scratches (GPU).", "auto|on|off" },
+	{ "vectrex_emu_scr_wear", "overlay", "Scratches: wear", "All the scratches together: from almost new to twice as worn.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_fine", "overlay", "Fine scratches", "The matte buff.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_medium", "overlay", "Medium scratches", NULL, "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_damage", "overlay", "Damage", "The few deep ones, through the colour.", "0.1x|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_scr_scrib", "overlay", "Scratches: scribbles", "The share of curly ones.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_scr_glint", "overlay", "Scratches: glint strength", NULL, "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_scr_reach", "overlay", "Scratches: glint reach", "Low: close to the lines. High: farther out.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_glint", "overlay", "Glint strength", "How strongly the scratches catch the light.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_scr_reach", "overlay", "Scratches: glint reach", "Low: only close to the lines. High: farther out.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_scr_seed", "overlay", "Scratch pattern", "Another random set of scratches.", "1|2|3|4|5|6|7|8|9|10" },
-	{ "vectrex_emu_buzz", "audio", "Vectrex buzz", NULL, "on|off" },
-	{ "vectrex_emu_speaker", "audio", "Vectrex speaker sound", NULL, "on|off" },
-	{ "vectrex_emu_afterglow", "tube", "Phosphor trail (afterglow)", NULL, "on|long (real Vectrex)|short|off" },
-	{ "vectrex_emu_trail_bright", "tube", "Phosphor trail brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
-	{ "vectrex_emu_white", "tube", "White balance", NULL, "12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
-	{ "vectrex_emu_geometry", "tube", "Tube geometry", "A real tube's slight curves.", "auto|on|off" },
-	{ "vectrex_emu_geometry_k", "tube", "Tube geometry strength", "1x: the measured Vectrex. 0x: ideal.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_glass_curve", "tube", "Glass curvature", "1: as seen on a Vectrex. 0: even squares.", "1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
-	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube glass's rounded outline.", "auto|on|off" },
-	{ "vectrex_emu_dither", "tube", "Dither", "No bands in soft glows (GPU).", "auto|on|off" },
-	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", NULL, "50 Hz|60 Hz|off" },
-	{ "vectrex_emu_bending", "tube", "Brightness bending", NULL, "on|off" },
-	{ "vectrex_emu_case", "case", "Plastic case", "The case round the glass, without an overlay.", "auto|on|off" },
-	{ "vectrex_emu_case_refl", "case", "Case reflections", "The lines mirrored in the case's walls: their strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_case_wear", "case", "Case scratches and wear", NULL, "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_room", "case", "Room light", "Lights the overlay.", "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_room_glass", "case", "Glass catches room light", "The bare glass grey in the room's light (no overlay). Off: pure black.", "auto|on|off" },
-	{ "vectrex_emu_ceiling", "case", "Ceiling light reflection", "A ceiling light mirrored in the glass: its strength.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_ceiling_ov", "case", "Ceiling light on the overlay", "Its reflection on the sheet: strength (GPU).", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_lamp_x", "case", "Lamp position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
-	{ "vectrex_emu_lamp_y", "case", "Lamp position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
-	{ "vectrex_emu_skip_intro", "system", "Skip the Vectrex intro", "Games start straight away (next game start).", "off|on" },
-	{ "vectrex_emu_port2", "system", "Port 2 device (next game start)", "Auto: the game's own (3D Imager, light pen, VecVoice, VecVox).",
-	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
-	{ "vectrex_emu_imager", "system", "3D Imager", NULL, "colour|off" },
+	{ "vectrex_emu_case", "case", "Case", "The Vectrex's black plastic case round the tube, without an overlay.", "auto|on|off" },
+	{ "vectrex_emu_case_refl", "case", "Case reflections", "How strongly the picture is mirrored in the case's walls. 0x: none.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_case_wear", "case", "Case wear", "Scratches, the band the overlays rubbed. 0x: none.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_room", "case", "Room light", "How much the room lights up the overlay, the glass and the case.", "1x (evening)|off (dark room)|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_room_glass", "case", "Glass catches room light", "Without an overlay the glass turns grey in the room's light. Off: always black.", "auto|on|off" },
+	{ "vectrex_emu_ceiling", "case", "Ceiling light on the glass", "A ceiling light mirrored in the glass: its strength. 0x: off.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_ceiling_ov", "case", "Ceiling light on the overlay", "Its reflection on the sheet: strength (GPU). 0x: off.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_lamp_x", "case", "Light position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
+	{ "vectrex_emu_lamp_y", "case", "Light position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
+#if defined(__ANDROID__)                            /* (a handheld: the lines lifted and wider by default, as the apps on a phone) */
+	{ "vectrex_emu_tube_look", "tube", "Look", "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen.", "Bright|Vectrex" },
+#else
+	{ "vectrex_emu_tube_look", "tube", "Look", "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen.", "Vectrex|Bright" },
+#endif
+	{ "vectrex_emu_afterglow", "tube", "Afterglow", "The phosphor keeps glowing after the beam has passed: its length. 1x is the measured length; 0.6x was matched to a real Vectrex side by side.",
+	  "0.6x|off|0.05x|0.1x|0.2x|0.3x|0.4x|0.5x|0.7x|0.8x|0.9x|1x|1.1x|1.2x" },
+	{ "vectrex_emu_trail_bright", "tube", "Afterglow brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
+	{ "vectrex_emu_white", "tube", "White balance", "The lines' colour temperature: 12000 K the bluish white of a real Vectrex, 6504 K neutral. The overlay and the case keep theirs.",
+	  "12000 K|5600 K|6000 K|6504 K|7000 K|7500 K|8000 K|9300 K|10000 K|11000 K|13000 K|14000 K|16000 K" },
+	{ "vectrex_emu_geometry", "tube", "Tube geometry", "Where the beam really lands, measured on a real Vectrex: the picture a little narrower towards the sides, lines bowed slightly.", "auto|on|off" },
+	{ "vectrex_emu_geometry_k", "tube", "Tube geometry strength", "0x: an ideal, straight picture. 1x: the measured Vectrex.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_glass_curve", "tube", "Glass curvature", "The tube's face curves away towards its edges. 1: as seen on a Vectrex (the overlays fit it). 0: even squares.", "1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
+	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube's glass ends in rounded corners with a soft edge.", "auto|on|off" },
+	{ "vectrex_emu_dither", "tube", "Dither", "The soft glows fade out smoothly instead of in steps (GPU).", "auto|on|off" },
+	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", "The picture sways a tiny bit with the mains: 50 or 60 Hz.", "50 Hz|60 Hz|off" },
+	{ "vectrex_emu_wobble_k", "tube", "Wobble strength", NULL, "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_bending", "tube", "Brightness bending", "A busy, bright picture grows a little.", "on|off" },
+	{ "vectrex_emu_bending_k", "tube", "Bending strength", NULL, "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_cart_hw", "system", "Cartridge hardware", "Auto: by the ROM's size (next game start).",
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
-	{ "vectrex_emu_uvm2_mode", "system", "UVMC2 mode", "Fast: the same game, less CPU. Exact: as the cartridge, cycle for cycle. Dev: fast, with an ideal beam.", "fast|exact|dev" },
+	{ "vectrex_emu_port2", "system", "Controller port 2", "Auto: a game that needs the 3D Imager, the light pen or a speech module gets it (next game start).",
+	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
+	{ "vectrex_emu_imager", "system", "3D Imager", NULL, "colour|off" },
+	{ "vectrex_emu_usb_hid", "system", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
+	{ "vectrex_emu_jack", "system", "UVMC2 headphone jack", "Clean: line out. Through the speaker: the Vectrex's own sound.", "clean|through the speaker|off" },
+	{ "vectrex_emu_jack_vol", "system", "UVMC2 headphone jack volume", NULL, "100%|0%|25%|50%|75%|125%|150%|175%|200%" },
+	{ "vectrex_emu_uvm2_mode", "system", "UVMC2 emulation", "Exact: as the cartridge, cycle for cycle. Fast: the same picture, much less work. Dev: Fast with an ideal beam.", "fast|exact|dev" },
 	{ "vectrex_emu_threaded", "system", "Threaded emulation (UVMC2, PiTrex)", "Emulates while drawing: full speed on handhelds, one frame more input delay.", "on|off" },
+	{ "vectrex_emu_buzz", "audio", "Vectrex buzz", "The famous Vectrex buzz from the speaker.", "on|off" },
+	{ "vectrex_emu_buzz_vol", "audio", "Buzz volume", NULL, "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_speaker", "audio", "Vectrex speaker", "All sound through the small built-in speaker: no deep bass, a little harsh.", "on|off" },
+	{ "vectrex_emu_voice_vol", "audio", "Speech module volume", "VecVoice and VecVox: 100 % is the MiSTer core's Normal level.", "100%|0%|25%|50%|75%|125%|150%|175%|200%" },
+	{ "vectrex_emu_motor_vol", "audio", "Disc motor sound", "The 3D Imager's disc motor while the goggles spin. 0 %: off.", "50%|0%|10%|20%|30%|40%|60%|70%|80%|90%|100%" },
 	{ "vectrex_emu_unit", "unit", "Unit", "Which Vectrex: the owner's (measured), an ideal one, a random or a cranky one (each number its own).", "owner's Vectrex (measured)|ideal|random 1|random 2|random 3|random 4|random 5|random 6|random 7|random 8|random 9|random 10|cranky 1|cranky 2|cranky 3|cranky 4|cranky 5|cranky 6|cranky 7|cranky 8|cranky 9|cranky 10" },
+	{ "vectrex_emu_skip_intro", "unit", "Skip the Vectrex intro", "The BIOS's start screen runs unseen and the cartridge starts straight away (next game start).", "off|on" },
 	{ "vectrex_emu_unit_knob", "unit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_sizex", "unit", NULL, NULL, "@" },
 	{ "vectrex_emu_unit_sizey", "unit", NULL, NULL, "@" },
@@ -598,14 +615,14 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_unit_gap", "circuit", NULL, NULL, "@" },
 	{ NULL, NULL, NULL, NULL, NULL } };
 static const char *const OPT_CATS[][3] = {   /* (RetroArch's own kind of menus, the most used first - the owner, 2026-11-15) */
-	{ "video", "Video", "Picture size, rotation, screen shape, control deck, screen rate, quality" },
-	{ "controls", "Controls", "Buttons for the ROM browser, pause, RESET and eject; tate; USB keyboard and mouse" },
+	{ "video", "Video", "Quality, colours, game list, screen rate, smooth motion, rotation, picture size, control deck" },
+	{ "controls", "Controls", "Buttons for the ROM browser, pause, RESET and eject; tate; the keyboard" },
 	{ "overlay", "Overlay", "The sheet: tint, print, plastic and scratches, parallax" },
-	{ "audio", "Audio", "The Vectrex's sound" },
-	{ "tube", "Tube", "Phosphor and afterglow, the tube's shape and glass" },
+	{ "audio", "Audio", "The Vectrex's buzz and speaker, the speech module, the 3D Imager's motor" },
+	{ "tube", "Tube", "The look, the afterglow, white balance, the tube's shape and glass, mains hum and bending" },
 	{ "case", "Case & Room light", "The plastic round the glass, the room's light, the ceiling light" },
-	{ "system", "System", "Port 2, the cartridge hardware, UVMC2 and PiTrex, the intro" },
-	{ "unit", "Vectrex Unit", "Which Vectrex; the knob, the pots and the yoke; the picture's shape" },
+	{ "system", "System", "The cartridge hardware, port 2, USB keyboard and mouse, UVMC2 and PiTrex" },
+	{ "unit", "Vectrex Unit", "Which Vectrex, the intro; the knob, the pots and the yoke; the picture's shape" },
 	{ "circuit", "Vectrex Circuit", "The service trim pots; its parts: zero reference, beam, zeroing, lag, DAC" } };
 #define NOPT (sizeof OPTS / sizeof OPTS[0])
 static struct retro_variable vars[NOPT];
@@ -649,7 +666,7 @@ static void opts_set (retro_environment_t cb)
 /* (2026-11-22, the beam on the phosphor: the picture's and the unit's settings - Tube, Overlay, Case & Room light, Unit, Circuit -
  *  back to their defaults once, as a clean install (the owner). A mark in the system folder says it is done; the frontend takes
  *  each value through RETRO_ENVIRONMENT_SET_VARIABLE - RetroArch 1.17 on, the own apps) */
-#define VX_OPT_EPOCH 2
+#define VX_OPT_EPOCH 3
 static void opts_reset_once (void)
 {
 	const char *sys = NULL; char f[1024]; int have = 0;
@@ -658,15 +675,21 @@ static void opts_reset_once (void)
 	{ FILE *fp = fopen (f, "r"); if (fp) { if (fscanf (fp, "%d", &have) != 1) have = 0; fclose (fp); } }
 	if (have >= VX_OPT_EPOCH) return;
 	int n = 0;
-	for (size_t i = 0; OPTS[i].key; i++) {
+	if (have < 2) for (size_t i = 0; OPTS[i].key; i++) {
 		const char *c = OPTS[i].cat; if (strcmp (c, "tube") && strcmp (c, "overlay") && strcmp (c, "case") && strcmp (c, "unit") && strcmp (c, "circuit")) continue;
-		if (!strcmp (OPTS[i].key, "vectrex_emu_overlay") || !strcmp (OPTS[i].key, "vectrex_emu_unit")) continue;   /* (the overlay on / off, which Vectrex: a choice, not a tuning) */
+		if (!strcmp (OPTS[i].key, "vectrex_emu_overlay") || !strcmp (OPTS[i].key, "vectrex_emu_unit") || !strcmp (OPTS[i].key, "vectrex_emu_skip_intro")) continue;   /* (the overlay on / off, which Vectrex, the intro: a choice, not a tuning) */
 		static char d[128]; const char *v = OPTS[i].vals[0] == '@' ? "auto" : OPTS[i].vals; size_t k = 0; while (v[k] && v[k] != '|' && k < sizeof d - 1) { d[k] = v[k]; k++; } d[k] = 0;
 		struct retro_variable cur = { OPTS[i].key, NULL };
 		if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &cur) && cur.value && !strcmp (cur.value, d)) continue;
 		struct retro_variable sv = { OPTS[i].key, d }; if (env_cb (70, &sv)) n++; }
+	/* (epoch 3, 2026-11-23: the Beam switch-off delay's fraction acts in the beam engine again (vecx.c) - a value set by hand
+	 *  keeps the picture it gave: its whole cycles, as the desktop's unit_fix 2) */
+	{ struct retro_variable cur = { "vectrex_emu_unit_beamoff", NULL };
+	  if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &cur) && cur.value && cur.value[0] >= '0' && cur.value[0] <= '9') {
+		static char d[32]; snprintf (d, sizeof d, "%.1f cycles", floor (atof (cur.value)));
+		if (strcmp (d, cur.value)) { struct retro_variable sv = { "vectrex_emu_unit_beamoff", d }; if (env_cb (70, &sv)) n++; } } }
 	{ FILE *fp = fopen (f, "w"); if (fp) { fprintf (fp, "%d\n", VX_OPT_EPOCH); fclose (fp); } }
-	fprintf (stderr, "[vectrex_emu] settings: the picture's and the unit's back to their defaults, once (%d changed)\n", n);
+	fprintf (stderr, "[vectrex_emu] settings: %s, once (%d changed)\n", have < 2 ? "the picture's and the unit's back to their defaults" : "the beam switch-off delay in whole cycles", n);
 }
 #endif
 #ifndef VX_EMUVR
@@ -738,17 +761,28 @@ static void read_options (void)
 #endif
 #ifndef VX_EMUVR
 	{ const char *z = getenv ("VX_HALO"); if (z) sscanf (z, "%lf,%lf", &bt_halo_f, &bt_halo_s); }   /* (a test: the glass's glow - its share of the light, its sigma in units) */
+	{ extern int vx_app_noshape; extern float vx_bright;   /* (Tube > Look, as the desktop's: RetroArch's option - the own apps set it themselves, App > Look) */
+	  if (!vx_app_noshape) vx_bright = opt_is ("vectrex_emu_tube_look", "Bright") ? 1.0f : 0.0f; }
 	{ const char *z = getenv ("VX_BRIGHT"); if (z) { extern float vx_bright; vx_bright = (float) atof (z); } }   /* (a test: the Bright look) */
 	{ const char *z = getenv ("VX_HDRPEAK"); if (z) { extern float vx_hdr_peak; vx_hdr_peak = (float) atof (z); } }   /* (a test: an HDR screen's top, x white) */
 	{ const char *z = getenv ("VX_GPROF"); if (z) { extern int vx_gprof; vx_gprof = atoi (z); } }   /* (a test: the GPU diagnostic - each stage's time in the log) */
 #endif
 	opt_wob = opt_is ("vectrex_emu_wobble", "off") ? 0 : opt_is ("vectrex_emu_wobble", "60 Hz") ? 60 : 50;
 	opt_buzz = !opt_is ("vectrex_emu_buzz", "off"); opt_spk = !opt_is ("vectrex_emu_speaker", "off");
+	/* (2026-11-23, the desktop's sliders: the wobble's and the bending's strength, the sound's volumes - 1x / 100 % / 50 % the default) */
+	{ double k = optx ("vectrex_emu_wobble_k", 1.0); opt_wob_k = k >= 0 && k <= 2 ? k : 1.0; k = optx ("vectrex_emu_bending_k", 1.0); opt_bend_k = k >= 0 && k <= 2 ? k : 1.0;
+	  k = optx ("vectrex_emu_buzz_vol", 1.0); opt_buzz_k = k >= 0 && k <= 2 ? k : 1.0;
+	  k = optn ("vectrex_emu_voice_vol", 100) / 100.0; opt_voice_k = k >= 0 && k <= 2 ? k : 1.0;
+	  k = optn ("vectrex_emu_motor_vol", 50) / 50.0; opt_motor_k = k >= 0 && k <= 2 ? k : 1.0;
+	  k = optn ("vectrex_emu_jack_vol", 100) / 100.0; opt_jack_k = k >= 0 && k <= 2 ? k : 1.0;
+	  opt_jack = opt_is ("vectrex_emu_jack", "off") ? 0 : opt_is ("vectrex_emu_jack", "through the speaker") ? 2 : 1; }
 #ifdef VX_EMUVR
 	{ struct retro_variable v = { "vectrex_emu_eye_shift", NULL }; opt_shift = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : 0; }
 #endif
 	opt_after = !opt_is ("vectrex_emu_afterglow", "off");
-	opt_trail = opt_is ("vectrex_emu_afterglow", "long (real Vectrex)") ? 1.0f : opt_is ("vectrex_emu_afterglow", "short") ? 0.3f : 0.6f;
+	/* (Afterglow: its length, as the desktop's slider - 0.05x .. 1.2x, 0.6x the default; the values before 2026-11-23: on 0.6x, long 1x, short 0.3x) */
+	{ const char *ag = optv ("vectrex_emu_afterglow"); double t = !strcmp (ag, "long (real Vectrex)") ? 1.0 : !strcmp (ag, "short") ? 0.3 : ag[0] >= '0' && ag[0] <= '9' ? atof (ag) : 0.6;
+	  opt_trail = (float) (t < 0.05 ? 0.05 : t > 10.0 ? 10.0 : t); }
 	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) * VX_TRAIL_DEF : VX_TRAIL_DEF;   /* (1x: the default) */
 	  opt_trail_k = k >= 0.25 && k <= 6.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
 	{ extern int vx_app_noshape, vx_app_dots; extern float vx_hdr_lift, vx_trail_mul;   /* (the look - as the own apps' setting; they set it themselves) */
@@ -783,7 +817,7 @@ static void read_options (void)
 	raw_groom = TRI ("vectrex_emu_room_glass"); opt_room_glass = raw_groom > 0;
 	if (unit_known) { unit_make (unit_preset (), optv); if (vx_ok ()) { emu_wait_ext (); unit_live (unit_addon); } }   /* (the unit, while running) */
 	opt_async = !opt_is ("vectrex_emu_threaded", "off");
-	opt_white = opt_is ("vectrex_emu_white", "9300 K") ? 9300 : opt_is ("vectrex_emu_white", "16000 K") ? 16000 : opt_is ("vectrex_emu_white", "6504 K (neutral)") ? 6504 : 12000;
+	{ const int w = atoi (optv ("vectrex_emu_white")); opt_white = w >= 5600 && w <= 16000 ? w : 12000; }   /* (the desktop's 5600 - 16000 K; "6504 K (neutral)" before 2026-11-23 reads as 6504) */
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
 	opt_trail_k0 = opt_trail_k;                 /* (EmuVR: one trail brightness; the RetroArch flavour reads its own below) */
@@ -795,6 +829,7 @@ static void read_options (void)
 	opt_ov_btn = 1;                             /* (the RetroPad's START, named "Overlay off / on": RetroArch's Controls menu
 	                                               puts it on any button - the owner, 2026-11-15) */
 	{ float t = (float) optx ("vectrex_emu_ov_tint", 1), pr = (float) optx ("vectrex_emu_ov_print", 1);
+	  t = t < 0 ? 0 : t > 2 ? 2 : t; pr = pr < 0 ? 0 : pr > 2 ? 2 : pr;   /* (the desktop's ranges: 0 .. twice the default - an older 3x .. 6x print as 2x) */
 	  const char *rv = optv ("vectrex_emu_room"); float rm = !strncmp (rv, "off", 3) ? 0.0f : rv[0] ? (float) atof (rv) : 1.0f;
 	  if (!(rm >= 0 && rm <= 4)) rm = 1.0f;
 	  if (t != opt_ov_tint || pr != opt_ov_print || rm != opt_room) { opt_ov_tint = t; opt_ov_print = pr; opt_room = rm; ov_made = 0; }
@@ -1528,13 +1563,15 @@ static const double TUBE_LIGHT[] = {
 static double zk_tab[128];              /* the tube's light for each intensity, as a display value (^(1 / 2.2)) */
 
 /* the lines being built: the frame's (or two frames' mixed: Smooth motion), with the resting spots and halos added */
-typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; float lt; } wline;   /* (lt: beam trace - the piece's light, bt2_prepare; < 0: by the rules) */   /* (b: intensity | 128 fade
+typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; float lt, ag; } wline;   /* (lt: beam trace - the piece's light, bt2_prepare; < 0: by the rules. ag: the age of its frame's start at
+                                                  this picture's moment, s - a line's own age ag - t / 1.5e6 (wl_from); 0 unknown. In the struct's padding: its size, and the
+                                                  save state's pw_streak, as before) */   /* (b: intensity | 128 fade
                                                                                          | 256 halo | 512 dwell | 1024 a rest
                                                                                          joined to a lit line: a joint, a corner) */
 #define NW (MAXL * 3)
 static wline W1[NW], W2[NW];
 /* a piece in picture pixels: the segment (run on past an open end), the ends of its own box, the cuts, the spot */
-typedef struct { float ax, ay, bx, by, x0, y0, x1, y1, n0x, n0y, c0, n1x, n1y, c1, k2, R, r, g, b, hx; int to, cut; } pline;
+typedef struct { float ax, ay, bx, by, x0, y0, x1, y1, n0x, n0y, c0, n1x, n1y, c1, k2, R, r, g, b, hx, ag; int to, cut; } pline;   /* (ag: the light's age at this picture, s - gpu_phos.c, where the afterglow starts) */
 static pline pl[NW];
 #define GTAB 4096
 #define GX 4.5                          /* (the spot out to 3 sigma: d^2 / 2 sigma^2 up to 4.5) */
@@ -1687,7 +1724,7 @@ static const double HUM[2][3][3] = { { { 1.0, 1, 0.3 }, { 0.55, 2, 1.7 }, { 0.25
 static double humP[2][4], humQ[2][4], hum_a0;
 static void hum_coeffs (double t, int hz)
 {
-	const double PI2 = 6.283185307179586, strength = 0.1074, speed = 2.62;
+	const double PI2 = 6.283185307179586, strength = 0.1074 * opt_wob_k, speed = 2.62;   /* (x Wobble strength) */
 	double mc = hz * t + speed * (0.002 * t + 0.15 * sin (PI2 * t / 61.0) + 0.08 * sin (PI2 * t / 23.0 + 1.0) + 0.04 * sin (PI2 * t / 9.7 + 2.0));
 	hum_a0 = PI2 * mc;
 	double breathe = 0.75 + 0.25 * sin (PI2 * 0.029 * t) * sin (PI2 * 0.047 * t + 1.0);
@@ -1779,15 +1816,16 @@ static void audio_frame (void)
 		double run = 0; for (int i = 0; i < n; i++) { run += act[i]; act[i] = run; }
 		for (int i = 0; i < n && i < 8; i++) act[i] += 300.0 * (1.0 - i / 8.0);   /* (the frame's start: a sharp pulse) */
 	}
-	const double buzz_g = 0.0912 * 47.5;
+	const double buzz_g = 0.0912 * 47.5 * opt_buzz_k;   /* (x Buzz volume) */
 	for (int i = 0; i < n; i++) {
 		double a = two ? s[2 * i] : s[i], c = two ? s[2 * i + 1] : 0;
+		if (vt_uvm2_cart && !vt_imager && opt_jack == 2) { a += c * 2.0 * opt_jack_k; c = 0; }   /* (the UVMC2's headphone jack through the Vectrex's speaker) */
 		if (opt_buzz) a += bq_run (f_buzz, 8, act[i] * buzz_g);
 		if (opt_spk) { a = bq_run (f_spk, 6, a); a = 32767.0 * tanh (a / 26000.0); }   /* (the driver's limited excursion) */
 		if (c != 0 || two) {                /* beside the Vectrex, not through its speaker */
-			if (vt_imager) a = soft (a + c * 1.0);                                  /* (the goggles' motor, on the head) */
-			else if (vt_uvm2_cart) a = soft (a + c * 2.0);                               /* (the UVMC2's headphone jack, clean) */
-			else a = soft (a + bq_run (f_voice, 2, c * 3.0));                       /* (the speech module, full-range speakers) */
+			if (vt_imager) a = soft (a + c * 1.0 * opt_motor_k);                    /* (the goggles' motor, on the head: x Disc motor sound / 50 %) */
+			else if (vt_uvm2_cart) a = soft (a + (opt_jack == 1 ? c * 2.0 * opt_jack_k : 0.0));   /* (the UVMC2's headphone jack, clean - x its volume; off) */
+			else a = soft (a + bq_run (f_voice, 2, c * 3.0 * opt_voice_k));         /* (the speech module, full-range speakers - x its volume) */
 		}
 		int v = (int) a; int16_t o = (int16_t) (v > 32767 ? 32767 : v < -32768 ? -32768 : v);
 		if (aq_fill () < AQ - 1) { aq[2 * aq_w] = aq[2 * aq_w + 1] = o; aq_w = (aq_w + 1) % AQ; } }
@@ -2044,7 +2082,9 @@ static void bg_make (void)
  * (emulated seconds), where its lines' times count from, and whether it is the other half of a picture drawn in two
  * halves on alternate frames (vecrender.py frame_alternates) */
 #define NH 6
-typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; } gframe;
+typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; } gframe;   /* (gen: this content's
+                                                own number - a new one each push, join or state load; Smooth motion's kept work, smooth.c) */
+static unsigned long long frame_gen;       /* (not in the save state: the frames get new numbers when one is loaded) */
 #define SHORT_PIECE 0.015
 #define HOLD_SLOW 1.1                     /* (the hold below for a game this much slower than the screen: Vectrexians 45 fps at 60 Hz) */
 #define HOLD_GRACE 2.0                    /* (a line not found again: lit this many of its frames - one may leave it out) */
@@ -2052,6 +2092,7 @@ typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *k
 static gframe hist[NH]; static int nh; static gframe prevf; static int have_prev;
 VXS_ON
 static double load_f = -1;              /* (brightness bending: the beam's load, smoothed) */
+#define BEND_LOAD_CYC (30000.0 / 1.0556)  /* (its unit - vecrender.py BEND_LOAD_CYC: the Test Cartridge's screen 1 0.366, as the tube map was measured) */
 VXS_OFF
 static int cmp_ll (const void *a, const void *b) { long long x = *(const long long *) a, y = *(const long long *) b; return x < y ? -1 : x > y; }
 static void frame_keys (gframe *f)
@@ -2089,7 +2130,7 @@ static void frame_push (unsigned long long p0)
 		if (pt >= 0 && h->t >= pt && h->t - pt < SHORT_PIECE && h->n + nlast <= MAXL && p0 >= h->p0) {
 			const unsigned sh = (unsigned) (p0 - h->p0);
 			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
-			h->n += nlast; h->t = total_cycles / 1.5e6; frame_keys (h);
+			h->n += nlast; h->t = total_cycles / 1.5e6; h->gen = ++frame_gen; frame_keys (h);
 			{ const gframe *f1 = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL, *f2 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL);
 			  double o1 = f1 ? frame_overlap (h, f1) : -1, o2 = f2 ? frame_overlap (h, f2) : -1;
 			  h->alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
@@ -2097,15 +2138,18 @@ static void frame_push (unsigned long long p0)
 	if (nh == NH) frame_pop ();
 	if (spare.L) { f = spare; spare.L = NULL; }
 	else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
-	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0;
+	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0; f.gen = ++frame_gen;
 	frame_keys (&f);
 	{ const gframe *f1 = nh ? &hist[nh - 1] : NULL, *f2 = nh > 1 ? &hist[nh - 2] : (nh == 1 && have_prev ? &prevf : NULL);
 	  double o1 = f1 ? frame_overlap (&f, f1) : -1, o2 = f2 ? frame_overlap (&f, f2) : -1;
 	  f.alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
 	hist[nh++] = f;
-	/* the beam's load (brightness bending): the frame's lit cycles, smoothed (vecrender.py load_f) */
-	double ld = 0; for (int i = 0; i < nlast; i++) ld += last[i].cyc / 8.0 * ((last[i].c & 127) / 127.0);
-	ld /= 30000.0; if (load_f < 0) load_f = ld; load_f += (ld - load_f) * 0.3;
+	/* the beam's load (brightness bending): the frame before this one - whole now, a short piece joined to it (above) - its lit
+	 * cycles, smoothed (vecrender.py beam_load, load_f: the PC's joined picture). Counted as each frame came, a short piece's
+	 * joined lines were left out: the Test Cartridge's screen 1 (a 5 ms piece and a 23 ms one) 0.105 instead of 0.366 */
+	{ const gframe *g = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL;
+	  if (g) { double ld = 0; for (int i = 0; i < g->n; i++) ld += g->L[i].cyc / 8.0 * ((g->L[i].c & 127) / 127.0);
+	    ld /= BEND_LOAD_CYC; if (load_f < 0) load_f = ld; load_f += (ld - load_f) * 0.3; } }
 }
 static void frame_pop (void)                /* (the oldest frame becomes the one before) */
 {
@@ -2254,13 +2298,27 @@ static void eyes_take (void)
 	}
 }
 
+/* The afterglow starts at the light's real age (vecrender.py GLOW_COMMON: a flash leaving the lit layer excites the two parts at
+ * their share at its age - from when the beam drew it to the picture it is left in). The picture's moment wl_tshow (s): set each
+ * refresh (retro_run); a line's own age: ag - its time in the frame (build_lines). Before 2026-11-23 the afterglow started at one
+ * refresh's age: at 60 Hz its first ghosts 1.3 - 2.3 x the PC's in light (Test Cart page 1). wl_base: the frame a line array belongs
+ * to - its start, cycles (-1: none - the age unknown, 0) */
+static double wl_tshow, wl_off;   /* (wl_off: total_cycles - the vector clock alg_cycles, which the frames' p0 count in) */
+static double wl_base (const line_t *L)
+{
+	for (int i = 0; i < nh; i++) if (hist[i].L && L >= hist[i].L && L < hist[i].L + hist[i].n) return (double) hist[i].p0;
+	if (have_prev && prevf.L && L >= prevf.L && L < prevf.L + prevf.n) return (double) prevf.p0;
+	return -1;
+}
 static int wl_from (wline *o, int m, const line_t *L, int n, const line_t *B, double alpha)
 {
+	const double base = n > 0 && !B ? wl_base (L) : -1;
+	const float ag = base >= 0 ? (float) (wl_tshow - (base + wl_off) / 1.5e6) : 0.0f;
 	for (int i = 0; i < n && m < NW; i++) {
 		const line_t *l = &L[i]; wline *w = &o[m++];
 		w->x0 = l->x0; w->y0 = l->y0; w->x1 = l->x1; w->y1 = l->y1;
 		if (B) { w->x0 += (B[i].x0 - l->x0) * alpha; w->y0 += (B[i].y0 - l->y0) * alpha; w->x1 += (B[i].x1 - l->x1) * alpha; w->y1 += (B[i].y1 - l->y1) * alpha; }
-		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb; w->wq = 255; w->lt = -1;
+		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb; w->wq = 255; w->lt = -1; w->ag = ag;
 	}
 	return m;
 }
@@ -2406,22 +2464,32 @@ static double bt2_light (double z, double d)   /* (the light a unit of path: the
 	return BT2_K * o;
 }
 static double bt2_xs[2 * NW], bt2_ys[2 * NW], bt2_s0[NW]; static int bt2_nk; static unsigned char bt2_fl[NW];   /* (bt2_fl: 1 lit, 2 joins the lit piece before) */
+/* (the knots looked up from where the last lookup ended: a picture's lookups only go forward along the path - the same knot as a
+ *  search from the start finds, in a step or two instead of ~15; one going back searches from the start. Vectrexians at 120 Hz:
+ *  bt2_prepare 1.24 -> 0.45 ms a refresh on the PC, the pieces bit for bit the same) */
+static int bt2_ch, bt2_cl;
 static double bt2_thi (double s)           /* (the beam's cycles up to s along the path, a rest at s counted) */
 {
 	const int n = bt2_nk; if (s >= bt2_xs[n - 1]) return bt2_ys[n - 1]; if (s < bt2_xs[0]) return bt2_ys[0];
-	int lo = 0, hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] <= s) lo = m; else hi = m; }   /* (the last knot <= s) */
+	int lo = bt2_ch;                       /* (the last knot <= s) */
+	if (lo < 0 || lo > n - 2 || bt2_xs[lo] > s) { int hi = n - 1; lo = 0; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] <= s) lo = m; else hi = m; } }
+	else while (bt2_xs[lo + 1] <= s) lo++;
+	bt2_ch = lo;
 	const double dx = bt2_xs[lo + 1] - bt2_xs[lo]; return bt2_ys[lo] + (dx > 1e-9 ? (s - bt2_xs[lo]) / dx : 0.0) * (bt2_ys[lo + 1] - bt2_ys[lo]);
 }
 static double bt2_tlo (double s)           /* (.. a rest at s not counted) */
 {
 	const int n = bt2_nk; if (s <= bt2_xs[0]) return bt2_ys[0]; if (s > bt2_xs[n - 1]) return bt2_ys[n - 1];
-	int lo = 0, hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] < s) lo = m; else hi = m; }   /* (hi: the first knot >= s) */
+	int lo, hi = bt2_cl;                   /* (hi: the first knot >= s) */
+	if (hi < 1 || hi > n - 1 || bt2_xs[hi - 1] >= s) { lo = 0; hi = n - 1; while (hi - lo > 1) { const int m = (lo + hi) / 2; if (bt2_xs[m] < s) lo = m; else hi = m; } }
+	else while (bt2_xs[hi] < s) hi++;
+	lo = hi - 1; bt2_cl = hi;
 	const double dx = bt2_xs[hi] - bt2_xs[lo]; return bt2_ys[lo] + (dx > 1e-9 ? (s - bt2_xs[lo]) / dx : 1.0) * (bt2_ys[hi] - bt2_ys[lo]);
 }
 static double bt2_dwell (double s) { return (bt2_thi (s + BT2_W / 2) - bt2_tlo (s - BT2_W / 2)) / BT2_W; }
 static int bt2_prepare_cpu (const wline *L, int n, wline *o, double kb)
 {
-	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0;
+	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0; bt2_ch = bt2_cl = 0;
 	for (int i = 0; i < n; i++) {
 		const wline *l = &L[i]; const int z = l->b & 127; bt2_fl[i] = 0;
 		if (!z || (l->b & 128)) continue;
@@ -2462,7 +2530,7 @@ static int bt2_prepare_cpu (const wline *L, int n, wline *o, double kb)
  *  end); the others - the beam fading, the blanked beam - piece by piece) */
 static int bt2_prepare (const wline *L, int n, wline *o)
 {
-	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0;
+	int m = 0, prev = -1; double S = 0, T = 0; bt2_nk = 0; bt2_ch = bt2_cl = 0;
 	for (int i = 0; i < n; i++) {
 		const wline *l = &L[i]; const int z = l->b & 127; bt2_fl[i] = 0;
 		if (!z || (l->b & 128)) continue;
@@ -2504,6 +2572,7 @@ static unsigned long long sm_ex_shown, sm_ex_next;   /* (Smooth motion's aftergl
 int vx_owe_hidden;                         /* (set by the apps: a hidden catch-up run's frame is drawn with the next picture) */
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
 static int bt_gpu_ok (void);
+#define BL_WIDTH 1.3                        /* (the Bright look: the beam this much wider - vecrender.py BL_WIDTH; its glass's glow not: gpu_phos.c) */
 static int build_lines (wline *L, int n, int to, double esh, int npl)
 {
 	extern int vt_imager;
@@ -2519,7 +2588,8 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 	/* the halos (corner glow) round the long rests: drawn as pieces of their own */
 	static unsigned char zl[NW], jo[NW], halo[NW];
 	int nhalo = 0;
-	for (int i = 0; i < n; i++) {                 /* a rest joined to a lit line (a joint, a corner): 1024 */
+	const int bgpu = vx_beam && bt_gpu;            /* (the beam on the GPU: its pieces use no joint marks, open ends or cuts - not made) */
+	if (!bgpu) for (int i = 0; i < n; i++) {                 /* a rest joined to a lit line (a joint, a corner): 1024 */
 		wline *l = &L[i]; l->b &= ~1024;
 		if (sqrt ((l->x1 - l->x0) * (l->x1 - l->x0) + (l->y1 - l->y0) * (l->y1 - l->y0)) > REST_SPEED * l->cyc) continue;
 		for (int d = -1; d <= 1; d += 2) {
@@ -2545,24 +2615,30 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		if (vx_beam && l->lt >= 0) zl[i] = l->x0 == l->x1 && l->y0 == l->y1;   /* (beam trace: only a piece without length is a spot) */
 		halo[i] = (l->b & 256) != 0; jo[i] = 0;
 	}
-	for (int i = 1; i < n; i++)                   /* one stroke in several pieces: the joined ends open */
+	if (!bgpu) for (int i = 1; i < n; i++)                   /* one stroke in several pieces: the joined ends open */
 		if (fabs (L[i].x0 - L[i - 1].x1) <= 1.5 && fabs (L[i].y0 - L[i - 1].y1) <= 1.5 && fabs (L[i].t - (L[i - 1].t + L[i - 1].cyc)) <= 1.5
 		    && !halo[i] && !halo[i - 1]) { if (!zl[i]) jo[i] |= 1; if (!zl[i - 1]) jo[i - 1] |= 2; }
 	const double sx = EW / SHEET_W, sy = FH / SHEET_H, gp = GAME_PX * sy, bk = opt_sigma / 0.689;   /* (px per game px;
 	                                                    the beam width option: "thin" = 0.55 px at 1x for intensity 127) */
 	const double cxm = ALG_MAX_X / 2.0, cym = ALG_MAX_Y / 2.0;
 	const double par = par_dy ();
-	const double gs = (opt_bend && load_f > 0) ? 1.0 + 0.6 * load_f * 10.0 / 128.0 : 1.0;   /* (bending: grow) */
+	const double gs = (opt_bend && load_f > 0) ? 1.0 + 0.6 * opt_bend_k * load_f * 10.0 / 128.0 : 1.0;   /* (bending: grow - x Bending strength) */
 	const int n0 = npl;
+	double tk_x = 0, tk_y = 0, tv_x = 0, tv_y = 0, hk_t = 0, hv_x = 0, hv_y = 0; int tk_ok = 0, hk_ok = 0;   /* (the last end: where it was, its map, its hum -
+	                                                    the next piece starts at the same place and moment: the same values, done once) */
 	for (int i = 0; i < n && npl < NW; i++) {
 		const wline *l = &L[i];
 		int z = l->b & 127; const int web = (l->b & 255) == 128;   /* (the blanked beam: drawn while the knob is up) */
 		if (!z && !(web && up_kb > 0)) continue;         /* (intensity 0: dark) */
-		double x0, y0, x1, y1; tube_pt (l->x0, l->y0, &x0, &y0); tube_pt (l->x1, l->y1, &x1, &y1);
+		double x0, y0, x1, y1;
+		if (tk_ok && l->x0 == tk_x && l->y0 == tk_y) { x0 = tv_x; y0 = tv_y; } else tube_pt (l->x0, l->y0, &x0, &y0);
+		tube_pt (l->x1, l->y1, &x1, &y1); tk_x = l->x1; tk_y = l->y1; tv_x = x1; tv_y = y1; tk_ok = 1;
 		if (zl[i]) { x0 = x1; y0 = y1; }                /* (a resting spot: where the spot came to rest) */
 		x0 = cxm + (x0 - cxm) * gs; x1 = cxm + (x1 - cxm) * gs; y0 = cym + (y0 - cym) * gs; y1 = cym + (y1 - cym) * gs;
 		if (pw_sx != 1.0) { x0 = cxm + (x0 - cxm) * pw_sx; x1 = cxm + (x1 - cxm) * pw_sx; y0 = cym + (y0 - cym) * pw_sx; y1 = cym + (y1 - cym) * pw_sx; }
-		if (opt_wob) { double ax, ay, bx, by; hum_at (l->t, opt_wob, &ax, &ay); hum_at (l->t + l->cyc, opt_wob, &bx, &by);
+		if (opt_wob) { double ax, ay, bx, by; const double te = l->t + l->cyc;
+			if (hk_ok && l->t == hk_t) { ax = hv_x; ay = hv_y; } else hum_at (l->t, opt_wob, &ax, &ay);
+			hum_at (te, opt_wob, &bx, &by); hk_t = te; hv_x = bx; hv_y = by; hk_ok = 1;
 			if (zl[i]) { ax = bx; ay = by; } x0 += ax; y0 += ay; x1 += bx; y1 += by; }
 		x0 = (x0 - SHEET_X0) * sx + esh; x1 = (x1 - SHEET_X0) * sx + esh; y0 = (y0 - SHEET_Y0 + par) * sy; y1 = (y1 - SHEET_Y0 + par) * sy;
 		/* the brightness and width (game px, FWHM) */
@@ -2587,8 +2663,9 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			pline *q = &pl[npl++];
 			q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
 			q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
-			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= 1.3; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
+			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= BL_WIDTH; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
 			q->k2 = (float) sb; q->R = (float) (3.5 * sb + 1.0); q->r = r; q->g = g; q->b = b; q->hx = (float) (BT_HALO_S * upx);   /* (k2: the spot's sigma, hx: the glow's - px) */
+			{ const double a = l->ag > 0 ? l->ag - l->t / 1.5e6 : 0; q->ag = (float) (a < 0 ? 0 : a > 1 ? 1 : a); }   /* (the light's age: wl_from) */
 			q->cut = 0; q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;
 			continue;
 		}
@@ -2627,7 +2704,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		float r = (float) kk, g = r, b = r;
 		if (vt_imager && opt_imager) { hx = 0;  /* (the filter in front of the eye: its colour; no HDR light past it) */
 			r = (l->rgb & 1) ? r : 0; g = (l->rgb & 2) ? g : 0; b = (l->rgb & 4) ? b : 0; if (!(l->rgb & 7)) r = g = b = 0; }
-		pline *q = &pl[npl++];
+		pline *q = &pl[npl++]; q->ag = 0;
 		q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
 		q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
 		q->k2 = (float) (1.0 / (2.0 * sw * sw)); q->R = (float) (sw * 3.0); q->r = r; q->g = g; q->b = b; q->hx = (float) hx;
@@ -2635,7 +2712,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;
 	}
 	/* the joints' cuts: the bisector of the two pieces' directions (a turn sharper than ~120 degrees: round ends) */
-	for (int k = n0 + 1; k < npl; k++) {
+	if (!bgpu) for (int k = n0 + 1; k < npl; k++) {
 		pline *p = &pl[k - 1], *q = &pl[k];
 		if (!(p->cut & 2) || !(q->cut & 1)) { continue; }
 		double pdx = p->bx - p->ax, pdy = p->by - p->ay, pl_ = sqrt (pdx * pdx + pdy * pdy);
@@ -2647,7 +2724,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		q->n0x = (float) ux; q->n0y = (float) uy; q->c0 = (float) (ux * q->ax + uy * q->ay);
 		p->cut |= 4; q->cut |= 8;                       /* (marks: this end really cut) */
 	}
-	for (int k = n0; k < npl; k++) {                    /* (an open end without a cut: round; a cut end: the segment
+	if (!bgpu) for (int k = n0; k < npl; k++) {                    /* (an open end without a cut: round; a cut end: the segment
 	                                                        runs on past it, the cut ends it) */
 		pline *q = &pl[k]; int c = 0;
 		double dx = q->bx - q->ax, dy = q->by - q->ay, L = sqrt (dx * dx + dy * dy);
@@ -2661,16 +2738,12 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 /* ---- the screen rate and Smooth motion. Each retro_run is one refresh of the screen (the rate option): it runs the
  * emulator on until the emulated time has caught up with it (no game frame, one, or two), then draws a picture of its
  * own. Smooth motion (vectrex_emu.py smooth_frame): the picture of the moment one game frame and one refresh back,
- * the lines between the two game frames around it, where the two match line for line (as many, the same intensities,
- * none moved more than SMOOTH_MATCH units); else the earlier frame as it is. The phosphor (vecrender.py PHOS_A, the
+ * the lines between the two game frames around it, stroke by stroke where a stroke's partner in the other frame is
+ * certain (smooth.c: paired by place; none moved more than SMOOTH_MATCH units); the others as drawn. The phosphor (vecrender.py PHOS_A, the
  * afterglow measured on the owner's Vectrex, at the owner's time scale 0.6): what was lit and is not lit again starts
  * to glow away, in two parts (14 % fading with 27 ms, 5.8 % with 210 ms) */
 #define SMOOTH_MATCH 2500
-#define SM_LOOK 6                         /* (Smooth motion: how far on in the other frame's list a line's partner is looked for) */
-static int sm_draw (const gframe *a, const gframe *b, double alpha, int n, int ex);   /* (smooth.c, included below the things it uses) */
-static int sm_ok (const line_t *p, const line_t *q)   /* (the same line a frame on: its colour, its ends near) */
-{ return p->c == q->c && labs (q->x0 - p->x0) < SMOOTH_MATCH && labs (q->y0 - p->y0) < SMOOTH_MATCH && labs (q->x1 - p->x1) < SMOOTH_MATCH && labs (q->y1 - p->y1) < SMOOTH_MATCH; }
-#include "smooth.c"
+#include "smooth.c"                       /* (sm_draw, sm_merge: included below the things they use) */
 VXS_ON
 static unsigned long long run_t; static double run_frac;   /* (v0.13: saved) */
 VXS_OFF
@@ -2955,7 +3028,21 @@ static void shot_write (void)                /* (the GPU's picture, read back in
 }
 /* (test: VXPOC_PROF=1 - where a refresh's time goes, printed at the game's end) */
 static double pf_now (void) { return vt_wall (); }   /* (vtest.c: the wall clock, every system) */
+/* (the own apps' log: where a refresh's processor time goes - emulation, Smooth motion, the picture's lines, the afterglow's lines,
+ *  the GPU's commands - each refresh's added up, their largest kept; the app reads and restarts them every 5 s: vx_app_cpu_split) */
+static double cs_now[5], cs_sum[5], cs_max[5]; static long cs_n;
+void vx_app_cpu_split (double mean[5], double most[5])   /* (ms a refresh, since the last call) */
+{
+	for (int k = 0; k < 5; k++) { mean[k] = cs_n ? cs_sum[k] / cs_n * 1e3 : 0; most[k] = cs_max[k] * 1e3; cs_sum[k] = cs_max[k] = 0; }
+	cs_n = 0;
+}
+static void retro_run_one (void);
 void retro_run (void)
+{
+	memset (cs_now, 0, sizeof cs_now); retro_run_one ();
+	for (int k = 0; k < 5; k++) { cs_sum[k] += cs_now[k]; if (cs_now[k] > cs_max[k]) cs_max[k] = cs_now[k]; } cs_n++;
+}
+static void retro_run_one (void)
 {
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
@@ -3069,13 +3156,20 @@ void retro_run (void)
 	extern int vt_imager;
 	const double dt = 1.0 / opt_rate;
 	if (pf_on) pf1 = pf_now ();
-	if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; }
+	{ const double c0 = vt_wall (); if (!primed) { run_t_next (); emu_loop (); if (asy) emu_primed = 1; } cs_now[0] += vt_wall () - c0; }
 	const int stood = emu_stood && (ls_state == 2 || netvx_playing ());   /* (read before the next run starts) */
 	if (pf_on) pf2 = pf_now ();
 	{ int av = 3; vx_nobuild = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1); }
 	/* the picture: which lines, from which game frames */
 	const double now = run_t / 1.5e6;
 	int npl = 0; unsigned long long ft0 = nh ? hist[nh - 1].p0 : 0;
+	/* (the picture's moment for the light's age, wl_from: now - a game slower than the screen (hold_lines: each line lit from its own
+	 *  moment until drawn again, as the PC's fixed refresh); a frame a refresh (the game's 50 Hz), as the PC's G-Sync: the frame shown
+	 *  as it ends - the moment its end, a refresh on each time it is shown again (ag_c, the plain branch below) */
+	static unsigned long long ag_p0 = ~0ull; static double ag_c;
+	{ extern unsigned long long vt_piece_t0;
+	  wl_tshow = now; wl_off = (double) total_cycles - (double) vt_piece_t0;   /* (the newest frame ended as the next piece began) */
+	  if (nh) { const gframe *g = &hist[nh - 1]; if (g->p0 != ag_p0) { ag_p0 = g->p0; ag_c = g->t - now; } } }
 #ifndef VX_EMUVR
 	bt_gpu = vx_beam && bt_gpu_ok ();
 #endif
@@ -3112,8 +3206,8 @@ void retro_run (void)
 		const int slow = nh > 1 && hper > HOLD_SLOW * dt;   /* (a game slower than the screen: hold_lines) */
 		if (opt_smooth && opt_rate != 50) {
 			/* (Smooth motion, as the desktop's: one game frame and one refresh back, the frames a and b round that moment -
-			 *  their lines in between where the two match line for line; where they do not, a slow game's lines as held
-			 *  (hold_lines) at the same moment) */
+			 *  their lines in between, stroke by stroke where a stroke's partner is certain (smooth.c); without a b, a slow
+			 *  game's lines as held (hold_lines) at the same moment) */
 			double per = nh > 1 ? (hist[nh - 1].t - hist[0].t) / (nh - 1) : 0.02;
 			per = per < 0.01 ? 0.01 : per > 0.1 ? 0.1 : per;
 			const double D = now - per - dt;
@@ -3129,8 +3223,8 @@ void retro_run (void)
 			 *  in-between away from the whole picture before: that refresh every moving thing stood at a game frame's place
 			 *  instead of between two - gaps and pairs in every trail, a stutter (the owner's iPhone, 2026-11-22) */
 			 /* (and the two frames need not have as many lines: the beam's path is cut into pieces a little differently each
-			 *  frame - the Test Cart's 146, 145, 144 - and a piece more or less took the in-between away as well; the lists
-			 *  are walked side by side, a piece without a partner within SM_LOOK is such a standing line) */
+			 *  frame - the Test Cart's 146, 145, 144 - and a piece more or less took the in-between away as well; strokes are
+			 *  paired by place, smooth.c - one without a certain partner is such a standing line) */
 			if (b && alpha > 0) B = b->L;
 			sm_runs++; if (B) sm_mixed++;
 			sm_exc = 0;
@@ -3146,7 +3240,7 @@ void retro_run (void)
 				if (a->alt && pa) n = wl_from (W1, n, pa->L, pa->n, NULL, 0);   /* (a picture in halves: both) */
 				if (!B) n = wl_from (W1, n, a->L, a->n, NULL, 0);
 				else {
-					n = sm_draw (a, b, alpha, n, sm_ex_cur != NULL);   /* (stroke by stroke: smooth.c) */
+					const double c0 = vt_wall (); n = sm_draw (a, b, alpha, n, sm_ex_cur != NULL); cs_now[1] += vt_wall () - c0;   /* (stroke by stroke: smooth.c) */
 				} }
 			/* (the hum at the nearest real frame's moment: the beam draws only when the game draws) */
 			ft0 = (b && alpha >= 0.5) ? b->p0 : a->p0;
@@ -3154,6 +3248,7 @@ void retro_run (void)
 			n = vx_nobuild ? 0 : hold_lines (now, dt); ft0 = hist[nh - 1].p0;
 		} else {
 			const gframe *a = &hist[nh - 1];
+			wl_tshow = now + ag_c;                     /* (G-Sync's moment: the frame's end, then on by the refresh) */
 			/* (the apps: a game frame that a catch-up run hid - two runs in one refresh, the first without a picture: the screen
 			 *  slower than the game, an iPhone's 48 Hz for 50 - is owed its light: its lines that the newest frame does not draw
 			 *  again (they moved) go into this picture too. Without it that frame's copy was missing from every trail, twice a
@@ -3170,15 +3265,22 @@ void retro_run (void)
 			while (nh > 4) frame_pop ();
 		}
 		if (opt_wob) hum_coeffs (ft0 / 1.5e6, opt_wob);
-		npl = build_lines (W1, n, 0, 0, npl);
+		{ const double c0 = vt_wall (); npl = build_lines (W1, n, 0, 0, npl); cs_now[2] += vt_wall () - c0; }
 #ifndef VX_EMUVR
 		/* (Smooth motion: the game frame's own lines, once a frame, after the picture's - where the afterglow starts: gpu_phos.c ph_ex_mode) */
+		const double c0 = vt_wall ();
 		ph_ex_mode = sm_ex && !vx_nobuild; ph_ex_n = 0;
-		if (ph_ex_mode) { int n2 = 0;
-			if (sm_ex_cur) for (int k = 0; k < sm_exc; k++) n2 = wl_from (W1, n2, &sm_ex_cur->L[sm_exi[k]], 1, NULL, 0);   /* (a's lines the gliding ones have just cleared) */
-			if (sm_ex_a) { const int fl = sm_exfp && sm_exfp_id == sm_ex_a->p0;   /* (the frame before: what has not started yet) */
-				for (int i = 0; i < sm_ex_a->n; i++) if (!(fl && i < sm_exfp_n && sm_exfp[i])) n2 = wl_from (W1, n2, &sm_ex_a->L[i], 1, NULL, 0); }
+		if (ph_ex_mode) { int n2 = 0, ne = 0;
+			/* (the pieces of one straight line as one line, as the PC's: smooth.c sm_merge) */
+			static line_t *exl; static int exl_cap; const int want = (sm_ex_cur ? sm_exc : 0) + (sm_ex_a ? sm_ex_a->n : 0);
+			if (exl_cap < want) { free (exl); exl_cap = want + 256; exl = malloc (sizeof (line_t) * (size_t) exl_cap); if (!exl) exl_cap = 0; }
+			if (exl) {
+				if (sm_ex_cur) for (int k = 0; k < sm_exc; k++) exl[ne++] = sm_ex_cur->L[sm_exi[k]];   /* (a's lines the gliding ones have just cleared) */
+				if (sm_ex_a) { const int fl = sm_exfp && sm_exfp_id == sm_ex_a->p0;   /* (the frame before: what has not started yet) */
+					for (int i = 0; i < sm_ex_a->n; i++) if (!(fl && i < sm_exfp_n && sm_exfp[i])) exl[ne++] = sm_ex_a->L[i]; }
+				n2 = sm_merge (0, exl, ne); }
 			if (n2) ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
+		cs_now[3] += vt_wall () - c0;
 #endif
 	}
 	/* v0.13: a refresh RetroArch does not show (run-ahead's hidden runs: the video off) draws no picture - after the
@@ -3218,7 +3320,8 @@ void retro_run (void)
 		{ extern int vx_gprof_now; vx_gprof_now = gpm; }
 		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
 		if (ph_ex_mode) sm_ex_shown = sm_ex_next;       /* (this picture is drawn - Low leaves every other one out: its game frame's afterglow with the next) */
-		if (ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ())) {
+		const double c0 = vt_wall (); const int phd = ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ()); cs_now[4] += vt_wall () - c0;
+		if (phd) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
 			if (gpm) { glFinish_ (); gp1 = vt_wall (); }
 			/* (the diagnostic, no overlay: the glass and the case drawn once more with a part off - not shown, the real one after it -
@@ -3229,7 +3332,7 @@ void retro_run (void)
 				gpu_novideo = 1; gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
 				glFinish_ (); { const double tv = vt_wall (); gvt[vi] += tv - gp1; gvn[vi]++; gp1 = tv; }
 				gfx.cse = kc; gfx.lk = kl; gfx.grey = kg; gfx.crefl = kr; gpu_novideo = kn; }
-			gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+			{ const double c1 = vt_wall (); gpu_present (NULL, FW, FH, FW, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot); cs_now[4] += vt_wall () - c1; }
 			if (gpm) { glFinish_ (); const double gp2 = vt_wall (); gpt[0] += gp1 - gp0; gpt[1] += gp2 - gp1; gpn++;
 				extern double vx_gpst[4], vx_oxst[8]; extern int vx_gprof_now; vx_gprof_now = 0;
 				if (gpw == 0) gpw = gp2; else if (gp2 - gpw >= 5.0) { fprintf (stderr, "[vectrex_emu] GPU per picture (%ld timed): the light %.2f ms (lines %.2f, phosphor %.2f, glow %.2f, picture %.2f), the glass and the case %.2f ms - %d x %d px, profile %s; the sheet's passes %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f; the glass and case with a part off: no case %.2f, no case nor room light %.2f, no reflections %.2f ms%c",
@@ -3559,6 +3662,7 @@ static bool vx_load_from (const void *d, size_t sz)   /* (retro_unserialize's wo
 		if (np) f = pool[--np]; else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
 		int fn; GET (&fn, sizeof (int)); GET (&f.nk, sizeof (int)); GET (&f.alt, sizeof (int)); GET (&f.t, sizeof (double)); GET (&f.p0, sizeof (unsigned long long));
 		i = get_lines (i, f.L, &f.n); (void) fn; GET (f.keys, sizeof (long long) * (f.nk > 0 ? f.nk : 0));
+		f.gen = ++frame_gen;                       /* (loaded: new content - Smooth motion's kept work does not apply) */
 		*dst[k] = f;
 	}
 	nh = n_h; have_prev = n_p;

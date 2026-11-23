@@ -896,7 +896,10 @@ static void vxa_glass (double t)
 	                                                       tried again after the emulator's step in the same refresh (tick) - dropped, it was
 	                                                       10-25 pictures a second on an M3 iPad: the stutter, the owner 2026-11-19. A long
 	                                                       wait here spun the processor: 120-144 % on the iPad, it heated up) */
-		if (glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, 2000000) == GL_TIMEOUT_EXPIRED) {
+		/* (at the refresh's start only looked at - the 2 ms wait there came off the emulator's time (2026-11-23); the late try
+		 *  after the emulator's step still waits up to 2 ms, and the 50 Hz own clock, which has no late try, as before) */
+		const GLuint64 wait_ns = (late || _own) ? 2000000 : 0;
+		if (glClientWaitSync (vxa_fence[sl], GL_SYNC_FLUSH_COMMANDS_BIT, wait_ns) == GL_TIMEOUT_EXPIRED) {
 			_tFin += CACurrentMediaTime () - tf0; if (late) vxa_pending = -1; else { vxa_pending = sl; _notReady++; } return; }
 		glDeleteSync (vxa_fence[sl]); vxa_fence[sl] = NULL; }
 	_tFin += CACurrentMediaTime () - tf0; if (late) _lateShown++;
@@ -982,10 +985,15 @@ static void vxa_glass (double t)
 	{ const double tt = CACurrentMediaTime () - now; if (tt > _tMax) _tMax = tt; }
 	if (now - _stat_t >= 5) {
 		double t = now - _stat_t; _stat_t = now;
+		/* (the core's run split up - emulation, Smooth motion, the picture's lines, the afterglow's lines, the GPU's commands: each one's
+		 *  mean and largest a run over these 5 s; read every time, so each line covers its own 5 s) */
+		extern void vx_app_cpu_split (double mean[5], double most[5]); double cm[5], cx[5]; vx_app_cpu_split (cm, cx);
 		if (_ticks) { const CGRect pr = _pic; const int barOver = !_bar.hidden && CGRectIntersectsRect (_bar.frame, pr), deckOver = !_deck.hidden && CGRectIntersectsRect (CGRectInset (_deck.frame, 0, 1), pr);
-			vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms (%ld not ready, %ld shown late), Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s; over the picture: bar %d, deck %d",
+			vlog ("time a refresh: emulator %.1f ms, GL wait %.1f ms (%ld not ready, %ld shown late), Metal wait %.1f ms, longest %.1f ms; display %.1f Hz%s; over the picture: bar %d, deck %d; "
+			      "a run (mean / most): emulation %.2f / %.2f, smooth %.2f / %.2f, lines %.2f / %.2f, afterglow lines %.2f / %.2f, GPU commands %.2f / %.2f ms",
 			_tRun * 1000 / _ticks, _tFin * 1000 / _ticks, _notReady, _lateShown, _tDraw * 1000 / _ticks, _tMax * 1000, _tLinkDur > 0 ? _ticks / _tLinkDur : 0,
-			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "", barOver, deckOver); }
+			NSProcessInfo.processInfo.lowPowerModeEnabled ? ", Low Power Mode" : "", barOver, deckOver,
+			cm[0], cx[0], cm[1], cx[1], cm[2], cx[2], cm[3], cx[3], cm[4], cx[4]); }
 		{ int c[6], tot = 0; for (int i = 0; i < 6; i++) { c[i] = atomic_exchange (&vxa_gl_n[i], 0); tot += c[i]; } const long us = atomic_exchange (&vxa_gl_us, 0);
 		  if (tot) vlog ("on glass: %d pictures, %.2f ms apart on average; gaps of 8.3 ms %d, 16.7 ms %d, 20.0 ms %d, 20.8 ms %d, 25 ms %d, longer %d; own clock %d", tot, us / 1000.0 / tot, c[0], c[1], c[2], c[3], c[4], c[5], _own); }
 		_notReady = 0; _lateShown = 0;

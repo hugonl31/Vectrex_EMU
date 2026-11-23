@@ -1413,11 +1413,16 @@ void vt_protect_stats (unsigned long *lines, unsigned long *dim, double *dimmin,
 
 /* one cycle of the spot (after the lag: beam_x / beam_y, ZS units): the cycle's light goes from where the spot was to
  * where it is now; the same piece while the speed holds (BP_TOL), the beam level and the Z the same */
-static void bp_step (unsigned sig_blank)
+static void bp_step (unsigned sig_blank, int run)
 {
 	double lev = (sig_blank && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f)) ? alg_zlev : 0.0;
 	int inb = ALG_IN (beam_x, beam_y);
 	double x = beam_x, y = beam_y, vx = x - bp_px, vy = y - bp_py;
+	/* (VT_BEAMOFF's fraction: the beam goes dark that much of a cycle after /BLANK switched it off - the whole cycles are in
+	 *  sig_blank already. A moving line is lit that share of this cycle's way further, as alg_addline does for the line
+	 *  renderer; until 2026-11-23 the beam engine left the fraction out) */
+	if (!sig_blank && bp_open && run && inb) { const double fr = beam_off - (int) beam_off;
+		if (fr > 0.0) { bp_x1 = bp_px + fr * vx; bp_y1 = bp_py + fr * vy; bp_cyc += fr * bp_lev; } }
 	if (lev > 0.0 && inb) {
 		unsigned pc = e6809_get_pc () & 0xFFFF; int sh = pc >= 0xF495 && pc < 0xF511;
 		if (bp_open && (unsigned char) alg_zsh == bp_z && fabs (lev - bp_lev) < 0.02 && sh == bp_shift &&
@@ -1940,7 +1945,7 @@ static void alg_sstep_full (void)
 	  { double ex = beam_vx - sig_dx, ey = beam_vy - sig_dy, v = fabs ((double) sig_dx) + fabs ((double) sig_dy);
 	    lag_moving = fabs (ex) + fabs (ey) > 0.03 * v + 0.02 * ZS; } }
 	if (vt_beam_mode < 0) { const char *z = getenv ("VT_BEAMMODE"); vt_beam_mode = z && atoi (z) > 0; }
-	if (vt_beam_mode > 0) bp_step (sig_blank);
+	if (vt_beam_mode > 0) bp_step (sig_blank, zero_now && sig_ramp == 0);
 	if (vt_beam_hook) {
 		double hx = beam_x / ZS, hy = beam_y / ZS;
 		unsigned pc = e6809_get_pc () & 0xFFFF;                 /* (the text's shift, as alg_addline's) */

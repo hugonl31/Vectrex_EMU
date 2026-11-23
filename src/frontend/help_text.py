@@ -252,10 +252,10 @@ TOPICS = [
 ('item', 'Low', "For weak graphics (a Raspberry Pi 5, old laptops with integrated graphics): Medium's cuts, the phosphor "
                 "drawn at half the window's size while the vectors stay at full size, and 30 pictures a second instead "
                 "of 60. The two switches are also in Display > Weak graphics, for any profile."),
-('item', 'Medium', "The Vectrex look for laptops: the afterglow, the glow, the corner dots, closed corners (bend "
-                   "smoothing) and the overlay's colours stay; the tube curve, glass edge, scratches, plastic glow, parallax, "
-                   "room light, reflections and dither are off, and the glow is drawn at three-quarter size."),
-('item', 'High', "All but the room light and its reflections; a lighter glow."),
+('item', 'Medium', "The Vectrex look for laptops: the afterglow, the glow, the corner dots and "
+                   "the overlay's colours stay; the tube curve, glass edge, scratches, plastic glow, "
+                   "room light, reflections and dither are off, and the phosphor is drawn at three-quarter size."),
+('item', 'High', "All but the room light and its reflections; a lighter afterglow."),
 ('item', 'Ultra', "Every effect on."),
 ('item', 'Custom', "A profile you changed: any picture setting (Tube, Room light, Case, Overlay) set by hand in the tabs below."),
 ('item', 'Test this PC...', "Draws a heavy scene at each profile for a moment, measures the processor and the "
@@ -289,13 +289,6 @@ TOPICS = [
          "about 2 seconds. That is why fast objects leave fading copies or a faint trail, and why a game "
          "running at 25 frames a second flickers less than you might expect. A spot drawn again is lit "
          "again; it does not add up."),
-('item', 'Afterglow joining', "Off by default: every position a fast object was drawn at leaves its own "
-         "crisp fading copy, as each flash does on the tube. On: the fading glow spreads a little every frame, "
-         "so the copies merge into one softer trail - some screens and some players like that better."),
-('item', 'Joining strength...', "How far the glow spreads when joining is on, 0 to 1 (0 by default: turn it up after switching joining on)."),
-('item', 'Afterglow smoothing', "Off by default. On: the fading glow is averaged over a small spot, so the "
-         "trail becomes one smooth gradient. Only the fading light; the lines being drawn stay sharp."),
-('item', 'Smoothing width...', "How wide that spot is when smoothing is on, 0 to 1 (0 by default: turn it up after switching smoothing on)."),
 ('item', 'Game list', "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder."),
 ('item', 'Colours', "The deck's, the menus' and the windows' colour: a deeper blue, or green. From the next start."),
 ('item', 'Look', "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen."),
@@ -727,8 +720,8 @@ TOPICS = [
 ('item', 'Smooth motion', "For 60 Hz screens without G-Sync / FreeSync (most laptops): a Vectrex game makes 50 pictures a second, a 60 Hz "
       "screen shows 60, so every fifth refresh repeats one and moving things stutter slightly. Smooth motion gives every refresh a picture "
       "of its own, with the vectors where they are between the two game frames around it - the game keeps its own speed and sound, the "
-      "picture comes about 20 ms later. Where two frames do not match line for line (things appearing, other lines), the earlier one is "
-      "shown as is. Off by default (the purist 50 pictures a second)."),
+      "picture comes about 20 ms later. A shape that cannot be matched with certainty in the next frame is shown as drawn. On by "
+      "default; off: the purist 50 pictures a second."),
 ('item', "The monitor's full rate", "Every refresh of a 120, 144 or 240 Hz monitor: the afterglow fades in "
          "finer steps and moving things update more often."),
 ('item', 'G-Sync / FreeSync', "One screen picture per game frame, with no tearing - needs such a monitor. "

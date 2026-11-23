@@ -796,6 +796,7 @@ VOICE_BOOST = 1.5
 
 # the sliders: the default in the middle, this much below and above it (the owner, 2026-10-19)
 SLIDER_SPAN = 1.0                   # (0 .. twice the default)
+SLIDER_LOW = {'trail': 0.05}        # (a slider's left end where less changes nothing: the renderer's floor)
 
 class CrtSound:
     """the Vectrex's own noise mixed into the game sound: the BUZZ (the beam and deflection
@@ -1566,7 +1567,7 @@ UNIT_PRESETS = {
     # (zofs / drift_x: 0, a typical Vectrex. v1.5.6-v1.5.8 had 0.13 / +0.13, fitted to the owner's own console's BIOS text,
     #  but long moves then land off on other consoles - a player's homebrew (DW2000) put its figures into the platform.
     #  The owner, 2026-11-04: typical console as the default; he trims his own Vectrex to match)
-    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
@@ -1624,6 +1625,11 @@ def old_gap(look):
     if isinstance(look, dict) and 'glass_k' in look and 'glass_curve' not in look:   # (before v1.2.0: the amount of the
         try: look['glass_curve'] = max(0.0, min(1.0, 1.0 - float(look.pop('glass_k'))))   #  curve undone - now the curve
         except (TypeError, ValueError): look.pop('glass_k', None)   #  itself, 1 as on a Vectrex)
+    for k_, lo_, hi_ in (('glass_curve', 0.0, 1.0), ('trail', 0.05, None)):   # (the sliders' ranges since 2026-11-23: an older
+        try:                                            #  value outside them gave the same picture as the end - stored as the end)
+            if isinstance(look, dict) and k_ in look:
+                v_ = max(lo_, float(look[k_])); look[k_] = min(hi_, v_) if hi_ is not None else v_
+        except (TypeError, ValueError): look.pop(k_, None)
     if isinstance(look, dict) and abs(float(look.get('line_gap', 0)) - 12.3) < 1e-6:
         look['line_gap'] = 7.0
     if isinstance(look, dict) and any(abs(float(look.get('white_k', 0)) - old) < 1e-6 for old in (6400.0, 9300.0)):
@@ -1644,7 +1650,7 @@ UNIT_SPREAD = dict(
     drift_y= (('s', 0.0, 0.012),       ('s', 0.015, 0.04)),
     zofs=    (('s', 0.0, 0.04),        ('s', 0.05, 0.10)),   # (the most sensitive: +-0.25 flattens the BIOS's small text)
     ysettle= (('r', 0.60, 0.90),       ('r', 0.45, 0.62)),
-    beamoff= (('r', 0.3, 0.9),         ('r', 0.9, 1.5)),
+    beamoff= (('r', 0.0, 0.4),         ('r', 0.4, 1.0)),
     gap=     (('r', 6.3, 7.7),         ('r', 7.7, 9.3)),
     zerotx=  (('r', 3.8, 5.2),         ('r', 5.2, 6.2)),
     zeroty=  (('r', 2.9, 3.8),         ('r', 3.8, 4.6)),
@@ -2526,6 +2532,9 @@ class App:
             for k in ('zofs', 'drift_x'):                       #  defaults, whatever was set; later changes are the player's own.
                 self.unit[k] = UNIT_PRESETS['owner'][k]         #  v1.5.6's 0.13 values go back to 0 through new_defaults above)
             self.unit_fix = 1
+        if self.unit_fix < 2:                                   # (once (2026-11-23): Beam switch-off delay's fraction acts in the
+            self.unit['beamoff'] = float(int(self.unit.get('beamoff', 0.0)))   #  beam engine again - a saved value keeps the
+            self.unit_fix = 2                                   #  picture it gave: its whole cycles)
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', True) if self.ren else False
@@ -2659,11 +2668,11 @@ class App:
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
-        self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look', 'look2', 'even_beam', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+        self.look_keys = [k for k in ('phosphor', 'trail_on', 'trail', 'wob_on', 'wob_strength',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'look2', 'white_k', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
-                                      'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
+                                      'case_on', 'case_refl', 'case_wear', 'dither_on',
                                       'phos_scale', 'half_rate', 'phos_full', 'line_half')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
@@ -3286,11 +3295,8 @@ class App:
     SLIDERS = {
         'volume':        ('Volume (0 % = off)', 'Page Down / Page Up', 'crt', 'volume', 0.0, 1.0, False, '%.0f %%', 100),
         'voice_vol':     ('Speech module volume (100 % = MiSTer Normal)', 'Ctrl+Page Down / Ctrl+Page Up', 'crt', 'voice_vol', 0.0, 2.0, False, '%.0f %%', 100),
-        'bloom':         ('Bloom', '', 'ren', 'bloom', 0.0, 3.0, False, '%.2f', 1),
         'white_k':       ('White balance (colour temperature)', '', 'ren', 'white_k', vecrender.WHITE_LO, vecrender.WHITE_HI, 'mired', '%.0f K', 1),
-        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.1, 10.0, True, 'x%.2f', 1),
-        'halo_k':        ('Corner glow strength', '', 'ren', 'halo_k', 0.0, 0.4, False, '%.3f', 1),
-        'dot_k':         ('Corner dot brightness (x1 = measured)', '', 'ren', 'dot_k', 0.0, 2.0, False, 'x%.2f', 1),
+        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.05, 10.0, True, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'glass_curve':   ('Glass curvature (1 = as on a Vectrex, 0 = even squares)', '', 'ren', 'glass_curve', 0.0, 1.0, False, '%.2f', 1),
         'head_k':        ('Shift strength (x1 = 2 mm at the full reach)', '', 'ren', 'head_k', 0.0, 4.0, False, 'x%.2f', 1),
@@ -3300,7 +3306,6 @@ class App:
         'head_smooth_y': ('Near / far smoothing (less judder, a little later)', '', 'ren', 'head_smooth_y', 0.0, 200.0, False, '%.0f ms', 1),
         'head_glass_k':  ('Glass strength (x1 = a real mirror image)', '', 'ren', 'head_glass_k', 0.0, 1.0, False, 'x%.2f', 1),
         'head_ov_k':     ('Sheet strength (x1 = a real mirror image)', '', 'ren', 'head_ov_k', 0.0, 1.0, False, 'x%.2f', 1),
-        'line_gap':      ('Line gaps (stop delay; 7 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 4.0, 10.0, False, '%.1f cycles', 1),
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
         'art_room':      ('Room light (the overlay; without one, the glass)', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
         'light_k':       ('Ceiling light on the glass: strength', '', 'ren', 'light_k', 0.0, 2.0, False, 'x%.2f', 1),
@@ -3319,8 +3324,6 @@ class App:
         'art_dx':        ('Overlay left / right (picture heights; the picture moves, the sheet stays on the case)', '', 'ren', 'art_dx', -0.05, 0.05, False, '%+.3f', 1),
         'art_dy':        ('Overlay up / down (picture heights)', '', 'ren', 'art_dy', -0.05, 0.05, False, '%+.3f', 1),
         'art_scale':     ('Overlay size (the picture is sized the other way)', '', 'ren', 'art_scale', 0.9, 1.1, False, 'x%.3f', 1),
-        'phos_grow':     ('Joining strength', '', 'ren', 'phos_grow', 0.0, 1.0, False, '%.2f', 1),
-        'phos_smooth':   ('Smoothing width', '', 'ren', 'phos_smooth', 0.0, 1.0, False, '%.2f', 1),
         'wob_strength':  ('Wobble strength', '', 'ren', 'wob_strength', 0.0, 1.0, False, '%.3f px', 1),
         'bend_strength': ('Bending strength', '', 'ren', 'bend_strength', 0.0, 10.0, False, '%.2f', 1),
         'buzz_vol':      ('Buzz volume', '', 'crt', 'buzz_vol', 0.0, 4.0, False, '%.3f', 1),
@@ -3346,9 +3349,9 @@ class App:
         # the default in its middle and goes 100 % below and above it (0 .. twice) - for small personal adjustments. (Not
         # the volume knob: 0 % is the power switch; not a value whose default is 0 = off.)
         default = ART_ADJ_DEFAULT.get(attr, default)            # (an overlay's position / size: 0, 0, x1)
-        rel = attr not in ('volume', 'line_gap', 'monitor_inch', 'white_k') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
+        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'white_k') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
         if rel:
-            lo, hi, log = default * (1 - SLIDER_SPAN), default * (1 + SLIDER_SPAN), False
+            lo, hi, log = max(SLIDER_LOW.get(attr, 0.0), default * (1 - SLIDER_SPAN)), default * (1 + SLIDER_SPAN), False
         if getattr(self, 'slider_win', None):
             try: self.slider_win.destroy()
             except tk.TclError: pass
@@ -3378,7 +3381,6 @@ class App:
                 self.set_volume(round(v * 20) / 20.0)
             else:
                 setattr(obj(), attr, round(v, 4))
-                if attr == 'line_gap': self.core.set_gap(getattr(obj(), attr))
             head.configure(text=value_text())
             if attr == 'monitor_inch':
                 self.real_size(); return
@@ -3397,7 +3399,6 @@ class App:
         def to_default(e=None):
             if attr == 'volume': self.set_volume(default)
             else: setattr(obj(), attr, default)
-            if attr == 'line_gap': self.core.set_gap(default)
             if attr == 'monitor_inch': self.real_size()
             busy[0] = True; sc.set(to_pos(default)); busy[0] = False
             head.configure(text=value_text())
@@ -3406,7 +3407,6 @@ class App:
         def undo(e=None):
             if attr == 'volume': self.set_volume(start)
             else: setattr(obj(), attr, start)
-            if attr == 'line_gap': self.core.set_gap(start)
             if attr == 'monitor_inch': self.real_size()
             else: self.show_look(attr, obj())
             close()
@@ -4298,10 +4298,6 @@ class App:
         """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
         if self.ren:
             self.ren.look2 = v; self.show_look('look: ' + ('Bright' if v == 'bright' else 'Vectrex')); self.save_settings()
-    def set_look(self, v):
-        """Tube > Look: 'bright' or 'vectrex' (vecrender.LOOK_*)"""
-        if self.ren:
-            self.ren.look = v; self.show_look('look')
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True
@@ -5334,7 +5330,7 @@ class App:
                                           initialdir=ROOT, filetypes=[('Vectrex unit', '*.vxunit'), ('All files', '*.*')])
         if fn:
             try:
-                json.dump(dict(vectrex_unit=1, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
+                json.dump(dict(vectrex_unit=2, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
                 self.show_look('Vectrex unit exported: ' + os.path.basename(fn))
             except OSError as e:
                 self.show_look('could not export: %s' % e)
@@ -5347,6 +5343,7 @@ class App:
         try:
             d = json.load(open(fn))
             u = {k: float(d[k]) for k in UNIT_PRESETS['owner'] if k in d}
+            if 'beamoff' in u and int(d.get('vectrex_unit', 1)) < 2: u['beamoff'] = float(int(u['beamoff']))   # (see unit_fix 2)
         except (OSError, ValueError, TypeError) as e:
             self.show_look('not a Vectrex unit file: %s' % e); return
         for k, v in u.items():
@@ -7459,12 +7456,12 @@ class App:
         if not r.phosphor:
             return 'phosphor OFF (crisp lines)' + w
         tl = ('afterglow x%.2f%s' % (r.trail, ' (measured)' if abs(r.trail - 1) < 0.01 else '')) if getattr(r, 'trail_on', False) else 'afterglow OFF'
-        return 'bloom %.2f  %s' % (r.bloom, tl) + w
+        return tl + w
     # what the title bar says about a changed setting: (name, format of its value; None: on / off)
-    LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
+    LOOK_LABELS = dict(volume=('volume', '%d %%'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining strength', '%.2f'), phos_smooth=('afterglow smoothing width', '%.2f'), phos_grow_on=('afterglow joining', None), phos_smooth_on=('afterglow smoothing', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
@@ -7488,10 +7485,6 @@ class App:
         if getattr(self, 'title_job', None):
             self.root.after_cancel(self.title_job)
         self.title_job = self.root.after(2000, self.title)
-    def tune(self, what, step, lo, hi):
-        if self.ren and hasattr(self.ren, what):
-            setattr(self.ren, what, round(max(lo, min(hi, getattr(self.ren, what) + step)), 2))
-            self.show_look(what)
     def toggle_phosphor(self, e=None):
         if self.ren and hasattr(self.ren, 'phosphor'):
             self.ren.phosphor = not self.ren.phosphor
@@ -8889,7 +8882,7 @@ class App:
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name
-            d['unit_fix'] = getattr(self, 'unit_fix', 1)
+            d['unit_fix'] = getattr(self, 'unit_fix', 2)
         d['ultra_rate'] = getattr(self, 'ultra_rate', None)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['run_ahead'] = getattr(self, 'run_ahead', False)
@@ -9117,8 +9110,26 @@ class App:
     SMOOTH_EXW = 96                                     # (Smooth motion: a line that moves on by this or more a frame starts its
                                                         #  afterglow as soon as the gliding line is that far past its place - the core's SM_EXW)
     SMOOTH_MATCH = 2500                                 # (a line moved by more: not the same line - 7 % of the screen)
+    # (a stroke glides only when its partner in the next frame is certain: found by place - each the other's nearest of the
+    #  strokes alike - and moved SM_NEAR at most, or no other stroke alike lies within SM_OTHER[0] x its move + SM_OTHER[1]
+    #  of either, in the other frame or in its own. Identical shapes in a formation, a row of them left out of a frame -
+    #  Vectrexians' aliens: paired with the same alien a row away they were drawn between the rows (the owner's recording,
+    #  2026-11-23) - sm_align; handed to the C version, vxs_frame)
+    SM_NEAR = 400
+    SM_OTHER = (2.0, 300.0)
     def smooth_on(self):
         return getattr(self, 'smooth', False) and not self.vrr and bool(self.ren) and hasattr(self.ren, 'present')
+    def sm_moment(self, now):
+        """Smooth motion on a fixed refresh (vsync): the moment of this refresh's picture - the refresh it goes out with
+        (the one after the last, vbl - as tick_timed counts them; the next one when the tick began after it: that one is
+        gone), not when the tick's work began. That moment moved with the work before it - the sleep's margin follows the
+        drawing time - and the glide went in uneven steps (the Ship Test while recording: 7 2 7 2 px). A refresh apart:
+        even steps. The refresh not known, or far from now (a stall, just switched): now"""
+        per = self.vsync / float(self.refresh if getattr(self, 'refresh', 0) >= 50 else 60)
+        due = self.vbl + per
+        if not now - per < due < now + 2 * per:
+            return now
+        return due if due > now else due + per
     def toggle_smooth(self):
         self.smooth = not self.smooth
         self.sm_buf = []
@@ -9158,7 +9169,8 @@ class App:
                                  alpha, float(self.SMOOTH_MATCH), float(self.SMOOTH_EXW), 0.97 * per * 1.5e6, ctypes.byref(kc),
                                  kma.ctypes.data if kma is not None else None, len(kma) if kma is not None else 0,
                                  kmb.ctypes.data if kmb is not None else None, len(kmb) if kmb is not None else 0,
-                                 R.ctypes.data, self.sm_exf.ctypes.data, now_.ctypes.data, info) < 0 or info[0] != len(R):
+                                 R.ctypes.data, self.sm_exf.ctypes.data, now_.ctypes.data, info,
+                                 float(self.SM_NEAR), float(self.SM_OTHER[0]), float(self.SM_OTHER[1])) < 0 or info[0] != len(R):
                     return None
                 if info[4] == 0:                        # (two frames newly paired: the pairing, for every refresh between them)
                     ma = np.empty(info[2], dtype=np.int64); mb = np.empty(info[3], dtype=np.int64)
@@ -9198,10 +9210,10 @@ class App:
 
         The beam draws a stroke - pieces joined end to start, one brightness - and the core cuts it into pieces by time, a
         little differently each frame (16 24 40 200 8 8 ... cycles in one, 16 16 24 40 192 8 8 ... in the next): the pieces of
-        two frames do not pair up, the strokes do. So strokes are matched (their ends near, their brightness the same), and a
-        piece's ends are looked up along the other frame's stroke at the same share of its drawing time. Matching piece to
-        piece (2026-11-22, a day) paired neighbours wherever a frame had a piece more: shapes broke into dashes - the owner's
-        recording of Mine Storm's mothership"""
+        two frames do not pair up, the strokes do. So strokes are matched (their ends near, their brightness the same, the
+        partner certain: SM_NEAR), and a piece's ends are looked up along the other frame's stroke at the same share of its
+        drawing time. Matching piece to piece (2026-11-22, a day) paired neighbours wherever a frame had a piece more: shapes
+        broke into dashes - the owner's recording of Mine Storm's mothership"""
         M = self.SMOOTH_MATCH
         def strokes(X):
             n = len(X); st = _np.ones(n, dtype=bool)
@@ -9220,53 +9232,82 @@ class App:
         #  about as far: a line and the one next to it, a side of the same shape, are near each other too. The Ship Test,
         #  2026-11-22: as its scale steps, two frames have as many strokes grouped differently - a line was paired with its
         #  neighbour and slid between the two for some pictures)
-        def same(X, Y):
+        def same(X, Y, R=M):
             ex = (X[:, 2] - X[:, 0]) - (Y[:, 2] - Y[:, 0]); ey = (X[:, 3] - X[:, 1]) - (Y[:, 3] - Y[:, 1])
             lx = _np.maximum(_np.maximum(_np.abs(X[:, 2] - X[:, 0]), _np.abs(X[:, 3] - X[:, 1])), _np.maximum(_np.abs(Y[:, 2] - Y[:, 0]), _np.abs(Y[:, 3] - Y[:, 1])))
-            return ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
+            return ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < R) & (Y[:, 4] == X[:, 4])
                     & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0)
                     & (_np.maximum(_np.abs(ex), _np.abs(ey)) <= 0.35 * lx + 200.0))
         ma = _np.full(len(SA), -1, dtype=int); mb = _np.full(len(SB), -1, dtype=int)
         kept = getattr(self, '_al_keep', None)           # (the pairing: worked out once for the two frames, asked for every refresh)
         if key is not None and kept is not None and kept[0] is key[0] and kept[1] is key[1] and len(kept[2]) == len(SA) and len(kept[3]) == len(SB):
             ma, mb = kept[2], kept[3]
-        elif len(SA) == len(SB) and bool(same(SA, SB).all()):   # (stroke for stroke; one that does not fit: laid along each other, below)
-            idx = _np.arange(len(SA)); ma[idx] = idx; mb[idx] = idx
         else:
-            # (a stroke more or less: the two lists laid along each other for the least total distance - a stroke paired with the
-            #  one at its place, or left out at the price of a stroke SMOOTH_MATCH away. Walked side by side with 'near enough'
-            #  as the test (an hour, 2026-11-22), a small shape's strokes are all near each other: the lists went on one out of
-            #  step, the shape scrambled for that frame - the owner's recording, Mine Storm's mothership at its smallest)
-            la_, lb_ = len(SA), len(SB); Wb = abs(la_ - lb_) + 6; K = 2 * Wb + 1; INF = 1e18; G = float(M)
-            C = _np.full((la_, K), INF); ia = _np.arange(la_)
-            for k_ in range(K):
-                jb = ia + k_ - Wb; v = (jb >= 0) & (jb < lb_)
-                if not v.any(): continue
-                X = SA[v]; Y = SB[jb[v]]; d = _np.abs(Y[:, :4] - X[:, :4]).max(1)
-                okk = same(X, Y)
-                col = _np.full(int(v.sum()), INF); col[okk] = d[okk]; C[v, k_] = col
-            C = C.tolist()
-            D = [[INF] * K for _ in range(la_ + 1)]; BP = [[0] * K for _ in range(la_ + 1)]
-            D[0][Wb] = 0.0
-            for i_ in range(la_ + 1):
-                Di = D[i_]; Dn = D[i_ + 1] if i_ < la_ else None; Ci = C[i_] if i_ < la_ else None
-                for k_ in range(K):
-                    d = Di[k_]
-                    if d >= INF: continue
-                    j_ = i_ + k_ - Wb
-                    if j_ < 0 or j_ > lb_: continue
-                    if k_ + 1 < K and j_ + 1 <= lb_ and d + G < Di[k_ + 1]: Di[k_ + 1] = d + G; BP[i_][k_ + 1] = 2   # (b's stroke left out)
-                    if Dn is not None:
-                        if j_ < lb_ and Ci[k_] < INF and d + Ci[k_] < Dn[k_]: Dn[k_] = d + Ci[k_]; BP[i_ + 1][k_] = 1   # (paired)
-                        if k_ - 1 >= 0 and d + G < Dn[k_ - 1]: Dn[k_ - 1] = d + G; BP[i_ + 1][k_ - 1] = 3                 # (a's left out)
-            i_ = la_; k_ = lb_ - la_ + Wb
-            if 0 <= k_ < K and D[i_][k_] < INF:
-                while i_ > 0 or (i_ + k_ - Wb) > 0:
-                    t_ = BP[i_][k_]
-                    if t_ == 1: i_ -= 1; ma[i_] = i_ + k_ - Wb; mb[i_ + k_ - Wb] = i_
-                    elif t_ == 2: k_ -= 1
-                    elif t_ == 3: i_ -= 1; k_ += 1
-                    else: break
+            # (each stroke with the stroke of the other frame nearest to it of those alike, where each is the other's nearest
+            #  and the pair is certain - SM_NEAR, above; the others stand where the game drew them, a's until halfway and b's
+            #  after. By place, not by the place in the list: a frame with a stroke more or less - a mine laid, a row left
+            #  out - leaves the rest gliding. Paired by the list (2026-11-23) such a frame stood still as a whole; laid along
+            #  each other for the least total distance (2026-11-22), Vectrexians' aliens were paired with the alien a row away)
+            OFF, W, s1 = 1 << 21, 1 << 23, M / 4.0
+            def dist(X, Y):
+                # (how far apart, for the nearest: its ends moved + the stroke itself changed. By its ends alone a short line
+                #  was nearer to the short line across it next to it a frame on than to itself - the Ship Test's small parts;
+                #  'moved SM_NEAR at most' is by its ends: a shrinking shape's lines change more than they move)
+                ex = (X[:, 2] - X[:, 0]) - (Y[:, 2] - Y[:, 0]); ey = (X[:, 3] - X[:, 1]) - (Y[:, 3] - Y[:, 1])
+                return _np.abs(Y[:, :4] - X[:, :4]).max(1) + _np.maximum(_np.abs(ex), _np.abs(ey))
+            def grid(S, s):                              # (strokes by their square of side s, by their start; far off: none)
+                v = (_np.abs(S[:, 0]) <= 1e9) & (_np.abs(S[:, 1]) <= 1e9)
+                cx = _np.zeros(len(S), dtype=_np.int64); cy = _np.zeros(len(S), dtype=_np.int64)
+                cx[v] = _np.floor(S[v, 0] / s).astype(_np.int64); cy[v] = _np.floor(S[v, 1] / s).astype(_np.int64)
+                ix = _np.nonzero(v)[0]; k = (cy[ix] + OFF) * W + cx[ix] + OFF; o = _np.argsort(k, kind='stable')
+                return v, cx, cy, ix[o], k[o]
+            def around(P, gp, gq, R):
+                # (each of P's strokes with each of the other's in the (2R + 1)^2 squares around it: P's, the other's)
+                v, cx, cy = gp[:3]; P = P[v[P]]; iq, kq = gq[3], gq[4]; I_, J_ = [], []
+                for dy in range(-R, R + 1):
+                    k0 = (cy[P] + dy + OFF) * W + cx[P] - R + OFF
+                    lo = _np.searchsorted(kq, k0, 'left'); cnt = _np.searchsorted(kq, k0 + 2 * R, 'right') - lo; tot = int(cnt.sum())
+                    if tot:
+                        I_.append(_np.repeat(P, cnt)); J_.append(iq[_np.arange(tot) - _np.repeat(_np.cumsum(cnt) - cnt - lo, cnt)])
+                return (_np.concatenate(I_), _np.concatenate(J_)) if I_ else (_np.zeros(0, dtype=int), _np.zeros(0, dtype=int))
+            def side(SP, SQ, P, gp, gq, bq, d1, d2, f1):
+                # (for P's strokes: the nearest of SQ's strokes alike in the 3 x 3 squares around each - between equals the one
+                #  nearer its place in the list -, its distance, the next nearest's distance, how far its ends are from the
+                #  nearest's)
+                I, J = around(P, gp, gq, 1); X = SP[I]; Y = SQ[J]; m = same(X, Y)
+                if not m.any(): return
+                I = I[m]; J = J[m]; X = X[m]; Y = Y[m]; d = dist(X, Y); e = _np.abs(Y[:, :4] - X[:, :4]).max(1)
+                o = _np.lexsort((J, _np.abs(J - I), d, I)); I = I[o]; J = J[o]; d = d[o]; e = e[o]
+                f = _np.ones(len(I), dtype=bool); f[1:] = I[1:] != I[:-1]; fi = _np.nonzero(f)[0]
+                bq[I[fi]] = J[fi]; d1[I[fi]] = d[fi]; f1[I[fi]] = e[fi]
+                s_ = fi + 1; h = s_ < len(I); h[h] = I[s_[h]] == I[fi[h]]; d2[I[fi[h]]] = d[s_[h]]
+            def open_(d1, d2, f1):
+                # (those the squares of side s1 did not settle: their nearest, or whether the next nearest is far enough,
+                #  could lie further off - any stroke outside the 3 x 3 squares is more than s1 away)
+                need = _np.where(f1 <= self.SM_NEAR, d1, _np.minimum(d2, self.SM_OTHER[0] * d1 + self.SM_OTHER[1]))
+                return _np.nonzero(s1 - 1.0 < need)[0]
+            NA, NB = [(_np.full(n_, -1, dtype=int), _np.full(n_, _np.inf), _np.full(n_, _np.inf), _np.full(n_, _np.inf)) for n_ in (len(SA), len(SB))]
+            ga, gb = grid(SA, s1), grid(SB, s1)
+            side(SA, SB, _np.arange(len(SA)), ga, gb, *NA); side(SB, SA, _np.arange(len(SB)), gb, ga, *NB)
+            ua, ub = open_(*NA[1:]), open_(*NB[1:]); gM = None
+            if len(ua) or len(ub):                       # (those: among all within SMOOTH_MATCH)
+                gM = ga, gb = grid(SA, M), grid(SB, M)
+                for U, N_, SP, SQ, gp, gq in ((ua, NA, SA, SB, ga, gb), (ub, NB, SB, SA, gb, ga)):
+                    if len(U):
+                        N_[0][U] = -1; N_[1][U] = _np.inf; N_[2][U] = _np.inf; N_[3][U] = _np.inf; side(SP, SQ, U, gp, gq, *N_)
+            (ba, da1, da2, ea1), (bb, db1, db2, eb1) = NA, NB
+            k = _np.nonzero(ba >= 0)[0]; j = ba[k]; d = da1[k]; lim = self.SM_OTHER[0] * d + self.SM_OTHER[1]
+            p = (bb[j] == k) & ((ea1[k] <= self.SM_NEAR) | ((da2[k] >= lim) & (db2[j] >= lim)))
+            f = _np.nonzero(p & (ea1[k] > self.SM_NEAR))[0]
+            if len(f):                                   # (moved further: another like it that near in its own frame?)
+                if gM is None: gM = grid(SA, M), grid(SB, M)
+                R = int(self.SM_OTHER[0] + self.SM_OTHER[1] / M) + 1
+                for S, P_, g in ((SA, k, gM[0]), (SB, j, gM[1])):
+                    w, q = around(_np.arange(len(f)), (g[0][P_[f]], g[1][P_[f]], g[2][P_[f]]), g, R)
+                    X = S[P_[f][w]]; Y = S[q]; L = lim[f][w]
+                    m = (q != P_[f][w]) & same(X, Y, L) & (dist(X, Y) < L)
+                    p[f[w[m]]] = False
+            ma[k[p]] = j[p]; mb[j[p]] = k[p]
         if key is not None: self._al_keep = (key[0], key[1], ma, mb)
         def look(sid, f0, f1, mp, pu, px, py, n):
             v = mp[sid] >= 0; q0 = mp[sid] + 0.999 * f0; q1 = mp[sid] + 0.999 * f1
@@ -9275,6 +9316,71 @@ class App:
             return T, v
         TA, va = look(sa, fa0, fa1, ma, pub, pxb, pyb, len(A)); TB, vb = look(sb, fb0, fb1, mb, pua, pxa, pya, len(B))
         return TA, va, TB, vb
+    def sm_pair(self, A, B):
+        """sm_align's pairing of two frames' strokes alone: a's strokes' partners in b (-1: none) - in C (vxs_frame, the
+        in-between at a, nothing used but the pairing) or numpy (sm_align); the same pairs. None: not paired"""
+        lib = self.sm_lib()
+        if lib is not None:
+            try:
+                np = _np
+                A = np.ascontiguousarray(A, dtype=np.float64); B = np.ascontiguousarray(B, dtype=np.float64)
+                na, cols = A.shape
+                R = np.empty((na, cols)); exf = np.zeros(na, dtype=bool); now_ = np.zeros(na, dtype=bool)
+                kc = ctypes.c_double(1.0); info = (ctypes.c_int * 5)()
+                with vecrender._vxb_lock:
+                    if lib.vxs_frame(A.ctypes.data, na, B.ctypes.data, len(B), cols, 0.0, float(self.SMOOTH_MATCH),
+                                     float(self.SMOOTH_EXW), 1e30, ctypes.byref(kc), None, 0, None, 0, R.ctypes.data,
+                                     exf.ctypes.data, now_.ctypes.data, info, float(self.SM_NEAR), float(self.SM_OTHER[0]),
+                                     float(self.SM_OTHER[1])) < 0 or info[4] != 0:
+                        return None
+                    ma = np.empty(info[2], dtype=np.int64); mb = np.empty(info[3], dtype=np.int64)
+                    if lib.vxs_pair(ma.ctypes.data, mb.ctypes.data) < 0:
+                        return None
+                return ma
+            except Exception as e:   # noqa
+                self.sm_c_stop(e)
+        kept = getattr(self, '_al_keep', None)           # (Smooth motion's kept pairing: left as it was)
+        try:
+            self.sm_align(A, B, key=(object(), object()))
+            return self._al_keep[2]
+        finally:
+            self._al_keep = kept
+    def hold_pairs(self, A, B, dmin):
+        """the hand-over (vecrender _hand_build: the screen's own rate, Smooth motion off): frame a's lines that are drawn again in
+        frame b somewhere else - dmin units or more away -, and how much later (cycles: b's moment against a's, each in its own
+        frame) b draws each one's place on its partner stroke: (lines, shifts), or None. Paired as Smooth motion pairs strokes
+        (sm_pair: certain partners only - a row of identical aliens left out of a frame is not paired with the row next to it)"""
+        np = _np
+        if np is None or A.ndim != 2 or B.ndim != 2 or A.shape[1] != B.shape[1] or A.shape[1] < 7 or not len(A) or not len(B):
+            return None
+        ma = self.sm_pair(A, B)
+        if ma is None:
+            return None
+        def strokes(X):                                  # (as sm_align's: a piece's stroke, its ends' shares of its time, the path)
+            n = len(X); st = np.ones(n, dtype=bool)
+            st[1:] = ~((X[1:, 0] == X[:-1, 2]) & (X[1:, 1] == X[:-1, 3]) & (X[1:, 4] == X[:-1, 4]))
+            sid = np.cumsum(st) - 1; first = np.nonzero(st)[0]; last = np.append(first[1:], n) - 1
+            cyc = np.maximum(X[:, 5], 1e-3); c = np.cumsum(cyc); base = (c - cyc)[first]; tot = c[last] - base
+            f0 = (c - cyc - base[sid]) / tot[sid]; f1 = (c - base[sid]) / tot[sid]
+            pu = np.empty(2 * n); pu[0::2] = sid + 0.999 * f0; pu[1::2] = sid + 0.999 * f1
+            return sid, f0, f1, pu
+        sa, fa0, fa1, _ = strokes(A); sb, _, _, pub = strokes(B)
+        if len(ma) != sa[-1] + 1:
+            return None
+        m = ma[sa]; v = m >= 0
+        q0 = m + 0.999 * fa0; q1 = m + 0.999 * fa1
+        px = np.empty(2 * len(B)); px[0::2] = B[:, 0]; px[1::2] = B[:, 2]
+        py = np.empty(2 * len(B)); py[0::2] = B[:, 1]; py[1::2] = B[:, 3]
+        pt = np.empty(2 * len(B)); pt[0::2] = B[:, 6]; pt[1::2] = B[:, 6] + B[:, 5] / 8.0   # (a piece's start and end, cycles)
+        d = np.maximum(np.maximum(np.abs(np.interp(q0, pub, px) - A[:, 0]), np.abs(np.interp(q0, pub, py) - A[:, 1])),
+                       np.maximum(np.abs(np.interp(q1, pub, px) - A[:, 2]), np.abs(np.interp(q1, pub, py) - A[:, 3])))
+        sel = v & (d >= dmin) & ((A[:, 4].astype(np.int64) & 127) > 0)
+        if not sel.any():
+            return None
+        # (piece by piece, not joined into whole lines as sm_merge: a joined line's piece goes out at once, at its first moment - the
+        #  beam drawing the new copy at the picture's moment, the old one's rest went before the new one was there: a gap, the
+        #  Ship Test's lines in one picture of six)
+        return A[sel], np.interp(q0[sel], pub, pt) - A[sel, 6]
     def smooth_frame(self, r, T):
         """this refresh's picture: the game frames a and b around the moment shown, the vectors in between"""
         buf = self.sm_buf
@@ -9345,6 +9451,9 @@ class App:
             lines = [((p[0] + (q[0] - p[0]) * alpha, p[1] + (q[1] - p[1]) * alpha, p[2] + (q[2] - p[2]) * alpha,
                        p[3] + (q[3] - p[3]) * alpha) if match else tuple(p[:4])) + (p[4], p[5] * k, p[6] * k)
                      for p, q in zip(la, b[0] if match else la)]
+        # (the brightness bending's load: this game frame's lines as the core drew them - not squeezed into the refresh, not
+        #  with the other half below)
+        ld_pic = vecrender.beam_load(lines, k)
         # (a game that draws its picture in halves on alternate frames: both halves, as the tube shows them)
         if getattr(self, 'sm_alt_for', None) is not a:
             self.sm_alt_for = a
@@ -9378,12 +9487,20 @@ class App:
                     P_ = _np.concatenate(Ps) if Ps else _np.zeros((0, 7))
                     if P_.ndim == 2 and len(P_):
                         P_ = self.sm_merge(P_); P_[:, 5] *= k; P_[:, 6] *= k
-                        f0 = r.frame_t0; r.frame_t0 = pv[2]
+                        f0 = r.frame_t0; r.frame_t0 = pv[2]; r.dwell_k = 1.0 / k
                         try: r.ex_built = r._build(P_, load=False)
-                        finally: r.frame_t0 = f0
+                        finally: r.frame_t0 = f0; r.dwell_k = 1.0
                 except Exception as e:   # noqa
                     if not getattr(self, '_ex_said', False): self._ex_said = True; print('smooth afterglow: %s' % e)
-        r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
+        r.load_pic = ld_pic                              # (the brightness bending: the game frame's own load - see above)
+        # (the frame's light as the beam drew it: its times and cycles are squeezed into the refresh, x k, and the beam's light
+        #  a place grows with its time there - built so, a moving line was dimmer than the game frame shown whole (G-Sync, or
+        #  Smooth motion off): Test Cart page 1's bars' heads 0.791 against 0.814. The dwell x 1 / k: vecrender bt2_prepare)
+        r.dwell_k = 1.0 / k if k > 0 else 1.0
+        try:
+            r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
+        finally:
+            r.load_pic = None; r.dwell_k = 1.0
     def pen_live(self):
         """the light pen in port 2, the game running: the mouse is the pen"""
         return (getattr(self, 'speech', 'off') == 'lightpen' and self.run.power and not self.browser
@@ -9665,6 +9782,9 @@ class App:
             frames = list(self.run.queue); self.run.queue.clear()
             self.run.latest = None
         smooth = self.smooth_on()
+        # (the screen's own rate without Smooth motion: a moved line's old copy goes out as its new copy is drawn - vecrender
+        #  _hand_build; G-Sync and Smooth motion show whole pictures, the hold does not show there)
+        r.hand_pairs = self.hold_pairs if (getattr(self, 'hand_on', True) and not smooth and not vrr and self.run.power) else None
         for lines, t_start, t0, ln in frames:
             self.lines = lines
             if self.run.power:
@@ -9702,6 +9822,9 @@ class App:
         else:
             show = True
             T = now
+            if smooth and self.vsync and getattr(self, 'vbl', 0.0):
+                T = self.sm_moment(now)                         # (Smooth motion off: now, as before - the game's
+                                                                #  lines light at their own moments)
         if show:
             imm = None
             if not self.run.power:                              # power off: the tube collapses, fades
@@ -9723,11 +9846,6 @@ class App:
             self.rec_tick()                                     # (Record: the part recorded, the window's size)
             r.frozen = bool(self.run.paused and self.run.power and not getattr(self, 'snap_job', None))   # (paused: the picture last shown stays - vecrender keep_picture)
             r.frozen_box = None if (not r.frozen or self.browser or getattr(r, 'rot', 0)) else self.rec_box(False)   # (its tube part; the ROM browser lies over it: all drawn anew)
-            # (the screen's own rate, Smooth motion off: a picture that brings a whole new game frame is one too - a line that moved
-            #  hands over to its new copy. Its old copy stayed lit its whole hold, 20 ms, the next picture came after 16.7: every
-            #  moving thing drawn double in most pictures at 60 Hz - the owner's recording of Mine Storm's mothership, 2026-11-22;
-            #  the renderer checks that the frame was drawn to its end: whole_plain)
-            r.whole_plain = bool(frames) and not smooth and not vrr and self.run.power and not self.run.paused
             r.whole_pictures = bool(smooth or (vrr and frames)) and self.run.power and not self.run.paused   # (each picture complete: what
             r.present(T - self.pause_acc, imm, flush)                                          #  it does not draw fades)
             self.snap_tick()

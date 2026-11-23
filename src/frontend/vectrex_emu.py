@@ -260,8 +260,10 @@ def _rename_included_game():
 _rename_included_game()
 # The included game's UVMC2 edition (v1.4.3 to v1.4.5) is out until its text is fixed (the owner, 2026-11-01): the file
 # those versions put in roms is removed once - only that exact file (its checksum), never a player's other copy or
-# its saves (uvmc2/lasthuman/ stays)
-RETIRED_ROMS = {'Last Human (UVMC2).um2': 'cfac241a619e0436cf8a9de054429773'}
+# its saves (uvmc2/lasthuman/ stays). Likewise the small UVMC2 program v1.0.2 - v1.8.1 shipped beside it (the owner,
+# 2026-11-23: no longer part of the emulator) - only the file those versions put there
+RETIRED_ROMS = {'Last Human (UVMC2).um2': 'cfac241a619e0436cf8a9de054429773',
+                'UVMC2 Demo.um2': 'a5a8fddb38477db65497449b040beb78'}
 def _retire_roms():
     import hashlib
     for f, md5 in RETIRED_ROMS.items():
@@ -1780,11 +1782,44 @@ def ensure_sd_dir(d):
         pass
 
 
-# the UVMC2's calibration as it comes with the emulator (package/uvmc2/config/uvm2.cfg: the owner's, made on this
-# emulator's console, 2026-11-03; zero 3 since 2026-11-13: what a real Vectrex wants, the zero test cartridge) - Config > Ports > Reset UVMC2 calibration writes it back to the card. The SDK's
-# file: its lines, padded with spaces to 512 bytes (the last a newline)
-UVM2_CFG_DEFAULT = ('scale 160\nt1_tail_q8 752\nzero 3\nbright 80\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
-                    'neg_rate_y 0\ndrift_x 0\ndrift_y 0\naspect_q8 268\nwin_x 13500\nwin_y 14750\n').encode().ljust(511, b' ') + b'\n'
+# the UVMC2's calibration as it comes with the emulator (package/uvmc2/.conf/uvm2.cfg and config/uvm2.cfg, the same
+# bytes: the owner's, made on this emulator, 2026-11-23) - Config > Ports > Reset UVMC2 calibration writes it back to
+# the card. The SDK's file: its lines, padded with spaces to 512 bytes (the last a newline). Where: the SDK's games
+# from v1.4.17 read .conf/uvm2.cfg, the older ones config/uvm2.cfg (still read by the newer ones without a .conf)
+UVM2_CFG_DEFAULT = ('scale 150\nt1_tail_q8 1016\nzero 3\nbright 100\nhold_y_min 4\nhold_y_max 15\nneg_rate_x 0\n'
+                    'neg_rate_y 0\ndrift_x 0\ndrift_y 0\naspect_q8 278\nwin_x 13250\nwin_y 16750\n').encode().ljust(511, b' ') + b'\n'
+UVM2_CFG_FILES = (('.conf', 'uvm2.cfg'), ('config', 'uvm2.cfg'))
+# the calibrations the earlier versions shipped (their uvm2.cfg's MD5): a card that still has one byte for byte was never
+# calibrated by its player - it gets the new one at the start (uvm2_cfg_update); any other file is the player's and stays
+UVM2_CFG_OLD = ('9ed414c3e40b0719a4b526bb1d7a978f',    # (v1.6.2 - v1.8.1: scale 160, zero 3)
+                'a577e3a5cd6895b909001338f34df13a')    # (v1.5.2 - v1.6.1: zero 34)
+
+
+def uvm2_cfg_update(d):
+    """the SD card folder d's calibration at the start: each of its two files (UVM2_CFG_FILES) that is a calibration an
+    earlier version shipped, untouched since, becomes UVM2_CFG_DEFAULT; then a card without .conf/uvm2.cfg whose
+    config/uvm2.cfg is the default gets it there too. A player's own file (any other) and a card with none stay"""
+    import hashlib
+    new, old = (os.path.join(d, *f) for f in UVM2_CFG_FILES)
+    def put(p):
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p + '.tmp', 'wb') as f:
+            f.write(UVM2_CFG_DEFAULT)
+        os.replace(p + '.tmp', p)
+    def read(p):
+        try:
+            return open(p, 'rb').read() if os.path.getsize(p) <= 4096 else None
+        except OSError:
+            return None
+    try:
+        for p in (new, old):
+            b = read(p)
+            if b is not None and hashlib.md5(b).hexdigest() in UVM2_CFG_OLD:
+                put(p)
+        if not os.path.exists(new) and read(old) == UVM2_CFG_DEFAULT:
+            put(new)
+    except OSError:
+        pass
 
 
 def c1_setup_done(fn):
@@ -2516,6 +2551,7 @@ class App:
         self.speech = self.port2_auto(args.rom)
         self.sd_dir = _card_dir(c0.get('uvm2_sd_dir'), SD_DEFAULT)   # the UVMC2's SD card
         ensure_sd_dir(self.sd_dir)                              # (plug and play: there from the first start)
+        uvm2_cfg_update(self.sd_dir)                            # (an earlier version's shipped calibration: the new one)
         self.px_dir = _card_dir(c0.get('pitrex_sd_dir'), PX_DEFAULT)   # Add-ons: the PiTrex's SD card
         u = c0.get('unit') if isinstance(c0.get('unit'), dict) else {}
         u = new_defaults(u, (c0.get('defaults') or {}).get('unit'), UNIT_PRESETS['owner'])
@@ -8570,31 +8606,33 @@ class App:
         self.save_settings()
         self.show_look('add-on settings: the defaults')
     def reset_uvm2_cal(self):
-        """Config > Ports > Reset UVMC2 calibration: the card's config/uvm2.cfg back to the calibration that comes with
-        the emulator (UVM2_CFG_DEFAULT) - for a file a calibration went wrong in. The old one is kept beside it
-        (uvm2.cfg.bak); a UVMC2 game in the slot starts again with it"""
-        path = os.path.join(self.sd_dir, 'config', 'uvm2.cfg')
+        """Config > Ports > Reset UVMC2 calibration: the card's .conf/uvm2.cfg and config/uvm2.cfg (UVM2_CFG_FILES) back
+        to the calibration that comes with the emulator (UVM2_CFG_DEFAULT) - for a file a calibration went wrong in. The
+        old ones are kept beside them (uvm2.cfg.bak); a UVMC2 game in the slot starts again with it"""
+        paths = [os.path.join(self.sd_dir, *f) for f in UVM2_CFG_FILES]
         if not deck.dialog('question', 'Reset UVMC2 calibration',
                            'Put the UVMC2 calibration that comes with the emulator back on the SD card?' + chr(10) + chr(10) +
-                           path + chr(10) + chr(10) + 'The current file is kept as uvm2.cfg.bak.',
+                           chr(10).join(paths) + chr(10) + chr(10) + 'The current files are kept as uvm2.cfg.bak.',
                            parent=self.root, yesno=True, buttons=('Reset', 'Cancel')):   # (Cancel, Esc and the
-            #  window's x leave the card's file as it is)
+            #  window's x leave the card's files as they are)
             return
-        try:
-            if os.path.isfile(path):
-                shutil.copy2(path, path + '.bak')
-        except OSError:
-            pass
+        for path in paths:
+            try:
+                if os.path.isfile(path):
+                    shutil.copy2(path, path + '.bak')
+            except OSError:
+                pass
         if (self.args.rom or '').lower().endswith('.um2'):      # (the game has the card: written when it gives it back)
-            self.card_writes = getattr(self, 'card_writes', []) + [(path, UVM2_CFG_DEFAULT)]
+            self.card_writes = getattr(self, 'card_writes', []) + [(path, UVM2_CFG_DEFAULT) for path in paths]
             self.restart(self.args.rom)
         else:
-            try:
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                with open(path, 'wb') as f:
-                    f.write(UVM2_CFG_DEFAULT)
-            except OSError as e:
-                return self.rom_error('%s:\n%s' % (path, e))
+            for path in paths:
+                try:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, 'wb') as f:
+                        f.write(UVM2_CFG_DEFAULT)
+                except OSError as e:
+                    return self.rom_error('%s:\n%s' % (path, e))
         self.show_look('UVMC2 calibration: as it comes with the emulator')
     def toggle_motor_snd(self):
         self.run.crt.motor_on = not self.run.crt.motor_on

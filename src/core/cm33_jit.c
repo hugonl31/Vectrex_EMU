@@ -129,7 +129,7 @@ static void mj_flush (mj_core_t *J, cm33_sys_t *s)
 
 /* called from cm33_code_written: RAM at offset o, n bytes, was written. Only a write over compiled instructions counts
  * (a game's variables often share a page with its code: dropping every block then cost 1.4 million recompiles in the
- * UVMC2 Demo's first 20 s); then the blocks that can contain those bytes - starting at most 256 bytes before them, a
+ * first 20 s of a program that bit-bangs the bus); then the blocks that can contain those bytes - starting at most 256 bytes before them, a
  * block's longest - lose their entries (the code stays in the buffer until it is full), and attn makes a block running
  * now stop after the store */
 static void mj_written (uint32_t o, uint32_t n)

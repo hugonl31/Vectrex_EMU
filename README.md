@@ -305,7 +305,7 @@ with a short note on what goes there:
 | Folder | |
 |---|---|
 | `system` | the Vectrex BIOS, `bios.bin` (with Mine Storm; Smith Engineering allows it to be copied freely for non-commercial use) |
-| `roms` | your cartridge ROMs go here; it comes with two small UVMC2 programs written for this emulator: **UVMC2 Demo** and **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Last Human** ([Last_Human](https://github.com/hugonl31/Last_Human)) with its overlay, plus its UVMC2 edition **Last Human (UVMC2)** (cinematics, 2-player co-op) |
+| `roms` | your cartridge ROMs go here; it comes with a small UVMC2 program written for this emulator, **UVMC2 Movie Player** ([UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2)), and the game **Last Human** ([Last_Human](https://github.com/hugonl31/Last_Human)) with its overlay, plus its UVMC2 edition **Last Human (UVMC2)** (cinematics, 2-player co-op) |
 | `overlays` | the overlays: the MiSTer Vectrex core's set, named like the games (`CREDITS.md`: each design's author); yours go here too |
 
 More folders appear when they are needed: `uvmc2`, the UVMC2 cartridge's SD card (with a note in it), `pitrex`,
@@ -1370,18 +1370,14 @@ any cartridge: the mains wobble and the buzz too, as on a real Vectrex with a UV
 lists them marked UVMC2. On a PC with four or more cores the cartridge's two cores run on two of the PC's.
 
 <p align="center">
-<a href="docs/images/v1.0.3/uvmc2_demo.png"><img src="docs/images/v1.0.3/uvmc2_demo_small.jpg" width="260" alt="the UVMC2 demo: a rotating cube"></a>
 <a href="docs/images/v1.0.3/uvmc2_movies.png"><img src="docs/images/v1.0.3/uvmc2_movies_small.jpg" width="260" alt="the UVMC2 movie player playing Bad Apple"></a>
 <a href="docs/images/v1.0.3/uvmc2_doom.png"><img src="docs/images/v1.0.3/uvmc2_doom_small.jpg" width="260" alt="Doom on the UVMC2: the first level, its WAD read from the SD card folder"></a><br>
-<em>The included UVMC2 Demo and UVMC2 Movie Player (here: Bad Apple), and Doom on the UVMC2 in its
-first level (the WAD read from the SD card folder).</em>
+<em>The included UVMC2 Movie Player (here: Bad Apple), and Doom on the UVMC2 in its first level (the WAD
+read from the SD card folder).</em>
 </p>
 
-**Included**, both written for this emulator from scratch (MIT license, sources in `testcart/`):
+**Included**, written for this emulator from scratch (MIT license, source in `testcart/`):
 
-* **UVMC2 Demo** - a rotating 3D cube computed on the cartridge's chip and drawn on the Vectrex, line by
-  line, by the chip itself. Source: [`testcart/uvmc2_demo`](testcart/uvmc2_demo) - a small, readable
-  starting point for writing your own UVMC2 programs in plain C.
 * **UVMC2 Movie Player** - plays the Vectrex vector movies made for the PiTrex / VecFever (Bad Apple, La
   Linea, ...) from the SD card's `movies` folder, one after another; button 4 skips to the next. **Bad Apple
   is included** (`uvmc2/movies/BadApple.bin`, by Malban, bundled with his kind permission). With a `.pcm` sound file next to a movie (raw 16-bit mono,
@@ -1562,7 +1558,7 @@ For tinkerers - the [releases](../../releases) are built from the same sources b
 | `overlays/` | Mine Storm's overlay (`Mine Storm (built in).art`) |
 | `sounds/` | the power-on / power-off sounds, recorded on a real Vectrex |
 | `package/` | the folders and notes that go into each release zip |
-| `testcart/` | the test cartridges (6809 assembly) used to measure the real Vectrex; `uvmc2_demo/` and `uvmc2_movies/` the included UVMC2 programs (C, MIT) |
+| `testcart/` | the test cartridges (6809 assembly) used to measure the real Vectrex; `uvmc2_movies/` the included UVMC2 program (C, MIT) |
 | `docs/` | the pictures, and [TECHNICAL.md](docs/TECHNICAL.md) |
 
 Build outputs (`core/`, `build/`, `Vectrex_EMU.exe`, `dist-*`) are not in the repository.

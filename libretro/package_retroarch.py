@@ -1,7 +1,7 @@
 """package_retroarch.py - a RetroArch core package (zip) for one system, laid out as RetroArch's own folders:
   cores/<the core>                 info/vectrex_emu_libretro.info
   system/vectrex_emu/              the BIOS, the overlays, the GPU path's pictures, the UVMC2's SD card folder, notes
-  roms/                            Last Human, its UVMC2 edition, the UVMC2 demo and movie player
+  roms/                            Last Human, its UVMC2 edition, the UVMC2 movie player
   INSTALL.txt
 Android: the core and the info file at the top (RetroArch installs a core from a file there), ES-DE's system file.
   python package_retroarch.py <system name> <core file> <zip>      e.g.  windows-x64 vectrex_emu_libretro.dll out.zip

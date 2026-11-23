@@ -12,7 +12,7 @@
  *              $F0 the frame goes on in the next chunk, else the frame ends.
  * Each move / line: Y from the DAC through the sample-and-hold, X straight from the DAC, the ramp for 24 cycles.
  *
- * The bus (as demo.c): the RP2350 holds the 6809 in /HALT and makes one access per E period, writing the VIA. The SD
+ * The bus: the RP2350 holds the 6809 in /HALT and makes one access per E period, writing the VIA. The SD
  * card: SPI0 (GP34 SCK, GP35 TX, GP36 RX), its CS on GP39; FAT32 read with long names, a card with or without a
  * partition table. Button 4: the next movie. */
 #include <stdint.h>

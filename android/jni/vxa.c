@@ -700,6 +700,20 @@ JNIEXPORT void JNICALL JF(setHdr) (JNIEnv *e, jclass c, jboolean can, jfloat hea
 JNIEXPORT void JNICALL JF(setTrailMul) (JNIEnv *e, jclass c, jfloat k) { (void) e; (void) c; extern float vx_trail_mul; vx_trail_mul = k; }
 JNIEXPORT void JNICALL JF(testCart) (JNIEnv *e, jclass c, jstring path) { (void) c; JSTR (p, path); if (p) vx_testcart_write (p); JREL (p, path); }   /* (the Test Cart, written into roms/Tests) */
 JNIEXPORT void JNICALL JF(pitrexTiles) (JNIEnv *e, jclass c, jstring thumbs) { (void) c; JSTR (p, thumbs); if (p) vx_pitrex_tiles_write (p); JREL (p, thumbs); }   /* (the PiTrex's cartridge and box, written into the thumbs folder) */
+unsigned char *vx_genart_make (int look, const char *name, int *w, int *h); void vx_genart_free (void *p);   /* (libretro/genart.c, in the core) */
+/* (a cartridge (0) or box (1) for a game with no picture of its own: { width, height, the pixels as ARGB } - Bitmap's colours) */
+JNIEXPORT jintArray JNICALL JF(genart) (JNIEnv *e, jclass c, jint look, jstring name)
+{
+	(void) c; jintArray r = NULL; JSTR (p, name);
+	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_make ((int) look, p, &w, &h);
+		if (px) { const size_t n = (size_t) w * (size_t) h; jint *a = malloc ((n + 2) * sizeof (jint));
+			if (a) { a[0] = w; a[1] = h;
+				for (size_t i = 0; i < n; i++) { const unsigned char *q = px + i * 4; a[i + 2] = (jint) ((uint32_t) q[3] << 24 | (uint32_t) q[0] << 16 | (uint32_t) q[1] << 8 | (uint32_t) q[2]); }
+				r = (*e)->NewIntArray (e, (jsize) (n + 2)); if (r) (*e)->SetIntArrayRegion (e, r, 0, (jsize) (n + 2), a);
+				free (a); }
+			vx_genart_free (px); } }
+	JREL (p, name); return r;
+}
 JNIEXPORT jint JNICALL JF(palette) (JNIEnv *e, jclass c) { (void) e; (void) c; extern int vx_palette; return vx_palette; }   /* (the colour scheme: 0 blue, 1 green) */
 JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on ? 1.0f : 0.0f; { extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */ vlog ("look %s", on ? "Bright" : "Vectrex"); }   /* (the look: Vectrex, or Bright - lifted and wider) */
 JNIEXPORT void JNICALL JF(setHdrLook) (JNIEnv *e, jclass c, jint look) { (void) e; (void) c; extern float vx_hdr_lift; extern int vx_app_dots; vx_hdr_lift = (float) look; vx_app_dots = 1; vlog ("HDR look %d", (int) look); }

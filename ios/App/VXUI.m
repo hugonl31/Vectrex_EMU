@@ -5,6 +5,8 @@
  * LICENSE.md. */
 #import "VXApp.h"
 #include <ctype.h>
+unsigned char *vx_genart_make (int look, const char *name, int *w, int *h);   /* (libretro/genart.c, in the core) */
+void vx_genart_free (void *p);
 #import <GameController/GameController.h>
 
 static UIFont *VF (CGFloat s, UIFontWeight w) { return [UIFont systemFontOfSize:s weight:w]; }
@@ -418,7 +420,27 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	NSArray *dirs = [[self look] isEqualToString:@"boxes"] ? @[ @"boxes" ] : [[self look] isEqualToString:@"overlays"] ? @[ @"overlays", @"" ] : @[ @"carts" ];
 	for (NSString *d in dirs) for (NSString *nm in @[ n, base ]) {
 		UIImage *im = [UIImage imageWithContentsOfFile:[[th stringByAppendingPathComponent:d] stringByAppendingPathComponent:[nm stringByAppendingPathExtension:@"png"]]]; if (im) return im; }
-	return nil;
+	return [self drawnTileFor:n];
+}
+/* (a cartridge or box for a game with none of its own: drawn by the core's libretro/genart.c - the same pictures as the PC,
+ *  RetroArch and Android; kept while memory allows. Overlays: none - the name's tile) */
++ (UIImage *) drawnTileFor:(NSString *)n
+{
+	NSString *lk = [self look]; const int look = [lk isEqualToString:@"carts"] ? 0 : [lk isEqualToString:@"boxes"] ? 1 : -1;
+	if (look < 0 || !n.length) return nil;
+	static NSCache *made; static dispatch_once_t once; dispatch_once (&once, ^{ made = [NSCache new]; made.totalCostLimit = 64 << 20; });
+	NSString *key = [NSString stringWithFormat:@"%d/%@", look, n]; UIImage *im = [made objectForKey:key]; if (im) return im;
+	int w = 0, h = 0; unsigned char *px = vx_genart_make (look, n.UTF8String, &w, &h); if (!px) return nil;
+	for (size_t i = 0, k = (size_t) w * (size_t) h; i < k; i++) { unsigned char *q = px + i * 4; const unsigned a = q[3];   /* (premultiplied, as Core Graphics wants) */
+		q[0] = (unsigned char) ((q[0] * a + 127) / 255); q[1] = (unsigned char) ((q[1] * a + 127) / 255); q[2] = (unsigned char) ((q[2] * a + 127) / 255); }
+	CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB ();
+	CGContextRef ctx = CGBitmapContextCreate (px, (size_t) w, (size_t) h, 8, (size_t) w * 4, cs, (CGBitmapInfo) kCGImageAlphaPremultipliedLast | kCGBitmapByteOrderDefault);
+	CGImageRef ci = ctx ? CGBitmapContextCreateImage (ctx) : NULL;
+	if (ci) { im = [UIImage imageWithCGImage:ci]; CGImageRelease (ci); }
+	if (ctx) CGContextRelease (ctx);
+	CGColorSpaceRelease (cs); vx_genart_free (px);
+	if (im) [made setObject:im forKey:key cost:(NSUInteger) w * (NSUInteger) h * 4];
+	return im;
 }
 - (void) scan
 {

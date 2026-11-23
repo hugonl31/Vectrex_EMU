@@ -564,10 +564,16 @@ static unsigned char *ga_cart (const ga_font *g, const char *title, int width, i
 	ga_pill (g, title, o, *w, *h, GA_CART_X0 * k, GA_CART_Y0 * k, GA_CART_S * k, GA_LBL_W / 2, GA_PILL_CY_CART);
 	return o;
 }
-/* (the box's pill: as a real box's title - the widest 86 % of the width (2860 x 0.24 = 686 of 800), a line 121 px high,
- * centred at y 197 between the furniture and the picture, as the title on a real GCE box front (photo: 58..760 x 140..255)) */
-#define GA_BOX_PS 0.24f
-#define GA_BOX_PY 197.0f
+/* (the box as two real GCE boxes of the owner's, photos of Polar Rescue and Clean Sweep averaged, in the 800 x 1024 front's
+ * px: the pill centred at y 205 between the furniture and the picture, at most 2860 x 0.22 = 629 px wide (79 %: Clean
+ * Sweep's pill 125..662, its badge with the leaves 84 %, Polar Rescue's title 87 %), a line 111 px high; the picture's
+ * frame 190..615 x 310..855 (corners 24, a 10 px edge) in a 16 px grid-free well) */
+#define GA_BOX_PS 0.22f
+#define GA_BOX_PY 205.0f
+#define GA_FR_X 190.0f
+#define GA_FR_Y 310.0f
+#define GA_FR_W 425.0f
+#define GA_FR_H 545.0f
 static unsigned char *ga_box (const ga_font *g, const char *title, int width, int *w, int *h)
 {
 	const float k = width / 800.0f; const int BW = width, BH = (int) (1024 * k + 0.5f);
@@ -590,9 +596,9 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	uint32_t hs = 2166136261u; for (const char *p = title; *p; p++) hs = (hs ^ (unsigned char) *p) * 16777619u;   /* (FNV-1a, then mixed: every bit counts) */
 	hs ^= hs >> 16; hs *= 0x85ebca6bu; hs ^= hs >> 13; hs *= 0xc2b2ae35u; hs ^= hs >> 16;
 	const int theme = (int) (hs % 12), fc = (int) (hs / 12 % 6), ac = (int) (hs / 72 % 6), cream = (int) (hs >> 20 & 1);
-	{ const int wx0 = (int) floorf (176 * k + 0.5f), wy0 = (int) floorf (279 * k + 0.5f), wx1 = (int) floorf ((176 + 448) * k + 0.5f), wy1 = (int) floorf ((279 + 574) * k + 0.5f);   /* (the well: no grid) */
+	{ const int wx0 = (int) floorf ((GA_FR_X - 16) * k + 0.5f), wy0 = (int) floorf ((GA_FR_Y - 16) * k + 0.5f), wx1 = (int) floorf ((GA_FR_X + GA_FR_W + 16) * k + 0.5f), wy1 = (int) floorf ((GA_FR_Y + GA_FR_H + 16) * k + 0.5f);   /* (the well: no grid) */
 	  for (int y = wy0; y < wy1 && y < BH; y++) for (int x = wx0; x < wx1 && x < BW; x++) { unsigned char *p = o + ((size_t) y * BW + x) * 4; p[0] = p[1] = p[2] = 174; p[3] = 255; } }
-	const float fx = 192 * k, fy = 295 * k, fw = 416 * k, fh = 542 * k; float e = 10 * k;   /* (the frame) */
+	const float fx = GA_FR_X * k, fy = GA_FR_Y * k, fw = GA_FR_W * k, fh = GA_FR_H * k; float e = 10 * k;   /* (the frame) */
 	ga_rrect (o, BW, BH, fx, fy, fx + fw, fy + fh, 24 * k, FRAMES[fc]);
 	if (cream) { ga_rrect (o, BW, BH, fx + e, fy + e, fx + fw - e, fy + fh - e, 16 * k, CREAM); e += 3 * k; }
 	{ const int sx0 = (int) floorf (fx + e + 0.5f), sy0 = (int) floorf (fy + e + 0.5f), sx1 = (int) floorf (fx + fw - e + 0.5f), sy1 = (int) floorf (fy + fh - e + 0.5f);

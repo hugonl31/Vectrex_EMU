@@ -62,13 +62,14 @@ def furniture_body(gce=False):
     return fb
 
 
-# the box's top and foot as the Last Human box's (G:/AI/Vectrex_Artwork/last_human/make_lh_box.py - the same numbers,
-# in the 800 x 1024 front's px): the furniture (Vectrex + TM, ARCADE SYSTEM CARTRIDGE from shared furniture v6) with its
-# ink at x 212..587, y 20..122 (the SVG's ink x 821..2299, y 89..); the foot: the owner's block image scaled by its width
-# to the ink Simon's fronts have (223..577 x 896..1005), its GCE + TM rows (440..570) taken out and drawn from the
-# 'gce v5' SVG instead - the GCE symbol as wide as the image's (x 692..1226), standing on its line (y 561)
-FURN_S = (587 - 212 + 1) / (2299 - 821 + 1); FURN_T = (212 - 821 * FURN_S, 20 - 89 * FURN_S)
-GCE_INK = (223, 896, 577, 1005); GCE_ROWS = (440, 570); GCE_SYM = (692, 448, 1226, 561); SVG_SYM = (1213, 1283, 1805, 1400)
+# the box's top and foot as two real boxes of the owner's (photos of Polar Rescue and Clean Sweep, 2026-11-23; the
+# 800 x 1024 front's px, the two averaged): the furniture (Vectrex + TM, ARCADE SYSTEM CARTRIDGE from shared furniture
+# v6) with ARCADE SYSTEM CARTRIDGE as wide as on Clean Sweep (x 242..558) and the ink from y 37 (the SVG's ink x
+# 821..2299, y 89..); the foot: the owner's block image scaled to the real boxes' block (y 888..1010, centred: x 206..594),
+# its GCE + TM rows (440..570) taken out and drawn from the 'gce v5' SVG instead - the GCE symbol as wide as the image's
+# (x 692..1226), standing on its line (y 561). The Last Human box (make_lh_box.py) uses the same numbers.
+FURN_S = (558 - 242 + 1) / (2299 - 821 + 1); FURN_T = (242 - 821 * FURN_S, 37 - 89 * FURN_S)
+GCE_INK = (206, 888, 594, 1010); GCE_ROWS = (440, 570); GCE_SYM = (692, 448, 1226, 561); SVG_SYM = (1213, 1283, 1805, 1400)
 SH = ART + '/print 4x/reconstructed2/shared-svg'
 
 

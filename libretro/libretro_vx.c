@@ -1563,13 +1563,15 @@ static const double TUBE_LIGHT[] = {
 static double zk_tab[128];              /* the tube's light for each intensity, as a display value (^(1 / 2.2)) */
 
 /* the lines being built: the frame's (or two frames' mixed: Smooth motion), with the resting spots and halos added */
-typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; float lt; } wline;   /* (lt: beam trace - the piece's light, bt2_prepare; < 0: by the rules) */   /* (b: intensity | 128 fade
+typedef struct { double x0, y0, x1, y1, cyc, t; int b; unsigned char rgb, wq; float lt, ag; } wline;   /* (lt: beam trace - the piece's light, bt2_prepare; < 0: by the rules. ag: the age of its frame's start at
+                                                  this picture's moment, s - a line's own age ag - t / 1.5e6 (wl_from); 0 unknown. In the struct's padding: its size, and the
+                                                  save state's pw_streak, as before) */   /* (b: intensity | 128 fade
                                                                                          | 256 halo | 512 dwell | 1024 a rest
                                                                                          joined to a lit line: a joint, a corner) */
 #define NW (MAXL * 3)
 static wline W1[NW], W2[NW];
 /* a piece in picture pixels: the segment (run on past an open end), the ends of its own box, the cuts, the spot */
-typedef struct { float ax, ay, bx, by, x0, y0, x1, y1, n0x, n0y, c0, n1x, n1y, c1, k2, R, r, g, b, hx; int to, cut; } pline;
+typedef struct { float ax, ay, bx, by, x0, y0, x1, y1, n0x, n0y, c0, n1x, n1y, c1, k2, R, r, g, b, hx, ag; int to, cut; } pline;   /* (ag: the light's age at this picture, s - gpu_phos.c, where the afterglow starts) */
 static pline pl[NW];
 #define GTAB 4096
 #define GX 4.5                          /* (the spot out to 3 sigma: d^2 / 2 sigma^2 up to 4.5) */
@@ -2294,13 +2296,27 @@ static void eyes_take (void)
 	}
 }
 
+/* The afterglow starts at the light's real age (vecrender.py GLOW_COMMON: a flash leaving the lit layer excites the two parts at
+ * their share at its age - from when the beam drew it to the picture it is left in). The picture's moment wl_tshow (s): set each
+ * refresh (retro_run); a line's own age: ag - its time in the frame (build_lines). Before 2026-11-23 the afterglow started at one
+ * refresh's age: at 60 Hz its first ghosts 1.3 - 2.3 x the PC's in light (Test Cart page 1). wl_base: the frame a line array belongs
+ * to - its start, cycles (-1: none - the age unknown, 0) */
+static double wl_tshow, wl_off;   /* (wl_off: total_cycles - the vector clock alg_cycles, which the frames' p0 count in) */
+static double wl_base (const line_t *L)
+{
+	for (int i = 0; i < nh; i++) if (hist[i].L && L >= hist[i].L && L < hist[i].L + hist[i].n) return (double) hist[i].p0;
+	if (have_prev && prevf.L && L >= prevf.L && L < prevf.L + prevf.n) return (double) prevf.p0;
+	return -1;
+}
 static int wl_from (wline *o, int m, const line_t *L, int n, const line_t *B, double alpha)
 {
+	const double base = n > 0 && !B ? wl_base (L) : -1;
+	const float ag = base >= 0 ? (float) (wl_tshow - (base + wl_off) / 1.5e6) : 0.0f;
 	for (int i = 0; i < n && m < NW; i++) {
 		const line_t *l = &L[i]; wline *w = &o[m++];
 		w->x0 = l->x0; w->y0 = l->y0; w->x1 = l->x1; w->y1 = l->y1;
 		if (B) { w->x0 += (B[i].x0 - l->x0) * alpha; w->y0 += (B[i].y0 - l->y0) * alpha; w->x1 += (B[i].x1 - l->x1) * alpha; w->y1 += (B[i].y1 - l->y1) * alpha; }
-		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb; w->wq = 255; w->lt = -1;
+		w->cyc = l->cyc / 8.0; w->t = l->t0; w->b = l->c; w->rgb = l->rgb; w->wq = 255; w->lt = -1; w->ag = ag;
 	}
 	return m;
 }
@@ -2629,6 +2645,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
 			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= 1.3; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
 			q->k2 = (float) sb; q->R = (float) (3.5 * sb + 1.0); q->r = r; q->g = g; q->b = b; q->hx = (float) (BT_HALO_S * upx);   /* (k2: the spot's sigma, hx: the glow's - px) */
+			{ const double a = l->ag > 0 ? l->ag - l->t / 1.5e6 : 0; q->ag = (float) (a < 0 ? 0 : a > 1 ? 1 : a); }   /* (the light's age: wl_from) */
 			q->cut = 0; q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;
 			continue;
 		}
@@ -2667,7 +2684,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 		float r = (float) kk, g = r, b = r;
 		if (vt_imager && opt_imager) { hx = 0;  /* (the filter in front of the eye: its colour; no HDR light past it) */
 			r = (l->rgb & 1) ? r : 0; g = (l->rgb & 2) ? g : 0; b = (l->rgb & 4) ? b : 0; if (!(l->rgb & 7)) r = g = b = 0; }
-		pline *q = &pl[npl++];
+		pline *q = &pl[npl++]; q->ag = 0;
 		q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
 		q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
 		q->k2 = (float) (1.0 / (2.0 * sw * sw)); q->R = (float) (sw * 3.0); q->r = r; q->g = g; q->b = b; q->hx = (float) hx;
@@ -3112,6 +3129,13 @@ void retro_run (void)
 	/* the picture: which lines, from which game frames */
 	const double now = run_t / 1.5e6;
 	int npl = 0; unsigned long long ft0 = nh ? hist[nh - 1].p0 : 0;
+	/* (the picture's moment for the light's age, wl_from: now - a game slower than the screen (hold_lines: each line lit from its own
+	 *  moment until drawn again, as the PC's fixed refresh); a frame a refresh (the game's 50 Hz), as the PC's G-Sync: the frame shown
+	 *  as it ends - the moment its end, a refresh on each time it is shown again (ag_c, the plain branch below) */
+	static unsigned long long ag_p0 = ~0ull; static double ag_c;
+	{ extern unsigned long long vt_piece_t0;
+	  wl_tshow = now; wl_off = (double) total_cycles - (double) vt_piece_t0;   /* (the newest frame ended as the next piece began) */
+	  if (nh) { const gframe *g = &hist[nh - 1]; if (g->p0 != ag_p0) { ag_p0 = g->p0; ag_c = g->t - now; } } }
 #ifndef VX_EMUVR
 	bt_gpu = vx_beam && bt_gpu_ok ();
 #endif
@@ -3190,6 +3214,7 @@ void retro_run (void)
 			n = vx_nobuild ? 0 : hold_lines (now, dt); ft0 = hist[nh - 1].p0;
 		} else {
 			const gframe *a = &hist[nh - 1];
+			wl_tshow = now + ag_c;                     /* (G-Sync's moment: the frame's end, then on by the refresh) */
 			/* (the apps: a game frame that a catch-up run hid - two runs in one refresh, the first without a picture: the screen
 			 *  slower than the game, an iPhone's 48 Hz for 50 - is owed its light: its lines that the newest frame does not draw
 			 *  again (they moved) go into this picture too. Without it that frame's copy was missing from every trail, twice a

@@ -1877,8 +1877,8 @@ float lum(vec3 c) { return dot(c, vec3(0.3, 0.5, 0.2)); }
 #    faster, curve - the older copy faded early where a newer one had crossed it, the trail stepped and cut.)
 # The screen shows the brighter of the two (SHOW_SHADER).
 UPDATE_SHADER = b"""
-uniform sampler2D oldt, fresh;
-uniform float kf, mul, rel;
+uniform sampler2D oldt, fresh, relm;
+uniform float kf, mul, rel, relon, rmin;
 """ + PHOS_FUNC + b"""
 void main() {
     vec2 uv = gl_TexCoord[0].st;
@@ -1887,6 +1887,13 @@ void main() {
     if (o.a <= exp(-hold)) o = vec4(0.0);               // (past its hold: the afterglow layers carry it on)
     vec4 f = texture2D(fresh, uv);
     float fb = lum(f.rgb) * bright(f.a), ob = lum(o.rgb) * bright(o.a);
+    // the hand-over (the screen's own rate without Smooth motion: _present, relm): the old copy of a line that moved, in the
+    // picture its new copy is drawn in - where most of the light held here is that copy's, and lit a while ago (rmin: not a
+    // line this game frame drew). It goes out where the new copy does not light the spot again, as at the end of its hold - the
+    // lighting itself as without it (as a whole new picture's - all of the new light - the new copy's soft glow over the old
+    // copy took its light off the afterglow there: Test Cart page 1's slow bars' trails 5 % fainter)
+    float hm = relon > 0.5 ? lum(texture2D(relm, uv).rgb) : 0.0;
+    bool ho = hm > 0.0 && o.a > 0.0 && o.a <= exp(-rmin) && hm >= 0.5 * lum(o.rgb);
     // the beam lights the spot again if the fresh light is about as bright as what is held there (only strictly
     // brighter: an unchanged line drawn again kept its first lighting's age and went dark at the hold - every still line
     // blinked; ~0.7: a line the wobble shifts a little is drawn again too)
@@ -1894,6 +1901,8 @@ void main() {
                                                         //  however faint - its soft glow kept only where brighter than
                                                         //  the copy before, the old copy's afterglow showed through: the
                                                         //  new line's glow cut, 2026-10-29)
+    if (!lit && ho)                                     // (the hand-over: let go)
+        o = vec4(0.0);
     if (!lit && rel > 0.5)                              // a whole new picture (Smooth motion, G-Sync) that did not draw
         o = vec4(0.0);                                  //  this spot again: no longer held - a line that moved (a rotor's
                                                         //  blade) flashes once, razor sharp, then only glows away; a
@@ -2231,7 +2240,8 @@ class GLBloomRenderer(GLRenderer):
         self.BlendEqSep = proc('glBlendEquationSeparate', None, u, u)
         self.BlendFuncSep = proc('glBlendFuncSeparate', None, u, u, u, u)
         self.uprog = program(UPDATE_SHADER, 'phosphor update')
-        self.u_up = {k: GetUniform(self.uprog, k.encode()) for k in ('oldt', 'fresh', 'kf', 'mul', 'hold', 'tscale', 'toff', 'rel')}
+        self.u_up = {k: GetUniform(self.uprog, k.encode()) for k in ('oldt', 'fresh', 'kf', 'mul', 'hold', 'tscale', 'toff', 'rel',
+                                                                     'relm', 'relon', 'rmin')}
         GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt')
         try:                                            # (Ultra: both afterglow parts at once - two outputs)
             self.DrawBuffers = proc('glDrawBuffers', None, i, ctypes.POINTER(u))
@@ -2486,6 +2496,8 @@ class GLBloomRenderer(GLRenderer):
         self.F4 = self._target(fw, fh)                    # (their light averaged)
         self.E = self._target(fw, fh)                     # (Smooth motion: the game frame's own lines - where the afterglow
         self.E2 = self._target(fw, fh)                    #  starts, see _present; E2: as light, beam trace)
+        self.HM = self._target(fw, fh)                    # (the hand-over: old copies of moved lines - _present; HM2: as
+        self.HM2 = self._target(fw, fh)                   #  light, beam trace)
         self.D = self._target(pw, ph)                     # what the screen shows
         self.E = self._target(pw, ph)                     # (the curved tube: the screen before bending)
         self.young = []; self.last = None   # (built in window pixels: from now on)
@@ -3696,7 +3708,7 @@ class GLBloomRenderer(GLRenderer):
         for fb in (self.P[1], self.P2[1], self.F[1], self.D[1]) + tuple(t[1] for pr in getattr(self, 'AG', []) for t in pr):
             self.BindFB(GL_FRAMEBUFFER, fb); gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
         self.BindFB(GL_FRAMEBUFFER, 0)
-        self.young = []; self.last = None
+        self.young = []; self.last = None; self._hand_prev = []
     hist = property(lambda self: [], lambda self, v: self.clear())     # (older callers: hist = [] clears)
 
     def add_frame(self, lines, t_start, length=None, period=None):
@@ -3734,8 +3746,72 @@ class GLBloomRenderer(GLRenderer):
             alt = bool(period and length and period > length * 1.5)
             # (its first line's moment, its drawing span, second half)
             self.lit = (getattr(self, 'lit', []) + [(t_start + tmin, max(0.0, tdraw - tmin), alt)])[-8:]
-            self.young.append([b, t_start, t_start + (b[5] if len(b) > 5 else max(b[3])), -1e9])
+            hp = getattr(self, 'hand_pairs', None)          # (the hand-over: see _hand_build)
+            hb = self._hand_build(lines, alt, length, hp) if hp is not None and length else None
+            if hp is None or not length:
+                self._hand_prev = []
+            self.young.append([b, t_start, t_start + (b[5] if len(b) > 5 else max(b[3])), -1e9, hb])
             if os.environ.get('VX_TEST_DOUBLE'): self.young.append(list(self.young[-1]))   # (a test: every frame twice in a picture - the averaging)
+        else:
+            self._hand_prev = []
+
+    # ---- the hand-over: the screen's own rate (vsync, not G-Sync), Smooth motion off. A line stays lit until the next game frame
+    # has drawn it again, plus HOLD_EPS (the frame times jitter: a still line went dark a moment before its redraw). A line that
+    # moved was so lit twice, its old copy beside the new one for those 4 ms - and with 50 game frames on 60 refreshes a refresh
+    # falls within 4 ms after a redraw about one time in four: moving things doubled (the owner: Vectrexians' aliens, Mine Storm's
+    # mothership, the Ship Test). A whole picture letting go of what it did not draw (2026-11-22, whole_plain) took the rows a game
+    # leaves out of a frame with it - Vectrexians'. So line by line: the old copy of a line that moved goes out in the picture its new
+    # copy is drawn in - its partner found as Smooth motion pairs strokes (App.hold_pairs: certain partners only), the old copy's
+    # pieces drawn as a mask at their partner's moment (_present, HM; UPDATE_SHADER ho). A line without a partner - left out of
+    # the next frame, or not certain - keeps its hold, margin and all; a line drawn again in the same place is lit again as before
+    HAND_MAX = 2                                       # (the frames before paired with a new one: 2 for a picture in halves)
+    def _hand_build(self, lines, alt, length, hp):
+        """the hand-over's mask for this game frame: the pieces of the frame(s) before that moved and are drawn again in this one,
+        built where they were drawn (their own frame's hum), their moments their partners' in this frame. ([built...], rmin) or
+        None. hp: App.hold_pairs"""
+        np = _np
+        if np is None:
+            return None
+        try:
+            src = getattr(lines, 'np', None)
+            B = np.asarray(src if src is not None and len(src) == len(lines) else lines, dtype=np.float64)
+        except (ValueError, TypeError):
+            self._hand_prev = []
+            return None
+        prev = getattr(self, '_hand_prev', None) or []
+        self._hand_prev = [(B, getattr(self, 'frame_t0', 0.0))] + prev[:self.HAND_MAX - 1]
+        if B.ndim != 2 or B.shape[1] < 7 or not len(B):
+            return None
+        sc = self.map[0] if hasattr(self, 'map') else 0.0
+        dmin = 1.0 / sc if sc > 0 else 24.0               # (moved a window pixel or more: a line moved less is lit again in place)
+        out = []
+        f0 = self.frame_t0
+        try:
+            for A, ft0 in (prev[:2] if alt else prev[:1]):
+                if A.ndim != 2 or A.shape[1] != B.shape[1] or not len(A):
+                    continue
+                r = hp(A, B, dmin)
+                if r is None:
+                    continue
+                R, sh = r                                 # (the lines, how much later their partners are drawn - cycles)
+                o = np.argsort(R[:, 6], kind='stable'); R = np.ascontiguousarray(R[o]); sh = sh[o] / 1.5e6
+                self.frame_t0 = ft0                       # (built where it was drawn: its frame's hum)
+                hb = self._build(R, load=False)
+                if not hb:
+                    continue
+                # (each built piece's moment: its line's, found by its line's start - a line's pieces lie between its start and the
+                #  next line's - moved by that line's shift)
+                tt = np.frombuffer(hb[3], dtype=np.float32)
+                k = np.clip(np.searchsorted((R[:, 6] / 1.5e6).astype(np.float32), tt, 'right') - 1, 0, len(R) - 1)
+                tt += sh[k].astype(np.float32)
+                out.append(hb)
+        except Exception as e:   # noqa
+            if not getattr(self, '_hand_said', False):
+                self._hand_said = True; print('hand-over: %s' % e)
+            return None
+        finally:
+            self.frame_t0 = f0
+        return (out, 0.5 * length) if out else None
 
     # Quality profiles (the control deck, Vectrex > Quality): each sets these switches - the costly refinements - and
     # leaves the rest of the look alone; a switch changed by hand makes the profile Custom (the app's
@@ -3986,6 +4062,17 @@ class GLBloomRenderer(GLRenderer):
         # 1. the fresh light: lines add up within a frame (rgb), the newest life wins (alpha)
         fw, fh = getattr(self, 'fsize', (w, h))           # (Basic: drawn at the phosphor's size - CAPSULE_SHADER's fcs)
         self.fcs = (w / float(fw), h / float(fh))
+        # 0. the hand-over (see _hand_build): the old copies of the lines whose new copies this picture draws - a mask, HM
+        hand = [f for f in self.young if len(f) > 4 and f[4]] if (getattr(self, 'HM', None) and not flush) else []
+        hm_rmin = None
+        if hand:
+            self.BindFB(GL_FRAMEBUFFER, self.HM[1]); gl.glViewport(0, 0, fw, fh)
+            gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
+            gl.glEnable(GL_BLEND); self.BlendFuncSep(GL_ONE, GL_ONE, GL_ONE, GL_ONE); self.BlendEqSep(0x8006, 0x8008)
+            for f in hand:
+                for hb in f[4][0]:
+                    self._draw_built(hb, T - f[1], T - f[3])
+            hm_rmin = min(f[4][1] for f in hand)
         self.BindFB(GL_FRAMEBUFFER, self.F[1]); gl.glViewport(0, 0, fw, fh)
         gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
         gl.glEnable(GL_BLEND); self.BlendFuncSep(GL_ONE, GL_ONE, GL_ONE, GL_ONE)
@@ -4002,7 +4089,7 @@ class GLBloomRenderer(GLRenderer):
             self.BindFB(GL_FRAMEBUFFER, self.Fc[1])       #  second, a 50 Hz game on a 60 Hz screen: each frame's light
             gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)   #  on its own, summed, then averaged per pixel -
         for n, f in enumerate(self.young):                #  FRESH_COV / FRESH_NORM. Added up, every line drawn again
-            b, t0, t1, done = f                           #  glowed twice as bright; the brighter of the two kept a line
+            b, t0, t1, done = f[:4]                       #  glowed twice as bright; the brighter of the two kept a line
             if avg:                                       #  that moved at both places at full strength. Within a frame
                 self.BindFB(GL_FRAMEBUFFER, self.F3[1])   #  lines still add up - the owner, 2026-10-29)
                 gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
@@ -4042,6 +4129,12 @@ class GLBloomRenderer(GLRenderer):
         if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'):   # (beam trace: the energy as light)
             self.BindFB(GL_FRAMEBUFFER, self.F2[1]); gl.glDisable(GL_BLEND)
             self._sat(fresh); fresh = self.F2[0]
+        hm_tex = None
+        if hm_rmin is not None:                           # (the hand-over's mask, as light - as the fresh light)
+            hm_tex = self.HM[0]
+            if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'):
+                self.BindFB(GL_FRAMEBUFFER, self.HM2[1]); gl.glDisable(GL_BLEND)
+                self._sat(self.HM[0]); hm_tex = self.HM2[0]
         # Smooth motion's afterglow (2026-11-22, as the core's gpu_phos.c ph_ex_mode): the in-between pictures move a line several
         # places a game frame, and every place it left started an afterglow - 2.4 trail lines at 120 Hz where a Vectrex has one.
         # So the afterglow starts only where the game itself drew: once a game frame the app hands in that frame's own lines
@@ -4070,9 +4163,15 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform1f(self.u_up['mul'], od if od is not None else 1.0)
         self.Uniform1f(self.u_up['rel'], 1.0 if (getattr(self, 'whole_pictures', False) and getattr(self, 'phos_release', True)
                                                  and od is None) else 0.0)   # (see UPDATE_SHADER: set by the app per picture)
+        self.Uniform1i(self.u_up['relm'], 2)
+        self.Uniform1f(self.u_up['relon'], 1.0 if (hm_tex is not None and od is None) else 0.0)
+        self.Uniform1f(self.u_up['rmin'], hm_rmin if hm_rmin is not None else 1.0)
+        self.ActiveTexture(0x84C2); gl.glBindTexture(GL_TEXTURE_2D, hm_tex or 0)
         self.ActiveTexture(0x84C1); gl.glBindTexture(GL_TEXTURE_2D, fresh); self.ActiveTexture(0x84C0)
         self._quad(src[0])
         self.UseProgram(0)
+        if hm_tex is not None:
+            self.ActiveTexture(0x84C2); gl.glBindTexture(GL_TEXTURE_2D, 0); self.ActiveTexture(0x84C0)
         self.P, self.P2 = dst, src
         # 2b. the afterglow: both parts fade, flashes leaving the lit layer excite them - Ultra: in full colour, both at
         # once (GLOW_SHADER, two outputs); the other profiles: packed in one image (GLOW_PACKED). Afterglow off: skipped

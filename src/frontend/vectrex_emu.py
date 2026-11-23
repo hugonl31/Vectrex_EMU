@@ -9316,6 +9316,71 @@ class App:
             return T, v
         TA, va = look(sa, fa0, fa1, ma, pub, pxb, pyb, len(A)); TB, vb = look(sb, fb0, fb1, mb, pua, pxa, pya, len(B))
         return TA, va, TB, vb
+    def sm_pair(self, A, B):
+        """sm_align's pairing of two frames' strokes alone: a's strokes' partners in b (-1: none) - in C (vxs_frame, the
+        in-between at a, nothing used but the pairing) or numpy (sm_align); the same pairs. None: not paired"""
+        lib = self.sm_lib()
+        if lib is not None:
+            try:
+                np = _np
+                A = np.ascontiguousarray(A, dtype=np.float64); B = np.ascontiguousarray(B, dtype=np.float64)
+                na, cols = A.shape
+                R = np.empty((na, cols)); exf = np.zeros(na, dtype=bool); now_ = np.zeros(na, dtype=bool)
+                kc = ctypes.c_double(1.0); info = (ctypes.c_int * 5)()
+                with vecrender._vxb_lock:
+                    if lib.vxs_frame(A.ctypes.data, na, B.ctypes.data, len(B), cols, 0.0, float(self.SMOOTH_MATCH),
+                                     float(self.SMOOTH_EXW), 1e30, ctypes.byref(kc), None, 0, None, 0, R.ctypes.data,
+                                     exf.ctypes.data, now_.ctypes.data, info, float(self.SM_NEAR), float(self.SM_OTHER[0]),
+                                     float(self.SM_OTHER[1])) < 0 or info[4] != 0:
+                        return None
+                    ma = np.empty(info[2], dtype=np.int64); mb = np.empty(info[3], dtype=np.int64)
+                    if lib.vxs_pair(ma.ctypes.data, mb.ctypes.data) < 0:
+                        return None
+                return ma
+            except Exception as e:   # noqa
+                self.sm_c_stop(e)
+        kept = getattr(self, '_al_keep', None)           # (Smooth motion's kept pairing: left as it was)
+        try:
+            self.sm_align(A, B, key=(object(), object()))
+            return self._al_keep[2]
+        finally:
+            self._al_keep = kept
+    def hold_pairs(self, A, B, dmin):
+        """the hand-over (vecrender _hand_build: the screen's own rate, Smooth motion off): frame a's lines that are drawn again in
+        frame b somewhere else - dmin units or more away -, and how much later (cycles: b's moment against a's, each in its own
+        frame) b draws each one's place on its partner stroke: (lines, shifts), or None. Paired as Smooth motion pairs strokes
+        (sm_pair: certain partners only - a row of identical aliens left out of a frame is not paired with the row next to it)"""
+        np = _np
+        if np is None or A.ndim != 2 or B.ndim != 2 or A.shape[1] != B.shape[1] or A.shape[1] < 7 or not len(A) or not len(B):
+            return None
+        ma = self.sm_pair(A, B)
+        if ma is None:
+            return None
+        def strokes(X):                                  # (as sm_align's: a piece's stroke, its ends' shares of its time, the path)
+            n = len(X); st = np.ones(n, dtype=bool)
+            st[1:] = ~((X[1:, 0] == X[:-1, 2]) & (X[1:, 1] == X[:-1, 3]) & (X[1:, 4] == X[:-1, 4]))
+            sid = np.cumsum(st) - 1; first = np.nonzero(st)[0]; last = np.append(first[1:], n) - 1
+            cyc = np.maximum(X[:, 5], 1e-3); c = np.cumsum(cyc); base = (c - cyc)[first]; tot = c[last] - base
+            f0 = (c - cyc - base[sid]) / tot[sid]; f1 = (c - base[sid]) / tot[sid]
+            pu = np.empty(2 * n); pu[0::2] = sid + 0.999 * f0; pu[1::2] = sid + 0.999 * f1
+            return sid, f0, f1, pu
+        sa, fa0, fa1, _ = strokes(A); sb, _, _, pub = strokes(B)
+        if len(ma) != sa[-1] + 1:
+            return None
+        m = ma[sa]; v = m >= 0
+        q0 = m + 0.999 * fa0; q1 = m + 0.999 * fa1
+        px = np.empty(2 * len(B)); px[0::2] = B[:, 0]; px[1::2] = B[:, 2]
+        py = np.empty(2 * len(B)); py[0::2] = B[:, 1]; py[1::2] = B[:, 3]
+        pt = np.empty(2 * len(B)); pt[0::2] = B[:, 6]; pt[1::2] = B[:, 6] + B[:, 5] / 8.0   # (a piece's start and end, cycles)
+        d = np.maximum(np.maximum(np.abs(np.interp(q0, pub, px) - A[:, 0]), np.abs(np.interp(q0, pub, py) - A[:, 1])),
+                       np.maximum(np.abs(np.interp(q1, pub, px) - A[:, 2]), np.abs(np.interp(q1, pub, py) - A[:, 3])))
+        sel = v & (d >= dmin) & ((A[:, 4].astype(np.int64) & 127) > 0)
+        if not sel.any():
+            return None
+        # (piece by piece, not joined into whole lines as sm_merge: a joined line's piece goes out at once, at its first moment - the
+        #  beam drawing the new copy at the picture's moment, the old one's rest went before the new one was there: a gap, the
+        #  Ship Test's lines in one picture of six)
+        return A[sel], np.interp(q0[sel], pub, pt) - A[sel, 6]
     def smooth_frame(self, r, T):
         """this refresh's picture: the game frames a and b around the moment shown, the vectors in between"""
         buf = self.sm_buf
@@ -9713,6 +9778,9 @@ class App:
             frames = list(self.run.queue); self.run.queue.clear()
             self.run.latest = None
         smooth = self.smooth_on()
+        # (the screen's own rate without Smooth motion: a moved line's old copy goes out as its new copy is drawn - vecrender
+        #  _hand_build; G-Sync and Smooth motion show whole pictures, the hold does not show there)
+        r.hand_pairs = self.hold_pairs if (getattr(self, 'hand_on', True) and not smooth and not vrr and self.run.power) else None
         for lines, t_start, t0, ln in frames:
             self.lines = lines
             if self.run.power:

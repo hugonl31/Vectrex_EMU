@@ -3,14 +3,17 @@ a cartridge and a box for every game with no picture of its own, the same on the
 
   GA_CART_PNG   the cartridge without a title (840 px): the real shell (original gce/Armor..Attack, the one the PiTrex's
                 cartridge already ships with) + a label composed the label project's way - the exact silver grid, the
-                shared furniture v6 WITHOUT the GCE logo, Last Human's legal box with one line - cut out as
+                shared furniture v6 with the GCE logo + TM as the GCE labels have it (the owner, 2026-11-23), Last
+                Human's legal box with one line - cut out as
                 tools/ios_pack.py's shrink() / dark_edge(); GA_CART_X0 / Y0 / S: where the 3120 x 1700 label lies in it
                 (the pill's frame); GA_CART_LY0 / LH: the label's top and height there exactly (the shrink's rows are
                 rounded down: a little less than x k down) - the player's own labels go there (genart.c)
-  GA_FURN_PNG   the furniture alone (the Vectrex logo + TM, ARCADE SYSTEM CARTRIDGE) at the box's scale
-  GA_FOOT_PNG   the box's foot: the small print and the GCE logo (the owner's picture, gce_box_bottom_source.webp), a
-                mask, placed and sized as on the box-art pack's GCE fronts: its ink 223, 896, 354 x 109 of 800 x 1024
-                (the same on all of them), on the grid paper; GA_FOOT_CX / CY its centre in those px
+  GA_FURN_PNG   the box's furniture (the Vectrex logo + TM, ARCADE SYSTEM CARTRIDGE), drawn from the SVG at 840 px,
+                placed as the Last Human box's (make_lh_box.py): GA_FURN_X / Y its top left in the 800 px front's px
+  GA_FOOT_PNG   the box's foot: the small print and ENTERTAINING NEW IDEAS from the owner's picture
+                (gce_box_bottom_source.webp), its GCE + TM drawn from the label project's SVG ('gce v5'), a mask at
+                840 px, placed as on the box-art pack's GCE fronts (ink 223..577 x 896..1005 of 800 x 1024) and as the
+                Last Human box's; GA_FOOT_X / Y its top left in the 800 px front's px
   GA_FONT       Archivo Black (SIL OFL 1.1, libretro/fonts), cut to Latin-1 and the typographic quotes
   GA_TITLES     libretro/genart_titles.txt: titles set by hand
 
@@ -34,7 +37,6 @@ CART_W = 840                                                         # the cartr
 BOX_K = 840 / 800.0                                                  # the box: the pack's 800 x 1024 front, at 840 wide
 FONT = os.path.join(root, 'libretro', 'fonts', 'ArchivoBlack-Regular.ttf')
 FOOT = ART + '/boxart_labels/gen/gce_box_bottom_source.webp'            # (the owner's: the small print and GCE, black on clear)
-FOOT_BOX = (223, 896, 354, 109)                                      # (its ink on the pack's GCE fronts, 800 x 1024)
 REG = next(p for p in ('C:/Windows/Fonts/LiberationSans-Regular.ttf', 'C:/Windows/Fonts/arial.ttf',
                        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf') if os.path.exists(p))   # (the legal line: drawn into the pictures)
 
@@ -49,12 +51,59 @@ def text_path(s, font_file, cap, cx, base):
     return ' '.join(p for p in d if p)
 
 
-def furniture_body():
+def furniture_body(gce=False):
+    """the Vectrex logo + TM, ARCADE SYSTEM CARTRIDGE - and with gce the GCE logo + TM above the legal box (the cartridge's
+    label, as the GCE labels); the box's top has no GCE"""
     furn = open(ART + '/print 4x/reconstructed2/shared-svg/shared furniture v6.svg', encoding='utf-8').read()
     fb = furn[furn.index('<g id="vectrex-logo">'):furn.index('</svg>')]
-    fb = re.sub(r'<g id="gce-(?:symbol|tm)"[^>]*>.*?</g>', '', fb, flags=re.S)   # (no GCE: our own labels)
-    assert 'gce-' not in fb
+    if not gce:
+        fb = re.sub(r'<g id="gce-(?:symbol|tm)"[^>]*>.*?</g>', '', fb, flags=re.S)
+        assert 'gce-' not in fb
     return fb
+
+
+# the box's top and foot as the Last Human box's (G:/AI/Vectrex_Artwork/last_human/make_lh_box.py - the same numbers,
+# in the 800 x 1024 front's px): the furniture (Vectrex + TM, ARCADE SYSTEM CARTRIDGE from shared furniture v6) with its
+# ink at x 212..587, y 20..122 (the SVG's ink x 821..2299, y 89..); the foot: the owner's block image scaled by its width
+# to the ink Simon's fronts have (223..577 x 896..1005), its GCE + TM rows (440..570) taken out and drawn from the
+# 'gce v5' SVG instead - the GCE symbol as wide as the image's (x 692..1226), standing on its line (y 561)
+FURN_S = (587 - 212 + 1) / (2299 - 821 + 1); FURN_T = (212 - 821 * FURN_S, 20 - 89 * FURN_S)
+GCE_INK = (223, 896, 577, 1005); GCE_ROWS = (440, 570); GCE_SYM = (692, 448, 1226, 561); SVG_SYM = (1213, 1283, 1805, 1400)
+SH = ART + '/print 4x/reconstructed2/shared-svg'
+
+
+def svg_layer(body, k, t, w, h):
+    """an SVG part (its 3120 x 1700 units) scaled k and moved t (px), on a clear w x h canvas"""
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
+           '<g transform="translate(%.4f %.4f) scale(%.6f)">%s</g></svg>' % (w, h, w, h, t[0], t[1], k, body))
+    return Image.open(io.BytesIO(bytes(resvg_py.svg_to_bytes(svg_string=svg)))).convert('RGBA')
+
+
+def box_top(kb):
+    """the box's furniture at kb x the 800 px front: (RGBA cropped, its x, y in the front's px)"""
+    f = open(SH + '/shared furniture v6.svg', encoding='utf-8').read(); body = f[f.index('<g id="vectrex-logo">'):f.index('<g id="gce-symbol">')]
+    im = svg_layer(body, FURN_S * kb, (FURN_T[0] * kb, FURN_T[1] * kb), int(800 * kb), int(200 * kb)); bb = im.getchannel('A').getbbox()
+    return im.crop(bb), bb[0] / kb, bb[1] / kb
+
+
+def box_foot(kb):
+    """the box's foot at kb x the 800 px front, a mask: (L cropped, its x, y in the front's px)"""
+    b = Image.open(FOOT).convert('RGBA'); bx0, by0, bx1, by1 = b.getchannel('A').getbbox()
+    s = (GCE_INK[2] - GCE_INK[0]) / (bx1 - bx0)
+    a = np.asarray(b).copy(); a[GCE_ROWS[0]:GCE_ROWS[1], :, 3] = 0; b = Image.fromarray(a)
+    ow = b.width; b = b.resize((int(round(b.width * s)), int(round(b.height * s))), Image.LANCZOS); s = b.width / ow
+    cx, cy = (GCE_INK[0] + GCE_INK[2]) / 2, (GCE_INK[1] + GCE_INK[3]) / 2
+    x = int(round(cx - (bx0 + bx1) / 2 * s)); y = int(round(cy - (by0 + by1) / 2 * s))
+    Wd, Hd = int(round(800 * kb)), int(round(1024 * kb))
+    lay = Image.new('L', (Wd, Hd), 0)
+    bb = b.getchannel('A').resize((int(round(b.width * kb)), int(round(b.height * kb))), Image.LANCZOS) if kb != 1 else b.getchannel('A')
+    lay.paste(bb, (int(round(x * kb)), int(round(y * kb))))
+    g = open(SH + '/gce v5 (GCE + TM bottom-aligned).svg', encoding='utf-8').read(); gbody = g[g.index('<g id="gce-symbol">'):g.rindex('</svg>')]
+    k = s * (GCE_SYM[2] - GCE_SYM[0] + 1) / (SVG_SYM[2] - SVG_SYM[0] + 1)
+    tx = x + GCE_SYM[0] * s - SVG_SYM[0] * k; ty = y + (GCE_SYM[3] + 1) * s - (SVG_SYM[3] + 1) * k
+    gl = svg_layer(gbody, k * kb, (tx * kb, ty * kb), Wd, Hd).getchannel('A')
+    lay = Image.fromarray(np.maximum(np.asarray(lay), np.asarray(gl)))
+    bb = lay.getbbox(); return lay.crop(bb), bb[0] / kb, bb[1] / kb
 
 
 def render_svg(body, w=W, h=H):
@@ -68,7 +117,7 @@ def base_label():
     cx = BOX[0] + BOX[2] / 2; cy = BOX[1] + BOX[3] / 2
     legal = ('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="%s"/>' % BOX
              + '<path d="%s" fill="black"/>' % text_path(LEGAL, REG, 47.0, cx, cy + 23.5))
-    return render_svg(gb + furniture_body() + legal).convert('RGB')
+    return render_svg(gb + furniture_body(gce=True) + legal).convert('RGB')
 
 
 def dark_edge(a, k=1):
@@ -158,12 +207,8 @@ if __name__ == '__main__':
     cx0, cy0, cs = (x0 - left) * k, (y0 - top) * k, lw / W * k     # (label px -> cartridge px: x = cx0 + lx * cs)
     cart_png = png(cart)
     # the box's furniture and legal line
-    fu = render_svg(furniture_body(), int(W * 0.255 * BOX_K), int(H * 0.255 * BOX_K)); fu = fu.crop(fu.getchannel('A').getbbox())
-    furn_png = png(fu)
-    src = Image.open(FOOT).convert('RGBA').getchannel('A'); src = src.crop(src.getbbox())
-    fs = ((FOOT_BOX[2] / src.width) * (FOOT_BOX[3] / src.height)) ** 0.5 * BOX_K   # (between fitting its width and its height)
-    lg = src.resize((max(1, round(src.width * fs)), max(1, round(src.height * fs))), Image.LANCZOS)
-    legal_png = png(lg)
+    fu, fux, fuy = box_top(BOX_K); furn_png = png(fu)               # (as the Last Human box's: drawn at 840 from the SVGs)
+    lg, ftx, fty = box_foot(BOX_K); legal_png = png(lg)
     # the font: Latin-1 and the typographic quotes / dashes
     opt = subset.Options(); opt.layout_features = ['kern']; opt.name_IDs = ['*']; opt.notdef_outline = True
     ft = TTFont(FONT); sub = subset.Subsetter(opt)
@@ -183,7 +228,7 @@ if __name__ == '__main__':
          '#define GA_CART_X0 %.4ff' % cx0, '#define GA_CART_Y0 %.4ff' % cy0, '#define GA_CART_S %.6ff' % cs,
          '#define GA_CART_LY0 %.4ff' % ((y0 - top) * ky), '#define GA_CART_LH %.4ff' % (lh * ky),
          '#define GA_FONT_CAP %d' % cap, '#define GA_FONT_UPM %d' % upm,
-         '#define GA_FOOT_CX %.2ff' % (FOOT_BOX[0] + FOOT_BOX[2] / 2), '#define GA_FOOT_CY %.2ff' % (FOOT_BOX[1] + FOOT_BOX[3] / 2)]
+         '#define GA_FURN_X %.3ff' % fux, '#define GA_FURN_Y %.3ff' % fuy, '#define GA_FOOT_X %.3ff' % ftx, '#define GA_FOOT_Y %.3ff' % fty]
     L += c_bytes('GA_CART_PNG', cart_png) + c_bytes('GA_FURN_PNG', furn_png) + c_bytes('GA_FOOT_PNG', legal_png) + c_bytes('GA_FONT', font)
     L.append('static const char *const GA_TITLES[][2] = {')
     L += ['\t{ %s, %s },' % (c_str(a), c_str(v)) for a, v in titles] + ['\t{ 0, 0 }', '};', '']

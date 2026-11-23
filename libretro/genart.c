@@ -143,7 +143,8 @@ static void ga_text (const ga_font *g, unsigned char *img, int iw, int ih, const
 /* ---- the pill: laid out in the label's own pixels (3120 x 1700), drawn at any scale */
 #define GA_LBL_W 3120.0f
 #define GA_PILL_MAXW 2860.0f                         /* the widest pill */
-#define GA_PILL_CY 965.36f                           /* midway between ARCADE SYSTEM CARTRIDGE (495) and the legal box (1435.7) */
+#define GA_PILL_CY 965.36f                           /* the box's pill: its own frame (label px -> box px) */
+#define GA_PILL_CY_CART 889.0f                      /* the cartridge's: midway between ARCADE SYSTEM CARTRIDGE (495) and the GCE logo (1283), as the GCE labels' titles */
 #define GA_EDGE 24.0f                                /* its outline */
 static const unsigned char GA_FILL[3] = { 99, 175, 249 }, GA_EDGEC[3] = { 240, 55, 28 }, GA_INK[3] = { 10, 10, 10 };
 typedef struct { int cp[2][160], n[2], lines; float cap, pw, ph, widen; } ga_lay;
@@ -560,7 +561,7 @@ static unsigned char *ga_base (int width, int *w, int *h, float *k)
 static unsigned char *ga_cart (const ga_font *g, const char *title, int width, int *w, int *h)
 {
 	float k; unsigned char *o = ga_base (width, w, h, &k); if (!o) return NULL;
-	ga_pill (g, title, o, *w, *h, GA_CART_X0 * k, GA_CART_Y0 * k, GA_CART_S * k, GA_LBL_W / 2, GA_PILL_CY);
+	ga_pill (g, title, o, *w, *h, GA_CART_X0 * k, GA_CART_Y0 * k, GA_CART_S * k, GA_LBL_W / 2, GA_PILL_CY_CART);
 	return o;
 }
 static unsigned char *ga_box (const ga_font *g, const char *title, int width, int *w, int *h)
@@ -577,7 +578,7 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	  free (cx); }
 	const float ks = BW / (float) GA_W;                 /* (the furniture and the foot: made for 840) */
 	{ int fw, fh, gr; unsigned char *f = ga_mask (GA_FURN_PNG, (int) sizeof GA_FURN_PNG, ks, &fw, &fh, &gr);   /* (the furniture on top) */
-	  if (f) { ga_stamp (o, BW, BH, f, fw, fh, gr, (BW - fw) / 2, (int) (18 * k), NULL); free (f); } }
+	  if (f) { ga_stamp (o, BW, BH, f, fw, fh, gr, (int) floorf (GA_FURN_X * k + 0.5f), (int) floorf (GA_FURN_Y * k + 0.5f), NULL); free (f); } }
 	ga_pill (g, title, o, BW, BH, BW / 2.0f - GA_LBL_W / 2 * 0.205f * k, 205 * k - GA_PILL_CY * 0.205f * k, 0.205f * k, GA_LBL_W / 2, GA_PILL_CY);
 	static const unsigned char FRAMES[6][3] = { { 226, 38, 34 }, { 30, 100, 200 }, { 244, 128, 22 }, { 250, 222, 34 }, { 58, 168, 60 }, { 128, 62, 156 } },
 	                           ACCENTS[6][3] = { { 90, 205, 255 }, { 255, 80, 200 }, { 255, 150, 40 }, { 255, 232, 90 }, { 255, 72, 60 }, { 100, 140, 255 } },
@@ -593,7 +594,7 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	{ const int sx0 = (int) floorf (fx + e + 0.5f), sy0 = (int) floorf (fy + e + 0.5f), sx1 = (int) floorf (fx + fw - e + 0.5f), sy1 = (int) floorf (fy + fh - e + 0.5f);
 	  ga_scene (o, BW, BH, sx0, sy0, sx1 - sx0, sy1 - sy0, 14 * k, hs ^ 0x5bd1e995u, k, theme, ACCENTS[ac]); }
 	{ int fw2, fh2, gr; unsigned char *f = ga_mask (GA_FOOT_PNG, (int) sizeof GA_FOOT_PNG, ks, &fw2, &fh2, &gr);   /* (the foot: the small print and GCE, on the grid, as the pack's boxes) */
-	  if (f) { ga_stamp (o, BW, BH, f, fw2, fh2, gr, (int) floorf (GA_FOOT_CX * k - fw2 / 2.0f + 0.5f), (int) floorf (GA_FOOT_CY * k - fh2 / 2.0f + 0.5f), INK); free (f); } }
+	  if (f) { static const unsigned char BLACK[3] = { 0, 0, 0 }; ga_stamp (o, BW, BH, f, fw2, fh2, gr, (int) floorf (GA_FOOT_X * k + 0.5f), (int) floorf (GA_FOOT_Y * k + 0.5f), BLACK); free (f); } }
 	return o;
 }
 

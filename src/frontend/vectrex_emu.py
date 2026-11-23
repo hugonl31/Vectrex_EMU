@@ -9386,6 +9386,9 @@ class App:
             lines = [((p[0] + (q[0] - p[0]) * alpha, p[1] + (q[1] - p[1]) * alpha, p[2] + (q[2] - p[2]) * alpha,
                        p[3] + (q[3] - p[3]) * alpha) if match else tuple(p[:4])) + (p[4], p[5] * k, p[6] * k)
                      for p, q in zip(la, b[0] if match else la)]
+        # (the brightness bending's load: this game frame's lines as the core drew them - not squeezed into the refresh, not
+        #  with the other half below)
+        ld_pic = vecrender.beam_load(lines, k)
         # (a game that draws its picture in halves on alternate frames: both halves, as the tube shows them)
         if getattr(self, 'sm_alt_for', None) is not a:
             self.sm_alt_for = a
@@ -9424,7 +9427,11 @@ class App:
                         finally: r.frame_t0 = f0
                 except Exception as e:   # noqa
                     if not getattr(self, '_ex_said', False): self._ex_said = True; print('smooth afterglow: %s' % e)
-        r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
+        r.load_pic = ld_pic                              # (the brightness bending: the game frame's own load - see above)
+        try:
+            r.add_frame(lines, T - self.pause_acc - 1.0 / max(1.0, self.hz), 1.0 / max(1.0, self.hz), period=1.0 / max(1.0, self.hz))
+        finally:
+            r.load_pic = None
     def pen_live(self):
         """the light pen in port 2, the game running: the mouse is the pen"""
         return (getattr(self, 'speech', 'off') == 'lightpen' and self.run.power and not self.browser

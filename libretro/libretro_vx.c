@@ -2052,6 +2052,7 @@ typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *k
 static gframe hist[NH]; static int nh; static gframe prevf; static int have_prev;
 VXS_ON
 static double load_f = -1;              /* (brightness bending: the beam's load, smoothed) */
+#define BEND_LOAD_CYC (30000.0 / 1.0556)  /* (its unit - vecrender.py BEND_LOAD_CYC: the Test Cartridge's screen 1 0.366, as the tube map was measured) */
 VXS_OFF
 static int cmp_ll (const void *a, const void *b) { long long x = *(const long long *) a, y = *(const long long *) b; return x < y ? -1 : x > y; }
 static void frame_keys (gframe *f)
@@ -2103,9 +2104,12 @@ static void frame_push (unsigned long long p0)
 	  double o1 = f1 ? frame_overlap (&f, f1) : -1, o2 = f2 ? frame_overlap (&f, f2) : -1;
 	  f.alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
 	hist[nh++] = f;
-	/* the beam's load (brightness bending): the frame's lit cycles, smoothed (vecrender.py load_f) */
-	double ld = 0; for (int i = 0; i < nlast; i++) ld += last[i].cyc / 8.0 * ((last[i].c & 127) / 127.0);
-	ld /= 30000.0; if (load_f < 0) load_f = ld; load_f += (ld - load_f) * 0.3;
+	/* the beam's load (brightness bending): the frame before this one - whole now, a short piece joined to it (above) - its lit
+	 * cycles, smoothed (vecrender.py beam_load, load_f: the PC's joined picture). Counted as each frame came, a short piece's
+	 * joined lines were left out: the Test Cartridge's screen 1 (a 5 ms piece and a 23 ms one) 0.105 instead of 0.366 */
+	{ const gframe *g = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL;
+	  if (g) { double ld = 0; for (int i = 0; i < g->n; i++) ld += g->L[i].cyc / 8.0 * ((g->L[i].c & 127) / 127.0);
+	    ld /= BEND_LOAD_CYC; if (load_f < 0) load_f = ld; load_f += (ld - load_f) * 0.3; } }
 }
 static void frame_pop (void)                /* (the oldest frame becomes the one before) */
 {

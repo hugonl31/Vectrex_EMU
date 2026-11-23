@@ -796,6 +796,7 @@ VOICE_BOOST = 1.5
 
 # the sliders: the default in the middle, this much below and above it (the owner, 2026-10-19)
 SLIDER_SPAN = 1.0                   # (0 .. twice the default)
+SLIDER_LOW = {'trail': 0.05}        # (a slider's left end where less changes nothing: the renderer's floor)
 
 class CrtSound:
     """the Vectrex's own noise mixed into the game sound: the BUZZ (the beam and deflection
@@ -1566,7 +1567,7 @@ UNIT_PRESETS = {
     # (zofs / drift_x: 0, a typical Vectrex. v1.5.6-v1.5.8 had 0.13 / +0.13, fitted to the owner's own console's BIOS text,
     #  but long moves then land off on other consoles - a player's homebrew (DW2000) put its figures into the platform.
     #  The owner, 2026-11-04: typical console as the default; he trims his own Vectrex to match)
-    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.5, gap=7.0, knob=KNOB_DEFAULT,
+    'owner':  dict(zhold=0.38, zcal=2.9, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=0.70, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    **UNIT_BEAM, **UNIT_DAC_OWNER, **UNIT_FACTORY_PICTURE),  # (measured; the pots as the factory set them)
     'ideal':  dict(zhold=1.00, zcal=0.0, drift_x=0.0, drift_y=0.0, dacofs=0.0, zofs=0.0, ysettle=1.00, beamoff=0.0, gap=7.0, knob=KNOB_DEFAULT,
                    zerotx=3.3, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3, dac0=0.0, dac1=0.0, dac2=0.0, dac3=0.0,   # (ZERO as drawn: 220 ohm x 0.01 uF)
@@ -1644,7 +1645,7 @@ UNIT_SPREAD = dict(
     drift_y= (('s', 0.0, 0.012),       ('s', 0.015, 0.04)),
     zofs=    (('s', 0.0, 0.04),        ('s', 0.05, 0.10)),   # (the most sensitive: +-0.25 flattens the BIOS's small text)
     ysettle= (('r', 0.60, 0.90),       ('r', 0.45, 0.62)),
-    beamoff= (('r', 0.3, 0.9),         ('r', 0.9, 1.5)),
+    beamoff= (('r', 0.0, 0.4),         ('r', 0.4, 1.0)),
     gap=     (('r', 6.3, 7.7),         ('r', 7.7, 9.3)),
     zerotx=  (('r', 3.8, 5.2),         ('r', 5.2, 6.2)),
     zeroty=  (('r', 2.9, 3.8),         ('r', 3.8, 4.6)),
@@ -2526,6 +2527,9 @@ class App:
             for k in ('zofs', 'drift_x'):                       #  defaults, whatever was set; later changes are the player's own.
                 self.unit[k] = UNIT_PRESETS['owner'][k]         #  v1.5.6's 0.13 values go back to 0 through new_defaults above)
             self.unit_fix = 1
+        if self.unit_fix < 2:                                   # (once (2026-11-23): Beam switch-off delay's fraction acts in the
+            self.unit['beamoff'] = float(int(self.unit.get('beamoff', 0.0)))   #  beam engine again - a saved value keeps the
+            self.unit_fix = 2                                   #  picture it gave: its whole cycles)
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', True) if self.ren else False
@@ -2659,11 +2663,11 @@ class App:
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
-        self.look_keys = [k for k in ('phosphor', 'bloom', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'halo_on', 'halo_k', 'dot_k', 'look', 'look2', 'even_beam', 'white_k', 'phos_spread', 'phos_grow', 'phos_smooth', 'phos_grow_on', 'phos_smooth_on', 'line_gap',
+        self.look_keys = [k for k in ('phosphor', 'trail_on', 'trail', 'wob_on', 'wob_strength',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'look2', 'white_k', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
-                                      'case_on', 'case_refl', 'case_wear', 'passes', 'bend_smooth', 'dither_on',
+                                      'case_on', 'case_refl', 'case_wear', 'dither_on',
                                       'phos_scale', 'half_rate', 'phos_full', 'line_half')
                           if self.ren and hasattr(self.ren, k)]
         self.look_default = {k: getattr(self.ren, k) for k in self.look_keys}
@@ -3286,11 +3290,8 @@ class App:
     SLIDERS = {
         'volume':        ('Volume (0 % = off)', 'Page Down / Page Up', 'crt', 'volume', 0.0, 1.0, False, '%.0f %%', 100),
         'voice_vol':     ('Speech module volume (100 % = MiSTer Normal)', 'Ctrl+Page Down / Ctrl+Page Up', 'crt', 'voice_vol', 0.0, 2.0, False, '%.0f %%', 100),
-        'bloom':         ('Bloom', '', 'ren', 'bloom', 0.0, 3.0, False, '%.2f', 1),
         'white_k':       ('White balance (colour temperature)', '', 'ren', 'white_k', vecrender.WHITE_LO, vecrender.WHITE_HI, 'mired', '%.0f K', 1),
-        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.1, 10.0, True, 'x%.2f', 1),
-        'halo_k':        ('Corner glow strength', '', 'ren', 'halo_k', 0.0, 0.4, False, '%.3f', 1),
-        'dot_k':         ('Corner dot brightness (x1 = measured)', '', 'ren', 'dot_k', 0.0, 2.0, False, 'x%.2f', 1),
+        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.05, 10.0, True, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'glass_curve':   ('Glass curvature (1 = as on a Vectrex, 0 = even squares)', '', 'ren', 'glass_curve', 0.0, 1.0, False, '%.2f', 1),
         'head_k':        ('Shift strength (x1 = 2 mm at the full reach)', '', 'ren', 'head_k', 0.0, 4.0, False, 'x%.2f', 1),
@@ -3300,7 +3301,6 @@ class App:
         'head_smooth_y': ('Near / far smoothing (less judder, a little later)', '', 'ren', 'head_smooth_y', 0.0, 200.0, False, '%.0f ms', 1),
         'head_glass_k':  ('Glass strength (x1 = a real mirror image)', '', 'ren', 'head_glass_k', 0.0, 1.0, False, 'x%.2f', 1),
         'head_ov_k':     ('Sheet strength (x1 = a real mirror image)', '', 'ren', 'head_ov_k', 0.0, 1.0, False, 'x%.2f', 1),
-        'line_gap':      ('Line gaps (stop delay; 7 = a well-tuned Vectrex)', '', 'ren', 'line_gap', 4.0, 10.0, False, '%.1f cycles', 1),
         'art_tint':      ('Overlay tint strength', '', 'ren', 'art_tint', 0.0, 2.0, False, '%.2f', 1),
         'art_room':      ('Room light (the overlay; without one, the glass)', '', 'ren', 'art_room', 0.0, 1.0, False, '%.2f', 1),
         'light_k':       ('Ceiling light on the glass: strength', '', 'ren', 'light_k', 0.0, 2.0, False, 'x%.2f', 1),
@@ -3319,8 +3319,6 @@ class App:
         'art_dx':        ('Overlay left / right (picture heights; the picture moves, the sheet stays on the case)', '', 'ren', 'art_dx', -0.05, 0.05, False, '%+.3f', 1),
         'art_dy':        ('Overlay up / down (picture heights)', '', 'ren', 'art_dy', -0.05, 0.05, False, '%+.3f', 1),
         'art_scale':     ('Overlay size (the picture is sized the other way)', '', 'ren', 'art_scale', 0.9, 1.1, False, 'x%.3f', 1),
-        'phos_grow':     ('Joining strength', '', 'ren', 'phos_grow', 0.0, 1.0, False, '%.2f', 1),
-        'phos_smooth':   ('Smoothing width', '', 'ren', 'phos_smooth', 0.0, 1.0, False, '%.2f', 1),
         'wob_strength':  ('Wobble strength', '', 'ren', 'wob_strength', 0.0, 1.0, False, '%.3f px', 1),
         'bend_strength': ('Bending strength', '', 'ren', 'bend_strength', 0.0, 10.0, False, '%.2f', 1),
         'buzz_vol':      ('Buzz volume', '', 'crt', 'buzz_vol', 0.0, 4.0, False, '%.3f', 1),
@@ -3346,9 +3344,9 @@ class App:
         # the default in its middle and goes 100 % below and above it (0 .. twice) - for small personal adjustments. (Not
         # the volume knob: 0 % is the power switch; not a value whose default is 0 = off.)
         default = ART_ADJ_DEFAULT.get(attr, default)            # (an overlay's position / size: 0, 0, x1)
-        rel = attr not in ('volume', 'line_gap', 'monitor_inch', 'white_k') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
+        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'white_k') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
         if rel:
-            lo, hi, log = default * (1 - SLIDER_SPAN), default * (1 + SLIDER_SPAN), False
+            lo, hi, log = max(SLIDER_LOW.get(attr, 0.0), default * (1 - SLIDER_SPAN)), default * (1 + SLIDER_SPAN), False
         if getattr(self, 'slider_win', None):
             try: self.slider_win.destroy()
             except tk.TclError: pass
@@ -3378,7 +3376,6 @@ class App:
                 self.set_volume(round(v * 20) / 20.0)
             else:
                 setattr(obj(), attr, round(v, 4))
-                if attr == 'line_gap': self.core.set_gap(getattr(obj(), attr))
             head.configure(text=value_text())
             if attr == 'monitor_inch':
                 self.real_size(); return
@@ -3397,7 +3394,6 @@ class App:
         def to_default(e=None):
             if attr == 'volume': self.set_volume(default)
             else: setattr(obj(), attr, default)
-            if attr == 'line_gap': self.core.set_gap(default)
             if attr == 'monitor_inch': self.real_size()
             busy[0] = True; sc.set(to_pos(default)); busy[0] = False
             head.configure(text=value_text())
@@ -3406,7 +3402,6 @@ class App:
         def undo(e=None):
             if attr == 'volume': self.set_volume(start)
             else: setattr(obj(), attr, start)
-            if attr == 'line_gap': self.core.set_gap(start)
             if attr == 'monitor_inch': self.real_size()
             else: self.show_look(attr, obj())
             close()
@@ -4298,10 +4293,6 @@ class App:
         """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
         if self.ren:
             self.ren.look2 = v; self.show_look('look: ' + ('Bright' if v == 'bright' else 'Vectrex')); self.save_settings()
-    def set_look(self, v):
-        """Tube > Look: 'bright' or 'vectrex' (vecrender.LOOK_*)"""
-        if self.ren:
-            self.ren.look = v; self.show_look('look')
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True
@@ -5334,7 +5325,7 @@ class App:
                                           initialdir=ROOT, filetypes=[('Vectrex unit', '*.vxunit'), ('All files', '*.*')])
         if fn:
             try:
-                json.dump(dict(vectrex_unit=1, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
+                json.dump(dict(vectrex_unit=2, name=UNIT_NAMES.get(self.unit_name, 'Custom'), **self.unit), open(fn, 'w'), indent=1)
                 self.show_look('Vectrex unit exported: ' + os.path.basename(fn))
             except OSError as e:
                 self.show_look('could not export: %s' % e)
@@ -5347,6 +5338,7 @@ class App:
         try:
             d = json.load(open(fn))
             u = {k: float(d[k]) for k in UNIT_PRESETS['owner'] if k in d}
+            if 'beamoff' in u and int(d.get('vectrex_unit', 1)) < 2: u['beamoff'] = float(int(u['beamoff']))   # (see unit_fix 2)
         except (OSError, ValueError, TypeError) as e:
             self.show_look('not a Vectrex unit file: %s' % e); return
         for k, v in u.items():
@@ -7459,12 +7451,12 @@ class App:
         if not r.phosphor:
             return 'phosphor OFF (crisp lines)' + w
         tl = ('afterglow x%.2f%s' % (r.trail, ' (measured)' if abs(r.trail - 1) < 0.01 else '')) if getattr(r, 'trail_on', False) else 'afterglow OFF'
-        return 'bloom %.2f  %s' % (r.bloom, tl) + w
+        return tl + w
     # what the title bar says about a changed setting: (name, format of its value; None: on / off)
-    LOOK_LABELS = dict(volume=('volume', '%d %%'), bloom=('bloom', '%.2f'), trail=('afterglow length', 'x%.2f'),
+    LOOK_LABELS = dict(volume=('volume', '%d %%'), trail=('afterglow length', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), phos_spread=('afterglow softness', '%.2f'), phos_grow=('afterglow joining strength', '%.2f'), phos_smooth=('afterglow smoothing width', '%.2f'), phos_grow_on=('afterglow joining', None), phos_smooth_on=('afterglow smoothing', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""
@@ -7488,10 +7480,6 @@ class App:
         if getattr(self, 'title_job', None):
             self.root.after_cancel(self.title_job)
         self.title_job = self.root.after(2000, self.title)
-    def tune(self, what, step, lo, hi):
-        if self.ren and hasattr(self.ren, what):
-            setattr(self.ren, what, round(max(lo, min(hi, getattr(self.ren, what) + step)), 2))
-            self.show_look(what)
     def toggle_phosphor(self, e=None):
         if self.ren and hasattr(self.ren, 'phosphor'):
             self.ren.phosphor = not self.ren.phosphor
@@ -8889,7 +8877,7 @@ class App:
         if getattr(self, 'setup_done', False): d['setup_done'] = True
         if hasattr(self, 'unit'):
             d['unit'] = {k: v for k, v in self.unit.items() if k != 'gap'}; d['unit_name'] = self.unit_name
-            d['unit_fix'] = getattr(self, 'unit_fix', 1)
+            d['unit_fix'] = getattr(self, 'unit_fix', 2)
         d['ultra_rate'] = getattr(self, 'ultra_rate', None)
         d['skip_boot'] = getattr(self, 'skip_boot', False)
         d['run_ahead'] = getattr(self, 'run_ahead', False)

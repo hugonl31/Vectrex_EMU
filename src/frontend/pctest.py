@@ -19,9 +19,9 @@ import tkinter as tk
 
 V = None                                # (the app's module: set by vectrex_emu)
 FIT = 0.75                              # (a profile fits: processor and graphics card each busy under this)
-OFF_NAMES = dict(passes='the second glow pass', curve_on='tube curve', glass_on='glass edge', glass_room='glass in room light',
+OFF_NAMES = dict(curve_on='tube curve', glass_on='glass edge', glass_room='glass in room light',
                  light_on='light on the glass', light_ov='light on the overlay', art_glow='plastic glow', scr_on='scratches',
-                 art_parallax='parallax', case_refl='case reflections', bend_smooth='bend smoothing', dither_on='dither',
+                 art_parallax='parallax', case_refl='case reflections', dither_on='dither',
                  phos_scale='the phosphor at full size (now half)', half_rate='60 pictures a second (now 30)')
 KEPT = 'kept: the afterglow, the glow, the corner dots and their glow, the overlay\'s colours'
 
@@ -145,8 +145,8 @@ def _loads(game, hz, b, c, g):
 
 
 # the effects Optimize may turn off, and what each is when off (vecrender PROFILE_KEYS)
-FEATURES = (('dither_on', False), ('bend_smooth', False), ('case_refl', 0.0), ('art_parallax', False), ('glass_room', False),
-            ('light_ov', False), ('light_on', False), ('passes', 1), ('art_glow', False), ('scr_on', False),
+FEATURES = (('dither_on', False), ('case_refl', 0.0), ('art_parallax', False), ('glass_room', False),
+            ('light_ov', False), ('light_on', False), ('art_glow', False), ('scr_on', False),
             ('glass_on', False), ('curve_on', False), ('phos_scale', 0.5), ('half_rate', True))
 
 

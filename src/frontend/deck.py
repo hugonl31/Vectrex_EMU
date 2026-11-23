@@ -659,11 +659,7 @@ class Deck:
                      None, lambda: self.changed('look2')),
                     ('check', 'Phosphor', PH, a.toggle_phosphor, None),
                     ('in', [('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
-                            ('in', [('slider', 'trail', AG),
-                                    ('check', 'Afterglow joining', lambda: A('phos_grow_on'), flip('phos_grow_on'), AG),
-                                    ('in', [('slider', 'phos_grow', lambda: AG() and A('phos_grow_on'))]),
-                                    ('check', 'Afterglow smoothing', lambda: A('phos_smooth_on'), flip('phos_smooth_on'), AG),
-                                    ('in', [('slider', 'phos_smooth', lambda: AG() and A('phos_smooth_on'))])])]),
+                            ('in', [('slider', 'trail', AG)])]),
                     ('slider', 'white_k', lambda: has('white_k')),
                     ('group', 'SHAPE AND GLASS'),
                     ('check', 'Tube geometry', lambda: A('curve_on'), flip('curve_on'), None),
@@ -1329,9 +1325,9 @@ class Deck:
         if attr == 'volume':
             default = 1.0
         default = V.ART_ADJ_DEFAULT.get(attr, default)
-        rel = attr not in ('volume', 'line_gap', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
+        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
         if rel:
-            lo, hi, log = default * (1 - V.SLIDER_SPAN), default * (1 + V.SLIDER_SPAN), False
+            lo, hi, log = max(V.SLIDER_LOW.get(attr, 0.0), default * (1 - V.SLIDER_SPAN)), default * (1 + V.SLIDER_SPAN), False
         return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default)
 
     def mk_slider(self, name, dep):

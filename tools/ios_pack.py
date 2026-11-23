@@ -60,13 +60,19 @@ for f in sorted(os.listdir(os.path.join(PKG, 'overlays'))):
     bg.convert('RGB').resize((324, 414), Image.LANCZOS).save(os.path.join(th, 'overlays', stem + '.png'), optimize=True)
     nt += 1
 print('thumbs:', nt)
-# the library's other two looks (the owner's choice in the app): each game's cartridge - the real cartridge seen from
-# above (original gce), else the owner's reconstructed label (print 4x\labels) on that real shell - and
-# its box front (the box-art pack there); named after the ROMs, exact names first, then the closest
+# the library's other two looks (the owner's choice in the app): each game's cartridge and its box front (the box-art
+# pack there), named after the ROMs. The cartridge, on the real shell, the first there is of: the box art's title made
+# into a label (G:\AI\Vectrex_Artwork\boxart_labels: the label project's way - silver grid, shared furniture, legal box
+# - from the box front; the owner, 2026-11-23: better than the old ones); the owner's label template (print 4x\labels:
+# Last Human, no box art); the real cartridge seen from above (original gce); a label with the game's name
 import re                                                       # noqa: E402
 from PIL import ImageDraw, ImageFilter                          # noqa: E402
 LBL = 'G:/AI/Vectrex_Artwork'                                    # (was Vectrex_Labels: the folder renamed)
 LAB, BOX = LBL + '/print 4x/labels', LBL + '/original gce/Vectrex 2D Front Cover Box Art - v1.3 Full'
+BAL = LBL + '/boxart_labels/labels-png'                          # (<box front's name>.png, 3120 x 1700)
+ALIAS = {'hyperchaseautorace': 'Hyperchase', 'mrbostoncleansweep': 'Clean Sweep Mr Boston',   # (a ROM's key -> the box
+         'minestormiii': 'Mine Storm v3', 'lunarlander': 'Lunar Lander demo', 'zzap': 'Zzap Strikes Back',  # front's
+         'testcartridgerev4': 'Vectrex Test Cartridge Rev.4', 'blitzactionfootball': 'Blitz Action Football (US)'}  # name)
 
 
 def key(s):
@@ -219,22 +225,28 @@ if os.path.isdir(LAB) and os.path.isdir(BOX):
         for k in {key(st), key(st.split(' - ')[0])}:          # (AnimAction - Advanced Animation: AnimAction)
             if k not in gce or up:
                 gce[k] = os.path.join(GCE, f)
+    bal = {}                                                    # (the box-art labels, by the box front's key)
+    if os.path.isdir(BAL):
+        bal = {key(os.path.splitext(f)[0]): os.path.join(BAL, f) for f in os.listdir(BAL) if f.lower().endswith('.png')}
     tc, tb = os.path.join(th, 'carts'), os.path.join(th, 'boxes'); os.makedirs(tc, exist_ok=True); os.makedirs(tb, exist_ok=True)
-    nc = nb = 0
+    nc = nb = 0; srcs = {}
     for f in sorted(os.listdir(os.path.join(PC, 'roms'))):
         stem, ext = os.path.splitext(f)
         if ext.lower() not in ('.bin', '.vec', '.um2', '.gam'):
             continue
+        k = key(stem)
         gp, lp, bp = find(gce, stem), find(labs, stem), find(boxes, stem)
-        if gp:
-            shrink(Image.open(gp).convert('RGBA')).save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
-        elif not lp:                                            # (no label: one made with its name)
-            name_label(stem).save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
-        if lp and not gp:
-            cart(lp).save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
+        ap = bal.get(key(ALIAS[k])) if k in ALIAS else bal.get(k)
+        if ap: im, srcs[stem] = cart(ap), 'box-art label ' + os.path.basename(ap)
+        elif lp: im, srcs[stem] = cart(lp), 'label template ' + os.path.basename(lp)
+        elif gp: im, srcs[stem] = shrink(Image.open(gp).convert('RGBA')), 'GCE photo ' + os.path.basename(gp)
+        else: im, srcs[stem] = name_label(stem), 'name label'
+        im.save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
         if bp:
             b = Image.open(bp).convert('RGB'); b.resize((390, int(390 * b.height / b.width)), Image.LANCZOS).save(os.path.join(tb, stem + '.png'), optimize=True); nb += 1
     print('cartridges:', nc, 'boxes:', nb)
+    import json as _json                                        # (each cartridge's source, beside the pack: not in it)
+    _json.dump(srcs, open(os.path.join(out, 'carts_sources.json'), 'w', encoding='utf-8'), indent=1)
 else:
     print('labels / box art not found: none in the pack')
 # the pack in parts, each chosen in the app (the core's own and the games always): each part's version is its contents'

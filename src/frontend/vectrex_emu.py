@@ -9117,11 +9117,11 @@ class App:
     SMOOTH_EXW = 96                                     # (Smooth motion: a line that moves on by this or more a frame starts its
                                                         #  afterglow as soon as the gliding line is that far past its place - the core's SM_EXW)
     SMOOTH_MATCH = 2500                                 # (a line moved by more: not the same line - 7 % of the screen)
-    # (a stroke glides only when its partner in the next frame is certain: identical shapes in a formation, a row of them
-    #  left out of a frame - Vectrexians' aliens - and the stroke at the same place in the list is the same shape one row
-    #  on: drawn halfway between, the aliens deformed, rows missing (the owner's recording, 2026-11-23). Certain: it moved
-    #  SM_NEAR at most, or no other stroke that could be its partner lies within SM_OTHER[0] x its own move + SM_OTHER[1]
-    #  - sm_align; handed to the C version, vxs_frame)
+    # (a stroke glides only when its partner in the next frame is certain: found by place - each the other's nearest of the
+    #  strokes alike - and moved SM_NEAR at most, or no other stroke alike lies within SM_OTHER[0] x its move + SM_OTHER[1]
+    #  of either, in the other frame or in its own. Identical shapes in a formation, a row of them left out of a frame -
+    #  Vectrexians' aliens: paired with the same alien a row away they were drawn between the rows (the owner's recording,
+    #  2026-11-23) - sm_align; handed to the C version, vxs_frame)
     SM_NEAR = 400
     SM_OTHER = (2.0, 300.0)
     def smooth_on(self):
@@ -9228,41 +9228,82 @@ class App:
         #  about as far: a line and the one next to it, a side of the same shape, are near each other too. The Ship Test,
         #  2026-11-22: as its scale steps, two frames have as many strokes grouped differently - a line was paired with its
         #  neighbour and slid between the two for some pictures)
-        def same(X, Y):
+        def same(X, Y, R=M):
             ex = (X[:, 2] - X[:, 0]) - (Y[:, 2] - Y[:, 0]); ey = (X[:, 3] - X[:, 1]) - (Y[:, 3] - Y[:, 1])
             lx = _np.maximum(_np.maximum(_np.abs(X[:, 2] - X[:, 0]), _np.abs(X[:, 3] - X[:, 1])), _np.maximum(_np.abs(Y[:, 2] - Y[:, 0]), _np.abs(Y[:, 3] - Y[:, 1])))
-            return ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < M) & (Y[:, 4] == X[:, 4])
+            return ((_np.abs(Y[:, :4] - X[:, :4]).max(1) < R) & (Y[:, 4] == X[:, 4])
                     & (_np.abs(Y[:, 5] - X[:, 5]) <= 0.35 * _np.maximum(X[:, 5], Y[:, 5]) + 16.0)
                     & (_np.maximum(_np.abs(ex), _np.abs(ey)) <= 0.35 * lx + 200.0))
         ma = _np.full(len(SA), -1, dtype=int); mb = _np.full(len(SB), -1, dtype=int)
         kept = getattr(self, '_al_keep', None)           # (the pairing: worked out once for the two frames, asked for every refresh)
         if key is not None and kept is not None and kept[0] is key[0] and kept[1] is key[1] and len(kept[2]) == len(SA) and len(kept[3]) == len(SB):
             ma, mb = kept[2], kept[3]
-        elif len(SA) == len(SB):
-            # (stroke for stroke, each only where its partner is certain - SM_NEAR, above; a stroke that is not stands where
-            #  the game drew it, a's until halfway and b's after. Two frames with different numbers of strokes: none paired,
-            #  each frame shown as drawn. Laid along each other for the least total distance instead (2026-11-22, a day),
-            #  Vectrexians' aliens were paired with the same alien a row away)
-            ok = same(SA, SB); d = _np.abs(SB[:, :4] - SA[:, :4]).max(1)
-            sure = ok & (d <= self.SM_NEAR); nk = _np.nonzero(ok & ~sure)[0]
-            if len(nk):                                  # (moved further: is there another it could be as well?)
-                lim = self.SM_OTHER[0] * d[nk] + self.SM_OTHER[1]
-                def other(X, Y, nk, lim):
-                    # (which of X's strokes nk have another of Y's strokes - not their own - the same by same() and within lim;
-                    #  looked for among those whose start is near enough across: Y's in order of that)
-                    o = _np.argsort(Y[:, 0], kind='stable'); xs = Y[o, 0]; x = X[nk, 0]
-                    lo = _np.searchsorted(xs, x - lim - 1.0, 'left'); cnt = _np.searchsorted(xs, x + lim + 1.0, 'right') - lo
-                    tot = int(cnt.sum()); r = _np.zeros(len(nk), dtype=bool)
-                    if not tot: return r
-                    w = _np.repeat(_np.arange(len(nk)), cnt)
-                    j = o[_np.arange(tot) - _np.repeat(_np.cumsum(cnt) - cnt - lo, cnt)]
-                    m = (j != nk[w]) & (_np.abs(Y[j, 1] - X[nk[w], 1]) < lim[w]); w = w[m]; j = j[m]
-                    P = X[nk[w]]; Q = Y[j]
-                    r[w[(_np.abs(Q[:, :4] - P[:, :4]).max(1) < lim[w]) & same(P, Q)]] = True
-                    return r
-                un = ~other(SA, SB, nk, lim); nk = nk[un]; lim = lim[un]       # (b's strokes, then a's for those left)
-                if len(nk): sure[nk[~other(SB, SA, nk, lim)]] = True
-            idx = _np.nonzero(sure)[0]; ma[idx] = idx; mb[idx] = idx
+        else:
+            # (each stroke with the stroke of the other frame nearest to it of those alike, where each is the other's nearest
+            #  and the pair is certain - SM_NEAR, above; the others stand where the game drew them, a's until halfway and b's
+            #  after. By place, not by the place in the list: a frame with a stroke more or less - a mine laid, a row left
+            #  out - leaves the rest gliding. Paired by the list (2026-11-23) such a frame stood still as a whole; laid along
+            #  each other for the least total distance (2026-11-22), Vectrexians' aliens were paired with the alien a row away)
+            OFF, W, s1 = 1 << 21, 1 << 23, M / 4.0
+            def dist(X, Y):
+                # (how far apart, for the nearest: its ends moved + the stroke itself changed. By its ends alone a short line
+                #  was nearer to the short line across it next to it a frame on than to itself - the Ship Test's small parts;
+                #  'moved SM_NEAR at most' is by its ends: a shrinking shape's lines change more than they move)
+                ex = (X[:, 2] - X[:, 0]) - (Y[:, 2] - Y[:, 0]); ey = (X[:, 3] - X[:, 1]) - (Y[:, 3] - Y[:, 1])
+                return _np.abs(Y[:, :4] - X[:, :4]).max(1) + _np.maximum(_np.abs(ex), _np.abs(ey))
+            def grid(S, s):                              # (strokes by their square of side s, by their start; far off: none)
+                v = (_np.abs(S[:, 0]) <= 1e9) & (_np.abs(S[:, 1]) <= 1e9)
+                cx = _np.zeros(len(S), dtype=_np.int64); cy = _np.zeros(len(S), dtype=_np.int64)
+                cx[v] = _np.floor(S[v, 0] / s).astype(_np.int64); cy[v] = _np.floor(S[v, 1] / s).astype(_np.int64)
+                ix = _np.nonzero(v)[0]; k = (cy[ix] + OFF) * W + cx[ix] + OFF; o = _np.argsort(k, kind='stable')
+                return v, cx, cy, ix[o], k[o]
+            def around(P, gp, gq, R):
+                # (each of P's strokes with each of the other's in the (2R + 1)^2 squares around it: P's, the other's)
+                v, cx, cy = gp[:3]; P = P[v[P]]; iq, kq = gq[3], gq[4]; I_, J_ = [], []
+                for dy in range(-R, R + 1):
+                    k0 = (cy[P] + dy + OFF) * W + cx[P] - R + OFF
+                    lo = _np.searchsorted(kq, k0, 'left'); cnt = _np.searchsorted(kq, k0 + 2 * R, 'right') - lo; tot = int(cnt.sum())
+                    if tot:
+                        I_.append(_np.repeat(P, cnt)); J_.append(iq[_np.arange(tot) - _np.repeat(_np.cumsum(cnt) - cnt - lo, cnt)])
+                return (_np.concatenate(I_), _np.concatenate(J_)) if I_ else (_np.zeros(0, dtype=int), _np.zeros(0, dtype=int))
+            def side(SP, SQ, P, gp, gq, bq, d1, d2, f1):
+                # (for P's strokes: the nearest of SQ's strokes alike in the 3 x 3 squares around each - between equals the one
+                #  nearer its place in the list -, its distance, the next nearest's distance, how far its ends are from the
+                #  nearest's)
+                I, J = around(P, gp, gq, 1); X = SP[I]; Y = SQ[J]; m = same(X, Y)
+                if not m.any(): return
+                I = I[m]; J = J[m]; X = X[m]; Y = Y[m]; d = dist(X, Y); e = _np.abs(Y[:, :4] - X[:, :4]).max(1)
+                o = _np.lexsort((J, _np.abs(J - I), d, I)); I = I[o]; J = J[o]; d = d[o]; e = e[o]
+                f = _np.ones(len(I), dtype=bool); f[1:] = I[1:] != I[:-1]; fi = _np.nonzero(f)[0]
+                bq[I[fi]] = J[fi]; d1[I[fi]] = d[fi]; f1[I[fi]] = e[fi]
+                s_ = fi + 1; h = s_ < len(I); h[h] = I[s_[h]] == I[fi[h]]; d2[I[fi[h]]] = d[s_[h]]
+            def open_(d1, d2, f1):
+                # (those the squares of side s1 did not settle: their nearest, or whether the next nearest is far enough,
+                #  could lie further off - any stroke outside the 3 x 3 squares is more than s1 away)
+                need = _np.where(f1 <= self.SM_NEAR, d1, _np.minimum(d2, self.SM_OTHER[0] * d1 + self.SM_OTHER[1]))
+                return _np.nonzero(s1 - 1.0 < need)[0]
+            NA, NB = [(_np.full(n_, -1, dtype=int), _np.full(n_, _np.inf), _np.full(n_, _np.inf), _np.full(n_, _np.inf)) for n_ in (len(SA), len(SB))]
+            ga, gb = grid(SA, s1), grid(SB, s1)
+            side(SA, SB, _np.arange(len(SA)), ga, gb, *NA); side(SB, SA, _np.arange(len(SB)), gb, ga, *NB)
+            ua, ub = open_(*NA[1:]), open_(*NB[1:]); gM = None
+            if len(ua) or len(ub):                       # (those: among all within SMOOTH_MATCH)
+                gM = ga, gb = grid(SA, M), grid(SB, M)
+                for U, N_, SP, SQ, gp, gq in ((ua, NA, SA, SB, ga, gb), (ub, NB, SB, SA, gb, ga)):
+                    if len(U):
+                        N_[0][U] = -1; N_[1][U] = _np.inf; N_[2][U] = _np.inf; N_[3][U] = _np.inf; side(SP, SQ, U, gp, gq, *N_)
+            (ba, da1, da2, ea1), (bb, db1, db2, eb1) = NA, NB
+            k = _np.nonzero(ba >= 0)[0]; j = ba[k]; d = da1[k]; lim = self.SM_OTHER[0] * d + self.SM_OTHER[1]
+            p = (bb[j] == k) & ((ea1[k] <= self.SM_NEAR) | ((da2[k] >= lim) & (db2[j] >= lim)))
+            f = _np.nonzero(p & (ea1[k] > self.SM_NEAR))[0]
+            if len(f):                                   # (moved further: another like it that near in its own frame?)
+                if gM is None: gM = grid(SA, M), grid(SB, M)
+                R = int(self.SM_OTHER[0] + self.SM_OTHER[1] / M) + 1
+                for S, P_, g in ((SA, k, gM[0]), (SB, j, gM[1])):
+                    w, q = around(_np.arange(len(f)), (g[0][P_[f]], g[1][P_[f]], g[2][P_[f]]), g, R)
+                    X = S[P_[f][w]]; Y = S[q]; L = lim[f][w]
+                    m = (q != P_[f][w]) & same(X, Y, L) & (dist(X, Y) < L)
+                    p[f[w[m]]] = False
+            ma[k[p]] = j[p]; mb[j[p]] = k[p]
         if key is not None: self._al_keep = (key[0], key[1], ma, mb)
         def look(sid, f0, f1, mp, pu, px, py, n):
             v = mp[sid] >= 0; q0 = mp[sid] + 0.999 * f0; q1 = mp[sid] + 0.999 * f1

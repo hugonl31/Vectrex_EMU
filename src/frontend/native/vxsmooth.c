@@ -107,60 +107,169 @@ static int same(const double *X, const double *Y, double M)
            && max2(fabs(ex), fabs(ey)) <= 0.35 * lx + 200.0;
 }
 
-/* the strokes of a frame in order of where they start across (pairing: the others near a stroke) */
-typedef struct { double x; int i; } Sx;
-static Sx *g_xa, *g_xb; static double *g_d; static int *g_nk; static size_t g_cx;
+/* the pairing's work: the strokes by their square (by their start), and for each stroke of a and of b the nearest of the
+   other frame's strokes alike, its distance and the next nearest's */
+#define SQ_OFF ((int64_t)1 << 21)
+#define SQ_W ((int64_t)1 << 23)
+typedef struct { int64_t k; int i; } Sq;
+static Sq *g_qa, *g_qb, *g_qt; static int *g_ba, *g_bb; static double *g_da1, *g_da2, *g_fa1, *g_db1, *g_db2, *g_fb1;
+static size_t g_cp;
 
-static int sx_cmp(const void *p, const void *q)
+/* in order of their square, those in one square in the order given (a radix sort, 12 bits a pass: the squares' numbers
+   are below 2^48); t: room for n */
+static void sq_sort(Sq *g, int n, Sq *t)
 {
-    const Sx *a = (const Sx *)p, *b = (const Sx *)q;
-    return a->x < b->x ? -1 : a->x > b->x ? 1 : a->i - b->i;
+    int cnt[4096], pass, i, b, sum;
+    for (pass = 0; pass < 4; pass++) {
+        int sh = 12 * pass; Sq *x;
+        memset(cnt, 0, sizeof cnt);
+        for (i = 0; i < n; i++) cnt[(g[i].k >> sh) & 4095]++;
+        for (b = 0, sum = 0; b < 4096; b++) { int c = cnt[b]; cnt[b] = sum; sum += c; }
+        for (i = 0; i < n; i++) t[cnt[(g[i].k >> sh) & 4095]++] = g[i];
+        x = g; g = t; t = x;
+    }
 }
 
-/* is there another of the strokes S (in order: o, n of them) - not stroke k - the same as X by same() and within lim? */
-static int other(const double *X, const double *S, const Sx *o, int n, int k, double lim, double M)
+/* a stroke's square of side s by its start (0: far off, none) */
+static int square(const double *S, double s, int64_t *cx, int64_t *cy)
 {
-    double x0 = X[0] - lim - 1.0, x1 = X[0] + lim + 1.0; int lo = 0, hi = n;
-    while (lo < hi) { int mid = lo + ((hi - lo) >> 1); if (o[mid].x < x0) lo = mid + 1; else hi = mid; }
-    for (; lo < n && o[lo].x <= x1; lo++) {
-        const double *Y = S + 6 * (size_t)o[lo].i;
-        if (o[lo].i != k && fabs(Y[1] - X[1]) < lim && far4(X, Y) < lim && same(X, Y, M)) return 1;
+    if (!(fabs(S[0]) <= 1e9) || !(fabs(S[1]) <= 1e9)) return 0;
+    *cx = (int64_t)floor(S[0] / s); *cy = (int64_t)floor(S[1] / s);
+    return 1;
+}
+
+/* a frame's strokes by their squares of side s, in order (the count) */
+static int grid(const double *S, int n, double s, Sq *g)
+{
+    int i, m = 0; int64_t cx, cy;
+    for (i = 0; i < n; i++)
+        if (square(S + 6 * (size_t)i, s, &cx, &cy)) { g[m].k = (cy + SQ_OFF) * SQ_W + cx + SQ_OFF; g[m].i = i; m++; }
+    sq_sort(g, m, g_qt);
+    return m;
+}
+
+/* how far apart two strokes are, for the nearest: their ends moved + the stroke itself changed (sm_align: dist) */
+static double dist(const double *X, const double *Y)
+{
+    double ex = (X[2] - X[0]) - (Y[2] - Y[0]), ey = (X[3] - X[1]) - (Y[3] - Y[1]);
+    return far4(X, Y) + max2(fabs(ex), fabs(ey));
+}
+
+/* stroke q of the other frame, d away (its ends f), for stroke p: the nearest (between equals the one nearer p's place in
+   the list), the next nearest's distance, how far its ends are from the nearest's */
+static void nearest(int *bq, double *d1, double *d2, double *f1, int p, int q, double d, double f)
+{
+    int b = bq[p];
+    if (b < 0 || d < d1[p] || (d == d1[p] && (abs(q - p) < abs(b - p) || (abs(q - p) == abs(b - p) && q < b)))) {
+        d2[p] = d1[p]; d1[p] = d; f1[p] = f; bq[p] = q;
+    }
+    else if (d < d2[p]) d2[p] = d;
+}
+
+/* the first of g's squares (ng of them) numbered k0 or more */
+static int sq_find(const Sq *g, int ng, int64_t k0)
+{
+    int lo = 0, hi = ng;
+    while (lo < hi) { int mid = lo + ((hi - lo) >> 1); if (g[mid].k < k0) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+
+/* .. stroke p of SP against SQ's strokes alike in the 3 x 3 squares of side s around it (g: SQ's squares, ng of them) */
+static void side(const double *SP, int p, const double *SQ, const Sq *g, int ng, double s, double M, int *bq, double *d1,
+                 double *d2, double *f1)
+{
+    const double *X = SP + 6 * (size_t)p; int64_t cx, cy; int dy, lo;
+    if (!square(X, s, &cx, &cy)) return;
+    for (dy = -1; dy <= 1; dy++) {
+        int64_t k0 = (cy + dy + SQ_OFF) * SQ_W + cx - 1 + SQ_OFF, k1 = k0 + 2;
+        for (lo = sq_find(g, ng, k0); lo < ng && g[lo].k <= k1; lo++) {
+            int q = g[lo].i; const double *Y = SQ + 6 * (size_t)q;
+            if (same(X, Y, M)) nearest(bq, d1, d2, f1, p, q, dist(X, Y), far4(X, Y));
+        }
+    }
+}
+
+/* another stroke of S alike to stroke p within lim of it (g: S's squares of side M, R squares each way)? */
+static int crowd(const double *S, int p, const Sq *g, int ng, double M, int R, double lim)
+{
+    const double *X = S + 6 * (size_t)p; int64_t cx, cy; int dy, lo;
+    if (!square(X, M, &cx, &cy)) return 0;
+    for (dy = -R; dy <= R; dy++) {
+        int64_t k0 = (cy + dy + SQ_OFF) * SQ_W + cx - R + SQ_OFF, k1 = k0 + 2 * R;
+        for (lo = sq_find(g, ng, k0); lo < ng && g[lo].k <= k1; lo++) {
+            int q = g[lo].i; const double *Y = S + 6 * (size_t)q;
+            if (q != p && same(X, Y, lim) && dist(X, Y) < lim) return 1;
+        }
     }
     return 0;
 }
 
-/* the pairing of the two frames' strokes -> g_ma, g_mb (sm_align): stroke for stroke, each only where its partner is
-   certain - it moved no further than `nearr`, or no other stroke that could be its partner lies within ok x its own move
-   + oa (identical shapes in a formation, a row left out of a frame: vectrex_emu.py SM_NEAR, SM_OTHER). Two frames with
-   different numbers of strokes: none paired */
+/* not settled by the squares of side s1: the nearest, or whether the next nearest is far enough, could lie further off
+   (any stroke outside the 3 x 3 squares is more than s1 away) */
+static int open_(double d1, double d2, double f1, double s1, double nearr, double ok, double oa)
+{
+    double lim = ok * d1 + oa, need = f1 <= nearr ? d1 : (d2 < lim ? d2 : lim);
+    return s1 - 1.0 < need;
+}
+
+/* the pairing of the two frames' strokes -> g_ma, g_mb (sm_align): by place - each stroke with the nearest of the other
+   frame's strokes alike, where each is the other's nearest and the pair is certain: its ends moved no further than `nearr`, or no
+   other stroke alike within `ok` x the move + `oa` of either, in the other frame or its own (identical shapes in a
+   formation, a row left out of a frame: vectrex_emu.py SM_NEAR, SM_OTHER). Looked for within M / 4 first, within M where
+   that does not settle it */
 static int pairing(double M, double nearr, double ok, double oa)
 {
-    const double *SA = g_fa.S, *SB = g_fb.S; int la = g_fa.ns, lb = g_fb.ns, i, nn = 0;
+    const double *SA = g_fa.S, *SB = g_fb.S; int la = g_fa.ns, lb = g_fb.ns, i, na, nb, ua = 0, ub = 0, coarse = 0;
+    double s1 = M / 4.0; size_t c = (size_t)(la > lb ? la : lb);
     for (i = 0; i < la; i++) g_ma[i] = -1;
     for (i = 0; i < lb; i++) g_mb[i] = -1;
-    if (la != lb) return 0;
-    if (g_cx < (size_t)la) {
-        size_t c = (size_t)la + 256;
-        free(g_xa); free(g_xb); free(g_d); free(g_nk);
-        g_xa = (Sx *)malloc(c * sizeof(Sx)); g_xb = (Sx *)malloc(c * sizeof(Sx));
-        g_d = (double *)malloc(c * sizeof(double)); g_nk = (int *)malloc(c * sizeof(int));
-        if (!g_xa || !g_xb || !g_d || !g_nk) { free(g_xa); free(g_xb); free(g_d); free(g_nk); g_xa = g_xb = NULL; g_d = NULL; g_nk = NULL; g_cx = 0; return -1; }
-        g_cx = c;
+    if (g_cp < c) {
+        c += 256;
+        free(g_qa); free(g_qb); free(g_qt); free(g_ba); free(g_bb);
+        free(g_da1); free(g_da2); free(g_fa1); free(g_db1); free(g_db2); free(g_fb1);
+        g_qa = (Sq *)malloc(c * sizeof(Sq)); g_qb = (Sq *)malloc(c * sizeof(Sq)); g_qt = (Sq *)malloc(c * sizeof(Sq));
+        g_ba = (int *)malloc(c * sizeof(int)); g_bb = (int *)malloc(c * sizeof(int));
+        g_da1 = (double *)malloc(c * sizeof(double)); g_da2 = (double *)malloc(c * sizeof(double)); g_fa1 = (double *)malloc(c * sizeof(double));
+        g_db1 = (double *)malloc(c * sizeof(double)); g_db2 = (double *)malloc(c * sizeof(double)); g_fb1 = (double *)malloc(c * sizeof(double));
+        if (!g_qa || !g_qb || !g_qt || !g_ba || !g_bb || !g_da1 || !g_da2 || !g_fa1 || !g_db1 || !g_db2 || !g_fb1) {
+            free(g_qa); free(g_qb); free(g_qt); free(g_ba); free(g_bb);
+            free(g_da1); free(g_da2); free(g_fa1); free(g_db1); free(g_db2); free(g_fb1);
+            g_qa = g_qb = g_qt = NULL; g_ba = g_bb = NULL; g_da1 = g_da2 = g_fa1 = g_db1 = g_db2 = g_fb1 = NULL; g_cp = 0;
+            return -1;
+        }
+        g_cp = c;
+    }
+    for (i = 0; i < la; i++) { g_ba[i] = -1; g_da1[i] = g_da2[i] = g_fa1[i] = HUGE_VAL; }
+    for (i = 0; i < lb; i++) { g_bb[i] = -1; g_db1[i] = g_db2[i] = g_fb1[i] = HUGE_VAL; }
+    na = grid(SA, la, s1, g_qa); nb = grid(SB, lb, s1, g_qb);
+    for (i = 0; i < la; i++) side(SA, i, SB, g_qb, nb, s1, M, g_ba, g_da1, g_da2, g_fa1);
+    for (i = 0; i < lb; i++) side(SB, i, SA, g_qa, na, s1, M, g_bb, g_db1, g_db2, g_fb1);
+    for (i = 0; i < la; i++) ua += open_(g_da1[i], g_da2[i], g_fa1[i], s1, nearr, ok, oa);
+    for (i = 0; i < lb; i++) ub += open_(g_db1[i], g_db2[i], g_fb1[i], s1, nearr, ok, oa);
+    if (ua || ub) {                                                 /* (those: among all within M) */
+        unsigned char *oa_ = (unsigned char *)malloc((size_t)la + 1), *ob_ = (unsigned char *)malloc((size_t)lb + 1);
+        if (!oa_ || !ob_) { free(oa_); free(ob_); return -1; }
+        for (i = 0; i < la; i++) oa_[i] = (unsigned char)open_(g_da1[i], g_da2[i], g_fa1[i], s1, nearr, ok, oa);
+        for (i = 0; i < lb; i++) ob_[i] = (unsigned char)open_(g_db1[i], g_db2[i], g_fb1[i], s1, nearr, ok, oa);
+        na = grid(SA, la, M, g_qa); nb = grid(SB, lb, M, g_qb); coarse = 1;
+        for (i = 0; i < la; i++)
+            if (oa_[i]) { g_ba[i] = -1; g_da1[i] = g_da2[i] = g_fa1[i] = HUGE_VAL; side(SA, i, SB, g_qb, nb, M, M, g_ba, g_da1, g_da2, g_fa1); }
+        for (i = 0; i < lb; i++)
+            if (ob_[i]) { g_bb[i] = -1; g_db1[i] = g_db2[i] = g_fb1[i] = HUGE_VAL; side(SB, i, SA, g_qa, na, M, M, g_bb, g_db1, g_db2, g_fb1); }
+        free(oa_); free(ob_);
     }
     for (i = 0; i < la; i++) {
-        const double *X = SA + 6 * (size_t)i, *Y = SB + 6 * (size_t)i; double d;
-        if (!same(X, Y, M)) continue;
-        d = far4(X, Y);
-        if (d <= nearr) { g_ma[i] = i; g_mb[i] = i; }
-        else { g_d[nn] = d; g_nk[nn++] = i; }                       /* (moved further: is there another it could be as well?) */
-    }
-    if (nn) {
-        for (i = 0; i < la; i++) { g_xa[i].x = SA[6 * (size_t)i]; g_xa[i].i = i; g_xb[i].x = SB[6 * (size_t)i]; g_xb[i].i = i; }
-        qsort(g_xa, (size_t)la, sizeof(Sx), sx_cmp); qsort(g_xb, (size_t)la, sizeof(Sx), sx_cmp);
-        for (i = 0; i < nn; i++) {
-            int k = g_nk[i]; double lim = ok * g_d[i] + oa;
-            if (!other(SA + 6 * (size_t)k, SB, g_xb, la, k, lim, M) && !other(SB + 6 * (size_t)k, SA, g_xa, la, k, lim, M)) { g_ma[k] = k; g_mb[k] = k; }
+        int j = g_ba[i]; double d = g_da1[i], lim;
+        if (j < 0 || g_bb[j] != i) continue;
+        lim = ok * d + oa;
+        if (g_fa1[i] <= nearr) { g_ma[i] = j; g_mb[j] = i; continue; }
+        if (!(g_da2[i] >= lim && g_db2[j] >= lim)) continue;
+        if (!coarse) { na = grid(SA, la, M, g_qa); nb = grid(SB, lb, M, g_qb); coarse = 1; }
+        {                                                           /* (moved further: another like it that near in its own frame?) */
+            int R = (int)(ok + oa / M) + 1;
+            if (crowd(SA, i, g_qa, na, M, R, lim) || crowd(SB, j, g_qb, nb, M, R, lim)) continue;
         }
+        g_ma[i] = j; g_mb[j] = i;
     }
     return 0;
 }

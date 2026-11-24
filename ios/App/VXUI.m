@@ -290,13 +290,20 @@ static UITableViewCell *vxs_cell (NSString *title)
 			ulog ([NSString stringWithFormat:@"brighter afterglow %d", (int) on]); vxa_hdr_update (); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
 	if (R == 12) {                                  /* (the screen at its brightest while a game plays - VXApp.m vxa_bright) */
-		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"Full brightness"; c.textLabel.textColor = VX_FG;
+		static NSString *const MB[3] = { @"Off", @"Gameplay", @"Whole app" };
+		static NSString *const MBD[3] = { @"Your own brightness", @"Screen at maximum while playing, yours in menus", @"Screen at maximum, menus too" };
+		const NSInteger mb = MAX (0, MIN (2, [NSUserDefaults.standardUserDefaults integerForKey:@"app.maxbright"]));
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"Max brightness"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		c.detailTextLabel.text = @"Screen at maximum while playing, yours in menus";
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [NSUserDefaults.standardUserDefaults boolForKey:@"app.fullbright"];
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.fullbright"];
-			ulog ([NSString stringWithFormat:@"full brightness %d", (int) on]); }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sw; return c; }
+		c.detailTextLabel.text = MBD[mb];
+		NSMutableArray *acts = [NSMutableArray array];   /* (a pull-down: the choice and a chevron, the menu on a tap) */
+		for (NSInteger k = 0; k < 3; k++) { UIAction *a = [UIAction actionWithTitle:MB[k] image:nil identifier:nil handler:^(UIAction *x) { (void) x;
+				[NSUserDefaults.standardUserDefaults setInteger:k forKey:@"app.maxbright"]; ulog ([NSString stringWithFormat:@"max brightness %@", MB[k]]); [ws.tableView reloadData]; }];
+			if (k == mb) a.state = UIMenuElementStateOn; [acts addObject:a]; }
+		UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem]; b.menu = [UIMenu menuWithTitle:@"" children:acts]; b.showsMenuAsPrimaryAction = YES;
+		[b setTitle:[MB[mb] stringByAppendingString:@" ▾"] forState:UIControlStateNormal]; [b setTitleColor:mb ? VX_HI2 : VX_FG2 forState:UIControlStateNormal];
+		b.titleLabel.font = VF (15, UIFontWeightSemibold); [b sizeToFit];
+		c.accessoryView = b; return c; }
 	if (R == 9) {                                   /* (skip the Vectrex intro: the core's setting, here on top) */
 		int i = vxa_ofind ("vectrex_emu_skip_intro"); UITableViewCell *c = vxs_cell (@"Skip intro");
 		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = i >= 0 && !strcmp (vxa_oval (i), "on");

@@ -95,11 +95,17 @@ def line(text, style, cx=W / 2):
     return ' '.join(p for p in d if p), x0 + ox, x1 + ox, y0, y1
 
 
-def area(x0, x1, margin=12.0):
-    """the plain area round ink x0..x1: whole cells (inside the grid lines), the two rows"""
+PAD_MIN = 0.5                                        # (the least room beside the text, in cells - the owner, 2026-11-24)
+
+
+def area(x0, x1, cx=W / 2, pad=PAD_MIN):
+    """the plain area round ink x0..x1: whole cells (inside the grid lines), the two rows, the same number of cells each
+    side of the cell under the label's middle - the text centred in it, as the real GCE labels' room beside it (0.6-1.35
+    cells measured on Blitz and Berzerk) but even: at least pad cells, so 0.5..1.5 cells, a cell on average"""
     import math
-    i = math.floor((x0 - margin - GX0 - GLW) / GPX); j = math.ceil((x1 + margin - GX0) / GPX)
-    L = GX0 + i * GPX + GLW; R = GX0 + j * GPX
+    c = math.floor((cx - GX0) / GPX); m = pad * GPX; k = 0
+    while GX0 + (c - k) * GPX + GLW > x0 - m or GX0 + (c + 1 + k) * GPX < x1 + m: k += 1
+    L = GX0 + (c - k) * GPX + GLW; R = GX0 + (c + 1 + k) * GPX
     return (L, AREA_Y[0], R - L, AREA_Y[1] - AREA_Y[0])
 
 
@@ -110,7 +116,7 @@ def legal(lines, cx=W / 2):
     body, xs = [], []
     for s, st in zip(lines, styles):
         d, a, b, _, _ = line(s, st, cx); body.append('<path d="%s" fill="black"/>' % d); xs += [a, b]
-    return '<g id="legal">%s</g>' % ''.join(body), area(min(xs), max(xs))
+    return '<g id="legal">%s</g>' % ''.join(body), area(min(xs), max(xs), cx)
 
 
 if __name__ == '__main__':

@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.6
+- Labels: the small print's area a square wider where it was tight
+- Phones: Max brightness - Off, Gameplay or Whole app
+- iPhone / iPad: the deck's GPU bar works
+
 ## v1.8.5
 - Box art and labels for 112 games, remade on our own design
 - Title art and pictures: Simon Quincey's (with permission)

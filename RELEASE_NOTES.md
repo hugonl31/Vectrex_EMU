@@ -3,6 +3,17 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.6
+
+* Cartridge labels: the plain area round the small print is a whole number of grid squares, the same on both sides,
+  with at least half a square beside the text (half to one and a half squares, one on average) - as the real GCE
+  labels, centred. Some labels had only a sliver of a square beside it. The drawn cartridges, the PiTrex's label and
+  the full set (artwork-1) alike.
+* iPhone / iPad and Android: Max brightness (Settings > App): Off, Gameplay (the screen at its brightest while a game
+  plays, your own brightness in the menus) or Whole app - whatever the brightness slider or auto-brightness says, for
+  the thin lines through an overlay in a dark room. Your own brightness back when you leave the app.
+* iPhone / iPad: the deck's GPU bar works (iOS's OpenGL ES has no GPU timer: the app's own timing of each picture).
+
 ## v1.8.5
 
 * Real box art in the games list: box fronts and cartridge labels for the 112 games with real artwork in Simon

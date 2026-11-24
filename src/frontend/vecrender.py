@@ -3130,6 +3130,12 @@ class GLBloomRenderer(GLRenderer):
         try:
             if L.ndim != 2 or L.shape[1] < 7 or not len(L):
                 return None
+            if L.shape[1] > 7 and self.imager_eye >= 0:     # (the 3D Imager, one eye: the other half turn's lines out - as _build_np)
+                c8 = L[:, 7].astype(np.int64)
+                if (c8 & 7).any():
+                    L = np.ascontiguousarray(L[((c8 & 8) != 0) == (self.imager_eye == 1)])
+                    if not len(L):
+                        return None
             k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
             w = getattr(self, 'unit_warp', None)
             wv = tuple(float(x) for x in w) if w else (0.0,) * 6

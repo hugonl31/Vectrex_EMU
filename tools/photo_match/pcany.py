@@ -1,5 +1,5 @@
 """the PC app from source, minimised, focus kept: any cart, button presses, one F12 snapshot (window size).
-argv: out.png rom button presses [wait_ms]; env LOOK, BEAM=1"""
+argv: out.png rom button presses [wait_ms]; env LOOK, BEAM=1, EYE (3D Imager: 1 left, 0 right)"""
 import sys, os, argparse, glob, shutil, ctypes
 S = os.path.dirname(os.path.abspath(__file__))
 import threading, subprocess
@@ -29,6 +29,7 @@ def _back():
 for ms in (50, 300, 700, 1500): app.root.after(ms, _back)
 if os.environ.get('LOOK'): app.ren.look = os.environ['LOOK']
 if os.environ.get('BEAM'): app.ren.beam_trace = True
+if os.environ.get('EYE'): app.ren.imager_eye = int(os.environ['EYE'])   # (the 3D Imager's view: 1 left, 0 right, -1 both)
 app.ren.wob_on = False; app.ren.bend_on = False; app.skip_boot = not os.environ.get("NOSKIP"); app.ren.art_on = False
 def _vrr():
     app.vrr = True

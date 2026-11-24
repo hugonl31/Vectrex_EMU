@@ -405,6 +405,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void tick ()
 	{
 		h.postDelayed (this::tick, 50);
+		brightTick ();                                   /* (Max brightness: the start screen too, Whole app) */
 		if (!started) return;
 		int st = VX.status (); if (st < 0 && welcome.getParent () == null) { started = false; root.addView (welcome); welcome.setAlpha (1); status ("The game could not be started. See files/applog.txt"); return; }
 		float[] p = VX.picRect (); if (p[2] != pic[2] || p[3] != pic[3] || p[0] != pic[0] || p[1] != pic[1]) { pic = p; ctl.relayout (); }
@@ -414,16 +415,16 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		Online.tick (this);
 		Input.poll (this);
 		if (barAuto () && !barHidden && System.currentTimeMillis () > barUntil) { barHidden = true; bar.animate ().alpha (0).setDuration (400); }
-		brightTick ();
 	}
-	/* Full brightness (Settings > App, as the iPhone app): the screen at its brightest while a game plays, whatever the brightness
-	 * slider or auto-brightness says - the window's own override, as a boarding pass; the user's own in the menus (the HDR
-	 * slider is no menu) and whenever the app is not in front (Android drops a window's override by itself) */
-	boolean fullBright () { return prefs.getBoolean ("app.fullbright", false); }
+	/* Max brightness (Settings > App, as the iPhone app: Off, Gameplay, Whole app): the screen at its brightest, whatever the
+	 * brightness slider or auto-brightness says - the window's own override, as a boarding pass. Gameplay: while a game plays,
+	 * the user's own in the menus (the HDR slider is no menu); Whole app: the menus too. Never when the app is not in front
+	 * (Android drops a window's override by itself) */
+	int maxBright () { return prefs.getInt ("app.maxbright", 0); }   /* (0 off, 1 gameplay, 2 whole app) */
 	boolean brightUp;
 	void brightTick ()
 	{
-		final boolean want = fullBright () && stack.isEmpty () && welcome.getParent () == null;
+		final int mb = maxBright (); final boolean want = mb == 2 || (mb == 1 && stack.isEmpty () && welcome.getParent () == null);
 		if (want == brightUp) return; brightUp = want;
 		WindowManager.LayoutParams lp = getWindow ().getAttributes (); lp.screenBrightness = want ? WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
 		getWindow ().setAttributes (lp); log ("full brightness: " + (want ? "up" : "yours back"));

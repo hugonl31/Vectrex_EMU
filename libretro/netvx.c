@@ -161,7 +161,11 @@ static pthread_t nv_th;
 static void nv_sleep_ms (int ms) { usleep ((useconds_t) ms * 1000); }
 #endif
 static void nv_log (const char *s) { fprintf (stderr, "[vectrex_emu] online: %s\n", s); }
+#ifdef VX_EMUVR   /* (EmuVR: no online play, no pxfetch.c - the room list's packed answer never comes) */
+static int pz_inflate (unsigned char *out, size_t outlen, const unsigned char *in, size_t inlen) { (void) out; (void) outlen; (void) in; (void) inlen; return -1; }
+#else
 static int pz_inflate (unsigned char *out, size_t outlen, const unsigned char *in, size_t inlen);   /* (pxfetch.c) */
+#endif
 static void nv_on_sum (const unsigned char *b, size_t n);
 static void nv_jesc (char *out, size_t n, const char *s);
 

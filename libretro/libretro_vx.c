@@ -147,6 +147,7 @@ static void vx_putenv (const char *s)       /* (as Windows' _putenv: "NAME=" tak
 #define PH 800
 #define SHEET_H (0.924 * ALG_MAX_Y)     /* the sheet in emulator units (vecrender.py ART_TUBE_K) */
 #define SHEET_W (SHEET_H * 162.0 / 207.0)
+#include "glass_cut_cad_lut.h"               /* (route A: GLASS_CAD_W / _H and glass_cut_cad[360]) */
 #define SHEET_X0 (ALG_MAX_X / 2.0 - SHEET_W / 2.0)
 #define SHEET_Y0 (ALG_MAX_Y / 2.0 - SHEET_H / 2.0)
 /* v0.6: the tube's straight map (vecrender.py TUBE_LIN = tubemap.LIN, measured from the owner's trace of the Test
@@ -225,6 +226,7 @@ static int S = 1, FW, FH, EW;               /* the scale (1 or 2), the frame's s
 /* the picture sent: the whole overlay sheet (162 x 207 mm) or only the glass's window (145.7 x 188.5 mm, the owner's
  * trace of the real tube: vecrender.py GLASS_LUT) - what a screen model shows behind its bezel, at its real size */
 static int opt_glass = 1, CW, CH, CX0, CY0, OW, OH; static uint32_t *ob;
+static int opt_cad;                         /* (route A: 1 = the owner's CAD console - its window and glass edge, glass_cut_cad_lut.h) */
 static retro_environment_t env_cb;
 static retro_video_refresh_t video_cb;
 static retro_audio_sample_batch_t audio_cb;
@@ -390,6 +392,9 @@ enum { KB_UP = 1, KB_DOWN = 2, KB_LEFT = 4, KB_RIGHT = 8, KB_B1 = 16, KB_B2 = 32
 enum { KE_PAUSE = 1, KE_BROWSER = 2, KE_OVERLAY = 4, KE_RESET = 8, KE_EJECT = 16, KE_VOLUP = 32, KE_VOLDN = 64, KE_ESC = 128 };
 static int kb_on, km_typing; static volatile unsigned kb_held, kb_ev;
 static int br_open;                                 /* (browser.c) */ static int lib_on; static void br_show (int on);   /* (library.c) */
+#ifdef VX_EMUVR
+static void br_show (int on) { (void) on; }        /* (EmuVR: no ROM browser on the picture - EmuVR's own shelf) */
+#endif
 static void RETRO_CALLCONV km_key (bool down, unsigned keycode, uint32_t character, uint16_t mods);
 static const char *optv (const char *key);
 static const char *unit_preset (void)               /* (the Unit option: owner, ideal, random N, cranky N) */
@@ -439,6 +444,7 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_eye_shift", "3D Imager: right eye's picture left (-) or right (+), pixels; 0|-10|-20|-30|-40|-50|-60|-70|-80|-90|-100|-110|-120|-130|-140|-150|-160|10|20|30|40|50|60|70|80|90|100|110|120|130|140|150|160" },
 	{ "vectrex_emu_beam", "Beam width; thin|medium|wide" },
 	{ "vectrex_emu_area", "Picture area (from the next game start); glass window 145.7x188.5 mm|overlay sheet 162x207 mm" },
+	{ "vectrex_emu_console", "Console model: its glass window (from the next game start); auto|classic|owner's CAD model" },   /* (route A, 2026-11-25: auto = as the mod says) */
 	{ "vectrex_emu_res", "Picture size (from the next game start); 1x 624x800|2x 1248x1600|3x 1872x2400|4x 2496x3200" },
 	{ "vectrex_emu_rate", "Screen rate (from the next game start); 90 Hz|72 Hz|80 Hz|120 Hz|144 Hz|60 Hz|50 Hz (game)" },
 	{ "vectrex_emu_smooth", "Smooth motion (not at 50 Hz); on|off" },
@@ -754,6 +760,8 @@ static void read_options (void)
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
+	{ const char *ce = getenv ("VECTREX_CONSOLE");   /* (route A: the mod names the console that starts this RetroArch; the option overrides) */
+	  opt_cad = opt_is ("vectrex_emu_console", "owner's CAD model") ? 1 : opt_is ("vectrex_emu_console", "classic") ? 0 : (ce && !strcmp (ce, "cad")); }
 #endif
 	opt_glow = opt_is ("vectrex_emu_glow", "on") ? 1 : opt_is ("vectrex_emu_glow", "strong") ? 2 : 0;
 	raw_glow = opt_is ("vectrex_emu_glow", "auto") ? -1 : opt_glow;
@@ -1008,7 +1016,7 @@ static void geom_calc (int glass, int *ew, int *fh, int *cw, int *ch)
 {
 #ifdef VX_EMUVR
 	*ew = PW * opt_res; *fh = PH * opt_res;
-	*cw = glass ? (int) (*ew * 145.7 / 162.0 + 0.5) : *ew; *ch = glass ? (int) (*fh * 188.5 / 207.0 + 0.5) : *fh;
+	*cw = glass ? (int) (*ew * (opt_cad ? GLASS_CAD_W : 145.7) / 162.0 + 0.5) : *ew; *ch = glass ? (int) (*fh * (opt_cad ? GLASS_CAD_H : 188.5) / 207.0 + 0.5) : *fh;
 #else
 	const int odd = opt_rot & 1; double k = opt_size / (glass ? (odd ? 145.7 : 188.5) : (odd ? 162.0 : 207.0));   /* (px per mm) */
 	if ((opt_deck == 1 || opt_deck == 2) && !odd && !opt_shape && !glass) k /= 1.0 + (opt_deck == 2 ? 0.046 : 0.08134) / 0.924;   /* (4:3 with the deck:
@@ -1051,6 +1059,10 @@ static void geo_tell (void)
  *  in netplay; the Vectrex controller (the RetroPad with its sticks) is the type for it, 2026-11-16) */
 static unsigned port_dev[2] = { RETRO_DEVICE_ANALOG, RETRO_DEVICE_ANALOG };
 void retro_set_controller_port_device (unsigned p, unsigned d) { if (p < 2) port_dev[p] = d; }
+#ifdef VX_EMUVR
+static void ov_flip (const char *by) { (void) by; ov_on = !ov_on; }   /* (EmuVR: the switch only - the mod shows or hides the real sheet; RetroArch 1.7.5
+                                                takes no option back - as the installed EmuVR core, 2026-11-15) */
+#endif
 #ifndef VX_EMUVR
 /* (the first start, in tate - the default: why the picture lies on its side, said once; a mark in RetroArch's saves
  *  folder keeps it from coming again. The owner, 2026-11-16) */
@@ -2035,18 +2047,19 @@ static void white_make (void)
  * real tube"): 0 within 3 mm of the glass's outline (a superellipse, Vectrex_EMU's GLASS_N, over the glass window the
  * picture covers), 1 inside, a 1.5 mm soft step - made once per picture size */
 #include "glass_cut_lut.h"
-static float *emask; static int emask_w, emask_h;
+static float *emask; static int emask_w, emask_h, emask_cad = -1;
 static float edge_mask (int x, int y)
 {
 	int ex = x % EW;
-	if (!emask || emask_w != EW || emask_h != FH) {
-		free (emask); emask = malloc (sizeof (float) * EW * FH); emask_w = EW; emask_h = FH;
+	if (!emask || emask_w != EW || emask_h != FH || emask_cad != opt_cad) {
+		free (emask); emask = malloc (sizeof (float) * EW * FH); emask_w = EW; emask_h = FH; emask_cad = opt_cad;
+		const float *gcut = opt_cad ? glass_cut_cad : glass_cut;   /* (route A) */
 		const double gA = 145.7 / 2, gB = 188.5 / 2, gN = 7.17, gIN = 3.0, gSOFT = 0.75;
 		for (int yy = 0; yy < FH; yy++) for (int xx = 0; xx < EW; xx++) {
 			double px = ((xx + 0.5) / EW - 0.5) * 162.0, py = ((yy + 0.5) / FH - 0.5) * 207.0;   /* (the frame: the 162 x 207 mm sheet, the glass in its middle) */
 			/* (v0.36: the glass's visible edge where the new bezel walls cut the tube, glass_cut_lut.h - y up there, down here) */
 			double deg = atan2 (-py, px) * 57.29578; if (deg < 0) deg += 360; int di = (int) deg; double ft = deg - di;
-			double R = glass_cut[di % 360] * (1 - ft) + glass_cut[(di + 1) % 360] * ft, d = R - sqrt (px * px + py * py);
+			double R = gcut[di % 360] * (1 - ft) + gcut[(di + 1) % 360] * ft, d = R - sqrt (px * px + py * py);
 			(void) gA; (void) gB; (void) gN;
 			double t = (d - (gIN - gSOFT)) / (2 * gSOFT); t = t < 0 ? 0 : t > 1 ? 1 : t;
 			emask[(size_t) yy * EW + xx] = (float) (t * t * (3 - 2 * t));
@@ -2992,6 +3005,13 @@ static int bt_gpu_ok (void) { return gpu_asked && gpu_ok && ph_ok && ph_beam && 
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
 #else
 int gpu_frame_shown (void) { return 0; }
+/* (EmuVR: no GPU picture, nothing to tune - the apps' device test answers "nothing measured") */
+/* (EmuVR: the GPU picture's look values, gpu_phos.c not built - its defaults: SDR, the Vectrex look, no app trail; keep in step) */
+float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lift = 0.0f, vx_hdr_peak = 1.0f, vx_bright = 0.0f, vx_trail_mul = 1.0f;
+int vx_app_dots = 0;
+int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry) { (void) lng; (void) shrt; (void) rates; (void) n; (void) dry; return 0; }
+const char *vx_app_tune_report (void) { return ""; }
+void vx_app_tune_status (char *o, int n) { if (o && n > 0) o[0] = 0; }
 #endif
 /* (1.1) the emulation on a thread of its own (UVMC2 / PiTrex games - the option Threaded emulation): retro_run waits
  * for the refresh it shows, builds its lines, sends its sound, starts the next refresh's emulation and draws while that
@@ -3863,7 +3883,9 @@ static void cart_swap (const char *path)
 /* a game started: the common part of RetroArch's load and the ROM browser's (first: RetroArch's own - the GPU asked for) */
 static bool game_open (const char *gpath, const char *sys, int first)
 {
+#ifndef VX_EMUVR
 	opt_quiet = 90;                             /* (Optimize: a case not measured yet may be measured in the first refreshes of a game - never later in it) */
+#endif
 	char dir[1024]; snprintf (dir, sizeof dir, "%s", gpath);
 	{ char *s = strrchr (dir, '\\'), *t = strrchr (dir, '/'); if (t > s) s = t; if (s) *s = 0; else strcpy (dir, "."); }
 	/* the BIOS (8 KB): in the system folder, or next to the game (EmuVR keeps it there) */

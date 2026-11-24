@@ -1285,6 +1285,8 @@ static UIImage *VXSym (NSString *n, NSString *fallback, CGFloat pt)
 		else { _r1.text = relay ? @"RELAY" : @""; _r2.text = rtt > 0 ? [NSString stringWithFormat:@"%d MS", rtt] : @""; _r1.textColor = _r2.textColor = VX_DIM; }
 	} else if (paused && power) { _sMain.text = @"PAUSED"; _sMain.textColor = VX_CHG; _sMain.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightBold]; }
 	else { char f[24], h[24], e[24]; int c = -1, gq = -1; vx_app_osd (f, h, e, &c, &gq);
+		{ extern int vxa_gpu_share (void); const int gs = vxa_gpu_share ();   /* (iOS's GL has no timer queries: the app's own fence timing) */
+		  if (gq < 0 && c >= 0) gq = gs; }                  /* (c -1: paused or off - the bar empty, as the core's) */
 		/* (FPS: the pictures the screen was given a second - what the phone manages after the emulator and the GPU; the core's
 		 *  own figure counts the emulator's runs, 120 even when the GPU delivers fewer. INT: the game's own frames) */
 		{ extern long vxa_presents; static long p0 = -1; static double t0; static int shown = -1; const double tn = CACurrentMediaTime ();

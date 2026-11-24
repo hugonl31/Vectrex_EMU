@@ -3,6 +3,11 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.8
+
+* iPhone / iPad and Android: Max brightness is Gameplay by default (the screen at its brightest while a game plays,
+  yours in the menus); Off or Whole app in Settings > App.
+
 ## v1.8.7
 
 * Quality auto: the device is tested once and never in the middle of a game. The iPhone / iPad and Android apps ask

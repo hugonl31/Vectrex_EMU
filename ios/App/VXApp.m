@@ -1092,7 +1092,9 @@ static void vxa_toast (NSString *s, double secs)
 	if (!r.length) return;
 	vxa_hold (1);
 	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Device test done" message:[r stringByAppendingString:@"\n\nQuality profile Auto uses these results; the settings let you choose another."] preferredStyle:UIAlertControllerStyleAlert];
-	[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x; vxa_hold (0); }]];
+	__weak VXGameVC *ws = self;   /* (the welcome sheet after the result - it would not show over it) */
+	[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x; vxa_hold (0);
+		VXGameVC *g = ws; if (g && ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.4 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:g]; }); }]];
 	[(self.presentedViewController ?: self) presentViewController:a animated:YES completion:nil];
 }
 - (void) startLink                                 /* (the game on: its refreshes, the start screen gone) */
@@ -1692,7 +1694,8 @@ void vxa_toast_ext (NSString *s) { extern void vxa_ntoast_c (NSString *s); vxa_n
  * game plays, the user's own back as soon as a menu covers it (the one-slider panel is no menu); Whole app: the menus too.
  * Always the user's own when the app leaves the front */
 static CGFloat vxa_bright_was = -1;                       /* (the user's brightness while ours is up; -1: ours not up) */
-static int vxa_fullbright (void) { return (int) [NSUserDefaults.standardUserDefaults integerForKey:@"app.maxbright"]; }   /* (0 off, 1 gameplay, 2 whole app) */
+int vxa_maxbright (void) { NSNumber *v = [NSUserDefaults.standardUserDefaults objectForKey:@"app.maxbright"]; return v ? v.intValue : 1; }   /* (0 off, 1 gameplay - the default, the owner 2026-11-25 - 2 whole app) */
+static int vxa_fullbright (void) { return vxa_maxbright (); }
 static void vxa_bright (int want)
 {
 	UIScreen *s = UIScreen.mainScreen;

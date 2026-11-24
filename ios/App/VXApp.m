@@ -1023,9 +1023,10 @@ static void vxa_toast (NSString *s, double secs)
 }
 - (void) startCore
 {
-	if (_link) return;                              /* (running already: a download from Settings while playing) */
+	static int starting; if (_link || starting) return;   /* (running already: a download from Settings while playing; or tuning) */
+	starting = 1;
 	vxa_retire ();                                  /* (before the last game is looked for: it may be one of them) */
-	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
+	_status.text = @"";                             /* (the start screen fades once the game is on: after the first start's tuning) */
 	_ctx = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3]; [EAGLContext setCurrentContext:_ctx]; [self makeDisplayBuffer];   /* (OpenGL ES: the core's; no layer of its own) */
 	vlog ("GL: %s / %s / %s", glGetString (GL_VENDOR), glGetString (GL_RENDERER), glGetString (GL_VERSION));
 	vxa_gq_start (_ctx);                            /* (the GPU's time a picture, measured without waiting: the 5 s log line) */
@@ -1042,11 +1043,31 @@ static void vxa_toast (NSString *s, double secs)
 	BOOL ok = retro_load_game (&gi);
 	vxa_loaded = 1; for (NSString *s in vxa_early) fputs (s.UTF8String, stderr); [vxa_early removeAllObjects];   /* (the core's log exists now) */
 	vlog ("game %s: %s", game.UTF8String, ok ? "loaded" : "FAILED");
-	if (!ok) { _status.text = [NSString stringWithFormat:@"%@ could not be started.", game.lastPathComponent]; return; }
+	if (!ok) { _status.text = [NSString stringWithFormat:@"%@ could not be started.", game.lastPathComponent]; starting = 0; return; }
 	retro_get_system_av_info (&vxa_av);
 	vlog ("av: %u x %u (max %u x %u), aspect %.3f, %.2f Hz, sound %.0f Hz", vxa_av.geometry.base_width, vxa_av.geometry.base_height, vxa_av.geometry.max_width, vxa_av.geometry.max_height, vxa_av.geometry.aspect_ratio, vxa_av.timing.fps, vxa_av.timing.sample_rate);
 	if (vxa_hw_on) { vxa_core_fb (vxa_av.geometry.max_width, vxa_av.geometry.max_height); if (vxa_hw.context_reset) vxa_hw.context_reset (); vlog ("GL context handed to the core"); }
 	vxa_audio_start (vxa_av.timing.sample_rate);
+	/* the first start (and after an update that measures anew): the core tunes this device once - each screen rate at the
+	 * largest picture this screen can show, the overlay on - before the first game shows, the start screen up; never in the
+	 * middle of a game (the owner, 2026-11-24) */
+	{ extern int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry);
+	  for (int i = 0; i < 2; i++) { vxa_input_poll (); retro_run (); }   /* (the first refreshes: the picture's size known) */
+	  const CGSize ns = UIScreen.mainScreen.nativeBounds.size; const int L = (int) MAX (ns.width, ns.height), S = (int) MIN (ns.width, ns.height);
+	  const int top = UIScreen.mainScreen.maximumFramesPerSecond >= 119 ? 120 : 60, nr = top > 60 ? 2 : 1; const int r0[2] = { 60, top };
+	  if (vx_app_tune (L, S, r0, nr, 1) > 0) {
+		_status.text = @"Tuning for this device (once)..."; vlog ("tuning this device: 60%s Hz at the largest picture of %d x %d, the overlay on", nr > 1 ? " and 120" : "", L, S);
+		__weak VXGameVC *ws = self;
+		dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.15 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ VXGameVC *g = ws; if (!g) return;   /* (the text on screen first) */
+			[EAGLContext setCurrentContext:g->_ctx]; const double t0 = CACurrentMediaTime (); const int rr[2] = { 60, top };
+			const int k = vx_app_tune (L, S, rr, nr, 0); vlog ("tuned: %d rate%s in %.1f s", k, k > 1 ? "s" : "", CACurrentMediaTime () - t0);
+			[g startLink]; });
+		return; } }
+	[self startLink];
+}
+- (void) startLink                                 /* (the game on: its refreshes, the start screen gone) */
+{
+	_status.text = @""; [UIView animateWithDuration:0.6 animations:^{ self->_welcome.alpha = 0; } completion:^(BOOL f) { (void) f; [self->_welcome removeFromSuperview]; }];
 	_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
 	if (@available (iOS 15.0, *)) { float f = (float) vxa_av.timing.fps; _link.preferredFrameRateRange = CAFrameRateRangeMake (f, f, f); }
 	[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; _running = 1;

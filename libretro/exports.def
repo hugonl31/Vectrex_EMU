@@ -25,3 +25,4 @@ EXPORTS
 	retro_set_video_refresh
 	retro_unload_game
 	retro_unserialize
+	vx_app_tune

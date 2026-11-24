@@ -4,6 +4,12 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.7
+- Phones: tuned once at the first start, never during a game
+- Overlay on, a turn of the device: no more hold-ups
+- Auto quality keeps every picture (half rate only as a last resort)
+- Android: FPS holds 120 at 120 Hz
+
 ## v1.8.6
 - Labels: the small print's area a square wider where it was tight
 - Phones: Max brightness - Off, Gameplay or Whole app

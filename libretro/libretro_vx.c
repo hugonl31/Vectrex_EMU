@@ -2950,6 +2950,25 @@ static void fx_apply (void)
 	#undef PICK
 }
 #include "gpu_opt.c"
+/* the own apps' first start (and again after an update that measures anew, or on a bigger screen): each screen rate
+ * measured once, at the largest picture this screen can show - upright or across, the deck off - with the overlay on,
+ * so no game is held up later (2026-11-24). lng / shrt: the screen's sides in pixels; rates: those it can run. dry: only
+ * how many would be measured. Returns that count. Called on the game thread, the context current, after a refresh */
+int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry)
+{
+	if (!gpu_ok || !ph_ok || stereo || vx_nobuild || FW <= 0 || FH <= 0 || n <= 0 || lng <= 0 || shrt <= 0) return 0;
+	const double su = fmin ((double) shrt / FW, (double) lng / FH), sa = fmin ((double) lng / FW, (double) shrt / FH);
+	double s = su > sa ? su : sa; if (s < 1.0) s = 1.0;   /* (upright or across: the larger picture; never smaller than now) */
+	const long px = (long) (FW * s) * (long) (FH * s);
+	int need = 0, todo[16]; for (int i = 0; i < n && i < 16; i++) { prow v; int rg = 0; long pg = 0; todo[i] = !(opt_lookup (rates[i], px, &v, &rg, &pg) && rg == rates[i]); need += todo[i]; }
+	if (dry || !need) return need;
+	const int keep_size = opt_size, keep_rate = opt_rate;
+	opt_size = (int) (opt_size * s + 0.5); pic_setup ();
+	fprintf (stderr, "[vectrex_emu] Optimize: tuning this device - %d rate%s at %d x %d (screen %d x %d), the overlay on\n", need, need > 1 ? "s" : "", FW, FH, lng, shrt);
+	for (int i = 0; i < n && i < 16; i++) if (todo[i]) { opt_rate = rates[i]; prow v = opt_measure (); opt_store (rates[i], (long) FW * FH, &v); }
+	opt_rate = keep_rate; opt_size = keep_size; pic_setup (); ph_made = 0; opt_key_seen[0] = 0; opt_pending = 0; fx_apply ();
+	return need;
+}
 static int bt_gpu_ok (void) { return gpu_asked && gpu_ok && ph_ok && ph_beam && ph_sat && !stereo && !sheet_file; }   /* (as retro_run's gph) */
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
 #else
@@ -3820,6 +3839,7 @@ static void cart_swap (const char *path)
 /* a game started: the common part of RetroArch's load and the ROM browser's (first: RetroArch's own - the GPU asked for) */
 static bool game_open (const char *gpath, const char *sys, int first)
 {
+	opt_quiet = 90;                             /* (Optimize: a case not measured yet may be measured in the first refreshes of a game - never later in it) */
 	char dir[1024]; snprintf (dir, sizeof dir, "%s", gpath);
 	{ char *s = strrchr (dir, '\\'), *t = strrchr (dir, '/'); if (t > s) s = t; if (s) *s = 0; else strcpy (dir, "."); }
 	/* the BIOS (8 KB): in the system folder, or next to the game (EmuVR keeps it there) */

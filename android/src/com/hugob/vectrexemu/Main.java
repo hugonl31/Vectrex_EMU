@@ -151,6 +151,10 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		float best = d.getRefreshRate (); try { for (Display.Mode m : d.getSupportedModes ()) best = Math.max (best, m.getRefreshRate ()); } catch (Throwable t) { }
 		maxHz = best;
 		curHz = d.getRefreshRate ();
+		{ int pw = getResources ().getDisplayMetrics ().widthPixels, ph = getResources ().getDisplayMetrics ().heightPixels;   /* (the tuning: the whole screen's sides) */
+		  try { pw = d.getMode ().getPhysicalWidth (); ph = d.getMode ().getPhysicalHeight (); } catch (Throwable t) { }
+		  final int[] R = { 144, 120, 90, 72 }; int top = 60; for (int r : R) if (best >= r - 1) { top = r; break; }   /* (the fastest of the core's rates it can run) */
+		  VX.setTune (Math.max (pw, ph), Math.min (pw, ph), top); }
 		log ("screen: " + d.getRefreshRate () + " Hz (up to " + best + "), HDR " + (hdrCan ? "yes, headroom " + hdrRoom : hdrScreen ? "screen yes, but not on this Android (before 14): off" : "no") + ", " + getResources ().getDisplayMetrics ().widthPixels + " x " + getResources ().getDisplayMetrics ().heightPixels + " px, density " + getResources ().getDisplayMetrics ().density);
 		VX.setHdr (hdrCan && prefs.getFloat ("app.hdr", 1f) > 0.01f, hdrRoom, prefs.getFloat ("app.hdr", 1f));
 		VX.setBright (prefs.getInt ("app.look", 1));   /* (Bright the default on phones and tablets) */
@@ -280,7 +284,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		String g = prefs.getString ("lastGame", ""); if (g.isEmpty () || !new File (g).exists ()) g = firstGame ();
 		log ("starting with " + g);
 		VX.start (sysDir.getAbsolutePath (), savesDir.getAbsolutePath (), g, defaults ());
-		welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome));
+		tuneWait (System.currentTimeMillis ());           /* (the start screen stays while the first start tunes this device) */
 		layout (); Live.start (this);
 		h.postDelayed (this::autoOnce, 2000);
 		h.postDelayed (() -> testIntent (getIntent ()), 3000);
@@ -465,6 +469,15 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		wProg = new ProgressBar (this, null, android.R.attr.progressBarStyleHorizontal); wProg.setMax (1000); wProg.setVisibility (View.GONE);
 		l.addView (wProg, new LinearLayout.LayoutParams (-1, (int) dp (8)));
 		return l;
+	}
+	/* the first start (and after an update that measures anew): the core tunes this device once - every screen rate at the
+	 * largest picture, the overlay on - before the first game is shown; never in the middle of a game (2026-11-24) */
+	void tuneWait (long t0)
+	{
+		final int t = VX.tuning (), st = VX.status ();
+		if (t == 1) status ("Tuning for this device (once)...");
+		if (st < 0 || t == 2 || System.currentTimeMillis () - t0 > 60000) { welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome)); return; }
+		h.postDelayed (() -> tuneWait (t0), 100);
 	}
 	void status (String s) { wStatus.setText (s); log ("start screen: " + s.replace ('\n', ' ')); }
 

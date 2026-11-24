@@ -457,6 +457,7 @@ static int vxa_state_file (int save, int slot)
 
 /* ---------------------------------------------------------------- the core's thread: start, then a refresh each vsync */
 static pthread_t vxa_th; static volatile int vxa_quit, vxa_running = 1, vxa_started, vxa_ok;
+static int vxa_tune_l, vxa_tune_s, vxa_tune_hz = 60; static volatile int vxa_tune_st;   /* (the first start's tuning: the screen's sides, its fastest rate; 1 tuning, 2 done) */
 static char vxa_game0[1100]; static volatile int vxa_browser;     /* (the core's ROM browser asked for: the library instead) */
 static volatile int vxa_stat_rps, vxa_stat_pps, vxa_stat_ms;
 extern int vx_app_noshape, vx_app_osd_on;
@@ -578,6 +579,13 @@ static void *vxa_main (void *u)
 			clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c1); t_cpu += (c1.tv_sec - c0.tv_sec) + (c1.tv_nsec - c0.tv_nsec) * 1e-9;   /* (the thread's own processor time: waiting for the GPU is not) */
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;
 			if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); vxa_browser = 1; } }
+		if (vxa_tune_st == 0 && vxa_since_load >= 2) {    /* (the first refreshes drawn: this device tuned now if it never was - the start screen up) */
+			extern int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry);
+			int rates[2] = { 60, vxa_tune_hz }; const int nr = vxa_tune_hz > 60 ? 2 : 1;
+			if (vxa_tune_l > 0 && vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 1) > 0) { vxa_tune_st = 1; const double t0 = vxa_now ();
+				vlog ("tuning this device: 60%s Hz at the largest picture of %d x %d, the overlay on", nr > 1 ? (vxa_tune_hz == 120 ? " and 120" : " and the fastest") : "", vxa_tune_l, vxa_tune_s);
+				const int k = vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 0); vlog ("tuned: %d rate%s in %.1f s", k, k > 1 ? "s" : "", vxa_now () - t0); last = 0; }
+			vxa_tune_st = 2; }
 		vxa_present (); pres++;
 		if (vxa_hint && vxa_ph_rep) vxa_ph_rep (vxa_hint, (int64_t) ((vxa_now () - now) * 1e9));   /* (this refresh's work: the hint) */
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
@@ -686,6 +694,8 @@ JNIEXPORT void JNICALL JF(start) (JNIEnv *e, jclass c, jstring sys, jstring save
 	pthread_attr_t a; pthread_attr_init (&a); pthread_attr_setstacksize (&a, 8 << 20);
 	pthread_create (&vxa_th, &a, vxa_main, NULL);
 }
+JNIEXPORT void JNICALL JF(setTune) (JNIEnv *e, jclass c, jint l, jint s, jint hz) { (void) e; (void) c; vxa_tune_l = l; vxa_tune_s = s; vxa_tune_hz = hz > 60 ? hz : 60; }
+JNIEXPORT jint JNICALL JF(tuning) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_tune_st; }
 JNIEXPORT jint JNICALL JF(status) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_ok; }
 JNIEXPORT void JNICALL JF(setSurface) (JNIEnv *e, jclass c, jobject surface)
 {

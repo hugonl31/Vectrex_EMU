@@ -3,6 +3,19 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.7
+
+* Quality auto: the device is tuned once and never in the middle of a game. The iPhone / iPad and Android apps tune
+  at their first start (and again after an update that changes the drawing), every screen rate at the largest picture
+  the screen can show, with the overlay on; the start screen says "Tuning for this device (once)". So switching the
+  overlay on, turning the device or changing the deck never holds a game up (on the Nova it held Last Human up for
+  14 s the first time the overlay went on). The RetroArch core tunes at a game's start, never later in it.
+* Quality auto, the rule: the costliest effects go off first; drawing only every second picture is the last resort.
+  It used to go first, because it always saves the most: the Nova at 120 Hz with an overlay showed 60 pictures a
+  second for it. On the PC the same rule, and Optimize measures with an overlay on.
+* Android: one emulator run every refresh when the screen runs at the emulator's rate (as on iOS since 1.7.6): the
+  deck's FPS holds 120 at 120 Hz.
+
 ## v1.8.6
 
 * Cartridge labels: the plain area round the small print is a whole number of grid squares, the same on both sides,

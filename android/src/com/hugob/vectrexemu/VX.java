@@ -8,6 +8,8 @@ final class VX {
 	static native void log (String s);
 	static native String takeLog ();                       /* the log's new lines (for the live sender) */
 	static native void start (String sysDir, String savesDir, String game, String defaults);
+	static native void setTune (int longPx, int shortPx, int maxHz);   /* (the screen for the first start's tuning: its sides, its fastest rate) */
+	static native int tuning ();                           /* 0 not yet, 1 tuning this device, 2 done (or nothing to tune) */
 	static native int status ();                           /* 0 starting, 1 running, -1 failed */
 	static native void setSurface (Object surface);
 	static native void setRoom (int x, int y, int w, int h, boolean top);

@@ -434,7 +434,7 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_scr_reach", "Overlay: glint reach (left: close to the lines, right: farther out); x1|x0|x0.1|x0.25|x0.5|x0.75|x1.25|x1.5|x2" },
 	{ "vectrex_emu_art_glow", "Overlay: plastic glow; on|off" },
 	{ "vectrex_emu_art_glow_k", "Overlay: plastic glow strength; x0.2|x0|x0.1|x0.25|x0.5|x0.75|x1|x1.5|x2" },
-	{ "vectrex_emu_imager", "3D Imager; vr side by side|colour|off" },
+	{ "vectrex_emu_imager", "3D Imager; vr side by side|colour|left eye|right eye|off" },
 	{ "vectrex_emu_swap_eyes", "3D Imager: swap eyes; off|on" },
 	{ "vectrex_emu_eye_shift", "3D Imager: right eye's picture left (-) or right (+), pixels; 0|-10|-20|-30|-40|-50|-60|-70|-80|-90|-100|-110|-120|-130|-140|-150|-160|10|20|30|40|50|60|70|80|90|100|110|120|130|140|150|160" },
 	{ "vectrex_emu_beam", "Beam width; thin|medium|wide" },
@@ -570,7 +570,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
 	{ "vectrex_emu_port2", "system", "Controller port 2", "Auto: a game that needs the 3D Imager, the light pen or a speech module gets it (next game start).",
 	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
-	{ "vectrex_emu_imager", "system", "3D Imager", NULL, "colour|off" },
+	{ "vectrex_emu_imager", "system", "3D Imager", "Colour: both eyes' pictures at once, as seen without the goggles. Left eye / right eye: only that eye's pictures, no double image.", "colour|left eye|right eye|off" },
 	{ "vectrex_emu_usb_hid", "system", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 	{ "vectrex_emu_jack", "system", "UVMC2 headphone jack", "Clean: line out. Through the speaker: the Vectrex's own sound.", "clean|through the speaker|off" },
 	{ "vectrex_emu_jack_vol", "system", "UVMC2 headphone jack volume", NULL, "100%|0%|25%|50%|75%|125%|150%|175%|200%" },
@@ -749,7 +749,8 @@ static void read_options (void)
 	if (!rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
 	  int r = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : VX_RATE_DEF; opt_rate = r >= 30 && r <= 360 ? r : VX_RATE_DEF; }
 	opt_overlay = opt_is ("vectrex_emu_overlay", "on");   /* (v0.25: off by default) */
-	opt_imager = opt_is ("vectrex_emu_imager", "off") ? 0 : opt_is ("vectrex_emu_imager", "colour") ? 1 : 2;
+	opt_imager = opt_is ("vectrex_emu_imager", "off") ? 0 : opt_is ("vectrex_emu_imager", "colour") ? 1 : opt_is ("vectrex_emu_imager", "left eye") ? 3
+	           : opt_is ("vectrex_emu_imager", "right eye") ? 4 : 2;   /* (3 / 4: one eye's pictures only - the other half turn left out) */
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
@@ -1109,21 +1110,32 @@ static void letters (const char *s, char *out, size_t n)
 #else
 #define OV_EXT(x) ((x) && !vx_stricmp (x, ".png"))   /* (EmuVR: the mod hangs the PNG itself) */
 #endif
+static int ov_uvmc2_tag (const char *s)       /* ("(UVMC2)" in a name, any case) */
+{
+	static const char t[] = "(uvmc2)";
+	for (; *s; s++) { int k = 0; while (k < 7 && s[k] && (s[k] | 0x20) == (t[k] | 0x20)) k++; if (k == 7) return 1; }
+	return 0;
+}
 static int try_overlay_dir (const char *dir, const char *rom)
 {
 	char want[512], wantl[512]; base_of (rom, want, sizeof want); letters (want, wantl, sizeof wantl);
+	/* (a UVMC2 program: a Vectrex game's overlay only for its UVMC2 edition - "Last Human (UVMC2)" - else only one named for
+	 *  the UVMC2, "Armor Attack (UVMC2).png": the card's arcade games renamed to the Vectrex game's name got the cartridge's
+	 *  overlay, made for another screen - Tony on Facebook, 2026-11-25. As the PC's find_overlay) */
+	const char *rx = strrchr (rom, '.'); const char *rs = strrchr (rom, '/'), *rb = strrchr (rom, '\\'); if (rb > rs) rs = rb; rs = rs ? rs + 1 : rom;
+	const int card_only = rx && !vx_stricmp (rx, ".um2") && !ov_uvmc2_tag (rs);
 	char best[1600] = ""; int bestk = 0; size_t bestlen = 99999;
 #ifdef _WIN32
 	char pat[1200]; snprintf (pat, sizeof pat, "%s\\*.*", dir);
 	WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA (pat, &fd);
 	if (h == INVALID_HANDLE_VALUE) return 0;
 	do { const char *fn = fd.cFileName, *x = strrchr (fn, '.');
-		if (!OV_EXT (x)) continue;
+		if (!OV_EXT (x) || (card_only && !ov_uvmc2_tag (fn))) continue;
 #else
 	DIR *dh = opendir (dir); struct dirent *de;
 	if (!dh) return 0;
 	while ((de = readdir (dh))) { const char *fn = de->d_name, *x = strrchr (fn, '.');
-		if (!OV_EXT (x)) continue;
+		if (!OV_EXT (x) || (card_only && !ov_uvmc2_tag (fn))) continue;
 #endif
 		char b[512], bl[512]; base_of (fn, b, sizeof b); letters (b, bl, sizeof bl);
 		char full[512]; snprintf (full, sizeof full, "%s", fn); char *e = strrchr (full, '.'); if (e) *e = 0;
@@ -2950,6 +2962,32 @@ static void fx_apply (void)
 	#undef PICK
 }
 #include "gpu_opt.c"
+/* the own apps' first start (and again after an update that measures anew, or on a bigger screen): each screen rate
+ * measured once, at the largest picture this screen can show - upright or across, the deck off - with the overlay on,
+ * so no game is held up later (2026-11-24). lng / shrt: the screen's sides in pixels; rates: those it can run. dry: only
+ * how many would be measured. Returns that count. Called on the game thread, the context current, after a refresh */
+static char tune_report[1200];
+const char *vx_app_tune_report (void) { return tune_report; }   /* (the last tuning's result, a line a rate) */
+void vx_app_tune_status (char *o, int n) { snprintf (o, (size_t) n, "%s", opt_status); }   /* (the step running now) */
+int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry)
+{
+	if (!gpu_ok || !ph_ok || stereo || vx_nobuild || FW <= 0 || FH <= 0 || n <= 0 || lng <= 0 || shrt <= 0) return 0;
+	const double su = fmin ((double) shrt / FW, (double) lng / FH), sa = fmin ((double) lng / FW, (double) shrt / FH);
+	double s = su > sa ? su : sa; if (s < 1.0) s = 1.0;   /* (upright or across: the larger picture; never smaller than now) */
+	const long px = (long) (FW * s) * (long) (FH * s);
+	int need = 0, todo[16]; for (int i = 0; i < n && i < 16; i++) { prow v; int rg = 0; long pg = 0; todo[i] = !(opt_lookup (rates[i], px, &v, &rg, &pg) && rg == rates[i]); need += todo[i]; }
+	if (dry || !need) return need;
+	const int keep_size = opt_size, keep_rate = opt_rate;
+	opt_size = (int) (opt_size * s + 0.5); pic_setup ();
+	fprintf (stderr, "[vectrex_emu] Optimize: tuning this device - %d rate%s at %d x %d (screen %d x %d), the overlay on\n", need, need > 1 ? "s" : "", FW, FH, lng, shrt);
+	tune_report[0] = 0;
+	for (int i = 0; i < n && i < 16; i++) if (todo[i]) { opt_rate = rates[i]; prow v = opt_measure (); opt_store (rates[i], (long) FW * FH, &v);
+		const size_t k = strlen (tune_report);   /* (the player's report: each rate, all on or what went off) */
+		if (!opt_last_off[0]) snprintf (tune_report + k, sizeof tune_report - k, "%s%d Hz: Every effect on, full quality - %.0f %% of each picture's time used", k ? "\n" : "", rates[i], 100 * opt_last_share);
+		else snprintf (tune_report + k, sizeof tune_report - k, "%s%d Hz: Full speed with these effects off: %s%s", k ? "\n" : "", rates[i], opt_last_off, opt_last_fit ? "" : " - still short of time, a busy game may slow down"); }
+	opt_rate = keep_rate; opt_size = keep_size; pic_setup (); ph_made = 0; opt_key_seen[0] = 0; opt_pending = 0; fx_apply ();
+	return need;
+}
 static int bt_gpu_ok (void) { return gpu_asked && gpu_ok && ph_ok && ph_beam && ph_sat && !stereo && !sheet_file; }   /* (as retro_run's gph) */
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
 #else
@@ -3297,6 +3335,7 @@ static void retro_run_one (void)
 	} else if (vt_imager) {                          /* (the 3D Imager: the two half turns' pictures - side by side, or both in
 	                                              colour on one; not mixed between frames, the disc's halves alternate) */
 		for (int e = 0; e < 2; e++) {
+			if (opt_imager >= 3 && e != ((opt_imager == 3) ^ opt_swap)) continue;   /* (one eye: e 1 the left, e 0 the right - "swap eyes" turns it round) */
 			/* (the second half turn's lines, rgb bit 3, are the LEFT eye's: so the depth comes out right - in 3D Crazy
 			 *  Coaster the near track and the rider's hands lie ~100 px apart, the horizon ~200 px (~52 mm on the real
 			 *  screen, nearly the eyes' distance: far away) - checked 2026-11-04; "swap eyes" turns it round) */
@@ -3820,6 +3859,7 @@ static void cart_swap (const char *path)
 /* a game started: the common part of RetroArch's load and the ROM browser's (first: RetroArch's own - the GPU asked for) */
 static bool game_open (const char *gpath, const char *sys, int first)
 {
+	opt_quiet = 90;                             /* (Optimize: a case not measured yet may be measured in the first refreshes of a game - never later in it) */
 	char dir[1024]; snprintf (dir, sizeof dir, "%s", gpath);
 	{ char *s = strrchr (dir, '\\'), *t = strrchr (dir, '/'); if (t > s) s = t; if (s) *s = 0; else strcpy (dir, "."); }
 	/* the BIOS (8 KB): in the system folder, or next to the game (EmuVR keeps it there) */

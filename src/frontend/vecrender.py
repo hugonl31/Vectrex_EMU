@@ -3130,6 +3130,12 @@ class GLBloomRenderer(GLRenderer):
         try:
             if L.ndim != 2 or L.shape[1] < 7 or not len(L):
                 return None
+            if L.shape[1] > 7 and self.imager_eye >= 0:     # (the 3D Imager, one eye: the other half turn's lines out - as _build_np)
+                c8 = L[:, 7].astype(np.int64)
+                if (c8 & 7).any():
+                    L = np.ascontiguousarray(L[((c8 & 8) != 0) == (self.imager_eye == 1)])
+                    if not len(L):
+                        return None
             k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
             w = getattr(self, 'unit_warp', None)
             wv = tuple(float(x) for x in w) if w else (0.0,) * 6
@@ -3295,6 +3301,8 @@ class GLBloomRenderer(GLRenderer):
     # the 3D Imager's filters (imager.c: the colour code of each line, an 8th column): the phosphor's white light through
     # red, green and blue gels - the blue a little dimmer, as through a real one
     IMAGER_RGB = {1: (1.0, 0.12, 0.10), 2: (0.15, 1.0, 0.25), 4: (0.25, 0.45, 1.0)}
+    imager_eye = -1     # (the 3D Imager: -1 both eyes' pictures, 1 the left eye's only, 0 the right eye's - bit 8 of the
+                        #  colour code: the disc's second half turn, the left eye's; Tony on Facebook, 2026-11-24)
 
     def _build_np(self, lines, gain=1.0, load=True):
         """_build_py with numpy: the same arithmetic on all lines at once (checked equal to it, float32). Beam trace on:
@@ -3306,6 +3314,9 @@ class GLBloomRenderer(GLRenderer):
             raise ValueError('lines')
         col = L[:, 7].astype(np.int64) if L.shape[1] > 7 else None
         L = L[:, :7]
+        if col is not None and self.imager_eye >= 0 and len(col) and (col & 7).any():   # (one eye: the other half turn's lines out)
+            keep = ((col & 8) != 0) == (self.imager_eye == 1)
+            L = L[keep]; col = col[keep]
         ld_ = self._pic_load(L)                                  # (brightness bending: the core's lines, before any are added)
         b = L[:, 4].astype(np.int64)
         if len(b) and not getattr(self, 'beam_trace', False):   # (rests joined to lines: see DOT_C0)

@@ -219,7 +219,15 @@ def optimize(app, say=lambda s: None):
         return None
     was = a.run.paused
     a.run.paused = True
+    r = a.ren; art0, on0, stand = r.art, getattr(r, 'art_on', True), False
     try:
+        # (the overlay on while measuring - the heavier case, as the cores (2026-11-24): the game's own, else a stand-in
+        #  sheet, a filter's colour; so turning the overlay on later never needs more than measured)
+        if not art0:
+            w, h = 552, 707
+            row = bytes((60, 140, 230, 140)) * w
+            r.set_art((w, h, row * h, w)); stand = True
+        r.art_on = True
         A = scene()
         say('measuring the processor...')
         game = _game_thread_ms(a, A)
@@ -240,7 +248,8 @@ def optimize(app, say=lambda s: None):
                 gain = max(before[0] - l[0], before[1] - l[1])
                 if gain > 0.02:                         # (2 % of the processor or the card: it matters)
                     gains.append((gain, k, v))
-            gains.sort(reverse=True)
+            gains.sort(key=lambda g: (g[1] == 'half_rate', -g[0]))   # (the costliest first - every second picture only the
+                                                    #  last resort: it always saves most, and was taken first)
             for gain, k, v in gains:
                 old = vals[k]
                 vals[k] = v
@@ -256,6 +265,10 @@ def optimize(app, say=lambda s: None):
                     break
         uvm2 = uvm2_probe(say)                          # (the UVMC2 mode: the core on its own, the game still paused)
     finally:
+        if stand:
+            r.set_art(None)
+        r.art = art0 if not stand else None
+        r.art_on = on0
         a.run.paused = was
     return dict(vals=vals, off=off, before=before, after=now, fits=fits(now), cpu=cpu_name(), gpu=gpu_name(a), hz=hz,
                 uvm2=uvm2)

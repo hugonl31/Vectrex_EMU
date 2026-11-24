@@ -4,6 +4,15 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.7
+- Phones: a device test once, asked first, its result shown
+- Overlay on, a turn of the device: no more hold-ups
+- Auto quality keeps every picture (half rate only as a last resort)
+- Android: FPS holds 120 at 120 Hz; the screen follows the rate
+- Android: asks what to download at the first start
+- 3D Imager: show one eye only, left or right
+- UVMC2 arcade games no longer get the Vectrex game's overlay
+
 ## v1.8.6
 - Labels: the small print's area a square wider where it was tight
 - Phones: Max brightness - Off, Gameplay or Whole app

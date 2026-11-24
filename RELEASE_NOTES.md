@@ -3,6 +3,32 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.7
+
+* Quality auto: the device is tested once and never in the middle of a game. The iPhone / iPad and Android apps ask
+  first ("Device test": Test now / Later), show each step on the start screen, and then say what came out: every
+  effect on at full quality, or which effects this device runs without at each screen rate. The test measures every
+  screen rate at the largest picture the screen can show, with the overlay on; it runs again only after an update
+  that changes the drawing, or for a bigger screen (asked again). So switching the
+  overlay on, turning the device or changing the deck never holds a game up (on the Nova it held Last Human up for
+  14 s the first time the overlay went on). The RetroArch core tunes at a game's start, never later in it.
+* Quality auto, the rule: the costliest effects go off first; drawing only every second picture is the last resort.
+  It used to go first, because it always saves the most: the Nova at 120 Hz with an overlay showed 60 pictures a
+  second for it. On the PC the same rule, and Optimize measures with an overlay on.
+* Android: one emulator run every refresh when the screen runs at the emulator's rate (as on iOS since 1.7.6): the
+  deck's FPS holds 120 at 120 Hz.
+* 3D Imager: one eye's pictures only, left or right - no double image without the goggles (RetroArch: Core Options >
+  System > 3D Imager; the apps: the same in the settings; PC: Add-ons > 3D Imager > View). Colour, both eyes at once,
+  stays the default.
+* Overlays for UVMC2 programs (.um2): a Vectrex game's overlay only for that game's UVMC2 edition (Last Human
+  (UVMC2)); any other UVMC2 program only gets an overlay named for the UVMC2 (Armor Attack (UVMC2).png). The card's
+  arcade games renamed to a Vectrex game's name showed that cartridge's overlay, made for another screen. Every
+  platform alike.
+* Android, as the iPhone app: the screen is asked for the game's rate (choosing 120 Hz switches the display, no system
+  setting needed); the first start asks what to download (everything on, the size shown, mobile data said); 120 Hz
+  the GPU cannot hold falls back to 60 for the session (the default rate only); HDR's headroom read every second
+  (Android 14).
+
 ## v1.8.6
 
 * Cartridge labels: the plain area round the small print is a whole number of grid squares, the same on both sides,

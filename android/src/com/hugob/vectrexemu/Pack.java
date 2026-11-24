@@ -53,9 +53,8 @@ final class Pack {
 				parts = pp; List<String> need = new ArrayList<> ();
 				for (int i = 0; i < pp.length (); i++) { JSONObject x = pp.optJSONObject (i); String v = inst.optString (x.optString ("id"), null);
 					if ((v != null && !v.equals (x.optString ("version"))) || (v == null && x.optBoolean ("required"))) need.add (x.optString ("id")); }
-				if (inst.length () == 0 && !have) { List<String> all = new ArrayList<> (); for (int i = 0; i < pp.length (); i++) all.add (pp.optJSONObject (i).optString ("id"));
-					Main.log ("first start: every part downloaded"); fetch (m, all); }   /* (a fresh install gets everything - the owner, 2026-11-21: the choice
-					                                                   screen lay behind the start screen and nothing came) */
+				if (inst.length () == 0 && !have) { Main.log ("first start: the choice of parts"); m.status ("Choose what to download"); choose (m, true); }   /* (as the
+					                                                   iPhone app: asked first, everything on - the screens now lie in front of the start screen) */
 				else if (!need.isEmpty ()) fetch (m, need);
 				else { busy = false; m.startCore (); } });
 		}).start ();
@@ -77,16 +76,28 @@ final class Pack {
 		Screens.Panel p = new Screens.Panel (m, first ? "Download the games" : "Downloads"); JSONObject inst = installed (m);
 		final ArrayList<String> pick = new ArrayList<> ();
 		p.header (first ? "Needed parts come always - choose the rest" : "Parts");
+		final TextView[] sum = new TextView[1];
+		final Runnable total = () -> { long sz = 0; for (int i = 0; i < parts.length (); i++) if (pick.contains (parts.optJSONObject (i).optString ("id"))) sz += parts.optJSONObject (i).optLong ("size");
+			if (sum[0] != null) sum[0].setText (sz > 0 ? String.format (Locale.ROOT, "To download: %.0f MB%s", sz / 1e6, metered (m) ? " - you are on mobile data" : "") : "Nothing to download"); };
 		for (int i = 0; i < parts.length (); i++) { JSONObject x = parts.optJSONObject (i); final String id = x.optString ("id"); final boolean req = x.optBoolean ("required");
 			String v = inst.optString (id, null); boolean have = v != null, cur = have && v.equals (x.optString ("version"));
-			if (req && !cur) pick.add (id);
+			if ((req && !cur) || (first && !cur)) pick.add (id);   /* (the first time: everything on - as the iPhone app) */
 			final String detail = String.format (Locale.ROOT, "%.0f MB - %s", x.optLong ("size") / 1e6, req ? "needed" : cur ? "here" : have ? "a new version" : "optional");
 			LinearLayout r = p.row ((pick.contains (id) ? "✓  " : "     ") + x.optString ("name"), detail, null);
 			if (!req) { r.setFocusable (true); r.setClickable (true); r.setOnClickListener (vw -> { TextView t = r.findViewWithTag ("t");
-				if (pick.contains (id)) { pick.remove (id); t.setText ("     " + x.optString ("name")); } else { pick.add (id); t.setText ("✓  " + x.optString ("name")); } }); } }
+				if (pick.contains (id)) { pick.remove (id); t.setText ("     " + x.optString ("name")); } else { pick.add (id); t.setText ("✓  " + x.optString ("name")); } total.run (); }); } }
 		p.foot ("The Vectrex and the games are needed: without them nothing plays. The rest: whenever you like (Settings > Downloads).");
-		p.row ("Download", "", () -> { m.pop (); fetch (m, pick); });
+		final boolean[] went = { false };
+		LinearLayout dl = p.row ("Download", "To download", () -> { went[0] = true; m.pop (); fetch (m, pick); }); sum[0] = dl.findViewWithTag ("d"); total.run ();
+		if (first) p.onClose = () -> { if (went[0]) return; final ArrayList<String> req = new ArrayList<> ();   /* (closed at the first start: the needed parts only - nothing plays without them) */
+			for (int i = 0; i < parts.length (); i++) if (parts.optJSONObject (i).optBoolean ("required")) req.add (parts.optJSONObject (i).optString ("id"));
+			Main.log ("downloads: closed - the needed parts only"); m.h.post (() -> fetch (m, req)); };
 		m.push (p);
+	}
+	static boolean metered (Main m)                 /* (mobile data: said beside the size) */
+	{
+		try { android.net.ConnectivityManager c = (android.net.ConnectivityManager) m.getSystemService (android.content.Context.CONNECTIVITY_SERVICE); return c != null && c.isActiveNetworkMetered (); }
+		catch (Throwable t) { return false; }
 	}
 	/* the parts downloaded one by one on the start screen, the progress shown; the game after them */
 	static void fetch (Main m, List<String> ids)

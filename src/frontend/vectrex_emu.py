@@ -1185,15 +1185,20 @@ def _art_base(s):
             return s.strip()
         s = t
 
-def find_overlay(name):
+def find_overlay(name, card=False):
     """the overlay for a ROM name: the same name, else the same base name (without (...) parts), else the
     same letters and digits ('Heads-Up' = 'Heads Up') - .art (MiSTer) or .png files; an underscore in the
-    file's name counts as a space (MiSTer's names: Armor_Attack.art)"""
+    file's name counts as a space (MiSTer's names: Armor_Attack.art). card: a UVMC2 program (.um2) - a Vectrex
+    game's overlay only for its UVMC2 edition ('Last Human (UVMC2)'), else only an overlay named for the UVMC2
+    ('Armor Attack (UVMC2).png'): the card's arcade games renamed to the Vectrex game's name got the cartridge's
+    overlay, made for another screen (Tony on Facebook, 2026-11-25)"""
     files = []
     for d in overlay_dirs():
         if os.path.isdir(d):
             files += [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.lower().endswith(('.art', '.png'))
                       and not re.search(r'_90c?cw$', os.path.splitext(f)[0], re.I)]
+    if card and '(uvmc2)' not in name.lower():
+        files = [f for f in files if '(uvmc2)' in os.path.basename(f).lower()]
     # (several with one base name: the plain one first - no hack, no variant suffix - then the shortest)
     files.sort(key=lambda f: (bool(re.search(r'hack|_\(', os.path.basename(f), re.I)), len(os.path.basename(f)),
                               os.path.basename(f).lower()))
@@ -2574,6 +2579,7 @@ class App:
         self.sm_buf = []
         self.sm_st = type('SmoothState', (), {})()     # (the alternate-halves check's memory)
         self.imager_note = bool(c0.get('imager_note', True))    # the 3D Imager: a note while its disc spins up
+        self.imager_eye = c0.get('imager_eye', 'both') if c0.get('imager_eye') in ('both', 'left', 'right') else 'both'   # its view: both eyes or one
         self.usb_hid = bool(c0.get('usb_hid', True))            # a UVMC2 game: the PC's mouse (and keyboard: Ctrl+K) as its USB devices
         self.uvm2_mode = c0.get('uvm2_mode', 'exact') if c0.get('uvm2_mode') in UVM2_MODES else 'exact'
         Core.uvm2_mode = self.uvm2_mode                         # UVMC2 games: Exact (as the cartridge) or Fast (slower PCs)
@@ -2748,6 +2754,7 @@ class App:
                 self.root.update()
                 self.ren = vecrender.make_renderer(self.screen.winfo_id(), self.screen)
                 self.ren.reserve = self.knob_reserve()
+                self.ren.imager_eye = {'left': 1, 'right': 0}.get(self.imager_eye, -1)   # (the 3D Imager's view, as saved)
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
                 self.hdr_mode = c0.get('hdr', 'auto'); self.hdr_frac = float(c0.get('hdr_frac', 1.0))   # (View > HDR)
                 self.root.after(400, self.hdr_apply)
@@ -3618,7 +3625,7 @@ class App:
             path = self.art_for[key] = moved_overlay(pick)
         elif self.art_auto:
             if self.args.rom:
-                path = find_overlay(key)
+                path = find_overlay(key, card=self.args.rom.lower().endswith('.um2'))
                 if not path and _art_base(key).lower() == 'mine storm':
                     path = builtin_overlay()
             else:                                               # (no cartridge: the console's own Mine Storm -
@@ -8647,6 +8654,7 @@ class App:
             if k.startswith(('jack_', 'motor_')):
                 setattr(self.run.crt, k, v)
         self.imager_note = True
+        self.set_imager_eye('both')
         self.show_um2 = True
         self.sd_dir = SD_DEFAULT
         self.px_dir = PX_DEFAULT
@@ -8694,6 +8702,13 @@ class App:
         self.run.crt.motor_on = not self.run.crt.motor_on
         self.save_settings()
         self.show_look('3D Imager motor sound: ' + ('on' if self.run.crt.motor_on else 'off'))
+    def set_imager_eye(self, k):
+        """the 3D Imager's view: both eyes' pictures (in colour, as without the goggles), or one eye's only - no double image"""
+        self.imager_eye = k
+        if self.ren is not None:
+            self.ren.imager_eye = {'left': 1, 'right': 0}.get(k, -1)
+        self.save_settings()
+        self.show_look('3D Imager: ' + {'both': 'both eyes', 'left': 'the left eye only', 'right': 'the right eye only'}[k])
     def toggle_imager_note(self):
         self.imager_note = not self.imager_note
         self.save_settings()
@@ -8964,6 +8979,7 @@ class App:
         d['usb_hid'] = getattr(self, 'usb_hid', True)
         d['uvm2_mode'] = getattr(self, 'uvm2_mode', 'exact')
         d['imager_note'] = getattr(self, 'imager_note', True)
+        d['imager_eye'] = getattr(self, 'imager_eye', 'both')
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'
         d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)

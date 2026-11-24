@@ -70,9 +70,11 @@ jobs:
         run: |
           if [ -z "$MAC_CERT_P12" ]; then echo "no signing secrets: the app stays unsigned"; exit 0; fi
           KC=$RUNNER_TEMP/sign.keychain-db; KP=$(uuidgen)
-          echo "$MAC_CERT_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
+          # (the secret as pasted may carry line breaks / spaces: only the base64 characters are decoded)
+          printf '%s' "$MAC_CERT_P12" | tr -cd 'A-Za-z0-9+/=' | base64 -D > $RUNNER_TEMP/cert.p12
+          echo "certificate file: $(wc -c < $RUNNER_TEMP/cert.p12) bytes (expected 3230)"
           security create-keychain -p "$KP" $KC && security set-keychain-settings -lut 3600 $KC && security unlock-keychain -p "$KP" $KC
-          security import $RUNNER_TEMP/cert.p12 -k $KC -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security import $RUNNER_TEMP/cert.p12 -k $KC -f pkcs12 -P "$(printf '%s' "$MAC_CERT_PASSWORD" | tr -d '\r\n')" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" $KC > /dev/null
           security list-keychains -d user -s $KC $(security list-keychains -d user | tr -d '"')
           ID=$(security find-identity -v -p codesigning $KC | grep -o '"Developer ID Application[^"]*"' | head -1 | tr -d '"')

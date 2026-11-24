@@ -586,6 +586,8 @@ TOPICS = [
       "short gaps where joined lines meet (the spot still moving while the beam is dark). 6 = measured."),
 ('item', 'DAC bit 0-3 error', "The DAC's ladder: each bit's current off by this share. Text drawn right and back at a "
       "width has different bits each way, so its slant changes from one width to the next. The owner's: measured."),
+('item', 'X rate right vs left / Y rate up vs down', "How much faster the beam moves one way than the other, in %: "
+      "+ right faster than left (X), up faster than down (Y). Lines drawn the fast way come out longer. 0 = even."),
 ('item', 'Line gaps (stop delay)', "When the integrators stop after a line: the gaps at line ends and corners."),
 ('item', 'Brightness (the knob at the back)', "As the knob on the back of a Vectrex: 0 = a black screen, 1 = as bright as a real "
       "one goes, 0.71 = well set (right click on the slider). Down: the faintest lines go first, a line's corner dots with "
@@ -813,6 +815,12 @@ TOPICS = [
       "drift, the AY sound chip at its own clock, and the bank-switching cartridges. The front end draws "
       "the beam with OpenGL in real time - at your monitor's full resolution - and models the tube, the "
       "phosphor and the speaker from measurements of a real Vectrex."),
+('p', "Title artwork and pictures: Simon Quincey (his Vectrex 2D Front Cover Box Art pack), used with permission. The games list's "
+      "boxes and cartridge labels for the 112 games with real artwork come with the emulator, remade on our own box and "
+      "label design; the full set is a separate download (the README: your own pictures for the games list)."),
+('p', "Box and label design, label art and reconstructions by Hugo Bokhorst: every box and label of the games list, Last "
+      "Human's and Robot Arena's; the full set's extras folder has all his labels, their SVG reconstructions and the "
+      "Vectrex logo. The labels' small print: TeX Gyre Heros (GUST Font License)."),
 ('p', "The settings live in system\\settings.json next to Vectrex_EMU.exe (or in %APPDATA%\\Vectrex_EMU "
       "when that folder can not be written)."),
 ]),
@@ -896,6 +904,11 @@ UNIT_CIRCUIT = {
             "bandwidth make the spot follow the integrator a few cycles late.",
     'dac': "The circuit: the DAC (an MC1408) sums a current per bit through a resistor ladder; each resistor's "
            "tolerance makes its bit a little too strong or too weak, so equal steps are not quite equal.",
+    'xrate': "The circuit: the X integrator charges its capacitor through the DAC's voltage against the zero reference; "
+             "the DAC and the op-amps do not swing quite as far one way as the other, so one direction runs a little faster.",
+    'yrate': "The circuit: the Y integrator charges its capacitor through the Y hold's voltage against the zero reference; "
+             "the DAC and the op-amps do not swing quite as far one way as the other, so one direction runs a little "
+             "faster. The owner's Vectrex: up 1.2 % faster than down.",
     'gap': "The circuit: the 6522's port B switches the integrators (RAMP) and the beam; the analog side reacts some "
            "cycles after the CPU's write, so each line ends a little after the program asked.",
 }

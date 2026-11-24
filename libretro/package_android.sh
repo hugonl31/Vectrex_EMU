@@ -17,6 +17,7 @@ mkdir -p dist/pkg/system/vectrex_emu/gpu; cp gpu/case_scratch.png gpu/glass_ligh
 cp ../package/overlays/*.png dist/pkg/system/vectrex_emu/overlays/ 2>/dev/null || true
 cp -r ../package/uvmc2 dist/pkg/system/vectrex_emu/
 cp ../package/system/README-speech.txt dist/pkg/system/vectrex_emu/   # (README.txt: the desktop's - ffmpeg, settings.json)
+mkdir -p dist/pkg/system/vectrex_emu/thumbs; cp -r ../package/system/vectrex_emu/thumbs/shipped dist/pkg/system/vectrex_emu/thumbs/   # (the games list's shipped pictures)
 mkdir -p dist/pkg/roms; cp ../package/roms/*.bin ../package/roms/*.um2 dist/pkg/roms/   # (its README: the desktop's ROM browser and folders)
 cp -r android/ES-DE dist/pkg/
 cp -r retroarch_config dist/pkg/config   # (this core: Max Users 2, ports 1 and 2 the Vectrex controller)

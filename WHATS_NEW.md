@@ -4,6 +4,19 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.5
+- Box art and labels for 112 games, remade on our own design
+- Title art and pictures: Simon Quincey's (with permission)
+- Real-label small print, a gloss on every box and label
+- Last Human's and Robot Arena's labels and boxes (Hugo Bokhorst's)
+- The PiTrex's cartridge and box in the same design
+- The full set of 280 games: a separate download (README)
+- Your own pictures may be JPEG too
+- Games list pictures at 80 % brightness (were 70 %)
+- Test Cartridge Rev. 4 and others: their lines steady
+- Vectrex unit: the beam's rate up vs down, right vs left (in %)
+- Downloads checked before unpacking; archive.org as a fallback
+
 ## v1.8.4
 - Drawn boxes: a portrait picture, 12 vector scenes, a colour per game
 - Your own labels (thumbs/labels) go on the cartridge by themselves

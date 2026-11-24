@@ -4,9 +4,10 @@ drawn by libretro/genart.c - the same code as RetroArch's, the iPhone's and Andr
 
     make(look, name, width=840) -> (w, h, RGBA bytes) or None   look 'carts' or 'boxes'; name: the file's name without
                                                                 extension; width: the tile's (size())
-    label(path, width=840) -> (w, h, RGBA bytes) or None        the cartridge with the player's own label (a PNG) on it
-    fit(path, maxw) -> (w, h, RGBA bytes) or None               a picture (a PNG) at most maxw wide
+    label(path, width=840) -> (w, h, RGBA bytes) or None        the cartridge with the player's own label (a PNG or JPEG) on it
+    fit(path, maxw) -> (w, h, RGBA bytes) or None               a picture (a PNG or JPEG) at most maxw wide
     size(px) -> the width to make a tile shown px wide at: 256, 384, 512, 640 or 840 (as genart.c's vx_genart_size)
+    boxpaper(width, well) -> the box's paper, furniture and foot alone; wear(w, h, rgba, name) -> the box's wear on it
     title(name) -> the title the pill shows"""
 import ctypes, os, sys
 
@@ -38,6 +39,11 @@ def lib():
                     L.vx_genart_make_w.restype = ctypes.c_void_p
                     L.vx_genart_label_png_w.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
                     L.vx_genart_label_png_w.restype = ctypes.c_void_p
+                    L.vx_genart_boxpaper_w.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+                    L.vx_genart_boxpaper_w.restype = ctypes.c_void_p
+                    L.vx_genart_wear.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]; L.vx_genart_wear.restype = None
+                    L.vx_genart_pill.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]; L.vx_genart_pill.restype = ctypes.c_int
+                    L.vx_genart_gloss.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]; L.vx_genart_gloss.restype = None
                 except AttributeError:
                     pass
                 _lib = L; break
@@ -77,7 +83,7 @@ def label(path, width=840):
 
 
 def fit(path, maxw=840):
-    """a picture of the player's own (a PNG) at most maxw wide, made smaller once -> (w, h, RGBA bytes) or None"""
+    """a picture of the player's own (a PNG or JPEG) at most maxw wide, made smaller once -> (w, h, RGBA bytes) or None"""
     return _file('vx_genart_fit_png', path, maxw)
 
 
@@ -97,6 +103,48 @@ def _file(fn, path, *extra):
         return w.value, h.value, ctypes.string_at(p, w.value * h.value * 4)
     finally:
         L.vx_genart_free(p)
+
+
+def boxpaper(width=800, well=False):
+    """the drawn box's paper, furniture and foot alone (for a box made elsewhere: the PiTrex's, Last Human's) ->
+    (w, h, RGBA bytes) or None; well: leave the picture well's grid lines out"""
+    L = lib()
+    if not L or not hasattr(L, 'vx_genart_boxpaper_w'):
+        return None
+    w, h = ctypes.c_int(0), ctypes.c_int(0); p = L.vx_genart_boxpaper_w(int(width), 1 if well else 0, ctypes.byref(w), ctypes.byref(h))
+    if not p:
+        return None
+    try:
+        return w.value, h.value, ctypes.string_at(p, w.value * h.value * 4)
+    finally:
+        L.vx_genart_free(p)
+
+
+def wear(w, h, rgba, name):
+    """the drawn box's wear for name (its title's hash: edges, corners, perhaps a crease) on RGBA bytes w x h -> new bytes"""
+    L = lib()
+    if not L or not hasattr(L, 'vx_genart_wear'):
+        return rgba
+    b = ctypes.create_string_buffer(bytes(rgba), w * h * 4); L.vx_genart_wear(b, w, h, name.encode('utf-8'))
+    return b.raw
+
+
+def pill(w, h, rgba, name, box):
+    """the drawn pill for name onto RGBA bytes w x h (box: a box front, else a label) -> new bytes"""
+    L = lib()
+    if not L or not hasattr(L, 'vx_genart_pill'):
+        return rgba
+    b = ctypes.create_string_buffer(bytes(rgba), w * h * 4); L.vx_genart_pill(b, w, h, name.encode('utf-8'), 1 if box else 0)
+    return b.raw
+
+
+def gloss(w, h, rgba, box):
+    """gloss c (the paper's shine over the print) on RGBA bytes w x h (box: a box front, else a label) -> new bytes"""
+    L = lib()
+    if not L or not hasattr(L, 'vx_genart_gloss'):
+        return rgba
+    b = ctypes.create_string_buffer(bytes(rgba), w * h * 4); L.vx_genart_gloss(b, w, h, 1 if box else 0)
+    return b.raw
 
 
 def title(name):

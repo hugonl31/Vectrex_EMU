@@ -2,20 +2,28 @@
 
 The owner, 2026-11-22: the PC's loader like the phones' - the tiles' look (cartridges, boxes, overlays), how many a row or
 titles only, a search, the categories; it fills the picture's place above the control deck. The pictures: the apps' own
-folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png (nothing is downloaded); a cartridge from the
-player's own label, thumbs/labels/<game>.png, when there is no cartridge picture; a game with no cartridge or box gets one
-drawn (genart.py: libretro/genart.c, the same as every platform's), an overlay its name's tile.
+folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png or .jpg (nothing is downloaded); a cartridge from the
+player's own label, thumbs/labels/<game>.png / .jpg, when there is no cartridge picture; then the ones that come with the
+emulator (thumbs/shipped: the remade box art - Simon Quincey's title artwork and pictures, with his permission - a label put on our cartridge, a box front; by the
+game's key in its index.txt, tools/make_shipped_art.py); a game with no cartridge or box gets one drawn (genart.py:
+libretro/genart.c, the same as every platform's), an overlay its name's tile.
 
 The app holds one Library; while it is open App.browser is its dict (lib=True), so everything that asks "is the loader
 open" works as before. The renderer draws state() (vecrender._library); the pictures are read by a thread (the PNG reader
 is Python: 60 - 90 ms each) and handed over there to become textures."""
-import json, os, threading, queue, time, math
+import json, os, re, threading, queue, time, math
 import tkinter as tk
 
 ASPECT = {'carts': 0.96, 'boxes': 1.39, 'overlays': 207.0 / 162.0}      # a tile's height / width (the apps')
 LOOKS = (('CARTRIDGES', 'carts'), ('BOXES', 'boxes'), ('OVERLAYS', 'overlays'))
 CATS = ('All', 'Recent', 'Games', 'UVMC2', 'PiTrex', 'Tests')
 COLS = (0, 2, 3, 4, 5, 6)                                               # tiles a row (0: titles only)
+
+
+def art_key(name):
+    """a game's key in the shipped pictures' index (thumbs/shipped/index.txt): its name without the (...) and [...] parts,
+    lower case, only a-z and 0-9 - as genart.c's vx_genart_key and tools/make_shipped_art.py's key()"""
+    return re.sub(r'[^a-z0-9]', '', re.sub(r'\(.*?\)|\[.*?\]', '', name).lower())
 
 
 class Library:
@@ -59,12 +67,21 @@ class Library:
         for lk in [x[1] for x in LOOKS] + ['labels']:
             d = os.path.join(th, lk); m = {}
             try:
-                for f in os.listdir(d):
-                    if f.lower().endswith('.png'):
-                        m[f[:-4].lower()] = os.path.join(d, f)
+                for f in sorted(os.listdir(d), key=lambda f: not f.lower().endswith('.png')):   # (a .png before a .jpg)
+                    st, e = os.path.splitext(f)
+                    if e.lower() in ('.png', '.jpg', '.jpeg'):
+                        m.setdefault(st.lower(), os.path.join(d, f))
             except OSError:
                 pass
             self.files[lk] = m
+        self.ship_dir = os.path.join(th, 'shipped'); self.shipped = {}   # (the pictures that come with it: index.txt)
+        try:
+            for ln in open(os.path.join(self.ship_dir, 'index.txt'), encoding='utf-8'):
+                k, t, n = ln.rstrip('\r\n').partition('\t')
+                if t and not k.startswith('#'):
+                    self.shipped[k] = n
+        except OSError:
+            pass
 
     def shown(self):
         g = self.games
@@ -81,17 +98,26 @@ class Library:
         return g
 
     def tile(self, name, boot=False):
-        """the picture's file for a game in the look chosen (its name, else its name without a (...) part) or None; the
-        PiTrex itself: its own picture in every look, the program's (pitrex_art.py) unless the folder has one"""
+        """the picture's file for a game in the look chosen (its name, else its name without a (...) part, else the box
+        art's name for it - the shipped index: the full artwork set's names) or None; the PiTrex itself: its own picture
+        in every look, the program's (pitrex_art.py) unless the folder has one"""
+        art = self.shipped.get(art_key(name)) if self.look in ('carts', 'boxes') else None
+        names = [name.lower(), name.split(' (')[0].lower()] + ([art.lower()] if art else [])
         m = self.files.get(self.look) or {}
-        p = m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+        p = next((m[n] for n in names if n in m), None)
         if not p and self.look == 'carts':                          # (no cartridge picture: the player's own label on our cartridge)
             m = self.files.get('labels') or {}
-            q = m.get(name.lower()) or m.get(name.split(' (')[0].lower())
+            q = next((m[n] for n in names if n in m), None)
             if q:
                 import genart
                 if genart.lib():
                     p = 'lab:' + q
+        if not p and art:                                           # (none of the player's own: the one that comes with it)
+            q = os.path.join(self.ship_dir, 'labels' if self.look == 'carts' else 'boxes', art + '.jpg')
+            if os.path.isfile(q):
+                import genart
+                if genart.lib():                                    # (a JPEG: read by genart.c's stb_image)
+                    p = ('lab:' + q) if self.look == 'carts' else q
         if not p and boot:
             import pitrex_art
             p = pitrex_art.path(self.V.ROOT, self.look)

@@ -1,6 +1,7 @@
 """package_retroarch.py - a RetroArch core package (zip) for one system, laid out as RetroArch's own folders:
   cores/<the core>                 info/vectrex_emu_libretro.info
-  system/vectrex_emu/              the BIOS, the overlays, the GPU path's pictures, the UVMC2's SD card folder, notes
+  system/vectrex_emu/              the BIOS, the overlays, the GPU path's pictures, the UVMC2's SD card folder, notes,
+                                   the games list's shipped pictures (thumbs/shipped)
   roms/                            Last Human, its UVMC2 edition, the UVMC2 movie player
   INSTALL.txt
 Android: the core and the info file at the top (RetroArch installs a core from a file there), ES-DE's system file.
@@ -25,6 +26,8 @@ for f in glob.glob(os.path.join(R, 'overlays', '*.art')) + glob.glob(os.path.joi
 for f in ('case_scratch.png', 'glass_light.bin'): shutil.copy(os.path.join(H, 'gpu', f), os.path.join(sv, 'gpu'))
 shutil.copytree(os.path.join(R, 'package', 'uvmc2'), os.path.join(sv, 'uvmc2'))
 shutil.copy(os.path.join(R, 'package', 'system', 'README-speech.txt'), sv)
+# (the games list's pictures that come with it - the remade box art - Simon Quincey's title artwork and pictures, with his permission: tools/make_shipped_art.py)
+shutil.copytree(os.path.join(R, 'package', 'system', 'vectrex_emu', 'thumbs', 'shipped'), os.path.join(sv, 'thumbs', 'shipped'))
 # (RetroArch's config folder: this core's override - Max Users 2, RetroArch's routine notices off (the override and
 #  remap loaded, a controller set up, the display's rate) - and its remap - ports 1 and 2 the Vectrex controller,
 #  the RetroPad with its sticks: netplay sends a port's sticks only with that type)

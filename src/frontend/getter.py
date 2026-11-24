@@ -7,7 +7,10 @@ that download (a zip, zips in a zip, or the files) and names it the same way.
 Nothing of it comes with the emulator: the user downloads it and takes the responsibility for it (DISCLAIMER: shown once,
 with every file and its sources; accepted, the downloads go without asking). Files already there are kept."""
 import io, json, os, re, threading, urllib.parse, urllib.request, webbrowser, zipfile
-import tkinter as tk
+try:
+    import tkinter as tk
+except ImportError:                     # (tools/linkcheck.py on a server: the checks only, no window)
+    tk = None
 
 V = None                                # (the app's module: set by vectrex_emu)
 V_APP = None                            # (the app, for the PiTrex folder)
@@ -237,11 +240,19 @@ DRIVE_SPEECH = 'https://drive.usercontent.google.com/download?export=download&co
 DRIVE_PITREX = 'https://drive.usercontent.google.com/download?export=download&confirm=t&id=17XNGNgabHEQ0eNc7zzuPhTPxmZ7G4Rri'
 DRIVE_PITREX_NAME = 'PiTrex_sd_Jul29_25'
 DRIVE_HOMEBREW = 'https://drive.usercontent.google.com/download?export=download&confirm=t&id=1N2lCNS8VSlBQeCqKp40nYoQVegHyhub7'
+# the same files on the project's own archive.org item (slower than the Drive, there for the years to come): tried
+# after the Drive and the authors' own pages, before the other sets and the Wayback Machine
+MIRROR = 'https://archive.org/download/vectrex-emu-extras/'
+MIRROR_GAMES = MIRROR + 'GCE_Vectrex_games.zip'
+MIRROR_HOMEBREW = MIRROR + 'Vectrex_homebrew_free.zip'
+MIRROR_PITREX = MIRROR + DRIVE_PITREX_NAME + '.zip'
+MIRROR_SPEECH = MIRROR + 'al2.bin'
 
 
 def chain_games():
     if DRIVE_GAMES:                                                  # the project's own copy: it never changes
         yield DRIVE_GAMES
+    yield MIRROR_GAMES                                               # (the same, on archive.org)
     yield _ia_zip('vectrex-champion-collection', 'collection')       # the Vectrex Champion Collection: all 36, clean
     for ident in _ia_search('title:(vectrex champion collection)'):  # (moved: its newest copy)
         yield _ia_zip(ident, 'collection')
@@ -258,24 +269,31 @@ def chain_homebrew():
     yield m + 'Vectorblade/Vectorblade%20(v1.13).bin'                # (shared there with the authors' permission:
     yield m + 'NeonHawk/Neon%20Hawk%20Demo%20(v1.0).bin'             #  from there only)
     yield 'https://raw.githubusercontent.com/malbanGit/Telengard/master/Telengard_256kFlash.bin'
+    yield MIRROR_HOMEBREW                                            # (the Drive's, on archive.org)
     yield _ia_zip('gce-vectrex-games-complete')                      # the public domain ones
     yield _ia_zip('GCE_Vectrex_TOSEC_2012_04_23')
     yield m + 'Telengard/Telengard%20(v1.03).bin'
 
 
+def pitrex_ids():
+    """the PiTrex_sd_... downloads on Malban's page, newest first (IOError etc. when the page is not there)"""
+    page = _get('http://vide.malban.de/pitrex/pitrex-baremetal-download').decode('utf8', 'replace')
+    ids = []
+    for m in re.finditer(r'download_id=(\d+)', page):
+        if re.search(r'PiTrex_sd_\w+\.zip', page[m.start():m.start() + 1500], re.I):
+            ids.append(int(m.group(1)))
+    return sorted(set(ids), reverse=True)
+
+
 def chain_pitrex():
     try:                                                             # the newest PiTrex_sd_... on Malban's page
-        page = _get('http://vide.malban.de/pitrex/pitrex-baremetal-download').decode('utf8', 'replace')
-        ids = []
-        for m in re.finditer(r'download_id=(\d+)', page):
-            if re.search(r'PiTrex_sd_\w+\.zip', page[m.start():m.start() + 1500], re.I):
-                ids.append(int(m.group(1)))
-        for i in sorted(set(ids), reverse=True):
+        for i in pitrex_ids():
             yield 'http://vide.malban.de/?sdm_process_download=1&download_id=%d' % i
     except Exception:   # noqa
         pass
     yield 'http://vide.malban.de/?sdm_process_download=1&download_id=7074'
     yield 'http://vectrex.malban.de/pitrex/PiTrex_sd_Jul29_25.zip'
+    yield MIRROR_PITREX                                              # (the last version, on archive.org)
     for u in _wayback('vectrex.malban.de/pitrex/', r'(pitrex_sd_|sd_drive_)[^/]*\.zip$'):   # (older copies)
         yield u
 
@@ -284,6 +302,7 @@ def chain_speech():
     if DRIVE_SPEECH:                                                 # the project's own copy: it never changes
         yield DRIVE_SPEECH
     yield 'http://spatula-city.org/~im14u2c/sp0256-al2/al2.bin'
+    yield MIRROR_SPEECH                                              # (the Drive's, on archive.org)
     for u in _wayback('spatula-city.org/~im14u2c/sp0256-al2/al2.bin', r'al2\.bin$'):
         yield u
 
@@ -317,23 +336,82 @@ def fetch(url, progress):
     return buf.getvalue()
 
 
-def _usable(key, data):
-    """a download that is what it should be (not an error page, not some other zip)"""
-    if key == 'speech':
-        return len(data) == 2048
+# ---------------------------------------------------------------- what each download must be
+# checked before anything of it is unpacked; a file that fails is left and the next source is tried. tools/linkcheck.py
+# (weekly on GitHub) runs the same checks on every source.
+# The project's own copies: exactly these files (size, sha256)
+PINNED = {
+    DRIVE_GAMES: (169168, 'deaa7cf0ca07c5a57b9dd65f57089dc87a17de946f8d1c5246e992db8fa9d92d'),
+    DRIVE_HOMEBREW: (148368, 'c2b7987d991b8599f1563606897ccd6ba2124b0cab64372ace026546aa37aed8'),
+    DRIVE_SPEECH: (2048, '6a4c0cd4aa9ae472ce28109b650680c76f76a53e6d6fd63af6b9bfde801a9e48'),
+    DRIVE_PITREX: (188168647, '237b4f61b267c15a1d1d3c16e761f4e63d31da11b24a1d25bec1e35b4a8d81ab'),
+}
+PINNED.update({MIRROR_GAMES: PINNED[DRIVE_GAMES], MIRROR_HOMEBREW: PINNED[DRIVE_HOMEBREW],   # (the same files)
+               MIRROR_SPEECH: PINNED[DRIVE_SPEECH], MIRROR_PITREX: PINNED[DRIVE_PITREX]})
+SPEECH_SHA256 = PINNED[DRIVE_SPEECH][1]                 # al2.bin, wherever it comes from
+# a set of games from elsewhere: at least this many of the item's games in it, found by their fingerprints (2026-11:
+# the GCE sets on archive.org have 24-36 of the 36 and 8 of the homebrew games); one homebrew file: a known one
+MIN_FOUND = {'games': 20, 'homebrew': 6}
+# the PiTrex's SD card (it changes: no fixed file): a zip with these in its top folder
+PITREX_KEYS = ('pitrex.img', 'bootcode.bin', 'start.elf', 'config.txt')
+
+
+def found(key, data, depth=0):
+    """the item's games (GCE_GAMES or HOMEBREW) a download has, by their fingerprints (zips in zips as unpack takes them)"""
+    want = GCE_GAMES if key == 'games' else HOMEBREW
     if not zipfile.is_zipfile(io.BytesIO(data)):
-        return False
-    names = [n.lower() for n in zipfile.ZipFile(io.BytesIO(data)).namelist()]
-    if key == 'pitrex':
-        return any(n.endswith('pitrex.img') for n in names)
-    return any(n.endswith(('.bin', '.vec', '.zip')) for n in names)
+        n = KNOWN_SUMS.get(_fp(data))
+        return {n} if n in want else set()
+    out = set()
+    z = zipfile.ZipFile(io.BytesIO(data))
+    for i in z.infolist():
+        if i.is_dir():
+            continue
+        d = z.read(i)
+        if i.filename.lower().endswith('.zip') and depth < 2:
+            out |= found(key, d, depth + 1)
+        elif os.path.splitext(i.filename)[1].lower() in ('.bin', '.vec', '.gam', '.rom'):
+            n = KNOWN_SUMS.get(_fp(d))
+            if n in want:
+                out.add(n)
+    return out
 
 
-def _usable_any(key, data):
-    """a homebrew game comes as a zip or as its own file"""
-    if key == 'homebrew' and not zipfile.is_zipfile(io.BytesIO(data)):
-        return len(data) >= 1024 and not data[:64].lstrip().startswith((b'<', b'{'))
-    return _usable(key, data)
+def pitrex_missing(names):
+    """the PITREX_KEYS a zip's names (its listing) lack: none - an SD card"""
+    tops = {n.replace('\\', '/').rstrip('/').split('/')[-1].lower() for n in names
+            if n.replace('\\', '/').rstrip('/').count('/') <= 1}
+    return [k for k in PITREX_KEYS if k not in tops]
+
+
+def check(key, url, data):
+    """(ok, what it is): a download is what it should be - the project's copy that very file, al2.bin its known bytes,
+    a set of games enough of them by their fingerprints, a homebrew file a known game, the PiTrex an SD card"""
+    import hashlib
+    if url in PINNED:
+        size, sha = PINNED[url]
+        h = hashlib.sha256(data).hexdigest()
+        return (len(data) == size and h == sha), ('the known file' if h == sha else 'another file (sha256 %s, %d bytes)' % (h[:16], len(data)))
+    if key == 'speech':
+        h = hashlib.sha256(data).hexdigest()
+        return h == SPEECH_SHA256, 'al2.bin' if h == SPEECH_SHA256 else 'another file (sha256 %s, %d bytes)' % (h[:16], len(data))
+    try:
+        is_zip = zipfile.is_zipfile(io.BytesIO(data))
+        if key == 'pitrex':
+            if not is_zip:
+                return False, 'not a zip'
+            z = zipfile.ZipFile(io.BytesIO(data))
+            miss = pitrex_missing(z.namelist())
+            return not miss, ('an SD card, %d files' % len(z.namelist())) if not miss else 'lacks ' + ', '.join(miss)
+        if not is_zip and key == 'games':
+            return False, 'not a zip'
+        f = found(key, data)
+        if not is_zip:
+            return bool(f), ('the game ' + next(iter(f))) if f else 'not a known game'
+        need, of = MIN_FOUND[key], len(GCE_GAMES if key == 'games' else HOMEBREW)
+        return len(f) >= need, '%d of the %d games' % (len(f), of)
+    except Exception as e:   # noqa (a broken zip)
+        return False, 'broken: %s' % e
 
 
 def get_item(key, progress, say, px_dir):
@@ -349,8 +427,8 @@ def get_item(key, progress, say, px_dir):
             data = fetch(url, progress)
         except Exception:   # noqa
             continue
-        if not _usable_any(key, data):
-            continue
+        if not check(key, url, data)[0]:
+            continue                                    # (not what it should be: the next source)
         a, k = unpack(key, data, px_dir, urllib.parse.unquote(url.rsplit('/', 1)[-1]))
         added += a; kept += k; ok = True
         if key == 'games' and games_have()[0] < len(GCE_GAMES):
@@ -489,10 +567,10 @@ def _remember_agreed():
         pass
 
 
-WHAT = [('GCE Vectrex games', "the project's copy (Google Drive), archive.org"),
-        ('Free homebrew games', "the project's copy (Google Drive), archive.org, GitHub (Malban, MiSTer)"),
-        ('PiTrex SD card files', "Malban's site, the Wayback Machine, the project's copy (Google Drive)"),
-        ('Speech ROM (al2.bin)', "the project's copy (Google Drive), Joe Zbiciak's site, the Wayback Machine")]
+WHAT = [('GCE Vectrex games', "the project's copy (Google Drive, archive.org), archive.org"),
+        ('Free homebrew games', "the project's copy (Google Drive, archive.org), archive.org, GitHub (Malban, MiSTer)"),
+        ('PiTrex SD card files', "Malban's site, the project's copy (archive.org, Google Drive), the Wayback Machine"),
+        ('Speech ROM (al2.bin)', "the project's copy (Google Drive, archive.org), Joe Zbiciak's site, the Wayback Machine")]
 
 
 def agreed(parent):
@@ -580,8 +658,14 @@ def window(app, only=None, parent=None):
         def go_old():
             try:
                 st['msgs']['pitrex'] = 'the older version...'
-                data = fetch(DRIVE_PITREX, prog('pitrex'))
-                if not _usable('pitrex', data):
+                for url in (DRIVE_PITREX, MIRROR_PITREX):           # (the Drive, else archive.org)
+                    try:
+                        data = fetch(url, prog('pitrex'))
+                    except Exception:   # noqa
+                        continue
+                    if check('pitrex', url, data)[0]:
+                        break
+                else:
                     raise IOError('not a PiTrex SD card')
                 added, kept = unpack('pitrex', data, a.px_dir)
                 st['msgs']['pitrex'] = 'done: %d added (%s)' % (added, DRIVE_PITREX_NAME)

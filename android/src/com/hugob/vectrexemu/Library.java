@@ -211,16 +211,40 @@ final class Library extends LinearLayout implements Screens.Closing {
 		String key = look () + "/" + tw + "/" + n; Bitmap b = cache.get (key); if (b != null) return b;
 		File th = new File (m.sysDir, "vectrex_emu/thumbs"); String base = n.split (" \\(")[0];
 		String[] dirs = look ().equals ("boxes") ? new String[] { "boxes" } : look ().equals ("overlays") ? new String[] { "overlays", "" } : new String[] { "carts" };
-		for (String d : dirs) for (String nm : new String[] { n, base }) { File f = new File (new File (th, d), nm + ".png");
+		final String art = look ().equals ("overlays") ? null : shipped (n);   /* (the box art's name for it: the full artwork set's pictures) */
+		final String[] names = art != null ? new String[] { n, base, art } : new String[] { n, base };
+		for (String d : dirs) for (String nm : names) for (String x : EXT) { File f = new File (new File (th, d), nm + x);
 			if (f.exists ()) { try { b = bitmapOf (VX.genfit (f.getAbsolutePath (), tw), tw); } catch (Throwable t) { Main.log ("library: genfit " + t); }
 				if (b == null) { BitmapFactory.Options o = new BitmapFactory.Options (); o.inSampleSize = tw <= 420 ? 2 : 1; b = BitmapFactory.decodeFile (f.getAbsolutePath (), o); }
 				if (b != null) { cache.put (key, b); return b; } } }
-		if (look ().equals ("carts")) for (String nm : new String[] { n, base }) {   /* (no cartridge picture: the player's own label on our cartridge - genart.c) */
-			File f = new File (new File (th, "labels"), nm + ".png");
+		if (look ().equals ("carts")) for (String nm : names) for (String x : EXT) {   /* (no cartridge picture: the player's own label on our cartridge - genart.c) */
+			File f = new File (new File (th, "labels"), nm + x);
 			if (f.exists ()) try { b = bitmapOf (VX.genlabel (f.getAbsolutePath (), tw), tw); if (b != null) { cache.put (key, b); return b; } } catch (Throwable t) { Main.log ("library: genlabel " + t); } }
+		if (art != null) {                                 /* (none of the player's own: the one that comes with the app - assets/shipped) */
+			byte[] pic = asset ("shipped/" + (look ().equals ("boxes") ? "boxes/" : "labels/") + art + ".jpg");
+			if (pic != null) try { b = bitmapOf (look ().equals ("boxes") ? VX.genfitb (pic, tw) : VX.genlabelb (pic, tw), tw);
+				if (b != null) { cache.put (key, b); return b; } } catch (Throwable t) { Main.log ("library: shipped " + t); } }
 		if (!look ().equals ("overlays")) {               /* (none of its own: a cartridge / box drawn by the core's genart.c - as the iPhone, the PC, RetroArch) */
 			try { b = bitmapOf (VX.genart (look ().equals ("boxes") ? 1 : 0, n, tw), tw); if (b != null) { cache.put (key, b); return b; } } catch (Throwable t) { Main.log ("library: genart " + t); } }
 		return null;
+	}
+	static final String[] EXT = { ".png", ".jpg" };     /* (the player's own pictures: PNG or JPEG) */
+	/* (the pictures that come with the app: assets/shipped - labels/<name>.jpg, boxes/<name>.jpg - and its index.txt,
+	 *  "<key>\t<name>" a line (tools/make_shipped_art.py); the key as genart.c's vx_genart_key: the name without its (...) and
+	 *  [...] parts, lower case, only a-z and 0-9) */
+	static java.util.Map<String, String> ship;
+	static String key (String n) { return n.replaceAll ("\\(.*?\\)|\\[.*?\\]", "").toLowerCase (java.util.Locale.ROOT).replaceAll ("[^a-z0-9]", ""); }
+	String shipped (String n)
+	{
+		if (ship == null) { java.util.Map<String, String> mp = new java.util.HashMap<> (); byte[] ix = asset ("shipped/index.txt");
+			if (ix != null) for (String ln : new String (ix, java.nio.charset.StandardCharsets.UTF_8).split ("\n")) { int t = ln.indexOf ('\t'); if (ln.startsWith ("#") || t < 0) continue; mp.put (ln.substring (0, t), ln.substring (t + 1).trim ()); }
+			ship = mp; }
+		return ship.get (key (n));
+	}
+	byte[] asset (String p)
+	{
+		try (java.io.InputStream in = m.getAssets ().open (p)) { java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream (); byte[] buf = new byte[65536]; int k; while ((k = in.read (buf)) > 0) o.write (buf, 0, k); return o.toByteArray (); }
+		catch (Exception e) { return null; }
 	}
 	/* (genart.c's { w, h, ARGB... } as a Bitmap at most tw wide) */
 	static Bitmap bitmapOf (int[] g, int tw)
@@ -256,7 +280,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 					name = m.text ("", 15, Main.FG, false); name.setSingleLine (true); name.setTag ("n"); c.addView (name, new LayoutParams (0, -2, 1));
 					kind = m.text ("", 11, Main.DIM, true); kind.setTag ("k"); c.addView (kind); }
 				else { c.setOrientation (VERTICAL); box = new FrameLayout (m); box.setTag ("b");
-					img = new ImageView (m); img.setTag ("i"); img.setColorFilter (0xffb3b3b3, android.graphics.PorterDuff.Mode.MULTIPLY);   /* (the pictures 30 % less bright, as the PC's library - the owner, 2026-11-22) */ box.addView (img, new FrameLayout.LayoutParams (-1, -1));
+					img = new ImageView (m); img.setTag ("i"); img.setColorFilter (0xffcccccc, android.graphics.PorterDuff.Mode.MULTIPLY);   /* (the pictures at 80 % brightness, as the PC's library - the owner, 2026-11-23) */ box.addView (img, new FrameLayout.LayoutParams (-1, -1));
 					ph = m.text ("", 15, Main.G, true); ph.setGravity (Gravity.CENTER); ph.setTag ("p"); ph.setPadding ((int) m.dp (6), 0, (int) m.dp (6), 0); box.addView (ph, new FrameLayout.LayoutParams (-1, -1));
 					c.addView (box, new LayoutParams (-1, 100));
 					name = m.text ("", 12, Main.FG, false); name.setMaxLines (2); name.setTag ("n"); name.setPadding (0, (int) m.dp (4), 0, 0); c.addView (name); } }

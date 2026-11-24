@@ -22,7 +22,7 @@ OUT = {'state_vecx': ('src/core/state/vars_vecx.h', 'vecx'), 'state_e6809': ('sr
 SKIP = set('''vx_ram vt_beam_hook vectors_draw vectors_erse vl vl_dbg vl_dbg_n uvm2 rptr_xyus e6809_read8 e6809_write8
 bcur blast wavf recf stdout_bin abuf abuf_n abuf_cap vt_flash_file syms ra_buf ra_raw ra_state
 vectors_set vector_hash cart uvm2_image px_image sp_rom prof acc cur last eyeb ncur nlast neye
-vxd_a vxd_z vxb_a vxb_z'''.split())
+vxd_a vxd_z vxb_a vxb_z vt_piece_cut'''.split())   # (vt_piece_cut: set by each run_frame, read right after - vtest.c)
 # long (4 bytes on Windows, 8 elsewhere): saved as 8 each; structs with long in them: member by member ('+': long)
 LONG = set()                     # (filled in below from LONGS)
 LONGS = '''vt_bank_switches vt_via_mirror alg_xofs alg_yofs dark_x0 dark_y0 dark_x1 dark_y1 dark_dx dark_dy fade_x0 fade_y0

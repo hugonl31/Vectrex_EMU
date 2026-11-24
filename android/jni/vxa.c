@@ -736,6 +736,16 @@ JNIEXPORT jintArray JNICALL JF(genfit) (JNIEnv *e, jclass c, jstring path, jint 
 	if (p) { int w = 0, h = 0; unsigned char *px = vx_genart_fit (p, (int) maxw, &w, &h); r = ga_argb (e, px, w, h); }
 	JREL (p, path); return r;
 }
+/* (the same two from a picture's bytes - PNG or JPEG: the ones that come with the app, in its assets (shipped/)) */
+unsigned char *vx_genart_label_png_w (const unsigned char *png, int len, int width, int *w, int *h); unsigned char *vx_genart_fit_png (const unsigned char *png, int len, int maxw, int *w, int *h);
+static jintArray ga_bytes (JNIEnv *e, jbyteArray b, int label, int width)
+{
+	jintArray r = NULL; if (!b) return NULL; const jsize n = (*e)->GetArrayLength (e, b); jbyte *p = (*e)->GetByteArrayElements (e, b, NULL); if (!p) return NULL;
+	int w = 0, h = 0; unsigned char *px = label ? vx_genart_label_png_w ((const unsigned char *) p, (int) n, width, &w, &h) : vx_genart_fit_png ((const unsigned char *) p, (int) n, width, &w, &h);
+	(*e)->ReleaseByteArrayElements (e, b, p, JNI_ABORT); r = ga_argb (e, px, w, h); return r;
+}
+JNIEXPORT jintArray JNICALL JF(genlabelb) (JNIEnv *e, jclass c, jbyteArray b, jint width) { (void) c; return ga_bytes (e, b, 1, (int) width); }
+JNIEXPORT jintArray JNICALL JF(genfitb) (JNIEnv *e, jclass c, jbyteArray b, jint maxw) { (void) c; return ga_bytes (e, b, 0, (int) maxw); }
 JNIEXPORT jint JNICALL JF(palette) (JNIEnv *e, jclass c) { (void) e; (void) c; extern int vx_palette; return vx_palette; }   /* (the colour scheme: 0 blue, 1 green) */
 JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on ? 1.0f : 0.0f; { extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */ vlog ("look %s", on ? "Bright" : "Vectrex"); }   /* (the look: Vectrex, or Bright - lifted and wider) */
 JNIEXPORT void JNICALL JF(setHdrLook) (JNIEnv *e, jclass c, jint look) { (void) e; (void) c; extern float vx_hdr_lift; extern int vx_app_dots; vx_hdr_lift = (float) look; vx_app_dots = 1; vlog ("HDR look %d", (int) look); }

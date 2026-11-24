@@ -319,7 +319,7 @@ to send along when something is wrong - `core_log.txt` (the emulator core's mess
 |---|---|---|
 | **Cartridge ROMs** (`.bin`, `.vec`, `.gam`, `.rom`, VecFever `.v4e`) | `roms` (subfolders too) | your own cartridges |
 | **Overlays** (more of them, optional) | `overlays` | they come with the emulator; your own `.art` / PNGs - see [Overlays](#overlays) |
-| **Labels, boxes** for the games list (optional) | `system/vectrex_emu/thumbs` | your own pictures - see [your own pictures](#your-own-pictures-for-the-games-list) |
+| **Labels, boxes** for the games list (optional) | `system/vectrex_emu/thumbs` | 112 games' come with the emulator; the full set and your own pictures - see [your own pictures](#your-own-pictures-for-the-games-list) |
 | **Speech ROM** (optional, for the VecVoice / VecVox speech modules) | `system` | `al2.bin`, a free download - see [Speech modules](#speech-modules) |
 | **UVMC2 games** (`.um2`, optional) | `roms` | made for the Ultimate Vectrex Multicart 2 - see [UVMC2 games](#uvmc2-games-the-ultimate-vectrex-multicart-2) |
 | **Game data** for UVMC2 games that need it (Doom's WAD, Quake's `pak0.pak`, vector movies) | `uvmc2` (`uvmc2/doom`, `uvmc2/quake`, `uvmc2/movies`) | your own copy (the shareware Doom and Quake files work) |
@@ -329,10 +329,13 @@ them in one click: the original GCE games, free homebrew games that have an over
 Malban's Telengard, and Vectorblade and the Neon Hawk demo as the MiSTer project shares them with their authors'
 permission), the speech ROM and the PiTrex's SD card files - unpacked into `roms`, `system` and the PiTrex folder
 and named as the ROM browser lists them; files you already have are kept. Each has a chain of sources tried in
-turn: the games and the speech ROM, which never change, from the project's own copy first, then archive.org,
+turn: the games and the speech ROM, which never change, from the project's own copy first (Google Drive, and the
+same files on archive.org), then archive.org,
 GitHub, Joe Zbiciak's page and the Wayback Machine; the PiTrex from the newest download on Malban's page first
 (the project's copy of the last version only when you ask for it). Should all of them fail, the window says
-where to get it, and **Add file...** takes your own download and names it the same way. None of it comes with
+where to get it, and **Add file...** takes your own download and names it the same way. Every download is checked
+before it is unpacked (the project's copies by their hash, the game sets by the games' fingerprints); one that is
+not what it should be is left and the next source tried. All the links are checked weekly on GitHub. None of it comes with
 the emulator. *The maintainer of Vectrex_EMU does not take responsibility for the sharing of these files: you
 download them yourself and take that responsibility.* The disclaimer is shown once, with every file and its
 sources; accepted, the downloads go without asking.
@@ -1214,10 +1217,20 @@ removed. The other overlays are the MiSTer project's set as it shares them, each
 
 ### Your own pictures for the games list
 
-Pictures that come with the emulator are matched to your ROMs by file name, so they show as soon as you add the
-ROM. For your own ROMs and homebrew, add your own: a PNG named like the ROM without its extension
+Pictures for many games come with the emulator: the box fronts and cartridge labels of the 112 games with real
+artwork in Simon Quincey's Vectrex 2D Front Cover Box Art pack, remade on the emulator's own box and label design
+(title artwork and pictures: Simon Quincey, used with permission; box and label design: Hugo Bokhorst; in
+`system/vectrex_emu/thumbs/shipped`), and Hugo Bokhorst's own Last Human and Robot Arena (label and box). They are matched to your ROMs by name - case, punctuation and
+`(...)` / `[...]` parts don't matter, and known other spellings are listed in `shipped/index.txt` - so they show as
+soon as you add the ROM. The full set (all 280 games' labels and boxes) is a separate download:
+[artwork-1](https://github.com/hugonl31/Vectrex_EMU/releases/tag/artwork-1) - unzip it next to the program (or into
+RetroArch's system folder / the app's folder); it also holds an `extras` folder with Hugo Bokhorst's label art (all
+his labels as PNG, his SVG label reconstructions, the Vectrex logo as SVG).
+
+For your own ROMs and homebrew, add your own: a PNG or JPEG named like the ROM without its extension
 (`Mine Storm.bin` -> `Mine Storm.png`; `Dark Tower (Proto).bin` also finds `Dark Tower.png`), in a folder under
-`system/vectrex_emu/thumbs`:
+`system/vectrex_emu/thumbs`. Your own pictures always come first, then the ones that come with the emulator, then
+the drawn ones:
 
 | Kind | Folder | Size | Notes |
 |---|---|---|---|
@@ -1596,7 +1609,7 @@ Build outputs (`core/`, `build/`, `Vectrex_EMU.exe`, `dist-*`) are not in the re
 ## Credits and license
 
 Vectrex_EMU is free software under the **GNU General Public License v3** ([LICENSE.md](LICENSE.md)), the
-license of the vecx emulator it is built on.
+license of the vecx emulator it is built on. What the program sends over the internet, and when: [PRIVACY.md](PRIVACY.md).
 
 * **vecx** - the original emulator core.
 * **MAME** - the SP0256 synthesizer in `src/core/sp0256.c` is ported from MAME's sp0256.cpp
@@ -1609,6 +1622,13 @@ license of the vecx emulator it is built on.
 * **The PiTrex** (Malban, Kevin Koster and the PiTrex team) - the cartridge and its programs; the emulator runs
   their SD card as it comes, downloaded from Malban's page.
 * **The overlays** - the authors of each design are listed in `overlays/CREDITS.md`.
+* **Title artwork and pictures**: Simon Quincey (his Vectrex 2D Front Cover Box Art pack), used with permission -
+  on the games list's boxes and cartridge labels (`system/vectrex_emu/thumbs/shipped`, and the full set,
+  [artwork-1](https://github.com/hugonl31/Vectrex_EMU/releases/tag/artwork-1)).
+* **Box and label design** by Hugo Bokhorst - every box and label of the games list (the silver paper, the layout,
+  the small print), Last Human's and Robot Arena's labels and boxes, and the full set's `extras` (his labels, their SVG
+  reconstructions, the Vectrex logo). The labels' small print is set in TeX Gyre Heros (GUST Font License,
+  `art/fonts`).
 * **The SP0256-AL2 ROM** is (c) Microchip Technology Inc., distributed by Joe Zbiciak with Microchip's
   permission; it is not part of this project.
 * **The Vectrex BIOS**: Smith Engineering allows it to be copied freely for non-commercial use.

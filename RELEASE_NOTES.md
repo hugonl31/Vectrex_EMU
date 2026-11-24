@@ -3,6 +3,33 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.5
+
+* Real box art in the games list: box fronts and cartridge labels for the 112 games with real artwork in Simon
+  Quincey's Vectrex 2D Front Cover Box Art pack come with the emulator on every platform
+  (system/vectrex_emu/thumbs/shipped). Each one remade on our own box and label design - the silver paper with its
+  sheen and wear, the real boxes' layout, the real labels' small print (TeX Gyre Heros, fitted to photographs of real
+  labels: "(c) GCE 1982. All Rights Reserved. MADE IN HONG KONG", the licensed games' trademark line, a homebrew's
+  author and year) - with the game's title artwork and picture from his pack (used with permission). Matched to your
+  ROMs by name (case, punctuation and "(...)" parts don't matter; other known spellings in its index.txt); the other
+  games keep the drawn cartridge and box. The full set (all 280 games, remade the same way) is a separate download,
+  the GitHub release artwork-1.
+* Last Human's and Robot Arena's labels and boxes (Hugo Bokhorst's) come with the emulator too; the full set has an
+  extras folder with his labels (PNG), his SVG label reconstructions and the Vectrex logo (SVG).
+* Drawn cartridges and boxes: the print has the paper's gloss too, and the label's small print is set as on the real
+  labels (on a plain two-row area of the grid).
+* The PiTrex's cartridge and box in the same design: its new title logo, its picture in the boxes' frame.
+* Your own pictures may be JPEG as well as PNG, and still come first.
+* The games list's pictures at 80 % brightness on every platform (70 % since v1.8.2).
+* The Test Cartridge Rev. 4's grid steady, and other games that time their own frames (Polar Rescue, Spinball, Tour
+  De France, the Zero Test): a piece of a frame the emulator had to cut is joined to the rest of the game's frame (PC,
+  phones and RetroArch alike). With Smooth motion off (phones, RetroArch) a held line ends at its own copy.
+* Vectrex unit: the beam's rate one way against the other - 'Y rate up vs down', 'X rate right vs left', -3..+3 %. The
+  Owner's Vectrex preset has Y up 1.16 % faster (measured on a photo of the Full Grid Test); the tube map is refitted
+  with it, so the default look stays as it was.
+* Get games & extras: every download checked before it is unpacked; the project's archive.org mirror as a fallback.
+* Cartridges in the games list drawn at up to 840 px (sharp at 2 a row on a big tablet).
+
 ## v1.8.4
 
 * Drawn boxes: the picture now portrait, in the place and shape of the real boxes' pictures, one of 12 vector scenes

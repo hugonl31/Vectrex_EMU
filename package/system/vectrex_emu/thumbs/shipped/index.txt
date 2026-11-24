@@ -1,0 +1,290 @@
+# which picture a game takes: <key>\t<name> -> labels/<name>.jpg, boxes/<name>.jpg - here (the ones that come with
+# the emulator) or in thumbs/labels, thumbs/boxes (yours, the full set); every game of the box art pack and the ROM
+# names spelt otherwise. key: the game file's name without its (...) and [...] parts, lower case, only a-z and 0-9
+# (tools/make_shipped_art.py)
+2048	2048
+23matches	23 Matches
+2dnarrowescape	2D Narrow Escape
+3dcrazycoaster	3D Crazy Coaster
+3ddemo	3D Demo
+3dlordoftherobots	3D Lord Of The Robots
+3dminestorm	3D Minestorm
+3dnarrowescape	3D Narrow Escape
+3dscapedemocollection	3D Scape Demo Collection
+3dvectorspacecab	3D Vector Space Cab
+absorbtex	Absorbtex
+abyssdemo	Abyss Demo
+aceyducey	Acey Ducey
+alleyanxiety	Alley Anxiety
+allgoodthings	All Good Things
+allyourbase	All Your Base
+animaction	Anim Action
+armorattack	Armor Attack
+artillerystrike	Artillery Strike
+artmaster	Art Master
+asteroidcowboy	Asteroid Cowboy
+asteroids	Asteroids
+bacteria	Bacteria
+baseloot	Baseloot
+batmanvssupermanlaserwars	Batman Vs Superman Laserwars
+battleearthterrorhazard	Battle Earth Terror Hazard
+bcgawari	BCG Awari
+bcgbagels	BCG Bagels
+bcgtower	BCG Tower
+beckysmessage	Beckys Message
+bedlam	Bedlam
+belugadreams	Beluga Dreams
+berzerk	Berzerk
+berzerkultimate	Berzerk Ultimate
+birdsofprey	Birds Of Prey
+blitzactionfootball	Blitz Action Football (US)
+blitzamericanfootball	Blitz American Football (UK)
+blockbomb	Block Bomb
+blocks	Blocks
+blox	Blox
+bloxbreaker	Blox Breaker
+bloxorz	Bloxorz
+blueskyracer	Blue Sky Racer
+brickcrusher	Brick Crusher
+buenzli17	Buenzli 17
+bullet	Bullet
+c19musicbox	C19 Music Box
+cantinaband	Cantina Band
+castledefender	Castle Defender
+castlevscastle	Castle Vs Castle
+chimneyhunt	Chimney Hunt
+circusvectrex	Circus Vectrex
+citybomber	City Bomber
+cleansweep	Clean Sweep
+cleansweepmrboston	Clean Sweep Mr Boston
+climaxslideshow	Climax Slideshow
+continuum	Continuum
+cosmicchasm	Cosmic Chasm
+crossfire	Crossfire
+curling	Curling
+daisyland	Daisy Land
+darktower	Dark Tower
+deadline2019	Deadline 2019
+dinorunner	Dino Runner
+discdueldemo	Disc Duel Demo
+donkeykong	Donkey Kong
+dontfall	Dont Fall
+doodle	Doodle
+doodlejump	Doodle Jump
+drwhotheme	Dr Who Theme
+eatingfish	Eating Fish
+eigenvectrexdemo	Eigen Vectrex Demo
+engineanalyzer	Engine Analyzer
+epicrealtime	Epic Realtime
+etchasketch	Etch-A-Sketch
+everydayishalloween	Every Day Is Halloween
+fencingsimulator	Fencing Simulator
+floorislava	Floor Is Lava
+floppyfish	Floppy Fish
+fortressofnarzod	Fortress Of Narzod
+fresssakk	Fresssakk
+frogsnflies	Frogs N Flies
+galaxywars	Galaxy Wars
+gravitrexplus	Gravitrex Plus
+headlessrunner	Headless Runner
+headsupactionsoccer	Heads-Up Action Soccer (UK)
+heraprimera	Hera Primera
+hex	Hex
+hexed	Hexed
+hextrex	Hextrex
+holerun	Hole Run
+hoverrace	Hover Race
+hungrypython	Hungry Python
+hurdles	Hurdles
+hyperchase	Hyperchase
+hyperchaseautorace	Hyperchase
+inkubationszeit	Inkubationszeit
+jinglebellhero	Jingle Bell Hero
+karlquappe	Karl Quappe
+keyboardhero	Keyboard Hero
+kingdomofheaven	Kingdom Of Heaven
+knightex	KnightEx
+knightrider	Knight Rider
+kokosretribution	Kokos Retribution
+kolonie	Kolonie
+labyrinthrev4vectorrouge	Labyrinth Rev 4 Vector Rouge
+lastbattle	Last Battle
+lasthuman	Last Human
+lichtbringer	Lichtbringer
+lineart	Lineart
+lordsofcode	Lords Of Code
+lostsouls	Lost Souls
+lunarlander	Lunar Lander demo
+lunarlanderdemo	Lunar Lander demo
+magic8ball	Magic 8 Ball
+mailplane	Mail Plane
+manusvol1nonagolf	Manus Vol1 Nonagolf
+manusvol2vecsportskingpin	Manus Vol2 Vecsports Kingpin
+manusvol3beth	Manus Vol3 BETH
+manusvol4yoehl	Manus Vol4 Yoehl
+manusvol5ztagger	Manus Vol5 Ztagger
+marinefox	Marine Fox
+megaapocalypse	Mega Apocalypse
+melodymaster	Melody Master
+mikesmoleculesdemo	Mikes Molecules demo
+minestorm	Mine Storm
+minestormii	Mine Storm II
+minestormiii	Mine Storm v3
+minestormv3	Mine Storm v3
+minex	MineX
+missilelords	Missile Lords
+monsterhouse	Monster House
+moonlander	Moon Lander
+moonshot	Moon Shot
+moskwa	Moskwa (Demo)
+mrbostoncleansweep	Clean Sweep Mr Boston
+nagoyaattack	Nagoya Attack
+nebulacommander	Nebula Commander
+nightdriver	Night Driver
+omegachase	Omega Chase
+oregontrail1978	Oregon Trail 1978
+overseer	Overseer
+p1x3lpushr	P1x3l Pushr
+pacmenreloaded	Pac Men Reloaded
+paratroopers	Paratroopers
+patriots	Patriots
+patriotsiii	Patriots III
+patriotsremix	Patriots Remix
+phillyclassic3demo	Philly Classic 3 Demo
+piperace	Pipe Race
+pirates	Pirates
+pitchersduel	Pitchers Duel
+polarrescue	Polar Rescue
+poleposition	Pole Position
+popdemo	Pop Demo
+portalfight	Portal Fight
+protectoryasi	Protector Yasi
+pyorochan	Pyoro-Chan
+pythagoreantheorem	Pythagorean Theorem
+quartzsquest	Quartzs Quest
+quickshot	Quick Shot
+raidingparty	Raiding Party
+randomaccessvector	Random Access Vector
+release	Release
+repulse	Repulse
+revector	Revector
+ripoff	Rip Off
+robhop	RobHop
+robotarena	Robot Arena
+rockaroidsremix	Rockaroids Remix
+rocketsledge	Rocket Sledge
+roundersdemo	Rounders Demo
+royal21	Royal 21
+scramble	Scramble
+sduntitled	SD - Untitled
+sectis	Sectis
+sharkattack	Shark Attack
+sinzdemo	Sinz Demo
+skullshot	Skull Shot
+snowball	Snowball
+soccerfootball	Soccer Football (US)
+solarquest	Solar Quest
+spaceassault	Space Assault
+spaceattack	Space Attack
+spaceball	Spaceball
+spacedefender	Space Defender
+spacefrenzy	Space Frenzy
+spacepatrol	Space Patrol
+spacerace	Space Race
+spaceshipcentauri	Spaceship Centauri
+spacewars	Space Wars
+spidex	SpideX
+spike	Spike
+spikeandtheangryvortexbird	Spike And The Angry Vortex Bird
+spikegoesskiing	Spike Goes Skiing
+spikehoppin	Spike Hoppin
+spikes	Spikes
+spikesslampit	Spikes Slam Pit
+spikeswaterballoons	Spikes Water Balloons
+spinball	Spinball
+splitpersonality	Split Personality
+spudstersrevenge	Spudsters Revenge
+squarez	Squarez
+starcastle	Star Castle
+starfire	Star Fire
+starfuel	Star Fuel
+starhawk	Starhawk
+starseige	Star Seige
+starship	Star Ship
+starsling	Star Sling
+startrekdebugged	Star Trek Debugged
+startrekthemotionpicture	Star Trek The Motion Picture
+starwar	Star War
+stevedoremicroban	Stevedore Microban
+stormstorm	Storm Storm
+subwars	Sub Wars
+supersimon	Super Simon
+testcartridgerev4	Vectrex Test Cartridge Rev.4
+thecount	The Count
+thedice	The Dice
+thejgame	The J-Game
+thesnake	The Snake
+thirstyastronaut	Thirsty Astronaut
+thisisjustanonplayabledemo	This Is Just A Non Playable Demo
+thrust	Thrust
+topgun	Top Gun
+tourdefrance	Tour De France
+trafficrace	Traffic Race
+trapped	Trapped
+treasurediver	Treasure Diver
+tsunami	Tsunami
+unblockme	UnblockMe
+unknown	Unknown
+vaboom	Vaboom
+vaboomvectrace	Vaboom + Vectrace
+veccybird	Veccy Bird
+vecdrum	Vecdrum
+vecfahren	Vecfahren
+vecfu	Vec-Fu
+vecman	Vec Man
+vecmaniapt1	Vecmania Pt1
+vecmaniapt2	Vecmania Pt2
+vecsportsboxing	Vec Sports Boxing
+vectopia	Vectopia
+vector21	Vector 21
+vectorblade	Vectorblade
+vectorbladeb	Vectorblade-b
+vectorclock	Vector Clock
+vectorpong	Vector Pong
+vectorvaders	Vector Vaders
+vectorvadersremix	Vector Vaders Remix
+vectrace	Vectrace
+vectrexagon	Vectrexagon
+vectrexians	Vectrexians
+vectrexmaze	Vectrex Maze
+vectrexpong	Vectrex Pong
+vectrexroli	Vectrex Roli
+vectrextestcartridgerev4	Vectrex Test Cartridge Rev.4
+vectroid	Vectroid
+vecwarsretrodevolved	Vec Wars Retro Devolved
+vecz	VecZ
+veryvectight	Very Vectight
+verzerk	Verzerk
+vexperience	Vexperience
+vfrogger	V-Frogger
+vix	Vix
+vogelfutter	Vogel Futter
+vtheremin	V-Theremin
+wangle	Wangle
+waroftherobots	War Of The Robots
+warrior	Warrior
+webwarp	Web Warp (UK)
+webwars	Web Wars (US)
+whackamole	Whack-A-Mole
+wormhole	Wormhole
+xandoz	Xandoz
+xmascart2014	Xmas Cart 2014
+xmascart2015	Xmas Cart 2015
+xmasspacerace	Xmas Space Race
+yargyetanotherracinggame	Yarg - Yet Another Racing Game
+ymusic1	YMusic #1
+z4l3nr473n	Z4l3n R473n
+zantis	Zantis
+zufallstreffer	Zufallstreffer
+zzap	Zzap Strikes Back
+zzapstrikesback	Zzap Strikes Back

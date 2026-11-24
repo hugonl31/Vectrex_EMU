@@ -18,6 +18,11 @@ targets:
       - path: App
         excludes: ["vx_token.h"]
       - path: Assets.xcassets
+      # (the games list's pictures that come with the app - the remade box art - Simon Quincey's title artwork and pictures, with his permission: the bundle's
+      #  shipped folder, a folder reference; tools/make_shipped_art.py)
+      - path: ../package/system/vectrex_emu/thumbs/shipped
+        type: folder
+        buildPhase: resources
       - path: ../libretro/libretro_vx.c
         compilerFlags: &core "-w -ffp-contract=off -fgnu89-inline -DVX_RETROARCH -DCM33_NO_JIT -DARM11_NO_JIT -DVX_DBG_LOG_S=2.0 -DVX_DBG_STATUS_S=5.0 -include vx_token.h"
       - path: ../src/core/state/state_vecx.c

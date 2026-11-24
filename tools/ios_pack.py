@@ -3,7 +3,7 @@ changes): everything the PC has, laid out as the core's folders - system/vectrex
 the overlays, the UVMC2's SD card folder with Doom, Quake, the movies and Last Human, the PiTrex's SD card files with the
 owner's calibration, the speech ROM) and roms (every game). The app stays a few MB, each new build quick; the pack sits
 on the project's server behind the log token (vxreport.py GET /iosextra/pack, /iosextra/packver).
-  python ios_pack.py <out folder>   -> <out>/pack.tgz, <out>/pack.ver
+  python ios_pack.py <out folder> [part ...]   -> <out>/pack-<part>.tgz, <out>/pack.json (only the parts named, if any)
 Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md."""
 import os, shutil, sys, tarfile, time
 
@@ -13,6 +13,7 @@ PKG = os.path.join(R, 'libretro', 'dist', 'pkg', 'system', 'vectrex_emu')   # (t
 SKIP = ('printf.log', 'settings.json')
 
 out = sys.argv[1]
+ONLY = sys.argv[2:]                                             # (parts to pack: none named, all)
 os.makedirs(out, exist_ok=True)
 parts = [(os.path.join(PKG, 'bios.bin'), 'system/vectrex_emu/bios.bin'),
          (os.path.join(PKG, 'gpu'), 'system/vectrex_emu/gpu'),
@@ -60,17 +61,16 @@ for f in sorted(os.listdir(os.path.join(PKG, 'overlays'))):
     bg.convert('RGB').resize((324, 414), Image.LANCZOS).save(os.path.join(th, 'overlays', stem + '.png'), optimize=True)
     nt += 1
 print('thumbs:', nt)
-# the library's other two looks (the owner's choice in the app): each game's cartridge and its box front (the box-art
-# pack there), named after the ROMs. The cartridge, on the real shell, the first there is of: the box art's title made
-# into a label (G:\AI\Vectrex_Artwork\boxart_labels: the label project's way - silver grid, shared furniture, legal box
-# - from the box front; the owner, 2026-11-23: better than the old ones); the owner's label template (print 4x\labels:
-# Last Human, no box art); the real cartridge seen from above (original gce); the cartridge every platform draws
-# (libretro/genart.c: the game's title in the blue pill)
+# the library's other two looks (the owner's choice in the app): each game's cartridge and its box front, named after
+# the ROMs - the remade collection, the same as the emulator's shipped set and the full download (the owner,
+# 2026-11-24: G:\AI\Vectrex_Artwork\boxart_labels\make_new_art.py - labels-new, boxes-new; none of the box-art pack's
+# own pictures). The cartridge: its remade label on the shell as every platform puts it (genart.c vx_genart_label), or
+# the cartridge every platform draws (libretro/genart.c: the game's title in the blue pill)
 import re                                                       # noqa: E402
 from PIL import ImageDraw, ImageFilter                          # noqa: E402
 LBL = 'G:/AI/Vectrex_Artwork'                                    # (was Vectrex_Labels: the folder renamed)
-LAB, BOX = LBL + '/print 4x/labels', LBL + '/original gce/Vectrex 2D Front Cover Box Art - v1.3 Full'
-BAL = LBL + '/boxart_labels/labels-png'                          # (<box front's name>.png, 3120 x 1700)
+BOX = LBL + '/boxart_labels/boxes-new'                          # (<box front's name>.png, 800 x 1024)
+BAL = LBL + '/boxart_labels/labels-new'                          # (<box front's name>.png, 3120 x 1700)
 ALIAS = {'hyperchaseautorace': 'Hyperchase', 'mrbostoncleansweep': 'Clean Sweep Mr Boston',   # (a ROM's key -> the box
          'minestormiii': 'Mine Storm v3', 'lunarlander': 'Lunar Lander demo', 'zzap': 'Zzap Strikes Back',  # front's
          'testcartridgerev4': 'Vectrex Test Cartridge Rev.4', 'blitzactionfootball': 'Blitz Action Football (US)'}  # name)
@@ -88,7 +88,10 @@ def find(d, n):
 GCE = LBL + '/original gce'                                     # (the real cartridges seen from above, label and all)
 
 
-def shrink(im, W=420):
+CART_W = 840                                                    # (the tiles' width: sharp at 2 per row on a big tablet; the PiTrex's too)
+
+
+def shrink(im, W=CART_W):
     """the cartridge at the tile's size, a clean cutout: only the cartridge on a clear background - the edge's half-clear
     pixels in the shell's dark colour (the sources left a light grey line along the bottom), the faintest ones clear"""
     import numpy as np
@@ -119,21 +122,22 @@ def shrink(im, W=420):
     al = a[:, :, 3]; semi = (al > 0) & (al < 250)
     a[semi, :3] = np.minimum(a[semi, :3], (40, 42, 46))
     a[al < 48] = 0
-    return Image.fromarray(dark_edge(a), 'RGBA')
+    return Image.fromarray(dark_edge(a, max(1, round(W / 420))), 'RGBA')
 
 
-def dark_edge(a):
+def dark_edge(a, k=1):
     """the cartridge's outline in the shell's dark plastic, no light line round it on a dark background (the owner,
     2026-11-23): the half-clear pixels and the first four opaque rings capped 14 / 20 / 28 / 36 / 44 (the plastic ~40),
-    the half-clear ones premultiplied - dark whether the picture is blended (the phones, RetroArch) or not (the PC)"""
+    the half-clear ones premultiplied - dark whether the picture is blended (the phones, RetroArch) or not (the PC).
+    k: each ring's width in pixels (1 at 420 wide, 2 at 840: the same edge at either size)"""
     import numpy as np
     from PIL import ImageFilter as _F
     al = a[:, :, 3].astype(np.float32); rgb = a[:, :, :3].astype(np.float32)
-    inside = al >= 128; pad = 5
+    inside = al >= 128; pad = 4 * k + 1
     ring = np.full(al.shape, 99, np.int32); ring[(al > 0) & ~inside] = 0
     cur = Image.fromarray(np.pad(inside, pad).astype(np.uint8) * 255, 'L')
     for i in (1, 2, 3, 4):
-        er = cur.filter(_F.MinFilter(3)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
+        er = cur.filter(_F.MinFilter(2 * k + 1)); r = (np.asarray(cur) > 0) & ~(np.asarray(er) > 0)
         ring[r[pad:-pad, pad:-pad]] = i; cur = er
     mx = rgb.max(2)
     for i, cap in ((0, 14.0), (1, 20.0), (2, 28.0), (3, 36.0), (4, 44.0)):
@@ -177,6 +181,14 @@ def cart(label):
     return shrink(im)
 
 
+def label_cart(path):
+    """a remade label on the cartridge, as every platform puts it (libretro/genart.c vx_genart_label, 840 wide)"""
+    sys.path.insert(0, os.path.join(R, 'src', 'frontend'))
+    import genart
+    r = genart.label(path, CART_W)
+    return Image.frombytes('RGBA', (r[0], r[1]), r[2]) if r else None
+
+
 def drawn_cart(name):
     """a cartridge for a game with no label of its own: the one every platform draws (libretro/genart.c - the blue pill with
     its title on our own label, no GCE), through the PC's native library (src/frontend/native: build_win.bat); None
@@ -187,26 +199,15 @@ def drawn_cart(name):
     return Image.frombytes('RGBA', (r[0], r[1]), r[2]) if r else None
 
 
-if os.path.isdir(LAB) and os.path.isdir(BOX):
-    labs = {key(os.path.splitext(f)[0]): os.path.join(LAB, f) for f in os.listdir(LAB) if f.lower().endswith('.png')}
+if os.path.isdir(BAL) and os.path.isdir(BOX):
     boxes = {}
-    for f in os.listdir(BOX):
-        if not f.lower().endswith('.png'):
-            continue
-        st = os.path.splitext(f)[0]; up = '_upscayl' in st; k = key(st.split('_upscayl')[0])
-        if k not in boxes or up:
-            boxes[k] = os.path.join(BOX, f)
-    gce = {}
-    for f in os.listdir(GCE):
-        if not f.lower().endswith('.png') or f.startswith('Robot'):
-            continue
-        st = os.path.splitext(f)[0]; up = '_upscayl' in st; st = st.split('_upscayl')[0]
-        for k in {key(st), key(st.split(' - ')[0])}:          # (AnimAction - Advanced Animation: AnimAction)
-            if k not in gce or up:
-                gce[k] = os.path.join(GCE, f)
-    bal = {}                                                    # (the box-art labels, by the box front's key)
-    if os.path.isdir(BAL):
-        bal = {key(os.path.splitext(f)[0]): os.path.join(BAL, f) for f in os.listdir(BAL) if f.lower().endswith('.png')}
+    for f in sorted(os.listdir(BOX)):                          # (a key two names share: the first, as the shipped index)
+        if f.lower().endswith('.png'):
+            boxes.setdefault(key(os.path.splitext(f)[0]), os.path.join(BOX, f))
+    bal = {}                                                    # (the remade labels, by the box front's key)
+    for f in sorted(os.listdir(BAL)):
+        if f.lower().endswith('.png'):
+            bal.setdefault(key(os.path.splitext(f)[0]), os.path.join(BAL, f))
     tc, tb = os.path.join(th, 'carts'), os.path.join(th, 'boxes'); os.makedirs(tc, exist_ok=True); os.makedirs(tb, exist_ok=True)
     nc = nb = 0; srcs = {}
     for f in sorted(os.listdir(os.path.join(PC, 'roms'))):
@@ -214,11 +215,9 @@ if os.path.isdir(LAB) and os.path.isdir(BOX):
         if ext.lower() not in ('.bin', '.vec', '.um2', '.gam'):
             continue
         k = key(stem)
-        gp, lp, bp = find(gce, stem), find(labs, stem), find(boxes, stem)
         ap = bal.get(key(ALIAS[k])) if k in ALIAS else bal.get(k)
-        if ap: im, srcs[stem] = cart(ap), 'box-art label ' + os.path.basename(ap)
-        elif lp: im, srcs[stem] = cart(lp), 'label template ' + os.path.basename(lp)
-        elif gp: im, srcs[stem] = shrink(Image.open(gp).convert('RGBA')), 'GCE photo ' + os.path.basename(gp)
+        bp = boxes.get(key(ALIAS[k])) if k in ALIAS else boxes.get(k)
+        if ap: im, srcs[stem] = label_cart(ap), 'remade label ' + os.path.basename(ap)
         else: im, srcs[stem] = drawn_cart(stem), 'drawn (genart.c)'
         if im is not None: im.save(os.path.join(tc, stem + '.png'), optimize=True); nc += 1
         if bp:
@@ -258,6 +257,8 @@ def files_of(src, arc):
 
 man = {'made': ver, 'parts': []}
 for pid, name, req, srcs in PARTS:
+    if ONLY and pid not in ONLY:
+        continue
     h = hashlib.sha1(); fl = []
     for src, arc in srcs:
         if not os.path.exists(src):

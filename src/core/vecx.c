@@ -294,11 +294,24 @@ static void dac_init (void)
 	dac_on_set ();
 }
 #define DACV(u) (dac_on > 0 ? dacv (u) : (double) (u))
+/* the integrators' rate one way against the other (VT_YRATE / VT_XRATE = how many % faster the beam goes up than down /
+ * right than left; vt_set_analog 28 / 29; 0: even, the old model). The integrator's speed for one direction is 1 + d / 200,
+ * the other 1 - d / 200 (d the setting in %). The owner's Vectrex, the Full Grid Test 50 fps photo (2026-11-23): Y up
+ * ~1.16 % faster than down (beta = d / 200 = 0.0057 from the column start dots' slant, 0.0059 from the two-dot gaps); X not
+ * measured. The UVMC2 SDK has the same as neg_rate_x / neg_rate_y ("the DAC does not deviate the same at +k as at -k") */
+static double rate_bx, rate_by; static int rate_env = -1;
+static void rate_init (void)
+{
+	const char *z = getenv ("VT_XRATE"); rate_env = 1;
+	if (z) rate_bx = atof (z) / 200.0;
+	z = getenv ("VT_YRATE"); if (z) rate_by = atof (z) / 200.0;
+}
 /* the frontend's Vectrex unit settings, live (input flags bit 5: an id and a float, see live.c): how one
  * real Vectrex differs from another - 0 the stop delay (cycles), 1 the zero reference's hold (ZREF_K),
  * 2 the zero calibration shift, 3 / 4 the integrators' drift X / Y (DAC units per cycle x ZS), 5 the Y
  * hold's settling, 6 the beam's switch-off delay (cycles), 7 the integrators' offset to the zero reference,
- * 23 the DAC's offset (the trimmer R302, see dac_ofs) */
+ * 23 the DAC's offset (the trimmer R302, see dac_ofs), 28 / 29 the integrators' rate up against down (Y) /
+ * right against left (X), in % (see rate_by) */
 static unsigned alg_idle_n; static int alg_quiet;
 void vt_set_analog (int id, double v)
 {
@@ -322,6 +335,11 @@ void vt_set_analog (int id, double v)
 	case 15: vt_lag_y = v < 0 ? -1 : v > 50 ? 50 : v; break;  /* (the Y deflection's lag; -1: as X) */
 	case 24: case 25: case 26: lp_set (id - 24, v); break;   /* (the light pen: x, y, touching - imager.c) */
 	case 27: p2_set ((int) (v + 0.5)); break;                 /* (controller port 2's device, while running: p2_set) */
+	case 28: case 29:                                          /* (the integrators' rate up / down, right / left: see rate_by) */
+		if (rate_env < 0) rate_init ();
+		v = v < -5 ? -5 : v > 5 ? 5 : v;
+		if (id == 28) rate_by = v / 200.0; else rate_bx = v / 200.0;
+		break;
 	case 16: case 17: case 18: case 19: case 20: case 21: case 22:   /* (the DAC's bit errors e0..e6, see dacv) */
 		if (dac_on < 0) dac_init ();
 		dac_e[id - 16] = v < -0.05 ? -0.05 : v > 0.05 ? 0.05 : v;
@@ -1695,6 +1713,10 @@ static void alg_sstep_full (void)
 		}
 		adx = (long) (vlag_x + (vlag_x >= 0 ? 0.5 : -0.5)); ady = (long) (vlag_y + (vlag_y >= 0 ? 0.5 : -0.5));
 	}
+	if (rate_env < 0) rate_init ();                     /* the integrators' rate one way against the other (see rate_by): ady < 0
+	                                                     * moves the beam up, adx > 0 right - those (1 + b), the other way (1 - b) */
+	if (rate_bx != 0.0) { double r = (double) adx * (1.0 + (adx > 0 ? rate_bx : -rate_bx)); adx = (long) (r + (r >= 0 ? 0.5 : -0.5)); }
+	if (rate_by != 0.0) { double r = (double) ady * (1.0 + (ady < 0 ? rate_by : -rate_by)); ady = (long) (r + (r >= 0 ? 0.5 : -0.5)); }
 	if (via_acr & 0x80) {
 		sig_ramp = via_t1pb7;
 	} else {

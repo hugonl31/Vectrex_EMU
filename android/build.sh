@@ -30,20 +30,27 @@ fi
 "$JDK/bin/javac" -nowarn -source 8 -target 8 -bootclasspath "$(cygpath -w "$JAR");$(cygpath -w "$BT/core-lambda-stubs.jar")" -encoding UTF-8 -d $O/classes src/com/hugob/vectrexemu/*.java 2>&1 | grep -v "^warning\|^Note\|bootstrap\|^1 warning" || true
 test -s $O/classes/com/hugob/vectrexemu/Main.class
 JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/d8.bat" --release --min-api 28 --lib "$JAR" --output $O/dex $(find $O/classes -name '*.class')
-# --- the resources (the icon), the assets (the private build's token, when there), the package
+# --- the resources (the icon), the assets (the games list's shipped pictures; the private build's token, when there), the package
 mkdir -p $O/res/mipmap-xxxhdpi; python -c "
 from PIL import Image; im = Image.open('../icons/ios_icon_1024.png').convert('RGBA'); im.resize((192, 192), Image.LANCZOS).save('$O/res/mipmap-xxxhdpi/ic_launcher.png')"
 rm -f $O/assets/token.txt; [ -s "$PRIV/tok.txt" ] && cp "$PRIV/tok.txt" $O/assets/token.txt || true
+rm -rf $O/assets/shipped   # (the shipped pictures: added below, not through aapt2 - its Windows build wrote "\" in their zip names)
 "$BT/aapt2.exe" compile -o $O/res.zip --dir $O/res
 "$BT/aapt2.exe" link -o $O/base.apk -I "$JAR" --manifest AndroidManifest.xml --min-sdk-version 28 --target-sdk-version 34 --version-code $CODE --version-name "$VER" -A $O/assets $O/res.zip
-python - "$O" <<'EOF'
+python - "$O" ../package/system/vectrex_emu/thumbs/shipped <<'EOF'
 import sys, zipfile, os, shutil
-o = sys.argv[1]; src = os.path.join (o, 'base.apk'); dst = os.path.join (o, 'unsigned.apk')
+o, ship = sys.argv[1], sys.argv[2]; src = os.path.join (o, 'base.apk'); dst = os.path.join (o, 'unsigned.apk')
 shutil.copy (src, dst)
 with zipfile.ZipFile (dst, 'a', zipfile.ZIP_DEFLATED) as z:
     z.write (os.path.join (o, 'dex', 'classes.dex'), 'classes.dex')
     for d in ('arm64-v8a', 'x86_64'):
         z.write (os.path.join (o, 'apk', 'lib', d, 'libvxa.so'), 'lib/%s/libvxa.so' % d)
+    # the games list's pictures that come with the app (assets/shipped: the remade box art - Simon Quincey's title artwork and pictures, with his permission -
+    # tools/make_shipped_art.py), stored: the app reads them whole (Library.java)
+    for r, ds, fs in os.walk (ship):
+        ds.sort ()
+        for f in sorted (fs):
+            q = os.path.join (r, f); z.write (q, 'assets/shipped/' + os.path.relpath (q, ship).replace (os.sep, '/'), zipfile.ZIP_STORED)
 EOF
 "$BT/zipalign.exe" -f -p 4 $O/unsigned.apk $O/aligned.apk
 KS=$PRIV/debug.keystore

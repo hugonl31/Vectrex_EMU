@@ -77,7 +77,7 @@ static void opt_say (const char *m, unsigned frames)
 }
 static const char *const OPT_OFF_NAMES[14] = { "dither", "bend smoothing", "case reflections", "parallax", "glass in room light",
 	"light on the overlay", "light on the glass", "the second glow pass", "plastic glow", "scratches", "glass edge", "tube curve",
-	"the phosphor at full size", "60 pictures a second" };
+	"the phosphor at full size", "every second picture (half the pictures a second)" };
 static void opt_feature (prow *w, int k)            /* (pctest FEATURES: what each is when off) */
 {
 	switch (k) {
@@ -96,6 +96,7 @@ static void opt_feature (prow *w, int k)            /* (pctest FEATURES: what ea
  * The rule: the costliest effects off first; drawing every second picture only the last resort (it was the first:
  * it always saves most - the Nova at 120 Hz with an overlay drew 60 pictures a second for it). */
 #define OPT_VER "b3"                            /* (a new rule or new costs: every case measured anew, once) */
+int vx_app_tunes;                               /* (the own apps test the device themselves, asked first (vx_app_tune): the core never measures on its own) */
 static long opt_px_seen; static int opt_quiet, opt_pending;   /* (opt_quiet: refreshes left in which measuring may run) */
 static const char *opt_gpu (void)
 {
@@ -143,10 +144,13 @@ static void opt_store (int rate, long px, const prow *v)
 		fclose (w); }
 	free (all);
 }
+/* (the apps keep the player in the loop: the step running now, and what the last measurement left off) */
+static char opt_status[200], opt_last_off[600]; static double opt_last_share; static int opt_last_fit;
 /* this rate measured now, at this picture, with an overlay on -> its switches */
 static prow opt_measure (void)
 {
 	opt_busy = 1;
+	snprintf (opt_status, sizeof opt_status, "%d Hz: every effect on", opt_rate);
 	opt_say ("Vectrex_EMU: measuring this device for the best quality (once)...", 120);
 	/* (the overlay on: the game's own, else a stand-in sheet - a filter's colour, see-through, the size of a real one) */
 	unsigned char *ov0 = ov; const int ovw0 = ovw, ovh0 = ovh, on0 = ov_on; unsigned char *stand = NULL;
@@ -163,12 +167,14 @@ static prow opt_measure (void)
 	if (now > budget) {
 		struct { double gain; int k; } g[14]; int ng = 0;
 		for (int k = 0; k < 14; k++) { prow w = v; opt_feature (&w, k); if (!memcmp (&w, &v, sizeof w)) continue;
+			snprintf (opt_status, sizeof opt_status, "%d Hz: too slow with every effect - each effect's cost (%d of 14)", opt_rate, k + 1);
 			const double t = opt_time (&w, sc, n, 12), gain = before - t;
 			if (gain > 0.02 * frame) { g[ng].gain = gain; g[ng].k = k; ng++; } }
 		for (int i = 0; i < ng; i++) for (int j = i + 1; j < ng; j++) {   /* (the costliest first - every second picture last, whatever it saves) */
 			const int hi = g[i].k == 13, hj = g[j].k == 13;
 			if (hi > hj || (hi == hj && g[j].gain > g[i].gain)) { double a = g[i].gain; int b = g[i].k; g[i] = g[j]; g[j].gain = a; g[j].k = b; } }
 		for (int i = 0; i < ng && now > budget; i++) { prow w = v; opt_feature (&w, g[i].k);
+			snprintf (opt_status, sizeof opt_status, "%d Hz: trying without %s", opt_rate, OPT_OFF_NAMES[g[i].k]);
 			const double t = opt_time (&w, sc, n, 16);
 			if (now - t < 0.02 * frame) continue;              /* (no real saving once the others are off: stays on) */
 			v = w; now = t; snprintf (off + strlen (off), sizeof off - strlen (off), "%s%s", off[0] ? ", " : "", OPT_OFF_NAMES[g[i].k]); }
@@ -177,6 +183,7 @@ static prow opt_measure (void)
 	ov = ov0; ovw = ovw0; ovh = ovh0; ov_on = on0; ov_made = 0; ov_tk[0] = -1; free (stand);
 	ph_made = 0;                                   /* (the phosphor dark again: the scene's light gone) */
 	opt_busy = 0;
+	snprintf (opt_last_off, sizeof opt_last_off, "%s", off); opt_last_share = now / frame; opt_last_fit = now <= budget;
 	char m[900]; snprintf (m, sizeof m, "Vectrex_EMU: %s (%.1f ms a picture, %.0f %% of a refresh)%s%s", off[0] ? "best this device runs at full speed" : "every effect on",
 		now, 100 * now / frame, off[0] ? " - off: " : "", off);
 	opt_say (m, 300);
@@ -194,7 +201,7 @@ static void opt_check (void)
 	prow v; int rg = 0; long pg = 0;
 	if (opt_lookup (opt_rate, px, &v, &rg, &pg)) { opt_row = v; opt_row_ok = 1; opt_pending = 0;
 		fprintf (stderr, "[vectrex_emu] Optimize: %s - as measured before (%d Hz, %ld px)\n", key, rg, pg); fx_apply (); return; }
-	if (!opt_quiet) {                              /* (in the middle of a game: not now - the nearest case, measured at the next start) */
+	if (!opt_quiet || vx_app_tunes) {              /* (in the middle of a game, or the apps: not now - the nearest case; measured at the next start / the app's test) */
 		if (opt_lookup (opt_rate, 0, &v, &rg, &pg) || opt_lookup (0, 0, &v, &rg, &pg)) { opt_row = v; opt_row_ok = 1; }
 		else { opt_row = FX_PROFILES[1]; opt_row_ok = 1; }   /* (none at all: High meanwhile) */
 		if (!opt_pending) fprintf (stderr, "[vectrex_emu] Optimize: %s at %ld px not measured - measured at the next game's start\n", key, px);

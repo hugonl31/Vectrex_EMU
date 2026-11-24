@@ -2954,6 +2954,9 @@ static void fx_apply (void)
  * measured once, at the largest picture this screen can show - upright or across, the deck off - with the overlay on,
  * so no game is held up later (2026-11-24). lng / shrt: the screen's sides in pixels; rates: those it can run. dry: only
  * how many would be measured. Returns that count. Called on the game thread, the context current, after a refresh */
+static char tune_report[1200];
+const char *vx_app_tune_report (void) { return tune_report; }   /* (the last tuning's result, a line a rate) */
+void vx_app_tune_status (char *o, int n) { snprintf (o, (size_t) n, "%s", opt_status); }   /* (the step running now) */
 int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry)
 {
 	if (!gpu_ok || !ph_ok || stereo || vx_nobuild || FW <= 0 || FH <= 0 || n <= 0 || lng <= 0 || shrt <= 0) return 0;
@@ -2965,7 +2968,11 @@ int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry)
 	const int keep_size = opt_size, keep_rate = opt_rate;
 	opt_size = (int) (opt_size * s + 0.5); pic_setup ();
 	fprintf (stderr, "[vectrex_emu] Optimize: tuning this device - %d rate%s at %d x %d (screen %d x %d), the overlay on\n", need, need > 1 ? "s" : "", FW, FH, lng, shrt);
-	for (int i = 0; i < n && i < 16; i++) if (todo[i]) { opt_rate = rates[i]; prow v = opt_measure (); opt_store (rates[i], (long) FW * FH, &v); }
+	tune_report[0] = 0;
+	for (int i = 0; i < n && i < 16; i++) if (todo[i]) { opt_rate = rates[i]; prow v = opt_measure (); opt_store (rates[i], (long) FW * FH, &v);
+		const size_t k = strlen (tune_report);   /* (the player's report: each rate, all on or what went off) */
+		if (!opt_last_off[0]) snprintf (tune_report + k, sizeof tune_report - k, "%s%d Hz: Every effect on, full quality - %.0f %% of each picture's time used", k ? "\n" : "", rates[i], 100 * opt_last_share);
+		else snprintf (tune_report + k, sizeof tune_report - k, "%s%d Hz: Full speed with these effects off: %s%s", k ? "\n" : "", rates[i], opt_last_off, opt_last_fit ? "" : " - still short of time, a busy game may slow down"); }
 	opt_rate = keep_rate; opt_size = keep_size; pic_setup (); ph_made = 0; opt_key_seen[0] = 0; opt_pending = 0; fx_apply ();
 	return need;
 }

@@ -164,7 +164,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	float maxHz = 60, curHz = 60; boolean hdrScreen;
 	void hdrChanged ()
 	{
-		final float f = prefs.getFloat ("app.hdr", 1f); VX.setHdr (hdrCan && f > 0.01f, hdrRoom, f);
+		final float f = prefs.getFloat ("app.hdr", 1f); VX.setHdr (hdrCan && f > 0.01f, hdrNow > 0 ? hdrNow : hdrRoom, f);   /* (the headroom now, if read) */
 		if (hdrCan && (f > 0.01f) != (VX.hdrActive () != 0)) toast (f > 0.01f ? "HDR: on at the next start of the app" : "HDR: off at the next start of the app", 3);   /* (the window's kind: chosen at the start) */
 	}
 
@@ -288,9 +288,6 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		layout (); Live.start (this);
 		h.postDelayed (this::autoOnce, 2000);
 		h.postDelayed (() -> testIntent (getIntent ()), 3000);
-		h.postDelayed (() -> Online.firstName (this), 2500);    /* (the player name: this device's, or asked for once) */
-		if (!prefs.getBoolean ("app.welcomed", false)) h.postDelayed (() -> { prefs.edit ().putBoolean ("app.welcomed", true).apply ();
-			toast ("Tap the cartridge on the deck for the games, ≡ or the menu button for the rest", 5); }, 1500);
 	}
 	/* the tests' hooks (adb: am start -e vx.game <path> -e vx.name <name> -e vx.host 0|1|2 / -e vx.join <code or address>):
 	 * the same steps a player takes, logged as such */
@@ -411,6 +408,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		h.postDelayed (this::tick, 50);
 		brightTick ();                                   /* (Max brightness: the start screen too, Whole app) */
 		if (!started) return;
+		rateTick (); hdrTick ();
 		int st = VX.status (); if (st < 0 && welcome.getParent () == null) { started = false; root.addView (welcome); welcome.setAlpha (1); status ("The game could not be started. See files/applog.txt"); return; }
 		float[] p = VX.picRect (); if (p[2] != pic[2] || p[3] != pic[3] || p[0] != pic[0] || p[1] != pic[1]) { pic = p; ctl.relayout (); }
 		placeDeck (); { long now = System.currentTimeMillis (); if (now - deckT > 500) { deckT = now; deck.tick (); } }
@@ -472,12 +470,71 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	}
 	/* the first start (and after an update that measures anew): the core tunes this device once - every screen rate at the
 	 * largest picture, the overlay on - before the first game is shown; never in the middle of a game (2026-11-24) */
+	/* the screen asked for the game's rate - as the iOS app (its preferred frame rate): the display mode with that refresh
+	 * rate (or a whole multiple of it), at once when the setting changes; before, a chosen 120 Hz ran twice a refresh on a
+	 * panel left at 60 until the system's own setting was changed (the owner's Nova, 2026-11-24). Android drops it by
+	 * itself when the app leaves the front */
+	int rateAsked = -1;
+	void rateTick ()
+	{
+		final int r = VX.rate (); if (r <= 0 || r == rateAsked) return; rateAsked = r;
+		try { final Display d = getWindowManager ().getDefaultDisplay (); final Display.Mode cur = d.getMode (); int best = 0, bk = 99;
+			for (Display.Mode m : d.getSupportedModes ()) {
+				if (m.getPhysicalWidth () != cur.getPhysicalWidth () || m.getPhysicalHeight () != cur.getPhysicalHeight ()) continue;
+				for (int k = 1; k <= 4; k++) if (Math.abs (m.getRefreshRate () - r * k) < 1.0f && k < bk) { bk = k; best = m.getModeId (); } }
+			final WindowManager.LayoutParams lp = getWindow ().getAttributes ();
+			if (lp.preferredDisplayModeId != best) { lp.preferredDisplayModeId = best; getWindow ().setAttributes (lp); }
+			log ("screen asked for " + r + " Hz: " + (best != 0 ? "mode " + best + (bk > 1 ? " (" + (r * bk) + " Hz)" : "") : "no such mode - the system's own"));
+		} catch (Throwable t) { log ("screen rate: " + t); }
+	}
+	/* HDR (Android 14 and up): the headroom the screen gives now, read again every second - as the iOS app (at full
+	 * brightness only a little is left above white) */
+	long hdrT; float hdrNow = -1;
+	void hdrTick ()
+	{
+		if (!hdrCan || Build.VERSION.SDK_INT < 34) return; final long now = System.currentTimeMillis (); if (now - hdrT < 1000) return; hdrT = now;
+		try { final float r = Math.max (1f, getWindowManager ().getDefaultDisplay ().getHdrSdrRatio ()); if (Math.abs (r - hdrNow) < 0.05f) return; hdrNow = r;
+			final float f = prefs.getFloat ("app.hdr", 1f); VX.setHdr (f > 0.01f, r, f); log ("HDR: headroom now " + r + "x"); }
+		catch (Throwable t) { }
+	}
+	boolean tuneAsked, tuneRan; String tuneSaid = "";
 	void tuneWait (long t0)
 	{
 		final int t = VX.tuning (), st = VX.status ();
-		if (t == 1) status ("Tuning for this device (once)...");
-		if (st < 0 || t == 2 || System.currentTimeMillis () - t0 > 60000) { welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome)); return; }
+		if (t == 3 && !tuneAsked) { tuneAsked = true; status ("A short test of this device first"); askTune (); }
+		else if (t == 3 && stack.isEmpty ()) VX.tuneAnswer (-1);   /* (the question closed without an answer: later) */
+		if (t == 1) { final String s = "Testing this device (once)...\n" + VX.tuneStatus (); if (!s.equals (tuneSaid)) { tuneSaid = s; status (s); } }
+		if (st < 0 || t == 2 || (t == 0 && System.currentTimeMillis () - t0 > 60000)) {
+			welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome));
+			if (t == 2 && tuneRan) tuneReport (VX.tuneReport ());
+			/* (the greeting and the first hint once the start screen is gone - not over the device test's question) */
+			h.postDelayed (() -> Online.firstName (this), 1500);    /* (the player name: this device's, or asked for once) */
+			if (!prefs.getBoolean ("app.welcomed", false)) h.postDelayed (() -> { prefs.edit ().putBoolean ("app.welcomed", true).apply ();
+				toast ("Tap the cartridge on the deck for the games, ≡ or the menu button for the rest", 5); }, 800);
+			return; }
 		h.postDelayed (() -> tuneWait (t0), 100);
+	}
+	/* the question before the test - what it does, how long, that it never runs in a game */
+	void askTune ()
+	{
+		Screens.Panel p = new Screens.Panel (this, "Device test");
+		p.header ("Best quality at full speed");
+		p.row ("Test now", "About 10 to 20 seconds, once", () -> { pop (); tuneRan = true; VX.tuneAnswer (1); });
+		p.row ("Later", "Asked again at the next start", () -> { pop (); VX.tuneAnswer (-1); });
+		p.foot ("A short test of this device's graphics finds the best picture quality it keeps at full speed, at each screen rate. It runs before you play, never during a game.");
+		push (p);
+	}
+	/* the test's result: each screen rate - every effect on, or what this device runs without */
+	void tuneReport (String r)
+	{
+		log ("device test: " + r.replace ('\n', ';'));
+		if (r == null || r.isEmpty ()) return;
+		Screens.Panel p = new Screens.Panel (this, "Device test done");
+		p.header (r.contains ("effects off") ? "What this device runs at full speed" : "Every effect on at every rate");
+		for (String line : r.split ("\n")) { final int c = line.indexOf (": "); p.row (c > 0 ? line.substring (0, c) : line, c > 0 ? line.substring (c + 2) : "", null); }
+		p.foot ("Quality profile Auto uses these results; the settings let you choose another.");
+		p.row ("OK", "", this::pop);
+		push (p);
 	}
 	void status (String s) { wStatus.setText (s); log ("start screen: " + s.replace ('\n', ' ')); }
 

@@ -5,10 +5,11 @@ newest on top, each line short enough for that small window (at most about 70 ch
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.8.7
-- Phones: tuned once at the first start, never during a game
+- Phones: a device test once, asked first, its result shown
 - Overlay on, a turn of the device: no more hold-ups
 - Auto quality keeps every picture (half rate only as a last resort)
-- Android: FPS holds 120 at 120 Hz
+- Android: FPS holds 120 at 120 Hz; the screen follows the rate
+- Android: asks what to download at the first start
 
 ## v1.8.6
 - Labels: the small print's area a square wider where it was tight

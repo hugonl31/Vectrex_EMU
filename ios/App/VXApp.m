@@ -1033,6 +1033,7 @@ static void vxa_toast (NSString *s, double secs)
 	[NSUserDefaults.standardUserDefaults removeObjectForKey:@"resk.land"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"resk.up"];   /* (a smaller drawing tried in a test: gone) */
 	extern int vx_app_osd_on; vx_app_osd_on = 1; vxa_hdr_update ();     /* (the figures measured for the native deck) */
 	extern int vx_app_noshape; vx_app_noshape = 1;      /* (the app places the picture and the deck: no bars to the screen's shape) */
+	{ extern int vx_app_tunes; vx_app_tunes = 1; }       /* (the app tests the device itself, the player asked first: the core never measures on its own) */
 	retro_set_environment (vxa_env); vxa_set_callbacks ();
 	retro_init ();
 	NSString *game = [NSUserDefaults.standardUserDefaults stringForKey:@"lastGame"];
@@ -1055,15 +1056,44 @@ static void vxa_toast (NSString *s, double secs)
 	  for (int i = 0; i < 2; i++) { vxa_input_poll (); retro_run (); }   /* (the first refreshes: the picture's size known) */
 	  const CGSize ns = UIScreen.mainScreen.nativeBounds.size; const int L = (int) MAX (ns.width, ns.height), S = (int) MIN (ns.width, ns.height);
 	  const int top = UIScreen.mainScreen.maximumFramesPerSecond >= 119 ? 120 : 60, nr = top > 60 ? 2 : 1; const int r0[2] = { 60, top };
-	  if (vx_app_tune (L, S, r0, nr, 1) > 0) {
-		_status.text = @"Tuning for this device (once)..."; vlog ("tuning this device: 60%s Hz at the largest picture of %d x %d, the overlay on", nr > 1 ? " and 120" : "", L, S);
+	  if (vx_app_tune (L, S, r0, nr, 1) > 0) {       /* (asked first: what it does, how long - never in a game) */
+		_status.text = @"A short test of this device first"; vlog ("device test: needed - asking");
 		__weak VXGameVC *ws = self;
-		dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.15 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ VXGameVC *g = ws; if (!g) return;   /* (the text on screen first) */
-			[EAGLContext setCurrentContext:g->_ctx]; const double t0 = CACurrentMediaTime (); const int rr[2] = { 60, top };
-			const int k = vx_app_tune (L, S, rr, nr, 0); vlog ("tuned: %d rate%s in %.1f s", k, k > 1 ? "s" : "", CACurrentMediaTime () - t0);
-			[g startLink]; });
+		UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Device test" message:@"A short test of this device's graphics finds the best picture quality it keeps at full speed, at each screen rate. About 10 to 20 seconds, once. It runs before you play, never during a game." preferredStyle:UIAlertControllerStyleAlert];
+		[a addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:^(UIAlertAction *x) { (void) x; vlog ("device test: later - nothing measured meanwhile"); [ws startLink]; }]];
+		UIAlertAction *go = [UIAlertAction actionWithTitle:@"Test now" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x; [ws testLong:L short:S top:top]; }];
+		[a addAction:go]; a.preferredAction = go;
+		[(self.presentedViewController ?: self) presentViewController:a animated:YES completion:nil];
 		return; } }
 	[self startLink];
+}
+/* the device test on a thread of its own (the GL context handed to it), its steps on the start screen; then its result */
+- (void) testLong:(int)L short:(int)S top:(int)top
+{
+	extern int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry); extern void vx_app_tune_status (char *o, int n);
+	_status.numberOfLines = 0; _status.text = @"Testing this device (once)...";
+	vlog ("device test: 60%s Hz at the largest picture of %d x %d, the overlay on", top > 60 ? " and 120" : "", L, S);
+	EAGLContext *cx = _ctx; __weak VXGameVC *ws = self; [EAGLContext setCurrentContext:nil];
+	NSTimer *tm = [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) { (void) t; char b[256]; vx_app_tune_status (b, sizeof b);
+		VXGameVC *g = ws; if (g) g->_status.text = [NSString stringWithFormat:@"Testing this device (once)...\n%s", b]; }];
+	dispatch_async (dispatch_get_global_queue (QOS_CLASS_USER_INTERACTIVE, 0), ^{
+		[EAGLContext setCurrentContext:cx]; const double t0 = CACurrentMediaTime (); const int rr[2] = { 60, top };
+		const int k = vx_app_tune (L, S, rr, top > 60 ? 2 : 1, 0); glFinish (); [EAGLContext setCurrentContext:nil];
+		const double secs = CACurrentMediaTime () - t0;
+		dispatch_async (dispatch_get_main_queue (), ^{ [tm invalidate]; VXGameVC *g = ws; if (!g) return;
+			[EAGLContext setCurrentContext:cx]; vlog ("device test done: %d rate%s in %.1f s", k, k > 1 ? "s" : "", secs);
+			[g startLink]; [g testReport]; }); });
+}
+/* the test's result: each screen rate - every effect on, or what this device runs without */
+- (void) testReport
+{
+	extern const char *vx_app_tune_report (void); NSString *r = @(vx_app_tune_report ());
+	vlog ("device test: %s", [r stringByReplacingOccurrencesOfString:@"\n" withString:@"; "].UTF8String);
+	if (!r.length) return;
+	vxa_hold (1);
+	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Device test done" message:[r stringByAppendingString:@"\n\nQuality profile Auto uses these results; the settings let you choose another."] preferredStyle:UIAlertControllerStyleAlert];
+	[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x; vxa_hold (0); }]];
+	[(self.presentedViewController ?: self) presentViewController:a animated:YES completion:nil];
 }
 - (void) startLink                                 /* (the game on: its refreshes, the start screen gone) */
 {

@@ -457,7 +457,8 @@ static int vxa_state_file (int save, int slot)
 
 /* ---------------------------------------------------------------- the core's thread: start, then a refresh each vsync */
 static pthread_t vxa_th; static volatile int vxa_quit, vxa_running = 1, vxa_started, vxa_ok;
-static int vxa_tune_l, vxa_tune_s, vxa_tune_hz = 60; static volatile int vxa_tune_st;   /* (the first start's tuning: the screen's sides, its fastest rate; 1 tuning, 2 done) */
+static int vxa_tune_l, vxa_tune_s, vxa_tune_hz = 60; static volatile int vxa_tune_st, vxa_tune_go;   /* (the first start's tuning: the screen's sides, its fastest rate;
+                                                    3 the player asked, 1 testing, 2 done; go: their answer, 1 now, -1 later) */
 static char vxa_game0[1100]; static volatile int vxa_browser;     /* (the core's ROM browser asked for: the library instead) */
 static volatile int vxa_stat_rps, vxa_stat_pps, vxa_stat_ms;
 extern int vx_app_noshape, vx_app_osd_on;
@@ -529,6 +530,7 @@ static void *vxa_main (void *u)
 	vxa_present_setup ();
 	vx_app_noshape = 1;                                  /* (the app places the picture and the deck: no bars to the screen's shape) */
 	vx_app_osd_on = 1;
+	{ extern int vx_app_tunes; vx_app_tunes = 1; }       /* (the app tests the device itself, the player asked first: the core never measures on its own) */
 	retro_set_environment (vxa_env);
 	retro_set_video_refresh (vxa_video); retro_set_audio_sample (vxa_audio_sample); retro_set_audio_sample_batch (vxa_audio_batch);
 	retro_set_input_poll (vxa_poll); retro_set_input_state (vxa_input_state);
@@ -579,13 +581,16 @@ static void *vxa_main (void *u)
 			clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c1); t_cpu += (c1.tv_sec - c0.tv_sec) + (c1.tv_nsec - c0.tv_nsec) * 1e-9;   /* (the thread's own processor time: waiting for the GPU is not) */
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;
 			if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); vxa_browser = 1; } }
-		if (vxa_tune_st == 0 && vxa_since_load >= 2) {    /* (the first refreshes drawn: this device tuned now if it never was - the start screen up) */
+		if ((vxa_tune_st == 0 && vxa_since_load >= 2) || (vxa_tune_st == 3 && vxa_tune_go)) {   /* (the first refreshes drawn: this device tested if it never
+			                                             was - the player asked first, the start screen up) */
 			extern int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry);
 			int rates[2] = { 60, vxa_tune_hz }; const int nr = vxa_tune_hz > 60 ? 2 : 1;
-			if (vxa_tune_l > 0 && vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 1) > 0) { vxa_tune_st = 1; const double t0 = vxa_now ();
-				vlog ("tuning this device: 60%s Hz at the largest picture of %d x %d, the overlay on", nr > 1 ? (vxa_tune_hz == 120 ? " and 120" : " and the fastest") : "", vxa_tune_l, vxa_tune_s);
-				const int k = vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 0); vlog ("tuned: %d rate%s in %.1f s", k, k > 1 ? "s" : "", vxa_now () - t0); last = 0; }
-			vxa_tune_st = 2; }
+			if (vxa_tune_st == 0) { vxa_tune_st = vxa_tune_l > 0 && vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 1) > 0 ? 3 : 2; if (vxa_tune_st == 3) vlog ("device test: needed - asking"); }
+			else if (vxa_tune_go < 0) { vlog ("device test: later - nothing measured meanwhile"); vxa_tune_st = 2; }
+			else { vxa_tune_st = 1; const double t0 = vxa_now ();
+				vlog ("device test: 60%s Hz at the largest picture of %d x %d, the overlay on", nr > 1 ? (vxa_tune_hz == 120 ? " and 120" : " and the fastest") : "", vxa_tune_l, vxa_tune_s);
+				const int k = vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 0); vlog ("device test done: %d rate%s in %.1f s", k, k > 1 ? "s" : "", vxa_now () - t0); last = 0;
+				vxa_tune_st = 2; } }
 		vxa_present (); pres++;
 		if (vxa_hint && vxa_ph_rep) vxa_ph_rep (vxa_hint, (int64_t) ((vxa_now () - now) * 1e9));   /* (this refresh's work: the hint) */
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
@@ -595,6 +600,19 @@ static void *vxa_main (void *u)
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
 				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, zero, multi, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
 			vxa_threads (t);
+			{ /* (120 Hz the GPU cannot hold - as the iOS app (f4049fa): after a while at full load a phone slows its GPU and the
+			   *  pictures come irregularly, a stutter; a steady 60 looks smooth. Two periods behind (fewer than 80 % of the runs
+			   *  got a refresh of their own): 60 Hz for this session - the default only (a rate the player chose stays), not
+			   *  online, not saved) */
+			  static int slow; extern int vx_net_playing_now (void); const double rs = runs / t, ps = pres / t; char sv[160];
+			  pthread_mutex_lock (&vxa_omx); const int ri = vxa_opt_find ("vectrex_emu_rate");
+			  const int dflt120 = ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv);
+			  if (dflt120 && !vx_net_playing_now () && !vxa_holding) {
+				slow = rs > 100 && ps < 0.8 * rs ? slow + 1 : 0;
+				if (slow >= 2) { slow = 0; snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1;
+					vlog ("the GPU behind at 120 Hz (%.0f of %.0f runs got a refresh): 60 Hz for this session", ps, rs); } }
+			  else slow = 0;
+			  pthread_mutex_unlock (&vxa_omx); }
 			{ extern int vx_net_diag (char *, int), vx_net_playing_now (void); if (vx_net_playing_now ()) { char d[600]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */
 			runs = pres = ticks = late = zero = multi = 0; t_run = t_max = t_cpu = 0; vxa_under = vxa_drop = 0; }
 	}
@@ -695,7 +713,11 @@ JNIEXPORT void JNICALL JF(start) (JNIEnv *e, jclass c, jstring sys, jstring save
 	pthread_create (&vxa_th, &a, vxa_main, NULL);
 }
 JNIEXPORT void JNICALL JF(setTune) (JNIEnv *e, jclass c, jint l, jint s, jint hz) { (void) e; (void) c; vxa_tune_l = l; vxa_tune_s = s; vxa_tune_hz = hz > 60 ? hz : 60; }
+JNIEXPORT jint JNICALL JF(rate) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_ok == 1 ? (jint) (vxa_av.timing.fps + 0.5) : 0; }
 JNIEXPORT jint JNICALL JF(tuning) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_tune_st; }
+JNIEXPORT void JNICALL JF(tuneAnswer) (JNIEnv *e, jclass c, jint go) { (void) e; (void) c; vxa_tune_go = go; }
+JNIEXPORT jstring JNICALL JF(tuneStatus) (JNIEnv *e, jclass c) { (void) c; extern void vx_app_tune_status (char *o, int n); char b[256]; vx_app_tune_status (b, sizeof b); return (*e)->NewStringUTF (e, b); }
+JNIEXPORT jstring JNICALL JF(tuneReport) (JNIEnv *e, jclass c) { (void) c; extern const char *vx_app_tune_report (void); return (*e)->NewStringUTF (e, vx_app_tune_report ()); }
 JNIEXPORT jint JNICALL JF(status) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_ok; }
 JNIEXPORT void JNICALL JF(setSurface) (JNIEnv *e, jclass c, jobject surface)
 {

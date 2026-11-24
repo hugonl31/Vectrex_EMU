@@ -292,7 +292,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 	if (R == 12) {                                  /* (the screen at its brightest while a game plays - VXApp.m vxa_bright) */
 		static NSString *const MB[3] = { @"Off", @"Gameplay", @"Whole app" };
 		static NSString *const MBD[3] = { @"Your own brightness", @"Screen at maximum while playing, yours in menus", @"Screen at maximum, menus too" };
-		const NSInteger mb = MAX (0, MIN (2, [NSUserDefaults.standardUserDefaults integerForKey:@"app.maxbright"]));
+		extern int vxa_maxbright (void); const NSInteger mb = MAX (0, MIN (2, vxa_maxbright ()));   /* (Gameplay the default) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"Max brightness"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
 		c.detailTextLabel.text = MBD[mb];

@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <math.h>
 #include <time.h>
 #include <unistd.h>
@@ -465,7 +466,7 @@ extern int vx_app_noshape, vx_app_osd_on;
 /* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
  * slow cores took 15-16 ms of a 16.7 ms refresh for Armor Attack (the iPad: 4); RetroArch's game thread is kept on the
  * fast ones. The cores near the top clock speed; the threads the core starts from here (UVMC2 / PiTrex, the drawing) follow */
-static int vxa_tid;
+static int vxa_tid; static int vxa_rate_slow;   /* (vxa_rate_slow: 120 Hz the GPU could not hold - 60 for the session) */
 static cpu_set_t vxa_top_set; static int vxa_top_ok;   /* (the fastest cores: the emulation thread's - UVMC2 / PiTrex) */
 static void vxa_fast_cores (void)
 {
@@ -478,6 +479,16 @@ static void vxa_fast_cores (void)
 	CPU_ZERO (&vxa_top_set); for (int c = 0; c < n; c++) if (mx[c] == top) CPU_SET (c, &vxa_top_set); vxa_top_ok = 1;
 	const int r = sched_setaffinity (0, sizeof set, &set);
 	vlog ("cores: the game's thread on %d fast ones (%s, up to %ld MHz)%s", k, list, top / 1000, r ? " - not allowed" : "");
+}
+/* (the UVMC2 / PiTrex emulation's own thread, as it starts: on the fastest core - from its own thread; moved from the game
+ *  thread, Android said "not allowed" (the Nova, VecDoom: 80 % of a core, fewer pictures than refreshes) */
+static void vxa_emu_start (void)
+{
+	if (!vxa_top_ok) return;
+	const int r = sched_setaffinity (0, sizeof vxa_top_set, &vxa_top_set), er = r ? errno : 0;
+	char list[64] = ""; size_t o = 0; for (int c = 0; c < 64; c++) if (CPU_ISSET (c, &vxa_top_set)) o += (size_t) snprintf (list + o, o < sizeof list ? sizeof list - o : 0, "%s%d", o ? "," : "", c);
+	if (r) vlog ("cores: the emulation thread on the fastest (%s) - refused: %s", list, strerror (er));
+	else vlog ("cores: the emulation thread on the fastest (%s)", list);
 }
 /* (Android 13+: the game thread says how long each refresh's work took - the clocks follow) */
 static int vxa_emu_tid; static double vxa_hint_fps;
@@ -510,9 +521,9 @@ static void vxa_threads (double secs)
 		int l = (int) (c - o - 1); if (l > 19) l = 19; memcpy (nm[n], o + 1, l); nm[n][l] = 0;
 		long ut = 0, st = 0; if (sscanf (c + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld", &ut, &st) != 2) continue;
 		id[n] = atoi (de->d_name); tk[n] = ut + st;
-		if (!strcmp (nm[n], "vx-emu") && id[n] != vxa_emu_tid) { vxa_emu_tid = id[n];   /* (the emulation's own thread: on the fastest core, in the hints) */
-			const int e = vxa_top_ok ? sched_setaffinity (vxa_emu_tid, sizeof vxa_top_set, &vxa_top_set) : -1;
-			vlog ("cores: the emulation thread on the fastest%s", e ? " - not allowed" : ""); if (vxa_hint) vxa_perf_hint (vxa_hint_fps); }
+		if (!strcmp (nm[n], "vx-emu") && id[n] != vxa_emu_tid) { vxa_emu_tid = id[n];   /* (the emulation's own thread: in the hints - it puts itself on the
+			                                                   fastest core as it starts, vxa_emu_start) */
+			if (vxa_hint) vxa_perf_hint (vxa_hint_fps); }
 		n++; }
 	closedir (d);
 	long dl[VXA_TH]; for (int i = 0; i < n; i++) { dl[i] = 0; for (int j = 0; j < vxa_th_n; j++) if (vxa_th_id[j] == id[i]) { dl[i] = tk[i] - vxa_th_t[j]; break; } all += dl[i]; }
@@ -526,6 +537,7 @@ static void vxa_threads (double secs)
 static void *vxa_main (void *u)
 {
 	(void) u; vxa_tid = gettid (); vxa_fast_cores (); pthread_setname_np (pthread_self (), "vx-game");
+	{ extern void (*vx_emu_thread_hook) (void); vx_emu_thread_hook = vxa_emu_start; }
 	if (!vxa_egl_init ()) { vxa_ok = -1; return NULL; }
 	vxa_present_setup ();
 	vx_app_noshape = 1;                                  /* (the app places the picture and the deck: no bars to the screen's shape) */
@@ -571,6 +583,18 @@ static void *vxa_main (void *u)
 		if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3 && !onl) n++;
 		if (n > (onl ? 2 : 4)) n = onl ? 2 : 4;            /* (online: the lockstep waits - no runs to fill the dry sound, as the iOS app) */
 		if (vxa_snap_n >= 0) n = 1;                         /* (a snapshot asked for: every run drawn) */
+		{ /* (a UVMC2 / PiTrex program at 60 Hz when the rate is only the default: its emulation is a processor of its own -
+		   *  VecDoom took 80 % of the Nova's fastest core, at 120 Hz 49-56 pictures a second, the refreshes waiting for it;
+		   *  its game makes 20-35 frames a second, 120 gives nothing to see. A rate the player chose stays; back at the next
+		   *  Vectrex game. The owner, 2026-11-25) */
+		  static int card_was = -1; extern int vx_app_card (void), vx_net_playing_now (void); const int card = vx_app_card ();
+		  if (card != card_was && !vx_net_playing_now ()) { card_was = card; char sv[160];
+			pthread_mutex_lock (&vxa_omx); const int ri = vxa_opt_find ("vectrex_emu_rate");
+			if (ri >= 0 && !vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv)) {
+				const char *want = (card || vxa_rate_slow) && atoi (vxa_opt[ri].def) > 60 ? "60 Hz" : vxa_opt[ri].def;
+				if (strcmp (vxa_opt[ri].val, want)) { snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", want); vxa_opt_dirty = 1;
+					vlog ("screen rate %s: %s", want, card ? "a UVMC2 / PiTrex game (the default rate)" : "a Vectrex game again"); } }
+			pthread_mutex_unlock (&vxa_omx); } }
 		if (!vxa_holding) { if (n == 0) zero++; else if (n > 1) multi++; }
 		vxa_hdr_update ();
 		if (!vxa_holding) {
@@ -600,6 +624,11 @@ static void *vxa_main (void *u)
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
 				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, zero, multi, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
 			vxa_threads (t);
+			{ /* (the core's run split up - emulation, Smooth motion, the picture's lines, the afterglow's lines, the GPU's commands:
+			   *  mean and largest a run over these 5 s - as the iOS app's; where a slow refresh's time went) */
+			  extern void vx_app_cpu_split (double mean[5], double most[5]); double cm[5], cx[5]; vx_app_cpu_split (cm, cx);
+			  if (runs > 0) vlog ("a run (mean / most): emulation %.2f / %.2f, smooth %.2f / %.2f, lines %.2f / %.2f, afterglow lines %.2f / %.2f, GPU commands %.2f / %.2f ms",
+				cm[0], cx[0], cm[1], cx[1], cm[2], cx[2], cm[3], cx[3], cm[4], cx[4]); }
 			{ /* (120 Hz the GPU cannot hold - as the iOS app (f4049fa): after a while at full load a phone slows its GPU and the
 			   *  pictures come irregularly, a stutter; a steady 60 looks smooth. Two periods behind (fewer than 80 % of the runs
 			   *  got a refresh of their own): 60 Hz for this session - the default only (a rate the player chose stays), not
@@ -609,7 +638,7 @@ static void *vxa_main (void *u)
 			  const int dflt120 = ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv);
 			  if (dflt120 && !vx_net_playing_now () && !vxa_holding) {
 				slow = rs > 100 && ps < 0.8 * rs ? slow + 1 : 0;
-				if (slow >= 2) { slow = 0; snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1;
+				if (slow >= 2) { slow = 0; snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
 					vlog ("the GPU behind at 120 Hz (%.0f of %.0f runs got a refresh): 60 Hz for this session", ps, rs); } }
 			  else slow = 0;
 			  pthread_mutex_unlock (&vxa_omx); }

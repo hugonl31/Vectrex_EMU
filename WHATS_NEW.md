@@ -4,6 +4,10 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.8
+- Phones: Max brightness on for gameplay by default
+- Phones: UVMC2 / PiTrex games at a steady 60 Hz by default
+
 ## v1.8.7
 - Phones: a device test once, asked first, its result shown
 - Overlay on, a turn of the device: no more hold-ups

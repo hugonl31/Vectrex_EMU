@@ -3,6 +3,16 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.8
+
+* iPhone / iPad and Android: Max brightness is Gameplay by default (the screen at its brightest while a game plays,
+  yours in the menus); Off or Whole app in Settings > App.
+* iPhone / iPad and Android: UVMC2 and PiTrex programs run at 60 Hz when 120 Hz is only the default (a rate you chose
+  stays): their emulation is a processor of its own, and at 120 Hz the refreshes waited for it (VecDoom: about 50
+  pictures a second on the Nova); back to 120 Hz at the next Vectrex game.
+* Android: the UVMC2 / PiTrex emulation thread put on the fastest core from its own thread (moved from outside,
+  Android refused it); the log splits each run's time (emulation, Smooth motion, lines, afterglow, GPU) as on iOS.
+
 ## v1.8.7
 
 * Quality auto: the device is tested once and never in the middle of a game. The iPhone / iPad and Android apps ask

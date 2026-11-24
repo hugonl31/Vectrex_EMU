@@ -422,7 +422,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	 * brightness slider or auto-brightness says - the window's own override, as a boarding pass. Gameplay: while a game plays,
 	 * the user's own in the menus (the HDR slider is no menu); Whole app: the menus too. Never when the app is not in front
 	 * (Android drops a window's override by itself) */
-	int maxBright () { return prefs.getInt ("app.maxbright", 0); }   /* (0 off, 1 gameplay, 2 whole app) */
+	int maxBright () { return prefs.getInt ("app.maxbright", 1); }   /* (0 off, 1 gameplay - the default, the owner 2026-11-25 - 2 whole app) */
 	boolean brightUp;
 	void brightTick ()
 	{
@@ -506,11 +506,11 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (t == 1) { final String s = "Testing this device (once)...\n" + VX.tuneStatus (); if (!s.equals (tuneSaid)) { tuneSaid = s; status (s); } }
 		if (st < 0 || t == 2 || (t == 0 && System.currentTimeMillis () - t0 > 60000)) {
 			welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome));
-			if (t == 2 && tuneRan) tuneReport (VX.tuneReport ());
-			/* (the greeting and the first hint once the start screen is gone - not over the device test's question) */
-			h.postDelayed (() -> Online.firstName (this), 1500);    /* (the player name: this device's, or asked for once) */
-			if (!prefs.getBoolean ("app.welcomed", false)) h.postDelayed (() -> { prefs.edit ().putBoolean ("app.welcomed", true).apply ();
-				toast ("Tap the cartridge on the deck for the games, ≡ or the menu button for the rest", 5); }, 800);
+			/* (the greeting and the first hint once the start screen is gone - not over the device test's question or its result) */
+			final Runnable greet = () -> { h.postDelayed (() -> Online.firstName (this), 1500);    /* (the player name: this device's, or asked for once) */
+				if (!prefs.getBoolean ("app.welcomed", false)) h.postDelayed (() -> { prefs.edit ().putBoolean ("app.welcomed", true).apply ();
+					toast ("Tap the cartridge on the deck for the games, ≡ or the menu button for the rest", 5); }, 800); };
+			if (t == 2 && tuneRan && !VX.tuneReport ().isEmpty ()) tuneReport (VX.tuneReport (), greet); else greet.run ();
 			return; }
 		h.postDelayed (() -> tuneWait (t0), 100);
 	}
@@ -525,7 +525,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		push (p);
 	}
 	/* the test's result: each screen rate - every effect on, or what this device runs without */
-	void tuneReport (String r)
+	void tuneReport (String r, Runnable after)
 	{
 		log ("device test: " + r.replace ('\n', ';'));
 		if (r == null || r.isEmpty ()) return;
@@ -534,6 +534,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		for (String line : r.split ("\n")) { final int c = line.indexOf (": "); p.row (c > 0 ? line.substring (0, c) : line, c > 0 ? line.substring (c + 2) : "", null); }
 		p.foot ("Quality profile Auto uses these results; the settings let you choose another.");
 		p.row ("OK", "", this::pop);
+		p.onClose = after;                              /* (closed - OK or back: the greeting then) */
 		push (p);
 	}
 	void status (String s) { wStatus.setText (s); log ("start screen: " + s.replace ('\n', ' ')); }

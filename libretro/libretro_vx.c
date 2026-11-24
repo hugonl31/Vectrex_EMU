@@ -3020,12 +3020,15 @@ static void emu_join (void) { WaitForSingleObject (emu_done, INFINITE); }
 #include <pthread.h>
 static pthread_t emu_th; static int emu_made, emu_req, emu_fin;
 static pthread_mutex_t emu_mx = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t emu_cv = PTHREAD_COND_INITIALIZER;
+void (*vx_emu_thread_hook) (void);              /* (the own apps: called on the emulation thread as it starts - the Android app puts
+                                                   it on the fastest core from there: moved from outside, Android refused it) */
 static void *emu_main (void *p)
 {
 	(void) p;
 #ifdef __ANDROID__
 	pthread_setname_np (pthread_self (), "vx-emu");      /* (named: the Android app's thread figures) */
 #endif
+	if (vx_emu_thread_hook) vx_emu_thread_hook ();
 	for (;;) {
 		pthread_mutex_lock (&emu_mx); while (!emu_req) pthread_cond_wait (&emu_cv, &emu_mx); emu_req = 0; pthread_mutex_unlock (&emu_mx);
 		emu_loop ();
@@ -3689,6 +3692,7 @@ static const unsigned char *get_lines (const unsigned char *i, line_t *L, int *n
 #define VX_FRAME_HDR (sizeof (int) * 3 + sizeof (double) + sizeof (unsigned long long))
 static int extern_cart_len (void) { extern size_t vt_cart_len; return (int) (vt_cart_len > sizeof cart ? sizeof cart : vt_cart_len); }
 static int vx_ok (void) { extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; return !vt_uvm2 && !vt_uvm2_cart && !vt_pitrex; }
+int vx_app_card (void) { return !vx_ok (); }   /* (the own apps: a UVMC2 or PiTrex program running - its screen rate) */
 /* (2026-11-15: the variables by name, in one order, 'long' as 8 bytes - the same state on every system, so netplay joins
  *  between Windows, Android and Linux. Before: the save-state sections whole, which each compiler lays out its own way.
  *  The lists: vars_*.h, made by tools/gen_state_vars.py from both builds' symbols) */

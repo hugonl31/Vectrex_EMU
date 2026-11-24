@@ -13,6 +13,9 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - The full set of 280 games: a separate download (README)
 - Your own pictures may be JPEG too
 - Games list pictures at 80 % brightness (were 70 %)
+- Test Cartridge Rev. 4 and others: their lines steady
+- Vectrex unit: the beam's rate up vs down, right vs left (in %)
+- Downloads checked before unpacking; archive.org as a fallback
 
 ## v1.8.4
 - Drawn boxes: a portrait picture, 12 vector scenes, a colour per game

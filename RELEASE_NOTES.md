@@ -21,6 +21,14 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * The PiTrex's cartridge and box in the same design: its new title logo, its picture in the boxes' frame.
 * Your own pictures may be JPEG as well as PNG, and still come first.
 * The games list's pictures at 80 % brightness on every platform (70 % since v1.8.2).
+* The Test Cartridge Rev. 4's grid steady, and other games that time their own frames (Polar Rescue, Spinball, Tour
+  De France, the Zero Test): a piece of a frame the emulator had to cut is joined to the rest of the game's frame (PC,
+  phones and RetroArch alike). With Smooth motion off (phones, RetroArch) a held line ends at its own copy.
+* Vectrex unit: the beam's rate one way against the other - 'Y rate up vs down', 'X rate right vs left', -3..+3 %. The
+  Owner's Vectrex preset has Y up 1.16 % faster (measured on a photo of the Full Grid Test); the tube map is refitted
+  with it, so the default look stays as it was.
+* Get games & extras: every download checked before it is unpacked; the project's archive.org mirror as a fallback.
+* Cartridges in the games list drawn at up to 840 px (sharp at 2 a row on a big tablet).
 
 ## v1.8.4
 

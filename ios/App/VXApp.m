@@ -275,6 +275,7 @@ static struct { GLsync f; double t; } vxa_gq[VXA_GQN]; static unsigned vxa_gq_r,
 static pthread_mutex_t vxa_gq_mx = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t vxa_gq_cv = PTHREAD_COND_INITIALIZER;
 static EAGLContext *vxa_gq_ctx;
 static double vxa_gt_last, vxa_gt_busy, vxa_gt_bmax, vxa_gt_lat, vxa_gt_lmax, vxa_mt_sum, vxa_mt_max; static long vxa_gt_n, vxa_gt_lost, vxa_mt_n;
+static double vxa_dk_busy;                               /* (the deck's GPU bar: the same busy times + Metal's copies, its own second) */
 static void *vxa_gq_main (void *u)
 {
 	(void) u;
@@ -290,7 +291,7 @@ static void *vxa_gq_main (void *u)
 		pthread_mutex_lock (&vxa_gq_mx);
 		if (r == GL_ALREADY_SIGNALED || r == GL_CONDITION_SATISFIED) {
 			const double b = td - (tf > vxa_gt_last ? tf : vxa_gt_last), l = td - tf;
-			vxa_gt_busy += b; if (b > vxa_gt_bmax) vxa_gt_bmax = b; vxa_gt_lat += l; if (l > vxa_gt_lmax) vxa_gt_lmax = l; vxa_gt_n++; vxa_gt_last = td; }
+			vxa_dk_busy += b; vxa_gt_busy += b; if (b > vxa_gt_bmax) vxa_gt_bmax = b; vxa_gt_lat += l; if (l > vxa_gt_lmax) vxa_gt_lmax = l; vxa_gt_n++; vxa_gt_last = td; }
 		else vxa_gt_lost++;
 		pthread_mutex_unlock (&vxa_gq_mx); }
 	return NULL;
@@ -317,7 +318,19 @@ static void vxa_gq_push (GLsync f)                       /* (a picture's fence, 
 static void vxa_mt_add (double s)                        /* (Metal's copy to the screen: its GPU time, from its completion handler) */
 {
 	if (s <= 0 || s > 1) return;
-	pthread_mutex_lock (&vxa_gq_mx); vxa_mt_sum += s; if (s > vxa_mt_max) vxa_mt_max = s; vxa_mt_n++; pthread_mutex_unlock (&vxa_gq_mx);
+	pthread_mutex_lock (&vxa_gq_mx); vxa_dk_busy += s; vxa_mt_sum += s; if (s > vxa_mt_max) vxa_mt_max = s; vxa_mt_n++; pthread_mutex_unlock (&vxa_gq_mx);
+}
+/* the deck's GPU bar (VXUI): the core's meter needs GL timer queries, which iOS's OpenGL ES lacks - so the share of each second
+ * the GPU worked on our pictures, from the fences above plus Metal's copies (-1: not timed); read on every deck update */
+int vxa_gpu_share (void)
+{
+	static double t0; static int last = -1; const double tn = CACurrentMediaTime ();
+	if (!vxa_gq_on) return -1;
+	if (t0 == 0 || tn - t0 > 3) { pthread_mutex_lock (&vxa_gq_mx); vxa_dk_busy = 0; pthread_mutex_unlock (&vxa_gq_mx); t0 = tn; last = -1; return -1; }   /* (first, or after a stop) */
+	if (tn - t0 < 0.95) return last;
+	pthread_mutex_lock (&vxa_gq_mx); const double b = vxa_dk_busy; vxa_dk_busy = 0; pthread_mutex_unlock (&vxa_gq_mx);
+	last = (int) (b * 100 / (tn - t0) + 0.5); if (last > 100) last = 100; t0 = tn;
+	return last;
 }
 static void vxa_core_fb (unsigned w, unsigned h)              /* (the core's framebuffers at least w x h) */
 {

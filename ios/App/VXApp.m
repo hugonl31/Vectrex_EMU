@@ -41,6 +41,7 @@ static void vxa_net_watch (void)
 }
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding, vxa_nodraw;
 static int vxa_fullbright (void); static void vxa_bright (int want);   /* (Max brightness: by vxa_hold) */
+static int vxa_rate_slow;                                 /* (120 Hz the GPU could not hold: 60 for the session) */
 static void vxa_net_tick (void);                  /* (online play: below) */
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 void vxa_hdr_update (void); float vxa_hdr_headroom (void);
@@ -1225,6 +1226,15 @@ static void vxa_glass (double t)
 	                                                           drew pictures nobody saw: 115 runs, 0 pictures a second, the owner 2026-11-19) */
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
 	{ static double bt; if (now - bt > 0.25) { bt = now; const int mb = vxa_fullbright (); vxa_bright (mb == 2 || (mb == 1 && !vxa_holding && !_welcome.superview)); } }   /* (Max brightness) */
+	{ /* (a UVMC2 / PiTrex program at 60 Hz when the rate is only the default - as the Android app: its emulation is a processor
+	   *  of its own, 120 Hz left the refreshes waiting for it; its game makes 20-35 frames a second. A rate the player chose
+	   *  stays; back at the next Vectrex game. The owner, 2026-11-25) */
+	  static int card_was = -1; extern int vx_app_card (void); const int card = vx_app_card (); const int ri = vxa_opt_find ("vectrex_emu_rate");
+	  if (card != card_was && ri >= 0 && !vxa_net_playing ()) { card_was = card;
+		if (![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"]) {
+			const char *want = (card || vxa_rate_slow) && atoi (vxa_opt[ri].def) > 60 ? "60 Hz" : vxa_opt[ri].def;
+			if (strcmp (vxa_opt[ri].val, want)) { snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", want); vxa_opt_dirty = 1;
+				vlog ("screen rate %s: %s", want, card ? "a UVMC2 / PiTrex game (the default rate)" : "a Vectrex game again"); } } } }
 	if (vxa_holding) [self padBack];               /* (a screen over the game: the Vectrex's button 1 goes back) */
 	if (vxa_holding || _welcome.superview) return; /* (a screen over the game, or a download on the start screen: it waits - no playing while downloading) */
 	[EAGLContext setCurrentContext:_ctx];
@@ -1280,7 +1290,7 @@ static void vxa_glass (double t)
 		  static int slow; const double rs = _runs / t, ps = _presents / t; const int ri = vxa_opt_find ("vectrex_emu_rate");
 		  if (ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && ![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] && !vxa_net_playing ()) {
 			slow = rs > 100 && ps < 0.8 * rs ? slow + 1 : 0;
-			if (slow >= 2) { slow = 0; snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1;
+			if (slow >= 2) { slow = 0; snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
 				if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
 				vlog ("the GPU behind at 120 Hz (%.0f of %.0f pictures a second): 60 Hz for this session", ps, rs); } } }
 		{ extern int vx_net_playing_now (void), vx_net_diag (char *, int); if (vx_net_playing_now ()) { char d[600]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */

@@ -40,6 +40,7 @@ static void vxa_net_watch (void)
 	nw_path_monitor_set_queue (vxa_mon, dispatch_get_main_queue ()); nw_path_monitor_start (vxa_mon);
 }
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding, vxa_nodraw;
+static int vxa_fullbright (void); static void vxa_bright (int want);   /* (Full brightness: by vxa_hold) */
 static void vxa_net_tick (void);                  /* (online play: below) */
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 void vxa_hdr_update (void); float vxa_hdr_headroom (void);
@@ -1170,6 +1171,7 @@ static void vxa_glass (double t)
 	if (n > (onl ? 2 : 4)) n = onl ? 2 : 4;   /* (online: the lockstep waits for the other side - runs to fill the dry sound
 	                                                           drew pictures nobody saw: 115 runs, 0 pictures a second, the owner 2026-11-19) */
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
+	{ static double bt; if (now - bt > 0.25) { bt = now; vxa_bright (vxa_fullbright () && !vxa_holding && !_welcome.superview); } }   /* (Full brightness: playing) */
 	if (vxa_holding) [self padBack];               /* (a screen over the game: the Vectrex's button 1 goes back) */
 	if (vxa_holding || _welcome.superview) return; /* (a screen over the game, or a download on the start screen: it waits - no playing while downloading) */
 	[EAGLContext setCurrentContext:_ctx];
@@ -1634,8 +1636,21 @@ int vxa_state (int save, int slot)
 }
 int vxa_is_held (void) { return vxa_holding; }
 void vxa_toast_ext (NSString *s) { extern void vxa_ntoast_c (NSString *s); vxa_ntoast_c (s); }
+/* Full brightness (Settings > App): the screen at its brightest while a game plays - as a boarding pass in Wallet, whatever
+ * the brightness slider or auto-brightness says (the thin lines through an overlay in a dark room); the user's own back as soon
+ * as a menu covers the game or the app leaves the front. The one-slider panel is no menu: it stays up there */
+static CGFloat vxa_bright_was = -1;                       /* (the user's brightness while ours is up; -1: ours not up) */
+static int vxa_fullbright (void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"app.fullbright"]; }
+static void vxa_bright (int want)
+{
+	UIScreen *s = UIScreen.mainScreen;
+	if (want) { if (vxa_bright_was < 0) { vxa_bright_was = s.brightness; vlog ("full brightness: up (yours %.0f %%)", vxa_bright_was * 100); }
+		if (s.brightness < 0.995) s.brightness = 1.0; }   /* (auto-brightness pulled it down: up again) */
+	else if (vxa_bright_was >= 0) { s.brightness = vxa_bright_was; vlog ("full brightness: yours back (%.0f %%)", vxa_bright_was * 100); vxa_bright_was = -1; }
+}
 void vxa_hold (int on)
 {
+	if (on) vxa_bright (0);                               /* (a menu: the user's brightness at once) */
 	if (on != vxa_holding) { vxa_holding = on; vlog ("game %s", on ? "held (a screen over it)" : "running again");
 		extern int vxa_net_playing (void); if (vxa_net_playing ()) vx_net_pause (on); }   /* (online: a menu open pauses both, as the desktop's P) */
 }
@@ -1834,7 +1849,7 @@ static void vxa_net_tick (void)
 - (void) application:(UIApplication *)a handleEventsForBackgroundURLSession:(NSString *)i completionHandler:(void (^) (void))h
 { vlog ("woken for the pack's fetch (%s)", i.UTF8String); VXPack.shared.bgDone = h; if ([i hasSuffix:@".wifi"]) (void) VXPack.shared.wifiSession; else (void) VXPack.shared.session; }
 static UIBackgroundTaskIdentifier vxa_bgt; static int vxa_bgt_on;   /* (UIBackgroundTaskInvalid is no constant: a flag beside it) */
-- (void) applicationWillResignActive:(UIApplication *)a { [vxa_vc setRunning:0]; if (vxa_net_playing ()) vx_net_pause (2); }   /* (online: the other side sees
+- (void) applicationWillResignActive:(UIApplication *)a { vxa_bright (0); [vxa_vc setRunning:0]; if (vxa_net_playing ()) vx_net_pause (2); }   /* (online: the other side sees
 	                                                     "in another app" - a call, Control Center, the app switcher alike) */
 - (void) applicationDidEnterBackground:(UIApplication *)a
 {

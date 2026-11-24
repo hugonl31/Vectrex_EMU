@@ -143,6 +143,8 @@ final class Screens {
 		if (m.hdrCan) p.row ("HDR brightness", m.prefs.getFloat ("app.hdr", 1f) > 0.01f ? "The brightest dots up to " + String.format (java.util.Locale.ROOT, "%.1fx", 1 + (m.hdrRoom - 1) * m.prefs.getFloat ("app.hdr", 1f)) + " white" : "Off: as an ordinary screen",
 			() -> Adjust.showHdr (m));   /* (a slider over the running game) */
 		else p.row ("HDR brightness", m.hdrScreen ? "Not on this Android version (HDR needs Android 14)" : "Not on this screen (it shows no HDR)", null);
+		p.row ("Full brightness", m.fullBright () ? "On: screen at maximum while playing, yours in menus" : "Off",
+			() -> { m.prefs.edit ().putBoolean ("app.fullbright", !m.fullBright ()).apply (); Main.log ("full brightness " + m.fullBright ()); reopenSettings (m); });
 		{ final int lk = m.prefs.getInt ("app.look", 1);   /* (the look - iOS alike) */
 			p.row ("Look", lk == 1 ? "Bright: brighter, wider lines - for a small screen" : "Vectrex: as a real Vectrex",
 				() -> pick (m, "Look", new String[] { "0", "1" }, new String[] { "Vectrex", "Bright" }, String.valueOf (lk), s -> {

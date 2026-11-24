@@ -414,6 +414,19 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		Online.tick (this);
 		Input.poll (this);
 		if (barAuto () && !barHidden && System.currentTimeMillis () > barUntil) { barHidden = true; bar.animate ().alpha (0).setDuration (400); }
+		brightTick ();
+	}
+	/* Full brightness (Settings > App, as the iPhone app): the screen at its brightest while a game plays, whatever the brightness
+	 * slider or auto-brightness says - the window's own override, as a boarding pass; the user's own in the menus (the HDR
+	 * slider is no menu) and whenever the app is not in front (Android drops a window's override by itself) */
+	boolean fullBright () { return prefs.getBoolean ("app.fullbright", false); }
+	boolean brightUp;
+	void brightTick ()
+	{
+		final boolean want = fullBright () && stack.isEmpty () && welcome.getParent () == null;
+		if (want == brightUp) return; brightUp = want;
+		WindowManager.LayoutParams lp = getWindow ().getAttributes (); lp.screenBrightness = want ? WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+		getWindow ().setAttributes (lp); log ("full brightness: " + (want ? "up" : "yours back"));
 	}
 	long barUntil; boolean barHidden;
 	void showBar () { if (barAuto ()) { if (barHidden) log ("top bar shown"); barHidden = false; bar.animate ().cancel (); bar.animate ().alpha (1).setDuration (150); barUntil = System.currentTimeMillis () + 3000; }
@@ -424,7 +437,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void push (View v)
 	{
 		if (stack.isEmpty ()) hold (true);
-		stack.add (v); screens.addView (v, new FrameLayout.LayoutParams (-1, -1)); screens.bringToFront (); v.setAlpha (0); v.animate ().alpha (1).setDuration (150);   /* (in front of the start screen too) */
+		stack.add (v); brightTick (); screens.addView (v, new FrameLayout.LayoutParams (-1, -1)); screens.bringToFront (); v.setAlpha (0); v.animate ().alpha (1).setDuration (150);   /* (in front of the start screen too) */
 		v.post (() -> { View f = v.findFocus (); if (f == null) v.requestFocus (); });
 	}
 	void pop ()

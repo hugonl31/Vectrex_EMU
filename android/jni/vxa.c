@@ -545,7 +545,7 @@ static void *vxa_main (void *u)
 	vxa_audio_start (vxa_av.timing.sample_rate);
 	vxa_perf_hint (vxa_av.timing.fps);
 	vxa_ok = 1;
-	double last = 0, acc = 0, stat_t = vxa_now (), t_run = 0, t_max = 0, t_cpu = 0; long runs = 0, pres = 0, ticks = 0, late = 0; int was_running = 1;
+	double last = 0, acc = 0, stat_t = vxa_now (), t_run = 0, t_max = 0, t_cpu = 0; long runs = 0, pres = 0, ticks = 0, late = 0, zero = 0, multi = 0; int was_running = 1;
 	while (!vxa_quit) {
 		vxa_surface_update ();
 		vxa_cmd_run ();
@@ -559,11 +559,16 @@ static void *vxa_main (void *u)
 		if (dt > 1.5 / fps) late++;
 		if (dt > 0.25) dt = 0.25;
 		acc += dt * fps; int n = (int) acc; acc -= n;
+		/* (the screen at the emulator's rate: one run a refresh - the fraction kept at a half, as the iOS app since 1.7.6 (151).
+		 *  Left near a whole number, a refresh a little short got no run and the next one two, one picture for both: 120 runs
+		 *  and EMU RATE 100 %, yet the deck's FPS below 120 - the Nova, 2026-11-24) */
+		if (n == 1 && fabs (dt * fps - 1) < 0.3) acc += (0.5 - acc) * 0.1;
 		const double buf = vxa_ring_fill () / (vxa_av.timing.sample_rate > 0 ? vxa_av.timing.sample_rate : 44100);   /* (the sound decides: never far ahead, never dry) */
 		extern int vx_net_playing_now (void); const int onl = vx_net_playing_now ();
 		if (buf > 0.12 && n > 0) n--; else if (buf < 0.03 && n < 3 && !onl) n++;
 		if (n > (onl ? 2 : 4)) n = onl ? 2 : 4;            /* (online: the lockstep waits - no runs to fill the dry sound, as the iOS app) */
 		if (vxa_snap_n >= 0) n = 1;                         /* (a snapshot asked for: every run drawn) */
+		if (!vxa_holding) { if (n == 0) zero++; else if (n > 1) multi++; }
 		vxa_hdr_update ();
 		if (!vxa_holding) {
 			const double t0 = vxa_now ();
@@ -579,11 +584,11 @@ static void *vxa_main (void *u)
 		eglSwapBuffers (vxa_dpy, vxa_surf);
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
-			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld, sound %.0f ms, %u dry, %u dropped%s",
-				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
+			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
+				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, zero, multi, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
 			vxa_threads (t);
 			{ extern int vx_net_diag (char *, int), vx_net_playing_now (void); if (vx_net_playing_now ()) { char d[600]; vx_net_diag (d, sizeof d); vlog ("online: %s", d); } }   /* (the lockstep's figures: the delay, ahead, waits) */
-			runs = pres = ticks = late = 0; t_run = t_max = t_cpu = 0; vxa_under = vxa_drop = 0; }
+			runs = pres = ticks = late = zero = multi = 0; t_run = t_max = t_cpu = 0; vxa_under = vxa_drop = 0; }
 	}
 	vlog ("the core ends"); if (vxa_as) { AAudioStream_requestStop (vxa_as); AAudioStream_close (vxa_as); vxa_as = NULL; }
 	retro_unload_game (); retro_deinit ();

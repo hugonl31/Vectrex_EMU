@@ -1110,21 +1110,32 @@ static void letters (const char *s, char *out, size_t n)
 #else
 #define OV_EXT(x) ((x) && !vx_stricmp (x, ".png"))   /* (EmuVR: the mod hangs the PNG itself) */
 #endif
+static int ov_uvmc2_tag (const char *s)       /* ("(UVMC2)" in a name, any case) */
+{
+	static const char t[] = "(uvmc2)";
+	for (; *s; s++) { int k = 0; while (k < 7 && s[k] && (s[k] | 0x20) == (t[k] | 0x20)) k++; if (k == 7) return 1; }
+	return 0;
+}
 static int try_overlay_dir (const char *dir, const char *rom)
 {
 	char want[512], wantl[512]; base_of (rom, want, sizeof want); letters (want, wantl, sizeof wantl);
+	/* (a UVMC2 program: a Vectrex game's overlay only for its UVMC2 edition - "Last Human (UVMC2)" - else only one named for
+	 *  the UVMC2, "Armor Attack (UVMC2).png": the card's arcade games renamed to the Vectrex game's name got the cartridge's
+	 *  overlay, made for another screen - Tony on Facebook, 2026-11-25. As the PC's find_overlay) */
+	const char *rx = strrchr (rom, '.'); const char *rs = strrchr (rom, '/'), *rb = strrchr (rom, '\\'); if (rb > rs) rs = rb; rs = rs ? rs + 1 : rom;
+	const int card_only = rx && !vx_stricmp (rx, ".um2") && !ov_uvmc2_tag (rs);
 	char best[1600] = ""; int bestk = 0; size_t bestlen = 99999;
 #ifdef _WIN32
 	char pat[1200]; snprintf (pat, sizeof pat, "%s\\*.*", dir);
 	WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA (pat, &fd);
 	if (h == INVALID_HANDLE_VALUE) return 0;
 	do { const char *fn = fd.cFileName, *x = strrchr (fn, '.');
-		if (!OV_EXT (x)) continue;
+		if (!OV_EXT (x) || (card_only && !ov_uvmc2_tag (fn))) continue;
 #else
 	DIR *dh = opendir (dir); struct dirent *de;
 	if (!dh) return 0;
 	while ((de = readdir (dh))) { const char *fn = de->d_name, *x = strrchr (fn, '.');
-		if (!OV_EXT (x)) continue;
+		if (!OV_EXT (x) || (card_only && !ov_uvmc2_tag (fn))) continue;
 #endif
 		char b[512], bl[512]; base_of (fn, b, sizeof b); letters (b, bl, sizeof bl);
 		char full[512]; snprintf (full, sizeof full, "%s", fn); char *e = strrchr (full, '.'); if (e) *e = 0;

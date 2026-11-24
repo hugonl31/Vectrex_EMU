@@ -32,6 +32,8 @@ load a core from a file.
        <system>/vectrex_emu/overlays/*.art (or .png)
    Speech games (VecVox / VecVoice): put sp0256-al2.bin (or al2.bin) in <system>/vectrex_emu too. Not included.
    Overlays are found by the game's file name (Armor Attack.bin -> overlays/Armor Attack.png).
+   A UVMC2 program (.um2) only gets one named for the UVMC2 (Armor Attack (UVMC2).png), or a Vectrex
+   game's own overlay if it is that game's UVMC2 edition (Last Human (UVMC2).um2).
    PiTrex and UVMC2: their SD card folders (cards/system/vectrex_emu: pitrex, uvmc2) into <system>/vectrex_emu - the
    core makes each card from its folder and puts what the games save back into it; the PiTrex loader
    (cards/ROMs/PiTrex.img - its menu starts the PiTrex programs) and the .um2 games with the games.

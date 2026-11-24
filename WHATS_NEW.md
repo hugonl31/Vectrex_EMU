@@ -11,6 +11,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - Android: FPS holds 120 at 120 Hz; the screen follows the rate
 - Android: asks what to download at the first start
 - 3D Imager: show one eye only, left or right
+- UVMC2 arcade games no longer get the Vectrex game's overlay
 
 ## v1.8.6
 - Labels: the small print's area a square wider where it was tight

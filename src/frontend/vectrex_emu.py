@@ -1185,15 +1185,20 @@ def _art_base(s):
             return s.strip()
         s = t
 
-def find_overlay(name):
+def find_overlay(name, card=False):
     """the overlay for a ROM name: the same name, else the same base name (without (...) parts), else the
     same letters and digits ('Heads-Up' = 'Heads Up') - .art (MiSTer) or .png files; an underscore in the
-    file's name counts as a space (MiSTer's names: Armor_Attack.art)"""
+    file's name counts as a space (MiSTer's names: Armor_Attack.art). card: a UVMC2 program (.um2) - a Vectrex
+    game's overlay only for its UVMC2 edition ('Last Human (UVMC2)'), else only an overlay named for the UVMC2
+    ('Armor Attack (UVMC2).png'): the card's arcade games renamed to the Vectrex game's name got the cartridge's
+    overlay, made for another screen (Tony on Facebook, 2026-11-25)"""
     files = []
     for d in overlay_dirs():
         if os.path.isdir(d):
             files += [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.lower().endswith(('.art', '.png'))
                       and not re.search(r'_90c?cw$', os.path.splitext(f)[0], re.I)]
+    if card and '(uvmc2)' not in name.lower():
+        files = [f for f in files if '(uvmc2)' in os.path.basename(f).lower()]
     # (several with one base name: the plain one first - no hack, no variant suffix - then the shortest)
     files.sort(key=lambda f: (bool(re.search(r'hack|_\(', os.path.basename(f), re.I)), len(os.path.basename(f)),
                               os.path.basename(f).lower()))
@@ -3620,7 +3625,7 @@ class App:
             path = self.art_for[key] = moved_overlay(pick)
         elif self.art_auto:
             if self.args.rom:
-                path = find_overlay(key)
+                path = find_overlay(key, card=self.args.rom.lower().endswith('.um2'))
                 if not path and _art_base(key).lower() == 'mine storm':
                     path = builtin_overlay()
             else:                                               # (no cartridge: the console's own Mine Storm -

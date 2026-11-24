@@ -20,6 +20,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * 3D Imager: one eye's pictures only, left or right - no double image without the goggles (RetroArch: Core Options >
   System > 3D Imager; the apps: the same in the settings; PC: Add-ons > 3D Imager > View). Colour, both eyes at once,
   stays the default.
+* Overlays for UVMC2 programs (.um2): a Vectrex game's overlay only for that game's UVMC2 edition (Last Human
+  (UVMC2)); any other UVMC2 program only gets an overlay named for the UVMC2 (Armor Attack (UVMC2).png). The card's
+  arcade games renamed to a Vectrex game's name showed that cartridge's overlay, made for another screen. Every
+  platform alike.
 * Android, as the iPhone app: the screen is asked for the game's rate (choosing 120 Hz switches the display, no system
   setting needed); the first start asks what to download (everything on, the size shown, mobile data said); 120 Hz
   the GPU cannot hold falls back to 60 for the session (the default rate only); HDR's headroom read every second

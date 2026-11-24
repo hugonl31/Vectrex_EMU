@@ -1219,11 +1219,13 @@ removed. The other overlays are the MiSTer project's set as it shares them, each
 
 Pictures for many games come with the emulator: the box fronts and, made from their title artwork, the cartridge
 labels of the 112 games with real artwork in Simon Quincey's Vectrex 2D Front Cover Box Art pack (used with
-permission; in `system/vectrex_emu/thumbs/shipped`). They are matched to your ROMs by name - case, punctuation and
+permission; in `system/vectrex_emu/thumbs/shipped`), and Hugo Bokhorst's own Last Human (label and box) and Robot
+Arena (label). They are matched to your ROMs by name - case, punctuation and
 `(...)` / `[...]` parts don't matter, and known other spellings are listed in `shipped/index.txt` - so they show as
 soon as you add the ROM. The full set (all 280 games' labels and boxes) is a separate download:
 [artwork-1](https://github.com/hugonl31/Vectrex_EMU/releases/tag/artwork-1) - unzip it next to the program (or into
-RetroArch's system folder / the app's folder).
+RetroArch's system folder / the app's folder); it also holds an `extras` folder with Hugo Bokhorst's label art (all
+his labels as PNG, his SVG label reconstructions, the Vectrex logo as SVG).
 
 For your own ROMs and homebrew, add your own: a PNG or JPEG named like the ROM without its extension
 (`Mine Storm.bin` -> `Mine Storm.png`; `Dark Tower (Proto).bin` also finds `Dark Tower.png`), in a folder under
@@ -1623,6 +1625,8 @@ license of the vecx emulator it is built on. What the program sends over the int
 * **Box art and title artwork**: Simon Quincey's Vectrex 2D Front Cover Box Art pack, used with permission - the
   games list's boxes and the cartridge labels made from them (`system/vectrex_emu/thumbs/shipped`, and the full set,
   [artwork-1](https://github.com/hugonl31/Vectrex_EMU/releases/tag/artwork-1)).
+* **Label art and reconstructions** by Hugo Bokhorst - Last Human's and Robot Arena's labels, Last Human's box, and
+  the full set's `extras` (his labels, their SVG reconstructions, the Vectrex logo).
 * **The SP0256-AL2 ROM** is (c) Microchip Technology Inc., distributed by Joe Zbiciak with Microchip's
   permission; it is not part of this project.
 * **The Vectrex BIOS**: Smith Engineering allows it to be copied freely for non-commercial use.

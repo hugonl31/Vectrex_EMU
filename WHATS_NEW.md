@@ -6,8 +6,10 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.8.5
 - Real box art and labels for 112 games (Simon Quincey's, with permission)
+- Last Human's label and box, Robot Arena's label (Hugo Bokhorst's)
 - The full set of 280 games: a separate download (README)
 - Your own pictures may be JPEG too
+- Games list pictures at 80 % brightness (were 70 %)
 
 ## v1.8.4
 - Drawn boxes: a portrait picture, 12 vector scenes, a colour per game

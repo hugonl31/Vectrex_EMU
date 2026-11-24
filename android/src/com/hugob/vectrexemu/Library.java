@@ -280,7 +280,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 					name = m.text ("", 15, Main.FG, false); name.setSingleLine (true); name.setTag ("n"); c.addView (name, new LayoutParams (0, -2, 1));
 					kind = m.text ("", 11, Main.DIM, true); kind.setTag ("k"); c.addView (kind); }
 				else { c.setOrientation (VERTICAL); box = new FrameLayout (m); box.setTag ("b");
-					img = new ImageView (m); img.setTag ("i"); img.setColorFilter (0xffb3b3b3, android.graphics.PorterDuff.Mode.MULTIPLY);   /* (the pictures 30 % less bright, as the PC's library - the owner, 2026-11-22) */ box.addView (img, new FrameLayout.LayoutParams (-1, -1));
+					img = new ImageView (m); img.setTag ("i"); img.setColorFilter (0xffcccccc, android.graphics.PorterDuff.Mode.MULTIPLY);   /* (the pictures at 80 % brightness, as the PC's library - the owner, 2026-11-23) */ box.addView (img, new FrameLayout.LayoutParams (-1, -1));
 					ph = m.text ("", 15, Main.G, true); ph.setGravity (Gravity.CENTER); ph.setTag ("p"); ph.setPadding ((int) m.dp (6), 0, (int) m.dp (6), 0); box.addView (ph, new FrameLayout.LayoutParams (-1, -1));
 					c.addView (box, new LayoutParams (-1, 100));
 					name = m.text ("", 12, Main.FG, false); name.setMaxLines (2); name.setTag ("n"); name.setPadding (0, (int) m.dp (4), 0, 0); c.addView (name); } }

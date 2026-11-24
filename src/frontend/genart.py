@@ -42,6 +42,8 @@ def lib():
                     L.vx_genart_boxpaper_w.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
                     L.vx_genart_boxpaper_w.restype = ctypes.c_void_p
                     L.vx_genart_wear.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]; L.vx_genart_wear.restype = None
+                    L.vx_genart_pill.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]; L.vx_genart_pill.restype = ctypes.c_int
+                    L.vx_genart_gloss.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]; L.vx_genart_gloss.restype = None
                 except AttributeError:
                     pass
                 _lib = L; break
@@ -124,6 +126,24 @@ def wear(w, h, rgba, name):
     if not L or not hasattr(L, 'vx_genart_wear'):
         return rgba
     b = ctypes.create_string_buffer(bytes(rgba), w * h * 4); L.vx_genart_wear(b, w, h, name.encode('utf-8'))
+    return b.raw
+
+
+def pill(w, h, rgba, name, box):
+    """the drawn pill for name onto RGBA bytes w x h (box: a box front, else a label) -> new bytes"""
+    L = lib()
+    if not L or not hasattr(L, 'vx_genart_pill'):
+        return rgba
+    b = ctypes.create_string_buffer(bytes(rgba), w * h * 4); L.vx_genart_pill(b, w, h, name.encode('utf-8'), 1 if box else 0)
+    return b.raw
+
+
+def gloss(w, h, rgba, box):
+    """gloss c (the paper's shine over the print) on RGBA bytes w x h (box: a box front, else a label) -> new bytes"""
+    L = lib()
+    if not L or not hasattr(L, 'vx_genart_gloss'):
+        return rgba
+    b = ctypes.create_string_buffer(bytes(rgba), w * h * 4); L.vx_genart_gloss(b, w, h, 1 if box else 0)
     return b.raw
 
 

@@ -18,7 +18,7 @@ targets:
       - path: App
         excludes: ["vx_token.h"]
       - path: Assets.xcassets
-      # (the games list's pictures that come with the app - Simon Quincey's box art, with his permission: the bundle's
+      # (the games list's pictures that come with the app - the remade box art - Simon Quincey's title artwork and pictures, with his permission: the bundle's
       #  shipped folder, a folder reference; tools/make_shipped_art.py)
       - path: ../package/system/vectrex_emu/thumbs/shipped
         type: folder

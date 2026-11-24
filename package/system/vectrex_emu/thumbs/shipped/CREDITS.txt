@@ -1,4 +1,4 @@
-Box art and title artwork: Simon Quincey's Vectrex 2D Front Cover Box Art pack (v1.3), used with permission.
-Label art and reconstructions by Hugo Bokhorst (Last Human, Robot Arena).
-The labels are made from the boxes' title artwork; games without real artwork get the emulator's own drawn
-cartridge and box. Your own pictures (thumbs/carts, thumbs/labels, thumbs/boxes) always come first.
+Title artwork and pictures: Simon Quincey (his Vectrex 2D Front Cover Box Art pack, v1.3), used with permission.
+Box and label design by Hugo Bokhorst; his own titles: Last Human, Robot Arena.
+Games without real artwork get the emulator's own drawn cartridge and box. Your own pictures (thumbs/carts,
+thumbs/labels, thumbs/boxes) always come first.

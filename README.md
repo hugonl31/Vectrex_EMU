@@ -1217,10 +1217,10 @@ removed. The other overlays are the MiSTer project's set as it shares them, each
 
 ### Your own pictures for the games list
 
-Pictures for many games come with the emulator: the box fronts and, made from their title artwork, the cartridge
-labels of the 112 games with real artwork in Simon Quincey's Vectrex 2D Front Cover Box Art pack (used with
-permission; in `system/vectrex_emu/thumbs/shipped`), and Hugo Bokhorst's own Last Human (label and box) and Robot
-Arena (label). They are matched to your ROMs by name - case, punctuation and
+Pictures for many games come with the emulator: the box fronts and cartridge labels of the 112 games with real
+artwork in Simon Quincey's Vectrex 2D Front Cover Box Art pack, remade on the emulator's own box and label design
+(title artwork and pictures: Simon Quincey, used with permission; box and label design: Hugo Bokhorst; in
+`system/vectrex_emu/thumbs/shipped`), and Hugo Bokhorst's own Last Human and Robot Arena (label and box). They are matched to your ROMs by name - case, punctuation and
 `(...)` / `[...]` parts don't matter, and known other spellings are listed in `shipped/index.txt` - so they show as
 soon as you add the ROM. The full set (all 280 games' labels and boxes) is a separate download:
 [artwork-1](https://github.com/hugonl31/Vectrex_EMU/releases/tag/artwork-1) - unzip it next to the program (or into
@@ -1622,11 +1622,13 @@ license of the vecx emulator it is built on. What the program sends over the int
 * **The PiTrex** (Malban, Kevin Koster and the PiTrex team) - the cartridge and its programs; the emulator runs
   their SD card as it comes, downloaded from Malban's page.
 * **The overlays** - the authors of each design are listed in `overlays/CREDITS.md`.
-* **Box art and title artwork**: Simon Quincey's Vectrex 2D Front Cover Box Art pack, used with permission - the
-  games list's boxes and the cartridge labels made from them (`system/vectrex_emu/thumbs/shipped`, and the full set,
+* **Title artwork and pictures**: Simon Quincey (his Vectrex 2D Front Cover Box Art pack), used with permission -
+  on the games list's boxes and cartridge labels (`system/vectrex_emu/thumbs/shipped`, and the full set,
   [artwork-1](https://github.com/hugonl31/Vectrex_EMU/releases/tag/artwork-1)).
-* **Label art and reconstructions** by Hugo Bokhorst - Last Human's and Robot Arena's labels, Last Human's box, and
-  the full set's `extras` (his labels, their SVG reconstructions, the Vectrex logo).
+* **Box and label design** by Hugo Bokhorst - every box and label of the games list (the silver paper, the layout,
+  the small print), Last Human's and Robot Arena's labels and boxes, and the full set's `extras` (his labels, their SVG
+  reconstructions, the Vectrex logo). The labels' small print is set in TeX Gyre Heros (GUST Font License,
+  `art/fonts`).
 * **The SP0256-AL2 ROM** is (c) Microchip Technology Inc., distributed by Joe Zbiciak with Microchip's
   permission; it is not part of this project.
 * **The Vectrex BIOS**: Smith Engineering allows it to be copied freely for non-commercial use.

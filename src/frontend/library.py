@@ -4,7 +4,7 @@ The owner, 2026-11-22: the PC's loader like the phones' - the tiles' look (cartr
 titles only, a search, the categories; it fills the picture's place above the control deck. The pictures: the apps' own
 folder, system/vectrex_emu/thumbs/{boxes,carts,overlays}/<game>.png or .jpg (nothing is downloaded); a cartridge from the
 player's own label, thumbs/labels/<game>.png / .jpg, when there is no cartridge picture; then the ones that come with the
-emulator (thumbs/shipped: Simon Quincey's box art, with his permission - a label put on our cartridge, a box front; by the
+emulator (thumbs/shipped: the remade box art - Simon Quincey's title artwork and pictures, with his permission - a label put on our cartridge, a box front; by the
 game's key in its index.txt, tools/make_shipped_art.py); a game with no cartridge or box gets one drawn (genart.py:
 libretro/genart.c, the same as every platform's), an overlay its name's tile.
 

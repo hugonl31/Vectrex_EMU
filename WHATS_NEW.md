@@ -5,8 +5,11 @@ newest on top, each line short enough for that small window (at most about 70 ch
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
 ## v1.8.5
-- Real box art and labels for 112 games (Simon Quincey's, with permission)
-- Last Human's label and box, Robot Arena's label (Hugo Bokhorst's)
+- Box art and labels for 112 games, remade on our own design
+- Title art and pictures: Simon Quincey's (with permission)
+- Real-label small print, a gloss on every box and label
+- Last Human's and Robot Arena's labels and boxes (Hugo Bokhorst's)
+- The PiTrex's cartridge and box in the same design
 - The full set of 280 games: a separate download (README)
 - Your own pictures may be JPEG too
 - Games list pictures at 80 % brightness (were 70 %)

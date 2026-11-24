@@ -26,7 +26,7 @@ for f in glob.glob(os.path.join(R, 'overlays', '*.art')) + glob.glob(os.path.joi
 for f in ('case_scratch.png', 'glass_light.bin'): shutil.copy(os.path.join(H, 'gpu', f), os.path.join(sv, 'gpu'))
 shutil.copytree(os.path.join(R, 'package', 'uvmc2'), os.path.join(sv, 'uvmc2'))
 shutil.copy(os.path.join(R, 'package', 'system', 'README-speech.txt'), sv)
-# (the games list's pictures that come with it - Simon Quincey's box art, with his permission: tools/make_shipped_art.py)
+# (the games list's pictures that come with it - the remade box art - Simon Quincey's title artwork and pictures, with his permission: tools/make_shipped_art.py)
 shutil.copytree(os.path.join(R, 'package', 'system', 'vectrex_emu', 'thumbs', 'shipped'), os.path.join(sv, 'thumbs', 'shipped'))
 # (RetroArch's config folder: this core's override - Max Users 2, RetroArch's routine notices off (the override and
 #  remap loaded, a controller set up, the display's rate) - and its remap - ports 1 and 2 the Vectrex controller,

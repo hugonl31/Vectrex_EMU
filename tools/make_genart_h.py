@@ -153,9 +153,10 @@ def silver_paper(box=BOX):
 
 
 def base_label():
-    cx = BOX[0] + BOX[2] / 2; cy = BOX[1] + BOX[3] / 2
-    lab = silver_paper().convert('RGBA')
-    lab.alpha_composite(render_svg(furniture_body(gce=True) + '<path d="%s" fill="black"/>' % text_path(LEGAL, REG, 47.0, cx, cy + 23.5)))
+    import legal_lines                                              # (the real labels' small print: tools/legal_lines.py)
+    body, box = legal_lines.legal([LEGAL])
+    lab = silver_paper(box).convert('RGBA')
+    lab.alpha_composite(render_svg(furniture_body(gce=True) + body))
     return lab.convert('RGB')
 
 

@@ -815,11 +815,12 @@ TOPICS = [
       "drift, the AY sound chip at its own clock, and the bank-switching cartridges. The front end draws "
       "the beam with OpenGL in real time - at your monitor's full resolution - and models the tube, the "
       "phosphor and the speaker from measurements of a real Vectrex."),
-('p', "Box art and title artwork: Simon Quincey's Vectrex 2D Front Cover Box Art pack, used with permission. The games list's boxes, and the cartridge labels "
-      "made from them, for the 112 games with real artwork come with the emulator; the full set is a separate "
-      "download (the README: your own pictures for the games list)."),
-('p', "Label art and reconstructions by Hugo Bokhorst: Last Human's label and box and Robot Arena's label come with the "
-      "emulator; the full set's extras folder has all his labels, their SVG reconstructions and the Vectrex logo."),
+('p', "Title artwork and pictures: Simon Quincey (his Vectrex 2D Front Cover Box Art pack), used with permission. The games list's "
+      "boxes and cartridge labels for the 112 games with real artwork come with the emulator, remade on our own box and "
+      "label design; the full set is a separate download (the README: your own pictures for the games list)."),
+('p', "Box and label design, label art and reconstructions by Hugo Bokhorst: every box and label of the games list, Last "
+      "Human's and Robot Arena's; the full set's extras folder has all his labels, their SVG reconstructions and the "
+      "Vectrex logo. The labels' small print: TeX Gyre Heros (GUST Font License)."),
 ('p', "The settings live in system\\settings.json next to Vectrex_EMU.exe (or in %APPDATA%\\Vectrex_EMU "
       "when that folder can not be written)."),
 ]),

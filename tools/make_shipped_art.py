@@ -1,22 +1,24 @@
 """make_shipped_art.py - the games list's pictures that come with the emulator (every public build: the PC zips, the
-RetroArch packages, the iPhone and Android apps): Simon Quincey's Vectrex 2D Front Cover Box Art pack (v1.3 Full), used
-with his permission, for the games whose box has real title artwork - the pack's generic covers (a blue pill with the
-typed name, G:/AI/Vectrex_Artwork/boxart_labels/placeholders.txt) are left out: for those the emulator draws its own
-cartridge and box (libretro/genart.c), which look the same as each other. Beside them: the owner's own titles (OWN - games
-with nothing in the pack: his label, his box where there is one; a game without a box keeps the drawn one).
+RetroArch packages, the iPhone and Android apps): the remade collection (the owner, 2026-11-24 - boxart_labels/
+make_new_art.py: every label and box on our own template - the silver paper, the real labels' small print, gloss c - with
+each game's title artwork and picture from Simon Quincey's Vectrex 2D Front Cover Box Art pack (v1.3 Full), used with his
+permission; none of his own pictures), for the games whose cover has real title artwork - the pack's generic covers (a
+blue pill with the typed name, G:/AI/Vectrex_Artwork/boxart_labels/placeholders.txt) are left out: for those the
+emulator draws its own cartridge and box (libretro/genart.c), which look the same. Beside them: the owner's own titles
+(OWN - games with nothing in the pack: his label and box).
 
   python tools/make_shipped_art.py [art folder] [out folder]
       art folder: G:/AI/Vectrex_Artwork (default); out: package/system/vectrex_emu/thumbs/shipped (default)
   python tools/make_shipped_art.py --full <zip> [art folder]
       the full set for those who want every game's pictures (a separate download, the GitHub release artwork-1, never in
-      the repository): all the pack's labels and box fronts, the plain covers too, laid out as the folder it is unzipped
+      the repository): the whole remade collection, the plain covers too, laid out as the folder it is unzipped
       into - system/vectrex_emu/thumbs/labels, .../boxes (the player's own folders: found by the box art's name through the
       shipped index.txt), the owner's titles, an extras folder (the owner's artwork: EXTRAS) and a README.txt
 
 Out (the folder made afresh):
-  labels/<box art's name>.jpg   the box art's title made into a cartridge label (boxart_labels/labels-png, 3120 x 1700),
-                                840 x 458 - the emulator puts it on its cartridge itself (genart.c)
-  boxes/<box art's name>.jpg    the box front, 800 x 1024
+  labels/<box art's name>.jpg   the remade label (boxart_labels/labels-new, 3120 x 1700), 840 x 458 - the emulator puts it
+                                on its cartridge itself (genart.c)
+  boxes/<box art's name>.jpg    the remade box front (boxart_labels/boxes-new), 800 x 1024
   index.txt                     which game takes which picture: "<key>\t<box art's name>", one a line - every box art's
                                 own name's key (the full set's too) and the keys of ROM names spelt otherwise (ALIAS)
   CREDITS.txt
@@ -33,8 +35,8 @@ if '--full' in ARGS:                                             # (--full <zip>
     i = ARGS.index('--full'); FULL = ARGS[i + 1] if i + 1 < len(ARGS) else 'Vectrex_EMU-artwork-full.zip'; del ARGS[i:i + 2]
 ART = ARGS[0] if len(ARGS) > 0 else 'G:/AI/Vectrex_Artwork'
 OUT = ARGS[1] if len(ARGS) > 1 else os.path.join(R, 'package', 'system', 'vectrex_emu', 'thumbs', 'shipped')
-BOX = os.path.join(ART, 'original gce', 'Vectrex 2D Front Cover Box Art - v1.3 Full')
-LAB = os.path.join(ART, 'boxart_labels', 'labels-png')
+BOX = os.path.join(ART, 'boxart_labels', 'boxes-new')               # (the remade collection: boxart_labels/make_new_art.py)
+LAB = os.path.join(ART, 'boxart_labels', 'labels-new')
 PLACEHOLDERS = os.path.join(ART, 'boxart_labels', 'placeholders.txt')
 LABEL_SIZE, BOX_SIZE, QUALITY = (840, 458), (800, 1024), 85
 # ROM names the box art spells otherwise (a ROM's name -> the box art's), as tools/ios_pack.py's ALIAS and
@@ -46,19 +48,20 @@ ALIAS = {'HyperChase Auto Race': 'Hyperchase', 'Mr. Boston Clean Sweep': 'Clean 
          'Web Warp': 'Web Warp (UK)', 'Web Wars': 'Web Wars (US)',
          'Mine Storm III': 'Mine Storm v3', 'Lunar Lander': 'Lunar Lander demo', 'ZZAP': 'Zzap Strikes Back'}
 # the owner's own titles, games with nothing in the pack: name -> (its label, 3120 x 1700; its box front or None - the
-# drawn box then). Last Human's box: his cover's picture in the drawn boxes' layout (last_human/make_lh_box.py --final B
-# red-orange). Keys: the name's - "Last Human (UVMC2)" and the Tests' "Last Human (autopilot)" are "lasthuman" too
-OWN = {'Last Human': ('print 4x/labels/Last Human 4x.png', 'last_human/out/Last Human.png'),
-       'Robot Arena': ('print 4x/labels/Robot Arena 4x.png', None)}
+# drawn box then), remade as the rest (make_new_art.py: Last Human's box with his cover's picture, Robot Arena's with the
+# drawn box's scene under his title). Keys: the name's - "Last Human (UVMC2)" and the Tests' "Last Human (autopilot)" are
+# "lasthuman" too
+OWN = {'Last Human': ('boxart_labels/labels-new/Last Human.png', 'boxart_labels/boxes-new/Last Human.png'),
+       'Robot Arena': ('boxart_labels/labels-new/Robot Arena.png', 'boxart_labels/boxes-new/Robot Arena.png')}
 # the full set's extras folder: the owner's artwork (his own) - its folder in the zip, the files, how
 EXTRAS = [('extras/labels', 'print 4x/labels/*.png', 'label'),                    # (his 34 labels, 1560 x 850 PNG)
           ('extras/label reconstructions (SVG)', 'print 4x/reconstructed2/deliver/*.svg', 'copy'),
           ('extras', 'GCE_Vectrex.svg', 'copy')]
 EXTRA_LABEL = (1560, 850)
-CREDITS = ("Box art and title artwork: Simon Quincey's Vectrex 2D Front Cover Box Art pack (v1.3), used with permission.\n"
-           "Label art and reconstructions by Hugo Bokhorst (Last Human, Robot Arena).\n"
-           "The labels are made from the boxes' title artwork; games without real artwork get the emulator's own drawn\n"
-           "cartridge and box. Your own pictures (thumbs/carts, thumbs/labels, thumbs/boxes) always come first.\n")
+CREDITS = ("Title artwork and pictures: Simon Quincey (his Vectrex 2D Front Cover Box Art pack, v1.3), used with permission.\n"
+           "Box and label design by Hugo Bokhorst; his own titles: Last Human, Robot Arena.\n"
+           "Games without real artwork get the emulator's own drawn cartridge and box. Your own pictures (thumbs/carts,\n"
+           "thumbs/labels, thumbs/boxes) always come first.\n")
 
 
 def key(s):
@@ -76,15 +79,10 @@ def placeholders():
 
 
 def sources():
-    """the pack's games: name -> (box front, label) - the box front's 4x upscale when there (made smaller)"""
-    boxes = {}
-    for f in sorted(os.listdir(BOX)):
-        if not f.lower().endswith('.png'):
-            continue
-        st = os.path.splitext(f)[0]; up = '_upscayl' in st; st = st.split('_upscayl')[0]
-        if st not in boxes or up:
-            boxes[st] = os.path.join(BOX, f)
-    return {n: (b, os.path.join(LAB, n + '.png')) for n, b in boxes.items() if os.path.exists(os.path.join(LAB, n + '.png'))}
+    """the pack's games, remade: name -> (box front, label)"""
+    boxes = {os.path.splitext(f)[0]: os.path.join(BOX, f) for f in sorted(os.listdir(BOX)) if f.lower().endswith('.png')}
+    return {n: (b, os.path.join(LAB, n + '.png')) for n, b in boxes.items()
+            if n not in OWN and os.path.exists(os.path.join(LAB, n + '.png'))}
 
 
 def jpegs(src, n, out):
@@ -137,13 +135,14 @@ def index(src, mine=None):
 
 FULL_README = """Vectrex_EMU - the games list's pictures, the full set
 =====================================================
-Every game of Simon Quincey's Vectrex 2D Front Cover Box Art pack (v1.3): %d box fronts (800 x 1024) and the cartridge
-labels made from their title artwork (840 x 458) - the emulator puts a label on its cartridge itself. The emulator comes
-with %d of them (the games with real title artwork); this set has them all, the pack's plain covers (a blue pill with the
-name) too - and Hugo Bokhorst's own titles (%s).
+Box fronts (800 x 1024) and cartridge labels (840 x 458) for every game of Simon Quincey's Vectrex 2D Front Cover Box
+Art pack (v1.3): %d games, each remade on the emulator's own box and label design with the game's title artwork and
+picture from the pack - the emulator puts a label on its cartridge itself. The emulator comes with %d of them (the games
+with real title artwork); this set has them all, the pack's plain covers too (with the emulator's own title pill) - and
+Hugo Bokhorst's own titles (%s).
 
-Box art and title artwork: Simon Quincey's Vectrex 2D Front Cover Box Art pack, used with permission.
-Label art and reconstructions by Hugo Bokhorst.
+Title artwork and pictures: Simon Quincey (his Vectrex 2D Front Cover Box Art pack), used with permission.
+Box and label design by Hugo Bokhorst. Label art and reconstructions by Hugo Bokhorst.
 
 extras (not used by the emulator) - Hugo Bokhorst's artwork:
   labels                            his cartridge labels, 1560 x 850 PNG (print size: 66.04 x 35.98 mm): the GCE

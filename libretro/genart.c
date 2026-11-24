@@ -19,6 +19,8 @@
  *   unsigned char *vx_genart_fit (const char *path, int maxw, int *w, int *h)    (and vx_genart_fit_png: its bytes)
  *   unsigned char *vx_genart_boxpaper_w (int width, int well, int *w, int *h)      the box's paper, furniture and foot alone
  *   void vx_genart_wear (unsigned char *rgba, int w, int h, const char *name)      the box's wear for name, in place
+ *   int vx_genart_pill (unsigned char *rgba, int w, int h, const char *name, int box)   the drawn pill onto a box / label
+ *   void vx_genart_gloss (unsigned char *rgba, int w, int h, int box)               gloss c on a box / label, in place
  *       a picture of the player's own (a PNG or JPEG: cartridge, box, overlay) made at most maxw wide, once; as vx_genart_make's
  *   int vx_genart_key (const char *name, char *out, int n)
  *       a game's key in the pictures that come with the emulator (thumbs/shipped/index.txt: "<key>\t<picture's name>",
@@ -144,6 +146,7 @@ static void ga_text (const ga_font *g, unsigned char *img, int iw, int ih, const
 
 /* ---- the pill: laid out in the label's own pixels (3120 x 1700), drawn at any scale */
 #define GA_LBL_W 3120.0f
+#define GA_LBL_H 1700.0f
 #define GA_PILL_MAXW 2860.0f                         /* the widest pill */
 #define GA_PILL_CY 965.36f                           /* the box's pill: its own frame (label px -> box px) */
 #define GA_PILL_CY_CART 889.0f                      /* the cartridge's: midway between ARCADE SYSTEM CARTRIDGE (495) and the GCE logo (1283), as the GCE labels' titles */
@@ -210,6 +213,24 @@ static void ga_pill (const ga_font *g, const char *title, unsigned char *img, in
 			ga_mix (p, GA_EDGEC, ga_clamp01 (0.5f - d)); ga_mix (p, GA_FILL, ga_clamp01 (0.5f - (d + e))); } }
 	const float cap = L.cap * s, pitch = 1.5f * cap, top = pcy - (cap + pitch * (L.lines - 1)) / 2;
 	for (int i = 0; i < L.lines; i++) ga_text (g, img, iw, ih, L.cp[i], L.n[i], cap, L.widen, pcx, top + i * pitch + cap, GA_INK);
+}
+
+/* ---- gloss c (the owner, 2026-11-24): the paper's light - its S1 streak and the lit half of its fall-off - also over
+ * what is printed on it (coloured or dark pixels: not the silver, not its white lines), 70 %, a screen blend (dark print
+ * gets a faint sheen, white never clips); over the RW x RH region at x0, y0 of o (W wide); curv: the box's bent streak */
+#define GA_GLOSS 0.7
+static void ga_gloss (unsigned char *o, int W, int x0, int y0, int RW, int RH, double curv)
+{
+	if (RW < 2 || RH < 2) return;
+	for (int y = 0; y < RH; y++) for (int x = 0; x < RW; x++) {
+		unsigned char *p = o + ((size_t) (y0 + y) * W + x0 + x) * 4;
+		const int mx = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]), mn = p[0] < p[1] ? (p[0] < p[2] ? p[0] : p[2]) : (p[1] < p[2] ? p[1] : p[2]);
+		const double lum = (p[0] + p[1] + p[2]) / 3.0, it = fmin (1, fmax (0, fmax ((mx - mn - 20) / 30.0, (170 - lum) / 40.0)));
+		if (it <= 0) continue;
+		const double xv = x + 0.5, yv = y + 0.5, px = xv - 0.22 * RW, py = yv - 0.20 * RH, u = px * 0.39 + py * 0.92, v = px * 0.92 - py * 0.39 + curv * u * u / RW;
+		const double s = 32 * exp (-(v / (0.08 * RW)) * (v / (0.08 * RW))) * exp (-(u / (0.25 * RH)) * (u / (0.25 * RH))) + fmax ((0.5 - (xv / RW * 0.35 + yv / RH * 0.65)) * 2 * 14, 0);
+		const double g = s / 255 * GA_GLOSS * it;
+		for (int q = 0; q < 3; q++) { const double c = 255 - (255 - p[q]) * (1 - g); p[q] = (unsigned char) (c > 255 ? 255 : c + 0.5); } }
 }
 
 /* ---- the box's shapes */
@@ -564,6 +585,10 @@ static unsigned char *ga_cart (const ga_font *g, const char *title, int width, i
 {
 	float k; unsigned char *o = ga_base (width, w, h, &k); if (!o) return NULL;
 	ga_pill (g, title, o, *w, *h, GA_CART_X0 * k, GA_CART_Y0 * k, GA_CART_S * k, GA_LBL_W / 2, GA_PILL_CY_CART);
+	{ const int x0 = (int) floorf (GA_CART_X0 * k + 0.5f), y0 = (int) floorf (GA_CART_Y0 * k + 0.5f);   /* (gloss c over the label) */
+	  int lw = (int) floorf (GA_LBL_W * GA_CART_S * k + 0.5f), lh = (int) floorf (GA_LBL_H * GA_CART_S * k + 0.5f);
+	  if (x0 + lw > *w) lw = *w - x0; if (y0 + lh > *h) lh = *h - y0;
+	  ga_gloss (o, *w, x0, y0, lw, lh, 0); }
 	return o;
 }
 /* ---- the box (the owner's approved look, 2026-11-23: B1v14): laid out on his real Clean Sweep box (his photo, 2022 x
@@ -709,6 +734,7 @@ static unsigned char *ga_box (const ga_font *g, const char *title, int width, in
 	if (cream) { ga_rrect (o, BW, BH, fx0 + e, fy0 + e, fx1 - e, fy1 - e, fmaxf (2, GA_FRM_R - 6) * k, CREAM); e += 3 * k; }
 	{ const int sx0 = (int) floorf (fx0 + e + 0.5f), sy0 = (int) floorf (fy0 + e + 0.5f), sx1 = (int) floorf (fx1 - e + 0.5f), sy1 = (int) floorf (fy1 - e + 0.5f);
 	  ga_scene (o, BW, BH, sx0, sy0, sx1 - sx0, sy1 - sy0, fmaxf (2, GA_FRM_R - 8) * k, hs ^ 0x5bd1e995u, k, theme, ACCENTS[ac]); }
+	ga_gloss (o, BW, 0, 0, BW, BH, 0.18);              /* (gloss c, then the wear over it) */
 	ga_wear (o, BW, BH, k, title);
 	return o;
 }
@@ -838,4 +864,22 @@ VX_GENART_API unsigned char *vx_genart_make_w (int look, const char *name, int w
 	return o;
 }
 VX_GENART_API unsigned char *vx_genart_make (int look, const char *name, int *w, int *h) { return vx_genart_make_w (look, name, GA_W, w, h); }
+/* the drawn pill for name onto an RGBA picture made elsewhere (tools: the remade collection - his typed-pill covers get
+ * ours): box 1: a box front (w = its width, 800 x 1024 scaled), where the drawn box has it; box 0: a label (w = its width,
+ * 3120 x 1700 scaled), where the drawn cartridge has it. 1 when drawn */
+VX_GENART_API int vx_genart_pill (unsigned char *rgba, int w, int h, const char *name, int box)
+{
+	char t[1024]; ga_font g;
+	if (!rgba || w < 8 || h < 8 || !name || !vx_genart_title (name, t, (int) sizeof t) || !t[0]) return 0;
+	ga_font_init (&g); if (!g.ok) return 0;
+	if (box) { const float k = w / 800.0f;
+		ga_pill (&g, t, rgba, w, h, (float) (w / 2.0f - GA_LBL_W / 2 * GA_BOX_PS * k), (float) (GA_BOX_PY * k - GA_PILL_CY * GA_BOX_PS * k), (float) (GA_BOX_PS * k), GA_LBL_W / 2, GA_PILL_CY); }
+	else ga_pill (&g, t, rgba, w, h, 0, 0, w / GA_LBL_W, GA_LBL_W / 2, GA_PILL_CY_CART);
+	return 1;
+}
+/* gloss c on an RGBA picture made elsewhere, in place: box 1 a box front (the bent streak), 0 a label (all of it) */
+VX_GENART_API void vx_genart_gloss (unsigned char *rgba, int w, int h, int box)
+{
+	if (rgba && w >= 2 && h >= 2) ga_gloss (rgba, w, 0, 0, w, h, box ? 0.18 : 0);
+}
 VX_GENART_API void vx_genart_free (void *p) { free (p); }

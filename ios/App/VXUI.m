@@ -439,7 +439,7 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 		UIImage *im = [[self look] isEqualToString:@"boxes"] ? [self fileTileFor:p w:tw] : [self labelTileFor:p w:tw]; if (im) return im; }
 	return [self drawnTileFor:n w:tw];
 }
-/* (the pictures that come with the app - Simon Quincey's box art, with his permission: the bundle's shipped folder - labels/<name>.jpg,
+/* (the pictures that come with the app - the remade box art - Simon Quincey's title artwork and pictures, with his permission: the bundle's shipped folder - labels/<name>.jpg,
  *  boxes/<name>.jpg - and its index.txt, "<key>\t<name>" a line (tools/make_shipped_art.py); the game's key: genart.c's) */
 + (NSString *) shippedFor:(NSString *)n
 {

@@ -45,7 +45,7 @@ with zipfile.ZipFile (dst, 'a', zipfile.ZIP_DEFLATED) as z:
     z.write (os.path.join (o, 'dex', 'classes.dex'), 'classes.dex')
     for d in ('arm64-v8a', 'x86_64'):
         z.write (os.path.join (o, 'apk', 'lib', d, 'libvxa.so'), 'lib/%s/libvxa.so' % d)
-    # the games list's pictures that come with the app (assets/shipped: Simon Quincey's box art, with his permission -
+    # the games list's pictures that come with the app (assets/shipped: the remade box art - Simon Quincey's title artwork and pictures, with his permission -
     # tools/make_shipped_art.py), stored: the app reads them whole (Library.java)
     for r, ds, fs in os.walk (ship):
         ds.sort ()

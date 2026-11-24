@@ -5,13 +5,20 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.8.5
 
-* Real box art in the games list: the box fronts, and cartridge labels made from their title artwork, of the 112
-  games with real artwork in Simon Quincey's Vectrex 2D Front Cover Box Art pack (used with permission) come with
-  the emulator on every platform (system/vectrex_emu/thumbs/shipped, ~25 MB). Matched to your ROMs by name (case,
-  punctuation and "(...)" parts don't matter; other known spellings in its index.txt); the other games keep the
-  drawn cartridge and box. The full set (all 280 games) is a separate download, the GitHub release artwork-1.
-* Last Human's label and box and Robot Arena's label (label art by Hugo Bokhorst) come with the emulator too; the full
-  set has an extras folder with his labels (PNG), his SVG label reconstructions and the Vectrex logo (SVG).
+* Real box art in the games list: box fronts and cartridge labels for the 112 games with real artwork in Simon
+  Quincey's Vectrex 2D Front Cover Box Art pack come with the emulator on every platform
+  (system/vectrex_emu/thumbs/shipped). Each one remade on our own box and label design - the silver paper with its
+  sheen and wear, the real boxes' layout, the real labels' small print (TeX Gyre Heros, fitted to photographs of real
+  labels: "(c) GCE 1982. All Rights Reserved. MADE IN HONG KONG", the licensed games' trademark line, a homebrew's
+  author and year) - with the game's title artwork and picture from his pack (used with permission). Matched to your
+  ROMs by name (case, punctuation and "(...)" parts don't matter; other known spellings in its index.txt); the other
+  games keep the drawn cartridge and box. The full set (all 280 games, remade the same way) is a separate download,
+  the GitHub release artwork-1.
+* Last Human's and Robot Arena's labels and boxes (Hugo Bokhorst's) come with the emulator too; the full set has an
+  extras folder with his labels (PNG), his SVG label reconstructions and the Vectrex logo (SVG).
+* Drawn cartridges and boxes: the print has the paper's gloss too, and the label's small print is set as on the real
+  labels (on a plain two-row area of the grid).
+* The PiTrex's cartridge and box in the same design: its new title logo, its picture in the boxes' frame.
 * Your own pictures may be JPEG as well as PNG, and still come first.
 * The games list's pictures at 80 % brightness on every platform (70 % since v1.8.2).
 

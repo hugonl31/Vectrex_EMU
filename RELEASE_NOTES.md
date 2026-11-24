@@ -17,6 +17,9 @@ build workflow replaces that release (title = the version, marked Latest) with t
   second for it. On the PC the same rule, and Optimize measures with an overlay on.
 * Android: one emulator run every refresh when the screen runs at the emulator's rate (as on iOS since 1.7.6): the
   deck's FPS holds 120 at 120 Hz.
+* 3D Imager: one eye's pictures only, left or right - no double image without the goggles (RetroArch: Core Options >
+  System > 3D Imager; the apps: the same in the settings; PC: Add-ons > 3D Imager > View). Colour, both eyes at once,
+  stays the default.
 * Android, as the iPhone app: the screen is asked for the game's rate (choosing 120 Hz switches the display, no system
   setting needed); the first start asks what to download (everything on, the size shown, mobile data said); 120 Hz
   the GPU cannot hold falls back to 60 for the session (the default rate only); HDR's headroom read every second

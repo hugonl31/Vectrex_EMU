@@ -434,7 +434,7 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_scr_reach", "Overlay: glint reach (left: close to the lines, right: farther out); x1|x0|x0.1|x0.25|x0.5|x0.75|x1.25|x1.5|x2" },
 	{ "vectrex_emu_art_glow", "Overlay: plastic glow; on|off" },
 	{ "vectrex_emu_art_glow_k", "Overlay: plastic glow strength; x0.2|x0|x0.1|x0.25|x0.5|x0.75|x1|x1.5|x2" },
-	{ "vectrex_emu_imager", "3D Imager; vr side by side|colour|off" },
+	{ "vectrex_emu_imager", "3D Imager; vr side by side|colour|left eye|right eye|off" },
 	{ "vectrex_emu_swap_eyes", "3D Imager: swap eyes; off|on" },
 	{ "vectrex_emu_eye_shift", "3D Imager: right eye's picture left (-) or right (+), pixels; 0|-10|-20|-30|-40|-50|-60|-70|-80|-90|-100|-110|-120|-130|-140|-150|-160|10|20|30|40|50|60|70|80|90|100|110|120|130|140|150|160" },
 	{ "vectrex_emu_beam", "Beam width; thin|medium|wide" },
@@ -570,7 +570,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
 	{ "vectrex_emu_port2", "system", "Controller port 2", "Auto: a game that needs the 3D Imager, the light pen or a speech module gets it (next game start).",
 	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
-	{ "vectrex_emu_imager", "system", "3D Imager", NULL, "colour|off" },
+	{ "vectrex_emu_imager", "system", "3D Imager", "Colour: both eyes' pictures at once, as seen without the goggles. Left eye / right eye: only that eye's pictures, no double image.", "colour|left eye|right eye|off" },
 	{ "vectrex_emu_usb_hid", "system", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 	{ "vectrex_emu_jack", "system", "UVMC2 headphone jack", "Clean: line out. Through the speaker: the Vectrex's own sound.", "clean|through the speaker|off" },
 	{ "vectrex_emu_jack_vol", "system", "UVMC2 headphone jack volume", NULL, "100%|0%|25%|50%|75%|125%|150%|175%|200%" },
@@ -749,7 +749,8 @@ static void read_options (void)
 	if (!rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
 	  int r = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : VX_RATE_DEF; opt_rate = r >= 30 && r <= 360 ? r : VX_RATE_DEF; }
 	opt_overlay = opt_is ("vectrex_emu_overlay", "on");   /* (v0.25: off by default) */
-	opt_imager = opt_is ("vectrex_emu_imager", "off") ? 0 : opt_is ("vectrex_emu_imager", "colour") ? 1 : 2;
+	opt_imager = opt_is ("vectrex_emu_imager", "off") ? 0 : opt_is ("vectrex_emu_imager", "colour") ? 1 : opt_is ("vectrex_emu_imager", "left eye") ? 3
+	           : opt_is ("vectrex_emu_imager", "right eye") ? 4 : 2;   /* (3 / 4: one eye's pictures only - the other half turn left out) */
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
@@ -3323,6 +3324,7 @@ static void retro_run_one (void)
 	} else if (vt_imager) {                          /* (the 3D Imager: the two half turns' pictures - side by side, or both in
 	                                              colour on one; not mixed between frames, the disc's halves alternate) */
 		for (int e = 0; e < 2; e++) {
+			if (opt_imager >= 3 && e != ((opt_imager == 3) ^ opt_swap)) continue;   /* (one eye: e 1 the left, e 0 the right - "swap eyes" turns it round) */
 			/* (the second half turn's lines, rgb bit 3, are the LEFT eye's: so the depth comes out right - in 3D Crazy
 			 *  Coaster the near track and the rider's hands lie ~100 px apart, the horizon ~200 px (~52 mm on the real
 			 *  screen, nearly the eyes' distance: far away) - checked 2026-11-04; "swap eyes" turns it round) */

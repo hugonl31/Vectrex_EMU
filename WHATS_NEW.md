@@ -10,6 +10,7 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - Auto quality keeps every picture (half rate only as a last resort)
 - Android: FPS holds 120 at 120 Hz; the screen follows the rate
 - Android: asks what to download at the first start
+- 3D Imager: show one eye only, left or right
 
 ## v1.8.6
 - Labels: the small print's area a square wider where it was tight

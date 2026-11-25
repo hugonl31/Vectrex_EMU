@@ -442,6 +442,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_renderer", "Picture (from the next game start): GPU - as the PC's - or the CPU's (the picture before); GPU|CPU only" },
 	{ "vectrex_emu_res", "Picture size (from the next game start); 1x 624x800|2x 1248x1600|3x 1872x2400|4x 2496x3200" },
 	{ "vectrex_emu_rate", "Screen rate (from the next game start); 90 Hz|72 Hz|80 Hz|120 Hz|144 Hz|60 Hz|50 Hz (game)" },
+	{ "vectrex_emu_card_rate", "UVMC2 / PiTrex picture rate (from the next game start - 60 Hz: their heavy frames fit, as the phone apps); 60 Hz|match display" },
 	{ "vectrex_emu_smooth", "Smooth motion (not at 50 Hz); on|off" },
 	{ "vectrex_emu_fill", "Fill skipped lines (not as a real Vectrex); off|on" },
 	{ "vectrex_emu_corner_glow", "Corner glow (CPU picture); on|off" },
@@ -3951,6 +3952,13 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	if (!abuf) { abuf_cap = 65536; abuf = malloc (abuf_cap); }
 	{ extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; frame_budget = (vt_uvm2 || vt_uvm2_cart || vt_pitrex) ? 30000 : 33000; }
 	{ extern int vt_imager; stereo = vt_imager && opt_imager == 2; }
+#ifdef VX_EMUVR
+	/* (2026-11-25, the owner's top: UVMC2 / PiTrex programs at 60 Hz, as the phone apps - VecDoom's heavy frames need more ARM time than
+	 *  a 90 Hz refresh, 3.5 % of them late; at 60 Hz under 1 %. Plain carts keep the screen rate. "match display": the screen rate) */
+	{ extern int vt_uvm2, vt_uvm2_cart, vt_pitrex;
+	  if ((vt_uvm2 || vt_uvm2_cart || vt_pitrex) && !opt_is ("vectrex_emu_card_rate", "match display") && opt_rate > 60) {
+		fprintf (stderr, "[vectrex_emu] UVMC2 / PiTrex program: %d Hz instead of %d (UVMC2 / PiTrex picture rate)\n", 60, opt_rate); opt_rate = 60; } }
+#endif
 	rate_set = 1;
 	pic_setup ();
 	for (int k = 0; k < GTAB + 1; k++) gtab[k] = (float) exp (-(double) k * GX / GTAB);

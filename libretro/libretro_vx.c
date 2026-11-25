@@ -452,7 +452,8 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_corner_glow", "Corner glow; on|off" },
 	{ "vectrex_emu_bending", "Brightness bending; on|off" },
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
-	{ "vectrex_emu_unit", "Vectrex unit (the owner's measured one: as his console draws); owner's Vectrex (measured)|ideal" },   /* (EmuVR: the owner, 2026-11-25 - his unit the default, ideal selectable) */
+	{ "vectrex_emu_unit", "Vectrex unit (the owner's measured one: as his console draws); owner's Vectrex (measured)|ideal" },
+	{ "vectrex_emu_tube_look", "Look (Bright: brighter, wider lines, as the owner's PC); Bright|Vectrex" },   /* (EmuVR: Bright the default - the owner, 2026-11-25) */   /* (EmuVR: the owner, 2026-11-25 - his unit the default, ideal selectable) */
 	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
 	{ "vectrex_emu_glass_curve", "Glass curvature (1: as on a Vectrex, 0: even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (fine detail, off: VR hardly shows it); off|on" },
@@ -760,6 +761,7 @@ static void read_options (void)
 	           : opt_is ("vectrex_emu_imager", "right eye") ? 4 : 2;   /* (3 / 4: one eye's pictures only - the other half turn left out) */
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
+	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_tube_look", "Vectrex") ? 0.0f : 1.0f; }   /* (the look: Bright unless Vectrex is chosen - as the owner's PC) */
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
 	{ const char *ce = getenv ("VECTREX_CONSOLE");   /* (route A: the mod names the console that starts this RetroArch; the option overrides) */
 	  opt_cad = opt_is ("vectrex_emu_console", "owner's CAD model") ? 1 : opt_is ("vectrex_emu_console", "classic") ? 0 : (ce && !strcmp (ce, "cad")); }
@@ -3008,7 +3010,7 @@ int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet
 int gpu_frame_shown (void) { return 0; }
 /* (EmuVR: no GPU picture, nothing to tune - the apps' device test answers "nothing measured") */
 /* (EmuVR: the GPU picture's look values, gpu_phos.c not built - its defaults: SDR, the Vectrex look, no app trail; keep in step) */
-float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lift = 0.0f, vx_hdr_peak = 1.0f, vx_bright = 0.0f, vx_trail_mul = 1.0f;
+float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lift = 0.0f, vx_hdr_peak = 1.0f, vx_bright = 1.0f, vx_trail_mul = 1.0f;   /* (Bright: the owner's choice) */
 int vx_app_dots = 0;
 int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry) { (void) lng; (void) shrt; (void) rates; (void) n; (void) dry; return 0; }
 const char *vx_app_tune_report (void) { return ""; }

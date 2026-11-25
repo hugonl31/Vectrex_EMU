@@ -145,7 +145,7 @@ final class Getter {
 		case 0: return count (have, GCE) + " of the " + GCE.length + " original games";
 		case 1: return count (have, HOMEBREW) + " of " + HOMEBREW.length + " free homebrew games";
 		case 2: return new File (pxDir (m), "pitrex.img").exists () ? "found" : "not there";
-		case 5: return new File (roms (m), "VecDoom.um2").exists () ? "found" : "not there";
+		case 5: return new File (roms (m), "VecDoom.um2").exists () && new File (roms (m), "Tests/Photo Test.bin").exists () ? "found" : "not there";   /* (the test carts too: 2026-11-25) */
 		case 4: { String[] l = new File (m.sysDir, "vectrex_emu/thumbs/labels").list (); int n = l == null ? 0 : l.length; return n >= 250 ? "found (" + n + " labels)" : n > 0 ? n + " labels" : "the 112 that come with the app"; }
 		default: return speechFile (m).exists () || new File (m.sysDir, "vectrex_emu/sp0256-al2.bin").exists () ? "found" : "not there"; }
 	}
@@ -374,8 +374,8 @@ final class Getter {
 
 	/* ------------------------------------------------------------ the screen */
 	static final String[] TITLE = { "GCE Vectrex games", "Homebrew games (free)", "PiTrex SD card", "Speech ROM (al2.bin)", "Box art and labels (full set)", "Test extras (test build only)" };
-	static final String[] SIZE = { "0.2 MB", "1 MB", "190 MB", "2 KB", "96 MB", "22 MB" };
-	static final String[] SITE = { "archive.org", "archive.org, GitHub", "vide.malban.de", "spatula-city.org", "this project's GitHub", "VecDoom, Doom, Quake, Veccy Road - the project's server" };
+	static final String[] SIZE = { "0.2 MB", "1 MB", "190 MB", "2 KB", "96 MB", "25 MB" };
+	static final String[] SITE = { "archive.org", "archive.org, GitHub", "vide.malban.de", "spatula-city.org", "this project's GitHub", "the test carts, VecDoom, Doom, Quake, Veccy Road - the project's server" };
 	static final int N = TITLE.length;
 	static final boolean[] busy = new boolean[N];
 	/* the private test build (the owner, 2026-11-25: the app private until he is happy): the public build's page and one

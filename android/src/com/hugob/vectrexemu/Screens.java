@@ -33,9 +33,13 @@ final class Screens {
 			TextView x = button (m, "✕", false); x.setContentDescription ("Close"); x.setOnClickListener (v -> m.pop ()); head.addView (x, new LinearLayout.LayoutParams ((int) m.dp (48), (int) m.dp (44)));
 			addView (head, new LinearLayout.LayoutParams (-1, -2));
 			sc = new ScrollView (m); sc.setFillViewport (true);
-			FrameLayout holder = new FrameLayout (m);
+			final int maxW = (int) m.dp (640);
+			FrameLayout holder = new FrameLayout (m) {   /* (the column: the screen's width, at most a tablet's sheet - measured each time, so a
+				                                           turn from landscape to portrait narrows it; it kept the width it opened with and cut the text) */
+				@Override protected void onMeasure (int w, int hm) {
+					int ww = MeasureSpec.getSize (w); col.getLayoutParams ().width = Math.min (ww, maxW); super.onMeasure (w, hm); } };
 			col = new LinearLayout (m); col.setOrientation (VERTICAL); col.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (8), (int) m.dp (16) + m.insR, (int) m.dp (24) + m.insBot);
-			holder.addView (col, new FrameLayout.LayoutParams ((int) Math.min (m.root.getWidth (), m.dp (640)), -2, Gravity.CENTER_HORIZONTAL));
+			holder.addView (col, new FrameLayout.LayoutParams (Math.min (m.root.getWidth (), maxW), -2, Gravity.CENTER_HORIZONTAL));
 			sc.addView (holder); addView (sc, new LinearLayout.LayoutParams (-1, 0, 1));
 		}
 		@Override public void closed () { if (onClose != null) onClose.run (); }

@@ -294,7 +294,8 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	}
 	void offerGetter ()   /* (the public build's first start: where the games come from - once the device test and such are closed) */
 	{
-		if (!stack.isEmpty () || welcome.getParent () != null) { h.postDelayed (this::offerGetter, 1500); return; }
+		final int t = VX.tuning ();   /* (not over the device test - its question, the test itself or its result) */
+		if (!stack.isEmpty () || welcome.getParent () != null || t == 1 || t == 3) { h.postDelayed (this::offerGetter, 1500); return; }
 		prefs.edit ().putBoolean ("getter.offered", true).apply ();
 		if (Getter.count (Getter.present (this), Getter.GCE) == 0) { log ("first start: get games & extras offered"); Getter.show (this); }
 	}

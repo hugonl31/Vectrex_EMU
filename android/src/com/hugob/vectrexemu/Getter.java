@@ -158,6 +158,7 @@ final class Getter {
 	static final String DRIVE = "https://drive.usercontent.google.com/download?export=download&confirm=t&id=";
 	static final String DRIVE_GAMES = DRIVE + "1dcRdUxgMg2yX0ux-izPzcttY0SislQgF", DRIVE_SPEECH = DRIVE + "1L_fWaxPa4KLWnE7-RNCDqmI1clzSXxPP",
 		DRIVE_PITREX = DRIVE + "17XNGNgabHEQ0eNc7zzuPhTPxmZ7G4Rri", DRIVE_HOMEBREW = DRIVE + "1N2lCNS8VSlBQeCqKp40nYoQVegHyhub7";
+	static final String DRIVE_PITREX_NAME = "PiTrex_sd_Jul29_25";   /* (the version the project's copy of the PiTrex's SD card is) */
 	static final String MIRROR = "https://archive.org/download/vectrex-emu-extras/", MIRROR_GAMES = MIRROR + "GCE_Vectrex_games.zip",
 		MIRROR_HOMEBREW = MIRROR + "Vectrex_homebrew_free.zip", MIRROR_PITREX = MIRROR + "PiTrex_sd_Jul29_25.zip", MIRROR_SPEECH = MIRROR + "al2.bin";
 	/* the full artwork set (the project's own remade box art and labels, 280 games - Simon Quincey's title artwork and
@@ -215,6 +216,10 @@ final class Getter {
 			c.add (one ("https://raw.githubusercontent.com/malbanGit/Telengard/master/Telengard_256kFlash.bin")); c.add (one (MIRROR_HOMEBREW));
 			c.add (() -> Arrays.asList (iaZip ("gce-vectrex-games-complete", null), iaZip ("GCE_Vectrex_TOSEC_2012_04_23", null))); c.add (one (mi + "Telengard/Telengard%20(v1.03).bin")); break;
 		case 2: c.add (() -> { List<String> o = new ArrayList<> (); try { String page = getText ("http://vide.malban.de/pitrex/pitrex-baremetal-download", 30); Set<Integer> ids = new java.util.TreeSet<> (Collections.reverseOrder ());
+					/* (Malban's site is slow for 190 MB: when the newest file it offers is the version the project's own
+					 *  copy has, that copy first - Google Drive, checked byte for byte; a newer version from his site) */
+					Set<String> names = new HashSet<> (); Matcher nm = Pattern.compile ("PiTrex_sd_\\w+\\.zip", Pattern.CASE_INSENSITIVE).matcher (page); while (nm.find ()) names.add (nm.group ().toLowerCase (Locale.ROOT));
+					if (!names.isEmpty () && names.equals (Collections.singleton (DRIVE_PITREX_NAME.toLowerCase (Locale.ROOT) + ".zip"))) o.add (DRIVE_PITREX);
 					Matcher mm = Pattern.compile ("download_id=(\\d+)").matcher (page);
 					while (mm.find ()) { String after = page.substring (mm.start (), Math.min (page.length (), mm.start () + 1500)); if (Pattern.compile ("PiTrex_sd_\\w+\\.zip", Pattern.CASE_INSENSITIVE).matcher (after).find ()) ids.add (Integer.parseInt (mm.group (1))); }
 					for (int id : ids) o.add ("http://vide.malban.de/?sdm_process_download=1&download_id=" + id); } catch (Exception e) { } return o; });
@@ -347,7 +352,7 @@ final class Getter {
 	/* an item through its chain: each address until one works (the games: until all of them are there); the files added */
 	static int getItem (Main m, int k, Progress p, Say say) throws IOException
 	{
-		Set<String> tried = new LinkedHashSet<> (); int added = 0; boolean ok = false; File tmp = new File (m.getCacheDir (), "download.tmp");
+		Set<String> tried = new LinkedHashSet<> (); int added = 0; boolean ok = false; File tmp = new File (m.getCacheDir (), "download" + k + ".tmp");   /* (each item its own: Download all runs them side by side - one shared file was overwritten halfway) */
 		synchronized (Getter.class) { owned (m); }
 		outer:
 		for (Step s : chain (k)) {

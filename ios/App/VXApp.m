@@ -949,9 +949,21 @@ static void vxa_toast (NSString *s, double secs)
 			else [self startCore]; });
 	}] resume];
 #else
+	/* (the public build's first start: the download page first, the device test after it and its downloads - as the
+	 *  Android app; the owner, 2026-11-25) */
+	if (![NSUserDefaults.standardUserDefaults boolForKey:@"getter.offered"] && [VXUI getterGames] == 0) {
+		[NSUserDefaults.standardUserDefaults setBool:YES forKey:@"getter.offered"]; vlog ("first start: get games & extras, then the device test");
+		_status.text = @"First the games"; __weak VXGameVC *ws = self;
+		[VXUI showGetterFrom:self then:^{ [ws startAfterDownloads]; }]; return; }
 	vlog ("pack: no token in this build - the content must be in the app's folder already");
 	[self startCore];
 #endif
+}
+- (void) startAfterDownloads   /* (the download page closed: its downloads finished first - the test measures this device alone) */
+{
+	if (vxg_any_busy ()) { _status.text = @"Downloading...\nThe device test follows"; __weak VXGameVC *ws = self;
+		dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.5 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [ws startAfterDownloads]; }); return; }
+	[self startCore];
 }
 - (void) openDownloads { if (_parts.count) [self chooseParts:NO]; else { vlog ("downloads: the list not here yet - asking the server"); [self checkPack]; } }
 - (BOOL) hasOldPack { return [NSFileManager.defaultManager fileExistsAtPath:[vxa_docs () stringByAppendingPathComponent:@"system/vectrex_emu/pack_version.txt"]]; }
@@ -1060,11 +1072,11 @@ static void vxa_toast (NSString *s, double secs)
 	  if (vx_app_tune (L, S, r0, nr, 1) > 0) {       /* (asked first: what it does, how long - never in a game) */
 		_status.text = @"A short test of this device first"; vlog ("device test: needed - asking");
 		__weak VXGameVC *ws = self;
-		UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Device test" message:@"A short test of this device's graphics finds the best picture quality it keeps at full speed, at each screen rate. About 10 to 20 seconds, once. It runs before you play, never during a game." preferredStyle:UIAlertControllerStyleAlert];
-		[a addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:^(UIAlertAction *x) { (void) x; vlog ("device test: later - nothing measured meanwhile"); [ws startLink]; }]];
-		UIAlertAction *go = [UIAlertAction actionWithTitle:@"Test now" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x; [ws testLong:L short:S top:top]; }];
-		[a addAction:go]; a.preferredAction = go;
-		[(self.presentedViewController ?: self) presentViewController:a animated:YES completion:nil];
+		void (^later) (void) = ^{ vlog ("device test: later - nothing measured meanwhile"); [ws startLink]; };
+		vxa_prompt (self, @"Device test", @"Best quality at full speed", nil, nil, nil, NO, @[
+				@[ @"Test now", @"About 10 to 20 seconds, once", VXGO (^(NSString *t) { (void) t; [ws testLong:L short:S top:top]; }) ],
+				@[ @"Later", @"Asked again at the next start", VXGO (^(NSString *t) { (void) t; later (); }) ] ],
+			@"A short test of this device's graphics finds the best picture quality it keeps at full speed, at each screen rate. It runs before you play, never during a game.", later);
 		return; } }
 	[self startLink];
 }
@@ -1092,11 +1104,15 @@ static void vxa_toast (NSString *s, double secs)
 	vlog ("device test: %s", [r stringByReplacingOccurrencesOfString:@"\n" withString:@"; "].UTF8String);
 	if (!r.length) return;
 	vxa_hold (1);
-	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Device test done" message:[r stringByAppendingString:@"\n\nQuality profile Auto uses these results; the settings let you choose another."] preferredStyle:UIAlertControllerStyleAlert];
 	__weak VXGameVC *ws = self;   /* (the welcome sheet after the result - it would not show over it) */
-	[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x; vxa_hold (0);
-		VXGameVC *g = ws; if (g && ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.4 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:g]; }); }]];
-	[(self.presentedViewController ?: self) presentViewController:a animated:YES completion:nil];
+	void (^ok) (void) = ^{ vxa_hold (0);
+		VXGameVC *g = ws; if (g && ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.4 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:g]; }); };
+	NSMutableArray *rows = [NSMutableArray array];   /* (each screen rate a line, as the Android app's) */
+	for (NSString *ln in [r componentsSeparatedByString:@"\n"]) { if (!ln.length) continue; NSRange c = [ln rangeOfString:@": "];
+		[rows addObject:@[ c.location != NSNotFound ? [ln substringToIndex:c.location] : ln, c.location != NSNotFound ? [ln substringFromIndex:c.location + 2] : @"", NSNull.null ]]; }
+	[rows addObject:@[ @"OK", @"", VXGO (^(NSString *t) { (void) t; ok (); }) ]];
+	vxa_prompt (self, @"Device test done", [r containsString:@"effects off"] ? @"What this device runs at full speed" : @"Every effect on at every rate", nil, nil, nil, NO, rows,
+		@"Quality profile Auto uses these results; the settings let you choose another.", ok);
 }
 - (void) startLink                                 /* (the game on: its refreshes, the start screen gone) */
 {
@@ -1369,7 +1385,7 @@ static void vxa_set_opt (int i, NSString *v)
 	CGRect df = CGRectMake (s.left, below ? CGRectGetMaxY (pic) : CGRectGetMaxY (pic) - h, v.width - s.left - s.right, h);
 	if (!CGRectEqualToRect (df, _deck.frame)) _deck.frame = df;
 	BOOL show = YES;
-	if (m == 3) { show = CACurrentMediaTime () < _popUntil || vx_app_paused () || vxa_holding; [_deck.superview bringSubviewToFront:_deck]; }
+	if (m == 3) { show = CACurrentMediaTime () < _popUntil || vx_app_paused () || vxa_holding || !vx_app_power_on (); [_deck.superview bringSubviewToFront:_deck]; }   /* (switched off: its OFF in sight) */
 	if (_deck.hidden == show) { _deck.hidden = !show; if (show) [dk tick]; }
 	const BOOL tab = NO; if (_popTab.hidden != !tab) _popTab.hidden = !tab;   /* (no tab: a tap on the picture's foot opens the pop-up deck) */
 	if (tab) { CGRect tf = CGRectMake (CGRectGetMidX (pic) - 32, CGRectGetMaxY (pic) - 14, 64, 26); if (!CGRectEqualToRect (tf, _popTab.frame)) { _popTab.frame = tf; [_popTab viewWithTag:5].frame = CGRectMake (10, 12, 44, 14); } }
@@ -1384,7 +1400,7 @@ static void vxa_set_opt (int i, NSString *v)
 	UIViewController *top = self; while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) top = top.presentedViewController;
 	if (top == self) return;
 	if ([top isKindOfClass:UINavigationController.class] && ((UINavigationController *) top).viewControllers.count > 1) { [(UINavigationController *) top popViewControllerAnimated:YES]; ulog (@"pad: back"); return; }
-	if ([top isKindOfClass:UIAlertController.class]) return;   /* (a question: answered by tapping) */
+	if ([top respondsToSelector:@selector(promptClose)]) { ulog (@"pad: prompt closed"); [top performSelector:@selector(promptClose)]; return; }   /* (the app's own prompt: its close - as its button) */
 	ulog (@"pad: close"); __weak VXGameVC *ws = self;
 	[top dismissViewControllerAnimated:YES completion:^{ VXGameVC *g = ws; if (g && !g.presentedViewController) vxa_hold (0); }];   /* (nothing over the game any more: on) */
 }
@@ -1803,12 +1819,8 @@ static void vxa_banner (NSString *s)
 void vxa_chat_prompt (void)
 {
 	UIViewController *vc = vxa_vc; if (!vc || vc.presentedViewController) return;
-	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Chat" message:nil preferredStyle:UIAlertControllerStyleAlert];
-	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.placeholder = @"A line to the other player"; f.autocapitalizationType = UITextAutocapitalizationTypeSentences; }];
-	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-	[a addAction:[UIAlertAction actionWithTitle:@"Send" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { NSString *v = a.textFields.firstObject.text;
-		if (v.length) { extern void vx_net_chat (const char *); vx_net_chat (v.UTF8String); vlog ("online chat out: %s", v.UTF8String); } }]];
-	[vc presentViewController:a animated:YES completion:nil];
+	vxa_prompt (vc, @"Chat", nil, nil, @"A line to the other player", nil, NO, @[ @[ @"Send", @"", VXGO (^(NSString *v) {
+		if (v.length) { extern void vx_net_chat (const char *); vx_net_chat (v.UTF8String); vlog ("online chat out: %s", v.UTF8String); } }) ] ], nil, nil);
 }
 static NSString *vxa_find_md5 (NSString *md5)          /* (the host's game in this phone's library: by its MD5, as the desktop's find_rom) */
 {

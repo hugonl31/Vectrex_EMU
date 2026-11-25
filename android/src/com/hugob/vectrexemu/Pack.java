@@ -134,9 +134,12 @@ final class Pack {
 
 /* the app's log, sent live to the project's server (the private test build: new apps start with detailed logs) */
 final class Live {
+	static String tok;   /* (the live log's key: the private build's token, or the public test build's log-only one - assets/logtoken.txt) */
 	static void start (Main m)
 	{
-		if (Pack.token (m) == null) return;
+		tok = Pack.token (m);
+		if (tok == null) try (InputStream in = m.getAssets ().open ("logtoken.txt")) { String t = new String (Pack.read (in), StandardCharsets.UTF_8).trim (); tok = t.isEmpty () ? null : t; } catch (Exception e) { tok = null; }
+		if (tok == null) return;
 		final String sess = String.format ("d%04x", new java.util.Random ().nextInt (0x10000));
 		new Thread (() -> {
 			try { File prev = new File (m.files, "applog_previous.txt"); if (prev.exists ()) post (sess + "-app-previous-log", java.nio.file.Files.readAllBytes (prev.toPath ())); } catch (Exception e) { }
@@ -146,7 +149,7 @@ final class Live {
 	static void post (String kind, byte[] d) throws java.io.IOException
 	{
 		HttpURLConnection c = (HttpURLConnection) new URL (Pack.HOST + "/ioslog").openConnection (); c.setDoOutput (true); c.setConnectTimeout (10000); c.setReadTimeout (15000);
-		c.setRequestProperty ("X-Vectrex-Token", Pack.tok); c.setRequestProperty ("X-Vectrex-Kind", kind); c.setRequestProperty ("X-Vectrex-Ext", "txt");
+		c.setRequestProperty ("X-Vectrex-Token", tok); c.setRequestProperty ("X-Vectrex-Kind", kind); c.setRequestProperty ("X-Vectrex-Ext", "txt");
 		try (OutputStream o = c.getOutputStream ()) { o.write (d); } c.getResponseCode (); c.disconnect ();
 	}
 }

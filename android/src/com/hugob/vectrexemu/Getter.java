@@ -10,7 +10,6 @@
  * Copyright (c) 2026 Hugo Bokhorst. Part of Vectrex_EMU; see LICENSE.md. */
 package com.hugob.vectrexemu;
 
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.widget.LinearLayout;
@@ -377,7 +376,7 @@ final class Getter {
 	static final String[] SITE = { "archive.org", "archive.org, GitHub", "vide.malban.de", "spatula-city.org", "this project's GitHub" };
 	static final int N = TITLE.length;
 	static final boolean[] busy = new boolean[N];
-	static void show (Main m)
+	static Screens.Panel show (Main m)
 	{
 		Main.log ("ui get games & extras"); m.findContent (); Set<String> have = present (m);
 		Screens.Panel p = new Screens.Panel (m, "Get games & extras");
@@ -391,21 +390,24 @@ final class Getter {
 			int[] a = new int[ks.size ()]; for (int i = 0; i < a.length; i++) a[i] = ks.get (i); start (m, a); });
 		p.foot ("Files already there are kept. The box art for 112 games comes with the app; the full set has 280. The PiTrex's SD card (190 MB) and the full box art (96 MB) are large: best on Wi-Fi.");
 		p.header ("Your own files");
-		p.row ("Add files...", "Games (.bin, .vec, a zip of them), the speech ROM, a PiTrex SD card zip", () -> pick (m));
+		p.row ("Add files...", "Games (.bin, .vec, a zip of them), UVMC2 games (.um2), the speech ROM, a PiTrex SD card zip", () -> pick (m));
 		p.header ("Notice");
 		p.foot (DISCLAIMER);
-		rows = det; m.push (p);
+		rows = det; m.push (p); return p;
 	}
+	static boolean anyBusy () { for (boolean b : busy) if (b) return true; return false; }
 	static TextView[] rows;
 	static void say (Main m, int k, String s) { m.h.post (() -> { if (rows != null && rows[k] != null) rows[k].setText (s); }); }
 	static void start (Main m, int[] ks)
 	{
 		if (m.prefs.getBoolean ("dl.agreed", false)) { run (m, ks); return; }
-		StringBuilder s = new StringBuilder (DISCLAIMER).append ("\n\nThe files and where they come from:\n");
+		StringBuilder s = new StringBuilder ("The files and where they come from:\n");
 		for (String[] w : WHAT) s.append ("\n").append (w[0]).append (": ").append (w[1]);
-		new AlertDialog.Builder (m).setTitle ("Before you download").setMessage (s.toString ())
-			.setPositiveButton ("I agree - download", (d, w) -> { m.prefs.edit ().putBoolean ("dl.agreed", true).apply (); Main.log ("downloads: the notice agreed to"); run (m, ks); })
-			.setNegativeButton ("Cancel", null).show ();
+		Screens.Panel p = new Screens.Panel (m, "Before you download");   /* (the app's own panel, as the iOS app's prompt) */
+		p.header ("Notice"); p.body (DISCLAIMER);
+		p.row ("I agree - download", "", () -> { m.prefs.edit ().putBoolean ("dl.agreed", true).apply (); Main.log ("downloads: the notice agreed to"); m.pop (); run (m, ks); });
+		p.row ("Cancel", "", m::pop);
+		p.foot (s.toString ()); m.push (p);
 	}
 	static void run (Main m, int[] ks)
 	{
@@ -454,10 +456,15 @@ final class Getter {
 	/* a game file (named ours when known, else as it was), or a zip of them, into roms/Imported */
 	static int importGames (Main m, String name, byte[] d, int depth) throws IOException
 	{
+		String low = name.toLowerCase (Locale.ROOT);
+		if (low.endsWith (".um2") || low.endsWith (".v4e")) {   /* (as it is: a UVMC2 game, a Vec4ever file - as the iOS app's) */
+			File out = new File (roms (m), "Imported/" + new File (name).getName ()); if (out.exists ()) return 0;
+			out.getParentFile ().mkdirs (); try (OutputStream o = new FileOutputStream (out)) { o.write (d); } return 1; }
 		if (isZip (d)) { int n = 0;
 			try (ZipInputStream z = new ZipInputStream (new java.io.ByteArrayInputStream (d))) { ZipEntry e;
 				while ((e = z.getNextEntry ()) != null) if (!e.isDirectory ()) { String en = e.getName ().replace ('\\', '/'); byte[] b = Pack.read (z);
-					if (en.toLowerCase (Locale.ROOT).endsWith (".zip") && depth < 2) n += importGames (m, en, b, depth + 1); else if (romExt (en)) n += importOne (m, en, b); } }
+					String el = en.toLowerCase (Locale.ROOT);
+					if (el.endsWith (".zip") && depth < 2) n += importGames (m, en, b, depth + 1); else if (romExt (en) || el.endsWith (".um2") || el.endsWith (".v4e")) n += importGames (m, en, b, depth + 1); } }
 			return n; }
 		return romExt (name) ? importOne (m, name, d) : 0;
 	}

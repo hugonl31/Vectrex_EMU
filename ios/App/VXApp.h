@@ -96,6 +96,16 @@ UIColor *vx_rgba (double r, double g, double b, double a);
 @interface VXUI (Online)
 + (void) showOnlineFrom:(UIViewController *)vc;
 @end
+@interface VXUI (Getter)                                        /* (VXGetter.m: Get games & extras, as the Android app's) */
++ (void) showGetterFrom:(UIViewController *)vc then:(void (^) (void))then;   /* (then: once it is closed) */
++ (int) getterGames;                                            /* (the original games here) */
+@end
+int vxg_any_busy (void);                                        /* (a download of it still running) */
+/* the app's own prompt (VXUI.m, as the Android app's panels - no iOS alerts): a title, a header, the text, a field to type
+ * in (its placeholder; nil: none), the choices - each @[ title, note, VXGO (^(NSString *typed) { ... }) ] (NSNull: a line
+ * shown only) -, a foot; closed: the close button (nil: nothing) */
+void vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void));
+#define VXGO(b) ((id) [(b) copy])
 @interface VXDeck : UIView
 @property (nonatomic, weak) UIViewController *game;
 @property (nonatomic) int mode;                  /* (1 full, 2 slim) */

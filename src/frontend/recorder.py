@@ -15,7 +15,7 @@ FPS = 50                        # (the Vectrex's own frame rate)
 
 QUALITY = {'veryhigh': ('Very high', 14), 'high': ('High', 18), 'small': ('Smaller files', 23)}   # (x264 crf)
 VSIZE = {'full': 'The window\'s size', 'half': 'Half'}
-SNAP = {'window': 'Window', '2x': '2x', 'max': '4x (about 6000 px)'}
+SNAP = {'2x': '2x', 'max': '4x (about 6000 px)'}   # (Shift+F12's size; F12: the window's)
 DEFAULTS = {'rec_dir': '', 'rec_quality': 'veryhigh', 'rec_size': 'full', 'rec_snap': 'max', 'rec_sound': True,
             'rec_deck': False}
 SNAP_MAX_H = 6000               # (4x: the snapshot's height at most - and never past the graphics card's limit)

@@ -313,7 +313,7 @@ static void dk_tick (double busy)
 	{ static int hw = -1; const int h = vx_paused || br_open;   /* (paused, or the ROM browser open: EMU RATE 0%, not red - at once) */
 	  if (h != hw) { hw = h; dk_dirty_set = 1; if (h && pw_on) { snprintf (dk_osd[2], 24, "0%%"); dk_osd_col = DK_G; }
 		if (dk_t0 != 0) { dk_t0 = vt_wall (); dk_f0 = aq_frames; dk_r0 = dk_runs; dk_e0 = run_t; dk_busy = 0; } dk_rate_reset (); } }   /* (the rate measured anew: the stop not in it) */
-	if (dk_pop) { const int want = vx_paused || dk_drag.on || vt_wall () < dk_pop_until;   /* (the pop-up: a while after a touch, while paused) */
+	if (dk_pop) { const int want = vx_paused || dk_drag.on || vt_wall () < dk_pop_until || !pw_on;   /* (the pop-up: a while after a touch, while paused, while switched off - its OFF in sight, as the apps) */
 		if (want != dk_shown) { dk_shown = want; dk_dirty_set = 1; } }
 	{ static clock_t c0; const clock_t c = clock (); if (c0) dk_busy += (double) (c - c0) / CLOCKS_PER_SEC; c0 = c; }   /* (the processor: all the core's threads) */
 	const double now = vt_wall ();

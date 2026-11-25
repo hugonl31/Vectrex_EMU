@@ -26,7 +26,7 @@ TOPICS = [
 ('h', 'Playing'),
 ('p', "Player 1 plays with the arrow keys and A S D F (buttons 1 to 4, in a row as on the controller; W A S D as a cross in Controls), Shift for a half push of the "
       "stick, or with a game controller; Controls > Keyboard and controllers sets both players up. Keys that run the "
-      "emulator: F11 full screen, F9 record a video, F12 snapshot, Tab the Config window, Esc back / pause, P pause, Space (held) fast forward, L ROM browser, O overlay, C case, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
+      "emulator: F11 full screen, F9 record a video, F12 snapshot, Shift+F12 high-res snapshot, Tab the Config window, Esc back / pause, P pause, Space (held) fast forward, L ROM browser, O overlay, C case, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+Page Up / Down speech module volume, "
       "+ / - / 0 size, 9 Authentic size, Alt the menus."),
 ('more', 'The menus in full screen', "In full screen (F11) the menu bar is hidden: move the mouse to the top "
       "edge of the screen, or press Alt, and it appears over the picture - it goes again when the mouse moves "
@@ -179,6 +179,9 @@ TOPICS = [
          "older or newer Vectrex_EMU, which can not join). Join starts it "
          "as with a code. The list keeps itself up to date while the window is open; the room holds at most 100 waiting "
          "games."),
+('item', 'Find LAN games...', "The games hosted on this local network - another PC's Online > Host on local "
+         "network, a phone's or tablet's On this Wi-Fi - under 'Games on this network' in the Online window: one click joins. No "
+         "meeting point, no code, no internet needed."),
 ('item', 'Join with a code...', "Type the host's code (or an address) and press Join. The host's game starts here when you "
          "have the same ROM in your roms folder (found by its contents, whatever its file name)."),
 ('item', 'UVMC2 games and PiTrex programs', "They can be played online too. Both players need the same SD card "
@@ -223,9 +226,10 @@ TOPICS = [
          "into the picture. The video is 50 pictures a second, the Vectrex's own rate. After Stop the MP4 is made in the "
          "background (SAVING VIDEO, then VIDEO SAVED); the game plays on. A new window size stops the recording: a "
          "video keeps one size."),
-('item', 'Snapshot (F12)', "The screen as a PNG, drawn again at up to four times the window's size (about 6000 "
-         "pixels tall) - the lines sharp at that size, not a stretched screenshot. The picture is drawn at that size "
-         "for a moment (about a fifth of a second), then back. Paused games work too."),
+('item', 'Snapshot (F12)', "The screen as a PNG, exactly the picture shown at that moment, at the window's size."),
+('item', 'High-res snapshot (Shift+F12)', "The screen drawn again at up to four times the window's size (about 6000 "
+         "pixels tall; Snapshot size in Recording settings) - the lines sharp at that size, not a stretched screenshot. "
+         "The picture is drawn at that size for a moment (about a fifth of a second), then back. Paused games work too."),
 ('item', 'Open recordings folder', "The folder with your videos and snapshots."),
 ('item', 'Recording settings...', "Save to: the folder. Video quality: Very high (the default), High or Smaller "
          "files. Video size: the window's size or half. Snapshot size: the window's, 2x or 4x (about 6000 px). "

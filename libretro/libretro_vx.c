@@ -777,10 +777,10 @@ static void read_options (void)
 #ifdef VX_EMUVR
 	opt_res = opt_is ("vectrex_emu_res", "4x 2496x3200") ? 4 : opt_is ("vectrex_emu_res", "3x 1872x2400") ? 3 : opt_is ("vectrex_emu_res", "2x 1248x1600") ? 2 : 1;
 #endif
-#ifndef VX_EMUVR
-	{ extern void vt_set_analog (int id, double v); const int bt = !(getenv ("VX_BEAM") && !atoi (getenv ("VX_BEAM")));   /* (2026-11-22: as the PC - always; VX_BEAM=0: a test, the rules before) */
+	{ extern void vt_set_analog (int id, double v); const int bt = !(getenv ("VX_BEAM") && !atoi (getenv ("VX_BEAM")));   /* (2026-11-22: as the PC - always; VX_BEAM=0: a test, the rules before.
+	                                              EmuVR too since 2026-11-25: without the beam's path its moving shapes came apart at the
+	                                              corners - Smooth motion and the slow game's hold pair the path's pieces, not the old lines) */
 	  if (bt != vx_beam) { vx_beam = bt; vt_set_analog (11, bt ? 1.0 : 0.0); } }
-#endif
 #ifndef VX_EMUVR
 	{ const char *z = getenv ("VX_HALO"); if (z) sscanf (z, "%lf,%lf", &bt_halo_f, &bt_halo_s); }   /* (a test: the glass's glow - its share of the light, its sigma in units) */
 	{ extern int vx_app_noshape; extern float vx_bright;   /* (Tube > Look, as the desktop's: RetroArch's option - the own apps set it themselves, App > Look) */
@@ -933,7 +933,6 @@ static LONG WINAPI vx_crash (EXCEPTION_POINTERS *ep)
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif
-#ifndef VX_EMUVR
 /* (2026-11-22: the timing as the owner's Vectrex measured - vectrex_emu.py Core: the shift register's model, the spot's lag in three
  *  stages, RAMP's and the beam's delays, the S/H's. The core reads them as its test variables: set here unless a test set them) */
 static void timing_defaults (void)
@@ -947,12 +946,10 @@ static void timing_defaults (void)
 #endif
 	}
 }
-#endif
 void retro_init (void)
 {
-#ifndef VX_EMUVR
-	timing_defaults ();
-#endif
+	timing_defaults ();   /* (EmuVR too since 2026-11-25: without it its strokes started and stopped off the
+	                         measured moments - a shape's halves apart, the owner's Mine Storm in VR) */
 #if defined(_WIN32)
 	if (getenv ("VXPOC_CRASHLOG")) AddVectoredExceptionHandler (1, vx_crash);
 	if (getenv ("VXPOC_STDERR")) { freopen (getenv ("VXPOC_STDERR"), "a", stderr); setvbuf (stderr, NULL, _IONBF, 0); }   /* (test: the core's messages to a file) */

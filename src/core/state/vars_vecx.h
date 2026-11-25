@@ -132,6 +132,9 @@ void vxs_vars_vecx (void (*add) (void *p, size_t n, int is_long))
 	add (&km_mly, sizeof km_mly, 0);
 	add (&km_mzx, sizeof km_mzx, 0);
 	add (&km_mzy, sizeof km_mzy, 0);
+	add (&lag3_init, sizeof lag3_init, 0);
+	add (&lag3_x, sizeof lag3_x, 0);
+	add (&lag3_y, sizeof lag3_y, 0);
 	add (&lag_moving, sizeof lag_moving, 0);
 	add (&lag_split_k, sizeof lag_split_k, 0);
 	add (&lp_dark, sizeof lp_dark, 0);
@@ -220,6 +223,7 @@ void vxs_vars_vecx (void (*add) (void *p, size_t n, int is_long))
 	add (&sd_bh, sizeof sd_bh, 0);
 	add (&sd_hist, sizeof sd_hist, 0);
 	add (&sd_zh, sizeof sd_zh, 0);
+	add (&sd_zq, sizeof sd_zq, 0);
 	add (&ser_cnt, sizeof ser_cnt, 0);
 	add (&ser_div, sizeof ser_div, 0);
 	add (&ser_line, sizeof ser_line, 0);

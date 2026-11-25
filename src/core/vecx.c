@@ -1509,6 +1509,10 @@ static unsigned long long alg_skipped;    /* (cycles the fast path took, for the
 static void alg_sstep_full (void);
 /* (alg_sstep_full's histories and remembered factors: at file scope, so a save state has them - RetroArch's netplay) */
 static unsigned char sd_zh[32], sd_bh[16], sd_hist[64];
+static unsigned sd_zq;                 /* (sd_zh's write count - VT_ZDELAY / VT_SRDELAY; at file scope so the save state holds it) */
+static double lag3_x[6], lag3_y[6]; static int lag3_init;   /* (the beam's lag stages beyond two - the same; a function's own
+                                         *  static was not in the named lists: after run-ahead's load the stages and the Z queue held the
+                                         *  hidden frames' values and moves lit up as long lines - Vectrexians in EmuVR, 2026-11-25) */
 static double zt_tau = -1.0, zt_e[128];   /* (per intensity, remembered: see kexp) */
 static kmemo_t km_m2, km_m1, km_mzx, km_mzy, km_mlx, km_mly;
 double vt_alg_skipped (void) { return alg_cycles ? (double) alg_skipped / (double) alg_cycles : 0.0; }
@@ -1639,9 +1643,9 @@ static void alg_sstep_full (void)
 	{ static int sr_delay = -1;      /* VT_SRDELAY=c (a test): the beam switched by the shift register (the BIOS's lines and text) c cycles
 	   * later than by a PCR write - the Settle Test (hand-timed, PCR) gives the spot's timing against the switch itself */
 	  if (sr_delay < 0) { const char *z = getenv ("VT_SRDELAY"); sr_delay = z ? atoi (z) : 0; if (sr_delay > 30) sr_delay = 30; if (sr_delay > 0 && z_delay == 0) z_delay = 0; }
-	  if (z_delay > 0 || sr_delay > 0) { int zd = z_delay + ((via_acr & 0x10) ? sr_delay : 0); static unsigned zq;
-		sd_zh[zq++ & 31] = sig_blank ? 1 : 0;
-		sig_blank = sd_zh[(zq - 1 - zd) & 31]; } }
+	  if (z_delay > 0 || sr_delay > 0) { int zd = z_delay + ((via_acr & 0x10) ? sr_delay : 0);
+		sd_zh[sd_zq++ & 31] = sig_blank ? 1 : 0;
+		sig_blank = sd_zh[(sd_zq - 1 - zd) & 31]; } }
 	{ int boff = (int) beam_off;
 	  if (boff) {
 		sd_bh[bpos++ & 15] = sig_blank ? 1 : 0;
@@ -1965,10 +1969,9 @@ static void alg_sstep_full (void)
 			beam_x1 += (tx - beam_x1) * kx; beam_y1 += (ty - beam_y1) * ky;
 			beam_x += (beam_x1 - beam_x) * kx; beam_y += (beam_y1 - beam_y) * ky;
 		} else if (n > 2) {
-			static double sx[6], sy[6]; static int sinit;
-			if (!sinit) { sinit = 1; for (int i = 0; i < 6; i++) { sx[i] = tx; sy[i] = ty; } }
-			{ double ix = tx, iy = ty; for (int i = 0; i < n; i++) { sx[i] += (ix - sx[i]) * kx; sy[i] += (iy - sy[i]) * ky; ix = sx[i]; iy = sy[i]; }
-			  beam_x = ix; beam_y = iy; beam_x1 = sx[0]; beam_y1 = sy[0]; }
+			if (!lag3_init) { lag3_init = 1; for (int i = 0; i < 6; i++) { lag3_x[i] = tx; lag3_y[i] = ty; } }
+			{ double ix = tx, iy = ty; for (int i = 0; i < n; i++) { lag3_x[i] += (ix - lag3_x[i]) * kx; lag3_y[i] += (iy - lag3_y[i]) * ky; ix = lag3_x[i]; iy = lag3_y[i]; }
+			  beam_x = ix; beam_y = iy; beam_x1 = lag3_x[0]; beam_y1 = lag3_y[0]; }
 		} else {
 			beam_x += (tx - beam_x) * kx; beam_y += (ty - beam_y) * ky;
 		}

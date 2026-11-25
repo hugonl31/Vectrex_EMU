@@ -491,7 +491,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|basic|low|medium|high|ultra" },
 	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green.", "blue|green" },
 #if VX_TINT_DEFAULT
-	{ "vectrex_emu_faint", "video", "Vector colour (test)", "For matching a real Vectrex: every vector the same at every brightness - a white core and a blue halo where its light falls off (by the line's own profile, not its brightness): thin or wide, today's blue or a deeper one, or a blue glow brighter than white (HDR); 15000 K core; blue (before): as today.", "white, wide blue halo|white, blue halo|white, deep blue halo|white, wide deep blue halo|white, bright blue glow|15000 K core, blue halo|blue (before)" },
+	{ "vectrex_emu_faint", "video", "Vector colour (test)", "For matching a real Vectrex: every vector the same at every brightness - a white core and a blue halo where its light falls off (by the line's own profile, not its brightness): thin or wide, today's blue or a deeper one, or a blue glow brighter than white (HDR); 15000 K core; blue (before): as today.", "blue glow 2.0x|blue glow 1.4x|blue glow 1.7x|blue glow 2.5x|blue glow 3.0x|blue glow 2.0x extra wide|white, wide blue halo|blue (before)" },
 #endif
 	{ "vectrex_emu_gamelist", "video", "Game list", "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder.", "library|simple" },
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
@@ -887,8 +887,9 @@ static void read_options (void)
 	{ const int lo = !opt_is ("vectrex_emu_gamelist", "simple"); if (lo != lib_on) { lib_on = lo; if (br_open) br_show (1); } }
 #if VX_TINT_DEFAULT
 	{ extern int vx_tint_mode; extern float vx_tint_k; const char *f = optv ("vectrex_emu_faint");   /* (the test build's Faint vectors: gpu_phos.c PH_FS_SAT) */
-	  if (f && *f) { static const char *const V[] = { "15000 K core, blue halo", "white, blue halo", "white, wide blue halo", "white, deep blue halo", "white, wide deep blue halo", "white, bright blue glow" };
-		vx_tint_mode = 0; for (int i = 0; i < 6; i++) if (!strcmp (f, V[i])) { vx_tint_mode = 4; vx_tint_k = (float) (i + 1); } } }   /* (4: the colour by the profile, vx_tint_k the choice) */
+	  if (f && *f) { static const char *const V[] = { "15000 K core, blue halo", "white, blue halo", "white, wide blue halo", "white, deep blue halo", "white, wide deep blue halo", "white, bright blue glow",
+		  "blue glow 1.4x", "blue glow 1.7x", "blue glow 2.0x", "blue glow 2.5x", "blue glow 3.0x", "blue glow 2.0x extra wide" };
+		vx_tint_mode = 0; for (int i = 0; i < 12; i++) if (!strcmp (f, V[i])) { vx_tint_mode = 4; vx_tint_k = (float) (i + 1); } } }   /* (4: the colour by the profile, vx_tint_k the choice) */
 #endif
 	{ extern int vx_palette; const int pl = opt_is ("vectrex_emu_palette", "green"); if (pl != vx_palette) { vx_palette = pl; dk_dirty_set = 1; } }
 	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }

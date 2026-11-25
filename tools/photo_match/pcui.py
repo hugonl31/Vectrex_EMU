@@ -4,7 +4,8 @@ argv: out_prefix rom what[,what...] [wait_ms]   what: main | library | boxes | c
 env: NOSETUP=1 (defaults, no setup window), OVERLAY=1 (the game's overlay on), PRESS=ms[,ms...] (button 4 pressed then), LOOK,
 ROOM=0.5|1|2 (View > Room light: Dark, Evening, Daylight), JOY=from-to:x,y (ms; player 1's stick held, -1..1),
 LIBART=1.0 (the library's pictures at that brightness - the README's screenshots; the app keeps its 80 %),
-LIBROOT=<folder> (the app's folder for roms and thumbs, e.g. build\Vectrex_EMU with the owner's pictures), HIDE=name;name (games left out of the list)"""
+LIBROOT=<folder> (the app's folder for roms and thumbs, e.g. build\Vectrex_EMU with the owner's pictures), HIDE=name;name (games left out of the list),
+LIBUI=1.25 (the library's own colours - text, buttons, panels - that much brighter: with LIBART=1.0 the whole loader at 100 %)"""
 import sys, os, glob, ctypes, threading, subprocess, tempfile
 S = os.path.dirname(os.path.abspath(__file__))
 _root = os.environ.get('TEST_TEMP_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '_temp')
@@ -30,6 +31,17 @@ V.Core.frame_send = frame_send
 args = argparse.Namespace(rom=rom, height_mm=0, scale=1.0, tk=False, fullscreen=False, ideal=False, demo=0, net_host=None, net_join=None, net_online=False)
 V.vecrender.set_dpi_aware()
 if os.environ.get('LIBART'): V.vecrender.LIB_ART = float(os.environ['LIBART'])
+if os.environ.get('LIBUI'):
+    _uk = float(os.environ['LIBUI']); _lib0 = V.vecrender.GLBloomRenderer._library
+    def _lib1(self, b, _p=V.vecrender.palette):
+        r0 = _p.rgb; done = set()                    # (once: the text's colours come through rgb() again)
+        def r1(c):
+            if tuple(c) in done: return tuple(c)
+            o = tuple(min(1.0, v * _uk) for v in r0(c)); done.add(o); return o
+        _p.rgb = r1
+        try: return _lib0(self, b)
+        finally: _p.rgb = r0
+    V.vecrender.GLBloomRenderer._library = _lib1
 if os.environ.get('LIBROOT'): V.ROOT = os.path.abspath(os.environ['LIBROOT'])
 if os.environ.get('HIDE'):
     _hide = {x.lower() for x in os.environ['HIDE'].split(';')}; _scan = V.library.Library.scan

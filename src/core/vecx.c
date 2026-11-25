@@ -305,7 +305,7 @@ static double rate_bx, rate_by; static int rate_env = -1;
  *  50 fps one's thirds of 7 columns as before). So the difference's part of the beam's Y is kept on its own (rate_ey) and leaks
  *  away with RATE_LEAK cycles; ZERO empties it with the integrators. Without the leak the plain grid's lower right ran off:
  *  its vertical lines' lower halves short, on the owner's tube whole (VT_RATELEAK: tests, 0 none) */
-#define RATE_LEAK 9000.0                  /* (9000: the owner's PC exe with his whole unit, 2026-11-25 - at 12000 the plain grid's right columns ended half a cell above its bottom line, on his tube they reach it; the start dots rise 2.6 cells, the photo 2.7. Before, fitted with the owner's Y rate 1.5 %: the plain grid's start dots 0 3 6 6 10 13 15 17 21 21 22 23 25 26 27 27 31 31 31 units, the photo's 0 3 5 10 12 15 . 20 22 23 25 25 26 . . 30 30 30 30; the 50 fps grid 0.098 rows a column, the photo 0.106) */
+#define RATE_LEAK 6000.0                  /* (6000: the owner, 2026-11-25 - on his tube the plain grid's right columns run past its bottom line to the glass; at 9000 they only met it, at 12000 they ended half a cell above. The start dots then rise 1.8 cells, the photo 2.7: this model moves a column's start and its bottom end together, the tube does not - the closed grid first. 9000: 2.6 cells. Before, fitted with the owner's Y rate 1.5 %: the plain grid's start dots 0 3 6 6 10 13 15 17 21 21 22 23 25 26 27 27 31 31 31 units, the photo's 0 3 5 10 12 15 . 20 22 23 25 25 26 . . 30 30 30 30; the 50 fps grid 0.098 rows a column, the photo 0.106) */
 static long rate_ady; static double rate_ey, rate_leak = -1;
 static void rate_init (void)
 {

@@ -5,6 +5,12 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.9.0
 
+* **The Android app is out**: `Vectrex_EMU-android.apk` (Android 9 or later). It comes with the Vectrex BIOS, Last Human,
+  the overlays and box art for 112 games; Settings > Get games & extras fetches the original games, free homebrew, the
+  PiTrex's SD card, the speech ROM and the full box art set (280 games) from public sources - the same notice as the
+  PC's - or adds your own files.
+* Android: a setting with more than on and off (Case, Glass edge, Dither, Smooth motion...) no longer shows a switch
+  that opens a menu: its value is shown, a tap opens its choices; a real on / off switch turns at a tap.
 * Glass curvature 0 is always a flat picture: with Tube geometry off it no longer stretches the picture's edges (it
   took a curve out that was not there). The curvature comes with Tube geometry; without it the picture is flat.
 

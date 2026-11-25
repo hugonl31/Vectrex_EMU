@@ -203,6 +203,8 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	}
 	void checkContent ()
 	{
+		if (Base.busy) return;
+		if (Base.needed (this)) { Base.busy = true; status ("Setting up..."); new Thread (() -> { Base.install (this); h.post (() -> { Base.busy = false; checkContent (); }); }, "base").start (); return; }   /* (the public build: its own files unpacked first, once) */
 		findContent ();
 		boolean bios = new File (sysDir, "vectrex_emu/bios.bin").exists () || new File (sysDir, "vectrex_emu").isDirectory ();
 		if (Pack.token (this) != null) { Pack.check (this, bios); return; }   /* (the private test build: the parts from the project's server) */
@@ -288,6 +290,18 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		layout (); Live.start (this);
 		h.postDelayed (this::autoOnce, 2000);
 		h.postDelayed (() -> testIntent (getIntent ()), 3000);
+		if (Pack.token (this) == null && !prefs.getBoolean ("getter.offered", false)) h.postDelayed (this::offerGetter, 2500);
+	}
+	void offerGetter ()   /* (the public build's first start: where the games come from - once the device test and such are closed) */
+	{
+		if (!stack.isEmpty () || welcome.getParent () != null) { h.postDelayed (this::offerGetter, 1500); return; }
+		prefs.edit ().putBoolean ("getter.offered", true).apply ();
+		if (Getter.count (Getter.present (this), Getter.GCE) == 0) { log ("first start: get games & extras offered"); Getter.show (this); }
+	}
+	@Override protected void onActivityResult (int code, int res, Intent data)
+	{
+		super.onActivityResult (code, res, data);
+		if (code == Getter.PICK && res == RESULT_OK) Getter.picked (this, data);
 	}
 	/* the tests' hooks (adb: am start -e vx.game <path> -e vx.name <name> -e vx.host 0|1|2 / -e vx.join <code or address>):
 	 * the same steps a player takes, logged as such */

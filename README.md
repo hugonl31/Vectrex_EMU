@@ -16,6 +16,7 @@
 | **Windows** 10 / 11, 64-bit | [Vectrex_EMU-windows.zip](https://github.com/hugonl31/Vectrex_EMU/releases/latest/download/Vectrex_EMU-windows.zip) | `Vectrex_EMU.exe` |
 | **macOS** 10.13 or later, Intel and Apple Silicon | [Vectrex_EMU-mac-app.zip](https://github.com/hugonl31/Vectrex_EMU/releases/latest/download/Vectrex_EMU-mac-app.zip) | `Vectrex_EMU.app` |
 | **Linux** x86-64 (Ubuntu 22.04, Debian 12, Fedora 36 or later) | [Vectrex_EMU-linux-bin.zip](https://github.com/hugonl31/Vectrex_EMU/releases/latest/download/Vectrex_EMU-linux-bin.zip) | `./Vectrex_EMU` |
+| **Android** 9 or later (phones, tablets, handhelds) | [Vectrex_EMU-android.apk](https://github.com/hugonl31/Vectrex_EMU/releases/latest/download/Vectrex_EMU-android.apk) | open the APK to install it |
 
 **RetroArch cores** (each zip has RetroArch's folders and an `INSTALL.txt`):
 [Windows x64](https://github.com/hugonl31/Vectrex_EMU/releases/latest/download/Vectrex_EMU_RetroArch_Windows-x64.zip) -
@@ -36,6 +37,8 @@ original GCE games and free homebrew with **Vectrex > Get games & extras**, at y
 
 The Mac app is signed and notarized by Apple: it opens straight away. The Windows program is not signed yet: Windows may
 say it protected your PC - *More info > Run anyway*. Linux: `chmod +x Vectrex_EMU` if the zip lost the permission.
+Android: allow your browser or file manager to install apps when Android asks; the app's own **Settings > Get games &
+extras** fetches the games and extras (with the same notice: at your own responsibility) or adds your own files.
 
 ---
 
@@ -233,8 +236,9 @@ recording and measurement, and every call on how it should look, sound and feel.
 * **RetroArch core** for Windows, macOS, Linux (x64 and arm64) and Android: the same emulation and picture (on the
   GPU), overlays, the Vectrex unit, UVMC2 and PiTrex, a game library, a control deck, tate mode for handhelds,
   netplay; ES-DE support on Android.
-* **iPhone / iPad and Android apps**: standalone apps around the same core (no RetroArch) - touch controls,
-  controllers, the library, HDR, save states, online play with PCs. They are in testing and not published yet.
+* **Android app**: a standalone app around the same core (no RetroArch) - touch controls, controllers, the library,
+  HDR, save states, online play with PCs and phones, Get games & extras. Download the APK above.
+* **iPhone / iPad app**: the same app for iOS - in testing, not published yet.
 
 ### Also
 

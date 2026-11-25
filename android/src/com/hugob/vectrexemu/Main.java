@@ -69,11 +69,24 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (h[0] > 100f && h[0] < 190f && h[1] > 0.12f) { h[0] = 216f; h[1] = Math.min (1f, h[1] * 1.25f); return android.graphics.Color.HSVToColor (android.graphics.Color.alpha (c), h); }
 		return c;
 	}
+	static final int[] BASE = { BG, BAR, PANEL, BODY, EDGE, EDGE2, SEL, G, HI, HI2, FG, FG2, DIM };   /* (the theme's own colours: each scheme made from them) */
 	static void palette (boolean g)
 	{
-		green = g; if (g) return;
-		BG = pal (BG); BAR = pal (BAR); PANEL = pal (PANEL); BODY = pal (BODY); EDGE = pal (EDGE); EDGE2 = pal (EDGE2); SEL = pal (SEL);
-		G = pal (G); HI = pal (HI); HI2 = pal (HI2); FG = pal (FG); FG2 = pal (FG2); DIM = pal (DIM);
+		green = g; final int[] c = new int[BASE.length]; for (int i = 0; i < c.length; i++) c[i] = pal (BASE[i]);
+		BG = c[0]; BAR = c[1]; PANEL = c[2]; BODY = c[3]; EDGE = c[4]; EDGE2 = c[5]; SEL = c[6]; G = c[7]; HI = c[8]; HI2 = c[9]; FG = c[10]; FG2 = c[11]; DIM = c[12];
+	}
+	/* the colour scheme changed (Settings: Green colours): everything in the new one at once - the owner, 2026-11-25: until the
+	 * next start some of it kept the old one (the quick bar, the menu button, the pop-up tab were made with the colours of
+	 * the app's start); the screen open is made again by the caller */
+	void applyPalette (boolean g)
+	{
+		if (g == green) return;
+		palette (g); prefs.edit ().putInt ("app.palgreen", g ? 1 : 0).apply (); log ("colours: " + (g ? "green" : "blue") + " - the app's own views made again");
+		int i = root.indexOfChild (bar); root.removeView (bar); bar = quickBar (); root.addView (bar, i, new FrameLayout.LayoutParams (-1, (int) dp (44)));
+		i = root.indexOfChild (popTab); final int pv = popTab.getVisibility (); root.removeView (popTab); popTab = popTabView (); popTab.setVisibility (pv);
+		root.addView (popTab, i, new FrameLayout.LayoutParams ((int) dp (64), (int) dp (26)));
+		menuBtn.setTextColor (HI); menuBtn.setBackground (round (pal (0xbf0b1511), EDGE2, dp (22)));
+		deck.invalidate (); ctl.recolour (); layout (); placeDeck ();
 	}
 	static Main me; static boolean palSet;
 	SharedPreferences prefs; FrameLayout root, screens; SurfaceView sv; Controls ctl; LinearLayout bar, toasts; TextView menuBtn; DeckView deck; View popTab; long popUntil;
@@ -102,7 +115,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		deck = new DeckView (this); deck.setVisibility (View.GONE); root.addView (deck, new FrameLayout.LayoutParams (-1, (int) dp (58)));
 		popTab = popTabView (); popTab.setVisibility (View.GONE); root.addView (popTab, new FrameLayout.LayoutParams ((int) dp (64), (int) dp (26)));
 		menuBtn = new TextView (this); menuBtn.setText ("≡"); menuBtn.setTextSize (24); menuBtn.setTextColor (HI); menuBtn.setGravity (Gravity.CENTER);
-		menuBtn.setBackground (round (0xbf0b1511, EDGE2, dp (22))); menuBtn.setOnClickListener (v -> Screens.gameMenu (this)); menuBtn.setContentDescription ("Menu");
+		menuBtn.setBackground (round (pal (0xbf0b1511), EDGE2, dp (22))); menuBtn.setOnClickListener (v -> Screens.gameMenu (this)); menuBtn.setContentDescription ("Menu");
 		root.addView (menuBtn, new FrameLayout.LayoutParams ((int) dp (44), (int) dp (44)));
 		toasts = new LinearLayout (this); toasts.setOrientation (LinearLayout.VERTICAL); toasts.setGravity (Gravity.CENTER_HORIZONTAL);
 		FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams (-1, -2, Gravity.TOP); root.addView (toasts, tl);

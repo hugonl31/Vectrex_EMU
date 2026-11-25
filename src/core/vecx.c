@@ -307,6 +307,16 @@ static double rate_bx, rate_by; static int rate_env = -1;
  *  its vertical lines' lower halves short, on the owner's tube whole (VT_RATELEAK: tests, 0 none) */
 #define RATE_LEAK 5800.0                  /* (5800 with the owner's Y rate 2.1 %, 2026-11-25 - his tube's plain Full Grid (the photos Grid cut off / his lower-right shot): the columns cross the last horizontal line by 0.30 0.26 0.18 0.15 0.13 0.07 0.02 0 0 cells from the centre column to the right, here 0.40 0.33 0.27 0.24 0.19 0.11 0.07 0 0 (wobble off); 8500 with 1.5: 0.60 ... 0, its step from column to column twice the tube's - the error builds up sooner on the tube and levels off. The start dots: steep on the left, flat on the right, as the photo (2.0 cells, the photo 2.7). Before, fitted with the owner's Y rate 1.5 %: the plain grid's start dots 0 3 6 6 10 13 15 17 21 21 22 23 25 26 27 27 31 31 31 units, the photo's 0 3 5 10 12 15 . 20 22 23 25 25 26 . . 30 30 30 30; the 50 fps grid 0.098 rows a column, the photo 0.106) */
 static long rate_ady; static double rate_ey, rate_leak = -1;
+/* (2026-11-26, the owner's Updown Test photos: the Y difference is no rate - at DAC $40 (half speed) there is none at all, at $7F the
+ *  beam comes down ~1 % short of where it went up, a trip at a time, adding up without levelling off over 16 trips. An integrator that
+ *  cannot follow the fastest downward slope: VT_YSLEW=d0 (a test) - downward moves lose rate_by x 2 of their way at full scale, fading
+ *  to none at |DAC| d0; no leak. VT_YRAIL=r: the Y integrator's swing ends r units (ALG units) from the middle - its rail) */
+static int ysl_on = -1; static double ysl_d0 = 64.0, ysl_rail = 0.0;
+static void ysl_init (void)
+{
+	const char *z = getenv ("VT_YSLEW"); ysl_on = z != NULL; if (z) ysl_d0 = atof (z);
+	z = getenv ("VT_YRAIL"); if (z) ysl_rail = atof (z);
+}
 static void rate_init (void)
 {
 	const char *z = getenv ("VT_XRATE"); rate_env = 1;
@@ -1728,7 +1738,11 @@ static void alg_sstep_full (void)
 	                                                     * moves the beam up, adx > 0 right - those (1 + b), the other way (1 - b) */
 	if (rate_bx != 0.0) { double r = (double) adx * (1.0 + (adx > 0 ? rate_bx : -rate_bx)); adx = (long) (r + (r >= 0 ? 0.5 : -0.5)); }
 	rate_ady = 0;
-	if (rate_by != 0.0) { double r = (double) ady * (1.0 + (ady < 0 ? rate_by : -rate_by)); const long a2 = (long) (r + (r >= 0 ? 0.5 : -0.5)); rate_ady = a2 - ady; ady = a2; }
+	if (ysl_on < 0) ysl_init ();
+	if (rate_by != 0.0 && ysl_on) {                    /* (the downward speed limit: see ysl_on) */
+		if (ady > 0) { double f = ((double) ady / ZS - ysl_d0) / (127.0 - ysl_d0); f = f < 0 ? 0 : f > 1 ? 1 : f;
+			const double r = (double) ady * (1.0 - 2.0 * rate_by * f); const long a2 = (long) (r + 0.5); rate_ady = a2 - ady; ady = a2; }
+	} else if (rate_by != 0.0) { double r = (double) ady * (1.0 + (ady < 0 ? rate_by : -rate_by)); const long a2 = (long) (r + (r >= 0 ? 0.5 : -0.5)); rate_ady = a2 - ady; ady = a2; }
 	if (via_acr & 0x80) {
 		sig_ramp = via_t1pb7;
 	} else {
@@ -1929,11 +1943,13 @@ static void alg_sstep_full (void)
 
 	alg_curr_x += sig_dx;
 	alg_curr_y += sig_dy;
-	if (rate_leak < 0) { const char *z = getenv ("VT_RATELEAK"); rate_leak = z ? atof (z) : RATE_LEAK; }
+	if (rate_leak < 0) { const char *z = getenv ("VT_RATELEAK"); rate_leak = z ? atof (z) : ysl_on > 0 ? 0.0 : RATE_LEAK; }
 	if (zero_now == 0) rate_ey = 0;                         /* (the rate difference's own part of Y: see rate_ey) */
 	else if (rate_leak > 0.5) {
 		if (sig_ramp == 0) rate_ey += ramp_part < 1.0 ? rate_ady * ramp_part : (double) rate_ady;
 		const long lk = (long) (rate_ey / rate_leak); alg_curr_y -= lk; rate_ey -= (double) lk; }
+	if (ysl_rail > 0.0) { const long cy = (ALG_MAX_Y*ZS) / 2, r = (long) (ysl_rail * ZS);   /* (the Y integrator's rail: see ysl_on) */
+		if (alg_curr_y > cy + r) alg_curr_y = cy + r; else if (alg_curr_y < cy - r) alg_curr_y = cy - r; }
 	prot_step (sig_blank == 1 && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f) != 0);   /* (the deflection protect: see prot_step) */
 	alg_cycles++;
 	{ static int lag_env; static double lag_force = -1;      /* (VT_DEFLAG / VT_DEFLAGN given: they win over the frontend's unit

@@ -181,6 +181,19 @@ void vt_step (unsigned icycles)
 		frame_start_cycles = total_cycles;
 		idle_frame = 0;
 		frames++;
+		{ /* (a frame longer than the BIOS's 20 ms - the Full Grid Test, 25 a second: on the tube it flickers and the eye sees the whole
+		   *  picture, each part at its average light; a screen showing one picture per game frame (G-Sync) showed the frame's end, its
+		   *  first lines ~35 ms old and gone (the owner's PC, 2026-11-25: the lower left missing). So its lines' times go into its last
+		   *  20 ms, in their order - every line at most 20 ms old when the frame is shown, as in a 50 fps game - and their light is
+		   *  scaled by 20 ms / the frame: the eye's average of the slower flicker (the dwell's light ~ dwell^0.75). VT_LONGFRAME=0: off */
+		  extern unsigned long long vt_piece_t0, alg_cycles; extern int vt_uvm2, vt_pitrex; static int lf = -1;
+		  if (lf < 0) { const char *z = getenv ("VT_LONGFRAME"); lf = z ? atoi (z) : 1; }
+		  const unsigned long long D = alg_cycles > vt_piece_t0 ? alg_cycles - vt_piece_t0 : 0; const double W = 30000.0;
+		  if (lf && !vt_uvm2 && !vt_pitrex && D > 30000 && D < 400000) {   /* (from 20 ms on, smoothly: no step in a busy game) */
+			const double k = W / (double) D, kc = pow (k, 1.0 / 0.75);
+			for (int i = 0; i < ncur; i++) { line_t *l = &cur[i];
+				const double t = l->t0 < D ? (double) l->t0 : (double) D; l->t0 = (unsigned) ((double) D - W + t * k + 0.5);
+				l->cyc = (unsigned) (l->cyc * kc + 0.5); if (!l->cyc) l->cyc = 1; } } }
 		memcpy (last, cur, sizeof (line_t) * ncur);
 		nlast = ncur; ncur = 0; beam_swap ();
 		frame_done = 1;

@@ -172,7 +172,10 @@ static void vx_putenv (const char *s)       /* (as Windows' _putenv: "NAME=" tak
 #endif
 #define TUBE_SEG 1200.0                     /* (lines longer than this, emulator units, are bent in pieces) */
 static int opt_geom = 1;
-static double opt_geom_k = 1.0, opt_glass_g;   /* (the strength; the glass's curve undone: 1 - Glass curvature) */
+static double opt_geom_k = 1.0, opt_glass_c = 1.0, opt_glass_g;   /* (the strength; Glass curvature; the glass's curve undone: 1 - Glass
+ * curvature, only with the tube's map on - it has the curve in it; without it the picture is flat and undoing a curve
+ * that is not there stretched its edges (the owner, 2026-11-25: 0 has to mean no curve). glass_set after every change */
+static void glass_set (void) { opt_glass_g = opt_geom && opt_geom_k > 0 ? 1.0 - opt_glass_c : 0.0; }
 #define GLASS_RX_U (97.0 / (103.5 / 0.924))   /* (the face's radii in half picture heights: mm / MM_UNIT) */
 #define GLASS_RY_U (205.0 / (103.5 / 0.924))
 #define GLASS_T_MAX 0.95                    /* (past 95 % of the radius: straight on with the slope there) */
@@ -449,7 +452,7 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_bending", "Brightness bending; on|off" },
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
 	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
-	{ "vectrex_emu_glass_curve", "Glass curvature (1: as on a Vectrex, 0: even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
+	{ "vectrex_emu_glass_curve", "Glass curvature (with Tube geometry; 1: as on a Vectrex, 0: flat, even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (fine detail, off: VR hardly shows it); off|on" },
 	{ "vectrex_emu_white", "White balance; 12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
@@ -561,7 +564,7 @@ static const struct vx_opt OPTS[] = {
 	  "12000 K|5600 K|6000 K|6504 K|7000 K|7500 K|8000 K|9300 K|10000 K|11000 K|13000 K|14000 K|16000 K" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "Where the beam really lands, measured on a real Vectrex: the picture a little narrower towards the sides, lines bowed slightly.", "auto|on|off" },
 	{ "vectrex_emu_geometry_k", "tube", "Tube geometry strength", "0x: an ideal, straight picture. 1x: the measured Vectrex.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_glass_curve", "tube", "Glass curvature", "The tube's face curves away towards its edges. 1: as seen on a Vectrex (the overlays fit it). 0: even squares.", "1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
+	{ "vectrex_emu_glass_curve", "tube", "Glass curvature", "The tube's face curves away towards its edges. 1: as seen on a Vectrex (the overlays fit it). 0: flat, even squares. Works with Tube geometry; without it the picture is flat.", "1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_glass_edge", "tube", "Glass edge", "The tube's glass ends in rounded corners with a soft edge.", "auto|on|off" },
 	{ "vectrex_emu_dither", "tube", "Dither", "The soft glows fade out smoothly instead of in steps (GPU).", "auto|on|off" },
 	{ "vectrex_emu_wobble", "tube", "Mains hum wobble", "The picture sways a tiny bit with the mains: 50 or 60 Hz.", "50 Hz|60 Hz|off" },
@@ -803,7 +806,7 @@ static void read_options (void)
 	opt_smooth = !opt_is ("vectrex_emu_smooth", "off"); raw_smooth = opt_is ("vectrex_emu_smooth", "auto") ? -1 : opt_smooth; opt_halo = !opt_is ("vectrex_emu_corner_glow", "off"); opt_bend = !opt_is ("vectrex_emu_bending", "off");
 	raw_geom = TRI ("vectrex_emu_geometry"); opt_geom = raw_geom != 0;
 	{ double k = optx ("vectrex_emu_geometry_k", 1.0), c = optn ("vectrex_emu_glass_curve", 1.0);
-	  opt_geom_k = k >= 0 && k <= 2 ? k : 1.0; opt_glass_g = c >= 0 && c <= 1 ? 1.0 - c : 0.0; }
+	  opt_geom_k = k >= 0 && k <= 2 ? k : 1.0; opt_glass_c = c >= 0 && c <= 1 ? c : 1.0; glass_set (); }
 	raw_passes = TRI ("vectrex_emu_passes"); raw_dith = TRI ("vectrex_emu_dither"); opt_sbend = opt_is ("vectrex_emu_smooth_bends", "on");
 	raw_sbend = opt_is ("vectrex_emu_smooth_bends", "auto") ? -1 : opt_sbend;
 	{ const char *pv = optv ("vectrex_emu_profile"); opt_profile = !strcmp (pv, "ultra") ? 1 : !strcmp (pv, "high") ? 2 : !strcmp (pv, "medium") ? 3
@@ -2946,7 +2949,7 @@ static void fx_apply (void)
 	const prow *const R = fx_force ? fx_force : !opt_profile && gl && opt_row_ok ? &opt_row : &FX_PROFILES[pr];
 	#define PICK(raw, v) ((raw) >= 0 ? (raw) : (v))
 	opt_glow = PICK (raw_glow, gl ? 1 : t[0]); opt_sbend = PICK (raw_sbend, gl ? R->sbend : t[1]); opt_smooth = PICK (raw_smooth, gl ? 1 : t[2]);
-	opt_geom = PICK (raw_geom, R->curve); opt_par = PICK (raw_par, R->par);
+	opt_geom = PICK (raw_geom, R->curve); glass_set (); opt_par = PICK (raw_par, R->par);
 	fx_passes = PICK (raw_passes, R->passes >= 2) ? 2 : 1; fx_dith = gl && PICK (raw_dith, R->dith);
 	fx_ps = gl ? R->ps : 1.0f; fx_half = gl && R->half; fx_lh = gl && R->lh;
 	gfx.glass = g && PICK (raw_glass, R->glass); gfx.ceiling = g && (raw_ceiling >= 0 ? raw_ceiling : R->light);

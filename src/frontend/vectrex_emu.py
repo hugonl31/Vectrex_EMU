@@ -3392,7 +3392,7 @@ class App:
         'white_k':       ('White balance (colour temperature)', '', 'ren', 'white_k', vecrender.WHITE_LO, vecrender.WHITE_HI, 'mired', '%.0f K', 1),
         'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.05, 10.0, True, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
-        'glass_curve':   ('Glass curvature (1 = as on a Vectrex, 0 = even squares)', '', 'ren', 'glass_curve', 0.0, 1.0, False, '%.2f', 1),
+        'glass_curve':   ('Glass curvature (1 = as on a Vectrex, 0 = flat; with Tube geometry)', '', 'ren', 'glass_curve', 0.0, 1.0, False, '%.2f', 1),
         'head_k':        ('Shift strength (x1 = 2 mm at the full reach)', '', 'ren', 'head_k', 0.0, 4.0, False, 'x%.2f', 1),
         'head_tilt':     ('Phone tilt (its angle: nearer / further seen as up / down)', '', 'ren', 'head_tilt', -45.0, 45.0, False, '%+.0f\u00b0', 1),
         'head_smooth_x': ('Left / right smoothing (less judder, a little later)', '', 'ren', 'head_smooth_x', 0.0, 200.0, False, '%.0f ms', 1),

@@ -312,8 +312,9 @@ TOPICS = [
          "middle) to twice as much."),
 ('item', 'Glass curvature...', "The tube's face curves away towards its edges, so seen straight on the squares of a "
          "grid look narrower at the sides and lower at the top and bottom - in front of a real Vectrex too. 1 (the default) "
-         "shows it as on a Vectrex (the overlays fit it), 0 takes it away: even squares, the picture a little wider. Separate from the analog "
-         "circuits' geometry (Unit and Circuit tabs) and Tube geometry."),
+         "shows it as on a Vectrex (the overlays fit it), 0 takes it away: flat, even squares, the picture a little wider. It works with "
+         "Tube geometry, which holds the curve; with Tube geometry off the picture is flat whatever this is set to. Separate from "
+         "the analog circuits' geometry (Unit and Circuit tabs)."),
 ('item', 'Dither (no bands in soft glows)', "A faint noise in the soft glows, so they fade out smoothly instead of in visible "
          "steps of brightness (bands)."),
 ('item', 'Glass edge (rounded corners)', "The tube's glass face ends in rounded corners with a soft edge: what "

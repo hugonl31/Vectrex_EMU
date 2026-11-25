@@ -1426,6 +1426,22 @@ static void vxa_set_opt (int i, NSString *v)
 }
 - (void) fadeBar { if ([self barAuto]) [UIView animateWithDuration:0.5 animations:^{ self->_bar.alpha = 0; }]; }
 - (void) barModeChanged { [self viewDidLayoutSubviews]; _pic = CGRectZero; [self showBar]; }
+/* the colour scheme changed (Settings: Green colours): the game's own views in the new one at once - the quick bar and the deck
+ * made again, the touch controls, the menu button, the toast and the pop-up tab recoloured */
+- (void) paletteChanged
+{
+	UIColor *g = vx_rgba (0x66 / 255.0, 0xaa / 255.0, 0x88 / 255.0, 1), *hi = vx_rgba (0x88 / 255.0, 0xcc / 255.0, 0xbb / 255.0, 1);
+	_stickBase.fillColor = vx_rgba (0.06, 0.11, 0.09, 0.6).CGColor; _stickBase.strokeColor = vx_rgba (0x2f / 255.0, 0x55 / 255.0, 0x44 / 255.0, 1).CGColor;
+	_stickKnob.fillColor = vx_rgba (0x16 / 255.0, 0x30 / 255.0, 0x2a / 255.0, 1).CGColor; _stickKnob.strokeColor = g.CGColor;
+	_padTog.fillColor = _stickBase.fillColor; _padTog.strokeColor = _stickBase.strokeColor; _padTogT.foregroundColor = g.CGColor;
+	for (int i = 0; i < 4; i++) { _btn[i].fillColor = _stickBase.fillColor; _btn[i].strokeColor = g.CGColor; _btnT[i].foregroundColor = hi.CGColor; }
+	vxa_toast_l.textColor = hi; vxa_toast_l.backgroundColor = vx_rgba (0x0b / 255.0, 0x15 / 255.0, 0x11 / 255.0, 0.92);
+	_menuBtn.tintColor = hi; _menuBtn.backgroundColor = vx_rgba (0x0b / 255.0, 0x15 / 255.0, 0x11 / 255.0, 0.75); _menuBtn.layer.borderColor = vx_rgba (0x2f / 255.0, 0x55 / 255.0, 0x44 / 255.0, 1).CGColor;
+	{ UIView *t = [_popTab viewWithTag:5]; t.backgroundColor = VX_PANEL; t.layer.borderColor = VX_EDGE.CGColor; for (UIView *a in t.subviews) a.tintColor = VX_DIM; }
+	{ UIView *nb = [VXUI quickBarFor:self]; nb.frame = _bar.frame; nb.hidden = _bar.hidden; nb.alpha = _bar.alpha; [self.view insertSubview:nb aboveSubview:_bar]; [_bar removeFromSuperview]; _bar = nb; }
+	{ VXDeck *nd = (VXDeck *) [VXUI deckFor:self]; nd.frame = _deck.frame; nd.hidden = _deck.hidden; nd.alpha = _deck.alpha; nd.mode = ((VXDeck *) _deck).mode; [self.view insertSubview:nd aboveSubview:_deck]; [_deck removeFromSuperview]; _deck = nd; }
+	[self barModeChanged];
+}
 - (void) setRunning:(int)on
 {
 	if (!_link || on == _running) return; _running = on; _link.paused = !on; _last = 0;

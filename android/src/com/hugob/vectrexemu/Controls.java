@@ -25,6 +25,7 @@ final class Controls extends View {
 		super (m); this.m = m; for (int i = 0; i < 4; i++) btn[i] = new RectF ();
 		edge.setStyle (Paint.Style.STROKE); edge.setStrokeWidth (m.dp (1.5f)); txt.setTextAlign (Paint.Align.CENTER); txt.setColor (Main.HI); txt.setTypeface (Typeface.DEFAULT_BOLD);
 	}
+	void recolour () { txt.setColor (Main.HI); invalidate (); }   /* (the colour scheme changed) */
 	void relayout ()
 	{
 		final float tsize = m.prefs.getFloat ("touch.size", 1f); setAlpha (m.prefs.getFloat ("touch.alpha", 1f));

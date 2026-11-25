@@ -14,6 +14,7 @@ NAME = 'blue'
 HUE, SAT_K = 216.0 / 360.0, 1.25
 _HEX = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
 _cache = {}
+_inv = {}                       # (a colour of the blue scheme -> the theme's own one it was made from: back to green)
 
 def rgb(c):
     """(r, g, b) 0..1 in the scheme"""
@@ -36,6 +37,8 @@ def hexs(c):
             t = ''.join(ch * 2 for ch in t)
         r, g, b = rgb(tuple(int(t[i:i + 2], 16) / 255.0 for i in (0, 2, 4)))
         o = _cache[c] = '#%02x%02x%02x' % (int(r * 255 + 0.5), int(g * 255 + 0.5), int(b * 255 + 0.5))
+        if o != c.lower():
+            _inv[o] = c
     return o
 
 def bgr(v):
@@ -50,3 +53,66 @@ def _options(self, cnf, kw=None):
         return res
     return tuple(hexs(v) if isinstance(v, str) and v[:1] == '#' else v for v in res)
 tk.Misc._options = _options
+
+# the scheme changed while the app runs (Display > Colours - the owner, 2026-11-25: at once, not from the next start): every
+# window's widgets, canvas items and menu entries given their colours again in the new one (blue: the theme's own colours
+# made blue; green: each blue one back to the colour it was made from). OpenGL reads the scheme at each picture (rgb()).
+_OPTS = ('background', 'foreground', 'activebackground', 'activeforeground', 'highlightbackground', 'highlightcolor',
+         'selectbackground', 'selectforeground', 'insertbackground', 'disabledforeground', 'troughcolor', 'selectcolor',
+         'readonlybackground', 'fill', 'outline', 'activefill', 'activeoutline', 'disabledfill', 'disabledoutline')
+
+def _conv(v):
+    v = str(v)
+    if not _HEX.match(v):
+        return v
+    return hexs(v) if NAME == 'blue' else _inv.get(v.lower(), v)
+
+def switch(root, name):
+    """the scheme now 'blue' or 'green', every widget under root (its windows too) recoloured; the count of colours changed"""
+    global NAME
+    if name == NAME:
+        return 0
+    NAME = name
+    n = [0]
+    def fix(w):
+        try:
+            kw = {}
+            for k in w.keys():
+                if k in _OPTS:
+                    v = w.cget(k); nv = _conv(v)
+                    if nv != str(v):
+                        kw[k] = nv
+            if kw:
+                w.configure(**kw); n[0] += len(kw)
+        except tk.TclError:
+            pass
+        if isinstance(w, tk.Canvas):
+            for it in w.find_all():
+                try:
+                    kw = {}
+                    for k, d in w.itemconfigure(it).items():
+                        if k in _OPTS:
+                            v = d[-1]; nv = _conv(v)
+                            if v and nv != str(v):
+                                kw[k] = nv
+                    if kw:
+                        w.itemconfigure(it, **kw); n[0] += len(kw)
+                except tk.TclError:
+                    pass
+        if isinstance(w, tk.Menu):
+            try:
+                last = w.index('end')
+            except tk.TclError:
+                last = None
+            for i in range(0 if last is None else last + 1):
+                for k in ('background', 'foreground', 'activebackground', 'activeforeground', 'selectcolor'):
+                    try:
+                        v = w.entrycget(i, k); nv = _conv(v)
+                        if v and nv != str(v):
+                            w.entryconfigure(i, **{k: nv}); n[0] += 1
+                    except tk.TclError:
+                        pass
+        for c in w.winfo_children():
+            fix(c)
+    fix(root)
+    return n[0]

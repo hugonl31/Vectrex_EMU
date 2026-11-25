@@ -286,6 +286,19 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithPrimaryAction:[UIAction actionWithTitle:@"Done" image:nil identifier:nil handler:^(UIAction *a) { (void) a; [ws dismissViewControllerAnimated:YES completion:nil]; }]];
 }
 - (void) viewWillAppear:(BOOL)a { [super viewWillAppear:a]; [self.tableView reloadData]; }
+/* the colour scheme changed (Green colours): everything in the new one at once - the owner, 2026-11-25: until the app's next
+ * start the deck, the quick bar, the menus kept the old one (each colour is made when its view is): the core's scheme set now
+ * (it reads its setting at the next picture only), the game's own views made again, this list and its bar redrawn */
+- (BOOL) palCheck:(int)i
+{
+	if (i < 0 || strcmp (vxa_okey (i), "vectrex_emu_palette")) return NO;
+	extern int vx_palette; const int g = !strcmp (vxa_oval (i), "green"); if (g == vx_palette) return NO;
+	vx_palette = g; [NSUserDefaults.standardUserDefaults setInteger:g forKey:@"app.palgreen"]; ulog ([NSString stringWithFormat:@"colours: %s - the views made again", g ? "green" : "blue"]);
+	if ([self.game respondsToSelector:@selector(paletteChanged)]) [self.game performSelector:@selector(paletteChanged)];
+	self.tableView.backgroundColor = VX_BG; self.tableView.separatorColor = VX_EDGE;
+	if (self.navigationController) [VXUI styleNav:self.navigationController];
+	[self.tableView reloadData]; return YES;
+}
 - (UIContextMenuConfiguration *) tableView:(UITableView *)t contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)ip point:(CGPoint)p
 {
 	if (!ip.section) return nil;
@@ -450,6 +463,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = on; __weak VXSettings *ws = self; char a[64], bb[64]; snprintf (a, sizeof a, "%s", onv); snprintf (bb, sizeof bb, "%s", offv);
 		NSString *sa = @(a), *sb = @(bb);
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *x) { vxa_oset (i, ((UISwitch *) x.sender).on ? sa.UTF8String : sb.UTF8String); ulog ([NSString stringWithFormat:@"setting %s = %s", vxa_okey (i), vxa_oval (i)]);
+			if ([ws palCheck:i]) return;
 			[ws.tableView reloadRowsAtIndexPaths:@[ ip ] withRowAnimation:UITableViewRowAnimationNone]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; } }
 	UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"o"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"o"];
@@ -471,7 +485,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 				for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
 				[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.bar"];   /* (the deck's pop-up and the top bar too: Auto) */
 				if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)];
-				ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); [ws.tableView reloadData]; }) ],
+				ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); if (![ws palCheck:vxa_ofind ("vectrex_emu_palette")]) [ws.tableView reloadData]; }) ],
 			@[ @"Cancel", @"", VXGO (^(NSString *x) { (void) x; }) ] ], nil, nil);
 		return; }
 	if (R == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }
@@ -483,6 +497,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; ulog ([NSString stringWithFormat:@"setting opened %s", vxa_okey (i)]);
 	{ const char *onv, *offv; NSString *tt, *non, *noff;   /* (a switch row: the row's tap turns it too - no menu) */
 	  if (vxs_switch (i, &onv, &offv, &tt, &non, &noff)) { vxa_oset (i, strcmp (vxa_oval (i), onv) ? onv : offv); ulog ([NSString stringWithFormat:@"setting %s = %s", vxa_okey (i), vxa_oval (i)]);
+		if ([self palCheck:i]) return;
 		[t reloadRowsAtIndexPaths:@[ ip ] withRowAnimation:UITableViewRowAnimationNone]; return; } }
 	if (VSlider (i, NULL, NULL)) {                  /* (a number: the slider over the running game, the settings out of the way) */
 		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:i over:g fromSettings:YES]; }]; return; }

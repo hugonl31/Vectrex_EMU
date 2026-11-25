@@ -480,7 +480,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_profile", "video", "Quality profile",
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|basic|low|medium|high|ultra" },
-	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green. An app's own menus: from its next start.", "blue|green" },
+	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green.", "blue|green" },
 	{ "vectrex_emu_gamelist", "video", "Game list", "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder.", "library|simple" },
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
 	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
@@ -3302,6 +3302,7 @@ static void retro_run_one (void)
 	if (px_redo) { const int r = px_redo; px_redo = 0;   /* (the PiTrex's download: its progress; done - the list again, it chosen) */
 		if (r & 1 && br_open) { char px[1200]; br_px_boot (px, sizeof px); if (lib_on) lib_scan (px); else br_scan (br_dir, px); }
 		br_dirty = 1; }
+	{ static int bp = -1; extern int vx_palette; if (bp != vx_palette) { bp = vx_palette; br_dirty = 1; } }   /* (the colour scheme changed: the ROM browser drawn again at once - the owner, 2026-11-25) */
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
 	dbg_tick ();
 	{ static int pz; const int pi_ = btn_id ("vectrex_emu_btn_pause"), p_ = pi_ >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pi_) != 0;

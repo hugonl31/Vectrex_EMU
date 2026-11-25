@@ -4459,10 +4459,15 @@ class App:
             self.close_browser()
         self.lib_on = bool(on); self.save_settings(); self.show_look('game list: ' + ('library' if on else 'simple list'))
     def set_palette(self, v):
-        """Display > Colours: 'blue' or 'green' (palette.py) - every window is made in it, so from the next start"""
+        """Display > Colours: 'blue' or 'green' (palette.py) - at once"""
         global PALETTE_SET
         PALETTE_SET = v; self.save_settings()
-        self.show_look('colours: %s - from the next start' % v)
+        n = palette.switch(self.root, v)                        # (at once - the owner, 2026-11-25: every open window recoloured,
+        for w in [self.root] + [c for c in self.root.winfo_children() if isinstance(c, tk.Toplevel)]:   #  the title bars too;
+            try: dark_title(w)                                  #  the deck and the OSD (OpenGL) read it at their next picture)
+            except Exception: pass   # noqa
+        print('colours: %s - %d colours changed' % (v, n))
+        self.show_look('colours: %s' % v)
     def set_look2(self, v):
         """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
         if self.ren:

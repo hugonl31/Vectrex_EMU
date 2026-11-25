@@ -193,7 +193,7 @@ final class Screens {
 				if (!v.equals ("yes")) { reopenSettings (m); return; } int k = 0;
 				for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) { VX.oset (i, VX.opt (i, 6)); k++; }
 				m.prefs.edit ().remove ("app.deckpop").remove ("app.topbar").remove ("app.bar").apply (); m.showBar (); m.layout ();   /* (the deck's pop-up and the top bar too: Auto) */
-				Main.log ("settings: reset all (" + k + " changed)"); m.toast ("Settings back to their defaults", 2); reopenSettings (m); }); });
+				Main.log ("settings: reset all (" + k + " changed)"); { int pi = VX.ofind ("vectrex_emu_palette"); if (pi >= 0) palCheck (m, pi); } m.toast ("Settings back to their defaults", 2); reopenSettings (m); }); });
 		  if (n > 0) ((TextView) r.findViewWithTag ("t")).setTextColor (Main.CHG); }
 		p.foot ("Auto: what fits this screen with the picture at its full width. Top bar auto-hide: tap the top of the screen to bring it back. Deck pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away.");
 		/* the core's settings by its groups, in the iOS app's order (VXSettings): the most used first, in each group the
@@ -221,8 +221,8 @@ final class Screens {
 					final String[] sw = TWO.get (VX.opt (i, 0)); final String onV = sw != null ? sw[1] : (two[0].equals (VX.opt (i, 6)) ? two[1] : two[0]);
 					final String offV = onV.equals (two[0]) ? two[1] : two[0]; final boolean isOn = v.equals (onV);
 					LinearLayout r = p.toggle (sw != null ? sw[0] : VX.opt (i, 1) + ": " + onV, sw != null ? (isOn ? sw[2] : sw[3]) : "Now: " + v,
-						isOn, () -> { VX.oset (ix, isOn ? offV : onV); reopenSettings (m); });
-					r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true; VX.oset (ix, VX.opt (ix, 6)); m.toast (VX.opt (ix, 1) + ": " + VX.opt (ix, 6) + " (the default)", 2); reopenSettings (m); return true; });
+						isOn, () -> { VX.oset (ix, isOn ? offV : onV); palCheck (m, ix); reopenSettings (m); });
+					r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true; VX.oset (ix, VX.opt (ix, 6)); palCheck (m, ix); m.toast (VX.opt (ix, 1) + ": " + VX.opt (ix, 6) + " (the default)", 2); reopenSettings (m); return true; });
 					continue; }
 				LinearLayout r = p.row (VX.opt (i, 1), v, onoff ? (Runnable) () -> { VX.oset (ix, VX.opt (ix, 5).equals ("on") ? "off" : "on"); reopenSettings (m); } : (Runnable) () -> choice (m, ix), onoff); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG);
 				r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true;   /* (a long press: back to the default) */
@@ -236,6 +236,7 @@ final class Screens {
 	/* the core's settings of two choices shown as a switch: its name, the value that is "on", the notes on / off */
 	static final java.util.Map<String, String[]> TWO = new java.util.HashMap<> ();
 	static { TWO.put ("vectrex_emu_palette", new String[] { "Green colours", "green", "The deck, the menus and the buttons in green", "Off: a deeper blue" }); }
+	static void palCheck (Main m, int i) { if (VX.opt (i, 0).equals ("vectrex_emu_palette")) m.applyPalette (VX.opt (i, 5).equals ("green")); }   /* (the colour scheme: at once) */
 	static void reopenSettings (Main m)                          /* (an app setting changed: the list shown again, scrolled where it was) */
 	{
 		View t = m.top (); int y = t instanceof Panel ? ((Panel) t).sc.getScrollY () : 0; m.pop (); settings (m);

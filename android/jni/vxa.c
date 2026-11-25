@@ -124,6 +124,42 @@ static retro_keyboard_event_t vxa_kbcb;
 static struct retro_system_av_info vxa_av;
 static GLuint vxa_cfbo, vxa_ctex, vxa_cdepth; static unsigned vxa_cw, vxa_ch; static int vxa_half;
 static EGLDisplay vxa_dpy = EGL_NO_DISPLAY; static EGLContext vxa_ctx = EGL_NO_CONTEXT; static EGLSurface vxa_surf = EGL_NO_SURFACE, vxa_pbuf = EGL_NO_SURFACE;
+/* Input delay (the owner, 2026-11-25: measured, not estimated): a press on a dark picture (Input Delay Test cart: a square
+ * while a button is held) - the button's own event time (Android's, the kernel's), the first refresh whose picture has
+ * the square, and when that picture reached the glass (EGL_ANDROID_get_frame_timestamps: the display's present time) */
+typedef unsigned long long vxa_u64;
+typedef EGLBoolean (*vxa_fid_t) (EGLDisplay, EGLSurface, vxa_u64 *);
+typedef EGLBoolean (*vxa_fts_t) (EGLDisplay, EGLSurface, vxa_u64, EGLint, const EGLint *, long long *);
+static vxa_fid_t vxa_fid; static vxa_fts_t vxa_fts; static int vxa_ts_ok;
+static volatile double vxa_lat_t0, vxa_lat_arrive; static volatile int vxa_lat_armed;   /* (the press: its event time, when the app got it) */
+static double vxa_lat_t1, vxa_lat_tsw; static vxa_u64 vxa_lat_fid; static int vxa_lat_wait, vxa_lat_dark = 1, vxa_lat_ages;
+static double vxa_lat_sum[3]; static int vxa_lat_n; static double vxa_lat_min = 1e9, vxa_lat_max;
+static void vxa_ts_setup (void)
+{
+	if (!vxa_fid) { vxa_fid = (vxa_fid_t) eglGetProcAddress ("eglGetNextFrameIdANDROID"); vxa_fts = (vxa_fts_t) eglGetProcAddress ("eglGetFrameTimestampsANDROID"); }
+	vxa_ts_ok = vxa_fid && vxa_fts && eglSurfaceAttrib (vxa_dpy, vxa_surf, 0x3430, EGL_TRUE);   /* (EGL_TIMESTAMPS_ANDROID) */
+	vlog ("input delay: the glass's times %s", vxa_ts_ok ? "on (EGL frame timestamps)" : "not available - up to the swap only");
+}
+/* Frame pacing (the owner's measurement, 2026-11-25: 29 ms at 120 Hz, 45 at 60 from the swap to the glass - the app drew
+ * ahead until Android's queue was full, each picture waited in line): before a refresh's work, wait until the display
+ * has latched the last picture swapped (EGL_COMPOSITION_LATCH_TIME_ANDROID) - at most one picture queued, the input
+ * read just before its picture is made. Up to two refreshes, then on regardless (the old way) */
+static vxa_u64 vxa_pace_fid, vxa_pace_q[2]; static double vxa_pace_t; static long vxa_pace_to, vxa_pace_n;
+static int vxa_pace_depth = 1; static double vxa_pace_fps;   /* (pictures allowed to wait: 1, or 2 where one made the app miss refreshes -
+                                                    Android reports a picture taken about a refresh late: at 120 Hz on the Nova 77-92 pictures a second) */
+static void vxa_pace (double frame)
+{
+	if (frame > 0 && fabs (1.0 / frame - vxa_pace_fps) > 1) { vxa_pace_fps = 1.0 / frame; vxa_pace_depth = 1; }   /* (another rate: one waiting first) */
+	vxa_pace_fid = vxa_pace_q[vxa_pace_depth - 1];
+	if (!vxa_ts_ok || !vxa_pace_fid) return;
+	const EGLint what = 0x3436; const double t0 = vxa_now (), lim = t0 + 2.0 * frame;
+	for (;;) { long long v = -2;
+		if (vxa_fts (vxa_dpy, vxa_surf, vxa_pace_fid, 1, &what, &v) != EGL_TRUE || v != -2) break;
+		if (vxa_now () > lim) { vxa_pace_to++; break; }
+		usleep (250); }
+	vxa_pace_t += vxa_now () - t0; vxa_pace_n++;
+}
+static const char *vxa_lat_smooth (void) { const int i = vxa_opt_find ("vectrex_emu_smooth"); return i >= 0 ? vxa_opt[i].val : "?"; }
 static EGLConfig vxa_cfg; static int vxa_hdr_surf;               /* (the window's surface: extended linear, half floats) */
 static ANativeWindow *vxa_win, *vxa_win_new; static volatile int vxa_win_changed;
 static int vxa_sw, vxa_sh;                                       /* (the window's pixels) */
@@ -217,6 +253,7 @@ static void vxa_surface_update (void)               /* (the window came, changed
 	const EGLint hdr[] = { EGL_GL_COLORSPACE_KHR, EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT, EGL_NONE };
 	vxa_surf = eglCreateWindowSurface (vxa_dpy, vxa_cfg, vxa_win, vxa_hdr_surf ? hdr : NULL);
 	if (vxa_surf == EGL_NO_SURFACE && vxa_hdr_surf) { vlog ("window: no extended linear surface (0x%x) - ordinary", eglGetError ()); vxa_surf = eglCreateWindowSurface (vxa_dpy, vxa_cfg, vxa_win, NULL); vxa_hdr_surf = 2; }
+	vxa_ts_setup (); vxa_lat_wait = 0;
 	if (vxa_surf == EGL_NO_SURFACE) { vlog ("window: no surface (0x%x)", eglGetError ()); return; }
 	eglMakeCurrent (vxa_dpy, vxa_surf, vxa_surf, vxa_ctx); eglSwapInterval (vxa_dpy, 1);
 	EGLint w = 0, h = 0; eglQuerySurface (vxa_dpy, vxa_surf, EGL_WIDTH, &w); eglQuerySurface (vxa_dpy, vxa_surf, EGL_HEIGHT, &h); vxa_sw = w; vxa_sh = h;
@@ -569,6 +606,7 @@ static void *vxa_main (void *u)
 			usleep (20000); last = 0; continue; }
 		if (!was_running) { was_running = 1; if (vxa_as) AAudioStream_requestStart (vxa_as); vlog ("resumed"); }
 		vxa_audio_check ();
+		vxa_pace (1.0 / (vxa_av.timing.fps > 0 ? vxa_av.timing.fps : 60));   /* (the last picture taken by the display: this refresh's starts) */
 		const double now = vxa_now (); double dt = last ? now - last : 0; last = now; ticks++;
 		const double fps = vxa_av.timing.fps > 0 ? vxa_av.timing.fps : 60;
 		if (dt > 1.5 / fps) late++;
@@ -618,12 +656,39 @@ static void *vxa_main (void *u)
 		vxa_present (); pres++;
 		if (vxa_hint && vxa_ph_rep) vxa_ph_rep (vxa_hint, (int64_t) ((vxa_now () - now) * 1e9));   /* (this refresh's work: the hint) */
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
+		{ /* (input delay: the first picture with the square after an armed press - its frame id for the glass's time) */
+		  extern int vx_pic_lines; const int lit = vx_pic_lines >= 4;
+		  vxa_u64 fid = 0; if (!(vxa_ts_ok && vxa_fid (vxa_dpy, vxa_surf, &fid))) fid = 0;
+		  vxa_pace_q[1] = vxa_pace_q[0]; vxa_pace_q[0] = fid;   /* (the last two pictures swapped)*/
+		  if (vxa_lat_armed && lit && !vxa_lat_wait) { vxa_lat_armed = 0; vxa_lat_t1 = vxa_now (); vxa_lat_wait = 1; vxa_lat_ages = 0; vxa_lat_tsw = 0;
+			vxa_lat_fid = fid; }
+		  vxa_lat_dark = !lit; }
 		eglSwapBuffers (vxa_dpy, vxa_surf);
+		if (vxa_lat_wait && !vxa_lat_tsw) vxa_lat_tsw = vxa_now ();   /* (that picture handed to Android: the swap done) */
+		if (vxa_lat_wait) {                                 /* (the glass's time for that picture - it comes a few refreshes later) */
+			long long v = -2; const EGLint what = 0x343A;   /* (EGL_DISPLAY_PRESENT_TIME_ANDROID) */
+			if (vxa_lat_fid && vxa_fts (vxa_dpy, vxa_surf, vxa_lat_fid, 1, &what, &v) != EGL_TRUE) v = -1;
+			if (!vxa_lat_fid) v = -1;
+			if (v != -2 || ++vxa_lat_ages > 60) {
+				const double t0 = vxa_lat_t0, a = (vxa_lat_arrive - t0) * 1000, p = (vxa_lat_t1 - t0) * 1000, sw = (vxa_lat_tsw - t0) * 1000, g = v > 0 ? (v / 1e9 - t0) * 1000 : -1;
+				char m[300];
+				if (g > 0) { vxa_lat_sum[0] += a; vxa_lat_sum[1] += p; vxa_lat_sum[2] += g; vxa_lat_n++; if (g < vxa_lat_min) vxa_lat_min = g; if (g > vxa_lat_max) vxa_lat_max = g;
+					snprintf (m, sizeof m, "Input delay %.0f ms (on glass; average %.0f of %d)", g, vxa_lat_sum[2] / vxa_lat_n, vxa_lat_n); }
+				else snprintf (m, sizeof m, "Input delay %.0f ms to the picture (the glass's time not known)", p);
+				vlog ("input delay: button to the app %.1f ms, to the picture %.1f ms, swapped %.1f ms, to the glass %.1f ms (%.0f Hz, Smooth motion %s)%s", a, p, sw, g, vxa_av.timing.fps,
+				      vxa_lat_smooth (), "");
+				if (vxa_lat_n && vxa_lat_n % 10 == 0) vlog ("input delay, %d presses: button to the app %.1f ms, to the picture %.1f ms, to the glass %.1f ms on average (%.1f - %.1f)",
+					vxa_lat_n, vxa_lat_sum[0] / vxa_lat_n, vxa_lat_sum[1] / vxa_lat_n, vxa_lat_sum[2] / vxa_lat_n, vxa_lat_min, vxa_lat_max);
+				vxa_message (m, 2.0); vxa_lat_wait = 0; } }
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
 				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, zero, multi, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
 			vxa_threads (t);
+			if (vxa_pace_n && vxa_pace_depth == 1 && !vxa_holding && multi > ticks * 3 / 100) { vxa_pace_depth = 2;   /* (one waiting made it miss refreshes: two) */
+				vlog ("pacing: %ld of %ld refreshes missed with one picture waiting - two may wait at %.0f Hz", multi, ticks, vxa_pace_fps); }
+			if (vxa_pace_n) { vlog ("pacing: %d picture%s waiting, %.1f ms a refresh waiting for the display, %ld of %ld not taken within two refreshes", vxa_pace_depth, vxa_pace_depth > 1 ? "s" : "", vxa_pace_t * 1000 / vxa_pace_n, vxa_pace_to, vxa_pace_n);
+				vxa_pace_t = 0; vxa_pace_n = vxa_pace_to = 0; }
 			{ /* (the core's run split up - emulation, Smooth motion, the picture's lines, the afterglow's lines, the GPU's commands:
 			   *  mean and largest a run over these 5 s - as the iOS app's; where a slow refresh's time went) */
 			  extern void vx_app_cpu_split (double mean[5], double most[5]); double cm[5], cx[5]; vx_app_cpu_split (cm, cx);
@@ -742,6 +807,8 @@ JNIEXPORT void JNICALL JF(start) (JNIEnv *e, jclass c, jstring sys, jstring save
 	pthread_create (&vxa_th, &a, vxa_main, NULL);
 }
 JNIEXPORT void JNICALL JF(setTune) (JNIEnv *e, jclass c, jint l, jint s, jint hz) { (void) e; (void) c; vxa_tune_l = l; vxa_tune_s = s; vxa_tune_hz = hz > 60 ? hz : 60; }
+JNIEXPORT void JNICALL JF(inputMark) (JNIEnv *e, jclass c, jlong ms)   /* (a button pressed: its event time - armed only on a dark picture) */
+{ (void) e; (void) c; if (vxa_lat_armed || vxa_lat_wait || !vxa_lat_dark) return; vxa_lat_t0 = ms / 1000.0; vxa_lat_arrive = vxa_now (); vxa_lat_armed = 1; }
 JNIEXPORT jint JNICALL JF(rate) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_ok == 1 ? (jint) (vxa_av.timing.fps + 0.5) : 0; }
 JNIEXPORT jint JNICALL JF(tuning) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_tune_st; }
 JNIEXPORT void JNICALL JF(tuneAnswer) (JNIEnv *e, jclass c, jint go) { (void) e; (void) c; vxa_tune_go = go; }

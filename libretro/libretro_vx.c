@@ -398,6 +398,8 @@ static const char *unit_preset (void)               /* (the Unit option: owner, 
 	return !strncmp (u, "ideal", 5) ? "ideal" : !strncmp (u, "random", 6) || !strncmp (u, "cranky", 6) ? u : "owner";
 }
 static int opt_async = 1, emu_primed;   /* (1.1: Threaded emulation - UVMC2 / PiTrex, see emu_start) */
+static int opt_async_vx;                 /* (the 6809's too - off by default: Vectrexians' 13-16 ms refreshes at 120 Hz on the Nova, its
+                                            emulation and its lines one after another; the owner 2026-11-25: an option, off) */
 static int unser_seen, runs_since_unser;   /* (v0.27: run-ahead - see retro_run) */
 static void cart_poll (void)
 {
@@ -576,6 +578,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_jack_vol", "system", "UVMC2 headphone jack volume", NULL, "100%|0%|25%|50%|75%|125%|150%|175%|200%" },
 	{ "vectrex_emu_uvm2_mode", "system", "UVMC2 emulation", "Exact: as the cartridge, cycle for cycle. Fast: the same picture, much less work. Dev: Fast with an ideal beam.", "fast|exact|dev" },
 	{ "vectrex_emu_threaded", "system", "Threaded emulation (UVMC2, PiTrex)", "Emulates while drawing: full speed on handhelds, one frame more input delay.", "on|off" },
+	{ "vectrex_emu_threaded_vx", "system", "Threaded emulation (Vectrex games)", "Emulates while drawing: steadier on a busy game at 120 Hz, one refresh more input delay. Not during online play.", "off|on" },
 	{ "vectrex_emu_buzz", "audio", "Vectrex buzz", "The famous Vectrex buzz from the speaker.", "on|off" },
 	{ "vectrex_emu_buzz_vol", "audio", "Buzz volume", NULL, "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_speaker", "audio", "Vectrex speaker", "All sound through the small built-in speaker: no deep bass, a little harsh.", "on|off" },
@@ -822,7 +825,7 @@ static void read_options (void)
 #endif
 	raw_groom = TRI ("vectrex_emu_room_glass"); opt_room_glass = raw_groom > 0;
 	if (unit_known) { unit_make (unit_preset (), optv); if (vx_ok ()) { emu_wait_ext (); unit_live (unit_addon); } }   /* (the unit, while running) */
-	opt_async = !opt_is ("vectrex_emu_threaded", "off");
+	opt_async = !opt_is ("vectrex_emu_threaded", "off"); opt_async_vx = opt_is ("vectrex_emu_threaded_vx", "on");
 	{ const int w = atoi (optv ("vectrex_emu_white")); opt_white = w >= 5600 && w <= 16000 ? w : 12000; }   /* (the desktop's 5600 - 16000 K; "6504 K (neutral)" before 2026-11-23 reads as 6504) */
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
@@ -3095,7 +3098,7 @@ static void emu_start (void)
 	if (emu_make ()) { emu_busy = 1; emu_kick (); }
 	else emu_loop ();                       /* (no thread: here, as before) */
 }
-static int emu_threaded (void) { return opt_async && !vx_ok () && ls_state != 2; }   /* (lockstep: here - RetroArch's network is called from this thread) */
+static int emu_threaded (void) { return (vx_ok () ? opt_async_vx && !netvx_playing () : opt_async) && ls_state != 2; }   /* (lockstep: here - RetroArch's network is called from this thread) */
 static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save states, no run-ahead) */
 #include "usbkm.c"
 #ifndef VX_EMUVR
@@ -3469,6 +3472,7 @@ static void retro_run_one (void)
 		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
 		if (ph_ex_mode) sm_ex_shown = sm_ex_next;       /* (this picture is drawn - Low leaves every other one out: its game frame's afterglow with the next) */
 		const int gb_exm = ph_ex_mode, gb_exn = ph_ex_n; (void) gb_exm; (void) gb_exn;   /* (VX_GPUBENCH below) */
+		{ extern int vx_pic_lines; vx_pic_lines = npl; }   /* (the pieces in this refresh's picture: the apps' input delay measurement) */
 		const double c0 = vt_wall (); const int phd = ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ()); cs_now[4] += vt_wall () - c0;
 		if (phd) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
@@ -3692,7 +3696,8 @@ static const unsigned char *get_lines (const unsigned char *i, line_t *L, int *n
 #define VX_FRAME_HDR (sizeof (int) * 3 + sizeof (double) + sizeof (unsigned long long))
 static int extern_cart_len (void) { extern size_t vt_cart_len; return (int) (vt_cart_len > sizeof cart ? sizeof cart : vt_cart_len); }
 static int vx_ok (void) { extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; return !vt_uvm2 && !vt_uvm2_cart && !vt_pitrex; }
-int vx_app_card (void) { return !vx_ok (); }   /* (the own apps: a UVMC2 or PiTrex program running - its screen rate) */
+int vx_app_card (void) { return !vx_ok (); }
+int vx_pic_lines;                               /* (the pieces in the last refresh's picture - the apps' input delay measurement) */   /* (the own apps: a UVMC2 or PiTrex program running - its screen rate) */
 /* (2026-11-15: the variables by name, in one order, 'long' as 8 bytes - the same state on every system, so netplay joins
  *  between Windows, Android and Linux. Before: the save-state sections whole, which each compiler lays out its own way.
  *  The lists: vars_*.h, made by tools/gen_state_vars.py from both builds' symbols) */
@@ -3777,7 +3782,7 @@ static bool vx_load_from (const void *d, size_t sz);
 bool retro_unserialize (const void *d, size_t sz)
 {
 	if (netvx_playing ()) { fprintf (stderr, "[vectrex_emu] a saved state: not during an online game\n"); return false; }   /* (it would part the two games - the apps' buttons, any way in) */
-	emu_wait_ext (); net_mark ();
+	emu_wait_ext (); net_mark (); emu_primed = 0;   /* (threaded: the next refresh emulated anew from the state - Vectrex games have states) */
 	unser_seen = 1; runs_since_unser = 0;
 	return vx_load_from (d, sz);
 }

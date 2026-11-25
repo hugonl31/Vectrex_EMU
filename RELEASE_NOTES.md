@@ -3,7 +3,7 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
-## v1.8.10
+## v1.9.0
 
 * Glass curvature 0 is always a flat picture: with Tube geometry off it no longer stretches the picture's edges (it
   took a curve out that was not there). The curvature comes with Tube geometry; without it the picture is flat.

@@ -433,6 +433,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_beam", "Beam width; thin|medium|wide" },
 	{ "vectrex_emu_area", "Picture area (from the next game start); glass window 145.7x188.5 mm|overlay sheet 162x207 mm" },
 	{ "vectrex_emu_console", "Console model: its glass window (from the next game start); auto|classic|owner's CAD model" },   /* (route A, 2026-11-25: auto = as the mod says) */
+	{ "vectrex_emu_renderer", "Picture (from the next game start): GPU - as the PC's - or the CPU's (the picture before); GPU|CPU only" },
 	{ "vectrex_emu_res", "Picture size (from the next game start); 1x 624x800|2x 1248x1600|3x 1872x2400|4x 2496x3200" },
 	{ "vectrex_emu_rate", "Screen rate (from the next game start); 90 Hz|72 Hz|80 Hz|120 Hz|144 Hz|60 Hz|50 Hz (game)" },
 	{ "vectrex_emu_smooth", "Smooth motion (not at 50 Hz); on|off" },
@@ -2929,7 +2930,13 @@ static void pic_setup (void)
 	  } else { for (int c = 0; c < NC; c++) { memset (pb[0][c], 0, NP * 4); memset (pb[1][c], 0, NP * 4); memset (g1b[c], 0, NP * 4); memset (g2b[c], 0, NP * 4); }
 	           spans_reset (FH, 1); } }
 }
-#ifndef VX_EMUVR
+/* (2026-11-25, route (a): EmuVR too - the PC's beam on the phosphor on the GPU; there the glass, the case, the room's light and
+ *  the overlay stay off (the mod and EmuVR draw them), the sheet's picture and the 3D Imager's eye pair on the GPU as well) */
+#ifdef VX_EMUVR
+#define VX_GPU_ALL 1                        /* (the GPU light also for the sheet's picture and the eye pair) */
+#else
+#define VX_GPU_ALL 0
+#endif
 #include "gpu_gl.c"
 #include "gpu_phos.c"
 /* the profile's choices (Ultra, High, Medium, Low, Basic) for the options left on auto */
@@ -2969,6 +2976,11 @@ static void fx_apply (void)
 	ovfx.glow = gl && (k_ovglow >= 0 ? k_ovglow > 0 : R->aglow) ? (k_ovglow > 0 ? k_ovglow : 1.0f) : 0.0f;
 	ovfx.scr = gl && PICK (raw_scr, R->scr);
 	#undef PICK
+#ifdef VX_EMUVR
+	/* (EmuVR: the light alone - its own glass, case, room light and the mod's overlay are in the VR room: none drawn here) */
+	gfx.glass = gfx.ceiling = gfx.cse = gfx.fx = 0; gfx.lk = gfx.grey = gfx.croom = gfx.crefl = gfx.cwear = 0.0f; glass_grey = 0.0f;
+	ovfx.ovl = ovfx.glow = 0.0f; ovfx.scr = 0;
+#endif
 }
 #include "gpu_opt.c"
 /* the own apps' first start (and again after an update that measures anew, or on a bigger screen): each screen rate
@@ -2997,18 +3009,8 @@ int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry)
 	opt_rate = keep_rate; opt_size = keep_size; pic_setup (); ph_made = 0; opt_key_seen[0] = 0; opt_pending = 0; fx_apply ();
 	return need;
 }
-static int bt_gpu_ok (void) { return gpu_asked && gpu_ok && ph_ok && ph_beam && ph_sat && !stereo && !sheet_file; }   /* (as retro_run's gph) */
+static int bt_gpu_ok (void) { return gpu_asked && gpu_ok && ph_ok && ph_beam && ph_sat && (VX_GPU_ALL || (!stereo && !sheet_file)); }   /* (as retro_run's gph) */
 int gpu_frame_shown (void) { return gpu_ok && !stereo && !(ov && ov_on && !sheet_file) && (gfx.cse || gfx.glass); }
-#else
-int gpu_frame_shown (void) { return 0; }
-/* (EmuVR: no GPU picture, nothing to tune - the apps' device test answers "nothing measured") */
-/* (EmuVR: the GPU picture's look values, gpu_phos.c not built - its defaults: SDR, the Vectrex look, no app trail; keep in step) */
-float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lift = 0.0f, vx_hdr_peak = 1.0f, vx_bright = 1.0f, vx_trail_mul = 1.0f;   /* (Bright: the owner's choice) */
-int vx_app_dots = 0;
-int vx_app_tune (int lng, int shrt, const int *rates, int n, int dry) { (void) lng; (void) shrt; (void) rates; (void) n; (void) dry; return 0; }
-const char *vx_app_tune_report (void) { return ""; }
-void vx_app_tune_status (char *o, int n) { if (o && n > 0) o[0] = 0; }
-#endif
 /* (1.1) the emulation on a thread of its own (UVMC2 / PiTrex games - the option Threaded emulation): retro_run waits
  * for the refresh it shows, builds its lines, sends its sound, starts the next refresh's emulation and draws while that
  * runs. The picture is one refresh behind the input (17 ms); what reads or changes the emulator waits first (emu_wait) */
@@ -3124,13 +3126,11 @@ static void emu_wait_ext (void) { emu_wait (); }   /* (UVMC2 / PiTrex: no save s
 static void frame_out (int shot_now, const uint32_t **pic_o, int *pw_o, int *ph_o)
 {
 	const uint32_t *pic = ob; int pw = OW, ph = OH; const int Wd = FW;   /* (what is sent, and shot) */
-#ifndef VX_EMUVR
 	if (gpu_asked && !shot_now) {               /* (1.1: the GPU: up, turned, the glass and the case on top - or, the context not
 	                                               there yet, the last picture again) */
-		if (gpu_ok && Wd / EW == 1) gpu_present (ph_ok && ph_made && !stereo ? NULL : fb, FW, FH, Wd, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
+		if (gpu_ok && (Wd / EW == 1 || VX_GPU_ALL)) gpu_present (ph_ok && ph_made && (VX_GPU_ALL || !stereo) ? NULL : fb, FW, FH, Wd, (float) CX0 / EW, 1.0f - (float) (CY0 + CH) / FH, (float) (CX0 + CW) / EW, 1.0f - (float) CY0 / FH, CW, CH, opt_rot);
 		else video_cb (NULL, (unsigned) ((opt_rot & 1) ? OH : OW), (unsigned) ((opt_rot & 1) ? OW : OH), 0);
 	} else
-#endif
 #ifndef VX_EMUVR
 	if (dk_on || dk_pop) {                      /* (the control deck: the block - bars, the picture, the deck - then turned) */
 		dk_compose (dk_cb, fb + (size_t) CY0 * Wd + CX0, (size_t) Wd);
@@ -3334,9 +3334,7 @@ static void retro_run_one (void)
 	{ extern unsigned long long vt_piece_t0;
 	  wl_tshow = now; wl_off = (double) total_cycles - (double) vt_piece_t0;   /* (the newest frame ended as the next piece began) */
 	  if (nh) { const gframe *g = &hist[nh - 1]; if (g->p0 != ag_p0) { ag_p0 = g->p0; ag_c = g->t - now; } } }
-#ifndef VX_EMUVR
 	bt_gpu = vx_beam && bt_gpu_ok ();
-#endif
 	pw_gain = 1; pw_sx = 1; pw_width = 1;
 	if (opt_power && pw_on && pw_t < pw_fade) {   /* (switched on: the light comes up, slowly at first; a warm tube bulges) */
 		double f = pw_t / pw_fade; pw_gain = pow (f * f * (3 - 2 * f), 2.6);
@@ -3430,7 +3428,6 @@ static void retro_run_one (void)
 		}
 		if (opt_wob) hum_coeffs (ft0 / 1.5e6, opt_wob);
 		{ const double c0 = vt_wall (); npl = build_lines (W1, n, 0, 0, npl); cs_now[2] += vt_wall () - c0; }
-#ifndef VX_EMUVR
 		/* (Smooth motion: the game frame's own lines, once a frame, after the picture's - where the afterglow starts: gpu_phos.c ph_ex_mode) */
 		const double c0 = vt_wall ();
 		ph_ex_mode = sm_ex && !vx_nobuild; ph_ex_n = 0;
@@ -3445,20 +3442,20 @@ static void retro_run_one (void)
 				n2 = sm_merge (0, exl, ne); }
 			if (n2) ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
 		cs_now[3] += vt_wall () - c0;
-#endif
 	}
 	/* v0.13: a refresh RetroArch does not show (run-ahead's hidden runs: the video off) draws no picture - after the
 	 * choice of frames above, which keeps the kept frames' list the same whether a refresh is shown or not */
-	{ int av = 3; if (env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) && !(av & 1)) { vx_hidden++; audio_out (); if (asy) { flash_save (0); emu_start (); } return; } }
+	{ int av = 3; const int avk = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av);
+	  { static int told; if (!told) { told = 1; fprintf (stderr, "[vectrex_emu] hidden refreshes (run-ahead): the frontend %s\n", avk ? "says which" : "does not say - each refresh drawn"); } }
+	  if (avk && !(av & 1)) { vx_hidden++; audio_out (); if (asy) { flash_save (0); emu_start (); } return; } }
 	vx_shown++;
 	if (asy) { audio_out (); flash_save (0); emu_start (); }   /* (threaded: this refresh's sound out, the next one's emulation
 	                                              started - the drawing below reads only the pieces built above) */
 	if (pf_on) pf3 = pf_now ();
 	/* the bands: the lines, the phosphor, then (no glow) the knee and the 8-bit picture - each band on its own core */
 	const int Wd = FW, H = FH; const size_t NP = (size_t) Wd * H;
-#ifndef VX_EMUVR
 	/* (1.1: the light on the GPU - gpu_phos.c; the CPU's bands below otherwise) */
-	const int gph = gpu_asked && gpu_ok && ph_ok && !stereo && !sheet_file;
+	const int gph = gpu_asked && gpu_ok && ph_ok && (VX_GPU_ALL || (!stereo && !sheet_file));
 	static int half_skip; static double half_dt;
 	if (gph) gq_begin ();                      /* (the GPU meter: this picture's GPU time, the light and the glass) */
 	if (stood && !shot_due && (!gph || ph_made)) {   /* (online, waiting for the other side: the picture as it was, as paused - the
@@ -3523,7 +3520,6 @@ static void retro_run_one (void)
 			return;
 		}
 	}
-#endif
 	const int cb = pbi; float **cur = pb[pbi], **prv = pb[pbi ^ 1]; pbi ^= 1;
 	for (int c = 0; c < 3; c++) lacc[c] = cur[c];
 	cur_l0 = sp_l0[cb]; cur_l1 = sp_l1[cb];
@@ -3879,9 +3875,9 @@ static void cart_swap (const char *path)
 /* a game started: the common part of RetroArch's load and the ROM browser's (first: RetroArch's own - the GPU asked for) */
 static bool game_open (const char *gpath, const char *sys, int first)
 {
-#ifndef VX_EMUVR
+	{
 	opt_quiet = 90;                             /* (Optimize: a case not measured yet may be measured in the first refreshes of a game - never later in it) */
-#endif
+	}
 	char dir[1024]; snprintf (dir, sizeof dir, "%s", gpath);
 	{ char *s = strrchr (dir, '\\'), *t = strrchr (dir, '/'); if (t > s) s = t; if (s) *s = 0; else strcpy (dir, "."); }
 	/* the BIOS (8 KB): in the system folder, or next to the game (EmuVR keeps it there) */
@@ -3945,10 +3941,10 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	char od[1600];
 	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, gpath); }
 	if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", dir); try_overlay_dir (od, gpath); }
-#ifndef VX_EMUVR
+	{
 	if (first) { const char *rv = optv ("vectrex_emu_renderer"); opt_renderer = !strcmp (rv, "CPU only") ? 2 : !strcmp (rv, "GPU") ? 1 : 0;
 	  gpu_asked = opt_renderer != 2 ? gpu_request () : 0; if (!gpu_asked) gpu_ok = 0; }   /* (each game: RetroArch sets the context up after this) */
-#endif
+	}
 	if (area_glass () != geo_glass) pic_setup ();   /* (the overlay found: the area it asks for, before RetroArch asks the size) */
 	return true;
 }
@@ -3988,9 +3984,7 @@ static int game_switch_now (const char *path)
 	const char *sys = NULL; env_cb (RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys);
 	if (!game_open (path, sys, 0)) { fprintf (stderr, "[vectrex_emu] could not load %s\n", path);
 		struct retro_message msg = { "Vectrex_EMU: this game could not be loaded", 180 }; env_cb (RETRO_ENVIRONMENT_SET_MESSAGE, &msg); return 0; }
-#ifndef VX_EMUVR
 	ph_made = 0;                                /* (the phosphor dark: a new game) */
-#endif
 	geo_tell ();   /* (2026-11-16: the new size only - SET_SYSTEM_AV_INFO set RetroArch's video up anew on each switch, and on the
 	                *  Nova that stopped there: Pole Position to Scramble from the browser, RetroArch hung) */
 	fprintf (stderr, "[vectrex_emu] now in the slot: %s\n", path);

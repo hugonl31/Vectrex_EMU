@@ -677,6 +677,10 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	const GLuint ofb = (GLuint) hwr.get_current_framebuffer ();
 	glBindFramebuffer_ (GL_FRAMEBUFFER, ofb);
 	if (dk_on || dk_pop) { ow = TW; oh = TH; }                           /* (the control deck: the block, deck.c) */
+	/* (the 3D Imager's eye pair - EmuVR: the frame two sheets wide, each eye's window side by side in the picture sent, the left eye
+	 *  on the left, as the CPU's frame_out; not turned) */
+	const int pair = VX_GPU_ALL && stereo && fw == 2 * EW && !(dk_on || dk_pop) && !rot;
+	if (pair) ow *= 2;
 	const int dw = rot & 1 ? oh : ow, dh = rot & 1 ? ow : oh;
 	glViewport_ (0, 0, dw, dh);
 	/* (the picture below covers all it shows, opaque: what the frontend's image held is not needed - a tiled GPU (Apple's, Mali,
@@ -704,7 +708,11 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); glUniform3f_ (g_u[U_LC], g_lc[0], g_lc[1], g_lc[2]);   /* (the light turns with the picture in tate: the screen is turned) */
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));
-	glDrawArrays_ (GL_TRIANGLES, 0, 3);
+	if (pair) for (int e = 0; e < 2; e++) {
+		glViewport_ (e * (dw / 2), 0, dw / 2, dh);
+		glUniform4f_ (g_u[U_CROP], (float) (e * EW + CX0) / fw, cy0, (float) (e * EW + CX0 + CW) / fw, cy1);
+		glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+	else glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	if ((dk_on || dk_pop) && dk_img && dk_prog) {                       /* (the deck under the picture - the pop-up's over it) */
 		if (!dk_tex || dk_tw != dk_w || dk_th != dk_h) { if (!dk_tex) glGenTextures_ (1, &dk_tex); glBindTexture_ (GL_TEXTURE_2D, dk_tex);
 			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

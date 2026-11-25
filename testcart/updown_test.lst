@@ -78,7 +78,7 @@
 007F BDF2AB           (  updown_test.asm):00076                 jsr     Intensity_a
 0082 867F             (  updown_test.asm):00077                 lda     #$7F
 0084 9704             (  updown_test.asm):00078                 sta     <$04
-0086 CCC0B0           (  updown_test.asm):00079                 ldd     #$C0B0
+0086 CCEEB0           (  updown_test.asm):00079                 ldd     #$EEB0
 0089 BDF312           (  updown_test.asm):00080                 jsr     Moveto_d                ; the start
 008C 8610             (  updown_test.asm):00081                 lda     #$10
 008E 9704             (  updown_test.asm):00082                 sta     <$04                ; scale $10: the tick
@@ -97,7 +97,7 @@
 00B1 BDF2AB           (  updown_test.asm):00095                 jsr     Intensity_a
 00B4 867F             (  updown_test.asm):00096                 lda     #$7F
 00B6 9704             (  updown_test.asm):00097                 sta     <$04
-00B8 CCC0D8           (  updown_test.asm):00098                 ldd     #$C0D8
+00B8 CCEED8           (  updown_test.asm):00098                 ldd     #$EED8
 00BB BDF312           (  updown_test.asm):00099                 jsr     Moveto_d                ; the start
 00BE 8610             (  updown_test.asm):00100                 lda     #$10
 00C0 9704             (  updown_test.asm):00101                 sta     <$04                ; scale $10: the tick
@@ -127,7 +127,7 @@
 00FD BDF2AB           (  updown_test.asm):00125                 jsr     Intensity_a
 0100 867F             (  updown_test.asm):00126                 lda     #$7F
 0102 9704             (  updown_test.asm):00127                 sta     <$04
-0104 CCC000           (  updown_test.asm):00128                 ldd     #$C000
+0104 CCEE00           (  updown_test.asm):00128                 ldd     #$EE00
 0107 BDF312           (  updown_test.asm):00129                 jsr     Moveto_d                ; the start
 010A 8610             (  updown_test.asm):00130                 lda     #$10
 010C 9704             (  updown_test.asm):00131                 sta     <$04                ; scale $10: the tick
@@ -157,7 +157,7 @@
 0149 BDF2AB           (  updown_test.asm):00155                 jsr     Intensity_a
 014C 867F             (  updown_test.asm):00156                 lda     #$7F
 014E 9704             (  updown_test.asm):00157                 sta     <$04
-0150 CCC028           (  updown_test.asm):00158                 ldd     #$C028
+0150 CCEE28           (  updown_test.asm):00158                 ldd     #$EE28
 0153 BDF312           (  updown_test.asm):00159                 jsr     Moveto_d                ; the start
 0156 8610             (  updown_test.asm):00160                 lda     #$10
 0158 9704             (  updown_test.asm):00161                 sta     <$04                ; scale $10: the tick
@@ -187,7 +187,7 @@
 0195 BDF2AB           (  updown_test.asm):00185                 jsr     Intensity_a
 0198 867F             (  updown_test.asm):00186                 lda     #$7F
 019A 9704             (  updown_test.asm):00187                 sta     <$04
-019C CCC050           (  updown_test.asm):00188                 ldd     #$C050
+019C CCEE50           (  updown_test.asm):00188                 ldd     #$EE50
 019F BDF312           (  updown_test.asm):00189                 jsr     Moveto_d                ; the start
 01A2 8610             (  updown_test.asm):00190                 lda     #$10
 01A4 9704             (  updown_test.asm):00191                 sta     <$04                ; scale $10: the tick
@@ -220,7 +220,7 @@
 01EA 867F             (  updown_test.asm):00218                 lda     #$7F
 01EC 9704             (  updown_test.asm):00219                 sta     <$04
 01EE CE0C8A           (  updown_test.asm):00220                 ldu     #T1
-01F1 CC70C0           (  updown_test.asm):00221                 ldd     #$70C0
+01F1 CCE2C2           (  updown_test.asm):00221                 ldd     #$E2C2
 01F4 BDF37A           (  updown_test.asm):00222                 jsr     Print_Str_d
 01F7 16FE2A           (  updown_test.asm):00223                 lbra    Main
                       (  updown_test.asm):00224         
@@ -230,7 +230,7 @@
 01FF BDF2AB           (  updown_test.asm):00228                 jsr     Intensity_a
 0202 867F             (  updown_test.asm):00229                 lda     #$7F
 0204 9704             (  updown_test.asm):00230                 sta     <$04
-0206 CCB0B0           (  updown_test.asm):00231                 ldd     #$B0B0
+0206 CCD0B0           (  updown_test.asm):00231                 ldd     #$D0B0
 0209 BDF312           (  updown_test.asm):00232                 jsr     Moveto_d                ; the start
 020C 8610             (  updown_test.asm):00233                 lda     #$10
 020E 9704             (  updown_test.asm):00234                 sta     <$04                ; scale $10: the tick
@@ -249,7 +249,7 @@
 0231 BDF2AB           (  updown_test.asm):00247                 jsr     Intensity_a
 0234 867F             (  updown_test.asm):00248                 lda     #$7F
 0236 9704             (  updown_test.asm):00249                 sta     <$04
-0238 CCB0D8           (  updown_test.asm):00250                 ldd     #$B0D8
+0238 CCD0D8           (  updown_test.asm):00250                 ldd     #$D0D8
 023B BDF312           (  updown_test.asm):00251                 jsr     Moveto_d                ; the start
 023E 8610             (  updown_test.asm):00252                 lda     #$10
 0240 9704             (  updown_test.asm):00253                 sta     <$04                ; scale $10: the tick
@@ -279,7 +279,7 @@
 027D BDF2AB           (  updown_test.asm):00277                 jsr     Intensity_a
 0280 867F             (  updown_test.asm):00278                 lda     #$7F
 0282 9704             (  updown_test.asm):00279                 sta     <$04
-0284 CCB000           (  updown_test.asm):00280                 ldd     #$B000
+0284 CCD000           (  updown_test.asm):00280                 ldd     #$D000
 0287 BDF312           (  updown_test.asm):00281                 jsr     Moveto_d                ; the start
 028A 8610             (  updown_test.asm):00282                 lda     #$10
 028C 9704             (  updown_test.asm):00283                 sta     <$04                ; scale $10: the tick
@@ -309,7 +309,7 @@
 02C9 BDF2AB           (  updown_test.asm):00307                 jsr     Intensity_a
 02CC 867F             (  updown_test.asm):00308                 lda     #$7F
 02CE 9704             (  updown_test.asm):00309                 sta     <$04
-02D0 CCB028           (  updown_test.asm):00310                 ldd     #$B028
+02D0 CCD028           (  updown_test.asm):00310                 ldd     #$D028
 02D3 BDF312           (  updown_test.asm):00311                 jsr     Moveto_d                ; the start
 02D6 8610             (  updown_test.asm):00312                 lda     #$10
 02D8 9704             (  updown_test.asm):00313                 sta     <$04                ; scale $10: the tick
@@ -339,7 +339,7 @@
 0315 BDF2AB           (  updown_test.asm):00337                 jsr     Intensity_a
 0318 867F             (  updown_test.asm):00338                 lda     #$7F
 031A 9704             (  updown_test.asm):00339                 sta     <$04
-031C CCB050           (  updown_test.asm):00340                 ldd     #$B050
+031C CCD050           (  updown_test.asm):00340                 ldd     #$D050
 031F BDF312           (  updown_test.asm):00341                 jsr     Moveto_d                ; the start
 0322 8610             (  updown_test.asm):00342                 lda     #$10
 0324 9704             (  updown_test.asm):00343                 sta     <$04                ; scale $10: the tick
@@ -372,7 +372,7 @@
 036A 867F             (  updown_test.asm):00370                 lda     #$7F
 036C 9704             (  updown_test.asm):00371                 sta     <$04
 036E CE0C97           (  updown_test.asm):00372                 ldu     #T2
-0371 CC70C0           (  updown_test.asm):00373                 ldd     #$70C0
+0371 CCC4C2           (  updown_test.asm):00373                 ldd     #$C4C2
 0374 BDF37A           (  updown_test.asm):00374                 jsr     Print_Str_d
 0377 16FCAA           (  updown_test.asm):00375                 lbra    Main
                       (  updown_test.asm):00376         
@@ -382,7 +382,7 @@
 037F BDF2AB           (  updown_test.asm):00380                 jsr     Intensity_a
 0382 867F             (  updown_test.asm):00381                 lda     #$7F
 0384 9704             (  updown_test.asm):00382                 sta     <$04
-0386 CCB0B0           (  updown_test.asm):00383                 ldd     #$B0B0
+0386 CCD0B0           (  updown_test.asm):00383                 ldd     #$D0B0
 0389 BDF312           (  updown_test.asm):00384                 jsr     Moveto_d                ; the start
 038C 8610             (  updown_test.asm):00385                 lda     #$10
 038E 9704             (  updown_test.asm):00386                 sta     <$04                ; scale $10: the tick
@@ -401,7 +401,7 @@
 03B1 BDF2AB           (  updown_test.asm):00399                 jsr     Intensity_a
 03B4 867F             (  updown_test.asm):00400                 lda     #$7F
 03B6 9704             (  updown_test.asm):00401                 sta     <$04
-03B8 CCB0D8           (  updown_test.asm):00402                 ldd     #$B0D8
+03B8 CCD0D8           (  updown_test.asm):00402                 ldd     #$D0D8
 03BB BDF312           (  updown_test.asm):00403                 jsr     Moveto_d                ; the start
 03BE 8610             (  updown_test.asm):00404                 lda     #$10
 03C0 9704             (  updown_test.asm):00405                 sta     <$04                ; scale $10: the tick
@@ -431,7 +431,7 @@
 03FD BDF2AB           (  updown_test.asm):00429                 jsr     Intensity_a
 0400 867F             (  updown_test.asm):00430                 lda     #$7F
 0402 9704             (  updown_test.asm):00431                 sta     <$04
-0404 CCB000           (  updown_test.asm):00432                 ldd     #$B000
+0404 CCD000           (  updown_test.asm):00432                 ldd     #$D000
 0407 BDF312           (  updown_test.asm):00433                 jsr     Moveto_d                ; the start
 040A 8610             (  updown_test.asm):00434                 lda     #$10
 040C 9704             (  updown_test.asm):00435                 sta     <$04                ; scale $10: the tick
@@ -461,7 +461,7 @@
 0449 BDF2AB           (  updown_test.asm):00459                 jsr     Intensity_a
 044C 867F             (  updown_test.asm):00460                 lda     #$7F
 044E 9704             (  updown_test.asm):00461                 sta     <$04
-0450 CCB028           (  updown_test.asm):00462                 ldd     #$B028
+0450 CCD028           (  updown_test.asm):00462                 ldd     #$D028
 0453 BDF312           (  updown_test.asm):00463                 jsr     Moveto_d                ; the start
 0456 8610             (  updown_test.asm):00464                 lda     #$10
 0458 9704             (  updown_test.asm):00465                 sta     <$04                ; scale $10: the tick
@@ -491,7 +491,7 @@
 0495 BDF2AB           (  updown_test.asm):00489                 jsr     Intensity_a
 0498 867F             (  updown_test.asm):00490                 lda     #$7F
 049A 9704             (  updown_test.asm):00491                 sta     <$04
-049C CCB050           (  updown_test.asm):00492                 ldd     #$B050
+049C CCD050           (  updown_test.asm):00492                 ldd     #$D050
 049F BDF312           (  updown_test.asm):00493                 jsr     Moveto_d                ; the start
 04A2 8610             (  updown_test.asm):00494                 lda     #$10
 04A4 9704             (  updown_test.asm):00495                 sta     <$04                ; scale $10: the tick
@@ -524,7 +524,7 @@
 04EA 867F             (  updown_test.asm):00522                 lda     #$7F
 04EC 9704             (  updown_test.asm):00523                 sta     <$04
 04EE CE0CA4           (  updown_test.asm):00524                 ldu     #T3
-04F1 CC70C0           (  updown_test.asm):00525                 ldd     #$70C0
+04F1 CCC4C2           (  updown_test.asm):00525                 ldd     #$C4C2
 04F4 BDF37A           (  updown_test.asm):00526                 jsr     Print_Str_d
 04F7 16FB2A           (  updown_test.asm):00527                 lbra    Main
                       (  updown_test.asm):00528         
@@ -534,7 +534,7 @@
 04FF BDF2AB           (  updown_test.asm):00532                 jsr     Intensity_a
 0502 867F             (  updown_test.asm):00533                 lda     #$7F
 0504 9704             (  updown_test.asm):00534                 sta     <$04
-0506 CC50B0           (  updown_test.asm):00535                 ldd     #$50B0
+0506 CC30B0           (  updown_test.asm):00535                 ldd     #$30B0
 0509 BDF312           (  updown_test.asm):00536                 jsr     Moveto_d                ; the start
 050C 8610             (  updown_test.asm):00537                 lda     #$10
 050E 9704             (  updown_test.asm):00538                 sta     <$04                ; scale $10: the tick
@@ -553,7 +553,7 @@
 0531 BDF2AB           (  updown_test.asm):00551                 jsr     Intensity_a
 0534 867F             (  updown_test.asm):00552                 lda     #$7F
 0536 9704             (  updown_test.asm):00553                 sta     <$04
-0538 CC50D8           (  updown_test.asm):00554                 ldd     #$50D8
+0538 CC30D8           (  updown_test.asm):00554                 ldd     #$30D8
 053B BDF312           (  updown_test.asm):00555                 jsr     Moveto_d                ; the start
 053E 8610             (  updown_test.asm):00556                 lda     #$10
 0540 9704             (  updown_test.asm):00557                 sta     <$04                ; scale $10: the tick
@@ -583,7 +583,7 @@
 057D BDF2AB           (  updown_test.asm):00581                 jsr     Intensity_a
 0580 867F             (  updown_test.asm):00582                 lda     #$7F
 0582 9704             (  updown_test.asm):00583                 sta     <$04
-0584 CC5000           (  updown_test.asm):00584                 ldd     #$5000
+0584 CC3000           (  updown_test.asm):00584                 ldd     #$3000
 0587 BDF312           (  updown_test.asm):00585                 jsr     Moveto_d                ; the start
 058A 8610             (  updown_test.asm):00586                 lda     #$10
 058C 9704             (  updown_test.asm):00587                 sta     <$04                ; scale $10: the tick
@@ -613,7 +613,7 @@
 05C9 BDF2AB           (  updown_test.asm):00611                 jsr     Intensity_a
 05CC 867F             (  updown_test.asm):00612                 lda     #$7F
 05CE 9704             (  updown_test.asm):00613                 sta     <$04
-05D0 CC5028           (  updown_test.asm):00614                 ldd     #$5028
+05D0 CC3028           (  updown_test.asm):00614                 ldd     #$3028
 05D3 BDF312           (  updown_test.asm):00615                 jsr     Moveto_d                ; the start
 05D6 8610             (  updown_test.asm):00616                 lda     #$10
 05D8 9704             (  updown_test.asm):00617                 sta     <$04                ; scale $10: the tick
@@ -643,7 +643,7 @@
 0615 BDF2AB           (  updown_test.asm):00641                 jsr     Intensity_a
 0618 867F             (  updown_test.asm):00642                 lda     #$7F
 061A 9704             (  updown_test.asm):00643                 sta     <$04
-061C CC5050           (  updown_test.asm):00644                 ldd     #$5050
+061C CC3050           (  updown_test.asm):00644                 ldd     #$3050
 061F BDF312           (  updown_test.asm):00645                 jsr     Moveto_d                ; the start
 0622 8610             (  updown_test.asm):00646                 lda     #$10
 0624 9704             (  updown_test.asm):00647                 sta     <$04                ; scale $10: the tick
@@ -676,7 +676,7 @@
 066A 867F             (  updown_test.asm):00674                 lda     #$7F
 066C 9704             (  updown_test.asm):00675                 sta     <$04
 066E CE0CB1           (  updown_test.asm):00676                 ldu     #T4
-0671 CC90C0           (  updown_test.asm):00677                 ldd     #$90C0
+0671 CC24C2           (  updown_test.asm):00677                 ldd     #$24C2
 0674 BDF37A           (  updown_test.asm):00678                 jsr     Print_Str_d
 0677 16F9AA           (  updown_test.asm):00679                 lbra    Main
                       (  updown_test.asm):00680         
@@ -828,7 +828,7 @@
 07EA 867F             (  updown_test.asm):00826                 lda     #$7F
 07EC 9704             (  updown_test.asm):00827                 sta     <$04
 07EE CE0CBE           (  updown_test.asm):00828                 ldu     #T5
-07F1 CC70C0           (  updown_test.asm):00829                 ldd     #$70C0
+07F1 CCB1E6           (  updown_test.asm):00829                 ldd     #$B1E6
 07F4 BDF37A           (  updown_test.asm):00830                 jsr     Print_Str_d
 07F7 16F82A           (  updown_test.asm):00831                 lbra    Main
                       (  updown_test.asm):00832         
@@ -980,7 +980,7 @@
 096A 867F             (  updown_test.asm):00978                 lda     #$7F
 096C 9704             (  updown_test.asm):00979                 sta     <$04
 096E CE0CC4           (  updown_test.asm):00980                 ldu     #T6
-0971 CC90C0           (  updown_test.asm):00981                 ldd     #$90C0
+0971 CC10E1           (  updown_test.asm):00981                 ldd     #$10E1
 0974 BDF37A           (  updown_test.asm):00982                 jsr     Print_Str_d
 0977 16F6AA           (  updown_test.asm):00983                 lbra    Main
                       (  updown_test.asm):00984         
@@ -990,7 +990,7 @@
 097F BDF2AB           (  updown_test.asm):00988                 jsr     Intensity_a
 0982 867F             (  updown_test.asm):00989                 lda     #$7F
 0984 9704             (  updown_test.asm):00990                 sta     <$04
-0986 CCB0B0           (  updown_test.asm):00991                 ldd     #$B0B0
+0986 CCD0B0           (  updown_test.asm):00991                 ldd     #$D0B0
 0989 BDF312           (  updown_test.asm):00992                 jsr     Moveto_d                ; the start
 098C 8610             (  updown_test.asm):00993                 lda     #$10
 098E 9704             (  updown_test.asm):00994                 sta     <$04                ; scale $10: the tick
@@ -1009,7 +1009,7 @@
 09B1 BDF2AB           (  updown_test.asm):01007                 jsr     Intensity_a
 09B4 867F             (  updown_test.asm):01008                 lda     #$7F
 09B6 9704             (  updown_test.asm):01009                 sta     <$04
-09B8 CCB0D8           (  updown_test.asm):01010                 ldd     #$B0D8
+09B8 CCD0D8           (  updown_test.asm):01010                 ldd     #$D0D8
 09BB BDF312           (  updown_test.asm):01011                 jsr     Moveto_d                ; the start
 09BE 8610             (  updown_test.asm):01012                 lda     #$10
 09C0 9704             (  updown_test.asm):01013                 sta     <$04                ; scale $10: the tick
@@ -1039,7 +1039,7 @@
 09FD BDF2AB           (  updown_test.asm):01037                 jsr     Intensity_a
 0A00 867F             (  updown_test.asm):01038                 lda     #$7F
 0A02 9704             (  updown_test.asm):01039                 sta     <$04
-0A04 CCB000           (  updown_test.asm):01040                 ldd     #$B000
+0A04 CCD000           (  updown_test.asm):01040                 ldd     #$D000
 0A07 BDF312           (  updown_test.asm):01041                 jsr     Moveto_d                ; the start
 0A0A 8610             (  updown_test.asm):01042                 lda     #$10
 0A0C 9704             (  updown_test.asm):01043                 sta     <$04                ; scale $10: the tick
@@ -1069,7 +1069,7 @@
 0A49 BDF2AB           (  updown_test.asm):01067                 jsr     Intensity_a
 0A4C 867F             (  updown_test.asm):01068                 lda     #$7F
 0A4E 9704             (  updown_test.asm):01069                 sta     <$04
-0A50 CCB028           (  updown_test.asm):01070                 ldd     #$B028
+0A50 CCD028           (  updown_test.asm):01070                 ldd     #$D028
 0A53 BDF312           (  updown_test.asm):01071                 jsr     Moveto_d                ; the start
 0A56 8610             (  updown_test.asm):01072                 lda     #$10
 0A58 9704             (  updown_test.asm):01073                 sta     <$04                ; scale $10: the tick
@@ -1099,7 +1099,7 @@
 0A95 BDF2AB           (  updown_test.asm):01097                 jsr     Intensity_a
 0A98 867F             (  updown_test.asm):01098                 lda     #$7F
 0A9A 9704             (  updown_test.asm):01099                 sta     <$04
-0A9C CCB050           (  updown_test.asm):01100                 ldd     #$B050
+0A9C CCD050           (  updown_test.asm):01100                 ldd     #$D050
 0A9F BDF312           (  updown_test.asm):01101                 jsr     Moveto_d                ; the start
 0AA2 8610             (  updown_test.asm):01102                 lda     #$10
 0AA4 9704             (  updown_test.asm):01103                 sta     <$04                ; scale $10: the tick
@@ -1132,7 +1132,7 @@
 0AEA 867F             (  updown_test.asm):01130                 lda     #$7F
 0AEC 9704             (  updown_test.asm):01131                 sta     <$04
 0AEE CE0CCB           (  updown_test.asm):01132                 ldu     #T7
-0AF1 CC70C0           (  updown_test.asm):01133                 ldd     #$70C0
+0AF1 CCC4C2           (  updown_test.asm):01133                 ldd     #$C4C2
 0AF4 BDF37A           (  updown_test.asm):01134                 jsr     Print_Str_d
 0AF7 16F52A           (  updown_test.asm):01135                 lbra    Main
                       (  updown_test.asm):01136         
@@ -1142,7 +1142,7 @@
 0AFF BDF2AB           (  updown_test.asm):01140                 jsr     Intensity_a
 0B02 867F             (  updown_test.asm):01141                 lda     #$7F
 0B04 9704             (  updown_test.asm):01142                 sta     <$04
-0B06 CCB0B0           (  updown_test.asm):01143                 ldd     #$B0B0
+0B06 CCD0B0           (  updown_test.asm):01143                 ldd     #$D0B0
 0B09 BDF312           (  updown_test.asm):01144                 jsr     Moveto_d                ; the start
 0B0C 8610             (  updown_test.asm):01145                 lda     #$10
 0B0E 9704             (  updown_test.asm):01146                 sta     <$04                ; scale $10: the tick
@@ -1161,7 +1161,7 @@
 0B31 BDF2AB           (  updown_test.asm):01159                 jsr     Intensity_a
 0B34 867F             (  updown_test.asm):01160                 lda     #$7F
 0B36 9704             (  updown_test.asm):01161                 sta     <$04
-0B38 CCB0D8           (  updown_test.asm):01162                 ldd     #$B0D8
+0B38 CCD0D8           (  updown_test.asm):01162                 ldd     #$D0D8
 0B3B BDF312           (  updown_test.asm):01163                 jsr     Moveto_d                ; the start
 0B3E 8610             (  updown_test.asm):01164                 lda     #$10
 0B40 9704             (  updown_test.asm):01165                 sta     <$04                ; scale $10: the tick
@@ -1191,7 +1191,7 @@
 0B7D BDF2AB           (  updown_test.asm):01189                 jsr     Intensity_a
 0B80 867F             (  updown_test.asm):01190                 lda     #$7F
 0B82 9704             (  updown_test.asm):01191                 sta     <$04
-0B84 CCB000           (  updown_test.asm):01192                 ldd     #$B000
+0B84 CCD000           (  updown_test.asm):01192                 ldd     #$D000
 0B87 BDF312           (  updown_test.asm):01193                 jsr     Moveto_d                ; the start
 0B8A 8610             (  updown_test.asm):01194                 lda     #$10
 0B8C 9704             (  updown_test.asm):01195                 sta     <$04                ; scale $10: the tick
@@ -1221,7 +1221,7 @@
 0BC9 BDF2AB           (  updown_test.asm):01219                 jsr     Intensity_a
 0BCC 867F             (  updown_test.asm):01220                 lda     #$7F
 0BCE 9704             (  updown_test.asm):01221                 sta     <$04
-0BD0 CCB028           (  updown_test.asm):01222                 ldd     #$B028
+0BD0 CCD028           (  updown_test.asm):01222                 ldd     #$D028
 0BD3 BDF312           (  updown_test.asm):01223                 jsr     Moveto_d                ; the start
 0BD6 8610             (  updown_test.asm):01224                 lda     #$10
 0BD8 9704             (  updown_test.asm):01225                 sta     <$04                ; scale $10: the tick
@@ -1251,7 +1251,7 @@
 0C15 BDF2AB           (  updown_test.asm):01249                 jsr     Intensity_a
 0C18 867F             (  updown_test.asm):01250                 lda     #$7F
 0C1A 9704             (  updown_test.asm):01251                 sta     <$04
-0C1C CCB050           (  updown_test.asm):01252                 ldd     #$B050
+0C1C CCD050           (  updown_test.asm):01252                 ldd     #$D050
 0C1F BDF312           (  updown_test.asm):01253                 jsr     Moveto_d                ; the start
 0C22 8610             (  updown_test.asm):01254                 lda     #$10
 0C24 9704             (  updown_test.asm):01255                 sta     <$04                ; scale $10: the tick
@@ -1284,7 +1284,7 @@
 0C6A 867F             (  updown_test.asm):01282                 lda     #$7F
 0C6C 9704             (  updown_test.asm):01283                 sta     <$04
 0C6E CE0CD8           (  updown_test.asm):01284                 ldu     #T8
-0C71 CC70C0           (  updown_test.asm):01285                 ldd     #$70C0
+0C71 CCC4C2           (  updown_test.asm):01285                 ldd     #$C4C2
 0C74 BDF37A           (  updown_test.asm):01286                 jsr     Print_Str_d
 0C77 16F3AA           (  updown_test.asm):01287                 lbra    Main
                       (  updown_test.asm):01288         

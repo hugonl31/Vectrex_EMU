@@ -76,7 +76,7 @@ Pg01:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C0B0
+        ldd     #$EEB0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -95,7 +95,7 @@ Pg01:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C0D8
+        ldd     #$EED8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -125,7 +125,7 @@ L11:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C000
+        ldd     #$EE00
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -155,7 +155,7 @@ L12:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C028
+        ldd     #$EE28
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -185,7 +185,7 @@ L13:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C050
+        ldd     #$EE50
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -218,7 +218,7 @@ L14:
         lda     #$7F
         sta     <$04
         ldu     #T1
-        ldd     #$70C0
+        ldd     #$E2C2
         jsr     Print_Str_d
         lbra    Main
 
@@ -228,7 +228,7 @@ Pg02:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0B0
+        ldd     #$D0B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -247,7 +247,7 @@ Pg02:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0D8
+        ldd     #$D0D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -277,7 +277,7 @@ L21:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B000
+        ldd     #$D000
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -307,7 +307,7 @@ L22:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B028
+        ldd     #$D028
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -337,7 +337,7 @@ L23:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B050
+        ldd     #$D050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -370,7 +370,7 @@ L24:
         lda     #$7F
         sta     <$04
         ldu     #T2
-        ldd     #$70C0
+        ldd     #$C4C2
         jsr     Print_Str_d
         lbra    Main
 
@@ -380,7 +380,7 @@ Pg03:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0B0
+        ldd     #$D0B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -399,7 +399,7 @@ Pg03:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0D8
+        ldd     #$D0D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -429,7 +429,7 @@ L31:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B000
+        ldd     #$D000
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -459,7 +459,7 @@ L32:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B028
+        ldd     #$D028
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -489,7 +489,7 @@ L33:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B050
+        ldd     #$D050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -522,7 +522,7 @@ L34:
         lda     #$7F
         sta     <$04
         ldu     #T3
-        ldd     #$70C0
+        ldd     #$C4C2
         jsr     Print_Str_d
         lbra    Main
 
@@ -532,7 +532,7 @@ Pg04:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$50B0
+        ldd     #$30B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -551,7 +551,7 @@ Pg04:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$50D8
+        ldd     #$30D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -581,7 +581,7 @@ L41:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$5000
+        ldd     #$3000
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -611,7 +611,7 @@ L42:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$5028
+        ldd     #$3028
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -641,7 +641,7 @@ L43:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$5050
+        ldd     #$3050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -674,7 +674,7 @@ L44:
         lda     #$7F
         sta     <$04
         ldu     #T4
-        ldd     #$90C0
+        ldd     #$24C2
         jsr     Print_Str_d
         lbra    Main
 
@@ -826,7 +826,7 @@ L54:
         lda     #$7F
         sta     <$04
         ldu     #T5
-        ldd     #$70C0
+        ldd     #$B1E6
         jsr     Print_Str_d
         lbra    Main
 
@@ -978,7 +978,7 @@ L64:
         lda     #$7F
         sta     <$04
         ldu     #T6
-        ldd     #$90C0
+        ldd     #$10E1
         jsr     Print_Str_d
         lbra    Main
 
@@ -988,7 +988,7 @@ Pg07:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0B0
+        ldd     #$D0B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1007,7 +1007,7 @@ Pg07:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0D8
+        ldd     #$D0D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1037,7 +1037,7 @@ L71:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B000
+        ldd     #$D000
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1067,7 +1067,7 @@ L72:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B028
+        ldd     #$D028
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1097,7 +1097,7 @@ L73:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B050
+        ldd     #$D050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1130,7 +1130,7 @@ L74:
         lda     #$7F
         sta     <$04
         ldu     #T7
-        ldd     #$70C0
+        ldd     #$C4C2
         jsr     Print_Str_d
         lbra    Main
 
@@ -1140,7 +1140,7 @@ Pg08:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0B0
+        ldd     #$D0B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1159,7 +1159,7 @@ Pg08:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0D8
+        ldd     #$D0D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1189,7 +1189,7 @@ L81:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B000
+        ldd     #$D000
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1219,7 +1219,7 @@ L82:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B028
+        ldd     #$D028
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1249,7 +1249,7 @@ L83:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B050
+        ldd     #$D050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -1282,7 +1282,7 @@ L84:
         lda     #$7F
         sta     <$04
         ldu     #T8
-        ldd     #$70C0
+        ldd     #$C4C2
         jsr     Print_Str_d
         lbra    Main
 

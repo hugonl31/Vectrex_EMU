@@ -22,14 +22,14 @@ CNT = 0xC884                          # the round trips left (RAM)
 NS = (0, 2, 5, 10, 16)                # (every page within a 50 Hz frame, 30000 cycles: page 3 ~27000 - the owner photographs it)
 XS = (-0x50, -0x28, 0x00, 0x28, 0x50)
 PAGES = [  # (dac, scale, start y, label, text)
-    (0x7F, 0x30, -0x40, 'T1', 'DAC 7F S30'),
-    (0x7F, 0x60, -0x50, 'T2', 'DAC 7F S60'),
-    (0x40, 0xC0, -0x50, 'T3', 'DAC 40 SC0'),
-    (0x7F, 0x60, 0x50, 'T4', 'DOWN FIRST'),
+    (0x7F, 0x30, -0x12, 'T1', 'DAC 7F S30'),   # (the trips centred on the screen's middle, where the camera is sharpest - the
+    (0x7F, 0x60, -0x30, 'T2', 'DAC 7F S60'),   #  owner; 2: -48 .. +47)
+    (0x40, 0xC0, -0x30, 'T3', 'DAC 40 SC0'),
+    (0x7F, 0x60, 0x30, 'T4', 'DOWN FIRST'),
     (0x7F, 0x60, -0x7F, 'T5', 'LOW'),          # (page 2's trip low on the screen: -127 .. -32)
     (0x7F, 0x60, 0x1C, 'T6', 'HIGH'),          # (and high: +28 .. +123)
-    (0x60, 0x80, -0x50, 'T7', 'DAC 60 S80'),   # (page 2's distance at 3/4 speed)
-    (0x70, 0x6D, -0x50, 'T8', 'DAC 70 S6D'),   # (.. at 7/8 speed)
+    (0x60, 0x80, -0x30, 'T7', 'DAC 60 S80'),   # (page 2's distance at 3/4 speed)
+    (0x70, 0x6D, -0x30, 'T8', 'DAC 70 S6D'),   # (.. at 7/8 speed)
 ]
 
 
@@ -74,7 +74,9 @@ def build():
         ppage(p + 1)
         for i, (x, n) in enumerate(zip(XS, NS)):
             column(dac, scale, y0, x, n, '%d%d' % (p + 1, i))
-        text(label, 0x70 if y0 < 0 else -0x70, -0x40)
+        n = len('%d %s' % (p + 1, txt))         # (the label centred, right under the ticks - above them on the low page:
+        ty = y0 + 0x30 if y0 < -0x60 else y0 - 0x0C   #  one frame for the camera, the owner)
+        text(label, ty, -int(n * 10.4 / 2))
         w('        lbra    Main')
     page_table(len(PAGES))
     w('')

@@ -65,7 +65,7 @@ Page1:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C0A0
+        ldd     #$C0B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -84,37 +84,7 @@ Page1:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C0C0
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$30
-        sta     <$04
-        lda     #1
-        sta     $C884
-L11:
-        ldd     #$7F00
-        jsr     Moveto_d
-        ldd     #$8100
-        jsr     Moveto_d
-        dec     $C884
-        bne     L11
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$C0E0
+        ldd     #$C0D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -126,13 +96,13 @@ L11:
         sta     <$04
         lda     #2
         sta     $C884
-L12:
+L11:
         ldd     #$7F00
         jsr     Moveto_d
         ldd     #$8100
         jsr     Moveto_d
         dec     $C884
-        bne     L12
+        bne     L11
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F
@@ -154,7 +124,37 @@ L12:
         jsr     Moveto_d
         lda     #$30
         sta     <$04
-        lda     #4
+        lda     #5
+        sta     $C884
+L12:
+        ldd     #$7F00
+        jsr     Moveto_d
+        ldd     #$8100
+        jsr     Moveto_d
+        dec     $C884
+        bne     L12
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        jsr     Reset0Ref
+        lda     #$7F
+        jsr     Intensity_a
+        lda     #$7F
+        sta     <$04
+        ldd     #$C028
+        jsr     Moveto_d                ; the start
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        lda     #$30
+        sta     <$04
+        lda     #10
         sta     $C884
 L13:
         ldd     #$7F00
@@ -174,37 +174,7 @@ L13:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$C020
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$30
-        sta     <$04
-        lda     #8
-        sta     $C884
-L14:
-        ldd     #$7F00
-        jsr     Moveto_d
-        ldd     #$8100
-        jsr     Moveto_d
-        dec     $C884
-        bne     L14
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$C040
+        ldd     #$C050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -216,43 +186,13 @@ L14:
         sta     <$04
         lda     #16
         sta     $C884
-L15:
+L14:
         ldd     #$7F00
         jsr     Moveto_d
         ldd     #$8100
         jsr     Moveto_d
         dec     $C884
-        bne     L15
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$C060
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$30
-        sta     <$04
-        lda     #32
-        sta     $C884
-L16:
-        ldd     #$7F00
-        jsr     Moveto_d
-        ldd     #$8100
-        jsr     Moveto_d
-        dec     $C884
-        bne     L16
+        bne     L14
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F
@@ -277,7 +217,7 @@ Page2:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0A0
+        ldd     #$B0B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -296,37 +236,7 @@ Page2:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0C0
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$60
-        sta     <$04
-        lda     #1
-        sta     $C884
-L21:
-        ldd     #$7F00
-        jsr     Moveto_d
-        ldd     #$8100
-        jsr     Moveto_d
-        dec     $C884
-        bne     L21
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$B0E0
+        ldd     #$B0D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -338,13 +248,13 @@ L21:
         sta     <$04
         lda     #2
         sta     $C884
-L22:
+L21:
         ldd     #$7F00
         jsr     Moveto_d
         ldd     #$8100
         jsr     Moveto_d
         dec     $C884
-        bne     L22
+        bne     L21
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F
@@ -366,7 +276,37 @@ L22:
         jsr     Moveto_d
         lda     #$60
         sta     <$04
-        lda     #4
+        lda     #5
+        sta     $C884
+L22:
+        ldd     #$7F00
+        jsr     Moveto_d
+        ldd     #$8100
+        jsr     Moveto_d
+        dec     $C884
+        bne     L22
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        jsr     Reset0Ref
+        lda     #$7F
+        jsr     Intensity_a
+        lda     #$7F
+        sta     <$04
+        ldd     #$B028
+        jsr     Moveto_d                ; the start
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        lda     #$60
+        sta     <$04
+        lda     #10
         sta     $C884
 L23:
         ldd     #$7F00
@@ -386,37 +326,7 @@ L23:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B020
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$60
-        sta     <$04
-        lda     #8
-        sta     $C884
-L24:
-        ldd     #$7F00
-        jsr     Moveto_d
-        ldd     #$8100
-        jsr     Moveto_d
-        dec     $C884
-        bne     L24
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$B040
+        ldd     #$B050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -428,43 +338,13 @@ L24:
         sta     <$04
         lda     #16
         sta     $C884
-L25:
+L24:
         ldd     #$7F00
         jsr     Moveto_d
         ldd     #$8100
         jsr     Moveto_d
         dec     $C884
-        bne     L25
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$B060
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$60
-        sta     <$04
-        lda     #32
-        sta     $C884
-L26:
-        ldd     #$7F00
-        jsr     Moveto_d
-        ldd     #$8100
-        jsr     Moveto_d
-        dec     $C884
-        bne     L26
+        bne     L24
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F
@@ -489,7 +369,7 @@ Page3:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0A0
+        ldd     #$B0B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -508,37 +388,7 @@ Page3:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B0C0
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$C0
-        sta     <$04
-        lda     #1
-        sta     $C884
-L31:
-        ldd     #$4000
-        jsr     Moveto_d
-        ldd     #$C000
-        jsr     Moveto_d
-        dec     $C884
-        bne     L31
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$B0E0
+        ldd     #$B0D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -550,13 +400,13 @@ L31:
         sta     <$04
         lda     #2
         sta     $C884
-L32:
+L31:
         ldd     #$4000
         jsr     Moveto_d
         ldd     #$C000
         jsr     Moveto_d
         dec     $C884
-        bne     L32
+        bne     L31
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F
@@ -578,7 +428,37 @@ L32:
         jsr     Moveto_d
         lda     #$C0
         sta     <$04
-        lda     #4
+        lda     #5
+        sta     $C884
+L32:
+        ldd     #$4000
+        jsr     Moveto_d
+        ldd     #$C000
+        jsr     Moveto_d
+        dec     $C884
+        bne     L32
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        jsr     Reset0Ref
+        lda     #$7F
+        jsr     Intensity_a
+        lda     #$7F
+        sta     <$04
+        ldd     #$B028
+        jsr     Moveto_d                ; the start
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        lda     #$C0
+        sta     <$04
+        lda     #10
         sta     $C884
 L33:
         ldd     #$4000
@@ -598,37 +478,7 @@ L33:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$B020
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$C0
-        sta     <$04
-        lda     #8
-        sta     $C884
-L34:
-        ldd     #$4000
-        jsr     Moveto_d
-        ldd     #$C000
-        jsr     Moveto_d
-        dec     $C884
-        bne     L34
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$B040
+        ldd     #$B050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -640,43 +490,13 @@ L34:
         sta     <$04
         lda     #16
         sta     $C884
-L35:
+L34:
         ldd     #$4000
         jsr     Moveto_d
         ldd     #$C000
         jsr     Moveto_d
         dec     $C884
-        bne     L35
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$B060
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$C0
-        sta     <$04
-        lda     #32
-        sta     $C884
-L36:
-        ldd     #$4000
-        jsr     Moveto_d
-        ldd     #$C000
-        jsr     Moveto_d
-        dec     $C884
-        bne     L36
+        bne     L34
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F
@@ -701,7 +521,7 @@ Page4:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$50A0
+        ldd     #$50B0
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -720,37 +540,7 @@ Page4:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$50C0
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$60
-        sta     <$04
-        lda     #1
-        sta     $C884
-L41:
-        ldd     #$8100
-        jsr     Moveto_d
-        ldd     #$7F00
-        jsr     Moveto_d
-        dec     $C884
-        bne     L41
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$50E0
+        ldd     #$50D8
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -762,13 +552,13 @@ L41:
         sta     <$04
         lda     #2
         sta     $C884
-L42:
+L41:
         ldd     #$8100
         jsr     Moveto_d
         ldd     #$7F00
         jsr     Moveto_d
         dec     $C884
-        bne     L42
+        bne     L41
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F
@@ -790,7 +580,37 @@ L42:
         jsr     Moveto_d
         lda     #$60
         sta     <$04
-        lda     #4
+        lda     #5
+        sta     $C884
+L42:
+        ldd     #$8100
+        jsr     Moveto_d
+        ldd     #$7F00
+        jsr     Moveto_d
+        dec     $C884
+        bne     L42
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        jsr     Reset0Ref
+        lda     #$7F
+        jsr     Intensity_a
+        lda     #$7F
+        sta     <$04
+        ldd     #$5028
+        jsr     Moveto_d                ; the start
+        lda     #$10
+        sta     <$04                ; scale $10: the tick
+        ldd     #$007F
+        jsr     Draw_Line_d
+        ldd     #$0081
+        jsr     Moveto_d
+        lda     #$60
+        sta     <$04
+        lda     #10
         sta     $C884
 L43:
         ldd     #$8100
@@ -810,37 +630,7 @@ L43:
         jsr     Intensity_a
         lda     #$7F
         sta     <$04
-        ldd     #$5020
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$60
-        sta     <$04
-        lda     #8
-        sta     $C884
-L44:
-        ldd     #$8100
-        jsr     Moveto_d
-        ldd     #$7F00
-        jsr     Moveto_d
-        dec     $C884
-        bne     L44
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$5040
+        ldd     #$5050
         jsr     Moveto_d                ; the start
         lda     #$10
         sta     <$04                ; scale $10: the tick
@@ -852,43 +642,13 @@ L44:
         sta     <$04
         lda     #16
         sta     $C884
-L45:
+L44:
         ldd     #$8100
         jsr     Moveto_d
         ldd     #$7F00
         jsr     Moveto_d
         dec     $C884
-        bne     L45
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        jsr     Reset0Ref
-        lda     #$7F
-        jsr     Intensity_a
-        lda     #$7F
-        sta     <$04
-        ldd     #$5060
-        jsr     Moveto_d                ; the start
-        lda     #$10
-        sta     <$04                ; scale $10: the tick
-        ldd     #$007F
-        jsr     Draw_Line_d
-        ldd     #$0081
-        jsr     Moveto_d
-        lda     #$60
-        sta     <$04
-        lda     #32
-        sta     $C884
-L46:
-        ldd     #$8100
-        jsr     Moveto_d
-        ldd     #$7F00
-        jsr     Moveto_d
-        dec     $C884
-        bne     L46
+        bne     L44
         lda     #$10
         sta     <$04                ; scale $10: the tick
         ldd     #$007F

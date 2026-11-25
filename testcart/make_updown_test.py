@@ -1,8 +1,8 @@
 """make_updown_test.py - writes updown_test.asm ("UPDOWN TEST"): how the beam's up / down difference builds up.
 
-Each page has seven columns. In each column the beam is zeroed, moved to its start, and draws a short horizontal tick
+Each page has five columns. In each column the beam is zeroed, moved to its start, and draws a short horizontal tick
 there (the reference). Then, with the beam off, it moves up and back down the same distance N times
-(N = 0 1 2 4 8 16 32, left to right, no zeroing in between) and draws a second tick where it ended. A beam that
+(N = 0 2 5 10 16, left to right, no zeroing in between) and draws a second tick where it ended. A beam that
 goes up as far as it comes down puts both ticks on top of each other; the gap between them is what the up / down
 difference left after N round trips. N = 0 is the control.
 
@@ -17,8 +17,8 @@ the columns how it builds up and levels off over the round trips (the leak), fro
 from tc_common import *
 
 CNT = 0xC884                          # the round trips left (RAM)
-NS = (0, 1, 2, 4, 8, 16, 32)
-XS = (-0x60, -0x40, -0x20, 0x00, 0x20, 0x40, 0x60)
+NS = (0, 2, 5, 10, 16)                # (every page within a 50 Hz frame, 30000 cycles: page 3 ~27000 - the owner photographs it)
+XS = (-0x50, -0x28, 0x00, 0x28, 0x50)
 PAGES = [  # (dac, scale, start y, label, text)
     (0x7F, 0x30, -0x40, 'T1', 'DAC 7F S30'),
     (0x7F, 0x60, -0x50, 'T2', 'DAC 7F S60'),

@@ -241,6 +241,12 @@ PARTS = [
     ('carts', 'Cartridges with their labels', False, [(os.path.join(th, 'carts'), J + 'thumbs/carts')]),
     ('uvmc2', 'UVMC2: Last Human, Doom, Quake, vector movies', False, [(os.path.join(PC, 'uvmc2'), J + 'uvmc2')]),
     ('pitrex', 'PiTrex SD card (calibrated)', False, [(os.path.join(PC, 'pitrex'), J + 'pitrex')]),
+    # (2026-11-25: the test apps are the public build and one item more - the iOS test build fetches this part once in
+    #  place of the files the Android app has inside it (assets/base.zip, the same set): the free BIOS, the overlays, the
+    #  GPU pictures, the UVMC2 folder, the included games; its games then from Get games & extras)
+    ('base', 'The files that come with the app', True,
+     [(os.path.join(PKG, f), J + f) for f in ('bios.bin', 'README-speech.txt', 'gpu', 'overlays', 'uvmc2')]
+     + [(os.path.join(os.path.dirname(os.path.dirname(PKG)), 'roms'), 'roms')]),
 ]
 
 

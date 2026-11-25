@@ -579,6 +579,8 @@ static void vxa_untar_feed (vxa_untar *u, const unsigned char *d, size_t n)
 		}
 	}
 }
+static int vxa_untgz (const char *tgz, const char *root, int *files);
+int vxa_untgz_ext (const char *tgz, const char *root, int *files) { return vxa_untgz (tgz, root, files); }   /* (Get games & extras' test item) */
 static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: whole) */
 {
 	FILE *f = fopen (tgz, "rb"); if (!f) return -1;
@@ -938,26 +940,30 @@ static void vxa_toast (NSString *s, double secs)
 		NSDictionary *j = d && ((NSHTTPURLResponse *) r).statusCode == 200 ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
 		NSArray *parts = [j isKindOfClass:NSDictionary.class] ? j[@"parts"] : nil; NSDictionary *inst = [VXPack installed];
 		vlog ("parts: server %lu, here %lu%s", (unsigned long) parts.count, (unsigned long) inst.count, e ? [@" - " stringByAppendingString:e.localizedDescription].UTF8String : "");
+		/* (the owner, 2026-11-25: the test build is the public build and one item more - only the files the Android app has
+		 *  inside it come from the server here, the part "base"; then the public build's start: Get games & extras first,
+		 *  the device test after its downloads. The test extras (VecDoom...) are an item of Get games & extras) */
 		dispatch_async (dispatch_get_main_queue (), ^{
-			if (!parts.count) { if (inst.count || [self hasOldPack]) [self startCore]; else self->_status.text = @"The games could not be fetched: no connection to the project's server. Close the app and try again."; return; }
-			self->_parts = parts;
-			NSMutableArray *need = [NSMutableArray array];   /* (the parts here with a new version, the required ones missing) */
-			for (NSDictionary *p in parts) { NSString *v = inst[p[@"id"]];
-				if ((v && ![v isEqualToString:p[@"version"]]) || (!v && [p[@"required"] boolValue])) [need addObject:p[@"id"]]; }
-			if (!inst.count && ![self hasOldPack]) [self chooseParts:YES];
-			else if (need.count) [self askUpdate:need];
-			else [self startCore]; });
+			NSDictionary *base = nil; for (NSDictionary *p in parts) if ([p[@"id"] isEqualToString:@"base"]) base = p;
+			if (!base) { if (inst[@"base"] || inst[@"core"] || [self hasOldPack]) [self publicStart];
+				else self->_status.text = @"The app's files could not be fetched: no connection to the project's server. Close the app and try again."; return; }
+			self->_parts = @[ base ];
+			if (![inst[@"base"] isEqual:base[@"version"]]) { vlog ("base: fetching %s", [base[@"version"] UTF8String]); [self fetchParts:@[ @"base" ] wifi:NO]; }
+			else [self publicStart]; });
 	}] resume];
 #else
-	/* (the public build's first start: the download page first, the device test after it and its downloads - as the
-	 *  Android app; the owner, 2026-11-25) */
+	[self publicStart];
+#endif
+}
+/* the public build's start: the first time, the download page first, the device test after it and its downloads - as the
+ * Android app (the owner, 2026-11-25) */
+- (void) publicStart
+{
 	if (![NSUserDefaults.standardUserDefaults boolForKey:@"getter.offered"] && [VXUI getterGames] == 0) {
 		[NSUserDefaults.standardUserDefaults setBool:YES forKey:@"getter.offered"]; vlog ("first start: get games & extras, then the device test");
 		_status.text = @"First the games"; __weak VXGameVC *ws = self;
 		[VXUI showGetterFrom:self then:^{ [ws startAfterDownloads]; }]; return; }
-	vlog ("pack: no token in this build - the content must be in the app's folder already");
 	[self startCore];
-#endif
 }
 - (void) startAfterDownloads   /* (the download page closed: its downloads finished first - the test measures this device alone) */
 {
@@ -1004,7 +1010,7 @@ static void vxa_toast (NSString *s, double secs)
 		if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
 			UNMutableNotificationContent *n = [UNMutableNotificationContent new]; n.title = @"Vectrex_EMU"; n.body = @"The games are ready. Tap to play."; n.sound = UNNotificationSound.defaultSound;
 			[UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"pack" content:n trigger:nil] withCompletionHandler:nil]; }
-		if (!_link) { _firstPack = 1; [self startCore]; } else [self closeWelcome];
+		if (!_link) { _firstPack = 1; [self publicStart]; } else [self closeWelcome];
 		return; }
 	NSString *pid = _qIds.firstObject; NSDictionary *part = nil; for (NSDictionary *p in _parts) if ([p[@"id"] isEqualToString:pid]) part = p;
 	if (!part) { [_qIds removeObjectAtIndex:0]; [self nextPart]; return; }

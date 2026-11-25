@@ -145,6 +145,7 @@ final class Getter {
 		case 0: return count (have, GCE) + " of the " + GCE.length + " original games";
 		case 1: return count (have, HOMEBREW) + " of " + HOMEBREW.length + " free homebrew games";
 		case 2: return new File (pxDir (m), "pitrex.img").exists () ? "found" : "not there";
+		case 5: return new File (roms (m), "VecDoom.um2").exists () ? "found" : "not there";
 		case 4: { String[] l = new File (m.sysDir, "vectrex_emu/thumbs/labels").list (); int n = l == null ? 0 : l.length; return n >= 250 ? "found (" + n + " labels)" : n > 0 ? n + " labels" : "the 112 that come with the app"; }
 		default: return speechFile (m).exists () || new File (m.sysDir, "vectrex_emu/sp0256-al2.bin").exists () ? "found" : "not there"; }
 	}
@@ -351,6 +352,7 @@ final class Getter {
 	/* an item through its chain: each address until one works (the games: until all of them are there); the files added */
 	static int getItem (Main m, int k, Progress p, Say say) throws IOException
 	{
+		if (k == 5) return getTest (m, p);
 		Set<String> tried = new LinkedHashSet<> (); int added = 0; boolean ok = false; File tmp = new File (m.getCacheDir (), "download" + k + ".tmp");   /* (each item its own: Download all runs them side by side - one shared file was overwritten halfway) */
 		synchronized (Getter.class) { owned (m); }
 		outer:
@@ -371,22 +373,40 @@ final class Getter {
 	interface Say { void say (String s); }
 
 	/* ------------------------------------------------------------ the screen */
-	static final String[] TITLE = { "GCE Vectrex games", "Homebrew games (free)", "PiTrex SD card", "Speech ROM (al2.bin)", "Box art and labels (full set)" };
-	static final String[] SIZE = { "0.2 MB", "1 MB", "190 MB", "2 KB", "96 MB" };
-	static final String[] SITE = { "archive.org", "archive.org, GitHub", "vide.malban.de", "spatula-city.org", "this project's GitHub" };
+	static final String[] TITLE = { "GCE Vectrex games", "Homebrew games (free)", "PiTrex SD card", "Speech ROM (al2.bin)", "Box art and labels (full set)", "Test extras (test build only)" };
+	static final String[] SIZE = { "0.2 MB", "1 MB", "190 MB", "2 KB", "96 MB", "22 MB" };
+	static final String[] SITE = { "archive.org", "archive.org, GitHub", "vide.malban.de", "spatula-city.org", "this project's GitHub", "VecDoom, Doom, Quake, Veccy Road - the project's server" };
 	static final int N = TITLE.length;
 	static final boolean[] busy = new boolean[N];
+	/* the private test build (the owner, 2026-11-25: the app private until he is happy): the public build's page and one
+	 * item more - the test extras from the project's server, behind the test token (assets/logtoken.txt). The release
+	 * build (VX_RELEASE=1) has no token: the item is not there */
+	static String testTok (Main m) { try (InputStream in = m.getAssets ().open ("logtoken.txt")) { String t = new String (Pack.read (in), "UTF-8").trim (); return t.isEmpty () ? null : t; } catch (Exception e) { return null; } }
+	static int items (Main m) { return testTok (m) != null ? N : N - 1; }
+	static int getTest (Main m, Progress p) throws IOException
+	{
+		String tok = testTok (m); if (tok == null) throw new IOException ("not in this build");
+		File tmp = new File (m.getCacheDir (), "download5.tmp");
+		try { HttpURLConnection c = (HttpURLConnection) new URL (Pack.HOST + "/iosextra/part/testx").openConnection (); c.setConnectTimeout (15000); c.setReadTimeout (60000);
+			c.setRequestProperty ("X-Vectrex-Token", tok); if (c.getResponseCode () != 200) throw new IOException ("HTTP " + c.getResponseCode ());
+			long total = c.getContentLengthLong (), done = 0, last = 0;
+			try (InputStream in = c.getInputStream (); OutputStream o = new FileOutputStream (tmp)) { byte[] b = new byte[1 << 16]; int n;
+				while ((n = in.read (b)) > 0) { o.write (b, 0, n); done += n; long now = System.currentTimeMillis (); if (now - last > 250) { last = now; p.at (done, total); } } }
+			int files = VX.untgz (tmp.getAbsolutePath (), m.ext ().getAbsolutePath ()); Main.log ("get: test extras - " + files + " files");
+			if (files < 0) throw new IOException ("not unpacked"); return files; }
+		finally { tmp.delete (); }
+	}
 	static Screens.Panel show (Main m)
 	{
 		Main.log ("ui get games & extras"); m.findContent (); Set<String> have = present (m);
 		Screens.Panel p = new Screens.Panel (m, "Get games & extras");
 		p.header ("Download");
 		final TextView[] det = new TextView[N];
-		for (int i = 0; i < N; i++) { final int k = i;
+		for (int i = 0; i < items (m); i++) { final int k = i;
 			LinearLayout r = p.row (TITLE[k], state (m, k, have) + "  -  " + SIZE[k] + ", " + SITE[k], () -> start (m, new int[] { k }));
 			det[k] = r.findViewWithTag ("d"); }
 		p.row ("Download all", "What is not here yet", () -> { List<Integer> ks = new ArrayList<> (); Set<String> h = present (m);
-			for (int i = 0; i < N; i++) if (!complete (m, i, h)) ks.add (i); if (ks.isEmpty ()) { m.toast ("Everything is here", 2); return; }
+			for (int i = 0; i < items (m); i++) if (!complete (m, i, h)) ks.add (i); if (ks.isEmpty ()) { m.toast ("Everything is here", 2); return; }
 			int[] a = new int[ks.size ()]; for (int i = 0; i < a.length; i++) a[i] = ks.get (i); start (m, a); });
 		p.foot ("Files already there are kept. The box art for 112 games comes with the app; the full set has 280. The PiTrex's SD card (190 MB) and the full box art (96 MB) are large: best on Wi-Fi.");
 		p.header ("Your own files");

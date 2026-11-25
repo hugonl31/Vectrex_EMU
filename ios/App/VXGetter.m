@@ -14,6 +14,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #include <zlib.h>
 #import "VXApp.h"
+#include "vx_token.h"
 
 static NSString *const VXG_DISCLAIMER = @"These files are not part of Vectrex_EMU and do not come with it. The maintainer of Vectrex_EMU on GitHub "
 	"does not take responsibility for the sharing of these files. You, the user, download them yourself from "
@@ -181,6 +182,7 @@ static NSString *vxg_state (int k, NSSet *have)
 	case 0: return [NSString stringWithFormat:@"%d of the %d original games", vxg_count (have, vxg_gce), VXG_NGCE];
 	case 1: return [NSString stringWithFormat:@"%d of %d free homebrew games", vxg_count (have, vxg_hb), VXG_NHB];
 	case 2: return [fm fileExistsAtPath:[vxg_px () stringByAppendingPathComponent:@"pitrex.img"]] ? @"found" : @"not there";
+	case 5: return [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"VecDoom.um2"]] ? @"found" : @"not there";
 	case 4: { NSUInteger n = [fm contentsOfDirectoryAtPath:[vxg_sys () stringByAppendingPathComponent:@"vectrex_emu/thumbs/labels"] error:nil].count;
 		return n >= 250 ? [NSString stringWithFormat:@"found (%lu labels)", (unsigned long) n] : n > 0 ? [NSString stringWithFormat:@"%lu labels", (unsigned long) n] : @"the 112 that come with the app"; }
 	default: return [fm fileExistsAtPath:vxg_speech ()] || [fm fileExistsAtPath:[vxg_sys () stringByAppendingPathComponent:@"vectrex_emu/sp0256-al2.bin"]] ? @"found" : @"not there"; }
@@ -409,7 +411,30 @@ static int vxg_unpackart (NSString *f)
 /* an item through its chain: each address until one works (the games: until all of them are there); the files added */
 static int vxg_getitem (int k, void (^prog) (long long, long long), void (^say) (NSString *), NSString **err)
 {
-	vxg_init (); NSMutableSet *tried = [NSMutableSet set]; int added = 0; BOOL ok = NO;
+	vxg_init ();
+	if (k == 5) {   /* (the test extras: the project's server, the test token; a .tgz unpacked into the app's folder) */
+#ifdef VX_LOG_TOKEN
+		extern int vxa_untgz_ext (const char *tgz, const char *root, int *files);
+		NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:@"download5.tmp"]; __block NSString *bad = nil;
+		NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://172.233.60.40:7746/iosextra/part/testx"]];
+		[rq setValue:@VX_LOG_TOKEN forHTTPHeaderField:@"X-Vectrex-Token"]; rq.timeoutInterval = 60; dispatch_semaphore_t sem = dispatch_semaphore_create (0);
+		NSURLSessionDownloadTask *t = [NSURLSession.sharedSession downloadTaskWithRequest:rq completionHandler:^(NSURL *loc, NSURLResponse *r, NSError *e) {
+			const NSInteger code = [r isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *) r).statusCode : 0;
+			if (e) bad = e.localizedDescription; else if (code != 200) bad = [NSString stringWithFormat:@"HTTP %ld", (long) code];
+			else { [NSFileManager.defaultManager removeItemAtPath:tmp error:nil]; if (![NSFileManager.defaultManager moveItemAtURL:loc toURL:[NSURL fileURLWithPath:tmp] error:nil]) bad = @"not saved"; }
+			dispatch_semaphore_signal (sem); }];
+		[t resume];
+		while (dispatch_semaphore_wait (sem, dispatch_time (DISPATCH_TIME_NOW, (int64_t) (250 * NSEC_PER_MSEC)))) prog (t.countOfBytesReceived, t.countOfBytesExpectedToReceive);
+		if (bad) { if (err) *err = bad; return -1; }
+		int files = 0; const int r = vxa_untgz_ext (tmp.fileSystemRepresentation, vxa_docs ().fileSystemRepresentation, &files);
+		[NSFileManager.defaultManager removeItemAtPath:tmp error:nil]; ulog ([NSString stringWithFormat:@"get: test extras - %d files (%d)", files, r]);
+		if (r != 0) { if (err) *err = @"not unpacked"; return -1; }
+		return files;
+#else
+		if (err) *err = @"not in this build"; return -1;
+#endif
+	}
+	NSMutableSet *tried = [NSMutableSet set]; int added = 0; BOOL ok = NO;
 	NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:[NSString stringWithFormat:@"download%d.tmp", k]];   /* (each item its own: Download all runs them side by side) */
 	@synchronized (vxg_lock) { vxg_owned (); }
 	for (id sx in vxg_chain (k)) { vxg_step s = sx;
@@ -460,10 +485,17 @@ static int vxg_importgames (NSString *name, NSData *d, int depth)
 }
 
 /* ------------------------------------------------------------ the screen */
-static NSString *const VXG_TITLE[] = { @"GCE Vectrex games", @"Homebrew games (free)", @"PiTrex SD card", @"Speech ROM (al2.bin)", @"Box art and labels (full set)" };
-static NSString *const VXG_SIZE[] = { @"0.2 MB", @"1 MB", @"190 MB", @"2 KB", @"96 MB" };
-static NSString *const VXG_SITE[] = { @"archive.org", @"archive.org, GitHub", @"vide.malban.de", @"spatula-city.org", @"this project's GitHub" };
-#define VXG_N 5
+static NSString *const VXG_TITLE[] = { @"GCE Vectrex games", @"Homebrew games (free)", @"PiTrex SD card", @"Speech ROM (al2.bin)", @"Box art and labels (full set)", @"Test extras (test build only)" };
+static NSString *const VXG_SIZE[] = { @"0.2 MB", @"1 MB", @"190 MB", @"2 KB", @"96 MB", @"22 MB" };
+static NSString *const VXG_SITE[] = { @"archive.org", @"archive.org, GitHub", @"vide.malban.de", @"spatula-city.org", @"this project's GitHub", @"VecDoom, Doom, Quake, Veccy Road - the project's server" };
+#define VXG_N 6
+/* (the private test build - the owner, 2026-11-25: the app private until he is happy: the public build's page and one item
+ *  more, the test extras from the project's server behind the test token; a build without the token has not got it) */
+#ifdef VX_LOG_TOKEN
+#define VXG_ITEMS VXG_N
+#else
+#define VXG_ITEMS (VXG_N - 1)
+#endif
 static BOOL vxg_busy[VXG_N];
 static NSString *vxg_det[VXG_N];   /* (a row's line while it downloads, and its result) */
 int vxg_any_busy (void) { for (int i = 0; i < VXG_N; i++) if (vxg_busy[i]) return 1; return 0; }
@@ -486,7 +518,7 @@ int vxg_any_busy (void) { for (int i = 0; i < VXG_N; i++) if (vxg_busy[i]) retur
 	if (!_closed && (self.navigationController.isBeingDismissed || self.isBeingDismissed || !self.navigationController.presentingViewController)) { _closed = YES; if (self.onClose) self.onClose (); }
 }
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return 3; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s == 0 ? VXG_N + 1 : s == 1 ? 1 : 0; }
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s == 0 ? VXG_ITEMS + 1 : s == 1 ? 1 : 0; }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s == 0 ? @"DOWNLOAD" : s == 1 ? @"YOUR OWN FILES" : @"NOTICE"; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s
 {
@@ -502,7 +534,7 @@ int vxg_any_busy (void) { for (int i = 0; i < VXG_N; i++) if (vxg_busy[i]) retur
 	UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb;
 	const NSInteger r = ip.row;
 	if (ip.section == 1) { c.textLabel.text = @"Add files..."; c.detailTextLabel.text = @"from Files: iCloud, this device, a USB stick"; return c; }
-	if (r == VXG_N) { c.textLabel.text = @"Download all"; c.detailTextLabel.text = @"What is not here yet"; c.textLabel.textColor = VX_HI; return c; }
+	if (r == VXG_ITEMS) { c.textLabel.text = @"Download all"; c.detailTextLabel.text = @"What is not here yet"; c.textLabel.textColor = VX_HI; return c; }
 	c.textLabel.text = VXG_TITLE[r];
 	c.detailTextLabel.text = vxg_det[r] ?: [NSString stringWithFormat:@"%@  -  %@, %@", vxg_state ((int) r, _have), VXG_SIZE[r], VXG_SITE[r]];
 	if (vxg_busy[r]) c.detailTextLabel.textColor = VX_CHG;
@@ -513,7 +545,7 @@ int vxg_any_busy (void) { for (int i = 0; i < VXG_N; i++) if (vxg_busy[i]) retur
 	[t deselectRowAtIndexPath:ip animated:YES];
 	if (ip.section == 1) { [self pick]; return; }
 	if (ip.section) return;
-	if (ip.row == VXG_N) { NSSet *h = vxg_present (); NSMutableArray *ks = [NSMutableArray array]; for (int i = 0; i < VXG_N; i++) if (!vxg_complete (i, h)) [ks addObject:@(i)];
+	if (ip.row == VXG_ITEMS) { NSSet *h = vxg_present (); NSMutableArray *ks = [NSMutableArray array]; for (int i = 0; i < VXG_ITEMS; i++) if (!vxg_complete (i, h)) [ks addObject:@(i)];
 		if (!ks.count) { [self toast:@"Everything is here"]; return; } [self start:ks]; return; }
 	[self start:@[ @(ip.row) ]];
 }

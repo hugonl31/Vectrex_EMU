@@ -68,7 +68,7 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
 #ifndef VX_TINT_DEFAULT
 #define VX_TINT_DEFAULT 0                          /* (the colour by the excitation: 0 off - as before -, 2 on; PH_FS_SAT. The iOS test build: on) */
 #endif
-int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = 15000.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
+int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = -0.5f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
 #define BT_GLOW_R 0.62f                            /* (the glow's tint against the core's - the owner's choice from the previews, 2026-11-22; vecrender.py BT_GLOW) */
 #define BT_GLOW_G 0.80f
 #define BT_HALO_A 3.0f                             /* (the glass's glow beside a line: 0 the Gaussian; else its level at the line and its power - PH_FS_BEAM hsh) */
@@ -489,7 +489,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		      { const float td = tde >= 0 ? tde : vx_tint_k; float d[3], dm = 0;
 		        /* (the faintest lines' white: the tube's own (td 0) - the bright lines' core colour, no extra blue -, or a white of td K on
 		         *  the blackbody's line (the tube's white sits a little green of it); moved with the White balance setting as the tube's) */
-		        if (td <= 0) { for (int c = 0; c < 3; c++) d[c] = tn[c] / mx; dm = 1; }
+		        if (td <= 0) { const float x = -td; for (int c = 0; c < 3; c++) d[c] = tn[c] / mx * (1.0f - x + x * gt[c]); dm = 1; }   /* (0: the tube's white; -x: x of the glow's extra blue, its hue kept - the owner, 2026-11-25: any warmer white looked green) */
 		        else { float wd[3]; white_gain (td, wd); for (int c = 0; c < 3; c++) { d[c] = wd[c] * tg[c] / t0[c]; if (d[c] > dm) dm = d[c]; } }
 		        glUniform3f_ (ph_ul (ph_sat, "tdim"), d[0] / dm, d[1] / dm, d[2] / dm); } }
 		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);

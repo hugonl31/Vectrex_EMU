@@ -491,7 +491,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|basic|low|medium|high|ultra" },
 	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green.", "blue|green" },
 #if VX_TINT_DEFAULT
-	{ "vectrex_emu_faint", "video", "Faint vectors (test)", "The colour faint vectors go to (bright ones stay as they are) - for matching a real Vectrex. A white of 15000 / 12000 / 9000 K; tube white: the bright lines' own white (a little cyan); blue: as before.", "15000 K|12000 K|9000 K|tube white|blue (before)" },
+	{ "vectrex_emu_faint", "video", "Faint vectors (test)", "The colour faint vectors go to (bright ones stay as they are) - for matching a real Vectrex. Blue N %: today's extra blue in faint vectors cut to N % (its hue kept); tube white: none of it (0 %); a white of 15000 / 12000 K; blue (before): 100 %.", "blue 50 %|blue 75 %|blue 25 %|tube white|15000 K|12000 K|blue (before)" },
 #endif
 	{ "vectrex_emu_gamelist", "video", "Game list", "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder.", "library|simple" },
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
@@ -887,7 +887,7 @@ static void read_options (void)
 	{ const int lo = !opt_is ("vectrex_emu_gamelist", "simple"); if (lo != lib_on) { lib_on = lo; if (br_open) br_show (1); } }
 #if VX_TINT_DEFAULT
 	{ extern int vx_tint_mode; extern float vx_tint_k; const char *f = optv ("vectrex_emu_faint");   /* (the test build's Faint vectors: gpu_phos.c PH_FS_SAT) */
-	  if (f && *f) { vx_tint_mode = !strcmp (f, "blue (before)") ? 0 : 2; vx_tint_k = !strcmp (f, "tube white") ? 0.0f : (float) atof (f); } }
+	  if (f && *f) { vx_tint_mode = !strcmp (f, "blue (before)") ? 0 : 2; vx_tint_k = !strcmp (f, "tube white") ? 0.0f : !strncmp (f, "blue ", 5) ? -(float) atof (f + 5) / 100.0f : (float) atof (f); } }   /* (blue N %: -N / 100) */
 #endif
 	{ extern int vx_palette; const int pl = opt_is ("vectrex_emu_palette", "green"); if (pl != vx_palette) { vx_palette = pl; dk_dirty_set = 1; } }
 	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }

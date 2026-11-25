@@ -2,6 +2,10 @@
 argv: out.png rom button presses [wait_ms]; env LOOK, BEAM=1, EYE (3D Imager: 1 left, 0 right)"""
 import sys, os, argparse, glob, shutil, ctypes
 S = os.path.dirname(os.path.abspath(__file__))
+_root = os.environ.get('TEST_TEMP_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '_temp')
+os.makedirs(_root, exist_ok=True)                         # (never the owner's TEMP: the core and the app write stamps there -
+import tempfile; _tmp = tempfile.mkdtemp(prefix='pcany_', dir=_root)   #  vectrex_emu_power_off.txt, read at his next start)
+os.environ['TEMP'] = os.environ['TMP'] = os.environ['TMPDIR'] = _tmp; tempfile.tempdir = _tmp
 import threading, subprocess
 def _dead():                                             # (a test never stays open: after 90 s the whole process tree goes - the app and its core)
     subprocess.call('taskkill /F /T /PID %d' % os.getpid(), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); os._exit(3)

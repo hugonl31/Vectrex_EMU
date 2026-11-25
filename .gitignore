@@ -49,3 +49,5 @@ system/adhoc.json
 /src/frontend/native/*.obj
 /src/frontend/native/*.lib
 /src/frontend/native/*.exp
+tools/photo_match/_temp/
+tools/_temp/

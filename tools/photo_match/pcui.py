@@ -4,7 +4,10 @@ argv: out_prefix rom what[,what...] [wait_ms]   what: main | library | boxes | c
 env: NOSETUP=1 (defaults, no setup window), OVERLAY=1 (the game's overlay on), PRESS=ms (button 4 pressed then), LOOK"""
 import sys, os, glob, ctypes, threading, subprocess, tempfile
 S = os.path.dirname(os.path.abspath(__file__))
-_tmp = tempfile.mkdtemp(prefix='pcui_'); os.environ['TEMP'] = os.environ['TMP'] = os.environ['TMPDIR'] = _tmp
+_root = os.environ.get('TEST_TEMP_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '_temp')
+os.makedirs(_root, exist_ok=True)                         # (never the owner's TEMP: the core and the app write stamps there -
+import tempfile; _tmp = tempfile.mkdtemp(prefix='pcui_', dir=_root)   #  vectrex_emu_power_off.txt, read at his next start)
+os.environ['TEMP'] = os.environ['TMP'] = os.environ['TMPDIR'] = _tmp; tempfile.tempdir = _tmp
 def _dead():
     subprocess.call('taskkill /F /T /PID %d' % os.getpid(), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); os._exit(3)
 _wd = threading.Timer(float(os.environ.get('TEST_MAX_S', '120')), _dead); _wd.daemon = True; _wd.start()

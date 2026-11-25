@@ -12,7 +12,15 @@ core to core and against the PC app (the RAM's checksums alike at every check).
     h.load(rom)
     for f in range(n): h.run(pad=dict(up=1, b4=1), ax=(x, y)); img = h.grab()    # img: numpy uint8 (h, w, 3), top row first
 """
-import ctypes, ctypes.wintypes as W, os, sys
+import ctypes, ctypes.wintypes as W, os, sys, tempfile
+def _own_temp():                                          # (a test run never uses the owner's TEMP: the core writes stamps there -
+    t = os.path.normcase(os.path.abspath(os.environ.get('TEMP', '')))   #  vectrex_emu_power_off.txt, read at his next start.
+    real = os.path.normcase(os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Temp'))   #  A caller's own TEMP is kept.)
+    if t and t != real: tempfile.tempdir = os.environ['TEMP']; return
+    root = os.environ.get('TEST_TEMP_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '_temp')
+    os.makedirs(root, exist_ok=True); d = tempfile.mkdtemp(prefix='lrhost_', dir=root)
+    os.environ['TEMP'] = os.environ['TMP'] = os.environ['TMPDIR'] = d; tempfile.tempdir = d
+_own_temp()
 import numpy as np
 
 c_bool = ctypes.c_bool

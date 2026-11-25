@@ -2,6 +2,10 @@
 argv: out.png rom button presses [wait_ms]; env LOOK, BEAM=1, EYE (3D Imager: 1 left, 0 right)"""
 import sys, os, argparse, glob, shutil, ctypes
 S = os.path.dirname(os.path.abspath(__file__))
+_root = os.environ.get('TEST_TEMP_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '_temp')
+os.makedirs(_root, exist_ok=True)                         # (never the owner's TEMP: the core and the app write stamps there -
+import tempfile; _tmp = tempfile.mkdtemp(prefix='pcany_', dir=_root)   #  vectrex_emu_power_off.txt, read at his next start)
+os.environ['TEMP'] = os.environ['TMP'] = os.environ['TMPDIR'] = _tmp; tempfile.tempdir = _tmp
 import threading, subprocess
 def _dead():                                             # (a test never stays open: after 90 s the whole process tree goes - the app and its core)
     subprocess.call('taskkill /F /T /PID %d' % os.getpid(), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); os._exit(3)
@@ -30,7 +34,7 @@ for ms in (50, 300, 700, 1500): app.root.after(ms, _back)
 if os.environ.get('LOOK'): app.ren.look = os.environ['LOOK']
 if os.environ.get('BEAM'): app.ren.beam_trace = True
 if os.environ.get('EYE'): app.ren.imager_eye = int(os.environ['EYE'])   # (the 3D Imager's view: 1 left, 0 right, -1 both)
-app.ren.wob_on = False; app.ren.bend_on = False; app.skip_boot = not os.environ.get("NOSKIP"); app.ren.art_on = False
+app.ren.wob_on = False; app.skip_boot = not os.environ.get("NOSKIP"); app.ren.art_on = False
 def _vrr():
     app.vrr = True
     if app.ren and hasattr(app.ren, 'present'): app.ren.swap_interval(0)

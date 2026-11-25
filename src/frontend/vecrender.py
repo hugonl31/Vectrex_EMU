@@ -3054,7 +3054,7 @@ class GLBloomRenderer(GLRenderer):
         """Tube geometry: every line through the owner's tube map (tubemap), long ones in pieces so they
         bend; each piece keeps its share of the beam's energy and its moment in the frame"""
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
-        g = self.glass_undo()                            # (the glass's curve undone: Tube > Glass curvature)
+        g = self.glass_undo(k)                           # (the glass's curve undone: Tube > Glass curvature)
         w = getattr(self, 'unit_warp', None)             # (this Vectrex's picture shape)
         if getattr(self, '_tube_k', None) != (k, g, w):  # (its own name: under _tube_f it hid the method _build_np
             self._tube_k = (k, g, w); self._tube_fn = tube_map(k, g, w)  #  calls - after the first switch-on animation every frame
@@ -3156,7 +3156,7 @@ class GLBloomRenderer(GLRenderer):
             P = getattr(self, '_vxb_p', None)
             if P is None:
                 P = self._vxb_p = np.zeros(_VXB_NP)
-            P[:] = ((BT2_W, BT2_K, 1.0 if BT_HALO_F > 0 else 0.0, k, self.glass_undo(), 1.0 if w else 0.0) + wv + tuple(TUBE_LIN)
+            P[:] = ((BT2_W, BT2_K, 1.0 if BT_HALO_F > 0 else 0.0, k, self.glass_undo(k), 1.0 if w else 0.0) + wv + tuple(TUBE_LIN)
                     + (ALG_MAX_X / 2.0, ALG_MAX_Y / 2.0, ALG_MAX_Y / 2.0, UW, tubemap.U0, tubemap.V0, tubemap.SU, tubemap.SV,
                        MM_UNIT, GLASS_RX_MM, GLASS_RY_MM, GLASS_T_MAX, ps, pdx, pdy, TUBE_SEG, 0.0, 1.0, 0.0,
                        1.0 if wob else 0.0, a0, k50) + hum
@@ -3237,7 +3237,7 @@ class GLBloomRenderer(GLRenderer):
         if k:
             dx, dy = tubemap.imp_np(np, u, v)
             X = X + k * dx; Y = Y + k * dy
-        X, Y = glass_flat(X, Y, self.glass_undo(), np)   # (the glass's curve undone: Glass curvature)
+        X, Y = glass_flat(X, Y, self.glass_undo(k), np)  # (the glass's curve undone: Glass curvature)
         ps, pdx, pdy = self.pic_adj()                     # (behind an overlay: its sliders and the parallax)
         return XM + X * U * ps + pdx, YM + Y * U * ps + pdy
 
@@ -3366,7 +3366,7 @@ class GLBloomRenderer(GLRenderer):
         # the tube's map, long lines in pieces (_tube_lines)
         k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
         Ls = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
-        bend = k > 0 or self.glass_undo() > 0 or bool(getattr(self, 'unit_warp', None))   # (the unit's shape bends lines too)
+        bend = k > 0 or self.glass_undo(k) > 0 or bool(getattr(self, 'unit_warp', None))   # (the unit's shape bends lines too)
         m = np.where((Ls > TUBE_SEG) & bend, (Ls / TUBE_SEG).astype(np.int64) + 1, 1)
         n0 = len(L)
         idx = np.repeat(np.arange(n0), m)
@@ -3884,8 +3884,15 @@ class GLBloomRenderer(GLRenderer):
                    'basic': dict(_MEDIUM, phos_scale=0.5, half_rate=True, line_half=True)}   # (Low, the lines at the
                                                                     #  phosphor's half size too: Pi 5, Vectrexians)
     phos_scale = 1.0                 # the phosphor passes' size as a share of the window's (see PROFILE_OFF)
-    def glass_undo(self):
-        """how much of the glass's curve is undone: 0 as seen on a Vectrex (Glass curvature 1), 1 even squares (0)"""
+    def glass_undo(self, k=None):
+        """how much of the glass's curve is undone: 0 as seen on a Vectrex (Glass curvature 1), 1 even squares (0) - only
+        with the tube's map on (k > 0; None: as set), which has the curve in it. Without it the picture is flat and
+        nothing is undone: undoing a curve that is not there stretched the picture's edges (the owner, 2026-11-25:
+        Glass curvature 0 has to mean no curve)"""
+        if k is None:
+            k = getattr(self, 'geom_k', 1.0) if getattr(self, 'curve_on', False) else 0.0
+        if k <= 0:
+            return 0.0
         return max(0.0, min(1.0, 1.0 - float(getattr(self, 'glass_curve', 1.0))))
     line_half = False                # Basic: the lines drawn at the phosphor's size too (softer; a quarter of the work)
     phos_full = True                 # Ultra's fidelity: the afterglow in full colour, both parts (else packed: half the

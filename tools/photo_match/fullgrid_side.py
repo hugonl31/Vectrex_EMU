@@ -54,6 +54,10 @@ def cut(a, cx, cy):
     o = np.zeros((h, w, 3), np.float32); sx0, sy0 = max(0, X0), max(0, Y0); sx1, sy1 = min(a.shape[1], X0 + w), min(a.shape[0], Y0 + h)
     o[sy0 - Y0:sy1 - Y0, sx0 - X0:sx1 - X0] = a[sy0:sy1, sx0:sx1]; return o
 P, M, I = fit(cut(ph, pcx, pcy)), fit(cut(ms, mcx, mcy)), fit(cut(ids, mcx, mcy))
+# (the photo at the emulator's total light, as rawcmp: exposed for the detail, the camera shows the lines brighter)
+light = lambda a: ((np.asarray(a, np.float32) / 255.0) ** 2.2)[np.asarray(a).max(2) > 12].sum()
+kp = (light(M) / light(P)) ** (1 / 2.2); print('photo scaled by %.3f' % kp, flush=True)
+P = Image.fromarray(np.clip(np.asarray(P, np.float32) * kp, 0, 255).astype(np.uint8))
 panels = [(P, 'Real Vectrex (photo)'), (M, 'Vectrex_EMU: the measured tube'), (I, 'A perfect grid (an ideal tube)')]
 W = sum(p_.width for p_, _ in panels) + 20 * 4; im = Image.new('RGB', (W, Hh + 50), (6, 6, 6)); d = ImageDraw.Draw(im); x = 20
 for p_, t in panels: im.paste(p_, (x, 44)); d.text((x, 8), t, fill=(235, 160, 60), font=f); x += p_.width + 20

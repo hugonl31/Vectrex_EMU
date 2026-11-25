@@ -840,11 +840,8 @@ static void read_options (void)
 #endif
 	raw_groom = TRI ("vectrex_emu_room_glass"); opt_room_glass = raw_groom > 0;
 	if (unit_known) { unit_make (unit_preset (), optv); if (vx_ok ()) { emu_wait_ext (); unit_live (unit_addon); } }   /* (the unit, while running) */
-#ifdef VX_EMUVR
-	opt_async = opt_is ("vectrex_emu_threaded", "on");   /* (EmuVR: off - no key in its list; the builder, 2026-11-25) */
-#else
-	opt_async = !opt_is ("vectrex_emu_threaded", "off");
-#endif
+	opt_async = !opt_is ("vectrex_emu_threaded", "off");   /* (EmuVR too, no key there: on, as the PC - UVMC2 / PiTrex only, plain carts
+	                                              run as before; single-threaded VecDoom's ARM bursts missed 1.5 % of 90 Hz frames, the builder 2026-11-25) */
 	{ const int w = atoi (optv ("vectrex_emu_white")); opt_white = w >= 5600 && w <= 16000 ? w : 12000; }   /* (the desktop's 5600 - 16000 K; "6504 K (neutral)" before 2026-11-23 reads as 6504) */
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");

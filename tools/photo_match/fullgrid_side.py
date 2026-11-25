@@ -19,7 +19,7 @@ def render(geom, curve, edge):
     fr = []
     for i in range(3): h.run(); fr.append(h.grab().astype(np.float32)[..., :3])   # (a third of the grid a frame: the three together - at the cart's own 50 Hz, or the thirds land in the wrong places)
     h.close(); return np.max(fr, 0)
-meas, ideal, meas_raw = render('on', '1.00', 'on'), render('off', '0.00', 'on'), render('on', '1.00', 'off')
+meas, ideal, meas_raw = render('on', '1.00', 'on'), render('off', '1.00', 'on'), render('on', '1.00', 'off')   # (perfect: the tube map off; the glass curvature stays 1 - at 0 it takes the glass's curve out of a picture that has none and stretches the edges)
 lin = rawpy.imread(DNG).postprocess(gamma=(1, 1), no_auto_bright=True, output_bps=16, use_camera_wb=True, half_size=True).astype(np.float32) / 65535
 lin = cv2.resize(lin, (1512, 2016), interpolation=cv2.INTER_AREA)   # (the fit's overlay picture's size)
 L = lin.max(2); p = np.percentile(L[L > np.percentile(L, 98)], 95); ph = np.clip(lin / p * 0.9, 0, 1) ** (1 / 2.2) * 255

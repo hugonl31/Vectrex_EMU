@@ -85,6 +85,8 @@ final class Library extends LinearLayout implements Screens.Closing {
 		srow.addView (search, new LayoutParams (0, (int) m.dp (40), 1));
 		size = Screens.button (m, "", false); size.setTextSize (12); size.setOnClickListener (v -> sizeMenu ());
 		LayoutParams sp = new LayoutParams (-2, (int) m.dp (40)); sp.leftMargin = (int) m.dp (8); srow.addView (size, sp);
+		if (Pack.token (m) == null) { TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (12); get.setOnClickListener (v -> { m.pop (); Getter.show (m); });   /* (the download page: here too) */
+			LayoutParams gp = new LayoutParams (-2, (int) m.dp (40)); gp.leftMargin = (int) m.dp (8); srow.addView (get, gp); }
 		LayoutParams srp = new LayoutParams (-1, -2); srp.topMargin = (int) m.dp (8); head.addView (srow, srp);
 		HorizontalScrollView hs = new HorizontalScrollView (m); hs.setHorizontalScrollBarEnabled (false); chips = new LinearLayout (m);
 		for (String f : new String[] { "All", "Recent", "Games", "UVMC2", "PiTrex", "Tests" }) { TextView c = Screens.button (m, f, false); c.setTextSize (13); c.setTag (f);

@@ -516,7 +516,11 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void tuneWait (long t0)
 	{
 		final int t = VX.tuning (), st = VX.status ();
-		if (t == 3 && !tuneAsked) { tuneAsked = true; status ("A short test of this device first"); askTune (); }
+		if (t == 3 && !tuneAsked && getterFirst ()) {   /* (the public build's first start: the games first, the device test after them -
+			                                         the owner, 2026-11-25: the download page broke into the test) */
+			tuneAsked = true; prefs.edit ().putBoolean ("getter.offered", true).apply (); log ("first start: get games & extras, then the device test");
+			status ("First the games"); Screens.Panel g = Getter.show (this); g.onClose = this::testAfterDownloads; }
+		else if (t == 3 && !tuneAsked) { tuneAsked = true; status ("A short test of this device first"); askTune (); }
 		else if (t == 3 && stack.isEmpty ()) VX.tuneAnswer (-1);   /* (the question closed without an answer: later) */
 		if (t == 1) { final String s = "Testing this device (once)...\n" + VX.tuneStatus (); if (!s.equals (tuneSaid)) { tuneSaid = s; status (s); } }
 		if (st < 0 || t == 2 || (t == 0 && System.currentTimeMillis () - t0 > 60000)) {
@@ -528,6 +532,12 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 			if (t == 2 && tuneRan && !VX.tuneReport ().isEmpty ()) tuneReport (VX.tuneReport (), greet); else greet.run ();
 			return; }
 		h.postDelayed (() -> tuneWait (t0), 100);
+	}
+	boolean getterFirst () { return Pack.token (this) == null && !prefs.getBoolean ("getter.offered", false) && Getter.count (Getter.present (this), Getter.GCE) == 0; }
+	void testAfterDownloads ()   /* (the download page closed: its downloads finished first - the test measures this device alone) */
+	{
+		if (Getter.anyBusy ()) { status ("Downloading...\nThe device test follows"); if (stack.isEmpty ()) { hold (true); } h.postDelayed (this::testAfterDownloads, 500); return; }
+		status ("A short test of this device"); askTune ();
 	}
 	/* the question before the test - what it does, how long, that it never runs in a game */
 	void askTune ()

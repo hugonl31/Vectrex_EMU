@@ -3321,6 +3321,9 @@ class App:
                  "have the same ROM.")
             item(m, 'Find public games...', '', self.find_players_window,
                  "The game room: the public games waiting for a player 2, with their gamer names - join one with a click.")
+            item(m, 'Find games on local network (LAN)...', '', lambda: self.online_window('join'),   # (the owner, 2026-11-25: the list was only behind Join with a code)
+                 "The games hosted on this local network - another PC's Online > Host on local network, a phone's On this "
+                 "Wi-Fi: listed under 'Games on this network', one click joins. No internet needed.")
             m.add_separator()
             item(m, 'Chat...', 'Ctrl+T', self.chat_window,
                  "Write to the other player while you play: the Chat window (it also opens by itself when they write).")

@@ -377,7 +377,7 @@ final class Getter {
 	static final String[] SITE = { "archive.org", "archive.org, GitHub", "vide.malban.de", "spatula-city.org", "this project's GitHub" };
 	static final int N = TITLE.length;
 	static final boolean[] busy = new boolean[N];
-	static void show (Main m)
+	static Screens.Panel show (Main m)
 	{
 		Main.log ("ui get games & extras"); m.findContent (); Set<String> have = present (m);
 		Screens.Panel p = new Screens.Panel (m, "Get games & extras");
@@ -394,8 +394,9 @@ final class Getter {
 		p.row ("Add files...", "Games (.bin, .vec, a zip of them), the speech ROM, a PiTrex SD card zip", () -> pick (m));
 		p.header ("Notice");
 		p.foot (DISCLAIMER);
-		rows = det; m.push (p);
+		rows = det; m.push (p); return p;
 	}
+	static boolean anyBusy () { for (boolean b : busy) if (b) return true; return false; }
 	static TextView[] rows;
 	static void say (Main m, int k, String s) { m.h.post (() -> { if (rows != null && rows[k] != null) rows[k].setText (s); }); }
 	static void start (Main m, int[] ks)

@@ -139,6 +139,7 @@ final class Screens {
 		LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams (-1, -2); alp.topMargin = (int) m.dp (14); alp.bottomMargin = (int) m.dp (8); p.col.addView (acts, alp);
 		p.row ("All settings", "The picture, the overlay, the sound, the controls...", () -> { m.pop (); settings (m); });
 		p.row ("Online: play with a friend", Online.playing ? "Playing online now" : "Host or join - phones and PCs together", () -> { m.pop (); Online.show (m); });
+		if (Pack.token (m) == null) p.row ("Get games & extras", "the original games, free homebrew, the PiTrex, box art - or your own files", () -> { m.pop (); Getter.show (m); });
 		p.header ("Vectrex hardware");
 		p.row ("Eject / insert cartridge", "Mine Storm without a cartridge", () -> { VX.act (2, 0); m.pop (); });
 		final int p2 = VX.ofind ("vectrex_emu_port2");

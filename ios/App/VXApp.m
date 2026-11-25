@@ -1369,7 +1369,7 @@ static void vxa_set_opt (int i, NSString *v)
 	CGRect df = CGRectMake (s.left, below ? CGRectGetMaxY (pic) : CGRectGetMaxY (pic) - h, v.width - s.left - s.right, h);
 	if (!CGRectEqualToRect (df, _deck.frame)) _deck.frame = df;
 	BOOL show = YES;
-	if (m == 3) { show = CACurrentMediaTime () < _popUntil || vx_app_paused () || vxa_holding; [_deck.superview bringSubviewToFront:_deck]; }
+	if (m == 3) { show = CACurrentMediaTime () < _popUntil || vx_app_paused () || vxa_holding || !vx_app_power_on (); [_deck.superview bringSubviewToFront:_deck]; }   /* (switched off: its OFF in sight) */
 	if (_deck.hidden == show) { _deck.hidden = !show; if (show) [dk tick]; }
 	const BOOL tab = NO; if (_popTab.hidden != !tab) _popTab.hidden = !tab;   /* (no tab: a tap on the picture's foot opens the pop-up deck) */
 	if (tab) { CGRect tf = CGRectMake (CGRectGetMidX (pic) - 32, CGRectGetMaxY (pic) - 14, 64, 26); if (!CGRectEqualToRect (tf, _popTab.frame)) { _popTab.frame = tf; [_popTab viewWithTag:5].frame = CGRectMake (10, 12, 44, 14); } }

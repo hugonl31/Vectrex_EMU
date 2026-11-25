@@ -34,9 +34,10 @@ JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/d8.bat" --release --min-api 28 --lib
 mkdir -p $O/res/mipmap-xxxhdpi; python -c "
 from PIL import Image; im = Image.open('../icons/ios_icon_1024.png').convert('RGBA'); im.resize((192, 192), Image.LANCZOS).save('$O/res/mipmap-xxxhdpi/ic_launcher.png')"
 rm -f $O/assets/token.txt $O/assets/logtoken.txt
-# the token: the private build - the content from the project's server and the live log; PUBLIC=1 - the public build's
-# own files and Get games & extras, the live log still sent (the owner: kept until the app is ready); RELEASE=1 - nothing
-if [ -s "$PRIV/tok.txt" ] && [ -z "$RELEASE" ]; then if [ -n "$PUBLIC" ]; then cp "$PRIV/tok.txt" $O/assets/logtoken.txt; else cp "$PRIV/tok.txt" $O/assets/token.txt; fi; fi
+# (VX_ names: Windows itself sets PUBLIC = C:SERSPUBLIC - EVERY BUILD WAS THE PUBLIC ONE)
+# THE TOKEN: THE PRIVATE BUILD - THE CONTENT from the project's server and the live log; VX_PUBLIC=1 - the public build's
+# own files and Get games & extras, the live log still sent (the owner: kept until the app is ready); VX_RELEASE=1 - nothing
+if [ -s "$PRIV/tok.txt" ] && [ -z "$VX_RELEASE" ]; then if [ -n "$VX_PUBLIC" ]; then cp "$PRIV/tok.txt" $O/assets/logtoken.txt; else cp "$PRIV/tok.txt" $O/assets/token.txt; fi; fi
 rm -rf $O/assets/shipped   # (the shipped pictures: added below, not through aapt2 - its Windows build wrote "\" in their zip names)
 "$BT/aapt2.exe" compile -o $O/res.zip --dir $O/res
 "$BT/aapt2.exe" link -o $O/base.apk -I "$JAR" --manifest AndroidManifest.xml --min-sdk-version 28 --target-sdk-version 34 --version-code $CODE --version-name "$VER" -A $O/assets $O/res.zip

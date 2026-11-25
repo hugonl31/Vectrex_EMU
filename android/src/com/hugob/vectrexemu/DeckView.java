@@ -210,11 +210,14 @@ final class DeckView extends View {
 		switch (e.getActionMasked ()) {
 		case MotionEvent.ACTION_DOWN:
 			downX = x; downY = y; downT = System.currentTimeMillis (); m.deckPoked ();
+			if (rv.contains (x, y) && power == 0 && mode != 1) {   /* (off - the bar down to 0: a touch on it switches on, at the volume before) */
+				VX.act (3, 0); power = 1; performHapticFeedback (HapticFeedbackConstants.LONG_PRESS); Main.log ("deck: switched on (bar)"); invalidate (); return true; }
 			if (rv.contains (x, y)) { volDrag = true; lastAng = ang (x, y); if (mode != 1) setBar (x); postDelayed (longPress, 600); }
 			return true;
 		case MotionEvent.ACTION_MOVE:
 			if (volDrag) { if (Math.hypot (x - downX, y - downY) > 8 * d) removeCallbacks (longPress);
-				if (mode != 1) setBar (x); else { float a = ang (x, y), da = a - lastAng; if (da > 180) da -= 360; if (da < -180) da += 360; lastAng = a; if (power != 0) { VX.act (4, da / 270.0); vol = Math.max (0, Math.min (100, vol + Math.round (da / 2.7f))); invalidate (); } } }
+				if (mode != 1) setBar (x); else { float a = ang (x, y), da = a - lastAng; if (da > 180) da -= 360; if (da < -180) da += 360; lastAng = a; if (power != 0 || da > 0) { if (power == 0) { power = 1; vol = 0; Main.log ("deck: switched on (knob)"); }   /* (off: turned up switches on, as the Vectrex) */
+					VX.act (4, da / 270.0); vol = Math.max (0, Math.min (100, vol + Math.round (da / 2.7f))); invalidate (); } } }
 			return true;
 		case MotionEvent.ACTION_UP:
 			removeCallbacks (longPress);

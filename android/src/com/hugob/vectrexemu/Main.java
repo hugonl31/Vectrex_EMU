@@ -396,7 +396,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		FrameLayout.LayoutParams l = (FrameLayout.LayoutParams) deck.getLayoutParams ();
 		if (l.topMargin != top || l.height != h || l.leftMargin != insL || l.rightMargin != insR) { l.topMargin = top; l.height = h; l.leftMargin = insL; l.rightMargin = insR; l.gravity = android.view.Gravity.TOP; deck.setLayoutParams (l); }
 		deck.mode = look == 1 ? 1 : 2;
-		boolean show = dm != 3 || System.currentTimeMillis () < popUntil || !stack.isEmpty () || deck.paused != 0;   /* (the pop-up: a while after a touch, while paused) */
+		boolean show = dm != 3 || System.currentTimeMillis () < popUntil || !stack.isEmpty () || deck.paused != 0 || deck.power == 0;   /* (the pop-up: a while after a touch, while paused, while switched off - its OFF in sight) */
 		deck.setVisibility (show ? View.VISIBLE : View.GONE);
 		popTab.setVisibility (View.GONE);   /* (no tab: a tap on the picture's foot opens the pop-up deck) */
 		if (dm == 3) { FrameLayout.LayoutParams t = (FrameLayout.LayoutParams) popTab.getLayoutParams (); t.gravity = android.view.Gravity.TOP;

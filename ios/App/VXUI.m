@@ -1174,7 +1174,13 @@ extern double vx_app_volume (void); extern void vx_app_turn (double d); extern v
 	CGRect t = _tr.frame; if (t.size.width <= 0 || !vx_app_power_on ()) return;
 	const double want = MAX (0.0, MIN (1.0, (p.x - t.origin.x) / t.size.width)); vx_app_turn (want - vx_app_volume ()); [self show];
 }
-- (BOOL) beginTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { [self setTo:[t locationInView:self]]; [self sendActionsForControlEvents:UIControlEventValueChanged]; return YES; }
+- (BOOL) beginTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e
+{
+	if (!vx_app_power_on ()) {   /* (off - the bar down to 0: a touch on it switches on, at the volume before - it ignored every touch, the owner 2026-11-25) */
+		vx_app_power (); [self show]; [[UIImpactFeedbackGenerator new] impactOccurred]; ulog (@"deck: switched on (bar)");
+		[self sendActionsForControlEvents:UIControlEventValueChanged]; return NO; }
+	[self setTo:[t locationInView:self]]; [self sendActionsForControlEvents:UIControlEventValueChanged]; return YES;
+}
 - (BOOL) continueTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { [self setTo:[t locationInView:self]]; [self sendActionsForControlEvents:UIControlEventValueChanged]; return YES; }
 - (void) endTrackingWithTouch:(UITouch *)t withEvent:(UIEvent *)e { ulog ([NSString stringWithFormat:@"deck: volume %.0f %%", vx_app_volume () * 100]); }
 - (void) press:(UILongPressGestureRecognizer *)g

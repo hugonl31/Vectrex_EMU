@@ -490,6 +490,9 @@ static const struct vx_opt OPTS[] = {
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|basic|low|medium|high|ultra" },
 	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green.", "blue|green" },
+#if VX_TINT_DEFAULT
+	{ "vectrex_emu_faint", "video", "Faint vectors (test)", "The colour faint vectors go to (bright ones stay as they are) - for matching a real Vectrex. A white of 15000 / 12000 / 9000 K; tube white: the bright lines' own white (a little cyan); blue: as before.", "15000 K|12000 K|9000 K|tube white|blue (before)" },
+#endif
 	{ "vectrex_emu_gamelist", "video", "Game list", "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder.", "library|simple" },
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
 	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
@@ -882,6 +885,10 @@ static void read_options (void)
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
 	{ const int lo = !opt_is ("vectrex_emu_gamelist", "simple"); if (lo != lib_on) { lib_on = lo; if (br_open) br_show (1); } }
+#if VX_TINT_DEFAULT
+	{ extern int vx_tint_mode; extern float vx_tint_k; const char *f = optv ("vectrex_emu_faint");   /* (the test build's Faint vectors: gpu_phos.c PH_FS_SAT) */
+	  if (f && *f) { vx_tint_mode = !strcmp (f, "blue (before)") ? 0 : 2; vx_tint_k = !strcmp (f, "tube white") ? 0.0f : (float) atof (f); } }
+#endif
 	{ extern int vx_palette; const int pl = opt_is ("vectrex_emu_palette", "green"); if (pl != vx_palette) { vx_palette = pl; dk_dirty_set = 1; } }
 	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }
 	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0;

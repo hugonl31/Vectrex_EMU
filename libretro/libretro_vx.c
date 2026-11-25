@@ -3804,7 +3804,8 @@ static size_t vx_raw, vx_size; static int vx_inited;
  *  cycles, the start - at most ST_L a frame (ST_E an eye): RetroArch's netplay keeps a ring of states and sends one to who
  *  joins; at 40000 lines of 48 bytes reserved for each list a state was 19 MB and the join failed, 2026-11-15. A 6809 game
  *  draws a few thousand at most; more would trim only the picture after a load, never the game) */
-#define ST_L 6000
+#define ST_L MAXL   /* (a list whole: 6000 cut Vectrexians' ~15000 beam pieces a frame - after each run-ahead load the
+                        *  frames drawn lacked most of the formation, 2026-11-25) */
 #define ST_E 3000
 #define LREC 26
 static unsigned char *put_lines (unsigned char *o, const line_t *L, int n, int cap)

@@ -44,9 +44,27 @@ def centre(xs, ys, W, H):
 pxs, pys = lines(ph); pcx, pcy, pdx, pdy = centre(pxs, pys, ph.shape[1], ph.shape[0])
 exs, eys = lines(meas); ecx, ecy, edx, edy = centre(exs, eys, meas.shape[1], meas.shape[0])
 print('photo: %d cols, %d rows, middle cell %.1f x %.1f px; emulator: %d cols, %d rows, middle cell %.1f x %.1f px' % (len(pxs), len(pys), pdx, pdy, len(exs), len(eys), edx, edy), flush=True)
-k = pdx / edx; print('emulator scaled by %.3f (rows would want %.3f)' % (k, pdy / edy), flush=True)
-def scaled(a): return cv2.resize(a, None, fx=k, fy=k, interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR)
-ms, ids = scaled(meas), scaled(ideal); mcx, mcy = ecx * k, ecy * k
+def span(ls, c, n):
+    """the distance from the n-th line left (above) of the middle one to the n-th right (below)"""
+    i = int(np.argmin(abs(ls - c))); n = min(n, i, len(ls) - 1 - i); return ls[i + n] - ls[i - n], n
+sxp, nx = span(pxs, pcx, 9); sxe, _ = span(exs, ecx, nx); syp, ny = span(pys, pcy, 9); sye, _ = span(eys, ecy, ny)
+kx, ky = sxp / sxe, syp / sye        # (the same grid lines the same distance apart: the whole grid the photo's size)
+print('emulator scaled by %.3f across (%d lines each side), %.3f down (%d)' % (kx, nx, ky, ny), flush=True)
+def scaled(a): return cv2.resize(a, None, fx=kx, fy=ky, interpolation=cv2.INTER_AREA)
+ms, ids = scaled(meas), scaled(ideal)
+def shift(p, e):
+    """the offset that lays the emulator's lines (scaled) on the photo's: every pairing of the two line sets a few lines
+    apart, the one with the smallest spread wins - the same grid line on both, not just the nearest one"""
+    best = None
+    for o in range(-3, 4):
+        pairs = [(p[j + o], e[j]) for j in range(len(e)) if 0 <= j + o < len(p)]
+        if len(pairs) < 12: continue
+        d = np.array([a - b for a, b in pairs]); t = np.median(d); r = np.sqrt(np.mean((d - t) ** 2))
+        if best is None or r < best[0]: best = (r, t, o)
+    return best
+rx_, tx, ox = shift(pxs, exs * kx); ry_, ty, oy = shift(pys, eys * ky)
+print('lines paired: across offset %d (rms %.1f px), down offset %d (rms %.1f px)' % (ox, rx_, oy, ry_), flush=True)
+mcx, mcy = pcx - tx, pcy - ty        # (the emulator's point under the photo's middle crossing)
 # one window for all three: the photo's lit area, around the middle crossing
 y0, y1, x0, x1 = box(ph, 25); hw0, hw1, hh0, hh1 = pcx - x0, x1 - pcx, pcy - y0, y1 - pcy
 def cut(a, cx, cy):

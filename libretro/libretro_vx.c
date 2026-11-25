@@ -431,12 +431,12 @@ static void cart_poll (void)
 #define VX_TRAIL_DEF 1.0
 static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and the bezel's look - scratches, plastic glow, case mirror / wear, the tube face's grey - read by
 	                                         the mod from its own UserData file; the sheet's "look" line keeps their defaults for older mods) */
-	{ "vectrex_emu_screen_light", "Screen light in EmuVR (all of the picture alike - the trail ends up at this / the dots level); 2.4x|1x|1.5x|2x|2.8x|3x|4x" },
-	{ "vectrex_emu_dot_level", "Screen light in EmuVR: what is the brightest (the beam's dots and corners at 2 - lines below them by their speed); 2|1.5|2.5|3|4" },
+	{ "vectrex_emu_screen_light", "Screen light in EmuVR (CPU picture - all of the picture alike - the trail ends up at this / the dots level); 2.4x|1x|1.5x|2x|2.8x|3x|4x" },
+	{ "vectrex_emu_dot_level", "Screen light in EmuVR (CPU picture): what is the brightest (the beam's dots and corners at 2 - lines below them by their speed); 2|1.5|2.5|3|4" },
 	{ "vectrex_emu_imager", "3D Imager; vr side by side|colour|left eye|right eye|off" },
 	{ "vectrex_emu_swap_eyes", "3D Imager: swap eyes; off|on" },
 	{ "vectrex_emu_eye_shift", "3D Imager: right eye's picture left (-) or right (+), pixels; 0|-10|-20|-30|-40|-50|-60|-70|-80|-90|-100|-110|-120|-130|-140|-150|-160|10|20|30|40|50|60|70|80|90|100|110|120|130|140|150|160" },
-	{ "vectrex_emu_beam", "Beam width; thin|medium|wide" },
+	{ "vectrex_emu_beam", "Beam width (CPU picture); thin|medium|wide" },
 	{ "vectrex_emu_area", "Picture area (from the next game start); glass window 145.7x188.5 mm|overlay sheet 162x207 mm" },
 	{ "vectrex_emu_console", "Console model: its glass window (from the next game start); auto|classic|owner's CAD model" },   /* (route A, 2026-11-25: auto = as the mod says) */
 	{ "vectrex_emu_renderer", "Picture (from the next game start): GPU - as the PC's - or the CPU's (the picture before); GPU|CPU only" },
@@ -444,24 +444,24 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_rate", "Screen rate (from the next game start); 90 Hz|72 Hz|80 Hz|120 Hz|144 Hz|60 Hz|50 Hz (game)" },
 	{ "vectrex_emu_smooth", "Smooth motion (not at 50 Hz); on|off" },
 	{ "vectrex_emu_fill", "Fill skipped lines (not as a real Vectrex); off|on" },
-	{ "vectrex_emu_corner_glow", "Corner glow; on|off" },
+	{ "vectrex_emu_corner_glow", "Corner glow (CPU picture); on|off" },
 	{ "vectrex_emu_bending", "Brightness bending; on|off" },
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
 	{ "vectrex_emu_unit", "Vectrex unit (the owner's measured one: as his console draws); owner's Vectrex (measured)|ideal" },
 	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
 	{ "vectrex_emu_glass_curve", "Glass curvature (1: as on a Vectrex, 0: even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
-	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (fine detail, off: VR hardly shows it); off|on" },
+	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (CPU picture - fine detail, off: VR hardly shows it); off|on" },
 	{ "vectrex_emu_white", "White balance; 12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
-	{ "vectrex_emu_glow", "Phosphor glow (bloom); off|on|strong" },
-	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow); on|long (real Vectrex)|short|off" },
+	{ "vectrex_emu_glow", "Phosphor glow (bloom - CPU picture); off|on|strong" },
+	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow - CPU picture); on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_vr_bright", "VR brightness (the whole picture brighter or dimmer - 1x is the PC's look); 1.0x|0.5x|0.75x|1.25x|1.5x|1.75x|2.0x|2.5x|3.0x" },
-	{ "vectrex_emu_brightness", "Brightness (VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
-	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
+	{ "vectrex_emu_brightness", "Brightness (CPU picture - VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
+	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (CPU picture - VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
 	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white - bright vectors on a dim screen; Vectrex: as a real Vectrex - dots and slow lines stand out, wants a bright screen); bright|vectrex" },
-	{ "vectrex_emu_corner_dots", "Corner dots (the beam resting); on|off" },
-	{ "vectrex_emu_dwell", "Dwell spots inside strokes; on|off" },
-	{ "vectrex_emu_speed_bright", "Fast sweeps fainter; on|off" },
+	{ "vectrex_emu_corner_dots", "Corner dots (CPU picture - the beam resting); on|off" },
+	{ "vectrex_emu_dwell", "Dwell spots inside strokes (CPU picture); on|off" },
+	{ "vectrex_emu_speed_bright", "Fast sweeps fainter (CPU picture); on|off" },
 	{ "vectrex_emu_wobble", "Mains hum wobble; 50 Hz|60 Hz|off" },
 	{ "vectrex_emu_buzz", "Vectrex buzz; on|off" },
 	{ "vectrex_emu_speaker", "Vectrex speaker sound; on|off" },
@@ -809,10 +809,6 @@ static void read_options (void)
 	  opt_trail = (float) (t < 0.05 ? 0.05 : t > 10.0 ? 10.0 : t); }
 	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) * VX_TRAIL_DEF : VX_TRAIL_DEF;   /* (1x: the default) */
 	  opt_trail_k = k >= 0.25 && k <= 6.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */
-#ifdef VX_EMUVR
-	if (!opt_is ("vectrex_emu_renderer", "CPU only")) opt_trail_k *= 1.5f;   /* (the GPU picture: the PC's trail, 1.5x on black - its tuning
-	                                              kept exactly, the owner 2026-11-25; the CPU's picture keeps its own 1x) */
-#endif
 	{ extern int vx_app_noshape, vx_app_dots; extern float vx_hdr_lift, vx_trail_mul;   /* (the look - as the own apps' setting; they set it themselves) */
 	  if (!vx_app_noshape) { const int v = opt_is ("vectrex_emu_look", "vectrex"); vx_hdr_lift = v ? 2.0f : 0.0f; vx_trail_mul = v ? 2.1f : 1.0f; vx_app_dots = 1; } }
 	{ struct retro_variable v = { "vectrex_emu_brightness", NULL }; double k = !opt_gone (v.key) && env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) : 1.0;
@@ -852,6 +848,12 @@ static void read_options (void)
 	{ const int w = atoi (optv ("vectrex_emu_white")); opt_white = w >= 5600 && w <= 16000 ? w : 12000; }   /* (the desktop's 5600 - 16000 K; "6504 K (neutral)" before 2026-11-23 reads as 6504) */
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
+	/* (2026-11-25, the owner: the GPU picture is the PC's tuning exactly - the old CPU picture's look keys (glow, beam width, brightness,
+	 *  the trail's length and strength, smooth bends) act on the CPU's picture only; an EmuVR configuration with glow "on" from the CPU days
+	 *  put the core's own bloom over the PC's, its "long" trail made it 1.7x as long) */
+	if (!opt_is ("vectrex_emu_renderer", "CPU only")) {
+		opt_glow = 0; raw_glow = 0; opt_sigma = 0.55; opt_bright = 1.0f; opt_after = 1; opt_trail = 0.6f;
+		opt_trail_k = 1.5f; opt_sbend = 0; raw_sbend = 0; }
 	opt_trail_k0 = opt_trail_k;                 /* (EmuVR: one trail brightness; the RetroArch flavour reads its own below) */
 	{ int was = opt_overlay_seen; opt_overlay_seen = opt_overlay; if (was != opt_overlay) ov_on = opt_overlay; }   /* (only when the option itself changed:
 	                                              a change of another option keeps the button's choice) */
@@ -3227,6 +3229,11 @@ void retro_run (void)
 }
 static void retro_run_one (void)
 {
+#ifdef VX_EMUVR
+	{ static int told; static long runs; static double t0; int av = 3; const int rc = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av); runs++;
+	  if (!told) { told = 1; t0 = vt_wall (); fprintf (stderr, "[vectrex_emu] run-ahead check: GET_AUDIO_VIDEO_ENABLE answered %d, value %d (bit 1 video, 2 audio)\n", rc, av); fflush (stderr); }
+	  else if (vt_wall () - t0 >= 10.0) { t0 = vt_wall (); fprintf (stderr, "[vectrex_emu] runs in 10 s: %ld - shown %ld, hidden %ld (so far)\n", runs, vx_shown, vx_hidden); fflush (stderr); runs = 0; } }
+#endif
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
 	wd_runs++; wd_thr_set ();

@@ -494,7 +494,10 @@ static void gpu_reset (void)
 	  unsigned char *im = stbi_load (p, &w, &h, &n, 4);
 	  if (im) { glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, im); stbi_image_free (im); g_smap_ok = 1; }
 	  else { static const unsigned char z[4] = { 0, 0, 0, 255 }; glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, z);
-	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p); } }
+#ifndef VX_EMUVR
+	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p);
+#endif
+	       } }
 	{ static const char *DKF = "in vec2 vuv; out vec4 fragc; uniform sampler2D t; uniform int rot; uniform vec4 crop;\n"
 		"void main() { vec2 a = vuv; vec2 q = rot == 1 ? vec2(a.y, 1.0 - a.x) : rot == 2 ? vec2(1.0 - a.x, 1.0 - a.y) : rot == 3 ? vec2(1.0 - a.y, a.x) : a;\n"
 		"  vec2 p = crop.xy + q * (crop.zw - crop.xy);\n"
@@ -508,7 +511,11 @@ static void gpu_reset (void)
 	gpu_ok = 1;
 	scr_detect ();                                    /* (Picture size auto: the screen's size) */
 	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */
+#ifdef VX_EMUVR
+	fprintf (stderr, "[vectrex_emu] GPU: %s - %s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? "the light only (EmuVR: no glass, case, room light or overlay)" : "not available - the CPU's picture");
+#else
 	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there%s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? ", the light too" : "");
+#endif
 }
 static void gpu_destroy (void) { fprintf (stderr, "[vectrex_emu] GPU: context destroyed\n"); ph_lost (); gpu_ok = 0; gq_ok = -1; gq_cur = -1; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
 

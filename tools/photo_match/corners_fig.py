@@ -6,7 +6,12 @@ def bbox(a, thr):
     m = nd.gaussian_filter(a.max(2), 2) > thr; ys, xs = np.nonzero(m); return ys.min(), ys.max(), xs.min(), xs.max()
 r = np.asarray(Image.open(S + '/' + (sys.argv[2] if len(sys.argv) > 2 else 'corner_real_wb.png')).convert('RGB')).astype(np.float32)   # (the RAW as shot: white balance 6400 K, the screen's own white)
 e = np.asarray(Image.open(S + '/corner_now_v.png').convert('RGB')).astype(np.float32)
-ry0, ry1, rx0, rx1 = bbox(r, 40); ey0, ey1, ex0, ex1 = bbox(e, 25)
+def content_box(a):   # (the drawn content's own extent: bright lines, high-passed - as rawcmp.py; not the photo's glare)
+    g = a.max(2); g = np.clip(g - nd.gaussian_filter(g, 12), 0, None); ys, xs = np.nonzero(g > 0.3 * np.percentile(g, 99.9))
+    x0, x1 = np.percentile(xs, [0.2, 99.8]); y0, y1 = np.percentile(ys, [0.2, 99.8]); p_ = 0.03 * max(x1 - x0, y1 - y0)
+    return max(0, int(y0 - p_)), min(a.shape[0] - 1, int(y1 + p_)), max(0, int(x0 - p_)), min(a.shape[1] - 1, int(x1 + p_))
+ry0, ry1, rx0, rx1 = content_box(r); ey0, ey1, ex0, ex1 = content_box(e)
+print('content: photo %.3f, emulator %.3f wide to tall' % ((rx1 - rx0) / (ry1 - ry0), (ex1 - ex0) / (ey1 - ey0)))
 W = 760
 def fit(a): im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)); return np.asarray(im.resize((W, round(im.height * W / im.width)), Image.LANCZOS)).astype(np.float32)
 rc, ec = fit(r[ry0:ry1 + 1, rx0:rx1 + 1]), fit(e[ey0:ey1 + 1, ex0:ex1 + 1])

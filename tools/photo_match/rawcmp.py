@@ -73,6 +73,20 @@ for nm in names:
         s = np.corrcoef(g.ravel(), es.ravel())[0, 1]
         if best is None or s > best[0]: best = (s, k)
     ph = np.ascontiguousarray(np.rot90(ph, best[1]))
+    # the same crop on both: the drawn content's own extent (its bright lines, high-passed - not the photo's glare, glow or
+    # mirror images round it), the same padding; each keeps its shape, the same height (the owner, 2026-11-25)
+    def content_box(a, pad=0.05):
+        g = a.max(2).astype(np.float32); g = np.clip(g - nd.gaussian_filter(g, 12), 0, None); ys, xs = np.nonzero(g > 0.3 * np.percentile(g, 99.9))
+        x0, x1 = np.percentile(xs, [0.2, 99.8]); y0, y1 = np.percentile(ys, [0.2, 99.8]); p_ = pad * max(x1 - x0, y1 - y0)
+        return int(y0 - p_), int(y1 + p_), int(x0 - p_), int(x1 + p_)
+    def cut(a, b):
+        Y0, Y1, X0, X1 = b; o = np.zeros((Y1 - Y0, X1 - X0, 3), np.float32)
+        sx0, sy0, sx1, sy1 = max(0, X0), max(0, Y0), min(a.shape[1], X1), min(a.shape[0], Y1)
+        o[sy0 - Y0:sy1 - Y0, sx0 - X0:sx1 - X0] = a[sy0:sy1, sx0:sx1]; return o
+    bp_, be_ = content_box(ph), content_box(es_[0])
+    asp = lambda b: (b[3] - b[2]) / (b[1] - b[0])
+    print(nm, 'content: photo %.3f, emulator %.3f wide to tall (%+.1f %%)' % (asp(bp_), asp(be_), 100 * (asp(be_) / asp(bp_) - 1)), flush=True)
+    ph = cut(ph, bp_); es_ = [cut(a, be_) for a in es_]; e = es_[0]
     Hh = 640
     fit = lambda a: np.asarray(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).resize((max(1, round(a.shape[1] * Hh / a.shape[0])), Hh), Image.LANCZOS)).astype(np.float32)
     ph = fit(ph); es_ = [fit(a) for a in es_]; e = es_[0]

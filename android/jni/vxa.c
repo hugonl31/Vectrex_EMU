@@ -144,16 +144,20 @@ static void vxa_ts_setup (void)
  * ahead until Android's queue was full, each picture waited in line): before a refresh's work, wait until the display
  * has latched the last picture swapped (EGL_COMPOSITION_LATCH_TIME_ANDROID) - at most one picture queued, the input
  * read just before its picture is made. Up to two refreshes, then on regardless (the old way) */
-static vxa_u64 vxa_pace_fid; static double vxa_pace_t; static long vxa_pace_to, vxa_pace_n;
+static vxa_u64 vxa_pace_fid, vxa_pace_q[2]; static double vxa_pace_t; static long vxa_pace_to, vxa_pace_n;
+static int vxa_pace_depth = 1; static double vxa_pace_fps;   /* (pictures allowed to wait: 1, or 2 where one made the app miss refreshes -
+                                                    Android reports a picture taken about a refresh late: at 120 Hz on the Nova 77-92 pictures a second) */
 static void vxa_pace (double frame)
 {
+	if (frame > 0 && fabs (1.0 / frame - vxa_pace_fps) > 1) { vxa_pace_fps = 1.0 / frame; vxa_pace_depth = 1; }   /* (another rate: one waiting first) */
+	vxa_pace_fid = vxa_pace_q[vxa_pace_depth - 1];
 	if (!vxa_ts_ok || !vxa_pace_fid) return;
 	const EGLint what = 0x3436; const double t0 = vxa_now (), lim = t0 + 2.0 * frame;
 	for (;;) { long long v = -2;
 		if (vxa_fts (vxa_dpy, vxa_surf, vxa_pace_fid, 1, &what, &v) != EGL_TRUE || v != -2) break;
 		if (vxa_now () > lim) { vxa_pace_to++; break; }
 		usleep (250); }
-	vxa_pace_t += vxa_now () - t0; vxa_pace_n++; vxa_pace_fid = 0;
+	vxa_pace_t += vxa_now () - t0; vxa_pace_n++;
 }
 static const char *vxa_lat_smooth (void) { const int i = vxa_opt_find ("vectrex_emu_smooth"); return i >= 0 ? vxa_opt[i].val : "?"; }
 static EGLConfig vxa_cfg; static int vxa_hdr_surf;               /* (the window's surface: extended linear, half floats) */
@@ -655,7 +659,7 @@ static void *vxa_main (void *u)
 		{ /* (input delay: the first picture with the square after an armed press - its frame id for the glass's time) */
 		  extern int vx_pic_lines; const int lit = vx_pic_lines >= 4;
 		  vxa_u64 fid = 0; if (!(vxa_ts_ok && vxa_fid (vxa_dpy, vxa_surf, &fid))) fid = 0;
-		  vxa_pace_fid = fid;
+		  vxa_pace_q[1] = vxa_pace_q[0]; vxa_pace_q[0] = fid;   /* (the last two pictures swapped)*/
 		  if (vxa_lat_armed && lit && !vxa_lat_wait) { vxa_lat_armed = 0; vxa_lat_t1 = vxa_now (); vxa_lat_wait = 1; vxa_lat_ages = 0; vxa_lat_tsw = 0;
 			vxa_lat_fid = fid; }
 		  vxa_lat_dark = !lit; }
@@ -681,7 +685,9 @@ static void *vxa_main (void *u)
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
 				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, zero, multi, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
 			vxa_threads (t);
-			if (vxa_pace_n) { vlog ("pacing: %.1f ms a refresh waiting for the display to take the last picture, %ld of %ld not taken within two refreshes", vxa_pace_t * 1000 / vxa_pace_n, vxa_pace_to, vxa_pace_n);
+			if (vxa_pace_n && vxa_pace_depth == 1 && !vxa_holding && multi > ticks * 3 / 100) { vxa_pace_depth = 2;   /* (one waiting made it miss refreshes: two) */
+				vlog ("pacing: %ld of %ld refreshes missed with one picture waiting - two may wait at %.0f Hz", multi, ticks, vxa_pace_fps); }
+			if (vxa_pace_n) { vlog ("pacing: %d picture%s waiting, %.1f ms a refresh waiting for the display, %ld of %ld not taken within two refreshes", vxa_pace_depth, vxa_pace_depth > 1 ? "s" : "", vxa_pace_t * 1000 / vxa_pace_n, vxa_pace_to, vxa_pace_n);
 				vxa_pace_t = 0; vxa_pace_n = vxa_pace_to = 0; }
 			{ /* (the core's run split up - emulation, Smooth motion, the picture's lines, the afterglow's lines, the GPU's commands:
 			   *  mean and largest a run over these 5 s - as the iOS app's; where a slow refresh's time went) */

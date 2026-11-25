@@ -459,6 +459,8 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (CPU picture - fine detail, off: VR hardly shows it); off|on" },
 	{ "vectrex_emu_white", "White balance; 12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
+	{ "vectrex_emu_skip_intro", "Skip the Vectrex intro (from the next game start - the cartridge starts straight away); off|on" },   /* (2026-11-26, the owner:
+	                                         for his tests; RetroArch 1.7.5 answers only the keys listed here - the desktop list's one never reached EmuVR) */
 	{ "vectrex_emu_glow", "Phosphor glow (bloom - CPU picture); off|on|strong" },
 	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow - CPU picture); on|long (real Vectrex)|short|off" },
 	{ "vectrex_emu_vr_bright", "VR brightness (the whole picture brighter or dimmer - 1x is the PC's look); 1.0x|0.5x|0.75x|1.25x|1.5x|1.75x|2.0x|2.5x|3.0x" },
@@ -2236,7 +2238,8 @@ VX_INLINE uint32_t pixel_out (float r, float g, float b, int x, int y)
 	 * the beam at rest 1.6 - 4), only that clipped; the knee squeezed every line into 91 - 98 %. The screen's light
 	 * (the mod, x light_g) lifts it all alike. And the glass's edge: 3 mm black round its outline, softened (edge_mask) */
 	if (sheet_file) {
-		float k = 1.0f / light_p, e = edge_mask (x, y); r *= k * e; g *= k * e; b *= k * e;
+		float k = 1.0f / light_p; r *= k; g *= k; b *= k; (void) edge_mask;   /* (2026-11-26, the owner: no black edge round the glass - the
+		                                         mod's thick glass runs under the frame; the GPU picture never drew it) */
 		r = r > 1 ? 1 : r; g = g > 1 ? 1 : g; b = b > 1 ? 1 : b;
 		int R0 = (int) (r * 255 + 0.5f), G0 = (int) (g * 255 + 0.5f), B0 = (int) (b * 255 + 0.5f);
 		return (uint32_t) (R0 << 16 | G0 << 8 | B0);

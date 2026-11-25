@@ -208,6 +208,12 @@ void vxs_vars_vecx (void (*add) (void *p, size_t n, int is_long))
 	add (&psg_tout, sizeof psg_tout, 0);
 	add (&ram, sizeof ram, 0);
 	add (&rampdly_gap, sizeof rampdly_gap, 0);
+	add (&rate_ady, sizeof rate_ady, 1);
+	add (&rate_bx, sizeof rate_bx, 0);
+	add (&rate_by, sizeof rate_by, 0);
+	add (&rate_env, sizeof rate_env, 0);
+	add (&rate_ey, sizeof rate_ey, 0);
+	add (&rate_leak, sizeof rate_leak, 0);
 	add (&rdly_frac, sizeof rdly_frac, 0);
 	add (&rdly_frac_t1, sizeof rdly_frac_t1, 0);
 	add (&rom, sizeof rom, 0);

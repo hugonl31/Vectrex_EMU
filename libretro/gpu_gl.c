@@ -128,6 +128,7 @@ static const char *GPU_FS_A =
 	"in vec2 vuv; out vec4 fragc;\n"
 	"uniform sampler2D tex, lmap, smap;\n"
 	"uniform int rot, fx;\n"
+	"uniform float vrk;\n"
 	"uniform vec4 crop;\n"
 	"uniform vec2 norm;\n"
 	"uniform float pxs, bscale, glass, edge, grey, lk;\n"
@@ -327,6 +328,7 @@ static const char *GPU_FS_B =
 	"        c = sqrt(c * c + add * add) * g;\n"
 	"        if (cse > 0.5) c += sdg > -3.0 * pxs ? plastic(gd, tgt, sdg) : vec3((hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0);\n"
 	"    }\n"
+	"    if (vrk != 1.0) c = min(c * vrk, vec3(1.0));\n"
 	"    fragc = vec4(c, 1.0);\n"
 	"}\n";
 
@@ -476,6 +478,7 @@ static void gpu_reset (void)
 	{ GLint lk = 0; glGetProgramiv_ (g_prog, GL_LINK_STATUS, &lk);
 	  if (!lk) { char log[2048] = ""; glGetProgramInfoLog_ (g_prog, sizeof log, NULL, log); fprintf (stderr, "[vectrex_emu] GPU: link: %s\n", log); return; } }
 	for (int i = 0; i < U_N; i++) g_u[i] = glGetUniformLocation_ (g_prog, g_un[i]);
+	g_u_vrk = glGetUniformLocation_ (g_prog, "vrk");
 	glGenVertexArrays_ (1, &g_vao);
 	GLuint t[3]; glGenTextures_ (3, t); g_tex = t[0]; g_lmap = t[1]; g_smap = t[2]; g_tw = g_th = 0;
 	for (int i = 0; i < 3; i++) { glBindTexture_ (GL_TEXTURE_2D, t[i]);
@@ -491,7 +494,10 @@ static void gpu_reset (void)
 	  unsigned char *im = stbi_load (p, &w, &h, &n, 4);
 	  if (im) { glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, im); stbi_image_free (im); g_smap_ok = 1; }
 	  else { static const unsigned char z[4] = { 0, 0, 0, 255 }; glBindTexture_ (GL_TEXTURE_2D, g_smap); glTexImage2D_ (GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, z);
-	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p); } }
+#ifndef VX_EMUVR
+	         fprintf (stderr, "[vectrex_emu] GPU: no %s - no case scratches\n", p);
+#endif
+	       } }
 	{ static const char *DKF = "in vec2 vuv; out vec4 fragc; uniform sampler2D t; uniform int rot; uniform vec4 crop;\n"
 		"void main() { vec2 a = vuv; vec2 q = rot == 1 ? vec2(a.y, 1.0 - a.x) : rot == 2 ? vec2(1.0 - a.x, 1.0 - a.y) : rot == 3 ? vec2(1.0 - a.y, a.x) : a;\n"
 		"  vec2 p = crop.xy + q * (crop.zw - crop.xy);\n"
@@ -505,7 +511,11 @@ static void gpu_reset (void)
 	gpu_ok = 1;
 	scr_detect ();                                    /* (Picture size auto: the screen's size) */
 	ph_reset ();                                      /* (the tube's light there too: gpu_phos.c) */
+#ifdef VX_EMUVR
+	fprintf (stderr, "[vectrex_emu] GPU: %s - %s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? "the light only (EmuVR: no glass, case, room light or overlay)" : "not available - the CPU's picture");
+#else
 	fprintf (stderr, "[vectrex_emu] GPU: %s - the glass and the case drawn there%s\n", gpu_es ? "OpenGL ES 3" : "OpenGL 3.3", ph_ok ? ", the light too" : "");
+#endif
 }
 static void gpu_destroy (void) { fprintf (stderr, "[vectrex_emu] GPU: context destroyed\n"); ph_lost (); gpu_ok = 0; gq_ok = -1; gq_cur = -1; g_prog = g_tex = g_lmap = g_smap = g_vao = 0; g_tw = g_th = 0; }
 
@@ -677,6 +687,10 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	const GLuint ofb = (GLuint) hwr.get_current_framebuffer ();
 	glBindFramebuffer_ (GL_FRAMEBUFFER, ofb);
 	if (dk_on || dk_pop) { ow = TW; oh = TH; }                           /* (the control deck: the block, deck.c) */
+	/* (the 3D Imager's eye pair - EmuVR: the frame two sheets wide, each eye's window side by side in the picture sent, the left eye
+	 *  on the left, as the CPU's frame_out; not turned) */
+	const int pair = VX_GPU_ALL && stereo && fw == 2 * EW && !(dk_on || dk_pop) && !rot;
+	if (pair) ow *= 2;
 	const int dw = rot & 1 ? oh : ow, dh = rot & 1 ? ow : oh;
 	glViewport_ (0, 0, dw, dh);
 	/* (the picture below covers all it shows, opaque: what the frontend's image held is not needed - a tiled GPU (Apple's, Mali,
@@ -692,7 +706,7 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glActiveTexture_ (GL_TEXTURE0);
 	const float nx = 2.0f * GPU_ART_AW, ny = 2.0f * GPU_ART_AH;          /* (the sheet in units) */
 	glUniform1i_ (g_u[U_ROT], rot); glUniform4f_ (g_u[U_CROP], cx0, cy0, cx1, cy1); glUniform2f_ (g_u[U_NORM], nx, ny);
-	glUniform1i_ (g_u[U_FX], gfx.fx);
+	glUniform1i_ (g_u[U_FX], gfx.fx); glUniform1f_ (g_u_vrk, vx_vr_k);   /* (EmuVR's VR brightness: a gain on the picture sent, 1 elsewhere) */
 	const float pxs = ny / (float) fh;                                     /* (one picture pixel, units) */
 	glUniform1f_ (g_u[U_PXS], pxs); glUniform1f_ (g_u[U_BSCALE], 1834.0f * pxs / 2.0f / 3.2f);
 	glUniform1f_ (g_u[U_GLASS], (float) gfx.glass); glUniform1f_ (g_u[U_EDGE], GPU_EDGE); glUniform1f_ (g_u[U_GREY], gfx.grey);
@@ -704,7 +718,11 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glUniform1f_ (g_u[U_CWEAR], g_smap_ok ? gfx.cwear : 0.0f); glUniform3f_ (g_u[U_LC], g_lc[0], g_lc[1], g_lc[2]);   /* (the light turns with the picture in tate: the screen is turned) */
 	glUniform4f_ (g_u[U_SMR], GPU_SCR_BOUNDS[0], GPU_SCR_BOUNDS[1], GPU_SCR_BOUNDS[2], GPU_SCR_BOUNDS[3]);
 	glUniform1f_ (g_u[U_LCA], cosf (GPU_LANG)); glUniform1f_ (g_u[U_LSA], sinf (GPU_LANG));
-	glDrawArrays_ (GL_TRIANGLES, 0, 3);
+	if (pair) for (int e = 0; e < 2; e++) {
+		glViewport_ (e * (dw / 2), 0, dw / 2, dh);
+		glUniform4f_ (g_u[U_CROP], (float) (e * EW + CX0) / fw, cy0, (float) (e * EW + CX0 + CW) / fw, cy1);
+		glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+	else glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	if ((dk_on || dk_pop) && dk_img && dk_prog) {                       /* (the deck under the picture - the pop-up's over it) */
 		if (!dk_tex || dk_tw != dk_w || dk_th != dk_h) { if (!dk_tex) glGenTextures_ (1, &dk_tex); glBindTexture_ (GL_TEXTURE_2D, dk_tex);
 			glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

@@ -4,7 +4,7 @@ from scipy import ndimage as nd
 S = sys.argv[1]
 def bbox(a, thr):
     m = nd.gaussian_filter(a.max(2), 2) > thr; ys, xs = np.nonzero(m); return ys.min(), ys.max(), xs.min(), xs.max()
-r = np.asarray(Image.open(S + '/corner_real_wb.png').convert('RGB')).astype(np.float32)   # (the RAW as shot: white balance 6400 K, the screen's own white)
+r = np.asarray(Image.open(S + '/' + (sys.argv[2] if len(sys.argv) > 2 else 'corner_real_wb.png')).convert('RGB')).astype(np.float32)   # (the RAW as shot: white balance 6400 K, the screen's own white)
 e = np.asarray(Image.open(S + '/corner_now_v.png').convert('RGB')).astype(np.float32)
 ry0, ry1, rx0, rx1 = bbox(r, 40); ey0, ey1, ex0, ex1 = bbox(e, 25)
 W = 760

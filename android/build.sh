@@ -33,13 +33,14 @@ JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/d8.bat" --release --min-api 28 --lib
 # --- the resources (the icon), the assets (the games list's shipped pictures; the private build's token, when there), the package
 mkdir -p $O/res/mipmap-xxxhdpi; python -c "
 from PIL import Image; im = Image.open('../icons/ios_icon_1024.png').convert('RGBA'); im.resize((192, 192), Image.LANCZOS).save('$O/res/mipmap-xxxhdpi/ic_launcher.png')"
-rm -f $O/assets/token.txt; [ -s "$PRIV/tok.txt" ] && cp "$PRIV/tok.txt" $O/assets/token.txt || true
+rm -f $O/assets/token.txt; [ -z "$PUBLIC" ] && [ -s "$PRIV/tok.txt" ] && cp "$PRIV/tok.txt" $O/assets/token.txt || true   # (PUBLIC=1: the release build - never the token)
 rm -rf $O/assets/shipped   # (the shipped pictures: added below, not through aapt2 - its Windows build wrote "\" in their zip names)
 "$BT/aapt2.exe" compile -o $O/res.zip --dir $O/res
 "$BT/aapt2.exe" link -o $O/base.apk -I "$JAR" --manifest AndroidManifest.xml --min-sdk-version 28 --target-sdk-version 34 --version-code $CODE --version-name "$VER" -A $O/assets $O/res.zip
-python - "$O" ../package/system/vectrex_emu/thumbs/shipped <<'EOF'
-import sys, zipfile, os, shutil
-o, ship = sys.argv[1], sys.argv[2]; src = os.path.join (o, 'base.apk'); dst = os.path.join (o, 'unsigned.apk')
+test -s ../libretro/dist/pkg/system/vectrex_emu/bios.bin || { echo 'run libretro/package_android.sh first (the files that come with the app)'; exit 1; }
+python - "$O" ../package/system/vectrex_emu/thumbs/shipped ../libretro/dist/pkg <<'EOF'
+import sys, zipfile, os, shutil, io
+o, ship, pkg = sys.argv[1], sys.argv[2], sys.argv[3]; src = os.path.join (o, 'base.apk'); dst = os.path.join (o, 'unsigned.apk')
 shutil.copy (src, dst)
 with zipfile.ZipFile (dst, 'a', zipfile.ZIP_DEFLATED) as z:
     z.write (os.path.join (o, 'dex', 'classes.dex'), 'classes.dex')
@@ -51,6 +52,19 @@ with zipfile.ZipFile (dst, 'a', zipfile.ZIP_DEFLATED) as z:
         ds.sort ()
         for f in sorted (fs):
             q = os.path.join (r, f); z.write (q, 'assets/shipped/' + os.path.relpath (q, ship).replace (os.sep, '/'), zipfile.ZIP_STORED)
+    # the files that come with the app, unpacked into its folder at the first start (Getter.java Base; the private
+    # build gets them from the project's server instead): RetroArch's Android package - the free BIOS, the overlays,
+    # the GPU assets, the UVMC2's folder, the included games (Last Human, its UVMC2 edition, the UVMC2 movie player) -
+    # without its pictures (assets/shipped has them)
+    b = io.BytesIO ()
+    with zipfile.ZipFile (b, 'w', zipfile.ZIP_DEFLATED) as bz:
+        for top in ('system', 'roms'):
+            for r, ds, fs in os.walk (os.path.join (pkg, top)):
+                ds[:] = sorted (d for d in ds if not (top == 'system' and d == 'thumbs'))
+                for f in sorted (fs):
+                    q = os.path.join (r, f); bz.write (q, os.path.relpath (q, pkg).replace (os.sep, '/'))
+    z.writestr (zipfile.ZipInfo ('assets/base.zip', (2026, 1, 1, 0, 0, 0)), b.getvalue (), zipfile.ZIP_STORED)
+    print ('base.zip: %.1f MB' % (len (b.getvalue ()) / 1e6))
 EOF
 "$BT/zipalign.exe" -f -p 4 $O/unsigned.apk $O/aligned.apk
 KS=$PRIV/debug.keystore

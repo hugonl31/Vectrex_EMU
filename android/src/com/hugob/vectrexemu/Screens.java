@@ -33,15 +33,21 @@ final class Screens {
 			TextView x = button (m, "✕", false); x.setContentDescription ("Close"); x.setOnClickListener (v -> m.pop ()); head.addView (x, new LinearLayout.LayoutParams ((int) m.dp (48), (int) m.dp (44)));
 			addView (head, new LinearLayout.LayoutParams (-1, -2));
 			sc = new ScrollView (m); sc.setFillViewport (true);
-			FrameLayout holder = new FrameLayout (m);
+			final int maxW = (int) m.dp (640);
+			FrameLayout holder = new FrameLayout (m) {   /* (the column: the screen's width, at most a tablet's sheet - measured each time, so a
+				                                           turn from landscape to portrait narrows it; it kept the width it opened with and cut the text) */
+				@Override protected void onMeasure (int w, int hm) {
+					int ww = MeasureSpec.getSize (w); col.getLayoutParams ().width = Math.min (ww, maxW); super.onMeasure (w, hm); } };
 			col = new LinearLayout (m); col.setOrientation (VERTICAL); col.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (8), (int) m.dp (16) + m.insR, (int) m.dp (24) + m.insBot);
-			holder.addView (col, new FrameLayout.LayoutParams ((int) Math.min (m.root.getWidth (), m.dp (640)), -2, Gravity.CENTER_HORIZONTAL));
+			holder.addView (col, new FrameLayout.LayoutParams (Math.min (m.root.getWidth (), maxW), -2, Gravity.CENTER_HORIZONTAL));
 			sc.addView (holder); addView (sc, new LinearLayout.LayoutParams (-1, 0, 1));
 		}
 		@Override public void closed () { if (onClose != null) onClose.run (); }
 		TextView header (String s) { TextView t = m.text (s.toUpperCase (), 12, Main.DIM, true); t.setPadding ((int) m.dp (4), (int) m.dp (18), 0, (int) m.dp (6)); col.addView (t); return t; }
 		TextView foot (String s) { TextView t = m.text (s, 12, Main.DIM, false); t.setPadding ((int) m.dp (4), (int) m.dp (6), 0, (int) m.dp (4)); col.addView (t); return t; }
-		LinearLayout row (String title, String detail, Runnable go) { LinearLayout r = Screens.row (m, title, detail, go); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-1, -2); lp.bottomMargin = (int) m.dp (6); col.addView (r, lp); return r; }
+		LinearLayout row (String title, String detail, Runnable go) { return row (title, detail, go, null); }
+		LinearLayout toggle (String title, String note, boolean on, Runnable go) { LinearLayout r = Screens.toggleRow (m, title, note, on, go); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-1, -2); lp.bottomMargin = (int) m.dp (6); col.addView (r, lp); return r; }
+		LinearLayout row (String title, String detail, Runnable go, Boolean tog) { LinearLayout r = Screens.row (m, title, detail, go, tog); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-1, -2); lp.bottomMargin = (int) m.dp (6); col.addView (r, lp); return r; }
 	}
 	static StateListDrawable states (Main m, int fill, int edge, float r)
 	{
@@ -52,12 +58,16 @@ final class Screens {
 	}
 	static GradientDrawable ring (Main m, float r) { GradientDrawable g = new GradientDrawable (); g.setColor (0); g.setCornerRadius (r); g.setStroke ((int) m.dp (3), Main.HI2); return g; }
 	static GradientDrawable focus (Main m, float r) { GradientDrawable g = new GradientDrawable (); g.setColor (Main.SEL); g.setCornerRadius (r); g.setStroke ((int) m.dp (2.5f), Main.HI2); return g; }
-	static LinearLayout row (Main m, String title, String detail, Runnable go)
+	static LinearLayout row (Main m, String title, String detail, Runnable go) { return row (m, title, detail, go, null); }
+	/* tog: a switch at the row's right (its tap turns it) - null: an app row whose detail is On / Off. A core setting says it
+	 * itself: only one of exactly on and off is a switch; one with more values (auto, strong, a button...) shows its value
+	 * and opens its choice - its "on" or "off" showed a switch that opened a menu (the owner, 2026-11-25) */
+	static LinearLayout row (Main m, String title, String detail, Runnable go, Boolean togArg)
 	{
 		LinearLayout r = new LinearLayout (m); r.setOrientation (LinearLayout.VERTICAL); r.setPadding ((int) m.dp (14), (int) m.dp (11), (int) m.dp (14), (int) m.dp (11));
 		r.setBackground (states (m, Main.PANEL, Main.EDGE, m.dp (10)));
 		TextView t = m.text (title, 16, go != null ? Main.HI : Main.FG, go != null); t.setTag ("t"); r.addView (t);
-		final boolean tog = go != null && detail != null && (detail.equalsIgnoreCase ("on") || detail.equalsIgnoreCase ("off"));
+		final boolean tog = go != null && detail != null && (detail.equalsIgnoreCase ("on") || detail.equalsIgnoreCase ("off")) && (togArg == null || togArg);
 		if (tog) {                                 /* (an on / off row: a switch at its right, as the iOS app's - the owner, 2026-11-22; the row's tap turns it) */
 			r.setOrientation (LinearLayout.HORIZONTAL); r.setGravity (Gravity.CENTER_VERTICAL);
 			t.setLayoutParams (new LinearLayout.LayoutParams (0, -2, 1f));
@@ -65,6 +75,20 @@ final class Screens {
 			r.addView (new Toggle (m, detail.equalsIgnoreCase ("on")), new LinearLayout.LayoutParams ((int) m.dp (46), (int) m.dp (26))); }
 		else if (detail != null && !detail.isEmpty ()) { TextView d = m.text (detail, 13, Main.DIM, false); d.setTag ("d"); r.addView (d); }
 		if (go != null) { r.setFocusable (true); r.setClickable (true); r.setOnClickListener (v -> { Main.log ("ui " + title); go.run (); }); }
+		return r;
+	}
+	/* a setting of two choices as a switch (the owner, 2026-11-25: no menu to open for two choices): its name, a small
+	 * note below saying what it does now, the switch at the right; a tap turns it */
+	static LinearLayout toggleRow (Main m, String title, String note, boolean on, Runnable go)
+	{
+		LinearLayout r = new LinearLayout (m); r.setOrientation (LinearLayout.HORIZONTAL); r.setGravity (Gravity.CENTER_VERTICAL);
+		r.setPadding ((int) m.dp (14), (int) m.dp (11), (int) m.dp (14), (int) m.dp (11)); r.setBackground (states (m, Main.PANEL, Main.EDGE, m.dp (10)));
+		LinearLayout txt = new LinearLayout (m); txt.setOrientation (LinearLayout.VERTICAL);
+		TextView t = m.text (title, 16, Main.HI, true); t.setTag ("t"); txt.addView (t);
+		if (note != null && !note.isEmpty ()) { TextView d = m.text (note, 13, Main.DIM, false); d.setTag ("d"); txt.addView (d); }
+		LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams (0, -2, 1f); tl.rightMargin = (int) m.dp (10); r.addView (txt, tl);
+		r.addView (new Toggle (m, on), new LinearLayout.LayoutParams ((int) m.dp (46), (int) m.dp (26)));
+		r.setFocusable (true); r.setClickable (true); r.setOnClickListener (v -> { Main.log ("ui " + title); go.run (); });
 		return r;
 	}
 	/* the switch of an on / off row: a pill, its knob right and the pill green when on */
@@ -139,7 +163,8 @@ final class Screens {
 		  else if (sel == 0) p.row ("Deck pop-up", (pop ? "On" : "Off") + " (Auto)", null); }
 		{ final int si = VX.ofind ("vectrex_emu_skip_intro");
 		  if (si >= 0) p.row ("Skip intro", VX.opt (si, 5).equals ("on") ? "On" : "Off", () -> { VX.oset (si, VX.opt (si, 5).equals ("on") ? "off" : "on"); reopenSettings (m); }); }
-		p.row ("Downloads", Pack.token (m) != null ? "games, boxes, UVMC2, PiTrex" : "Not in this build (no server key)", () -> { if (Pack.token (m) == null) { m.toast ("This build has no server key: no downloads", 2.5); return; } m.pop (); Pack.choose (m, false); });
+		if (Pack.token (m) != null) p.row ("Downloads", "games, boxes, UVMC2, PiTrex", () -> { m.pop (); Pack.choose (m, false); });
+		else p.row ("Get games & extras", "the original games, free homebrew, the PiTrex, the speech ROM - or your own files", () -> { m.pop (); Getter.show (m); });
 		if (m.hdrCan) p.row ("HDR brightness", m.prefs.getFloat ("app.hdr", 1f) > 0.01f ? "The brightest dots up to " + String.format (java.util.Locale.ROOT, "%.1fx", 1 + (m.hdrRoom - 1) * m.prefs.getFloat ("app.hdr", 1f)) + " white" : "Off: as an ordinary screen",
 			() -> Adjust.showHdr (m));   /* (a slider over the running game) */
 		else p.row ("HDR brightness", m.hdrScreen ? "Not on this Android version (HDR needs Android 14)" : "Not on this screen (it shows no HDR)", null);
@@ -148,9 +173,8 @@ final class Screens {
 		  p.row ("Max brightness", MD[mb], () -> pick (m, "Max brightness", new String[] { "0", "1", "2" }, ML, "" + mb, v -> {
 			m.prefs.edit ().putInt ("app.maxbright", Integer.parseInt (v)).apply (); Main.log ("max brightness " + ML[Integer.parseInt (v)]); m.brightTick (); reopenSettings (m); })); }
 		{ final int lk = m.prefs.getInt ("app.look", 1);   /* (the look - iOS alike) */
-			p.row ("Look", lk == 1 ? "Bright: brighter, wider lines - for a small screen" : "Vectrex: as a real Vectrex",
-				() -> pick (m, "Look", new String[] { "0", "1" }, new String[] { "Vectrex", "Bright" }, String.valueOf (lk), s -> {
-					m.prefs.edit ().putInt ("app.look", Integer.parseInt (s)).apply (); VX.setBright (Integer.parseInt (s)); Main.log ("look " + s); reopenSettings (m); })); }
+			p.toggle ("Bright look", lk == 1 ? "Brighter, wider lines - for a small screen" : "Off: as a real Vectrex", lk == 1, () -> { final int s = 1 - lk;
+					m.prefs.edit ().putInt ("app.look", s).apply (); VX.setBright (s); Main.log ("look " + s); reopenSettings (m); }); }
 		p.row ("Brighter afterglow", m.trailBoost () ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("app.trailboost", !m.trailBoost ()).apply (); m.trailLast = -1; m.trailTick (); Main.log ("brighter afterglow " + m.trailBoost ()); reopenSettings (m); });
 		p.row ("Controls", "controllers, touch, keyboard", () -> { m.pop (); controls (m); });
 		p.row ("About and help", "how to play, online, credits", () -> about (m));
@@ -169,7 +193,7 @@ final class Screens {
 		final int n = VX.nopts (), nc = VX.ncats ();
 		java.util.List<String> order = java.util.Arrays.asList ("video", "overlay", "case", "tube", "controls", "audio", "system", "unit", "circuit");
 		java.util.List<String> top = java.util.Arrays.asList ("vectrex_emu_profile");
-		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look", "vectrex_emu_deck", "vectrex_emu_skip_intro", "vectrex_emu_tube_look");   /* (the deck, skip intro, the look: under App) */
+		java.util.List<String> hide = java.util.Arrays.asList ("vectrex_emu_shape", "vectrex_emu_btn_browser", "vectrex_emu_deck_look", "vectrex_emu_deck", "vectrex_emu_skip_intro", "vectrex_emu_tube_look", "vectrex_emu_gamelist");   /* (the game list: RetroArch's own browser - the app has its library) */   /* (the deck, skip intro, the look: under App) */
 		java.util.ArrayList<Integer> cs = new java.util.ArrayList<> ();
 		for (String k : order) for (int c = 0; c < nc; c++) if (VX.cat (c, 0).equals (k)) cs.add (c);
 		for (int c = 0; c < nc; c++) if (!cs.contains (c)) cs.add (c);
@@ -184,7 +208,15 @@ final class Screens {
 			for (int i : rows) {
 				final int ix = i; String v = VX.opt (i, 5); boolean chg = !v.equals (VX.opt (i, 6));
 				final String vals = VX.opt (i, 4); final boolean onoff = vals.equals ("on|off") || vals.equals ("off|on");   /* (on / off: the row's switch turns it) */
-				LinearLayout r = p.row (VX.opt (i, 1), v, onoff ? (Runnable) () -> { VX.oset (ix, VX.opt (ix, 5).equals ("on") ? "off" : "on"); reopenSettings (m); } : (Runnable) () -> choice (m, ix)); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG);
+				final String[] two = vals.split ("\\|");
+				if (!onoff && two.length == 2) {   /* (two other choices - Colours blue / green: a switch too, its note what it is now) */
+					final String[] sw = TWO.get (VX.opt (i, 0)); final String onV = sw != null ? sw[1] : (two[0].equals (VX.opt (i, 6)) ? two[1] : two[0]);
+					final String offV = onV.equals (two[0]) ? two[1] : two[0]; final boolean isOn = v.equals (onV);
+					LinearLayout r = p.toggle (sw != null ? sw[0] : VX.opt (i, 1) + ": " + onV, sw != null ? (isOn ? sw[2] : sw[3]) : "Now: " + v,
+						isOn, () -> { VX.oset (ix, isOn ? offV : onV); reopenSettings (m); });
+					r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true; VX.oset (ix, VX.opt (ix, 6)); m.toast (VX.opt (ix, 1) + ": " + VX.opt (ix, 6) + " (the default)", 2); reopenSettings (m); return true; });
+					continue; }
+				LinearLayout r = p.row (VX.opt (i, 1), v, onoff ? (Runnable) () -> { VX.oset (ix, VX.opt (ix, 5).equals ("on") ? "off" : "on"); reopenSettings (m); } : (Runnable) () -> choice (m, ix), onoff); if (chg) ((TextView) r.findViewWithTag ("d")).setTextColor (Main.CHG);
 				r.setOnLongClickListener (x -> { if (VX.opt (ix, 5).equals (VX.opt (ix, 6))) return true;   /* (a long press: back to the default) */
 					VX.oset (ix, VX.opt (ix, 6)); Main.log ("settings: " + VX.opt (ix, 0) + " back to the default"); x.performHapticFeedback (android.view.HapticFeedbackConstants.LONG_PRESS);
 					m.toast (VX.opt (ix, 1) + ": " + VX.opt (ix, 6) + " (the default)", 2); reopenSettings (m); return true; }); }
@@ -193,6 +225,9 @@ final class Screens {
 		m.push (p);
 	}
 	static String pct (float f) { return Math.round (f * 100) + " %"; }
+	/* the core's settings of two choices shown as a switch: its name, the value that is "on", the notes on / off */
+	static final java.util.Map<String, String[]> TWO = new java.util.HashMap<> ();
+	static { TWO.put ("vectrex_emu_palette", new String[] { "Green colours", "green", "The deck, the menus and the buttons in green", "Off: a deeper blue" }); }
 	static void reopenSettings (Main m)                          /* (an app setting changed: the list shown again, scrolled where it was) */
 	{
 		View t = m.top (); int y = t instanceof Panel ? ((Panel) t).sc.getScrollY () : 0; m.pop (); settings (m);

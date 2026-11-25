@@ -197,7 +197,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	 *  screen's shape, RetroArch's ROM browser button) */
 	NSArray *order = @[ @"video", @"overlay", @"case", @"tube", @"controls", @"audio", @"system", @"unit", @"circuit" ];
 	NSArray *top = @[ @"vectrex_emu_profile" ];
-	NSSet *hide = [NSSet setWithArray:@[ @"vectrex_emu_shape", @"vectrex_emu_btn_browser", @"vectrex_emu_deck", @"vectrex_emu_skip_intro", @"vectrex_emu_tube_look" ]];   /* (the deck, skip intro, the look: under App, on top) */
+	NSSet *hide = [NSSet setWithArray:@[ @"vectrex_emu_shape", @"vectrex_emu_btn_browser", @"vectrex_emu_deck", @"vectrex_emu_skip_intro", @"vectrex_emu_tube_look", @"vectrex_emu_gamelist" ]];   /* (the game list: RetroArch's own browser - the app has its library) */   /* (the deck, skip intro, the look: under App, on top) */
 	NSMutableArray *cs = [NSMutableArray array];
 	for (NSString *k in order) for (int c = 0; c < vxa_ncats (); c++) if ([k isEqualToString:@(vxa_ckey (c))]) [cs addObject:@(c)];
 	for (int c = 0; c < vxa_ncats (); c++) if (![cs containsObject:@(c)]) [cs addObject:@(c)];
@@ -243,6 +243,19 @@ static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 	[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
 	[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG2 } forState:UIControlStateNormal]; [sg sizeToFit]; return sg;
 }
+/* a core setting of two choices shown as a switch (the owner, 2026-11-25: no menu to open for two choices): on / off -
+ * or two others (Colours blue / green: "Green colours"), its note what it is now; the value that is "on", the title,
+ * the notes. NO for a setting of more choices (it opens its menu) */
+static BOOL vxs_switch (int i, const char **onv, const char **offv, NSString **title, NSString **noteOn, NSString **noteOff)
+{
+	NSArray<NSString *> *v = [@(vxa_ovals (i)) componentsSeparatedByString:@"|"]; if (v.count != 2) return NO;
+	const char *k = vxa_okey (i); static char a[64], bb[64];
+	if ([v containsObject:@"on"] && [v containsObject:@"off"]) { *onv = "on"; *offv = "off"; *title = @(vxa_odesc (i)); *noteOn = *noteOff = nil; return YES; }
+	if (!strcmp (k, "vectrex_emu_palette")) { *onv = "green"; *offv = "blue"; *title = @"Green colours"; *noteOn = @"The deck, the menus and the buttons in green"; *noteOff = @"Off: a deeper blue"; return YES; }
+	NSString *on = [v[0] isEqualToString:@(vxa_odef (i))] ? v[1] : v[0], *off = [on isEqualToString:v[0]] ? v[1] : v[0];
+	snprintf (a, sizeof a, "%s", on.UTF8String); snprintf (bb, sizeof bb, "%s", off.UTF8String); *onv = a; *offv = bb;
+	*title = [NSString stringWithFormat:@"%s: %@", vxa_odesc (i), on]; *noteOn = *noteOff = [NSString stringWithFormat:@"Now: %s", vxa_oval (i)]; return YES;
+}
 static UITableViewCell *vxs_cell (NSString *title)
 {
 	UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
@@ -272,16 +285,12 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"Look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
 		NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; const NSInteger md = lk ? lk.integerValue : 1;   /* (Bright the default on phones and tablets) */
-		c.detailTextLabel.text = md == 1 ? @"Brighter, wider lines: for a small screen" : @"As a real Vectrex";
-		UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:@[ @"Vectrex", @"Bright" ]];
-		sg.selectedSegmentIndex = md == 1 ? 1 : 0; sg.selectedSegmentTintColor = VX_G;
-		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_FG } forState:UIControlStateNormal];
-		[sg setTitleTextAttributes:@{ NSForegroundColorAttributeName: UIColor.blackColor } forState:UIControlStateSelected];
-		[sg sizeToFit];
-		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger v = ((UISegmentedControl *) a.sender).selectedSegmentIndex == 1 ? 1 : 0;
+		c.textLabel.text = @"Bright look"; c.detailTextLabel.text = md == 1 ? @"Brighter, wider lines - for a small screen" : @"Off: as a real Vectrex";   /* (a switch: the owner, 2026-11-25) */
+		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = md == 1;
+		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger v = ((UISwitch *) a.sender).on ? 1 : 0;
 			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.look"];
 			ulog ([NSString stringWithFormat:@"look %@", v ? @"Bright" : @"Vectrex"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sg; return c; }
+		c.accessoryView = sw; return c; }
 	if (R == 11) {                                  /* (the afterglow 20 % brighter: a phone's small picture loses it - on there by default, off on an iPad) */
 		extern void vxa_hdr_update (void); extern int vxa_trail_boost (void);
 		UITableViewCell *c = vxs_cell (@"Brighter afterglow");
@@ -353,8 +362,20 @@ static UITableViewCell *vxs_cell (NSString *title)
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.statusbar"];
 			ulog ([NSString stringWithFormat:@"clock and battery %@", on ? @"on" : @"off"]); [ws.game setNeedsStatusBarAppearanceUpdate]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
+	{ int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; const char *onv, *offv; NSString *tt, *non, *noff;
+	  if (vxs_switch (i, &onv, &offv, &tt, &non, &noff)) {   /* (two choices: a switch - its own cell, not reused) */
+		const BOOL on = !strcmp (vxa_oval (i), onv), chg = strcmp (vxa_oval (i), vxa_odef (i)) != 0; NSString *note = on ? non : noff;
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:note ? UITableViewCellStyleSubtitle : UITableViewCellStyleDefault reuseIdentifier:nil];
+		c.textLabel.text = tt; c.textLabel.textColor = chg ? VX_CHG : VX_FG; c.textLabel.font = VF (15, UIFontWeightRegular); c.textLabel.numberOfLines = 2;
+		if (note) { c.detailTextLabel.text = note; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2; }
+		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone;
+		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = on; __weak VXSettings *ws = self; char a[64], bb[64]; snprintf (a, sizeof a, "%s", onv); snprintf (bb, sizeof bb, "%s", offv);
+		NSString *sa = @(a), *sb = @(bb);
+		[sw addAction:[UIAction actionWithHandler:^(UIAction *x) { vxa_oset (i, ((UISwitch *) x.sender).on ? sa.UTF8String : sb.UTF8String); ulog ([NSString stringWithFormat:@"setting %s = %s", vxa_okey (i), vxa_oval (i)]);
+			[ws.tableView reloadRowsAtIndexPaths:@[ ip ] withRowAnimation:UITableViewRowAnimationNone]; }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sw; return c; } }
 	UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"o"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"o"];
-	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; BOOL chg = strcmp (vxa_oval (i), vxa_odef (i)) != 0;
+	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; BOOL chg = strcmp (vxa_oval (i), vxa_odef (i)) != 0; c.accessoryView = nil;
 	c.textLabel.text = @(vxa_odesc (i)); c.textLabel.textColor = VX_FG; c.textLabel.font = VF (15, UIFontWeightRegular); c.textLabel.numberOfLines = 2;
 	c.detailTextLabel.text = @(vxa_oval (i)); c.detailTextLabel.textColor = chg ? VX_CHG : VX_DIM; c.detailTextLabel.font = VF (14, UIFontWeightRegular);
 	c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; c.tintColor = VX_DIM;
@@ -380,6 +401,9 @@ static UITableViewCell *vxs_cell (NSString *title)
 		[self dismissViewControllerAnimated:YES completion:^{ if ([g respondsToSelector:@selector(openDownloads)]) [g performSelector:@selector(openDownloads)]; }]; return; }
 	if (!ip.section) return;
 	int i = _rows[(NSUInteger) ip.section - 1][(NSUInteger) ip.row].intValue; ulog ([NSString stringWithFormat:@"setting opened %s", vxa_okey (i)]);
+	{ const char *onv, *offv; NSString *tt, *non, *noff;   /* (a switch row: the row's tap turns it too - no menu) */
+	  if (vxs_switch (i, &onv, &offv, &tt, &non, &noff)) { vxa_oset (i, strcmp (vxa_oval (i), onv) ? onv : offv); ulog ([NSString stringWithFormat:@"setting %s = %s", vxa_okey (i), vxa_oval (i)]);
+		[t reloadRowsAtIndexPaths:@[ ip ] withRowAnimation:UITableViewRowAnimationNone]; return; } }
 	if (VSlider (i, NULL, NULL)) {                  /* (a number: the slider over the running game, the settings out of the way) */
 		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:i over:g fromSettings:YES]; }]; return; }
 	VXChoice *ch = [[VXChoice alloc] initWithStyle:UITableViewStyleInsetGrouped]; ch.opt = i; [self.navigationController pushViewController:ch animated:YES];

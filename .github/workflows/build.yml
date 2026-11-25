@@ -256,7 +256,10 @@ jobs:
           VER=$(head -n 1 repo/VERSION | tr -d ' \r')
           { awk -v v="## $VER" '$0 == v {on=1; next} on && /^## / {exit} on' repo/RELEASE_NOTES.md
             echo; echo "Built from ${GITHUB_SHA::7}."; } > notes.md
+          # (the Android app is built and signed on the maintainer's PC - android/build.sh, PUBLIC=1 - and added to the
+          #  release by hand: kept when the same release is built again, until a new one replaces it)
+          mkdir -p keep; gh release download "$VER" -R "$GITHUB_REPOSITORY" -p 'Vectrex_EMU-android.apk' -D keep 2>/dev/null || true
           gh release delete latest-build --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
           gh release delete "$VER" --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
           gh release create "$VER" -R "$GITHUB_REPOSITORY" --latest --target "$GITHUB_SHA" \
-            --title "$VER" --notes-file notes.md windows/*.zip mac/*.zip linux/*.zip retroarch-*/*.zip   # (the checks' logs and pictures stay with the run)
+            --title "$VER" --notes-file notes.md windows/*.zip mac/*.zip linux/*.zip retroarch-*/*.zip $(ls keep/*.apk 2>/dev/null)   # (the checks' logs and pictures stay with the run)

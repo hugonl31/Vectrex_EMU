@@ -286,6 +286,12 @@ def pitrex_ids():
 
 
 def chain_pitrex():
+    try:                                                             # (Malban's site is slow for 190 MB: when the newest
+        names = {n.lower() for n in re.findall(r'PiTrex_sd_\w+\.zip', _get('http://vide.malban.de/pitrex/pitrex-baremetal-download').decode('utf8', 'replace'), re.I)}
+        if names == {DRIVE_PITREX_NAME.lower() + '.zip'}:            #  file it offers is the version the project's copy
+            yield DRIVE_PITREX                                       #  has, that copy first - checked byte for byte)
+    except Exception:   # noqa
+        pass
     try:                                                             # the newest PiTrex_sd_... on Malban's page
         for i in pitrex_ids():
             yield 'http://vide.malban.de/?sdm_process_download=1&download_id=%d' % i

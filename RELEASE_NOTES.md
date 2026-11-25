@@ -5,6 +5,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.9.0
 
+* Get games & extras (PC): the PiTrex's SD card from the project's own copy when Malban's site offers that same
+  version - his site is slow for its 190 MB; a newer version still comes from his site.
 * Glass curvature 0 is always a flat picture: with Tube geometry off it no longer stretches the picture's edges (it
   took a curve out that was not there). The curvature comes with Tube geometry; without it the picture is flat.
 

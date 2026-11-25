@@ -1552,7 +1552,7 @@ UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3)      
 UNIT_DAC_OWNER = dict(dac0=0.0170, dac1=0.0069, dac2=-0.0089, dac3=-0.0014)       # (the owner's: half the slant pattern)
 # (the owner's, the Full Grid Test 50 fps photo 2026-11-23: Y up 1.16 % faster than down - beta 0.0058 = 1.16 / 200, from
 #  the column start dots' slant and the two-dot gaps; X not measured)
-UNIT_RATE_OWNER = dict(xrate=0.0, yrate=1.5)   # (1.5 with the leak - vecx.c RATE_LEAK: both Full Grid photos, 2026-11-25; 1.16 was without it)
+UNIT_RATE_OWNER = dict(xrate=0.0, yrate=2.1)   # (2.1 with vecx.c RATE_LEAK 5800: the owner's tube, the plain Full Grid's lower right, 2026-11-25; 1.5 with 8500 - too steep a step from column to column; 1.16 without the leak)
 UNIT_ZERO_CENTRED = ('dac0', 'dac1', 'dac2', 'dac3', 'xrate', 'yrate')   # (random / cranky: about none - the owner's are one unit's)
 # the picture's pots and the yoke (the frontend's: they act after the integrators, see unit_picture): R401 / R408 the
 # deflection amplifiers' input dividers (2K pot over 1.5K: 0.43..1 of the signal; 100 % = the pot's middle, 60..140 %),

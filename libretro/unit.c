@@ -54,7 +54,7 @@ static const unit_par UNIT_P[] = {
 	/* (the integrators' rate one way against the other, %: vecx.c rate_by - the owner's Y measured, 2026-11-23; random / cranky about 0.
 	 *  Last: a random or cranky unit's other parts as before) */
 	{ "xrate", 29, "VT_XRATE", "X rate right vs left", "Right faster than left: +.", -3, 3, 0.1, "%+.1f %%", 0, 0, 'c', 's', 0, 1.2, 's', 1.2, 2.5 },
-	{ "yrate", 28, "VT_YRATE", "Y rate up vs down", "Up faster than down: +.", -3, 3, 0.1, "%+.1f %%", 1.5, 0, 'c', 's', 0, 1.2, 's', 1.2, 2.5 },   /* (1.5: with vecx.c RATE_LEAK, both Full Grid photos - 2026-11-25) */
+	{ "yrate", 28, "VT_YRATE", "Y rate up vs down", "Up faster than down: +.", -3, 3, 0.1, "%+.1f %%", 2.1, 0, 'c', 's', 0, 1.2, 's', 1.2, 2.5 },   /* (2.1: with vecx.c RATE_LEAK 5800 - the owner's tube, the plain Full Grid's lower right, 2026-11-25) */
 	{ NULL } };
 #define NUNIT (sizeof UNIT_P / sizeof UNIT_P[0] - 1)
 static double unit_v[NUNIT], unit_sent[NUNIT]; static int unit_known;

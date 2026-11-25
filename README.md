@@ -408,16 +408,16 @@ out (measured from each photo's own line width, as the eye sees the tube sharper
 total light as the emulator's picture. Click for the full size.
 
 <p align="center">
-<a href="docs/images/page/raw/raw_dot_p1.jpg"><img src="docs/images/page/raw/raw_dot_p1.jpg" width="469" alt="Dot Test page 1: a real Vectrex and the emulator"></a>
-<a href="docs/images/page/raw/raw_dot_p4.jpg"><img src="docs/images/page/raw/raw_dot_p4.jpg" width="411" alt="Dot Test page 4: a real Vectrex and the emulator"></a><br>
+<a href="docs/images/page/raw/raw_dot_p1.jpg"><img src="docs/images/page/raw/raw_dot_p1.jpg" width="470" alt="Dot Test page 1: a real Vectrex and the emulator"></a>
+<a href="docs/images/page/raw/raw_dot_p4.jpg"><img src="docs/images/page/raw/raw_dot_p4.jpg" width="410" alt="Dot Test page 4: a real Vectrex and the emulator"></a><br>
 <em>The Dot Test: page 1, dots resting 4 to 128 cycles at four intensities; page 4, corners of 30 to 135 degrees with
 rests of 0 to 64 cycles.</em>
 </p>
 
 <p align="center">
 <a href="docs/images/page/raw/raw_intensity.jpg"><img src="docs/images/page/raw/raw_intensity.jpg" width="312" alt="the Test Cartridge's INTENSITY screen: a real Vectrex and the emulator"></a>
-<a href="docs/images/page/raw/raw_dac_p1.jpg"><img src="docs/images/page/raw/raw_dac_p1.jpg" width="161" alt="DAC Test page 1: a real Vectrex and the emulator"></a>
-<a href="docs/images/page/raw/raw_gap_p1.jpg"><img src="docs/images/page/raw/raw_gap_p1.jpg" width="407" alt="Gap Test page 1: a real Vectrex and the emulator"></a><br>
+<a href="docs/images/page/raw/raw_dac_p1.jpg"><img src="docs/images/page/raw/raw_dac_p1.jpg" width="158" alt="DAC Test page 1: a real Vectrex and the emulator"></a>
+<a href="docs/images/page/raw/raw_gap_p1.jpg"><img src="docs/images/page/raw/raw_gap_p1.jpg" width="410" alt="Gap Test page 1: a real Vectrex and the emulator"></a><br>
 <em>The Test Cartridge Rev. 4's INTENSITY screen; the DAC Test, a long and a short line per DAC value - with a
 linear DAC the long ones end on the reference line; the Gap Test, rows of joined pieces as Mine Storm draws its ship,
 at scales 6 to 13 - the gaps where they join.</em>
@@ -697,7 +697,7 @@ with a shorter afterglow and no scratches.
 
 ### First start
 
-<p align="center"><img src="docs/images/page/setup.jpg" width="600" alt="the first-start setup page"></p>
+<p align="center"><a href="docs/images/page/setup.jpg"><img src="docs/images/page/setup.jpg" width="600" alt="the first-start setup page"></a></p>
 
 The first start shows one page: whether the BIOS, games, overlays, homebrew, the speech ROM and the SD cards were found
 (missing in red; **Download everything missing** gets them), the **quality** (a new install runs **Optimize**), the
@@ -727,7 +727,7 @@ a menu), the **cartridge** (click: the games list; right click: eject, again: ba
 knob** (drag it round, the mouse wheel, Page Up / Down; down to 0 % switches the Vectrex off). PAUSED shows in the
 strip, not on the picture, so a paused game makes a clean snapshot. **View > Control deck** hides it all.
 
-<p align="center"><img src="docs/images/page/deck.jpg" width="760" alt="the control deck: on-screen display, P2 PORT, cartridge, RESET, volume knob"></p>
+<p align="center"><a href="docs/images/page/deck.jpg"><img src="docs/images/page/deck.jpg" width="760" alt="the control deck: on-screen display, P2 PORT, cartridge, RESET, volume knob"></a></p>
 
 ### Keys
 
@@ -792,7 +792,7 @@ Everything that sets the look and the sound is in the **Config window** (**Tab**
 | **Sound** | volume, the buzz, the speaker, the speech module's volume and speaker, the 3D Imager's motor |
 | **Display** | colours (blue / green), game list (library / simple), screen rate and Smooth motion, rotation, run-ahead, weak-graphics switches, the deck's parts, monitor size, Authentic / Fit |
 
-<p align="center"><img src="docs/images/page/config.jpg" width="520" alt="the Config window, Tube tab"></p>
+<p align="center"><a href="docs/images/page/config.jpg"><img src="docs/images/page/config.jpg" width="520" alt="the Config window, Tube tab"></a></p>
 
 * **Sliders**: drag or click; **right click: the default**. The defaults are the faithful values, mostly in the middle.
 * **Orange** marks what differs from the default: a setting's text, a stripe on a slider where its default is, a tab's
@@ -878,7 +878,7 @@ game for its calibration screen. **Display > Game list: Simple** gives the compa
 games, BACK to go up; Windows shortcuts, Finder aliases and symbolic links in `roms` work as folders, so you can link
 the folder you build your own games in.
 
-<p align="center"><img src="docs/images/page/library_carts.jpg" width="480" alt="the games list: cartridges, categories, search"></p>
+<p align="center"><a href="docs/images/page/library_carts.jpg"><img src="docs/images/page/library_carts.jpg" width="480" alt="the games list: cartridges, categories, search"></a></p>
 
 #### Your own pictures for the games list
 

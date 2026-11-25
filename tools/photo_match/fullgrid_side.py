@@ -28,8 +28,8 @@ def box(a, thr, frac=0.03, pad=0.03):
     cols = np.nonzero(m.mean(0) > frac)[0]; rows = np.nonzero(m.mean(1) > frac)[0]
     x0, x1, y0, y1 = cols.min(), cols.max(), rows.min(), rows.max(); px, py = int((x1 - x0) * pad), int((y1 - y0) * pad)
     return max(0, y0 - py), min(g.shape[0], y1 + py), max(0, x0 - px), min(g.shape[1], x1 + px)
-f = ImageFont.truetype('segoeui.ttf', 26)
-Hh = 900
+f = ImageFont.truetype('segoeui.ttf', 44)
+Hh = 1500   # (full size on a click)
 def fit(a): im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)); return im.resize((round(im.width * Hh / im.height), Hh), Image.LANCZOS)
 from scipy.signal import find_peaks
 def lines(a):
@@ -87,8 +87,8 @@ light = lambda a: ((np.asarray(a, np.float32) / 255.0) ** 2.2)[np.asarray(a).max
 kp = (light(M) / light(P)) ** (1 / 2.2); print('photo scaled by %.3f' % kp, flush=True)
 P = Image.fromarray(np.clip(np.asarray(P, np.float32) * kp, 0, 255).astype(np.uint8))
 panels = [(P, 'Real Vectrex (photo)'), (M, 'Vectrex_EMU: the measured tube'), (I, 'A perfect grid (an ideal tube)')]
-W = sum(p_.width for p_, _ in panels) + 20 * 4; im = Image.new('RGB', (W, Hh + 50), (6, 6, 6)); d = ImageDraw.Draw(im); x = 20
-for p_, t in panels: im.paste(p_, (x, 44)); d.text((x, 8), t, fill=(235, 160, 60), font=f); x += p_.width + 20
+W = sum(p_.width for p_, _ in panels) + 20 * 4; im = Image.new('RGB', (W, Hh + 84), (6, 6, 6)); d = ImageDraw.Draw(im); x = 20
+for p_, t in panels: im.paste(p_, (x, 76)); d.text((x, 12), t, fill=(235, 160, 60), font=f); x += p_.width + 20
 im.save(os.path.join(out, 'fullgrid_side.jpg'), quality=90); print('side', im.size, flush=True)
 if os.environ.get('OVERLAY'):   # (the overlay: experimental - ECC does not lock on the repeating grid yet)
     # the overlay: the emulator's grid (full raster) registered on the red lines of the fit's overlay picture (photo space)

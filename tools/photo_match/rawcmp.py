@@ -53,7 +53,7 @@ def bbox(a, thr):
     m = nd.gaussian_filter(a.max(2), 3) > thr; ys, xs = np.nonzero(m); H, W = m.shape
     my, mx = int((ys.max() - ys.min()) * 0.04) + 8, int((xs.max() - xs.min()) * 0.04) + 8
     return max(0, ys.min() - my), min(H, ys.max() + my), max(0, xs.min() - mx), min(W, xs.max() + mx)
-f = ImageFont.truetype('segoeui.ttf', 20)
+f = ImageFont.truetype('segoeui.ttf', 40)   # (the pictures at 1280 px tall: a click on GitHub shows them full size)
 for nm in names:
     dng, rom, presses, title = JOBS[nm][:4]; X = JOBS[nm][4] if len(JOBS[nm]) > 4 else {}
     looks = X.get('looks', ('vectrex',))
@@ -87,13 +87,13 @@ for nm in names:
     asp = lambda b: (b[3] - b[2]) / (b[1] - b[0])
     print(nm, 'content: photo %.3f, emulator %.3f wide to tall (%+.1f %%)' % (asp(bp_), asp(be_), 100 * (asp(be_) / asp(bp_) - 1)), flush=True)
     ph = cut(ph, bp_); es_ = [cut(a, be_) for a in es_]; e = es_[0]
-    Hh = 640
+    Hh = 1280
     fit = lambda a: np.asarray(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).resize((max(1, round(a.shape[1] * Hh / a.shape[0])), Hh), Image.LANCZOS)).astype(np.float32)
     ph = fit(ph); es_ = [fit(a) for a in es_]; e = es_[0]
     light = lambda a: ((a / 255.0) ** 2.2)[a.max(2) > 12].sum()
     ph = np.clip(ph * (light(e) / light(ph)) ** (1 / 2.2), 0, 255)
-    W = ph.shape[1] + sum(a.shape[1] for a in es_) + 10 * (len(es_) + 2); im = Image.new('RGB', (W, Hh + 40), (6, 6, 6)); d = ImageDraw.Draw(im)
-    im.paste(Image.fromarray(ph.astype(np.uint8)), (10, 34)); d.text((10, 6), 'Real Vectrex', fill=(235, 160, 60), font=f); x = 20 + ph.shape[1]
+    W = ph.shape[1] + sum(a.shape[1] for a in es_) + 10 * (len(es_) + 2); im = Image.new('RGB', (W, Hh + 80), (6, 6, 6)); d = ImageDraw.Draw(im)
+    im.paste(Image.fromarray(ph.astype(np.uint8)), (10, 68)); d.text((10, 12), 'Real Vectrex', fill=(235, 160, 60), font=f); x = 20 + ph.shape[1]
     for a, lk in zip(es_, looks):
-        im.paste(Image.fromarray(a.astype(np.uint8)), (x, 34)); d.text((x, 6), 'Vectrex_EMU' + ('' if len(looks) == 1 else ', %s look' % lk.capitalize()), fill=(235, 160, 60), font=f); x += a.shape[1] + 10
+        im.paste(Image.fromarray(a.astype(np.uint8)), (x, 68)); d.text((x, 12), 'Vectrex_EMU' + ('' if len(looks) == 1 else ', %s look' % lk.capitalize()), fill=(235, 160, 60), font=f); x += a.shape[1] + 10
     im.save(os.path.join(out, 'raw_%s.jpg' % nm), quality=90); print(nm, 'rot', best[1], 'corr %.2f' % best[0], im.size, flush=True)

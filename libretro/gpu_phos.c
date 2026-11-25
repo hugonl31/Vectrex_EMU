@@ -68,6 +68,7 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
 #ifndef VX_TINT_DEFAULT
 #define VX_TINT_DEFAULT 0                          /* (the colour by the excitation: 0 off - as before -, 2 on; PH_FS_SAT. The iOS test build: on) */
 #endif
+int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = 15000.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
 #define BT_GLOW_R 0.62f                            /* (the glow's tint against the core's - the owner's choice from the previews, 2026-11-22; vecrender.py BT_GLOW) */
 #define BT_GLOW_G 0.80f
 #define BT_HALO_A 3.0f                             /* (the glass's glow beside a line: 0 the Gaussian; else its level at the line and its power - PH_FS_BEAM hsh) */
@@ -482,14 +483,14 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		  { /* (the glow bluer than the core - the owner, 2026-11-22: next to the tube the phone's vectors looked greenish; BT_GLOW x the tube's white) */
 		    static float gt[3] = { BT_GLOW_R, BT_GLOW_G, 1.0f }; static int rd; if (!rd) { rd = 1; const char *z = getenv ("VX_GLOWTINT"); if (z) sscanf (z, "%f,%f,%f", &gt[0], &gt[1], &gt[2]); }
 		    glUniform3f_ (ph_ul (ph_sat, "tintg"), tn[0] / mx * gt[0], tn[1] / mx * gt[1], tn[2] / mx * gt[2]);
-		    { static int tmv = -1; static float tq[4] = { 10.0f, 0.0f, 0.0f, 0.058f };   /* (the colour by the excitation - PH_FS_SAT; tests: VX_TINTMODE, VX_TINTQ=eref,-,-,qmin, VX_TINTDIM=K) */
-		      if (tmv < 0) { const char *z = getenv ("VX_TINTMODE"); tmv = z ? atoi (z) : VX_TINT_DEFAULT; z = getenv ("VX_TINTQ"); if (z) sscanf (z, "%f,%f,%f,%f", &tq[0], &tq[1], &tq[2], &tq[3]); }
-		      glUniform1i_ (ph_ul (ph_sat, "tm"), tmv); glUniform4f_ (ph_ul (ph_sat, "tq"), tq[0], tq[1], tq[2], tq[3]);
-		      { static float td = 9000.0f; static int r2; if (!r2) { r2 = 1; const char *z = getenv ("VX_TINTDIM"); if (z) td = (float) atof (z); }
-		        /* (the faintest lines' white: a white of td on the blackbody's line - the tube's own white sits a little green of it -,
-		         *  moved with the White balance setting as the tube's) */
-		        float wd[3]; white_gain (td, wd); float d[3], dm = 0;
-		        for (int c = 0; c < 3; c++) { d[c] = wd[c] * tg[c] / t0[c]; if (d[c] > dm) dm = d[c]; }
+		    { static int tme = -2; static float tq[4] = { 10.0f, 0.0f, 0.0f, 0.058f }, tde = -1.0f;   /* (the colour by the excitation - PH_FS_SAT; tests: VX_TINTMODE, VX_TINTQ=eref,-,-,qmin, VX_TINTDIM=K) */
+		      if (tme == -2) { const char *z = getenv ("VX_TINTMODE"); tme = z ? atoi (z) : -1; z = getenv ("VX_TINTQ"); if (z) sscanf (z, "%f,%f,%f,%f", &tq[0], &tq[1], &tq[2], &tq[3]); z = getenv ("VX_TINTDIM"); if (z) tde = (float) atof (z); }
+		      glUniform1i_ (ph_ul (ph_sat, "tm"), tme >= 0 ? tme : vx_tint_mode); glUniform4f_ (ph_ul (ph_sat, "tq"), tq[0], tq[1], tq[2], tq[3]);
+		      { const float td = tde >= 0 ? tde : vx_tint_k; float d[3], dm = 0;
+		        /* (the faintest lines' white: the tube's own (td 0) - the bright lines' core colour, no extra blue -, or a white of td K on
+		         *  the blackbody's line (the tube's white sits a little green of it); moved with the White balance setting as the tube's) */
+		        if (td <= 0) { for (int c = 0; c < 3; c++) d[c] = tn[c] / mx; dm = 1; }
+		        else { float wd[3]; white_gain (td, wd); for (int c = 0; c < 3; c++) { d[c] = wd[c] * tg[c] / t0[c]; if (d[c] > dm) dm = d[c]; } }
 		        glUniform3f_ (ph_ul (ph_sat, "tdim"), d[0] / dm, d[1] / dm, d[2] / dm); } }
 		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
 		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }

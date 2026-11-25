@@ -13,11 +13,11 @@ def render(geom, curve, edge):
              options={'vectrex_emu_deck': 'off', 'vectrex_emu_rotate': 'off', 'vectrex_emu_skip_intro': 'on', 'vectrex_emu_wobble': 'off',
                       'vectrex_emu_bending': 'off', 'vectrex_emu_overlay': 'off', 'vectrex_emu_look': 'vectrex', 'vectrex_emu_case': 'off',
                       'vectrex_emu_glass_edge': edge, 'vectrex_emu_room': 'off (dark room)', 'vectrex_emu_geometry': geom,
-                      'vectrex_emu_glass_curve': curve, 'vectrex_emu_afterglow': 'off'}, size=(1200, 1500))
+                      'vectrex_emu_glass_curve': curve, 'vectrex_emu_afterglow': 'off', 'vectrex_emu_rate': '50 Hz'}, size=(1200, 1500))
     h.load(ROM)
     for i in range(200): h.run()
     fr = []
-    for i in range(3): h.run(); fr.append(h.grab().astype(np.float32)[..., :3])   # (a third of the grid a frame: the three together)
+    for i in range(3): h.run(); fr.append(h.grab().astype(np.float32)[..., :3])   # (a third of the grid a frame: the three together - at the cart's own 50 Hz, or the thirds land in the wrong places)
     h.close(); return np.max(fr, 0)
 meas, ideal, meas_raw = render('on', '1.00', 'on'), render('off', '0.00', 'on'), render('on', '1.00', 'off')
 lin = rawpy.imread(DNG).postprocess(gamma=(1, 1), no_auto_bright=True, output_bps=16, use_camera_wb=True, half_size=True).astype(np.float32) / 65535
@@ -31,8 +31,29 @@ def box(a, thr, frac=0.03, pad=0.03):
 f = ImageFont.truetype('segoeui.ttf', 26)
 Hh = 900
 def fit(a): im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)); return im.resize((round(im.width * Hh / im.height), Hh), Image.LANCZOS)
-y0, y1, x0, x1 = box(ph, 60, 0.08); P = fit(ph[y0:y1, x0:x1])
-ey0, ey1, ex0, ex1 = box(meas, 25); M = fit(meas[ey0:ey1, ex0:ex1]); I = fit(ideal[ey0:ey1, ex0:ex1])   # (the same cut for both: the ideal grid in the same place)
+from scipy.signal import find_peaks
+def lines(a):
+    """the grid's line positions across the middle (columns) and down the middle (rows)"""
+    g = a.max(2) if a.ndim == 3 else a; H, W = g.shape
+    def pk(prof): prof = prof - np.median(prof); q, _ = find_peaks(prof, height=prof.max() * 0.3, distance=10); return q
+    return pk(g[H // 2 - H // 8:H // 2 + H // 8].mean(0)), pk(g[:, W // 2 - W // 8:W // 2 + W // 8].mean(1))
+def centre(xs, ys, W, H):
+    """the middle crossing and the spacing there (the four cells round the middle)"""
+    i = int(np.argmin(abs(xs - W / 2))); j = int(np.argmin(abs(ys - H / 2)))
+    return xs[i], ys[j], np.mean(np.diff(xs[max(0, i - 2):i + 3])), np.mean(np.diff(ys[max(0, j - 2):j + 3]))
+pxs, pys = lines(ph); pcx, pcy, pdx, pdy = centre(pxs, pys, ph.shape[1], ph.shape[0])
+exs, eys = lines(meas); ecx, ecy, edx, edy = centre(exs, eys, meas.shape[1], meas.shape[0])
+print('photo: %d cols, %d rows, middle cell %.1f x %.1f px; emulator: %d cols, %d rows, middle cell %.1f x %.1f px' % (len(pxs), len(pys), pdx, pdy, len(exs), len(eys), edx, edy), flush=True)
+k = pdx / edx; print('emulator scaled by %.3f (rows would want %.3f)' % (k, pdy / edy), flush=True)
+def scaled(a): return cv2.resize(a, None, fx=k, fy=k, interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR)
+ms, ids = scaled(meas), scaled(ideal); mcx, mcy = ecx * k, ecy * k
+# one window for all three: the photo's lit area, around the middle crossing
+y0, y1, x0, x1 = box(ph, 25); hw0, hw1, hh0, hh1 = pcx - x0, x1 - pcx, pcy - y0, y1 - pcy
+def cut(a, cx, cy):
+    X0, Y0 = int(round(cx - hw0)), int(round(cy - hh0)); w, h = int(hw0 + hw1), int(hh0 + hh1)
+    o = np.zeros((h, w, 3), np.float32); sx0, sy0 = max(0, X0), max(0, Y0); sx1, sy1 = min(a.shape[1], X0 + w), min(a.shape[0], Y0 + h)
+    o[sy0 - Y0:sy1 - Y0, sx0 - X0:sx1 - X0] = a[sy0:sy1, sx0:sx1]; return o
+P, M, I = fit(cut(ph, pcx, pcy)), fit(cut(ms, mcx, mcy)), fit(cut(ids, mcx, mcy))
 panels = [(P, 'Real Vectrex (photo)'), (M, 'Vectrex_EMU: the measured tube'), (I, 'A perfect grid (an ideal tube)')]
 W = sum(p_.width for p_, _ in panels) + 20 * 4; im = Image.new('RGB', (W, Hh + 50), (6, 6, 6)); d = ImageDraw.Draw(im); x = 20
 for p_, t in panels: im.paste(p_, (x, 44)); d.text((x, 8), t, fill=(235, 160, 60), font=f); x += p_.width + 20

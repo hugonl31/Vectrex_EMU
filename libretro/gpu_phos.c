@@ -130,8 +130,14 @@ static const char *PH_FS_SAT =
 	/* (tm 4 - the owner, 2026-11-25: the tube's vectors one colour at every brightness: the colour by the pixel's place in its
 	 *  own line's profile (its light / the line's peak near by), not by its brightness - the core tcore, the thin rim where the
 	 *  light falls off thalo; a faint line the same as a bright one, scaled down) */
-	"    if (tm == 4) { float r = dot(max(lr.rgb, 0.0), vec3(1.0 / 3.0)) / max(e, 1e-6); vec3 v = pow(k * l, vec3(1.0 / 2.2));\n"
-	"      fragc = vec4(v * mix(thalo, tcore, smoothstep(thr.x, thr.y, r)), age); return; }\n"
+	"    if (tm == 4) { float lc = dot(max(lr.rgb, 0.0), vec3(1.0 / 3.0)), r = lc / max(e, 1e-6); vec3 v = pow(k * l, vec3(1.0 / 2.2));\n"
+	/* (a crest of its own line is its core: brighter than both its neighbours across it in some direction - a line beside a
+	 *  brighter dot (a corner, a rest) is not its halo; the owner, 2026-11-25: the dots' round halo showed on the lines as blue) */
+	"      float rid = 0.0; const ivec2 D[4] = ivec2[4](ivec2(2, 0), ivec2(0, 2), ivec2(2, 2), ivec2(2, -2));\n"
+	"      for (int j = 0; j < 4; j++) { float a = dot(texelFetch(lt, ip + D[j], 0).rgb, vec3(1.0 / 3.0)), bb = dot(texelFetch(lt, ip - D[j], 0).rgb, vec3(1.0 / 3.0));\n"
+	"        rid = max(rid, 1.0 - smoothstep(0.8, 1.0, max(a, bb) / max(lc, 1e-6))); }\n"
+	"      rid *= step(0.05, r);\n"
+	"      fragc = vec4(v * mix(thalo, tcore, max(smoothstep(thr.x, thr.y, r), rid)), age); return; }\n"
 	/* (t: 0 a bright line (q 1 and up) .. 1 the faintest measured (q tq.w); the colour from the tube's white to tdim - linear in
 	 *  mired against the log of the excitation, as the RAWs; the luminance kept) */
 	"    float t = clamp(log(max(e / tq.x, 1e-6)) / log(tq.w), 0.0, 1.0);\n"

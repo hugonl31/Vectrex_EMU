@@ -331,11 +331,17 @@ static void auto_path (char *o, size_t n) { snprintf (o, n, "%s" SEP "vectrex_em
                                                 file: the overlay on / off kept beside it; RetroArch keeps it as the option) */
 static void auto_keep (void)
 {
+#ifdef VX_EMUVR
+	return;                                     /* (no automatic overlay: nothing to keep) */
+#endif
 	if (!sheet_file || ov_on == auto_saved) return; auto_saved = ov_on;
 	char p[1100]; auto_path (p, sizeof p); FILE *f = fopen (p, "w"); if (f) { fprintf (f, "%d\n", ov_on); fclose (f); }
 }
 static void auto_load (void)
 {
+#ifdef VX_EMUVR
+	return;
+#endif
 	if (!sheet_file || !opt_overlay) return;
 	char p[1100]; auto_path (p, sizeof p); FILE *f = fopen (p, "r"); int v;
 	if (f) { if (fscanf (f, "%d", &v) == 1) ov_on = v != 0; fclose (f); }
@@ -424,7 +430,6 @@ static void cart_poll (void)
 #define VX_TRAIL_DEF 1.0
 static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and the bezel's look - scratches, plastic glow, case mirror / wear, the tube face's grey - read by
 	                                         the mod from its own UserData file; the sheet's "look" line keeps their defaults for older mods) */
-	{ "vectrex_emu_overlay", "Automatic overlay (the game's own put on at each game - SELECT takes it off / puts it on); off|on" },
 	{ "vectrex_emu_screen_light", "Screen light in EmuVR (all of the picture alike - the trail ends up at this / the dots level); 2.4x|1x|1.5x|2x|2.8x|3x|4x" },
 	{ "vectrex_emu_dot_level", "Screen light in EmuVR: what is the brightest (the beam's dots and corners at 2 - lines below them by their speed); 2|1.5|2.5|3|4" },
 	{ "vectrex_emu_imager", "3D Imager; vr side by side|colour|left eye|right eye|off" },
@@ -749,7 +754,11 @@ static void read_options (void)
 #endif
 	if (!rate_set) { struct retro_variable v = { "vectrex_emu_rate", NULL };
 	  int r = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : VX_RATE_DEF; opt_rate = r >= 30 && r <= 360 ? r : VX_RATE_DEF; }
+#ifdef VX_EMUVR
+	opt_overlay = 0;                            /* (2026-11-25, the owner: no automatic overlay in EmuVR - only those put on by hand) */
+#else
 	opt_overlay = opt_is ("vectrex_emu_overlay", "on");   /* (v0.25: off by default) */
+#endif
 	opt_imager = opt_is ("vectrex_emu_imager", "off") ? 0 : opt_is ("vectrex_emu_imager", "colour") ? 1 : opt_is ("vectrex_emu_imager", "left eye") ? 3
 	           : opt_is ("vectrex_emu_imager", "right eye") ? 4 : 2;   /* (3 / 4: one eye's pictures only - the other half turn left out) */
 #ifdef VX_EMUVR
@@ -3872,8 +3881,12 @@ static void cart_swap (const char *path)
 	fprintf (stderr, "[vectrex_emu] cartridge swapped: %s (%s)\n", path, rc == 2 ? "FAILED" : "running");
 	while (nh) frame_pop (); aq_r = aq_w = 0;
 	if (ov) stbi_image_free (ov); ov = NULL; ov_path[0] = 0;
+#ifndef VX_EMUVR
 	{ char od[1600]; if (g_sys[0]) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", g_sys); try_overlay_dir (od, ovname); }
 	  if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", g_dir); try_overlay_dir (od, ovname); } }
+#else
+	(void) ovname;                              /* (EmuVR: no automatic overlay - none looked up) */
+#endif
 	boot_id = VX_TICKS () | 1; sheet_written = -1; sheet_write ();
 }
 /* a game started: the common part of RetroArch's load and the ROM browser's (first: RetroArch's own - the GPU asked for) */
@@ -3943,8 +3956,12 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	if (ls_cfg_on ? ls_intro_skip : opt_is ("vectrex_emu_skip_intro", "on")) skip_boot ();   /* (1.1: as the desktop's Skip the intro - the BIOS run unseen) */
 	auto_load ();
 	char od[1600];
+#ifndef VX_EMUVR
 	if (sys) { snprintf (od, sizeof od, "%s" SEP "vectrex_emu" SEP "overlays", sys); try_overlay_dir (od, gpath); }
 	if (!ov) { snprintf (od, sizeof od, "%s" SEP "Overlays", dir); try_overlay_dir (od, gpath); }
+#else
+	(void) od;                                  /* (EmuVR: no automatic overlay - none looked up) */
+#endif
 	{
 	if (first) { const char *rv = optv ("vectrex_emu_renderer"); opt_renderer = !strcmp (rv, "CPU only") ? 2 : !strcmp (rv, "GPU") ? 1 : 0;
 	  gpu_asked = opt_renderer != 2 ? gpu_request () : 0; if (!gpu_asked) gpu_ok = 0; }   /* (each game: RetroArch sets the context up after this) */

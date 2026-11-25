@@ -24,7 +24,7 @@ targets:
         type: folder
         buildPhase: resources
       - path: ../libretro/libretro_vx.c
-        compilerFlags: &core "-w -ffp-contract=off -fgnu89-inline -DVX_RETROARCH -DCM33_NO_JIT -DARM11_NO_JIT -DVX_DBG_LOG_S=2.0 -DVX_DBG_STATUS_S=5.0 -include vx_token.h"
+        compilerFlags: &core "-w -ffp-contract=off -fgnu89-inline -DVX_RETROARCH -DCM33_NO_JIT -DARM11_NO_JIT -DVX_DBG_LOG_S=2.0 -DVX_DBG_STATUS_S=5.0 -DVX_TINT_DEFAULT=2 -include vx_token.h"
       - path: ../src/core/state/state_vecx.c
         compilerFlags: *core
       - path: ../src/core/state/state_e6809.c

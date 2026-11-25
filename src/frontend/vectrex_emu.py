@@ -3365,6 +3365,13 @@ class App:
                                 ('lightpen', 'Port 2: Light pen', "The light pen in port 2, for Art Master, AnimAction and Melody Master: the mouse is the pen - point at the picture, hold the left button to touch the screen."),
                                 ('imager', 'Port 2: 3D Imager', "The 3D Imager goggles in port 2: its spinning colour disc makes 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster colourful (the disc spins up first).")):
                 check(m, lbl, '', lambda k=k: self.speech == k and not Core.veclink, lambda k=k: self.set_speech(k), tip)
+            # (the 3D Imager's view under the ports, where people look for it - the owner, 2026-11-25: it was only in Config,
+            #  and only while the goggles were in port 2)
+            im = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='3D Imager view', menu=im)
+            for k, lbl, tip in (('both', 'Both eyes (colour)', "Both eyes' pictures at once, in colour - as the screen looks without the goggles."),
+                                ('left', 'Left eye only', "Only the left eye's pictures: no double image."),
+                                ('right', 'Right eye only', "Only the right eye's pictures: no double image.")):
+                check(im, lbl, '', lambda k=k: getattr(self, 'imager_eye', 'both') == k, lambda k=k: self.set_imager_eye(k), tip)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Online', menu=m)
             item(m, 'Host with a code...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
                  "Play this game with someone over the internet: you are player 1. The Online window shows a five-letter code "

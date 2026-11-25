@@ -3,6 +3,17 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.8.9
+
+* Android: less input delay - each picture is drawn just before the display takes it, at most one waiting in
+  Android's queue (it drew ahead until the queue was full: 29 ms at 120 Hz, 45 ms at 60 Hz from the swap to the glass
+  on the Nova).
+* Android: the input delay measured - with the new Input Delay Test cart (Tests: a square while a button is held) every
+  press shows its time from the button to the glass, the log has the details and averages.
+* Threaded emulation for Vectrex games (Settings / Core Options > System, off by default): the 6809 emulated while the
+  picture is drawn - steadier on a busy game at 120 Hz (Vectrexians), one refresh more input delay. Not during online
+  play.
+
 ## v1.8.8
 
 * iPhone / iPad and Android: Max brightness is Gameplay by default (the screen at its brightest while a game plays,

@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.8.9
+- Android: less input delay (one picture queued, not three)
+- Android: Input Delay Test cart - the delay measured to the glass
+- Threaded emulation for Vectrex games (option, off by default)
+
 ## v1.8.8
 - Phones: Max brightness on for gameplay by default
 - Phones: UVMC2 / PiTrex games at a steady 60 Hz by default

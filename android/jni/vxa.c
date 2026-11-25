@@ -140,6 +140,21 @@ static void vxa_ts_setup (void)
 	vxa_ts_ok = vxa_fid && vxa_fts && eglSurfaceAttrib (vxa_dpy, vxa_surf, 0x3430, EGL_TRUE);   /* (EGL_TIMESTAMPS_ANDROID) */
 	vlog ("input delay: the glass's times %s", vxa_ts_ok ? "on (EGL frame timestamps)" : "not available - up to the swap only");
 }
+/* Frame pacing (the owner's measurement, 2026-11-25: 29 ms at 120 Hz, 45 at 60 from the swap to the glass - the app drew
+ * ahead until Android's queue was full, each picture waited in line): before a refresh's work, wait until the display
+ * has latched the last picture swapped (EGL_COMPOSITION_LATCH_TIME_ANDROID) - at most one picture queued, the input
+ * read just before its picture is made. Up to two refreshes, then on regardless (the old way) */
+static vxa_u64 vxa_pace_fid; static double vxa_pace_t; static long vxa_pace_to, vxa_pace_n;
+static void vxa_pace (double frame)
+{
+	if (!vxa_ts_ok || !vxa_pace_fid) return;
+	const EGLint what = 0x3436; const double t0 = vxa_now (), lim = t0 + 2.0 * frame;
+	for (;;) { long long v = -2;
+		if (vxa_fts (vxa_dpy, vxa_surf, vxa_pace_fid, 1, &what, &v) != EGL_TRUE || v != -2) break;
+		if (vxa_now () > lim) { vxa_pace_to++; break; }
+		usleep (250); }
+	vxa_pace_t += vxa_now () - t0; vxa_pace_n++; vxa_pace_fid = 0;
+}
 static const char *vxa_lat_smooth (void) { const int i = vxa_opt_find ("vectrex_emu_smooth"); return i >= 0 ? vxa_opt[i].val : "?"; }
 static EGLConfig vxa_cfg; static int vxa_hdr_surf;               /* (the window's surface: extended linear, half floats) */
 static ANativeWindow *vxa_win, *vxa_win_new; static volatile int vxa_win_changed;
@@ -587,6 +602,7 @@ static void *vxa_main (void *u)
 			usleep (20000); last = 0; continue; }
 		if (!was_running) { was_running = 1; if (vxa_as) AAudioStream_requestStart (vxa_as); vlog ("resumed"); }
 		vxa_audio_check ();
+		vxa_pace (1.0 / (vxa_av.timing.fps > 0 ? vxa_av.timing.fps : 60));   /* (the last picture taken by the display: this refresh's starts) */
 		const double now = vxa_now (); double dt = last ? now - last : 0; last = now; ticks++;
 		const double fps = vxa_av.timing.fps > 0 ? vxa_av.timing.fps : 60;
 		if (dt > 1.5 / fps) late++;
@@ -638,8 +654,10 @@ static void *vxa_main (void *u)
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
 		{ /* (input delay: the first picture with the square after an armed press - its frame id for the glass's time) */
 		  extern int vx_pic_lines; const int lit = vx_pic_lines >= 4;
+		  vxa_u64 fid = 0; if (!(vxa_ts_ok && vxa_fid (vxa_dpy, vxa_surf, &fid))) fid = 0;
+		  vxa_pace_fid = fid;
 		  if (vxa_lat_armed && lit && !vxa_lat_wait) { vxa_lat_armed = 0; vxa_lat_t1 = vxa_now (); vxa_lat_wait = 1; vxa_lat_ages = 0; vxa_lat_tsw = 0;
-			if (!(vxa_ts_ok && vxa_fid (vxa_dpy, vxa_surf, &vxa_lat_fid))) vxa_lat_fid = 0; }
+			vxa_lat_fid = fid; }
 		  vxa_lat_dark = !lit; }
 		eglSwapBuffers (vxa_dpy, vxa_surf);
 		if (vxa_lat_wait && !vxa_lat_tsw) vxa_lat_tsw = vxa_now ();   /* (that picture handed to Android: the swap done) */
@@ -663,6 +681,8 @@ static void *vxa_main (void *u)
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
 				runs / t, pres / t, ticks ? t_run * 1000 / ticks : 0, ticks ? t_cpu * 1000 / ticks : 0, t_max * 1000, late, ticks, zero, multi, buf * 1000, vxa_under, vxa_drop, vxa_holding ? ", held" : "");
 			vxa_threads (t);
+			if (vxa_pace_n) { vlog ("pacing: %.1f ms a refresh waiting for the display to take the last picture, %ld of %ld not taken within two refreshes", vxa_pace_t * 1000 / vxa_pace_n, vxa_pace_to, vxa_pace_n);
+				vxa_pace_t = 0; vxa_pace_n = vxa_pace_to = 0; }
 			{ /* (the core's run split up - emulation, Smooth motion, the picture's lines, the afterglow's lines, the GPU's commands:
 			   *  mean and largest a run over these 5 s - as the iOS app's; where a slow refresh's time went) */
 			  extern void vx_app_cpu_split (double mean[5], double most[5]); double cm[5], cx[5]; vx_app_cpu_split (cm, cx);

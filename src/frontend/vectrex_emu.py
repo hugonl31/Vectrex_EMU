@@ -1818,6 +1818,74 @@ UVM2_CFG_VERSION = '2026-11-23'
 UVM2_CFG_MARK = ('.conf', 'vectrex_emu_cal')
 
 
+# the PiTrex's calibration for the emulator (as uvm2_cfg_force; the same in the core, libretro_vx.c px_cal_force): the
+# owner's calibrated card's values - the keys both card versions have; a newer card's per-scale calibration values 0 -
+# written into the card folder's vectrexInterface.ini once per PX_CAL_VERSION, only keys the file has, each value in its
+# place; the file before kept as vectrexInterface.ini.before_vxcal<version>; the marker vectrex_emu_cal beside it (the
+# player's later calibrations stay). The owner, 2026-11-25: the PiTrex's and the UVMC2's calibration shipped on all systems
+PX_CAL_VERSION = '1'
+PX_CAL = [('DELAY_ZERO_VALUE', '25'),
+           ('CRANKY_FLAG', '22'),
+           ('DELAY_AFTER_T1_END_VALUE', '10'),
+           ('MAX_USED_STRENGTH', '90'),
+           ('RESET_TO_ZERO_DIF_MAX', '2009'),
+           ('CYCLE_EQUIVALENT', '666'),
+           ('KEEP_DOTS_ORDERED', '0'),
+           ('MINSCALE', '2'),
+           ('DELAY_AFTER_XSH_VALUE', '2'),
+           ('DELAY_AFTER_YSH_VALUE', '1'),
+           ('CRANKY_DELAY_Y_TO_NULL_VALUE', '1'),
+           ('CALIBRATION_VALUE', '0'),
+           ('CALIBRATION_VALUE5', '0'),
+           ('CALIBRATION_VALUE10', '0'),
+           ('CALIBRATION_VALUE15', '0'),
+           ('CALIBRATION_VALUE20', '0'),
+           ('CALIBRATION_VALUE50', '0'),
+           ('CALIBRATION_VALUE100', '0'),
+           ('XCAL_VALUE', '0.000000'),
+           ('YCAL_VALUE', '0.000000'),
+           ('RASTER_RETURN_DELAY_LEFT', '9'),
+           ('RASTER_RETURN_DELAY_RIGHT', '9'),
+           ('RASTER_DOWN_BASE', '13')]
+
+
+def px_cal_force(d):
+    if not d:
+        return False
+    mk, p = os.path.join(d, 'vectrex_emu_cal'), os.path.join(d, 'vectrexInterface.ini')
+    try:
+        if open(mk).read().strip() == PX_CAL_VERSION:
+            return False
+    except OSError:
+        pass
+    try:
+        raw = open(p, 'rb').read()
+    except OSError:
+        return False
+    bk = p + '.before_vxcal' + PX_CAL_VERSION
+    if not os.path.exists(bk):
+        try:
+            open(bk, 'wb').write(raw)
+        except OSError:
+            pass
+    cal, out, changed = dict(PX_CAL), [], 0
+    for ln in raw.decode('latin-1').splitlines(keepends=True):
+        m = re.match(r'(\s*([A-Z0-9_]+)\s*=\s*)([^;\s]*)([^\r\n]*)(\r?\n?)$', ln)
+        if m and not ln.lstrip().startswith(';') and m.group(2) in cal:
+            v = cal[m.group(2)]
+            changed += m.group(3).strip() != v
+            ln = m.group(1) + v + m.group(4) + m.group(5)
+        out.append(ln)
+    try:
+        if changed:
+            open(p, 'wb').write(''.join(out).encode('latin-1'))
+        open(mk, 'w').write(PX_CAL_VERSION + '\n')
+    except OSError as e:
+        print('PiTrex calibration: %s' % e)
+        return False
+    print('PiTrex calibration %s on the card %s: %d values set' % (PX_CAL_VERSION, d, changed))
+    return True
+
 def uvm2_cfg_force(d):
     """the SD card folder d gets the emulator's calibration (UVM2_CFG_DEFAULT, both UVM2_CFG_FILES) once per
     UVM2_CFG_VERSION, whatever it has - a player's own file too, or none; a different file is kept beside it as
@@ -2022,6 +2090,7 @@ class Core:
                 pass
             px_dir = sd_dir = None
         if px_dir and rom.lower().endswith(('.img', '.pit')):       # a PiTrex program: its SD card is the folder px_dir
+            px_cal_force(px_dir)                                    # (this version's calibration on the card, once)
             sd_dir = None
             img = os.path.join(CACHE_DIR, 'pitrex_sd.img')
             try:
@@ -2879,7 +2948,8 @@ class App:
         if self.on_top:
             self.root.after(300, self.apply_on_top)               # (View > Always on top, as saved)
         self.root.bind('<F9>', self.toggle_rec)                # (Record: start / stop recording)
-        self.root.bind('<F12>', self.snapshot)                 # (Record: a big snapshot)
+        self.root.bind('<F12>', self.snapshot)                 # (Record: the screen as shown, at the window's size)
+        self.root.bind('<Shift-F12>', self.snapshot_hi)        # (and drawn again larger - the owner, 2026-11-25)
         self.root.bind('<F8>', self.vl_other_front)            # (Test VecLink on this PC: the other Vectrex in front)
         self.root.bind('<Motion>', self.pointer_moved)
         self.screen.bind('<Motion>', self.mouse_moved, add='+')
@@ -3347,7 +3417,9 @@ class App:
                  "and the time while it records (never in the video). After Stop the video is saved in the background.")
             self.rec_menu = (m, m.index('end'))
             item(m, 'Snapshot', 'F12', self.snapshot,
-                 "A picture of the screen as a PNG, drawn again at up to four times the window's size (Recording settings).")
+                 "The screen as a PNG, exactly as shown, at the window's size.")
+            item(m, 'High-res snapshot', 'Shift+F12', self.snapshot_hi,
+                 "The screen drawn again at up to four times the window's size (Snapshot size in Recording settings), as a PNG.")
             m.add_separator()
             item(m, 'Open recordings folder', '', lambda: recorder.open_folder(self.rec_folder()))
             item(m, 'Recording settings...', '', self.rec_window,
@@ -8166,9 +8238,12 @@ class App:
         except Exception:   # noqa
             pass
 
-    def snapshot(self, e=None):
-        """F12: the screen as a PNG - drawn again at up to four times the window's size (a few pictures at that size
-        first: the phosphor lit again), then back"""
+    def snapshot_hi(self, e=None):
+        """Shift+F12: the high-res snapshot"""
+        return self.snapshot(e, hi=True)
+    def snapshot(self, e=None, hi=False):
+        """F12: the screen as a PNG, the picture last shown at the window's size. Shift+F12 (hi): drawn again at the
+        Snapshot size - up to four times the window's (a few pictures at that size first: the phosphor lit again), then back"""
         if self.snap_job or not self.rec_ok():
             return 'break'
         ff = self.rec_ff()
@@ -8177,7 +8252,9 @@ class App:
         r = self.ren
         rw, rh = r.real_size
         opt = self.rec_opts.get('rec_snap', 'max')
-        k = {'window': 1.0, '2x': 2.0}.get(opt, min(4.0, recorder.SNAP_MAX_H / float(max(1, rh))))
+        if opt == 'window':
+            opt = 'max'                                         # (Shift+F12 is the larger one: Window size is F12's)
+        k = {'2x': 2.0}.get(opt, min(4.0, recorder.SNAP_MAX_H / float(max(1, rh))))
         try:
             mx = ctypes.c_int(0); r.gl.glGetIntegerv(0x0D33, ctypes.byref(mx))     # (GL_MAX_TEXTURE_SIZE)
             k = min(k, (mx.value or 8192) / float(max(rw, rh)))
@@ -8192,7 +8269,7 @@ class App:
         deck_on = self.rec_opts.get('rec_deck')
         # the picture on the screen at this moment, exactly (the owner, 2026-11-22: not some frames later, not drawn again larger -
         # a picture drawn again has other light in it): the one last shown, kept by the renderer, at the window's size
-        if hasattr(r, 'read_last') and not getattr(r, 'rot', 0):
+        if not hi and hasattr(r, 'read_last') and not getattr(r, 'rot', 0):
             box = self.rec_box(deck_on)
             data = r.read_last(box)
             if data:
@@ -8204,7 +8281,7 @@ class App:
                                                             'Snapshot saved: %s (%d x %d)' % (os.path.basename(path), w_, h_) if ok else 'Snapshot failed'))
                 threading.Thread(target=work, daemon=True).start()
                 return 'break'
-        big = (k > 1.05 and getattr(r, 'R', None) and getattr(r, 'float_ok', False) and hasattr(r, '_win_wh')
+        big = (hi and k > 1.05 and getattr(r, 'R', None) and getattr(r, 'float_ok', False) and hasattr(r, '_win_wh')
                and not self.rec)                                # (recording: the window's size - a video keeps its size)
         if not big:
             self.flash_until = 0                                # (no message in the snapshot)

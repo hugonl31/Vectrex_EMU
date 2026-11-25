@@ -1247,6 +1247,73 @@ static int uvm2_cal_force (const char *base, const char *game_dir)   /* (returns
 	fprintf (stderr, "[vectrex_emu] UVMC2 calibration %s on the card %s%s\n", UVM2_CFG_VERSION, fo, ok ? "" : " - FAILED");
 	return ok;
 }
+
+/* (2026-11-25) the PiTrex's calibration for the emulator, as the UVMC2's above: the owner's calibrated card's values
+ * (vectrexInterface.ini, the keys both card versions have; a newer card's per-scale calibration values 0) written into
+ * the card folder's vectrexInterface.ini once per PX_CAL_VERSION - only keys the file has, each value in its place, the
+ * rest of the file as it is; the file before kept as vectrexInterface.ini.before_vxcal<version> (the first one only).
+ * The marker vectrex_emu_cal (the version) beside it: the player's later calibrations stay. Before the card is built */
+#define PX_CAL_VERSION "1"
+static const char *const px_cal[][2] = {
+	{ "DELAY_ZERO_VALUE", "25" },
+	{ "CRANKY_FLAG", "22" },
+	{ "DELAY_AFTER_T1_END_VALUE", "10" },
+	{ "MAX_USED_STRENGTH", "90" },
+	{ "RESET_TO_ZERO_DIF_MAX", "2009" },
+	{ "CYCLE_EQUIVALENT", "666" },
+	{ "KEEP_DOTS_ORDERED", "0" },
+	{ "MINSCALE", "2" },
+	{ "DELAY_AFTER_XSH_VALUE", "2" },
+	{ "DELAY_AFTER_YSH_VALUE", "1" },
+	{ "CRANKY_DELAY_Y_TO_NULL_VALUE", "1" },
+	{ "CALIBRATION_VALUE", "0" },
+	{ "CALIBRATION_VALUE5", "0" },
+	{ "CALIBRATION_VALUE10", "0" },
+	{ "CALIBRATION_VALUE15", "0" },
+	{ "CALIBRATION_VALUE20", "0" },
+	{ "CALIBRATION_VALUE50", "0" },
+	{ "CALIBRATION_VALUE100", "0" },
+	{ "XCAL_VALUE", "0.000000" },
+	{ "YCAL_VALUE", "0.000000" },
+	{ "RASTER_RETURN_DELAY_LEFT", "9" },
+	{ "RASTER_RETURN_DELAY_RIGHT", "9" },
+	{ "RASTER_DOWN_BASE", "13" }
+};
+static int px_cal_force (const char *base)
+{
+	char fo[1800], mk[1900], p[1900], bk[1950]; snprintf (fo, sizeof fo, "%s" SEP "vectrex_emu" SEP "pitrex", base);
+	snprintf (mk, sizeof mk, "%s" SEP "vectrex_emu_cal", fo); snprintf (p, sizeof p, "%s" SEP "vectrexInterface.ini", fo);
+	{ FILE *m = fopen (mk, "rb"); if (m) { char b[32] = { 0 }; size_t n = fread (b, 1, 31, m); fclose (m);
+		while (n && (b[n - 1] == '\n' || b[n - 1] == '\r' || b[n - 1] == ' ')) b[--n] = 0;
+		if (!strcmp (b, PX_CAL_VERSION)) return 0; } }
+	FILE *f = fopen (p, "rb"); if (!f) return 0;                 /* (no card, or no ini on it: nothing to do) */
+	static char in[16384], out[20000]; size_t n = fread (in, 1, sizeof in - 1, f); fclose (f); in[n] = 0;
+	snprintf (bk, sizeof bk, "%s.before_vxcal%s", p, PX_CAL_VERSION);
+	if (!uvm2_isfile (bk)) { FILE *o = fopen (bk, "wb"); if (o) { fwrite (in, 1, n, o); fclose (o); } }
+	size_t w = 0; int changed = 0; const char *l = in;
+	while (*l && w < sizeof out - 256) {                          /* (line by line: "KEY = value[;]" with a key of ours gets our value) */
+		const char *e = strchr (l, '\n'); size_t len = e ? (size_t) (e - l + 1) : strlen (l);
+		const char *k = l; while (k < l + len && (*k == ' ' || *k == '\t')) k++;
+		int done = 0;
+		if (*k != ';') for (size_t i = 0; i < sizeof px_cal / sizeof px_cal[0] && !done; i++) {
+			size_t kl = strlen (px_cal[i][0]);
+			if (strncmp (k, px_cal[i][0], kl) || (k[kl] != ' ' && k[kl] != '\t' && k[kl] != '=')) continue;
+			const char *q = k + kl; while (*q == ' ' || *q == '\t') q++; if (*q != '=') continue; q++;
+			while (*q == ' ' || *q == '\t') q++;
+			const char *v_end = q; while (v_end < l + len && *v_end != ';' && *v_end != '\r' && *v_end != '\n') v_end++;
+			while (v_end > q && (v_end[-1] == ' ' || v_end[-1] == '\t')) v_end--;
+			if ((size_t) (v_end - q) != strlen (px_cal[i][1]) || strncmp (q, px_cal[i][1], (size_t) (v_end - q))) changed++;
+			memcpy (out + w, l, (size_t) (q - l)); w += (size_t) (q - l);
+			memcpy (out + w, px_cal[i][1], strlen (px_cal[i][1])); w += strlen (px_cal[i][1]);
+			size_t rest = (size_t) (l + len - v_end); memcpy (out + w, v_end, rest); w += rest; done = 1; }
+		if (!done) { memcpy (out + w, l, len); w += len; }
+		l += len; }
+	int ok = 1;
+	if (changed) { FILE *o = fopen (p, "wb"); if (!o) ok = 0; else { if (fwrite (out, 1, w, o) != w) ok = 0; if (fclose (o)) ok = 0; } }
+	if (ok) { FILE *m = fopen (mk, "wb"); ok = m && fprintf (m, "%s\n", PX_CAL_VERSION) > 0; if (m && fclose (m)) ok = 0; }
+	fprintf (stderr, "[vectrex_emu] PiTrex calibration %s on the card %s: %d values set%s\n", PX_CAL_VERSION, fo, changed, ok ? "" : " - FAILED");
+	return ok;
+}
 /* (1.1) a save's file: RetroArch's saves folder (else the game's), <game file><ext>; a save next to the ROM and none
  * there yet: copied over as the start */
 static void save_path (const char *rom, const char *ext, char *out, size_t n)
@@ -1425,6 +1492,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	{ const char *e = strrchr (path, '.'); int px = e && (!vx_stricmp (e, ".img") || !vx_stricmp (e, ".pit")), um = e && !vx_stricmp (e, ".um2");
 	  sd_img[0] = sd_folder[0] = 0;
 	  if (um) uvm2_cal_force (sys ? sys : dir, dir);   /* (this version's calibration on the card, once) */
+	  if (px) px_cal_force (sys ? sys : dir);          /* (the PiTrex's too - the owner, 2026-11-25: shipped on all systems) */
 	  if (px || um) { /* (1.1, as the desktop: the card is a folder - <system>/vectrex_emu/uvmc2 or pitrex - built into an image in
 	                     RetroArch's saves folder before the game and what the game wrote copied back after it) */
 		char fo[1800]; snprintf (fo, sizeof fo, "%s" SEP "vectrex_emu" SEP "%s", sys ? sys : dir, px ? "pitrex" : "uvmc2"); sdc_st st;

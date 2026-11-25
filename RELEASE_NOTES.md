@@ -5,6 +5,10 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.9.0
 
+* PiTrex calibration shipped on every system (PC, Mac, Linux, RetroArch, the apps), as the UVMC2's: the card's
+  vectrexInterface.ini gets the emulator's tuned values once (the file before kept beside it); later calibrations stay.
+* Shift+F12 (Record > High-res snapshot): the screen drawn again at up to four times the window's size. F12 is the
+  instant snapshot, exactly the picture shown, at the window's size.
 * Online > Find LAN games... (PC, Mac, Linux): the games hosted on this network, one click joins (the list was
   only in the window behind Join with a code).
 * Get games & extras (PC): the PiTrex's SD card from the project's own copy when Malban's site offers that same

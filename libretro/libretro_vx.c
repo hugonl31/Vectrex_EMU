@@ -422,24 +422,11 @@ static void cart_poll (void)
 #ifdef VX_EMUVR
 #define VX_RATE_DEF 90
 #define VX_TRAIL_DEF 1.0
-static struct retro_variable vars[] = {
+static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and the bezel's look - scratches, plastic glow, case mirror / wear, the tube face's grey - read by
+	                                         the mod from its own UserData file; the sheet's "look" line keeps their defaults for older mods) */
 	{ "vectrex_emu_overlay", "Automatic overlay (the game's own put on at each game - SELECT takes it off / puts it on); off|on" },
 	{ "vectrex_emu_screen_light", "Screen light in EmuVR (all of the picture alike - the trail ends up at this / the dots level); 2.4x|1x|1.5x|2x|2.8x|3x|4x" },
 	{ "vectrex_emu_dot_level", "Screen light in EmuVR: what is the brightest (the beam's dots and corners at 2 - lines below them by their speed); 2|1.5|2.5|3|4" },
-	{ "vectrex_emu_tube_grey", "Tube face in room light (Vectrex_EMU's phosphor layer - grey where light falls on it, black in the dark - EmuVR: 0.08); 0.32|0.08|0.2|0.25|0.4|0.5" },
-	{ "vectrex_emu_case_refl", "Bezel walls: the picture mirrored in them (Vectrex_EMU's case reflections); x1|x0|x0.5|x1.5|x2" },
-	{ "vectrex_emu_case_wear", "Bezel walls: wear (Vectrex_EMU's case scratches); x1|x0|x0.5|x1.5|x2" },
-	{ "vectrex_emu_scr", "Overlay: scratches; on|off" },
-	{ "vectrex_emu_scr_wear", "Overlay: wear - how much the sheet was handled (all scratches); x0.25|x0|x0.1|x0.5|x0.75|x1|x1.25|x1.5|x2" },
-	{ "vectrex_emu_scr_fine", "Overlay: fine scratches (the matte buff); x1|x0|x0.1|x0.25|x0.5|x0.75|x1.25|x1.5|x2" },
-	{ "vectrex_emu_scr_medium", "Overlay: medium scratches; x1|x0|x0.1|x0.25|x0.5|x0.75|x1.25|x1.5|x2" },
-	{ "vectrex_emu_scr_large", "Overlay: damage (deep, through the colour); x0.1|x0|x0.25|x0.5|x0.75|x1|x1.25|x1.5|x2" },
-	{ "vectrex_emu_scr_scrib", "Overlay: scribbles (the share of curly scratches); x1|x0|x0.1|x0.25|x0.5|x0.75|x1.25|x1.5|x2" },
-	{ "vectrex_emu_scr_lamps", "Overlay: scratches catch the room's lamps (near their reflection); on|off" },
-	{ "vectrex_emu_scr_glint", "Overlay: glint strength (how strongly the scratches catch the light); x1|x0|x0.1|x0.25|x0.5|x0.75|x1.25|x1.5|x2" },
-	{ "vectrex_emu_scr_reach", "Overlay: glint reach (left: close to the lines, right: farther out); x1|x0|x0.1|x0.25|x0.5|x0.75|x1.25|x1.5|x2" },
-	{ "vectrex_emu_art_glow", "Overlay: plastic glow; on|off" },
-	{ "vectrex_emu_art_glow_k", "Overlay: plastic glow strength; x0.2|x0|x0.1|x0.25|x0.5|x0.75|x1|x1.5|x2" },
 	{ "vectrex_emu_imager", "3D Imager; vr side by side|colour|left eye|right eye|off" },
 	{ "vectrex_emu_swap_eyes", "3D Imager: swap eyes; off|on" },
 	{ "vectrex_emu_eye_shift", "3D Imager: right eye's picture left (-) or right (+), pixels; 0|-10|-20|-30|-40|-50|-60|-70|-80|-90|-100|-110|-120|-130|-140|-150|-160|10|20|30|40|50|60|70|80|90|100|110|120|130|140|150|160" },
@@ -838,7 +825,11 @@ static void read_options (void)
 #endif
 	raw_groom = TRI ("vectrex_emu_room_glass"); opt_room_glass = raw_groom > 0;
 	if (unit_known) { unit_make (unit_preset (), optv); if (vx_ok ()) { emu_wait_ext (); unit_live (unit_addon); } }   /* (the unit, while running) */
+#ifdef VX_EMUVR
+	opt_async = opt_is ("vectrex_emu_threaded", "on");   /* (EmuVR: off - no key in its list; the builder, 2026-11-25) */
+#else
 	opt_async = !opt_is ("vectrex_emu_threaded", "off");
+#endif
 	{ const int w = atoi (optv ("vectrex_emu_white")); opt_white = w >= 5600 && w <= 16000 ? w : 12000; }   /* (the desktop's 5600 - 16000 K; "6504 K (neutral)" before 2026-11-23 reads as 6504) */
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");

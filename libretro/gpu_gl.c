@@ -128,6 +128,7 @@ static const char *GPU_FS_A =
 	"in vec2 vuv; out vec4 fragc;\n"
 	"uniform sampler2D tex, lmap, smap;\n"
 	"uniform int rot, fx;\n"
+	"uniform float vrk;\n"
 	"uniform vec4 crop;\n"
 	"uniform vec2 norm;\n"
 	"uniform float pxs, bscale, glass, edge, grey, lk;\n"
@@ -327,6 +328,7 @@ static const char *GPU_FS_B =
 	"        c = sqrt(c * c + add * add) * g;\n"
 	"        if (cse > 0.5) c += sdg > -3.0 * pxs ? plastic(gd, tgt, sdg) : vec3((hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy + 7.31)) / 255.0);\n"
 	"    }\n"
+	"    if (vrk != 1.0) c = min(c * vrk, vec3(1.0));\n"
 	"    fragc = vec4(c, 1.0);\n"
 	"}\n";
 
@@ -476,6 +478,7 @@ static void gpu_reset (void)
 	{ GLint lk = 0; glGetProgramiv_ (g_prog, GL_LINK_STATUS, &lk);
 	  if (!lk) { char log[2048] = ""; glGetProgramInfoLog_ (g_prog, sizeof log, NULL, log); fprintf (stderr, "[vectrex_emu] GPU: link: %s\n", log); return; } }
 	for (int i = 0; i < U_N; i++) g_u[i] = glGetUniformLocation_ (g_prog, g_un[i]);
+	g_u_vrk = glGetUniformLocation_ (g_prog, "vrk");
 	glGenVertexArrays_ (1, &g_vao);
 	GLuint t[3]; glGenTextures_ (3, t); g_tex = t[0]; g_lmap = t[1]; g_smap = t[2]; g_tw = g_th = 0;
 	for (int i = 0; i < 3; i++) { glBindTexture_ (GL_TEXTURE_2D, t[i]);
@@ -696,7 +699,7 @@ static void gpu_present (const uint32_t *frame, int fw, int fh, int pitch, float
 	glActiveTexture_ (GL_TEXTURE0);
 	const float nx = 2.0f * GPU_ART_AW, ny = 2.0f * GPU_ART_AH;          /* (the sheet in units) */
 	glUniform1i_ (g_u[U_ROT], rot); glUniform4f_ (g_u[U_CROP], cx0, cy0, cx1, cy1); glUniform2f_ (g_u[U_NORM], nx, ny);
-	glUniform1i_ (g_u[U_FX], gfx.fx);
+	glUniform1i_ (g_u[U_FX], gfx.fx); glUniform1f_ (g_u_vrk, vx_vr_k);   /* (EmuVR's VR brightness: a gain on the picture sent, 1 elsewhere) */
 	const float pxs = ny / (float) fh;                                     /* (one picture pixel, units) */
 	glUniform1f_ (g_u[U_PXS], pxs); glUniform1f_ (g_u[U_BSCALE], 1834.0f * pxs / 2.0f / 3.2f);
 	glUniform1f_ (g_u[U_GLASS], (float) gfx.glass); glUniform1f_ (g_u[U_EDGE], GPU_EDGE); glUniform1f_ (g_u[U_GREY], gfx.grey);

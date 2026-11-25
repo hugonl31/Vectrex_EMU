@@ -280,6 +280,7 @@ static float g_lamp_x, g_lamp_y;                 /* (the lamp's position: gpu_gl
 static struct { float glow, ovl, wear, fine, medium, large, scrib, glint, reach; int scr, seed; } ovfx;
 static float k_ovl = -1, k_ovglow = -1; static int raw_scr = -1, opt_par = 1, raw_par = -1, raw_geom = -1, raw_passes = -1, raw_dith = -1, raw_groom = -1;
 typedef struct { unsigned char passes, curve, glass, groom, light, lov, aglow, scr, par, crefl, sbend, dith, half, lh; float ps; } prow;   /* (a profile's switches) */
+static float vx_vr_k = 1.0f; static int g_u_vrk = -1;   /* (EmuVR: VR brightness - a gain on the final picture, at most white; 1: the PC's look) */
 static int fx_passes = 2, fx_dith = 1, fx_half, fx_lh; static float fx_ps = 1.0f;   /* (the profile's: the glow passes, dither, phosphor scale,
                                                                           half rate, the lines at the phosphor's size - GPU) */   /* (the overlay's ceiling light, plastic glow, scratches, parallax) */
 static float glass_grey_v, k_ceiling = -1, k_crefl = -1, k_cwear = -1;   /* (the strengths: -1 auto - the profile's on / off at 1x) */                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
@@ -454,6 +455,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
 	{ "vectrex_emu_glow", "Phosphor glow (bloom); off|on|strong" },
 	{ "vectrex_emu_afterglow", "Phosphor trail (afterglow); on|long (real Vectrex)|short|off" },
+	{ "vectrex_emu_vr_bright", "VR brightness (the whole picture brighter or dimmer - 1x is the PC's look); 1.0x|0.5x|0.75x|1.25x|1.5x|1.75x|2.0x|2.5x|3.0x" },
 	{ "vectrex_emu_brightness", "Brightness (VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
 	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white - bright vectors on a dim screen; Vectrex: as a real Vectrex - dots and slow lines stand out, wants a bright screen); bright|vectrex" },
@@ -797,6 +799,9 @@ static void read_options (void)
 	  opt_jack = opt_is ("vectrex_emu_jack", "off") ? 0 : opt_is ("vectrex_emu_jack", "through the speaker") ? 2 : 1; }
 #ifdef VX_EMUVR
 	{ struct retro_variable v = { "vectrex_emu_eye_shift", NULL }; opt_shift = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atoi (v.value) : 0; }
+#endif
+#ifdef VX_EMUVR
+	{ const double k = optx ("vectrex_emu_vr_bright", 1.0); vx_vr_k = k >= 0.5 && k <= 3.0 ? (float) k : 1.0f; }   /* (the owner's top, 2026-11-25: 1x the default) */
 #endif
 	opt_after = !opt_is ("vectrex_emu_afterglow", "off");
 	/* (Afterglow: its length, as the desktop's slider - 0.05x .. 1.2x, 0.6x the default; the values before 2026-11-23: on 0.6x, long 1x, short 0.3x) */
@@ -3161,13 +3166,18 @@ static void frame_out (int shot_now, const uint32_t **pic_o, int *pw_o, int *ph_
 		video_cb (pic, (unsigned) pw, (unsigned) ph, (size_t) pw * 4);
 	} else
 #endif
-	if (Wd / EW == 1 && !shot_now && !opt_rot)  /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
+	if (Wd / EW == 1 && !shot_now && !opt_rot && vx_vr_k == 1.0f)  /* v0.18: one picture - its window sent straight from the frame (pitch), no copy */
 		video_cb (fb + (size_t) CY0 * Wd + CX0, CW, CH, (size_t) Wd * 4);
 	else {
 		const uint32_t *src; size_t sp;
 		if (Wd / EW == 1) { src = fb + (size_t) CY0 * Wd + CX0; sp = (size_t) Wd; }
 		else { for (int e = 0; e < Wd / EW; e++)   /* (the area sent: each eye's window) */
 				for (int y = 0; y < CH; y++) memcpy (ob + (size_t) y * OW + e * CW, fb + (size_t) (CY0 + y) * Wd + e * EW + CX0, (size_t) CW * 4);
+			src = ob; sp = (size_t) OW; }
+		if (vx_vr_k != 1.0f) {                 /* (EmuVR's VR brightness on the CPU's picture: each value x the gain, at most 255) */
+			unsigned char lut[256]; for (int v = 0; v < 256; v++) { const float g = v * vx_vr_k + 0.5f; lut[v] = (unsigned char) (g > 255.0f ? 255 : (int) g); }
+			for (int y = 0; y < CH; y++) { const uint32_t *s = src + (size_t) y * sp; uint32_t *d = ob + (size_t) y * OW;
+				for (int x = 0; x < OW; x++) { const uint32_t c = s[x]; d[x] = (c & 0xFF000000u) | ((uint32_t) lut[(c >> 16) & 255] << 16) | ((uint32_t) lut[(c >> 8) & 255] << 8) | lut[c & 255]; } }
 			src = ob; sp = (size_t) OW; }
 		if (opt_rot) {                         /* (1.0: turned here, 90 / 180 / 270 counter-clockwise - in tiles, cache-kind) */
 			const int W = OW, Hh = OH, odd = opt_rot & 1, dw = odd ? Hh : W, dh = odd ? W : Hh; int ty;

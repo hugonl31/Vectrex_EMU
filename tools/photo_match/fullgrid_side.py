@@ -65,13 +65,23 @@ def shift(p, e):
 rx_, tx, ox = shift(pxs, exs * kx); ry_, ty, oy = shift(pys, eys * ky)
 print('lines paired: across offset %d (rms %.1f px), down offset %d (rms %.1f px)' % (ox, rx_, oy, ry_), flush=True)
 mcx, mcy = pcx - tx, pcy - ty        # (the emulator's point under the photo's middle crossing)
-# one window for all three: the photo's lit area, around the middle crossing
-y0, y1, x0, x1 = box(ph, 25); hw0, hw1, hh0, hh1 = pcx - x0, x1 - pcx, pcy - y0, y1 - pcy
-def cut(a, cx, cy):
-    X0, Y0 = int(round(cx - hw0)), int(round(cy - hh0)); w, h = int(hw0 + hw1), int(hh0 + hh1)
-    o = np.zeros((h, w, 3), np.float32); sx0, sy0 = max(0, X0), max(0, Y0); sx1, sy1 = min(a.shape[1], X0 + w), min(a.shape[0], Y0 + h)
+# each panel cut to its own tube: the grid is cut off by the glass's edge on both, so the bright grid's extent is the
+# glass (the photo's faint mirror images in the case's walls stay outside: a high threshold) - the same padding, the
+# same size: the tubes alike, the grids as each tube shows them (the owner, 2026-11-25: "match the crop")
+def tube_box(a, pad=0.04):
+    g = a.max(2); g = np.clip(g - cv2.GaussianBlur(g, (0, 0), 12), 0, None); m = g > 0.3 * np.percentile(g, 99.9)
+    cols = np.nonzero(m.mean(0) > 0.08)[0]; rows = np.nonzero(m.mean(1) > 0.08)[0]
+    x0, x1, y0, y1 = cols.min(), cols.max(), rows.min(), rows.max(); px, py = (x1 - x0) * pad, (y1 - y0) * pad
+    return int(y0 - py), int(y1 + py), int(x0 - px), int(x1 + px)
+def cut(a, b):
+    Y0, Y1, X0, X1 = b; o = np.zeros((Y1 - Y0, X1 - X0, 3), np.float32)
+    sx0, sy0, sx1, sy1 = max(0, X0), max(0, Y0), min(a.shape[1], X1), min(a.shape[0], Y1)
     o[sy0 - Y0:sy1 - Y0, sx0 - X0:sx1 - X0] = a[sy0:sy1, sx0:sx1]; return o
-P, M, I = fit(cut(ph, pcx, pcy)), fit(cut(ms, mcx, mcy)), fit(cut(ids, mcx, mcy))
+bp, be = tube_box(ph), tube_box(meas)
+print('tube: photo %d x %d px, emulator %d x %d px (aspect %.3f / %.3f)' % (bp[3] - bp[2], bp[1] - bp[0], be[3] - be[2], be[1] - be[0],
+      (bp[3] - bp[2]) / (bp[1] - bp[0]), (be[3] - be[2]) / (be[1] - be[0])), flush=True)
+def fit2(a): return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).resize((round(a.shape[1] * Hh / a.shape[0]), Hh), Image.LANCZOS)   # (the same height, each its own shape: nothing squeezed)
+P, M, I = fit2(cut(ph, bp)), fit2(cut(meas, be)), fit2(cut(ideal, be))
 # (the photo at the emulator's total light, as rawcmp: exposed for the detail, the camera shows the lines brighter)
 light = lambda a: ((np.asarray(a, np.float32) / 255.0) ** 2.2)[np.asarray(a).max(2) > 12].sum()
 kp = (light(M) / light(P)) ** (1 / 2.2); print('photo scaled by %.3f' % kp, flush=True)

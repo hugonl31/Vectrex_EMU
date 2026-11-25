@@ -1,7 +1,7 @@
 """pcui.py - the PC app from source, its window captured as it is on screen (the README's interface pictures): the window
 with a game and its deck, the game library, the Config window. Never saves settings; its own TEMP.
 argv: out_prefix rom what[,what...] [wait_ms]   what: main | library | boxes | config
-env: NOSETUP=1 (defaults, no setup window), OVERLAY=1 (the game's overlay on), PRESS=ms (button 4 pressed then), LOOK,
+env: NOSETUP=1 (defaults, no setup window), OVERLAY=1 (the game's overlay on), PRESS=ms[,ms...] (button 4 pressed then), LOOK,
 ROOM=0.5|1|2 (View > Room light: Dark, Evening, Daylight), JOY=from-to:x,y (ms; player 1's stick held, -1..1)"""
 import sys, os, glob, ctypes, threading, subprocess, tempfile
 S = os.path.dirname(os.path.abspath(__file__))
@@ -46,8 +46,7 @@ def _vrr():                                          # (as pcany: the game runs 
     if app.ren and hasattr(app.ren, 'present'): app.ren.swap_interval(0)
 if not os.environ.get('NOVRR'): app.root.after(200, _vrr)
 app.root.after(300, lambda: app.restart(os.path.abspath(rom)))
-if os.environ.get('PRESS'):
-    t = int(os.environ['PRESS'])
+for t in (int(x) for x in filter(None, os.environ.get('PRESS', '').split(','))):   # (ms, a comma list: one press each)
     app.root.after(t, lambda: BTN.__setitem__(0, 8)); app.root.after(t + 300, lambda: BTN.__setitem__(0, 0))
 for _it in filter(None, os.environ.get('JOY', '').split(';')):
     _r, _v = _it.split(':'); _a, _b = (int(x) for x in _r.split('-')); _xy = tuple(float(x) for x in _v.split(','))

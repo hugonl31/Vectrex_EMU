@@ -68,7 +68,7 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
 #ifndef VX_TINT_DEFAULT
 #define VX_TINT_DEFAULT 0                          /* (the colour by the excitation: 0 off - as before -, 2 on; PH_FS_SAT. The iOS test build: on) */
 #endif
-int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = -0.5f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
+int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = 1.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
 #define BT_GLOW_R 0.62f                            /* (the glow's tint against the core's - the owner's choice from the previews, 2026-11-22; vecrender.py BT_GLOW) */
 #define BT_GLOW_G 0.80f
 #define BT_HALO_A 3.0f                             /* (the glass's glow beside a line: 0 the Gaussian; else its level at the line and its power - PH_FS_BEAM hsh) */
@@ -116,7 +116,7 @@ static const char *PH_FS_BEAM =
 /* (the light as the screen's values - vecrender.py SAT_SHADER: (the exposure x the light)^(1 / 2.2) in the tube's own white; the
  *  glass's glow read from its smaller image) */
 static const char *PH_FS_SAT =
-	"uniform sampler2D lt, ht; uniform float k, gs; uniform vec3 tint, tintg; uniform vec2 sz; uniform int tm; uniform vec4 tq; uniform vec3 tdim; out vec4 fragc;\n"
+	"uniform sampler2D lt, ht; uniform float k, gs; uniform vec3 tint, tintg; uniform vec2 sz; uniform int tm; uniform vec4 tq; uniform vec3 tdim, tcore, thalo; out vec4 fragc;\n"
 	"void main() { vec3 h = max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0); vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + h;\n"
 	"  vec4 lr = texelFetch(lt, ivec2(gl_FragCoord.xy), 0); float ll = dot(max(lr.rgb, 0.0), vec3(1.0 / 3.0)); float age = ll > 0.0 ? max(lr.a, 0.0) / ll : 0.0;\n"
 	/* (2026-11-25, the owner: faint vectors were bluer than the tube's - the colour by the line's excitation, as the Photo Test's
@@ -127,6 +127,11 @@ static const char *PH_FS_SAT =
 	"  if (tm != 0) { ivec2 ip = ivec2(gl_FragCoord.xy); float e = 0.0;\n"   /* (the line's own light: the most within +-4 px across - a skirt has its core's) */
 	"    for (int i = -4; i <= 4; i += 2) { e = max(e, dot(texelFetch(lt, ip + ivec2(i, 0), 0).rgb, vec3(1.0 / 3.0))); e = max(e, dot(texelFetch(lt, ip + ivec2(0, i), 0).rgb, vec3(1.0 / 3.0))); }\n"
 	"    if (tm == 3) { fragc = vec4(vec3(pow(clamp(e * tq.x, 0.0, 1.0), 1.0 / 2.2)), age); return; }\n"
+	/* (tm 4 - the owner, 2026-11-25: the tube's vectors one colour at every brightness: the colour by the pixel's place in its
+	 *  own line's profile (its light / the line's peak near by), not by its brightness - the core tcore, the thin rim where the
+	 *  light falls off thalo; a faint line the same as a bright one, scaled down) */
+	"    if (tm == 4) { float r = dot(max(lr.rgb, 0.0), vec3(1.0 / 3.0)) / max(e, 1e-6); vec3 v = pow(k * l, vec3(1.0 / 2.2));\n"
+	"      fragc = vec4(v * mix(thalo, tcore, smoothstep(0.08, 0.4, r)), age); return; }\n"
 	/* (t: 0 a bright line (q 1 and up) .. 1 the faintest measured (q tq.w); the colour from the tube's white to tdim - linear in
 	 *  mired against the log of the excitation, as the RAWs; the luminance kept) */
 	"    float t = clamp(log(max(e / tq.x, 1e-6)) / log(tq.w), 0.0, 1.0);\n"
@@ -491,7 +496,16 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		         *  the blackbody's line (the tube's white sits a little green of it); moved with the White balance setting as the tube's) */
 		        if (td <= 0) { const float x = -td; for (int c = 0; c < 3; c++) d[c] = tn[c] / mx * (1.0f - x + x * gt[c]); dm = 1; }   /* (0: the tube's white; -x: x of the glow's extra blue, its hue kept - the owner, 2026-11-25: any warmer white looked green) */
 		        else { float wd[3]; white_gain (td, wd); for (int c = 0; c < 3; c++) { d[c] = wd[c] * tg[c] / t0[c]; if (d[c] > dm) dm = d[c]; } }
-		        glUniform3f_ (ph_ul (ph_sat, "tdim"), d[0] / dm, d[1] / dm, d[2] / dm); } }
+		        glUniform3f_ (ph_ul (ph_sat, "tdim"), d[0] / dm, d[1] / dm, d[2] / dm); }
+		      { /* (tm 4: the core and the rim by the choice - vx_tint_k 1 15000 K / blue halo, 2 white / blue halo, 3 15000 K all through,
+		         *  4 the tube's white with its green halfway to its red, 5 green = red; moved with the White balance setting) */
+		        float w15[3], c[3], h[3], m15 = 0; white_gain (15000.0, w15); for (int i = 0; i < 3; i++) { w15[i] *= tg[i] / t0[i]; if (w15[i] > m15) m15 = w15[i]; }
+		        const int sel = (int) (vx_tint_k + 0.5f);
+		        for (int i = 0; i < 3; i++) { const float tw = tn[i] / mx, wt = tg[i] / t0[i];
+		          c[i] = sel == 2 ? wt : sel == 4 || sel == 5 ? tw : w15[i] / m15; h[i] = sel <= 2 ? tw * gt[i] : c[i]; (void) wt; }
+		        if (sel == 2) { float m = fmaxf (c[0], fmaxf (c[1], c[2])); for (int i = 0; i < 3; i++) { c[i] /= m; h[i] = tn[i] / mx * gt[i]; } }
+		        if (sel == 4 || sel == 5) { c[1] = sel == 5 ? c[0] : 0.5f * (c[0] + c[1]); for (int i = 0; i < 3; i++) h[i] = c[i]; }
+		        glUniform3f_ (ph_ul (ph_sat, "tcore"), c[0], c[1], c[2]); glUniform3f_ (ph_ul (ph_sat, "thalo"), h[0], h[1], h[2]); } }
 		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
 		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 	}

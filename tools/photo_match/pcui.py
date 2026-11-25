@@ -1,7 +1,8 @@
 """pcui.py - the PC app from source, its window captured as it is on screen (the README's interface pictures): the window
 with a game and its deck, the game library, the Config window. Never saves settings; its own TEMP.
 argv: out_prefix rom what[,what...] [wait_ms]   what: main | library | boxes | config
-env: NOSETUP=1 (defaults, no setup window), OVERLAY=1 (the game's overlay on), PRESS=ms (button 4 pressed then), LOOK"""
+env: NOSETUP=1 (defaults, no setup window), OVERLAY=1 (the game's overlay on), PRESS=ms (button 4 pressed then), LOOK,
+ROOM=0.5|1|2 (View > Room light: Dark, Evening, Daylight), JOY=from-to:x,y (ms; player 1's stick held, -1..1)"""
 import sys, os, glob, ctypes, threading, subprocess, tempfile
 S = os.path.dirname(os.path.abspath(__file__))
 _root = os.environ.get('TEST_TEMP_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '_temp')
@@ -18,9 +19,11 @@ _FG = ctypes.windll.user32.GetForegroundWindow()
 import argparse
 import vectrex_emu as V
 from PIL import ImageGrab
-BTN = [0]
+BTN = [0]; JOY = [None]
 _fs = V.Core.frame_send
-def frame_send(self, jx, jy, b, flags, p2=None): return _fs(self, jx, jy, b | BTN[0], flags, p2)
+def frame_send(self, jx, jy, b, flags, p2=None):
+    if JOY[0]: jx, jy = (max(-128, min(127, int(round(v * 127)))) for v in JOY[0])
+    return _fs(self, jx, jy, b | BTN[0], flags, p2)
 V.Core.frame_send = frame_send
 args = argparse.Namespace(rom=rom, height_mm=0, scale=1.0, tk=False, fullscreen=False, ideal=False, demo=0, net_host=None, net_join=None, net_online=False)
 V.vecrender.set_dpi_aware()
@@ -37,6 +40,7 @@ app.skip_boot = True
 if os.environ.get('CLEAN'): app.ren.wob_on = False; app.ren.bend_on = False
 if os.environ.get('LOOK'): app.ren.look = os.environ['LOOK']
 app.ren.art_on = bool(os.environ.get('OVERLAY'))
+if os.environ.get('ROOM'): app.root.after(250, lambda: app.set_room(float(os.environ['ROOM'])))
 def _vrr():                                          # (as pcany: the game runs at the monitor's pace)
     app.vrr = True
     if app.ren and hasattr(app.ren, 'present'): app.ren.swap_interval(0)
@@ -45,6 +49,9 @@ app.root.after(300, lambda: app.restart(os.path.abspath(rom)))
 if os.environ.get('PRESS'):
     t = int(os.environ['PRESS'])
     app.root.after(t, lambda: BTN.__setitem__(0, 8)); app.root.after(t + 300, lambda: BTN.__setitem__(0, 0))
+for _it in filter(None, os.environ.get('JOY', '').split(';')):
+    _r, _v = _it.split(':'); _a, _b = (int(x) for x in _r.split('-')); _xy = tuple(float(x) for x in _v.split(','))
+    app.root.after(_a, lambda xy=_xy: JOY.__setitem__(0, xy)); app.root.after(_b, lambda: JOY.__setitem__(0, None))
 def grab(win, name):
     win.update(); x, y, w, h = win.winfo_rootx(), win.winfo_rooty(), win.winfo_width(), win.winfo_height()
     im = ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True); p = '%s_%s.png' % (out, name); im.save(p); print('ok', p, im.size, flush=True)

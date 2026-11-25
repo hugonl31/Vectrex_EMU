@@ -39,8 +39,8 @@ def line_sigma(L):
 def render(rom, presses, look='vectrex', idle=150):
     h = Host(r'G:\AI\Vectrex_EMU\libretro\vectrex_emu_libretro.dll', 'G:/AI/Vectrex_EMU/libretro/dist/pkg/system', tempfile.mkdtemp(),
              options={'vectrex_emu_deck': 'off', 'vectrex_emu_rotate': 'off', 'vectrex_emu_skip_intro': 'on', 'vectrex_emu_wobble': 'off',
-                      'vectrex_emu_bending': 'off', 'vectrex_emu_overlay': 'off', 'vectrex_emu_look': look, 'vectrex_emu_case': 'off',
-                      'vectrex_emu_glass_edge': 'off', 'vectrex_emu_room': 'off (dark room)'}, size=(1200, 1500))
+                      'vectrex_emu_bending': 'on', 'vectrex_emu_overlay': 'off', 'vectrex_emu_look': look, 'vectrex_emu_case': 'off',
+                      'vectrex_emu_glass_edge': 'off', 'vectrex_emu_room': 'off (dark room)', 'vectrex_emu_rate': '50 Hz (game)'}, size=(1200, 1500))
     h.load(os.path.join(T, rom))
     for i in range(60): h.run()
     for b, n in presses:

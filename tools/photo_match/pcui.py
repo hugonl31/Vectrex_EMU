@@ -58,7 +58,7 @@ def _warm(self, off_for=0.0):
 V.App.crt_on = _warm
 app = V.App(args)
 app.skip_boot = True
-if os.environ.get('CLEAN'): app.ren.wob_on = False; app.ren.bend_on = False
+if os.environ.get('CLEAN'): app.ren.wob_on = False   # (snapshots: wobble off; brightness bending stays on - it puts the picture where the tube has it, the owner 2026-11-25)
 if os.environ.get('LOOK'): app.ren.look = os.environ['LOOK']
 app.ren.art_on = bool(os.environ.get('OVERLAY'))
 if os.environ.get('ROOM'): app.root.after(250, lambda: app.set_room(float(os.environ['ROOM'])))

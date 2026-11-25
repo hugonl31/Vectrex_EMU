@@ -11,9 +11,9 @@ DNG = r'G:\Google Drive\#Sharing\Vectrex\Testcarts\Full Test Grid 50.dng'
 def render(geom, curve, edge):
     h = Host(r'G:\AI\Vectrex_EMU\libretro\vectrex_emu_libretro.dll', 'G:/AI/Vectrex_EMU/libretro/dist/pkg/system', tempfile.mkdtemp(),
              options={'vectrex_emu_deck': 'off', 'vectrex_emu_rotate': 'off', 'vectrex_emu_skip_intro': 'on', 'vectrex_emu_wobble': 'off',
-                      'vectrex_emu_bending': 'off', 'vectrex_emu_overlay': 'off', 'vectrex_emu_look': 'vectrex', 'vectrex_emu_case': 'off',
+                      'vectrex_emu_bending': 'on', 'vectrex_emu_overlay': 'off', 'vectrex_emu_look': 'vectrex', 'vectrex_emu_case': 'off',
                       'vectrex_emu_glass_edge': edge, 'vectrex_emu_room': 'off (dark room)', 'vectrex_emu_geometry': geom,
-                      'vectrex_emu_glass_curve': curve, 'vectrex_emu_afterglow': 'off', 'vectrex_emu_rate': '50 Hz'}, size=(1200, 1500))
+                      'vectrex_emu_glass_curve': curve, 'vectrex_emu_afterglow': 'off', 'vectrex_emu_rate': '50 Hz (game)'}, size=(1200, 1500))
     h.load(ROM)
     for i in range(200): h.run()
     fr = []

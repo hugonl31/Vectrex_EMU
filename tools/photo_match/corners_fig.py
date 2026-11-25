@@ -11,7 +11,11 @@ W = 760
 def fit(a): im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)); return np.asarray(im.resize((W, round(im.height * W / im.width)), Image.LANCZOS)).astype(np.float32)
 rc, ec = fit(r[ry0:ry1 + 1, rx0:rx1 + 1]), fit(e[ey0:ey1 + 1, ex0:ex1 + 1])
 def norm(a): l = a.max(2); p = np.percentile(l[l > 20], 99.7); return np.clip(a * 235.0 / p, 0, 255)
-rc, ec = norm(rc), norm(ec)
+# (brightness: the emulator as rendered; the photo brought to it on the lines' own level - the photo was exposed for the
+#  fine detail, so the brightest places clip and its lines are wider and brighter than the tube looks in the room)
+def light(a): l = a.max(2); return ((a / 255.0) ** 2.2)[l > 12].sum()   # (the light in linear terms, the background left out)
+k = (light(ec) / light(rc)) ** (1 / 2.2)                                    # (the same light in all: the camera spreads it wider)
+rc = np.clip(rc * k, 0, 255); print('photo scaled by %.3f' % k)
 # the emulator's white, level by level (its 12000 K: the faint glow bluer, the bright core whiter) -> the photo, which is grey
 L = ec.max(2); lut = np.zeros((256, 3), np.float32); cnt = np.zeros(256)
 for v in range(256):

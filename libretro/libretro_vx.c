@@ -346,11 +346,12 @@ static void sheet_write (void)
 {
 	if (!sheet_file) return;
 	int st = ov && ov_path[0] && !stereo ? (ov_on ? 1 : 0) : -2;
-	if (st == sheet_written && sel_count == sel_written && boot_id == boot_written && !strcmp (look, look_written)) return;
-	sheet_written = st; sel_written = sel_count; boot_written = boot_id; snprintf (look_written, sizeof look_written, "%s", look);
+	static int stereo_written = -1;   /* (the 3D Imager's eye pair said in so many words - the mod need not guess it from the frame's shape) */
+	if (st == sheet_written && sel_count == sel_written && boot_id == boot_written && !strcmp (look, look_written) && stereo == stereo_written) return;
+	sheet_written = st; sel_written = sel_count; boot_written = boot_id; snprintf (look_written, sizeof look_written, "%s", look); stereo_written = stereo;
 	FILE *f = fopen (sheet_file, "w"); if (!f) return;
 	if (st != -2) fprintf (f, "%s|%d\n", ov_path, st); else fprintf (f, "\n");
-	fprintf (f, "sel %d\nboot %u\nlook %s\n", sel_count, boot_id, look);
+	fprintf (f, "sel %d\nboot %u\nlook %s\nstereo %d\n", sel_count, boot_id, look, stereo ? 1 : 0);   /* (stereo 1: the frame is the eye pair, left eye on the left) */
 	fclose (f);
 }
 static char tmpdir[1024];
@@ -453,7 +454,6 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_bending", "Brightness bending; on|off" },
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
 	{ "vectrex_emu_unit", "Vectrex unit (the owner's measured one: as his console draws); owner's Vectrex (measured)|ideal" },
-	{ "vectrex_emu_tube_look", "Look (Bright: brighter, wider lines, as the owner's PC); Bright|Vectrex" },   /* (EmuVR: Bright the default - the owner, 2026-11-25) */   /* (EmuVR: the owner, 2026-11-25 - his unit the default, ideal selectable) */
 	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
 	{ "vectrex_emu_glass_curve", "Glass curvature (1: as on a Vectrex, 0: even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (fine detail, off: VR hardly shows it); off|on" },
@@ -470,6 +470,11 @@ static struct retro_variable vars[] = {
 	{ "vectrex_emu_wobble", "Mains hum wobble; 50 Hz|60 Hz|off" },
 	{ "vectrex_emu_buzz", "Vectrex buzz; on|off" },
 	{ "vectrex_emu_speaker", "Vectrex speaker sound; on|off" },
+	{ "vectrex_emu_buzz_vol", "Buzz volume; 1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },   /* (EmuVR: all the sound - the owner, 2026-11-25; values as the desktop table's) */
+	{ "vectrex_emu_voice_vol", "Speech module volume (VecVoice, VecVox); 100%|0%|25%|50%|75%|125%|150%|175%|200%" },
+	{ "vectrex_emu_motor_vol", "3D Imager disc motor sound; 50%|0%|10%|20%|30%|40%|60%|70%|80%|90%|100%" },
+	{ "vectrex_emu_jack", "UVMC2 headphone jack (clean: line out); clean|through the speaker|off" },
+	{ "vectrex_emu_jack_vol", "UVMC2 headphone jack volume; 100%|0%|25%|50%|75%|125%|150%|175%|200%" },
 	{ NULL, NULL } };
 #else
 #define VX_RATE_DEF 60
@@ -761,7 +766,7 @@ static void read_options (void)
 	           : opt_is ("vectrex_emu_imager", "right eye") ? 4 : 2;   /* (3 / 4: one eye's pictures only - the other half turn left out) */
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
-	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_tube_look", "Vectrex") ? 0.0f : 1.0f; }   /* (the look: Bright unless Vectrex is chosen - as the owner's PC) */
+	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_look", "vectrex") ? 0.0f : 1.0f; }   /* (the EmuVR table's Look, bright the default - the owner, 2026-11-25: also the GPU picture's Bright) */
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
 	{ const char *ce = getenv ("VECTREX_CONSOLE");   /* (route A: the mod names the console that starts this RetroArch; the option overrides) */
 	  opt_cad = opt_is ("vectrex_emu_console", "owner's CAD model") ? 1 : opt_is ("vectrex_emu_console", "classic") ? 0 : (ce && !strcmp (ce, "cad")); }

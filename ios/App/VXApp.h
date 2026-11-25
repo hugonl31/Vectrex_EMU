@@ -105,7 +105,7 @@ int vxg_any_busy (void);                                        /* (a download o
  * in (its placeholder; nil: none), the choices - each @[ title, note, VXGO (^(NSString *typed) { ... }) ] (NSNull: a line
  * shown only) -, a foot; closed: the close button (nil: nothing) */
 void vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void));
-#define VXGO(b) ((id) [(b) copy])
+#define VXGO(...) ((id) [(__VA_ARGS__) copy])   /* (variadic: a block's commas are no macro arguments) */
 @interface VXDeck : UIView
 @property (nonatomic, weak) UIViewController *game;
 @property (nonatomic) int mode;                  /* (1 full, 2 slim) */

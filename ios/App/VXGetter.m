@@ -273,7 +273,7 @@ static NSArray<NSString *> *vxg_wayback (NSString *prefix, NSString *pattern)
 	NSString *t = vxg_text ([NSString stringWithFormat:@"https://web.archive.org/cdx/search/cdx?url=%@&matchType=prefix&fl=original,timestamp,length&filter=statuscode:200", vxg_enc (prefix)], 60);
 	for (NSString *ln in [t componentsSeparatedByString:@"\n"]) { NSArray *p = [[ln stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] componentsSeparatedByString:@" "];
 		if (p.count == 3 && vxg_has (p[0], pattern, YES) && [p[2] longLongValue] > 1000) [hits addObject:@[ p[1], p[0] ]]; }
-	[hits sortUsingComparator:^NSComparisonResult (NSArray *a, NSArray *b) { return [b[0] compare:a[0]]; }];
+	[hits sortUsingComparator:^NSComparisonResult (NSArray *a, NSArray *b) { return [(NSString *) b[0] compare:(NSString *) a[0]]; }];
 	NSMutableArray *o = [NSMutableArray array]; for (NSArray *h in hits) [o addObject:[NSString stringWithFormat:@"https://web.archive.org/web/%@id_/%@", h[0], h[1]]];
 	return o;
 }
@@ -284,13 +284,13 @@ static NSArray<vxg_step> *vxg_chain (int k)
 {
 	NSString *mi = @"https://raw.githubusercontent.com/Videodr0me/Vectrex_MiSTer/master/games/";
 	switch (k) {
-	case 0: return @[ vxg_one (VXG_DRIVE_GAMES), vxg_one (VXG_MIRROR_GAMES), ^NSArray * { return vxg_nn (@[ vxg_iazip (@"vectrex-champion-collection", @"collection") ?: NSNull.null ]); },
+	case 0: return @[ vxg_one (VXG_DRIVE_GAMES), vxg_one (VXG_MIRROR_GAMES), ^NSArray * { return vxg_nn (@[ ((id) vxg_iazip (@"vectrex-champion-collection", @"collection") ?: (id) NSNull.null) ]); },
 		^NSArray * { NSMutableArray *o = [NSMutableArray array]; for (NSString *i in vxg_iasearch (@"title:(vectrex champion collection)")) { NSString *z = vxg_iazip (i, @"collection"); if (z) [o addObject:z]; } return o; },
 		vxg_one (@"https://archive.org/download/vectrex-champion-collection/Vectrex%20Champion%20Collection.zip"),
-		^NSArray * { return vxg_nn (@[ vxg_iazip (@"gce-vectrex-games-complete", nil) ?: NSNull.null, vxg_iazip (@"GCE_Vectrex_TOSEC_2012_04_23", nil) ?: NSNull.null, vxg_iazip (@"vectrex_202604", nil) ?: NSNull.null ]); } ];
+		^NSArray * { return vxg_nn (@[ ((id) vxg_iazip (@"gce-vectrex-games-complete", nil) ?: (id) NSNull.null), ((id) vxg_iazip (@"GCE_Vectrex_TOSEC_2012_04_23", nil) ?: (id) NSNull.null), ((id) vxg_iazip (@"vectrex_202604", nil) ?: (id) NSNull.null) ]); } ];
 	case 1: return @[ vxg_one (VXG_DRIVE_HOMEBREW), vxg_one ([mi stringByAppendingString:@"Vectorblade/Vectorblade%20(v1.13).bin"]), vxg_one ([mi stringByAppendingString:@"NeonHawk/Neon%20Hawk%20Demo%20(v1.0).bin"]),
 		vxg_one (@"https://raw.githubusercontent.com/malbanGit/Telengard/master/Telengard_256kFlash.bin"), vxg_one (VXG_MIRROR_HOMEBREW),
-		^NSArray * { return vxg_nn (@[ vxg_iazip (@"gce-vectrex-games-complete", nil) ?: NSNull.null, vxg_iazip (@"GCE_Vectrex_TOSEC_2012_04_23", nil) ?: NSNull.null ]); },
+		^NSArray * { return vxg_nn (@[ ((id) vxg_iazip (@"gce-vectrex-games-complete", nil) ?: (id) NSNull.null), ((id) vxg_iazip (@"GCE_Vectrex_TOSEC_2012_04_23", nil) ?: (id) NSNull.null) ]); },
 		vxg_one ([mi stringByAppendingString:@"Telengard/Telengard%20(v1.03).bin"]) ];
 	case 2: return @[ ^NSArray * { NSMutableArray *o = [NSMutableArray array]; NSString *page = vxg_text (@"http://vide.malban.de/pitrex/pitrex-baremetal-download", 30); if (!page) return o;
 			/* (Malban's site is slow for 190 MB: when the newest file it offers is the version the project's own copy has,
@@ -412,7 +412,7 @@ static int vxg_getitem (int k, void (^prog) (long long, long long), void (^say) 
 	vxg_init (); NSMutableSet *tried = [NSMutableSet set]; int added = 0; BOOL ok = NO;
 	NSString *tmp = [NSTemporaryDirectory () stringByAppendingPathComponent:[NSString stringWithFormat:@"download%d.tmp", k]];   /* (each item its own: Download all runs them side by side) */
 	@synchronized (vxg_lock) { vxg_owned (); }
-	for (vxg_step s in vxg_chain (k)) {
+	for (id sx in vxg_chain (k)) { vxg_step s = sx;
 		NSArray *urls = s (); BOOL done = NO;
 		for (NSString *u in urls) {
 			if (![u isKindOfClass:NSString.class] || [tried containsObject:u]) continue; [tried addObject:u];

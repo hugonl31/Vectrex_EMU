@@ -818,10 +818,10 @@ class Deck:
                     ('menu', 'Cartridge hardware', hw, None, lambda: a.cart_hw != 'auto'), ('menu', 'Controller port 2', p2, None),
                     ('check', 'Auto-select port 2', lambda: getattr(a, 'p2_auto', True), a.toggle_p2_auto, None,
                      lambda: not getattr(a, 'p2_auto', True)),
-                    ] + ([('in', [('menu', 'View', [(lbl, (lambda k=k: getattr(a, 'imager_eye', 'both') == k), (lambda k=k: a.set_imager_eye(k)))
-                                                    for k, lbl in (('both', 'Both eyes (colour)'), ('left', 'Left eye only'), ('right', 'Right eye only'))],
-                                   None, lambda: getattr(a, 'imager_eye', 'both') != 'both'),
-                                  ('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, None, lambda: snd('motor_on')),
+                    ('menu', '3D Imager view', [(lbl, (lambda k=k: getattr(a, 'imager_eye', 'both') == k), (lambda k=k: a.set_imager_eye(k)))
+                                                for k, lbl in (('both', 'Both eyes (colour)'), ('left', 'Left eye only'), ('right', 'Right eye only'))],
+                     None, lambda: getattr(a, 'imager_eye', 'both') != 'both'),   # (always here - the owner, 2026-11-25: not only with the goggles in)
+                    ] + ([('in', [('check', 'Disc motor sound', lambda: C().motor_on, a.toggle_motor_snd, None, lambda: snd('motor_on')),
                                   ('slider', 'motor_vol', lambda: C().motor_on),
                                   ('check', 'Spin-up note on the picture', lambda: a.imager_note, a.toggle_imager_note, None,
                                    lambda: not a.imager_note)])]

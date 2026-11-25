@@ -68,7 +68,7 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
 #ifndef VX_TINT_DEFAULT
 #define VX_TINT_DEFAULT 0                          /* (the colour by the excitation: 0 off - as before -, 2 on; PH_FS_SAT. The iOS test build: on) */
 #endif
-int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = 9.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
+int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = 12.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
 #define BT_GLOW_R 0.62f                            /* (the glow's tint against the core's - the owner's choice from the previews, 2026-11-22; vecrender.py BT_GLOW) */
 #define BT_GLOW_G 0.80f
 #define BT_HALO_A 3.0f                             /* (the glass's glow beside a line: 0 the Gaussian; else its level at the line and its power - PH_FS_BEAM hsh) */

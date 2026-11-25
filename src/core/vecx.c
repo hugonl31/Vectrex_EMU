@@ -300,6 +300,13 @@ static void dac_init (void)
  * ~1.16 % faster than down (beta = d / 200 = 0.0057 from the column start dots' slant, 0.0059 from the two-dot gaps); X not
  * measured. The UVMC2 SDK has the same as neg_rate_x / neg_rate_y ("the DAC does not deviate the same at +k as at -k") */
 static double rate_bx, rate_by; static int rate_env = -1;
+/* (2026-11-25, the owner's two Full Grid photos: the Y error the rate difference leaves does not just add up - in a long run of
+ *  moves without ZERO it levels off (the plain Full Grid Test's start dots: 3.8 units a column at first, ~30 after 18 columns, the
+ *  50 fps one's thirds of 7 columns as before). So the difference's part of the beam's Y is kept on its own (rate_ey) and leaks
+ *  away with RATE_LEAK cycles; ZERO empties it with the integrators. Without the leak the plain grid's lower right ran off:
+ *  its vertical lines' lower halves short, on the owner's tube whole (VT_RATELEAK: tests, 0 none) */
+#define RATE_LEAK 12000.0                 /* (fitted with the owner's Y rate 1.5 %: the plain grid's start dots 0 3 6 6 10 13 15 17 21 21 22 23 25 26 27 27 31 31 31 units, the photo's 0 3 5 10 12 15 . 20 22 23 25 25 26 . . 30 30 30 30; the 50 fps grid 0.098 rows a column, the photo 0.106) */
+static long rate_ady; static double rate_ey, rate_leak = -1;
 static void rate_init (void)
 {
 	const char *z = getenv ("VT_XRATE"); rate_env = 1;
@@ -1716,7 +1723,8 @@ static void alg_sstep_full (void)
 	if (rate_env < 0) rate_init ();                     /* the integrators' rate one way against the other (see rate_by): ady < 0
 	                                                     * moves the beam up, adx > 0 right - those (1 + b), the other way (1 - b) */
 	if (rate_bx != 0.0) { double r = (double) adx * (1.0 + (adx > 0 ? rate_bx : -rate_bx)); adx = (long) (r + (r >= 0 ? 0.5 : -0.5)); }
-	if (rate_by != 0.0) { double r = (double) ady * (1.0 + (ady < 0 ? rate_by : -rate_by)); ady = (long) (r + (r >= 0 ? 0.5 : -0.5)); }
+	rate_ady = 0;
+	if (rate_by != 0.0) { double r = (double) ady * (1.0 + (ady < 0 ? rate_by : -rate_by)); const long a2 = (long) (r + (r >= 0 ? 0.5 : -0.5)); rate_ady = a2 - ady; ady = a2; }
 	if (via_acr & 0x80) {
 		sig_ramp = via_t1pb7;
 	} else {
@@ -1917,6 +1925,11 @@ static void alg_sstep_full (void)
 
 	alg_curr_x += sig_dx;
 	alg_curr_y += sig_dy;
+	if (rate_leak < 0) { const char *z = getenv ("VT_RATELEAK"); rate_leak = z ? atof (z) : RATE_LEAK; }
+	if (zero_now == 0) rate_ey = 0;                         /* (the rate difference's own part of Y: see rate_ey) */
+	else if (rate_leak > 0.5) {
+		if (sig_ramp == 0) rate_ey += ramp_part < 1.0 ? rate_ady * ramp_part : (double) rate_ady;
+		const long lk = (long) (rate_ey / rate_leak); alg_curr_y -= lk; rate_ey -= (double) lk; }
 	prot_step (sig_blank == 1 && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f) != 0);   /* (the deflection protect: see prot_step) */
 	alg_cycles++;
 	{ static int lag_env; static double lag_force = -1;      /* (VT_DEFLAG / VT_DEFLAGN given: they win over the frontend's unit

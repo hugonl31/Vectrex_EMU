@@ -974,6 +974,7 @@ class _VxbOut:
 _vxb_out = _VxbOut()
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
+TINT_GLOW = False                         # (the vectors' colour by their profile, a white core with a blue glow - SAT_SHADER tm; on test)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
                                         #  the faint light - the lines' skirts, the glass's glow - bluer, the bright core the tube's white)
 LIB_ART = 0.8                           # (the library's pictures at 80 % brightness - the owner: 70 % on 2026-11-22 (the eyes stay used to the vectors' level), 80 % on 2026-11-23)
@@ -993,13 +994,32 @@ uniform float k;
 uniform vec3 wb;
 uniform vec3 wbc;
 uniform float gs;                       // (the Bright look's lift taken out: the split by the Vectrex look's screen value)
+uniform int tm;                         // (1: the vectors' colour by their profile - TINT_GLOW; libretro gpu_phos.c PH_FS_SAT tm 4)
+uniform vec2 px;                        // (a texel)
+uniform vec3 tcore, thalo;
+uniform vec2 thr;
 vec3 cold(vec3 c, vec3 wb) {               // the glow's tint in the faint light, the tube's white in the bright core (BT_GLOW)
     float m = max(c.r, max(c.g, c.b)) * gs;
     return c * mix(wb, wbc, smoothstep(0.35, 0.9, m));
 }
+float lum(vec2 uv) { return dot(max(texture2D(tex, uv).rgb, vec3(0.0)), vec3(1.0 / 3.0)); }
 void main() {
     vec4 c = texture2D(tex, gl_TexCoord[0].st);
     vec3 l = max(c.rgb, vec3(0.0));          // (the pieces' light, added up: the phosphor's law is in each piece - bt2_light)
+    if (tm == 1) {                           // (every vector the same at every brightness: a white core, a blue halo where
+        vec2 uv = gl_TexCoord[0].st;         //  its light falls off - by the pixel's place in its own line's profile)
+        float lc = dot(l, vec3(1.0 / 3.0)), e = 0.0;
+        for (int i = -4; i <= 4; i += 2) { e = max(e, lum(uv + vec2(float(i) * px.x, 0.0))); e = max(e, lum(uv + vec2(0.0, float(i) * px.y))); }
+        float r = lc / max(e, 1e-6), rid = 0.0, bv = -1.0;   // (a crest across the direction its light falls off most: a core)
+        for (int j = 0; j < 4; j++) {
+            vec2 d = j == 0 ? vec2(2.0, 0.0) : j == 1 ? vec2(0.0, 2.0) : j == 2 ? vec2(2.0, 2.0) : vec2(2.0, -2.0);
+            float a = lum(uv + d * px), bb = lum(uv - d * px), dv = lc - min(a, bb);
+            if (dv > bv) { bv = dv; rid = 1.0 - smoothstep(0.8, 1.0, max(a, bb) / max(lc, 1e-6)); }
+        }
+        rid *= step(0.05, r);
+        gl_FragColor = vec4(pow(k * l, vec3(1.0 / 2.2)) * mix(thalo, tcore, max(smoothstep(thr.x, thr.y, r), rid)), c.a);
+        return;
+    }
     gl_FragColor = vec4(cold(pow(k * l, vec3(1.0 / 2.2)), wb), c.a);
 }
 """
@@ -2270,7 +2290,7 @@ class GLBloomRenderer(GLRenderer):
         self.u_premul = GetUniform(self.cprog, b'premul')
         self.u_t = {k: GetUniform(self.cprog, k.encode()) for k in ('timed', 'age0', 'dtw', 'gain', 'beam', 'hsg', 'wb', 'wbc', 'fcs')}
         self.satprog = program(SAT_SHADER, 'beam trace phosphor')
-        self.u_sat = {k: GetUniform(self.satprog, k.encode()) for k in ('tex', 'k', 'wb', 'wbc', 'gs')}
+        self.u_sat = {k: GetUniform(self.satprog, k.encode()) for k in ('tex', 'k', 'wb', 'wbc', 'gs', 'tm', 'px', 'tcore', 'thalo', 'thr')}
         self.ClientActiveTexture = proc('glClientActiveTexture', None, u)
         self.MultiTexCoord4f = proc('glMultiTexCoord4f', None, u, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float)
         self.ActiveTexture = proc('glActiveTexture', None, u)
@@ -2493,6 +2513,9 @@ class GLBloomRenderer(GLRenderer):
         gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
         self.BindFB(GL_FRAMEBUFFER, 0)
         self.tex.append(t.value); self.fbs.append(f.value)
+        if not hasattr(self, 'tex_wh'):
+            self.tex_wh = {}
+        self.tex_wh[t.value] = (w, h)                     # (a texel's size: SAT_SHADER's profile)
         return t.value, f.value
 
     def resize(self, w, h):
@@ -4309,6 +4332,18 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform1f(self.u_sat['k'], ex * BT_KMAX); self.Uniform3f(self.u_sat['wb'], *(a * b for a, b in zip(t, BT_GLOW)))   # (the glow bluer than the core)
         self.Uniform1f(self.u_sat['gs'], 1.0 / self.bgain())
         self.Uniform3f(self.u_sat['wbc'], *t)
+        # (TINT_GLOW - the owner, 2026-11-25, matching the tube with the cart: the vectors' colour by their own profile - a white
+        #  core, the halo the glow's tint twice, 2 x its light, extra wide; as the libretro core's test option "blue glow 2.0x
+        #  extra wide". VX_TINT=0 / 1 overrides it)
+        on = TINT_GLOW if os.environ.get('VX_TINT') is None else os.environ.get('VX_TINT') == '1'
+        self.Uniform1i(self.u_sat['tm'], 1 if on else 0)
+        if on:
+            w_, h_ = getattr(self, 'tex_wh', {}).get(tex, self.size)
+            self.Uniform2f(self.u_sat['px'], 1.0 / max(1, w_), 1.0 / max(1, h_))
+            wt = tuple(a / c for a, c in zip(tk, t0)); wt = tuple(v / max(wt) for v in wt)   # (the screen's white, moved with the White balance)
+            self.Uniform3f(self.u_sat['tcore'], *wt)
+            self.Uniform3f(self.u_sat['thalo'], *(a * g * g * 2.0 for a, g in zip(t, BT_GLOW)))
+            self.Uniform2f(self.u_sat['thr'], 0.25, 0.9)
         self._quad(tex)
         self.UseProgram(0)
 

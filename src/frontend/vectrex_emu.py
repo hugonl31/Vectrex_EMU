@@ -1552,7 +1552,7 @@ UNIT_BEAM = dict(zerotx=4.5, zeroty=3.3, ofsk=166.0, lagx=13.3, lagy=13.3)      
 UNIT_DAC_OWNER = dict(dac0=0.0170, dac1=0.0069, dac2=-0.0089, dac3=-0.0014)       # (the owner's: half the slant pattern)
 # (the owner's, the Full Grid Test 50 fps photo 2026-11-23: Y up 1.16 % faster than down - beta 0.0058 = 1.16 / 200, from
 #  the column start dots' slant and the two-dot gaps; X not measured)
-UNIT_RATE_OWNER = dict(xrate=0.0, yrate=1.16)
+UNIT_RATE_OWNER = dict(xrate=0.0, yrate=1.5)   # (1.5 with the leak - vecx.c RATE_LEAK: both Full Grid photos, 2026-11-25; 1.16 was without it)
 UNIT_ZERO_CENTRED = ('dac0', 'dac1', 'dac2', 'dac3', 'xrate', 'yrate')   # (random / cranky: about none - the owner's are one unit's)
 # the picture's pots and the yoke (the frontend's: they act after the integrators, see unit_picture): R401 / R408 the
 # deflection amplifiers' input dividers (2K pot over 1.5K: 0.43..1 of the signal; 100 % = the pot's middle, 60..140 %),
@@ -3365,6 +3365,13 @@ class App:
                                 ('lightpen', 'Port 2: Light pen', "The light pen in port 2, for Art Master, AnimAction and Melody Master: the mouse is the pen - point at the picture, hold the left button to touch the screen."),
                                 ('imager', 'Port 2: 3D Imager', "The 3D Imager goggles in port 2: its spinning colour disc makes 3D Mine Storm, 3D Narrow Escape and 3D Crazy Coaster colourful (the disc spins up first).")):
                 check(m, lbl, '', lambda k=k: self.speech == k and not Core.veclink, lambda k=k: self.set_speech(k), tip)
+            # (the 3D Imager's view under the ports, where people look for it - the owner, 2026-11-25: it was only in Config,
+            #  and only while the goggles were in port 2)
+            im = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='3D Imager view', menu=im)
+            for k, lbl, tip in (('both', 'Both eyes (colour)', "Both eyes' pictures at once, in colour - as the screen looks without the goggles."),
+                                ('left', 'Left eye only', "Only the left eye's pictures: no double image."),
+                                ('right', 'Right eye only', "Only the right eye's pictures: no double image.")):
+                check(im, lbl, '', lambda k=k: getattr(self, 'imager_eye', 'both') == k, lambda k=k: self.set_imager_eye(k), tip)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Online', menu=m)
             item(m, 'Host with a code...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
                  "Play this game with someone over the internet: you are player 1. The Online window shows a five-letter code "

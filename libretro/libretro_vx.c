@@ -3228,9 +3228,8 @@ void retro_run (void)
 static void retro_run_one (void)
 {
 #ifdef VX_EMUVR
-	{ static int told; static long runs; static double t0; int av = 3; const int rc = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av); runs++;
-	  if (!told) { told = 1; t0 = vt_wall (); fprintf (stderr, "[vectrex_emu] run-ahead check: GET_AUDIO_VIDEO_ENABLE answered %d, value %d (bit 1 video, 2 audio)\n", rc, av); fflush (stderr); }
-	  else if (vt_wall () - t0 >= 10.0) { t0 = vt_wall (); fprintf (stderr, "[vectrex_emu] runs in 10 s: %ld - shown %ld, hidden %ld (so far)\n", runs, vx_shown, vx_hidden); fflush (stderr); runs = 0; } }
+	{ static int told; if (!told) { int av = 3; const int rc = env_cb (RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av); told = 1;
+	  fprintf (stderr, "[vectrex_emu] run-ahead check: GET_AUDIO_VIDEO_ENABLE answered %d, value %d (bit 1 video, 2 audio)\n", rc, av); fflush (stderr); } }
 #endif
 	if (pf_on < 0) pf_on = getenv ("VXPOC_PROF") != NULL;
 	double pf0 = pf_on ? pf_now () : 0, pf1 = 0, pf2 = 0, pf3 = 0;
@@ -3957,7 +3956,7 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	 *  a 90 Hz refresh, 3.5 % of them late; at 60 Hz under 1 %. Plain carts keep the screen rate. "match display": the screen rate) */
 	{ extern int vt_uvm2, vt_uvm2_cart, vt_pitrex;
 	  if ((vt_uvm2 || vt_uvm2_cart || vt_pitrex) && !opt_is ("vectrex_emu_card_rate", "match display") && opt_rate > 60) {
-		fprintf (stderr, "[vectrex_emu] UVMC2 / PiTrex program: %d Hz instead of %d (UVMC2 / PiTrex picture rate)\n", 60, opt_rate); opt_rate = 60; } }
+		fprintf (stderr, "[vectrex_emu] UVMC2 / PiTrex program: %d Hz instead of %d (UVMC2 / PiTrex picture rate)\n", 60, opt_rate); fflush (stderr); opt_rate = 60; } }
 #endif
 	rate_set = 1;
 	pic_setup ();

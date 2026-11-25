@@ -68,7 +68,7 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
 #ifndef VX_TINT_DEFAULT
 #define VX_TINT_DEFAULT 0                          /* (the colour by the excitation: 0 off - as before -, 2 on; PH_FS_SAT. The iOS test build: on) */
 #endif
-int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = 3.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
+int vx_tint_mode = VX_TINT_DEFAULT; float vx_tint_k = 9.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
 #define BT_GLOW_R 0.62f                            /* (the glow's tint against the core's - the owner's choice from the previews, 2026-11-22; vecrender.py BT_GLOW) */
 #define BT_GLOW_G 0.80f
 #define BT_HALO_A 3.0f                             /* (the glass's glow beside a line: 0 the Gaussian; else its level at the line and its power - PH_FS_BEAM hsh) */
@@ -134,8 +134,9 @@ static const char *PH_FS_SAT =
 	/* (a crest of its own line is its core: brighter than both its neighbours across it in some direction - a line beside a
 	 *  brighter dot (a corner, a rest) is not its halo; the owner, 2026-11-25: the dots' round halo showed on the lines as blue) */
 	"      float rid = 0.0; const ivec2 D[4] = ivec2[4](ivec2(2, 0), ivec2(0, 2), ivec2(2, 2), ivec2(2, -2));\n"
+	"      float bv = -1.0;\n"   /* (judged across: in the direction its light falls off most - a dot's edge is no crest of it) */
 	"      for (int j = 0; j < 4; j++) { float a = dot(texelFetch(lt, ip + D[j], 0).rgb, vec3(1.0 / 3.0)), bb = dot(texelFetch(lt, ip - D[j], 0).rgb, vec3(1.0 / 3.0));\n"
-	"        rid = max(rid, 1.0 - smoothstep(0.8, 1.0, max(a, bb) / max(lc, 1e-6))); }\n"
+	"        float dv = lc - min(a, bb); if (dv > bv) { bv = dv; rid = 1.0 - smoothstep(0.8, 1.0, max(a, bb) / max(lc, 1e-6)); } }\n"
 	"      rid *= step(0.05, r);\n"
 	"      fragc = vec4(v * mix(thalo, tcore, max(smoothstep(thr.x, thr.y, r), rid)), age); return; }\n"
 	/* (t: 0 a bright line (q 1 and up) .. 1 the faintest measured (q tq.w); the colour from the tube's white to tdim - linear in
@@ -508,12 +509,14 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		         *  its light - above white on an HDR screen. The white: the screen's, moved with the White balance setting) */
 		        float w15[3], c[3], h[3], m15 = 0, wm = 0, wt[3]; white_gain (15000.0, w15);
 		        for (int i = 0; i < 3; i++) { w15[i] *= tg[i] / t0[i]; if (w15[i] > m15) m15 = w15[i]; wt[i] = tg[i] / t0[i]; if (wt[i] > wm) wm = wt[i]; }
-		        const int sel = (int) (vx_tint_k + 0.5f); const int deep = sel >= 4, wide = sel == 3 || sel >= 5;
+		        const int sel = (int) (vx_tint_k + 0.5f); const int deep = sel >= 4, wide = sel == 3 || sel >= 5, xwide = sel == 12;
+		        /* (7-12, the owner 2026-11-25 - the bright blue glow the most promising: its light 1.4 / 1.7 / 2 / 2.5 / 3 x, and 2 x wider) */
+		        static const float GAIN[13] = { 1, 1, 1, 1, 1, 1, 1.4f, 1.4f, 1.7f, 2.0f, 2.5f, 3.0f, 2.0f };
 		        for (int i = 0; i < 3; i++) { const float tw = tn[i] / mx;
 		          c[i] = sel == 1 ? w15[i] / m15 : wt[i] / wm;
-		          h[i] = tw * gt[i] * (deep ? gt[i] : 1.0f) * (sel == 6 ? 1.4f : 1.0f); }
+		          h[i] = tw * gt[i] * (deep ? gt[i] : 1.0f) * GAIN[sel < 0 ? 0 : sel > 12 ? 12 : sel]; }
 		        glUniform3f_ (ph_ul (ph_sat, "tcore"), c[0], c[1], c[2]); glUniform3f_ (ph_ul (ph_sat, "thalo"), h[0], h[1], h[2]);
-		        glUniform2f_ (ph_ul (ph_sat, "thr"), wide ? 0.15f : 0.08f, wide ? 0.75f : 0.4f); } }
+		        glUniform2f_ (ph_ul (ph_sat, "thr"), xwide ? 0.25f : wide ? 0.15f : 0.08f, xwide ? 0.9f : wide ? 0.75f : 0.4f); } }
 		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
 		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 	}

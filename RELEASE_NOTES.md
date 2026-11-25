@@ -8,6 +8,8 @@ build workflow replaces that release (title = the version, marked Latest) with t
 * The Full Grid Test drawn whole: the owner's Vectrex's Y rate difference (up faster than down) now leaks away in a long run of
   moves, as both of his grid photos show - the plain and the 25 fps grids lost their lower right before. Smooth motion leaves a
   picture drawn in thirds alone (the 50 fps grid showed double lines); each third flickers as on the tube.
+* Long frames (slower than the BIOS's 50 a second - the Full Grid Test, 25 a second): each line at the light it averages over the
+  frame, as the eye sees the flickering tube; with G-Sync the first-drawn part of such a frame (the grid's lower left) had faded out.
 * PiTrex calibration shipped on every system (PC, Mac, Linux, RetroArch, the apps), as the UVMC2's: the card's
   vectrexInterface.ini gets the emulator's tuned values once (the file before kept beside it); later calibrations stay.
 * Shift+F12 (Record > High-res snapshot): the screen drawn again at up to four times the window's size. F12 is the

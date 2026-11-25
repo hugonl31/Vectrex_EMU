@@ -34,10 +34,11 @@ JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/d8.bat" --release --min-api 28 --lib
 mkdir -p $O/res/mipmap-xxxhdpi; python -c "
 from PIL import Image; im = Image.open('../icons/ios_icon_1024.png').convert('RGBA'); im.resize((192, 192), Image.LANCZOS).save('$O/res/mipmap-xxxhdpi/ic_launcher.png')"
 rm -f $O/assets/token.txt $O/assets/logtoken.txt
-# (VX_ names: Windows itself sets PUBLIC = C:SERSPUBLIC - EVERY BUILD WAS THE PUBLIC ONE)
-# THE TOKEN: THE PRIVATE BUILD - THE CONTENT from the project's server and the live log; VX_PUBLIC=1 - the public build's
-# own files and Get games & extras, the live log still sent (the owner: kept until the app is ready); VX_RELEASE=1 - nothing
-if [ -s "$PRIV/tok.txt" ] && [ -z "$VX_RELEASE" ]; then if [ -n "$VX_PUBLIC" ]; then cp "$PRIV/tok.txt" $O/assets/logtoken.txt; else cp "$PRIV/tok.txt" $O/assets/token.txt; fi; fi
+# the builds: the test build (no switch) is the public build - its own files, Get games & extras, the first start's
+# order - with the live log and one item more, the test extras (VecDoom, Doom, Quake) from the project's server, behind
+# the token (assets/logtoken.txt; the owner, 2026-11-25: the app private until he is happy); VX_RELEASE=1 - no token, no
+# log, no test extras. (VX_ names: Windows itself sets PUBLIC to its Public folder - every build was taken for the public one)
+if [ -s "$PRIV/tok.txt" ] && [ -z "$VX_RELEASE" ]; then cp "$PRIV/tok.txt" $O/assets/logtoken.txt; fi
 rm -rf $O/assets/shipped   # (the shipped pictures: added below, not through aapt2 - its Windows build wrote "\" in their zip names)
 "$BT/aapt2.exe" compile -o $O/res.zip --dir $O/res
 "$BT/aapt2.exe" link -o $O/base.apk -I "$JAR" --manifest AndroidManifest.xml --min-sdk-version 28 --target-sdk-version 34 --version-code $CODE --version-name "$VER" -A $O/assets $O/res.zip
@@ -74,4 +75,4 @@ EOF
 KS=$PRIV/debug.keystore
 [ -s "$KS" ] || "$JDK/bin/keytool.exe" -genkeypair -keystore "$(cygpath -w "$KS")" -storepass android -keypass android -alias vx -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Vectrex_EMU debug" >/dev/null
 JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/apksigner.bat" sign --ks "$(cygpath -w "$KS")" --ks-pass pass:android --key-pass pass:android --out $O/Vectrex_EMU.apk $O/aligned.apk
-ls -l $O/Vectrex_EMU.apk; if [ -s $O/assets/token.txt ]; then echo "(with the private build's token)"; elif [ -s $O/assets/logtoken.txt ]; then echo "(public build, with the live log)"; else echo "(release build: no token, no log)"; fi
+ls -l $O/Vectrex_EMU.apk; if [ -s $O/assets/token.txt ]; then echo "(with the private build's token)"; elif [ -s $O/assets/logtoken.txt ]; then echo "(test build: the public build with the live log and the test extras)"; else echo "(release build: no token, no log)"; fi

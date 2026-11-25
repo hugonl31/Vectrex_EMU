@@ -308,9 +308,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 14; }
-/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, get games & extras, HDR, full brightness, look, afterglow, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[14] = { 0, 1, 7, 8, 9, 2, 13, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 13 ? -1 : m[ip.row]; }   /* (13: Get games & extras, 2026-11-25) */   /* (10, the look: Vectrex or Bright, 2026-11-22; 12 full brightness, 2026-11-24) */
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 13; }
+/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, get games & extras, HDR, full brightness, look, afterglow, controls, about, reset - as numbered below) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[13] = { 0, 1, 7, 8, 9, 13, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 12 ? -1 : m[ip.row]; }   /* (13: Get games & extras in place of 2, the Downloads, 2026-11-25: the test build is the public one) */   /* (10, the look: Vectrex or Bright, 2026-11-22; 12 full brightness, 2026-11-24) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;

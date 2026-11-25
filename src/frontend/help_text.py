@@ -179,7 +179,7 @@ TOPICS = [
          "older or newer Vectrex_EMU, which can not join). Join starts it "
          "as with a code. The list keeps itself up to date while the window is open; the room holds at most 100 waiting "
          "games."),
-('item', 'Find games on local network (LAN)...', "The games hosted on this local network - another PC's Online > Host on local "
+('item', 'Find LAN games...', "The games hosted on this local network - another PC's Online > Host on local "
          "network, a phone's or tablet's On this Wi-Fi - under 'Games on this network' in the Online window: one click joins. No "
          "meeting point, no code, no internet needed."),
 ('item', 'Join with a code...', "Type the host's code (or an address) and press Join. The host's game starts here when you "

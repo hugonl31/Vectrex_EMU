@@ -5,7 +5,7 @@ build workflow replaces that release (title = the version, marked Latest) with t
 
 ## v1.9.0
 
-* Online > Find games on local network (LAN)... (PC): the games hosted on this network, one click joins (the list was
+* Online > Find LAN games... (PC, Mac, Linux): the games hosted on this network, one click joins (the list was
   only in the window behind Join with a code).
 * Get games & extras (PC): the PiTrex's SD card from the project's own copy when Malban's site offers that same
   version - his site is slow for its 190 MB; a newer version still comes from his site.

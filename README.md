@@ -34,8 +34,8 @@ box art for 112 games, the UVMC2 Movie Player with Bad Apple. **You add:** your 
 original GCE games and free homebrew with **Vectrex > Get games & extras**, at your own responsibility
 ([what you add](#what-you-add)).
 
-The programs are not signed. Windows: *More info > Run anyway*. Mac: right-click the app > *Open* (macOS 15: *System
-Settings > Privacy & Security > Open Anyway*). Linux: `chmod +x Vectrex_EMU` if the zip lost the permission.
+The Mac app is signed and notarized by Apple: it opens straight away. The Windows program is not signed yet: Windows may
+say it protected your PC - *More info > Run anyway*. Linux: `chmod +x Vectrex_EMU` if the zip lost the permission.
 
 ---
 

@@ -67,17 +67,16 @@ static NSString *OClean (NSString *s);
 static void OAsk (UIViewController *vc, NSString *msg)       /* (the name asked for: typed, checked and kept) */
 {
 	while (vc.presentedViewController) vc = vc.presentedViewController;
-	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Your player name" message:msg ?: @"The name other players see when you play online. Up to 10 letters A-Z and digits 0-9 - reserved for this phone, the same in every online mode." preferredStyle:UIAlertControllerStyleAlert];
-	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.placeholder = @"YOUR NAME"; f.text = vxa_net_name (); f.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters; f.autocorrectionType = UITextAutocorrectionTypeNo; }];
-	[a addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:^(UIAlertAction *x) { (void) x; ulog (@"online: name later"); }]];
 	__weak UIViewController *wv = vc;
-	[a addAction:[UIAlertAction actionWithTitle:@"Check and keep" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x;
-		NSString *n = OClean (a.textFields.firstObject.text ?: @"");
-		if (!n.length) { UIViewController *v = wv; if (v) OAsk (v, @"A name first: 1 to 10 letters A-Z or digits 0-9."); return; }
-		OClaim (n, ^(int r, NSString *g) { UIViewController *v = wv;
-			if (r == 0 || r == -1) { if (v) OAsk (v, [OClaimSays (r, g).capitalizedString stringByAppendingString:@"."]); }
-			else vxa_toast_ext (OClaimSays (r, g)); }); }]];
-	[vc presentViewController:a animated:YES completion:nil];
+	vxa_prompt (vc, @"Your player name", nil, msg ?: @"The name other players see when you play online. Up to 10 letters A-Z and digits 0-9 - reserved for this phone, the same in every online mode.",
+		@"YOUR NAME", vxa_net_name (), YES, @[
+			@[ @"Check and keep", @"", VXGO (^(NSString *typed) {
+				NSString *n = OClean (typed ?: @"");
+				if (!n.length) { UIViewController *v = wv; if (v) OAsk (v, @"A name first: 1 to 10 letters A-Z or digits 0-9."); return; }
+				OClaim (n, ^(int r, NSString *g) { UIViewController *v = wv;
+					if (r == 0 || r == -1) { if (v) OAsk (v, [OClaimSays (r, g).capitalizedString stringByAppendingString:@"."]); }
+					else vxa_toast_ext (OClaimSays (r, g)); }); }) ],
+			@[ @"Later", @"", VXGO (^(NSString *t) { (void) t; ulog (@"online: name later"); }) ] ], nil, nil);
 }
 void vxa_name_first (UIViewController *vc)
 {
@@ -238,28 +237,19 @@ int vxa_net_rehost (void)
 }
 - (void) note:(NSString *)t
 {
-	UIAlertController *a = [UIAlertController alertControllerWithTitle:nil message:t preferredStyle:UIAlertControllerStyleAlert];
-	[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]]; [self presentViewController:a animated:YES completion:nil];
+	vxa_prompt (self, @"Online", nil, t, nil, nil, NO, @[ @[ @"OK", @"", VXGO (^(NSString *x) { (void) x; }) ] ], nil, nil);
 }
 - (void) ask:(NSString *)t then:(void (^) (NSString *))go
 {
-	UIAlertController *a = [UIAlertController alertControllerWithTitle:t message:nil preferredStyle:UIAlertControllerStyleAlert];
-	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters; f.autocorrectionType = UITextAutocorrectionTypeNo; }];
-	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-	[a addAction:[UIAlertAction actionWithTitle:@"Join" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { NSString *v = [a.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-		if (v.length) { ulog ([NSString stringWithFormat:@"online: joining %@", v]); go (v); } }]];
-	[self presentViewController:a animated:YES completion:nil];
+	vxa_prompt (self, @"Join", nil, t, @"", nil, YES, @[ @[ @"Join", @"", VXGO (^(NSString *v) {
+		if (v.length) { ulog ([NSString stringWithFormat:@"online: joining %@", v]); go (v); } }) ] ], nil, nil);
 }
 - (void) chat
 {
 	extern int vxa_net_playing (void); extern void vxa_chat_prompt (void);
 	if (vxa_net_playing ()) { [self dismissViewControllerAnimated:YES completion:^{ vxa_hold (0); vxa_chat_prompt (); }]; return; }   /* (in a game: typed over
 	                                                     the running game - the menu closed, no pause for either) */
-	UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Chat" message:nil preferredStyle:UIAlertControllerStyleAlert];
-	[a addTextFieldWithConfigurationHandler:^(UITextField *f) { f.placeholder = @"A line to the other player"; }];
-	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-	[a addAction:[UIAlertAction actionWithTitle:@"Send" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { NSString *v = a.textFields.firstObject.text; if (v.length) vx_net_chat (v.UTF8String); }]];
-	[self presentViewController:a animated:YES completion:nil];
+	vxa_prompt (self, @"Chat", nil, nil, @"A line to the other player", nil, NO, @[ @[ @"Send", @"", VXGO (^(NSString *v) { if (v.length) vx_net_chat (v.UTF8String); }) ] ], nil, nil);
 }
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _secs.count; }
 - (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger) [_secs[(NSUInteger) s][2] count]; }

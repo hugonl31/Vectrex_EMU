@@ -17,7 +17,6 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.app.AlertDialog;
 import java.io.File;
 
 final class Screens {
@@ -45,6 +44,14 @@ final class Screens {
 		@Override public void closed () { if (onClose != null) onClose.run (); }
 		TextView header (String s) { TextView t = m.text (s.toUpperCase (), 12, Main.DIM, true); t.setPadding ((int) m.dp (4), (int) m.dp (18), 0, (int) m.dp (6)); col.addView (t); return t; }
 		TextView foot (String s) { TextView t = m.text (s, 12, Main.DIM, false); t.setPadding ((int) m.dp (4), (int) m.dp (6), 0, (int) m.dp (4)); col.addView (t); return t; }
+		TextView body (String s) { TextView t = m.text (s, 15, Main.FG2, false); t.setPadding ((int) m.dp (4), (int) m.dp (2), 0, (int) m.dp (12)); col.addView (t); return t; }   /* (a prompt's text, as the iOS app's) */
+		EditText field (String hint, boolean caps)   /* (a line to type, as the iOS app's prompt) */
+		{
+			EditText e = new EditText (m); e.setHint (hint); e.setSingleLine (true); e.setTextColor (Main.FG); e.setHintTextColor (Main.DIM); e.setTextSize (17);
+			if (caps) e.setInputType (InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+			e.setBackground (Main.round (Main.PANEL, Main.EDGE2, m.dp (12))); e.setPadding ((int) m.dp (14), 0, (int) m.dp (14), 0);
+			LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-1, (int) m.dp (50)); lp.bottomMargin = (int) m.dp (14); col.addView (e, lp); return e;
+		}
 		LinearLayout row (String title, String detail, Runnable go) { return row (title, detail, go, null); }
 		LinearLayout toggle (String title, String note, boolean on, Runnable go) { LinearLayout r = Screens.toggleRow (m, title, note, on, go); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-1, -2); lp.bottomMargin = (int) m.dp (6); col.addView (r, lp); return r; }
 		LinearLayout row (String title, String detail, Runnable go, Boolean tog) { LinearLayout r = Screens.row (m, title, detail, go, tog); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams (-1, -2); lp.bottomMargin = (int) m.dp (6); col.addView (r, lp); return r; }
@@ -318,11 +325,15 @@ final class Screens {
 	}
 	/* a line of text typed in (chat, a code, an address) */
 	interface Typed { void go (String s); }
+	/* a line typed: the app's own panel, as the iOS app's prompt (no system dialog - the owner, 2026-11-25) */
 	static void ask (Main m, String title, String hint, boolean caps, Typed go)
 	{
-		EditText e = new EditText (m); e.setHint (hint); e.setSingleLine (true);
-		if (caps) e.setInputType (InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-		new AlertDialog.Builder (m, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle (title).setView (e)
-			.setPositiveButton ("OK", (d, w) -> { String s = e.getText ().toString ().trim (); if (!s.isEmpty ()) go.go (s); }).setNegativeButton ("Cancel", null).show ();
+		Panel p = new Panel (m, title); final EditText e = p.field (hint, caps);
+		final Runnable ok = () -> { String s = e.getText ().toString ().trim (); hideKeys (m, e); m.pop (); if (!s.isEmpty ()) go.go (s); };
+		e.setImeOptions (android.view.inputmethod.EditorInfo.IME_ACTION_DONE); e.setOnEditorActionListener ((v, a, k) -> { ok.run (); return true; });
+		p.row ("OK", "", ok);
+		m.push (p); e.requestFocus ();
+		e.postDelayed (() -> { android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager) m.getSystemService (android.content.Context.INPUT_METHOD_SERVICE); if (im != null) im.showSoftInput (e, 0); }, 150);
 	}
+	static void hideKeys (Main m, View v) { android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager) m.getSystemService (android.content.Context.INPUT_METHOD_SERVICE); if (im != null) im.hideSoftInputFromWindow (v.getWindowToken (), 0); }
 }

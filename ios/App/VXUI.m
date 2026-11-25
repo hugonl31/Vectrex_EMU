@@ -36,6 +36,80 @@ static void VToast (UIViewController *vc, NSString *s)
 	[vc.view addSubview:l]; [UIView animateWithDuration:0.4 delay:1.6 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL d) { (void) d; [l removeFromSuperview]; }];
 }
 
+/* ------------------------------------------------ the app's own prompt: the Android app's panel (Screens.Panel) - a title
+ * bar with its close button, a header, the text, a field to type in, the choices as rows (a title, a small note), a foot.
+ * In place of iOS's alerts (the owner, 2026-11-25: "custom prompts and messages in the game itself, like the apk") */
+@interface VXPrompt : UIViewController <UITextFieldDelegate>
+@property (nonatomic, copy) NSString *ttl, *head, *body, *foot, *field, *fieldText; @property (nonatomic) BOOL caps;
+@property (nonatomic, strong) NSArray<NSArray *> *choices; @property (nonatomic, copy) void (^closed) (void);
+@end
+@implementation VXPrompt { UITextField *_tf; BOOL _done; }
+- (void) finish:(void (^) (NSString *))go
+{
+	if (_done) return; _done = YES; NSString *typed = [_tf.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] ?: @"";
+	void (^cl) (void) = self.closed; [_tf resignFirstResponder];
+	[self dismissViewControllerAnimated:YES completion:^{ if (go) go (typed); else if (cl) cl (); }];
+}
+- (void) viewDidLoad
+{
+	[super viewDidLoad]; self.view.backgroundColor = VX_BG; __weak VXPrompt *ws = self;
+	UIView *bar = [UIView new]; bar.backgroundColor = VX_BAR; bar.translatesAutoresizingMaskIntoConstraints = NO; [self.view addSubview:bar];
+	UILabel *t = VL (self.ttl ?: @"", VT (22), VX_HI); t.translatesAutoresizingMaskIntoConstraints = NO; [bar addSubview:t];
+	UIButton *x = VB (@"", @"xmark", NO, ^{ ulog (@"prompt: closed"); [ws finish:nil]; }); x.accessibilityLabel = @"Close"; x.translatesAutoresizingMaskIntoConstraints = NO; [bar addSubview:x];
+	UIStackView *col = [UIStackView new]; col.axis = UILayoutConstraintAxisVertical; col.spacing = 6; col.translatesAutoresizingMaskIntoConstraints = NO;
+	if (self.head.length) { UILabel *h = VL (self.head.uppercaseString, VF (12, UIFontWeightSemibold), VX_DIM); [col addArrangedSubview:h]; [col setCustomSpacing:8 afterView:h]; }
+	if (self.body.length) { UILabel *b = VL (self.body, VF (15, UIFontWeightRegular), VX_FG2); [col addArrangedSubview:b]; [col setCustomSpacing:14 afterView:b]; }
+	if (self.field) {
+		_tf = [UITextField new]; _tf.placeholder = self.field; _tf.text = self.fieldText; _tf.textColor = VX_FG; _tf.font = VF (17, UIFontWeightMedium); _tf.delegate = self;
+		_tf.attributedPlaceholder = [[NSAttributedString alloc] initWithString:self.field attributes:@{ NSForegroundColorAttributeName: VX_DIM }];
+		_tf.autocapitalizationType = self.caps ? UITextAutocapitalizationTypeAllCharacters : UITextAutocapitalizationTypeSentences; _tf.autocorrectionType = self.caps ? UITextAutocorrectionTypeNo : UITextAutocorrectionTypeDefault;
+		_tf.keyboardAppearance = UIKeyboardAppearanceDark; _tf.returnKeyType = UIReturnKeyDone; _tf.backgroundColor = VX_PANEL;
+		_tf.layer.cornerRadius = 12; _tf.layer.borderWidth = 1; _tf.layer.borderColor = VX_EDGE2.CGColor;
+		_tf.leftView = [[UIView alloc] initWithFrame:CGRectMake (0, 0, 14, 10)]; _tf.leftViewMode = UITextFieldViewModeAlways;
+		[_tf.heightAnchor constraintEqualToConstant:50].active = YES; [col addArrangedSubview:_tf]; [col setCustomSpacing:14 afterView:_tf]; }
+	for (NSArray *ch in self.choices) {
+		NSString *ct = ch[0], *cd = ch.count > 1 && [ch[1] isKindOfClass:NSString.class] ? ch[1] : @""; id blk = ch.count > 2 ? ch[2] : nil;
+		void (^go) (NSString *) = [blk isKindOfClass:NSNull.class] ? nil : blk;
+		UIButtonConfiguration *c = [UIButtonConfiguration plainButtonConfiguration]; c.title = ct; c.subtitle = cd.length ? cd : nil;
+		c.titleAlignment = UIButtonConfigurationTitleAlignmentLeading; c.baseForegroundColor = go ? VX_FG : VX_FG2;
+		c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (16, UIFontWeightSemibold); return m; };
+		c.subtitleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (12, UIFontWeightRegular); m[NSForegroundColorAttributeName] = VX_DIM; return m; };
+		c.contentInsets = NSDirectionalEdgeInsetsMake (12, 14, 12, 14); c.titlePadding = 3;
+		c.background.backgroundColor = VX_PANEL; c.background.strokeColor = VX_EDGE; c.background.strokeWidth = 1; c.background.cornerRadius = 12;
+		UIButton *b = [UIButton buttonWithConfiguration:c primaryAction:[UIAction actionWithHandler:^(UIAction *a) { (void) a; if (!go) return;
+			ulog ([NSString stringWithFormat:@"prompt: %@", ct]); [ws finish:go]; }]];
+		b.contentHorizontalAlignment = UIControlContentHorizontalAlignmentFill; b.userInteractionEnabled = go != nil; b.accessibilityLabel = ct;
+		[b.heightAnchor constraintGreaterThanOrEqualToConstant:52].active = YES; [col addArrangedSubview:b]; }
+	if (self.foot.length) { UILabel *f = VL (self.foot, VF (12, UIFontWeightRegular), VX_DIM); [col setCustomSpacing:10 afterView:col.arrangedSubviews.lastObject ?: f]; [col addArrangedSubview:f]; }
+	UIScrollView *sc = [UIScrollView new]; sc.translatesAutoresizingMaskIntoConstraints = NO; sc.keyboardDismissMode = UIScrollViewKeyboardDismissModeInteractive; [sc addSubview:col]; [self.view addSubview:sc];
+	UILayoutGuide *sa = self.view.safeAreaLayoutGuide;
+	NSLayoutConstraint *w = [col.widthAnchor constraintEqualToAnchor:sc.frameLayoutGuide.widthAnchor constant:-32]; w.priority = UILayoutPriorityDefaultHigh;   /* (the screen's width, at most a tablet's sheet: 640) */
+	[NSLayoutConstraint activateConstraints:@[
+		[bar.topAnchor constraintEqualToAnchor:self.view.topAnchor], [bar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor], [bar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+		[t.leadingAnchor constraintEqualToAnchor:sa.leadingAnchor constant:16], [t.centerYAnchor constraintEqualToAnchor:x.centerYAnchor], [t.trailingAnchor constraintLessThanOrEqualToAnchor:x.leadingAnchor constant:-8],
+		[x.topAnchor constraintEqualToAnchor:sa.topAnchor constant:8], [x.trailingAnchor constraintEqualToAnchor:sa.trailingAnchor constant:-8], [x.widthAnchor constraintEqualToConstant:48], [x.heightAnchor constraintEqualToConstant:44],
+		[bar.bottomAnchor constraintEqualToAnchor:x.bottomAnchor constant:8],
+		[sc.topAnchor constraintEqualToAnchor:bar.bottomAnchor], [sc.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor], [sc.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+		[sc.bottomAnchor constraintEqualToAnchor:self.view.keyboardLayoutGuide.topAnchor],
+		[col.topAnchor constraintEqualToAnchor:sc.contentLayoutGuide.topAnchor constant:16], [col.bottomAnchor constraintEqualToAnchor:sc.contentLayoutGuide.bottomAnchor constant:-24],
+		[col.centerXAnchor constraintEqualToAnchor:sc.frameLayoutGuide.centerXAnchor], [col.widthAnchor constraintLessThanOrEqualToConstant:640], w ]];
+}
+- (void) viewDidAppear:(BOOL)a { [super viewDidAppear:a]; if (_tf) [_tf becomeFirstResponder]; }
+- (void) promptClose { [self finish:nil]; }   /* (the controller's back button: as the close button) */
+- (BOOL) textFieldShouldReturn:(UITextField *)f   /* (Done on the keyboard: the first choice) */
+{
+	for (NSArray *ch in self.choices) { id blk = ch.count > 2 ? ch[2] : nil; if (blk && ![blk isKindOfClass:NSNull.class]) { [self finish:blk]; break; } }
+	return NO;
+}
+@end
+void vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void))
+{
+	while (vc.presentedViewController && !vc.presentedViewController.isBeingDismissed) vc = vc.presentedViewController;
+	VXPrompt *p = [VXPrompt new]; p.ttl = title; p.head = head; p.body = body; p.field = field; p.fieldText = fieldText; p.caps = caps; p.choices = choices; p.foot = foot; p.closed = closed;
+	p.modalPresentationStyle = UIModalPresentationOverFullScreen; p.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+	ulog ([NSString stringWithFormat:@"prompt: %@", title]); [vc presentViewController:p animated:YES completion:nil];
+}
+
 /* ------------------------------------------------ a setting's values: numbers on a slider, the rest a list */
 static int VNum (NSString *v, double *out)
 {
@@ -234,9 +308,9 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 13; }
-/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, HDR, full brightness, look, afterglow, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[13] = { 0, 1, 7, 8, 9, 2, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 12 ? -1 : m[ip.row]; }   /* (10, the look: Vectrex or Bright, 2026-11-22; 12 full brightness, 2026-11-24) */
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 14; }
+/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, downloads, get games & extras, HDR, full brightness, look, afterglow, controls, about, reset - as numbered below) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[14] = { 0, 1, 7, 8, 9, 2, 13, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 13 ? -1 : m[ip.row]; }   /* (13: Get games & extras, 2026-11-25) */   /* (10, the look: Vectrex or Bright, 2026-11-22; 12 full brightness, 2026-11-24) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
@@ -341,9 +415,13 @@ static UITableViewCell *vxs_cell (NSString *title)
 		NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0;
 		c.detailTextLabel.text = fr > 0.01 ? [NSString stringWithFormat:@"The brightest dots up to %.1fx white", 1 + (hr - 1) * fr] : @"Off: as an ordinary screen";
 		c.textLabel.textColor = VX_HI; c.selectionStyle = UITableViewCellSelectionStyleDefault; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; return c; }   /* (a tap: the slider over the running game) */
+	if (R == 13) {                                  /* (Get games & extras: the public sources, Add files - as the Android app's) */
+		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+		c.textLabel.text = @"Get games & extras"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"the original games, free homebrew, the PiTrex, the speech ROM - or your own files"; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
+		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
 	if (R == 2) {                                   /* (the downloads: which parts are here, add or remove) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-		c.textLabel.text = @"Downloads"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"games, boxes, UVMC2, PiTrex"; c.detailTextLabel.textColor = VX_DIM;
+		c.textLabel.text = @"Downloads"; c.textLabel.textColor = VX_FG; c.detailTextLabel.text = @"test build: games, boxes, UVMC2 (VecDoom), PiTrex"; c.detailTextLabel.textColor = VX_DIM;
 		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
 	if (R == 1) {                                   /* (the quick bar: its own row, or hiding itself over the picture) */
 		UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"bar"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"bar"];
@@ -388,15 +466,17 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:VX_ADJ_HDR over:g fromSettings:YES]; }]; return; }
 	if (R == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
 	if (R == 6) { [t deselectRowAtIndexPath:ip animated:YES]; __weak VXSettings *ws = self;
-		UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Reset all settings?" message:@"Every setting of the picture, the overlay, the sound and the controls back to its default." preferredStyle:UIAlertControllerStyleAlert];
-		[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-		[a addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x) { (void) x; int n = 0;
-			for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
-			[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.bar"];   /* (the deck's pop-up and the top bar too: Auto) */
-			if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)];
-			ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); [ws.tableView reloadData]; }]];
-		[self presentViewController:a animated:YES completion:nil]; return; }
+		vxa_prompt (self, @"Reset all settings?", nil, @"Every setting of the picture, the overlay, the sound and the controls back to its default.", nil, nil, NO, @[
+			@[ @"Reset", @"every setting to its default", VXGO (^(NSString *x) { (void) x; int n = 0;
+				for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
+				[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.bar"];   /* (the deck's pop-up and the top bar too: Auto) */
+				if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)];
+				ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); [ws.tableView reloadData]; }) ],
+			@[ @"Cancel", @"", VXGO (^(NSString *x) { (void) x; }) ] ], nil, nil);
+		return; }
 	if (R == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }
+	if (R == 13) { UIViewController *g = self.game; ulog (@"settings: get games & extras");
+		[self dismissViewControllerAnimated:YES completion:^{ vxa_hold (1); [VXUI showGetterFrom:g then:^{ vxa_hold (0); }]; }]; return; }
 	if (R == 2) { UIViewController *g = self.game; ulog (@"settings: downloads");
 		[self dismissViewControllerAnimated:YES completion:^{ if ([g respondsToSelector:@selector(openDownloads)]) [g performSelector:@selector(openDownloads)]; }]; return; }
 	if (!ip.section) return;
@@ -622,8 +702,8 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	[_look addAction:[UIAction actionWithHandler:^(UIAction *a) { NSInteger k = ((UISegmentedControl *) a.sender).selectedSegmentIndex;
 		[NSUserDefaults.standardUserDefaults setObject:k == 1 ? @"boxes" : k == 2 ? @"overlays" : @"carts" forKey:@"lib.look"];
 		ulog ([NSString stringWithFormat:@"library look %ld", (long) k]); [ws reload]; }] forControlEvents:UIControlEventValueChanged];
-	UIButton *add = VB (@"", @"plus", NO, ^{ [ws importGames]; }); add.accessibilityLabel = @"Add games from Files";   /* (your own ROMs: from Files) */
-	[add.widthAnchor constraintEqualToConstant:44].active = YES; [add.heightAnchor constraintEqualToConstant:44].active = YES;
+	UIButton *add = VB (@"GET GAMES", nil, NO, ^{ [VXUI showGetterFrom:ws then:^{ [ws scan]; [ws applyFilter]; }]; }); add.accessibilityLabel = @"Get games & extras";   /* (the download page - Add files in it: as the Android app's) */
+	[add.heightAnchor constraintEqualToConstant:44].active = YES;
 	UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[ title, [UIView new], add, close ]]; row.alignment = UIStackViewAlignmentCenter; row.spacing = 8;
 	UIStackView *hs = [[UIStackView alloc] initWithArrangedSubviews:@[ row, _look, srow, cs ]]; hs.axis = UILayoutConstraintAxisVertical; hs.spacing = 10; hs.translatesAutoresizingMaskIntoConstraints = NO;
 	[head addSubview:hs];
@@ -849,8 +929,10 @@ static void vxu_release (UIViewController *game)
 	for (UIButton *b in @[ ej, pb ]) { UIButtonConfiguration *c = b.configuration; c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (13, UIFontWeightRegular); return m; };
 		c.baseForegroundColor = VX_FG2; b.configuration = c; [b.heightAnchor constraintEqualToConstant:40].active = YES; }
 	UIStackView *hwr = [[UIStackView alloc] initWithArrangedSubviews:@[ ej, pb ]]; hwr.distribution = UIStackViewDistributionFillEqually; hwr.spacing = 8;
-	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ head, st, slots, stn, acts, allb, onl, hw, hwr ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 14;
-	[all setCustomSpacing:24 afterView:onl]; self.all = all;
+	UIButton *getb = VB (@"Get games & extras", @"arrow.down.circle", NO, ^{ UIViewController *gm = ws.game; [ws dismissViewControllerAnimated:YES completion:^{ vxa_hold (1); [VXUI showGetterFrom:gm then:^{ vxa_hold (0); }]; }]; });
+	[getb.heightAnchor constraintEqualToConstant:56].active = YES;
+	UIStackView *all = [[UIStackView alloc] initWithArrangedSubviews:@[ head, st, slots, stn, acts, allb, onl, getb, hw, hwr ]]; all.axis = UILayoutConstraintAxisVertical; all.spacing = 14;
+	[all setCustomSpacing:24 afterView:getb]; self.all = all;
 	UIScrollView *sc = [UIScrollView new]; sc.translatesAutoresizingMaskIntoConstraints = NO; all.translatesAutoresizingMaskIntoConstraints = NO; [sc addSubview:all]; [self.view addSubview:sc];
 	[NSLayoutConstraint activateConstraints:@[ [sc.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:24], [sc.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
 		[sc.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor], [sc.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
@@ -1484,12 +1566,11 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 {
 	if (ip.section != 1) return;
 	NSInteger btn = ip.row; NSUserDefaults *u = NSUserDefaults.standardUserDefaults; __weak VXControls *ws = self;
-	UIAlertController *a = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Vectrex button %ld", (long) btn + 1] message:@"On the controller's" preferredStyle:UIAlertControllerStyleActionSheet];
-	for (int i = 0; i < 8; i++) [a addAction:[UIAlertAction actionWithTitle:VXPhys[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void) x;
-		[u setInteger:i forKey:[NSString stringWithFormat:@"map.%ld", (long) btn + 1]]; ulog ([NSString stringWithFormat:@"controls: button %ld on %@", (long) btn + 1, VXPhys[i]]); [ws.tableView reloadData]; }]];
-	[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-	a.popoverPresentationController.sourceView = [t cellForRowAtIndexPath:ip]; a.view.tintColor = VX_HI; a.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-	[self presentViewController:a animated:YES completion:nil]; [t deselectRowAtIndexPath:ip animated:YES];
+	NSMutableArray *rows = [NSMutableArray array];
+	for (int i = 0; i < 8; i++) [rows addObject:@[ VXPhys[i], @"", VXGO (^(NSString *x) { (void) x;
+		[u setInteger:i forKey:[NSString stringWithFormat:@"map.%ld", (long) btn + 1]]; ulog ([NSString stringWithFormat:@"controls: button %ld on %@", (long) btn + 1, VXPhys[i]]); [ws.tableView reloadData]; }) ]];
+	vxa_prompt (self, [NSString stringWithFormat:@"Vectrex button %ld", (long) btn + 1], @"On the controller's", nil, nil, nil, NO, rows, nil, nil);
+	[t deselectRowAtIndexPath:ip animated:YES];
 }
 @end
 

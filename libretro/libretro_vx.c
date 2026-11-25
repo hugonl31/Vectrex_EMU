@@ -491,7 +491,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|basic|low|medium|high|ultra" },
 	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green.", "blue|green" },
 #if VX_TINT_DEFAULT
-	{ "vectrex_emu_faint", "video", "Vector colour (test)", "For matching a real Vectrex: every vector the same at every brightness - a white core and a blue halo where its light falls off (by the line's own profile, not its brightness): thin or wide, today's blue or a deeper one, or a blue glow brighter than white (HDR); 15000 K core; blue (before): as today.", "blue glow 2.0x|blue glow 1.4x|blue glow 1.7x|blue glow 2.5x|blue glow 3.0x|blue glow 2.0x extra wide|white, wide blue halo|blue (before)" },
+	{ "vectrex_emu_faint", "video", "Vector colour (test)", "For matching a real Vectrex: every vector the same at every brightness - a white core and a blue halo where its light falls off (by the line's own profile, not its brightness): thin or wide, today's blue or a deeper one, or a blue glow brighter than white (HDR); 15000 K core; blue (before): as today.", "blue glow 2.0x extra wide|blue glow 2.0x|blue glow 1.4x|blue glow 1.7x|blue glow 2.5x|blue glow 3.0x|white, wide blue halo|blue (before)" },
 #endif
 	{ "vectrex_emu_gamelist", "video", "Game list", "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder.", "library|simple" },
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
@@ -2268,7 +2268,7 @@ static void bg_make (void)
  * (emulated seconds), where its lines' times count from, and whether it is the other half of a picture drawn in two
  * halves on alternate frames (vecrender.py frame_alternates) */
 #define NH 6
-typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; int open; } gframe;   /* (gen: this content's
+typedef struct { line_t *L; int n; double t; unsigned long long p0; long long *keys; int nk, alt; unsigned long long gen; int open, thirds; } gframe;   /* (gen: this content's
                                                 own number - a new one each push, join or state load; Smooth motion's kept work, smooth.c;
                                                 open: its last piece was cut short by the budget, the game's frame goes on - frame_push) */
 static unsigned long long frame_gen;       /* (not in the save state: the frames get new numbers when one is loaded) */
@@ -2324,18 +2324,26 @@ static void frame_push (unsigned long long p0, int cut)
 			const unsigned sh = (unsigned) (p0 - h->p0);
 			for (int i = 0; i < nlast; i++) { h->L[h->n + i] = last[i]; h->L[h->n + i].t0 += sh; }
 			h->n += nlast; h->t = total_cycles / 1.5e6; h->gen = ++frame_gen; h->open = cut == 2; frame_keys (h);
-			{ const gframe *f1 = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL, *f2 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL);
-			  double o1 = f1 ? frame_overlap (h, f1) : -1, o2 = f2 ? frame_overlap (h, f2) : -1;
-			  h->alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
+			{ const gframe *f1 = nh > 1 ? &hist[nh - 2] : have_prev ? &prevf : NULL, *f2 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL),
+			               *f3 = nh > 3 ? &hist[nh - 4] : (nh == 3 && have_prev ? &prevf : NULL);
+			  double o1 = f1 ? frame_overlap (h, f1) : -1, o2 = f2 ? frame_overlap (h, f2) : -1, o3 = f3 ? frame_overlap (h, f3) : -1;
+			  h->alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3;
+			  h->thirds = o1 >= 0 && o2 >= 0 && o3 >= 0 && o1 < 0.5 && o2 < 0.5 && o3 > (o1 > o2 ? o1 : o2) + 0.3; }
 			return; } } }
 	if (nh == NH) frame_pop ();
 	if (spare.L) { f = spare; spare.L = NULL; }
 	else { f.L = malloc (sizeof (line_t) * MAXL); f.keys = malloc (sizeof (long long) * 6000); }
 	memcpy (f.L, last, sizeof (line_t) * nlast); f.n = nlast; f.t = total_cycles / 1.5e6; f.p0 = p0; f.gen = ++frame_gen; f.open = cut == 2;
 	frame_keys (&f);
-	{ const gframe *f1 = nh ? &hist[nh - 1] : NULL, *f2 = nh > 1 ? &hist[nh - 2] : (nh == 1 && have_prev ? &prevf : NULL);
-	  double o1 = f1 ? frame_overlap (&f, f1) : -1, o2 = f2 ? frame_overlap (&f, f2) : -1;
-	  f.alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3; }
+	{ const gframe *f1 = nh ? &hist[nh - 1] : NULL, *f2 = nh > 1 ? &hist[nh - 2] : (nh == 1 && have_prev ? &prevf : NULL),
+	               *f3 = nh > 2 ? &hist[nh - 3] : (nh == 2 && have_prev ? &prevf : NULL);
+	  double o1 = f1 ? frame_overlap (&f, f1) : -1, o2 = f2 ? frame_overlap (&f, f2) : -1, o3 = f3 ? frame_overlap (&f, f3) : -1;
+	  f.alt = o1 >= 0 && o2 >= 0 && o1 < 0.5 && o2 > o1 + 0.3;
+	  /* (a picture drawn in thirds, one a frame in turn - the Full Grid Test 50 fps: little in common with the last two frames,
+	   *  the one three back again. Nothing in it moves: Smooth motion pairs nothing in it - it drew a third's line between its
+	   *  neighbours of the next third, a grid of double lines (the owner's iPhone, 2026-11-25); each third lit as drawn, the
+	   *  others on the phosphor's afterglow - the tube's flicker) */
+	  f.thirds = o1 >= 0 && o2 >= 0 && o3 >= 0 && o1 < 0.5 && o2 < 0.5 && o3 > (o1 > o2 ? o1 : o2) + 0.3; }
 	hist[nh++] = f;
 	/* the beam's load (brightness bending): the frame before this one - whole now, a short piece joined to it (above) - its lit
 	 * cycles, smoothed (vecrender.py beam_load, load_f: the PC's joined picture). Counted as each frame came, a short piece's
@@ -3499,7 +3507,7 @@ static void retro_run_one (void)
 			 /* (and the two frames need not have as many lines: the beam's path is cut into pieces a little differently each
 			 *  frame - the Test Cart's 146, 145, 144 - and a piece more or less took the in-between away as well; strokes are
 			 *  paired by place, smooth.c - one without a certain partner is such a standing line) */
-			if (b && alpha > 0) B = b->L;
+			if (b && alpha > 0 && !a->thirds && !b->thirds) B = b->L;   /* (a picture in thirds: nothing moves - not paired) */
 			sm_runs++; if (B) sm_mixed++;
 			sm_exc = 0;
 			if (B && !fx_half && !vx_nobuild) {             /* (Low draws every other picture: all a frame later there) */

@@ -13,6 +13,7 @@ final class VX {
 	static native void tuneAnswer (int go);                /* 1 test now, -1 later */
 	static native String tuneStatus ();                    /* the test's step now */
 	static native String tuneReport ();                    /* the result: a line a screen rate - every effect on, or what went off */
+	static native void inputMark (long eventMs);            /* a button pressed: its event time (uptimeMillis) - the input delay measurement */
 	static native int rate ();                             /* the game's screen rate now, Hz (0: not known yet) */
 	static native int status ();                           /* 0 starting, 1 running, -1 failed */
 	static native void setSurface (Object surface);

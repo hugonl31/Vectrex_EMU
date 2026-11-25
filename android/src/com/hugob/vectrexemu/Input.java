@@ -94,6 +94,7 @@ final class Input {
 		if (act == KeyEvent.ACTION_MULTIPLE) return false;
 		final boolean down = act == KeyEvent.ACTION_DOWN, pad = isPad (d) || KeyEvent.isGamepadButton (code);
 		if (pad) nintendo = nintendoPad (d);
+		if (down && e.getRepeatCount () == 0 && pbit (code) >= 0) VX.inputMark (e.getEventTime ());   /* (the input delay measurement: the press's own time) */
 		if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE) return false;
 		if (pad) {
 			if (!m.stack.isEmpty ()) return screenKey (m, e, code, down);

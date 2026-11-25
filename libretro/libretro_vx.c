@@ -3469,6 +3469,7 @@ static void retro_run_one (void)
 		if (gpm) { glFinish_ (); gp0 = vt_wall (); }
 		if (ph_ex_mode) sm_ex_shown = sm_ex_next;       /* (this picture is drawn - Low leaves every other one out: its game frame's afterglow with the next) */
 		const int gb_exm = ph_ex_mode, gb_exn = ph_ex_n; (void) gb_exm; (void) gb_exn;   /* (VX_GPUBENCH below) */
+		{ extern int vx_pic_lines; vx_pic_lines = npl; }   /* (the pieces in this refresh's picture: the apps' input delay measurement) */
 		const double c0 = vt_wall (); const int phd = ph_frame (npl, pdt, opt_glow, opt_after, shot_pending ()); cs_now[4] += vt_wall () - c0;
 		if (phd) {
 			if (pf_on) { double t4 = pf_now (); pf_g[0] += t4 - pf3; }
@@ -3692,7 +3693,8 @@ static const unsigned char *get_lines (const unsigned char *i, line_t *L, int *n
 #define VX_FRAME_HDR (sizeof (int) * 3 + sizeof (double) + sizeof (unsigned long long))
 static int extern_cart_len (void) { extern size_t vt_cart_len; return (int) (vt_cart_len > sizeof cart ? sizeof cart : vt_cart_len); }
 static int vx_ok (void) { extern int vt_uvm2, vt_uvm2_cart, vt_pitrex; return !vt_uvm2 && !vt_uvm2_cart && !vt_pitrex; }
-int vx_app_card (void) { return !vx_ok (); }   /* (the own apps: a UVMC2 or PiTrex program running - its screen rate) */
+int vx_app_card (void) { return !vx_ok (); }
+int vx_pic_lines;                               /* (the pieces in the last refresh's picture - the apps' input delay measurement) */   /* (the own apps: a UVMC2 or PiTrex program running - its screen rate) */
 /* (2026-11-15: the variables by name, in one order, 'long' as 8 bytes - the same state on every system, so netplay joins
  *  between Windows, Android and Linux. Before: the save-state sections whole, which each compiler lays out its own way.
  *  The lists: vars_*.h, made by tools/gen_state_vars.py from both builds' symbols) */

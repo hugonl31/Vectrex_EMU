@@ -28,7 +28,14 @@ final class Controls extends View {
 	int rpPtr = -1, rpDir, togPtr = -1; boolean togLong; String lastStem = "";
 	static String stem () { String g = VX.game (); return g == null || g.isEmpty () ? "" : Online.stem (g); }
 	boolean rstick () { return m.prefs.getBoolean ("touch.rstick." + stem (), false); }
-	static String rmap (Main m, String st) { String s = m.prefs.getString ("touch.rmap." + st, "3421"); return s != null && s.matches ("[1-4]{4}") ? s : "3421"; }   /* (up, right, down, left) */
+	static String rmap (Main m, String st)   /* (up, right, down, left; 2 4 3 1 the default - the owner, 2026-11-26: 2 up, 3 down) */
+	{
+		if (!m.prefs.getBoolean ("touch.rmap2", false)) {   /* (once: a map kept at the first default, 3 4 2 1, to the new one) */
+			android.content.SharedPreferences.Editor e = m.prefs.edit ().putBoolean ("touch.rmap2", true);
+			for (java.util.Map.Entry<String, ?> k : m.prefs.getAll ().entrySet ()) if (k.getKey ().startsWith ("touch.rmap.") && "3421".equals (k.getValue ())) e.putString (k.getKey (), "2431");
+			e.apply (); }
+		String s = m.prefs.getString ("touch.rmap." + st, "2431"); return s != null && s.matches ("[1-4]{4}") ? s : "2431";
+	}   /* (up, right, down, left) */
 	Controls (Main m)
 	{
 		super (m); this.m = m; for (int i = 0; i < 4; i++) btn[i] = new RectF (); java.util.Arrays.fill (fb, -1);

@@ -125,9 +125,12 @@ void vxa_prompt_close (UIViewController *p) { if ([p isKindOfClass:VXPrompt.clas
 NSString *vxa_rkey (void) { NSString *g = vxa_game ().lastPathComponent.stringByDeletingPathExtension; return g.length ? g : @"minestorm"; }   /* (no cartridge: Mine Storm) */
 NSString *vxa_rmap (void)
 {
+	NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (once: a map kept at the first default, 3 4 2 1, to the new one) */
+	if (![u boolForKey:@"touch.rmap2"]) { [u setBool:YES forKey:@"touch.rmap2"];
+		for (NSString *k in u.dictionaryRepresentation.allKeys) if ([k hasPrefix:@"touch.rmap."] && [[u objectForKey:k] isEqual:@"3421"]) [u setObject:@"2431" forKey:k]; }
 	NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:[@"touch.rmap." stringByAppendingString:vxa_rkey ()]];
-	if (m.length != 4) return @"3421";
-	for (NSUInteger i = 0; i < 4; i++) { const unichar c = [m characterAtIndex:i]; if (c < '1' || c > '4') return @"3421"; }
+	if (m.length != 4) return @"2431";   /* (the default: 2 up, 3 down - the owner, 2026-11-26) */
+	for (NSUInteger i = 0; i < 4; i++) { const unichar c = [m characterAtIndex:i]; if (c < '1' || c > '4') return @"2431"; }
 	return m;
 }
 void vxa_rmap_panel (UIViewController *vc, void (^closed) (void))

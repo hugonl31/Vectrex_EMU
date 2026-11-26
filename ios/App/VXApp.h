@@ -108,7 +108,7 @@ int vxg_any_busy (void);                                        /* (a download o
 UIViewController *vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void));
 void vxa_prompt_say (UIViewController *p, NSString *s), vxa_prompt_close (UIViewController *p);
 #define VXGO(...) ((id) [(__VA_ARGS__) copy])   /* (variadic: a block's commas are no macro arguments) */
-/* the right side as a stick (VXUI.m): this game's key (its file's stem), its map (up, right, down, left: 4 digits, "3421"
+/* the right side as a stick (VXUI.m): this game's key (its file's stem), its map (up, right, down, left: 4 digits, "2431"
  * the first suggestion), the panel choosing it */
 NSString *vxa_rkey (void), *vxa_rmap (void);
 void vxa_rmap_panel (UIViewController *vc, void (^closed) (void));

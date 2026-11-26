@@ -4476,9 +4476,9 @@ class App:
         print('colours: %s - %d colours changed' % (v, n))
         self.show_look('colours: %s' % v)
     def set_look2(self, v):
-        """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
+        """Tube > Look: 'vectrex', 'medium' or 'bright' (vecrender blook, look_s)"""
         if self.ren:
-            self.ren.look2 = v; self.show_look('look: ' + ('Bright' if v == 'bright' else 'Vectrex')); self.save_settings()
+            self.ren.look2 = v; self.show_look('look: ' + {'bright': 'Bright', 'medium': 'Medium'}.get(v, 'Vectrex')); self.save_settings()
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True

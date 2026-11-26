@@ -983,6 +983,8 @@ BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's -
                                         #  the faint light - the lines' skirts, the glass's glow - bluer, the bright core the tube's white)
 LIB_ART = 0.8                           # (the library's pictures at 80 % brightness - the owner: 70 % on 2026-11-22 (the eyes stay used to the vectors' level), 80 % on 2026-11-23)
 BL_GAIN = 1.5; BL_WIDTH = 1.3             # (the Bright look: blook)
+LOOK_S = {'vectrex': 0.0, 'medium': 0.5, 'bright': 1.0}   # (Tube > Look: its strength - Medium halfway by eye: the geometric mean of
+                                                        #  the two, 1.22 x the light, 1.14 x the width; bgain / bwidth, the core's look_gain)
 BT_SPOT = 1.25                              # (the spot's width x this: the lines' cross-section in the owner's photos, cut along the normal -
                                             #  2026-11-22, the owner: 1.85 matched the photos - their lens' blur with it; the BIOS's small text
                                             #  must show its rows as the tube does: 1.5; Last Human's smaller font too, but only barely (the owner): 1.25)
@@ -1034,10 +1036,13 @@ TONE_SHADER = b"""
 uniform sampler2D tex;
 uniform float hk;
 uniform float vl;                       // (the Vectrex look: the lines scaled in light by vl, clipping only at white / the peak)
-uniform float bgh;                      // (Bright on an HDR screen: the ordinary screen's curve, x the screen's top)
+uniform float bgh;                      // (Bright on an HDR screen: the ordinary screen's curve, x the screen's top; Medium: x its square
+                                        //  root, the rest given back above it as the Vectrex look's, up to the top)
 void main() {
     vec3 c = texture2D(tex, gl_TexCoord[0].st).rgb;
-    if (bgh > 0.0) { vec3 d = c / bgh; vec3 e = 0.55 + 0.45 * (1.0 - exp(-(d - 0.55) / 0.6)); gl_FragColor = vec4(mix(d, e, step(0.55, d)) * bgh, 1.0); return; }
+    if (bgh > 0.0) { vec3 d = c / bgh; vec3 e = 0.55 + 0.45 * (1.0 - exp(-(d - 0.55) / 0.6)); vec3 o = mix(d, e, step(0.55, d)) * bgh;
+        if (hk > bgh) { vec3 x = max(c - o, 0.0); float m = hk - bgh; o += x / pow(1.0 + pow(x / m, vec3(8.0)), vec3(0.125)); }
+        gl_FragColor = vec4(o, 1.0); return; }
     if (vl > 0.0) { vec3 l = pow(max(c, 0.0), vec3(2.2)) * vl; float p = pow(max(hk, 1.0), 2.2);
         l = l / pow(1.0 + pow(l / p, vec3(6.0)), vec3(1.0 / 6.0)); gl_FragColor = vec4(pow(l, vec3(1.0 / 2.2)), 1.0); return; }
     vec3 k = 0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6));
@@ -2435,7 +2440,7 @@ class GLBloomRenderer(GLRenderer):
         self.light_ov_k = 1.0        #  its strength
         self.light_tex = None; self.light_key = None; self.light_made_t = 0.0
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
-        self.look2 = 'vectrex'       # Tube > Look: 'vectrex' (the measured picture) or 'bright' (the tube's light lifted, the beam wider - blook)
+        self.look2 = 'medium'        # Tube > Look: 'vectrex' (the measured picture), 'medium' (halfway - the PC's default, the owner 2026-11-26) or 'bright' (the tube's light lifted, the beam wider - blook)
         self.white_k = WHITE_DEFAULT # Tube > White balance: the beam's white, kelvin (see white_gain)
         self.beam_trace = True       # (2026-11-22: the picture is the beam's path lighting the phosphor - always; the line renderer's rules are not used any more): the spot's own path lights the phosphor by the time it spent
                                      #  (BEAM_TRACE_CSAT; the core's beam-trace mode) - off: the line renderer
@@ -3191,7 +3196,7 @@ class GLBloomRenderer(GLRenderer):
                        getattr(self, 'crt_gain', 1.0) * getattr(self, 'hv_light', 1.0),
                        getattr(self, 'crt_width', 1.0) * getattr(self, 'hv_width', 1.0), getattr(self, 'knob_bright', 0.0), gain,
                        BEAM_LOWZ, BEAM_LOWW, BEAM_W0, BEAM_WZ, BEAM_TRACE_SG, float(os.environ.get('VX_BT_SPOT', BT_SPOT)), _hf, _hs,
-                       BT_UNITS, BT_KMAX, BEAM_FADE, 1.0 if self.blook() else 0.0, BL_WIDTH, 1.0 if L.shape[1] > 7 else 0.0)
+                       BT_UNITS, BT_KMAX, BEAM_FADE, 1.0 if self.blook() else 0.0, self.bwidth(), 1.0 if L.shape[1] > 7 else 0.0)
                     + tuple(rgb) + (float(getattr(self, 'dwell_k', 1.0)),))   # (dwell_k: see bt2_prepare)
             with _vxb_lock:                                # (the library keeps the pieces between its calls)
                 n = lib.vxb_pieces(L.ctypes.data, len(L), L.shape[1], P.ctypes.data)
@@ -3500,7 +3505,7 @@ class GLBloomRenderer(GLRenderer):
             kk = ((bl if bl is not None else bt_light(np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT), lp / upx, cyc))
                   / (2.0 * math.pi * (sg / upx) ** 2) * np.where(hal, _hf, 1.0 - _hf) * gain * cgain / BT_KMAX)   # (a rest's peak for that light: the shader spreads it)
             kk = np.where(((b & 128) != 0) & ~web, kk * BEAM_FADE, kk)
-            if self.blook(): sg = np.where(hal, sg, sg * BL_WIDTH)   # (Bright: the beam wider, its peak kept - more light from a thin line)
+            if self.blook(): sg = np.where(hal, sg, sg * self.bwidth())   # (Bright, Medium: the beam wider, its peak kept - more light from a thin line)
             mq = 3.5 * sg + 1.0
         moved = lp > 1e-3
         lps = np.where(moved, lp, 1.0)
@@ -3731,11 +3736,20 @@ class GLBloomRenderer(GLRenderer):
     def blook(self):
         """the Bright look (Tube > Look, 2026-11-22: for a small screen whose thin lines give little light): the tube's light lifted and
         the beam BL_WIDTH x wider. An ordinary screen: its values x BL_GAIN before the roll-off - the faint lines come up, the top is
-        pressed into white. An HDR screen: the ordinary screen's whole picture, roll-off and all, x the screen's top (TONE_SHADER: bgh)"""
-        return getattr(self, 'look2', 'vectrex') == 'bright'
+        pressed into white. An HDR screen: the ordinary screen's whole picture, roll-off and all, x the screen's top (TONE_SHADER: bgh).
+        True for Medium too: halfway (look_s 0.5) - every lift the geometric mean of the Vectrex look's and Bright's"""
+        return self.look_s() > 0.0
+    def look_s(self):
+        """the look's strength: 0 Vectrex, 0.5 Medium, 1 Bright (LOOK_S)"""
+        return LOOK_S.get(getattr(self, 'look2', 'vectrex'), 0.0)
     def bgain(self):
-        """the Bright look's lift of the tube's light as a screen value (1.0: the Vectrex look)"""
-        return (self.hdr_hk if getattr(self, 'hdr_hk', 1.0) > 1.0 else BL_GAIN) if self.blook() else 1.0
+        """the Bright look's lift of the tube's light as a screen value (1.0: the Vectrex look; Medium: its square root)"""
+        s = self.look_s(); g = self.hdr_hk if getattr(self, 'hdr_hk', 1.0) > 1.0 else BL_GAIN
+        return g if s >= 1.0 else g ** s if s > 0.0 else 1.0
+    def bwidth(self):
+        """the beam's width x this (Bright BL_WIDTH, Medium its square root, Vectrex 1)"""
+        s = self.look_s()
+        return BL_WIDTH if s >= 1.0 else BL_WIDTH ** s if s > 0.0 else 1.0
     def hold(self):
         """how long a lit spot stays at full brightness: until the game has drawn its next picture. A real tube
         keeps a slow game's picture as bright as a fast one's (the eye averages the flashes); here a spot stays
@@ -4329,7 +4343,7 @@ class GLBloomRenderer(GLRenderer):
         self.UseProgram(self.satprog); self.Uniform1i(self.u_sat['tex'], 0)
         ex = float(os.environ.get('VX_BT_EXPO', BT_EXPO))    # (the exposure: light -> the screen; VX_BT_EXPO: tests)
         ex *= float(os.environ.get('VX_BT_SPOT', BT_SPOT))   # (a wider spot: its peak lower - the reference line stays at white)
-        if self.blook(): ex *= (self.hdr_hk if getattr(self, 'hdr_hk', 1.0) > 1.0 else BL_GAIN) ** 2.2   # (Bright: the light lifted here)
+        if self.blook(): ex *= self.bgain() ** 2.2   # (Bright, Medium: the light lifted here)
         k = float(getattr(self, 'white_k', WHITE_DEFAULT))
         t0 = white_gain(WHITE_DEFAULT); tk = white_gain(k)                      # (the tube's white as the owner's photos show it at the default
         t = tuple(a * b / c for a, b, c in zip(BT_TINT, tk, t0)); t = tuple(v / max(t) for v in t)   #  setting - BT_TINT - moved with the White balance setting)
@@ -4876,7 +4890,7 @@ class GLBloomRenderer(GLRenderer):
         if hx or hy:
             gl.glMatrixMode(GL_MODELVIEW); gl.glPushMatrix(); gl.glTranslatef(hx / float(w), -hy / float(h), 0.0)
         self.UseProgram(self.tprog); self.Uniform1i(self.u_ttex, 0); self.Uniform1f(self.u_thk, self.hdr_hk)
-        self.Uniform1f(self.u_tbgh, self.hdr_hk if (self.blook() and self.hdr_hk > 1.0) else 0.0)
+        self.Uniform1f(self.u_tbgh, self.bgain() if (self.blook() and self.hdr_hk > 1.0) else 0.0)
         self.Uniform1f(self.u_tvl, 0.0)
         self._quad(src)
         self.UseProgram(0)

@@ -323,7 +323,7 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
 - (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 13; }
 /* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, get games & extras, HDR, full brightness, look, afterglow, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[13] = { 0, 1, 7, 8, 9, 13, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 12 ? -1 : m[ip.row]; }   /* (13: Get games & extras in place of 2, the Downloads, 2026-11-25: the test build is the public one) */   /* (10, the look: Vectrex or Bright, 2026-11-22; 12 full brightness, 2026-11-24) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[13] = { 0, 1, 7, 8, 9, 13, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 12 ? -1 : m[ip.row]; }   /* (13: Get games & extras in place of 2, the Downloads, 2026-11-25: the test build is the public one) */   /* (10, the look: Vectrex, Medium or Bright, 2026-11-22 / 2026-11-26; 12 full brightness, 2026-11-24) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
@@ -367,17 +367,17 @@ static UITableViewCell *vxs_cell (NSString *title)
 		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_sel (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
-	if (R == 10) {                                  /* (the look: Vectrex - the measured picture - or Bright: the lines lifted and wider, for a small screen) */
+	if (R == 10) {                                  /* (the look: Vectrex - the measured picture -, Medium - halfway - or Bright: the lines lifted and wider, for a small screen) */
 		extern void vxa_hdr_update (void);
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"Look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; const NSInteger md = lk ? lk.integerValue : 1;   /* (Bright the default on phones and tablets) */
-		c.textLabel.text = @"Bright look"; c.detailTextLabel.text = md == 1 ? @"Brighter, wider lines - for a small screen" : @"Off: as a real Vectrex";   /* (a switch: the owner, 2026-11-25) */
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = md == 1;
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger v = ((UISwitch *) a.sender).on ? 1 : 0;
+		NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; const NSInteger md = lk ? lk.integerValue : 1;   /* (0 Vectrex, 2 Medium, 1 Bright - Bright the default on phones and tablets) */
+		c.detailTextLabel.text = md == 0 ? @"As a real Vectrex" : md == 2 ? @"Between Vectrex and Bright" : @"Brighter, wider lines - for a small screen";
+		UISegmentedControl *sg = vxs_seg (@[ @"Vectrex", @"Medium", @"Bright" ], md == 0 ? 0 : md == 2 ? 1 : 2);   /* (three choices: segments, as the control deck's - the owner, 2026-11-26) */
+		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger k = ((UISegmentedControl *) a.sender).selectedSegmentIndex, v = k == 0 ? 0 : k == 1 ? 2 : 1;
 			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.look"];
-			ulog ([NSString stringWithFormat:@"look %@", v ? @"Bright" : @"Vectrex"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sw; return c; }
+			ulog ([NSString stringWithFormat:@"look %@", v == 1 ? @"Bright" : v == 2 ? @"Medium" : @"Vectrex"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sg; return c; }
 	if (R == 11) {                                  /* (the afterglow 20 % brighter: a phone's small picture loses it - on there by default, off on an iPad) */
 		extern void vxa_hdr_update (void); extern int vxa_trail_boost (void);
 		UITableViewCell *c = vxs_cell (@"Brighter afterglow");

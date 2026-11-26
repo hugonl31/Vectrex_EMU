@@ -1669,7 +1669,7 @@ float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIS
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
-	{ extern float vx_bright; NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; vx_bright = !lk || lk.integerValue == 1 ? 1.0f : 0.0f; }   /* (Bright the default here)   /* (the look: Vectrex, or Bright - lifted and wider) */
+	{ extern float vx_bright; NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; vx_bright = !lk || lk.integerValue == 1 ? 1.0f : lk.integerValue == 2 ? 0.5f : 0.0f; }   /* (Bright the default here)   /* (the look: 0 Vectrex, 1 Bright - lifted and wider, 2 Medium - halfway) */
 	{ extern int vx_palette; if ([NSUserDefaults.standardUserDefaults integerForKey:@"app.palgreen"] != vx_palette) [NSUserDefaults.standardUserDefaults setInteger:vx_palette forKey:@"app.palgreen"]; }
 	{ extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */
 	vx_hdr_lift = 0.0f;   /* (2026-11-22: one picture - the beam on the phosphor; an HDR screen opens its top, no look to choose) */

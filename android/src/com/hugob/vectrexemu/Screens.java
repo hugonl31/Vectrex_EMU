@@ -180,9 +180,11 @@ final class Screens {
 		  final String[] MD = { "Off: your own brightness", "Gameplay: screen at maximum while playing, yours in menus", "Whole app: screen at maximum, menus too" };
 		  p.row ("Max brightness", MD[mb], () -> pick (m, "Max brightness", new String[] { "0", "1", "2" }, ML, "" + mb, v -> {
 			m.prefs.edit ().putInt ("app.maxbright", Integer.parseInt (v)).apply (); Main.log ("max brightness " + ML[Integer.parseInt (v)]); m.brightTick (); reopenSettings (m); })); }
-		{ final int lk = m.prefs.getInt ("app.look", 1);   /* (the look - iOS alike) */
-			p.toggle ("Bright look", lk == 1 ? "Brighter, wider lines - for a small screen" : "Off: as a real Vectrex", lk == 1, () -> { final int s = 1 - lk;
-					m.prefs.edit ().putInt ("app.look", s).apply (); VX.setBright (s); Main.log ("look " + s); reopenSettings (m); }); }
+		{ final int lk = m.prefs.getInt ("app.look", 1);   /* (the look - iOS alike: 0 Vectrex, 2 Medium, 1 Bright - in that order) */
+		  final String[] LL = { "Vectrex", "Medium", "Bright" };
+		  final String ld = lk == 0 ? "Vectrex: as a real Vectrex" : lk == 2 ? "Medium: between Vectrex and Bright" : "Bright: brighter, wider lines - for a small screen";
+		  p.row ("Look", ld, () -> pick (m, "Look", new String[] { "0", "2", "1" }, LL, "" + lk, v -> { final int s = Integer.parseInt (v);
+				m.prefs.edit ().putInt ("app.look", s).apply (); VX.setBright (s); Main.log ("look " + s); reopenSettings (m); })); }
 		p.row ("Brighter afterglow", m.trailBoost () ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("app.trailboost", !m.trailBoost ()).apply (); m.trailLast = -1; m.trailTick (); Main.log ("brighter afterglow " + m.trailBoost ()); reopenSettings (m); });
 		p.row ("Controls", "controllers, touch, keyboard", () -> { m.pop (); controls (m); });
 		p.row ("About and help", "how to play, online, credits", () -> about (m));

@@ -566,10 +566,10 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_ceiling_ov", "case", "Ceiling light on the overlay", "Its reflection on the sheet: strength (GPU). 0x: off.", "auto|0x|0.25x|0.5x|0.75x|1x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_lamp_x", "case", "Light position: left / right", NULL, "0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
 	{ "vectrex_emu_lamp_y", "case", "Light position: high / low", NULL, "27%|0%|10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" },
-#if defined(__ANDROID__)                            /* (a handheld: the lines lifted and wider by default, as the apps on a phone) */
-	{ "vectrex_emu_tube_look", "tube", "Look", "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen.", "Bright|Vectrex" },
+#if defined(__ANDROID__) || VX_IOS                  /* (a phone, a handheld: Bright by default, as the apps; a computer: Medium - the owner, 2026-11-26) */
+	{ "vectrex_emu_tube_look", "tube", "Look", "Vectrex: as a real Vectrex. Medium: between the two. Bright: brighter, wider lines - for a small screen.", "Bright|Medium|Vectrex" },
 #else
-	{ "vectrex_emu_tube_look", "tube", "Look", "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen.", "Vectrex|Bright" },
+	{ "vectrex_emu_tube_look", "tube", "Look", "Vectrex: as a real Vectrex. Medium: between the two. Bright: brighter, wider lines - for a small screen.", "Medium|Bright|Vectrex" },
 #endif
 	{ "vectrex_emu_afterglow", "tube", "Afterglow", "The phosphor keeps glowing after the beam has passed: its length. 1x is the measured length; 0.6x was matched to a real Vectrex side by side.",
 	  "0.6x|off|0.05x|0.1x|0.2x|0.3x|0.4x|0.5x|0.7x|0.8x|0.9x|1x|1.1x|1.2x" },
@@ -795,8 +795,8 @@ static void read_options (void)
 #ifndef VX_EMUVR
 	{ const char *z = getenv ("VX_HALO"); if (z) sscanf (z, "%lf,%lf", &bt_halo_f, &bt_halo_s); }   /* (a test: the glass's glow - its share of the light, its sigma in units) */
 	{ extern int vx_app_noshape; extern float vx_bright;   /* (Tube > Look, as the desktop's: RetroArch's option - the own apps set it themselves, App > Look) */
-	  if (!vx_app_noshape) vx_bright = opt_is ("vectrex_emu_tube_look", "Bright") ? 1.0f : 0.0f; }
-	{ const char *z = getenv ("VX_BRIGHT"); if (z) { extern float vx_bright; vx_bright = (float) atof (z); } }   /* (a test: the Bright look) */
+	  if (!vx_app_noshape) vx_bright = opt_is ("vectrex_emu_tube_look", "Bright") ? 1.0f : opt_is ("vectrex_emu_tube_look", "Medium") ? 0.5f : 0.0f; }
+	{ const char *z = getenv ("VX_BRIGHT"); if (z) { extern float vx_bright; vx_bright = (float) atof (z); } }   /* (a test: the look's strength - 0 Vectrex, 0.5 Medium, 1 Bright) */
 	{ const char *z = getenv ("VX_HDRPEAK"); if (z) { extern float vx_hdr_peak; vx_hdr_peak = (float) atof (z); } }   /* (a test: an HDR screen's top, x white) */
 	{ const char *z = getenv ("VX_GPROF"); if (z) { extern int vx_gprof; vx_gprof = atoi (z); } }   /* (a test: the GPU diagnostic - each stage's time in the log) */
 #endif
@@ -2809,7 +2809,8 @@ static unsigned long long sm_ex_shown, sm_ex_next;   /* (Smooth motion's aftergl
 int vx_owe_hidden;                         /* (set by the apps: a hidden catch-up run's frame is drawn with the next picture) */
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
 static int bt_gpu_ok (void);
-#define BL_WIDTH 1.3                        /* (the Bright look: the beam this much wider - vecrender.py BL_WIDTH; its glass's glow not: gpu_phos.c) */
+#define BL_WIDTH 1.3                        /* (the Bright look: the beam this much wider - vecrender.py BL_WIDTH; its glass's glow not: gpu_phos.c.
+                                               Medium: BL_WIDTH ^ 0.5 - gpu_phos.c look_width) */
 static int build_lines (wline *L, int n, int to, double esh, int npl)
 {
 	extern int vt_imager;
@@ -2900,7 +2901,7 @@ static int build_lines (wline *L, int n, int to, double esh, int npl)
 			pline *q = &pl[npl++];
 			q->to = to; q->x0 = (float) x0; q->y0 = (float) y0; q->x1 = (float) x1; q->y1 = (float) y1;
 			q->ax = (float) x0; q->ay = (float) y0; q->bx = (float) x1; q->by = (float) y1;
-			{ extern float vx_bright; if (vx_bright > 0.5f) sb *= BL_WIDTH; }   /* (Bright: the beam wider, its peak kept - more light from a thin line) */
+			{ extern float vx_bright; if (vx_bright >= 1.0f) sb *= BL_WIDTH; else if (vx_bright > 0.0f) sb *= pow (BL_WIDTH, vx_bright); }   /* (Bright, Medium: the beam wider, its peak kept - more light from a thin line) */
 			q->k2 = (float) sb; q->R = (float) (3.5 * sb + 1.0); q->r = r; q->g = g; q->b = b; q->hx = (float) (BT_HALO_S * upx);   /* (k2: the spot's sigma, hx: the glow's - px) */
 			{ const double a = l->ag > 0 ? l->ag - l->t / 1.5e6 : 0; q->ag = (float) (a < 0 ? 0 : a > 1 ? 1 : a); }   /* (the light's age: wl_from) */
 			q->cut = 0; q->n0x = q->n0y = q->n1x = q->n1y = 0; q->c0 = q->c1 = 0;

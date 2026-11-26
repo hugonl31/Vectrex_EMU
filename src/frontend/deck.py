@@ -648,7 +648,6 @@ class Deck:
             if self.reading is not None:
                 self.reading.append(k)                  # (a check's setting: for its changed mark, see mk_check)
             return getattr(a.ren, k, d) if a.ren else d
-        has = lambda k: bool(a.ren) and hasattr(a.ren, k)
         PH = lambda: A('phosphor'); AG = lambda: A('phosphor') and A('trail_on')
         OV = lambda: bool(A('art_on') and A('art', None)); SC = lambda: OV() and A('scr_on')
         flip = lambda k: (lambda: a.flip(a.ren, k))
@@ -660,7 +659,6 @@ class Deck:
                     ('check', 'Phosphor', PH, a.toggle_phosphor, None),
                     ('in', [('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
                             ('in', [('slider', 'trail', AG)])]),
-                    ('slider', 'white_k', lambda: has('white_k')),
                     ('group', 'SHAPE AND GLASS'),
                     ('check', 'Tube geometry', lambda: A('curve_on'), flip('curve_on'), None),
                     ('in', [('slider', 'geom_k', lambda: A('curve_on'))]),
@@ -1328,7 +1326,7 @@ class Deck:
         if attr == 'volume':
             default = 1.0
         default = V.ART_ADJ_DEFAULT.get(attr, default)
-        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
+        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large') + tuple(V.ART_ADJ_DEFAULT) and default > 0
         if rel:
             lo, hi, log = max(V.SLIDER_LOW.get(attr, 0.0), default * (1 - V.SLIDER_SPAN)), default * (1 + V.SLIDER_SPAN), False
         return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default)
@@ -1394,12 +1392,8 @@ class Deck:
         """a slider row; ref() - the value it counts as changed from: an orange stripe on the bar there while the
         slider is elsewhere (where it goes back to)"""
         f = self.frame(); N = 1000
-        if log == 'mired':                                      # (even in mireds: White balance)
-            to_pos = lambda v: N * (V.vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
-            to_val = lambda p: V.vecrender.white_from_pos(2.0 * p / N - 1.0)
-        else:
-            to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
-            to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
+        to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
+        to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
         lw = tk.Label(f, text=label, fg=G, bg=self.bgc, font=_font(self.app, 9), width=26, anchor='w'); lw.pack(side='left')
         self.with_info(f, lw, label, unit)
         val = tk.Label(f, fg=G, bg=self.bgc, font=_font(self.app, 9), width=12, anchor='w')

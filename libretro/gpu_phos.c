@@ -65,13 +65,11 @@ float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the mea
                                                    roll-off and all, x the screen's top - the same range, higher up (tone: bgh). The room's light
                                                    stays as it is) */
 #define BL_GAIN 1.5f
-#ifndef VX_TINT_DEFAULT
-#define VX_TINT_DEFAULT 0                          /* (on: the test builds' option Vector colour (test) - the iOS test build) */
-#endif
 /* (the vectors' colour by their own profile - a white core, a blue glow 2 x its light, extra wide - the default everywhere since
  *  2026-11-26: the owner's choice from the test cartridge on his tube; the brightest lines and dots neutral white, ~1.9 x the old
  *  12000 K colour's light in the Full Grid. vecrender.py TINT_GLOW) */
-int vx_tint_mode = 4; float vx_tint_k = 12.0f;   /* (PH_FS_SAT: the mode; the faint end's white, K - 0: the tube's own white. The test build's option Faint vectors sets them) */
+static const int vx_tint_mode = 4; static const float vx_tint_k = 12.0f;   /* (PH_FS_SAT: the mode, the profile's choice - fixed: the vector
+                                                   colour options gone, the owner 2026-11-26; the other choices only by the test switch VX_TINTMODE) */
 #define BT_GLOW_R 0.62f                            /* (the glow's tint against the core's - the owner's choice from the previews, 2026-11-22; vecrender.py BT_GLOW) */
 #define BT_GLOW_G 0.80f
 #define BT_HALO_A 3.0f                             /* (the glass's glow beside a line: 0 the Gaussian; else its level at the line and its power - PH_FS_BEAM hsh) */

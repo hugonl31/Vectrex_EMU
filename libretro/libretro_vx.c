@@ -243,7 +243,8 @@ static int opt_rate = 60, opt_smooth = 1, opt_halo = 1, opt_bend = 1, opt_dwell 
 static int vx_beam;                          /* (the beam on the phosphor: the picture is the light of the spot's own path - bt2_prepare; not EmuVR's flavour) */
 static int bt_gpu;                           /* (.. as light on the GPU - gpu_phos.c: pieces add, the glass's glow; else the CPU's display values) */
 static int opt_dots = 1, opt_speedb = 1; static float opt_trail = 0.6f, opt_trail_k = 1.0f, opt_bright = 1.0f;   /* (v0.10: every look switchable, for slower PCs) */
-static int opt_sbend = 0; static double opt_white = 12000;   /* (v0.14; opt_geom with the tube map above) */
+static int opt_sbend = 0; static const double opt_white = 12000;   /* (v0.14; opt_geom with the tube map above. The lines' white, fixed since
+                                              2026-11-26: the White balance option gone - the owner) */
 static int opt_power = 1;                    /* (v0.15: the switch-on / switch-off effects) */
 /* (1.0, 2026-11-15) the overlay as Vectrex_EMU's (vecrender.py ART_SHADER): its clear filters colour the lines in their
  * own hue at the tint strength, its opaque print lit by the room at the print brightness; the overlay's button; the
@@ -457,7 +458,6 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
 	{ "vectrex_emu_glass_curve", "Glass curvature (with Tube geometry; 1: as on a Vectrex, 0: flat, even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (CPU picture - fine detail, off: VR hardly shows it); off|on" },
-	{ "vectrex_emu_white", "White balance; 12000 K (real Vectrex)|9300 K|16000 K|6504 K (neutral)" },
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
 	{ "vectrex_emu_skip_intro", "Skip the Vectrex intro (from the next game start - the cartridge starts straight away); off|on" },   /* (2026-11-26, the owner:
 	                                         for his tests; RetroArch 1.7.5 answers only the keys listed here - the desktop list's one never reached EmuVR) */
@@ -492,9 +492,6 @@ static const struct vx_opt OPTS[] = {
 	  "Sets the options left on auto. Auto: the best this device runs at full speed, measured once (GPU; CPU only: Medium).",
 	  "auto|basic|low|medium|high|ultra" },
 	{ "vectrex_emu_palette", "video", "Colours", "The deck's, the menus' and the buttons' colour: a deeper blue, or green.", "blue|green" },
-#if VX_TINT_DEFAULT
-	{ "vectrex_emu_faint", "video", "Vector colour (test)", "For matching a real Vectrex: every vector the same at every brightness - a white core and a blue halo where its light falls off (by the line's own profile, not its brightness): thin or wide, today's blue or a deeper one, or a blue glow brighter than white (HDR); 15000 K core; blue (before): as today.", "blue glow 2.0x extra wide|blue glow 2.0x|blue glow 1.4x|blue glow 1.7x|blue glow 2.5x|blue glow 3.0x|white, wide blue halo|blue (before)" },
-#endif
 	{ "vectrex_emu_gamelist", "video", "Game list", "Library: the games as tiles - cartridges, boxes or overlays, a search, categories. Simple: the plain list of the roms folder.", "library|simple" },
 	{ "vectrex_emu_rate", "video", "Screen rate", "50 Hz needs a screen that can run at 50 Hz.",
 	  "60 Hz|50 Hz (game)|72 Hz|90 Hz|120 Hz|144 Hz" },
@@ -574,8 +571,6 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_afterglow", "tube", "Afterglow", "The phosphor keeps glowing after the beam has passed: its length. 1x is the measured length; 0.6x was matched to a real Vectrex side by side.",
 	  "0.6x|off|0.05x|0.1x|0.2x|0.3x|0.4x|0.5x|0.7x|0.8x|0.9x|1x|1.1x|1.2x" },
 	{ "vectrex_emu_trail_bright", "tube", "Afterglow brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
-	{ "vectrex_emu_white", "tube", "White balance", "The lines' colour temperature: 12000 K the bluish white of a real Vectrex, 6504 K neutral. The overlay and the case keep theirs.",
-	  "12000 K|5600 K|6000 K|6504 K|7000 K|7500 K|8000 K|9300 K|10000 K|11000 K|13000 K|14000 K|16000 K" },
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "Where the beam really lands, measured on a real Vectrex: the picture a little narrower towards the sides, lines bowed slightly.", "auto|on|off" },
 	{ "vectrex_emu_geometry_k", "tube", "Tube geometry strength", "0x: an ideal, straight picture. 1x: the measured Vectrex.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_glass_curve", "tube", "Glass curvature", "The tube's face curves away towards its edges. 1: as seen on a Vectrex (the overlays fit it). 0: flat, even squares. Works with Tube geometry; without it the picture is flat.", "1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
@@ -854,7 +849,6 @@ static void read_options (void)
 	if (unit_known) { unit_make (unit_preset (), optv); if (vx_ok ()) { emu_wait_ext (); unit_live (unit_addon); } }   /* (the unit, while running) */
 	opt_async = !opt_is ("vectrex_emu_threaded", "off"); opt_async_vx = opt_is ("vectrex_emu_threaded_vx", "on");   /* (EmuVR too, no key there: on, as the PC - UVMC2 / PiTrex only, plain carts
 	                                              run as before; single-threaded VecDoom's ARM bursts missed 1.5 % of 90 Hz frames, the builder 2026-11-25) */
-	{ const int w = atoi (optv ("vectrex_emu_white")); opt_white = w >= 5600 && w <= 16000 ? w : 12000; }   /* (the desktop's 5600 - 16000 K; "6504 K (neutral)" before 2026-11-23 reads as 6504) */
 	white_make ();
 	opt_power = !opt_is ("vectrex_emu_power_fx", "off");
 	/* (2026-11-25, the owner: the GPU picture is the PC's tuning exactly - the old CPU picture's look keys (glow, beam width, brightness,
@@ -887,12 +881,6 @@ static void read_options (void)
 	  opt_size = z >= 240 && z <= 2400 ? z : 800; }
 	opt_area = opt_is ("vectrex_emu_area", "glass window") ? 1 : opt_is ("vectrex_emu_area", "overlay sheet") ? 2 : 0;
 	{ const int lo = !opt_is ("vectrex_emu_gamelist", "simple"); if (lo != lib_on) { lib_on = lo; if (br_open) br_show (1); } }
-#if VX_TINT_DEFAULT
-	{ extern int vx_tint_mode; extern float vx_tint_k; const char *f = optv ("vectrex_emu_faint");   /* (the test build's Faint vectors: gpu_phos.c PH_FS_SAT) */
-	  if (f && *f) { static const char *const V[] = { "15000 K core, blue halo", "white, blue halo", "white, wide blue halo", "white, deep blue halo", "white, wide deep blue halo", "white, bright blue glow",
-		  "blue glow 1.4x", "blue glow 1.7x", "blue glow 2.0x", "blue glow 2.5x", "blue glow 3.0x", "blue glow 2.0x extra wide" };
-		vx_tint_mode = 0; for (int i = 0; i < 12; i++) if (!strcmp (f, V[i])) { vx_tint_mode = 4; vx_tint_k = (float) (i + 1); } } }   /* (4: the colour by the profile, vx_tint_k the choice) */
-#endif
 	{ extern int vx_palette; const int pl = opt_is ("vectrex_emu_palette", "green"); if (pl != vx_palette) { vx_palette = pl; dk_dirty_set = 1; } }
 	{ const int lk = !opt_is ("vectrex_emu_deck_look", "classic"); if (lk != opt_deck_look) { opt_deck_look = lk; dk_dirty_set = 1; } }
 	opt_deck = opt_is ("vectrex_emu_deck", "full") || opt_is ("vectrex_emu_deck", "on") ? 1 : opt_is ("vectrex_emu_deck", "slim") ? 2 : opt_is ("vectrex_emu_deck", "pop-up") ? 3 : 0;

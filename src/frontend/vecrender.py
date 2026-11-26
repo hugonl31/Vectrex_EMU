@@ -2436,7 +2436,7 @@ class GLBloomRenderer(GLRenderer):
         self.light_tex = None; self.light_key = None; self.light_made_t = 0.0
         self.halo_on = True          # the glow around resting spots (Tube > Corner glow, see BEAM_HALO_W)
         self.look2 = 'vectrex'       # Tube > Look: 'vectrex' (the measured picture) or 'bright' (the tube's light lifted, the beam wider - blook)
-        self.white_k = WHITE_DEFAULT # Tube > White balance: the beam's white, kelvin (see white_gain)
+        self.white_k = WHITE_DEFAULT # the beam's white, kelvin (see white_gain) - fixed: the White balance slider gone, 2026-11-26
         self.beam_trace = True       # (2026-11-22: the picture is the beam's path lighting the phosphor - always; the line renderer's rules are not used any more): the spot's own path lights the phosphor by the time it spent
                                      #  (BEAM_TRACE_CSAT; the core's beam-trace mode) - off: the line renderer
         self.even_beam = False       # Tube > Even beam: an ideal vector display - every point as bright and wide as a
@@ -4338,8 +4338,8 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform3f(self.u_sat['wbc'], *t)
         # (TINT_GLOW - the owner, 2026-11-25, matching the tube with the cart: the vectors' colour by their own profile - a white
         #  core, the halo the glow's tint twice, 2 x its light, extra wide; as the libretro core's test option "blue glow 2.0x
-        #  extra wide". VX_TINT=0 / 1 overrides it)
-        on = TINT_GLOW if os.environ.get('VX_TINT') is None else os.environ.get('VX_TINT') == '1'
+        #  extra wide" - the one vector colour since 2026-11-26)
+        on = TINT_GLOW
         self.Uniform1i(self.u_sat['tm'], 1 if on else 0)
         if on:
             w_, h_ = getattr(self, 'tex_wh', {}).get(tex, self.size)

@@ -409,9 +409,10 @@ final class Screens {
 		  final String[] MD = { "Your own brightness", "Screen at maximum while playing, yours in menus", "Screen at maximum, menus too" };
 		  pullRow (p, "Max brightness", MD[mb], ML, mb, mb != 0 ? Main.HI2 : Main.FG2, k -> {
 			m.prefs.edit ().putInt ("app.maxbright", k).apply (); Main.log ("max brightness " + ML[k]); m.brightTick (); reopenSettings (m); }); }
-		{ final int lk = m.prefs.getInt ("app.look", 1);   /* (the look - iOS alike) */
-			p.toggle ("Bright look", lk == 1 ? "Brighter, wider lines - for a small screen" : "Off: as a real Vectrex", lk == 1, () -> { final int s = 1 - lk;
-					m.prefs.edit ().putInt ("app.look", s).apply (); VX.setBright (s); Main.log ("look " + s); reopenSettings (m); }); }
+		{ final int lk = m.prefs.getInt ("app.look", 1);   /* (the look - iOS alike: stored 0 Vectrex, 2 Medium, 1 Bright; shown in that order) */
+		  final int[] LV = { 0, 2, 1 }; final int ls = lk == 0 ? 0 : lk == 2 ? 1 : 2;
+		  segRow (p, "Look", ls == 0 ? "As a real Vectrex" : ls == 1 ? "Between Vectrex and Bright" : "Brighter, wider lines - for a small screen", new String[] { "Vectrex", "Medium", "Bright" }, ls, k -> {
+			final int s = LV[k]; m.prefs.edit ().putInt ("app.look", s).apply (); VX.setBright (s); Main.log ("look " + s); reopenSettings (m); }); }
 		p.row ("Brighter afterglow", m.trailBoost () ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("app.trailboost", !m.trailBoost ()).apply (); m.trailLast = -1; m.trailTick (); Main.log ("brighter afterglow " + m.trailBoost ()); reopenSettings (m); });
 		p.row ("Controls", "controllers, touch, keyboard", () -> { m.pop (); controls (m); });
 		p.row ("About and help", "how to play, online, credits", () -> about (m));

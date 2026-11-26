@@ -59,7 +59,8 @@ int vx_phone_trail = 0;                        /* (the own phone / tablet apps s
 #define PHOS_T1 (vx_phone_trail ? 0.0454f * 1.5f : 0.0454f)
 #define PHOS_A2 (vx_phone_trail ? 0.0582f * 0.75f : 0.0582f)
 #define PHOS_T2 (vx_phone_trail ? 0.350f * 2.0f : 0.350f)
-float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 1 Bright, for a small screen whose thin lines
+float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 0.5 Medium - halfway, look_gain / look_width;
+                                                   1 Bright, for a small screen whose thin lines
                                                    give little light (the owner, 2026-11-22): the tube's light lifted and the beam 1.3 x wider
                                                    (libretro_vx.c). An ordinary screen: its values x BL_GAIN before the roll-off - the faint lines
                                                    come up, the top is pressed into white. An HDR screen: the ordinary screen's whole picture,
@@ -79,6 +80,11 @@ int vx_tint_mode = 4; float vx_tint_k = 12.0f;   /* (PH_FS_SAT: the mode; the fa
 #define BT_HALO_N 3.0f
 float vx_hdr_peak = 1.0f;                       /* (HDR: the brightest lights top, x the screens white - the own iOS app sets it
                                                 from the screens headroom; 1: SDR, as everywhere else) */
+/* (the look's lift of the tube's light as a screen value, and its beam's width: Vectrex 1, Bright BL_GAIN (an HDR screen: its top)
+ *  and BL_WIDTH, Medium (vx_bright 0.5) their geometric mean - halfway by eye: 1.22 x the light, 1.14 x the width on an ordinary
+ *  screen. vecrender.py bgain / bwidth) */
+static double look_gain (void) { const double g = vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN; return vx_bright >= 1.0f ? g : vx_bright > 0.0f ? pow (g, vx_bright) : 1.0; }
+static double look_width (void) { return vx_bright >= 1.0f ? BL_WIDTH : vx_bright > 0.0f ? pow (BL_WIDTH, vx_bright) : 1.0; }
 static int ph_w, ph_h, ph_i, ph_ovgen = -1, ph_made;
 static float *ph_buf; static size_t ph_bufn;
 
@@ -252,9 +258,11 @@ static const char *PH_FS_BLUR =                 /* (the Gaussian, one way: gtw) 
 	"  fragc = vec4(a, 1.0); }\n";
 /* (vecrender.py TONE_SHADER: the picture as it is up to 0.55, then rolling off towards white - bright slow shapes keep their detail;
  *  an HDR screen: what the roll-off took given back above it, softly up to the screen's peak hk - the same picture from black to
- *  the middle, the top open) */
+ *  the middle, the top open. bgh: Bright / Medium on an HDR screen - the ordinary screen's curve x bgh (Bright: the top, hk;
+ *  Medium: its square root, the rest given back above it as the Vectrex look's, up to hk) */
 #define PH_TONE "uniform int beam; uniform float bgh;\n" \
-	"vec3 tone(vec3 c) { if (bgh > 0.0) { vec3 d = c / bgh, e = 0.55 + 0.45 * (1.0 - exp(-(d - 0.55) / 0.6)); return mix(d, e, step(0.55, d)) * bgh; }\n" \
+	"vec3 tone(vec3 c) { if (bgh > 0.0) { vec3 d = c / bgh, e = 0.55 + 0.45 * (1.0 - exp(-(d - 0.55) / 0.6)); vec3 o = mix(d, e, step(0.55, d)) * bgh;\n" \
+	"    if (hk > bgh) { vec3 x = max(c - o, 0.0); float m = hk - bgh; o += x / pow(1.0 + pow(x / m, vec3(8.0)), vec3(0.125)); } return o; }\n" \
 	"  vec3 k =0.55 + 0.45 * (1.0 - exp(-(c - 0.55) / 0.6)); vec3 o = mix(c, k, step(0.55, c));\n" \
 	"  if (hk > 1.0) { vec3 x = max(c - o, 0.0); float m = hk - 1.0; o += x / pow(1.0 + pow(x / m, vec3(8.0)), vec3(0.125)); }\n" \
 	"  return o; }\n"
@@ -575,7 +583,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		const float hx = (float) ph_gw / FW, hy = (float) ph_gh / FH, hm = 0.5f * (hx + hy), hf = (float) (BT_HALO_F / (1.0 - BT_HALO_F));
 		/* (Bright widens the spot, its peak kept (build_lines): the piece's light x BL_WIDTH^2 - the glass's glow is the light of the spot as
 		 *  measured, as the PC's (vecrender.py _build_np: the glow's piece from the light before the widening). It came 1.7 x the PC's) */
-		const float bwk = vx_bright > 0.5f ? (float) (1.0 / (BL_WIDTH * BL_WIDTH)) : 1.0f;
+		const double bw = look_width (); const float bwk = vx_bright > 0.0f ? (float) (1.0 / (bw * bw)) : 1.0f;
 		if ((size_t) ntot * 24 > ph_hbufn) { free (ph_hbuf); ph_hbufn = (size_t) ntot * 24 + 4096; ph_hbuf = malloc (ph_hbufn * sizeof (float)); }
 		/* (pieces that follow each other along one straight line - a line's ends and middle, its caps, the tube's segments - as one
 		 *  piece with their light together: over the glow's width, 2.5 units, where along half a unit the light sat shows nothing - a
@@ -610,7 +618,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		  for (int k = 0; k < 3; k++) { tn[k] = BT_TINT[k] * tg[k] / t0[k]; if (tn[k] > mx) mx = tn[k]; }
 		  glBindVertexArray_ (g_vao); ph_target (dstF, 0, 0, ph_fw, ph_fh); glUseProgram_ (ph_sat);
 		  ph_bind (ph_sat, "lt", 0, ph_L); ph_bind (ph_sat, "ht", 1, ph_H);
-		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2) * pow (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0, 2.2)));   /* (Bright: the tube's light lifted here - all that comes of it with it) */   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
+		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2) * pow (look_gain (), 2.2)));   /* (Bright, Medium: the tube's light lifted here - all that comes of it with it) */   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
 		  glUniform3f_ (ph_ul (ph_sat, "tint"), tn[0] / mx, tn[1] / mx, tn[2] / mx);
 		  { /* (the glow bluer than the core - the owner, 2026-11-22: next to the tube the phone's vectors looked greenish; BT_GLOW x the tube's white) */
 		    static float gt[3] = { BT_GLOW_R, BT_GLOW_G, 1.0f }; static int rd; if (!rd) { rd = 1; const char *z = getenv ("VX_GLOWTINT"); if (z) sscanf (z, "%f,%f,%f", &gt[0], &gt[1], &gt[2]); }
@@ -637,7 +645,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		          h[i] = tw * gt[i] * (deep ? gt[i] : 1.0f) * GAIN[sel < 0 ? 0 : sel > 12 ? 12 : sel]; }
 		        glUniform3f_ (ph_ul (ph_sat, "tcore"), c[0], c[1], c[2]); glUniform3f_ (ph_ul (ph_sat, "thalo"), h[0], h[1], h[2]);
 		        glUniform2f_ (ph_ul (ph_sat, "thr"), xwide ? 0.25f : wide ? 0.15f : 0.08f, xwide ? 0.9f : wide ? 0.75f : 0.4f); } }
-		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
+		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / look_gain ())); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
 		  PHREP (glDrawArrays_ (GL_TRIANGLES, 0, 3)); }
 	}
 	}
@@ -658,7 +666,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  { static int ua = -1; if (ua < 0) ua = !(getenv ("VX_PHAGE") && !atoi (getenv ("VX_PHAGE")));
 	    PU1F (ph_upd, "usea", beam && ua && !ex_n ? 1.0f : 0.0f); }
 	  PU1F (ph_upd, "fak", beam ? 0.0f : 1.0f);
-	  PU1F (ph_upd, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam && vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
+	  PU1F (ph_upd, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
 	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
@@ -705,7 +713,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  PU1I (ph_out, "glow", glow); PU1I (ph_out, "ovon", ovon && ph_ovm); PU1I (ph_out, "wbon", wb_on && !beam); PU1I (ph_out, "beam", beam);
 	  glUniform3f_ (ph_ul (ph_out, "tint"), gk * GLOW_TINT[0], gk * GLOW_TINT[1], gk * GLOW_TINT[2]);
 	  glUniform3f_ (ph_ul (ph_out, "wbg"), wb_g[0], wb_g[1], wb_g[2]); glUniform3f_ (ph_ul (ph_out, "wbc"), wb_c[0], wb_c[1], wb_c[2]);
-	  PU1F (ph_out, "bright", beam ? 1.0f : opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0); PU1F (ph_out, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); PU1F (ph_out, "bgh", beam && vx_bright > 0.5f && vx_hdr_peak > 1.0f ? vx_hdr_peak : 0.0f); PU1F (ph_out, "hl", beam ? 0.0f : vx_hdr_lift); PU1F (ph_out, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); PU1F (ph_out, "lt", vx_hdr_lt); PU1F (ph_out, "sn", vx_hdr_sn); PU1F (ph_out, "gb", vx_hdr_gb);
+	  PU1F (ph_out, "bright", beam ? 1.0f : opt_bright); PU1F (ph_out, "grey", glass_grey); PU1F (ph_out, "dith", fx_dith ? 1.0 : 0.0); PU1F (ph_out, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); PU1F (ph_out, "bgh", beam && vx_bright > 0.0f && vx_hdr_peak > 1.0f ? (float) look_gain () : 0.0f); PU1F (ph_out, "hl", beam ? 0.0f : vx_hdr_lift); PU1F (ph_out, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); PU1F (ph_out, "lt", vx_hdr_lt); PU1F (ph_out, "sn", vx_hdr_sn); PU1F (ph_out, "gb", vx_hdr_gb);
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:

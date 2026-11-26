@@ -34,7 +34,7 @@ final class VX {
 	static native int[] genlabelb (byte[] pic, int width);     /* (genlabel / genfit from a picture's bytes, PNG or JPEG: the app's own, assets/shipped) */
 	static native int[] genfitb (byte[] pic, int maxw);
 	static native int palette ();                               /* (the core's colour scheme now: 0 blue, 1 green) */
-	static native void setBright (int on);                      /* (the look: 0 Vectrex, 1 Bright - the lines lifted and wider) */
+	static native void setBright (int on);                      /* (the look: 0 Vectrex, 1 Bright - the lines lifted and wider, 2 Medium - halfway) */
 	static native void setHdrLook (int look);                   /* (0 bright - as SDR, 1 the whole picture, 2 the Vectrex: iOS alike) */
 	static native int hdrActive ();
 	static native void snap (int runs, String path);        /* tests: the shown picture at that run after the next load */

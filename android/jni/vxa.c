@@ -696,7 +696,7 @@ static void *vxa_main (void *u)
 				      vxa_lat_smooth (), "");
 				if (vxa_lat_n && vxa_lat_n % 10 == 0) vlog ("input delay, %d presses: button to the app %.1f ms, to the picture %.1f ms, to the glass %.1f ms on average (%.1f - %.1f)",
 					vxa_lat_n, vxa_lat_sum[0] / vxa_lat_n, vxa_lat_sum[1] / vxa_lat_n, vxa_lat_sum[2] / vxa_lat_n, vxa_lat_min, vxa_lat_max);
-				vxa_message (m, 2.0); vxa_lat_wait = 0; } }
+				(void) m; vxa_lat_wait = 0; } }   /* (in the log only: on the screen it came after every press in every game - the owner, 2026-11-26) */
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
@@ -897,7 +897,7 @@ static jintArray ga_bytes (JNIEnv *e, jbyteArray b, int label, int width)
 JNIEXPORT jintArray JNICALL JF(genlabelb) (JNIEnv *e, jclass c, jbyteArray b, jint width) { (void) c; return ga_bytes (e, b, 1, (int) width); }
 JNIEXPORT jintArray JNICALL JF(genfitb) (JNIEnv *e, jclass c, jbyteArray b, jint maxw) { (void) c; return ga_bytes (e, b, 0, (int) maxw); }
 JNIEXPORT jint JNICALL JF(palette) (JNIEnv *e, jclass c) { (void) e; (void) c; extern int vx_palette; return vx_palette; }   /* (the colour scheme: 0 blue, 1 green) */
-JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on ? 1.0f : 0.0f; { extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */ vlog ("look %s", on ? "Bright" : "Vectrex"); }   /* (the look: Vectrex, or Bright - lifted and wider) */
+JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on == 1 ? 1.0f : on == 2 ? 0.5f : 0.0f; { extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */ vlog ("look %s", on == 1 ? "Bright" : on == 2 ? "Medium" : "Vectrex"); }   /* (the look: 0 Vectrex, 1 Bright - lifted and wider, 2 Medium - halfway) */
 JNIEXPORT void JNICALL JF(setHdrLook) (JNIEnv *e, jclass c, jint look) { (void) e; (void) c; extern float vx_hdr_lift; extern int vx_app_dots; vx_hdr_lift = (float) look; vx_app_dots = 1; vlog ("HDR look %d", (int) look); }
 JNIEXPORT void JNICALL JF(snap) (JNIEnv *e, jclass c, jint n, jstring path) { (void) c; JSTR (s, path); snprintf (vxa_snap_path, sizeof vxa_snap_path, "%s", s ? s : ""); JREL (s, path); vx_app_pich = 0; vxa_snap_fixed = 1; vxa_snap_n = n; }   /* (the picture at the size the options give - Picture size - as any frontend) */
 JNIEXPORT jint JNICALL JF(hdrActive) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_hdr_surf == 1; }

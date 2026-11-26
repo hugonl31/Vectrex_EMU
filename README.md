@@ -781,7 +781,7 @@ Everything that sets the look and the sound is in the **Config window** (**Tab**
 
 | Tab | |
 |---|---|
-| **Tube** | Look (Vectrex / Bright), phosphor and afterglow, white balance, tube geometry and its strength, glass curvature, glass edge, dither, mains wobble (50 / 60 Hz), brightness bending |
+| **Tube** | Look (Vectrex / Medium / Bright), phosphor and afterglow, white balance, tube geometry and its strength, glass curvature, glass edge, dither, mains wobble (50 / 60 Hz), brightness bending |
 | **Overlay** | on / off, choosing one per game, tint, printed art, parallax, plastic glow, scratches (wear, fine, medium, damage, scribbles, glint strength and reach, new random scratches), position and size |
 | **Case** | the plastic case round the tube: on / off, reflections, wear |
 | **Room light** | the room's light, the glass catching it, the ceiling light on the glass and on the overlay, the lamp's position (a pad) |

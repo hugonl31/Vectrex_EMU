@@ -496,7 +496,7 @@ static int ox_draw (int glow, double dt)
 	OU1F (ox_sheet, "glint", glint); OU1F (ox_sheet, "scrk", scrk); OU1F (ox_sheet, "scron", scr ? 1.0 : 0.0);
 	OU1F (ox_sheet, "a2", scr_a2); OU1F (ox_sheet, "a4", scr_a4); OU1F (ox_sheet, "gk", scr ? 2.0 : 0.0);
 	OU1F (ox_sheet, "glow", pgl); OU1F (ox_sheet, "ref", SCR_REF); OU1F (ox_sheet, "pxo", 1.5 * kpx);
-	OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); { extern float vx_bright; OU1F (ox_sheet, "bgh", bt_gpu && vx_bright > 0.5f && vx_hdr_peak > 1.0f ? vx_hdr_peak : 0.0f); } { extern float vx_hdr_lift, vx_hdr_vs, vx_hdr_vss; OU1F (ox_sheet, "hl", bt_gpu ? 0.0f : vx_hdr_lift); OU1I (ox_sheet, "beam", bt_gpu); OU1F (ox_sheet, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); { extern float vx_hdr_lt, vx_hdr_sn; OU1F (ox_sheet, "lt", vx_hdr_lt); OU1F (ox_sheet, "sn", vx_hdr_sn); } }
+	OU1F (ox_sheet, "dith", fx_dith ? 1.0 : 0.0); OU1F (ox_sheet, "hk", vx_hdr_peak > 1.0f ? vx_hdr_peak : 1.0f); { extern float vx_bright; OU1F (ox_sheet, "bgh", bt_gpu && vx_bright > 0.0f && vx_hdr_peak > 1.0f ? (float) look_gain () : 0.0f); } { extern float vx_hdr_lift, vx_hdr_vs, vx_hdr_vss; OU1F (ox_sheet, "hl", bt_gpu ? 0.0f : vx_hdr_lift); OU1I (ox_sheet, "beam", bt_gpu); OU1F (ox_sheet, "vs", vx_hdr_peak > 1.0f ? vx_hdr_vs : vx_hdr_vss); { extern float vx_hdr_lt, vx_hdr_sn; OU1F (ox_sheet, "lt", vx_hdr_lt); OU1F (ox_sheet, "sn", vx_hdr_sn); } }
 	ox_quad (); OXT (7); if (ox_prof == 2) ox_tqp = 1;
 	glBindTexture_ (GL_TEXTURE_2D, ph_S); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri_ (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	return 1;

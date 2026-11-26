@@ -4,6 +4,15 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.9.1
+- New vector colour: a white core with a blue glow - brighter
+- More shine round the brightest dots, as on a real tube
+- The beam's up / down difference as measured on a real Vectrex
+- Full Grid Test and Test Cartridge grid drawn as on the tube
+- RetroArch: no stray lines with run-ahead (Vectrexians)
+- PC: Controls > 3D Imager view, always there
+- New test cart: Updown Test
+
 ## v1.8.9
 - Android: less input delay (one picture queued, not three)
 - Android: Input Delay Test cart - the delay measured to the glass

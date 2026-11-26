@@ -1716,7 +1716,7 @@ static double hdr_rest (double cyc)
 /* per look (0 Bright, 1 Vectrex - the lines' light differs): the spot's peak (display value) for A = 1, its width (the line's
  * x DOT_W: the photos' camera widens the line more than ours), the glow's share and FWHM - each matched to the photos' dot
  * sizes (Bright: within 0.12 unit on average, Vectrex 0.11) */
-static const double DOT_K[2] = { 1.5, 3.0 }, DOT_W[2] = { 1.4, 1.6 }, DOT_HALO[2] = { 0.003, 0.005 }, DOT_HALO_W[2] = { 1.3, 1.3 };
+static const double DOT_K[2] = { 1.5, 3.0 }, DOT_W[2] = { 1.4, 1.6 }, DOT_HALO[2] = { 0.051, 0.085 }, DOT_HALO_W[2] = { 3.47, 3.47 };   /* (the glow x 3.6 as a display value, 2.7 x as wide: the owner, 2026-11-26 - the brighter dots' shine on the test cartridge's INTENSITY page; vecrender.py REST_HALO) */
 #define DOT_A 0.209
 #define DOT_T 52.0
 static double dot_light (double cyc) { return cyc > 0 ? DOT_A * DOT_T * log (1.0 + cyc / DOT_T) : 0; }

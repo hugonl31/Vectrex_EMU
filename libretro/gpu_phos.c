@@ -198,18 +198,24 @@ static const char *PH_FS_SAT =
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, t1, t2, dtv, usea, fak, kd1, kd2, acap, pex; uniform int after; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, t1, t2, dtv, usea, fak, kd1, kd2, acap, pex; uniform int after, hp; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
+	/* (hp - the beam on the phosphor: what is left of a light after a newer one took part of it, in the old light's own colour - the
+	 *  same light as channel by channel. Its values carry the vectors' colour by their profile (PH_FS_SAT tm 4: a white core, a
+	 *  blue glow): a line's white core less the next copy's blue glow beside it left red and green only - every trail stripe an
+	 *  orange edge, the afterglow orange-brown at Afterglow brightness 3x (the owner's iPhone, 2026-11-26). The 3D Imager's
+	 *  colours: a channel the newer light does not have keeps its light, as before) */
+	"vec3 rest(vec3 a, vec3 r) { if (hp == 0 || r == a) return r; float s = a.r + a.g + a.b; return s > 0.0 ? a * ((r.r + r.g + r.b) / s) : r; }\n"
 	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
 	"  float fa = txb(fc, uv).a * fak;\n"   /* (fak 0: the beam on the phosphor - alpha is the light's age there, not the HDR rests' light) */
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, fa); return; }\n"
 	"  vec4 pp = txb(fp, uv); vec3 p = pp.rgb * pex, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
 	"  float age = usea * max(pp.a, 0.0) + dtv, e1 = a1 * exp(-age / t1), e2 = a2 * exp(-age / t2);\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
-	"  float cap = pv && lp > acap ? acap / lp : 1.0; vec3 l = pv ? max(p * cap - f, 0.0) : vec3(0.0);\n"
+	"  float cap = pv && lp > acap ? acap / lp : 1.0; vec3 l = pv ? rest(p * cap, max(p * cap - f, 0.0)) : vec3(0.0);\n"
 	"  g1 += l * e1; g2 += l * e2;\n"
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
-	"  g1 = mix(g1, max(g1 - f * a1, 0.0), lit); g2 = mix(g2, max(g2 - f * a2, 0.0), lit);\n"
+	"  g1 = rest(g1, mix(g1, max(g1 - f * a1, 0.0), lit)); g2 = rest(g2, mix(g2, max(g2 - f * a2, 0.0), lit));\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
 	"  o1 = vec4(g1, 0.0); o2 = vec4(g2, 0.0); os = vec4(f + lift(g1 + g2), fa); }\n";   /* (HDR: the light above white is the spot's own,
 	                                              no trail of it - that trail, up to 8x the ordinary one, gave Last Human's ship a long bright tail) */
@@ -660,6 +666,8 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  { static int ua = -1; if (ua < 0) ua = !(getenv ("VX_PHAGE") && !atoi (getenv ("VX_PHAGE")));
 	    PU1F (ph_upd, "usea", beam && ua && !ex_n ? 1.0f : 0.0f); }
 	  PU1F (ph_upd, "fak", beam ? 0.0f : 1.0f);
+	  { static int hp = -1; if (hp < 0) hp = !(getenv ("VX_AGHUE") && !atoi (getenv ("VX_AGHUE")));   /* (VX_AGHUE=0: channel by channel - before 2026-11-26) */
+	    PU1I (ph_upd, "hp", beam && hp); }
 	  PU1F (ph_upd, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
 	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);

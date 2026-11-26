@@ -696,7 +696,7 @@ static void *vxa_main (void *u)
 				      vxa_lat_smooth (), "");
 				if (vxa_lat_n && vxa_lat_n % 10 == 0) vlog ("input delay, %d presses: button to the app %.1f ms, to the picture %.1f ms, to the glass %.1f ms on average (%.1f - %.1f)",
 					vxa_lat_n, vxa_lat_sum[0] / vxa_lat_n, vxa_lat_sum[1] / vxa_lat_n, vxa_lat_sum[2] / vxa_lat_n, vxa_lat_min, vxa_lat_max);
-				vxa_message (m, 2.0); vxa_lat_wait = 0; } }
+				(void) m; vxa_lat_wait = 0; } }   /* (in the log only: on the screen it came after every press in every game - the owner, 2026-11-26) */
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",

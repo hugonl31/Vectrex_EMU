@@ -54,9 +54,9 @@ int vx_phone_trail = 0;                        /* (the own phone / tablet apps s
                                                    PC's Vectrex look by eye, 2026-11-22: the measured afterglow with its bright start 1.5 x as long and
                                                    its faint end twice as long at 0.75 of its level - a phone shows 120 pictures a second, each ghost along
                                                    its whole fade, where the PC shows it fresh. Back on 2026-11-26 (the owner: the iPhone's afterglow too
-                                                   dim without it), by the look: that lift x1 in Vectrex, x0.8 in Medium, x0.7 in Bright. The PC and
+                                                   dim without it) - the full lift in every look (2026-11-27, the owner: x0.8 / x0.7 in Medium / Bright not enough). The PC and
                                                    RetroArch: the measured one, vecrender.py PHOS_A) */
-#define PHOS_LIFT (vx_phone_trail ? (vx_bright >= 1.0f ? 0.7f : vx_bright > 0.0f ? 0.8f : 1.0f) : 0.0f)
+#define PHOS_LIFT (vx_phone_trail ? 1.0f : 0.0f)
 #define PHOS_A1 0.1404f
 #define PHOS_T1 (0.0454f * (1.0f + 0.5f * PHOS_LIFT))
 #define PHOS_A2 (0.0582f * (1.0f - 0.25f * PHOS_LIFT))

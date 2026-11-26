@@ -364,9 +364,10 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 13; }
-/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, get games & extras, HDR, full brightness, look, afterglow, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[13] = { 0, 1, 7, 8, 9, 13, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 12 ? -1 : m[ip.row]; }   /* (13: Get games & extras in place of 2, the Downloads, 2026-11-25: the test build is the public one) */   /* (10, the look: Vectrex, Medium or Bright, 2026-11-22 / 2026-11-26; 12 full brightness, 2026-11-24) */
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 12; }
+/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, get games & extras, HDR, full brightness, look, controls, about, reset - as numbered below;
+ *  11, Brighter afterglow, gone - the afterglow as the PC's, the owner 2026-11-26) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[12] = { 0, 1, 7, 8, 9, 13, 3, 12, 10, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 11 ? -1 : m[ip.row]; }   /* (13: Get games & extras in place of 2, the Downloads, 2026-11-25: the test build is the public one) */   /* (10, the look: Vectrex, Medium or Bright, 2026-11-22 / 2026-11-26; 12 full brightness, 2026-11-24) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
@@ -421,13 +422,6 @@ static UITableViewCell *vxs_cell (NSString *title)
 			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.look"];
 			ulog ([NSString stringWithFormat:@"look %@", v == 1 ? @"Bright" : v == 2 ? @"Medium" : @"Vectrex"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sg; return c; }
-	if (R == 11) {                                  /* (the afterglow 20 % brighter: a phone's small picture loses it - on there by default, off on an iPad) */
-		extern void vxa_hdr_update (void); extern int vxa_trail_boost (void);
-		UITableViewCell *c = vxs_cell (@"Brighter afterglow");
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_trail_boost ();
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.trailboost"];
-			ulog ([NSString stringWithFormat:@"brighter afterglow %d", (int) on]); vxa_hdr_update (); }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sw; return c; }
 	if (R == 12) {                                  /* (the screen at its brightest while a game plays - VXApp.m vxa_bright) */
 		static NSString *const MB[3] = { @"Off", @"Gameplay", @"Whole app" };
 		static NSString *const MBD[3] = { @"Your own brightness", @"Screen at maximum while playing, yours in menus", @"Screen at maximum, menus too" };
@@ -450,7 +444,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 		c.accessoryView = sw; return c; }
 	if (R == 6) {                                   /* (every setting back to its default - as RetroArch's Reset Core Options) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-		int n = 0; for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) n++;
+		const int n = vxa_settings_changed ();   /* (the core's options and the app's own: vxa_factory_reset) */
 		c.textLabel.text = @"Reset all settings"; c.textLabel.textColor = n ? VX_CHG : VX_DIM; c.backgroundColor = VX_PANEL;
 		c.detailTextLabel.text = n ? [NSString stringWithFormat:@"%d changed - all back to their defaults (a long press on one: that one)", n] : @"All at their defaults"; c.detailTextLabel.textColor = VX_DIM;
 		UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
@@ -523,14 +517,12 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:VX_ADJ_HDR over:g fromSettings:YES]; }]; return; }
 	if (R == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
 	if (R == 6) { [t deselectRowAtIndexPath:ip animated:YES]; __weak VXSettings *ws = self;
-		{ int n = 0; for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) n++;   /* (nothing changed: only said - the owner, 2026-11-26) */
+		{ const int n = vxa_settings_changed ();   /* (nothing changed: only said - the owner, 2026-11-26) */
 		  if (!n) { UIViewController *tv = self.navigationController; if (!tv) tv = self; VToast (tv, @"Every setting is at its default"); return; } }
 		vxa_prompt (self, @"Reset all settings?", nil, @"Every setting of the picture, the overlay, the sound and the controls back to its default.", nil, nil, NO, @[
-			@[ @"Reset", @"every setting to its default", VXGO (^(NSString *x) { (void) x; int n = 0;
-				for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
-				[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.bar"];   /* (the deck's pop-up and the top bar too: Auto) */
-				if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)];
-				ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); if (![ws palCheck:vxa_ofind ("vectrex_emu_palette")]) [ws.tableView reloadData];
+			@[ @"Reset", @"every setting to its default", VXGO (^(NSString *x) { (void) x;
+				vxa_factory_reset ();   /* (as a new install: the app's own settings too - applied at once, the game's view with them) */
+				if (![ws palCheck:vxa_ofind ("vectrex_emu_palette")]) [ws.tableView reloadData];
 				VXSettings *s = ws; UIViewController *tv = s.navigationController; if (!tv) tv = s; if (tv) VToast (tv, @"Settings reset"); }) ],
 			@[ @"Cancel", @"", VXGO (^(NSString *x) { (void) x; }) ] ], nil, nil);
 		return; }

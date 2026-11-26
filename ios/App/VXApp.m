@@ -41,6 +41,7 @@ static void vxa_net_watch (void)
 }
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding, vxa_nodraw;
 static int vxa_fullbright (void); static void vxa_bright (int want);   /* (Max brightness: by vxa_hold) */
+static int vxa_card_was = -1;   /* (the UVMC2 / PiTrex check in the tick: the card it last saw; -1 none yet - looked at anew) */
 static int vxa_rate_slow; static double vxa_gpu_pct;   /* (vxa_gpu_pct: the GPU busy on ours in the last 5 s, %) */                                 /* (120 Hz the GPU could not hold: 60 for the session) */
 static void vxa_net_tick (void);                  /* (online play: below) */
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
@@ -822,6 +823,7 @@ static void vxa_retire (void)
 @interface VXGameVC : UIViewController
 - (void) gotFrame:(unsigned)w :(unsigned)h;
 - (void) setRunning:(int)on;
+- (void) rightReset; - (void) barModeChanged; - (void) controlsChanged;   /* (vxa_factory_reset) */
 @end
 void vxa_set_callbacks (void);
 static UILabel *vxa_toast_l;
@@ -1272,8 +1274,8 @@ static void vxa_glass (double t)
 	{ /* (a UVMC2 / PiTrex program at 60 Hz when the rate is only the default - as the Android app: its emulation is a processor
 	   *  of its own, 120 Hz left the refreshes waiting for it; its game makes 20-35 frames a second. A rate the player chose
 	   *  stays; back at the next Vectrex game. The owner, 2026-11-25) */
-	  static int card_was = -1; extern int vx_app_card (void); const int card = vx_app_card (); const int ri = vxa_opt_find ("vectrex_emu_rate");
-	  if (card != card_was && ri >= 0 && !vxa_net_playing ()) { card_was = card;
+	  extern int vx_app_card (void); const int card = vx_app_card (); const int ri = vxa_opt_find ("vectrex_emu_rate");
+	  if (card != vxa_card_was && ri >= 0 && !vxa_net_playing ()) { vxa_card_was = card;
 		if (![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"]) {
 			const char *want = (card || vxa_rate_slow) && atoi (vxa_opt[ri].def) > 60 ? "60 Hz" : vxa_opt[ri].def;
 			if (strcmp (vxa_opt[ri].val, want)) { snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", want); vxa_opt_dirty = 1;
@@ -1791,8 +1793,6 @@ const char *vxa_cinfo (int i) { return vxa_cat[i].info; }
 void ulog (NSString *s) { vlog ("ui %s", s.UTF8String); }
 /* HDR (Settings > App, HDR brightness 0..1 of the screen's headroom; the default 1 where the screen has HDR): the core's
  * brightest light up to that, its knee's top in display gamma */
-/* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost, its lit area so much smaller
- *  than on an iPad or a monitor; on by default on an iPhone, off on an iPad, the setting below the Look) */
 /* (the PiTrex's cartridge and box for the library: written into the thumbs folder - the library calls it when the PiTrex is there) */
 void vxa_pitrex_tiles (void)
 {
@@ -1805,7 +1805,6 @@ UIColor *vx_rgba (double r, double g, double b, double a)
 	extern unsigned vx_pal (unsigned c); const unsigned c = vx_pal ((unsigned) lround (r * 255) << 16 | (unsigned) lround (g * 255) << 8 | (unsigned) lround (b * 255));
 	return [UIColor colorWithRed:(c >> 16 & 255) / 255.0 green:(c >> 8 & 255) / 255.0 blue:(c & 255) / 255.0 alpha:a];
 }
-int vxa_trail_boost (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.trailboost"]; return n ? n.boolValue : 0; }   /* (off by default since the afterglow's own shape for the apps, vx_phone_trail) */
 float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIScreen.mainScreen.potentialEDRHeadroom; return 1; }
 void vxa_hdr_update (void)
 {
@@ -1822,7 +1821,7 @@ void vxa_hdr_update (void)
 	{ /* (the trail for the look and the screen's brightness - the owner next to a real Vectrex, 2026-11-21: Vectrex on HDR 1.25x,
 	   *  on SDR 2x; Bright at full brightness 0.5x - easing with the slider) */
 	  extern float vx_trail_mul; extern int vx_app_dots; vx_app_dots = 1; const double b = UIScreen.mainScreen.brightness;
-	  const float tm = vxa_trail_boost () ? 1.2f : 1.0f; (void) b;   /* (2026-11-22: as the PC, the master - the trail was scaled down with the screen's brightness, to half at full: the old look's) */   /* (SDR Vectrex 2.8: the owner's iPad and iPhone without HDR, 40 % more than 2) */
+	  const float tm = 1.0f; (void) b;   /* (as the PC, the master: x1 - it was scaled down with the screen's brightness, then 1.2 with Brighter afterglow, gone 2026-11-26; an old app.trailboost is left unread) */
 	  if (fabsf (tm - vx_trail_mul) > 0.02f) { vlog ("trail x%.2f (look %.0f, brightness %.0f %%)", tm, vx_hdr_lift, b * 100); vx_trail_mul = tm; } }
 	const double use = hr <= 1.05 ? 1.0 : cur > 1.05 ? fmin (cur, hr) : hr;
 	float pk = use > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (use - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */
@@ -1877,6 +1876,48 @@ int vxa_state (int save, int slot)
 	vlog ("state %s slot %d: %s (%zu bytes)", save ? "save" : "load", slot, ok ? "done" : "FAILED", n); return ok;
 }
 int vxa_is_held (void) { return vxa_holding; }
+/* Settings > Reset all settings: every setting as a new install has it (the owner, 2026-11-26: the look, HDR, Max brightness -
+ * everything; the Android app alike) - the core's options (their opt.* keys, older versions' too; the screen rate this
+ * screen's own again - not chosen, the 120 Hz check and a UVMC2 / PiTrex game's 60 as at a start) and the app's own: the top
+ * bar, the deck's pop-up, clock and battery, HDR brightness, Max brightness, the look, the touch
+ * controls (each game's right-side stick and its map too), the controller's buttons, the library's view. Kept: the
+ * player's name and key online, the downloads and their notice, the device test's result, save states, the recent games,
+ * the first-start and once-only flags. vxa_app_defs: each one's default (NSNull: an older key - gone) */
+static NSArray<NSString *> *vxa_app_keys (void) { return @[ @"app.bar", @"app.topbar", @"app.deckpop", @"app.statusbar", @"app.hdr", @"app.maxbright", @"app.look",
+	@"touch.show", @"touch.size", @"touch.alpha", @"touch.dpad", @"touch.lefty", @"lib.perrow", @"lib.look" ]; }
+static NSArray *vxa_app_defs (void) { return @[ @"auto", NSNull.null, @NO, @NO, @1.0, @1, @1, @"auto", @1.0, @1.0, @NO, @NO, @3, @"boxes" ]; }
+static BOOL vxa_pergame_key (NSString *k) { return [k hasPrefix:@"touch.rstick."] || [k hasPrefix:@"touch.rmap."] || (k.length == 5 && [k hasPrefix:@"map."]); }
+static int vxa_app_changed (void)                       /* (the app's own settings not at their default) */
+{
+	NSUserDefaults *u = NSUserDefaults.standardUserDefaults; NSArray *K = vxa_app_keys (), *D = vxa_app_defs (); int n = 0;
+	for (NSUInteger i = 0; i < K.count; i++) { id v = [u objectForKey:K[i]]; if (v && ![v isEqual:D[i]]) n++; }
+	static const int mdef[4] = { 2, 3, 0, 1 };             /* (the controller's buttons: VXPhysDef) */
+	for (NSString *k in u.dictionaryRepresentation.allKeys) { if (!vxa_pergame_key (k)) continue; id v = [u objectForKey:k];
+		if ([k hasPrefix:@"touch.rstick."]) { if ([v isKindOfClass:NSNumber.class] && [v boolValue]) n++; }
+		else if ([k hasPrefix:@"touch.rmap."]) { if (![v isEqual:@"2431"]) n++; }
+		else { const int b = [k characterAtIndex:4] - '1'; if (b < 0 || b > 3 || !([v isKindOfClass:NSNumber.class] && [v intValue] == mdef[b])) n++; } }
+	return n;
+}
+int vxa_settings_changed (void)                         /* (the core's options - the screen rate only a chosen one - and the app's own) */
+{
+	int n = 0; const BOOL rch = [NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] != nil;
+	for (int i = 0; i < vxa_nopt; i++) n += !strcmp (vxa_opt[i].key, "vectrex_emu_rate") ? rch : strcmp (vxa_opt[i].val, vxa_opt[i].def) != 0;
+	return n + vxa_app_changed ();
+}
+/* (and what a start applies, at once: the look, HDR, Max brightness's screen level, the status bar, the top
+ *  bar and the deck as this screen's Auto, the touch controls; the screen rate this screen's own - the display link follows) */
+int vxa_factory_reset (void)
+{
+	const int n = vxa_settings_changed (); NSUserDefaults *u = NSUserDefaults.standardUserDefaults;
+	for (int i = 0; i < vxa_nopt; i++) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", vxa_opt[i].def);
+	vxa_rate_slow = 0; vxa_card_was = -1; vxa_opt_dirty = 1;
+	for (NSString *k in vxa_app_keys ()) [u removeObjectForKey:k];
+	for (NSString *k in u.dictionaryRepresentation.allKeys) if ([k hasPrefix:@"opt."] || vxa_pergame_key (k)) [u removeObjectForKey:k];
+	vxa_hdr_update (); { const int mb = vxa_fullbright (); vxa_bright (mb == 2 || (mb == 1 && !vxa_holding)); }
+	VXGameVC *g = vxa_vc; if (g) { [g setNeedsStatusBarAppearanceUpdate]; [g rightReset]; [g barModeChanged]; [g controlsChanged]; }
+	const int r = vxa_opt_find ("vectrex_emu_rate"); vlog ("settings: reset all, as a new install (%d changed), the rate %s", n, r >= 0 ? vxa_opt[r].def : "?");
+	return n;
+}
 void vxa_toast_ext (NSString *s) { extern void vxa_ntoast_c (NSString *s); vxa_ntoast_c (s); }
 /* Max brightness (Settings > App: Off, Gameplay, Whole app): the screen at its brightest - as a boarding pass in Wallet,
  * whatever the brightness slider or auto-brightness says (the thin lines through an overlay in a dark room). Gameplay: while a

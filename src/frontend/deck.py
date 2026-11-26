@@ -593,7 +593,7 @@ class Deck:
         self.inner = None; self.cols = None; self.split = None
         foot = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); foot.pack(fill='x', pady=(10, 0))
         self.reset_b = _button(foot, 'Reset this tab', self.reset_strip, a, small=True); self.reset_b.pack(side='left', padx=(12, 0), pady=6)
-        _button(foot, 'Reset all', self.reset_all, a, small=True).pack(side='left', padx=(8, 0), pady=6)
+        _button(foot, 'Reset all settings', self.reset_all, a, small=True).pack(side='left', padx=(8, 0), pady=6)
         bb = _button(foot, 'Hold: before', None, a, small=True); bb.pack(side='left', padx=8)
         bb.bind('<ButtonPress-1>', lambda e: self.compare(True)); bb.bind('<ButtonRelease-1>', lambda e: self.compare(False))
         tk.Label(foot, text='right click a slider: its default', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=8)
@@ -852,11 +852,14 @@ class Deck:
               'Display': 'reset_display', 'Ports': 'reset_addons', 'Head': 'reset_head'}
 
     def reset_all(self):
-        """every tab to its defaults: those of the Quality profile chosen (or Optimize's result) - asked first"""
+        """Reset all settings: every setting as a new install has it (App.factory_reset - Config's tabs under the Quality
+        profile chosen or Optimize's result) - asked first, as in the phone apps; nothing changed: only said"""
         a = self.app
-        if dialog('question', 'Reset all', 'Reset every tab to the %s defaults?' % a.base_name(), parent=self.t, yesno=True,
-                  buttons=('Reset all', 'Cancel')):
-            self.frozen(lambda: (a.reset_all(), self.show(self.strip)))
+        if not a.factory_changed():
+            a.flash('EVERY SETTING IS AT ITS DEFAULT', secs=2); self.sync_all(); return
+        if dialog('question', 'Reset all settings?', 'Every setting of the picture, the overlay, the sound and the controls back to its default.',
+                  parent=self.t, yesno=True, buttons=('Reset', 'Cancel')):
+            self.frozen(lambda: (a.factory_reset(), self.show(self.strip)))
         else:
             self.sync_all()
 

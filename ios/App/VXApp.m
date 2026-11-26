@@ -1291,8 +1291,10 @@ static void vxa_glass (double t)
 	{ /* (120 Hz the GPU cannot hold, checked each second: a warm iPhone slows its GPU and the picture stood still for seconds at
 	   *  a time while the game ran on - the owner, build 218. Fewer than 60 % of a second's runs shown: 60 Hz for this session
 	   *  at once - the default only (a rate the player chose stays), not online, not saved) */
-	  static double w0; static long r0, p0;
-	  if (now - w0 >= 1.0) { const double dt = now - w0; const long dr = vxa_runs_all - r0, dp = vxa_presents - p0; w0 = now; r0 = vxa_runs_all; p0 = vxa_presents;
+	  static double w0, grace; static long r0, p0; static char lastv[16];
+	  { const int rk = vxa_opt_find ("vectrex_emu_rate"); if (rk >= 0 && strcmp (vxa_opt[rk].val, lastv)) { snprintf (lastv, sizeof lastv, "%s", vxa_opt[rk].val); grace = now + 3.0; } }   /* (a new rate: 3 s for the screen to change over - the Nova's first second at 120 had 70 refreshes) */
+	  if (now < grace) { w0 = now; r0 = vxa_runs_all; p0 = vxa_presents; }
+	  else if (now - w0 >= 1.0) { const double dt = now - w0; const long dr = vxa_runs_all - r0, dp = vxa_presents - p0; w0 = now; r0 = vxa_runs_all; p0 = vxa_presents;
 		const int ri = vxa_opt_find ("vectrex_emu_rate");
 		if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && ![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] && !vxa_net_playing ()) {
 			snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;

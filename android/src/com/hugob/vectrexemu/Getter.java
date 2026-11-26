@@ -402,9 +402,10 @@ final class Getter {
 		Screens.Panel p = new Screens.Panel (m, "Get games & extras");
 		p.header ("Download");
 		final TextView[] det = new TextView[N];
-		for (int i = 0; i < items (m); i++) { final int k = i;
-			LinearLayout r = p.row (TITLE[k], state (m, k, have) + "  -  " + SIZE[k] + ", " + SITE[k], () -> start (m, new int[] { k }));
-			det[k] = r.findViewWithTag ("d"); }
+		for (int i = 0; i < N; i++) if (!busy[i]) said[i] = null;
+		for (int i = 0; i < items (m); i++) { final int k = i;   /* (a download going on: its line, orange - as iOS) */
+			LinearLayout r = p.row (TITLE[k], said[k] != null ? said[k] : state (m, k, have) + "  -  " + SIZE[k] + ", " + SITE[k], () -> start (m, new int[] { k }));
+			det[k] = r.findViewWithTag ("d"); if (busy[k]) det[k].setTextColor (Main.CHG); }
 		p.row ("Download all", "What is not here yet", () -> { List<Integer> ks = new ArrayList<> (); Set<String> h = present (m);
 			for (int i = 0; i < items (m); i++) if (!complete (m, i, h)) ks.add (i); if (ks.isEmpty ()) { m.toast ("Everything is here", 2); return; }
 			int[] a = new int[ks.size ()]; for (int i = 0; i < a.length; i++) a[i] = ks.get (i); start (m, a); });
@@ -416,8 +417,8 @@ final class Getter {
 		rows = det; m.push (p); return p;
 	}
 	static boolean anyBusy () { for (boolean b : busy) if (b) return true; return false; }
-	static TextView[] rows;
-	static void say (Main m, int k, String s) { m.h.post (() -> { if (rows != null && rows[k] != null) rows[k].setText (s); }); }
+	static TextView[] rows; static final String[] said = new String[N];   /* (a row's line while it downloads, and its result) */
+	static void say (Main m, int k, String s) { m.h.post (() -> { said[k] = s; if (rows != null && rows[k] != null) { rows[k].setText (s); rows[k].setTextColor (busy[k] ? Main.CHG : Main.DIM); } }); }
 	static void start (Main m, int[] ks)
 	{
 		if (m.prefs.getBoolean ("dl.agreed", false)) { run (m, ks); return; }
@@ -431,7 +432,7 @@ final class Getter {
 	}
 	static void run (Main m, int[] ks)
 	{
-		for (int k : ks) { if (busy[k]) continue; busy[k] = true; final int kk = k;
+		for (int k : ks) { if (busy[k]) continue; busy[k] = true; final int kk = k; say (m, k, "starting...");
 			new Thread (() -> {
 				String res;
 				try { int n = getItem (m, kk, (done, total) -> say (m, kk, total > 0 ? String.format (Locale.ROOT, "%.1f of %.1f MB  -  %.0f %%", done / 1e6, total / 1e6, 100.0 * done / total) : String.format (Locale.ROOT, "%.1f MB", done / 1e6)),

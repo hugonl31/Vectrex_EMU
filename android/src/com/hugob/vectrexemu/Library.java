@@ -85,7 +85,8 @@ final class Library extends LinearLayout implements Screens.Closing {
 		srow.addView (search, new LayoutParams (0, (int) m.dp (40), 1));
 		size = Screens.button (m, "", false); size.setTextSize (12); size.setOnClickListener (v -> sizeMenu ());
 		LayoutParams sp = new LayoutParams (-2, (int) m.dp (40)); sp.leftMargin = (int) m.dp (8); srow.addView (size, sp);
-		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (12); get.setOnClickListener (v -> { m.pop (); Getter.show (m); });   /* (the download page: here too) */
+		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (12);   /* (the download page over the library - as iOS: the games looked for again when it closes) */
+			get.setOnClickListener (v -> { Screens.Panel g = Getter.show (m); g.onClose = () -> { all = scan (m); Main.log ("library: " + all.size () + " games (again)"); search.setHint ("Search " + all.size () + " games"); cache.evictAll (); apply (); }; });
 			LayoutParams gp = new LayoutParams (-2, (int) m.dp (40)); gp.leftMargin = (int) m.dp (8); srow.addView (get, gp); }
 		LayoutParams srp = new LayoutParams (-1, -2); srp.topMargin = (int) m.dp (8); head.addView (srow, srp);
 		HorizontalScrollView hs = new HorizontalScrollView (m); hs.setHorizontalScrollBarEnabled (false); chips = new LinearLayout (m);
@@ -97,12 +98,12 @@ final class Library extends LinearLayout implements Screens.Closing {
 		grid.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (16), (int) m.dp (16) + m.insR, (int) m.dp (24) + m.insBot); grid.setClipToPadding (false);
 		grid.setStretchMode (GridView.STRETCH_COLUMN_WIDTH); grid.setSelector (new android.graphics.drawable.ColorDrawable (0)); grid.setFocusable (false);
 		grid.setOnItemClickListener ((par, v, pos, id) -> play (pos));
-		grid.setOnItemLongClickListener ((par, v, pos, id) -> {   /* (a UVMC2 game: its calibration screen - buttons 2 + 3 held at its start, as iOS) */
-			if (pos < 0 || pos >= shown.size () || !shown.get (pos).path.toLowerCase (java.util.Locale.ROOT).endsWith (".um2")) return false;
-			final Game g = shown.get (pos);
-			Screens.pick (m, g.name, new String[] { "play", "cal" }, new String[] { "Play", "Calibration (2 + 3 held)" }, "play", v2 -> {
-				if (v2.equals ("cal")) { Main.log ("library: " + g.name + " with buttons 2 + 3 held (calibration)"); m.ctl.holdFor ((1 << 9) | (1 << 0), 30000); VX.load (g.path); remember (m, g.path); m.pop (); }
-				else play (pos); });
+		grid.setOnItemLongClickListener ((par, v, pos, id) -> {   /* (as iOS's menu: Play on every game; a UVMC2 game its calibration screen too - buttons 2 + 3 held at its start) */
+			if (pos < 0 || pos >= shown.size ()) return false;
+			final Game g = shown.get (pos); v.performHapticFeedback (android.view.HapticFeedbackConstants.LONG_PRESS);
+			final Runnable cal = () -> { Main.log ("library: " + g.name + " with buttons 2 + 3 held (calibration)"); m.ctl.holdFor ((1 << 9) | (1 << 0), 30000); VX.load (g.path); remember (m, g.path); m.pop (); };
+			Screens.prompt (m, g.name, null, null, g.path.toLowerCase (Locale.ROOT).endsWith (".um2")
+				? new Object[][] { { "Play", "", (Runnable) () -> play (pos) }, { "Calibration (2 + 3 held)", "", cal } } : new Object[][] { { "Play", "", (Runnable) () -> play (pos) } }, null);
 			return true; });
 		grid.setAdapter (adapter); addView (grid, new LayoutParams (-1, 0, 1));
 		paintLooks (); sizeLabel (); reload (); apply (); ready = true;

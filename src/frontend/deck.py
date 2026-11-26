@@ -659,7 +659,7 @@ class Deck:
                      None, lambda: self.changed('look2')),
                     ('check', 'Phosphor', PH, a.toggle_phosphor, None),
                     ('in', [('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
-                            ('in', [('slider', 'trail', AG)])]),
+                            ('in', [('slider', 'trail', AG), ('slider', 'trail_k', AG)])]),
                     ('slider', 'white_k', lambda: has('white_k')),
                     ('group', 'SHAPE AND GLASS'),
                     ('check', 'Tube geometry', lambda: A('curve_on'), flip('curve_on'), None),
@@ -1328,10 +1328,11 @@ class Deck:
         if attr == 'volume':
             default = 1.0
         default = V.ART_ADJ_DEFAULT.get(attr, default)
-        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
+        steps = V.SLIDER_STEPS.get(attr)                        # (the core's notches: its range)
+        rel = not steps and attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
         if rel:
             lo, hi, log = max(V.SLIDER_LOW.get(attr, 0.0), default * (1 - V.SLIDER_SPAN)), default * (1 + V.SLIDER_SPAN), False
-        return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default)
+        return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default, steps=steps)
 
     def mk_slider(self, name, dep):
         r = self.range_of(name)
@@ -1363,7 +1364,7 @@ class Deck:
         else:
             ref = None                                          # (the volume, the monitor's size: normal use)
         return self.mk_scale(label, get, setv, r['lo'], r['hi'], r['log'],
-                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep, ref=ref)
+                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep, ref=ref, steps=r.get('steps'))
 
     def mk_unit(self, key):
         a, V = self.app, self.V
@@ -1390,13 +1391,16 @@ class Deck:
             self._pv = a.base_values()
         return self._pv.get(key, d[key])
 
-    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None, ref=None):
+    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None, ref=None, steps=None):
         """a slider row; ref() - the value it counts as changed from: an orange stripe on the bar there while the
-        slider is elsewhere (where it goes back to)"""
+        slider is elsewhere (where it goes back to). steps: its values, evenly spaced notches (the core's own)"""
         f = self.frame(); N = 1000
         if log == 'mired':                                      # (even in mireds: White balance)
             to_pos = lambda v: N * (V.vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
             to_val = lambda p: V.vecrender.white_from_pos(2.0 * p / N - 1.0)
+        elif steps:
+            to_pos = lambda v: N * self.V.step_index(steps, v) / (len(steps) - 1.0)
+            to_val = lambda p: steps[int(round(p * (len(steps) - 1.0) / N))]
         else:
             to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
             to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
@@ -1408,6 +1412,8 @@ class Deck:
             if busy[0]: return
             if abs(float(p) - to_pos(max(lo, min(hi, get())))) < 0.5:   # (Tk reports the value set by sync() later:
                 return                                                  #  not a move - nothing changes)
+            if steps and abs(to_val(float(p)) - get()) < 1e-9:          # (still the same notch)
+                return
             setv(to_val(float(p))); val.configure(text=fmt(get())); stripe_at()
         sc = tk.Scale(f, from_=0, to=N, orient='horizontal', length=300, showvalue=0, command=moved, bg=G, fg=G,
                       troughcolor='#123', highlightthickness=0, activebackground=HI, sliderrelief='flat', bd=0,
@@ -1441,7 +1447,10 @@ class Deck:
             sc.set(max(0, min(N, (e.x - 9) / float(max(1, sc.winfo_width() - 18)) * N))); return 'break'
         sc.bind('<Button-1>', jump)
         sc.bind(self.V.RCLICK, to_default); val.bind(self.V.RCLICK, to_default)
-        def act(d):                                             # (a controller: 2 % steps)
+        def act(d):                                             # (a controller: 2 % steps - notches: one)
+            if steps:
+                i = self.V.step_index(steps, get()) + (1 if d > 0 else -1 if d < 0 else 0)
+                setv(steps[max(0, min(len(steps) - 1, i))]); sync(); return
             setv(to_val(max(0, min(N, to_pos(max(lo, min(hi, get()))) + d * 20)))); sync()
         return dict(kind='scale', f=f, w=sc, sync=sync, dep=dep, act=act)
 

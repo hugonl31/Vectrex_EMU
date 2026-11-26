@@ -805,6 +805,13 @@ VOICE_BOOST = 1.5
 # the sliders: the default in the middle, this much below and above it (the owner, 2026-10-19)
 SLIDER_SPAN = 1.0                   # (0 .. twice the default)
 SLIDER_LOW = {'trail': 0.05}        # (a slider's left end where less changes nothing: the renderer's floor)
+# sliders with the core's own steps (RetroArch and the phone apps: libretro_vx.c vectrex_emu_afterglow / _trail_bright - the
+# owner, 2026-11-26: the same everywhere): a notch each, the Afterglow check the core's "off"
+SLIDER_STEPS = {'trail':   (0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2),
+                'trail_k': (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0)}
+def step_index(steps, v):
+    """the notch nearest to v"""
+    return min(range(len(steps)), key=lambda i: abs(steps[i] - v))
 
 class CrtSound:
     """the Vectrex's own noise mixed into the game sound: the BUZZ (the beam and deflection
@@ -1646,7 +1653,8 @@ def old_gap(look):
     if isinstance(look, dict) and 'glass_k' in look and 'glass_curve' not in look:   # (before v1.2.0: the amount of the
         try: look['glass_curve'] = max(0.0, min(1.0, 1.0 - float(look.pop('glass_k'))))   #  curve undone - now the curve
         except (TypeError, ValueError): look.pop('glass_k', None)   #  itself, 1 as on a Vectrex)
-    for k_, lo_, hi_ in (('glass_curve', 0.0, 1.0), ('trail', 0.05, None)):   # (the sliders' ranges since 2026-11-23: an older
+    for k_, lo_, hi_ in (('glass_curve', 0.0, 1.0), ('trail', 0.05, 1.2), ('trail_k', 0.5, 3.0)):   # (the sliders' ranges since 2026-11-23 - the
+                                                    #  afterglow's the core's since 2026-11-26, a longer one as x1.2: an older
         try:                                            #  value outside them gave the same picture as the end - stored as the end)
             if isinstance(look, dict) and k_ in look:
                 v_ = max(lo_, float(look[k_])); look[k_] = min(hi_, v_) if hi_ is not None else v_
@@ -2831,7 +2839,7 @@ class App:
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
-        self.look_keys = [k for k in ('phosphor', 'trail_on', 'trail', 'wob_on', 'wob_strength',
+        self.look_keys = [k for k in ('phosphor', 'trail_on', 'trail', 'trail_k', 'wob_on', 'wob_strength',
                                       'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'look2', 'white_k', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
@@ -3472,7 +3480,8 @@ class App:
         'volume':        ('Volume (0 % = off)', 'Page Down / Page Up', 'crt', 'volume', 0.0, 1.0, False, '%.0f %%', 100),
         'voice_vol':     ('Speech module volume (100 % = MiSTer Normal)', 'Ctrl+Page Down / Ctrl+Page Up', 'crt', 'voice_vol', 0.0, 2.0, False, '%.0f %%', 100),
         'white_k':       ('White balance (colour temperature)', '', 'ren', 'white_k', vecrender.WHITE_LO, vecrender.WHITE_HI, 'mired', '%.0f K', 1),
-        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.05, 10.0, True, 'x%.2f', 1),
+        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.05, 1.2, False, 'x%.2f', 1),
+        'trail_k':       ('Afterglow brightness', '', 'ren', 'trail_k', 0.5, 3.0, False, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'glass_curve':   ('Glass curvature (1 = as on a Vectrex, 0 = flat; with Tube geometry)', '', 'ren', 'glass_curve', 0.0, 1.0, False, '%.2f', 1),
         'head_k':        ('Shift strength (x1 = 2 mm at the full reach)', '', 'ren', 'head_k', 0.0, 4.0, False, 'x%.2f', 1),
@@ -3525,7 +3534,8 @@ class App:
         # the default in its middle and goes 100 % below and above it (0 .. twice) - for small personal adjustments. (Not
         # the volume knob: 0 % is the power switch; not a value whose default is 0 = off.)
         default = ART_ADJ_DEFAULT.get(attr, default)            # (an overlay's position / size: 0, 0, x1)
-        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'white_k') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
+        steps = SLIDER_STEPS.get(attr)                          # (the core's notches: its range)
+        rel = not steps and attr not in ('volume', 'glass_curve', 'monitor_inch', 'white_k') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
         if rel:
             lo, hi, log = max(SLIDER_LOW.get(attr, 0.0), default * (1 - SLIDER_SPAN)), default * (1 + SLIDER_SPAN), False
         if getattr(self, 'slider_win', None):
@@ -3535,6 +3545,9 @@ class App:
         if log == 'mired':                                      # (even in mireds, 1e6 / kelvin: as the eye sees colour)
             to_pos = lambda v: N * (vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
             to_val = lambda p: vecrender.white_from_pos(2.0 * p / N - 1.0)
+        elif steps:                                             # (evenly spaced notches)
+            to_pos = lambda v: N * step_index(steps, v) / (len(steps) - 1.0)
+            to_val = lambda p: steps[int(round(p * (len(steps) - 1.0) / N))]
         else:
             to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
             to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
@@ -7644,7 +7657,7 @@ class App:
         tl = ('afterglow x%.2f%s' % (r.trail, ' (measured)' if abs(r.trail - 1) < 0.01 else '')) if getattr(r, 'trail_on', False) else 'afterglow OFF'
         return tl + w
     # what the title bar says about a changed setting: (name, format of its value; None: on / off)
-    LOOK_LABELS = dict(volume=('volume', '%d %%'), trail=('afterglow length', 'x%.2f'),
+    LOOK_LABELS = dict(volume=('volume', '%d %%'), trail=('afterglow length', 'x%.2f'), trail_k=('afterglow brightness', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
                        curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),

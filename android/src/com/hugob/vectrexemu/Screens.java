@@ -107,6 +107,25 @@ final class Screens {
 			pt.setColor (on ? Main.G : Main.EDGE2); c.drawRoundRect (0, 0, w, h, r, r, pt);
 			pt.setColor (on ? Main.HI2 : Main.FG2); c.drawCircle (on ? w - r : r, r, r - h * 0.12f, pt); }
 	}
+	/* a green tick at a row's right: the download page's items that are all here (the owner, 2026-11-26) */
+	static final int TICK = 0xff3ccf5a;
+	static class Tick extends View {
+		final android.graphics.Paint pt = new android.graphics.Paint (android.graphics.Paint.ANTI_ALIAS_FLAG);
+		final android.graphics.Path pa = new android.graphics.Path ();
+		Tick (Main m) { super (m); pt.setColor (TICK); pt.setStyle (android.graphics.Paint.Style.STROKE); pt.setStrokeCap (android.graphics.Paint.Cap.ROUND); pt.setStrokeJoin (android.graphics.Paint.Join.ROUND); }
+		@Override protected void onDraw (android.graphics.Canvas c) {
+			float w = getWidth (), h = getHeight (); pt.setStrokeWidth (h * 0.14f);
+			pa.reset (); pa.moveTo (w * 0.14f, h * 0.54f); pa.lineTo (w * 0.40f, h * 0.80f); pa.lineTo (w * 0.88f, h * 0.22f); c.drawPath (pa, pt); }
+	}
+	/* a row of the download page with a tick at its right (hidden until the item is all here) */
+	static Tick withTick (Main m, LinearLayout r)
+	{
+		LinearLayout txt = new LinearLayout (m); txt.setOrientation (LinearLayout.VERTICAL);
+		while (r.getChildCount () > 0) { View v = r.getChildAt (0); r.removeViewAt (0); txt.addView (v); }
+		r.setOrientation (LinearLayout.HORIZONTAL); r.setGravity (Gravity.CENTER_VERTICAL);
+		LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams (0, -2, 1f); tl.rightMargin = (int) m.dp (10); r.addView (txt, tl);
+		Tick k = new Tick (m); r.addView (k, new LinearLayout.LayoutParams ((int) m.dp (26), (int) m.dp (26))); return k;
+	}
 	static TextView button (Main m, String s, boolean on)
 	{
 		TextView b = m.text (s, 15, on ? Main.HI2 : Main.HI, true); b.setGravity (Gravity.CENTER); b.setPadding ((int) m.dp (10), (int) m.dp (8), (int) m.dp (10), (int) m.dp (8));

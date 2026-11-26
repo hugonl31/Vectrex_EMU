@@ -322,7 +322,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		/* (this app's own, as the iOS app's: the deck below the picture, the picture upright as the screen stands, the keys
 		 *  as on the PC, the screen's own rate) */
 		int hz = curHz >= 143 ? 144 : curHz >= 119 ? 120 : curHz >= 89 ? 90 : curHz >= 71 ? 72 : 60;   /* (the screen's rate now: the Nova "up to 120" ran at 60 - 120 Hz ran the emulator twice a refresh, 15.6 of 16.7 ms) */
-		return "vectrex_emu_deck=auto" + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
+		return "vectrex_emu_deck=auto" + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_rate=" + hz + " Hz\n";
 	}
 	/* (once, 1.7.6: the deck and the top bar to Auto - an older install kept the screen's old default as its own value) */
 	void autoOnce ()
@@ -331,6 +331,13 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		prefs.edit ().putBoolean ("app.auto1", true).remove ("app.deckpop").remove ("app.topbar").remove ("app.bar").apply ();
 		final String v = VX.val ("vectrex_emu_deck"); if (v.equals ("pop-up") || v.equals ("slim") || v.equals ("full")) VX.oset (VX.ofind ("vectrex_emu_deck"), "auto");
 		log ("deck and top bar: Auto (once)"); showBar (); layout ();
+	}
+	/* (once, 1.9.1: Eject off R1 - the old default; not mapped by default any more, the owner 2026-11-26) */
+	void ejectOnce ()
+	{
+		if (prefs.getBoolean ("app.eject1", false)) return; final int i = VX.ofind ("vectrex_emu_btn_eject"); if (i < 0) { h.postDelayed (this::ejectOnce, 1000); return; }
+		prefs.edit ().putBoolean ("app.eject1", true).apply ();
+		if (VX.val ("vectrex_emu_btn_eject").equals ("R")) { VX.oset (i, "off"); log ("eject button: off (once - it was R1, the old default)"); }
 	}
 	/* the trail for the look and the screen's brightness, every 2 s (the owner's Nova next to a real Vectrex, 2026-11-21: Vectrex on
 	 * SDR 2x, on HDR 1.25x; Bright at full brightness a bit too bright - 0.75x, easing with the slider) */
@@ -357,7 +364,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		VX.start (sysDir.getAbsolutePath (), savesDir.getAbsolutePath (), g, defaults ());
 		tuneWait (System.currentTimeMillis ());           /* (the start screen stays while the first start tunes this device) */
 		layout (); Live.start (this);
-		h.postDelayed (this::autoOnce, 2000);
+		h.postDelayed (this::autoOnce, 2000); h.postDelayed (this::ejectOnce, 2000);
 		h.postDelayed (() -> testIntent (getIntent ()), 3000);
 		if (Pack.token (this) == null && !prefs.getBoolean ("getter.offered", false)) h.postDelayed (this::offerGetter, 2500);
 	}

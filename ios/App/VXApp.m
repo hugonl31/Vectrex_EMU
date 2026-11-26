@@ -197,6 +197,9 @@ static void vxa_opts_defaults (void)
 	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (once, 1.7.6 (108): the deck and the top bar to Auto - values kept from before it existed) */
 	  if (![u boolForKey:@"app.auto1"]) { [u setBool:YES forKey:@"app.auto1"]; [u removeObjectForKey:@"opt.vectrex_emu_deck"]; [u removeObjectForKey:@"app.deckpop"];
 		[u removeObjectForKey:@"app.topbar"]; [u removeObjectForKey:@"app.bar"]; if (dk >= 0) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", "auto"); vlog ("deck and top bar: Auto (once)"); } }
+	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults; const int ej = vxa_opt_find ("vectrex_emu_btn_eject");   /* (once: Eject off R1 - the old default, the owner 2026-11-26) */
+	  if (![u boolForKey:@"app.eject1"] && ej >= 0) { [u setBool:YES forKey:@"app.eject1"];
+		if (!strcmp (vxa_opt[ej].val, "R")) { snprintf (vxa_opt[ej].val, sizeof vxa_opt[ej].val, "%s", "off"); [u removeObjectForKey:@"opt.vectrex_emu_btn_eject"]; vlog ("eject button: off (once - it was R1, the old default)"); } } }
 	const char *dd = "auto";   /* (Auto: this screen's - full, slim, popping up; vxa_deck_style) */
 	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (the top bar's setting as Auto / Shown / Auto-hide: an older one carried over) */
 	  if (![u stringForKey:@"app.bar"] && [u stringForKey:@"app.topbar"]) [u setObject:[[u stringForKey:@"app.topbar"] isEqualToString:@"auto"] ? @"hide" : @"always" forKey:@"app.bar"];

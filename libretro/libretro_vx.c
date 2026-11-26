@@ -531,11 +531,7 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_btn_reset", "controls", "RESET button", "A RetroPad button for the Vectrex's RESET button.", "L|off|R|L2|R2|L3|R3" },
 	{ "vectrex_emu_btn_browser", "controls", "ROM browser button", "A RetroPad button that opens and closes the ROM browser.", "L3|SELECT|off|L|R|L2|R2|R3" },
 	{ "vectrex_emu_btn_pause", "controls", "Pause button", "A RetroPad button that pauses and resumes the game.", "L2|off|L|R|R2|L3|R3" },
-#if VX_IOS                                          /* (an iPhone / iPad: R - the keyboard's E, the desktop's Ctrl+E) */
-	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "R|off|L|L2|R2|L3|R3" },
-#else
-	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },
-#endif
+	{ "vectrex_emu_btn_eject", "controls", "Eject button", "A RetroPad button: the cartridge out (Mine Storm), again: back in.", "off|L|R|L2|R2|L3|R3" },   /* (off everywhere - the owner, 2026-11-26: the phones had it on R1) */
 #if VX_IOS                                          /* (an iPhone / iPad: a controller does not turn with the screen) */
 	{ "vectrex_emu_rotate_stick", "controls", "Controls turned with the picture", "In tate the stick and buttons keep their places.", "off|on" },
 	{ "vectrex_emu_keys", "controls", "Keyboard as on the PC", "Arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L ROM browser, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, Ctrl+K typing to a UVMC2 / PiTrex.", "on|off" },

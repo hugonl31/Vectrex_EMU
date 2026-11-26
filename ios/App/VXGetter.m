@@ -527,6 +527,12 @@ int vxg_any_busy (void) { for (int i = 0; i < VXG_N; i++) if (vxg_busy[i]) retur
 }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
+/* the green tick at a row's right: an item all here (not while it downloads), Download all when every item is (the owner, 2026-11-26) */
+static UIView *vxg_tick (void)
+{
+	UIImageView *v = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"checkmark" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightBold]]];
+	v.tintColor = [UIColor colorWithRed:0x3c / 255.0 green:0xcf / 255.0 blue:0x5a / 255.0 alpha:1]; return v;
+}
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
 	UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
@@ -534,10 +540,11 @@ int vxg_any_busy (void) { for (int i = 0; i < VXG_N; i++) if (vxg_busy[i]) retur
 	UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb;
 	const NSInteger r = ip.row;
 	if (ip.section == 1) { c.textLabel.text = @"Add files..."; c.detailTextLabel.text = @"from Files: iCloud, this device, a USB stick"; return c; }
-	if (r == VXG_ITEMS) { c.textLabel.text = @"Download all"; c.detailTextLabel.text = @"What is not here yet"; c.textLabel.textColor = VX_HI; return c; }
+	if (r == VXG_ITEMS) { c.textLabel.text = @"Download all"; c.detailTextLabel.text = @"What is not here yet"; c.textLabel.textColor = VX_HI;
+		BOOL all = YES; for (int i = 0; i < VXG_ITEMS; i++) all &= vxg_complete (i, _have); if (all) c.accessoryView = vxg_tick (); return c; }
 	c.textLabel.text = VXG_TITLE[r];
 	c.detailTextLabel.text = vxg_det[r] ?: [NSString stringWithFormat:@"%@  -  %@, %@", vxg_state ((int) r, _have), VXG_SIZE[r], VXG_SITE[r]];
-	if (vxg_busy[r]) c.detailTextLabel.textColor = VX_CHG;
+	if (vxg_busy[r]) c.detailTextLabel.textColor = VX_CHG; else if (vxg_complete ((int) r, _have)) c.accessoryView = vxg_tick ();
 	return c;
 }
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
@@ -583,7 +590,8 @@ int vxg_any_busy (void) { for (int i = 0; i < VXG_N; i++) if (vxg_busy[i]) retur
 			NSString *res = n >= 0 ? [NSString stringWithFormat:@"%@  -  %@", vxg_state (k, vxg_present ()), n > 0 ? [NSString stringWithFormat:@"%d files added", n] : @"nothing new"]
 				: [NSString stringWithFormat:@"Could not be downloaded: %@. Try again later, or get it by hand and use Add files.", e ?: @"?"];
 			if (n < 0) ulog ([NSString stringWithFormat:@"get %@: %@", VXG_TITLE[k], e]);
-			vxg_busy[k] = NO; [ws say:k text:res];
+			vxg_busy[k] = NO; NSSet *h = vxg_present ();
+			dispatch_async (dispatch_get_main_queue (), ^{ VXGetterVC *g = ws; if (g) { g->_have = h; vxg_det[k] = res; if (g.tableView.window) [g.tableView reloadData]; } });   /* (the ticks: Download all's row too) */
 			dispatch_async (dispatch_get_main_queue (), ^{ VXGetterVC *g = ws; if (g) [g toast:[NSString stringWithFormat:@"%@: %@", VXG_TITLE[k], res]]; else vxa_toast_ext ([NSString stringWithFormat:@"%@: %@", VXG_TITLE[k], res]); }); }); }
 }
 - (void) pick

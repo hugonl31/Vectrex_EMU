@@ -71,7 +71,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 		head.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (8) + m.insTop, (int) m.dp (16) + m.insR, (int) m.dp (10));
 		LinearLayout row = new LinearLayout (m); row.setGravity (Gravity.CENTER_VERTICAL);
 		row.addView (m.text ("Games", 24, Main.HI, true), new LayoutParams (0, -2, 1));
-		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (13); get.setContentDescription ("Get games & extras"); get.setOnClickListener (v -> { Screens.Panel g = Getter.show (m); g.onClose = () -> { all = scan (m); Main.log ("library: " + all.size () + " games (again)"); search.setHint ("Search " + all.size () + " games"); cache.evictAll (); apply (); }; });   /* (the download page over the library, the games looked for again when it closes; top right, as the iOS app's - the owner, 2026-11-26) */
+		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (13); get.setContentDescription ("Get games & extras"); get.setOnClickListener (v -> { Screens.Panel g = Getter.show (m); g.onClose = () -> { all = scan (m); Main.log ("library: " + all.size () + " games (again)"); Library.this.search.setHint ("Search " + all.size () + " games"); cache.evictAll (); apply (); }; });   /* (the download page over the library, the games looked for again when it closes; top right, as the iOS app's - the owner, 2026-11-26) */
 			LayoutParams gp = new LayoutParams (-2, (int) m.dp (44)); gp.rightMargin = (int) m.dp (8); row.addView (get, gp); }
 		TextView close = Screens.button (m, "✕", false); close.setContentDescription ("Close"); close.setOnClickListener (v -> m.pop ());
 		row.addView (close, new LayoutParams ((int) m.dp (48), (int) m.dp (44))); head.addView (row);

@@ -2409,6 +2409,7 @@ class GLBloomRenderer(GLRenderer):
         self.trail_on = True         # the phosphor trail (T)
         self.trail = 0.6             # the afterglow's time scale: 1 = as measured on a real Vectrex (F7 / F8); 0.6 the
                                      #  owner's choice side by side with the tube (2026-10-14)
+        self.trail_k = 1.0           # the afterglow's brightness: x TRAIL_K (Afterglow brightness: 0.5 - 3 as the core's)
         self.wob_on = True           # mains hum wobble (see HUM_AXES)
         self.wob_strength = 0.1074   # rms offset, game px (the owner's choice, 2026-10-08)
         self.line_gap = 7.0          # the integrators' stop delay in cycles (the core's; Tube > Line gaps): the gaps at
@@ -4300,7 +4301,7 @@ class GLBloomRenderer(GLRenderer):
                 self.ActiveTexture(0x84C3); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0])
             self.ActiveTexture(0x84C0)
             (fa, ta), (fs, tsl) = PHOS_A
-            tk = TRAIL_K
+            tk = TRAIL_K * max(0.0, getattr(self, 'trail_k', 1.0))   # (Afterglow brightness: x the core's 1x, its opt_trail_k)
             self.Uniform2f(u['amp'], fa * tk, fs * tk); self.Uniform2f(u['tau'], ta * ts, tsl * ts)
             self.Uniform2f(u['kd'], *((1.0, 1.0) if od is not None else (math.exp(-dt / (ta * ts)), math.exp(-dt / (tsl * ts)))))
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)

@@ -288,13 +288,14 @@ TOPICS = [
          "each place - one law, measured on photos of a real Vectrex. So a slow line is brighter than a fast one, a "
          "resting dot grows wider, a line shows a dot where it starts, crossings add up, and the thick glass "
          "round a bright spot glows a little. On an HDR screen the brightest dots go above white."),
-('item', 'Afterglow / Afterglow length', "The phosphor keeps glowing after the beam has passed. "
-         "x1 is the measured length; the default x0.6 was matched to a real Vectrex side by side."),
+('item', 'Afterglow / Afterglow length', "The phosphor keeps glowing after the beam has passed: its length. "
+         "x1 is the measured length; x0.6 was matched to a real Vectrex side by side."),
 ('more', 'The measured afterglow', "Filmed on a real Vectrex: the moment the beam leaves, a spot drops to "
          "about 15 % of its brightness, to 4 % after 0.15 s and 1.5 % after half a second; it is gone after "
          "about 2 seconds. That is why fast objects leave fading copies or a faint trail, and why a game "
          "running at 25 frames a second flickers less than you might expect. A spot drawn again is lit "
          "again; it does not add up."),
+('item', 'Afterglow brightness', "How bright the afterglow is: above x1 a brighter trail, below a fainter one."),
 ('item', 'Game list', "Library: the games as tiles - cartridges, boxes or overlays, a search, categories; button 1 closes it. "
          "A right click on a UVMC2 game: Calibration (2 + 3 held). Simple: the plain list of the roms folder."),
 ('item', 'Colours', "The deck's, the menus' and the windows' colour: a deeper blue, or green."),

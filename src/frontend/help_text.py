@@ -593,8 +593,9 @@ TOPICS = [
       "short gaps where joined lines meet (the spot still moving while the beam is dark). 6 = measured."),
 ('item', 'DAC bit 0-3 error', "The DAC's ladder: each bit's current off by this share. Text drawn right and back at a "
       "width has different bits each way, so its slant changes from one width to the next. The owner's: measured."),
-('item', 'X rate right vs left / Y rate up vs down', "How much faster the beam moves one way than the other, in %: "
-      "+ right faster than left (X), up faster than down (Y). Lines drawn the fast way come out longer. 0 = even."),
+('item', 'X rate right vs left', "How much faster the beam moves right than left, in %. 0 = even."),
+('item', 'Y down-speed limit', "At full speed the beam comes down this much (%) short of where it went up; at half speed and "
+      "below not at all. Long fast up-and-down runs creep upward. 0 = even."),
 ('item', 'Line gaps (stop delay)', "When the integrators stop after a line: the gaps at line ends and corners."),
 ('item', 'Brightness (the knob at the back)', "As the knob on the back of a Vectrex: 0 = a black screen, 1 = as bright as a real "
       "one goes, 0.71 = well set (right click on the slider). Down: the faintest lines go first, a line's corner dots with "

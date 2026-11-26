@@ -976,8 +976,6 @@ class _VxbOut:
             out.append(a[o:o + k * n]); o += k * n
         return out
 _vxb_out = _VxbOut()
-BT_HALO_BRIGHT = 0.5                        # (the Bright look: the glass's glow x this - a round halo stood round small bright shapes, the
-                                            #  octagon on Last Human's title: the owner, 2026-11-26; the Vectrex look keeps it all)
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
 TINT_GLOW = True                          # (the vectors' colour by their profile, a white core with a blue glow - SAT_SHADER tm; the default since 2026-11-26)
@@ -3177,7 +3175,7 @@ class GLBloomRenderer(GLRenderer):
                 a0, ((PX, QX), (PY, QY)) = hum_coeffs(self.frame_t0 / 1.5e6, self.wob_strength, WOBBLE_SPEED, self.mains_hz)
                 k50 = 2 * math.pi * self.mains_hz / 1.5e6
                 hum = tuple(PX[1:4]) + tuple(QX[1:4]) + tuple(PY[1:4]) + tuple(QY[1:4])
-            _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F * (BT_HALO_BRIGHT if self.blook() else 1.0), BT_HALO_S)).split(',')]   # (tests)
+            _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F, BT_HALO_S)).split(',')]   # (tests)
             rgb = [1.0] * 24
             for code, c3 in self.IMAGER_RGB.items():
                 rgb[3 * code:3 * code + 3] = c3
@@ -3497,7 +3495,7 @@ class GLBloomRenderer(GLRenderer):
             upx = gp / BT_UNITS                            # (window px a unit)
             hal = (b & 256) != 0                           # (the glass's glow of a piece)
             sg = np.maximum(0.5, BEAM_TRACE_SG * fwb * gp / 2.355 * float(os.environ.get('VX_BT_SPOT', BT_SPOT)))
-            _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F * (BT_HALO_BRIGHT if self.blook() else 1.0), BT_HALO_S)).split(',')]   # (tests)
+            _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F, BT_HALO_S)).split(',')]   # (tests)
             sg = np.where(hal, _hs * upx, sg)
             kk = ((bl if bl is not None else bt_light(np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT), lp / upx, cyc))
                   / (2.0 * math.pi * (sg / upx) ** 2) * np.where(hal, _hf, 1.0 - _hf) * gain * cgain / BT_KMAX)   # (a rest's peak for that light: the shader spreads it)

@@ -254,7 +254,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VER=$(head -n 1 repo/VERSION | tr -d ' \r')
-          { awk -v v="## $VER" '$0 == v {on=1; next} on && /^## / {exit} on' repo/RELEASE_NOTES.md
+          # (the notes' section of this version - the file's Windows line ends taken off first: with them no line was "## $VER"
+          #  and every release since went up with no notes, 2026-11-26)
+          { tr -d '\r' < repo/RELEASE_NOTES.md | awk -v v="## $VER" '$0 == v {on=1; next} on && /^## / {exit} on'
             echo; echo "Built from ${GITHUB_SHA::7}."; } > notes.md
           # (the Android app is built and signed on the maintainer's PC - android/build.sh, PUBLIC=1 - and added to the
           #  release by hand: kept when the same release is built again, until a new one replaces it)

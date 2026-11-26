@@ -13,6 +13,14 @@ its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 - PC: Controls > 3D Imager view, always there
 - New test cart: Updown Test
 
+## v1.9.0
+- PiTrex calibration on every system, as the UVMC2's
+- Shift+F12: a high-res snapshot (also in the Record menu)
+- Online > Find LAN games... (PC, Mac, Linux)
+- Get games & extras: the PiTrex card from the project's own copy
+- Glass curvature 0 is always a flat picture
+- Slow frames (25 a second) drawn whole
+
 ## v1.8.9
 - Android: less input delay (one picture queued, not three)
 - Android: Input Delay Test cart - the delay measured to the glass

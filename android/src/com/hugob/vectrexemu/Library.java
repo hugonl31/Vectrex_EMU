@@ -81,7 +81,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 			b.setOnClickListener (x -> { m.prefs.edit ().putString ("lib.look", v).apply (); Main.log ("library look " + v); paintLooks (); cache.evictAll (); reload (); });
 			lk.addView (b, new LayoutParams (0, (int) m.dp (34), 1)); }
 		LayoutParams lkp = new LayoutParams (-1, -2); lkp.topMargin = (int) m.dp (8); head.addView (lk, lkp);
-		LinearLayout srow = new LinearLayout (m);
+		LinearLayout srow = new LinearLayout (m); srow.setBaselineAligned (false);   /* (not lined up on the search text: the per-row box was pushed down, its bottom cut off - the owner, 2026-11-26) */
 		search = new EditText (m); search.setHint ("Search " + all.size () + " games"); search.setSingleLine (true); search.setTextColor (Main.FG); search.setHintTextColor (Main.DIM); search.setTextSize (15);
 		search.setBackground (Main.round (Main.BODY, Main.EDGE, m.dp (10))); search.setPadding ((int) m.dp (12), 0, (int) m.dp (12), 0); search.setImeOptions (EditorInfo.IME_ACTION_DONE);
 		search.addTextChangedListener (new TextWatcher () { public void beforeTextChanged (CharSequence s, int a, int b, int c) { } public void onTextChanged (CharSequence s, int a, int b, int c) { } public void afterTextChanged (Editable e) { apply (); } });
@@ -89,7 +89,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 		size = Screens.button (m, "", false); size.setTextSize (12); size.setOnClickListener (v -> sizeMenu ());
 		LayoutParams sp = new LayoutParams (-2, (int) m.dp (40)); sp.leftMargin = (int) m.dp (8); srow.addView (size, sp);
 		LayoutParams srp = new LayoutParams (-1, -2); srp.topMargin = (int) m.dp (8); head.addView (srow, srp);
-		chips = new LinearLayout (m);   /* (the filters across the width, no scrolling - as the iOS app's; the owner, 2026-11-26) */
+		chips = new LinearLayout (m); chips.setBaselineAligned (false);   /* (the filters across the width, no scrolling - as the iOS app's; the owner, 2026-11-26) */
 		final String[] fs = { "All", "Recent", "Games", "UVMC2", "PiTrex", "Tests" };
 		for (int i = 0; i < fs.length; i++) { final String f = fs[i]; TextView c = Screens.button (m, f, false); c.setTextSize (13); c.setTag (f); c.setSingleLine (true);
 			c.setPadding ((int) m.dp (6), 0, (int) m.dp (6), 0); c.setOnClickListener (v -> { filter = f; apply (); });

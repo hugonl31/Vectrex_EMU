@@ -57,6 +57,7 @@ int vx_phone_trail = 0;                        /* (the own phone / tablet apps s
                                                    dim without it) - the full lift in every look (2026-11-27, the owner: x0.8 / x0.7 in Medium / Bright not enough). The PC and
                                                    RetroArch: the measured one, vecrender.py PHOS_A) */
 #define PHOS_LIFT (vx_phone_trail ? 1.0f : 0.0f)
+float vx_trail_tail = 1.0f;                    /* (the faint end's level x this - the iOS test build's Afterglow tail, libretro_vx.c) */
 #define PHOS_A1 0.1404f
 #define PHOS_T1 (0.0454f * (1.0f + 0.5f * PHOS_LIFT))
 #define PHOS_A2 (0.0582f * (1.0f - 0.25f * PHOS_LIFT))
@@ -660,7 +661,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
 	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
 	  /* (the afterglow's two parts - vecrender.py PHOS_A, on every system) */
-	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk, ta1 = PHOS_T1 * opt_trail, ta2 = PHOS_T2 * opt_trail;
+	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk * vx_trail_tail, ta1 = PHOS_T1 * opt_trail, ta2 = PHOS_T2 * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
 	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);

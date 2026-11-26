@@ -247,7 +247,7 @@ TOPICS = [
 ('deck', 'The Config window', [
 ('p', "Tab (or Config on the menu bar) opens one window over the running game with every display, sound and hardware "
       "setting, in tabs: Tube, Room light, Case, Overlay, Sound, Vectrex unit, Display and Cartridge. Every switch and "
-      "slider acts on the game at once. Right click a slider: its default. Reset this tab puts back only that tab; Reset all puts back every tab (to the Quality profile's defaults, Custom: High's). "
+      "slider acts on the game at once. Right click a slider: its default. Reset this tab puts back only that tab; Reset all settings puts every setting back as a new install has it - every tab (under the Quality profile), the games' own settings, the controls, HDR, the colours, recording and online (not the gamer name, the window's size or the Quality profile). "
       "Hold H (or the Before button) to see the look from before the Config window opened. Tab or Esc closes it."),
 ('p', "The game keeps its controllers and keys while the Config window is open: it can be played, and checked, with "
       "the window open. The emulator's keys work there too - P, O, L, C, + / - / 0 / 9, Ctrl+R, Page Up / Down; Tab or "

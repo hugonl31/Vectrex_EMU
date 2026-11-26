@@ -5605,6 +5605,99 @@ class App:
         self.save_settings()
         self.show_look('all settings: the defaults (quality %s)' % name)
         self.flash('DEFAULTS: ' + name.upper())
+    # Config > Reset all settings: every setting as a new install has it (the owner, 2026-11-26: the look, HDR - everything;
+    # the phone apps alike). Not settings, kept: the gamer name and its key, the debug report's email, the window's size
+    # and the windows' places, the recent games and the ROM browser's folder, Config's tab, the Quality profile (this PC's,
+    # from the setup or Optimize) and Optimize's result, the volume knob (the power switch), the notes not to show again,
+    # the first-start setup done
+    def factory_list(self):
+        """(name, now, a new install's) for every setting factory_reset puts back - factory_changed compares them"""
+        r, c, base = self.ren, self.run.crt, self.base_values()
+        own = UNIT_PRESETS['owner']
+        s = self.inp.save()
+        keys = {p: {k: [list(x) for x in DEFAULT_KEYS[p][k] if x[0] not in RESERVED_VK] for k in CTRL_INPUTS} for p in ('p1', 'p2')}
+        L = [('look ' + k, getattr(r, k), base.get(k, self.look_default[k])) for k in self.look_keys if k != 'line_gap'] if r else []
+        L += [('sound ' + k, getattr(c, k), self.sound_default[k]) for k in self.sound_keys if k != 'volume']
+        L += [('unit', (self.unit_name, {k: float(self.unit.get(k, v)) for k, v in own.items()}), ('owner', {k: float(v) for k, v in own.items()})),
+              ('controls', (s['keys'], s['dev'], all(m == default_map(d) for d, m in s['pads'].items())), (keys, {'p1': 'auto', 'p2': 'keyboard'}, True)),
+              ('game settings', bool(self.per_game), False), ('overlays chosen', bool(self.art_for), False),
+              ('overlay places', (bool(self.art_adj_game) or bool(self.art_adj), [float(v) for v in self.art_adj_all],
+                                  self.art_adj_now() if r and getattr(self, 'art_adj_ready', False) else [0.0, 0.0, 1.0]), (False, [0.0, 0.0, 1.0], [0.0, 0.0, 1.0])),
+              ('overlay auto', self.art_auto, True), ('scratches', getattr(r, 'scr_seed', 1), 1),
+              ('rotate', self.rot, 0), ('monitor size', self.monitor_inch, 0.0), ('real size', self.real_on, False),
+              ('deck', (self.fps_on, self.knob_on, self.cart_on, self.osd_meters), (True, True, True, True)),
+              ('smooth', self.smooth, True), ('run-ahead', self.run_ahead, False), ('screen', (self.vrr, self.rate), (False, 'max')),
+              ('on top', self.on_top, False), ('hdr', (self.hdr_mode, float(self.hdr_frac)), ('auto', 1.0)) if hasattr(self, 'hdr_mode') else ('hdr', 0, 0),
+              ('colours', PALETTE_SET, 'blue'), ('game list', self.lib_on, True),
+              ('library', (self.lib.look, self.lib.cols, self.lib.cat) if self.lib else tuple(self.lib_keep.get(k, v) for k, v in
+                           (('lib_look', 'boxes'), ('lib_cols', 4), ('lib_cat', 'All'))), ('boxes', 4, 'All')),
+              ('cartridge', (self.cart_hw, self.speech_user, bool(self.p2_games), self.p2_auto, self.usb_hid, self.uvm2_mode, self.show_um2),
+               ('auto', 'off', False, True, True, 'exact', True)),
+              ('power', (self.start_on, self.skip_boot), (False, False)), ('tv shortcuts', self.pad_shortcuts, True), ('mouse', self.mouse_stick, False),
+              ('3d imager', (self.imager_note, self.imager_eye), (True, 'both')), ('sd cards', (self.sd_dir, self.px_dir), (SD_DEFAULT, PX_DEFAULT)),
+              ('recording', dict(self.rec_opts), dict(recorder.DEFAULTS)),
+              ('online', (self.net_server_s, self.net_osd, self.chat_sound), ('', True, True)), ('update check', self.update_check, True)]
+        if r and hasattr(r, 'line_gap'):
+            L.append(('line gap', float(r.line_gap), float(own['gap'])))
+        return L
+    def factory_changed(self):
+        """the settings not as a new install has them: their names (Config's Reset all settings: nothing to do when none)"""
+        def same(v, d):
+            if isinstance(d, float) and not isinstance(v, (bool, str)):
+                return abs(float(v) - d) <= 1e-6
+            if isinstance(d, dict) and isinstance(v, dict) and d.keys() == v.keys():
+                return all(same(v[k], d[k]) for k in d)
+            if isinstance(d, tuple) and isinstance(v, tuple) and len(v) == len(d):
+                return all(same(a, b) for a, b in zip(v, d))
+            return v == d
+        return [n for n, v, d in self.factory_list() if not same(v, d)]
+    def factory_reset(self):
+        """Config > Reset all settings: everything factory_list names back to a new install's, at once - Config's tabs
+        (under the Quality profile, as Reset all always did), the games' own settings, overlays and places, the controls,
+        the display and screen rate, HDR, the colours, the game list, the cartridge and port 2, recording, online"""
+        changed = self.factory_changed()
+        self.per_game = {}; self.game_global = None             # (no game's own: the everyday settings, as new)
+        self.art_for = {}; self.art_adj_game = {}; self.art_adj = {}; self.art_adj_all = [0.0, 0.0, 1.0]; self.art_auto = True
+        r = self.ren
+        if r and hasattr(r, 'scr_seed'):
+            r.scr_seed = 1
+        base = self.base_values()
+        self.reset_all()                                        # (every tab: the picture, the sound, the unit, the display,
+        if r:                                                   #  the ports - the cartridge in again if its hardware changed)
+            for k in self.look_keys:                            # (and what those leave: head tracking on / off ...)
+                if k != 'line_gap':
+                    setattr(r, k, base.get(k, self.look_default[k]))
+            self.load_art()
+        self.start_on = False; self.skip_boot = False; self.pad_shortcuts = True
+        self.inp.reset()
+        self.mouse_stick = False; self.mouse_btn = 0; self.inp.mouse = None
+        if self.on_top:
+            self.on_top = False; self.apply_on_top()
+        if hasattr(self, 'hdr_mode') and (self.hdr_mode != 'auto' or self.hdr_frac != 1.0):
+            if r and getattr(r, 'hdr', None) and self.hdr_frac != 1.0:
+                r.hdr_stop()
+            self.hdr_mode = 'auto'; self.hdr_frac = 1.0; self.hdr_apply()
+        if PALETTE_SET != 'blue':
+            self.set_palette('blue')
+        if not self.lib_on:
+            self.set_lib(True)
+        if self.lib:
+            self.lib.look, self.lib.cols, self.lib.cat = 'boxes', 4, 'All'
+        self.lib_keep = {'lib_look': 'boxes', 'lib_cols': 4, 'lib_cat': 'All'}   # (written over the file's: save_settings keeps the rest)
+        self.rec_opts = dict(recorder.DEFAULTS)
+        self.net_server_s = ''; self.net_osd = True; self.chat_sound = True; self.update_check = True
+        self.ultra_rate = None
+        self.game_loaded = self.rom_name; self.game_start = json.loads(json.dumps(self.game_now()))
+        self.save_settings()
+        if getattr(self, 'deck', None):
+            try: self.deck.sync_all()
+            except Exception: pass   # noqa
+        left = self.factory_changed()
+        print('settings: reset all, as a new install (%d changed: %s)%s' % (len(changed), ', '.join(changed),
+              ' - still not: ' + ', '.join(left) if left else ''), flush=True)
+        self.show_look('all settings: as a new install')
+        self.flash('SETTINGS RESET')
+        return changed
     def set_quality(self, mode):
         """(older callers: 'auto' / '0'..'2')"""
         self.set_profile({'0': 'medium', '1': 'high'}.get(mode, 'ultra'))

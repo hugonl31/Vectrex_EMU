@@ -54,9 +54,15 @@ static void kb_desk (bool down, unsigned k)
 	case RETROK_PAGEUP: kb_ev |= KE_VOLUP; break; case RETROK_PAGEDOWN: kb_ev |= KE_VOLDN; break; case RETROK_ESCAPE: kb_ev |= KE_ESC; break;
 	default: break; }
 }
+#ifndef VX_EMUVR
+static int lib_key (bool down, unsigned keycode, uint32_t character);   /* (library.c: the ROM browser's search) */
+#endif
 static void RETRO_CALLCONV km_key (bool down, unsigned keycode, uint32_t character, uint16_t mods)
 {
 	(void) character; (void) mods;
+#ifndef VX_EMUVR
+	if (lib_key (down, keycode, character)) return;   /* (typing into the library's search: the keys are its own) */
+#endif
 	if (kb_on) {                                  /* (the desktop's keys; Ctrl+K: typing to a UVMC2 / PiTrex and back, as the desktop) */
 		if (keycode == RETROK_LCTRL || keycode == RETROK_RCTRL) kb_held = down ? kb_held | KB_CTRL : kb_held & ~KB_CTRL;
 		if (down && keycode == RETROK_k && (kb_held & KB_CTRL) && km_on) {

@@ -345,9 +345,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	/* the trail for the look and the screen's brightness, every 2 s (the owner's Nova next to a real Vectrex, 2026-11-21: Vectrex on
 	 * SDR 2x, on HDR 1.25x; Bright at full brightness a bit too bright - 0.75x, easing with the slider) */
 	float trailLast = -1; final Runnable trailR = this::trailTick;
-	/* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost; on by default on a
-	 *  phone (its shorter side under 600 dp), off on a tablet, the setting below the Look) */
-	boolean trailBoost () { return prefs.getBoolean ("app.trailboost", false); }   /* (off by default since the afterglow's own shape for the apps) */
+	/* (the afterglow as the PC's, always - the owner, 2026-11-26: no Brighter afterglow any more; an old app.trailboost is left unread) */
 	void trailTick ()
 	{
 		h.removeCallbacks (trailR);
@@ -356,7 +354,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		try { b = android.provider.Settings.System.getInt (getContentResolver (), android.provider.Settings.System.SCREEN_BRIGHTNESS, 128) / 255f; } catch (Throwable t) { }
 		b = Math.max (0f, Math.min (1f, b));
 		final int md = 0;
-		final float tm = trailBoost () ? 1.2f : 1f;   /* (2026-11-22: as the PC, the master - was scaled down with the screen's brightness) */  //   /* (SDR Vectrex 2.8: 40 % more - the owner's Nova, iPad and iPhone without HDR) */
+		final float tm = 1f;   /* (as the PC, the master: x1 - it was scaled down with the screen's brightness, then 1.2 with Brighter afterglow) */
 		if (Math.abs (tm - trailLast) > 0.02f) { trailLast = tm; VX.setTrailMul (tm); log ("trail x" + tm + " (look " + md + ", brightness " + Math.round (b * 100) + " %)"); }
 		h.postDelayed (trailR, 2000);
 	}
@@ -526,6 +524,39 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (want == brightUp) return; brightUp = want;
 		WindowManager.LayoutParams lp = getWindow ().getAttributes (); lp.screenBrightness = want ? WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
 		getWindow ().setAttributes (lp); log ("full brightness: " + (want ? "up" : "yours back"));
+	}
+	/* Settings > Reset all settings: every setting as a new install has it (the owner, 2026-11-26: the look, HDR, Max
+	 * brightness - everything; the iOS app alike) - the core's options (VX.oreset) and the app's own: the top bar, the deck's
+	 * pop-up, clock and battery, HDR brightness, Max brightness, the look, the touch controls (each
+	 * game's right-side stick and its map too), the controller's buttons, the library's view. Kept: the player's name and
+	 * key online, the downloads and their notice, the device test's result, save states, the recent games, the first-start
+	 * and once-only flags. APP_DEF: each one's default (null: an older key - gone) */
+	static final String[] APP_KEYS = { "app.bar", "app.topbar", "app.deckpop", "app.statusbar", "app.hdr", "app.maxbright", "app.look",
+		"touch.show", "touch.size", "touch.alpha", "touch.dpad", "touch.lefty", "lib.perrow", "lib.look" };
+	static final Object[] APP_DEF = { "auto", null, false, false, 1f, 1, 1, "auto", 1f, 1f, false, false, 3, "boxes" };
+	static boolean perGameKey (String k) { return k.startsWith ("touch.rstick.") || k.startsWith ("touch.rmap.") || k.matches ("map\\.[1-4]"); }
+	int appChanged ()                                          /* (the app's own settings not at their default) */
+	{
+		int n = 0; final java.util.Map<String, ?> all = prefs.getAll ();
+		for (int i = 0; i < APP_KEYS.length; i++) if (all.containsKey (APP_KEYS[i]) && !String.valueOf (all.get (APP_KEYS[i])).equals (String.valueOf (APP_DEF[i]))) n++;
+		for (java.util.Map.Entry<String, ?> e : all.entrySet ()) { final String k = e.getKey (); final Object v = e.getValue ();
+			if (k.startsWith ("touch.rstick.")) { if (Boolean.TRUE.equals (v)) n++; }
+			else if (k.startsWith ("touch.rmap.")) { if (!"2431".equals (v)) n++; }
+			else if (k.matches ("map\\.[1-4]") && !(v instanceof Integer && (Integer) v == (Input.nintendo ? Input.DEF_N : Input.DEF)[k.charAt (4) - '1'])) n++; }
+		return n;
+	}
+	int settingsChanged () { return VX.ochanged () + appChanged (); }
+	/* (and what a start applies, at once: the look, HDR, Max brightness's screen level, the status bar, the top
+	 *  bar and the deck as this screen's Auto, the touch controls; the screen rate this screen's own - rateTick asks for it) */
+	int factoryReset ()
+	{
+		final int n = settingsChanged (); VX.oreset ();
+		SharedPreferences.Editor e = prefs.edit (); for (String k : APP_KEYS) e.remove (k);
+		for (String k : prefs.getAll ().keySet ()) if (perGameKey (k)) e.remove (k);
+		e.apply ();
+		VX.setBright (1); hdrChanged (); brightTick (); immersive ();
+		ctl.padDir = 0; ctl.freeRight (); showBar (); layout (); placeDeck ();
+		log ("settings: reset all, as a new install (" + n + " changed)"); return n;
 	}
 	long barUntil; boolean barHidden;
 	void showBar () { if (barAuto ()) { if (barHidden) log ("top bar shown"); barHidden = false; bar.animate ().cancel (); bar.animate ().alpha (1).setDuration (150); barUntil = System.currentTimeMillis () + 3000; }

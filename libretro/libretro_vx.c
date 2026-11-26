@@ -456,7 +456,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
 	{ "vectrex_emu_unit", "Vectrex unit (the owner's measured one: as his console draws); owner's Vectrex (measured)|ideal" },
 	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
-	{ "vectrex_emu_glass_curve", "Glass curvature (with Tube geometry; 1: as on a Vectrex, 0: flat, even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
+	{ "vectrex_emu_glass_curve", "Glass curvature (with Tube geometry - 1: as on a Vectrex, 0: flat, even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (CPU picture - fine detail, off: VR hardly shows it); off|on" },
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
 	{ "vectrex_emu_skip_intro", "Skip the Vectrex intro (from the next game start - the cartridge starts straight away); off|on" },   /* (2026-11-26, the owner:
@@ -466,7 +466,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_vr_bright", "VR brightness (the whole picture brighter or dimmer - 1x is the PC's look); 1.0x|0.5x|0.75x|1.25x|1.5x|1.75x|2.0x|2.5x|3.0x" },
 	{ "vectrex_emu_brightness", "Brightness (CPU picture - VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (CPU picture - VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
-	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white - bright vectors on a dim screen; Vectrex: as a real Vectrex - dots and slow lines stand out, wants a bright screen); bright|vectrex" },
+	{ "vectrex_emu_look", "Look (Medium: between the two / Bright: all lines pushed up to white, bright vectors on a dim screen / Vectrex: as a real Vectrex, dots and slow lines stand out); medium|bright|vectrex" },
 	{ "vectrex_emu_corner_dots", "Corner dots (CPU picture - the beam resting); on|off" },
 	{ "vectrex_emu_dwell", "Dwell spots inside strokes (CPU picture); on|off" },
 	{ "vectrex_emu_speed_bright", "Fast sweeps fainter (CPU picture); on|off" },
@@ -682,7 +682,7 @@ static void opts_set (retro_environment_t cb)
 /* (2026-11-22, the beam on the phosphor: the picture's and the unit's settings - Tube, Overlay, Case & Room light, Unit, Circuit -
  *  back to their defaults once, as a clean install (the owner). A mark in the system folder says it is done; the frontend takes
  *  each value through RETRO_ENVIRONMENT_SET_VARIABLE - RetroArch 1.17 on, the own apps) */
-#define VX_OPT_EPOCH 3
+#define VX_OPT_EPOCH 4
 static void opts_reset_once (void)
 {
 	const char *sys = NULL; char f[1024]; int have = 0;
@@ -700,12 +700,33 @@ static void opts_reset_once (void)
 		struct retro_variable sv = { OPTS[i].key, d }; if (env_cb (70, &sv)) n++; }
 	/* (epoch 3, 2026-11-23: the Beam switch-off delay's fraction acts in the beam engine again (vecx.c) - a value set by hand
 	 *  keeps the picture it gave: its whole cycles, as the desktop's unit_fix 2) */
-	{ struct retro_variable cur = { "vectrex_emu_unit_beamoff", NULL };
+	if (have < 3) { struct retro_variable cur = { "vectrex_emu_unit_beamoff", NULL };   /* (once: not again at a later epoch) */
 	  if (env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &cur) && cur.value && cur.value[0] >= '0' && cur.value[0] <= '9') {
 		static char d[32]; snprintf (d, sizeof d, "%.1f cycles", floor (atof (cur.value)));
 		if (strcmp (d, cur.value)) { struct retro_variable sv = { "vectrex_emu_unit_beamoff", d }; if (env_cb (70, &sv)) n++; } } }
+	/* (epoch 4, 2026-11-26: new defaults RetroArch never gives a saved option - it keeps every value in its options file. A value still at
+	 *  the old default takes the new one; one chosen otherwise stays. Tube > Look: Medium on a computer (was Vectrex), Bright on an iPhone /
+	 *  iPad (was Vectrex; Android was Bright already); the Eject button off on an iPhone / iPad (was R). The own apps keep their own look
+	 *  (App > Look) and moved their eject themselves (app.eject1): not here) */
+	{ extern int vx_app_noshape;
+	  if (!vx_app_noshape) {
+		static const struct { const char *key, *was; } NEWDEF[] = {
+#if VX_IOS
+			{ "vectrex_emu_tube_look", "Vectrex" }, { "vectrex_emu_btn_eject", "R" },
+#elif !defined(__ANDROID__)
+			{ "vectrex_emu_tube_look", "Vectrex" },
+#endif
+			{ NULL, NULL } };
+		for (int k = 0; NEWDEF[k].key; k++) {
+			const char *nd = NULL; static char d[64];
+			for (size_t i = 0; OPTS[i].key; i++) if (!strcmp (OPTS[i].key, NEWDEF[k].key)) { const char *v = OPTS[i].vals; size_t j = 0;
+				while (v[j] && v[j] != '|' && j < sizeof d - 1) { d[j] = v[j]; j++; } d[j] = 0; nd = d; break; }
+			struct retro_variable cur = { NEWDEF[k].key, NULL };
+			if (!nd || strcmp (nd, NEWDEF[k].was) == 0 || !env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &cur) || !cur.value || strcmp (cur.value, NEWDEF[k].was)) continue;
+			struct retro_variable sv = { NEWDEF[k].key, nd };
+			if (env_cb (70, &sv)) { n++; fprintf (stderr, "[vectrex_emu] settings: %s %s -> %s (the new default), once\n", NEWDEF[k].key, NEWDEF[k].was, nd); } } } }
 	{ FILE *fp = fopen (f, "w"); if (fp) { fprintf (fp, "%d\n", VX_OPT_EPOCH); fclose (fp); } }
-	fprintf (stderr, "[vectrex_emu] settings: %s, once (%d changed)\n", have < 2 ? "the picture's and the unit's back to their defaults" : "the beam switch-off delay in whole cycles", n);
+	fprintf (stderr, "[vectrex_emu] settings: %s, once (%d changed)\n", have < 2 ? "the picture's and the unit's back to their defaults" : have < 3 ? "the beam switch-off delay in whole cycles" : "values left at an old default to the new one", n);
 }
 #endif
 #ifndef VX_EMUVR
@@ -768,7 +789,8 @@ static void read_options (void)
 	           : opt_is ("vectrex_emu_imager", "right eye") ? 4 : 2;   /* (3 / 4: one eye's pictures only - the other half turn left out) */
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
-	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_look", "vectrex") ? 0.0f : 1.0f; }   /* (the EmuVR table's Look, bright the default - the owner, 2026-11-25: also the GPU picture's Bright) */
+	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_look", "vectrex") ? 0.0f : opt_is ("vectrex_emu_look", "medium") ? 0.5f : 1.0f; }   /* (the EmuVR table's Look: Medium the default since
+	                                              2026-11-26 (bright before) - the GPU picture's look strength, 0 Vectrex, 0.5 Medium, 1 Bright, as the desktop core's Tube > Look) */
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
 	{ const char *ce = getenv ("VECTREX_CONSOLE");   /* (route A: the mod names the console that starts this RetroArch; the option overrides) */
 	  opt_cad = opt_is ("vectrex_emu_console", "owner's CAD model") ? 1 : opt_is ("vectrex_emu_console", "classic") ? 0 : (ce && !strcmp (ce, "cad")); }
@@ -1484,7 +1506,10 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	  km_on = unit_addon && !opt_is ("vectrex_emu_usb_hid", "off"); km_n = 0; km_mods = 0; km_dirty = km_on; km_btn = -1;
 	  vx_putenv (km_on ? "VT_USBHID=1" : "VT_USBHID=");   /* (the desktop's usb_hid: a UVMC2 / PiTrex gets the keyboard and mouse) */
 	  km_typing = 0; kb_held = 0; kb_ev = 0;
-	  if (km_on || kb_on) { static struct retro_keyboard_callback kc = { km_key }; env_cb (RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kc); } }   /* (unit.c: the desktop's Config > Unit / Circuit) */
+#ifdef VX_EMUVR
+	  if (km_on || kb_on)
+#endif
+	  { static struct retro_keyboard_callback kc = { km_key }; env_cb (RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kc); } }   /* (and always: the ROM browser's search - library.c) */   /* (unit.c: the desktop's Config > Unit / Circuit) */
 	/* (1.1, as the desktop's Core: the cartridge hardware - auto by the ROM's size, off a plain 32 KB, or a board; a UVMC2's
 	 *  mode; its core 0 on a host thread of its own with 4 or more processors) */
 	{ const char *ch = optv ("vectrex_emu_cart_hw"); static char e[64];
@@ -1747,6 +1772,26 @@ static pline pl[NW];
 #define GTAB 4096
 #define GX 4.5                          /* (the spot out to 3 sigma: d^2 / 2 sigma^2 up to 4.5) */
 static float gtab[GTAB + 1];
+/* (2026-11-26, the CPU picture in the vectors' colour of the GPU's (gpu_phos.c PH_FS_SAT tm 4, vecrender.py SAT_SHADER tm 1): a white
+ *  core, a blue glow - BT_GLOW twice, 2 x its light - where a line's light falls off, by the pixel's place in its own line's profile:
+ *  its light against the most within 4 pixels across (r), the core where that is 0.9 and up, the glow below 0.25; a crest - brighter
+ *  than both neighbours in the direction its light falls off most - the core too. The same rule on the light the CPU spreads (display
+ *  values: the light ^ (1 / 2.2), so a ratio's light its display ratio ^ 2.2 - the tables). The afterglow, kept as one value here (the
+ *  GPU keeps its colours), x vt_tavg: a line's whole profile's mean colour; the phosphor glow x vt_halo, as the GPU's glass glow) */
+#define VT_Q 1024
+static float vt_core[3] = { 1, 1, 1 }, vt_halo[3], vt_tavg[3], vt_sr[VT_Q + 1], vt_sc[VT_Q + 1];
+static float vt_ss (double r, double a, double b) { double u = (r - a) / (b - a); u = u < 0 ? 0 : u > 1 ? 1 : u; return (float) (u * u * (3 - 2 * u)); }
+static void vt_colour_make (void)
+{
+	static const float BT_TINT[3] = { 0.65f, 0.86f, 1.0f }, BT_GLOW[3] = { 0.62f, 0.80f, 1.0f };   /* (gpu_phos.c: the tube's white over its largest, BT_GLOW_R / G) */
+	double w = 0, t[3] = { 0, 0, 0 };
+	for (int c = 0; c < 3; c++) vt_halo[c] = BT_TINT[c] * BT_GLOW[c] * BT_GLOW[c] * 2.0f;   /* (vx_tint_k 12: deep, 2 x; its core the screen's white) */
+	for (int k = 0; k <= VT_Q; k++) { const double q = pow ((double) k / VT_Q, 2.2);   /* (by a display ratio: smoothstep (thr) of r, the crest's 1 - smoothstep (0.8, 1)) */
+		vt_sr[k] = vt_ss (q, 0.25, 0.9); vt_sc[k] = 1.0f - vt_ss (q, 0.8, 1.0); }
+	for (int i = -350; i <= 350; i++) { const double x = i / 100.0, k = exp (-x * x / 2), r = pow (k, 2.2); double u = (r - 0.25) / 0.65; u = u < 0 ? 0 : u > 1 ? 1 : u; u = u * u * (3 - 2 * u);
+		w += k; for (int c = 0; c < 3; c++) t[c] += k * (vt_halo[c] + (vt_core[c] - vt_halo[c]) * u); }   /* (across a line, by its display value: what the afterglow of a line moving over a pixel holds) */
+	for (int c = 0; c < 3; c++) vt_tavg[c] = (float) (t[c] / w);
+}
 
 static void splat_band (const pline *q, int ylo, int yhi)
 {
@@ -2125,7 +2170,7 @@ static double white_core_k (double T)
 static void white_make (void)
 {
 	white_gain (opt_white, wb_g); white_gain (white_core_k (opt_white), wb_c);
-	wb_on = fabs (opt_white - 6504.0) > 1.0;
+	wb_on = !vx_beam && fabs (opt_white - 6504.0) > 1.0;   /* (the beam on the phosphor: the vectors' colour instead - vt_colour) */
 }
 /* v0.35 (owner: "a 3 mm black border round the screen, a little blurred - the edge of the glass's visible area, as on a
  * real tube"): 0 within 3 mm of the glass's outline (a superellipse, Vectrex_EMU's GLASS_N, over the glass window the
@@ -2188,6 +2233,41 @@ static void ov_make (void)
 #else
 #define VX_INLINE static __forceinline
 #endif
+/* (the vectors' colour, the CPU picture - vt_colour_make. vt_share: the core's share at a lit pixel, PH_FS_SAT tm 4's rule on this
+ *  refresh's light (cur, display values); vt_colour: f the fresh light (NC channels), o it with the afterglow, sc the share; v 3 channels) */
+static float vt_share (float *const *cur, int x, int y, int W, int H)
+{
+	#define VT_L(xx, yy) ((xx) < 0 || (yy) < 0 || (xx) >= W || (yy) >= H ? 0.0f : NC == 3 ? (cur[0][(size_t) (yy) * W + (xx)] + cur[1][(size_t) (yy) * W + (xx)] + cur[2][(size_t) (yy) * W + (xx)]) * (1.0f / 3.0f) : cur[0][(size_t) (yy) * W + (xx)])
+	if (NC == 1 && x >= 4 && y >= 4 && x < W - 4 && y < H - 4) {   /* (the usual case: one channel, no edge - straight reads) */
+		const float *p = cur[0] + (size_t) y * W + x, lc = p[0]; if (!(lc > 0)) return 0.0f;
+		const size_t w2 = (size_t) W * 2, w4 = (size_t) W * 4;
+		float e = lc; const float c4[8] = { p[-4], p[-2], p[2], p[4], p[-(ptrdiff_t) w4], p[-(ptrdiff_t) w2], p[w2], p[w4] };
+		for (int i = 0; i < 8; i++) if (c4[i] > e) e = c4[i];
+		const float q = lc / e, sr = vt_sr[(int) (q * VT_Q)];
+		if (q < 0.2563f) return sr;   /* (r = q ^ 2.2 below 0.05: no crest - step (0.05, r)) */
+		const float A[4] = { p[2], p[w2], p[w2 + 2], p[-(ptrdiff_t) w2 + 2] }, B[4] = { p[-2], p[-(ptrdiff_t) w2], p[-(ptrdiff_t) w2 - 2], p[w2 - 2] };
+		float bv = -1e30f, mm = 0;
+		for (int j = 0; j < 4; j++) { const float a = A[j], b = B[j], dv = lc - (a < b ? a : b); if (dv > bv) { bv = dv; mm = a > b ? a : b; } }
+		const float m = mm / lc, rid = m >= 1.0f ? 0.0f : vt_sc[(int) (m * VT_Q)];
+		return rid > sr ? rid : sr; }
+	const float lc = VT_L (x, y); if (!(lc > 0)) return 0.0f;
+	float e = lc; for (int i = -4; i <= 4; i += 2) { const float a = VT_L (x + i, y), b = VT_L (x, y + i); if (a > e) e = a; if (b > e) e = b; }
+	const float q = lc / e; const float sr = vt_sr[(int) (q * VT_Q)];
+	if (q < 0.2563f) return sr;
+	static const signed char D[4][2] = { { 2, 0 }, { 0, 2 }, { 2, 2 }, { 2, -2 } };
+	float bv = -1e30f, mm = 0;
+	for (int j = 0; j < 4; j++) { const float a = VT_L (x + D[j][0], y + D[j][1]), b = VT_L (x - D[j][0], y - D[j][1]), dv = lc - (a < b ? a : b);
+		if (dv > bv) { bv = dv; mm = a > b ? a : b; } }
+	const float m = mm / lc, rid = m >= 1.0f ? 0.0f : vt_sc[(int) (m * VT_Q)];
+	#undef VT_L
+	return rid > sr ? rid : sr;
+}
+VX_INLINE void vt_colour (const float *f, const float *o, float sc, float *v)
+{
+	if (NC == 3) { for (int c = 0; c < 3; c++) v[c] = f[c] * (vt_halo[c] + (vt_core[c] - vt_halo[c]) * sc) + (o[c] - f[c]) * vt_tavg[c]; }
+	else { const float lf = f[0], tr = o[0] - lf;
+		for (int c = 0; c < 3; c++) v[c] = lf * (vt_halo[c] + (vt_core[c] - vt_halo[c]) * sc) + tr * vt_tavg[c]; }
+}
 /* (1.1: always inlined into the drawing loops, no divisions - the Nova's profile, 2026-11-15: 62 % of a refresh was here) */
 VX_INLINE uint32_t pixel_out (float r, float g, float b, int x, int y)
 {
@@ -3630,6 +3710,7 @@ static void retro_run_one (void)
 	}
 	const int cb = pbi; float **cur = pb[pbi], **prv = pb[pbi ^ 1]; pbi ^= 1;
 	for (int c = 0; c < 3; c++) lacc[c] = cur[c];
+	const int vtc = vx_beam;                   /* (the beam on the phosphor: the vectors' colour - vt_share, vt_colour) */
 	cur_l0 = sp_l0[cb]; cur_l1 = sp_l1[cb];
 	const int *pl0 = sp_l0[cb ^ 1], *pl1 = sp_l1[cb ^ 1];
 	const int NB = 64, BH = (H + NB - 1) / NB;
@@ -3651,6 +3732,13 @@ static void retro_run_one (void)
 			if (cur_l0[y] <= cur_l1[y]) for (int c = 0; c < NC; c++) memset (cur[c] + (size_t) y * Wd + cur_l0[y], 0, (size_t) (cur_l1[y] - cur_l0[y] + 1) * 4);
 			cur_l0[y] = SP_NONE; cur_l1[y] = -1; }
 		for (int k = 0; k < npl; k++) splat_band (&pl[k], y0b, y1b);
+	}
+	/* (the light all spread first, then the pixels: the vectors' colour reads the light 4 pixels round each - other bands' rows too) */
+	#pragma omp parallel for schedule(dynamic, 1)
+	for (bi = 0; bi < NB; bi++) {
+		int y0b = bi * BH, y1b = y0b + BH - 1; if (y1b > H - 1) y1b = H - 1;
+		if (y0b < ry0) y0b = ry0; if (y1b > ry1) y1b = ry1;
+		if (y0b > y1b) continue;
 		for (int y = y0b; y <= y1b; y++) {
 			int xs, xe;
 			if (glow || painted) { xs = cx0; xe = cx1; }
@@ -3686,7 +3774,8 @@ static void retro_run_one (void)
 				}
 				if (glow) { for (int c = 0; c < NC; c++) shown[c][i] = o[c]; continue; }
 				if (!any) { frow[x] = painted ? bgimg[i] : 0; continue; }   /* (no light: black, or the background made once) */
-				frow[x] = NC == 3 ? pixel_out (o[0], o[1], o[2], x, y) : pixel_out (o[0], o[0], o[0], x, y);
+				if (vtc) { float v[3]; vt_colour (f, o, vt_share (cur, x, y, Wd, H), v); frow[x] = pixel_out (v[0], v[1], v[2], x, y); }
+				else frow[x] = NC == 3 ? pixel_out (o[0], o[1], o[2], x, y) : pixel_out (o[0], o[0], o[0], x, y);
 				if (x < nf0) nf0 = x; nf1 = x;
 			}
 			if (after) { sp_g0[y] = ng0; sp_g1[y] = ng1; }   /* (the afterglow left in this row: none outside xs..xe) */
@@ -3701,7 +3790,8 @@ static void retro_run_one (void)
 		for (int x = 0; x < Wd; x++) { const int e = x / EW; float f = ((x - e * EW) + 0.5f) / GD - 0.5f; if (f < 0) f = 0;
 			int j = (int) f; if (j > GEW - 2) j = GEW - 2; float w = f - j; if (w > 1) w = 1; bx0[x] = e * GEW + j; bxw[x] = w; }
 		const float gk = GLOW_K * (glow == 2 ? 2.0f : 1.0f);
-		const float t0 = gk * GLOW_TINT[0], t1 = gk * GLOW_TINT[1], t2 = gk * GLOW_TINT[2];
+		const float *const gtn = vtc ? vt_halo : GLOW_TINT;   /* (the vectors' colour: the glow as the GPU's glass glow, the blue one) */
+		const float t0 = gk * gtn[0], t1 = gk * gtn[1], t2 = gk * gtn[2];
 		/* (no overlay painted in: a pixel whose light rounds to 0 is black at once - the same as pixel_out gives) */
 		const int painted = paint_all; float thr = 0.5f / (255.0f * 1.6f);
 		if (painted) thr /= 1.2f * (opt_bright > 1 ? opt_bright : 1);   /* (painted: below this the light changes no level of the
@@ -3719,7 +3809,12 @@ static void retro_run_one (void)
 			for (int x = 0; x < Wd; x++) { const size_t i = i0 + x; const int k = bx0[x]; const float wx = bxw[x];
 				const float G0 = cr[0][k] + (cr[0][k + 1] - cr[0][k]) * wx;
 				float r, g, b;
-				if (nc == 3) { const float G1 = cr[1][k] + (cr[1][k + 1] - cr[1][k]) * wx, G2 = cr[2][k] + (cr[2][k + 1] - cr[2][k]) * wx;
+				if (vtc) { float f[3], o[3], v[3]; int lit = 0; for (int c = 0; c < nc; c++) { f[c] = cur[c][i]; o[c] = shown[c][i]; lit |= f[c] > 0; }
+					vt_colour (f, o, lit ? vt_share (cur, x, yy, Wd, H) : 0.0f, v);
+					if (nc == 3) { const float G1 = cr[1][k] + (cr[1][k + 1] - cr[1][k]) * wx, G2 = cr[2][k] + (cr[2][k + 1] - cr[2][k]) * wx;
+						r = v[0] + t0 * G0; g = v[1] + t1 * G1; b = v[2] + t2 * G2; }
+					else { r = v[0] + t0 * G0; g = v[1] + t1 * G0; b = v[2] + t2 * G0; } }
+				else if (nc == 3) { const float G1 = cr[1][k] + (cr[1][k + 1] - cr[1][k]) * wx, G2 = cr[2][k] + (cr[2][k + 1] - cr[2][k]) * wx;
 					r = s0[i] + t0 * G0; g = s1[i] + t1 * G1; b = s2[i] + t2 * G2; }
 				else { const float o = s0[i]; r = o + t0 * G0; g = o + t1 * G0; b = o + t2 * G0; }
 				if (r < thr && g < thr && b < thr) { fo[i] = painted ? bgimg[i] : 0; continue; }
@@ -4044,6 +4139,7 @@ static bool game_open (const char *gpath, const char *sys, int first)
 	rate_set = 1;
 	pic_setup ();
 	for (int k = 0; k < GTAB + 1; k++) gtab[k] = (float) exp (-(double) k * GX / GTAB);
+	vt_colour_make ();
 	for (int z = 0; z < 128; z++) zk_tab[z] = pow (TUBE_LIGHT[z], 1 / 2.2);
 	run_t = 0; run_frac = 0; load_f = -1; while (nh) frame_pop (); aq_r = aq_w = 0; aq_frac = 0;
 	if (have_prev) { if (spare.L) { free (prevf.L); free (prevf.keys); } else spare = prevf; have_prev = 0; }   /* (the last game's last frame

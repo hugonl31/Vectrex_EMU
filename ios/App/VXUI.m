@@ -703,13 +703,13 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	_size.titleLabel.font = VF (12, UIFontWeightBold); _size.contentEdgeInsets = UIEdgeInsetsMake (0, 10, 0, 10); _size.accessibilityLabel = @"Games per row";
 	[_size setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal]; [_size setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
 	UIStackView *srow = [[UIStackView alloc] initWithArrangedSubviews:@[ _search, _size ]]; srow.spacing = 8;
-	_chips = [UIStackView new]; _chips.spacing = 6;
+	_chips = [UIStackView new]; _chips.spacing = 6; _chips.distribution = UIStackViewDistributionFillProportionally;   /* (the filters across the width, no scrolling - as the Android app's; the owner, 2026-11-26) */
 	for (NSString *f in @[ @"All", @"Recent", @"Games", @"UVMC2", @"PiTrex", @"Tests" ]) {
 		UIButton *b = VB (f, nil, NO, ^{ [ws pick:f]; }); UIButtonConfiguration *c = b.configuration; c.background.cornerRadius = 16;
-		c.contentInsets = NSDirectionalEdgeInsetsMake (6, 12, 6, 12); b.configuration = c; [_chips addArrangedSubview:b]; }
-	UIScrollView *cs = [UIScrollView new]; cs.showsHorizontalScrollIndicator = NO; [cs addSubview:_chips]; _chips.translatesAutoresizingMaskIntoConstraints = NO;
-	[NSLayoutConstraint activateConstraints:@[ [_chips.leadingAnchor constraintEqualToAnchor:cs.contentLayoutGuide.leadingAnchor], [_chips.trailingAnchor constraintEqualToAnchor:cs.contentLayoutGuide.trailingAnchor],
-		[_chips.topAnchor constraintEqualToAnchor:cs.contentLayoutGuide.topAnchor], [_chips.bottomAnchor constraintEqualToAnchor:cs.contentLayoutGuide.bottomAnchor], [_chips.heightAnchor constraintEqualToAnchor:cs.frameLayoutGuide.heightAnchor] ]];
+		c.contentInsets = NSDirectionalEdgeInsetsMake (6, 4, 6, 4); c.titleLineBreakMode = NSLineBreakByClipping;
+		c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (14, UIFontWeightSemibold); return m; };
+		b.configuration = c; [_chips addArrangedSubview:b]; }
+	UIView *cs = _chips;
 	_look = [[UISegmentedControl alloc] initWithItems:@[ @"Cartridges", @"Boxes", @"Overlays" ]];
 	_look.selectedSegmentIndex = [[VXLibrary look] isEqualToString:@"boxes"] ? 1 : [[VXLibrary look] isEqualToString:@"overlays"] ? 2 : 0;
 	_look.selectedSegmentTintColor = VX_SEL; [_look setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];

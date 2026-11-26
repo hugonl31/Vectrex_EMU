@@ -71,12 +71,15 @@ final class Library extends LinearLayout implements Screens.Closing {
 		head.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (8) + m.insTop, (int) m.dp (16) + m.insR, (int) m.dp (10));
 		LinearLayout row = new LinearLayout (m); row.setGravity (Gravity.CENTER_VERTICAL);
 		row.addView (m.text ("Games", 24, Main.HI, true), new LayoutParams (0, -2, 1));
+		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (13); get.setContentDescription ("Get games & extras"); get.setOnClickListener (v -> { m.pop (); Getter.show (m); });   /* (the download page: top right, as the iOS app's - the owner, 2026-11-26) */
+			LayoutParams gp = new LayoutParams (-2, (int) m.dp (44)); gp.rightMargin = (int) m.dp (8); row.addView (get, gp); }
 		TextView close = Screens.button (m, "✕", false); close.setContentDescription ("Close"); close.setOnClickListener (v -> m.pop ());
 		row.addView (close, new LayoutParams ((int) m.dp (48), (int) m.dp (44))); head.addView (row);
-		LinearLayout lk = new LinearLayout (m); String[] ln = { "Cartridges", "Boxes", "Overlays" }, lv = { "carts", "boxes", "overlays" };
+		LinearLayout lk = new LinearLayout (m); lk.setBackground (Main.round (Main.BODY, 0, m.dp (10))); lk.setPadding ((int) m.dp (3), (int) m.dp (3), (int) m.dp (3), (int) m.dp (3));   /* (one segmented control, as the iOS app's) */
+		String[] ln = { "Cartridges", "Boxes", "Overlays" }, lv = { "carts", "boxes", "overlays" };
 		for (int i = 0; i < 3; i++) { final String v = lv[i]; TextView b = Screens.button (m, ln[i], v.equals (look ())); b.setTextSize (13); looks[i] = b;
 			b.setOnClickListener (x -> { m.prefs.edit ().putString ("lib.look", v).apply (); Main.log ("library look " + v); paintLooks (); cache.evictAll (); reload (); });
-			LayoutParams lp = new LayoutParams (0, (int) m.dp (38), 1); lp.rightMargin = (int) m.dp (i < 2 ? 6 : 0); lk.addView (b, lp); }
+			lk.addView (b, new LayoutParams (0, (int) m.dp (34), 1)); }
 		LayoutParams lkp = new LayoutParams (-1, -2); lkp.topMargin = (int) m.dp (8); head.addView (lk, lkp);
 		LinearLayout srow = new LinearLayout (m);
 		search = new EditText (m); search.setHint ("Search " + all.size () + " games"); search.setSingleLine (true); search.setTextColor (Main.FG); search.setHintTextColor (Main.DIM); search.setTextSize (15);
@@ -85,13 +88,13 @@ final class Library extends LinearLayout implements Screens.Closing {
 		srow.addView (search, new LayoutParams (0, (int) m.dp (40), 1));
 		size = Screens.button (m, "", false); size.setTextSize (12); size.setOnClickListener (v -> sizeMenu ());
 		LayoutParams sp = new LayoutParams (-2, (int) m.dp (40)); sp.leftMargin = (int) m.dp (8); srow.addView (size, sp);
-		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (12); get.setOnClickListener (v -> { m.pop (); Getter.show (m); });   /* (the download page: here too) */
-			LayoutParams gp = new LayoutParams (-2, (int) m.dp (40)); gp.leftMargin = (int) m.dp (8); srow.addView (get, gp); }
 		LayoutParams srp = new LayoutParams (-1, -2); srp.topMargin = (int) m.dp (8); head.addView (srow, srp);
-		HorizontalScrollView hs = new HorizontalScrollView (m); hs.setHorizontalScrollBarEnabled (false); chips = new LinearLayout (m);
-		for (String f : new String[] { "All", "Recent", "Games", "UVMC2", "PiTrex", "Tests" }) { TextView c = Screens.button (m, f, false); c.setTextSize (13); c.setTag (f);
-			c.setOnClickListener (v -> { filter = f; apply (); }); LayoutParams cp = new LayoutParams (-2, (int) m.dp (34)); cp.rightMargin = (int) m.dp (6); chips.addView (c, cp); }
-		hs.addView (chips); LayoutParams hp = new LayoutParams (-1, -2); hp.topMargin = (int) m.dp (8); head.addView (hs, hp);
+		chips = new LinearLayout (m);   /* (the filters across the width, no scrolling - as the iOS app's; the owner, 2026-11-26) */
+		final String[] fs = { "All", "Recent", "Games", "UVMC2", "PiTrex", "Tests" };
+		for (int i = 0; i < fs.length; i++) { final String f = fs[i]; TextView c = Screens.button (m, f, false); c.setTextSize (13); c.setTag (f); c.setSingleLine (true);
+			c.setPadding ((int) m.dp (6), 0, (int) m.dp (6), 0); c.setOnClickListener (v -> { filter = f; apply (); });
+			LayoutParams cp = new LayoutParams (-2, (int) m.dp (34), 1); if (i < fs.length - 1) cp.rightMargin = (int) m.dp (6); chips.addView (c, cp); }
+		LayoutParams hp = new LayoutParams (-1, -2); hp.topMargin = (int) m.dp (8); head.addView (chips, hp);
 		addView (head, new LayoutParams (-1, -2));
 		grid = new GridView (m); grid.setBackgroundColor (Main.BG); grid.setVerticalSpacing ((int) m.dp (16)); grid.setHorizontalSpacing ((int) m.dp (12));
 		grid.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (16), (int) m.dp (16) + m.insR, (int) m.dp (24) + m.insBot); grid.setClipToPadding (false);
@@ -167,7 +170,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 		performHapticFeedback (android.view.HapticFeedbackConstants.CLOCK_TICK);
 	}
 	int current () { String g = VX.game (); for (int i = 0; i < shown.size (); i++) if (shown.get (i).path.equals (g)) return i; return -1; }
-	void paintLooks () { String[] lv = { "carts", "boxes", "overlays" }; for (int i = 0; i < 3; i++) { boolean on = lv[i].equals (look ()); looks[i].setTextColor (on ? Main.HI2 : Main.FG2); looks[i].setBackground (Screens.states (m, on ? Main.SEL : Main.BODY, Main.EDGE2, m.dp (10))); } }
+	void paintLooks () { String[] lv = { "carts", "boxes", "overlays" }; for (int i = 0; i < 3; i++) { boolean on = lv[i].equals (look ()); looks[i].setTextColor (on ? Main.HI2 : Main.FG2); looks[i].setBackground (on ? Main.round (Main.SEL, 0, m.dp (8)) : null); } }
 	void sizeLabel () { int k = perRow (); size.setText (k > 0 ? k + " PER ROW ▾" : "TITLES ONLY ▾"); }
 	void sizeMenu ()
 	{

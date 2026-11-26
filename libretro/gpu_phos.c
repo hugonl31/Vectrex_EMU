@@ -50,15 +50,11 @@ float vx_trail_mul = 1.0f;                     /* (the own apps: the trail for t
 float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture
                                                   lifted towards the peak, 2 the measured Vectrex - dots with the slow beam round them, the
                                                   brightest lines a little above white; below the knee as SDR) */
-int vx_phone_trail = 0;                        /* (the own phone / tablet apps set it: the afterglow there. The owner matched his iPhone and iPad to the
-                                                   PC's Vectrex look by eye, 2026-11-22 (it held in both looks, HDR on and off): the measured afterglow with
-                                                   its bright start 1.5 x as long and its faint end twice as long at 0.75 of its level - a phone shows 120
-                                                   pictures a second, each ghost along its whole fade, where the PC shows it fresh. The PC and RetroArch:
-                                                   the measured one, vecrender.py PHOS_A) */
-#define PHOS_A1 0.1404f
-#define PHOS_T1 (vx_phone_trail ? 0.0454f * 1.5f : 0.0454f)
-#define PHOS_A2 (vx_phone_trail ? 0.0582f * 0.75f : 0.0582f)
-#define PHOS_T2 (vx_phone_trail ? 0.350f * 2.0f : 0.350f)
+#define PHOS_A1 0.1404f                       /* (the afterglow's two parts, measured - vecrender.py PHOS_A; every system the same since 2026-11-26:
+                                                  the phone apps' own longer shape (vx_phone_trail) gone - the owner: the PC's afterglow everywhere) */
+#define PHOS_T1 0.0454f
+#define PHOS_A2 0.0582f
+#define PHOS_T2 0.350f
 float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 0.5 Medium - halfway, look_gain / look_width;
                                                    1 Bright, for a small screen whose thin lines
                                                    give little light (the owner, 2026-11-22): the tube's light lifted and the beam 1.3 x wider
@@ -651,7 +647,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	glBindVertexArray_ (g_vao);
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
 	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
-	  /* (the afterglow's two parts - vecrender.py PHOS_A; the phone apps' own shape: vx_phone_trail) */
+	  /* (the afterglow's two parts - vecrender.py PHOS_A, on every system) */
 	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk, ta1 = PHOS_T1 * opt_trail, ta2 = PHOS_T2 * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);

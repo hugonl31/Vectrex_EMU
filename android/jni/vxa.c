@@ -62,7 +62,8 @@ static char vxa_odefs[4096];                                    /* (this device'
 struct vxa_ov { const char *value, *label; }; struct vxa_oc { const char *key, *desc, *info; };
 struct vxa_od { const char *key, *desc, *desc_categorized, *info, *info_categorized, *category_key; struct vxa_ov values[128]; const char *default_value; };
 struct vxa_o2 { struct vxa_oc *categories; struct vxa_od *definitions; };
-static int vxa_rate_chosen;   /* (the screen rate picked by the player this run - kept even when it is the default: the 120 Hz check leaves it) */
+static int vxa_rate_chosen; static char vxa_note[160];   /* (vxa_note: a line for the player, shown by the Java side - VX.note) */
+static int vxa_rate_chosen_dummy;   /* (the screen rate picked by the player this run - kept even when it is the default: the 120 Hz check leaves it) */
 static int vxa_opt_find (const char *k) { for (int i = 0; i < vxa_nopt; i++) if (!strcmp (vxa_opt[i].key, k)) return i; return -1; }
 static void vxa_opt_save (void)
 {
@@ -665,7 +666,8 @@ static void *vxa_main (void *u)
 		  else if (tn - w0 >= 1.0) { const double dt = tn - w0; const long dr = vxa_runs_all - r0, dp = vxa_pres_all - p0; w0 = tn; r0 = vxa_runs_all; p0 = vxa_pres_all;
 			if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && !vxa_holding) { extern int vx_net_playing_now (void); char sv[160];
 				pthread_mutex_lock (&vxa_omx); const int ri = vxa_opt_find ("vectrex_emu_rate");
-				if (ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv) && !vx_net_playing_now ()) {
+				if (ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vx_net_playing_now ()) {   /* (a chosen 120 too: never a frozen picture - the owner, 2026-11-26; the setting itself stays) */
+					if (vxa_rate_chosen || vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv)) snprintf (vxa_note, sizeof vxa_note, "%s", "120 Hz too heavy now - 60 Hz");
 					snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
 					vlog ("the GPU behind at 120 Hz (%ld of %ld runs got a refresh in %.1f s): 60 Hz for this session", dp, dr, dt); }
 				pthread_mutex_unlock (&vxa_omx); } } }
@@ -938,6 +940,7 @@ JNIEXPORT void JNICALL JF(oset) (JNIEnv *e, jclass c, jint i, jstring v)
 		else pthread_mutex_unlock (&vxa_omx); }
 	JREL (s, v);
 }
+JNIEXPORT jstring JNICALL JF(note) (JNIEnv *e, jclass c) { (void) c; char n[160]; pthread_mutex_lock (&vxa_omx); snprintf (n, sizeof n, "%s", vxa_note); vxa_note[0] = 0; pthread_mutex_unlock (&vxa_omx); return js (e, n); }   /* (a line for the player, once) */
 JNIEXPORT jint JNICALL JF(ncats) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_ncat; }
 JNIEXPORT jstring JNICALL JF(cat) (JNIEnv *e, jclass c, jint i, jint what) { (void) c; if (i < 0 || i >= vxa_ncat) return js (e, ""); return js (e, what == 0 ? vxa_cat[i].key : what == 1 ? vxa_cat[i].desc : vxa_cat[i].info); }
 /* (actions) */

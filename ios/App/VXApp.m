@@ -41,7 +41,7 @@ static void vxa_net_watch (void)
 }
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding, vxa_nodraw;
 static int vxa_fullbright (void); static void vxa_bright (int want);   /* (Max brightness: by vxa_hold) */
-static int vxa_rate_slow;                                 /* (120 Hz the GPU could not hold: 60 for the session) */
+static int vxa_rate_slow; static double vxa_gpu_pct;   /* (vxa_gpu_pct: the GPU busy on ours in the last 5 s, %) */                                 /* (120 Hz the GPU could not hold: 60 for the session) */
 static void vxa_net_tick (void);                  /* (online play: below) */
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 void vxa_hdr_update (void); float vxa_hdr_headroom (void);
@@ -1296,7 +1296,8 @@ static void vxa_glass (double t)
 	  if (now < grace) { w0 = now; r0 = vxa_runs_all; p0 = vxa_presents; }
 	  else if (now - w0 >= 1.0) { const double dt = now - w0; const long dr = vxa_runs_all - r0, dp = vxa_presents - p0; w0 = now; r0 = vxa_runs_all; p0 = vxa_presents;
 		const int ri = vxa_opt_find ("vectrex_emu_rate");
-		if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && ![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] && !vxa_net_playing ()) {
+		if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vxa_net_playing ()) {   /* (a chosen 120 too: never a frozen picture - the owner, 2026-11-26; the setting itself stays) */
+			if ([NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"]) vxa_toast (@"120 Hz too heavy now - 60 Hz", 3);
 			snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
 			if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
 			vlog ("the GPU behind at 120 Hz (%ld of %ld runs shown in %.1f s, heat %ld): 60 Hz for this session", dp, dr, dt, (long) NSProcessInfo.processInfo.thermalState); } } }
@@ -1325,6 +1326,7 @@ static void vxa_glass (double t)
 		  bs = vxa_gt_busy; bm = vxa_gt_bmax; ls = vxa_gt_lat; lm = vxa_gt_lmax; gn = vxa_gt_n; gl = vxa_gt_lost; ms = vxa_mt_sum; mm = vxa_mt_max; mn = vxa_mt_n;
 		  vxa_gt_busy = vxa_gt_bmax = vxa_gt_lat = vxa_gt_lmax = vxa_mt_sum = vxa_mt_max = 0; vxa_gt_n = vxa_gt_lost = vxa_mt_n = 0;
 		  pthread_mutex_unlock (&vxa_gq_mx);
+		  vxa_gpu_pct = gn && t > 0 ? bs * 100 / t : 0;
 		  if (gn || gl || mn) vlog ("GPU a picture (%ld timed, %ld lost): busy %.2f ms mean, %.2f most - the GPU on ours %.0f %% of the time; flush to done %.2f ms mean, %.2f most; Metal's copy to the screen %.2f ms mean, %.2f most; shown %d refresh%s after its run",
 			gn, gl, gn ? bs * 1000 / gn : 0.0, bm * 1000, t > 0 ? bs * 100 / t : 0.0, gn ? ls * 1000 / gn : 0.0, lm * 1000, mn ? ms * 1000 / mn : 0.0, mm * 1000, vxa_deep ? 2 : 1, vxa_deep ? "es" : ""); }
 		_notReady = 0; _lateShown = 0;
@@ -1339,6 +1341,14 @@ static void vxa_glass (double t)
 			while (k < 40 && fgets (ln, sizeof ln, lf)) { size_t n = strlen (ln); if (!n || ln[n - 1] != '\n') break; ln[n - 1] = 0; off = ftell (lf);
 				if (strstr (ln, "Optimize") || strstr (ln, "GPU") || strstr (ln, "measur") || strstr (ln, "effect")) { vlog ("core: %s", ln); k++; } }
 			fclose (lf); } }
+		{ /* (warm and the GPU near its limit at 120 Hz: 60 before the picture stalls - the owner's iPhone ran 120 Hz at 66-70 % of the
+		   *  GPU cool; warm (heat 1) iOS slowed the GPU, 85-93 %, and then it froze; the Nova with a fan held 120. The default only (a
+		   *  rate the player chose stays: the second's check keeps that one from freezing), not online, not saved) */
+		  const long heat = (long) NSProcessInfo.processInfo.thermalState; const int ri = vxa_opt_find ("vectrex_emu_rate");
+		  if (heat >= 1 && vxa_gpu_pct >= 85 && ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && ![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] && !vxa_net_playing ()) {
+			snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
+			if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
+			vlog ("warm (heat %ld) and the GPU at %.0f %% at 120 Hz: 60 Hz for this session", heat, vxa_gpu_pct); } }
 		{ /* (120 Hz the GPU cannot hold: after 20-30 s at full load the iPhone slows its GPU and the pictures come irregularly - 40-60
 		   *  a second, a stutter (the owner's iPhone, builds 94-137). A steady 60 looks smooth: two periods behind (fewer than 80 %
 		   *  of the runs shown) - 60 Hz for this session; the default only (a rate the player chose stays), not online, not saved) */

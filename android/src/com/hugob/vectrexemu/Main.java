@@ -351,6 +351,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void trailTick ()
 	{
 		h.removeCallbacks (trailR);
+		{ String n = VX.note (); if (n != null && !n.isEmpty ()) toast (n, 3); }   /* (the emulator's line for the player: 120 Hz too heavy) */
 		float b = 0.5f;
 		try { b = android.provider.Settings.System.getInt (getContentResolver (), android.provider.Settings.System.SCREEN_BRIGHTNESS, 128) / 255f; } catch (Throwable t) { }
 		b = Math.max (0f, Math.min (1f, b));

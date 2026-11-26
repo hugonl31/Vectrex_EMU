@@ -873,8 +873,13 @@ static void read_options (void)
 	 *  the trail's length and strength, smooth bends) act on the CPU's picture only; an EmuVR configuration with glow "on" from the CPU days
 	 *  put the core's own bloom over the PC's, its "long" trail made it 1.7x as long) */
 	if (!opt_is ("vectrex_emu_renderer", "CPU only")) {
-		opt_glow = 0; raw_glow = 0; opt_sigma = 0.55; opt_bright = 1.0f; opt_after = 1; opt_trail = 0.6f;
-		opt_trail_k = 1.5f; opt_sbend = 0; raw_sbend = 0; }
+		opt_glow = 0; raw_glow = 0; opt_sigma = 0.55; opt_bright = 1.0f; opt_sbend = 0; raw_sbend = 0;
+#ifdef VX_EMUVR
+		opt_after = 1; opt_trail = 0.6f; opt_trail_k = 1.5f;   /* (EmuVR's afterglow keys are the CPU picture's) */
+#endif
+		/* (RetroArch and the apps: Afterglow and Afterglow brightness are the GPU picture's own settings, as the desktop's -
+		 *  forced here they changed nothing on screen from 2026-11-25 to 2026-11-26; their defaults are the values above) */
+	}
 	opt_trail_k0 = opt_trail_k;                 /* (EmuVR: one trail brightness; the RetroArch flavour reads its own below) */
 	{ int was = opt_overlay_seen; opt_overlay_seen = opt_overlay; if (was != opt_overlay) ov_on = opt_overlay; }   /* (only when the option itself changed:
 	                                              a change of another option keeps the button's choice) */

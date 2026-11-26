@@ -6,6 +6,8 @@
 package com.hugob.vectrexemu;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.ApplicationExitInfo;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -98,6 +100,54 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 
 	float dp (float v) { return TypedValue.applyDimension (TypedValue.COMPLEX_UNIT_DIP, v, getResources ().getDisplayMetrics ()); }
 	static void log (String s) { try { VX.log (s); } catch (Throwable t) { } }
+	static boolean crashHook;
+
+	/* (2026-11-26, the owner's Nova crashed once switching games and its log just stopped: Android 11+ keeps why the app last
+	 *  ended - a crash, a native crash with its tombstone, an ANR, killed for memory... Each start logs the reasons not seen
+	 *  before (the log goes to the Linode); a native crash's or an ANR's trace as its readable strings - the signal, the abort
+	 *  message, the backtrace's libraries and functions) */
+	void lastExit ()
+	{
+		if (Build.VERSION.SDK_INT < 30) return;
+		try {
+			ActivityManager am = (ActivityManager) getSystemService (ACTIVITY_SERVICE);
+			List<ApplicationExitInfo> l = am.getHistoricalProcessExitReasons (null, 0, 5);
+			long seen = prefs.getLong ("app.exitseen", 0), newest = seen;
+			final String[] R = { "unknown", "exit (itself)", "signalled", "low memory", "CRASH (Java)", "CRASH (native)", "ANR (not responding)",
+				"start failed", "permission changed", "too many resources", "user asked", "user stopped", "a dependency died", "other", "frozen",
+				"package state changed", "package updated" };
+			for (int k = l.size () - 1; k >= 0; k--) {
+				ApplicationExitInfo e = l.get (k);
+				if (e.getTimestamp () <= seen) continue;
+				newest = Math.max (newest, e.getTimestamp ());
+				final int r = e.getReason ();
+				log ("last exit: " + (r >= 0 && r < R.length ? R[r] : "reason " + r) + ", status " + e.getStatus () + ", "
+					+ new java.text.SimpleDateFormat ("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.ROOT).format (new java.util.Date (e.getTimestamp ()))
+					+ ", " + (e.getDescription () != null ? e.getDescription () : "") + ", memory " + e.getPss () / 1024 + " MB (pss), " + e.getRss () / 1024 + " MB (rss)");
+				if (r == ApplicationExitInfo.REASON_CRASH_NATIVE || r == ApplicationExitInfo.REASON_ANR) {
+					try (java.io.InputStream in = e.getTraceInputStream ()) {
+						if (in == null) { log ("last exit: no trace kept"); continue; }
+						java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream (); byte[] buf = new byte[65536]; int n;
+						while ((n = in.read (buf)) > 0 && bo.size () < 4 << 20) bo.write (buf, 0, n);
+						final byte[] d = bo.toByteArray ();
+						if (r == ApplicationExitInfo.REASON_ANR) {        /* (an ANR's trace is text: its main thread) */
+							String t = new String (d, "UTF-8"); int i = t.indexOf ("\"main\""); t = t.substring (Math.max (0, i), Math.min (t.length (), Math.max (0, i) + 6000));
+							for (String s : t.split ("\n")) if (!s.trim ().isEmpty ()) log ("last exit trace: " + s.trim ());
+						} else {                                            /* (a native crash: the tombstone, a protobuf - its strings, in order) */
+							StringBuilder sb = new StringBuilder (); int lines = 0; java.util.HashSet<String> once = new java.util.HashSet<> ();
+							for (int i = 0; i <= d.length && lines < 160; i++) {
+								final int c = i < d.length ? d[i] & 255 : 0;
+								if (c >= 32 && c < 127) { sb.append ((char) c); continue; }
+								if (sb.length () >= 6 && once.add (sb.toString ())) { log ("last exit trace: " + sb); lines++; }
+								sb.setLength (0);
+							}
+						}
+					} catch (Throwable t) { log ("last exit: trace not read (" + t + ")"); }
+				}
+			}
+			prefs.edit ().putLong ("app.exitseen", newest).apply ();
+		} catch (Throwable t) { log ("last exit: not read (" + t + ")"); }
+	}
 
 	@Override protected void onCreate (Bundle b)
 	{
@@ -105,6 +155,12 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (!palSet) { palSet = true; palette (prefs.getInt ("app.palgreen", 0) == 1); }
 		files = getFilesDir (); VX.logStart (files.getAbsolutePath ());
 		log ("app start: Vectrex_EMU " + version () + " on " + Build.MANUFACTURER + " " + Build.MODEL + ", Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")");
+		lastExit ();                                            /* (how the app ended last time - a crash with its trace) */
+		if (!crashHook) { crashHook = true; final Thread.UncaughtExceptionHandler old = Thread.getDefaultUncaughtExceptionHandler ();
+			Thread.setDefaultUncaughtExceptionHandler ((th, ex) -> {   /* (a Java crash: its stack into the log first - sent at the next start) */
+				try { java.io.StringWriter sw = new java.io.StringWriter (); ex.printStackTrace (new java.io.PrintWriter (sw));
+					log ("CRASH (Java) on thread " + th.getName () + ": " + sw.toString ().replace ("\n", " | ")); } catch (Throwable t) { }
+				if (old != null) old.uncaughtException (th, ex); }); }
 		Window w = getWindow (); w.addFlags (WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 		{ WindowManager.LayoutParams a = w.getAttributes (); a.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= 30 ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES; w.setAttributes (a); }   /* (the whole screen: the picture placed clear of a camera hole by the safe insets) */
 		w.setStatusBarColor (Color.BLACK); w.setNavigationBarColor (Color.BLACK);

@@ -456,7 +456,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_geometry", "Tube geometry (the owner's measured tube); on|off" },
 	{ "vectrex_emu_unit", "Vectrex unit (the owner's measured one: as his console draws); owner's Vectrex (measured)|ideal" },
 	{ "vectrex_emu_geometry_k", "Tube geometry strength (x1: the owner's Vectrex, x0: ideal); x1|x0|x0.25|x0.5|x0.75|x1.25|x1.5|x1.75|x2" },
-	{ "vectrex_emu_glass_curve", "Glass curvature (with Tube geometry; 1: as on a Vectrex, 0: flat, even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
+	{ "vectrex_emu_glass_curve", "Glass curvature (with Tube geometry - 1: as on a Vectrex, 0: flat, even squares); 1.00|0.90|0.80|0.70|0.60|0.50|0.40|0.30|0.20|0.10|0.00" },
 	{ "vectrex_emu_smooth_bends", "Smooth curves at bends (CPU picture - fine detail, off: VR hardly shows it); off|on" },
 	{ "vectrex_emu_power_fx", "Switching on / off (tube warm-up, switch-off zap); on|off" },
 	{ "vectrex_emu_skip_intro", "Skip the Vectrex intro (from the next game start - the cartridge starts straight away); off|on" },   /* (2026-11-26, the owner:
@@ -466,7 +466,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_vr_bright", "VR brightness (the whole picture brighter or dimmer - 1x is the PC's look); 1.0x|0.5x|0.75x|1.25x|1.5x|1.75x|2.0x|2.5x|3.0x" },
 	{ "vectrex_emu_brightness", "Brightness (CPU picture - VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (CPU picture - VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
-	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white - bright vectors on a dim screen; Vectrex: as a real Vectrex - dots and slow lines stand out, wants a bright screen); bright|vectrex" },
+	{ "vectrex_emu_look", "Look (Medium: between the two / Bright: all lines pushed up to white, bright vectors on a dim screen / Vectrex: as a real Vectrex, dots and slow lines stand out); medium|bright|vectrex" },
 	{ "vectrex_emu_corner_dots", "Corner dots (CPU picture - the beam resting); on|off" },
 	{ "vectrex_emu_dwell", "Dwell spots inside strokes (CPU picture); on|off" },
 	{ "vectrex_emu_speed_bright", "Fast sweeps fainter (CPU picture); on|off" },
@@ -768,7 +768,8 @@ static void read_options (void)
 	           : opt_is ("vectrex_emu_imager", "right eye") ? 4 : 2;   /* (3 / 4: one eye's pictures only - the other half turn left out) */
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
-	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_look", "vectrex") ? 0.0f : 1.0f; }   /* (the EmuVR table's Look, bright the default - the owner, 2026-11-25: also the GPU picture's Bright) */
+	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_look", "vectrex") ? 0.0f : opt_is ("vectrex_emu_look", "medium") ? 0.5f : 1.0f; }   /* (the EmuVR table's Look: Medium the default since
+	                                              2026-11-26 (bright before) - the GPU picture's look strength, 0 Vectrex, 0.5 Medium, 1 Bright, as the desktop core's Tube > Look) */
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
 	{ const char *ce = getenv ("VECTREX_CONSOLE");   /* (route A: the mod names the console that starts this RetroArch; the option overrides) */
 	  opt_cad = opt_is ("vectrex_emu_console", "owner's CAD model") ? 1 : opt_is ("vectrex_emu_console", "classic") ? 0 : (ce && !strcmp (ce, "cad")); }

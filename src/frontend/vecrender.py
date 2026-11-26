@@ -600,7 +600,7 @@ BEAM_HALO_W, BEAM_HALO_K, BEAM_HALO_C = 1.6, 0.014, 18.0  # FWHM (game px), brig
 # isolated dots. Per look (0 Bright, 1 Vectrex: the lines' light differs), each matched to the photos' dot sizes in this
 # renderer (F12 snapshots at the window's size: within 0.12 unit on average in Bright, 0.14 in Vectrex)
 DOT_A, DOT_T = 0.209, 52.0
-DOT_K, DOT_W, REST_HALO, REST_HALO_W, REST_HALO_P = (1.2, 3.0), (1.4, 1.6), (0.06, 0.12), (0.9, 0.9), 0.8
+DOT_K, DOT_W, REST_HALO, REST_HALO_W, REST_HALO_P = (1.2, 3.0), (1.4, 1.6), (0.3, 0.6), (2.4, 2.4), 0.8   # (REST_HALO x 5, W 0.9 -> 2.4: the owner, 2026-11-26 - more shine round the brightest and corner dots, as on his tube)
 if os.environ.get('VX_RHALO'):       # (a test: VX_RHALO=strength,width[,power] - the resting spots' glow, as REST_HALO[0] / REST_HALO_W)
     _h = [float(v) for v in os.environ['VX_RHALO'].split(',')]
     REST_HALO, REST_HALO_W = (_h[0], _h[0] * 2), (_h[1], _h[1])
@@ -978,7 +978,7 @@ class _VxbOut:
 _vxb_out = _VxbOut()
 BT_HALO_F, BT_HALO_S = 0.008, 2.5           # (the glass: this share of every piece's light spread wide - sigma, units: a flat, wide veil.
                                             #  Vectorblade's logo: 0.4-0.7 % of a line's level 2 units from it, and no band close to the line)
-TINT_GLOW = False                         # (the vectors' colour by their profile, a white core with a blue glow - SAT_SHADER tm; on test)
+TINT_GLOW = True                          # (the vectors' colour by their profile, a white core with a blue glow - SAT_SHADER tm; the default since 2026-11-26)
 BT_GLOW = (0.62, 0.80, 1.0)              # (the glow's tint against the core's - the owner, 2026-11-22: next to the tube the vectors looked greenish;
                                         #  the faint light - the lines' skirts, the glass's glow - bluer, the bright core the tube's white)
 LIB_ART = 0.8                           # (the library's pictures at 80 % brightness - the owner: 70 % on 2026-11-22 (the eyes stay used to the vectors' level), 80 % on 2026-11-23)

@@ -62,12 +62,13 @@ static char vxa_odefs[4096];                                    /* (this device'
 struct vxa_ov { const char *value, *label; }; struct vxa_oc { const char *key, *desc, *info; };
 struct vxa_od { const char *key, *desc, *desc_categorized, *info, *info_categorized, *category_key; struct vxa_ov values[128]; const char *default_value; };
 struct vxa_o2 { struct vxa_oc *categories; struct vxa_od *definitions; };
+static int vxa_rate_chosen;   /* (the screen rate picked by the player this run - kept even when it is the default: the 120 Hz check leaves it) */
 static int vxa_opt_find (const char *k) { for (int i = 0; i < vxa_nopt; i++) if (!strcmp (vxa_opt[i].key, k)) return i; return -1; }
 static void vxa_opt_save (void)
 {
 	char p[1100], t[1110]; snprintf (p, sizeof p, "%s/options.txt", vxa_files); snprintf (t, sizeof t, "%s.new", p);
 	FILE *f = fopen (t, "w"); if (!f) return;
-	for (int i = 0; i < vxa_nopt; i++) if (strcmp (vxa_opt[i].val, vxa_opt[i].def)) fprintf (f, "%s=%s\n", vxa_opt[i].key, vxa_opt[i].val);
+	for (int i = 0; i < vxa_nopt; i++) if (strcmp (vxa_opt[i].val, vxa_opt[i].def) || (vxa_rate_chosen && !strcmp (vxa_opt[i].key, "vectrex_emu_rate"))) fprintf (f, "%s=%s\n", vxa_opt[i].key, vxa_opt[i].val);
 	fclose (f); rename (t, p);
 }
 static int vxa_saved_val (const char *key, char *out, size_t n)   /* (1: the user chose it - the file has it) */
@@ -658,8 +659,10 @@ static void *vxa_main (void *u)
 		{ /* (120 Hz the GPU cannot hold, checked each second - as the iOS app: a warm phone slows its GPU and the picture stood
 		   *  still for seconds while the game ran on (the owner's iPhone, build 218). Fewer than 60 % of a second's runs got a
 		   *  refresh: 60 Hz for this session at once - the default only, not online, not saved) */
-		  static double w0; static long r0, p0; const double tn = vxa_now ();
-		  if (tn - w0 >= 1.0) { const double dt = tn - w0; const long dr = vxa_runs_all - r0, dp = vxa_pres_all - p0; w0 = tn; r0 = vxa_runs_all; p0 = vxa_pres_all;
+		  static double w0, grace; static long r0, p0; static char lastv[16]; const double tn = vxa_now ();
+		  { const int rk = vxa_opt_find ("vectrex_emu_rate"); if (rk >= 0 && strcmp (vxa_opt[rk].val, lastv)) { snprintf (lastv, sizeof lastv, "%s", vxa_opt[rk].val); grace = tn + 3.0; } }   /* (a new rate: 3 s for the screen to change over - the Nova first second at 120 had 70 refreshes, the owner 2026-11-26) */
+		  if (tn < grace) { w0 = tn; r0 = vxa_runs_all; p0 = vxa_pres_all; }
+		  else if (tn - w0 >= 1.0) { const double dt = tn - w0; const long dr = vxa_runs_all - r0, dp = vxa_pres_all - p0; w0 = tn; r0 = vxa_runs_all; p0 = vxa_pres_all;
 			if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && !vxa_holding) { extern int vx_net_playing_now (void); char sv[160];
 				pthread_mutex_lock (&vxa_omx); const int ri = vxa_opt_find ("vectrex_emu_rate");
 				if (ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv) && !vx_net_playing_now ()) {
@@ -930,6 +933,7 @@ JNIEXPORT jint JNICALL JF(ofind) (JNIEnv *e, jclass c, jstring k) { (void) c; JS
 JNIEXPORT void JNICALL JF(oset) (JNIEnv *e, jclass c, jint i, jstring v)
 {
 	(void) c; JSTR (s, v); if (s && i >= 0 && i < vxa_nopt) { pthread_mutex_lock (&vxa_omx);
+		if (!strcmp (vxa_opt[i].key, "vectrex_emu_rate") && !vxa_rate_chosen) { vxa_rate_chosen = 1; if (!strcmp (vxa_opt[i].val, s)) vxa_opt_save (); }   /* (the player's own rate, the default too - the Nova's 120 was not kept as a choice, the owner 2026-11-26) */
 		if (strcmp (vxa_opt[i].val, s)) { snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", s); vxa_opt_save (); vxa_opt_dirty = 1; pthread_mutex_unlock (&vxa_omx); vlog ("setting %s = %s", vxa_opt[i].key, s); }
 		else pthread_mutex_unlock (&vxa_omx); }
 	JREL (s, v);

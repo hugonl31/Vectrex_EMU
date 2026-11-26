@@ -4347,9 +4347,7 @@ class GLBloomRenderer(GLRenderer):
             wt = tuple(a / c for a, c in zip(tk, t0)); wt = tuple(v / max(wt) for v in wt)   # (the screen's white, moved with the White balance)
             self.Uniform3f(self.u_sat['tcore'], *wt)
             self.Uniform3f(self.u_sat['thalo'], *(a * g * g * 2.0 for a, g in zip(t, BT_GLOW)))
-            _thr = (0.25, 0.9)                     # (extra wide; VX_TINT_THR=0.15,0.75 - the core's "blue glow 2.0x", normal width: a test)
-            if os.environ.get('VX_TINT_THR'): _thr = tuple(float(v) for v in os.environ['VX_TINT_THR'].split(','))[:2]
-            self.Uniform2f(self.u_sat['thr'], *_thr)
+            self.Uniform2f(self.u_sat['thr'], 0.25, 0.9)
         self._quad(tex)
         self.UseProgram(0)
 

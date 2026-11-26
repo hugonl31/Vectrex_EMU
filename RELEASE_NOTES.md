@@ -3,6 +3,23 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.9.1
+
+* A new vector colour on every system: each vector by its own light profile - a neutral white core and a blue glow where
+  its light falls off, twice as strong and extra wide - matched to Test Cartridge Rev. 4 on a real Vectrex. The brightest
+  lines and dots are now white (the old 12000 K colour held red down everywhere): about 1.9 x the light in the Full Grid.
+* More shine round the brightest dots and corner dots (the glow round a resting beam about 3.6 x as bright and 2.7 x as
+  wide), as on the tube; Config > Tube > Corner glow strength still sets it.
+* The beam's up / down difference as a real Vectrex has it, measured with the new Updown Test cart: no difference at half
+  speed, at full speed the beam comes down about 1.1 % short of where it went up, adding up over long runs, and the Y
+  integrator ends at its rail. The Full Grid Test's lower right and the Test Cartridge Rev. 4 grid's middle now look as on
+  the tube. The Vectrex unit's setting is now "Y down-speed limit" (the measured unit: 1.1 %).
+* RetroArch (and EmuVR): with run-ahead, long stray lines no longer appear (Vectrexians) and pictures keep all their lines
+  after each reload. Save states from older builds do not load in this one; joining a running online game needs the same
+  version on both sides.
+* PC: Controls > 3D Imager view (both eyes / left / right), under the ports and always shown.
+* New test cart (Tests): Updown Test - the beam up and down N times, eight pages, every page at 50 fps.
+
 ## v1.9.0
 
 * The Full Grid Test drawn whole: the owner's Vectrex's Y rate difference (up faster than down) now leaks away in a long run of

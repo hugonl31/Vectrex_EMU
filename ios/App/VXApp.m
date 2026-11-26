@@ -2082,7 +2082,7 @@ static void vxa_net_tick (void)
 	vxa_log_start (); vlog ("app start"); vxa_net_watch ();
 	{ NSString *td = [vxa_docs () stringByAppendingPathComponent:@"roms/Tests"];   /* (the Test Cart: the picture compared between platforms - Library > Tests) */
 	  [NSFileManager.defaultManager createDirectoryAtPath:td withIntermediateDirectories:YES attributes:nil error:nil]; vx_testcart_write ([td stringByAppendingPathComponent:@"Test Cart.bin"].fileSystemRepresentation); }
-	{ extern int vx_gprof; vx_gprof = 1; }   /* (TEST BUILD 222 ONLY - the owner's iPhone measured stage by stage, 2026-11-26) (the GPU diagnostic, 1: one picture in 30 timed, stage by stage, the log - off: it cost about 4 pictures a second at 120 Hz) */
+	{ extern int vx_gprof; vx_gprof = 0; }   /* (the GPU diagnostic, 1: one picture in 30 timed, stage by stage, the log - off: it cost about 4 pictures a second at 120 Hz) */
 	self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController = [VXGameVC new];
 	self.window.backgroundColor = UIColor.blackColor; [self.window makeKeyAndVisible]; return YES;
 }

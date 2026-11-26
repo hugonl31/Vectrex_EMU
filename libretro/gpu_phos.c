@@ -50,11 +50,17 @@ float vx_trail_mul = 1.0f;                     /* (the own apps: the trail for t
 float vx_hdr_lift = 0.0f;                      /* (HDR, the own iOS app: 0 the rests above white only (before 2026-11-20), 1 the whole picture
                                                   lifted towards the peak, 2 the measured Vectrex - dots with the slow beam round them, the
                                                   brightest lines a little above white; below the knee as SDR) */
-#define PHOS_A1 0.1404f                       /* (the afterglow's two parts, measured - vecrender.py PHOS_A; every system the same since 2026-11-26:
-                                                  the phone apps' own longer shape (vx_phone_trail) gone - the owner: the PC's afterglow everywhere) */
-#define PHOS_T1 0.0454f
-#define PHOS_A2 0.0582f
-#define PHOS_T2 0.350f
+int vx_phone_trail = 0;                        /* (the own phone / tablet apps set it: the afterglow there. The owner matched his iPhone and iPad to the
+                                                   PC's Vectrex look by eye, 2026-11-22: the measured afterglow with its bright start 1.5 x as long and
+                                                   its faint end twice as long at 0.75 of its level - a phone shows 120 pictures a second, each ghost along
+                                                   its whole fade, where the PC shows it fresh. Back on 2026-11-26 (the owner: the iPhone's afterglow too
+                                                   dim without it), by the look: that lift x1 in Vectrex, x0.8 in Medium, x0.7 in Bright. The PC and
+                                                   RetroArch: the measured one, vecrender.py PHOS_A) */
+#define PHOS_LIFT (vx_phone_trail ? (vx_bright >= 1.0f ? 0.7f : vx_bright > 0.0f ? 0.8f : 1.0f) : 0.0f)
+#define PHOS_A1 0.1404f
+#define PHOS_T1 (0.0454f * (1.0f + 0.5f * PHOS_LIFT))
+#define PHOS_A2 (0.0582f * (1.0f - 0.25f * PHOS_LIFT))
+#define PHOS_T2 (0.350f * (1.0f + 1.0f * PHOS_LIFT))
 float vx_bright = 0.0f;                        /* (the look: 0 Vectrex - the measured picture; 0.5 Medium - halfway, look_gain / look_width;
                                                    1 Bright, for a small screen whose thin lines
                                                    give little light (the owner, 2026-11-22): the tube's light lifted and the beam 1.3 x wider

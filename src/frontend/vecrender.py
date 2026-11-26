@@ -1987,14 +1987,24 @@ void main() {
 # shape left ended in dots (PHOS_ACAP)
 GLOW_COMMON = b"""
 uniform sampler2D oldp, newp;
-uniform float mul, acap, hold, dt;
+uniform float mul, acap, hold, dt, hp;
 uniform vec2 amp, tau;                                  // (the two parts: fast, slow)
 float lum(vec3 c) { return dot(c, vec3(0.3, 0.5, 0.2)); }
+// (hp - the beam on the phosphor: what is left of a light after a newer one took part of it, in the old light's own colour - the
+//  same light as channel by channel. Its values carry the vectors' colour by their profile (SAT_SHADER tm 1: a white core, a blue
+//  glow): a line's white core less the next copy's blue glow beside it left red and green only - every trail stripe an orange
+//  edge (the owner's iPhone, 2026-11-26; libretro gpu_phos.c rest()). The 3D Imager's colours: a channel the newer light does not
+//  have keeps its light, as before)
+vec3 rest(vec3 a, vec3 r) {
+    if (hp < 0.5 || r == a) return r;
+    float s = a.r + a.g + a.b;
+    return s > 0.0 ? a * ((r.r + r.g + r.b) / s) : r;
+}
 vec4 leaving(vec2 uv) {                                 // a flash that starts fading here now: its light, its age
     vec4 o = texture2D(oldp, uv), n = texture2D(newp, uv);
     if (!(o.a > 0.0 && -log(o.a) < hold)) return vec4(0.0);
     vec3 c = o.rgb * mul * min(1.0, acap / max(lum(o.rgb), 1e-4));
-    if (n.a > 0.0 && -log(n.a) < hold) c = max(c - n.rgb, vec3(0.0));   // (taken over: the light it does not replace)
+    if (n.a > 0.0 && -log(n.a) < hold) c = rest(c, max(c - n.rgb, vec3(0.0)));   // (taken over: the light it does not replace)
     return vec4(c, -log(o.a) + dt);
 }
 void excite(vec2 uv, out vec3 e1, out vec3 e2) {       // the excitation of both parts here, as a flash starts fading
@@ -2012,8 +2022,8 @@ void main() {
     vec3 g1 = texture2D(oldg1, uv).rgb * kd.x * mul + e1, g2 = texture2D(oldg2, uv).rgb * kd.y * mul + e2;
     vec4 n = texture2D(newp, uv);
     if (n.a > 0.0 && -log(n.a) < hold) {                // (lit again: its own afterglow under it goes - a late game
-        g1 = max(g1 - n.rgb * amp.x, vec3(0.0));        //  frame let a still line start fading, lit again on top it
-        g2 = max(g2 - n.rgb * amp.y, vec3(0.0));        //  flashed a quarter brighter for a moment)
+        g1 = rest(g1, max(g1 - n.rgb * amp.x, vec3(0.0)));   //  frame let a still line start fading, lit again on top it
+        g2 = rest(g2, max(g2 - n.rgb * amp.y, vec3(0.0)));   //  flashed a quarter brighter for a moment)
     }
     gl_FragData[0] = vec4(g1, 1.0); gl_FragData[1] = vec4(g2, 1.0);
 }
@@ -2030,7 +2040,7 @@ void main() {
     vec3 g1 = t.rgb * kd.x * mul + e1; float g2 = t.a * kd.y * mul + lum(e2);
     vec4 n = texture2D(newp, uv);
     if (n.a > 0.0 && -log(n.a) < hold) {
-        g1 = max(g1 - n.rgb * amp.x, vec3(0.0)); g2 = max(g2 - lum(n.rgb) * amp.y, 0.0);
+        g1 = rest(g1, max(g1 - n.rgb * amp.x, vec3(0.0))); g2 = max(g2 - lum(n.rgb) * amp.y, 0.0);
     }
     gl_FragColor = vec4(g1, g2);
 }
@@ -2310,7 +2320,7 @@ class GLBloomRenderer(GLRenderer):
         self.uprog = program(UPDATE_SHADER, 'phosphor update')
         self.u_up = {k: GetUniform(self.uprog, k.encode()) for k in ('oldt', 'fresh', 'kf', 'mul', 'hold', 'tscale', 'toff', 'rel',
                                                                      'relm', 'relon', 'rmin')}
-        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt')
+        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt', 'hp')
         try:                                            # (Ultra: both afterglow parts at once - two outputs)
             self.DrawBuffers = proc('glDrawBuffers', None, i, ctypes.POINTER(u))
             self.glowprog = program(GLOW_SHADER, 'phosphor afterglow')   # (its own name: gprog is taken)
@@ -2399,6 +2409,7 @@ class GLBloomRenderer(GLRenderer):
         self.trail_on = True         # the phosphor trail (T)
         self.trail = 0.6             # the afterglow's time scale: 1 = as measured on a real Vectrex (F7 / F8); 0.6 the
                                      #  owner's choice side by side with the tube (2026-10-14)
+        self.trail_k = 1.0           # the afterglow's brightness: x TRAIL_K (Afterglow brightness: 0.5 - 3 as the core's)
         self.wob_on = True           # mains hum wobble (see HUM_AXES)
         self.wob_strength = 0.1074   # rms offset, game px (the owner's choice, 2026-10-08)
         self.line_gap = 7.0          # the integrators' stop delay in cycles (the core's; Tube > Line gaps): the gaps at
@@ -4290,12 +4301,14 @@ class GLBloomRenderer(GLRenderer):
                 self.ActiveTexture(0x84C3); gl.glBindTexture(GL_TEXTURE_2D, self.AG[1][a0][0])
             self.ActiveTexture(0x84C0)
             (fa, ta), (fs, tsl) = PHOS_A
-            tk = TRAIL_K
+            tk = TRAIL_K * max(0.0, getattr(self, 'trail_k', 1.0))   # (Afterglow brightness: x the core's 1x, its opt_trail_k)
             self.Uniform2f(u['amp'], fa * tk, fs * tk); self.Uniform2f(u['tau'], ta * ts, tsl * ts)
             self.Uniform2f(u['kd'], *((1.0, 1.0) if od is not None else (math.exp(-dt / (ta * ts)), math.exp(-dt / (tsl * ts)))))
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)
             self.Uniform1f(u['mul'], od if od is not None else 1.0)
             self.Uniform1f(u['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
+            self.Uniform1f(u['hp'], 1.0 if (getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')
+                                            and os.environ.get('VX_AGHUE', '1') != '0') else 0.0)   # (rest(); VX_AGHUE=0: channel by channel - before 2026-11-26)
             if full:
                 self.BindFB(GL_FRAMEBUFFER, self.AGfb[a1]); gl.glViewport(0, 0, pw, ph)
                 bufs = (ctypes.c_uint * 2)(GL_COLOR_ATT0, GL_COLOR_ATT0 + 1); self.DrawBuffers(2, bufs)

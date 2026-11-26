@@ -299,12 +299,6 @@ TOPICS = [
          "A right click on a UVMC2 game: Calibration (2 + 3 held). Simple: the plain list of the roms folder."),
 ('item', 'Colours', "The deck's, the menus' and the windows' colour: a deeper blue, or green."),
 ('item', 'Look', "Vectrex: as a real Vectrex. Medium: between the two. Bright: brighter, wider lines - for a small screen."),
-('item', 'White balance (colour temperature)', "The middle is neutral: the lines and their glow the screen's own "
-         "pure white. Towards cool (up to 16000 K) the glow turns colder while the lines' bright cores stay pure white - "
-         "the screen's brightest - and from about 9600 K the cores follow. Towards warm (down to "
-         "5600 K) the same. 12000 K by default: the bluish white of a real Vectrex - a cold glow, and the brightest cores "
-         "bluish too; further right even bluer. "
-         "Only the lines change colour - the overlay and the case keep theirs."),
 ('item', 'Line gaps (analog delay)...', "The small gaps at line ends and corners: on a real Vectrex the beam "
          "stops moving a few cycles after the game switches it off, and how many differs from one machine to "
          "the next. 7 cycles (the default) is a well-tuned Vectrex; 4 nearly closes the corners, 10 "

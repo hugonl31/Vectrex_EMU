@@ -6,6 +6,7 @@ final class VX {
 	static { System.loadLibrary ("vxa"); }
 	static native void logStart (String filesDir);
 	static native void log (String s);
+	static native String note ();                          /* a line for the player from the emulator's side, once ("" none) */
 	static native String takeLog ();                       /* the log's new lines (for the live sender) */
 	static native void start (String sysDir, String savesDir, String game, String defaults);
 	static native void setTune (int longPx, int shortPx, int maxHz);   /* (the screen for the first start's tuning: its sides, its fastest rate) */

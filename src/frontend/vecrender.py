@@ -4346,8 +4346,7 @@ class GLBloomRenderer(GLRenderer):
             self.Uniform2f(self.u_sat['px'], 1.0 / max(1, w_), 1.0 / max(1, h_))
             wt = tuple(a / c for a, c in zip(tk, t0)); wt = tuple(v / max(wt) for v in wt)   # (the screen's white, moved with the White balance)
             self.Uniform3f(self.u_sat['tcore'], *wt)
-            _hg = float(os.environ.get('VX_TINT_GAIN', '2.0'))   # (the blue glow's light, x; 2.0 the default - VX_TINT_GAIN=1.4 / 1.7: the core's test choices, a test)
-            self.Uniform3f(self.u_sat['thalo'], *(a * g * g * _hg for a, g in zip(t, BT_GLOW)))
+            self.Uniform3f(self.u_sat['thalo'], *(a * g * g * 2.0 for a, g in zip(t, BT_GLOW)))
             _thr = (0.25, 0.9)                     # (extra wide; VX_TINT_THR=0.15,0.75 - the core's "blue glow 2.0x", normal width: a test)
             if os.environ.get('VX_TINT_THR'): _thr = tuple(float(v) for v in os.environ['VX_TINT_THR'].split(','))[:2]
             self.Uniform2f(self.u_sat['thr'], *_thr)

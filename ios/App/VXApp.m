@@ -615,7 +615,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 @property (nonatomic, copy) NSString *ver; @property (nonatomic, strong) NSURLSession *session;
 + (instancetype) shared;
 @end
-long vxa_presents;                         /* (the pictures handed to the screen so far: the deck's HZ figure) */
+long vxa_presents; static long vxa_runs_all;   /* (vxa_runs_all: the runs so far - the second's check of 120 Hz) */                         /* (the pictures handed to the screen so far: the deck's HZ figure) */
 @implementation VXPack {
 	int _lastpc; double _t0; NSOperationQueue *_q;
 	NSURLSession *_fg, *_fgWifi;                    /* (the normal sessions, while the app is open: any network / Wi-Fi only) */
@@ -1287,7 +1287,17 @@ static void vxa_glass (double t)
 	/* (behind: the runs before the last emulate only - drawing each one's picture as well, that no one sees, kept the GPU
 	 *  behind for good: 3 runs a tick, ~20 pictures a second until a screen was opened) */
 	const double tr0 = CACurrentMediaTime ();
-	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; }
+	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; vxa_runs_all++; }
+	{ /* (120 Hz the GPU cannot hold, checked each second: a warm iPhone slows its GPU and the picture stood still for seconds at
+	   *  a time while the game ran on - the owner, build 218. Fewer than 60 % of a second's runs shown: 60 Hz for this session
+	   *  at once - the default only (a rate the player chose stays), not online, not saved) */
+	  static double w0; static long r0, p0;
+	  if (now - w0 >= 1.0) { const double dt = now - w0; const long dr = vxa_runs_all - r0, dp = vxa_presents - p0; w0 = now; r0 = vxa_runs_all; p0 = vxa_presents;
+		const int ri = vxa_opt_find ("vectrex_emu_rate");
+		if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && ![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] && !vxa_net_playing ()) {
+			snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
+			if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
+			vlog ("the GPU behind at 120 Hz (%ld of %ld runs shown in %.1f s, heat %ld): 60 Hz for this session", dp, dr, dt, (long) NSProcessInfo.processInfo.thermalState); } } }
 	_tRun += CACurrentMediaTime () - tr0; _tLinkDur += l.targetTimestamp - l.timestamp;
 	{ static double hdr_t; if (now - hdr_t > 1.0) { hdr_t = now; vxa_hdr_update (); } }   /* (HDR: the screen's headroom now - brightness, Low Power Mode) */
 	vxa_nodraw = 0;

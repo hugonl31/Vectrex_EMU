@@ -601,6 +601,10 @@ BEAM_HALO_W, BEAM_HALO_K, BEAM_HALO_C = 1.6, 0.014, 18.0  # FWHM (game px), brig
 # renderer (F12 snapshots at the window's size: within 0.12 unit on average in Bright, 0.14 in Vectrex)
 DOT_A, DOT_T = 0.209, 52.0
 DOT_K, DOT_W, REST_HALO, REST_HALO_W, REST_HALO_P = (1.2, 3.0), (1.4, 1.6), (0.06, 0.12), (0.9, 0.9), 0.8
+if os.environ.get('VX_RHALO'):       # (a test: VX_RHALO=strength,width[,power] - the resting spots' glow, as REST_HALO[0] / REST_HALO_W)
+    _h = [float(v) for v in os.environ['VX_RHALO'].split(',')]
+    REST_HALO, REST_HALO_W = (_h[0], _h[0] * 2), (_h[1], _h[1])
+    if len(_h) > 2: REST_HALO_P = _h[2]
 DOT_C0 = 9.0     # a rest joined to a lit line (a joint, a corner: brightness bit 1024): the beam slows into it - this many cycles
                  # less (the photos: a 16-cycle corner 1.3x the line, an isolated 16-cycle dot 2.9x; the owner, 2026-10-26: 12 and 16
                  # only a slight bump in the line's thickness)

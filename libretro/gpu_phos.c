@@ -36,6 +36,7 @@ static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
  * (ph_ex_mode: Smooth motion is drawing in-betweens; set by libretro_vx.c each refresh, taken here) */
 static int ph_ex_mode, ph_ex_n; static GLuint ph_E;
 static GLuint ph_beam, ph_sat, ph_L, ph_H; static float *ph_hbuf; static size_t ph_hbufn;   /* (the beam on the phosphor: the light image, the glass's glow) */
+static GLuint ph_beamc; static float *ph_cbuf; static size_t ph_cbufn; static int ph_chain = -1;   /* (the pieces as chains: PH_FS_CH) */
 static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1, ph_hdr_made = -1;
 float vx_hdr_ee = 1.4f, vx_hdr_eq = 0.31f, vx_hdr_ec = 6.0f, vx_hdr_vs = 0.25f, vx_hdr_vss = 0.15f, vx_hdr_dk = 0.1f, vx_hdr_dx = 2.5f, vx_hdr_lt = 0.3f, vx_hdr_sn = 6.0f, vx_hdr_gb = 1.3f, vx_hdr_hb = 2.75f, vx_hdr_hw = 1.0f, vx_hdr_dw = 1.6f;   /* (the apps: the dots' spot 1.6x wide, their halo x2.75 - the owner: x14 too much, as build 134 + 10 %) */   /* (SDR Vectrex: the dots' glow x2.5, their spot x1.6 wide (the photo: 1.2-1.6x the line's width at white) - at white as the lines, their glare tells them) */   /* (SDR: the lines 0.64 of white, the fat ones clipping at white - the owner, 2026-11-21: the grid too dim at 0.08) */   /* (dx: the dots above the lines, HDR; lt: the lines up to this share of the peak - the rest
                                                   the dots' room: 3.6x a line at every intensity, the owner: the dots not bright enough next to the lines) */   /* (vss: the Vectrex look on an SDR screen -
@@ -116,11 +117,51 @@ static const char *PH_FS_BEAM =
 	"    if (v >= vrc.x || u <= -vrc.x || u >= L + vrc.x) discard;\n"
 	"    g = 2.5066283 * sg / L * (Phi(u / sg) - Phi((u - L) / sg)) * (halo != 0 ? (hsh.x > 0.0 ? hsh.x * pow(max(1.0 - v / (3.0 * sg), 0.0), hsh.y) : exp(-0.5 * v * v / (sg * sg))) : 1.041 * exp(-pow(v / (1.356 * sg), 2.6))); }\n"
 	"  vec3 c = vrc.yzw * g; fragc = vec4(c, dot(c, vec3(1.0 / 3.0)) * va); }\n";   /* (alpha: the light x its age, s - PH_FS_SAT: the age) */
+/* (2026-11-26: the same pieces drawn up to four in a row as one - a chain. A game that draws its shapes round (Vectrexians' formations,
+ *  ~14000 pieces a picture against Last Human's ~1700) gives pieces a fraction of a pixel long, each with its own square of 2 R + 2
+ *  px: every pixel near a line was drawn 15 - 20 times over, the glass's glow's ~5000 pieces 36 pictures of its image. A chain is
+ *  one square round its pieces (ph_chains: only where that saves at least 40 %); each pixel works out each piece exactly as PH_FS_BEAM
+ *  does - its own square and reach, the same formula - and adds them before the one blend. The same light (the sum in 32 bits, not
+ *  16 bits a piece: a hair more exact), a third to a quarter of the pixels drawn. VX_CHAIN=0: piece by piece, as before.
+ *  c0 - c2.xy: the chain's points (a piece from each to the next; unused ones the last), c2.z: its pieces, c2.w: sigma, c3: each
+ *  piece's light, c4: each one's age, c5: R, the colour's channels (1 or 0)) */
+static const char *PH_VS_CH =
+	"layout(location = 0) in vec4 c0; layout(location = 1) in vec4 c1; layout(location = 2) in vec4 c2;\n"
+	"layout(location = 3) in vec4 c3; layout(location = 4) in vec4 c4; layout(location = 5) in vec4 c5;\n"
+	"uniform vec2 sz;\n"
+	"flat out vec4 v0, v1, v2, v3, v4, v5;\n"
+	"void main() { int k = gl_VertexID; vec2 q = vec2((k == 1 || k == 2 || k == 4) ? 1.0 : 0.0, (k == 2 || k == 4 || k == 5) ? 1.0 : 0.0);\n"
+	"  vec2 lo = min(min(min(c0.xy, c0.zw), min(c1.xy, c1.zw)), c2.xy) - vec2(c5.x + 1.0), hi = max(max(max(c0.xy, c0.zw), max(c1.xy, c1.zw)), c2.xy) + vec2(c5.x + 1.0);\n"
+	"  vec2 p = mix(lo, hi, q); v0 = c0; v1 = c1; v2 = c2; v3 = c3; v4 = c4; v5 = c5;\n"
+	"  gl_Position = vec4(p / sz * 2.0 - 1.0, 0.0, 1.0); }\n";
+static const char *PH_FS_CH =
+	"flat in vec4 v0, v1, v2, v3, v4, v5; out vec4 fragc; uniform int halo; uniform vec2 hsh;\n"
+	"float Phi(float x) { float z = abs(x) * 0.70710678, t = 1.0 / (1.0 + 0.3275911 * z);\n"
+	"  float e = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-z * z);\n"
+	"  return 0.5 + 0.5 * (x < 0.0 ? -e : e); }\n"
+	"void main() { vec2 p = gl_FragCoord.xy; float sg = v2.w, R = v5.x; int n = int(v2.z); vec2 e2 = vec2(R + 1.0);\n"
+	"  vec2 P[5] = vec2[5](v0.xy, v0.zw, v1.xy, v1.zw, v2.xy); float s = 0.0, sa = 0.0; bool hit = false;\n"
+	"  for (int i = 0; i < 4; i++) { if (i >= n) break;\n"
+	"    vec2 a = P[i], b = P[i + 1];\n"
+	"    if (any(lessThan(p, min(a, b) - e2)) || any(greaterThan(p, max(a, b) + e2))) continue;\n"   /* (outside the piece's own square: not drawn by it before either) */
+	"    vec2 ba = b - a, q = p - a; float L = length(ba), g;\n"
+	"    if (L < 1e-3) { float r = length(q); if (r >= R) continue;\n"
+	"      g = halo != 0 ? 4.0 * exp(-r / (0.5 * sg)) : 1.177 * exp(-pow(r / (1.356 * sg), 2.6)); }\n"
+	"    else { vec2 t = ba / L; float u = dot(q, t), v = abs(q.x * t.y - q.y * t.x);\n"
+	"      if (v >= R || u <= -R || u >= L + R) continue;\n"
+	"      if (halo != 0 && hsh.x > 0.0 && v >= 3.0 * sg) continue;\n"   /* (the glass's glow beside a line: 0 from 3 sigma out - nothing to add) */
+	"      g = 2.5066283 * sg / L * (Phi(u / sg) - Phi((u - L) / sg)) * (halo != 0 ? (hsh.x > 0.0 ? hsh.x * pow(max(1.0 - v / (3.0 * sg), 0.0), hsh.y) : exp(-0.5 * v * v / (sg * sg))) : 1.041 * exp(-pow(v / (1.356 * sg), 2.6))); }\n"
+	"    float w = i == 0 ? v3.x : i == 1 ? v3.y : i == 2 ? v3.z : v3.w, ag = i == 0 ? v4.x : i == 1 ? v4.y : i == 2 ? v4.z : v4.w;\n"
+	"    float c = w * g; s += c; sa += c * ag; hit = true; }\n"
+	"  if (!hit) discard;\n"
+	"  fragc = vec4(v5.yzw * s, dot(v5.yzw, vec3(1.0 / 3.0)) * sa); }\n";
 /* (the light as the screen's values - vecrender.py SAT_SHADER: (the exposure x the light)^(1 / 2.2) in the tube's own white; the
  *  glass's glow read from its smaller image) */
 static const char *PH_FS_SAT =
 	"uniform sampler2D lt, ht; uniform float k, gs; uniform vec3 tint, tintg; uniform vec2 sz; uniform int tm; uniform vec4 tq; uniform vec3 tdim, tcore, thalo; uniform vec2 thr; out vec4 fragc;\n"
 	"void main() { vec3 h = max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0); vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + h;\n"
+	"  if (tm != 3 && l == vec3(0.0)) { fragc = vec4(0.0); return; }\n"   /* (no light here, nor the glass's glow: black, as below gives it - without its
+	                                              ~20 reads round the pixel (2026-11-26). tm 3 shows its neighbours' light: not there) */
 	"  vec4 lr = texelFetch(lt, ivec2(gl_FragCoord.xy), 0); float ll = dot(max(lr.rgb, 0.0), vec3(1.0 / 3.0)); float age = ll > 0.0 ? max(lr.a, 0.0) / ll : 0.0;\n"
 	/* (2026-11-25, the owner: faint vectors were bluer than the tube's - the colour by the line's excitation, as the Photo Test's
 	 *  RAWs show it: a faint line warmer and less blue, its skirt its core's colour; a bright line exactly as before. e: the
@@ -286,7 +327,7 @@ static void ph_reset (void)
 	GLLOAD (glClear); GLLOAD (glUniform1fv); GLLOAD (glUniform2fv); GLLOAD (glUniform4fv); GLLOAD (glReadPixels); GLLOAD (glDeleteFramebuffers); GLLOAD (glFinish);
 	glInvalidateFramebuffer_ = (pf_glInvalidateFramebuffer) hwr.get_proc_address ("glInvalidateFramebuffer");   /* (optional: GL 4.3 / ES 3) */
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: no instancing / framebuffers - the light on the CPU\n"); return; }
-	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_beam = ph_prog (PH_VS_CAP, PH_FS_BEAM); ph_sat = ph_prog (GPU_VS, PH_FS_SAT); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
+	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_beam = ph_prog (PH_VS_CAP, PH_FS_BEAM); ph_beamc = ph_prog (PH_VS_CH, PH_FS_CH); ph_sat = ph_prog (GPU_VS, PH_FS_SAT); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
 	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_down2 = ph_prog (GPU_VS, PH_FS_DOWN2); ph_blurl = ph_prog (GPU_VS, PH_FS_BLURL); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP); ph_ui = ph_prog (GPU_VS, PH_FS_UI); ph_uit = 0; ph_uigen = -1;
 	if (!ph_cap || !ph_upd || !ph_down || !ph_blur || !ph_out || !ph_comp) return;
 	glGenBuffers_ (1, &ph_vbo); glGenVertexArrays_ (1, &ph_vao); glGenFramebuffers_ (1, &ph_fbo);
@@ -414,10 +455,87 @@ static void ph_overlay (void)
 int vx_gprof_now; double vx_gpst[4]; static double ph_t0;
 extern double vt_wall (void);
 #define PHT(k) do { if (vx_gprof_now) { glFinish_ (); const double t_ = vt_wall (); vx_gpst[k] += t_ - ph_t0; ph_t0 = t_; } } while (0)
+/* (tests: VX_PHPROF=2 - GPU timestamps between ph_frame's steps (the pieces, the glass's glow pieces, the screen's values, the phosphor,
+ *  the glow, the picture), the log every 300 pictures: phprof; VX_PHREP=k each of those draws k times - the GPU's own work, not the
+ *  gaps (the picture then wrong: timing only); VX_PHSTAT=1 the pieces a picture, their quads' area and the area they can light) */
+static int ph_prof = -1, ph_rep = 1, ph_stat; static GLuint ph_tq[8]; static int ph_tqp; static double ph_tt[7], ph_st[12], ph_cst[12]; static long ph_pn, ph_sn; static pf_ox_qc ph_qc;
+#define PHQ(k) do { if (ph_prof == 2 && ph_qc) ph_qc (ph_tq[k], 0x8E28); } while (0)
+#define PHREP(call) do { for (int r_ = 0; r_ < ph_rep; r_++) { call; } } while (0)
+static void ph_prof_begin (void)
+{
+	if (ph_prof < 0) { const char *z = getenv ("VX_PHPROF"); ph_prof = z && atoi (z) == 2; z = getenv ("VX_PHREP"); ph_rep = z && atoi (z) > 1 ? atoi (z) : 1; ph_stat = getenv ("VX_PHSTAT") != NULL; ph_prof = ph_prof ? 2 : 0; }
+	if (ph_prof == 2 && !ph_qc) { if (!gq_gen || !gq_u64) return; ph_qc = (pf_ox_qc) gq_proc ("glQueryCounterEXT", "glQueryCounter"); if (ph_qc) gq_gen (8, ph_tq); else { ph_prof = 0; return; } }
+	if (ph_prof && ph_tqp) { unsigned long long t[7]; for (int k = 0; k < 7; k++) gq_u64 (ph_tq[k], 0x8866, &t[k]);
+		for (int k = 0; k < 6; k++) ph_tt[k] += (double) (t[k + 1] - t[k]) * 1e-9 / ph_rep; ph_tqp = 0;
+		if (++ph_pn % 300 == 0) { fprintf (stderr, "phprof ms (x%d):", ph_rep); for (int k = 0; k < 6; k++) fprintf (stderr, " %.4f", ph_tt[k] / 300 * 1e3); fprintf (stderr, "\n"); memset (ph_tt, 0, sizeof ph_tt); } }
+}
+static void ph_stat_add (const float *b, int n, int slot, float sc)   /* (pieces' quads as PH_VS_CAP makes them - the box + R + 1 each side - and the part their light reaches) */
+{
+	double qa = 0, ca = 0; for (int k = 0; k < n; k++) { const float *o = b + (size_t) k * 24, R = o[16];
+		const double w = fabs (o[6] - o[4]) + 2 * (R + 1), h = fabs (o[7] - o[5]) + 2 * (R + 1), L = hypot (o[2] - o[0], o[3] - o[1]);
+		qa += w * h; ca += L < 1e-3 ? M_PI * R * R : (L + 2 * R) * 2 * R; }
+	ph_st[slot] += n; ph_st[slot + 1] += qa / sc; ph_st[slot + 2] += ca / sc;
+}
+/* (the pieces - 24 floats each, as ph_frame lays them out - as chains for PH_FS_CH: up to four that follow each other (each starts where
+ *  the last ended), with the same spot (sigma, R) and channels, joined while the chain's square stays at most 0.6 x their own squares
+ *  together - a long piece's square alone is mostly its own, it stays alone. Returns the chains; sq: their squares' area, px) */
+static int ph_chains (const float *in, int n, float *out, double *sq)
+{
+	#define CMN(a, b) ((a) < (b) ? (a) : (b))
+	#define CMX(a, b) ((a) > (b) ? (a) : (b))
+	int m = 0;
+	for (int k = 0; k < n; ) {
+		const float *o = in + (size_t) k * 24; float *c = out + (size_t) m++ * 24;
+		const float R = o[16], sg = o[20], e2 = 2 * (R + 1.0f);
+		/* (grey - r = g = b, every piece but the 3D Imager's colours: its light W, the channels 1 - may join others grey; else alone, the
+		 *  channels as shares of its brightest) */
+		const int grey = o[17] == o[18] && o[18] == o[19]; const float W = grey ? o[17] : CMX (o[17], CMX (o[18], o[19]));
+		float mk[3] = { 1, 1, 1 }; if (!grey) for (int i = 0; i < 3; i++) mk[i] = W > 0 ? o[17 + i] / W : 0.0f;
+		float px[5] = { o[0], o[2] }, py[5] = { o[1], o[3] }, w[4] = { W }, ag[4] = { o[22] };
+		float lx = CMN (o[0], o[2]), hx = CMX (o[0], o[2]), ly = CMN (o[1], o[3]), hy = CMX (o[1], o[3]);
+		float own = (hx - lx + e2) * (hy - ly + e2); int j = 1;
+		while (grey && j < 4 && k + j < n) {
+			const float *q = in + (size_t) (k + j) * 24;
+			if (q[16] != R || q[20] != sg || q[0] != px[j] || q[1] != py[j] || q[17] != q[18] || q[18] != q[19]) break;
+			const float nlx = CMN (lx, q[2]), nhx = CMX (hx, q[2]), nly = CMN (ly, q[3]), nhy = CMX (hy, q[3]);
+			const float qo = ((q[2] > q[0] ? q[2] - q[0] : q[0] - q[2]) + e2) * ((q[3] > q[1] ? q[3] - q[1] : q[1] - q[3]) + e2);
+			if ((nhx - nlx + e2) * (nhy - nly + e2) > 0.6f * (own + qo)) break;
+			px[j + 1] = q[2]; py[j + 1] = q[3]; w[j] = q[17]; ag[j] = q[22]; own += qo; lx = nlx; hx = nhx; ly = nly; hy = nhy; j++;
+		}
+		for (int i = j + 1; i < 5; i++) { px[i] = px[j]; py[i] = py[j]; }
+		for (int i = j; i < 4; i++) w[i] = ag[i] = 0;
+		c[0] = px[0]; c[1] = py[0]; c[2] = px[1]; c[3] = py[1]; c[4] = px[2]; c[5] = py[2]; c[6] = px[3]; c[7] = py[3];
+		c[8] = px[4]; c[9] = py[4]; c[10] = (float) j; c[11] = sg;
+		for (int i = 0; i < 4; i++) { c[12 + i] = w[i]; c[16 + i] = ag[i]; }
+		c[20] = R; c[21] = mk[0]; c[22] = mk[1]; c[23] = mk[2];
+		if (sq) *sq += (double) (hx - lx + e2) * (hy - ly + e2);
+		k += j;
+	}
+	#undef CMN
+	#undef CMX
+	return m;
+}
+/* (pieces drawn into the bound target, added: as chains (ph_beamc) or one by one (prog); halo: the glass's glow's shape) */
+static void ph_pieces (GLuint prog, const float *b, int n, float w, float h, int halo, const float *hs, int slot)
+{
+	if (ph_chain < 0) ph_chain = !(getenv ("VX_CHAIN") && !atoi (getenv ("VX_CHAIN")));
+	const int ch = ph_chain && ph_beamc && prog == ph_beam;
+	int m = n; double sq = 0;
+	if (ch) { if ((size_t) n * 24 > ph_cbufn) { free (ph_cbuf); ph_cbufn = (size_t) n * 24 + 4096; ph_cbuf = malloc (ph_cbufn * sizeof (float)); }
+		m = ph_chains (b, n, ph_cbuf, ph_stat ? &sq : NULL); b = ph_cbuf; prog = ph_beamc; }
+	glUseProgram_ (prog); glUniform2f_ (ph_ul (prog, "sz"), w, h);
+	if (prog != ph_cap) { PU1I (prog, "halo", halo); if (halo) glUniform2f_ (ph_ul (prog, "hsh"), hs[0], hs[1]); }
+	glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
+	glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) m * 24 * sizeof (float)), b, GL_STREAM_DRAW);
+	PHREP (glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, m));
+	glBindBuffer_ (GL_ARRAY_BUFFER, 0);
+	if (ph_stat && ch) { ph_cst[slot] += m; ph_cst[slot + 1] += sq / (w * h); }
+}
 static int ph_frame (int npl, double dt, int glow, int after, int shot)
 {
 	const int beam = bt_gpu && ph_beam && ph_sat; if (beam) glow = 0;   /* (the beam on the phosphor: the glass's glow is in the light itself) */
 	if (!ph_ok) return 0;
+	ph_prof_begin (); PHQ (0);
 	if (vx_gprof_now) ph_t0 = vt_wall ();
 	if (FW != ph_w || FH != ph_h || !ph_made || fx_ps != ph_ps_made || fx_lh != ph_lh_made || (vx_hdr_peak > 1.0f || vx_hdr_lift > 1.5f) != ph_hdr_made) { ph_size (); if (!ph_ok) return 0; }
 	const int scaled = ph_pw != FW || ph_ph != FH || ph_fw != FW; const float ls = (float) ph_fw / FW;   /* (the lines' scale: Basic) */
@@ -446,12 +564,11 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	ph_target (beam ? ph_L : dstF, 0, 0, ph_fw, ph_fh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
 	if (pc) {
 		glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
-		glUseProgram_ (capp); glUniform2f_ (ph_ul (capp, "sz"), (float) ph_fw, (float) ph_fh); if (beam) PU1I (capp, "halo", 0);
-		glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
-		glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) pc * 24 * sizeof (float)), ph_buf + (size_t) p0 * 24, GL_STREAM_DRAW);
-		glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, pc);
-		glBindBuffer_ (GL_ARRAY_BUFFER, 0); glDisable_ (GL_BLEND);
+		ph_pieces (capp, ph_buf + (size_t) p0 * 24, pc, (float) ph_fw, (float) ph_fh, 0, NULL, pass ? 6 : 0);
+		if (ph_stat) ph_stat_add (ph_buf + (size_t) p0 * 24, pc, pass ? 6 : 0, (float) ph_fw * ph_fh);
+		glDisable_ (GL_BLEND);
 	}
+	if (!pass) PHQ (1);
 	if (beam) {
 		/* the glass's glow: every piece once more, wide and faint (BT_HALO_F of its light, sigma BT_HALO_S units) - into an image the
 		 * glow's size (so smooth a light needs no more; at the picture's size it was most of the lines' cost), read into the light below */
@@ -479,14 +596,14 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 				o[16] = 3.5f * sh + 1.0f; o[17] = mc[0] * c; o[18] = mc[1] * c; o[19] = mc[2] * c; o[20] = sh; o[21] = o[22] = o[23] = 0; mh = 0; }
 			if (q) { mh = 1; mt = q->to; ms = q->hx; ma[0] = q->ax; ma[1] = q->ay; mb[0] = q->bx; mb[1] = q->by; ml = len; md[0] = dx; md[1] = dy;
 				mc[0] = q->r * f; mc[1] = q->g * f; mc[2] = q->b * f; } }
+		if (ph_stat) ph_stat_add (ph_hbuf, nh_, pass ? 9 : 3, (float) ph_gw * ph_gh);
 		ph_target (ph_H, 0, 0, ph_gw, ph_gh); glClearColor_ (0, 0, 0, 0); glClear_ (GL_COLOR_BUFFER_BIT);
 		if (nh_) {
 			glEnable_ (GL_BLEND); glBlendFunc_ (GL_ONE, GL_ONE);
-			glUseProgram_ (ph_beam); glUniform2f_ (ph_ul (ph_beam, "sz"), (float) ph_gw, (float) ph_gh); PU1I (ph_beam, "halo", 1); { static float hs[2] = { BT_HALO_A, BT_HALO_N }; static int rd; if (!rd) { rd = 1; const char *z = getenv ("VX_HALOSHAPE"); if (z) sscanf (z, "%f,%f", &hs[0], &hs[1]); } glUniform2f_ (ph_ul (ph_beam, "hsh"), hs[0], hs[1]); }
-			glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
-			glBufferData_ (GL_ARRAY_BUFFER, (ptrdiff_t) ((size_t) nh_ * 24 * sizeof (float)), ph_hbuf, GL_STREAM_DRAW);
-			glDrawArraysInstanced_ (GL_TRIANGLES, 0, 6, nh_);
-			glBindBuffer_ (GL_ARRAY_BUFFER, 0); glDisable_ (GL_BLEND); }
+			static float hs[2] = { BT_HALO_A, BT_HALO_N }; static int rd; if (!rd) { rd = 1; const char *z = getenv ("VX_HALOSHAPE"); if (z) sscanf (z, "%f,%f", &hs[0], &hs[1]); }
+			ph_pieces (ph_beam, ph_hbuf, nh_, (float) ph_gw, (float) ph_gh, 1, hs, pass ? 9 : 3);
+			glDisable_ (GL_BLEND); }
+		if (!pass) PHQ (2);
 		/* the light as the screen's values: the exposure, the tube's white (BT_TINT, moved with the White balance) */
 		{ float tg[3], t0[3], tn[3], mx = 0; static const float BT_TINT[3] = { 0.65f, 0.86f, 1.0f };
 		  white_gain (opt_white, tg); white_gain (12000.0, t0);
@@ -521,10 +638,10 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		        glUniform3f_ (ph_ul (ph_sat, "tcore"), c[0], c[1], c[2]); glUniform3f_ (ph_ul (ph_sat, "thalo"), h[0], h[1], h[2]);
 		        glUniform2f_ (ph_ul (ph_sat, "thr"), xwide ? 0.25f : wide ? 0.15f : 0.08f, xwide ? 0.9f : wide ? 0.75f : 0.4f); } }
 		    PU1F (ph_sat, "gs", (float) (OV_LINE_GAIN / (vx_bright > 0.5f ? (vx_hdr_peak > 1.0f ? vx_hdr_peak : BL_GAIN) : 1.0))); }   /* (as a screen value of the Vectrex look) */ glUniform2f_ (ph_ul (ph_sat, "sz"), (float) ph_fw, (float) ph_fh);
-		  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
+		  PHREP (glDrawArrays_ (GL_TRIANGLES, 0, 3)); }
 	}
 	}
-	PHT (0);
+	PHQ (3); PHT (0);
 	glBindVertexArray_ (g_vao);
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
 	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
@@ -547,7 +664,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
 		ph_bind (ph_comp, "fc", 0, ph_F[cur]); ph_bind (ph_comp, "g1t", 1, ph_G1[cur]); ph_bind (ph_comp, "g2t", 2, ph_G2[cur]);
 		PU1I (ph_comp, "after", after); PU1F (ph_comp, "fak", beam ? 0.0f : 1.0f); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
-	PHT (1);
+	PHQ (4); PHT (1);
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {
 		const int gd = 2 * S, nf = 2 * gd; double vd = 0;
@@ -578,7 +695,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 			ph_target (ph_B[pass ^ 1], 0, 0, ph_gw, ph_gh); ph_bind (ph_blur, "src", 0, ph_B[pass]);
 			glUniform2i_ (ph_ul (ph_blur, "dir"), pass ? 0 : 1, pass ? 1 : 0); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	}
-	PHT (2);
+	PHQ (5); PHT (2);
 	/* the screen's values: through the sheet with its effects (gpu_ovfx.c), or as PH_FS_OUT */
 	{ const int ovon = ov && ov_on && !sheet_file && ov_lm; if (ovon) ph_overlay ();
 	  if (ovon && ph_ovm && ox_draw (glow, dt)) goto done;
@@ -592,6 +709,11 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  glUniform2f_ (ph_ul (ph_out, "gsz"), (float) (ph_gw * 2 * S), (float) (ph_gh * 2 * S));
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3); }
 done:
+	PHQ (6); if (ph_prof == 2 && ph_qc) ph_tqp = 1;
+	if (ph_stat && ++ph_sn % 300 == 0) { const double k = 1.0 / 300; fprintf (stderr, "phstat %dx%d (light %dx%d, glass glow %dx%d): pieces %.0f, quads %.3f pictures, lit %.3f | glass glow pieces %.0f, quads %.3f, lit %.3f | afterglow pieces %.0f, quads %.3f, lit %.3f | its glass glow %.0f, %.3f, %.3f\n",
+		FW, FH, ph_fw, ph_fh, ph_gw, ph_gh, ph_st[0] * k, ph_st[1] * k, ph_st[2] * k, ph_st[3] * k, ph_st[4] * k, ph_st[5] * k, ph_st[6] * k, ph_st[7] * k, ph_st[8] * k, ph_st[9] * k, ph_st[10] * k, ph_st[11] * k);
+		if (ph_cst[0] + ph_cst[3] > 0) fprintf (stderr, "phstat chains: light %.0f, their squares %.3f pictures | glass glow %.0f, %.3f | afterglow %.0f, %.3f | its glass glow %.0f, %.3f\n", ph_cst[0] * k, ph_cst[1] * k, ph_cst[3] * k, ph_cst[4] * k, ph_cst[6] * k, ph_cst[7] * k, ph_cst[9] * k, ph_cst[10] * k);
+		memset (ph_st, 0, sizeof ph_st); memset (ph_cst, 0, sizeof ph_cst); }
 	PHT (3);
 	glActiveTexture_ (GL_TEXTURE0);
 	if (shot) glReadPixels_ (0, 0, FW, FH, GL_RGBA, GL_UNSIGNED_BYTE, fb);   /* (test: the picture back, B G R A = the CPU's XRGB) */

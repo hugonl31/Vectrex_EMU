@@ -77,7 +77,7 @@ def switch(root, name):
     def fix(w):
         try:
             kw = {}
-            for k in w.keys():
+            for k in tk.Misc.keys(w):          # (Tk's own: the dark menu bar keeps a dict called keys - it stopped the switch there)
                 if k in _OPTS:
                     v = w.cget(k); nv = _conv(v)
                     if nv != str(v):

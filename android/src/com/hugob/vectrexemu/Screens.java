@@ -413,18 +413,17 @@ final class Screens {
 		  final int[] LV = { 0, 2, 1 }; final int ls = lk == 0 ? 0 : lk == 2 ? 1 : 2;
 		  segRow (p, "Look", ls == 0 ? "As a real Vectrex" : ls == 1 ? "Between Vectrex and Bright" : "Brighter, wider lines - for a small screen", new String[] { "Vectrex", "Medium", "Bright" }, ls, k -> {
 			final int s = LV[k]; m.prefs.edit ().putInt ("app.look", s).apply (); VX.setBright (s); Main.log ("look " + s); reopenSettings (m); }); }
-		p.row ("Brighter afterglow", m.trailBoost () ? "On" : "Off", () -> { m.prefs.edit ().putBoolean ("app.trailboost", !m.trailBoost ()).apply (); m.trailLast = -1; m.trailTick (); Main.log ("brighter afterglow " + m.trailBoost ()); reopenSettings (m); });
 		p.row ("Controls", "controllers, touch, keyboard", () -> { m.pop (); controls (m); });
 		p.row ("About and help", "how to play, online, credits", () -> about (m));
-		{ int n = 0; for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) n++; final int changed = n;
+		{ final int n = m.settingsChanged (), changed = n;   /* (the core's options and the app's own: Main.factoryReset) */
 		  /* (one version on both apps: the title dimmed when nothing is changed - a tap then only says so; else the prompt) */
 		  LinearLayout r = p.row ("Reset all settings", n > 0 ? n + " changed - all back to their defaults (a long press on one: that one)" : "All at their defaults", () -> {
 			if (changed == 0) { m.toast ("Every setting is at its default", 2); return; }
 			prompt (m, "Reset all settings?", null, "Every setting of the picture, the overlay, the sound and the controls back to its default.", new Object[][] {
-				{ "Reset", "every setting to its default", (Runnable) () -> { int k = 0;
-					for (int i = 0; i < VX.nopts (); i++) if (!VX.opt (i, 5).equals (VX.opt (i, 6))) { VX.oset (i, VX.opt (i, 6)); k++; }
-					m.prefs.edit ().remove ("app.deckpop").remove ("app.topbar").remove ("app.bar").apply (); m.showBar (); m.layout ();   /* (the deck's pop-up and the top bar too: Auto) */
-					Main.log ("settings: reset all (" + k + " changed)"); { int pi = VX.ofind ("vectrex_emu_palette"); if (pi >= 0) palCheck (m, pi); } m.toast ("Settings reset", 2); reopenSettings (m); } },
+				{ "Reset", "every setting to its default", (Runnable) () -> { final boolean sb = m.prefs.getBoolean ("app.statusbar", false);
+					m.factoryReset ();   /* (as a new install: the app's own settings too) */
+					{ int pi = VX.ofind ("vectrex_emu_palette"); if (pi >= 0) palCheck (m, pi); } m.toast ("Settings reset", 2); reopenSettings (m);
+					if (sb) m.root.postDelayed (() -> { if (m.top () instanceof Panel && ((Panel) m.top ()).settings) reopenSettings (m); }, 350); } },   /* (the status bar gone: built again once its room is known) */
 				{ "Cancel", "", (Runnable) () -> { } } }, null); });
 		  ((TextView) r.findViewWithTag ("t")).setTextColor (n > 0 ? Main.CHG : Main.DIM); }
 		p.foot ("Auto: what fits this screen with the picture at its full width. Top bar auto-hide: tap the top of the screen to bring it back. Deck pop-up: hidden until you tap the picture's bottom. Skip intro: games start straight away.");

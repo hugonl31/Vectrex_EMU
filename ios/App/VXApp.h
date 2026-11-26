@@ -7,6 +7,8 @@ int vxa_nopts (void);
 const char *vxa_okey (int i), *vxa_odesc (int i), *vxa_ocat (int i), *vxa_oinfo (int i), *vxa_ovals (int i), *vxa_oval (int i), *vxa_odef (int i);
 int vxa_ofind (const char *key);
 void vxa_oset (int i, const char *value);
+int vxa_settings_changed (void);       /* Reset all settings: the core's options and the app's own not at their default */
+int vxa_factory_reset (void);          /* every one as a new install has it, applied at once - the count changed */
 int vxa_ncats (void);
 int vxa_squarish (void);               /* the top bar and the full deck do not both fit: the slim deck pops up by default */
 int vxa_popdef (void);                 /* the slim deck does not fit with the bar either: it pops up by default */

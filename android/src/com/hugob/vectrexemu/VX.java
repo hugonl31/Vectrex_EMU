@@ -49,6 +49,8 @@ final class VX {
 	static native String opt (int i, int what);            /* 0 key 1 desc 2 cat 3 info 4 vals 5 val 6 def */
 	static native int ofind (String key);
 	static native void oset (int i, String v);
+	static native int ochanged ();                         /* the options not at their default (the screen rate: only a chosen one) */
+	static native int oreset ();                           /* every option at its default, as a new install - the count changed */
 	static native int ncats ();
 	static native String cat (int i, int what);            /* 0 key 1 desc 2 info */
 	static native void load (String path);

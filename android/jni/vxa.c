@@ -503,6 +503,7 @@ extern int vx_app_noshape, vx_app_osd_on;
 /* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
  * slow cores took 15-16 ms of a 16.7 ms refresh for Armor Attack (the iPad: 4); RetroArch's game thread is kept on the
  * fast ones. The cores near the top clock speed; the threads the core starts from here (UVMC2 / PiTrex, the drawing) follow */
+static long vxa_runs_all, vxa_pres_all;   /* (the runs and pictures so far: the second's check of 120 Hz) */
 static int vxa_tid; static int vxa_rate_slow;   /* (vxa_rate_slow: 120 Hz the GPU could not hold - 60 for the session) */
 static cpu_set_t vxa_top_set; static int vxa_top_ok;   /* (the fastest cores: the emulation thread's - UVMC2 / PiTrex) */
 static void vxa_fast_cores (void)
@@ -639,7 +640,7 @@ static void *vxa_main (void *u)
 			const double t0 = vxa_now ();
 			struct timespec c0, c1; clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c0);
 			{ extern int vx_owe_hidden; vx_owe_hidden = 1; }   /* (a catch-up run's game frame: drawn with the next picture - no gap in a trail) */
-			for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); runs++; vxa_since_load++; }
+			for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); runs++; vxa_runs_all++; vxa_since_load++; }
 			clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c1); t_cpu += (c1.tv_sec - c0.tv_sec) + (c1.tv_nsec - c0.tv_nsec) * 1e-9;   /* (the thread's own processor time: waiting for the GPU is not) */
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;
 			if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); vxa_browser = 1; } }
@@ -653,7 +654,18 @@ static void *vxa_main (void *u)
 				vlog ("device test: 60%s Hz at the largest picture of %d x %d, the overlay on", nr > 1 ? (vxa_tune_hz == 120 ? " and 120" : " and the fastest") : "", vxa_tune_l, vxa_tune_s);
 				const int k = vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 0); vlog ("device test done: %d rate%s in %.1f s", k, k > 1 ? "s" : "", vxa_now () - t0); last = 0;
 				vxa_tune_st = 2; } }
-		vxa_present (); pres++;
+		vxa_present (); pres++; vxa_pres_all++;
+		{ /* (120 Hz the GPU cannot hold, checked each second - as the iOS app: a warm phone slows its GPU and the picture stood
+		   *  still for seconds while the game ran on (the owner's iPhone, build 218). Fewer than 60 % of a second's runs got a
+		   *  refresh: 60 Hz for this session at once - the default only, not online, not saved) */
+		  static double w0; static long r0, p0; const double tn = vxa_now ();
+		  if (tn - w0 >= 1.0) { const double dt = tn - w0; const long dr = vxa_runs_all - r0, dp = vxa_pres_all - p0; w0 = tn; r0 = vxa_runs_all; p0 = vxa_pres_all;
+			if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && !vxa_holding) { extern int vx_net_playing_now (void); char sv[160];
+				pthread_mutex_lock (&vxa_omx); const int ri = vxa_opt_find ("vectrex_emu_rate");
+				if (ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv) && !vx_net_playing_now ()) {
+					snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
+					vlog ("the GPU behind at 120 Hz (%ld of %ld runs got a refresh in %.1f s): 60 Hz for this session", dp, dr, dt); }
+				pthread_mutex_unlock (&vxa_omx); } } }
 		if (vxa_hint && vxa_ph_rep) vxa_ph_rep (vxa_hint, (int64_t) ((vxa_now () - now) * 1e9));   /* (this refresh's work: the hint) */
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
 		{ /* (input delay: the first picture with the square after an armed press - its frame id for the glass's time) */

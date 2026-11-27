@@ -35,7 +35,8 @@ static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
  * starts only where the game itself drew: once a game frame its real lines are drawn into ph_E (pieces npl .. npl + ph_ex_n,
  * built after the picture's), and that - not the last picture - is what the afterglow starts from; the other refreshes none
  * (ph_ex_mode: Smooth motion is drawing in-betweens; set by libretro_vx.c each refresh, taken here) */
-static int ph_ex_mode, ph_ex_n; static GLuint ph_E;
+static int ph_ex_mode, ph_ex_n, ph_rlm; static GLuint ph_E;
+static int ph_model (void) { static int rm = -2; if (rm == -2) { const char *z = getenv ("VX_RELIT"); rm = z ? atoi (z) : 1; } return rm; }   /* (the afterglow fitted to the owner's photos, 2026-11-27; VX_RELIT=0: the model before - a test) */
 static GLuint ph_beam, ph_sat, ph_L, ph_H; static float *ph_hbuf; static size_t ph_hbufn;   /* (the beam on the phosphor: the light image, the glass's glow) */
 static GLuint ph_beamc; static float *ph_cbuf; static size_t ph_cbufn; static int ph_chain = -1;   /* (the pieces as chains: PH_FS_CH) */
 static int ph_pw, ph_ph, ph_fw, ph_fh; static float ph_ps_made = -1; static int ph_lh_made = -1, ph_hdr_made = -1;
@@ -64,6 +65,7 @@ float vx_trail_faint = 1.0f;                   /* (the faint afterglow x this, t
                                                    picture (Bright, HDR 2.45) - the trails' brightest ghosts (rows 2 and 3) change < 10 %
                                                    at 4x, the faintest light most. VX_FAINTG0=share: a test) */
 #define PHOS_A1 0.1404f
+#define AG_WIDE 0.3f                            /* (the afterglow's spot this much wider than the lit one, sigma in units - PH_FS_UPD rlm) */
 #define PHOS_T1 (0.0454f * (1.0f + 0.5f * PHOS_LIFT))
 #define PHOS_A2 (0.0582f * (1.0f - 0.25f * PHOS_LIFT))
 #define PHOS_T2 (0.350f * (1.0f + 1.0f * PHOS_LIFT))
@@ -210,7 +212,7 @@ static const char *PH_FS_SAT =
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, t1, t2, dtv, usea, fak, kd1, kd2, acap, pex; uniform int after, hp; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, t1, t2, dtv, usea, fak, kd1, kd2, acap, pex, exs, bsr; uniform int after, hp, rlm; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	/* (hp - the beam on the phosphor: what is left of a light after a newer one took part of it, in the old light's own colour - the
 	 *  same light as channel by channel. Its values carry the vectors' colour by their profile (PH_FS_SAT tm 4: a white core, a
@@ -218,26 +220,48 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	 *  orange edge, the afterglow orange-brown at Afterglow brightness 3x (the owner's iPhone, 2026-11-26). The 3D Imager's
 	 *  colours: a channel the newer light does not have keeps its light, as before) */
 	"vec3 rest(vec3 a, vec3 r) { if (hp == 0 || r == a) return r; float s = a.r + a.g + a.b; return s > 0.0 ? a * ((r.r + r.g + r.b) / s) : r; }\n"
-	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb;\n"
+	"void main() { ivec2 ip = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / gs; vec3 f = txb(fc, uv).rgb, fs = f;\n"
 	"  float fa = txb(fc, uv).a * fak;\n"   /* (fak 0: the beam on the phosphor - alpha is the light's age there, not the HDR rests' light) */
 	"  if (after == 0) { o1 = vec4(0.0); o2 = vec4(0.0); os = vec4(f, fa); return; }\n"
-	"  vec4 pp = txb(fp, uv); vec3 p = pp.rgb * pex, g1 = texelFetch(g1t, ip, 0).rgb * kd1, g2 = texelFetch(g2t, ip, 0).rgb * kd2;\n"
-	"  float age = usea * max(pp.a, 0.0) + dtv, e1 = a1 * exp(-age / t1), e2 = a2 * exp(-age / t2);\n"
-	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0));\n"
+	"  vec4 pp = txb(fp, uv), q1 = texelFetch(g1t, ip, 0), q2 = texelFetch(g2t, ip, 0); vec3 p = pp.rgb * pex, g1 = q1.rgb * kd1, g2 = q2.rgb * kd2;\n"
+	/* (rlm, the afterglow fitted to the owner's photos of the Test Cart's TRAIL page (2026-11-27) - off: the model before (VX_RELIT=0).
+	 *  The spot that glows on is wider than the lit one (bsr: the light that leaves and the light that stays both seen through it - 4
+	 *  reads at +-sigma sqrt 2; a still line so still starts none): the tube's trail stripes 1.45 units wide (FWHM) at $7F where the
+	 *  lit spot's gave 1.15, 0.9 / 0.7 at $3F) */
+	"  if (rlm != 0 && bsr > 0.0) { vec2 ox = vec2(bsr, 0.0) / gs, oy = vec2(0.0, bsr) / gs;\n"
+	"    p = 0.25 * (txb(fp, uv + ox).rgb + txb(fp, uv - ox).rgb + txb(fp, uv + oy).rgb + txb(fp, uv - oy).rgb) * pex;\n"
+	"    f = 0.25 * (txb(fc, uv + ox).rgb + txb(fc, uv - ox).rgb + txb(fc, uv + oy).rgb + txb(fc, uv - oy).rgb); }\n"
+	"  float sl = q1.a * kd2, ts = q2.a + dtv, age = usea * max(pp.a, 0.0) + (rlm != 0 && exs > 0.5 ? 0.0 : dtv);\n"
+	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0)), lf = dot(f, vec3(1.0 / 3.0));\n"
 	"  float cap = pv && lp > acap ? acap / lp : 1.0; vec3 l = pv ? rest(p * cap, max(p * cap - f, 0.0)) : vec3(0.0);\n"
+	/* (rlm: sl - the light that started the afterglow here (decaying with the slow part), ts - its age. Smooth motion's game-frame lines
+	 *  (exs) are lines the beam has left: only the part brighter than what already glows here starts - the brightest light that left a
+	 *  spot is its afterglow's, as when it leaves bit by bit at 50 Hz -, taken over only by the same light again (a still line). An
+	 *  afterglow continued by a fainter light leaving (the skirt of a line that moved on) is as old as the light that started it) */
+	"  if (rlm != 0) {\n"
+	"    if (exs > 0.5 && pv) { vec3 pe = p * cap * clamp(1.0 - min(sl, acap) / max(lp * cap, 1e-6), 0.0, 1.0); l = lf >= 0.9 * lp ? rest(pe, max(pe - f, 0.0)) : pe; }\n"
+	"    if (any(greaterThan(l, vec3(0.0)))) { if (sl > 0.0 && lp <= sl) age = max(age, ts); else ts = age; sl = max(sl, lp); } }\n"
+	"  float e1 = a1 * exp(-age / t1), e2 = a2 * exp(-age / t2);\n"
 	"  g1 += l * e1; g2 += l * e2;\n"
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
+	/* (lit again: its own afterglow under it goes. rlm: only where the light is about as bright as the one that started it, and once a
+	 *  game frame - before, every refresh the skirt and the glass's glow of the lines that had moved on took a share off: a slow line's
+	 *  trail was wiped out to thin stripes, the Test Cart's slowest bars' 1.1 x the fastest's light where the tube's is 3 x) */
+	"  if (rlm != 0) { if (lf < 0.9 * sl || pex < 0.5) lit = vec3(0.0); else sl = 0.0; }\n"
 	"  g1 = rest(g1, mix(g1, max(g1 - f * a1, 0.0), lit)); g2 = rest(g2, mix(g2, max(g2 - f * a2, 0.0), lit));\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
-	"  o1 = vec4(g1, 0.0); o2 = vec4(g2, 0.0); os = vec4(f + LIFT(g1 + g2), fa); }\n";   /* (HDR: the light above white is the spot's own,
+	"  bool on = any(greaterThan(g1 + g2, vec3(0.0))); vec3 gl = LIFT(g1 + g2);\n"
+	"  o1 = vec4(g1, on && rlm != 0 ? sl : 0.0); o2 = vec4(g2, on && rlm != 0 ? ts : 0.0);\n"
+	/* (rlm: the afterglow added to the lit light as light - as screen values a faint trail beside a line came up to 3 x its own light) */
+	"  os = vec4(rlm != 0 ? pow(pow(max(fs, 0.0), vec3(2.2)) + pow(max(gl, 0.0), vec3(2.2)), vec3(1.0 / 2.2)) : fs + gl, fa); }\n";   /* (HDR: the light above white is the spot's own,
 	                                              no trail of it - that trail, up to 8x the ordinary one, gave Last Human's ship a long bright tail) */
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; uniform float fak; out vec4 fragc;\n"
+	"uniform sampler2D fc, g1t, g2t; uniform int after, rlm; uniform vec2 sz; uniform float fak; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"
 	"  float a = txb(fc, uv).a * fak;\n"
-	"  if (after != 0) { o += LIFT(txb(g1t, uv).rgb + txb(g2t, uv).rgb); a += txb(g1t, uv).a + txb(g2t, uv).a; }\n"
+	"  if (after != 0) { vec3 gl = LIFT(txb(g1t, uv).rgb + txb(g2t, uv).rgb); o = rlm != 0 ? pow(pow(max(o, 0.0), vec3(2.2)) + pow(max(gl, 0.0), vec3(2.2)), vec3(1.0 / 2.2)) : o + gl; }\n"
 	"  fragc = vec4(o, a); }\n";
 /* (PH_FS_UPD / PH_FS_COMP's afterglow as shown: LIFT. Off - the very code as before; on - the faint afterglow lifted, the bright one
  *  kept: x fl with no light, ~x1 well above fg0 (1 + (fl - 1) fg0 / (fg0 + y)), by its luminance - all channels alike, its colour
@@ -692,17 +716,18 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  /* (the afterglow starts at the leaving light's age (its alpha: libretro_vx.c wl_from) + this refresh - vecrender.py GLOW_COMMON;
 	   *  Smooth motion's game-frame lines (ph_E): one refresh, as before. VX_PHAGE=0: one refresh always - the core before 2026-11-23) */
 	  { static int ua = -1; if (ua < 0) ua = !(getenv ("VX_PHAGE") && !atoi (getenv ("VX_PHAGE")));
-	    PU1F (pu, "usea", beam && ua && !ex_n ? 1.0f : 0.0f); }
+	    PU1F (pu, "usea", beam && ua && (!ex_n || ph_model ()) ? 1.0f : 0.0f); }   /* (the fitted model: the game-frame lines' own age too - libretro_vx.c sm_tpic) */
 	  PU1F (pu, "fak", beam ? 0.0f : 1.0f);
 	  { static int hp = -1; if (hp < 0) hp = !(getenv ("VX_AGHUE") && !atoi (getenv ("VX_AGHUE")));   /* (VX_AGHUE=0: channel by channel - before 2026-11-26) */
 	    PU1I (pu, "hp", beam && hp); }
 	  PU1F (pu, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
 	  PU1F (pu, "kd1", kd1); PU1F (pu, "kd2", kd2); PU1I (pu, "after", after);
+	  { ph_rlm = ph_model (); PU1I (pu, "rlm", ph_rlm); PU1F (pu, "exs", ex_n ? 1.0f : 0.0f); PU1F (pu, "bsr", AG_WIDE * 1.41421f * 134.0f * (float) ph_ph / (float) SHEET_H); }
 	  if (pu != ph_upd) { PU1F (pu, "fl", vx_trail_faint); PU1F (pu, "fg0", fg0); }
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
 	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (pc);
 		ph_bind (pc, "fc", 0, ph_F[cur]); ph_bind (pc, "g1t", 1, ph_G1[cur]); ph_bind (pc, "g2t", 2, ph_G2[cur]);
-		PU1I (pc, "after", after); PU1F (pc, "fak", beam ? 0.0f : 1.0f); if (pc != ph_comp) { PU1F (pc, "fl", vx_trail_faint); PU1F (pc, "fg0", fg0); } glUniform2f_ (ph_ul (pc, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
+		PU1I (pc, "after", after); PU1I (pc, "rlm", ph_rlm); PU1F (pc, "fak", beam ? 0.0f : 1.0f); if (pc != ph_comp) { PU1F (pc, "fl", vx_trail_faint); PU1F (pc, "fg0", fg0); } glUniform2f_ (ph_ul (pc, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	PHQ (4); PHT (1);
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {

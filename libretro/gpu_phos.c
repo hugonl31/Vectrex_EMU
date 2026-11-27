@@ -27,6 +27,7 @@ GLFN(void, glFinish, (void)); GLFN(void, glDeleteFramebuffers, (GLsizei, const G
 #define GL_NEAREST 0x2600
 
 static uint32_t *br_img; static int br_shown, br_gen; static GLuint ph_ui, ph_uit; static int ph_uigen = -1, ph_uiw, ph_uih;   /* (browser.c) */
+static GLuint ph_updf, ph_compf; static int ph_fltry;   /* (the afterglow's display with the faint lift: vx_trail_faint) */
 static GLuint ph_cap, ph_upd, ph_comp, ph_down, ph_down2, ph_blurl, ph_blur, ph_out, ph_vbo, ph_vao, ph_fbo;
 static GLuint ph_F[2], ph_G1[2], ph_G2[2];   /* (ph_P: gpu_gl.c) */
 /* Smooth motion's afterglow (2026-11-22): the in-between pictures move a line 2.4 places a game frame at 120 Hz, and every place
@@ -57,7 +58,11 @@ int vx_phone_trail = 0;                        /* (the own phone / tablet apps s
                                                    dim without it) - the full lift in every look (2026-11-27, the owner: x0.8 / x0.7 in Medium / Bright not enough). The PC and
                                                    RetroArch: the measured one, vecrender.py PHOS_A) */
 #define PHOS_LIFT (vx_phone_trail ? 1.0f : 0.0f)
-float vx_trail_tail = 1.0f;                    /* (the faint end's level x this - the iOS test build's Afterglow tail, libretro_vx.c) */
+float vx_trail_faint = 1.0f;                   /* (the faint afterglow x this, the bright one as it is - the iOS test build's Faint afterglow
+                                                   lift (libretro_vx.c; 1: off - the shaders as before, ph_updf / ph_compf only above it) */
+#define TRAIL_FAINT_G0 0.0025f                  /* (its knee, as a share of the afterglow's brightest (acap): Test Cart page 1 on the iOS
+                                                   picture (Bright, HDR 2.45) - the trails' brightest ghosts (rows 2 and 3) change < 10 %
+                                                   at 4x, the faintest light most. VX_FAINTG0=share: a test) */
 #define PHOS_A1 0.1404f
 #define PHOS_T1 (0.0454f * (1.0f + 0.5f * PHOS_LIFT))
 #define PHOS_A2 (0.0582f * (1.0f - 0.25f * PHOS_LIFT))
@@ -224,7 +229,7 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
 	"  g1 = rest(g1, mix(g1, max(g1 - f * a1, 0.0), lit)); g2 = rest(g2, mix(g2, max(g2 - f * a2, 0.0), lit));\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
-	"  o1 = vec4(g1, 0.0); o2 = vec4(g2, 0.0); os = vec4(f + lift(g1 + g2), fa); }\n";   /* (HDR: the light above white is the spot's own,
+	"  o1 = vec4(g1, 0.0); o2 = vec4(g2, 0.0); os = vec4(f + LIFT(g1 + g2), fa); }\n";   /* (HDR: the light above white is the spot's own,
 	                                              no trail of it - that trail, up to 8x the ordinary one, gave Last Human's ship a long bright tail) */
 static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phosphor smaller - what it shows, at full size) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
@@ -232,8 +237,15 @@ static const char *PH_FS_COMP =                 /* (Medium, Low, Basic: the phos
 	"uniform sampler2D fc, g1t, g2t; uniform int after; uniform vec2 sz; uniform float fak; out vec4 fragc;\n"
 	"void main() { vec2 uv = gl_FragCoord.xy / sz; vec3 o = txb(fc, uv).rgb;\n"
 	"  float a = txb(fc, uv).a * fak;\n"
-	"  if (after != 0) { o += lift(txb(g1t, uv).rgb + txb(g2t, uv).rgb); a += txb(g1t, uv).a + txb(g2t, uv).a; }\n"
+	"  if (after != 0) { o += LIFT(txb(g1t, uv).rgb + txb(g2t, uv).rgb); a += txb(g1t, uv).a + txb(g2t, uv).a; }\n"
 	"  fragc = vec4(o, a); }\n";
+/* (PH_FS_UPD / PH_FS_COMP's afterglow as shown: LIFT. Off - the very code as before; on - the faint afterglow lifted, the bright one
+ *  kept: x fl with no light, ~x1 well above fg0 (1 + (fl - 1) fg0 / (fg0 + y)), by its luminance - all channels alike, its colour
+ *  kept (rest()). The owner, 2026-11-27: the slow bar's faint trail up, the brighter ones as they are) */
+static const char *PH_FL_OFF = "#define LIFT(x) lift(x)\n";
+static const char *PH_FL_ON = "uniform float fl, fg0;\n"
+	"vec3 flift(vec3 h) { float y = max(dot(h, vec3(1.0 / 3.0)), 0.0); return h * (1.0 + (fl - 1.0) * fg0 / (fg0 + y)); }\n"
+	"#define LIFT(x) flift(lift(x))\n";
 static const char *PH_FS_UI =                   /* (the ROM browser's panel: premultiplied, over the picture) */
 	"uniform sampler2D t; out vec4 fragc; void main() { fragc = texelFetch(t, ivec2(gl_FragCoord.xy), 0); }\n";
 static const char *PH_FS_DOWN =                 /* (glow_blur: 2 S x 2 S pixels to a cell, 1 3 3 1 by groups of S) */
@@ -302,12 +314,12 @@ static const char *PH_FS_OUT =                  /* (pixel_out; written B G R: gp
 	"  vec3 ht = ovon != 0 ? txb(ovm, gl_FragCoord.xy / vec2(textureSize(s, 0))).rgb : vec3(1.0);\n"
 	"  fragc = vec4((min(beam != 0 ? tone(o) : hdrx(hlift(knee(o)), hx, ht), vec3(max(hk, 1.0))) + dith * (dh(gl_FragCoord.xy) - dh(gl_FragCoord.xy + 17.31)) / 255.0).bgr, 1.0); }\n";
 
-static GLuint ph_prog (const char *vsrc, const char *fsrc)
+static GLuint ph_progx (const char *vsrc, const char *pre, const char *fsrc)   /* (pre: before the shader's text - PH_FL_OFF / ON) */
 {
 	const char *hdr = gpu_es ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 330 core\n";   /* (sampler2D highp: lowp by
 	                                              default in ES - Apple's GPUs then read the glow's faint half-floats in coarse steps, banded) */
-	const char *vs[2] = { hdr, vsrc }, *fs[3] = { hdr, g_bl, fsrc };
-	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 3);
+	const char *vs[2] = { hdr, vsrc }, *fs[4] = { hdr, g_bl, pre ? pre : "", fsrc };
+	GLuint v = gpu_shader (GL_VERTEX_SHADER, vs, 2), f = gpu_shader (GL_FRAGMENT_SHADER, fs, 4);
 	if (!v || !f) return 0;
 	GLuint p = glCreateProgram_ (); glAttachShader_ (p, v); glAttachShader_ (p, f); glLinkProgram_ (p);
 	glDeleteShader_ (v); glDeleteShader_ (f);
@@ -315,6 +327,7 @@ static GLuint ph_prog (const char *vsrc, const char *fsrc)
 	if (!lk) { char log[2048] = ""; glGetProgramInfoLog_ (p, sizeof log, NULL, log); fprintf (stderr, "[vectrex_emu] GPU: link: %s\n", log); return 0; }
 	return p;
 }
+static GLuint ph_prog (const char *vsrc, const char *fsrc) { return ph_progx (vsrc, NULL, fsrc); }
 /* (a uniform's location, kept: the name looked up once per program - by the name's address, the names are literals;
  *  each lookup cost the Nova's driver a good part of the overlay's 15 ms, 2026-11-15) */
 static struct { GLuint p; const char *n; GLint l; } ph_uc[512]; static int ph_nuc;
@@ -334,7 +347,7 @@ static int ph_gw, ph_gh; static GLuint ph_S, ph_B[2], ph_ovm, ph_ova;
 /* (gpu_reset's end: the functions, the programs) */
 static void ph_reset (void)
 {
-	int ok = 1; memset (ph_uc, 0, sizeof ph_uc); ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = ph_E = 0;   /* (a new context: the old names mean nothing in it) */
+	int ok = 1; ph_updf = ph_compf = 0; ph_fltry = 0; memset (ph_uc, 0, sizeof ph_uc); ph_ok = 0; ph_w = ph_h = 0; ph_ovgen = -1; ph_made = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = ph_E = 0;   /* (a new context: the old names mean nothing in it) */
 	if (getenv ("VX_GPUPHOS") && !atoi (getenv ("VX_GPUPHOS"))) { fprintf (stderr, "[vectrex_emu] GPU: the light on the CPU (VX_GPUPHOS=0)\n"); return; }
 	GLLOAD (glGenBuffers); GLLOAD (glBindBuffer); GLLOAD (glBufferData); GLLOAD (glVertexAttribPointer); GLLOAD (glEnableVertexAttribArray);
 	GLLOAD (glVertexAttribDivisor); GLLOAD (glDrawArraysInstanced); GLLOAD (glGenFramebuffers); GLLOAD (glFramebufferTexture2D);
@@ -342,8 +355,8 @@ static void ph_reset (void)
 	GLLOAD (glClear); GLLOAD (glUniform1fv); GLLOAD (glUniform2fv); GLLOAD (glUniform4fv); GLLOAD (glReadPixels); GLLOAD (glDeleteFramebuffers); GLLOAD (glFinish);
 	glInvalidateFramebuffer_ = (pf_glInvalidateFramebuffer) hwr.get_proc_address ("glInvalidateFramebuffer");   /* (optional: GL 4.3 / ES 3) */
 	if (!ok) { fprintf (stderr, "[vectrex_emu] GPU: no instancing / framebuffers - the light on the CPU\n"); return; }
-	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_beam = ph_prog (PH_VS_CAP, PH_FS_BEAM); ph_beamc = ph_prog (PH_VS_CH, PH_FS_CH); ph_sat = ph_prog (GPU_VS, PH_FS_SAT); ph_upd = ph_prog (GPU_VS, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
-	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_down2 = ph_prog (GPU_VS, PH_FS_DOWN2); ph_blurl = ph_prog (GPU_VS, PH_FS_BLURL); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_prog (GPU_VS, PH_FS_COMP); ph_ui = ph_prog (GPU_VS, PH_FS_UI); ph_uit = 0; ph_uigen = -1;
+	ph_cap = ph_prog (PH_VS_CAP, PH_FS_CAP); ph_beam = ph_prog (PH_VS_CAP, PH_FS_BEAM); ph_beamc = ph_prog (PH_VS_CH, PH_FS_CH); ph_sat = ph_prog (GPU_VS, PH_FS_SAT); ph_upd = ph_progx (GPU_VS, PH_FL_OFF, PH_FS_UPD); ph_down = ph_prog (GPU_VS, PH_FS_DOWN);
+	ph_blur = ph_prog (GPU_VS, PH_FS_BLUR); ph_down2 = ph_prog (GPU_VS, PH_FS_DOWN2); ph_blurl = ph_prog (GPU_VS, PH_FS_BLURL); ph_out = ph_prog (GPU_VS, PH_FS_OUT); ph_comp = ph_progx (GPU_VS, PH_FL_OFF, PH_FS_COMP); ph_ui = ph_prog (GPU_VS, PH_FS_UI); ph_uit = 0; ph_uigen = -1;
 	if (!ph_cap || !ph_upd || !ph_down || !ph_blur || !ph_out || !ph_comp) return;
 	glGenBuffers_ (1, &ph_vbo); glGenVertexArrays_ (1, &ph_vao); glGenFramebuffers_ (1, &ph_fbo);
 	glBindVertexArray_ (ph_vao); glBindBuffer_ (GL_ARRAY_BUFFER, ph_vbo);
@@ -355,7 +368,7 @@ static void ph_reset (void)
 	ox_reset ();                                       /* (the overlay's effects: gpu_ovfx.c) */
 }
 static int ph_nfb;
-static void ph_lost (void) { memset (ph_uc, 0, sizeof ph_uc); ox_lost (); ph_nfb = 0; ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = ph_E = 0; }   /* (the context gone: its objects with it) */
+static void ph_lost (void) { ph_updf = ph_compf = 0; ph_fltry = 0; memset (ph_uc, 0, sizeof ph_uc); ox_lost (); ph_nfb = 0; ph_ok = 0; ph_made = 0; ph_ovm = ph_ova = 0; ph_w = ph_h = 0; memset (ph_F, 0, sizeof ph_F); memset (ph_G1, 0, sizeof ph_G1); memset (ph_G2, 0, sizeof ph_G2); memset (ph_B, 0, sizeof ph_B); ph_S = ph_P = 0; ph_L = ph_H = ph_E = 0; }   /* (the context gone: its objects with it) */
 static GLuint ph_tex (int w, int h, GLint ifmt, GLenum fmt, GLenum type, GLint filt, const void *data)
 {
 	GLuint t; glGenTextures_ (1, &t); glBindTexture_ (GL_TEXTURE_2D, t);
@@ -661,26 +674,35 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	/* the phosphor: the afterglow's parts (into the other pair), what it shows */
 	{ extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;
 	  /* (the afterglow's two parts - vecrender.py PHOS_A, on every system) */
-	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk * vx_trail_tail, ta1 = PHOS_T1 * opt_trail, ta2 = PHOS_T2 * opt_trail;
+	  const float a1 = PHOS_A1 * tk, a2 = PHOS_A2 * tk, ta1 = PHOS_T1 * opt_trail, ta2 = PHOS_T2 * opt_trail;
 	  const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2);
+	  /* (the faint afterglow lift: its own programs, only while it is on - its knee a share of the afterglow's brightest, acap: the same
+	   *  trails lifted in every look and with HDR) */
+	  GLuint pu = ph_upd, pc = ph_comp; float fg0 = 0.0f;
+	  if (vx_trail_faint > 1.0f) {
+		if (!ph_fltry) { ph_fltry = 1; ph_updf = ph_progx (GPU_VS, PH_FL_ON, PH_FS_UPD); ph_compf = ph_progx (GPU_VS, PH_FL_ON, PH_FS_COMP); }
+		if (ph_updf && ph_compf) { pu = ph_updf; pc = ph_compf; }
+		static float g0 = -1.0f; if (g0 < 0.0f) { const char *z = getenv ("VX_FAINTG0"); g0 = z && atof (z) > 0.0 ? (float) atof (z) : TRAIL_FAINT_G0; }
+		fg0 = g0 * (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f); }
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
-	  glUseProgram_ (ph_upd); glUniform2f_ (ph_ul (ph_upd, "gs"), (float) ph_pw, (float) ph_ph);
-	  PU1F (ph_upd, "pex", ex_mode && !ex_n ? 0.0f : 1.0f);
-	  ph_bind (ph_upd, "fc", 0, ph_F[cur]); ph_bind (ph_upd, "fp", 1, ex_n ? ph_E : ph_F[prv]); ph_bind (ph_upd, "g1t", 2, ph_G1[prv]); ph_bind (ph_upd, "g2t", 3, ph_G2[prv]);
-	  PU1F (ph_upd, "a1", a1); PU1F (ph_upd, "a2", a2); PU1F (ph_upd, "t1", ta1); PU1F (ph_upd, "t2", ta2); PU1F (ph_upd, "dtv", (float) dt);
+	  glUseProgram_ (pu); glUniform2f_ (ph_ul (pu, "gs"), (float) ph_pw, (float) ph_ph);
+	  PU1F (pu, "pex", ex_mode && !ex_n ? 0.0f : 1.0f);
+	  ph_bind (pu, "fc", 0, ph_F[cur]); ph_bind (pu, "fp", 1, ex_n ? ph_E : ph_F[prv]); ph_bind (pu, "g1t", 2, ph_G1[prv]); ph_bind (pu, "g2t", 3, ph_G2[prv]);
+	  PU1F (pu, "a1", a1); PU1F (pu, "a2", a2); PU1F (pu, "t1", ta1); PU1F (pu, "t2", ta2); PU1F (pu, "dtv", (float) dt);
 	  /* (the afterglow starts at the leaving light's age (its alpha: libretro_vx.c wl_from) + this refresh - vecrender.py GLOW_COMMON;
 	   *  Smooth motion's game-frame lines (ph_E): one refresh, as before. VX_PHAGE=0: one refresh always - the core before 2026-11-23) */
 	  { static int ua = -1; if (ua < 0) ua = !(getenv ("VX_PHAGE") && !atoi (getenv ("VX_PHAGE")));
-	    PU1F (ph_upd, "usea", beam && ua && !ex_n ? 1.0f : 0.0f); }
-	  PU1F (ph_upd, "fak", beam ? 0.0f : 1.0f);
+	    PU1F (pu, "usea", beam && ua && !ex_n ? 1.0f : 0.0f); }
+	  PU1F (pu, "fak", beam ? 0.0f : 1.0f);
 	  { static int hp = -1; if (hp < 0) hp = !(getenv ("VX_AGHUE") && !atoi (getenv ("VX_AGHUE")));   /* (VX_AGHUE=0: channel by channel - before 2026-11-26) */
-	    PU1I (ph_upd, "hp", beam && hp); }
-	  PU1F (ph_upd, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
-	  PU1F (ph_upd, "kd1", kd1); PU1F (ph_upd, "kd2", kd2); PU1I (ph_upd, "after", after);
+	    PU1I (pu, "hp", beam && hp); }
+	  PU1F (pu, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
+	  PU1F (pu, "kd1", kd1); PU1F (pu, "kd2", kd2); PU1I (pu, "after", after);
+	  if (pu != ph_upd) { PU1F (pu, "fl", vx_trail_faint); PU1F (pu, "fg0", fg0); }
 	  glDrawArrays_ (GL_TRIANGLES, 0, 3);
-	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (ph_comp);
-		ph_bind (ph_comp, "fc", 0, ph_F[cur]); ph_bind (ph_comp, "g1t", 1, ph_G1[cur]); ph_bind (ph_comp, "g2t", 2, ph_G2[cur]);
-		PU1I (ph_comp, "after", after); PU1F (ph_comp, "fak", beam ? 0.0f : 1.0f); glUniform2f_ (ph_ul (ph_comp, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
+	  if (scaled) { ph_target (ph_S, 0, 0, FW, FH); glUseProgram_ (pc);
+		ph_bind (pc, "fc", 0, ph_F[cur]); ph_bind (pc, "g1t", 1, ph_G1[cur]); ph_bind (pc, "g2t", 2, ph_G2[cur]);
+		PU1I (pc, "after", after); PU1F (pc, "fak", beam ? 0.0f : 1.0f); if (pc != ph_comp) { PU1F (pc, "fl", vx_trail_faint); PU1F (pc, "fg0", fg0); } glUniform2f_ (ph_ul (pc, "sz"), (float) FW, (float) FH); glDrawArrays_ (GL_TRIANGLES, 0, 3); } }
 	PHQ (4); PHT (1);
 	/* the glow: down, across, up and down (glow_blur's Gaussian) */
 	if (glow) {

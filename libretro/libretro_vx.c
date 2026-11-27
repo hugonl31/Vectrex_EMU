@@ -567,8 +567,8 @@ static const struct vx_opt OPTS[] = {
 	{ "vectrex_emu_afterglow", "tube", "Afterglow", "The phosphor keeps glowing after the beam has passed: its length. 1x is the measured length; 0.6x was matched to a real Vectrex side by side.",
 	  "0.6x|off|0.05x|0.1x|0.2x|0.3x|0.4x|0.5x|0.7x|0.8x|0.9x|1x|1.1x|1.2x" },
 	{ "vectrex_emu_trail_bright", "tube", "Afterglow brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
-#ifdef VX_LOG_TOKEN                                 /* (the iOS test build only: the owner tries the faint end's level, 2026-11-27) */
-	{ "vectrex_emu_trail_tail", "tube", "Afterglow tail (test)", "The faint end of the afterglow: its level - the trail stays visible longer.", "1x|1.25x|1.5x|2x|2.5x|3x|4x" },
+#ifdef VX_LOG_TOKEN                                 /* (the iOS test build only: the owner tries lifting the faint trails, 2026-11-27) */
+	{ "vectrex_emu_trail_faint", "tube", "Faint afterglow lift (test)", "Lifts faint trails only - the bright ones stay.", "1x|1.5x|2x|2.5x|3x|4x|6x" },
 #endif
 	{ "vectrex_emu_geometry", "tube", "Tube geometry", "Where the beam really lands, measured on a real Vectrex: the picture a little narrower towards the sides, lines bowed slightly.", "auto|on|off" },
 	{ "vectrex_emu_geometry_k", "tube", "Tube geometry strength", "0x: an ideal, straight picture. 1x: the measured Vectrex.", "1x|0x|0.25x|0.5x|0.75x|1.25x|1.5x|1.75x|2x" },
@@ -836,7 +836,7 @@ static void read_options (void)
 	{ const char *ag = optv ("vectrex_emu_afterglow"); double t = !strcmp (ag, "long (real Vectrex)") ? 1.0 : !strcmp (ag, "short") ? 0.3 : ag[0] >= '0' && ag[0] <= '9' ? atof (ag) : 0.6;
 	  opt_trail = (float) (t < 0.05 ? 0.05 : t > 10.0 ? 10.0 : t); }
 #ifdef VX_LOG_TOKEN
-	{ extern float vx_trail_tail; const char *z = optv ("vectrex_emu_trail_tail"); const double t = z && *z ? atof (z) : 1.0; vx_trail_tail = t >= 0.5 && t <= 8.0 ? (float) t : 1.0f; }   /* (the test build's Afterglow tail) */
+	{ extern float vx_trail_faint; const char *z = optv ("vectrex_emu_trail_faint"); const double t = z && *z ? atof (z) : 1.0; vx_trail_faint = t >= 1.0 && t <= 8.0 ? (float) t : 1.0f; }   /* (the test build's Faint afterglow lift - gpu_phos.c flift) */
 #endif
 	{ struct retro_variable v = { "vectrex_emu_trail_bright", NULL }; double k = env_cb (RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value ? atof (v.value) * VX_TRAIL_DEF : VX_TRAIL_DEF;   /* (1x: the default) */
 	  opt_trail_k = k >= 0.25 && k <= 6.0 ? (float) k : (float) VX_TRAIL_DEF; }   /* (v0.22: also dimmer, 0.5x / 0.75x - the owner) */

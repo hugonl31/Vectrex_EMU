@@ -3,6 +3,25 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.9.2
+
+* The afterglow fitted to photos of a real Vectrex's tube (the Test Cartridge's trail page): a slow line leaves the long,
+  even trail the tube shows, the faint ends stay visible, and the trail is the same at 50, 60, 120 or 144 Hz (at 120 Hz the
+  slowest trails were wiped out before). One model on the PC, in RetroArch and in the phone apps.
+* Tube > Look: a new Medium look, halfway between Vectrex and Bright - the default on the PC and in desktop RetroArch
+  (Bright stays the default on phones and mobile RetroArch). EmuVR: the look switchable, Medium the default.
+* No vector colour options any more: every system draws the vectors in the one measured colour (the white core with the
+  blue glow); the White balance / tint choices are gone.
+* The afterglow keeps the vector's colour at any Afterglow / Afterglow brightness setting (both at the top turned it
+  reddish), and Afterglow and Afterglow brightness act again in RetroArch (since v1.9.1 they did nothing there).
+* PC: Afterglow length in the core's steps (0.05x - 1.2x, 0.6x the default) and a new Afterglow brightness setting
+  (0.5x - 3x) - the same settings on every system.
+* Reset all settings now resets everything, the look, HDR and brightness included, as a new install.
+* Faster on the GPU, the same picture: the overlay sheet's lasting parts drawn once, and games that draw round shapes
+  (Vectrexians) far cheaper to light.
+* RetroArch core: a search field in the game browser; saved options move to the new defaults once; the CPU picture
+  (EmuVR's) in the same vector colour.
+
 ## v1.9.1
 
 * A new vector colour on every system: each vector by its own light profile - a neutral white core and a blue glow where

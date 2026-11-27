@@ -1440,7 +1440,7 @@ def port2_needed(rom):
     titles = gce_titles(h)
     name = os.path.basename(rom).lower()
     flat = name.replace('_', ' ')
-    if any(t in (b'3D MINE STORM', b'NARROW', b'CRAZY COASTER', b'ROCKET SLEDGE') for t in titles) \
+    if any(t in (b'3D MINE STORM', b'NARROW', b'CRAZY COASTER', b'ROCKET SLEDGE', b'3D IMAGER TEST') for t in titles) \
             and not re.search(r'\b2d\b', flat):                 # (the 2D hacks keep the 3D game's header)
         return 'imager'
     if (b'ART' in titles and b'MASTER' in titles) or b'MELODY' in titles or b'ANIMACTION' in titles:

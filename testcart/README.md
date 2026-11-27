@@ -404,3 +404,24 @@ The shift register's switching after its bits have gone out, and the BIOS's Draw
 
 Why: the BIOS clears the shift register 22, 29, 36 ... cycles after setting it (its 7-cycle wait loop) - the Photo Test
 measured only up to 24, and whether the switch is 4 or 2 cycles late there decides the corners' gaps.
+
+## 3D Imager test (`imager_test.bin`; delivered as `3D Imager Test.bin`, 64 KB) - five pages, button 4 next / button 1 back
+
+For the 3D Imager's **Centre eye** view: objects at known depths through the goggles (port 2: the 3D Imager, by its title).
+Each object is drawn for each eye moved sideways by its own depth - the right eye's picture right of its middle by half its
+offset, the left eye's left of it - so the Centre eye view must put each one back on its middle. It drives the goggles as 3D
+Narrow Escape does: the disc's motor on the AY's port A bit 6, its index on CA1 (an interrupt each turn that restarts the
+frame; the motor runs for a turn when the last took longer than the frame - 25 turns a second), each half turn one eye,
+each half blue, green, red, every colour's lines drawn while its filter is in front of the eye. The disc needs ~6 s to spin
+up before the pages appear.
+
+1. DEPTHS - six boxes at six depths, two in each colour, a tick at depth 0 under each
+2. REVERSED - the same, one eye drawing its boxes in reverse order and every line the other way (3D Crazy Coaster does)
+3. RAILS - two rails into the distance (the near end moved more than the far one), crossbars at four depths
+4. MOVING - a box that moves on between the two half turns too
+5. TEXT - text at three depths
+
+`imager_flat.bin` (`make_imager_test.py --flat`): the same with every offset 0 - its left eye's picture is what the Centre eye
+view of the real cart should give. Measured with the core program (vtest dumpvec), 2026-11-27: every page within 59 units of it
+(page 4: 130 - the box has moved on by half a step between the eyes, as the Centre eye view averages).
+Build: `python make_imager_test.py [--flat]`, lwasm (build_cart.sh), `python make_imager_test.py [--flat] --pack`.

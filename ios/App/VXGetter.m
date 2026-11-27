@@ -183,7 +183,7 @@ static NSString *vxg_state (int k, NSSet *have)
 	case 1: return [NSString stringWithFormat:@"%d of %d free homebrew games", vxg_count (have, vxg_hb), VXG_NHB];
 	case 2: return [fm fileExistsAtPath:[vxg_px () stringByAppendingPathComponent:@"pitrex.img"]] ? @"found" : @"not there";
 	case 5: return [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"VecDoom.um2"]] && [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"Tests/Photo Test.bin"]]
-	               && [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"Vector Tank (UVMC2).um2"]] ? @"found" : @"not there";   /* (the test carts too; Nigel Harrison's UVMC2 ports: 2026-11-27) */
+	               && [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"Vector Tank (UVMC2).um2"]] && [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"Tests/3D Imager Test.bin"]] ? @"found" : @"not there";   /* (the test carts too; Nigel Harrison's UVMC2 ports: 2026-11-27) */
 	case 4: { NSUInteger n = [fm contentsOfDirectoryAtPath:[vxg_sys () stringByAppendingPathComponent:@"vectrex_emu/thumbs/labels"] error:nil].count;
 		return n >= 250 ? [NSString stringWithFormat:@"found (%lu labels)", (unsigned long) n] : n > 0 ? [NSString stringWithFormat:@"%lu labels", (unsigned long) n] : @"the 112 that come with the app"; }
 	default: return [fm fileExistsAtPath:vxg_speech ()] || [fm fileExistsAtPath:[vxg_sys () stringByAppendingPathComponent:@"vectrex_emu/sp0256-al2.bin"]] ? @"found" : @"not there"; }

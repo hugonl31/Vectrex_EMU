@@ -1474,7 +1474,7 @@ static int game_env (const char *path, const char *sys, const char *dir)
 	int im_out = 0;
 	/* port 2 by the game's title (vectrex_emu.py port2_needed): the 3D Imager's games, the light pen's */
 	{ FILE *c = fopen (path, "rb"); unsigned char h[96] = { 0 }; if (c) { fread (h, 1, 96, c); fclose (c); }
-	  int im = memmem_title (h, 96, "3D MINE") || memmem_title (h, 96, "NARROW") || memmem_title (h, 96, "CRAZY COASTER") || memmem_title (h, 96, "ROCKET SLEDGE");
+	  int im = memmem_title (h, 96, "3D MINE") || memmem_title (h, 96, "NARROW") || memmem_title (h, 96, "CRAZY COASTER") || memmem_title (h, 96, "ROCKET SLEDGE") || memmem_title (h, 96, "IMAGER TEST");   /* (IMAGER TEST: the 3D Imager Test cart) */
 	  if (im) vx_putenv (memmem_title (h, 96, "3D MINE") ? "VT_IMAGER=mine" : memmem_title (h, 96, "NARROW") ? "VT_IMAGER=narrow" : "VT_IMAGER=coaster");
 	  else vx_putenv ("VT_IMAGER=");
 	  im_out = im;

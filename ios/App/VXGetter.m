@@ -183,7 +183,7 @@ static NSString *vxg_state (int k, NSSet *have)
 	case 1: return [NSString stringWithFormat:@"%d of %d free homebrew games", vxg_count (have, vxg_hb), VXG_NHB];
 	case 2: return [fm fileExistsAtPath:[vxg_px () stringByAppendingPathComponent:@"pitrex.img"]] ? @"found" : @"not there";
 	case 5: return [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"VecDoom.um2"]] && [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"Tests/Photo Test.bin"]]
-	               && [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"Mach 3 (UVMC2).um2"]] ? @"found" : @"not there";   /* (the test carts too; Dragon's Lair and Mach 3: 2026-11-27) */
+	               && [fm fileExistsAtPath:[vxg_roms () stringByAppendingPathComponent:@"Vector Tank (UVMC2).um2"]] ? @"found" : @"not there";   /* (the test carts too; Nigel Harrison's UVMC2 ports: 2026-11-27) */
 	case 4: { NSUInteger n = [fm contentsOfDirectoryAtPath:[vxg_sys () stringByAppendingPathComponent:@"vectrex_emu/thumbs/labels"] error:nil].count;
 		return n >= 250 ? [NSString stringWithFormat:@"found (%lu labels)", (unsigned long) n] : n > 0 ? [NSString stringWithFormat:@"%lu labels", (unsigned long) n] : @"the 112 that come with the app"; }
 	default: return [fm fileExistsAtPath:vxg_speech ()] || [fm fileExistsAtPath:[vxg_sys () stringByAppendingPathComponent:@"vectrex_emu/sp0256-al2.bin"]] ? @"found" : @"not there"; }
@@ -488,7 +488,7 @@ static int vxg_importgames (NSString *name, NSData *d, int depth)
 /* ------------------------------------------------------------ the screen */
 static NSString *const VXG_TITLE[] = { @"GCE Vectrex games", @"Homebrew games (free)", @"PiTrex SD card", @"Speech ROM (al2.bin)", @"Box art and labels (full set)", @"Test extras (test build only)" };
 static NSString *const VXG_SIZE[] = { @"0.2 MB", @"1 MB", @"190 MB", @"2 KB", @"96 MB", @"25 MB" };
-static NSString *const VXG_SITE[] = { @"archive.org", @"archive.org, GitHub", @"vide.malban.de", @"spatula-city.org", @"this project's GitHub", @"the test carts, VecDoom, Doom, Quake, Veccy Road, Dragon's Lair, Mach 3 - the project's server" };
+static NSString *const VXG_SITE[] = { @"archive.org", @"archive.org, GitHub", @"vide.malban.de", @"spatula-city.org", @"this project's GitHub", @"the test carts, VecDoom, Doom, Quake, Veccy Road, Nigel Harrison's UVMC2 ports - the project's server" };
 #define VXG_N 6
 /* (the private test build - the owner, 2026-11-25: the app private until he is happy: the public build's page and one item
  *  more, the test extras from the project's server behind the test token; a build without the token has not got it) */

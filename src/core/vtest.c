@@ -351,6 +351,44 @@ static void imc_pair (int c, int i0, int i1)
  * the depth's plus half a turn's move. The move is taken out by pairing this pass with the left eye's last one too - the depth's
  * offset: to the right eye's pass from halfway between the two left ones (the owner, 2026-11-27: the arches drifted off the rails
  * as the ride went on - standing still, they sat right) */
+/* small objects, whole: the pieces of a pass grouped by their ends lying near (60 units - a square drawn with small gaps is one);
+ * each group's box, centre (weighed by length) and length */
+typedef struct { double cx, cy, len, x0, y0, x1, y1; } imc_obj;
+static int imc_uf[MAXL];
+static int imc_find (int a) { while (imc_uf[a] != a) a = imc_uf[a] = imc_uf[imc_uf[a]]; return a; }
+static int imc_group (const line_t *const *P, int n, int *lab, imc_obj *O)
+{
+	for (int i = 0; i < n; i++) imc_uf[i] = i;
+	for (int i = 0; i < n; i++) for (int j = i + 1; j < n; j++) {
+		const line_t *a = P[i], *b = P[j];
+		const long ex[2] = { a->x0, a->x1 }, ey[2] = { a->y0, a->y1 }, fx[2] = { b->x0, b->x1 }, fy[2] = { b->y0, b->y1 };
+		int near = 0; for (int u = 0; u < 2 && !near; u++) for (int v = 0; v < 2; v++) if (labs (ex[u] - fx[v]) <= 60 && labs (ey[u] - fy[v]) <= 60) { near = 1; break; }
+		if (near) { const int ra = imc_find (i), rb = imc_find (j); if (ra != rb) imc_uf[ra] = rb; }
+	}
+	int no = 0; static int idx[MAXL];
+	for (int i = 0; i < n; i++) idx[i] = -1;
+	for (int i = 0; i < n; i++) {
+		const int r = imc_find (i); if (idx[r] < 0) { idx[r] = no; imc_obj *o = &O[no++]; o->cx = o->cy = o->len = 0; o->x0 = o->y0 = 1e30; o->x1 = o->y1 = -1e30; }
+		const int k = idx[r]; lab[i] = k; imc_obj *o = &O[k]; const line_t *l = P[i];
+		const double L = hypot ((double) (l->x1 - l->x0), (double) (l->y1 - l->y0)) + 1;
+		o->cx += L * 0.5 * (l->x0 + l->x1); o->cy += L * 0.5 * (l->y0 + l->y1); o->len += L;
+		o->x0 = fmin (o->x0, fmin (l->x0, l->x1)); o->x1 = fmax (o->x1, fmax (l->x0, l->x1)); o->y0 = fmin (o->y0, fmin (l->y0, l->y1)); o->y1 = fmax (o->y1, fmax (l->y0, l->y1));
+	}
+	for (int k = 0; k < no; k++) { O[k].cx /= O[k].len; O[k].cy /= O[k].len; }
+	return no;
+}
+/* a small object's partner in another pass: about the same height, size and length - the shift between their centres (or no partner) */
+static int imc_obj_match (const imc_obj *a, const imc_obj *B, int nb, double *sh)
+{
+	int got = -1; double gc = 0; const double aw = a->x1 - a->x0, ah = a->y1 - a->y0;
+	for (int m = 0; m < nb; m++) {
+		const imc_obj *b = &B[m]; const double bw = b->x1 - b->x0, bh = b->y1 - b->y0, dx = b->cx - a->cx, dy = b->cy - a->cy;
+		if (fabs (dy) > IMC_Y || fabs (dx) > 16000 || fabs (bw - aw) > 0.3 * aw + 150 || fabs (bh - ah) > 0.3 * ah + 150 || fabs (b->len - a->len) > 0.3 * a->len + 200) continue;
+		const double cst = fabs (dy) + fabs (bw - aw) + fabs (bh - ah) + 0.5 * fabs (b->len - a->len) + fabs (dx) / 10;
+		if (got < 0 || cst < gc) { got = m; gc = cst; *sh = dx; }
+	}
+	return got;
+}
 static void imc_left (int c, int i0, int i1)
 {
 	static float d0[MAXL], d1[MAXL]; static unsigned char dl[MAXL];
@@ -362,6 +400,30 @@ static void imc_left (int c, int i0, int i1)
 		imc_w = 1; imc_P = imc_lp[c]; imc_np = imc_nlp[c]; imc_U = imc_lu[c];
 		imc_pair (c, i0, i1);
 		for (int i = i0; i <= i1; i++) if (dl[i] && imc_pl[i]) { d0[i] -= 0.5f * imc_s0[i]; d1[i] -= 0.5f * imc_s1[i]; }
+	}
+	/* (then each small object - under 4000 units across - come apart, paired whole: to the right eye's object of about its height,
+	 *  size and length, the shift between their centres; the move taken out by the left eye's last pass as above. Its pieces then move
+	 *  alike - 3D Narrow Escape's small squares, drawn with gaps between their sides, came apart side by side) */
+	{
+		static const line_t *LQ[MAXL], *RQ[IMC_N], *PQ[IMC_N]; static int li[MAXL], lab[MAXL], rlab[IMC_N], plab[IMC_N];
+		static imc_obj LO[MAXL], RO[IMC_N], PO[IMC_N]; int nl = 0;
+		for (int i = i0; i <= i1; i++) if (imc_col (last[i].rgb) == c && (last[i].rgb & 8)) { li[nl] = i; LQ[nl++] = &last[i]; }
+		for (int k = 0; k < imc_nr[c]; k++) RQ[k] = &imc_r[c][k];
+		for (int k = 0; k < imc_nlp[c]; k++) PQ[k] = &imc_lp[c][k];
+		if (nl && imc_nr[c]) {
+			const int nlo = imc_group (LQ, nl, lab, LO), nro = imc_group (RQ, imc_nr[c], rlab, RO), npo = imc_nlp[c] ? imc_group (PQ, imc_nlp[c], plab, PO) : 0;
+			for (int o = 0; o < nlo; o++) {
+				const imc_obj *a = &LO[o];
+				if (a->x1 - a->x0 >= 4000 || a->y1 - a->y0 >= 4000 || a->len < 150) continue;
+				{ float lo = 1e30f, hi = -1e30f; int unk = 0;   /* (only an object come apart: its pieces' shifts unalike, or some unknown -
+				                                                   letters alike side by side keep their pieces' own pairs) */
+				  for (int q = 0; q < nl; q++) if (lab[q] == o) { const int i = li[q]; if (!dl[i]) unk = 1; else { const float m = 0.5f * (d0[i] + d1[i]); if (m < lo) lo = m; if (m > hi) hi = m; } }
+				  if (!unk && hi - lo <= 400) continue; }
+				double sr = 0, sp = 0; if (imc_obj_match (a, RO, nro, &sr) < 0) continue;
+				const double d = npo && imc_obj_match (a, PO, npo, &sp) >= 0 ? sr - 0.5 * sp : sr;
+				for (int q = 0; q < nl; q++) if (lab[q] == o) { d0[li[q]] = d1[li[q]] = (float) d; dl[li[q]] = 1; }
+			}
+		}
 	}
 	for (int i = i0; i <= i1; i++) if (imc_col (last[i].rgb) == c && (last[i].rgb & 8) && dl[i]) {
 		last[i].x0 += (long) floor (d0[i] / 2 + 0.5f); last[i].x1 += (long) floor (d1[i] / 2 + 0.5f);

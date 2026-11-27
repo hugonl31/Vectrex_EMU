@@ -92,32 +92,141 @@ static void beam_take (double x, double y, double lev, unsigned char z, unsigned
  * colour is kept here (not in a save: a picture only) */
 int vt_imager_centre;
 #define IMC_N (MAXL / 4)
-static line_t imc_r[3][IMC_N]; static int imc_nr[3];
+static line_t imc_r[3][IMC_N]; static int imc_nr[3];         /* (the right eye's last pass of each colour) */
+static unsigned char imc_u[3][IMC_N];                         /* (its pieces already paired in the left eye's pass now) */
+static int imc_key = -1, imc_j[3], imc_hp[3]; static long imc_ps[3];   /* (the pass going on; each colour's place in its partner, the last shift) */
+static unsigned char imc_pl[MAXL]; static float imc_s0[MAXL], imc_s1[MAXL];   /* (this frame's left-eye pieces: paired, the shift found at each end) */
 static int imc_col (unsigned char rgb) { const int c = rgb & 7; return c == 1 ? 0 : c == 2 ? 1 : c == 4 ? 2 : -1; }
-static int imc_like (const line_t *a, const line_t *b)
+/* step 2's strokes: pieces in a row that join and go on straight; their ends in order (low y first, a level one low x first) */
+typedef struct { int i0, i1; double ax, ay, bx, by; } imc_stroke;
+static int imc_strokes (line_t *const *P, int n, imc_stroke *S, int smax)
 {
-	const long dxa = a->x1 - a->x0, dya = a->y1 - a->y0, dxb = b->x1 - b->x0, dyb = b->y1 - b->y0;
-	return labs (dxa - dxb) <= 96 && labs (dya - dyb) <= 96 && labs (a->y0 - b->y0) <= 256 && labs (b->x0 - a->x0) <= 16000;
+	int ns = 0, s0 = 0;
+	for (int i = 1; i <= n && ns < smax; i++) {
+		if (i < n) {
+			const line_t *a = P[i - 1], *b = P[i];
+			const double ax = a->x1 - a->x0, ay = a->y1 - a->y0, bx = b->x1 - b->x0, by = b->y1 - b->y0;
+			const double na = sqrt (ax * ax + ay * ay), nb = sqrt (bx * bx + by * by);
+			const int joined = labs (b->x0 - a->x1) <= 2 && labs (b->y0 - a->y1) <= 2;
+			const int straight = na < 1 || nb < 1 || (fabs (ax * by - ay * bx) <= 0.08 * na * nb && ax * bx + ay * by > 0);   /* (a line's start bends a little: the beam's lag) */
+			if (joined && straight) continue;
+		}
+		imc_stroke *t = &S[ns++]; t->i0 = s0; t->i1 = i - 1; s0 = i;
+		double x0 = (double) P[t->i0]->x0, y0 = (double) P[t->i0]->y0, x1 = (double) P[t->i1]->x1, y1 = (double) P[t->i1]->y1;
+		const int flip = fabs (y0 - y1) > 2 ? y0 > y1 : x0 > x1;
+		if (flip) { t->ax = x1; t->ay = y1; t->bx = x0; t->by = y0; } else { t->ax = x0; t->ay = y0; t->bx = x1; t->by = y1; }
+	}
+	return ns;
 }
-/* (a pass - one eye's lines of one colour, in a row - may end in the next frame: it goes on until the eye or the colour
- *  changes - a frame is a game frame, often one colour of one eye, or less) */
-static int imc_key = -1, imc_j[3];
+/* step 2: the left eye's pieces step 1 left, by strokes - each to the right eye's stroke at the same height (in order, a few
+ * strokes' slip; else the nearest - a pass drawn the other way round), every point moved by half the shift there along it
+ * (a rail going into the distance: its near end moves more than its far one) */
+#define IMC_S 4096
+static void imc_step2 (int c, line_t **LP, int nl)
+{
+	static line_t *RP[IMC_N]; static int RI[IMC_N]; static imc_stroke SL[IMC_S], SR[IMC_S]; static unsigned char su[IMC_S];
+	int nr = 0;
+	for (int k = 0; k < imc_nr[c]; k++) if (!imc_u[c][k]) { RI[nr] = k; RP[nr++] = &imc_r[c][k]; }
+	if (!nl || !nr) return;
+	const int nsl = imc_strokes (LP, nl, SL, IMC_S), nsr = imc_strokes (RP, nr, SR, IMC_S);
+	memset (su, 0, (size_t) nsr); int j = 0, hp = 0; double p0 = 0, p1 = 0;
+	for (int k = 0; k < nsl; k++) {
+		const imc_stroke *a = &SL[k]; int got = -1; double g0 = 0, g1 = 0, gc = 0;
+		for (int pass = 0; pass < 2 && got < 0; pass++)
+			for (int m = pass ? 0 : j; m < (pass ? nsr : (j + 8 < nsr ? j + 8 : nsr)); m++) {
+				const imc_stroke *b = &SR[m];
+				if (su[m] || fabs (b->ay - a->ay) > 48 || fabs (b->by - a->by) > 48) continue;
+				const double s0 = b->ax - a->ax, s1 = b->bx - a->bx;
+				if (fabs (s0) > 16000 || fabs (s1) > 16000) continue;
+				{ const double ln = sqrt ((a->bx - a->ax) * (a->bx - a->ax) + (a->by - a->ay) * (a->by - a->ay));
+				  if (fabs (s1 - s0) > 0.5 * ln + 200) continue; }   /* (its ends' shifts as far apart as its length allows: a wrong partner stretched it right across) */
+				const double cst = hp ? fabs (s0 - p0) + fabs (s1 - p1) : (pass ? fabs (s0) + fabs (s1) : 0);
+				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gc = cst; }
+			}
+		if (got < 0) continue;
+		if (got >= j && got < j + 8) j = got + 1;
+		su[got] = 1; hp = 1; p0 = g0; p1 = g1;
+		for (int i = SR[got].i0; i <= SR[got].i1; i++) imc_u[c][RI[i]] = 1;
+		const double vx = a->bx - a->ax, vy = a->by - a->ay, vv = vx * vx + vy * vy;
+		for (int i = a->i0; i <= a->i1; i++) {
+			const line_t *l = LP[i]; const int q = (int) (l - last);
+			double t = vv > 0 ? ((l->x0 - a->ax) * vx + (l->y0 - a->ay) * vy) / vv : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+			imc_s0[q] = (float) (g0 + (g1 - g0) * t);
+			t = vv > 0 ? ((l->x1 - a->ax) * vx + (l->y1 - a->ay) * vy) / vv : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+			imc_s1[q] = (float) (g0 + (g1 - g0) * t); imc_pl[q] = 1;
+		}
+	}
+}
+/* the left eye's lines of one pass in this frame (last[i0..i1] of colour c): step 1 - pieces in draw order with the same shape
+ * and height (a slip of 8 allowed, the one shifted most like the last pair) halfway to their partner; then step 2 */
+static void imc_left (int c, int i0, int i1)
+{
+	static line_t *LP[MAXL]; int nl = 0;
+	for (int i = i0; i <= i1; i++) {
+		line_t *a = &last[i]; imc_pl[i] = 0;
+		if (imc_col (a->rgb) != c || !(a->rgb & 8)) continue;
+		int got = -1; long gs = 0, gc = 0;
+		for (int pass = 0; pass < 2 && got < 0; pass++)    /* (near in order; else the same shape anywhere in the pass - the
+		                                                     eyes may draw their objects in another order) */
+			for (int m = pass ? 0 : imc_j[c]; m < imc_nr[c] && (pass || m < imc_j[c] + 8); m++) {
+				const line_t *b = &imc_r[c][m];
+				if (imc_u[c][m] || labs ((a->x1 - a->x0) - (b->x1 - b->x0)) > 8 || labs ((a->y1 - a->y0) - (b->y1 - b->y0)) > 8 || labs (a->y0 - b->y0) > 48) continue;
+				const long sh = b->x0 - a->x0; if (labs (sh) > 16000) continue;
+				const long cst = imc_hp[c] ? labs (sh - imc_ps[c]) : (pass ? labs (sh) : 0);
+				if (got < 0 || cst < gc) { got = m; gs = sh; gc = cst; }
+			}
+		if (got >= 0) { imc_u[c][got] = 1; imc_j[c] = got + 1; imc_hp[c] = 1; imc_ps[c] = gs; imc_s0[i] = imc_s1[i] = (float) gs; imc_pl[i] = 1; }
+		else LP[nl++] = a;
+	}
+	imc_step2 (c, LP, nl);
+	/* then each chain of joined pieces as one: a piece with no partner takes its neighbours' shift (a tumbling figure is not the
+	 * same shape in the two half turns), and where two pieces meet both ends get one shift - so a shape stays whole; a path into
+	 * the distance (a corridor's walls) keeps its shifts as found */
+	for (int k0 = i0; k0 <= i1; ) {
+		if (imc_col (last[k0].rgb) != c || !(last[k0].rgb & 8)) { k0++; continue; }
+		int k1 = k0;
+		while (k1 + 1 <= i1 && imc_col (last[k1 + 1].rgb) == c && (last[k1 + 1].rgb & 8)
+		       && labs (last[k1 + 1].x0 - last[k1].x1) <= 2 && labs (last[k1 + 1].y0 - last[k1].y1) <= 2) k1++;
+		int known = 0; for (int k = k0; k <= k1; k++) known += imc_pl[k];
+		if (known) {
+			static float m[MAXL];
+			for (int k = k0; k <= k1; k++) m[k] = imc_pl[k] ? 0.5f * (imc_s0[k] + imc_s1[k]) : 1e30f;
+			for (int k = k0; k <= k1; k++) {                /* (the neighbours' shift: the median of up to 7 round it) */
+				float w[7]; int nw = 0;
+				for (int q = k - 3; q <= k + 3; q++) if (q >= k0 && q <= k1 && m[q] < 1e29f) w[nw++] = m[q];
+				if (!nw) {                                  /* (none near: the nearest known along the chain) */
+					for (int d = 4; d <= k1 - k0 && !nw; d++) { if (k - d >= k0 && m[k - d] < 1e29f) w[nw++] = m[k - d]; else if (k + d <= k1 && m[k + d] < 1e29f) w[nw++] = m[k + d]; }
+				}
+				for (int a1 = 1; a1 < nw; a1++) for (int b1 = a1; b1 > 0 && w[b1 - 1] > w[b1]; b1--) { float t = w[b1]; w[b1] = w[b1 - 1]; w[b1 - 1] = t; }
+				const float med = nw ? w[nw / 2] : 0;
+				if (!imc_pl[k]) { imc_s0[k] = imc_s1[k] = med; imc_pl[k] = 1; }
+			}
+			for (int k = k0; k < k1; k++) if (fabsf (imc_s1[k] - imc_s0[k + 1]) <= 400) { const float v = 0.5f * (imc_s1[k] + imc_s0[k + 1]); imc_s1[k] = imc_s0[k + 1] = v; }
+			for (int k = k0; k <= k1; k++) { last[k].x0 += (long) floor (imc_s0[k] / 2 + 0.5f); last[k].x1 += (long) floor (imc_s1[k] / 2 + 0.5f); }
+		}
+		k0 = k1 + 1;
+	}
+}
 static void imager_centre (void)
 {
 	extern int vt_imager;
 	if (!vt_imager || !vt_imager_centre || !nlast) return;
-	for (int i = 0; i < nlast; i++) {
-		line_t *l = &last[i]; const int c = imc_col (l->rgb);
-		if (c < 0) continue;
-		const int left = (l->rgb & 8) != 0, key = left * 4 + c, fresh = key != imc_key; imc_key = key;
+	int run = -1, r0 = 0;                                  /* (this frame's run of left-eye lines of one colour) */
+	for (int i = 0; i <= nlast; i++) {
+		const int c = i < nlast ? imc_col (last[i].rgb) : -1, left = i < nlast && (last[i].rgb & 8);
+		const int key = i < nlast && c >= 0 ? left * 4 + c : -1;
+		if (run >= 0 && (key != run || i == nlast)) {   /* (a left run ends here: its pieces paired) */
+			imc_left (run - 4, r0, i - 1); run = -1;
+		}
+		if (key < 0) continue;
+		const int fresh = key != imc_key; imc_key = key;
 		if (!left) {                                        /* (the right eye's pass: kept - a new one in place of the last) */
 			if (fresh) imc_nr[c] = 0;
-			if (imc_nr[c] < IMC_N) imc_r[c][imc_nr[c]++] = *l;
+			if (imc_nr[c] < IMC_N) { imc_u[c][imc_nr[c]] = 0; imc_r[c][imc_nr[c]++] = last[i]; }
 			continue;
 		}
-		if (fresh) imc_j[c] = 0;                            /* (the left eye's: each line halfway to its partner) */
-		for (int k = imc_j[c]; k < imc_nr[c] && k < imc_j[c] + 8; k++)
-			if (imc_like (l, &imc_r[c][k])) { const line_t *r = &imc_r[c][k]; l->x0 = (l->x0 + r->x0) / 2; l->x1 = (l->x1 + r->x1) / 2; imc_j[c] = k + 1; break; }
+		if (fresh) { imc_j[c] = 0; imc_hp[c] = 0; memset (imc_u[c], 0, (size_t) imc_nr[c]); }   /* (a new left pass: its partner's pieces all free) */
+		if (run < 0) { run = key; r0 = i; }
 	}
 }
 static void beam_swap (void)

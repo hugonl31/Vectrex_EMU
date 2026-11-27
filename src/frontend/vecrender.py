@@ -2019,15 +2019,17 @@ vec4 spot(sampler2D t, vec2 uv) {                       // (rlm: the light seen 
 }
 // a flash that starts fading here now: its light (l), its age; sl - the light that started the afterglow here, ts its age (rlm);
 // relit - lit again by about the same light this game frame: its own afterglow under it goes (nl: that light)
+bool wfirst;                                            // (Smooth motion: the old afterglow goes before the new one starts)
 void leaving(vec2 uv, inout float sl, inout float ts, out vec3 l, out float age, out bool relit, out vec3 nl) {
     vec4 o = spot(oldp, uv), n = spot(newp, uv);
-    vec4 oc = texture2D(oldp, uv), nc = texture2D(newp, uv);
+    vec4 oc = texture2D(oldp, uv), nc = texture2D(newp, uv); wfirst = false;
     bool oh = o.a > 0.0 && (rlm > 0.5 && exs > 0.5 || -log(o.a) < hold), nh = n.a > 0.0 && -log(n.a) < hold;   // (rlm: the game frame's lines (E) are leaving at their own age)
     l = vec3(0.0); age = 0.0; nl = n.rgb;
     if (oh) {
         float lo = lum(o.rgb); vec3 c = o.rgb * mul * min(1.0, acap / max(lo, 1e-4));
         age = -log(o.a) + (rlm > 0.5 && exs > 0.5 ? exa : dt);
         if (rlm > 0.5 && exs > 0.5) {                   // (Smooth motion's game-frame lines: only what is brighter than what glows here)
+            if (lo >= 0.9 * sl) { wfirst = true; nl = c; sl = 0.0; }   // (the same line again: what it started before goes, as at 50 Hz)
             c *= clamp(1.0 - min(sl, acap) / max(lum(c), 1e-6), 0.0, 1.0);
             if (nh && lum(n.rgb) >= 0.9 * lo) c = rest(c, max(c - n.rgb, vec3(0.0)));
         } else if (nh) c = rest(c, max(c - n.rgb, vec3(0.0)));   // (taken over: the light it does not replace)
@@ -2036,9 +2038,19 @@ void leaving(vec2 uv, inout float sl, inout float ts, out vec3 l, out float age,
     }
     relit = nh;
     if (rlm > 0.5) {                                    // (lit anew this game frame, about as bright as the light that started it)
-        bool fresh = exm > 0.5 ? exs > 0.5 : (nc.a > oc.a * 1.0001 || !(oc.a > 0.0 && -log(oc.a) < hold));
-        relit = nh && fresh && lum(n.rgb) >= 0.9 * sl;
-        if (relit) sl = 0.0;
+        if (exm > 0.5) relit = wfirst;                  // (Smooth motion: the lines shown take nothing off - the game frame's own do,
+        else {                                          //  above. The line shown between two game frames starts no afterglow where
+                                                        //  it is: it took the trail away under it and left it dark - dark bars
+                                                        //  across the Ship Test's trail at a high rate, the owner's PC 2026-11-27)
+            bool fresh = nc.a > 0.0 && -log(nc.a) < dt * 1.25 + 1e-4;   // (lit since the last picture: a line the beam drew
+                                                            //  this refresh - not the lit layer's fading rest. Before: fresher than
+                                                            //  the old picture there - a line drawn early in a game frame is older
+                                                            //  than one drawn late in the one before: its afterglow stayed, and its
+                                                            //  own started as old - dark bars across the Ship Test's trail with
+                                                            //  G-Sync, the owner 2026-11-27; the TRAIL page's fastest bars 1.6 x)
+            relit = nh && fresh && lum(n.rgb) >= 0.9 * sl;
+            if (relit) sl = 0.0;
+        }
     }
 }
 """
@@ -2051,8 +2063,10 @@ void main() {
     vec4 q1 = texture2D(oldg1, uv), q2 = texture2D(oldg2, uv);
     float sl = rlm > 0.5 ? q1.a * kd.y : 0.0, ts = rlm > 0.5 ? q2.a + dt : 0.0;   // (rlm: the starting light, its age - in the alphas)
     vec3 l, nl; float age; bool relit; leaving(uv, sl, ts, l, age, relit, nl);
-    vec3 g1 = q1.rgb * kd.x * mul + l * amp.x * exp(-age / tau.x), g2 = q2.rgb * kd.y * mul + l * amp.y * exp(-age / tau.y);
-    if (relit) {                                        // (lit again: its own afterglow under it goes - a late game
+    vec3 g1 = q1.rgb * kd.x * mul, g2 = q2.rgb * kd.y * mul;
+    if (relit && wfirst) { g1 = rest(g1, max(g1 - nl * amp.x, vec3(0.0))); g2 = rest(g2, max(g2 - nl * amp.y, vec3(0.0))); }
+    g1 += l * amp.x * exp(-age / tau.x); g2 += l * amp.y * exp(-age / tau.y);
+    if (relit && !wfirst) {                                        // (lit again: its own afterglow under it goes - a late game
         g1 = rest(g1, max(g1 - nl * amp.x, vec3(0.0)));     //  frame let a still line start fading, lit again on top it
         g2 = rest(g2, max(g2 - nl * amp.y, vec3(0.0)));     //  flashed a quarter brighter for a moment)
     }
@@ -2070,8 +2084,10 @@ void main() {
     vec4 t = texture2D(oldg1, uv);
     float sl = rlm > 0.5 ? t.a * kd.y / max(amp.y, 1e-6) : 0.0, ts = 0.0;   // (rlm: no room for them - the starting light from the
     vec3 l, nl; float age; bool relit; leaving(uv, sl, ts, l, age, relit, nl);   //  slow part, which fades as it does; no age rule)
-    vec3 g1 = t.rgb * kd.x * mul + l * amp.x * exp(-age / tau.x); float g2 = t.a * kd.y * mul + lum(l) * amp.y * exp(-age / tau.y);
-    if (relit) {
+    vec3 g1 = t.rgb * kd.x * mul; float g2 = t.a * kd.y * mul;
+    if (relit && wfirst) { g1 = rest(g1, max(g1 - nl * amp.x, vec3(0.0))); g2 = max(g2 - lum(nl) * amp.y, 0.0); }
+    g1 += l * amp.x * exp(-age / tau.x); g2 += lum(l) * amp.y * exp(-age / tau.y);
+    if (relit && !wfirst) {
         g1 = rest(g1, max(g1 - nl * amp.x, vec3(0.0))); g2 = max(g2 - lum(nl) * amp.y, 0.0);
     }
     gl_FragColor = vec4(g1, g2);

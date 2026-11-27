@@ -2656,7 +2656,8 @@ class App:
         self.sm_buf = []
         self.sm_st = type('SmoothState', (), {})()     # (the alternate-halves check's memory)
         self.imager_note = bool(c0.get('imager_note', True))    # the 3D Imager: a note while its disc spins up
-        self.imager_eye = c0.get('imager_eye', 'both') if c0.get('imager_eye') in ('both', 'left', 'right', 'centre') else 'both'   # its view: both eyes or one
+        self.imager_eye = c0.get('imager_view', 'centre') if c0.get('imager_view') in ('both', 'left', 'right', 'centre') else 'centre'   # its view: both eyes, one or
+        # the centre (the default since 2026-11-27, the owner: "set center view to default on all systems" - a key of its own, so it is everyone's once)
         self.usb_hid = bool(c0.get('usb_hid', True))            # a UVMC2 game: the PC's mouse (and keyboard: Ctrl+K) as its USB devices
         self.uvm2_mode = c0.get('uvm2_mode', 'exact') if c0.get('uvm2_mode') in UVM2_MODES else 'exact'
         Core.uvm2_mode = self.uvm2_mode                         # UVMC2 games: Exact (as the cartridge) or Fast (slower PCs)
@@ -5650,7 +5651,7 @@ class App:
               ('cartridge', (self.cart_hw, self.speech_user, bool(self.p2_games), self.p2_auto, self.usb_hid, self.uvm2_mode, self.show_um2),
                ('auto', 'off', False, True, True, 'exact', True)),
               ('power', (self.start_on, self.skip_boot), (False, False)), ('tv shortcuts', self.pad_shortcuts, True), ('mouse', self.mouse_stick, False),
-              ('3d imager', (self.imager_note, self.imager_eye), (True, 'both')), ('sd cards', (self.sd_dir, self.px_dir), (SD_DEFAULT, PX_DEFAULT)),
+              ('3d imager', (self.imager_note, self.imager_eye), (True, 'centre')), ('sd cards', (self.sd_dir, self.px_dir), (SD_DEFAULT, PX_DEFAULT)),
               ('recording', dict(self.rec_opts), dict(recorder.DEFAULTS)),
               ('online', (self.net_server_s, self.net_osd, self.chat_sound), ('', True, True)), ('update check', self.update_check, True)]
         if r and hasattr(r, 'line_gap'):
@@ -8846,12 +8847,12 @@ class App:
         self.show_look('sound settings: the defaults')
     def reset_addons(self):
         """Add-ons > Reset add-on settings to default: UVMC2 games listed, the jack clean at 100 %, the 3D Imager's
-        motor heard and its note shown"""
+        motor heard and its note shown, its centre view"""
         for k, v in self.sound_default.items():
             if k.startswith(('jack_', 'motor_')):
                 setattr(self.run.crt, k, v)
         self.imager_note = True
-        self.set_imager_eye('both')
+        self.set_imager_eye('centre')
         self.show_um2 = True
         self.sd_dir = SD_DEFAULT
         self.px_dir = PX_DEFAULT
@@ -9186,7 +9187,7 @@ class App:
         d['usb_hid'] = getattr(self, 'usb_hid', True)
         d['uvm2_mode'] = getattr(self, 'uvm2_mode', 'exact')
         d['imager_note'] = getattr(self, 'imager_note', True)
-        d['imager_eye'] = getattr(self, 'imager_eye', 'both')
+        d['imager_view'] = getattr(self, 'imager_eye', 'centre')
         d['smooth_motion'] = getattr(self, 'smooth', False)
         d['quality'] = self.current_profile() if self.ren else 'ultra'
         d['hdr'] = getattr(self, 'hdr_mode', 'auto'); d['hdr_frac'] = getattr(self, 'hdr_frac', 1.0)

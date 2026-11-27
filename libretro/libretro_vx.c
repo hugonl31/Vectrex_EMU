@@ -583,7 +583,7 @@ static const struct vx_opt OPTS[] = {
 	  "auto|off (plain 32 KB)|pb6 (64 KB)|vb (Vectorblade 4 x 48 KB)|hb512 (512 KB flash)|multi (Multi-Cart)|ram (8 KB RAM)" },
 	{ "vectrex_emu_port2", "system", "Controller port 2", "Auto: a game that needs the 3D Imager, the light pen or a speech module gets it (next game start).",
 	  "auto|none|3D Imager|light pen|VecVoice|VecVox" },
-	{ "vectrex_emu_imager", "system", "3D Imager", "Colour: both eyes' pictures at once, as seen without the goggles. Left eye / right eye: only that eye's pictures, no double image. Centre eye: one picture as from between the eyes - for aiming.", "colour|left eye|right eye|centre eye|off" },
+	{ "vectrex_emu_imager", "system", "3D Imager", "Centre eye: one picture as from between the eyes - for aiming. Colour: both eyes' pictures at once, as seen without the goggles. Left eye / right eye: only that eye's pictures, no double image.", "centre eye|colour|left eye|right eye|off" },
 	{ "vectrex_emu_usb_hid", "system", "USB keyboard and mouse (UVMC2, PiTrex)", "RetroArch's keyboard and mouse as the cartridge's USB devices. Keys: Game Focus (Scroll Lock).", "on|off" },
 	{ "vectrex_emu_jack", "system", "UVMC2 headphone jack", "Clean: line out. Through the speaker: the Vectrex's own sound.", "clean|through the speaker|off" },
 	{ "vectrex_emu_jack_vol", "system", "UVMC2 headphone jack volume", NULL, "100%|0%|25%|50%|75%|125%|150%|175%|200%" },

@@ -285,7 +285,12 @@ static struct { float glow, ovl, wear, fine, medium, large, scrib, glint, reach;
 static float k_ovl = -1, k_ovglow = -1; static int raw_scr = -1, opt_par = 1, raw_par = -1, raw_geom = -1, raw_passes = -1, raw_dith = -1, raw_groom = -1;
 typedef struct { unsigned char passes, curve, glass, groom, light, lov, aglow, scr, par, crefl, sbend, dith, half, lh; float ps; } prow;   /* (a profile's switches) */
 static float vx_vr_k = 1.0f; static int g_u_vrk = -1;   /* (EmuVR: VR brightness - a gain on the final picture, at most white; 1: the PC's look) */
-static int fx_passes = 2, fx_dith = 1, fx_half, fx_lh; static float fx_ps = 1.0f;   /* (the profile's: the glow passes, dither, phosphor scale,
+#ifdef VX_EMUVR
+static int fx_dith = 0;                             /* (EmuVR: no dither from the start - fx_apply sets it only later; the owner, 2026-11-27) */
+#else
+static int fx_dith = 1;
+#endif
+static int fx_passes = 2, fx_half, fx_lh; static float fx_ps = 1.0f;   /* (the profile's: the glow passes, dither, phosphor scale,
                                                                           half rate, the lines at the phosphor's size - GPU) */   /* (the overlay's ceiling light, plastic glow, scratches, parallax) */
 static float glass_grey_v, k_ceiling = -1, k_crefl = -1, k_cwear = -1;   /* (the strengths: -1 auto - the profile's on / off at 1x) */                       /* (this refresh: every pixel has colour - an overlay painted in, or the glass grey) */
 static int geo_glass = -1, geo_rot = -1, geo_size = -1; static unsigned av_maxw, av_maxh; static uint32_t *rb; static size_t rb_n;
@@ -466,7 +471,7 @@ static struct retro_variable vars[] = {   /* (2026-11-25, D1: the overlay's and 
 	{ "vectrex_emu_vr_bright", "VR brightness (the whole picture brighter or dimmer - 1x is the PC's look); 1.0x|0.5x|0.75x|1.25x|1.5x|1.75x|2.0x|2.5x|3.0x" },
 	{ "vectrex_emu_brightness", "Brightness (CPU picture - VR: the screen behind its glass looks dimmer than a monitor); 1x (measured)|1.25x|1.5x|1.75x|2x" },
 	{ "vectrex_emu_trail_bright", "Phosphor trail brightness (CPU picture - VR headsets lose faint light); 1x (real)|0.5x|0.75x|1.5x|2x|3x|4x" },
-	{ "vectrex_emu_look", "Look (Medium: between the two / Bright: all lines pushed up to white, bright vectors on a dim screen / Vectrex: as a real Vectrex, dots and slow lines stand out); medium|bright|vectrex" },
+	{ "vectrex_emu_look", "Look (Bright: all lines pushed up to white, bright vectors on a dim screen / Medium: between the two / Vectrex: as a real Vectrex, dots and slow lines stand out); bright|medium|vectrex" },
 	{ "vectrex_emu_corner_dots", "Corner dots (CPU picture - the beam resting); on|off" },
 	{ "vectrex_emu_dwell", "Dwell spots inside strokes (CPU picture); on|off" },
 	{ "vectrex_emu_speed_bright", "Fast sweeps fainter (CPU picture); on|off" },
@@ -796,8 +801,9 @@ static void read_options (void)
 	{ extern int vt_imager_centre; vt_imager_centre = opt_imager == 5; }
 #ifdef VX_EMUVR
 	opt_swap = opt_is ("vectrex_emu_swap_eyes", "on");
-	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_look", "vectrex") ? 0.0f : opt_is ("vectrex_emu_look", "medium") ? 0.5f : 1.0f; }   /* (the EmuVR table's Look: Medium the default since
-	                                              2026-11-26 (bright before) - the GPU picture's look strength, 0 Vectrex, 0.5 Medium, 1 Bright, as the desktop core's Tube > Look) */
+	{ extern float vx_bright; vx_bright = opt_is ("vectrex_emu_look", "vectrex") ? 0.0f : opt_is ("vectrex_emu_look", "medium") ? 0.5f : 1.0f; }   /* (the EmuVR table's Look: Bright the default again
+	                                              since 2026-11-27 (Medium from 11-26) - the owner: the raw Vectrex_EMU picture, the core's Bright look; 0 Vectrex,
+	                                              0.5 Medium, 1 Bright, as the desktop core's Tube > Look) */
 	opt_glass = !opt_is ("vectrex_emu_area", "overlay sheet 162x207 mm");
 	{ const char *ce = getenv ("VECTREX_CONSOLE");   /* (route A: the mod names the console that starts this RetroArch; the option overrides) */
 	  opt_cad = opt_is ("vectrex_emu_console", "owner's CAD model") ? 1 : opt_is ("vectrex_emu_console", "classic") ? 0 : (ce && !strcmp (ce, "cad")); }
@@ -884,9 +890,8 @@ static void read_options (void)
 	 *  put the core's own bloom over the PC's, its "long" trail made it 1.7x as long) */
 	if (!opt_is ("vectrex_emu_renderer", "CPU only")) {
 		opt_glow = 0; raw_glow = 0; opt_sigma = 0.55; opt_bright = 1.0f; opt_sbend = 0; raw_sbend = 0;
-#ifdef VX_EMUVR
-		opt_after = 1; opt_trail = 1.1f; opt_trail_k = 1.5f;   /* (EmuVR's afterglow keys are the CPU picture's) */
-#endif
+		/* (EmuVR too: the afterglow as Vectrex_EMU's own, from its options' defaults - on (1.1x), 1x bright; its own 1.5x brightness forced
+		 *  here until 2026-11-27 made long trails - the owner: "no changes to the vectors afterglow in our vr core ... leave them alone") */
 		/* (RetroArch and the apps: Afterglow and Afterglow brightness are the GPU picture's own settings, as the desktop's -
 		 *  forced here they changed nothing on screen from 2026-11-25 to 2026-11-26; their defaults are the values above) */
 	}
@@ -1047,7 +1052,7 @@ void retro_get_system_info (struct retro_system_info *i)
 	memset (i, 0, sizeof *i);
 	i->library_name = "Vectrex_EMU";
 #ifdef VX_EMUVR
-	i->library_version = "0.36";
+	i->library_version = "0.37";
 #else
 	i->library_version = "1.1";                 /* (the RetroArch flavour's own line: libretro_port_plan.md 5.6) */
 #endif
@@ -3172,6 +3177,8 @@ static void fx_apply (void)
 #ifdef VX_EMUVR
 	/* (EmuVR: the light alone - its own glass, case, room light and the mod's overlay are in the VR room: none drawn here) */
 	gfx.glass = gfx.ceiling = gfx.cse = gfx.fx = 0; gfx.lk = gfx.grey = gfx.croom = gfx.crefl = gfx.cwear = 0.0f; glass_grey = 0.0f;
+	fx_dith = 0;                                /* (no dither: its +-1/255 on every pixel left 1 black pixel in 8 at 1/255 - grain, and the frame's
+	                                               rectangle faintly grey on the mod's phosphor layer; the owner, 2026-11-27) */
 	ovfx.ovl = ovfx.glow = 0.0f; ovfx.scr = 0;
 #endif
 }

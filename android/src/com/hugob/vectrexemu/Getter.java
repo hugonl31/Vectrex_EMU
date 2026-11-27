@@ -147,7 +147,7 @@ final class Getter {
 		case 1: return count (have, HOMEBREW) + " of " + HOMEBREW.length + " free homebrew games";
 		case 2: return new File (pxDir (m), "pitrex.img").exists () ? "found" : "not there";
 		case 5: return new File (roms (m), "VecDoom.um2").exists () && new File (roms (m), "Tests/Photo Test.bin").exists ()
-		               && new File (roms (m), "Vector Tank (UVMC2).um2").exists () ? "found" : "not there";   /* (the test carts too: 2026-11-25; Nigel Harrison's UVMC2 ports, Dragon's Lair to Vector Tank: 2026-11-27) */
+		               && new File (roms (m), "Vector Tank (UVMC2).um2").exists () && new File (roms (m), "Tests/3D Imager Test.bin").exists () ? "found" : "not there";   /* (the test carts too: 2026-11-25; Nigel Harrison's UVMC2 ports, Dragon's Lair to Vector Tank: 2026-11-27) */
 		case 4: { String[] l = new File (m.sysDir, "vectrex_emu/thumbs/labels").list (); int n = l == null ? 0 : l.length; return n >= 250 ? "found (" + n + " labels)" : n > 0 ? n + " labels" : "the 112 that come with the app"; }
 		default: return speechFile (m).exists () || new File (m.sysDir, "vectrex_emu/sp0256-al2.bin").exists () ? "found" : "not there"; }
 	}

@@ -239,6 +239,7 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	 *  spot is its afterglow's, as when it leaves bit by bit at 50 Hz -, taken over only by the same light again (a still line). An
 	 *  afterglow continued by a fainter light leaving (the skirt of a line that moved on) is as old as the light that started it) */
 	"  if (rlm != 0) {\n"
+	"    if (exs > 0.5 && pv && lp >= 0.9 * sl) { g1 = rest(g1, max(g1 - p * cap * a1, 0.0)); g2 = rest(g2, max(g2 - p * cap * a2, 0.0)); sl = 0.0; }\n"
 	"    if (exs > 0.5 && pv) { vec3 pe = p * cap * clamp(1.0 - min(sl, acap) / max(lp * cap, 1e-6), 0.0, 1.0); l = lf >= 0.9 * lp ? rest(pe, max(pe - f, 0.0)) : pe; }\n"
 	"    if (any(greaterThan(l, vec3(0.0)))) { if (sl > 0.0 && lp <= sl) age = max(age, ts); else ts = age; sl = max(sl, lp); } }\n"
 	"  float e1 = a1 * exp(-age / t1), e2 = a2 * exp(-age / t2);\n"
@@ -246,8 +247,12 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  vec3 lit = vec3(greaterThan(f, vec3(0.0)));\n"
 	/* (lit again: its own afterglow under it goes. rlm: only where the light is about as bright as the one that started it, and once a
 	 *  game frame - before, every refresh the skirt and the glass's glow of the lines that had moved on took a share off: a slow line's
-	 *  trail was wiped out to thin stripes, the Test Cart's slowest bars' 1.1 x the fastest's light where the tube's is 3 x) */
-	"  if (rlm != 0) { if (lf < 0.9 * sl || pex < 0.5) lit = vec3(0.0); else sl = 0.0; }\n"
+	 *  trail was wiped out to thin stripes, the Test Cart's slowest bars' 1.1 x the fastest's light where the tube's is 3 x. Smooth motion
+	 *  (exs): the lines shown take nothing off - the game frame's own lines do, as at 50 Hz (above: where one is about as bright as the
+	 *  light that started the afterglow there, that afterglow goes and its own starts in full). The line shown between two game frames
+	 *  starts no afterglow where it is, so it took the trail away under it and left it dark: dark bars across the trail at a high
+	 *  rate, the Ship Test's on the owner's PC, 2026-11-27) */
+	"  if (rlm != 0) { if (lf < 0.9 * sl || pex < 0.5 || exs > 0.5) lit = vec3(0.0); else sl = 0.0; }\n"
 	"  g1 = rest(g1, mix(g1, max(g1 - f * a1, 0.0), lit)); g2 = rest(g2, mix(g2, max(g2 - f * a2, 0.0), lit));\n"
 	"  g1 *= vec3(greaterThanEqual(g1, vec3(1e-4))); g2 *= vec3(greaterThanEqual(g2, vec3(1e-4)));\n"
 	"  bool on = any(greaterThan(g1 + g2, vec3(0.0))); vec3 gl = LIFT(g1 + g2);\n"

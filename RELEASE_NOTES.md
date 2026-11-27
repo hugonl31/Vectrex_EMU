@@ -3,6 +3,13 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.9.4
+
+* The afterglow behind moving shapes without dark bars: on the PC with G-Sync, a line the game draws early in a frame
+  left a dark bar in the trail behind it (the Ship Test), and with Smooth motion at a high refresh rate the lines shown
+  between two game frames did the same. With G-Sync the trails now also match the photos of the real tube (the fastest
+  lines' trails were about 1.6 x too bright).
+
 ## v1.9.3
 
 * Afterglow length: 1.1x the new default on every system (was 0.6x) - fitted to photos of a real Vectrex's tube (the Test

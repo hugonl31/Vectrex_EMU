@@ -289,7 +289,7 @@ TOPICS = [
          "resting dot grows wider, a line shows a dot where it starts, crossings add up, and the thick glass "
          "round a bright spot glows a little. On an HDR screen the brightest dots go above white."),
 ('item', 'Afterglow / Afterglow length', "The phosphor keeps glowing after the beam has passed: its length. "
-         "x1 is the measured length; x0.6 was matched to a real Vectrex side by side."),
+         "x1.1 matches photos of a real Vectrex's tube."),
 ('more', 'The measured afterglow', "Filmed on a real Vectrex: the moment the beam leaves, a spot drops to "
          "about 15 % of its brightness, to 4 % after 0.15 s and 1.5 % after half a second; it is gone after "
          "about 2 seconds. That is why fast objects leave fading copies or a faint trail, and why a game "

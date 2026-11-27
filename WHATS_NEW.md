@@ -4,6 +4,9 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.9.3
+- Afterglow length 1.1x by default, as photos of a real tube show
+
 ## v1.9.2
 - Afterglow fitted to a real tube: long, even trails
 - The afterglow the same at any refresh rate (60 / 120 / 144 Hz)

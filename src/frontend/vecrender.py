@@ -2440,8 +2440,8 @@ class GLBloomRenderer(GLRenderer):
         self.art_dx = 0.0; self.art_dy = 0.0; self.art_scale = 1.0   # (Overlay > Adjust position and size)
         self.tex = []; self.fbs = []
         self.trail_on = True         # the phosphor trail (T)
-        self.trail = 0.6             # the afterglow's time scale: 1 = as measured on a real Vectrex (F7 / F8); 0.6 the
-                                     #  owner's choice side by side with the tube (2026-10-14)
+        self.trail = 1.1             # the afterglow's time scale: 1 = as measured on a real Vectrex (F7 / F8); 1.1 fitted to
+                                     #  the owner's photos of the Test Cart's TRAIL page (2026-11-27; 0.6 before)
         self.trail_k = 1.0           # the afterglow's brightness: x TRAIL_K (Afterglow brightness: 0.5 - 3 as the core's)
         self.wob_on = True           # mains hum wobble (see HUM_AXES)
         self.wob_strength = 0.1074   # rms offset, game px (the owner's choice, 2026-10-08)

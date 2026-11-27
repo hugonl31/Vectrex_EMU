@@ -3,6 +3,12 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.9.3
+
+* Afterglow length: 1.1x the new default on every system (was 0.6x) - fitted to photos of a real Vectrex's tube (the Test
+  Cartridge's trail page): with it the trails fade as on the tube. A length left at the old default moves to the new one
+  once; one chosen by hand stays.
+
 ## v1.9.2
 
 * The afterglow fitted to photos of a real Vectrex's tube (the Test Cartridge's trail page): a slow line leaves the long,

@@ -242,7 +242,7 @@ static double opt_wob_k = 1, opt_bend_k = 1, opt_buzz_k = 1, opt_voice_k = 1, op
 static int opt_rate = 60, opt_smooth = 1, opt_halo = 1, opt_bend = 1, opt_dwell = 1;   /* (v0.9) */
 static int vx_beam;                          /* (the beam on the phosphor: the picture is the light of the spot's own path - bt2_prepare; not EmuVR's flavour) */
 static int bt_gpu;                           /* (.. as light on the GPU - gpu_phos.c: pieces add, the glass's glow; else the CPU's display values) */
-static int opt_dots = 1, opt_speedb = 1; static float opt_trail = 0.6f, opt_trail_k = 1.0f, opt_bright = 1.0f;   /* (v0.10: every look switchable, for slower PCs) */
+static int opt_dots = 1, opt_speedb = 1; static float opt_trail = 1.1f, opt_trail_k = 1.0f, opt_bright = 1.0f;   /* (v0.10: every look switchable, for slower PCs) */
 static int opt_sbend = 0; static const double opt_white = 12000;   /* (v0.14; opt_geom with the tube map above. The lines' white, fixed since
                                               2026-11-26: the White balance option gone - the owner) */
 static int opt_power = 1;                    /* (v0.15: the switch-on / switch-off effects) */
@@ -564,8 +564,8 @@ static const struct vx_opt OPTS[] = {
 #else
 	{ "vectrex_emu_tube_look", "tube", "Look", "Vectrex: as a real Vectrex. Medium: between the two. Bright: brighter, wider lines - for a small screen.", "Medium|Bright|Vectrex" },
 #endif
-	{ "vectrex_emu_afterglow", "tube", "Afterglow", "The phosphor keeps glowing after the beam has passed: its length. 1x is the measured length; 0.6x was matched to a real Vectrex side by side.",
-	  "0.6x|off|0.05x|0.1x|0.2x|0.3x|0.4x|0.5x|0.7x|0.8x|0.9x|1x|1.1x|1.2x" },
+	{ "vectrex_emu_afterglow", "tube", "Afterglow", "The phosphor keeps glowing after the beam has passed: its length. 1.1x matches photos of a real Vectrex's tube.",
+	  "1.1x|off|0.05x|0.1x|0.2x|0.3x|0.4x|0.5x|0.6x|0.7x|0.8x|0.9x|1x|1.2x" },
 	{ "vectrex_emu_trail_bright", "tube", "Afterglow brightness", NULL, "1x|0.5x|0.75x|1.25x|1.5x|2x|3x" },
 #ifdef VX_LOG_TOKEN                                 /* (the iOS test build only: the owner tries lifting the faint trails, 2026-11-27) */
 	{ "vectrex_emu_trail_faint", "tube", "Faint afterglow lift (test)", "Lifts faint trails only - the bright ones stay.", "1x|1.5x|2x|2.5x|3x|4x|6x" },
@@ -685,7 +685,7 @@ static void opts_set (retro_environment_t cb)
 /* (2026-11-22, the beam on the phosphor: the picture's and the unit's settings - Tube, Overlay, Case & Room light, Unit, Circuit -
  *  back to their defaults once, as a clean install (the owner). A mark in the system folder says it is done; the frontend takes
  *  each value through RETRO_ENVIRONMENT_SET_VARIABLE - RetroArch 1.17 on, the own apps) */
-#define VX_OPT_EPOCH 4
+#define VX_OPT_EPOCH 5
 static void opts_reset_once (void)
 {
 	const char *sys = NULL; char f[1024]; int have = 0;
@@ -710,17 +710,20 @@ static void opts_reset_once (void)
 	/* (epoch 4, 2026-11-26: new defaults RetroArch never gives a saved option - it keeps every value in its options file. A value still at
 	 *  the old default takes the new one; one chosen otherwise stays. Tube > Look: Medium on a computer (was Vectrex), Bright on an iPhone /
 	 *  iPad (was Vectrex; Android was Bright already); the Eject button off on an iPhone / iPad (was R). The own apps keep their own look
-	 *  (App > Look) and moved their eject themselves (app.eject1): not here) */
+	 *  (App > Look) and moved their eject themselves (app.eject1): not here.
+	 *  Epoch 5, 2026-11-27: Afterglow 0.6x -> 1.1x, fitted to the owner's photos of the Test Cart's TRAIL page - in the apps too) */
 	{ extern int vx_app_noshape;
-	  if (!vx_app_noshape) {
-		static const struct { const char *key, *was; } NEWDEF[] = {
+	  {
+		static const struct { int ep, app; const char *key, *was; } NEWDEF[] = {
 #if VX_IOS
-			{ "vectrex_emu_tube_look", "Vectrex" }, { "vectrex_emu_btn_eject", "R" },
+			{ 4, 0, "vectrex_emu_tube_look", "Vectrex" }, { 4, 0, "vectrex_emu_btn_eject", "R" },
 #elif !defined(__ANDROID__)
-			{ "vectrex_emu_tube_look", "Vectrex" },
+			{ 4, 0, "vectrex_emu_tube_look", "Vectrex" },
 #endif
-			{ NULL, NULL } };
+			{ 5, 1, "vectrex_emu_afterglow", "0.6x" },
+			{ 0, 0, NULL, NULL } };
 		for (int k = 0; NEWDEF[k].key; k++) {
+			if (have >= NEWDEF[k].ep || (vx_app_noshape && !NEWDEF[k].app)) continue;   /* (each once, at its own epoch) */
 			const char *nd = NULL; static char d[64];
 			for (size_t i = 0; OPTS[i].key; i++) if (!strcmp (OPTS[i].key, NEWDEF[k].key)) { const char *v = OPTS[i].vals; size_t j = 0;
 				while (v[j] && v[j] != '|' && j < sizeof d - 1) { d[j] = v[j]; j++; } d[j] = 0; nd = d; break; }
@@ -832,8 +835,8 @@ static void read_options (void)
 	{ const double k = optx ("vectrex_emu_vr_bright", 1.0); vx_vr_k = k >= 0.5 && k <= 3.0 ? (float) k : 1.0f; }   /* (the owner's top, 2026-11-25: 1x the default) */
 #endif
 	opt_after = !opt_is ("vectrex_emu_afterglow", "off");
-	/* (Afterglow: its length, as the desktop's slider - 0.05x .. 1.2x, 0.6x the default; the values before 2026-11-23: on 0.6x, long 1x, short 0.3x) */
-	{ const char *ag = optv ("vectrex_emu_afterglow"); double t = !strcmp (ag, "long (real Vectrex)") ? 1.0 : !strcmp (ag, "short") ? 0.3 : ag[0] >= '0' && ag[0] <= '9' ? atof (ag) : 0.6;
+	/* (Afterglow: its length, as the desktop's slider - 0.05x .. 1.2x, 1.1x the default (0.6x until 2026-11-27); the values before 2026-11-23: on 0.6x, long 1x, short 0.3x) */
+	{ const char *ag = optv ("vectrex_emu_afterglow"); double t = !strcmp (ag, "long (real Vectrex)") ? 1.0 : !strcmp (ag, "short") ? 0.3 : ag[0] >= '0' && ag[0] <= '9' ? atof (ag) : 1.1;
 	  opt_trail = (float) (t < 0.05 ? 0.05 : t > 10.0 ? 10.0 : t); }
 #ifdef VX_LOG_TOKEN
 	{ extern float vx_trail_faint; const char *z = optv ("vectrex_emu_trail_faint"); const double t = z && *z ? atof (z) : 1.0; vx_trail_faint = t >= 1.0 && t <= 8.0 ? (float) t : 1.0f; }   /* (the test build's Faint afterglow lift - gpu_phos.c flift) */
@@ -881,7 +884,7 @@ static void read_options (void)
 	if (!opt_is ("vectrex_emu_renderer", "CPU only")) {
 		opt_glow = 0; raw_glow = 0; opt_sigma = 0.55; opt_bright = 1.0f; opt_sbend = 0; raw_sbend = 0;
 #ifdef VX_EMUVR
-		opt_after = 1; opt_trail = 0.6f; opt_trail_k = 1.5f;   /* (EmuVR's afterglow keys are the CPU picture's) */
+		opt_after = 1; opt_trail = 1.1f; opt_trail_k = 1.5f;   /* (EmuVR's afterglow keys are the CPU picture's) */
 #endif
 		/* (RetroArch and the apps: Afterglow and Afterglow brightness are the GPU picture's own settings, as the desktop's -
 		 *  forced here they changed nothing on screen from 2026-11-25 to 2026-11-26; their defaults are the values above) */
@@ -3739,7 +3742,7 @@ static void retro_run_one (void)
 	const int cx0 = glow ? 0 : CX0, cx1 = glow ? Wd - 1 : (FW - EW) + CX0 + CW - 1;
 	extern float vx_trail_mul; const float tk = (ov && ov_on && !sheet_file ? opt_trail_k : opt_trail_k0) * vx_trail_mul;   /* (1.0: its own without an overlay; the apps' look) */
 	const float a1 = 0.1404f * tk, a2 = 0.0582f * tk,   /* (v0.16: x the trail brightness option) */
-	             ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;   /* (the trail's time scale: Vectrex_EMU's 0.6, a real Vectrex 1.0) */
+	             ta1 = 0.0454f * opt_trail, ta2 = 0.350f * opt_trail;   /* (the trail's time scale: 1.1 the default, fitted to the owner's tube photos) */
 	const float kd1 = expf (-(float) dt / ta1), kd2 = expf (-(float) dt / ta2), e1 = a1 * kd1, e2 = a2 * kd2;
 	int bi;
 	#pragma omp parallel for schedule(dynamic, 1)

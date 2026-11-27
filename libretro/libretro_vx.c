@@ -358,17 +358,46 @@ static void auto_load (void)
 	auto_saved = ov_on;
 }
 static void sheet_write (void);
+#ifdef VX_EMUVR
+__declspec(dllimport) int __stdcall MoveFileExA (const char *, const char *, unsigned long);   /* (kernel32: the file replaced in one step) */
+/* (2026-11-27, the owner: the 3D Imager's motor in the headset's headphones, not from the Vectrex - the mod loops
+ * imager_motor_loop.wav (the core's own noise, W 4096 a unit) at volume gain x the turn's swell (imager.c ims_turn_env at turn);
+ * gain: the core's level - IM_MOTOR_GAIN 0.0127 x 16000 x Disc motor sound / 50 % x (speed / 24)^2 - over W) */
+#define IMS_WAV_W 4096.0
+#endif
 static void sheet_write (void)
 {
 	if (!sheet_file) return;
 	int st = ov && ov_path[0] && !stereo ? (ov_on ? 1 : 0) : -2;
 	static int stereo_written = -1;   /* (the 3D Imager's eye pair said in so many words - the mod need not guess it from the frame's shape) */
+#ifdef VX_EMUVR
+	extern int vt_imager; static int im_written = -1; const int im = vt_imager != 0;   /* (a 3D Imager game: the motor's line each refresh) */
+	if (st == sheet_written && sel_count == sel_written && boot_id == boot_written && !strcmp (look, look_written) && stereo == stereo_written
+	    && !im && im_written == 0) return;
+	im_written = im;
+#else
 	if (st == sheet_written && sel_count == sel_written && boot_id == boot_written && !strcmp (look, look_written) && stereo == stereo_written) return;
+#endif
 	sheet_written = st; sel_written = sel_count; boot_written = boot_id; snprintf (look_written, sizeof look_written, "%s", look); stereo_written = stereo;
+#ifdef VX_EMUVR
+	char tp[1200]; snprintf (tp, sizeof tp, "%s.tmp", sheet_file);   /* (written whole, then moved over the sheet: the mod never reads half of it -
+	                                              it is rewritten every refresh in a 3D Imager game) */
+	FILE *f = fopen (tp, "w"); if (!f) return;
+#else
 	FILE *f = fopen (sheet_file, "w"); if (!f) return;
+#endif
 	if (st != -2) fprintf (f, "%s|%d\n", ov_path, st); else fprintf (f, "\n");
 	fprintf (f, "sel %d\nboot %u\nlook %s\nstereo %d\n", sel_count, boot_id, look, stereo ? 1 : 0);   /* (stereo 1: the frame is the eye pair, left eye on the left) */
+#ifdef VX_EMUVR
+	{ extern int vt_imager; extern double vt_imager_speed (void), vt_imager_turn (void);
+	  const double v = vt_imager ? vt_imager_speed () : 0.0, sv = v > 0 ? v / 24.0 : 0.0; double g = 0.0127 * 16000.0 * opt_motor_k * sv * sv / IMS_WAV_W;
+	  if (g > 1.0) g = 1.0;
+	  fprintf (f, "imager %d speed %.3f turn %.4f gain %.6f\n", vt_imager ? 1 : 0, v, vt_imager ? vt_imager_turn () : 0.0, vt_imager ? g : 0.0); }
 	fclose (f);
+	if (!MoveFileExA (tp, sheet_file, 1 /* MOVEFILE_REPLACE_EXISTING */)) { remove (sheet_file); rename (tp, sheet_file); }
+#else
+	fclose (f);
+#endif
 }
 static char tmpdir[1024];
 /* v0.23 (owner 2026-11-06: a cartridge pulled or put in while on boots at once, as on a real Vectrex - no RetroArch
@@ -1052,7 +1081,7 @@ void retro_get_system_info (struct retro_system_info *i)
 	memset (i, 0, sizeof *i);
 	i->library_name = "Vectrex_EMU";
 #ifdef VX_EMUVR
-	i->library_version = "0.37";
+	i->library_version = "0.38";
 #else
 	i->library_version = "1.1";                 /* (the RetroArch flavour's own line: libretro_port_plan.md 5.6) */
 #endif
@@ -2059,7 +2088,12 @@ static void audio_frame (void)
 		if (opt_buzz) a += bq_run (f_buzz, 8, act[i] * buzz_g);
 		if (opt_spk) { a = bq_run (f_spk, 6, a); a = 32767.0 * tanh (a / 26000.0); }   /* (the driver's limited excursion) */
 		if (c != 0 || two) {                /* beside the Vectrex, not through its speaker */
+#ifdef VX_EMUVR
+			if (vt_imager) a = soft (a);                     /* (EmuVR: the goggles' motor not here - the mod plays it in the headset, on the head
+			                                                   (sheet_write's imager line); the owner, 2026-11-27) */
+#else
 			if (vt_imager) a = soft (a + c * 1.0 * opt_motor_k);                    /* (the goggles' motor, on the head: x Disc motor sound / 50 %) */
+#endif
 			else if (vt_uvm2_cart) a = soft (a + (opt_jack == 1 ? c * 2.0 * opt_jack_k : 0.0));   /* (the UVMC2's headphone jack, clean - x its volume; off) */
 			else a = soft (a + bq_run (f_voice, 2, c * 3.0 * opt_voice_k));         /* (the speech module, full-range speakers - x its volume) */
 		}

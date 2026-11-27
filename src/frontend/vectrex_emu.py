@@ -4628,8 +4628,11 @@ class App:
         now = time.perf_counter()
         v = getattr(self.core, 'imager_speed', 0.0)
         dark = now - getattr(self.core, 'lines_t', 0.0) > 0.4   # (nothing drawn for a while)
+        if v < 0.3: self.im_note_done = False               # (the disc stopped: the next start shows it again)
+        elif not dark and v > 20: self.im_note_done = True   # (the game draws, the disc near speed: not again mid-game -
+        #  3D Crazy Coaster's dark moments between its scenes, 2026-11-27)
         a = getattr(self, 'im_note_a', 0.0)
-        a = 1.0 if (dark and v > 0.3) else max(0.0, a - 0.05)   # (~ a third of a second to fade)
+        a = 1.0 if (dark and v > 0.3 and not getattr(self, 'im_note_done', False)) else max(0.0, a - 0.05)   # (~ a third of a second to fade)
         self.im_note_a = a
         if a <= 0.0:
             return None

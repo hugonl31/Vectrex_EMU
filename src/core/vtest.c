@@ -83,8 +83,46 @@ static void beam_take (double x, double y, double lev, unsigned char z, unsigned
 	beam_t *b = &bcur[nbcur++]; b->x = (float) x; b->y = (float) y; b->lev = (float) lev; b->z = z;
 	b->t = (unsigned) (t > vt_frame_t0 ? t - vt_frame_t0 : 0);
 }
+/* ---------- the 3D Imager's centre view (vt_imager_centre - live setting 30, the libretro option): one picture as from between
+ * the eyes, for aiming (Tony, 2026-11-26: in 3D Narrow Escape the ship moves sideways between the eyes' pictures). The games
+ * draw each eye the same lines in the same order, every object moved sideways by its own depth (3D Narrow Escape: its text 1918
+ * units, its ship 3169, the rest 3968). So the left eye's lines (rgb bit 3) each go halfway to their partner - the right eye's
+ * line of the same colour drawn as many lines into its pass, of the same shape and height (a few lines' slip allowed); a line
+ * with no partner stays the left eye's. The frontends then show the left eye's lines alone. The right eye's last pass of each
+ * colour is kept here (not in a save: a picture only) */
+int vt_imager_centre;
+#define IMC_N (MAXL / 4)
+static line_t imc_r[3][IMC_N]; static int imc_nr[3];
+static int imc_col (unsigned char rgb) { const int c = rgb & 7; return c == 1 ? 0 : c == 2 ? 1 : c == 4 ? 2 : -1; }
+static int imc_like (const line_t *a, const line_t *b)
+{
+	const long dxa = a->x1 - a->x0, dya = a->y1 - a->y0, dxb = b->x1 - b->x0, dyb = b->y1 - b->y0;
+	return labs (dxa - dxb) <= 96 && labs (dya - dyb) <= 96 && labs (a->y0 - b->y0) <= 256 && labs (b->x0 - a->x0) <= 16000;
+}
+/* (a pass - one eye's lines of one colour, in a row - may end in the next frame: it goes on until the eye or the colour
+ *  changes - a frame is a game frame, often one colour of one eye, or less) */
+static int imc_key = -1, imc_j[3];
+static void imager_centre (void)
+{
+	extern int vt_imager;
+	if (!vt_imager || !vt_imager_centre || !nlast) return;
+	for (int i = 0; i < nlast; i++) {
+		line_t *l = &last[i]; const int c = imc_col (l->rgb);
+		if (c < 0) continue;
+		const int left = (l->rgb & 8) != 0, key = left * 4 + c, fresh = key != imc_key; imc_key = key;
+		if (!left) {                                        /* (the right eye's pass: kept - a new one in place of the last) */
+			if (fresh) imc_nr[c] = 0;
+			if (imc_nr[c] < IMC_N) imc_r[c][imc_nr[c]++] = *l;
+			continue;
+		}
+		if (fresh) imc_j[c] = 0;                            /* (the left eye's: each line halfway to its partner) */
+		for (int k = imc_j[c]; k < imc_nr[c] && k < imc_j[c] + 8; k++)
+			if (imc_like (l, &imc_r[c][k])) { const line_t *r = &imc_r[c][k]; l->x0 = (l->x0 + r->x0) / 2; l->x1 = (l->x1 + r->x1) / 2; imc_j[c] = k + 1; break; }
+	}
+}
 static void beam_swap (void)
 {
+	imager_centre ();                                       /* (every frame's end comes here) */
 	if (!bcur) return;
 	beam_t *k = blast; blast = bcur; bcur = k; nblast = nbcur; nbcur = 0;
 }

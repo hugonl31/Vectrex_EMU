@@ -358,7 +358,8 @@ void vt_set_analog (int id, double v)
 	case 14: ofs_k = v < 0 ? 0 : v > 400 ? 400 : v; break;   /* (the reference's shift, cycles a DAC step) */
 	case 15: vt_lag_y = v < 0 ? -1 : v > 50 ? 50 : v; break;  /* (the Y deflection's lag; -1: as X) */
 	case 24: case 25: case 26: lp_set (id - 24, v); break;   /* (the light pen: x, y, touching - imager.c) */
-	case 27: p2_set ((int) (v + 0.5)); break;                 /* (controller port 2's device, while running: p2_set) */
+	case 27: p2_set ((int) (v + 0.5)); break;
+	case 30: { extern int vt_imager_centre; vt_imager_centre = v > 0.5; } break;   /* (the 3D Imager's centre view: vtest.c imager_centre) */                 /* (controller port 2's device, while running: p2_set) */
 	case 28: case 29:                                          /* (the integrators' rate up / down, right / left: see rate_by) */
 		if (rate_env < 0) rate_init ();
 		v = v < -5 ? -5 : v > 5 ? 5 : v;

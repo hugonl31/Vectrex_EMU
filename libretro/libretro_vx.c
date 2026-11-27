@@ -3447,6 +3447,7 @@ static void retro_run_one (void)
 		if (r & 1 && br_open) { char px[1200]; br_px_boot (px, sizeof px); if (lib_on) lib_scan (px); else br_scan (br_dir, px); }
 		br_dirty = 1; }
 	{ static int bp = -1; extern int vx_palette; if (bp != vx_palette) { bp = vx_palette; br_dirty = 1; } }   /* (the colour scheme changed: the ROM browser drawn again at once - the owner, 2026-11-25) */
+	sp_tick ();                                 /* (the 3D Imager's spin-up note: browser.c) */
 	if (br_dirty || (br_open && !br_shown)) br_draw ();
 	dbg_tick ();
 	{ static int pz; const int pi_ = btn_id ("vectrex_emu_btn_pause"), p_ = pi_ >= 0 && input_cb (0, RETRO_DEVICE_JOYPAD, 0, (unsigned) pi_) != 0;

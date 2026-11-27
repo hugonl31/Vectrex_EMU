@@ -3,6 +3,13 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.9.5
+
+* Tube > Look Medium and Bright lift only the lines now: the afterglow and the glass's glow stay as in the Vectrex look, so
+  on a dimmer screen the vectors are brighter while the trails and the glow keep their real level. Before, Medium's
+  afterglow was 1.9 x and Bright's 3.2 x the Vectrex look's (their lines 1.4 x and 1.8 x), the glass's glow 1.6 x and
+  2.8 x. On every system: the PC, RetroArch, EmuVR and the apps.
+
 ## v1.9.4
 
 * The afterglow behind moving shapes without dark bars: on the PC with G-Sync, a line the game draws early in a frame

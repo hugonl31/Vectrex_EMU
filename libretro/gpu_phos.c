@@ -172,8 +172,8 @@ static const char *PH_FS_CH =
 /* (the light as the screen's values - vecrender.py SAT_SHADER: (the exposure x the light)^(1 / 2.2) in the tube's own white; the
  *  glass's glow read from its smaller image) */
 static const char *PH_FS_SAT =
-	"uniform sampler2D lt, ht; uniform float k, gs; uniform vec3 tint, tintg; uniform vec2 sz; uniform int tm; uniform vec4 tq; uniform vec3 tdim, tcore, thalo; uniform vec2 thr; out vec4 fragc;\n"
-	"void main() { vec3 h = max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0); vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + h;\n"
+	"uniform sampler2D lt, ht; uniform float k, gs, hk; uniform vec3 tint, tintg; uniform vec2 sz; uniform int tm; uniform vec4 tq; uniform vec3 tdim, tcore, thalo; uniform vec2 thr; out vec4 fragc;\n"
+	"void main() { vec3 h = max(txb(ht, gl_FragCoord.xy / sz).rgb, 0.0) * hk; vec3 l = max(texelFetch(lt, ivec2(gl_FragCoord.xy), 0).rgb, 0.0) + h;\n"
 	"  if (tm != 3 && l == vec3(0.0)) { fragc = vec4(0.0); return; }\n"   /* (no light here, nor the glass's glow: black, as below gives it - without its
 	                                              ~20 reads round the pixel (2026-11-26). tm 3 shows its neighbours' light: not there) */
 	"  vec4 lr = texelFetch(lt, ivec2(gl_FragCoord.xy), 0); float ll = dot(max(lr.rgb, 0.0), vec3(1.0 / 3.0)); float age = ll > 0.0 ? max(lr.a, 0.0) / ll : 0.0;\n"
@@ -212,7 +212,7 @@ static const char *PH_FS_SAT =
 static const char *PH_FS_UPD =                  /* (the CPU's band loop: the afterglow's two parts, one refresh on) */
 	"vec3 lift(vec3 g) { return g * (1.0 + 3.0 / (1.0 + g * 1.6 / 0.00625)); }\n"   /* (the afterglow's faint end lifted, everywhere: on black
 	                                              as it looked through an overlay - measured, the owner 2026-11-19) */
-	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, t1, t2, dtv, usea, fak, kd1, kd2, acap, pex, exs, bsr; uniform int after, hp, rlm; uniform vec2 gs;\n"
+	"uniform sampler2D fc, fp, g1t, g2t; uniform float a1, a2, t1, t2, dtv, usea, fak, kd1, kd2, acap, pex, exs, bsr, lg; uniform int after, hp, rlm; uniform vec2 gs;\n"
 	"layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2; layout(location = 2) out vec4 os;\n"
 	/* (hp - the beam on the phosphor: what is left of a light after a newer one took part of it, in the old light's own colour - the
 	 *  same light as channel by channel. Its values carry the vectors' colour by their profile (PH_FS_SAT tm 4: a white core, a
@@ -231,6 +231,7 @@ static const char *PH_FS_UPD =                  /* (the CPU's band loop: the aft
 	"  if (rlm != 0 && bsr > 0.0) { vec2 ox = vec2(bsr, 0.0) / gs, oy = vec2(0.0, bsr) / gs;\n"
 	"    p = 0.25 * (txb(fp, uv + ox).rgb + txb(fp, uv - ox).rgb + txb(fp, uv + oy).rgb + txb(fp, uv - oy).rgb) * pex;\n"
 	"    f = 0.25 * (txb(fc, uv + ox).rgb + txb(fc, uv - ox).rgb + txb(fc, uv + oy).rgb + txb(fc, uv - oy).rgb); }\n"
+	"  p *= lg; f *= lg;\n"   /* (lg: Medium, Bright - the light as the Vectrex look's: only the lines lifted, their afterglow as the Vectrex look's, the owner 2026-11-27) */
 	"  float sl = q1.a * kd2, ts = q2.a + dtv, age = usea * max(pp.a, 0.0) + (rlm != 0 && exs > 0.5 ? 0.0 : dtv);\n"
 	"  bool pv = any(greaterThan(p, vec3(0.0))); float lp = dot(p, vec3(1.0 / 3.0)), lf = dot(f, vec3(1.0 / 3.0));\n"
 	"  float cap = pv && lp > acap ? acap / lp : 1.0; vec3 l = pv ? rest(p * cap, max(p * cap - f, 0.0)) : vec3(0.0);\n"
@@ -667,7 +668,8 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		  for (int k = 0; k < 3; k++) { tn[k] = BT_TINT[k] * tg[k] / t0[k]; if (tn[k] > mx) mx = tn[k]; }
 		  glBindVertexArray_ (g_vao); ph_target (dstF, 0, 0, ph_fw, ph_fh); glUseProgram_ (ph_sat);
 		  ph_bind (ph_sat, "lt", 0, ph_L); ph_bind (ph_sat, "ht", 1, ph_H);
-		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2) * pow (look_gain (), 2.2)));   /* (Bright, Medium: the tube's light lifted here - all that comes of it with it) */   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
+		  PU1F (ph_sat, "k", (float) (BT_EXPO * BT_SPOT / pow (OV_LINE_GAIN, 2.2) * pow (look_gain (), 2.2)));
+		  PU1F (ph_sat, "hk", (float) pow (look_gain (), -2.2));   /* (Medium, Bright: the glass's glow as the Vectrex look's - only the lines lifted, the owner 2026-11-27) */   /* (Bright, Medium: the tube's light lifted here - all that comes of it with it) */   /* (the PC's screen value / OV_LINE_GAIN: the scale the phosphor and the sheet work in) */
 		  glUniform3f_ (ph_ul (ph_sat, "tint"), tn[0] / mx, tn[1] / mx, tn[2] / mx);
 		  { /* (the glow bluer than the core - the owner, 2026-11-22: next to the tube the phone's vectors looked greenish; BT_GLOW x the tube's white) */
 		    static float gt[3] = { BT_GLOW_R, BT_GLOW_G, 1.0f }; static int rd; if (!rd) { rd = 1; const char *z = getenv ("VX_GLOWTINT"); if (z) sscanf (z, "%f,%f,%f", &gt[0], &gt[1], &gt[2]); }
@@ -712,7 +714,7 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 		if (!ph_fltry) { ph_fltry = 1; ph_updf = ph_progx (GPU_VS, PH_FL_ON, PH_FS_UPD); ph_compf = ph_progx (GPU_VS, PH_FL_ON, PH_FS_COMP); }
 		if (ph_updf && ph_compf) { pu = ph_updf; pc = ph_compf; }
 		static float g0 = -1.0f; if (g0 < 0.0f) { const char *z = getenv ("VX_FAINTG0"); g0 = z && atof (z) > 0.0 ? (float) atof (z) : TRAIL_FAINT_G0; }
-		fg0 = g0 * (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f); }
+		fg0 = g0 * (beam ? 1.0f / 1.6f : 1.0f); }
 	  if (scaled) ph_target (ph_G1[cur], ph_G2[cur], 0, ph_pw, ph_ph); else ph_target (ph_G1[cur], ph_G2[cur], ph_S, FW, FH);
 	  glUseProgram_ (pu); glUniform2f_ (ph_ul (pu, "gs"), (float) ph_pw, (float) ph_ph);
 	  PU1F (pu, "pex", ex_mode && !ex_n ? 0.0f : 1.0f);
@@ -725,7 +727,8 @@ static int ph_frame (int npl, double dt, int glow, int after, int shot)
 	  PU1F (pu, "fak", beam ? 0.0f : 1.0f);
 	  { static int hp = -1; if (hp < 0) hp = !(getenv ("VX_AGHUE") && !atoi (getenv ("VX_AGHUE")));   /* (VX_AGHUE=0: channel by channel - before 2026-11-26) */
 	    PU1I (pu, "hp", beam && hp); }
-	  PU1F (pu, "acap", (beam ? 1.0f / 1.6f : 1.0f) * (beam ? (float) look_gain () : 1.0f));   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. Bright: lifted with the light) */
+	  PU1F (pu, "acap", beam ? 1.0f / 1.6f : 1.0f);   /* (the afterglow's brightest: a line's - the PC's PHOS_ACAP, 1.0 as a screen value; the values here are 1.6 x smaller. The Vectrex look's in every look - lg) */
+	  PU1F (pu, "lg", beam ? (float) (1.0 / (look_gain () * look_width ())) : 1.0f);   /* (and the wider beam's extra light: without it Bright's afterglow 1.38 x the Vectrex look's) */
 	  PU1F (pu, "kd1", kd1); PU1F (pu, "kd2", kd2); PU1I (pu, "after", after);
 	  { ph_rlm = ph_model (); PU1I (pu, "rlm", ph_rlm); PU1F (pu, "exs", ex_n ? 1.0f : 0.0f); PU1F (pu, "bsr", AG_WIDE * 1.41421f * 134.0f * (float) ph_ph / (float) SHEET_H); }
 	  if (pu != ph_upd) { PU1F (pu, "fl", vx_trail_faint); PU1F (pu, "fg0", fg0); }

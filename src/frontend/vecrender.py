@@ -553,7 +553,7 @@ void main() {
         g = exp(-0.5 * d * d / (sw * sw)) * (dot(ba, ba) < 1e-6 ? (sg * sg) / (sw * sw) : sg / sw);
     }
     if (timed > 0.5) {                      // fresh phosphor light: brightness, and its life left
-        float age = timed > 1.5 ? 0.0 : age0 - gl_TexCoord[1].x;
+        float age = timed > 1.5 ? age0 : age0 - gl_TexCoord[1].x;   // (imm: all lines at age0 - Smooth motion's game-frame lines)
         if (age < 0.0 || age >= dtw) discard;          // (not drawn yet / already lit earlier)
         gl_FragColor = vec4(gl_Color.rgb * g * gain, exp(-age));      // (alpha: freshness, e^-age)
         return;
@@ -1890,6 +1890,16 @@ PHOS_ACAP = 1.0                 # the afterglow's brightest: a line's (the corne
 # screen values) lift it there; measured with the RetroArch core on Armor Attack's jeep, overlay on / off (the owner,
 # 2026-11-19). The core lifts it always and adds the sheet's own light to the trail as light instead - the same look
 TRAIL_LIFT_A, TRAIL_LIFT_G0 = 3.0, 0.00625
+# The afterglow fitted to the owner's photos of the Test Cart's TRAIL page on his tube (2026-11-27; libretro gpu_phos.c PH_FS_UPD rlm,
+# the same rules): the slowest bars' trail a smooth band 3 x the fastest's light, the PC's and the core's faint stripes ~1 x. A spot's
+# afterglow taken off only by light about as bright as the one that started it (AG_RELIT) and once a game frame - the next lines'
+# skirts and the glass's glow wiped a slow line's trail out, more the more pictures a second; with Smooth motion only the part of a
+# game frame's line brighter than what already glows there starts, at its own age; the afterglow's spot AG_WIDE (sigma, units)
+# wider than the lit one (the tube's stripes 1.45 units wide at $7F where the lit spot gave 1.15); the afterglow added to the light
+# as light. VX_RELIT=0: the model before (a test)
+AG_MODEL = os.environ.get('VX_RELIT', '1') != '0'
+AG_WIDE = 0.3
+AG_RELIT = 0.9
 
 # A game may draw its picture in two halves, one on each frame (a menu that draws half its lines each frame: they share nothing
 # with the one before and nearly everything with the one before that). On the tube both halves keep glowing;
@@ -1987,8 +1997,8 @@ void main() {
 # shape left ended in dots (PHOS_ACAP)
 GLOW_COMMON = b"""
 uniform sampler2D oldp, newp;
-uniform float mul, acap, hold, dt, hp;
-uniform vec2 amp, tau;                                  // (the two parts: fast, slow)
+uniform float mul, acap, hold, dt, hp, rlm, exs, exm, exa;
+uniform vec2 amp, tau, bsr;                             // (the two parts: fast, slow; bsr: the wider spot's reads, uv)
 float lum(vec3 c) { return dot(c, vec3(0.3, 0.5, 0.2)); }
 // (hp - the beam on the phosphor: what is left of a light after a newer one took part of it, in the old light's own colour - the
 //  same light as channel by channel. Its values carry the vectors' colour by their profile (SAT_SHADER tm 1: a white core, a blue
@@ -2000,16 +2010,36 @@ vec3 rest(vec3 a, vec3 r) {
     float s = a.r + a.g + a.b;
     return s > 0.0 ? a * ((r.r + r.g + r.b) / s) : r;
 }
-vec4 leaving(vec2 uv) {                                 // a flash that starts fading here now: its light, its age
-    vec4 o = texture2D(oldp, uv), n = texture2D(newp, uv);
-    if (!(o.a > 0.0 && -log(o.a) < hold)) return vec4(0.0);
-    vec3 c = o.rgb * mul * min(1.0, acap / max(lum(o.rgb), 1e-4));
-    if (n.a > 0.0 && -log(n.a) < hold) c = rest(c, max(c - n.rgb, vec3(0.0)));   // (taken over: the light it does not replace)
-    return vec4(c, -log(o.a) + dt);
+vec4 spot(sampler2D t, vec2 uv) {                       // (rlm: the light seen through the afterglow's wider spot - AG_WIDE; the
+    vec4 c = texture2D(t, uv);                          //  freshest of the reads its age)
+    if (rlm < 0.5 || bsr.x <= 0.0) return c;
+    vec4 a = texture2D(t, uv + vec2(bsr.x, 0.0)), b = texture2D(t, uv - vec2(bsr.x, 0.0));
+    vec4 d = texture2D(t, uv + vec2(0.0, bsr.y)), e = texture2D(t, uv - vec2(0.0, bsr.y));
+    return vec4(0.25 * (a.rgb + b.rgb + d.rgb + e.rgb), max(max(max(a.a, b.a), max(d.a, e.a)), c.a));
 }
-void excite(vec2 uv, out vec3 e1, out vec3 e2) {       // the excitation of both parts here, as a flash starts fading
-    vec4 l = leaving(uv);
-    e1 = l.rgb * amp.x * exp(-l.a / tau.x); e2 = l.rgb * amp.y * exp(-l.a / tau.y);
+// a flash that starts fading here now: its light (l), its age; sl - the light that started the afterglow here, ts its age (rlm);
+// relit - lit again by about the same light this game frame: its own afterglow under it goes (nl: that light)
+void leaving(vec2 uv, inout float sl, inout float ts, out vec3 l, out float age, out bool relit, out vec3 nl) {
+    vec4 o = spot(oldp, uv), n = spot(newp, uv);
+    vec4 oc = texture2D(oldp, uv), nc = texture2D(newp, uv);
+    bool oh = o.a > 0.0 && (rlm > 0.5 && exs > 0.5 || -log(o.a) < hold), nh = n.a > 0.0 && -log(n.a) < hold;   // (rlm: the game frame's lines (E) are leaving at their own age)
+    l = vec3(0.0); age = 0.0; nl = n.rgb;
+    if (oh) {
+        float lo = lum(o.rgb); vec3 c = o.rgb * mul * min(1.0, acap / max(lo, 1e-4));
+        age = -log(o.a) + (rlm > 0.5 && exs > 0.5 ? exa : dt);
+        if (rlm > 0.5 && exs > 0.5) {                   // (Smooth motion's game-frame lines: only what is brighter than what glows here)
+            c *= clamp(1.0 - min(sl, acap) / max(lum(c), 1e-6), 0.0, 1.0);
+            if (nh && lum(n.rgb) >= 0.9 * lo) c = rest(c, max(c - n.rgb, vec3(0.0)));
+        } else if (nh) c = rest(c, max(c - n.rgb, vec3(0.0)));   // (taken over: the light it does not replace)
+        l = c;
+        if (rlm > 0.5 && lum(l) > 0.0) { if (sl > 0.0 && lo <= sl) age = max(age, ts); else ts = age; sl = max(sl, lo); }
+    }
+    relit = nh;
+    if (rlm > 0.5) {                                    // (lit anew this game frame, about as bright as the light that started it)
+        bool fresh = exm > 0.5 ? exs > 0.5 : (nc.a > oc.a * 1.0001 || !(oc.a > 0.0 && -log(oc.a) < hold));
+        relit = nh && fresh && lum(n.rgb) >= 0.9 * sl;
+        if (relit) sl = 0.0;
+    }
 }
 """
 # Ultra: both parts in full colour, written at once (two outputs)
@@ -2018,14 +2048,16 @@ uniform sampler2D oldg1, oldg2;
 uniform vec2 kd;
 void main() {
     vec2 uv = gl_TexCoord[0].st;
-    vec3 e1, e2; excite(uv, e1, e2);
-    vec3 g1 = texture2D(oldg1, uv).rgb * kd.x * mul + e1, g2 = texture2D(oldg2, uv).rgb * kd.y * mul + e2;
-    vec4 n = texture2D(newp, uv);
-    if (n.a > 0.0 && -log(n.a) < hold) {                // (lit again: its own afterglow under it goes - a late game
-        g1 = rest(g1, max(g1 - n.rgb * amp.x, vec3(0.0)));   //  frame let a still line start fading, lit again on top it
-        g2 = rest(g2, max(g2 - n.rgb * amp.y, vec3(0.0)));   //  flashed a quarter brighter for a moment)
+    vec4 q1 = texture2D(oldg1, uv), q2 = texture2D(oldg2, uv);
+    float sl = rlm > 0.5 ? q1.a * kd.y : 0.0, ts = rlm > 0.5 ? q2.a + dt : 0.0;   // (rlm: the starting light, its age - in the alphas)
+    vec3 l, nl; float age; bool relit; leaving(uv, sl, ts, l, age, relit, nl);
+    vec3 g1 = q1.rgb * kd.x * mul + l * amp.x * exp(-age / tau.x), g2 = q2.rgb * kd.y * mul + l * amp.y * exp(-age / tau.y);
+    if (relit) {                                        // (lit again: its own afterglow under it goes - a late game
+        g1 = rest(g1, max(g1 - nl * amp.x, vec3(0.0)));     //  frame let a still line start fading, lit again on top it
+        g2 = rest(g2, max(g2 - nl * amp.y, vec3(0.0)));     //  flashed a quarter brighter for a moment)
     }
-    gl_FragData[0] = vec4(g1, 1.0); gl_FragData[1] = vec4(g2, 1.0);
+    bool on = g1 + g2 != vec3(0.0);
+    gl_FragData[0] = vec4(g1, rlm > 0.5 ? (on ? sl : 0.0) : 1.0); gl_FragData[1] = vec4(g2, rlm > 0.5 ? (on ? ts : 0.0) : 1.0);
 }
 """
 # High, Medium, Low (and a driver without two outputs): one image - the fast part in colour, the slow part as brightness
@@ -2035,12 +2067,12 @@ uniform sampler2D oldg1;
 uniform vec2 kd;
 void main() {
     vec2 uv = gl_TexCoord[0].st;
-    vec3 e1, e2; excite(uv, e1, e2);
     vec4 t = texture2D(oldg1, uv);
-    vec3 g1 = t.rgb * kd.x * mul + e1; float g2 = t.a * kd.y * mul + lum(e2);
-    vec4 n = texture2D(newp, uv);
-    if (n.a > 0.0 && -log(n.a) < hold) {
-        g1 = rest(g1, max(g1 - n.rgb * amp.x, vec3(0.0))); g2 = max(g2 - lum(n.rgb) * amp.y, 0.0);
+    float sl = rlm > 0.5 ? t.a * kd.y / max(amp.y, 1e-6) : 0.0, ts = 0.0;   // (rlm: no room for them - the starting light from the
+    vec3 l, nl; float age; bool relit; leaving(uv, sl, ts, l, age, relit, nl);   //  slow part, which fades as it does; no age rule)
+    vec3 g1 = t.rgb * kd.x * mul + l * amp.x * exp(-age / tau.x); float g2 = t.a * kd.y * mul + lum(l) * amp.y * exp(-age / tau.y);
+    if (relit) {
+        g1 = rest(g1, max(g1 - nl * amp.x, vec3(0.0))); g2 = max(g2 - lum(nl) * amp.y, 0.0);
     }
     gl_FragColor = vec4(g1, g2);
 }
@@ -2051,7 +2083,7 @@ uniform sampler2D tex, g1, g2;
 uniform vec3 wb;
 """ + PHOS_FUNC + b"""
 uniform vec3 wbc;
-uniform float acap, lifta;
+uniform float acap, lifta, rlm;
 vec3 cold(vec3 c, vec3 wb) {               // the white balance in the glow, pure white in the bright core: a cold white
     float m = max(c.r, max(c.g, c.b));      //  line that keeps the screen's full brightness (WB_CORE)
     return c * mix(wb, wbc, smoothstep(0.35, 0.9, m));
@@ -2070,7 +2102,8 @@ void main() {
     vec3 lit = (p.a > 0.0 && -log(p.a) < hold) ? p.rgb : vec3(0.0);
     vec3 g = glow(uv);
     g *= 1.0 + lifta / (1.0 + g / 0.00625);   // (the faint end lifted with no overlay shown: TRAIL_LIFT_A, TRAIL_LIFT_G0)
-    gl_FragColor = vec4(cold(lit + g, wb), 0.7);   // (they add up: a new line's glow over a trail - the brighter of the two
+    vec3 sm = rlm > 0.5 ? pow(pow(max(lit, 0.0), vec3(2.2)) + pow(max(g, 0.0), vec3(2.2)), vec3(1.0 / 2.2)) : lit + g;   // (rlm: as light)
+    gl_FragColor = vec4(cold(sm, wb), 0.7);   // (they add up: a new line's glow over a trail - the brighter of the two
                                                    //  only, its glow ended in an edge there. White balance: see cold)
 }
 """
@@ -2320,7 +2353,7 @@ class GLBloomRenderer(GLRenderer):
         self.uprog = program(UPDATE_SHADER, 'phosphor update')
         self.u_up = {k: GetUniform(self.uprog, k.encode()) for k in ('oldt', 'fresh', 'kf', 'mul', 'hold', 'tscale', 'toff', 'rel',
                                                                      'relm', 'relon', 'rmin')}
-        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt', 'hp')
+        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt', 'hp', 'rlm', 'exs', 'exm', 'exa', 'bsr')
         try:                                            # (Ultra: both afterglow parts at once - two outputs)
             self.DrawBuffers = proc('glDrawBuffers', None, i, ctypes.POINTER(u))
             self.glowprog = program(GLOW_SHADER, 'phosphor afterglow')   # (its own name: gprog is taken)
@@ -2331,7 +2364,7 @@ class GLBloomRenderer(GLRenderer):
         self.u_gp = {k: GetUniform(self.glowpack, k.encode()) for k in GK}
         self.sprog = program(SHOW_SHADER, 'phosphor show')
         self.u_stex = GetUniform(self.sprog, b'tex')
-        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'wb', 'wbc', 'acap', 'g1', 'g2', 'pkd', 'lifta')}
+        self.u_sh = {k: GetUniform(self.sprog, k.encode()) for k in ('hold', 'tscale', 'toff', 'wb', 'wbc', 'acap', 'g1', 'g2', 'pkd', 'lifta', 'rlm')}
         try:                                                    # (max blending: overlaps do not add up)
             self.BlendEq = proc('glBlendEquation', None, u)
         except OSError:
@@ -4251,10 +4284,12 @@ class GLBloomRenderer(GLRenderer):
         if getattr(self, 'ex_mode', False) and getattr(self, 'E', None):
             self.BindFB(GL_FRAMEBUFFER, self.E[1]); gl.glViewport(0, 0, fw, fh)
             gl.glClearColor(0, 0, 0, 0); gl.glClear(GL_COLOR_BUFFER_BIT)
-            ex_tex = self.E[0]; exb = getattr(self, 'ex_built', None)
-            if exb:
+            ex_tex = self.E[0]; exb = getattr(self, 'ex_built', None); exb2 = getattr(self, 'ex_built2', None)
+            if exb or exb2:
                 gl.glEnable(GL_BLEND); self.BlendFuncSep(GL_ONE, GL_ONE, GL_ONE, GL_ONE); self.BlendEqSep(eq, 0x8008)
-                self._draw_built(exb, 0.0, 1.0, imm=True)
+                for b_, a_ in ((exb, 'ex_age'), (exb2, 'ex_age2')):   # (AG_MODEL: each frame's lines at their own age - the app's)
+                    if b_: self._draw_built(b_, float(getattr(self, a_, 0.0)) if AG_MODEL else 0.0, 1.0, imm=True)
+                if AG_MODEL: self.ex_used = True             # (once a game frame: not drawn again at the next refresh)
                 self.BlendEq(0x8006); gl.glDisable(GL_BLEND)
                 if getattr(self, 'beam_trace', False) and hasattr(self, 'satprog'):
                     self.BindFB(GL_FRAMEBUFFER, self.E2[1]); self._sat(self.E[0]); ex_tex = self.E2[0]
@@ -4309,6 +4344,14 @@ class GLBloomRenderer(GLRenderer):
             self.Uniform1f(u['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
             self.Uniform1f(u['hp'], 1.0 if (getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')
                                             and os.environ.get('VX_AGHUE', '1') != '0') else 0.0)   # (rest(); VX_AGHUE=0: channel by channel - before 2026-11-26)
+            # (the fitted afterglow - AG_MODEL: the game frame's lines (Smooth motion) at their own age - the app's ex_age -, the wider spot)
+            exm_ = getattr(self, 'ex_mode', False); exs_ = bool(exm_ and ex_tex is not None and (getattr(self, 'ex_built', None) or getattr(self, 'ex_built2', None)))
+            if getattr(self, 'ex_used', False): self.ex_built = self.ex_built2 = None; self.ex_used = False
+            self.Uniform1f(u['rlm'], 1.0 if AG_MODEL and od is None else 0.0)
+            self.Uniform1f(u['exm'], 1.0 if exm_ else 0.0); self.Uniform1f(u['exs'], 1.0 if exs_ else 0.0)
+            self.Uniform1f(u['exa'], 0.0)                 # (the game frame's lines carry their own age - E's alpha)
+            _upx = 134.0 * (self.map[0] if hasattr(self, 'map') else 0.0) * AG_WIDE * 1.41421   # (window px)
+            self.Uniform2f(u['bsr'], _upx / max(1.0, w), _upx / max(1.0, h))
             if full:
                 self.BindFB(GL_FRAMEBUFFER, self.AGfb[a1]); gl.glViewport(0, 0, pw, ph)
                 bufs = (ctypes.c_uint * 2)(GL_COLOR_ATT0, GL_COLOR_ATT0 + 1); self.DrawBuffers(2, bufs)
@@ -4329,6 +4372,7 @@ class GLBloomRenderer(GLRenderer):
         self.Uniform3f(self.u_sh['wbc'], *((1.0, 1.0, 1.0) if btm else self._wbc()))
         self.Uniform1f(self.u_sh['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
         self.Uniform1f(self.u_sh['lifta'], 0.0 if (self.art and self.art_on) else TRAIL_LIFT_A)   # (an overlay shown: its own look)
+        self.Uniform1f(self.u_sh['rlm'], 1.0 if AG_MODEL and od is None else 0.0)
 
         self._quad(self.P[0])
         self.UseProgram(0)

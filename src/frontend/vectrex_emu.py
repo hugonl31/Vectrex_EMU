@@ -9793,18 +9793,23 @@ class App:
             r.ex_mode = True
             if popped or len(ex_now):
                 try:
-                    pv = popped[-1] if popped else a; Ps = [ex_now] if len(ex_now) else []
+                    pv = popped[-1] if popped else a; Ps = []
                     for q_ in popped[-3:]:               # (a late refresh: more than one - each one's lines)
                         pl_ = q_[0]; pl_ = pl_.np if getattr(pl_, 'np', None) is not None and len(pl_.np) == len(pl_) else pl_
                         X_ = _np.asarray(pl_, dtype=_np.float64)
                         fl_ = getattr(self, 'sm_exfp', None) if getattr(self, 'sm_exfp_for', None) is q_ else (self.sm_exf if self.sm_exf_for is q_ else None)
                         if X_.ndim == 2 and fl_ is not None and len(fl_) == len(X_): X_ = X_[~fl_]   # (not those started already)
                         if X_.ndim == 2 and len(X_) and (not Ps or X_.shape[1] == Ps[0].shape[1]): Ps.append(X_)
-                    P_ = _np.concatenate(Ps) if Ps else _np.zeros((0, 7))
-                    if P_.ndim == 2 and len(P_):
-                        P_ = self.sm_merge(P_); P_[:, 5] *= k; P_[:, 6] *= k
-                        f0 = r.frame_t0; r.frame_t0 = pv[2]; r.dwell_k = 1.0 / k
-                        try: r.ex_built = r._build(P_, load=False)
+                    # (two batches, each frame's lines at their own age at the shown picture's moment - the frame before, and a's
+                    #  lines the gliding ones have just cleared: the afterglow starts as old as at 50 Hz, vecrender AG_MODEL)
+                    r.ex_built = r.ex_built2 = None
+                    for P_, fr_, key in ((_np.concatenate(Ps) if Ps else None, pv, 'ex_built'), (ex_now if len(ex_now) else None, a, 'ex_built2')):
+                        if P_ is None or P_.ndim != 2 or not len(P_):
+                            continue
+                        P_ = self.sm_merge(_np.array(P_, dtype=_np.float64)); P_[:, 5] *= k; P_[:, 6] *= k
+                        f0 = r.frame_t0; r.frame_t0 = fr_[2]; r.dwell_k = 1.0 / k
+                        setattr(r, key.replace('built', 'age'), max(0.0, D - fr_[1]))   # (fr_[1]: the frame's start)
+                        try: setattr(r, key, r._build(P_, load=False))
                         finally: r.frame_t0 = f0; r.dwell_k = 1.0
                 except Exception as e:   # noqa
                     if not getattr(self, '_ex_said', False): self._ex_said = True; print('smooth afterglow: %s' % e)
@@ -10153,7 +10158,7 @@ class App:
             r.port1 = self.port1_state()
             r.browser = self.browser_state()
             r.hint = self.hint_state()
-            r.ex_mode = False; r.ex_built = None       # (Smooth motion's afterglow: set by smooth_frame)
+            r.ex_mode = False; r.ex_built = r.ex_built2 = None       # (Smooth motion's afterglow: set by smooth_frame)
             if smooth and not self.run.paused:
                 self.smooth_frame(r, T)
             flush, self.flush = getattr(self, 'flush', False), False

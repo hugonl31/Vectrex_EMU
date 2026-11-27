@@ -2880,6 +2880,7 @@ static int bt2_prepare (const wline *L, int n, wline *o)
 #define SM_EXW 96
 static unsigned char *sm_exf, *sm_exfp; static int sm_exf_n, sm_exfp_n, sm_exf_cap, sm_exfp_cap, *sm_exi, sm_exi_cap, sm_exc;
 static unsigned long long sm_exf_id, sm_exfp_id;
+static double sm_tpic;                     /* (Smooth motion: the shown picture's moment, s - the game-frame lines' age for the afterglow) */
 static unsigned long long sm_ex_shown, sm_ex_next;   /* (Smooth motion's afterglow: the game frame the last drawn picture started it for, this refresh's) */
 int vx_owe_hidden;                         /* (set by the apps: a hidden catch-up run's frame is drawn with the next picture) */
 static int vx_nobuild;                     /* (v0.13: a hidden refresh - no picture, the lines not built) */
@@ -3571,7 +3572,7 @@ static void retro_run_one (void)
 			 *  game's lines as held (hold_lines) at the same moment) */
 			double per = nh > 1 ? (hist[nh - 1].t - hist[0].t) / (nh - 1) : 0.02;
 			per = per < 0.01 ? 0.01 : per > 0.1 ? 0.1 : per;
-			const double D = now - per - dt;
+			const double D = now - per - dt; sm_tpic = D;
 			if (D < hist[0].t - 0.25) while (nh > 1) frame_pop ();
 			if (!slow) while (nh > 2 && hist[1].t <= D) frame_pop ();   /* (the frames before D: only a slow game's hold keeps them) */
 			int ia = 0; while (ia + 1 < nh && hist[ia + 1].t <= D) ia++;
@@ -3635,9 +3636,16 @@ static void retro_run_one (void)
 			if (exl_cap < want) { free (exl); exl_cap = want + 256; exl = malloc (sizeof (line_t) * (size_t) exl_cap); if (!exl) exl_cap = 0; }
 			if (exl) {
 				if (sm_ex_cur) for (int k = 0; k < sm_exc; k++) exl[ne++] = sm_ex_cur->L[sm_exi[k]];   /* (a's lines the gliding ones have just cleared) */
+				const int nea = ne;
 				if (sm_ex_a) { const int fl = sm_exfp && sm_exfp_id == sm_ex_a->p0;   /* (the frame before: what has not started yet) */
 					for (int i = 0; i < sm_ex_a->n; i++) if (!(fl && i < sm_exfp_n && sm_exfp[i])) exl[ne++] = sm_ex_a->L[i]; }
-				n2 = sm_merge (0, exl, ne); }
+				/* (each frame's lines their age at the shown picture's moment, as a line's in wl_from: the afterglow starts as old as at
+				 *  50 Hz whatever the refresh - 2026-11-27, it started one refresh old: a just-cleared line older, the frame before's
+				 *  younger than the beam had left them, the slow bars' first ghosts brighter at 120 Hz, the fast ones' dimmer) */
+				const int n2a = sm_merge (0, exl, nea);
+				for (int k = 0; k < n2a; k++) { const double ag = sm_tpic - ((double) sm_ex_cur->p0 + wl_off) / 1.5e6; W1[k].ag = (float) (ag > 0 ? ag : 0); }
+				n2 = sm_merge (n2a, exl + nea, ne - nea);
+				for (int k = n2a; k < n2; k++) { const double ag = sm_tpic - ((double) sm_ex_a->p0 + wl_off) / 1.5e6; W1[k].ag = (float) (ag > 0 ? ag : 0); } }
 			if (n2) ph_ex_n = build_lines (W1, n2, 0, 0, npl) - npl; }
 		cs_now[3] += vt_wall () - c0;
 	}

@@ -4,6 +4,15 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.9.2
+- Afterglow fitted to a real tube: long, even trails
+- The afterglow the same at any refresh rate (60 / 120 / 144 Hz)
+- New Medium look, the default on the PC
+- No colour options: one measured vector colour everywhere
+- Afterglow keeps its colour; PC: an Afterglow brightness setting
+- Reset all settings: everything back to factory defaults
+- Lighter on the GPU; RetroArch: a search in the game browser
+
 ## v1.9.1
 - New vector colour: a white core with a blue glow - brighter
 - More shine round the brightest dots, as on a real tube

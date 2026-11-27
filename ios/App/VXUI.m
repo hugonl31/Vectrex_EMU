@@ -43,13 +43,18 @@ static void VToast (UIViewController *vc, NSString *s)
 @property (nonatomic, copy) NSString *ttl, *head, *body, *foot, *field, *fieldText; @property (nonatomic) BOOL caps;
 @property (nonatomic, strong) NSArray<NSArray *> *choices; @property (nonatomic, copy) void (^closed) (void);
 @end
-@implementation VXPrompt { UITextField *_tf; BOOL _done; }
+@implementation VXPrompt { UITextField *_tf; BOOL _done; UILabel *_said; }
 - (void) finish:(void (^) (NSString *))go
 {
 	if (_done) return; _done = YES; NSString *typed = [_tf.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] ?: @"";
 	void (^cl) (void) = self.closed; [_tf resignFirstResponder];
 	[self dismissViewControllerAnimated:YES completion:^{ if (go) go (typed); else if (cl) cl (); }];
 }
+- (void) stay:(void (^) (NSString *))go   /* (a choice that leaves the prompt open: it says its answer in the prompt) */
+{
+	if (_done || !go) return; go ([_tf.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] ?: @"");
+}
+- (void) say:(NSString *)s { _said.text = s; _said.hidden = s.length == 0; }
 - (void) viewDidLoad
 {
 	[super viewDidLoad]; self.view.backgroundColor = VX_BG; __weak VXPrompt *ws = self;
@@ -67,9 +72,11 @@ static void VToast (UIViewController *vc, NSString *s)
 		_tf.layer.cornerRadius = 12; _tf.layer.borderWidth = 1; _tf.layer.borderColor = VX_EDGE2.CGColor;
 		_tf.leftView = [[UIView alloc] initWithFrame:CGRectMake (0, 0, 14, 10)]; _tf.leftViewMode = UITextFieldViewModeAlways;
 		[_tf.heightAnchor constraintEqualToConstant:50].active = YES; [col addArrangedSubview:_tf]; [col setCustomSpacing:14 afterView:_tf]; }
+	_said = VL (@"", VF (14, UIFontWeightRegular), VX_CHG); _said.hidden = YES; [col addArrangedSubview:_said];   /* (an answer said in the prompt: vxa_prompt_say) */
 	for (NSArray *ch in self.choices) {
 		NSString *ct = ch[0], *cd = ch.count > 1 && [ch[1] isKindOfClass:NSString.class] ? ch[1] : @""; id blk = ch.count > 2 ? ch[2] : nil;
 		void (^go) (NSString *) = [blk isKindOfClass:NSNull.class] ? nil : blk;
+		const BOOL stays = ch.count > 3 && [ch[3] isKindOfClass:NSNumber.class] && [ch[3] boolValue];
 		UIButtonConfiguration *c = [UIButtonConfiguration plainButtonConfiguration]; c.title = ct; c.subtitle = cd.length ? cd : nil;
 		c.titleAlignment = UIButtonConfigurationTitleAlignmentLeading; c.baseForegroundColor = go ? VX_FG : VX_FG2;
 		c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (16, UIFontWeightSemibold); return m; };
@@ -77,7 +84,7 @@ static void VToast (UIViewController *vc, NSString *s)
 		c.contentInsets = NSDirectionalEdgeInsetsMake (12, 14, 12, 14); c.titlePadding = 3;
 		c.background.backgroundColor = VX_PANEL; c.background.strokeColor = VX_EDGE; c.background.strokeWidth = 1; c.background.cornerRadius = 12;
 		UIButton *b = [UIButton buttonWithConfiguration:c primaryAction:[UIAction actionWithHandler:^(UIAction *a) { (void) a; if (!go) return;
-			ulog ([NSString stringWithFormat:@"prompt: %@", ct]); [ws finish:go]; }]];
+			ulog ([NSString stringWithFormat:@"prompt: %@", ct]); if (stays) [ws stay:go]; else [ws finish:go]; }]];
 		b.contentHorizontalAlignment = UIControlContentHorizontalAlignmentFill; b.userInteractionEnabled = go != nil; b.accessibilityLabel = ct;
 		[b.heightAnchor constraintGreaterThanOrEqualToConstant:52].active = YES; [col addArrangedSubview:b]; }
 	if (self.foot.length) { UILabel *f = VL (self.foot, VF (12, UIFontWeightRegular), VX_DIM); [col setCustomSpacing:10 afterView:col.arrangedSubviews.lastObject ?: f]; [col addArrangedSubview:f]; }
@@ -98,16 +105,48 @@ static void VToast (UIViewController *vc, NSString *s)
 - (void) promptClose { [self finish:nil]; }   /* (the controller's back button: as the close button) */
 - (BOOL) textFieldShouldReturn:(UITextField *)f   /* (Done on the keyboard: the first choice) */
 {
-	for (NSArray *ch in self.choices) { id blk = ch.count > 2 ? ch[2] : nil; if (blk && ![blk isKindOfClass:NSNull.class]) { [self finish:blk]; break; } }
+	for (NSArray *ch in self.choices) { id blk = ch.count > 2 ? ch[2] : nil; if (blk && ![blk isKindOfClass:NSNull.class]) {
+		if (ch.count > 3 && [ch[3] isKindOfClass:NSNumber.class] && [ch[3] boolValue]) [self stay:blk]; else [self finish:blk]; break; } }
 	return NO;
 }
 @end
-void vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void))
+UIViewController *vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void))
 {
 	while (vc.presentedViewController && !vc.presentedViewController.isBeingDismissed) vc = vc.presentedViewController;
 	VXPrompt *p = [VXPrompt new]; p.ttl = title; p.head = head; p.body = body; p.field = field; p.fieldText = fieldText; p.caps = caps; p.choices = choices; p.foot = foot; p.closed = closed;
 	p.modalPresentationStyle = UIModalPresentationOverFullScreen; p.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
-	ulog ([NSString stringWithFormat:@"prompt: %@", title]); [vc presentViewController:p animated:YES completion:nil];
+	ulog ([NSString stringWithFormat:@"prompt: %@", title]); [vc presentViewController:p animated:YES completion:nil]; return p;
+}
+void vxa_prompt_say (UIViewController *p, NSString *s) { if ([p isKindOfClass:VXPrompt.class]) [(VXPrompt *) p say:s]; }
+void vxa_prompt_close (UIViewController *p) { if ([p isKindOfClass:VXPrompt.class]) [(VXPrompt *) p finish:nil]; }
+
+/* ------------------------------------------------ the right side as a stick: which button each direction presses, kept for
+ * each game (touch.rmap.<the game file's stem>: up, right, down, left; the owner, 2026-11-26) */
+NSString *vxa_rkey (void) { NSString *g = vxa_game ().lastPathComponent.stringByDeletingPathExtension; return g.length ? g : @"minestorm"; }   /* (no cartridge: Mine Storm) */
+NSString *vxa_rmap (void)
+{
+	NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (once: a map kept at the first default, 3 4 2 1, to the new one) */
+	if (![u boolForKey:@"touch.rmap2"]) { [u setBool:YES forKey:@"touch.rmap2"];
+		for (NSString *k in u.dictionaryRepresentation.allKeys) if ([k hasPrefix:@"touch.rmap."] && [[u objectForKey:k] isEqual:@"3421"]) [u setObject:@"2431" forKey:k]; }
+	NSString *m = [NSUserDefaults.standardUserDefaults stringForKey:[@"touch.rmap." stringByAppendingString:vxa_rkey ()]];
+	if (m.length != 4) return @"2431";   /* (the default: 2 up, 3 down - the owner, 2026-11-26) */
+	for (NSUInteger i = 0; i < 4; i++) { const unichar c = [m characterAtIndex:i]; if (c < '1' || c > '4') return @"2431"; }
+	return m;
+}
+void vxa_rmap_panel (UIViewController *vc, void (^closed) (void))
+{
+	NSString *key = [@"touch.rmap." stringByAppendingString:vxa_rkey ()], *m = vxa_rmap (); void (^cl) (void) = [closed copy];
+	NSArray<NSString *> *dn = @[ @"Up", @"Right", @"Down", @"Left" ]; NSMutableArray *rows = [NSMutableArray array];
+	for (NSUInteger d = 0; d < 4; d++) { const int cur = [m characterAtIndex:d] - '0';
+		[rows addObject:@[ dn[d], [NSString stringWithFormat:@"Button %d", cur], VXGO (^(NSString *x) { (void) x;   /* (a direction: its button, 1 - 4) */
+			NSMutableArray *bs = [NSMutableArray array];
+			for (int b = 1; b <= 4; b++) [bs addObject:@[ [NSString stringWithFormat:@"%@Button %d", b == cur ? @"✓  " : @"", b], @"", VXGO (^(NSString *y) { (void) y;
+				NSString *nm = [m stringByReplacingCharactersInRange:NSMakeRange (d, 1) withString:[NSString stringWithFormat:@"%d", b]];
+				[NSUserDefaults.standardUserDefaults setObject:nm forKey:key]; ulog ([NSString stringWithFormat:@"right stick %@: %@ - button %d (%@)", vxa_rkey (), dn[d], b, nm]);
+				vxa_rmap_panel (vc, cl); }) ]];
+			vxa_prompt (vc, dn[d], @"Right stick", nil, nil, nil, NO, bs, nil, ^{ vxa_rmap_panel (vc, cl); }); }) ]]; }
+	[rows addObject:@[ @"Done", @"", VXGO (^(NSString *x) { (void) x; [NSUserDefaults.standardUserDefaults setObject:vxa_rmap () forKey:key]; if (cl) cl (); }) ]];
+	vxa_prompt (vc, @"Right stick", nil, nil, nil, nil, NO, rows, @"Which button each direction presses in this game.", cl);
 }
 
 /* ------------------------------------------------ a setting's values: numbers on a slider, the rest a list */
@@ -237,20 +276,24 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 	[super viewDidLoad]; _vals = [@(vxa_ovals (_opt)) componentsSeparatedByString:@"|"]; self.title = @(vxa_odesc (_opt));
 	self.tableView.backgroundColor = VX_BG; self.tableView.separatorColor = VX_EDGE; self.tableView.tintColor = VX_G;
 }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger) _vals.count; }
+- (NSInteger) defRow { return strcmp (vxa_oval (_opt), vxa_odef (_opt)) ? 1 : 0; }   /* (changed: "Back to the default" on top, as the Android app's) */
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger) _vals.count + [self defRow]; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return [NSString stringWithFormat:@"%s\nDefault: %s", vxa_oinfo (_opt), vxa_odef (_opt)]; }
 - (void) tableView:(UITableView *)t willDisplayFooterView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
 - (UITableViewCell *) tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip
 {
 	UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"v"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"v"];
-	NSString *v = _vals[(NSUInteger) ip.row]; BOOL on = !strcmp (vxa_oval (_opt), v.UTF8String);
+	if (ip.row < [self defRow]) { c.textLabel.text = [NSString stringWithFormat:@"Back to the default: %s", vxa_odef (_opt)]; c.textLabel.textColor = VX_HI; c.textLabel.font = VF (16, UIFontWeightRegular);
+		c.backgroundColor = VX_PANEL; c.accessoryType = UITableViewCellAccessoryNone; UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
+	NSString *v = _vals[(NSUInteger) (ip.row - [self defRow])]; BOOL on = !strcmp (vxa_oval (_opt), v.UTF8String);
 	c.textLabel.text = v; c.textLabel.textColor = on ? VX_HI2 : VX_FG; c.textLabel.font = VF (16, on ? UIFontWeightSemibold : UIFontWeightRegular);
 	c.backgroundColor = on ? VX_SEL : VX_PANEL; c.accessoryType = on ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
 	UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c;
 }
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
-	vxa_oset (_opt, _vals[(NSUInteger) ip.row].UTF8String); [[UISelectionFeedbackGenerator new] selectionChanged];
+	if (ip.row < [self defRow]) vxa_oset (_opt, vxa_odef (_opt)); else vxa_oset (_opt, _vals[(NSUInteger) (ip.row - [self defRow])].UTF8String);
+	[[UISelectionFeedbackGenerator new] selectionChanged];
 	[t reloadData];
 	if (self.navigationController.viewControllers.firstObject == self) [self dismissViewControllerAnimated:YES completion:nil];   /* (opened on its own: from the game menu) */
 	else [self.navigationController popViewControllerAnimated:YES];
@@ -321,9 +364,10 @@ static int VSlider (int i, NSArray<NSString *> **nums, NSArray<NSString *> **ext
 }
 /* (section 0: the app's own settings; then the core's groups) */
 - (NSInteger) numberOfSectionsInTableView:(UITableView *)t { return (NSInteger) _rows.count + 1; }
-- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 13; }
-/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, get games & extras, HDR, full brightness, look, afterglow, controls, about, reset - as numbered below) */
-static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[13] = { 0, 1, 7, 8, 9, 13, 3, 12, 10, 11, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 12 ? -1 : m[ip.row]; }   /* (13: Get games & extras in place of 2, the Downloads, 2026-11-25: the test build is the public one) */   /* (10, the look: Vectrex or Bright, 2026-11-22; 12 full brightness, 2026-11-24) */
+- (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s ? (NSInteger) _rows[(NSUInteger) s - 1].count : 12; }
+/* (App's rows in order: clock, top bar, control deck, pop-up, skip intro, get games & extras, HDR, full brightness, look, controls, about, reset - as numbered below;
+ *  11, Brighter afterglow, gone - the afterglow as the PC's, the owner 2026-11-26) */
+static NSInteger vxs_app (NSIndexPath *ip) { static const NSInteger m[12] = { 0, 1, 7, 8, 9, 13, 3, 12, 10, 4, 5, 6 }; return ip.section || ip.row < 0 || ip.row > 11 ? -1 : m[ip.row]; }   /* (13: Get games & extras in place of 2, the Downloads, 2026-11-25: the test build is the public one) */   /* (10, the look: Vectrex, Medium or Bright, 2026-11-22 / 2026-11-26; 12 full brightness, 2026-11-24) */
 static UISegmentedControl *vxs_seg (NSArray *items, NSInteger sel)
 {
 	UISegmentedControl *sg = [[UISegmentedControl alloc] initWithItems:items]; sg.selectedSegmentIndex = sel; sg.selectedSegmentTintColor = VX_SEL;
@@ -367,24 +411,17 @@ static UITableViewCell *vxs_cell (NSString *title)
 		c.textLabel.textColor = sw.enabled ? VX_FG : VX_DIM;
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { vxa_deck_set (vxa_deck_sel (), ((UISwitch *) a.sender).on); }] forControlEvents:UIControlEventValueChanged];
 		c.accessoryView = sw; return c; }
-	if (R == 10) {                                  /* (the look: Vectrex - the measured picture - or Bright: the lines lifted and wider, for a small screen) */
+	if (R == 10) {                                  /* (the look: Vectrex - the measured picture -, Medium - halfway - or Bright: the lines lifted and wider, for a small screen) */
 		extern void vxa_hdr_update (void);
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.text = @"Look"; c.textLabel.textColor = VX_FG;
 		c.backgroundColor = VX_PANEL; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = VX_DIM; c.detailTextLabel.numberOfLines = 2;
-		NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; const NSInteger md = lk ? lk.integerValue : 1;   /* (Bright the default on phones and tablets) */
-		c.textLabel.text = @"Bright look"; c.detailTextLabel.text = md == 1 ? @"Brighter, wider lines - for a small screen" : @"Off: as a real Vectrex";   /* (a switch: the owner, 2026-11-25) */
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = md == 1;
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger v = ((UISwitch *) a.sender).on ? 1 : 0;
+		NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; const NSInteger md = lk ? lk.integerValue : 1;   /* (0 Vectrex, 2 Medium, 1 Bright - Bright the default on phones and tablets) */
+		c.detailTextLabel.text = md == 0 ? @"As a real Vectrex" : md == 2 ? @"Between Vectrex and Bright" : @"Brighter, wider lines - for a small screen";
+		UISegmentedControl *sg = vxs_seg (@[ @"Vectrex", @"Medium", @"Bright" ], md == 0 ? 0 : md == 2 ? 1 : 2);   /* (three choices: segments, as the control deck's - the owner, 2026-11-26) */
+		[sg addAction:[UIAction actionWithHandler:^(UIAction *a) { const NSInteger k = ((UISegmentedControl *) a.sender).selectedSegmentIndex, v = k == 0 ? 0 : k == 1 ? 2 : 1;
 			[NSUserDefaults.standardUserDefaults setInteger:v forKey:@"app.look"];
-			ulog ([NSString stringWithFormat:@"look %@", v ? @"Bright" : @"Vectrex"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sw; return c; }
-	if (R == 11) {                                  /* (the afterglow 20 % brighter: a phone's small picture loses it - on there by default, off on an iPad) */
-		extern void vxa_hdr_update (void); extern int vxa_trail_boost (void);
-		UITableViewCell *c = vxs_cell (@"Brighter afterglow");
-		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = vxa_trail_boost ();
-		[sw addAction:[UIAction actionWithHandler:^(UIAction *a) { const BOOL on = ((UISwitch *) a.sender).on; [NSUserDefaults.standardUserDefaults setBool:on forKey:@"app.trailboost"];
-			ulog ([NSString stringWithFormat:@"brighter afterglow %d", (int) on]); vxa_hdr_update (); }] forControlEvents:UIControlEventValueChanged];
-		c.accessoryView = sw; return c; }
+			ulog ([NSString stringWithFormat:@"look %@", v == 1 ? @"Bright" : v == 2 ? @"Medium" : @"Vectrex"]); vxa_hdr_update (); [ws.tableView reloadData]; }] forControlEvents:UIControlEventValueChanged];
+		c.accessoryView = sg; return c; }
 	if (R == 12) {                                  /* (the screen at its brightest while a game plays - VXApp.m vxa_bright) */
 		static NSString *const MB[3] = { @"Off", @"Gameplay", @"Whole app" };
 		static NSString *const MBD[3] = { @"Your own brightness", @"Screen at maximum while playing, yours in menus", @"Screen at maximum, menus too" };
@@ -407,7 +444,7 @@ static UITableViewCell *vxs_cell (NSString *title)
 		c.accessoryView = sw; return c; }
 	if (R == 6) {                                   /* (every setting back to its default - as RetroArch's Reset Core Options) */
 		UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-		int n = 0; for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) n++;
+		const int n = vxa_settings_changed ();   /* (the core's options and the app's own: vxa_factory_reset) */
 		c.textLabel.text = @"Reset all settings"; c.textLabel.textColor = n ? VX_CHG : VX_DIM; c.backgroundColor = VX_PANEL;
 		c.detailTextLabel.text = n ? [NSString stringWithFormat:@"%d changed - all back to their defaults (a long press on one: that one)", n] : @"All at their defaults"; c.detailTextLabel.textColor = VX_DIM;
 		UIView *sb = [UIView new]; sb.backgroundColor = VX_SEL; c.selectedBackgroundView = sb; return c; }
@@ -480,12 +517,13 @@ static UITableViewCell *vxs_cell (NSString *title)
 		UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI adjustOption:VX_ADJ_HDR over:g fromSettings:YES]; }]; return; }
 	if (R == 4) { UIViewController *g = self.game; [self dismissViewControllerAnimated:YES completion:^{ [VXUI showControlsFrom:g]; }]; return; }
 	if (R == 6) { [t deselectRowAtIndexPath:ip animated:YES]; __weak VXSettings *ws = self;
+		{ const int n = vxa_settings_changed ();   /* (nothing changed: only said - the owner, 2026-11-26) */
+		  if (!n) { UIViewController *tv = self.navigationController; if (!tv) tv = self; VToast (tv, @"Every setting is at its default"); return; } }
 		vxa_prompt (self, @"Reset all settings?", nil, @"Every setting of the picture, the overlay, the sound and the controls back to its default.", nil, nil, NO, @[
-			@[ @"Reset", @"every setting to its default", VXGO (^(NSString *x) { (void) x; int n = 0;
-				for (int i = 0; i < vxa_nopts (); i++) if (strcmp (vxa_oval (i), vxa_odef (i))) { vxa_oset (i, vxa_odef (i)); n++; }
-				[NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.deckpop"]; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"app.bar"];   /* (the deck's pop-up and the top bar too: Auto) */
-				if ([ws.game respondsToSelector:@selector(barModeChanged)]) [ws.game performSelector:@selector(barModeChanged)];
-				ulog ([NSString stringWithFormat:@"settings: reset all (%d changed)", n]); if (![ws palCheck:vxa_ofind ("vectrex_emu_palette")]) [ws.tableView reloadData]; }) ],
+			@[ @"Reset", @"every setting to its default", VXGO (^(NSString *x) { (void) x;
+				vxa_factory_reset ();   /* (as a new install: the app's own settings too - applied at once, the game's view with them) */
+				if (![ws palCheck:vxa_ofind ("vectrex_emu_palette")]) [ws.tableView reloadData];
+				VXSettings *s = ws; UIViewController *tv = s.navigationController; if (!tv) tv = s; if (tv) VToast (tv, @"Settings reset"); }) ],
 			@[ @"Cancel", @"", VXGO (^(NSString *x) { (void) x; }) ] ], nil, nil);
 		return; }
 	if (R == 5) { extern UIViewController *vxa_about_vc (void); [self.navigationController pushViewController:vxa_about_vc () animated:YES]; ulog (@"settings: about and help"); return; }
@@ -703,13 +741,13 @@ static UIImage *vxs_raspberry (UIColor *col, CGFloat h)
 	_size.titleLabel.font = VF (12, UIFontWeightBold); _size.contentEdgeInsets = UIEdgeInsetsMake (0, 10, 0, 10); _size.accessibilityLabel = @"Games per row";
 	[_size setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal]; [_size setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
 	UIStackView *srow = [[UIStackView alloc] initWithArrangedSubviews:@[ _search, _size ]]; srow.spacing = 8;
-	_chips = [UIStackView new]; _chips.spacing = 6;
+	_chips = [UIStackView new]; _chips.spacing = 6; _chips.distribution = UIStackViewDistributionFillProportionally;   /* (the filters across the width, no scrolling - as the Android app's; the owner, 2026-11-26) */
 	for (NSString *f in @[ @"All", @"Recent", @"Games", @"UVMC2", @"PiTrex", @"Tests" ]) {
 		UIButton *b = VB (f, nil, NO, ^{ [ws pick:f]; }); UIButtonConfiguration *c = b.configuration; c.background.cornerRadius = 16;
-		c.contentInsets = NSDirectionalEdgeInsetsMake (6, 12, 6, 12); b.configuration = c; [_chips addArrangedSubview:b]; }
-	UIScrollView *cs = [UIScrollView new]; cs.showsHorizontalScrollIndicator = NO; [cs addSubview:_chips]; _chips.translatesAutoresizingMaskIntoConstraints = NO;
-	[NSLayoutConstraint activateConstraints:@[ [_chips.leadingAnchor constraintEqualToAnchor:cs.contentLayoutGuide.leadingAnchor], [_chips.trailingAnchor constraintEqualToAnchor:cs.contentLayoutGuide.trailingAnchor],
-		[_chips.topAnchor constraintEqualToAnchor:cs.contentLayoutGuide.topAnchor], [_chips.bottomAnchor constraintEqualToAnchor:cs.contentLayoutGuide.bottomAnchor], [_chips.heightAnchor constraintEqualToAnchor:cs.frameLayoutGuide.heightAnchor] ]];
+		c.contentInsets = NSDirectionalEdgeInsetsMake (6, 4, 6, 4); c.titleLineBreakMode = NSLineBreakByClipping;
+		c.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *a) { NSMutableDictionary *m = [a mutableCopy]; m[NSFontAttributeName] = VF (14, UIFontWeightSemibold); return m; };
+		b.configuration = c; [_chips addArrangedSubview:b]; }
+	UIView *cs = _chips;
 	_look = [[UISegmentedControl alloc] initWithItems:@[ @"Cartridges", @"Boxes", @"Overlays" ]];
 	_look.selectedSegmentIndex = [[VXLibrary look] isEqualToString:@"boxes"] ? 1 : [[VXLibrary look] isEqualToString:@"overlays"] ? 2 : 0;
 	_look.selectedSegmentTintColor = VX_SEL; [_look setTitleTextAttributes:@{ NSForegroundColorAttributeName: VX_HI2 } forState:UIControlStateSelected];
@@ -1017,8 +1055,8 @@ static void vxu_release (UIViewController *game)
 	__weak UIViewController *w = vc;
 	UIStackView *s = [[UIStackView alloc] initWithArrangedSubviews:@[
 		VB (@"GAMES", @"square.grid.2x2", NO, ^{ [VXUI showLibraryFrom:w]; }),
-		VB (@"SAVE", @"square.and.arrow.down", NO, ^{ VToast (w, vxa_state (1, 1) ? @"Saved in slot 1" : @"This game has no save states"); }),
-		VB (@"LOAD", @"square.and.arrow.up", NO, ^{ VToast (w, vxa_state_exists (1) && vxa_state (0, 1) ? @"Slot 1 loaded" : @"Nothing saved in slot 1"); }),
+		VB (@"SAVE", @"square.and.arrow.down", NO, ^{ VToast (w, vxa_net_playing () ? @"No save states during an online game" : vxa_state (1, 1) ? @"Saved in slot 1" : @"This game has no save states"); }),   /* (online: a state would part the two games) */
+		VB (@"LOAD", @"square.and.arrow.up", NO, ^{ VToast (w, vxa_net_playing () ? @"No save states during an online game" : vxa_state_exists (1) && vxa_state (0, 1) ? @"Slot 1 loaded" : @"Nothing saved in slot 1"); }),
 		VB (@"OVERLAY", @"rectangle.on.rectangle", NO, ^{ vxa_do (@"overlay"); }),
 		VB (@"ROOM", @"lightbulb", NO, ^{ [VXUI adjustOption:vxa_ofind ("vectrex_emu_room") over:w]; }),
 		VB (@"MENU", @"line.3.horizontal", NO, ^{ [VXUI showGameMenuFrom:w]; }) ]];
@@ -1045,8 +1083,8 @@ static void vxu_release (UIViewController *game)
 	t.textAlignment = sub.textAlignment = NSTextAlignmentCenter;
 	UILabel *st = VL (@"", VF (14, UIFontWeightRegular), VX_FG2); st.tag = 11; st.textAlignment = NSTextAlignmentCenter;
 	UIProgressView *pr = [UIProgressView new]; pr.tag = 12; pr.progressTintColor = VX_G; pr.trackTintColor = VXC (0x16302a); pr.hidden = YES;
-	UILabel *ver = VL ([NSString stringWithFormat:@"%@ (%@) - test build - diagnostics on", [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],
-		[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]], VF (11, UIFontWeightRegular), VX_DIM); ver.textAlignment = NSTextAlignmentCenter;
+	UILabel *ver = VL ([NSString stringWithFormat:@"Version %@ (build %@)", [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?",
+		[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"?"], VF (11, UIFontWeightRegular), VX_DIM); ver.textAlignment = NSTextAlignmentCenter;   /* (the real version, as About's) */
 	UIStackView *mid = [[UIStackView alloc] initWithArrangedSubviews:@[ lv, t, sub ]]; mid.axis = UILayoutConstraintAxisVertical; mid.alignment = UIStackViewAlignmentCenter; mid.spacing = 10;
 	UIStackView *bot = [[UIStackView alloc] initWithArrangedSubviews:@[ st, pr, ver ]]; bot.axis = UILayoutConstraintAxisVertical; bot.spacing = 12;
 	for (UIView *v in @[ mid, bot ]) { v.translatesAutoresizingMaskIntoConstraints = NO; [w addSubview:v]; }
@@ -1514,14 +1552,14 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 - (NSInteger) tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s
 {
 	if (s == 0) return (NSInteger) MAX (1, GCController.controllers.count + (GCKeyboard.coalescedKeyboard ? 1 : 0));
-	return s == 1 ? 4 : s == 2 ? 5 : 1;
+	return s == 1 ? 5 : s == 2 ? 6 : 1;   /* (1: the four, then back to the default; 2: ... the right stick of this game) */
 }
 - (NSString *) tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[ @"CONNECTED", @"VECTREX BUTTONS ON THE CONTROLLER", @"TOUCH CONTROLS", @"KEYBOARD" ][(NSUInteger) s]; }
 - (NSString *) tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s
 {
 	return @[ @"Player 1 is the first controller, player 2 the second.",
 		@"Tap a button to choose. The Vectrex controller's four buttons in a row; on a modern pad's diamond by default 1 left, 2 top, 3 bottom, 4 right.",
-		@"Automatic: shown only while no controller or keyboard is connected. The stick appears where the thumb lands; the D-pad gives clear up, down, left, right (the small switch beside it changes it too).",
+		@"Automatic: shown only while no controller or keyboard is connected. The stick appears where the thumb lands; the D-pad gives clear up, down, left, right (the small switch beside it changes it too). Between two buttons a finger presses both. The switch by the buttons makes them a stick in this game; hold it to choose each direction's button.",
 		@"As on the PC: the arrows the stick (Shift: half), A W S D buttons 1-4, P pause, L the games, O overlay, Ctrl+R RESET, Ctrl+E eject, Page Up / Down volume, M the menu." ][(NSUInteger) s];
 }
 - (void) tableView:(UITableView *)t willDisplayHeaderView:(UITableViewHeaderFooterView *)v forSection:(NSInteger)s { v.textLabel.textColor = VX_DIM; }
@@ -1548,6 +1586,7 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 		NSArray<GCController *> *cs = GCController.controllers;
 		if ((NSUInteger) ip.row < cs.count) { UITableViewCell *c = [self cell:cs[(NSUInteger) ip.row].vendorName ?: @"Controller" detail:[NSString stringWithFormat:@"player %ld", (long) ip.row + 1]]; c.selectionStyle = UITableViewCellSelectionStyleNone; return c; }
 		UITableViewCell *c = [self cell:GCKeyboard.coalescedKeyboard ? @"Keyboard" : @"Nothing connected" detail:GCKeyboard.coalescedKeyboard ? @"the PC keys" : @"touch"]; c.selectionStyle = UITableViewCellSelectionStyleNone; return c; }
+	if (ip.section == 1 && ip.row == 4) { UITableViewCell *c = [self cell:@"As the Vectrex controller (default)" detail:@"1 X, 2 Y, 3 A, 4 B"]; c.detailTextLabel.textColor = VX_DIM; return c; }   /* (the four back to the default, as the Android app's) */
 	if (ip.section == 1) {
 		NSNumber *m = [u objectForKey:[NSString stringWithFormat:@"map.%ld", (long) ip.row + 1]]; int src = m ? m.intValue : VXPhysDef[ip.row];
 		UITableViewCell *c = [self cell:[NSString stringWithFormat:@"Button %ld", (long) ip.row + 1] detail:VXPhys[src >= 0 && src < 8 ? src : 0]];
@@ -1568,6 +1607,9 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 				ulog ([NSString stringWithFormat:@"controls: %@", d ? @"D-pad" : @"stick"]); [ws changed]; }] forControlEvents:UIControlEventValueChanged];
 			[sg sizeToFit]; c.accessoryView = sg; return c; }
 		if (ip.row == 2) { UITableViewCell *c = [self cell:@"Opacity" detail:nil]; c.selectionStyle = UITableViewCellSelectionStyleNone; c.accessoryView = [self slider:@"touch.alpha" min:0.2f max:1.0f def:1.0f]; return c; }
+		if (ip.row == 5) { NSString *m = vxa_rmap ();   /* (the right side as a stick: which button each direction presses in this game) */
+			UITableViewCell *c = [self cell:@"Right stick (this game)" detail:[NSString stringWithFormat:@"↑%C →%C ↓%C ←%C", [m characterAtIndex:0], [m characterAtIndex:1], [m characterAtIndex:2], [m characterAtIndex:3]]];
+			c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; return c; }
 		UITableViewCell *c = [self cell:@"Left-handed (the stick on the right)" detail:nil]; c.selectionStyle = UITableViewCellSelectionStyleNone;
 		UISwitch *sw = [UISwitch new]; sw.onTintColor = VX_G; sw.on = [u boolForKey:@"touch.lefty"];
 		[sw addAction:[UIAction actionWithHandler:^(UIAction *x) { [u setBool:((UISwitch *) x.sender).on forKey:@"touch.lefty"]; ulog (@"controls: left-handed toggled"); [ws changed]; }] forControlEvents:UIControlEventValueChanged];
@@ -1579,8 +1621,13 @@ static const int VXPhysDef[4] = { 2, 3, 0, 1 };
 }
 - (void) tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
+	__weak VXControls *ws = self;
+	if (ip.section == 2 && ip.row == 5) { [t deselectRowAtIndexPath:ip animated:YES]; ulog (@"controls: right stick map");
+		vxa_rmap_panel (self, ^{ VXControls *c = ws; if (c) { [c.tableView reloadData]; [c changed]; } }); return; }
 	if (ip.section != 1) return;
-	NSInteger btn = ip.row; NSUserDefaults *u = NSUserDefaults.standardUserDefaults; __weak VXControls *ws = self;
+	if (ip.row == 4) { for (int i = 1; i <= 4; i++) [NSUserDefaults.standardUserDefaults removeObjectForKey:[NSString stringWithFormat:@"map.%d", i]];
+		ulog (@"controls: buttons as the Vectrex controller"); [t deselectRowAtIndexPath:ip animated:YES]; [t reloadData]; return; }
+	NSInteger btn = ip.row; NSUserDefaults *u = NSUserDefaults.standardUserDefaults;
 	NSMutableArray *rows = [NSMutableArray array];
 	for (int i = 0; i < 8; i++) [rows addObject:@[ VXPhys[i], @"", VXGO (^(NSString *x) { (void) x;
 		[u setInteger:i forKey:[NSString stringWithFormat:@"map.%ld", (long) btn + 1]]; ulog ([NSString stringWithFormat:@"controls: button %ld on %@", (long) btn + 1, VXPhys[i]]); [ws.tableView reloadData]; }) ]];

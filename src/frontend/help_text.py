@@ -247,7 +247,7 @@ TOPICS = [
 ('deck', 'The Config window', [
 ('p', "Tab (or Config on the menu bar) opens one window over the running game with every display, sound and hardware "
       "setting, in tabs: Tube, Room light, Case, Overlay, Sound, Vectrex unit, Display and Cartridge. Every switch and "
-      "slider acts on the game at once. Right click a slider: its default. Reset this tab puts back only that tab; Reset all puts back every tab (to the Quality profile's defaults, Custom: High's). "
+      "slider acts on the game at once. Right click a slider: its default. Reset this tab puts back only that tab; Reset all settings puts every setting back as a new install has it - every tab (under the Quality profile), the games' own settings, the controls, HDR, the colours, recording and online (not the gamer name, the window's size or the Quality profile). "
       "Hold H (or the Before button) to see the look from before the Config window opened. Tab or Esc closes it."),
 ('p', "The game keeps its controllers and keys while the Config window is open: it can be played, and checked, with "
       "the window open. The emulator's keys work there too - P, O, L, C, + / - / 0 / 9, Ctrl+R, Page Up / Down; Tab or "
@@ -288,23 +288,18 @@ TOPICS = [
          "each place - one law, measured on photos of a real Vectrex. So a slow line is brighter than a fast one, a "
          "resting dot grows wider, a line shows a dot where it starts, crossings add up, and the thick glass "
          "round a bright spot glows a little. On an HDR screen the brightest dots go above white."),
-('item', 'Afterglow / Afterglow length', "The phosphor keeps glowing after the beam has passed. "
-         "x1 is the measured length; the default x0.6 was matched to a real Vectrex side by side."),
+('item', 'Afterglow / Afterglow length', "The phosphor keeps glowing after the beam has passed: its length. "
+         "x1 is the measured length; x0.6 was matched to a real Vectrex side by side."),
 ('more', 'The measured afterglow', "Filmed on a real Vectrex: the moment the beam leaves, a spot drops to "
          "about 15 % of its brightness, to 4 % after 0.15 s and 1.5 % after half a second; it is gone after "
          "about 2 seconds. That is why fast objects leave fading copies or a faint trail, and why a game "
          "running at 25 frames a second flickers less than you might expect. A spot drawn again is lit "
          "again; it does not add up."),
+('item', 'Afterglow brightness', "How bright the afterglow is: above x1 a brighter trail, below a fainter one."),
 ('item', 'Game list', "Library: the games as tiles - cartridges, boxes or overlays, a search, categories; button 1 closes it. "
          "A right click on a UVMC2 game: Calibration (2 + 3 held). Simple: the plain list of the roms folder."),
 ('item', 'Colours', "The deck's, the menus' and the windows' colour: a deeper blue, or green."),
-('item', 'Look', "Vectrex: as a real Vectrex. Bright: brighter, wider lines - for a small screen."),
-('item', 'White balance (colour temperature)', "The middle is neutral: the lines and their glow the screen's own "
-         "pure white. Towards cool (up to 16000 K) the glow turns colder while the lines' bright cores stay pure white - "
-         "the screen's brightest - and from about 9600 K the cores follow. Towards warm (down to "
-         "5600 K) the same. 12000 K by default: the bluish white of a real Vectrex - a cold glow, and the brightest cores "
-         "bluish too; further right even bluer. "
-         "Only the lines change colour - the overlay and the case keep theirs."),
+('item', 'Look', "Vectrex: as a real Vectrex. Medium: between the two. Bright: brighter, wider lines - for a small screen."),
 ('item', 'Line gaps (analog delay)...', "The small gaps at line ends and corners: on a real Vectrex the beam "
          "stops moving a few cycles after the game switches it off, and how many differs from one machine to "
          "the next. 7 cycles (the default) is a well-tuned Vectrex; 4 nearly closes the corners, 10 "

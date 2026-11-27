@@ -41,7 +41,8 @@ static void vxa_net_watch (void)
 }
 @class VXGameVC; static __weak VXGameVC *vxa_vc; static int vxa_holding, vxa_nodraw;
 static int vxa_fullbright (void); static void vxa_bright (int want);   /* (Max brightness: by vxa_hold) */
-static int vxa_rate_slow;                                 /* (120 Hz the GPU could not hold: 60 for the session) */
+static int vxa_card_was = -1;   /* (the UVMC2 / PiTrex check in the tick: the card it last saw; -1 none yet - looked at anew) */
+static int vxa_rate_slow; static double vxa_gpu_pct;   /* (vxa_gpu_pct: the GPU busy on ours in the last 5 s, %) */                                 /* (120 Hz the GPU could not hold: 60 for the session) */
 static void vxa_net_tick (void);                  /* (online play: below) */
 extern const char *vx_app_game (void); extern void vx_app_load (const char *path); extern int vx_app_browser_wanted (void);
 void vxa_hdr_update (void); float vxa_hdr_headroom (void);
@@ -197,17 +198,23 @@ static void vxa_opts_defaults (void)
 	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (once, 1.7.6 (108): the deck and the top bar to Auto - values kept from before it existed) */
 	  if (![u boolForKey:@"app.auto1"]) { [u setBool:YES forKey:@"app.auto1"]; [u removeObjectForKey:@"opt.vectrex_emu_deck"]; [u removeObjectForKey:@"app.deckpop"];
 		[u removeObjectForKey:@"app.topbar"]; [u removeObjectForKey:@"app.bar"]; if (dk >= 0) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", "auto"); vlog ("deck and top bar: Auto (once)"); } }
+	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults; const int ej = vxa_opt_find ("vectrex_emu_btn_eject");   /* (once: Eject off R1 - the old default, the owner 2026-11-26) */
+	  if (![u boolForKey:@"app.eject1"] && ej >= 0) { [u setBool:YES forKey:@"app.eject1"];
+		if (!strcmp (vxa_opt[ej].val, "R")) { snprintf (vxa_opt[ej].val, sizeof vxa_opt[ej].val, "%s", "off"); [u removeObjectForKey:@"opt.vectrex_emu_btn_eject"]; vlog ("eject button: off (once - it was R1, the old default)"); } } }
 	const char *dd = "auto";   /* (Auto: this screen's - full, slim, popping up; vxa_deck_style) */
 	{ NSUserDefaults *u = NSUserDefaults.standardUserDefaults;   /* (the top bar's setting as Auto / Shown / Auto-hide: an older one carried over) */
 	  if (![u stringForKey:@"app.bar"] && [u stringForKey:@"app.topbar"]) [u setObject:[[u stringForKey:@"app.topbar"] isEqualToString:@"auto"] ? @"hide" : @"always" forKey:@"app.bar"];
 	  [u removeObjectForKey:@"app.topbar"]; }
 	if (dk >= 0) snprintf (vxa_opt[dk].def, sizeof vxa_opt[dk].def, "%s", dd);   /* (the app's default - what Reset gives back) */
 	if (dk >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_deck"]) snprintf (vxa_opt[dk].val, sizeof vxa_opt[dk].val, "%s", dd);
-	/* (this device's own: the screen's refresh rate - 120 Hz on ProMotion, else 60) */
+	/* (this device's own: the screen's refresh rate snapped to the core's 60 / 72 / 90 / 120 / 144, as the Android app's - 120 Hz
+	 *  on ProMotion, else 60) */
 	int r = vxa_opt_find ("vectrex_emu_rate");
-	if (r >= 0) snprintf (vxa_opt[r].def, sizeof vxa_opt[r].def, "%s", UIScreen.mainScreen.maximumFramesPerSecond >= 120 ? "120 Hz" : "60 Hz");   /* (this screen's: the default) */
+	const long shz = (long) UIScreen.mainScreen.maximumFramesPerSecond; char hz[16];
+	snprintf (hz, sizeof hz, "%d Hz", shz >= 143 ? 144 : shz >= 119 ? 120 : shz >= 89 ? 90 : shz >= 71 ? 72 : 60);
+	if (r >= 0) snprintf (vxa_opt[r].def, sizeof vxa_opt[r].def, "%s", hz);   /* (this screen's: the default) */
 	if (r >= 0 && ![[NSUserDefaults standardUserDefaults] stringForKey:@"opt.vectrex_emu_rate"])
-		snprintf (vxa_opt[r].val, sizeof vxa_opt[r].val, "%s", UIScreen.mainScreen.maximumFramesPerSecond >= 120 ? "120 Hz" : "60 Hz");   /* (Metal shows the picture: ProMotion's 120 pictures a second) */
+		snprintf (vxa_opt[r].val, sizeof vxa_opt[r].val, "%s", hz);   /* (Metal shows the picture: ProMotion's 120 pictures a second) */
 	vlog ("core options: %d (rate %s)", vxa_nopt, r >= 0 ? vxa_opt[r].val : "?");
 }
 
@@ -609,7 +616,7 @@ static int vxa_untgz (const char *tgz, const char *root, int *files)    /* (0: w
 @property (nonatomic, copy) NSString *ver; @property (nonatomic, strong) NSURLSession *session;
 + (instancetype) shared;
 @end
-long vxa_presents;                         /* (the pictures handed to the screen so far: the deck's HZ figure) */
+long vxa_presents; static long vxa_runs_all;   /* (vxa_runs_all: the runs so far - the second's check of 120 Hz) */                         /* (the pictures handed to the screen so far: the deck's HZ figure) */
 @implementation VXPack {
 	int _lastpc; double _t0; NSOperationQueue *_q;
 	NSURLSession *_fg, *_fgWifi;                    /* (the normal sessions, while the app is open: any network / Wi-Fi only) */
@@ -816,6 +823,7 @@ static void vxa_retire (void)
 @interface VXGameVC : UIViewController
 - (void) gotFrame:(unsigned)w :(unsigned)h;
 - (void) setRunning:(int)on;
+- (void) rightReset; - (void) barModeChanged; - (void) controlsChanged;   /* (vxa_factory_reset) */
 @end
 void vxa_set_callbacks (void);
 static UILabel *vxa_toast_l;
@@ -836,8 +844,11 @@ static void vxa_toast (NSString *s, double secs)
 	unsigned _fw, _fh; int _have;                                   /* (the last picture from the core) */
 	CGRect _pic;                                                   /* (where it is on the screen, in points) */
 	UIView *_ctl; CAShapeLayer *_stickBase, *_stickKnob, *_btn[4]; CATextLayer *_btnT[4]; CGRect _btnR[4];
-	UITouch *_stickT, *_ptrT, *_btnTouch[4]; CGPoint _stickC; CGRect _stickZone; double _stickR;
+	UITouch *_stickT, *_ptrT; CGPoint _stickC; CGRect _stickZone; double _stickR;
 	CAShapeLayer *_padTog; CATextLayer *_padTogT; CGRect _padTogR; int _padDir;   /* (stick / D-pad: the switch beside it; the D-pad's arms pressed) */
+	UITouch *_bf[4]; int _bfSet[4], _bOn;          /* (rolling: the fingers on the buttons - each presses one, or two from the gap between them - and the buttons pressed now) */
+	CAShapeLayer *_rTog, *_rpBase, *_rpKnob; CATextLayer *_rTogT; CGRect _rTogR, _rZone; CGPoint _rpC; double _rpR;   /* (the right side as a stick: its switch, its D-pad) */
+	UITouch *_rpT, *_rTogTouch; int _rpDir, _rpSet; BOOL _rTogLong, _tested;   /* (its finger, direction and buttons; the switch held: the map; _tested: the device test ran at this start) */
 	UILabel *_status; UIProgressView *_prog; UIButton *_menuBtn; UIView *_bar, *_welcome, *_deck; int _firstPack;
 	UIButton *_popTab; double _popUntil;           /* (the pop-up deck: its tab, shown until) */
 	NSArray<NSDictionary *> *_parts; NSMutableArray<NSString *> *_qIds; BOOL _qWifi; long long _qTotal, _qDone;
@@ -872,6 +883,12 @@ static void vxa_toast (NSString *s, double secs)
 	_padTog = [CAShapeLayer layer]; _padTog.fillColor = _stickBase.fillColor; _padTog.strokeColor = _stickBase.strokeColor; _padTog.lineWidth = 1.5; [_ctl.layer addSublayer:_padTog];
 	_padTogT = [CATextLayer layer]; _padTogT.fontSize = 9.5; _padTogT.alignmentMode = kCAAlignmentCenter; _padTogT.contentsScale = UIScreen.mainScreen.scale;
 	_padTogT.font = (__bridge CFTypeRef) [UIFont systemFontOfSize:9.5 weight:UIFontWeightBold]; _padTogT.foregroundColor = g.CGColor; [_ctl.layer addSublayer:_padTogT];
+	_rTog = [CAShapeLayer layer]; _rTog.fillColor = _stickBase.fillColor; _rTog.strokeColor = _stickBase.strokeColor; _rTog.lineWidth = 1.5; [_ctl.layer addSublayer:_rTog];   /* (the right side's switch: buttons / stick) */
+	_rTogT = [CATextLayer layer]; _rTogT.fontSize = 9.5; _rTogT.alignmentMode = kCAAlignmentCenter; _rTogT.contentsScale = UIScreen.mainScreen.scale;
+	_rTogT.font = (__bridge CFTypeRef) [UIFont systemFontOfSize:9.5 weight:UIFontWeightBold]; _rTogT.foregroundColor = g.CGColor; [_ctl.layer addSublayer:_rTogT];
+	_rpBase = [CAShapeLayer layer]; _rpBase.fillColor = _stickBase.fillColor; _rpBase.strokeColor = _stickBase.strokeColor; _rpBase.lineWidth = 1.5;   /* (its D-pad: the left one's look) */
+	_rpKnob = [CAShapeLayer layer]; _rpKnob.fillColor = _stickKnob.fillColor; _rpKnob.strokeColor = g.CGColor; _rpKnob.lineWidth = 1.5;
+	[_ctl.layer addSublayer:_rpBase]; [_ctl.layer addSublayer:_rpKnob];
 	for (int i = 0; i < 4; i++) {
 		_btn[i] = [CAShapeLayer layer]; _btn[i].fillColor = _stickBase.fillColor; _btn[i].strokeColor = g.CGColor; _btn[i].lineWidth = 1.5; [_ctl.layer addSublayer:_btn[i]];
 		_btnT[i] = [CATextLayer layer]; _btnT[i].string = [NSString stringWithFormat:@"%d", i + 1]; _btnT[i].fontSize = 22; _btnT[i].alignmentMode = kCAAlignmentCenter;
@@ -1101,18 +1118,19 @@ static void vxa_toast (NSString *s, double secs)
 		const double secs = CACurrentMediaTime () - t0;
 		dispatch_async (dispatch_get_main_queue (), ^{ [tm invalidate]; VXGameVC *g = ws; if (!g) return;
 			[EAGLContext setCurrentContext:cx]; vlog ("device test done: %d rate%s in %.1f s", k, k > 1 ? "s" : "", secs);
-			[g startLink]; [g testReport]; }); });
+			g->_tested = YES; [g startLink]; [g testReport]; }); });
 }
 /* the test's result: each screen rate - every effect on, or what this device runs without */
 - (void) testReport
 {
 	extern const char *vx_app_tune_report (void); NSString *r = @(vx_app_tune_report ());
 	vlog ("device test: %s", [r stringByReplacingOccurrencesOfString:@"\n" withString:@"; "].UTF8String);
-	if (!r.length) return;
+	if (!r.length) { [self askName]; return; }
 	vxa_hold (1);
 	__weak VXGameVC *ws = self;   /* (the welcome sheet after the result - it would not show over it) */
 	void (^ok) (void) = ^{ vxa_hold (0);
-		VXGameVC *g = ws; if (g && ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.4 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:g]; }); };
+		VXGameVC *g = ws; if (g && ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.4 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:g]; });
+		[g askName]; };   /* (the player name once the result is closed - not over it) */
 	NSMutableArray *rows = [NSMutableArray array];   /* (each screen rate a line, as the Android app's) */
 	for (NSString *ln in [r componentsSeparatedByString:@"\n"]) { if (!ln.length) continue; NSRange c = [ln rangeOfString:@": "];
 		[rows addObject:@[ c.location != NSNotFound ? [ln substringToIndex:c.location] : ln, c.location != NSNotFound ? [ln substringFromIndex:c.location + 2] : @"", NSNull.null ]]; }
@@ -1144,7 +1162,11 @@ static void vxa_toast (NSString *s, double secs)
  [self viewDidLayoutSubviews]; [self showBar];
 	if (_firstPack || ![NSUserDefaults.standardUserDefaults boolForKey:@"app.welcomed"]) dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (0.8 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ [VXUI showReadyFrom:self]; });
 	[self devicesChanged:nil]; _stat_t = CACurrentMediaTime();
-	__weak VXGameVC *wn = self; dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (3 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ VXGameVC *g = wn; if (g) vxa_name_first (g); });   /* (the player name) */
+	if (!_tested) [self askName];   /* (after the device test: once its result is closed - testReport) */
+}
+- (void) askName   /* (the player name: this device's, or asked for once - as the Android app's, 1.5 s after the start screen or the test's result) */
+{
+	__weak VXGameVC *wn = self; dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (1.5 * NSEC_PER_SEC)), dispatch_get_main_queue (), ^{ VXGameVC *g = wn; if (g) vxa_name_first (g); });
 }
 /* the pictures' times on the glass: the gaps between them counted by length (the 5 s log line) - 20.0 ms is a 50 Hz panel,
  * 20.8 a 48 Hz one, 16.7 / 25 a 120 Hz grid */
@@ -1248,11 +1270,12 @@ static void vxa_glass (double t)
 	                                                           drew pictures nobody saw: 115 runs, 0 pictures a second, the owner 2026-11-19) */
 	vxa_net_tick ();                               /* (online: the game agreed, its news - also while a screen is over the game) */
 	{ static double bt; if (now - bt > 0.25) { bt = now; const int mb = vxa_fullbright (); vxa_bright (mb == 2 || (mb == 1 && !vxa_holding && !_welcome.superview)); } }   /* (Max brightness) */
+	{ static char gw[1100]; const char *g = vx_app_game (); if (g && strcmp (g, gw)) { snprintf (gw, sizeof gw, "%s", g); [self rightReset]; [self layoutControls]; } }   /* (another game: the right side as it is kept for that one - buttons or its stick) */
 	{ /* (a UVMC2 / PiTrex program at 60 Hz when the rate is only the default - as the Android app: its emulation is a processor
 	   *  of its own, 120 Hz left the refreshes waiting for it; its game makes 20-35 frames a second. A rate the player chose
 	   *  stays; back at the next Vectrex game. The owner, 2026-11-25) */
-	  static int card_was = -1; extern int vx_app_card (void); const int card = vx_app_card (); const int ri = vxa_opt_find ("vectrex_emu_rate");
-	  if (card != card_was && ri >= 0 && !vxa_net_playing ()) { card_was = card;
+	  extern int vx_app_card (void); const int card = vx_app_card (); const int ri = vxa_opt_find ("vectrex_emu_rate");
+	  if (card != vxa_card_was && ri >= 0 && !vxa_net_playing ()) { vxa_card_was = card;
 		if (![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"]) {
 			const char *want = (card || vxa_rate_slow) && atoi (vxa_opt[ri].def) > 60 ? "60 Hz" : vxa_opt[ri].def;
 			if (strcmp (vxa_opt[ri].val, want)) { snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", want); vxa_opt_dirty = 1;
@@ -1266,7 +1289,20 @@ static void vxa_glass (double t)
 	/* (behind: the runs before the last emulate only - drawing each one's picture as well, that no one sees, kept the GPU
 	 *  behind for good: 3 runs a tick, ~20 pictures a second until a screen was opened) */
 	const double tr0 = CACurrentMediaTime ();
-	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; }
+	for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); _runs++; vxa_runs_all++; }
+	{ /* (120 Hz the GPU cannot hold, checked each second: a warm iPhone slows its GPU and the picture stood still for seconds at
+	   *  a time while the game ran on - the owner, build 218. Fewer than 60 % of a second's runs shown: 60 Hz for this session
+	   *  at once - the default only (a rate the player chose stays), not online, not saved) */
+	  static double w0, grace; static long r0, p0; static char lastv[16];
+	  { const int rk = vxa_opt_find ("vectrex_emu_rate"); if (rk >= 0 && strcmp (vxa_opt[rk].val, lastv)) { snprintf (lastv, sizeof lastv, "%s", vxa_opt[rk].val); grace = now + 3.0; } }   /* (a new rate: 3 s for the screen to change over - the Nova's first second at 120 had 70 refreshes) */
+	  if (now < grace) { w0 = now; r0 = vxa_runs_all; p0 = vxa_presents; }
+	  else if (now - w0 >= 1.0) { const double dt = now - w0; const long dr = vxa_runs_all - r0, dp = vxa_presents - p0; w0 = now; r0 = vxa_runs_all; p0 = vxa_presents;
+		const int ri = vxa_opt_find ("vectrex_emu_rate");
+		if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vxa_net_playing ()) {   /* (a chosen 120 too: never a frozen picture - the owner, 2026-11-26; the setting itself stays) */
+			if ([NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"]) vxa_toast (@"120 Hz too heavy now - 60 Hz", 3);
+			snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
+			if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
+			vlog ("the GPU behind at 120 Hz (%ld of %ld runs shown in %.1f s, heat %ld): 60 Hz for this session", dp, dr, dt, (long) NSProcessInfo.processInfo.thermalState); } } }
 	_tRun += CACurrentMediaTime () - tr0; _tLinkDur += l.targetTimestamp - l.timestamp;
 	{ static double hdr_t; if (now - hdr_t > 1.0) { hdr_t = now; vxa_hdr_update (); } }   /* (HDR: the screen's headroom now - brightness, Low Power Mode) */
 	vxa_nodraw = 0;
@@ -1292,6 +1328,7 @@ static void vxa_glass (double t)
 		  bs = vxa_gt_busy; bm = vxa_gt_bmax; ls = vxa_gt_lat; lm = vxa_gt_lmax; gn = vxa_gt_n; gl = vxa_gt_lost; ms = vxa_mt_sum; mm = vxa_mt_max; mn = vxa_mt_n;
 		  vxa_gt_busy = vxa_gt_bmax = vxa_gt_lat = vxa_gt_lmax = vxa_mt_sum = vxa_mt_max = 0; vxa_gt_n = vxa_gt_lost = vxa_mt_n = 0;
 		  pthread_mutex_unlock (&vxa_gq_mx);
+		  vxa_gpu_pct = gn && t > 0 ? bs * 100 / t : 0;
 		  if (gn || gl || mn) vlog ("GPU a picture (%ld timed, %ld lost): busy %.2f ms mean, %.2f most - the GPU on ours %.0f %% of the time; flush to done %.2f ms mean, %.2f most; Metal's copy to the screen %.2f ms mean, %.2f most; shown %d refresh%s after its run",
 			gn, gl, gn ? bs * 1000 / gn : 0.0, bm * 1000, t > 0 ? bs * 100 / t : 0.0, gn ? ls * 1000 / gn : 0.0, lm * 1000, mn ? ms * 1000 / mn : 0.0, mm * 1000, vxa_deep ? 2 : 1, vxa_deep ? "es" : ""); }
 		_notReady = 0; _lateShown = 0;
@@ -1306,6 +1343,14 @@ static void vxa_glass (double t)
 			while (k < 40 && fgets (ln, sizeof ln, lf)) { size_t n = strlen (ln); if (!n || ln[n - 1] != '\n') break; ln[n - 1] = 0; off = ftell (lf);
 				if (strstr (ln, "Optimize") || strstr (ln, "GPU") || strstr (ln, "measur") || strstr (ln, "effect")) { vlog ("core: %s", ln); k++; } }
 			fclose (lf); } }
+		{ /* (warm and the GPU near its limit at 120 Hz: 60 before the picture stalls - the owner's iPhone ran 120 Hz at 66-70 % of the
+		   *  GPU cool; warm (heat 1) iOS slowed the GPU, 85-93 %, and then it froze; the Nova with a fan held 120. The default only (a
+		   *  rate the player chose stays: the second's check keeps that one from freezing), not online, not saved) */
+		  const long heat = (long) NSProcessInfo.processInfo.thermalState; const int ri = vxa_opt_find ("vectrex_emu_rate");
+		  if (heat >= 1 && vxa_gpu_pct >= 85 && ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && ![NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] && !vxa_net_playing ()) {
+			snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
+			if (@available (iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake (60, 60, 60);
+			vlog ("warm (heat %ld) and the GPU at %.0f %% at 120 Hz: 60 Hz for this session", heat, vxa_gpu_pct); } }
 		{ /* (120 Hz the GPU cannot hold: after 20-30 s at full load the iPhone slows its GPU and the pictures come irregularly - 40-60
 		   *  a second, a stutter (the owner's iPhone, builds 94-137). A steady 60 looks smooth: two periods behind (fewer than 80 %
 		   *  of the runs shown) - 60 Hz for this session; the default only (a rate the player chose stays), not online, not saved) */
@@ -1434,6 +1479,8 @@ static void vxa_set_opt (int i, NSString *v)
 	_stickBase.fillColor = vx_rgba (0.06, 0.11, 0.09, 0.6).CGColor; _stickBase.strokeColor = vx_rgba (0x2f / 255.0, 0x55 / 255.0, 0x44 / 255.0, 1).CGColor;
 	_stickKnob.fillColor = vx_rgba (0x16 / 255.0, 0x30 / 255.0, 0x2a / 255.0, 1).CGColor; _stickKnob.strokeColor = g.CGColor;
 	_padTog.fillColor = _stickBase.fillColor; _padTog.strokeColor = _stickBase.strokeColor; _padTogT.foregroundColor = g.CGColor;
+	_rTog.fillColor = _stickBase.fillColor; _rTog.strokeColor = _stickBase.strokeColor; _rTogT.foregroundColor = g.CGColor;
+	_rpBase.fillColor = _stickBase.fillColor; _rpBase.strokeColor = _stickBase.strokeColor; _rpKnob.fillColor = _stickKnob.fillColor; _rpKnob.strokeColor = g.CGColor;
 	for (int i = 0; i < 4; i++) { _btn[i].fillColor = _stickBase.fillColor; _btn[i].strokeColor = g.CGColor; _btnT[i].foregroundColor = hi.CGColor; }
 	vxa_toast_l.textColor = hi; vxa_toast_l.backgroundColor = vx_rgba (0x0b / 255.0, 0x15 / 255.0, 0x11 / 255.0, 0.92);
 	_menuBtn.tintColor = hi; _menuBtn.backgroundColor = vx_rgba (0x0b / 255.0, 0x15 / 255.0, 0x11 / 255.0, 0.75); _menuBtn.layer.borderColor = vx_rgba (0x2f / 255.0, 0x55 / 255.0, 0x44 / 255.0, 1).CGColor;
@@ -1460,6 +1507,35 @@ static void vxa_set_opt (int i, NSString *v)
 	vlog ("devices%s: controllers %s keyboard %s", n ? [@" " stringByAppendingString:n.name].UTF8String : "", s.length ? s.UTF8String : "none; ", kb ? "yes" : "no");
 	[self layoutControls];
 }
+/* a D-pad: its cross at c, the arms pressed lit (dir: up 1, down 2, left 4, right 8) - the left one's and the right side's
+ * as a stick */
+static void vxa_pad_draw (CAShapeLayer *base, CAShapeLayer *knob, CGPoint c, double R, int dir)
+{
+	const double w = R * 0.33;
+	UIBezierPath *p = [UIBezierPath bezierPath];
+	[p moveToPoint:CGPointMake (c.x - w, c.y - R)]; [p addLineToPoint:CGPointMake (c.x + w, c.y - R)]; [p addLineToPoint:CGPointMake (c.x + w, c.y - w)];
+	[p addLineToPoint:CGPointMake (c.x + R, c.y - w)]; [p addLineToPoint:CGPointMake (c.x + R, c.y + w)]; [p addLineToPoint:CGPointMake (c.x + w, c.y + w)];
+	[p addLineToPoint:CGPointMake (c.x + w, c.y + R)]; [p addLineToPoint:CGPointMake (c.x - w, c.y + R)]; [p addLineToPoint:CGPointMake (c.x - w, c.y + w)];
+	[p addLineToPoint:CGPointMake (c.x - R, c.y + w)]; [p addLineToPoint:CGPointMake (c.x - R, c.y - w)]; [p addLineToPoint:CGPointMake (c.x - w, c.y - w)]; [p closePath];
+	base.path = p.CGPath;
+	UIBezierPath *k = [UIBezierPath bezierPath]; const double ins = w * 1.1, r2 = R - 4, h = w - 4;   /* (the arms pressed, lit) */
+	if (dir & 1) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - h, c.y - r2, 2 * h, r2 - ins) cornerRadius:4]];
+	if (dir & 2) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - h, c.y + ins, 2 * h, r2 - ins) cornerRadius:4]];
+	if (dir & 4) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - r2, c.y - h, r2 - ins, 2 * h) cornerRadius:4]];
+	if (dir & 8) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x + ins, c.y - h, r2 - ins, 2 * h) cornerRadius:4]];
+	knob.path = k.CGPath;
+}
+/* the D-pad's direction under the thumb: up / down / left / right clearly - a diagonal only near the exact corner (30 degrees
+ * of each 90), nothing in the middle */
+static int vxa_pad_dir (double dx, double dy, double R)
+{
+	int dir = 0; if (hypot (dx, dy) > R * 0.22) { double a = atan2 (dy, dx) * 180 / M_PI; if (a < 0) a += 360;
+		const double m = fmod (a, 90);   /* (within 15 degrees of a diagonal: both; else the nearest of the four) */
+		if (m > 30 && m < 60) { dir = (dy < 0 ? 1 : 2) | (dx < 0 ? 4 : 8); }
+		else { const int q = (int) floor ((a + 45) / 90) % 4; dir = q == 0 ? 8 : q == 1 ? 2 : q == 2 ? 4 : 1; } }
+	return dir;
+}
+static const int vxa_id4[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A };   /* (the Vectrex's buttons 1-4) */
 /* the touch controls: a stick where the thumb lands (left), buttons 1-4 as the Vectrex controller (right); only while no
  * controller and no keyboard is connected; below the picture upright, beside it sideways */
 - (void) layoutControls
@@ -1487,37 +1563,40 @@ static void vxa_set_opt (int i, NSString *v)
 		double bx = cx + (i % 2 ? r + gap / 2 : -r - gap / 2), by = cy + (i < 2 ? -r - gap / 2 : r + gap / 2);
 		_btnR[i] = CGRectMake (bx - r, by - r, 2 * r, 2 * r);
 		_btn[i].path = [UIBezierPath bezierPathWithOvalInRect:_btnR[i]].CGPath;
+		_btnT[i].string = [NSString stringWithFormat:@"%d", i + 1]; _btnT[i].fontSize = 22;
 		_btnT[i].frame = CGRectMake (bx - r, by - 14, 2 * r, 28); }
+	/* the right side: the buttons, or a stick for this game (its D-pad where the buttons were, each arm's button at its end) -
+	 * its switch the left one's mirror: the zone's outer bottom corner, else under the buttons, else beside them where the two
+	 * zones meet (an iPhone upright: the buttons fill their zone's height) */
+	const BOOL rs = [self rstick]; _rZone = zr;
+	{ const BOOL rleft = CGRectGetMidX (zr) < v.width / 2; const double tw = 60, th = 26; const CGRect sq = CGRectInset (CGRectUnion (_btnR[0], _btnR[3]), -8, -8);
+	  const CGRect a = CGRectMake (rleft ? CGRectGetMinX (zr) + 12 : CGRectGetMaxX (zr) - 12 - tw, CGRectGetMaxY (zr) - 8 - th, tw, th);
+	  const CGRect b = CGRectMake (cx - tw / 2, CGRectGetMaxY (sq) + 4, tw, th);
+	  const CGRect c = CGRectMake ((rleft ? CGRectGetMaxX (zr) + 8 : CGRectGetMinX (zr) - 8) - tw / 2, a.origin.y, tw, th);
+	  _rTogR = !CGRectIntersectsRect (a, sq) ? a : CGRectGetMaxY (b) <= CGRectGetMaxY (zr) - 2 ? b : c;
+	  _rTog.path = [UIBezierPath bezierPathWithRoundedRect:_rTogR cornerRadius:th / 2].CGPath;
+	  _rTogT.string = rs ? @"BUTTONS" : @"STICK"; _rTogT.frame = CGRectMake (_rTogR.origin.x, CGRectGetMidY (_rTogR) - 6.5, _rTogR.size.width, 13); }
+	_rpC = CGPointMake (cx, cy); _rpR = fmin (_stickR, 2 * r + gap / 2);
+	for (int i = 0; i < 4; i++) _btn[i].hidden = rs;
+	if (rs) { NSString *m = vxa_rmap (); const double w = _rpR * 0.33, L = _rpR - w * 0.95;
+		static const int ax[4] = { 0, 1, 0, -1 }, ay[4] = { -1, 0, 1, 0 };   /* (up, right, down, left: the map's order) */
+		for (int d = 0; d < 4; d++) { _btnT[d].string = [m substringWithRange:NSMakeRange ((NSUInteger) d, 1)]; _btnT[d].fontSize = 15;
+			_btnT[d].frame = CGRectMake (cx + ax[d] * L - w, cy + ay[d] * L - 9.5, 2 * w, 19); }
+		vxa_pad_draw (_rpBase, _rpKnob, _rpC, _rpR, _rpDir); }
+	else { _rpBase.path = NULL; _rpKnob.path = NULL; }
 	if ([self dpad]) [self drawPad];
 	else if (!_stickT) { _stickC = CGPointMake (CGRectGetMidX (zl), CGRectGetMidY (zl)); [self drawStick:_stickC]; }
 }
+- (BOOL) rstick { return [NSUserDefaults.standardUserDefaults boolForKey:[@"touch.rstick." stringByAppendingString:vxa_rkey ()]]; }   /* (this game's: the switch, kept for each game) */
 - (BOOL) dpad { return [NSUserDefaults.standardUserDefaults boolForKey:@"touch.dpad"]; }   /* (Settings > Controls, or the switch beside it) */
 /* the D-pad: a cross in one place; up / down / left / right clearly - a diagonal only near the exact corner (30 degrees of
  * each 90), nothing in the middle (games such as Clean Sweep: the stick's way missed a turn now and then) */
-- (void) drawPad
-{
-	const double R = _stickR > 0 ? _stickR : 60, w = R * 0.33; const CGPoint c = _stickC;
-	UIBezierPath *p = [UIBezierPath bezierPath];
-	[p moveToPoint:CGPointMake (c.x - w, c.y - R)]; [p addLineToPoint:CGPointMake (c.x + w, c.y - R)]; [p addLineToPoint:CGPointMake (c.x + w, c.y - w)];
-	[p addLineToPoint:CGPointMake (c.x + R, c.y - w)]; [p addLineToPoint:CGPointMake (c.x + R, c.y + w)]; [p addLineToPoint:CGPointMake (c.x + w, c.y + w)];
-	[p addLineToPoint:CGPointMake (c.x + w, c.y + R)]; [p addLineToPoint:CGPointMake (c.x - w, c.y + R)]; [p addLineToPoint:CGPointMake (c.x - w, c.y + w)];
-	[p addLineToPoint:CGPointMake (c.x - R, c.y + w)]; [p addLineToPoint:CGPointMake (c.x - R, c.y - w)]; [p addLineToPoint:CGPointMake (c.x - w, c.y - w)]; [p closePath];
-	_stickBase.path = p.CGPath;
-	UIBezierPath *k = [UIBezierPath bezierPath]; const double ins = w * 1.1, r2 = R - 4, h = w - 4;   /* (the arms pressed, lit) */
-	if (_padDir & 1) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - h, c.y - r2, 2 * h, r2 - ins) cornerRadius:4]];
-	if (_padDir & 2) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - h, c.y + ins, 2 * h, r2 - ins) cornerRadius:4]];
-	if (_padDir & 4) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x - r2, c.y - h, r2 - ins, 2 * h) cornerRadius:4]];
-	if (_padDir & 8) [k appendPath:[UIBezierPath bezierPathWithRoundedRect:CGRectMake (c.x + ins, c.y - h, r2 - ins, 2 * h) cornerRadius:4]];
-	_stickKnob.path = k.CGPath;
-}
+- (void) drawPad { vxa_pad_draw (_stickBase, _stickKnob, _stickC, _stickR > 0 ? _stickR : 60, _padDir); }
 - (void) stickTo:(CGPoint)p   /* (the stick or the D-pad under the thumb: port 1's directions) */
 {
 	const double R = _stickR > 0 ? _stickR : 60; double dx = p.x - _stickC.x, dy = p.y - _stickC.y, ax, ay; uint32_t b = vxa_tpad.btn & ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP);
 	if ([self dpad]) {
-		int dir = 0; if (hypot (dx, dy) > R * 0.22) { double a = atan2 (dy, dx) * 180 / M_PI; if (a < 0) a += 360;
-			const double m = fmod (a, 90);   /* (within 15 degrees of a diagonal: both; else the nearest of the four) */
-			if (m > 30 && m < 60) { dir = (dy < 0 ? 1 : 2) | (dx < 0 ? 4 : 8); }
-			else { const int q = (int) floor ((a + 45) / 90) % 4; dir = q == 0 ? 8 : q == 1 ? 2 : q == 2 ? 4 : 1; } }
+		const int dir = vxa_pad_dir (dx, dy, R);
 		if (dir != _padDir) { _padDir = dir; [self drawPad]; if (dir) [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight] impactOccurred]; }
 		ax = (dir & 8) ? 1 : (dir & 4) ? -1 : 0; ay = (dir & 2) ? 1 : (dir & 1) ? -1 : 0;
 	} else {
@@ -1538,15 +1617,18 @@ static void vxa_set_opt (int i, NSString *v)
 	if ([self deckMode] == 3 && _deck.hidden && _pic.size.width > 0) for (UITouch *t in ts) { CGPoint p = [t locationInView:self.view];   /* (the pop-up deck: a tap on the picture's foot) */
 		/* (the picture's foot or the room under it - never a touch for the stick or a button: on the iPad they lie over
 		 *  the picture's foot, and a press on 3 / 4 opened the deck instead) */
-		BOOL onCtl = NO; if (!_ctl.hidden) { for (int i = 0; i < 4; i++) if (CGRectContainsPoint (CGRectInset (_btnR[i], -8, -8), p)) onCtl = YES; if (CGRectContainsPoint (_stickZone, p)) onCtl = YES; }
+		BOOL onCtl = NO; if (!_ctl.hidden) { for (int i = 0; i < 4; i++) if (CGRectContainsPoint (CGRectInset (_btnR[i], -8, -8), p)) onCtl = YES; if (CGRectContainsPoint (_stickZone, p)) onCtl = YES;
+			if (CGRectContainsPoint (CGRectInset (_rTogR, -6, -6), p) || ([self rstick] && CGRectContainsPoint (_rZone, p))) onCtl = YES; }
 		if (!onCtl && p.x >= CGRectGetMinX (_pic) && p.x <= CGRectGetMaxX (_pic) && p.y >= CGRectGetMaxY (_pic) - 70 && p.y <= CGRectGetMaxY (_pic) + 80) { [self popOpen]; return; } }
 	for (UITouch *t in ts) {
 		CGPoint p = [t locationInView:self.view]; NSString *what = @"nothing";
 		if (!_ctl.hidden) {
-			int hit = -1; for (int i = 0; i < 4; i++) if (CGRectContainsPoint (CGRectInset (_btnR[i], -8, -8), p)) hit = i;
-			if (hit >= 0 && !_btnTouch[hit]) { _btnTouch[hit] = t; static const int id4[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A };
-				vxa_tpad.btn |= 1u << id4[hit]; _btn[hit].fillColor = vx_rgba (0x24 / 255.0, 0x44 / 255.0, 0x3a / 255.0, 0.9).CGColor;
-				UIImpactFeedbackGenerator *h = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight]; [h impactOccurred]; what = [NSString stringWithFormat:@"button %d", hit + 1]; }
+			const BOOL rs = [self rstick]; const int set = rs ? 0 : [self rollAt:p]; int f = -1; for (int k = 0; k < 4; k++) if (!_bf[k]) { f = k; break; }
+			if (set && f >= 0) { _bf[f] = t; _bfSet[f] = 0; [self finger:f set:set];   /* (a button finger stays one) */
+				NSMutableString *bw = [NSMutableString stringWithString:@"button"]; for (int i = 0; i < 4; i++) if (set >> i & 1) [bw appendFormat:@" %d", i + 1]; what = bw; }
+			else if (CGRectContainsPoint (CGRectInset (_rTogR, -6, -6), p) && !_rTogTouch) {   /* (the right side's switch: a tap turns it, held the map) */
+				_rTogTouch = t; _rTogLong = NO; [self performSelector:@selector(rTogHeld) withObject:nil afterDelay:0.5]; what = @"the right side's switch"; }
+			else if (rs && !_rpT && CGRectContainsPoint (_rZone, p)) { _rpT = t; [self rpadTo:p]; what = @"right stick"; }
 			else if (CGRectContainsPoint (CGRectInset (_padTogR, -6, -6), p)) {   /* (the stick / D-pad switch) */
 				const BOOL d = ![self dpad]; [NSUserDefaults.standardUserDefaults setBool:d forKey:@"touch.dpad"]; _padDir = 0;
 				[[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred]; [self layoutControls]; what = d ? @"switched to the D-pad" : @"switched to the stick"; }
@@ -1567,6 +1649,8 @@ static void vxa_set_opt (int i, NSString *v)
 		CGPoint p = [t locationInView:self.view];
 		if (t == _ptrT) [self pointerAt:p on:1];
 		if (t == _stickT) [self stickTo:p];
+		if (t == _rpT) [self rpadTo:p];
+		for (int k = 0; k < 4; k++) if (t == _bf[k]) [self finger:k set:[self rollAt:p]];   /* (rolling: slid from one button to the next) */
 	}
 }
 - (void) touchesEnded:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e
@@ -1575,12 +1659,71 @@ static void vxa_set_opt (int i, NSString *v)
 		CGPoint p = [t locationInView:self.view];
 		if (t == _ptrT) { _ptrT = nil; [self pointerAt:p on:0]; }
 		if (t == _stickT) { _stickT = nil; _padDir = 0; vxa_tpad.btn &= ~(0xFu << RETRO_DEVICE_ID_JOYPAD_UP); vxa_tpad.ax[0][0] = vxa_tpad.ax[0][1] = 0; [self layoutControls]; }
-		for (int i = 0; i < 4; i++) if (t == _btnTouch[i]) { static const int id4[4] = { RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A };
-			_btnTouch[i] = nil; vxa_tpad.btn &= ~(1u << id4[i]); _btn[i].fillColor = _stickBase.fillColor; }
+		for (int k = 0; k < 4; k++) if (t == _bf[k]) { _bf[k] = nil; _bfSet[k] = 0; [self btnApply]; }
+		if (t == _rpT) { _rpT = nil; _rpDir = 0; _rpSet = 0; vxa_pad_draw (_rpBase, _rpKnob, _rpC, _rpR, 0); [self btnApply]; }
+		if (t == _rTogTouch) { _rTogTouch = nil; [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(rTogHeld) object:nil]; if (!_rTogLong) [self rTogTap]; }
 		vlog ("touch up %.0f,%.0f", p.x, p.y);
 	}
 }
-- (void) touchesCancelled:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e { [self touchesEnded:ts withEvent:e]; }
+- (void) touchesCancelled:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e { if (_rTogTouch && [ts containsObject:_rTogTouch]) _rTogLong = YES; [self touchesEnded:ts withEvent:e]; }   /* (a cancelled touch on the switch turns nothing) */
+/* rolling (the owner, 2026-11-26): a finger presses the button under it (its square grown 8 pt) - or both of two neighbours
+ * (1-2, 3-4, 1-3, 2-4) from the gap between their facing edges, as wide as the buttons */
+- (int) rollAt:(CGPoint)p
+{
+	static const int pr[4][2] = { { 0, 1 }, { 2, 3 }, { 0, 2 }, { 1, 3 } };
+	for (int k = 0; k < 4; k++) { const CGRect a = _btnR[pr[k][0]], b = _btnR[pr[k][1]];
+		const CGRect g = k < 2 ? CGRectMake (CGRectGetMaxX (a), CGRectGetMinY (a), CGRectGetMinX (b) - CGRectGetMaxX (a), a.size.height)
+		                       : CGRectMake (CGRectGetMinX (a), CGRectGetMaxY (a), a.size.width, CGRectGetMinY (b) - CGRectGetMaxY (a));
+		if (CGRectContainsPoint (g, p)) return (1 << pr[k][0]) | (1 << pr[k][1]); }
+	int hit = -1; double best = 1e9;   /* (the grown squares overlap round the gaps: the nearest button) */
+	for (int i = 0; i < 4; i++) if (CGRectContainsPoint (CGRectInset (_btnR[i], -8, -8), p)) { const double d = hypot (p.x - CGRectGetMidX (_btnR[i]), p.y - CGRectGetMidY (_btnR[i])); if (d < best) { best = d; hit = i; } }
+	return hit >= 0 ? 1 << hit : 0;
+}
+- (void) finger:(int)k set:(int)s   /* (a button finger's buttons: a light tick when they change) */
+{
+	if (s == _bfSet[k]) return; _bfSet[k] = s;
+	if (s) [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight] impactOccurred];
+	[self btnApply];
+}
+- (void) btnApply   /* (the buttons pressed: every button finger's and the right stick's) */
+{
+	int on = _rpSet; for (int k = 0; k < 4; k++) if (_bf[k]) on |= _bfSet[k];
+	if (on == _bOn) return; _bOn = on;
+	for (int i = 0; i < 4; i++) { const BOOL d = on >> i & 1;
+		if (d) vxa_tpad.btn |= 1u << vxa_id4[i]; else vxa_tpad.btn &= ~(1u << vxa_id4[i]);
+		_btn[i].fillColor = d ? vx_rgba (0x24 / 255.0, 0x44 / 255.0, 0x3a / 255.0, 0.9).CGColor : _stickBase.fillColor; }
+}
+- (void) rpadTo:(CGPoint)p   /* (the right side as a stick: the left D-pad's rule; each direction its button, a diagonal the two - this game's map) */
+{
+	const int dir = vxa_pad_dir (p.x - _rpC.x, p.y - _rpC.y, _rpR > 0 ? _rpR : 60); if (dir == _rpDir) return; _rpDir = dir;
+	vxa_pad_draw (_rpBase, _rpKnob, _rpC, _rpR, dir); if (dir) [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight] impactOccurred];
+	static const int bit[4] = { 1, 8, 2, 4 };   /* (the map's order: up, right, down, left) */
+	NSString *m = vxa_rmap (); int set = 0;
+	for (int d = 0; d < 4; d++) if (dir & bit[d]) { const int b = [m characterAtIndex:(NSUInteger) d] - '1'; if (b >= 0 && b < 4) set |= 1 << b; }
+	_rpSet = set; [self btnApply];
+}
+- (void) rightReset   /* (the right side switched: nothing held) */
+{
+	_rpT = nil; _rpDir = 0; _rpSet = 0; for (int k = 0; k < 4; k++) { _bf[k] = nil; _bfSet[k] = 0; } [self btnApply];
+}
+- (void) rTogTap   /* (the right side's switch: its buttons or a stick, this game's; the first time a stick: its map asked) */
+{
+	NSUserDefaults *u = NSUserDefaults.standardUserDefaults; NSString *k = vxa_rkey (); const BOOL s = ![self rstick];
+	[u setBool:s forKey:[@"touch.rstick." stringByAppendingString:k]]; [self rightReset];
+	[[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred]; [self layoutControls];
+	vlog ("right side: %s (%s)", s ? "a stick" : "the buttons", k.UTF8String);
+	if (s && ![u stringForKey:[@"touch.rmap." stringByAppendingString:k]]) [self rmapPanel];
+}
+- (void) rTogHeld   /* (the switch held: the map) */
+{
+	if (!_rTogTouch) return; _rTogLong = YES; [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred];
+	vlog ("right side: the switch held - the map"); [self rmapPanel];
+}
+- (void) rmapPanel   /* (Right stick: which button each direction presses in this game - the game held while it is open) */
+{
+	if (self.presentedViewController) return; __weak VXGameVC *ws = self; vxa_hold (1);
+	vxa_rmap_panel (self, ^{ vxa_hold (0); [ws layoutControls]; });
+}
 @end
 
 /* ---------------------------------------------------------------- the core's other callbacks */
@@ -1650,8 +1793,6 @@ const char *vxa_cinfo (int i) { return vxa_cat[i].info; }
 void ulog (NSString *s) { vlog ("ui %s", s.UTF8String); }
 /* HDR (Settings > App, HDR brightness 0..1 of the screen's headroom; the default 1 where the screen has HDR): the core's
  * brightest light up to that, its knee's top in display gamma */
-/* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost, its lit area so much smaller
- *  than on an iPad or a monitor; on by default on an iPhone, off on an iPad, the setting below the Look) */
 /* (the PiTrex's cartridge and box for the library: written into the thumbs folder - the library calls it when the PiTrex is there) */
 void vxa_pitrex_tiles (void)
 {
@@ -1664,14 +1805,12 @@ UIColor *vx_rgba (double r, double g, double b, double a)
 	extern unsigned vx_pal (unsigned c); const unsigned c = vx_pal ((unsigned) lround (r * 255) << 16 | (unsigned) lround (g * 255) << 8 | (unsigned) lround (b * 255));
 	return [UIColor colorWithRed:(c >> 16 & 255) / 255.0 green:(c >> 8 & 255) / 255.0 blue:(c & 255) / 255.0 alpha:a];
 }
-int vxa_trail_boost (void) { NSNumber *n = [NSUserDefaults.standardUserDefaults objectForKey:@"app.trailboost"]; return n ? n.boolValue : 0; }   /* (off by default since the afterglow's own shape for the apps, vx_phone_trail) */
 float vxa_hdr_headroom (void) { if (@available (iOS 16.0, *)) return (float) UIScreen.mainScreen.potentialEDRHeadroom; return 1; }
 void vxa_hdr_update (void)
 {
 	extern float vx_hdr_peak, vx_hdr_lift; NSNumber *f = [NSUserDefaults.standardUserDefaults objectForKey:@"app.hdr"]; double fr = f ? f.doubleValue : 1.0, hr = vxa_hdr_headroom ();
-	{ extern float vx_bright; NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; vx_bright = !lk || lk.integerValue == 1 ? 1.0f : 0.0f; }   /* (Bright the default here)   /* (the look: Vectrex, or Bright - lifted and wider) */
+	{ extern float vx_bright; NSNumber *lk = [NSUserDefaults.standardUserDefaults objectForKey:@"app.look"]; vx_bright = !lk || lk.integerValue == 1 ? 1.0f : lk.integerValue == 2 ? 0.5f : 0.0f; }   /* (Bright the default here)   /* (the look: 0 Vectrex, 1 Bright - lifted and wider, 2 Medium - halfway) */
 	{ extern int vx_palette; if ([NSUserDefaults.standardUserDefaults integerForKey:@"app.palgreen"] != vx_palette) [NSUserDefaults.standardUserDefaults setInteger:vx_palette forKey:@"app.palgreen"]; }
-	{ extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */
 	vx_hdr_lift = 0.0f;   /* (2026-11-22: one picture - the beam on the phosphor; an HDR screen opens its top, no look to choose) */
 	/* (Apple: map to the headroom the screen gives NOW (currentEDRHeadroom) - the most (potential) only while iOS has not yet
 	 *  raised it for our light; at full brightness the iPhone's white is near its peak already, ~1.6x left: mapped to 8x, all
@@ -1681,7 +1820,7 @@ void vxa_hdr_update (void)
 	{ /* (the trail for the look and the screen's brightness - the owner next to a real Vectrex, 2026-11-21: Vectrex on HDR 1.25x,
 	   *  on SDR 2x; Bright at full brightness 0.5x - easing with the slider) */
 	  extern float vx_trail_mul; extern int vx_app_dots; vx_app_dots = 1; const double b = UIScreen.mainScreen.brightness;
-	  const float tm = vxa_trail_boost () ? 1.2f : 1.0f; (void) b;   /* (2026-11-22: as the PC, the master - the trail was scaled down with the screen's brightness, to half at full: the old look's) */   /* (SDR Vectrex 2.8: the owner's iPad and iPhone without HDR, 40 % more than 2) */
+	  const float tm = 1.0f; (void) b;   /* (as the PC, the master: x1 - it was scaled down with the screen's brightness, then 1.2 with Brighter afterglow, gone 2026-11-26; an old app.trailboost is left unread) */
 	  if (fabsf (tm - vx_trail_mul) > 0.02f) { vlog ("trail x%.2f (look %.0f, brightness %.0f %%)", tm, vx_hdr_lift, b * 100); vx_trail_mul = tm; } }
 	const double use = hr <= 1.05 ? 1.0 : cur > 1.05 ? fmin (cur, hr) : hr;
 	float pk = use > 1.05 && fr > 0.01 ? (float) (1.055 * pow (1.0 + (use - 1.0) * fr, 1 / 2.4) - 0.055) : 1.0f;   /* (the peak as an sRGB value: the curve above inverted) */
@@ -1736,6 +1875,48 @@ int vxa_state (int save, int slot)
 	vlog ("state %s slot %d: %s (%zu bytes)", save ? "save" : "load", slot, ok ? "done" : "FAILED", n); return ok;
 }
 int vxa_is_held (void) { return vxa_holding; }
+/* Settings > Reset all settings: every setting as a new install has it (the owner, 2026-11-26: the look, HDR, Max brightness -
+ * everything; the Android app alike) - the core's options (their opt.* keys, older versions' too; the screen rate this
+ * screen's own again - not chosen, the 120 Hz check and a UVMC2 / PiTrex game's 60 as at a start) and the app's own: the top
+ * bar, the deck's pop-up, clock and battery, HDR brightness, Max brightness, the look, the touch
+ * controls (each game's right-side stick and its map too), the controller's buttons, the library's view. Kept: the
+ * player's name and key online, the downloads and their notice, the device test's result, save states, the recent games,
+ * the first-start and once-only flags. vxa_app_defs: each one's default (NSNull: an older key - gone) */
+static NSArray<NSString *> *vxa_app_keys (void) { return @[ @"app.bar", @"app.topbar", @"app.deckpop", @"app.statusbar", @"app.hdr", @"app.maxbright", @"app.look",
+	@"touch.show", @"touch.size", @"touch.alpha", @"touch.dpad", @"touch.lefty", @"lib.perrow", @"lib.look" ]; }
+static NSArray *vxa_app_defs (void) { return @[ @"auto", NSNull.null, @NO, @NO, @1.0, @1, @1, @"auto", @1.0, @1.0, @NO, @NO, @3, @"boxes" ]; }
+static BOOL vxa_pergame_key (NSString *k) { return [k hasPrefix:@"touch.rstick."] || [k hasPrefix:@"touch.rmap."] || (k.length == 5 && [k hasPrefix:@"map."]); }
+static int vxa_app_changed (void)                       /* (the app's own settings not at their default) */
+{
+	NSUserDefaults *u = NSUserDefaults.standardUserDefaults; NSArray *K = vxa_app_keys (), *D = vxa_app_defs (); int n = 0;
+	for (NSUInteger i = 0; i < K.count; i++) { id v = [u objectForKey:K[i]]; if (v && ![v isEqual:D[i]]) n++; }
+	static const int mdef[4] = { 2, 3, 0, 1 };             /* (the controller's buttons: VXPhysDef) */
+	for (NSString *k in u.dictionaryRepresentation.allKeys) { if (!vxa_pergame_key (k)) continue; id v = [u objectForKey:k];
+		if ([k hasPrefix:@"touch.rstick."]) { if ([v isKindOfClass:NSNumber.class] && [v boolValue]) n++; }
+		else if ([k hasPrefix:@"touch.rmap."]) { if (![v isEqual:@"2431"]) n++; }
+		else { const int b = [k characterAtIndex:4] - '1'; if (b < 0 || b > 3 || !([v isKindOfClass:NSNumber.class] && [v intValue] == mdef[b])) n++; } }
+	return n;
+}
+int vxa_settings_changed (void)                         /* (the core's options - the screen rate only a chosen one - and the app's own) */
+{
+	int n = 0; const BOOL rch = [NSUserDefaults.standardUserDefaults stringForKey:@"opt.vectrex_emu_rate"] != nil;
+	for (int i = 0; i < vxa_nopt; i++) n += !strcmp (vxa_opt[i].key, "vectrex_emu_rate") ? rch : strcmp (vxa_opt[i].val, vxa_opt[i].def) != 0;
+	return n + vxa_app_changed ();
+}
+/* (and what a start applies, at once: the look, HDR, Max brightness's screen level, the status bar, the top
+ *  bar and the deck as this screen's Auto, the touch controls; the screen rate this screen's own - the display link follows) */
+int vxa_factory_reset (void)
+{
+	const int n = vxa_settings_changed (); NSUserDefaults *u = NSUserDefaults.standardUserDefaults;
+	for (int i = 0; i < vxa_nopt; i++) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", vxa_opt[i].def);
+	vxa_rate_slow = 0; vxa_card_was = -1; vxa_opt_dirty = 1;
+	for (NSString *k in vxa_app_keys ()) [u removeObjectForKey:k];
+	for (NSString *k in u.dictionaryRepresentation.allKeys) if ([k hasPrefix:@"opt."] || vxa_pergame_key (k)) [u removeObjectForKey:k];
+	vxa_hdr_update (); { const int mb = vxa_fullbright (); vxa_bright (mb == 2 || (mb == 1 && !vxa_holding)); }
+	VXGameVC *g = vxa_vc; if (g) { [g setNeedsStatusBarAppearanceUpdate]; [g rightReset]; [g barModeChanged]; [g controlsChanged]; }
+	const int r = vxa_opt_find ("vectrex_emu_rate"); vlog ("settings: reset all, as a new install (%d changed), the rate %s", n, r >= 0 ? vxa_opt[r].def : "?");
+	return n;
+}
 void vxa_toast_ext (NSString *s) { extern void vxa_ntoast_c (NSString *s); vxa_ntoast_c (s); }
 /* Max brightness (Settings > App: Off, Gameplay, Whole app): the screen at its brightest - as a boarding pass in Wallet,
  * whatever the brightness slider or auto-brightness says (the thin lines through an overlay in a dark room). Gameplay: while a

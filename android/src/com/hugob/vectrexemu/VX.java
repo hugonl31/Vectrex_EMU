@@ -6,6 +6,7 @@ final class VX {
 	static { System.loadLibrary ("vxa"); }
 	static native void logStart (String filesDir);
 	static native void log (String s);
+	static native String note ();                          /* a line for the player from the emulator's side, once ("" none) */
 	static native String takeLog ();                       /* the log's new lines (for the live sender) */
 	static native void start (String sysDir, String savesDir, String game, String defaults);
 	static native void setTune (int longPx, int shortPx, int maxHz);   /* (the screen for the first start's tuning: its sides, its fastest rate) */
@@ -33,7 +34,7 @@ final class VX {
 	static native int[] genlabelb (byte[] pic, int width);     /* (genlabel / genfit from a picture's bytes, PNG or JPEG: the app's own, assets/shipped) */
 	static native int[] genfitb (byte[] pic, int maxw);
 	static native int palette ();                               /* (the core's colour scheme now: 0 blue, 1 green) */
-	static native void setBright (int on);                      /* (the look: 0 Vectrex, 1 Bright - the lines lifted and wider) */
+	static native void setBright (int on);                      /* (the look: 0 Vectrex, 1 Bright - the lines lifted and wider, 2 Medium - halfway) */
 	static native void setHdrLook (int look);                   /* (0 bright - as SDR, 1 the whole picture, 2 the Vectrex: iOS alike) */
 	static native int hdrActive ();
 	static native void snap (int runs, String path);        /* tests: the shown picture at that run after the next load */
@@ -48,6 +49,8 @@ final class VX {
 	static native String opt (int i, int what);            /* 0 key 1 desc 2 cat 3 info 4 vals 5 val 6 def */
 	static native int ofind (String key);
 	static native void oset (int i, String v);
+	static native int ochanged ();                         /* the options not at their default (the screen rate: only a chosen one) */
+	static native int oreset ();                           /* every option at its default, as a new install - the count changed */
 	static native int ncats ();
 	static native String cat (int i, int what);            /* 0 key 1 desc 2 info */
 	static native void load (String path);

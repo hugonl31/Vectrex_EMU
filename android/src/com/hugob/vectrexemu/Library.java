@@ -71,38 +71,41 @@ final class Library extends LinearLayout implements Screens.Closing {
 		head.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (8) + m.insTop, (int) m.dp (16) + m.insR, (int) m.dp (10));
 		LinearLayout row = new LinearLayout (m); row.setGravity (Gravity.CENTER_VERTICAL);
 		row.addView (m.text ("Games", 24, Main.HI, true), new LayoutParams (0, -2, 1));
+		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (13); get.setContentDescription ("Get games & extras"); get.setOnClickListener (v -> { Screens.Panel g = Getter.show (m); g.onClose = () -> { all = scan (m); Main.log ("library: " + all.size () + " games (again)"); Library.this.search.setHint ("Search " + all.size () + " games"); cache.evictAll (); apply (); }; });   /* (the download page over the library, the games looked for again when it closes; top right, as the iOS app's - the owner, 2026-11-26) */
+			LayoutParams gp = new LayoutParams (-2, (int) m.dp (44)); gp.rightMargin = (int) m.dp (8); row.addView (get, gp); }
 		TextView close = Screens.button (m, "✕", false); close.setContentDescription ("Close"); close.setOnClickListener (v -> m.pop ());
 		row.addView (close, new LayoutParams ((int) m.dp (48), (int) m.dp (44))); head.addView (row);
-		LinearLayout lk = new LinearLayout (m); String[] ln = { "Cartridges", "Boxes", "Overlays" }, lv = { "carts", "boxes", "overlays" };
+		LinearLayout lk = new LinearLayout (m); lk.setBackground (Main.round (Main.BODY, 0, m.dp (10))); lk.setPadding ((int) m.dp (3), (int) m.dp (3), (int) m.dp (3), (int) m.dp (3));   /* (one segmented control, as the iOS app's) */
+		String[] ln = { "Cartridges", "Boxes", "Overlays" }, lv = { "carts", "boxes", "overlays" };
 		for (int i = 0; i < 3; i++) { final String v = lv[i]; TextView b = Screens.button (m, ln[i], v.equals (look ())); b.setTextSize (13); looks[i] = b;
 			b.setOnClickListener (x -> { m.prefs.edit ().putString ("lib.look", v).apply (); Main.log ("library look " + v); paintLooks (); cache.evictAll (); reload (); });
-			LayoutParams lp = new LayoutParams (0, (int) m.dp (38), 1); lp.rightMargin = (int) m.dp (i < 2 ? 6 : 0); lk.addView (b, lp); }
+			lk.addView (b, new LayoutParams (0, (int) m.dp (34), 1)); }
 		LayoutParams lkp = new LayoutParams (-1, -2); lkp.topMargin = (int) m.dp (8); head.addView (lk, lkp);
-		LinearLayout srow = new LinearLayout (m);
+		LinearLayout srow = new LinearLayout (m); srow.setBaselineAligned (false);   /* (not lined up on the search text: the per-row box was pushed down, its bottom cut off - the owner, 2026-11-26) */
 		search = new EditText (m); search.setHint ("Search " + all.size () + " games"); search.setSingleLine (true); search.setTextColor (Main.FG); search.setHintTextColor (Main.DIM); search.setTextSize (15);
 		search.setBackground (Main.round (Main.BODY, Main.EDGE, m.dp (10))); search.setPadding ((int) m.dp (12), 0, (int) m.dp (12), 0); search.setImeOptions (EditorInfo.IME_ACTION_DONE);
 		search.addTextChangedListener (new TextWatcher () { public void beforeTextChanged (CharSequence s, int a, int b, int c) { } public void onTextChanged (CharSequence s, int a, int b, int c) { } public void afterTextChanged (Editable e) { apply (); } });
 		srow.addView (search, new LayoutParams (0, (int) m.dp (40), 1));
 		size = Screens.button (m, "", false); size.setTextSize (12); size.setOnClickListener (v -> sizeMenu ());
 		LayoutParams sp = new LayoutParams (-2, (int) m.dp (40)); sp.leftMargin = (int) m.dp (8); srow.addView (size, sp);
-		{ TextView get = Screens.button (m, "GET GAMES", false); get.setTextSize (12); get.setOnClickListener (v -> { m.pop (); Getter.show (m); });   /* (the download page: here too) */
-			LayoutParams gp = new LayoutParams (-2, (int) m.dp (40)); gp.leftMargin = (int) m.dp (8); srow.addView (get, gp); }
 		LayoutParams srp = new LayoutParams (-1, -2); srp.topMargin = (int) m.dp (8); head.addView (srow, srp);
-		HorizontalScrollView hs = new HorizontalScrollView (m); hs.setHorizontalScrollBarEnabled (false); chips = new LinearLayout (m);
-		for (String f : new String[] { "All", "Recent", "Games", "UVMC2", "PiTrex", "Tests" }) { TextView c = Screens.button (m, f, false); c.setTextSize (13); c.setTag (f);
-			c.setOnClickListener (v -> { filter = f; apply (); }); LayoutParams cp = new LayoutParams (-2, (int) m.dp (34)); cp.rightMargin = (int) m.dp (6); chips.addView (c, cp); }
-		hs.addView (chips); LayoutParams hp = new LayoutParams (-1, -2); hp.topMargin = (int) m.dp (8); head.addView (hs, hp);
+		chips = new LinearLayout (m); chips.setBaselineAligned (false);   /* (the filters across the width, no scrolling - as the iOS app's; the owner, 2026-11-26) */
+		final String[] fs = { "All", "Recent", "Games", "UVMC2", "PiTrex", "Tests" };
+		for (int i = 0; i < fs.length; i++) { final String f = fs[i]; TextView c = Screens.button (m, f, false); c.setTextSize (13); c.setTag (f); c.setSingleLine (true);
+			c.setPadding ((int) m.dp (6), 0, (int) m.dp (6), 0); c.setOnClickListener (v -> { filter = f; apply (); });
+			LayoutParams cp = new LayoutParams (-2, (int) m.dp (34), 1); if (i < fs.length - 1) cp.rightMargin = (int) m.dp (6); chips.addView (c, cp); }
+		LayoutParams hp = new LayoutParams (-1, -2); hp.topMargin = (int) m.dp (8); head.addView (chips, hp);
 		addView (head, new LayoutParams (-1, -2));
 		grid = new GridView (m); grid.setBackgroundColor (Main.BG); grid.setVerticalSpacing ((int) m.dp (16)); grid.setHorizontalSpacing ((int) m.dp (12));
 		grid.setPadding ((int) m.dp (16) + m.insL, (int) m.dp (16), (int) m.dp (16) + m.insR, (int) m.dp (24) + m.insBot); grid.setClipToPadding (false);
 		grid.setStretchMode (GridView.STRETCH_COLUMN_WIDTH); grid.setSelector (new android.graphics.drawable.ColorDrawable (0)); grid.setFocusable (false);
 		grid.setOnItemClickListener ((par, v, pos, id) -> play (pos));
-		grid.setOnItemLongClickListener ((par, v, pos, id) -> {   /* (a UVMC2 game: its calibration screen - buttons 2 + 3 held at its start, as iOS) */
-			if (pos < 0 || pos >= shown.size () || !shown.get (pos).path.toLowerCase (java.util.Locale.ROOT).endsWith (".um2")) return false;
-			final Game g = shown.get (pos);
-			Screens.pick (m, g.name, new String[] { "play", "cal" }, new String[] { "Play", "Calibration (2 + 3 held)" }, "play", v2 -> {
-				if (v2.equals ("cal")) { Main.log ("library: " + g.name + " with buttons 2 + 3 held (calibration)"); m.ctl.holdFor ((1 << 9) | (1 << 0), 30000); VX.load (g.path); remember (m, g.path); m.pop (); }
-				else play (pos); });
+		grid.setOnItemLongClickListener ((par, v, pos, id) -> {   /* (as iOS's menu: Play on every game; a UVMC2 game its calibration screen too - buttons 2 + 3 held at its start) */
+			if (pos < 0 || pos >= shown.size ()) return false;
+			final Game g = shown.get (pos); v.performHapticFeedback (android.view.HapticFeedbackConstants.LONG_PRESS);
+			final Runnable cal = () -> { Main.log ("library: " + g.name + " with buttons 2 + 3 held (calibration)"); m.ctl.holdFor ((1 << 9) | (1 << 0), 30000); VX.load (g.path); remember (m, g.path); m.pop (); };
+			Screens.prompt (m, g.name, null, null, g.path.toLowerCase (Locale.ROOT).endsWith (".um2")
+				? new Object[][] { { "Play", "", (Runnable) () -> play (pos) }, { "Calibration (2 + 3 held)", "", cal } } : new Object[][] { { "Play", "", (Runnable) () -> play (pos) } }, null);
 			return true; });
 		grid.setAdapter (adapter); addView (grid, new LayoutParams (-1, 0, 1));
 		paintLooks (); sizeLabel (); reload (); apply (); ready = true;
@@ -167,7 +170,7 @@ final class Library extends LinearLayout implements Screens.Closing {
 		performHapticFeedback (android.view.HapticFeedbackConstants.CLOCK_TICK);
 	}
 	int current () { String g = VX.game (); for (int i = 0; i < shown.size (); i++) if (shown.get (i).path.equals (g)) return i; return -1; }
-	void paintLooks () { String[] lv = { "carts", "boxes", "overlays" }; for (int i = 0; i < 3; i++) { boolean on = lv[i].equals (look ()); looks[i].setTextColor (on ? Main.HI2 : Main.FG2); looks[i].setBackground (Screens.states (m, on ? Main.SEL : Main.BODY, Main.EDGE2, m.dp (10))); } }
+	void paintLooks () { String[] lv = { "carts", "boxes", "overlays" }; for (int i = 0; i < 3; i++) { boolean on = lv[i].equals (look ()); looks[i].setTextColor (on ? Main.HI2 : Main.FG2); looks[i].setBackground (on ? Main.round (Main.SEL, 0, m.dp (8)) : null); } }
 	void sizeLabel () { int k = perRow (); size.setText (k > 0 ? k + " PER ROW ▾" : "TITLES ONLY ▾"); }
 	void sizeMenu ()
 	{

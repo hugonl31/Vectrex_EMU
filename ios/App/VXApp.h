@@ -7,6 +7,8 @@ int vxa_nopts (void);
 const char *vxa_okey (int i), *vxa_odesc (int i), *vxa_ocat (int i), *vxa_oinfo (int i), *vxa_ovals (int i), *vxa_oval (int i), *vxa_odef (int i);
 int vxa_ofind (const char *key);
 void vxa_oset (int i, const char *value);
+int vxa_settings_changed (void);       /* Reset all settings: the core's options and the app's own not at their default */
+int vxa_factory_reset (void);          /* every one as a new install has it, applied at once - the count changed */
 int vxa_ncats (void);
 int vxa_squarish (void);               /* the top bar and the full deck do not both fit: the slim deck pops up by default */
 int vxa_popdef (void);                 /* the slim deck does not fit with the bar either: it pops up by default */
@@ -103,9 +105,15 @@ UIColor *vx_rgba (double r, double g, double b, double a);
 int vxg_any_busy (void);                                        /* (a download of it still running) */
 /* the app's own prompt (VXUI.m, as the Android app's panels - no iOS alerts): a title, a header, the text, a field to type
  * in (its placeholder; nil: none), the choices - each @[ title, note, VXGO (^(NSString *typed) { ... }) ] (NSNull: a line
- * shown only) -, a foot; closed: the close button (nil: nothing) */
-void vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void));
+ * shown only) -, a foot; closed: the close button (nil: nothing). A choice with a 4th element @YES leaves the prompt open
+ * (its line said with vxa_prompt_say, closed with vxa_prompt_close: errors inline, as the Android app's) */
+UIViewController *vxa_prompt (UIViewController *vc, NSString *title, NSString *head, NSString *body, NSString *field, NSString *fieldText, BOOL caps, NSArray<NSArray *> *choices, NSString *foot, void (^closed) (void));
+void vxa_prompt_say (UIViewController *p, NSString *s), vxa_prompt_close (UIViewController *p);
 #define VXGO(...) ((id) [(__VA_ARGS__) copy])   /* (variadic: a block's commas are no macro arguments) */
+/* the right side as a stick (VXUI.m): this game's key (its file's stem), its map (up, right, down, left: 4 digits, "2431"
+ * the first suggestion), the panel choosing it */
+NSString *vxa_rkey (void), *vxa_rmap (void);
+void vxa_rmap_panel (UIViewController *vc, void (^closed) (void));
 @interface VXDeck : UIView
 @property (nonatomic, weak) UIViewController *game;
 @property (nonatomic) int mode;                  /* (1 full, 2 slim) */

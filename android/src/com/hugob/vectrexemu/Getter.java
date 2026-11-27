@@ -12,6 +12,7 @@ package com.hugob.vectrexemu;
 
 import android.content.Intent;
 import android.net.Uri;
+import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import org.json.JSONArray;
@@ -402,22 +403,32 @@ final class Getter {
 		Screens.Panel p = new Screens.Panel (m, "Get games & extras");
 		p.header ("Download");
 		final TextView[] det = new TextView[N];
-		for (int i = 0; i < items (m); i++) { final int k = i;
-			LinearLayout r = p.row (TITLE[k], state (m, k, have) + "  -  " + SIZE[k] + ", " + SITE[k], () -> start (m, new int[] { k }));
-			det[k] = r.findViewWithTag ("d"); }
-		p.row ("Download all", "What is not here yet", () -> { List<Integer> ks = new ArrayList<> (); Set<String> h = present (m);
+		for (int i = 0; i < N; i++) if (!busy[i]) said[i] = null;
+		for (int i = 0; i < items (m); i++) { final int k = i;   /* (a download going on: its line, orange - as iOS) */
+			LinearLayout r = p.row (TITLE[k], said[k] != null ? said[k] : state (m, k, have) + "  -  " + SIZE[k] + ", " + SITE[k], () -> start (m, new int[] { k }));
+			det[k] = r.findViewWithTag ("d"); if (busy[k]) det[k].setTextColor (Main.CHG); ticks[k] = Screens.withTick (m, r); }
+		LinearLayout all = p.row ("Download all", "What is not here yet", () -> { List<Integer> ks = new ArrayList<> (); Set<String> h = present (m);
 			for (int i = 0; i < items (m); i++) if (!complete (m, i, h)) ks.add (i); if (ks.isEmpty ()) { m.toast ("Everything is here", 2); return; }
 			int[] a = new int[ks.size ()]; for (int i = 0; i < a.length; i++) a[i] = ks.get (i); start (m, a); });
+		allTick = Screens.withTick (m, all);
 		p.foot ("Files already there are kept. The box art for 112 games comes with the app; the full set has 280. The PiTrex's SD card (190 MB) and the full box art (96 MB) are large: best on Wi-Fi.");
 		p.header ("Your own files");
 		p.row ("Add files...", "Games (.bin, .vec, a zip of them), UVMC2 games (.um2), the speech ROM, a PiTrex SD card zip", () -> pick (m));
 		p.header ("Notice");
 		p.foot (DISCLAIMER);
-		rows = det; m.push (p); return p;
+		rows = det; ticked (m, have); m.push (p); return p;
+	}
+	/* the green ticks: an item all here (not while it downloads), Download all when every item is (the owner, 2026-11-26) */
+	static final View[] ticks = new View[N]; static View allTick;
+	static void ticked (Main m, Set<String> have)
+	{
+		boolean all = true;
+		for (int i = 0; i < items (m); i++) { boolean c = complete (m, i, have); all &= c; if (ticks[i] != null) ticks[i].setVisibility (c && !busy[i] ? View.VISIBLE : View.INVISIBLE); }
+		if (allTick != null) allTick.setVisibility (all ? View.VISIBLE : View.INVISIBLE);
 	}
 	static boolean anyBusy () { for (boolean b : busy) if (b) return true; return false; }
-	static TextView[] rows;
-	static void say (Main m, int k, String s) { m.h.post (() -> { if (rows != null && rows[k] != null) rows[k].setText (s); }); }
+	static TextView[] rows; static final String[] said = new String[N];   /* (a row's line while it downloads, and its result) */
+	static void say (Main m, int k, String s) { m.h.post (() -> { said[k] = s; if (rows != null && rows[k] != null) { rows[k].setText (s); rows[k].setTextColor (busy[k] ? Main.CHG : Main.DIM); } }); }
 	static void start (Main m, int[] ks)
 	{
 		if (m.prefs.getBoolean ("dl.agreed", false)) { run (m, ks); return; }
@@ -431,7 +442,7 @@ final class Getter {
 	}
 	static void run (Main m, int[] ks)
 	{
-		for (int k : ks) { if (busy[k]) continue; busy[k] = true; final int kk = k;
+		for (int k : ks) { if (busy[k]) continue; busy[k] = true; final int kk = k; if (ticks[k] != null) ticks[k].setVisibility (View.INVISIBLE); say (m, k, "starting...");
 			new Thread (() -> {
 				String res;
 				try { int n = getItem (m, kk, (done, total) -> say (m, kk, total > 0 ? String.format (Locale.ROOT, "%.1f of %.1f MB  -  %.0f %%", done / 1e6, total / 1e6, 100.0 * done / total) : String.format (Locale.ROOT, "%.1f MB", done / 1e6)),
@@ -439,7 +450,7 @@ final class Getter {
 					res = state (m, kk, present (m)) + (n > 0 ? "  -  " + n + " files added" : "  -  nothing new"); }
 				catch (Exception e) { res = "Could not be downloaded: " + e.getMessage () + ". Try again later, or get it by hand and use Add files."; Main.log ("get " + TITLE[kk] + ": " + e); }
 				final String r = res; busy[kk] = false;
-				say (m, kk, r); m.h.post (() -> m.toast (TITLE[kk] + ": " + r, 3)); }, "get-" + k).start (); }
+				say (m, kk, r); final Set<String> h = present (m); m.h.post (() -> { ticked (m, h); m.toast (TITLE[kk] + ": " + r, 3); }); }, "get-" + k).start (); }
 	}
 
 	/* ------------------------------------------------------------ Add files...: the user's own, through the file picker */
@@ -470,7 +481,7 @@ final class Getter {
 				catch (Exception e) { Main.log ("add: " + name + " - " + e); }
 				finally { tmp.delete (); } }
 			final int g = games, o = other; Main.log ("add: " + g + " games, " + o + " other files");
-			m.h.post (() -> m.toast (g + (g == 1 ? " game" : " games") + (o > 0 ? ", " + o + " other files" : "") + " added" + (g + o == 0 ? " (nothing new, or not a Vectrex file)" : ""), 3));
+			final Set<String> h = present (m); m.h.post (() -> { ticked (m, h); m.toast (g + (g == 1 ? " game" : " games") + (o > 0 ? ", " + o + " other files" : "") + " added" + (g + o == 0 ? " (nothing new, or not a Vectrex file)" : ""), 3); });
 		}, "add-files").start ();
 	}
 	/* a game file (named ours when known, else as it was), or a zip of them, into roms/Imported */

@@ -62,12 +62,14 @@ static char vxa_odefs[4096];                                    /* (this device'
 struct vxa_ov { const char *value, *label; }; struct vxa_oc { const char *key, *desc, *info; };
 struct vxa_od { const char *key, *desc, *desc_categorized, *info, *info_categorized, *category_key; struct vxa_ov values[128]; const char *default_value; };
 struct vxa_o2 { struct vxa_oc *categories; struct vxa_od *definitions; };
+static int vxa_rate_chosen; static char vxa_note[160];   /* (vxa_note: a line for the player, shown by the Java side - VX.note) */
+static int vxa_rate_chosen_dummy;   /* (the screen rate picked by the player this run - kept even when it is the default: the 120 Hz check leaves it) */
 static int vxa_opt_find (const char *k) { for (int i = 0; i < vxa_nopt; i++) if (!strcmp (vxa_opt[i].key, k)) return i; return -1; }
 static void vxa_opt_save (void)
 {
 	char p[1100], t[1110]; snprintf (p, sizeof p, "%s/options.txt", vxa_files); snprintf (t, sizeof t, "%s.new", p);
 	FILE *f = fopen (t, "w"); if (!f) return;
-	for (int i = 0; i < vxa_nopt; i++) if (strcmp (vxa_opt[i].val, vxa_opt[i].def)) fprintf (f, "%s=%s\n", vxa_opt[i].key, vxa_opt[i].val);
+	for (int i = 0; i < vxa_nopt; i++) if (strcmp (vxa_opt[i].val, vxa_opt[i].def) || (vxa_rate_chosen && !strcmp (vxa_opt[i].key, "vectrex_emu_rate"))) fprintf (f, "%s=%s\n", vxa_opt[i].key, vxa_opt[i].val);
 	fclose (f); rename (t, p);
 }
 static int vxa_saved_val (const char *key, char *out, size_t n)   /* (1: the user chose it - the file has it) */
@@ -503,7 +505,9 @@ extern int vx_app_noshape, vx_app_osd_on;
 /* the game's thread on the fast cores: Android runs a plain thread wherever it likes - on the Nova (Snapdragon 8 Gen 2) the
  * slow cores took 15-16 ms of a 16.7 ms refresh for Armor Attack (the iPad: 4); RetroArch's game thread is kept on the
  * fast ones. The cores near the top clock speed; the threads the core starts from here (UVMC2 / PiTrex, the drawing) follow */
+static long vxa_runs_all, vxa_pres_all;   /* (the runs and pictures so far: the second's check of 120 Hz) */
 static int vxa_tid; static int vxa_rate_slow;   /* (vxa_rate_slow: 120 Hz the GPU could not hold - 60 for the session) */
+static int vxa_card_was = -1;   /* (the UVMC2 / PiTrex check below: the card it last saw; -1 none yet - looked at anew) */
 static cpu_set_t vxa_top_set; static int vxa_top_ok;   /* (the fastest cores: the emulation thread's - UVMC2 / PiTrex) */
 static void vxa_fast_cores (void)
 {
@@ -625,8 +629,8 @@ static void *vxa_main (void *u)
 		   *  VecDoom took 80 % of the Nova's fastest core, at 120 Hz 49-56 pictures a second, the refreshes waiting for it;
 		   *  its game makes 20-35 frames a second, 120 gives nothing to see. A rate the player chose stays; back at the next
 		   *  Vectrex game. The owner, 2026-11-25) */
-		  static int card_was = -1; extern int vx_app_card (void), vx_net_playing_now (void); const int card = vx_app_card ();
-		  if (card != card_was && !vx_net_playing_now ()) { card_was = card; char sv[160];
+		  extern int vx_app_card (void), vx_net_playing_now (void); const int card = vx_app_card ();
+		  if (card != vxa_card_was && !vx_net_playing_now ()) { vxa_card_was = card; char sv[160];
 			pthread_mutex_lock (&vxa_omx); const int ri = vxa_opt_find ("vectrex_emu_rate");
 			if (ri >= 0 && !vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv)) {
 				const char *want = (card || vxa_rate_slow) && atoi (vxa_opt[ri].def) > 60 ? "60 Hz" : vxa_opt[ri].def;
@@ -639,7 +643,7 @@ static void *vxa_main (void *u)
 			const double t0 = vxa_now ();
 			struct timespec c0, c1; clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c0);
 			{ extern int vx_owe_hidden; vx_owe_hidden = 1; }   /* (a catch-up run's game frame: drawn with the next picture - no gap in a trail) */
-			for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); runs++; vxa_since_load++; }
+			for (int i = 0; i < n; i++) { vxa_nodraw = i < n - 1; vxa_input_poll (); retro_run (); runs++; vxa_runs_all++; vxa_since_load++; }
 			clock_gettime (CLOCK_THREAD_CPUTIME_ID, &c1); t_cpu += (c1.tv_sec - c0.tv_sec) + (c1.tv_nsec - c0.tv_nsec) * 1e-9;   /* (the thread's own processor time: waiting for the GPU is not) */
 			vxa_nodraw = 0; const double tr = vxa_now () - t0; t_run += tr; if (tr > t_max) t_max = tr;
 			if (vx_app_browser_wanted ()) { vlog ("the core's ROM browser asked for: the library instead"); vxa_browser = 1; } }
@@ -653,7 +657,21 @@ static void *vxa_main (void *u)
 				vlog ("device test: 60%s Hz at the largest picture of %d x %d, the overlay on", nr > 1 ? (vxa_tune_hz == 120 ? " and 120" : " and the fastest") : "", vxa_tune_l, vxa_tune_s);
 				const int k = vx_app_tune (vxa_tune_l, vxa_tune_s, rates, nr, 0); vlog ("device test done: %d rate%s in %.1f s", k, k > 1 ? "s" : "", vxa_now () - t0); last = 0;
 				vxa_tune_st = 2; } }
-		vxa_present (); pres++;
+		vxa_present (); pres++; vxa_pres_all++;
+		{ /* (120 Hz the GPU cannot hold, checked each second - as the iOS app: a warm phone slows its GPU and the picture stood
+		   *  still for seconds while the game ran on (the owner's iPhone, build 218). Fewer than 60 % of a second's runs got a
+		   *  refresh: 60 Hz for this session at once - the default only, not online, not saved) */
+		  static double w0, grace; static long r0, p0; static char lastv[16]; const double tn = vxa_now ();
+		  { const int rk = vxa_opt_find ("vectrex_emu_rate"); if (rk >= 0 && strcmp (vxa_opt[rk].val, lastv)) { snprintf (lastv, sizeof lastv, "%s", vxa_opt[rk].val); grace = tn + 3.0; } }   /* (a new rate: 3 s for the screen to change over - the Nova first second at 120 had 70 refreshes, the owner 2026-11-26) */
+		  if (tn < grace) { w0 = tn; r0 = vxa_runs_all; p0 = vxa_pres_all; }
+		  else if (tn - w0 >= 1.0) { const double dt = tn - w0; const long dr = vxa_runs_all - r0, dp = vxa_pres_all - p0; w0 = tn; r0 = vxa_runs_all; p0 = vxa_pres_all;
+			if (dt < 1.5 && dr > 100 * dt && dp < 0.6 * dr && !vxa_holding) { extern int vx_net_playing_now (void); char sv[160];
+				pthread_mutex_lock (&vxa_omx); const int ri = vxa_opt_find ("vectrex_emu_rate");
+				if (ri >= 0 && !strcmp (vxa_opt[ri].val, "120 Hz") && !vx_net_playing_now ()) {   /* (a chosen 120 too: never a frozen picture - the owner, 2026-11-26; the setting itself stays) */
+					if (vxa_rate_chosen || vxa_saved_val ("vectrex_emu_rate", sv, sizeof sv)) snprintf (vxa_note, sizeof vxa_note, "%s", "120 Hz too heavy now - 60 Hz");
+					snprintf (vxa_opt[ri].val, sizeof vxa_opt[ri].val, "%s", "60 Hz"); vxa_opt_dirty = 1; vxa_rate_slow = 1;
+					vlog ("the GPU behind at 120 Hz (%ld of %ld runs got a refresh in %.1f s): 60 Hz for this session", dp, dr, dt); }
+				pthread_mutex_unlock (&vxa_omx); } } }
 		if (vxa_hint && vxa_ph_rep) vxa_ph_rep (vxa_hint, (int64_t) ((vxa_now () - now) * 1e9));   /* (this refresh's work: the hint) */
 		if (vxa_snap_n >= 0 && vxa_since_load >= vxa_snap_n) { vxa_snap_take (); vxa_snap_n = -1; }
 		{ /* (input delay: the first picture with the square after an armed press - its frame id for the glass's time) */
@@ -679,7 +697,7 @@ static void *vxa_main (void *u)
 				      vxa_lat_smooth (), "");
 				if (vxa_lat_n && vxa_lat_n % 10 == 0) vlog ("input delay, %d presses: button to the app %.1f ms, to the picture %.1f ms, to the glass %.1f ms on average (%.1f - %.1f)",
 					vxa_lat_n, vxa_lat_sum[0] / vxa_lat_n, vxa_lat_sum[1] / vxa_lat_n, vxa_lat_sum[2] / vxa_lat_n, vxa_lat_min, vxa_lat_max);
-				vxa_message (m, 2.0); vxa_lat_wait = 0; } }
+				(void) m; vxa_lat_wait = 0; } }   /* (in the log only: on the screen it came after every press in every game - the owner, 2026-11-26) */
 		if (now - stat_t >= 5) { const double t = now - stat_t; stat_t = now;
 			vxa_stat_rps = (int) (runs / t); vxa_stat_pps = (int) (pres / t); vxa_stat_ms = ticks ? (int) (t_run * 1000 / ticks) : 0;
 			vlog ("stat: %.0f runs/s, %.0f pictures/s, emulator %.1f ms a refresh (its processor %.1f ms; longest %.1f), %ld late of %ld (%ld without a run, %ld with several), sound %.0f ms, %u dry, %u dropped%s",
@@ -880,7 +898,7 @@ static jintArray ga_bytes (JNIEnv *e, jbyteArray b, int label, int width)
 JNIEXPORT jintArray JNICALL JF(genlabelb) (JNIEnv *e, jclass c, jbyteArray b, jint width) { (void) c; return ga_bytes (e, b, 1, (int) width); }
 JNIEXPORT jintArray JNICALL JF(genfitb) (JNIEnv *e, jclass c, jbyteArray b, jint maxw) { (void) c; return ga_bytes (e, b, 0, (int) maxw); }
 JNIEXPORT jint JNICALL JF(palette) (JNIEnv *e, jclass c) { (void) e; (void) c; extern int vx_palette; return vx_palette; }   /* (the colour scheme: 0 blue, 1 green) */
-JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on ? 1.0f : 0.0f; { extern int vx_phone_trail; vx_phone_trail = 1; }   /* (the afterglow's shape for the apps) */ vlog ("look %s", on ? "Bright" : "Vectrex"); }   /* (the look: Vectrex, or Bright - lifted and wider) */
+JNIEXPORT void JNICALL JF(setBright) (JNIEnv *e, jclass c, jint on) { (void) e; (void) c; extern float vx_bright; vx_bright = on == 1 ? 1.0f : on == 2 ? 0.5f : 0.0f; vlog ("look %s", on == 1 ? "Bright" : on == 2 ? "Medium" : "Vectrex"); }   /* (the look: 0 Vectrex, 1 Bright - lifted and wider, 2 Medium - halfway) */
 JNIEXPORT void JNICALL JF(setHdrLook) (JNIEnv *e, jclass c, jint look) { (void) e; (void) c; extern float vx_hdr_lift; extern int vx_app_dots; vx_hdr_lift = (float) look; vx_app_dots = 1; vlog ("HDR look %d", (int) look); }
 JNIEXPORT void JNICALL JF(snap) (JNIEnv *e, jclass c, jint n, jstring path) { (void) c; JSTR (s, path); snprintf (vxa_snap_path, sizeof vxa_snap_path, "%s", s ? s : ""); JREL (s, path); vx_app_pich = 0; vxa_snap_fixed = 1; vxa_snap_n = n; }   /* (the picture at the size the options give - Picture size - as any frontend) */
 JNIEXPORT jint JNICALL JF(hdrActive) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_hdr_surf == 1; }
@@ -918,10 +936,32 @@ JNIEXPORT jint JNICALL JF(ofind) (JNIEnv *e, jclass c, jstring k) { (void) c; JS
 JNIEXPORT void JNICALL JF(oset) (JNIEnv *e, jclass c, jint i, jstring v)
 {
 	(void) c; JSTR (s, v); if (s && i >= 0 && i < vxa_nopt) { pthread_mutex_lock (&vxa_omx);
+		if (!strcmp (vxa_opt[i].key, "vectrex_emu_rate") && !vxa_rate_chosen) { vxa_rate_chosen = 1; if (!strcmp (vxa_opt[i].val, s)) vxa_opt_save (); }   /* (the player's own rate, the default too - the Nova's 120 was not kept as a choice, the owner 2026-11-26) */
 		if (strcmp (vxa_opt[i].val, s)) { snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", s); vxa_opt_save (); vxa_opt_dirty = 1; pthread_mutex_unlock (&vxa_omx); vlog ("setting %s = %s", vxa_opt[i].key, s); }
 		else pthread_mutex_unlock (&vxa_omx); }
 	JREL (s, v);
 }
+/* (Settings > Reset all settings: the options a new install starts with. Changed: a value not its default - the screen rate
+ *  only when the player chose it (it can be 60 for the session by itself: a UVMC2 game, 120 Hz too heavy). The reset: every
+ *  value its default, options.txt gone (options from older versions too), the rate this screen's own again - not chosen,
+ *  the 120 Hz check and a UVMC2 / PiTrex game's 60 as at a start) */
+static int vxa_ochanged_l (void)
+{
+	int n = 0; char sv[160];
+	for (int i = 0; i < vxa_nopt; i++) n += !strcmp (vxa_opt[i].key, "vectrex_emu_rate") ? (vxa_rate_chosen || vxa_saved_val (vxa_opt[i].key, sv, sizeof sv)) : strcmp (vxa_opt[i].val, vxa_opt[i].def) != 0;
+	return n;
+}
+JNIEXPORT jint JNICALL JF(ochanged) (JNIEnv *e, jclass c) { (void) e; (void) c; pthread_mutex_lock (&vxa_omx); const int n = vxa_ochanged_l (); pthread_mutex_unlock (&vxa_omx); return n; }
+JNIEXPORT jint JNICALL JF(oreset) (JNIEnv *e, jclass c)
+{
+	(void) e; (void) c; pthread_mutex_lock (&vxa_omx); const int n = vxa_ochanged_l ();
+	for (int i = 0; i < vxa_nopt; i++) snprintf (vxa_opt[i].val, sizeof vxa_opt[i].val, "%s", vxa_opt[i].def);
+	vxa_rate_chosen = 0; vxa_rate_slow = 0; vxa_card_was = -1;
+	{ char p[1100]; snprintf (p, sizeof p, "%s/options.txt", vxa_files); remove (p); }
+	vxa_opt_dirty = 1; const int r = vxa_opt_find ("vectrex_emu_rate"); pthread_mutex_unlock (&vxa_omx);
+	vlog ("settings: every option at its default (%d changed), the rate %s", n, r >= 0 ? vxa_opt[r].def : "?"); return n;
+}
+JNIEXPORT jstring JNICALL JF(note) (JNIEnv *e, jclass c) { (void) c; char n[160]; pthread_mutex_lock (&vxa_omx); snprintf (n, sizeof n, "%s", vxa_note); vxa_note[0] = 0; pthread_mutex_unlock (&vxa_omx); return js (e, n); }   /* (a line for the player, once) */
 JNIEXPORT jint JNICALL JF(ncats) (JNIEnv *e, jclass c) { (void) e; (void) c; return vxa_ncat; }
 JNIEXPORT jstring JNICALL JF(cat) (JNIEnv *e, jclass c, jint i, jint what) { (void) c; if (i < 0 || i >= vxa_ncat) return js (e, ""); return js (e, what == 0 ? vxa_cat[i].key : what == 1 ? vxa_cat[i].desc : vxa_cat[i].info); }
 /* (actions) */

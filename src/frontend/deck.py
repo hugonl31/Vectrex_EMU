@@ -593,7 +593,7 @@ class Deck:
         self.inner = None; self.cols = None; self.split = None
         foot = tk.Frame(t, bg=TOPBG, highlightthickness=1, highlightbackground=EDGE); foot.pack(fill='x', pady=(10, 0))
         self.reset_b = _button(foot, 'Reset this tab', self.reset_strip, a, small=True); self.reset_b.pack(side='left', padx=(12, 0), pady=6)
-        _button(foot, 'Reset all', self.reset_all, a, small=True).pack(side='left', padx=(8, 0), pady=6)
+        _button(foot, 'Reset all settings', self.reset_all, a, small=True).pack(side='left', padx=(8, 0), pady=6)
         bb = _button(foot, 'Hold: before', None, a, small=True); bb.pack(side='left', padx=8)
         bb.bind('<ButtonPress-1>', lambda e: self.compare(True)); bb.bind('<ButtonRelease-1>', lambda e: self.compare(False))
         tk.Label(foot, text='right click a slider: its default', fg=DIM, bg=TOPBG, font=f9).pack(side='left', padx=8)
@@ -648,19 +648,17 @@ class Deck:
             if self.reading is not None:
                 self.reading.append(k)                  # (a check's setting: for its changed mark, see mk_check)
             return getattr(a.ren, k, d) if a.ren else d
-        has = lambda k: bool(a.ren) and hasattr(a.ren, k)
         PH = lambda: A('phosphor'); AG = lambda: A('phosphor') and A('trail_on')
         OV = lambda: bool(A('art_on') and A('art', None)); SC = lambda: OV() and A('scr_on')
         flip = lambda k: (lambda: a.flip(a.ren, k))
         snd = self.sound_changed
         if s == 'Tube':
             return [('group', 'PHOSPHOR'),
-                    ('choice', 'Look', [(n, (lambda v=v: A('look2', 'vectrex') == v), (lambda v=v: a.set_look2(v))) for n, v in (('Vectrex', 'vectrex'), ('Bright', 'bright'))],
+                    ('choice', 'Look', [(n, (lambda v=v: A('look2', 'medium') == v), (lambda v=v: a.set_look2(v))) for n, v in (('Vectrex', 'vectrex'), ('Medium', 'medium'), ('Bright', 'bright'))],
                      None, lambda: self.changed('look2')),
                     ('check', 'Phosphor', PH, a.toggle_phosphor, None),
                     ('in', [('check', 'Afterglow', lambda: A('trail_on'), flip('trail_on'), PH),
-                            ('in', [('slider', 'trail', AG)])]),
-                    ('slider', 'white_k', lambda: has('white_k')),
+                            ('in', [('slider', 'trail', AG), ('slider', 'trail_k', AG)])]),
                     ('group', 'SHAPE AND GLASS'),
                     ('check', 'Tube geometry', lambda: A('curve_on'), flip('curve_on'), None),
                     ('in', [('slider', 'geom_k', lambda: A('curve_on'))]),
@@ -854,11 +852,14 @@ class Deck:
               'Display': 'reset_display', 'Ports': 'reset_addons', 'Head': 'reset_head'}
 
     def reset_all(self):
-        """every tab to its defaults: those of the Quality profile chosen (or Optimize's result) - asked first"""
+        """Reset all settings: every setting as a new install has it (App.factory_reset - Config's tabs under the Quality
+        profile chosen or Optimize's result) - asked first, as in the phone apps; nothing changed: only said"""
         a = self.app
-        if dialog('question', 'Reset all', 'Reset every tab to the %s defaults?' % a.base_name(), parent=self.t, yesno=True,
-                  buttons=('Reset all', 'Cancel')):
-            self.frozen(lambda: (a.reset_all(), self.show(self.strip)))
+        if not a.factory_changed():
+            a.flash('EVERY SETTING IS AT ITS DEFAULT', secs=2); self.sync_all(); return
+        if dialog('question', 'Reset all settings?', 'Every setting of the picture, the overlay, the sound and the controls back to its default.',
+                  parent=self.t, yesno=True, buttons=('Reset', 'Cancel')):
+            self.frozen(lambda: (a.factory_reset(), self.show(self.strip)))
         else:
             self.sync_all()
 
@@ -1328,10 +1329,11 @@ class Deck:
         if attr == 'volume':
             default = 1.0
         default = V.ART_ADJ_DEFAULT.get(attr, default)
-        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large', 'white_k') + tuple(V.ART_ADJ_DEFAULT) and default > 0
+        steps = V.SLIDER_STEPS.get(attr)                        # (the core's notches: its range)
+        rel = not steps and attr not in ('volume', 'glass_curve', 'monitor_inch', 'scr_large') + tuple(V.ART_ADJ_DEFAULT) and default > 0
         if rel:
             lo, hi, log = max(V.SLIDER_LOW.get(attr, 0.0), default * (1 - V.SLIDER_SPAN)), default * (1 + V.SLIDER_SPAN), False
-        return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default)
+        return dict(title=title, obj=obj, attr=attr, lo=lo, hi=hi, log=log, fmt=fmt, show=show, default=default, steps=steps)
 
     def mk_slider(self, name, dep):
         r = self.range_of(name)
@@ -1363,7 +1365,7 @@ class Deck:
         else:
             ref = None                                          # (the volume, the monitor's size: normal use)
         return self.mk_scale(label, get, setv, r['lo'], r['hi'], r['log'],
-                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep, ref=ref)
+                             lambda v: r['fmt'] % (v * r['show']), r['default'], dep, ref=ref, steps=r.get('steps'))
 
     def mk_unit(self, key):
         a, V = self.app, self.V
@@ -1390,13 +1392,13 @@ class Deck:
             self._pv = a.base_values()
         return self._pv.get(key, d[key])
 
-    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None, ref=None):
+    def mk_scale(self, label, get, setv, lo, hi, log, fmt, default, dep, unit=None, ref=None, steps=None):
         """a slider row; ref() - the value it counts as changed from: an orange stripe on the bar there while the
-        slider is elsewhere (where it goes back to)"""
+        slider is elsewhere (where it goes back to). steps: its values, evenly spaced notches (the core's own)"""
         f = self.frame(); N = 1000
-        if log == 'mired':                                      # (even in mireds: White balance)
-            to_pos = lambda v: N * (V.vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
-            to_val = lambda p: V.vecrender.white_from_pos(2.0 * p / N - 1.0)
+        if steps:
+            to_pos = lambda v: N * self.V.step_index(steps, v) / (len(steps) - 1.0)
+            to_val = lambda p: steps[int(round(p * (len(steps) - 1.0) / N))]
         else:
             to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
             to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
@@ -1408,6 +1410,8 @@ class Deck:
             if busy[0]: return
             if abs(float(p) - to_pos(max(lo, min(hi, get())))) < 0.5:   # (Tk reports the value set by sync() later:
                 return                                                  #  not a move - nothing changes)
+            if steps and abs(to_val(float(p)) - get()) < 1e-9:          # (still the same notch)
+                return
             setv(to_val(float(p))); val.configure(text=fmt(get())); stripe_at()
         sc = tk.Scale(f, from_=0, to=N, orient='horizontal', length=300, showvalue=0, command=moved, bg=G, fg=G,
                       troughcolor='#123', highlightthickness=0, activebackground=HI, sliderrelief='flat', bd=0,
@@ -1441,7 +1445,10 @@ class Deck:
             sc.set(max(0, min(N, (e.x - 9) / float(max(1, sc.winfo_width() - 18)) * N))); return 'break'
         sc.bind('<Button-1>', jump)
         sc.bind(self.V.RCLICK, to_default); val.bind(self.V.RCLICK, to_default)
-        def act(d):                                             # (a controller: 2 % steps)
+        def act(d):                                             # (a controller: 2 % steps - notches: one)
+            if steps:
+                i = self.V.step_index(steps, get()) + (1 if d > 0 else -1 if d < 0 else 0)
+                setv(steps[max(0, min(len(steps) - 1, i))]); sync(); return
             setv(to_val(max(0, min(N, to_pos(max(lo, min(hi, get()))) + d * 20)))); sync()
         return dict(kind='scale', f=f, w=sc, sync=sync, dep=dep, act=act)
 

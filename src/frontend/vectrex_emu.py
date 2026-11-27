@@ -805,6 +805,13 @@ VOICE_BOOST = 1.5
 # the sliders: the default in the middle, this much below and above it (the owner, 2026-10-19)
 SLIDER_SPAN = 1.0                   # (0 .. twice the default)
 SLIDER_LOW = {'trail': 0.05}        # (a slider's left end where less changes nothing: the renderer's floor)
+# sliders with the core's own steps (RetroArch and the phone apps: libretro_vx.c vectrex_emu_afterglow / _trail_bright - the
+# owner, 2026-11-26: the same everywhere): a notch each, the Afterglow check the core's "off"
+SLIDER_STEPS = {'trail':   (0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2),
+                'trail_k': (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0)}
+def step_index(steps, v):
+    """the notch nearest to v"""
+    return min(range(len(steps)), key=lambda i: abs(steps[i] - v))
 
 class CrtSound:
     """the Vectrex's own noise mixed into the game sound: the BUZZ (the beam and deflection
@@ -1646,16 +1653,17 @@ def old_gap(look):
     if isinstance(look, dict) and 'glass_k' in look and 'glass_curve' not in look:   # (before v1.2.0: the amount of the
         try: look['glass_curve'] = max(0.0, min(1.0, 1.0 - float(look.pop('glass_k'))))   #  curve undone - now the curve
         except (TypeError, ValueError): look.pop('glass_k', None)   #  itself, 1 as on a Vectrex)
-    for k_, lo_, hi_ in (('glass_curve', 0.0, 1.0), ('trail', 0.05, None)):   # (the sliders' ranges since 2026-11-23: an older
+    for k_, lo_, hi_ in (('glass_curve', 0.0, 1.0), ('trail', 0.05, 1.2), ('trail_k', 0.5, 3.0)):   # (the sliders' ranges since 2026-11-23 - the
+                                                    #  afterglow's the core's since 2026-11-26, a longer one as x1.2: an older
         try:                                            #  value outside them gave the same picture as the end - stored as the end)
             if isinstance(look, dict) and k_ in look:
                 v_ = max(lo_, float(look[k_])); look[k_] = min(hi_, v_) if hi_ is not None else v_
         except (TypeError, ValueError): look.pop(k_, None)
     if isinstance(look, dict) and abs(float(look.get('line_gap', 0)) - 12.3) < 1e-6:
         look['line_gap'] = 7.0
-    if isinstance(look, dict) and any(abs(float(look.get('white_k', 0)) - old) < 1e-6 for old in (6400.0, 9300.0)):
-        look['white_k'] = vecrender.WHITE_DEFAULT       # (White balance: the old defaults - 6400 K, kept a day, then 9300 K
-                                                        #  until 2026-10-27 - now 12000 K, the real Vectrex's bluish white)
+    if isinstance(look, dict):
+        look.pop('white_k', None)                       # (the White balance slider, gone since 2026-11-26 - the owner: one vector
+                                                        #  colour, the default; a saved temperature is not used)
 
 
 # how far real Vectrexes differ (the owner, 2026-10-28: as real pots are set - nobody turns one so far that the screen
@@ -2831,8 +2839,8 @@ class App:
                 print('renderer unavailable (%s): using the Tk canvas' % e)
                 self.gl_error = str(e)                          # (said on screen too: GitHub issue 3)
         # display settings are kept in the settings file; each menu's Reset ... settings to default restores its own
-        self.look_keys = [k for k in ('phosphor', 'trail_on', 'trail', 'wob_on', 'wob_strength',
-                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'look2', 'white_k', 'line_gap',
+        self.look_keys = [k for k in ('phosphor', 'trail_on', 'trail', 'trail_k', 'wob_on', 'wob_strength',
+                                      'mains_hz', 'bend_on', 'bend_strength', 'bend_type', 'curve_on', 'geom_k', 'glass_curve', 'glass_on', 'glass_room', 'light_on', 'light_k', 'light_x', 'light_y', 'light_ov', 'light_ov_k', 'look2', 'line_gap',
                                       'art_on', 'art_tint', 'art_room', 'art_print', 'art_parallax', 'head_on', 'head_tilt', 'head_smooth_x', 'head_smooth_z', 'head_smooth_y', 'head_pic_on', 'head_k', 'head_glass_on', 'head_glass_k', 'head_ov_on', 'head_ov_k',
                                       'art_glow', 'art_glow_k', 'scr_on', 'scr_wear', 'scr_fine', 'scr_medium', 'scr_large', 'scr_glint', 'scr_reach', 'scr_scrib',
                                       'case_on', 'case_refl', 'case_wear', 'dither_on',
@@ -3471,8 +3479,8 @@ class App:
     SLIDERS = {
         'volume':        ('Volume (0 % = off)', 'Page Down / Page Up', 'crt', 'volume', 0.0, 1.0, False, '%.0f %%', 100),
         'voice_vol':     ('Speech module volume (100 % = MiSTer Normal)', 'Ctrl+Page Down / Ctrl+Page Up', 'crt', 'voice_vol', 0.0, 2.0, False, '%.0f %%', 100),
-        'white_k':       ('White balance (colour temperature)', '', 'ren', 'white_k', vecrender.WHITE_LO, vecrender.WHITE_HI, 'mired', '%.0f K', 1),
-        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.05, 10.0, True, 'x%.2f', 1),
+        'trail':         ('Afterglow length (x1 = measured)', '', 'ren', 'trail', 0.05, 1.2, False, 'x%.2f', 1),
+        'trail_k':       ('Afterglow brightness', '', 'ren', 'trail_k', 0.5, 3.0, False, 'x%.2f', 1),
         'geom_k':        ('Tube geometry strength (x1 = the owner\'s Vectrex, 0 = ideal)', '', 'ren', 'geom_k', 0.0, 2.0, False, 'x%.2f', 1),
         'glass_curve':   ('Glass curvature (1 = as on a Vectrex, 0 = flat; with Tube geometry)', '', 'ren', 'glass_curve', 0.0, 1.0, False, '%.2f', 1),
         'head_k':        ('Shift strength (x1 = 2 mm at the full reach)', '', 'ren', 'head_k', 0.0, 4.0, False, 'x%.2f', 1),
@@ -3525,16 +3533,17 @@ class App:
         # the default in its middle and goes 100 % below and above it (0 .. twice) - for small personal adjustments. (Not
         # the volume knob: 0 % is the power switch; not a value whose default is 0 = off.)
         default = ART_ADJ_DEFAULT.get(attr, default)            # (an overlay's position / size: 0, 0, x1)
-        rel = attr not in ('volume', 'glass_curve', 'monitor_inch', 'white_k') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
+        steps = SLIDER_STEPS.get(attr)                          # (the core's notches: its range)
+        rel = not steps and attr not in ('volume', 'glass_curve', 'monitor_inch') + tuple(ART_ADJ_DEFAULT) and default > 0   # (fixed ranges, see SLIDERS)
         if rel:
             lo, hi, log = max(SLIDER_LOW.get(attr, 0.0), default * (1 - SLIDER_SPAN)), default * (1 + SLIDER_SPAN), False
         if getattr(self, 'slider_win', None):
             try: self.slider_win.destroy()
             except tk.TclError: pass
         N = 1000
-        if log == 'mired':                                      # (even in mireds, 1e6 / kelvin: as the eye sees colour)
-            to_pos = lambda v: N * (vecrender.white_pos(v) + 1.0) / 2.0     # (the middle neutral: white_pos)
-            to_val = lambda p: vecrender.white_from_pos(2.0 * p / N - 1.0)
+        if steps:                                             # (evenly spaced notches)
+            to_pos = lambda v: N * step_index(steps, v) / (len(steps) - 1.0)
+            to_val = lambda p: steps[int(round(p * (len(steps) - 1.0) / N))]
         else:
             to_pos = lambda v: N * (math.log(v / lo) / math.log(hi / lo) if log else (v - lo) / (hi - lo))
             to_val = lambda p: lo * (hi / lo) ** (p / N) if log else lo + (hi - lo) * p / N
@@ -4476,9 +4485,9 @@ class App:
         print('colours: %s - %d colours changed' % (v, n))
         self.show_look('colours: %s' % v)
     def set_look2(self, v):
-        """Tube > Look: 'vectrex' or 'bright' (vecrender blook)"""
+        """Tube > Look: 'vectrex', 'medium' or 'bright' (vecrender blook, look_s)"""
         if self.ren:
-            self.ren.look2 = v; self.show_look('look: ' + ('Bright' if v == 'bright' else 'Vectrex')); self.save_settings()
+            self.ren.look2 = v; self.show_look('look: ' + {'bright': 'Bright', 'medium': 'Medium'}.get(v, 'Vectrex')); self.save_settings()
     def set_mains(self, hz):
         if self.ren:
             self.ren.mains_hz = hz; self.ren.wob_on = True
@@ -5610,6 +5619,99 @@ class App:
         self.save_settings()
         self.show_look('all settings: the defaults (quality %s)' % name)
         self.flash('DEFAULTS: ' + name.upper())
+    # Config > Reset all settings: every setting as a new install has it (the owner, 2026-11-26: the look, HDR - everything;
+    # the phone apps alike). Not settings, kept: the gamer name and its key, the debug report's email, the window's size
+    # and the windows' places, the recent games and the ROM browser's folder, Config's tab, the Quality profile (this PC's,
+    # from the setup or Optimize) and Optimize's result, the volume knob (the power switch), the notes not to show again,
+    # the first-start setup done
+    def factory_list(self):
+        """(name, now, a new install's) for every setting factory_reset puts back - factory_changed compares them"""
+        r, c, base = self.ren, self.run.crt, self.base_values()
+        own = UNIT_PRESETS['owner']
+        s = self.inp.save()
+        keys = {p: {k: [list(x) for x in DEFAULT_KEYS[p][k] if x[0] not in RESERVED_VK] for k in CTRL_INPUTS} for p in ('p1', 'p2')}
+        L = [('look ' + k, getattr(r, k), base.get(k, self.look_default[k])) for k in self.look_keys if k != 'line_gap'] if r else []
+        L += [('sound ' + k, getattr(c, k), self.sound_default[k]) for k in self.sound_keys if k != 'volume']
+        L += [('unit', (self.unit_name, {k: float(self.unit.get(k, v)) for k, v in own.items()}), ('owner', {k: float(v) for k, v in own.items()})),
+              ('controls', (s['keys'], s['dev'], all(m == default_map(d) for d, m in s['pads'].items())), (keys, {'p1': 'auto', 'p2': 'keyboard'}, True)),
+              ('game settings', bool(self.per_game), False), ('overlays chosen', bool(self.art_for), False),
+              ('overlay places', (bool(self.art_adj_game) or bool(self.art_adj), [float(v) for v in self.art_adj_all],
+                                  self.art_adj_now() if r and getattr(self, 'art_adj_ready', False) else [0.0, 0.0, 1.0]), (False, [0.0, 0.0, 1.0], [0.0, 0.0, 1.0])),
+              ('overlay auto', self.art_auto, True), ('scratches', getattr(r, 'scr_seed', 1), 1),
+              ('rotate', self.rot, 0), ('monitor size', self.monitor_inch, 0.0), ('real size', self.real_on, False),
+              ('deck', (self.fps_on, self.knob_on, self.cart_on, self.osd_meters), (True, True, True, True)),
+              ('smooth', self.smooth, True), ('run-ahead', self.run_ahead, False), ('screen', (self.vrr, self.rate), (False, 'max')),
+              ('on top', self.on_top, False), ('hdr', (self.hdr_mode, float(self.hdr_frac)), ('auto', 1.0)) if hasattr(self, 'hdr_mode') else ('hdr', 0, 0),
+              ('colours', PALETTE_SET, 'blue'), ('game list', self.lib_on, True),
+              ('library', (self.lib.look, self.lib.cols, self.lib.cat) if self.lib else tuple(self.lib_keep.get(k, v) for k, v in
+                           (('lib_look', 'boxes'), ('lib_cols', 4), ('lib_cat', 'All'))), ('boxes', 4, 'All')),
+              ('cartridge', (self.cart_hw, self.speech_user, bool(self.p2_games), self.p2_auto, self.usb_hid, self.uvm2_mode, self.show_um2),
+               ('auto', 'off', False, True, True, 'exact', True)),
+              ('power', (self.start_on, self.skip_boot), (False, False)), ('tv shortcuts', self.pad_shortcuts, True), ('mouse', self.mouse_stick, False),
+              ('3d imager', (self.imager_note, self.imager_eye), (True, 'both')), ('sd cards', (self.sd_dir, self.px_dir), (SD_DEFAULT, PX_DEFAULT)),
+              ('recording', dict(self.rec_opts), dict(recorder.DEFAULTS)),
+              ('online', (self.net_server_s, self.net_osd, self.chat_sound), ('', True, True)), ('update check', self.update_check, True)]
+        if r and hasattr(r, 'line_gap'):
+            L.append(('line gap', float(r.line_gap), float(own['gap'])))
+        return L
+    def factory_changed(self):
+        """the settings not as a new install has them: their names (Config's Reset all settings: nothing to do when none)"""
+        def same(v, d):
+            if isinstance(d, float) and not isinstance(v, (bool, str)):
+                return abs(float(v) - d) <= 1e-6
+            if isinstance(d, dict) and isinstance(v, dict) and d.keys() == v.keys():
+                return all(same(v[k], d[k]) for k in d)
+            if isinstance(d, tuple) and isinstance(v, tuple) and len(v) == len(d):
+                return all(same(a, b) for a, b in zip(v, d))
+            return v == d
+        return [n for n, v, d in self.factory_list() if not same(v, d)]
+    def factory_reset(self):
+        """Config > Reset all settings: everything factory_list names back to a new install's, at once - Config's tabs
+        (under the Quality profile, as Reset all always did), the games' own settings, overlays and places, the controls,
+        the display and screen rate, HDR, the colours, the game list, the cartridge and port 2, recording, online"""
+        changed = self.factory_changed()
+        self.per_game = {}; self.game_global = None             # (no game's own: the everyday settings, as new)
+        self.art_for = {}; self.art_adj_game = {}; self.art_adj = {}; self.art_adj_all = [0.0, 0.0, 1.0]; self.art_auto = True
+        r = self.ren
+        if r and hasattr(r, 'scr_seed'):
+            r.scr_seed = 1
+        base = self.base_values()
+        self.reset_all()                                        # (every tab: the picture, the sound, the unit, the display,
+        if r:                                                   #  the ports - the cartridge in again if its hardware changed)
+            for k in self.look_keys:                            # (and what those leave: head tracking on / off ...)
+                if k != 'line_gap':
+                    setattr(r, k, base.get(k, self.look_default[k]))
+            self.load_art()
+        self.start_on = False; self.skip_boot = False; self.pad_shortcuts = True
+        self.inp.reset()
+        self.mouse_stick = False; self.mouse_btn = 0; self.inp.mouse = None
+        if self.on_top:
+            self.on_top = False; self.apply_on_top()
+        if hasattr(self, 'hdr_mode') and (self.hdr_mode != 'auto' or self.hdr_frac != 1.0):
+            if r and getattr(r, 'hdr', None) and self.hdr_frac != 1.0:
+                r.hdr_stop()
+            self.hdr_mode = 'auto'; self.hdr_frac = 1.0; self.hdr_apply()
+        if PALETTE_SET != 'blue':
+            self.set_palette('blue')
+        if not self.lib_on:
+            self.set_lib(True)
+        if self.lib:
+            self.lib.look, self.lib.cols, self.lib.cat = 'boxes', 4, 'All'
+        self.lib_keep = {'lib_look': 'boxes', 'lib_cols': 4, 'lib_cat': 'All'}   # (written over the file's: save_settings keeps the rest)
+        self.rec_opts = dict(recorder.DEFAULTS)
+        self.net_server_s = ''; self.net_osd = True; self.chat_sound = True; self.update_check = True
+        self.ultra_rate = None
+        self.game_loaded = self.rom_name; self.game_start = json.loads(json.dumps(self.game_now()))
+        self.save_settings()
+        if getattr(self, 'deck', None):
+            try: self.deck.sync_all()
+            except Exception: pass   # noqa
+        left = self.factory_changed()
+        print('settings: reset all, as a new install (%d changed: %s)%s' % (len(changed), ', '.join(changed),
+              ' - still not: ' + ', '.join(left) if left else ''), flush=True)
+        self.show_look('all settings: as a new install')
+        self.flash('SETTINGS RESET')
+        return changed
     def set_quality(self, mode):
         """(older callers: 'auto' / '0'..'2')"""
         self.set_profile({'0': 'medium', '1': 'high'}.get(mode, 'ultra'))
@@ -7644,10 +7746,10 @@ class App:
         tl = ('afterglow x%.2f%s' % (r.trail, ' (measured)' if abs(r.trail - 1) < 0.01 else '')) if getattr(r, 'trail_on', False) else 'afterglow OFF'
         return tl + w
     # what the title bar says about a changed setting: (name, format of its value; None: on / off)
-    LOOK_LABELS = dict(volume=('volume', '%d %%'), trail=('afterglow length', 'x%.2f'),
+    LOOK_LABELS = dict(volume=('volume', '%d %%'), trail=('afterglow length', 'x%.2f'), trail_k=('afterglow brightness', 'x%.2f'),
                        wob_strength=('wobble strength', '%.3f px'), mains_hz=('mains', '%d Hz'), bend_strength=('bending strength', '%.2f'),
                        buzz_vol=('buzz volume', '%.3f'), phosphor=('phosphor', None), trail_on=('afterglow', None),
-                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), white_k=('white balance', '%.0f K'), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
+                       curve_on=('tube geometry', None), geom_k=('tube geometry strength', 'x%.2f'), glass_curve=('glass curvature', '%.2f'), head_on=('head tracking', None), head_k=('head tracking: picture shift strength', 'x%.2f'), head_pic_on=('head tracking: picture shift', None), head_tilt=('head tracking: phone tilt', '%+.0f degrees'), head_smooth_x=('head tracking: left / right smoothing', '%.0f ms'), head_smooth_z=('head tracking: up / down smoothing', '%.0f ms'), head_smooth_y=('head tracking: near / far smoothing', '%.0f ms'), head_glass_on=('head tracking: reflections on the glass', None), head_glass_k=('head tracking: glass reflections strength', 'x%.2f'), head_ov_on=('head tracking: reflections on the overlay', None), head_ov_k=('head tracking: overlay reflections strength', 'x%.2f'), glass_on=('glass edge', None), glass_room=('glass catches room light', None), light_on=('ceiling light on the glass', None), light_k=('glass reflection strength', 'x%.2f'), light_ov=('ceiling light on the overlay', None), light_ov_k=('overlay reflection strength', 'x%.2f'), halo_on=('corner glow', None), halo_k=('corner glow strength', '%.3f'), look=('look', '%s'), dot_k=('corner dot brightness', 'x%.2f'), even_beam=('even beam (an ideal vector display)', None), beam_trace=('beam trace', None), line_gap=('line gaps (stop delay)', '%.1f cycles'), art_on=('overlay', None), art_tint=('overlay tint strength', '%.2f'), art_room=('overlay room light', '%.2f'), art_print=('overlay printed art brightness', '%.2f'), art_parallax=('overlay parallax', None), scr_on=('overlay scratches', None), scr_wear=('scratches: wear', 'x%.2f'), scr_fine=('fine scratches', 'x%.2f'), scr_medium=('medium scratches', 'x%.2f'), scr_large=('damage', 'x%.2f'), scr_glint=('scratches: glint strength', 'x%.2f'), scr_reach=('scratches: glint reach', 'x%.2f'), scr_scrib=('scratches: scribbles', 'x%.2f'), art_glow=('plastic glow', None), art_glow_k=('plastic glow strength', 'x%.2f'), case_on=('case', None), case_refl=('case reflections', 'x%.2f'), case_wear=('case wear', 'x%.2f'), art_dx=('overlay left / right', '%+.3f'), art_dy=('overlay up / down', '%+.3f'), art_scale=('overlay size', 'x%.3f'), wob_on=('mains hum wobble', None), bend_on=('brightness bending', None),
                        buzz_on=('Vectrex buzz', None), speaker_on=('Vectrex speaker', None), voice_vol=('speech module volume', '%d %%'), voice_full=('speech module speakers', None), jack_vol=('UVMC2 headphone volume', '%d %%'))
     def show_look(self, what=None, obj=None):
         """save, and show only the setting that changed in the title bar for 2 s"""

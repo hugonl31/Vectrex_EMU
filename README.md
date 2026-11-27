@@ -144,7 +144,7 @@ recording and measurement, and every call on how it should look, sound and feel.
   voltage's ringing - plus the picture's shape (yoke skew, keystone, pincushion, linearity) and the beam's rate up vs
   down, right vs left. Presets: *Owner's Vectrex* (the measured one), *Ideal*, *Cranky*, *Random unit*; export and
   import a unit as a file.
-* **White balance** at the real tube's cold 12000 K; the glow a little bluer than the bright core, as on the tube.
+* **The vectors' colour**: the real tube's cold 12000 K white, the glow a little bluer than the bright core, as on the tube.
 * **Room light**: from a dark room to daylight - the ceiling light mirrored in the glass, a soft glow on the phosphor
   behind it, the overlay's print and plastic lit, all added to the picture as light.
 
@@ -347,11 +347,10 @@ balance at 6400 K, the white of a computer screen, every RAW photo of the tube o
 shown here as shot). Measured in those photos, the lines' red is about 0.62-0.66 of their blue and their green about
 0.83-0.89, in the bright cores and the glow alike.
 
-So Vectrex_EMU does not draw white lines. **Tube > White balance** sets the beam's colour as a colour temperature, and
-the default is **12000 K**: the bluish white that looked closest to the real machine standing next to it, and the
-tint the photos measure. Blue stays at full strength and red and green are turned down, so the lines lose none of
-their peak brightness. The slider goes from 5600 K (warm) to 16000 K; 6504 K is a screen's own neutral white. Overlays,
-the case and the glass keep their own colours. Every emulator picture on this page is at the default 12000 K.
+So Vectrex_EMU does not draw white lines. The beam's colour is a colour temperature, **12000 K**: the bluish white
+that looked closest to the real machine standing next to it, and the tint the photos measure. Blue stays at full
+strength and red and green are turned down, so the lines lose none of their peak brightness. Overlays, the case and
+the glass keep their own colours.
 
 <p align="center">
 <a href="docs/images/page/dots_compare.jpg"><img src="docs/images/page/dots_compare.jpg" width="900" alt="the Dot Test page 1: a real Vectrex, the emulator's Vectrex look, its Bright look"></a><br>
@@ -781,7 +780,7 @@ Everything that sets the look and the sound is in the **Config window** (**Tab**
 
 | Tab | |
 |---|---|
-| **Tube** | Look (Vectrex / Bright), phosphor and afterglow, white balance, tube geometry and its strength, glass curvature, glass edge, dither, mains wobble (50 / 60 Hz), brightness bending |
+| **Tube** | Look (Vectrex / Medium / Bright), phosphor and afterglow, white balance, tube geometry and its strength, glass curvature, glass edge, dither, mains wobble (50 / 60 Hz), brightness bending |
 | **Overlay** | on / off, choosing one per game, tint, printed art, parallax, plastic glow, scratches (wear, fine, medium, damage, scribbles, glint strength and reach, new random scratches), position and size |
 | **Case** | the plastic case round the tube: on / off, reflections, wear |
 | **Room light** | the room's light, the glass catching it, the ceiling light on the glass and on the overlay, the lamp's position (a pad) |

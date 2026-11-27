@@ -211,7 +211,8 @@ final class Online {
 			if (ph == 4) {
 				header ("Playing online");
 				row ("With " + (peer.isEmpty () ? "the other player" : peer), st.optInt ("delay") + " frames of input delay" + (st.optInt ("desync", -1) >= 0 ? " - OUT OF STEP: the two games differ" : ""), null);
-				row ("Chat", "A line to the other player - the game goes on meanwhile", () -> { m.popAll (); Screens.ask (m, "Chat", "A line to the other player", false, s -> { VX.netChat (s); Main.log ("online chat out: " + s); }); });
+				row ("Chat", "A line to the other player", () -> { m.popAll ();   /* (typed over the running game: no pause for either player - as iOS) */
+					Screens.ask (m, "Chat", "A line to the other player", false, "Send", true, s -> { VX.netChat (s); Main.log ("online chat out: " + s); }); });
 				{ org.json.JSONArray pt = st.optJSONArray ("ports"); final int mine = pt != null ? pt.optInt (role == 1 ? 0 : 1, role == 1 ? 1 : 2) : (role == 1 ? 1 : 2), theirs = pt != null ? pt.optInt (role == 1 ? 1 : 0, role == 1 ? 2 : 1) : (role == 1 ? 2 : 1);
 				  final String who = peer.isEmpty () ? "The other player" : peer;
 				  for (int k = 1; k <= 2; k++) { final int kk = k;   /* (taking a port the other player has: they move to the other one - all platforms alike) */
@@ -243,7 +244,7 @@ final class Online {
 				row ("In the game room", "Public: anyone can join it there", () -> host (0));
 				row ("With a code", "Private: only who you tell the code", () -> host (1));
 				row ("On this Wi-Fi", "No internet needed: players on the same network", () -> host (2));
-				foot (game.isEmpty () ? "Start a game first, then host it here." : "Player 2 needs the same game. You are player 1.");
+				foot (game.isEmpty () ? "Start a game first, then host it here." : "Player 2 needs the same game. Both start it together; you are player 1.");
 				header ("Nearby - no router, no internet");
 				row ("Make a network and host" + (game.isEmpty () ? "" : " " + game), "This device makes the Wi-Fi network " + Adhoc.ssid (m) + " (password " + Adhoc.pass (m) + "); players join it in their Wi-Fi settings", () -> adhocHost ());
 				row ("Join the nearby host", Adhoc.onAdhocNet () ? "This device is on a nearby host's network: " + Adhoc.hostAddr () : "First join the host's network in Wi-Fi settings: DIRECT-VX-VECTREX-..., VECTREX-EMU-... or the host phone's hotspot", () -> {
@@ -251,8 +252,8 @@ final class Online {
 				row ("Wi-Fi settings", "Find and join the host's network", () -> Adhoc.wifiSettings (m));
 				foot ("The host's game also shows under \"On this Wi-Fi\" below. The network's name and password stay the same on this device.");
 				header ("Join");
-				row ("Enter a code", "Five letters from the host", () -> Screens.ask (m, "The host's code", "CODE", true, v -> join (v)));
-				row ("Enter an address", "A host on this Wi-Fi (its address)", () -> Screens.ask (m, "The host's address", "192.168.1.20", false, v -> join (v)));
+				row ("Enter a code", "Five letters from the host", () -> Screens.ask (m, "The host's code", "CODE", true, "Join", false, v -> join (v)));
+				row ("Enter an address", "A host on this Wi-Fi (its address)", () -> Screens.ask (m, "The host's address", "192.168.1.20", false, "Join", false, v -> join (v)));
 				header ("Game room");
 				JSONObject r = st.optJSONObject ("room"); int n = 0;
 				if (r != null) { JSONArray g = r.optJSONArray ("g"); if (g != null) for (int i = 0; i < g.length (); i++) { JSONArray x = g.optJSONArray (i); if (x == null || x.length () < 6) continue;
@@ -275,13 +276,13 @@ final class Online {
 		{
 			if (nameField != null) { String n = clean (nameField.getText ().toString ()); nameField.setText (n); m.prefs.edit ().putString ("net.name", n).apply (); }
 			if (!clean (name (m)).isEmpty ()) { if (!m.prefs.getBoolean ("net.name_ok", false)) claim (m, clean (name (m)), (r, got) -> { if (r == 0 || r == -1) m.toast (claimSays (r, got), 4); }); return true; }
-			m.toast ("ONLINE: YOUR PLAYER NAME IS MISSING - ENTER IT ABOVE (A-Z, 0-9)", 4); Main.log ("online: no player name");
+			Main.log ("online: no player name"); Screens.note (m, "Online", "Your player name is missing: enter it above (A-Z, 0-9)");   /* (the app's own prompt with OK, as iOS) */
 			if (nameField != null) { nameField.requestFocus (); sc.smoothScrollTo (0, 0); }
 			return false;
 		}
 		void host (int mode)
 		{
-			String rom = VX.game (); if (rom.isEmpty ()) { m.toast ("Start a game first: the one you host", 3); return; }
+			String rom = VX.game (); if (rom.isEmpty ()) { Screens.note (m, "Online", "Start a game first: the one you host"); return; }
 			if (!named ()) return;
 			String nm = clean (name (m));
 			hostRom = rom; hostMode = mode; VX.netHost (mode, nm, key (m), rom, skip ());
@@ -289,7 +290,7 @@ final class Online {
 		}
 		void adhocHost ()
 		{
-			if (VX.game ().isEmpty ()) { m.toast ("Start a game first: the one you host", 3); return; }
+			if (VX.game ().isEmpty ()) { Screens.note (m, "Online", "Start a game first: the one you host"); return; }
 			if (!named ()) return;
 			m.toast ("Making the network " + Adhoc.ssid (m) + "...", 2);
 			Adhoc.start (m, (ok, msg) -> { if (!ok) { m.toast (msg, 4); return; } host (2); last = ""; });

@@ -61,22 +61,23 @@ static void OClaim (NSString *name, void (^done) (int, NSString *))
 static NSString *OClaimSays (int r, NSString *n)
 {
 	return r == 1 ? [NSString stringWithFormat:@"YOUR PLAYER NAME: %@", n] : r == 0 ? [NSString stringWithFormat:@"%@ BELONGS TO ANOTHER PLAYER - PICK ANOTHER", n]
-		: r == -1 ? @"THAT NAME IS NOT ALLOWED (A-Z, 0-9)" : [NSString stringWithFormat:@"NO ANSWER FROM THE MEETING POINT: %@ KEPT HERE", n];
+		: r == -1 ? @"THAT NAME IS NOT ALLOWED (A-Z, 0-9)" : [NSString stringWithFormat:@"NO ANSWER FROM THE MEETING POINT: %@ KEPT HERE, RESERVED AT THE NEXT ONLINE GAME", n];
 }
 static NSString *OClean (NSString *s);
-static void OAsk (UIViewController *vc, NSString *msg)       /* (the name asked for: typed, checked and kept) */
+static void OAsk (UIViewController *vc)       /* (the name asked for: typed, checked and kept - the answer said in the prompt, as the Android app's) */
 {
 	while (vc.presentedViewController) vc = vc.presentedViewController;
-	__weak UIViewController *wv = vc;
-	vxa_prompt (vc, @"Your player name", nil, msg ?: @"The name other players see when you play online. Up to 10 letters A-Z and digits 0-9 - reserved for this phone, the same in every online mode.",
+	__block __weak UIViewController *pw = nil;
+	UIViewController *p = vxa_prompt (vc, @"Your player name", nil, @"The name other players see when you play online - in the game room, the chat, on the deck. Up to 10 letters A-Z and digits 0-9. It is reserved for this device and stays the same in every online mode.",
 		@"YOUR NAME", vxa_net_name (), YES, @[
-			@[ @"Check and keep", @"", VXGO (^(NSString *typed) {
+			@[ @"Check and keep", @"Reserved at the meeting point for this device", VXGO (^(NSString *typed) {
 				NSString *n = OClean (typed ?: @"");
-				if (!n.length) { UIViewController *v = wv; if (v) OAsk (v, @"A name first: 1 to 10 letters A-Z or digits 0-9."); return; }
-				OClaim (n, ^(int r, NSString *g) { UIViewController *v = wv;
-					if (r == 0 || r == -1) { if (v) OAsk (v, [OClaimSays (r, g).capitalizedString stringByAppendingString:@"."]); }
-					else vxa_toast_ext (OClaimSays (r, g)); }); }) ],
-			@[ @"Later", @"", VXGO (^(NSString *t) { (void) t; ulog (@"online: name later"); }) ] ], nil, nil);
+				if (!n.length) { vxa_prompt_say (pw, @"A name first: 1 to 10 letters A-Z or digits 0-9"); return; }
+				vxa_prompt_say (pw, @"Asking the meeting point...");
+				OClaim (n, ^(int r, NSString *g) { UIViewController *q = pw; vxa_prompt_say (q, OClaimSays (r, g));
+					if (r == 1 || r == -2) { vxa_toast_ext (OClaimSays (r, g)); vxa_prompt_close (q); } }); }), @YES ],
+			@[ @"Later", @"Asked again when you go online", VXGO (^(NSString *t) { (void) t; ulog (@"online: name later"); }) ] ], nil, nil);
+	pw = p;
 }
 void vxa_name_first (UIViewController *vc)
 {
@@ -88,7 +89,7 @@ void vxa_name_first (UIViewController *vc)
 			if (g.length) { [NSUserDefaults.standardUserDefaults setObject:g forKey:@"net.name"]; [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"net.name_ok"];
 				ulog ([NSString stringWithFormat:@"online: welcome back %@", g]); vxa_toast_ext ([NSString stringWithFormat:@"WELCOME BACK, %@", g]); return; }
 			if (nm.length) { OClaim (nm, nil); return; }          /* (a name kept here while offline: reserved now) */
-			UIViewController *v = wv; if (v) OAsk (v, nil); }); });
+			UIViewController *v = wv; if (v) OAsk (v); }); });
 }
 static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 0-9 only, up to 10 - the rest left out) */
 {
@@ -150,7 +151,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 		if (role == 1) {
 			int mode = [_st[@"mode"] intValue];
 			if (ph == 1) { t = @"Asking the meeting point for a code..."; d = @""; }
-			else if (mode == 2) { t = @"Waiting on this Wi-Fi"; d = [NSString stringWithFormat:@"Player 2 picks your game under \"On this Wi-Fi\" or enters this phone's address: %@", vxa_net_ip ()]; }
+			else if (mode == 2) { t = @"Waiting on this Wi-Fi"; d = [NSString stringWithFormat:@"Player 2 picks your game under \"On this Wi-Fi\" or enters this device's address: %@", vxa_net_ip ()]; }
 			else { t = [NSString stringWithFormat:@"Your code:  %@", code.length ? code : @"..."]; d = mode == 0 ? @"Your game is in the game room. Player 2 picks it there, or enters the code." : @"Tell player 2 this code: they enter it under Join."; }
 			if ([_st[@"peer"] length]) d = [NSString stringWithFormat:@"%@ is connecting...", _st[@"peer"]]; }
 		else { t = ph == 3 ? @"The host's game came: starting..." : @"Connecting to the host..."; d = [_st[@"peer"] length] ? [NSString stringWithFormat:@"Host: %@", _st[@"peer"]] : @""; }
@@ -192,7 +193,7 @@ static NSString *OClean (NSString *s)                 /* (a gamer name: A-Z and 
 		for (NSDictionary *g in _st[@"lan"]) if ([g isKindOfClass:NSDictionary.class]) { NSString *where = [NSString stringWithFormat:@"%@:%@", g[@"ip"], g[@"port"]];
 			[lan addObject:@[ [g[@"name"] stringByDeletingPathExtension], [NSString stringWithFormat:@"%@ - %@", [g[@"gamer"] length] ? g[@"gamer"] : @"?", where],
 				^{ vx_net_join (where.UTF8String, OClean (vxa_net_name ()).UTF8String, vxa_net_key ().UTF8String); } ]]; }
-		if (!lan.count) [lan addObject:@[ @"None found", [NSString stringWithFormat:@"This phone: %@", vxa_net_ip ()], [NSNull null] ]];
+		if (!lan.count) [lan addObject:@[ @"None found", [NSString stringWithFormat:@"This device: %@", vxa_net_ip ()], [NSNull null] ]];
 		[s addObject:@[ @"On this Wi-Fi", @"Games hosted on this network. Not listed? Enter the host's address under Join.", lan ]]; }
 	_secs = s;
 }
@@ -241,7 +242,7 @@ int vxa_net_rehost (void)
 }
 - (void) ask:(NSString *)t then:(void (^) (NSString *))go
 {
-	vxa_prompt (self, @"Join", nil, t, @"", nil, YES, @[ @[ @"Join", @"", VXGO (^(NSString *v) {
+	vxa_prompt (self, t, nil, nil, @"", nil, YES, @[ @[ @"Join", @"", VXGO (^(NSString *v) {   /* (the title what to enter: "The host's code", as the Android app's) */
 		if (v.length) { ulog ([NSString stringWithFormat:@"online: joining %@", v]); go (v); } }) ] ], nil, nil);
 }
 - (void) chat

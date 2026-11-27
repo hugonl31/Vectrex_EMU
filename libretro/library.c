@@ -12,7 +12,11 @@
  * the tiles a row), button 4 plays (in the head: sets), button 1 closes, L / R turn a page. Touch: a tap, a drag scrolls.
  * Buttons 2 and 3 are free: held while button 4 starts a UVMC2 game they reach it (its calibration screen, as on the cartridge).
  * A UVMC2 game's choices - button 4 held on it, or a finger held on it: Play, Calibration (2 + 3 held: the game started with
- * buttons 2 + 3 held for 30 s - with the intro on they must still be held when it ends), as the apps' long press. */
+ * buttons 2 + 3 held for 30 s - with the intro on they must still be held when it ends), as the apps' long press.
+ * The search, as the PC's (library.py) and the phones': a field at the head's top right, "Search N games" while empty; with a
+ * keyboard / takes it (or a tap on the field), then letters, digits and the rest type, Backspace takes one back, Esc clears it
+ * (empty: leaves the field), Enter plays the chosen game, Down / Tab back to the games. The titles that hold it, in any case, in
+ * the category chosen. While typing the RetroPad is not read here: RetroArch also turns keys into its buttons. */
 #include "pitrex_tiles.h"
 
 typedef struct { char name[200]; char path[1100]; char kind; char tests, boot; } lib_ent;   /* (kind: r ROM, m UVMC2, p PiTrex program, x the PiTrex) */
@@ -24,6 +28,8 @@ static int lib_menu, lib_msel, lib_mskip, lib_press_i = -1;   /* (a UVMC2 game's
 static double lib_b4_t = -1, lib_press_t;          /* (button 4 down on a UVMC2 game since; the finger down since) */
 static double lib_cal_until;                       /* (Calibration (2 + 3 held): player 1's buttons 2 + 3 held until then - libretro_vx.c) */
 static float lib_mbox[4], lib_mrow[2][4];          /* (the choices' panel and its rows, for touch) */
+static char lib_q[64]; static int lib_qn, lib_sf, lib_kb_seen, lib_kwait;   /* (the search: its text, its length; the field typed into; a key seen - the keyboard's
+                                                       help; the pad not read until let go, after the field) */
 static const char *const LIB_LOOK[3] = { "carts", "boxes", "overlays" }, *const LIB_LOOKN[3] = { "CARTRIDGES", "BOXES", "OVERLAYS" };
 static const char *const LIB_CAT[6] = { "ALL", "RECENT", "GAMES", "UVMC2", "PITREX", "TESTS" };
 static const int LIB_COLS[6] = { 0, 2, 3, 4, 5, 6 };
@@ -68,15 +74,20 @@ static void lib_walk (const char *d, int depth, int tests)
 	closedir (dd);
 #endif
 }
+static int lib_has (const char *s, const char *q)  /* (the search: q in s, either case) */
+{
+	for (; *s; s++) { size_t i = 0; while (q[i] && s[i] && tolower ((unsigned char) s[i]) == tolower ((unsigned char) q[i])) i++; if (!q[i]) return 1; }
+	return !q[0];
+}
 static int lib_cmp (const void *a, const void *b) { const lib_ent *x = a, *y = b; if (x->boot != y->boot) return y->boot - x->boot; return vx_stricmp (x->name, y->name); }
 static void lib_filter (void)
 {
 	lib_ns = 0;
 	if (lib_cat == 1) { br_rec_load ();              /* (Recent: the last games played, the newest first) */
-		for (int r = 0; r < br_nrec; r++) for (int i = 0; i < lib_n; i++) if (!strcmp (lib_all[i].path, br_rec[r])) { lib_show[lib_ns++] = i; break; } }
+		for (int r = 0; r < br_nrec; r++) for (int i = 0; i < lib_n; i++) if (!strcmp (lib_all[i].path, br_rec[r])) { if (lib_has (lib_all[i].name, lib_q)) lib_show[lib_ns++] = i; break; } }
 	else for (int i = 0; i < lib_n; i++) { const lib_ent *e = &lib_all[i];
 		const int ok = lib_cat == 0 ? !e->tests : lib_cat == 2 ? e->kind == 'r' && !e->tests : lib_cat == 3 ? e->kind == 'm' : lib_cat == 4 ? e->kind == 'p' || e->kind == 'x' : e->tests;
-		if (ok) lib_show[lib_ns++] = i; }
+		if (ok && lib_has (e->name, lib_q)) lib_show[lib_ns++] = i; }   /* (the search: in the category chosen, as library.py shown) */
 	if (lib_sel > lib_ns - 1) lib_sel = lib_ns > 0 ? lib_ns - 1 : 0;
 }
 static void lib_scan (const char *select)
@@ -89,7 +100,7 @@ static void lib_scan (const char *select)
 	if (lib_n > 1) qsort (lib_all, (size_t) lib_n, sizeof (lib_ent), lib_cmp);
 	lib_filter ();
 	if (select) for (int i = 0; i < lib_ns; i++) if (!strcmp (lib_all[lib_show[i]].path, select)) lib_sel = i;
-	lib_focus = 2; lib_menu = 0; lib_b4_t = -1; lib_press_i = -1;
+	lib_focus = 2; lib_menu = 0; lib_b4_t = -1; lib_press_i = -1; lib_sf = 0; lib_kwait = 0;
 }
 
 /* ---- the pictures: read on demand (one a refresh), kept at the tile's size, at 80 % brightness (as every library) */
@@ -162,13 +173,14 @@ static void lib_blit (const lib_pic *p, float fx, float fy, int cy0, int cy1)
 }
 
 /* ---- the layout (the sheet's pixels), as library.py geom */
-typedef struct { float x0, y0, x1, y1, u, k, close[4], look[3][4], col[6][4], cat[6][4], per[2], help[2], title[2], head, grid[4], tw, th, gap, rowh; } lib_geo;
+typedef struct { float x0, y0, x1, y1, u, k, close[4], search[4], look[3][4], col[6][4], cat[6][4], per[2], help[2], title[2], head, grid[4], tw, th, gap, rowh; } lib_geo;
 static lib_geo lib_g;
 static void lib_geom (void)
 {
 	lib_geo g; g.x0 = (float) (CX0 + 2); g.x1 = (float) (CX0 + CW - 3); g.y0 = (float) (CY0 + 2); g.y1 = (float) (CY0 + CH - 3);
 	const float W = g.x1 - g.x0, u = W / 60.0f, k = 0.15f * u, m = 1.2f * u; g.u = u; g.k = k;
 	g.close[0] = g.x1 - m - 2.6f * u; g.close[1] = g.y0 + 0.7f * u; g.close[2] = g.x1 - m; g.close[3] = g.y0 + 3.3f * u;
+	g.search[0] = g.x1 - m - 3.2f * u - 19.0f * u; g.search[1] = g.y0 + 0.7f * u; g.search[2] = g.x1 - m - 3.2f * u; g.search[3] = g.y0 + 3.3f * u;   /* (library.py g['search']) */
 	g.title[0] = g.x0 + m; g.title[1] = g.y0 + 1.25f * u;
 	float y = g.y0 + 4.2f * u, x = g.x0 + m;
 	for (int i = 0; i < 3; i++) { g.look[i][0] = x; g.look[i][1] = y; g.look[i][2] = x + 8.6f * u; g.look[i][3] = y + 2.6f * u; x += 8.9f * u; }
@@ -215,13 +227,20 @@ static void lib_draw (void)
 	br_fill (g->x0, g->y0, g->x1, g->y1, BG, 1); br_fill (g->x0, g->y0, g->x1, g->head, TOP, 1); br_line (g->x0, g->head, g->x1, g->head, 1, EDGE);
 	{ char t[64]; snprintf (t, sizeof t, "GAMES  (%d)", lib_ns); br_text (t, g->title[0], g->title[1], 1.25f * k, HI); }
 	lib_button (g->close, "X", 0, 0, k);
+	{ const float *q = g->search, kk = 0.85f * k; char t[80]; const int room = (int) ((q[2] - q[0] - 1.6f * u) / (6 * kk)) - 1;   /* (the search field: its text, the last that fits) */
+	  br_fill (q[0], q[1], q[2], q[3], 0x0f1c17, 1); br_rect (q[0], q[1], q[2], q[3], lib_sf ? HI2 : EDGE2, lib_sf ? fmaxf (2.0f, kk * 0.6f) : 1.0f);
+	  if (lib_qn) { const int s0 = lib_qn > room ? lib_qn - room : 0; snprintf (t, sizeof t, "%s%s", lib_q + s0, lib_sf ? "_" : ""); br_text (t, q[0] + 0.8f * u, (q[1] + q[3]) / 2 - 3.0f * kk, kk, HI2); }
+	  else { snprintf (t, sizeof t, "%sSEARCH %d GAMES", lib_sf ? "_ " : "", lib_n); br_text (t, q[0] + 0.8f * u, (q[1] + q[3]) / 2 - 3.0f * kk, kk, DIM); } }
 	for (int i = 0; i < 3; i++) lib_button (g->look[i], LIB_LOOKN[i], i == lib_look, lib_focus == 0 && lib_hidx == i, 0.85f * k);
 	br_text ("PER ROW", g->per[0], g->per[1], 0.8f * k, DIM);
 	for (int i = 0; i < 6; i++) { char w[8]; if (i) snprintf (w, sizeof w, "%d", LIB_COLS[i]); else snprintf (w, sizeof w, "TEXT"); lib_button (g->col[i], w, LIB_COLS[i] == lib_cols, lib_focus == 0 && lib_hidx == 3 + i, 0.8f * k); }
 	for (int i = 0; i < 6; i++) lib_button (g->cat[i], LIB_CAT[i], i == lib_cat, lib_focus == 1 && lib_hidx == i, 0.85f * k);
 	{ const int um = lib_focus == 2 && lib_ns && lib_all[lib_show[lib_sel]].kind == 'm';   /* (a UVMC2 game chosen: its choices too) */
 	  const char *h = lib_menu ? "STICK: CHOOSE   BUTTON 4: OK   BUTTON 1: BACK"
-	                : um ? "STICK: CHOOSE (UP: LOOK, ROW, CATEGORY)   BUTTON 4: PLAY (HOLD IT: CALIBRATION)   BUTTON 1: CLOSE   L / R: PAGE"
+	                : lib_sf ? "TYPE TO SEARCH   ENTER: PLAY   ESC: CLEAR   DOWN: THE GAMES"
+	                : um ? (lib_kb_seen ? "STICK: CHOOSE (UP: LOOK, ROW, CATEGORY)   BUTTON 4: PLAY (HOLD IT: CALIBRATION)   BUTTON 1: CLOSE   L / R: PAGE   /: SEARCH"
+	                                    : "STICK: CHOOSE (UP: LOOK, ROW, CATEGORY)   BUTTON 4: PLAY (HOLD IT: CALIBRATION)   BUTTON 1: CLOSE   L / R: PAGE")
+	                : lib_kb_seen ? "STICK: CHOOSE (UP: LOOK, ROW, CATEGORY)   BUTTON 4: PLAY   BUTTON 1: CLOSE   L / R: PAGE   /: SEARCH"
 	                : "STICK: CHOOSE (UP: LOOK, ROW, CATEGORY)   BUTTON 4: PLAY   BUTTON 1: CLOSE   L / R: PAGE";
 	  br_text (h, g->help[0], g->help[1], fminf (0.6f * k, (g->x1 - g->x0 - 2.4f * u) / (6.0f * (float) (strlen (h) > 92 ? strlen (h) : 92))), DIM); }
 	const int c = lib_cols ? lib_cols : 1, cy0 = (int) g->grid[1], cy1 = (int) g->grid[3];
@@ -328,10 +347,48 @@ static void lib_page (int d)
 	if (lib_focus != 2) { lib_focus = 2; br_dirty = 1; return; }
 	int s = lib_sel + d * rows * c; if (s < 0) s = 0; if (s > lib_ns - 1) s = lib_ns - 1; if (s < 0) s = 0; lib_sel = s; lib_view (); br_dirty = 1;
 }
+/* the search's keys: RetroArch's keyboard callback (usbkm.c km_key) queues them while the library is open, read once a refresh
+ * here - in the thread that draws it. A key's character (some systems send it as its own event, the key's code 0) or, where none
+ * comes, the key's own letter, digit or space */
+#define LIB_KQ 64
+static struct { unsigned key; uint32_t ch; } lib_kq[LIB_KQ]; static volatile int lib_kqw, lib_kqr; static int lib_kchars;
+static int lib_key (bool down, unsigned keycode, uint32_t character)   /* (1: the key is the search's - not the game's) */
+{
+	if (!br_open || !lib_on) return 0;
+	if (down) lib_kb_seen = 1;
+	const int mine = lib_sf || keycode == RETROK_SLASH || character == '/';
+	if (down && ((lib_kqw + 1) % LIB_KQ) != lib_kqr) { lib_kq[lib_kqw].key = keycode; lib_kq[lib_kqw].ch = character; lib_kqw = (lib_kqw + 1) % LIB_KQ; }
+	return mine;
+}
+static void lib_typed (void) { lib_sel = 0; lib_scroll = 0; lib_filter (); br_dirty = 1; }
+static void lib_sf_leave (void) { lib_sf = 0; lib_kwait = 1; br_dirty = 1; }   /* (the pad again once its buttons are let go: the key's own RetroPad press) */
+static void lib_play (void);
+static void lib_keys (void)
+{
+	if (lib_kqr == lib_kqw) return;
+	int any = 0; for (int i = lib_kqr; i != lib_kqw; i = (i + 1) % LIB_KQ) if (lib_kq[i].ch >= 32 && lib_kq[i].ch < 127) any = 1;
+	if (any) lib_kchars = 1;                          /* (this system sends characters: the keys' own letters not used) */
+	for (; lib_kqr != lib_kqw; lib_kqr = (lib_kqr + 1) % LIB_KQ) {
+		const unsigned k = lib_kq[lib_kqr].key; uint32_t ch = lib_kq[lib_kqr].ch;
+		if (ch < 32 || ch >= 127) { ch = 0; if (!lib_kchars) {
+			if (k >= RETROK_a && k <= RETROK_z) ch = 'a' + (k - RETROK_a); else if (k >= RETROK_0 && k <= RETROK_9) ch = '0' + (k - RETROK_0);
+			else if (k == RETROK_SPACE) ch = ' '; else if (k == RETROK_SLASH) ch = '/'; else if (k == RETROK_MINUS) ch = '-'; else if (k == RETROK_PERIOD) ch = '.'; } }
+		if (!lib_sf) { if (ch == '/' && !lib_menu) { lib_sf = 1; br_dirty = 1; } continue; }
+		if (k == RETROK_ESCAPE) { if (lib_qn) { lib_qn = 0; lib_q[0] = 0; lib_typed (); } else lib_sf_leave (); }
+		else if (k == RETROK_RETURN || k == RETROK_KP_ENTER) { lib_sf_leave (); lib_play (); }
+		else if (k == RETROK_DOWN || k == RETROK_TAB) lib_sf_leave ();
+		else if (k == RETROK_BACKSPACE) { if (lib_qn) { lib_q[--lib_qn] = 0; lib_typed (); } }
+		else if (ch && lib_qn < (int) sizeof lib_q - 1) { lib_q[lib_qn++] = (char) ch; lib_q[lib_qn] = 0; lib_typed (); }
+	}
+}
 /* the library's input, once a refresh while it is open (from br_input: b the buttons held, nw the buttons just pressed, dx / dy the
  * stick's step - step 1: that call is the step's alone) */
 static void lib_input (unsigned b, unsigned nw, int dx, int dy, int step)
 {
+	if (lib_sf || lib_kwait) {                         /* (typing: the RetroPad not read - its keys are RetroArch's buttons too) */
+		if (!step) { lib_keys (); if (lib_kwait && !b && !br_dprev) { const int L = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L) != 0, R = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R) != 0; if (!L && !R) lib_kwait = 0; } }
+		return; }
+	if (!step) lib_keys ();
 	if (step) { if (lib_menu) { if (dy) { lib_msel = dy < 0 ? 0 : 1; br_dirty = 1; } } else if (lib_b4_t < 0) lib_move (dx, dy); return; }
 	static int lr_was; const int L = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L) != 0, R = input_cb (0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R) != 0, lr = L | R << 1;
 	if ((lr & ~lr_was) && !lib_menu && lib_b4_t < 0) lib_page (lr & ~lr_was & 2 ? 1 : -1);
@@ -372,6 +429,8 @@ static void lib_touch (float x, float y, int down, int held, int up)
 	if (!up) return;
 	lib_drag_y = -1; lib_press_i = -1; if (lib_dragged) return;
 	if (IN (g->close)) { br_show (0); return; }
+	if (IN (g->search)) { lib_sf = 1; br_dirty = 1; return; }   /* (the search field: typing into it) */
+	if (lib_sf) { lib_sf = 0; br_dirty = 1; }
 	for (int i = 0; i < 3; i++) if (IN (g->look[i])) { lib_set (0, i); return; }
 	for (int i = 0; i < 6; i++) if (IN (g->col[i])) { lib_set (0, 3 + i); return; }
 	for (int i = 0; i < 6; i++) if (IN (g->cat[i])) { lib_set (1, i); return; }

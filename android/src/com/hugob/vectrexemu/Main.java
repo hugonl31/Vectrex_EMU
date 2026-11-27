@@ -184,6 +184,9 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		h.post (this::checkContent);
 	}
 	String version () { try { return getPackageManager ().getPackageInfo (getPackageName (), 0).versionName; } catch (Exception e) { return "?"; } }
+	long versionCode () { try { return getPackageManager ().getPackageInfo (getPackageName (), 0).getLongVersionCode (); } catch (Exception e) { return 0; } }
+	/* (the start screen's version line: the real one - the version, its build, the test build said) */
+	String versionLine () { return version () + " (" + versionCode () + ")" + (Getter.testTok (this) != null ? " - test build" : ""); }
 	void immersive ()
 	{
 		if (Build.VERSION.SDK_INT >= 30) { getWindow ().setDecorFitsSystemWindows (false); android.view.WindowInsetsController c = getWindow ().getInsetsController ();
@@ -322,7 +325,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		/* (this app's own, as the iOS app's: the deck below the picture, the picture upright as the screen stands, the keys
 		 *  as on the PC, the screen's own rate) */
 		int hz = curHz >= 143 ? 144 : curHz >= 119 ? 120 : curHz >= 89 ? 90 : curHz >= 71 ? 72 : 60;   /* (the screen's rate now: the Nova "up to 120" ran at 60 - 120 Hz ran the emulator twice a refresh, 15.6 of 16.7 ms) */
-		return "vectrex_emu_deck=auto" + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_btn_eject=R\nvectrex_emu_rate=" + hz + " Hz\n";
+		return "vectrex_emu_deck=auto" + "\nvectrex_emu_rotate=off\nvectrex_emu_rotate_stick=on\nvectrex_emu_keys=on\nvectrex_emu_rate=" + hz + " Hz\n";
 	}
 	/* (once, 1.7.6: the deck and the top bar to Auto - an older install kept the screen's old default as its own value) */
 	void autoOnce ()
@@ -332,20 +335,26 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		final String v = VX.val ("vectrex_emu_deck"); if (v.equals ("pop-up") || v.equals ("slim") || v.equals ("full")) VX.oset (VX.ofind ("vectrex_emu_deck"), "auto");
 		log ("deck and top bar: Auto (once)"); showBar (); layout ();
 	}
+	/* (once, 1.9.1: Eject off R1 - the old default; not mapped by default any more, the owner 2026-11-26) */
+	void ejectOnce ()
+	{
+		if (prefs.getBoolean ("app.eject1", false)) return; final int i = VX.ofind ("vectrex_emu_btn_eject"); if (i < 0) { h.postDelayed (this::ejectOnce, 1000); return; }
+		prefs.edit ().putBoolean ("app.eject1", true).apply ();
+		if (VX.val ("vectrex_emu_btn_eject").equals ("R")) { VX.oset (i, "off"); log ("eject button: off (once - it was R1, the old default)"); }
+	}
 	/* the trail for the look and the screen's brightness, every 2 s (the owner's Nova next to a real Vectrex, 2026-11-21: Vectrex on
 	 * SDR 2x, on HDR 1.25x; Bright at full brightness a bit too bright - 0.75x, easing with the slider) */
 	float trailLast = -1; final Runnable trailR = this::trailTick;
-	/* (the afterglow 20 % brighter - the owner, 2026-11-22: on a phone's small picture the trail is lost; on by default on a
-	 *  phone (its shorter side under 600 dp), off on a tablet, the setting below the Look) */
-	boolean trailBoost () { return prefs.getBoolean ("app.trailboost", false); }   /* (off by default since the afterglow's own shape for the apps) */
+	/* (the afterglow as the PC's, always - the owner, 2026-11-26: no Brighter afterglow any more; an old app.trailboost is left unread) */
 	void trailTick ()
 	{
 		h.removeCallbacks (trailR);
+		{ String n = VX.note (); if (n != null && !n.isEmpty ()) toast (n, 3); }   /* (the emulator's line for the player: 120 Hz too heavy) */
 		float b = 0.5f;
 		try { b = android.provider.Settings.System.getInt (getContentResolver (), android.provider.Settings.System.SCREEN_BRIGHTNESS, 128) / 255f; } catch (Throwable t) { }
 		b = Math.max (0f, Math.min (1f, b));
 		final int md = 0;
-		final float tm = trailBoost () ? 1.2f : 1f;   /* (2026-11-22: as the PC, the master - was scaled down with the screen's brightness) */  //   /* (SDR Vectrex 2.8: 40 % more - the owner's Nova, iPad and iPhone without HDR) */
+		final float tm = 1f;   /* (as the PC, the master: x1 - it was scaled down with the screen's brightness, then 1.2 with Brighter afterglow) */
 		if (Math.abs (tm - trailLast) > 0.02f) { trailLast = tm; VX.setTrailMul (tm); log ("trail x" + tm + " (look " + md + ", brightness " + Math.round (b * 100) + " %)"); }
 		h.postDelayed (trailR, 2000);
 	}
@@ -357,12 +366,13 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		VX.start (sysDir.getAbsolutePath (), savesDir.getAbsolutePath (), g, defaults ());
 		tuneWait (System.currentTimeMillis ());           /* (the start screen stays while the first start tunes this device) */
 		layout (); Live.start (this);
-		h.postDelayed (this::autoOnce, 2000);
+		h.postDelayed (this::autoOnce, 2000); h.postDelayed (this::ejectOnce, 2000);
 		h.postDelayed (() -> testIntent (getIntent ()), 3000);
 		if (Pack.token (this) == null && !prefs.getBoolean ("getter.offered", false)) h.postDelayed (this::offerGetter, 2500);
 	}
 	void offerGetter ()   /* (the public build's first start: where the games come from - once the device test and such are closed) */
 	{
+		if (prefs.getBoolean ("getter.offered", false)) return;   /* (offered meanwhile - the first start's games before the device test: not twice, nor over Ready to play) */
 		final int t = VX.tuning ();   /* (not over the device test - its question, the test itself or its result) */
 		if (!stack.isEmpty () || welcome.getParent () != null || t == 1 || t == 3) { h.postDelayed (this::offerGetter, 1500); return; }
 		prefs.edit ().putBoolean ("getter.offered", true).apply ();
@@ -515,6 +525,39 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		WindowManager.LayoutParams lp = getWindow ().getAttributes (); lp.screenBrightness = want ? WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
 		getWindow ().setAttributes (lp); log ("full brightness: " + (want ? "up" : "yours back"));
 	}
+	/* Settings > Reset all settings: every setting as a new install has it (the owner, 2026-11-26: the look, HDR, Max
+	 * brightness - everything; the iOS app alike) - the core's options (VX.oreset) and the app's own: the top bar, the deck's
+	 * pop-up, clock and battery, HDR brightness, Max brightness, the look, the touch controls (each
+	 * game's right-side stick and its map too), the controller's buttons, the library's view. Kept: the player's name and
+	 * key online, the downloads and their notice, the device test's result, save states, the recent games, the first-start
+	 * and once-only flags. APP_DEF: each one's default (null: an older key - gone) */
+	static final String[] APP_KEYS = { "app.bar", "app.topbar", "app.deckpop", "app.statusbar", "app.hdr", "app.maxbright", "app.look",
+		"touch.show", "touch.size", "touch.alpha", "touch.dpad", "touch.lefty", "lib.perrow", "lib.look" };
+	static final Object[] APP_DEF = { "auto", null, false, false, 1f, 1, 1, "auto", 1f, 1f, false, false, 3, "boxes" };
+	static boolean perGameKey (String k) { return k.startsWith ("touch.rstick.") || k.startsWith ("touch.rmap.") || k.matches ("map\\.[1-4]"); }
+	int appChanged ()                                          /* (the app's own settings not at their default) */
+	{
+		int n = 0; final java.util.Map<String, ?> all = prefs.getAll ();
+		for (int i = 0; i < APP_KEYS.length; i++) if (all.containsKey (APP_KEYS[i]) && !String.valueOf (all.get (APP_KEYS[i])).equals (String.valueOf (APP_DEF[i]))) n++;
+		for (java.util.Map.Entry<String, ?> e : all.entrySet ()) { final String k = e.getKey (); final Object v = e.getValue ();
+			if (k.startsWith ("touch.rstick.")) { if (Boolean.TRUE.equals (v)) n++; }
+			else if (k.startsWith ("touch.rmap.")) { if (!"2431".equals (v)) n++; }
+			else if (k.matches ("map\\.[1-4]") && !(v instanceof Integer && (Integer) v == (Input.nintendo ? Input.DEF_N : Input.DEF)[k.charAt (4) - '1'])) n++; }
+		return n;
+	}
+	int settingsChanged () { return VX.ochanged () + appChanged (); }
+	/* (and what a start applies, at once: the look, HDR, Max brightness's screen level, the status bar, the top
+	 *  bar and the deck as this screen's Auto, the touch controls; the screen rate this screen's own - rateTick asks for it) */
+	int factoryReset ()
+	{
+		final int n = settingsChanged (); VX.oreset ();
+		SharedPreferences.Editor e = prefs.edit (); for (String k : APP_KEYS) e.remove (k);
+		for (String k : prefs.getAll ().keySet ()) if (perGameKey (k)) e.remove (k);
+		e.apply ();
+		VX.setBright (1); hdrChanged (); brightTick (); immersive ();
+		ctl.padDir = 0; ctl.freeRight (); showBar (); layout (); placeDeck ();
+		log ("settings: reset all, as a new install (" + n + " changed)"); return n;
+	}
 	long barUntil; boolean barHidden;
 	void showBar () { if (barAuto ()) { if (barHidden) log ("top bar shown"); barHidden = false; bar.animate ().cancel (); bar.animate ().alpha (1).setDuration (150); barUntil = System.currentTimeMillis () + 3000; }
 		else { barHidden = false; bar.setAlpha (1); } }
@@ -523,7 +566,7 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	void hold (boolean on) { VX.setHold (on); if (Online.playing) VX.net (4, on ? 1 : 0); }
 	void push (View v)
 	{
-		if (stack.isEmpty ()) hold (true);
+		if (stack.isEmpty () && !(v instanceof Screens.Panel && ((Screens.Panel) v).live)) hold (true);   /* (the chat line: the game goes on) */
 		stack.add (v); brightTick (); screens.addView (v, new FrameLayout.LayoutParams (-1, -1)); screens.bringToFront (); v.setAlpha (0); v.animate ().alpha (1).setDuration (150);   /* (in front of the start screen too) */
 		v.post (() -> { View f = v.findFocus (); if (f == null) v.requestFocus (); });
 	}
@@ -542,15 +585,75 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 	@Override public void onBackPressed () { if (Adjust.panel != null) Adjust.close (this); else if (!stack.isEmpty ()) pop (); else if (started) Screens.gameMenu (this); else super.onBackPressed (); }
 
 	/* ---------------------------------------------------------------- the start screen */
+	/* (as the iOS app's: the vector logo, the name and its line in the middle; what happens, the progress and the version at the foot) */
 	View welcomeView ()
 	{
-		LinearLayout l = new LinearLayout (this); l.setOrientation (LinearLayout.VERTICAL); l.setGravity (Gravity.CENTER); l.setBackgroundColor (BG); l.setPadding ((int) dp (32), 0, (int) dp (32), 0);
-		TextView t = text ("VECTREX_EMU", 30, HI, true); t.setLetterSpacing (0.08f); t.setGravity (Gravity.CENTER); l.addView (t);
-		TextView s = text ("Vectrex arcade, faithfully", 14, DIM, false); s.setGravity (Gravity.CENTER); l.addView (s);
-		wStatus = text ("", 14, FG2, false); wStatus.setGravity (Gravity.CENTER); wStatus.setPadding (0, (int) dp (28), 0, (int) dp (12)); l.addView (wStatus);
+		FrameLayout f = new FrameLayout (this); f.setBackgroundColor (BG);
+		LinearLayout mid = new LinearLayout (this); mid.setOrientation (LinearLayout.VERTICAL); mid.setGravity (Gravity.CENTER_HORIZONTAL);
+		mid.addView (new Logo (this), new LinearLayout.LayoutParams ((int) dp (170), (int) dp (180)));
+		TextView t = text ("Vectrex_EMU", 32, HI, true); t.setTypeface (Typeface.MONOSPACE, Typeface.BOLD); t.setGravity (Gravity.CENTER);
+		LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams (-2, -2); tl.topMargin = (int) dp (10); mid.addView (t, tl);
+		TextView s = text ("The Vectrex, as faithful as it gets", 14, DIM, false); s.setGravity (Gravity.CENTER);
+		LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams (-2, -2); sl.topMargin = (int) dp (10); mid.addView (s, sl);
+		FrameLayout.LayoutParams ml = new FrameLayout.LayoutParams (-2, -2, Gravity.CENTER); ml.bottomMargin = (int) dp (120); f.addView (mid, ml);   /* (60 dp above the middle) */
+		LinearLayout bot = new LinearLayout (this); bot.setOrientation (LinearLayout.VERTICAL);
+		wStatus = text ("", 14, FG2, false); wStatus.setGravity (Gravity.CENTER); bot.addView (wStatus);
 		wProg = new ProgressBar (this, null, android.R.attr.progressBarStyleHorizontal); wProg.setMax (1000); wProg.setVisibility (View.GONE);
-		l.addView (wProg, new LinearLayout.LayoutParams (-1, (int) dp (8)));
-		return l;
+		wProg.setProgressTintList (android.content.res.ColorStateList.valueOf (G)); wProg.setProgressBackgroundTintList (android.content.res.ColorStateList.valueOf (pal (0xff16302a)));
+		LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams (-1, (int) dp (8)); pl.topMargin = (int) dp (12); bot.addView (wProg, pl);
+		TextView ver = text (versionLine (), 11, DIM, false); ver.setGravity (Gravity.CENTER);
+		LinearLayout.LayoutParams vl = new LinearLayout.LayoutParams (-1, -2); vl.topMargin = (int) dp (12); bot.addView (ver, vl);
+		FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams (-1, -2, Gravity.BOTTOM); bl.leftMargin = bl.rightMargin = (int) dp (32); bl.bottomMargin = (int) dp (28); f.addView (bot, bl);
+		return f;
+	}
+	/* the start screen's logo: a vector shape, as the console draws - two hexagons and the inner one's three diagonals, glowing */
+	static class Logo extends View {
+		final Paint p = new Paint (Paint.ANTI_ALIAS_FLAG); final Main m;
+		Logo (Main m) { super (m); this.m = m; setLayerType (View.LAYER_TYPE_SOFTWARE, null); }   /* (the glow: a shadow layer, drawn in software) */
+		@Override protected void onDraw (Canvas c)
+		{
+			final float d = m.dp (1); c.translate (getWidth () / 2f, getHeight () / 2f);
+			final float[][] o = { { 0, -78 }, { 68, -38 }, { 68, 42 }, { 0, 82 }, { -68, 42 }, { -68, -38 } }, i = { { 0, -48 }, { 40, -24 }, { 40, 26 }, { 0, 50 }, { -40, 26 }, { -40, -24 } };
+			android.graphics.Path path = new android.graphics.Path ();
+			for (float[][] h : new float[][][] { o, i }) { path.moveTo (h[0][0] * d, h[0][1] * d); for (int k = 1; k < 6; k++) path.lineTo (h[k][0] * d, h[k][1] * d); path.close (); }
+			for (int[] l : new int[][] { { 0, 3 }, { 5, 2 }, { 1, 4 } }) { path.moveTo (i[l[0]][0] * d, i[l[0]][1] * d); path.lineTo (i[l[1]][0] * d, i[l[1]][1] * d); }
+			p.setStyle (Paint.Style.STROKE); p.setStrokeWidth (2.2f * d); p.setStrokeCap (Paint.Cap.ROUND); p.setStrokeJoin (Paint.Join.ROUND); p.setColor (G);
+			p.setShadowLayer (10 * d, 0, 0, (G & 0x00ffffff) | 0xb3000000); c.drawPath (path, p);
+		}
+	}
+	/* the first start's "Ready to play", once - as the iOS app's: what is in place, Play or Choose a game; then the rest
+	 * (the player name) */
+	void showReady (Runnable after)
+	{
+		if (prefs.getBoolean ("app.welcomed", false) || !stack.isEmpty ()) { after.run (); return; }
+		prefs.edit ().putBoolean ("app.welcomed", true).apply (); log ("ready-to-play shown");
+		final File sd = new File (sysDir, "vectrex_emu"); int games = 0;
+		for (Library.Game g : Library.scan (this)) if (g.kind.equals ("Games") || g.kind.equals ("UVMC2")) games++;
+		String pad = null; for (int id : Input.devs) { InputDevice d = InputDevice.getDevice (id); if (d != null) { pad = d.getName (); break; } }
+		if (pad == null) for (int id : InputDevice.getDeviceIds ()) { InputDevice d = InputDevice.getDevice (id); if (Input.isPad (d)) { pad = d.getName (); break; } }
+		final String[][] rows = {
+			{ "Vectrex BIOS", new File (sd, "bios.bin").exists () ? "Ready" : "Built in" },
+			{ "Games", games + ", with overlays" },
+			{ "UVMC2 and Last Human", new File (sd, "uvmc2").exists () ? "Ready" : "-" },
+			{ "PiTrex SD card", new File (sd, "pitrex/pitrex.img").exists () ? "Ready, calibrated" : "-" },
+			{ "Speech ROM (VecVoice)", new File (sd, "sp0256-al2.bin").exists () || new File (sd, "al2.bin").exists () ? "Ready" : "-" },
+			{ "Controls", pad != null ? pad + ": player 1" : "Touch - a controller or keyboard works too" } };
+		Screens.Panel p = new Screens.Panel (this, "Ready to play", Screens.BARE);
+		p.add (text ("SET UP - ONCE", 12, DIM, true), -2, 0);
+		TextView t = text ("Ready to play", 26, HI, true); t.setTypeface (Typeface.MONOSPACE, Typeface.BOLD); p.add (t, -2, 14);
+		p.add (text ("Everything is in place. The picture's quality is measured for this device at the first game; change anything later in Settings.", 14, FG2, false), -2, 14);
+		LinearLayout list = new LinearLayout (this); list.setOrientation (LinearLayout.VERTICAL); list.setBackground (round (EDGE, 0, dp (14))); list.setClipToOutline (true);
+		for (int k = 0; k < rows.length; k++) { LinearLayout h = new LinearLayout (this); h.setOrientation (LinearLayout.HORIZONTAL); h.setGravity (Gravity.CENTER_VERTICAL); h.setBaselineAligned (false);
+			h.setBackgroundColor (PANEL); h.setPadding ((int) dp (16), (int) dp (13), (int) dp (16), (int) dp (13));
+			h.addView (text (rows[k][0], 15, FG, false), new LinearLayout.LayoutParams (0, -2, 1));
+			TextView b = text (rows[k][1], 13, HI, true); b.setGravity (Gravity.END); LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams (0, -2, 1); bl.leftMargin = (int) dp (10); h.addView (b, bl);
+			LinearLayout.LayoutParams hl = new LinearLayout.LayoutParams (-1, -2); if (k > 0) hl.topMargin = 1; list.addView (h, hl); }
+		p.add (list, -2, 16);
+		TextView play = Screens.button (this, "Play", true), pick = Screens.button (this, "Choose a game", false);
+		play.setOnClickListener (v -> { log ("ready: play"); pop (); }); pick.setOnClickListener (v -> { log ("ready: choose a game"); pop (); Library.show (this); });
+		p.add (play, 54, 28); p.add (pick, 46, 16);
+		p.onClose = after;
+		push (p); play.requestFocus ();
 	}
 	/* the first start (and after an update that measures anew): the core tunes this device once - every screen rate at the
 	 * largest picture, the overlay on - before the first game is shown; never in the middle of a game (2026-11-24) */
@@ -594,10 +697,9 @@ public class Main extends Activity implements SurfaceHolder.Callback {
 		if (t == 1) { final String s = "Testing this device (once)...\n" + VX.tuneStatus (); if (!s.equals (tuneSaid)) { tuneSaid = s; status (s); } }
 		if (st < 0 || t == 2 || (t == 0 && System.currentTimeMillis () - t0 > 60000)) {
 			welcome.animate ().alpha (0).setDuration (500).withEndAction (() -> root.removeView (welcome));
-			/* (the greeting and the first hint once the start screen is gone - not over the device test's question or its result) */
-			final Runnable greet = () -> { h.postDelayed (() -> Online.firstName (this), 1500);    /* (the player name: this device's, or asked for once) */
-				if (!prefs.getBoolean ("app.welcomed", false)) h.postDelayed (() -> { prefs.edit ().putBoolean ("app.welcomed", true).apply ();
-					toast ("Tap the cartridge on the deck for the games, ≡ or the menu button for the rest", 5); }, 800); };
+			/* (the first start's Ready to play once the start screen is gone - not over the device test's question or its
+			 *  result -, the player name after it: this device's, or asked for once) */
+			final Runnable greet = () -> h.postDelayed (() -> showReady (() -> h.postDelayed (() -> Online.firstName (this), 800)), 600);
 			if (t == 2 && tuneRan && !VX.tuneReport ().isEmpty ()) tuneReport (VX.tuneReport (), greet); else greet.run ();
 			return; }
 		h.postDelayed (() -> tuneWait (t0), 100);

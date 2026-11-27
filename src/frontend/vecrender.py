@@ -1997,7 +1997,7 @@ void main() {
 # shape left ended in dots (PHOS_ACAP)
 GLOW_COMMON = b"""
 uniform sampler2D oldp, newp;
-uniform float mul, acap, hold, dt, hp, rlm, exs, exm, exa;
+uniform float mul, acap, hold, dt, hp, rlm, exs, exm, exa, lg;   // (lg: 1 / the look's lift - the afterglow as the Vectrex look's)
 uniform vec2 amp, tau, bsr;                             // (the two parts: fast, slow; bsr: the wider spot's reads, uv)
 float lum(vec3 c) { return dot(c, vec3(0.3, 0.5, 0.2)); }
 // (hp - the beam on the phosphor: what is left of a light after a newer one took part of it, in the old light's own colour - the
@@ -2021,7 +2021,8 @@ vec4 spot(sampler2D t, vec2 uv) {                       // (rlm: the light seen 
 // relit - lit again by about the same light this game frame: its own afterglow under it goes (nl: that light)
 bool wfirst;                                            // (Smooth motion: the old afterglow goes before the new one starts)
 void leaving(vec2 uv, inout float sl, inout float ts, out vec3 l, out float age, out bool relit, out vec3 nl) {
-    vec4 o = spot(oldp, uv), n = spot(newp, uv);
+    vec4 o = spot(oldp, uv), n = spot(newp, uv); o.rgb *= lg; n.rgb *= lg;   // (Medium, Bright: the light as the Vectrex look's - only
+                                                        //  the lines lifted, their afterglow as the Vectrex look's: the owner 2026-11-27)
     vec4 oc = texture2D(oldp, uv), nc = texture2D(newp, uv); wfirst = false;
     bool oh = o.a > 0.0 && (rlm > 0.5 && exs > 0.5 || -log(o.a) < hold), nh = n.a > 0.0 && -log(n.a) < hold;   // (rlm: the game frame's lines (E) are leaving at their own age)
     l = vec3(0.0); age = 0.0; nl = n.rgb;
@@ -2369,7 +2370,7 @@ class GLBloomRenderer(GLRenderer):
         self.uprog = program(UPDATE_SHADER, 'phosphor update')
         self.u_up = {k: GetUniform(self.uprog, k.encode()) for k in ('oldt', 'fresh', 'kf', 'mul', 'hold', 'tscale', 'toff', 'rel',
                                                                      'relm', 'relon', 'rmin')}
-        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt', 'hp', 'rlm', 'exs', 'exm', 'exa', 'bsr')
+        GK = ('oldg1', 'oldg2', 'oldp', 'newp', 'kd', 'mul', 'amp', 'tau', 'acap', 'hold', 'dt', 'hp', 'rlm', 'exs', 'exm', 'exa', 'bsr', 'lg')
         try:                                            # (Ultra: both afterglow parts at once - two outputs)
             self.DrawBuffers = proc('glDrawBuffers', None, i, ctypes.POINTER(u))
             self.glowprog = program(GLOW_SHADER, 'phosphor afterglow')   # (its own name: gprog is taken)
@@ -3239,6 +3240,7 @@ class GLBloomRenderer(GLRenderer):
                 k50 = 2 * math.pi * self.mains_hz / 1.5e6
                 hum = tuple(PX[1:4]) + tuple(QX[1:4]) + tuple(PY[1:4]) + tuple(QY[1:4])
             _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F, BT_HALO_S)).split(',')]   # (tests)
+            if self.blook(): _hf /= self.bgain() ** 2.2     # (Medium, Bright: the glass's glow as the Vectrex look's - only the lines lifted, the owner 2026-11-27)
             rgb = [1.0] * 24
             for code, c3 in self.IMAGER_RGB.items():
                 rgb[3 * code:3 * code + 3] = c3
@@ -3559,6 +3561,7 @@ class GLBloomRenderer(GLRenderer):
             hal = (b & 256) != 0                           # (the glass's glow of a piece)
             sg = np.maximum(0.5, BEAM_TRACE_SG * fwb * gp / 2.355 * float(os.environ.get('VX_BT_SPOT', BT_SPOT)))
             _hf, _hs = [float(v) for v in os.environ.get('VX_BT_HALO', '%g,%g' % (BT_HALO_F, BT_HALO_S)).split(',')]   # (tests)
+            if self.blook(): _hf /= self.bgain() ** 2.2     # (Medium, Bright: the glass's glow as the Vectrex look's - only the lines lifted, the owner 2026-11-27)
             sg = np.where(hal, _hs * upx, sg)
             kk = ((bl if bl is not None else bt_light(np.interp(zi * 127.0, np.arange(TUBE_LIGHT_D + 1.0), TUBE_LIGHT), lp / upx, cyc))
                   / (2.0 * math.pi * (sg / upx) ** 2) * np.where(hal, _hf, 1.0 - _hf) * gain * cgain / BT_KMAX)   # (a rest's peak for that light: the shader spreads it)
@@ -4357,7 +4360,9 @@ class GLBloomRenderer(GLRenderer):
             self.Uniform2f(u['kd'], *((1.0, 1.0) if od is not None else (math.exp(-dt / (ta * ts)), math.exp(-dt / (tsl * ts)))))
             self.Uniform1f(u['hold'], self.hold()); self.Uniform1f(u['dt'], 0.0 if od is not None else dt)
             self.Uniform1f(u['mul'], od if od is not None else 1.0)
-            self.Uniform1f(u['acap'], getattr(self, 'phos_acap', PHOS_ACAP) * self.bgain())
+            self.Uniform1f(u['acap'], getattr(self, 'phos_acap', PHOS_ACAP))   # (the Vectrex look's in every look - lg)
+            self.Uniform1f(u['lg'], 1.0 / (self.bgain() * self.bwidth()))   # (Medium, Bright: the afterglow from the light as the Vectrex
+                                                            #  look's - its lift and its wider beam's extra light, 2026-11-27)
             self.Uniform1f(u['hp'], 1.0 if (getattr(self, 'beam_trace', False) and hasattr(self, 'satprog')
                                             and os.environ.get('VX_AGHUE', '1') != '0') else 0.0)   # (rest(); VX_AGHUE=0: channel by channel - before 2026-11-26)
             # (the fitted afterglow - AG_MODEL: the game frame's lines (Smooth motion) at their own age - the app's ex_age -, the wider spot)

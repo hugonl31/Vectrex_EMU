@@ -120,7 +120,8 @@ TOPICS = [
          "port 2, a game that needs the goggles (the three 3D games, and Rocket Sledge, an unreleased one) gets them by "
          "itself, for that game only."),
 ('item', '3D Imager view', "Both eyes (colour): both eyes' pictures at once, as the screen looks without the goggles. Left eye only / "
-         "right eye only: that eye's pictures alone, no double image."),
+         "right eye only: that eye's pictures alone, no double image. Centre eye: one picture as from between the eyes - "
+         "for aiming."),
 ('item', 'Port 2: Joystick / VecVoice / VecVox', "The second joystick, or a speech accessory plugged in there: the VecVoice "
          "(Richard Hutchinson; a GI SP0256-AL2 speech chip) or the VecVox (Alex Herbert; a SpeakJet chip). With the "
          "joystick in port 2 and the speech ROM in the system folder, a game that talks (Vectorblade, Berzerk Ultimate, "

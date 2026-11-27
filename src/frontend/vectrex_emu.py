@@ -2656,7 +2656,7 @@ class App:
         self.sm_buf = []
         self.sm_st = type('SmoothState', (), {})()     # (the alternate-halves check's memory)
         self.imager_note = bool(c0.get('imager_note', True))    # the 3D Imager: a note while its disc spins up
-        self.imager_eye = c0.get('imager_eye', 'both') if c0.get('imager_eye') in ('both', 'left', 'right') else 'both'   # its view: both eyes or one
+        self.imager_eye = c0.get('imager_eye', 'both') if c0.get('imager_eye') in ('both', 'left', 'right', 'centre') else 'both'   # its view: both eyes or one
         self.usb_hid = bool(c0.get('usb_hid', True))            # a UVMC2 game: the PC's mouse (and keyboard: Ctrl+K) as its USB devices
         self.uvm2_mode = c0.get('uvm2_mode', 'exact') if c0.get('uvm2_mode') in UVM2_MODES else 'exact'
         Core.uvm2_mode = self.uvm2_mode                         # UVMC2 games: Exact (as the cartridge) or Fast (slower PCs)
@@ -2706,6 +2706,7 @@ class App:
                     self.unit[k] = UNIT_PRESETS['owner'][k] if self.unit_name == 'owner' else 0.0
             self.unit_fix = 3
         self.core = Core(rom, args.ideal, self.cart_hw, self.speech, self.sd_dir, self.px_dir, self.unit, self.usb_hid)
+        self.imager_centre_to_core()                            # (the 3D Imager's centre view, as chosen)
         self.run = Runner(self.core, self.inp, self.audio, False)
         self.run.beam_of = lambda: getattr(self.ren, 'beam_trace', True) if self.ren else False
         self.run.ra_of = lambda: getattr(self, 'run_ahead', False)
@@ -2831,7 +2832,7 @@ class App:
                 self.root.update()
                 self.ren = vecrender.make_renderer(self.screen.winfo_id(), self.screen)
                 self.ren.reserve = self.knob_reserve()
-                self.ren.imager_eye = {'left': 1, 'right': 0}.get(self.imager_eye, -1)   # (the 3D Imager's view, as saved)
+                self.ren.imager_eye = {'left': 1, 'right': 0, 'centre': 1}.get(self.imager_eye, -1)   # (the 3D Imager's view, as saved; the centre: the left eye's lines, moved by the core)
                 self.ren.resize(self.screen.winfo_width(), self.screen.winfo_height())
                 self.hdr_mode = c0.get('hdr', 'auto'); self.hdr_frac = float(c0.get('hdr_frac', 1.0))   # (View > HDR)
                 self.root.after(400, self.hdr_apply)
@@ -3378,7 +3379,8 @@ class App:
             im = Menu(m, tearoff=0, postcommand=refresh); m.add_cascade(label='3D Imager view', menu=im)
             for k, lbl, tip in (('both', 'Both eyes (colour)', "Both eyes' pictures at once, in colour - as the screen looks without the goggles."),
                                 ('left', 'Left eye only', "Only the left eye's pictures: no double image."),
-                                ('right', 'Right eye only', "Only the right eye's pictures: no double image.")):
+                                ('right', 'Right eye only', "Only the right eye's pictures: no double image."),
+                                ('centre', 'Centre eye', "One picture as from between the eyes: no double image, and the things where they are - for aiming.")):
                 check(im, lbl, '', lambda k=k: getattr(self, 'imager_eye', 'both') == k, lambda k=k: self.set_imager_eye(k), tip)
             m = Menu(mb, tearoff=0, postcommand=refresh); mb.add_cascade(label='Online', menu=m)
             item(m, 'Host with a code...', '', lambda: (setattr(self, 'net_vl_want', False), self.online_window('host')),
@@ -7883,6 +7885,7 @@ class App:
             Core.veclink = None; Core.veclink_slice = 0; self.vl_online = False
         self.core = Core(path, self.args.ideal, ng.get('cart_hw', self.cart_hw) if ng else self.cart_hw, self.speech,   #  the rest
                          self.sd_dir, self.px_dir, unit, self.usb_hid)                                                  #  only moves the picture)
+        self.imager_centre_to_core()                            # (the 3D Imager's centre view, as chosen)
         self.usb_typing_off()
         if self.ren and hasattr(self.ren, 'line_gap'):
             self.core.set_gap(self.ren.line_gap)
@@ -8897,12 +8900,22 @@ class App:
         self.save_settings()
         self.show_look('3D Imager motor sound: ' + ('on' if self.run.crt.motor_on else 'off'))
     def set_imager_eye(self, k):
-        """the 3D Imager's view: both eyes' pictures (in colour, as without the goggles), or one eye's only - no double image"""
+        """the 3D Imager's view: both eyes' pictures (in colour, as without the goggles), or one eye's only - no double image -,
+        or the centre eye: one picture as from between the eyes (the core's vtest.c imager_centre moves the left eye's lines
+        halfway to the right eye's: Tony, 2026-11-26 - for aiming in 3D Narrow Escape)"""
         self.imager_eye = k
         if self.ren is not None:
-            self.ren.imager_eye = {'left': 1, 'right': 0}.get(k, -1)
+            self.ren.imager_eye = {'left': 1, 'right': 0, 'centre': 1}.get(k, -1)
+        self.imager_centre_to_core()
         self.save_settings()
-        self.show_look('3D Imager: ' + {'both': 'both eyes', 'left': 'the left eye only', 'right': 'the right eye only'}[k])
+        self.show_look('3D Imager: ' + {'both': 'both eyes', 'left': 'the left eye only', 'right': 'the right eye only',
+                                        'centre': 'the centre eye'}[k])
+    def imager_centre_to_core(self):
+        """the centre view on or off in the running core (live setting 30)"""
+        core = getattr(self, 'core', None)
+        if core is not None:
+            try: core.set_analog(30, 1.0 if getattr(self, 'imager_eye', 'both') == 'centre' else 0.0)
+            except Exception: pass   # noqa
     def toggle_imager_note(self):
         self.imager_note = not self.imager_note
         self.save_settings()

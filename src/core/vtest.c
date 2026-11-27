@@ -92,10 +92,17 @@ static void beam_take (double x, double y, double lev, unsigned char z, unsigned
  * colour is kept here (not in a save: a picture only) */
 int vt_imager_centre;
 #define IMC_N (MAXL / 4)
+#define IMC_Y 1500                                             /* (how far a piece may have moved up or down between the passes) */
+#define IMC_K 2500                                             /* (a shift unlike the last pair's counts up to this: the next object may
+                                                                  be at another depth - 3D Crazy Coaster's flat cactus after its bar) */
+static long lmin_ (long a, long b) { return a < b ? a : b; }
 static line_t imc_r[3][IMC_N]; static int imc_nr[3];         /* (the right eye's last pass of each colour) */
 static unsigned char imc_u[3][IMC_N];                         /* (its pieces already paired in the left eye's pass now) */
-static int imc_key = -1, imc_j[3], imc_hp[3]; static long imc_ps[3];   /* (the pass going on; each colour's place in its partner, the last shift) */
-static unsigned char imc_pl[MAXL]; static float imc_s0[MAXL], imc_s1[MAXL]; static int imc_jt, imc_hpt; static long imc_pst;   /* (this frame's left-eye pieces: paired, the shift found at each end) */
+static line_t imc_lp[3][IMC_N], imc_la[3][IMC_N]; static int imc_nlp[3], imc_nla[3];   /* (the left eye's last whole pass, the one going on - as drawn) */
+static unsigned char imc_lu[3][IMC_N];                        /* (the last pass's pieces already paired) */
+static line_t *imc_P; static int imc_np, imc_w; static unsigned char *imc_U;   /* (the partner pass in use: 0 the right eye's, 1 the left eye's last) */
+static int imc_key = -1, imc_j[2][3], imc_hp[2][3]; static long imc_ps[2][3], imc_py[2][3];   /* (the pass going on; each colour's place in its partner, the last shifts) */
+static unsigned char imc_pl[MAXL]; static float imc_s0[MAXL], imc_s1[MAXL]; static int imc_jt, imc_hpt; static long imc_pst, imc_pyt;   /* (this frame's left-eye pieces: paired, the shift found at each end) */
 static int imc_col (unsigned char rgb) { const int c = rgb & 7; return c == 1 ? 0 : c == 2 ? 1 : c == 4 ? 2 : -1; }
 /* step 2's strokes: pieces in a row that join and go on straight; their ends in order (low y first, a level one low x first) */
 typedef struct { int i0, i1; double ax, ay, bx, by; } imc_stroke;
@@ -118,52 +125,67 @@ static int imc_strokes (line_t *const *P, int n, imc_stroke *S, int smax)
 	}
 	return ns;
 }
-/* step 2: the left eye's pieces step 1 left, by strokes - each to the right eye's stroke at the same height, every point moved by
- * half the shift there along it (a rail going into the distance: its near end moves more than its far one). The strokes are paired
- * in order with a few strokes' slip (the shift most like the last pair's), else the smallest shift anywhere - and the order tried
- * both ways: a pass drawn the other way round (3D Crazy Coaster's blue, the 3D Imager Test's page 2) pairs in reverse order */
+/* step 2: the left eye's pieces step 1 left, by strokes - each to the partner pass's stroke at about the same height, every point
+ * moved by the shift there along it (a rail going into the distance: its near end moves more than its far one). The strokes are
+ * paired in order with a few strokes' slip (the shifts most like the last pair's), else the smallest shift anywhere - and the
+ * order tried both ways: a pass drawn the other way round (3D Crazy Coaster's blue, the 3D Imager Test's page 2) pairs in reverse */
 #define IMC_S 4096
 static imc_stroke imc_sl[IMC_S], imc_sr[IMC_S];
 static int imc_match (int nsl, int nsr, int dir, int *pm, double *p0s, double *p1s, double *score)
 {
 	static unsigned char su[IMC_S]; memset (su, 0, (size_t) nsr);
-	int j = 0, hp = 0, n = 0; double p0 = 0, p1 = 0, tot = 0;
+	int j = 0, hp = 0, n = 0; double p0 = 0, p1 = 0, py = 0, tot = 0;
 	for (int k = 0; k < nsl; k++) {
-		const imc_stroke *a = &imc_sl[k]; int got = -1, gq = -1; double g0 = 0, g1 = 0, gc = 0;
+		const imc_stroke *a = &imc_sl[k]; int got = -1, gq = -1; double g0 = 0, g1 = 0, gy = 0, gc = 0;
 		if (fabs (a->bx - a->ax) + fabs (a->by - a->ay) < 16) { pm[k] = -1; continue; }   /* (a dot: its neighbours' shift) */
 			for (int q = 0; q < nsr; q++) {
 				const int m = dir > 0 ? q : nsr - 1 - q; const imc_stroke *b = &imc_sr[m];
-				if (su[m] || fabs (b->ay - a->ay) > 48 || fabs (b->by - a->by) > 48) continue;
-				const double s0 = b->ax - a->ax, s1 = b->bx - a->bx;
+				if (su[m] || fabs (b->ay - a->ay) > IMC_Y || fabs (b->by - a->by) > IMC_Y) continue;
+				const double s0 = b->ax - a->ax, s1 = b->bx - a->bx, sy = 0.5 * (b->ay - a->ay + b->by - a->by);
 				if (fabs (s0) > 16000 || fabs (s1) > 16000) continue;
 				{ const double ln = sqrt ((a->bx - a->ax) * (a->bx - a->ax) + (a->by - a->ay) * (a->by - a->ay));
 				  if (fabs (s1 - s0) > 0.5 * ln + 200) continue; }   /* (its ends' shifts as far apart as its length allows) */
-				const double cst = (hp ? fabs (s0 - p0) + fabs (s1 - p1) : 0) + (q >= j && q < j + 8 ? (q - j) * 20.0 : 300.0) + (fabs (s0) + fabs (s1)) / 20;   /* (as step 1) */
-				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gc = cst; gq = q; }
+				const double cst = (hp ? fmin (fabs (s0 - p0) + fabs (s1 - p1) + fabs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (q - j) * 20.0 : 300.0)
+				                   + (fabs (s0) + fabs (s1)) / 20 + fabs (sy) / 2;   /* (as step 1) */
+				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gy = sy; gc = cst; gq = q; }
 			}
 		if (gq >= 0) j = gq + 1;
 		pm[k] = got;
 		if (got < 0) continue;
-		if (hp) tot += fabs (g0 - p0) + fabs (g1 - p1);
-		tot += 0.1 * (fabs (g0) + fabs (g1));
-		su[got] = 1; hp = 1; p0 = g0; p1 = g1; p0s[k] = g0; p1s[k] = g1; n++;
+		if (hp) tot += fmin (fabs (g0 - p0) + fabs (g1 - p1) + fabs (gy - py), IMC_K);
+		tot += 0.1 * (fabs (g0) + fabs (g1)) + 0.5 * fabs (gy);
+		su[got] = 1; hp = 1; p0 = g0; p1 = g1; py = gy; p0s[k] = g0; p1s[k] = g1; n++;
 	}
 	*score = n * 1e7 - tot;
 	return n;
 }
-static void imc_step2 (int c, line_t **LP, int nl)
+static void imc_step2 (line_t **LP, int nl)
 {
 	static line_t *RP[IMC_N]; static int RI[IMC_N]; static int pm[2][IMC_S]; static double ps0[2][IMC_S], ps1[2][IMC_S];
 	int nr = 0;
-	for (int k = 0; k < imc_nr[c]; k++) if (!imc_u[c][k]) { RI[nr] = k; RP[nr++] = &imc_r[c][k]; }
+	for (int k = 0; k < imc_np; k++) if (!imc_U[k]) { RI[nr] = k; RP[nr++] = &imc_P[k]; }
 	if (!nl || !nr) return;
 	const int nsl = imc_strokes (LP, nl, imc_sl, IMC_S), nsr = imc_strokes (RP, nr, imc_sr, IMC_S);
 	double sc[2]; imc_match (nsl, nsr, 1, pm[0], ps0[0], ps1[0], &sc[0]); imc_match (nsl, nsr, -1, pm[1], ps0[1], ps1[1], &sc[1]);
 	const int w = sc[1] > sc[0];
+	/* (two strokes side by side keep their order in the other eye: a pair the other way round - the arch's posts each paired with
+	 *  the other's, 3D Crazy Coaster - swapped back, when that brings their shifts nearer) */
+	for (int k1 = 0; k1 < nsl; k1++) for (int k2 = k1 + 1; k2 < nsl; k2++) {
+		const int m1 = pm[w][k1], m2 = pm[w][k2]; if (m1 < 0 || m2 < 0) continue;
+		const imc_stroke *A1 = &imc_sl[k1], *A2 = &imc_sl[k2], *B1 = &imc_sr[m1], *B2 = &imc_sr[m2];
+		if (A1->by - A1->ay < 200 || A2->by - A2->ay < 200 || fmax (A1->ay, A2->ay) >= fmin (A1->by, A2->by)) continue;
+		if ((A1->ax + A1->bx < A2->ax + A2->bx) == (B1->ax + B1->bx < B2->ax + B2->bx)) continue;
+		if (fabs (B2->ay - A1->ay) > IMC_Y || fabs (B2->by - A1->by) > IMC_Y || fabs (B1->ay - A2->ay) > IMC_Y || fabs (B1->by - A2->by) > IMC_Y) continue;
+		const double n10 = B2->ax - A1->ax, n11 = B2->bx - A1->bx, n20 = B1->ax - A2->ax, n21 = B1->bx - A2->bx;
+		const double l1 = sqrt ((A1->bx - A1->ax) * (A1->bx - A1->ax) + (A1->by - A1->ay) * (A1->by - A1->ay)), l2 = sqrt ((A2->bx - A2->ax) * (A2->bx - A2->ax) + (A2->by - A2->ay) * (A2->by - A2->ay));
+		if (fabs (n11 - n10) > 0.5 * l1 + 200 || fabs (n21 - n20) > 0.5 * l2 + 200) continue;
+		if (fabs (0.5 * (n10 + n11) - 0.5 * (n20 + n21)) >= fabs (0.5 * (ps0[w][k1] + ps1[w][k1]) - 0.5 * (ps0[w][k2] + ps1[w][k2]))) continue;
+		pm[w][k1] = m2; pm[w][k2] = m1; ps0[w][k1] = n10; ps1[w][k1] = n11; ps0[w][k2] = n20; ps1[w][k2] = n21;
+	}
 	for (int k = 0; k < nsl; k++) {
 		const int got = pm[w][k]; if (got < 0) continue;
 		const imc_stroke *a = &imc_sl[k]; const double g0 = ps0[w][k], g1 = ps1[w][k];
-		for (int i = imc_sr[got].i0; i <= imc_sr[got].i1; i++) imc_u[c][RI[i]] = 1;
+		for (int i = imc_sr[got].i0; i <= imc_sr[got].i1; i++) imc_U[RI[i]] = 1;
 		const double vx = a->bx - a->ax, vy = a->by - a->ay, vv = vx * vx + vy * vy;
 		for (int i = a->i0; i <= a->i1; i++) {
 			const line_t *l = LP[i]; const int q = (int) (l - last);
@@ -174,46 +196,48 @@ static void imc_step2 (int c, line_t **LP, int nl)
 		}
 	}
 }
-/* step 1 for one order (dir 1: as drawn, -1: the right eye's pass the other way round): each left-eye piece of last[i0..i1] to a
- * right-eye piece of the same shape and height - drawn the same way or the other way (a box drawn the other way round: its left
- * side goes up where the other eye's goes down) - within a few pieces of the last pair's (the shift most like it; the first: the
- * next in order), else the smallest shift anywhere. Its pairs (pm: the partner, sh: the shift) and its score: the pairs, then the
- * steadier shifts - an object is moved whole, so right pairs keep the shift from piece to piece (the smallest shift is no rule: a
- * box nearer than it is wide finds its other side, drawn the other way, closer) */
-static double imc_step1 (int c, int i0, int i1, int dir, int *pm, long *sh, unsigned char *used)
+/* step 1 for one order (dir 1: as drawn, -1: the partner pass the other way round): each left-eye piece of last[i0..i1] to a
+ * partner piece of the same shape and about the same height - drawn the same way or the other way (a box drawn the other way round: its
+ * left side goes up where the other eye's goes down) - within a few pieces of the last pair's (the shifts most like it; the
+ * first: the next in order), else the smallest shift anywhere. Its pairs (pm: the partner, sh0 / sh1: the shift at each end) and
+ * its score: the pairs, then the steadier shifts - an object is moved whole, so right pairs keep the shift from piece to piece
+ * (the smallest shift is no rule: a box nearer than it is wide finds its other side, drawn the other way, closer) */
+static double imc_step1 (int c, int i0, int i1, int dir, int *pm, long *sh0, long *sh1, unsigned char *used)
 {
-	const int nr = imc_nr[c]; int j = dir > 0 ? imc_j[c] : 0, hp = dir > 0 ? imc_hp[c] : 0, n = 0; long ps = dir > 0 ? imc_ps[c] : 0; double tot = 0;
+	const int nr = imc_np; int j = dir > 0 ? imc_j[imc_w][c] : 0, hp = dir > 0 ? imc_hp[imc_w][c] : 0, n = 0;
+	long ps = dir > 0 ? imc_ps[imc_w][c] : 0, py = dir > 0 ? imc_py[imc_w][c] : 0; double tot = 0;
 	for (int i = i0; i <= i1; i++) {
 		pm[i - i0] = -1;
 		const line_t *a = &last[i];
 		if (imc_col (a->rgb) != c || !(a->rgb & 8)) continue;
 		const long adx = a->x1 - a->x0, ady = a->y1 - a->y0;
 		if (labs (adx) + labs (ady) < 16) continue;         /* (a dot has no shape to know its partner by: it takes its neighbours' shift) */
-		int got = -1, gq = -1; long gs = 0, gc = 0;
+		int got = -1, gq = -1; long g0 = 0, g1 = 0, gy = 0, gc = 0;
 			for (int q = 0; q < nr; q++) {
-				const int m = dir > 0 ? q : nr - 1 - q; const line_t *b = &imc_r[c][m];
+				const int m = dir > 0 ? q : nr - 1 - q; const line_t *b = &imc_P[m];
 				if (used[m]) continue;
-				const long bdx = b->x1 - b->x0, bdy = b->y1 - b->y0; long sh_;
-				if (labs (adx - bdx) <= 8 && labs (ady - bdy) <= 8 && labs (a->y0 - b->y0) <= 48) sh_ = b->x0 - a->x0;   /* (drawn the same way) */
-				else if (labs (adx + bdx) <= 8 && labs (ady + bdy) <= 8 && labs (a->y0 - b->y1) <= 48) sh_ = b->x1 - a->x0;   /* (the other way) */
+				const long bdx = b->x1 - b->x0, bdy = b->y1 - b->y0; long s0, s1, sy;
+				if (labs (adx - bdx) <= 8 && labs (ady - bdy) <= 8 && labs (a->y0 - b->y0) <= IMC_Y) { s0 = b->x0 - a->x0; s1 = b->x1 - a->x1; sy = b->y0 - a->y0; }   /* (drawn the same way) */
+				else if (labs (adx + bdx) <= 8 && labs (ady + bdy) <= 8 && labs (a->y0 - b->y1) <= IMC_Y) { s0 = b->x1 - a->x0; s1 = b->x0 - a->x1; sy = b->y1 - a->y0; }   /* (the other way) */
 				else continue;
-				if (labs (sh_) > 16000) continue;
-				/* (the cost: the shift unlike the last pair's - an object moves whole -, then the order - the next few pieces
-				 *  as drawn cost little, the rest more -, and a little the shift itself - a depth's offset is small) */
-				const long cst = (hp ? labs (sh_ - ps) : 0) + (q >= j && q < j + 8 ? (long) (q - j) * 20 : 300) + labs (sh_) / 10;
-				if (got < 0 || cst < gc) { got = m; gs = sh_; gc = cst; gq = q; }
+				if (labs (s0) > 16000) continue;
+				/* (the cost: the shifts unlike the last pair's - an object moves whole -, then the order - the next few pieces
+				 *  as drawn cost little, the rest more -, and a little the shifts themselves - a depth's offset is small, a
+				 *  move up or down smaller) */
+				const long cst = (hp ? lmin_ (labs (s0 - ps) + labs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (long) (q - j) * 20 : 300) + labs (s0) / 10 + labs (sy) / 2;
+				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gy = sy; gc = cst; gq = q; }
 			}
 		if (got < 0) continue;
 		j = gq + 1;
-		if (hp) tot += labs (gs - ps);                       /* (an object's pieces all moved alike: right pairs keep the shift) */
-		tot += 0.1 * labs (gs);                             /* (and a little for the shift itself: two objects alike at one height
-		                                                       paired the wrong way round are as steady - but moved far) */
-		used[got] = 1; hp = 1; ps = gs; pm[i - i0] = got; sh[i - i0] = gs; n++;
+		if (hp) tot += lmin_ (labs (g0 - ps) + labs (gy - py), IMC_K);   /* (an object's pieces all moved alike: right pairs keep the shift) */
+		tot += 0.1 * labs (g0) + 0.5 * labs (gy);          /* (and a little for the shift itself: two objects alike at one height
+		                                                       paired the wrong way round are as steady - but moved far; more
+		                                                       for a move up or down - text rows alike: the same row first) */
+		used[got] = 1; hp = 1; ps = g1; py = gy; pm[i - i0] = got; sh0[i - i0] = g0; sh1[i - i0] = g1; n++;
 	}
-	if (dir > 0) { imc_jt = j; imc_hpt = hp; imc_pst = ps; }
+	if (dir > 0) { imc_jt = j; imc_hpt = hp; imc_pst = ps; imc_pyt = py; }
 	return n * 1e7 - tot;
 }
-/* the left eye's lines of one pass in this frame (last[i0..i1] of colour c): step 1 both ways round, the better kept; then step 2 */
 /* a solution's cost: the jumps in shift where joined pieces meet (an object moves whole), and pieces long enough to know with no
  * partner */
 static double imc_cost (int c, int i0, int i1)
@@ -228,42 +252,43 @@ static double imc_cost (int c, int i0, int i1)
 	}
 	return cost;
 }
-/* the left eye's lines of one pass in this frame (last[i0..i1] of colour c), two ways: A - step 1 both ways round, the better kept,
- * then step 2 for what it left; B - step 2 alone (a box drawn the other way round: its sides' pieces cut otherwise - the first
- * pieces of a line are the short ones, as the beam gets going -, so piece by piece only its other side, drawn the same way, looks
- * like its partner; as whole strokes the sides pair right). The one with the steadier shifts kept */
-static void imc_left (int c, int i0, int i1)
+/* the left eye's lines of one pass in this frame (last[i0..i1] of colour c) to the partner pass in use, two ways: A - step 1 both
+ * ways round, the better kept, then step 2 for what it left; B - step 2 alone (a box drawn the other way round: its sides' pieces
+ * cut otherwise - the first pieces of a line are the short ones, as the beam gets going -, so piece by piece only its other side,
+ * drawn the same way, looks like its partner; as whole strokes the sides pair right). The one with the steadier shifts kept; then
+ * each chain of joined pieces as one. The shifts found: imc_s0 / imc_s1 (imc_pl: known) */
+static void imc_pair (int c, int i0, int i1)
 {
-	static line_t *LP[MAXL]; static int pm[2][MAXL]; static long sh[2][MAXL]; static unsigned char used[2][IMC_N], u0[IMC_N], uA[IMC_N];
+	static line_t *LP[MAXL]; static int pm[2][MAXL]; static long sh0[2][MAXL], sh1[2][MAXL]; static unsigned char used[2][IMC_N], u0[IMC_N], uA[IMC_N];
 	static float sA0[MAXL], sA1[MAXL]; static unsigned char pA[MAXL];
 	const int n = i1 - i0 + 1; int nl = 0;
-	memcpy (u0, imc_u[c], (size_t) imc_nr[c]);
+	memcpy (u0, imc_U, (size_t) imc_np);
 	/* A */
 	for (int i = i0; i <= i1; i++) imc_pl[i] = 0;
 	double sc[2];
-	for (int d = 0; d < 2; d++) { memcpy (used[d], u0, (size_t) imc_nr[c]); sc[d] = imc_step1 (c, i0, i1, d ? -1 : 1, pm[d], sh[d], used[d]); }
+	for (int d = 0; d < 2; d++) { memcpy (used[d], u0, (size_t) imc_np); sc[d] = imc_step1 (c, i0, i1, d ? -1 : 1, pm[d], sh0[d], sh1[d], used[d]); }
 	const int w = sc[1] > sc[0];
-	const int jt = imc_jt, hpt = imc_hpt; const long pst = imc_pst;
-	memcpy (imc_u[c], used[w], (size_t) imc_nr[c]);
+	const int jt = imc_jt, hpt = imc_hpt; const long pst = imc_pst, pyt = imc_pyt;
+	memcpy (imc_U, used[w], (size_t) imc_np);
 	for (int i = i0; i <= i1; i++) {
 		line_t *a = &last[i];
 		if (imc_col (a->rgb) != c || !(a->rgb & 8)) continue;
-		if (pm[w][i - i0] >= 0) { imc_s0[i] = imc_s1[i] = (float) sh[w][i - i0]; imc_pl[i] = 1; }
+		if (pm[w][i - i0] >= 0) { imc_s0[i] = (float) sh0[w][i - i0]; imc_s1[i] = (float) sh1[w][i - i0]; imc_pl[i] = 1; }
 		else LP[nl++] = a;
 	}
-	imc_step2 (c, LP, nl);
+	imc_step2 (LP, nl);
 	const double cA = imc_cost (c, i0, i1);
 	memcpy (sA0, imc_s0 + i0, sizeof (float) * (size_t) n); memcpy (sA1, imc_s1 + i0, sizeof (float) * (size_t) n); memcpy (pA, imc_pl + i0, (size_t) n);
-	memcpy (uA, imc_u[c], (size_t) imc_nr[c]);
+	memcpy (uA, imc_U, (size_t) imc_np);
 	/* B */
-	memcpy (imc_u[c], u0, (size_t) imc_nr[c]); nl = 0;
+	memcpy (imc_U, u0, (size_t) imc_np); nl = 0;
 	for (int i = i0; i <= i1; i++) { imc_pl[i] = 0; if (imc_col (last[i].rgb) == c && (last[i].rgb & 8)) LP[nl++] = &last[i]; }
-	imc_step2 (c, LP, nl);
+	imc_step2 (LP, nl);
 	const double cB = imc_cost (c, i0, i1);
 	if (cA <= cB) {                                         /* (A kept: its shifts, its partners used, its place in the pass) */
 		memcpy (imc_s0 + i0, sA0, sizeof (float) * (size_t) n); memcpy (imc_s1 + i0, sA1, sizeof (float) * (size_t) n); memcpy (imc_pl + i0, pA, (size_t) n);
-		memcpy (imc_u[c], uA, (size_t) imc_nr[c]);
-		if (!w) { imc_j[c] = jt; imc_hp[c] = hpt; imc_ps[c] = pst; }
+		memcpy (imc_U, uA, (size_t) imc_np);
+		if (!w) { imc_j[imc_w][c] = jt; imc_hp[imc_w][c] = hpt; imc_ps[imc_w][c] = pst; imc_py[imc_w][c] = pyt; }
 	}
 	/* then each chain of joined pieces as one: a piece with no partner takes its neighbours' shift (a tumbling figure is not the
 	 * same shape in the two half turns), and where two pieces meet both ends get one shift - so a shape stays whole; a path into
@@ -287,10 +312,39 @@ static void imc_left (int c, int i0, int i1)
 				const float med = nw ? w[nw / 2] : 0;
 				if (!imc_pl[k]) { imc_s0[k] = imc_s1[k] = med; imc_pl[k] = 1; }
 			}
+			{                                               /* (a piece far off its chain's shift - weighed by length - takes it: 3D Crazy
+			                                                   Coaster's arch, its posts paired each with the other's: the bar decides) */
+				static float sv[MAXL], sw[MAXL]; int nv = 0; double wt = 0;
+				for (int k = k0; k <= k1; k++) { sv[nv] = 0.5f * (imc_s0[k] + imc_s1[k]); sw[nv] = (float) (labs (last[k].x1 - last[k].x0) + labs (last[k].y1 - last[k].y0) + 1); wt += sw[nv++]; }
+				for (int a1 = 1; a1 < nv; a1++) for (int b1 = a1; b1 > 0 && sv[b1 - 1] > sv[b1]; b1--) { float t = sv[b1]; sv[b1] = sv[b1 - 1]; sv[b1 - 1] = t; t = sw[b1]; sw[b1] = sw[b1 - 1]; sw[b1 - 1] = t; }
+				double acc = 0; float med = nv ? sv[nv - 1] : 0; for (int q = 0; q < nv; q++) { acc += sw[q]; if (acc >= 0.5 * wt) { med = sv[q]; break; } }
+				for (int k = k0; k <= k1; k++) if (fabsf (0.5f * (imc_s0[k] + imc_s1[k]) - med) > 4000) imc_s0[k] = imc_s1[k] = med;
+			}
 			for (int k = k0; k < k1; k++) if (fabsf (imc_s1[k] - imc_s0[k + 1]) <= 400) { const float v = 0.5f * (imc_s1[k] + imc_s0[k + 1]); imc_s1[k] = imc_s0[k + 1] = v; }
-			for (int k = k0; k <= k1; k++) { last[k].x0 += (long) floor (imc_s0[k] / 2 + 0.5f); last[k].x1 += (long) floor (imc_s1[k] / 2 + 0.5f); }
 		}
 		k0 = k1 + 1;
+	}
+}
+/* the left eye's lines of one pass in this frame (last[i0..i1] of colour c). The games move the picture between the half turns
+ * (3D Crazy Coaster: an arch comes nearer - lower and wider - from the left eye's pass to the right eye's and on to the next left
+ * one), so the right eye's pass is of a moment halfway between the left eye's last pass and this one: its offset from this pass is
+ * the depth's plus half a turn's move. The move is taken out by pairing this pass with the left eye's last one too - the depth's
+ * offset: to the right eye's pass from halfway between the two left ones (the owner, 2026-11-27: the arches drifted off the rails
+ * as the ride went on - standing still, they sat right) */
+static void imc_left (int c, int i0, int i1)
+{
+	static float d0[MAXL], d1[MAXL]; static unsigned char dl[MAXL];
+	for (int i = i0; i <= i1; i++) if (imc_col (last[i].rgb) == c && (last[i].rgb & 8) && imc_nla[c] < IMC_N) imc_la[c][imc_nla[c]++] = last[i];
+	imc_w = 0; imc_P = imc_r[c]; imc_np = imc_nr[c]; imc_U = imc_u[c];
+	imc_pair (c, i0, i1);
+	for (int i = i0; i <= i1; i++) { d0[i] = imc_s0[i]; d1[i] = imc_s1[i]; dl[i] = imc_pl[i]; }
+	if (imc_nlp[c]) {
+		imc_w = 1; imc_P = imc_lp[c]; imc_np = imc_nlp[c]; imc_U = imc_lu[c];
+		imc_pair (c, i0, i1);
+		for (int i = i0; i <= i1; i++) if (dl[i] && imc_pl[i]) { d0[i] -= 0.5f * imc_s0[i]; d1[i] -= 0.5f * imc_s1[i]; }
+	}
+	for (int i = i0; i <= i1; i++) if (imc_col (last[i].rgb) == c && (last[i].rgb & 8) && dl[i]) {
+		last[i].x0 += (long) floor (d0[i] / 2 + 0.5f); last[i].x1 += (long) floor (d1[i] / 2 + 0.5f);
 	}
 }
 static void imager_centre (void)
@@ -311,7 +365,12 @@ static void imager_centre (void)
 			if (imc_nr[c] < IMC_N) { imc_u[c][imc_nr[c]] = 0; imc_r[c][imc_nr[c]++] = last[i]; }
 			continue;
 		}
-		if (fresh) { imc_j[c] = 0; imc_hp[c] = 0; memset (imc_u[c], 0, (size_t) imc_nr[c]); }   /* (a new left pass: its partner's pieces all free) */
+		if (fresh) {                                        /* (a new left pass: its partners' pieces all free; the one before kept) */
+			for (int w = 0; w < 2; w++) { imc_j[w][c] = 0; imc_hp[w][c] = 0; }
+			memset (imc_u[c], 0, (size_t) imc_nr[c]);
+			if (imc_nla[c]) { memcpy (imc_lp[c], imc_la[c], sizeof (line_t) * (size_t) imc_nla[c]); imc_nlp[c] = imc_nla[c]; }
+			imc_nla[c] = 0; memset (imc_lu[c], 0, (size_t) imc_nlp[c]);
+		}
 		if (run < 0) { run = key; r0 = i; }
 	}
 }

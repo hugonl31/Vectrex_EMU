@@ -69,6 +69,14 @@ extern unsigned char (*e6809_read8) (unsigned address);
 typedef struct { long x0, y0, x1, y1; unsigned char c, rgb; unsigned cyc, t0; } line_t;   /* (rgb: the 3D Imager's filter, imager.c) */
 #define MAXL 40000
 static line_t cur[MAXL], last[MAXL];
+/* (the 3D Imager's centre view: the strokes as the game draws them - vecx.c id_step - and each piece's two moments) */
+typedef struct { long x0, y0, x1, y1; unsigned long long t0, t1; unsigned char c, rgb; unsigned run; } iline_t;
+static iline_t icur[MAXL]; static int nicur;                 /* (left out of the run-ahead saves - live.c: a picture only, megabytes) */
+unsigned long long vt_line_ta, vt_line_tb; static unsigned long long cta[MAXL], ctb[MAXL];
+void vt_iline (long x0, long y0, long x1, long y1, unsigned char c, unsigned char rgb, unsigned long long t0, unsigned long long t1, unsigned run)
+{
+	if (nicur < MAXL) { iline_t *l = &icur[nicur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->rgb = rgb; l->t0 = t0; l->t1 = t1; l->run = run; }
+}
 static int ncur, nlast;
 
 /* ---------- beam trace (VT_BEAMTRACE=1, the beam-trace renderer): the lit cycles of a frame ---------- */
@@ -107,13 +115,15 @@ static unsigned char imc_pl[MAXL]; static float imc_s0[MAXL], imc_s1[MAXL]; stat
 /* (each eye's picture paired as one whole, all its colours together - the colour a strong preference, not a wall: the owner,
  * 2026-11-27, "we need to merge left and right as separate entities with recognizable colors, then only color the merged image" -
  * an object's pieces fall into the colour passes differently in the two eyes; paired colour by colour, the rest of the one pass
- * took a wrong partner. VT_IMC_PERCOLOUR=1: colour by colour, as before - a test) */
+ * took a wrong partner. Tried 2026-11-27 and set aside: see imc_col) */
 static int imc_whole = -1;
 #define IMC_CC 3000                                            /* (a partner of another colour: this much more) */
 static int imc_col (unsigned char rgb)
 {
 	const int c = rgb & 7, k = c == 1 ? 0 : c == 2 ? 1 : c == 4 ? 2 : -1;
-	if (imc_whole < 0) { const char *e = getenv ("VT_IMC_PERCOLOUR"); imc_whole = !(e && atoi (e)); }
+	if (imc_whole < 0) { const char *e = getenv ("VT_IMC_WHOLE"); imc_whole = e && atoi (e); }   /* (colour by colour - the default again: paired
+	                                              whole, an object took a partner of another colour now and then and jumped from frame to frame -
+	                                              the owner's PC, 2026-11-27, "total mess now"; VT_IMC_WHOLE=1: whole, a test) */
 	return k < 0 ? -1 : imc_whole ? 0 : k;
 }
 /* (key, index) pairs sorted by the key - qsort: the pieces come in no useful order */
@@ -572,7 +582,7 @@ static void imc_left (int c, int i0, int i1)
 	}
 }
 static int imc_prev_left;
-static void imager_centre (void)
+static void imager_centre_pairs (void)
 {
 	extern int vt_imager;
 	if (!vt_imager || !vt_imager_centre || !nlast) return;
@@ -602,6 +612,67 @@ static void imager_centre (void)
 		if (run < 0) { run = key; r0 = i; }
 	}
 }
+/* the centre view, take 12 (the owner, 2026-11-27: "match the eyes first and then render them as one"): the two eyes' strokes
+ * paired - the integrators' own path, the same strokes in both eyes moved sideways - and then each piece of the beam (its
+ * corners' chords, its rests, its ends) moved by the shift of the stroke drawn at its moment: nothing parts from its line.
+ * Paired piece by piece before, a corner's chords and rests came out different in the two eyes and some found a wrong
+ * partner - a dot or a dash off its line for a frame. VT_IMC_PIECES=1: the pieces paired, as before (a test) */
+static int imc_bystroke = -1;
+static line_t imc_real[MAXL]; static int imc_pi[MAXL]; static float imc_ss0[MAXL], imc_ss1[MAXL]; static unsigned char imc_inp[MAXL];   /* (imager_centre's: live.c leaves them out of a save) */
+#define IMC_LAG 6                                              /* (the spot follows the integrators this many cycles late - vecx.c LAG_TAU) */
+#define IMC_GAP 400                                            /* (a moment between strokes: the nearer one's end, this near) */
+static int imc_nofit;                                          /* (pieces no stroke was near: VT_IMC_LOG) */
+static float imc_shift_at (const float *s0, const float *s1, int ni, unsigned long long t)
+{
+	int lo = 0, hi = ni;                                       /* (the last stroke begun by t) */
+	while (lo < hi) { const int md = (lo + hi) / 2; if (icur[md].t0 <= t) lo = md + 1; else hi = md; }
+	const int k = lo - 1;
+	if (k >= 0 && t <= icur[k].t1) {
+		const double f = icur[k].t1 > icur[k].t0 ? (double) (t - icur[k].t0) / (double) (icur[k].t1 - icur[k].t0) : 0.0;
+		return (float) (s0[k] + (s1[k] - s0[k]) * f);
+	}
+	const unsigned long long da = k >= 0 ? t - icur[k].t1 : ~0ull, db = k + 1 < ni ? icur[k + 1].t0 - t : ~0ull;
+	if (da <= db && da <= IMC_GAP) return s1[k];
+	if (db < da && db <= IMC_GAP) return s0[k + 1];
+	imc_nofit++; return 0.0f;
+}
+static void imager_centre (void)
+{
+	extern int vt_imager;
+	const int ni = nicur; nicur = 0;
+	if (imc_bystroke < 0) { const char *e = getenv ("VT_IMC_PIECES"); imc_bystroke = !(e && atoi (e)); }
+	if (!imc_bystroke || !vt_imager || !vt_imager_centre) { imager_centre_pairs (); return; }
+	if (!nlast || !ni) return;                         /* (no strokes this frame: the pieces as drawn) */
+	line_t *const real = imc_real; int *const pi = imc_pi; float *const s0 = imc_ss0, *const s1 = imc_ss1; unsigned char *const inp = imc_inp;
+	const int nr = nlast; memcpy (real, last, sizeof (line_t) * (size_t) nr);
+	int np = 0;                                                /* (the strokes to pair: a rest inside a shape left out - a dot of its own kept) */
+	for (int a = 0, b; a < ni; a = b) {
+		int mv = 0; for (b = a; b < ni && icur[b].run == icur[a].run; b++) if (icur[b].x0 != icur[b].x1 || icur[b].y0 != icur[b].y1) mv = 1;
+		for (int k = a; k < b; k++) {
+			const iline_t *q = &icur[k]; inp[k] = !(mv && q->x0 == q->x1 && q->y0 == q->y1);
+			if (!inp[k]) continue;
+			line_t *l = &last[np]; pi[np++] = k;
+			l->x0 = q->x0; l->y0 = q->y0; l->x1 = q->x1; l->y1 = q->y1; l->c = q->c; l->rgb = q->rgb;
+			l->cyc = (unsigned) ((q->t1 - q->t0) * 8); l->t0 = 0;
+		}
+	}
+	nlast = np; imager_centre_pairs ();
+	for (int m = 0; m < np; m++) { const iline_t *q = &icur[pi[m]]; s0[pi[m]] = (float) (last[m].x0 - q->x0); s1[pi[m]] = (float) (last[m].x1 - q->x1); }
+	for (int k = 0; k < ni; k++) if (!inp[k]) {                /* (a rest: the shift where its shape's stroke before it ended, else where the next begins) */
+		int j = k - 1; while (j >= 0 && icur[j].run == icur[k].run && !inp[j]) j--;
+		if (j >= 0 && icur[j].run == icur[k].run) { s0[k] = s1[k] = s1[j]; continue; }
+		j = k + 1; while (j < ni && icur[j].run == icur[k].run && !inp[j]) j++;
+		s0[k] = s1[k] = j < ni && icur[j].run == icur[k].run ? s0[j] : 0.0f;
+	}
+	memcpy (last, real, sizeof (line_t) * (size_t) nr); nlast = nr;
+	imc_nofit = 0;
+	for (int i = 0; i < nr; i++) {                             /* (each piece: the shift at its start and at its end) */
+		const unsigned long long ta = cta[i] > IMC_LAG ? cta[i] - IMC_LAG : 0, tb = ctb[i] > IMC_LAG ? ctb[i] - IMC_LAG : 0;
+		last[i].x0 += (long) floor (imc_shift_at (s0, s1, ni, ta) + 0.5f); last[i].x1 += (long) floor (imc_shift_at (s0, s1, ni, tb) + 0.5f);
+	}
+	{ static int lg = -1; if (lg < 0) { const char *e = getenv ("VT_IMC_LOG"); lg = e && atoi (e); }
+	  if (lg) fprintf (stderr, "imc: %d pieces, %d strokes (%d paired), %d with no stroke near\n", nr, ni, np, imc_nofit); }
+}
 static void beam_swap (void)
 {
 	imager_centre ();                                       /* (every frame's end comes here) */
@@ -614,7 +685,8 @@ void vt_line (long x0, long y0, long x1, long y1, unsigned char c, unsigned cyc,
 {
 	vt_nlines++;
 	extern unsigned char vt_line_rgb;
-	if (ncur < MAXL) { line_t *l = &cur[ncur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->rgb = vt_line_rgb; l->cyc = cyc; l->t0 = t0; }
+	if (ncur < MAXL) { cta[ncur] = vt_line_ta; ctb[ncur] = vt_line_tb;
+		line_t *l = &cur[ncur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->rgb = vt_line_rgb; l->cyc = cyc; l->t0 = t0; }
 }
 
 /* ---------- stats ---------- */

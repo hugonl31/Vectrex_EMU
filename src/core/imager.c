@@ -71,13 +71,16 @@ static void im_plan (void)
 	if (im_freq > 1.0) {
 		double left = im_phase < 1.0 ? 1.0 - im_phase : 0.0;
 		im_due = alg_cycles + (unsigned long long) (left / im_freq * 1500000.0) + 1;
-	} else im_due = ~0ull;                  /* (standing, or nearly: no index) */
+	} else im_due = im_on ? alg_cycles + 15000 : ~0ull;   /* (standing, or nearly: no index - with the motor on, looked at again
+	                                           in 10 ms: a game that holds it on (the 3D Imager Test) gets its first index as the disc
+	                                           comes up to speed; it was only looked at when the motor switched) */
 }
 /* the hole passes the sensor: button 4 low for a degree of the turn, and CA1 pulsed */
 static void im_index (void)
 {
 	static int lg = -1; static unsigned long long lt;
 	im_move ();
+	if (im_freq <= 1.0) { if (im_phase >= 1.0) im_phase -= floor (im_phase); im_plan (); return; }   /* (still too slow: no index) */
 	if (im_phase < 0.999) { im_plan (); return; }   /* (not there yet: the speed changed - wait on) */
 	if (lg < 0) lg = getenv ("VT_IMLOG") != NULL;
 	if (lg && alg_cycles - lt >= 1500000ull) { lt = alg_cycles; fprintf (stderr, "imager: %.2f turns a second\n", im_freq); }

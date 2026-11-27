@@ -389,6 +389,11 @@ static int imc_obj_match (const imc_obj *a, const imc_obj *B, int nb, double *sh
 	}
 	return got;
 }
+/* the left eye's pieces already placed this turn (their place as drawn, their shift at each end, their colour): a small object of
+ * another colour that touches one takes its shift there - 3D Narrow Escape's doorway, red on one side and green on the others, its
+ * red corner came loose from the green ring and floated (the owner's PC recording, 2026-11-27) */
+typedef struct { long x0, y0, x1, y1; float d0, d1; int c; } imc_done_t;
+static imc_done_t imc_done[IMC_N]; static int imc_ndone;
 static void imc_left (int c, int i0, int i1)
 {
 	static float d0[MAXL], d1[MAXL]; static unsigned char dl[MAXL];
@@ -425,10 +430,33 @@ static void imc_left (int c, int i0, int i1)
 			}
 		}
 	}
+	if (imc_ndone) {                                     /* (a small object touching another colour's placed piece: that piece's shift there) */
+		static const line_t *LQ[MAXL]; static int li[MAXL], lab[MAXL]; static imc_obj LO[MAXL]; int nl = 0;
+		for (int i = i0; i <= i1; i++) if (imc_col (last[i].rgb) == c && (last[i].rgb & 8)) { li[nl] = i; LQ[nl++] = &last[i]; }
+		const int nlo = nl ? imc_group (LQ, nl, lab, LO) : 0;
+		for (int o = 0; o < nlo; o++) {
+			const imc_obj *ob = &LO[o]; if (ob->x1 - ob->x0 >= 4000 || ob->y1 - ob->y0 >= 4000) continue;
+			float sum = 0; int nt = 0;
+			for (int q = 0; q < nl && nt < 64; q++) if (lab[q] == o) {
+				const line_t *l = LQ[q]; const long ex[2] = { l->x0, l->x1 }, ey[2] = { l->y0, l->y1 };
+				for (int u = 0; u < 2; u++) for (int k = 0; k < imc_ndone; k++) {
+					const imc_done_t *dn = &imc_done[k]; if (dn->c == c) continue;
+					if (labs (ex[u] - dn->x0) <= 60 && labs (ey[u] - dn->y0) <= 60) { sum += dn->d0; nt++; }
+					else if (labs (ex[u] - dn->x1) <= 60 && labs (ey[u] - dn->y1) <= 60) { sum += dn->d1; nt++; }
+				}
+			}
+			if (nt) { const float d = sum / nt; for (int q = 0; q < nl; q++) if (lab[q] == o) { d0[li[q]] = d1[li[q]] = d; dl[li[q]] = 1; } }
+		}
+	}
+	for (int i = i0; i <= i1; i++) if (imc_col (last[i].rgb) == c && (last[i].rgb & 8) && dl[i] && imc_ndone < IMC_N) {   /* (the placed ones kept) */
+		imc_done_t *dn = &imc_done[imc_ndone++]; dn->x0 = last[i].x0; dn->y0 = last[i].y0; dn->x1 = last[i].x1; dn->y1 = last[i].y1;
+		dn->d0 = d0[i]; dn->d1 = d1[i]; dn->c = c;
+	}
 	for (int i = i0; i <= i1; i++) if (imc_col (last[i].rgb) == c && (last[i].rgb & 8) && dl[i]) {
 		last[i].x0 += (long) floor (d0[i] / 2 + 0.5f); last[i].x1 += (long) floor (d1[i] / 2 + 0.5f);
 	}
 }
+static int imc_prev_left;
 static void imager_centre (void)
 {
 	extern int vt_imager;
@@ -443,6 +471,8 @@ static void imager_centre (void)
 		if (key < 0) continue;
 		const int fresh = key != imc_key; imc_key = key;
 		if (!left) {                                        /* (the right eye's pass: kept - a new one in place of the last) */
+			if (fresh && imc_prev_left) imc_ndone = 0;      /* (a new turn: the left eye's placed pieces forgotten) */
+			imc_prev_left = 0;
 			if (fresh) imc_nr[c] = 0;
 			if (imc_nr[c] < IMC_N) { imc_u[c][imc_nr[c]] = 0; imc_r[c][imc_nr[c]++] = last[i]; }
 			continue;
@@ -453,6 +483,7 @@ static void imager_centre (void)
 			if (imc_nla[c]) { memcpy (imc_lp[c], imc_la[c], sizeof (line_t) * (size_t) imc_nla[c]); imc_nlp[c] = imc_nla[c]; }
 			imc_nla[c] = 0; memset (imc_lu[c], 0, (size_t) imc_nlp[c]);
 		}
+		imc_prev_left = 1;
 		if (run < 0) { run = key; r0 = i; }
 	}
 }

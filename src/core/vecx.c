@@ -1501,12 +1501,30 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
 		x0 += ax; y0 -= ay; x1 += bx; y1 -= by;          /* (screen y grows downwards) */
 	}
 	vt_line_rgb = vt_imager ? im_color (alg_vector_t0 + (unsigned long long) (alg_vector_cyc * 0.5)) : 0;   /* (the 3D Imager) */
+	{ extern unsigned long long vt_line_ta, vt_line_tb; vt_line_ta = alg_vector_t0; vt_line_tb = alg_cycles; }   /* (its moments: the centre view) */
 	{ unsigned long long tf = alg_vector_t0 > vt_piece_t0 ? alg_vector_t0 - vt_piece_t0 : 0;
 	  vt_line (x0, y0, x1, y1, color, (unsigned) (alg_vector_cyc * 8.0 + 0.5),   /* 1/8 cycles */
 		   tf > 65535 ? 65535 : (unsigned) tf); }                              /* start in frame */
 
 	/* (vecx's old draw / erase lists - for its SDL window, read by nothing here, and unbounded when a cycle adds
 	 * several lines - are no longer kept) */
+}
+
+/* the 3D Imager's centre view (vtest.c imager_centre): the strokes as the game draws them - the integrators' own path, a new
+ * stroke where the game changes the speed, the beam or its level: no deflection lag, no corners rounded in chords, no rests
+ * as pieces of their own. The two eyes' pictures are the same strokes moved sideways, so they are paired by these; the beam's
+ * pieces then move with the stroke drawn at their moment (the owner, 2026-11-27: "match the eyes first and then render them") */
+extern void vt_iline (long x0, long y0, long x1, long y1, unsigned char c, unsigned char rgb, unsigned long long t0, unsigned long long t1, unsigned run);
+static int id_open, id_lit, id_kz; static long id_x0, id_y0, id_kx, id_ky; static unsigned char id_c; static unsigned long long id_t0; static unsigned id_run;
+static void id_step (int lit, long kx, long ky, int kz)
+{
+	if (id_open && (!lit || kx != id_kx || ky != id_ky || kz != id_kz || (unsigned char) alg_zsh != id_c)) {
+		vt_iline (id_x0 / ZS, id_y0 / ZS, alg_curr_x / ZS, alg_curr_y / ZS, id_c, im_color ((id_t0 + alg_cycles) / 2), id_t0, alg_cycles, id_run);
+		id_open = 0;
+	}
+	if (lit && !id_open) { id_open = 1; id_x0 = alg_curr_x; id_y0 = alg_curr_y; id_kx = kx; id_ky = ky; id_kz = kz; id_c = (unsigned char) alg_zsh; id_t0 = alg_cycles; }
+	if (!lit && id_lit) id_run++;                       /* (a run: the beam lit without a break - a shape's strokes and its rests) */
+	id_lit = lit;
 }
 
 /* perform a single cycle worth of analog emulation */
@@ -1949,6 +1967,8 @@ static void alg_sstep_full (void)
 		}
 	}
 
+	if (vt_imager) id_step (sig_blank == 1 && (alg_zsh & 0x80) == 0 && (alg_zsh & 0x7f) != 0 && ALG_IN (alg_curr_x, alg_curr_y),
+	                        sig_ramp == 0 ? adx : 0, sig_ramp == 0 ? ady : 0, zero_now == 0);   /* (the strokes: see id_step) */
 	alg_curr_x += sig_dx;
 	alg_curr_y += sig_dy;
 	if (rate_leak < 0) { const char *z = getenv ("VT_RATELEAK"); rate_leak = z ? atof (z) : ysl_on > 0 ? 0.0 : RATE_LEAK; }

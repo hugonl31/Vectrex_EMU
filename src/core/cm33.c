@@ -40,7 +40,7 @@ static int at_cas (void *p, uint32_t expect, uint32_t v, int n)
 }
 #endif
 /* the second plain memory (the RP2350's PSRAM): any 0x1x000000 window with bit 24 set, offset in its low 24 bits */
-#define XRAM(s, a, n) (((a) >> 28) == 1 && ((a) & 0x01000000u) && ((a) & 0xffffffu) + (uint32_t) (n) <= (s)->xram_size)
+#define XRAM(s, a, n) ((((a) >> 24) & 0xF9u) == 0x11u && ((a) & 0xffffffu) + (uint32_t) (n) <= (s)->xram_size)   /* (0x11 / 0x13 / 0x15 / 0x17: the PSRAM; not 0x19 / 0x1b - the cache's maintenance, rp2350.c) */
 
 #define RD(a, n)     mrd (c, (a), (n))
 #define WR(a, v, n)  mwr (c, (a), (v), (n))
@@ -806,7 +806,11 @@ static uint32_t par_addsub (cm33_t *c, unsigned op1, unsigned op2, uint32_t a, u
 static void ldm_write_pc (cm33_t *c, uint32_t v, uint32_t ip) { bx_write_pc (c, v, ip); }
 
 /* after each instruction: the IT state advances, short loops are watched (spins) */
-/* a counting loop's compares with constants (CMP / CMN, 16 and 32 bit): values its counters must not be moved past */
+/* a counting loop's compares with constants (CMP / CMN, 16 and 32 bit): values its counters must not be moved past.
+ * And the constants it loads from its literal pool (LDR Rt, [PC, #n]) - for every counter (breg 0xff): a loop that
+ * compares its counter with one in a register, loaded each round and then overwritten (Mach 3's scan of its text
+ * screen: CMP r3, r1 with r1 = the screen's end, then r1 = r0 + r3), ends there too - skipped past it, it ran on
+ * through all memory and the game stood still after its first page (2026-11-27) */
 static void spin_bounds (cm33_t *c)
 {
 	c->spin_nb = 0;
@@ -817,10 +821,17 @@ static void spin_bounds (cm33_t *c)
 			if ((h2 & 0x8f00) == 0x0f00 && ((h & 0xfbf0) == 0xf1b0 || (h & 0xfbf0) == 0xf110)) {
 				uint32_t v = expand_imm_c (((h >> 10) & 1) << 11 | ((h2 >> 12) & 7) << 8 | (h2 & 0xff), 2, &co);
 				c->spin_breg[c->spin_nb] = (uint8_t) (h & 15); c->spin_bval[c->spin_nb++] = (h & 0xfbf0) == 0xf110 ? 0u - v : v;
+			} else if ((h & 0xff7f) == 0xf85f && (h2 >> 12) != 15) {             /* LDR.W Rt, [PC, #+-imm12] */
+				const uint32_t la = ((a + 4) & ~3u) + ((h & 0x80) ? (h2 & 0xfff) : 0u - (h2 & 0xfff));
+				c->spin_breg[c->spin_nb] = 0xff; c->spin_bval[c->spin_nb++] = fetch16 (c, la) | fetch16 (c, la + 2) << 16;
 			}
 			a += 4;
 		} else {
 			if ((h & 0xf800) == 0x2800) { c->spin_breg[c->spin_nb] = (uint8_t) ((h >> 8) & 7); c->spin_bval[c->spin_nb++] = h & 0xff; }
+			else if ((h & 0xf800) == 0x4800) {                                  /* LDR Rt, [PC, #imm8 x 4] */
+				const uint32_t la = ((a + 4) & ~3u) + (h & 0xff) * 4u;
+				c->spin_breg[c->spin_nb] = 0xff; c->spin_bval[c->spin_nb++] = fetch16 (c, la) | fetch16 (c, la + 2) << 16;
+			}
 			a += 2;
 		}
 	}
@@ -2455,7 +2466,7 @@ static uint64_t spin_cap_rounds (cm33_t *c)
 		uint32_t ad = d < 0 ? (uint32_t) -d : (uint32_t) d;
 		for (int j = -1 - c->spin_nb; j < 13; j++) {
 			if (j == i || (j >= 0 && c->spin_delta[j])) continue;
-			if (j < -1 && c->spin_breg[-2 - j] != i) continue;
+			if (j < -1 && c->spin_breg[-2 - j] != i && c->spin_breg[-2 - j] != 0xff) continue;   /* (0xff: a literal - any counter's) */
 			uint32_t v = j < -1 ? c->spin_bval[-2 - j] : j < 0 ? 0 : c->r[j];
 			uint32_t dist = d > 0 ? v - c->r[i] : c->r[i] - v;      /* (ahead, in the counting direction) */
 			uint64_t steps = dist / ad;

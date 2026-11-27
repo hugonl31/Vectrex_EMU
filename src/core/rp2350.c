@@ -1382,7 +1382,7 @@ static uint32_t bus_read (rp2350_t *rp, cm33_t *c, uint32_t a, int n)
 	}
 	if (a >= 0x10000000u && a < 0x20000000u) {                                /* XIP: flash (empty) / PSRAM (M1) */
 		uint32_t o = a & 0x00ffffffu;
-		if ((a & 0x01000000u) && o < PSRAM_SIZE) { uint32_t w = 0; memcpy (&w, rp->psram + o, (size_t) n); return w; }
+		if ((a & 0x01000000u) && (a >> 26) != 6 && o < PSRAM_SIZE) { uint32_t w = 0; memcpy (&w, rp->psram + o, (size_t) n); return w; }
 		return n == 4 ? 0xffffffffu : n == 2 ? 0xffff : 0xff;
 	}
 	if ((a >> 12) == 0xe0000u) return 1;                                     /* ITM stimulus ports: ready */
@@ -1417,8 +1417,11 @@ static void bus_write (rp2350_t *rp, cm33_t *c, uint32_t a, uint32_t v, int n)
 	}
 	if (a - SRAM_BASE < SRAM_SIZE) { memcpy (rp->sram + (a - SRAM_BASE), &v, (size_t) n); cm33_code_written (&rp->sys, a, (uint32_t) n); return; }
 	if (a >= 0x10000000u && a < 0x20000000u) {
+		/* (0x18000000-0x1bffffff: the XIP cache's maintenance - a write there cleans or drops a cache line; there is no cache
+		 *  here, so nothing to do. Taken as the PSRAM before: Dragon's Lair invalidates every 8-byte line it loads with a 0 to
+		 *  0x19000000 + offset + 2 - each line's third byte was zeroed, its pictures garbage lines, 2026-11-27) */
 		uint32_t o = a & 0x00ffffffu;
-		if ((a & 0x01000000u) && o < PSRAM_SIZE) memcpy (rp->psram + o, &v, (size_t) n);
+		if ((a & 0x01000000u) && (a >> 26) != 6 && o < PSRAM_SIZE) memcpy (rp->psram + o, &v, (size_t) n);
 		return;
 	}
 	if (a >= 0xd0000000u && a < 0xd0040000u) {

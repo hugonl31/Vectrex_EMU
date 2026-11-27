@@ -223,8 +223,10 @@ unsigned vx_pal (unsigned c)
 }
 static int dr_cy0 = 0, dr_cy1 = 1 << 30;         /* (rows drawn into: the library's grid cuts its tiles there) */
 static uint32_t *dr_img; static int dr_w, dr_h;    /* (what br_over draws into: the browser's image, the deck's) */
+static float dr_fade = 1.0f;                       /* (all of it fading: the 3D Imager's spin-up note) */
 static void br_over (int x, int y, unsigned rgb, float a)   /* (premultiplied ARGB, the colour over what is there) */
 {
+	a *= dr_fade;
 	if (x < 0 || y < 0 || x >= dr_w || y >= dr_h || a <= 0 || y < dr_cy0 || y >= dr_cy1) return;
 	if (a > 1) a = 1;
 	rgb = vx_pal (rgb);
@@ -260,6 +262,39 @@ static float br_text (const char *t, float x, float y, float k, unsigned c)   /*
 }
 static int game_switch (const char *path);
 #include "library.c"
+/* the 3D Imager's disc spinning up (the game draws nothing until it is at speed): a note in the middle of the picture with the
+ * speed, fading out once the game draws - the desktop's (vectrex_emu.py imager_hint, vecrender.py's hint: the same rows, bar and
+ * sizes). The owner, 2026-11-27: the phones showed nothing - the last game's picture - while a 3D game started */
+static float sp_a; static int sp_v = -1;           /* (its fade, the speed shown) */
+static void sp_draw (void)
+{
+	const unsigned GRN = 0x66aa88; const float k = CH / 330.0f, cx = CX0 + CW / 2.0f, ytop = CY0 + 0.50f * CH - 2 * 11.0f * k; float y = ytop;
+	static const char *const R[2] = { "3D IMAGER", "DISC SPINNING UP" };
+	dr_fade = sp_a;
+	for (int i = 0; i < 2; i++) { br_text (R[i], cx - (float) strlen (R[i]) * 3.0f * k, y, k, GRN); y += 11.0f * k; }
+	const float w = 22.0f * 6.0f * k, x0 = cx - w / 2, y0 = y + 2.0f * k, y1 = y0 + 4.0f * k, f = sp_v / 26.0f > 1 ? 1 : sp_v / 26.0f;
+	br_rect (x0, y0, x0 + w, y1, GRN, fmaxf (1.0f, k * 0.42f));
+	if (f > 0) br_fill (x0, y0, x0 + w * f, y1, GRN, 1.0f);
+	y = y1 + 5.0f * k;
+	char t[48]; snprintf (t, sizeof t, "%d / 26 TURNS A SECOND", sp_v); const float k2 = 0.8f * k;
+	br_text (t, cx - (float) strlen (t) * 3.0f * k2, y, k2, GRN);
+	dr_fade = 1.0f;
+	br_bx0 = (int) floorf (x0 - 10 * k) - 2; br_bx1 = (int) ceilf (x0 + w + 10 * k) + 2; br_by0 = (int) floorf (ytop) - 2; br_by1 = (int) ceilf (y + 7 * k2) + 2; br_shown = 1;
+}
+/* once a refresh: shown while the goggles' disc turns and the game has drawn nothing for 0.4 s - until the game draws with the disc
+ * near speed (then not again until the disc has stopped: 3D Crazy Coaster's dark moments between its scenes); else fading in ~0.3 s */
+static void sp_tick (void)
+{
+	extern int vt_imager; extern double vt_imager_speed (void); extern unsigned long vt_nlines;
+	static unsigned long nl; static double lt, tp; static int done;
+	const double now = vt_wall (), dt = tp > 0 && now > tp ? now - tp : 0; tp = now;
+	const double v = vt_imager ? vt_imager_speed () : 0;
+	if (vt_nlines != nl) { nl = vt_nlines; lt = now; if (v > 20) done = 1; }
+	if (v < 0.3) done = 0;
+	const float a = vt_imager && pw_on && !done && v > 0.3 && now - lt > 0.4 ? 1.0f : fmaxf (0.0f, sp_a - (float) dt * 3.0f);
+	const int vi = (int) (v + 0.5);
+	if (a != sp_a || (a > 0 && vi != sp_v)) { sp_a = a; sp_v = vi; br_dirty = 1; }
+}
 static void br_draw (void)
 {
 	const size_t n = (size_t) FW * FH;
@@ -268,7 +303,7 @@ static void br_draw (void)
 	dr_img = br_img; dr_w = FW; dr_h = FH;
 	if (br_shown) for (int y = br_by0; y <= br_by1; y++) if (y >= 0 && y < FH) memset (br_img + (size_t) y * FW + (br_bx0 > 0 ? br_bx0 : 0), 0, (size_t) ((br_bx1 < FW ? br_bx1 : FW - 1) - (br_bx0 > 0 ? br_bx0 : 0) + 1) * 4);
 	br_shown = 0; br_dirty = 0; br_gen++;
-	if (!br_open) return;
+	if (!br_open) { if (sp_a > 0) sp_draw (); return; }
 	if (lib_on) { lib_draw (); return; }
 	br_geom (); const br_geo *g = &br_g; const float k = g->k, rh = g->rh;
 	const unsigned GRN = 0x66aa88, HI = 0x88ccbb, DIM = 0x4a7a62, BG = 0x05080a, TOP = 0x0a1210, PAN = 0x0b1511, BODY = 0x0f1c17, SEL = 0x24443a,

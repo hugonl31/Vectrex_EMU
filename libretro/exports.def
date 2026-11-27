@@ -28,3 +28,4 @@ EXPORTS
 	vx_app_tune
 	vx_app_tune_report
 	vx_app_tune_status
+	vx_app_load

@@ -95,6 +95,7 @@ int vt_imager_centre;
 #define IMC_Y 1500                                             /* (how far a piece may have moved up or down between the passes) */
 #define IMC_K 2500                                             /* (a shift unlike the last pair's counts up to this: the next object may
                                                                   be at another depth - 3D Crazy Coaster's flat cactus after its bar) */
+#define IMC_W 0.5                                              /* (a move up or down, a unit's cost: the same height first) */
 static long lmin_ (long a, long b) { return a < b ? a : b; }
 static line_t imc_r[3][IMC_N]; static int imc_nr[3];         /* (the right eye's last pass of each colour) */
 static unsigned char imc_u[3][IMC_N];                         /* (its pieces already paired in the left eye's pass now) */
@@ -142,18 +143,22 @@ static int imc_match (int nsl, int nsr, int dir, int *pm, double *p0s, double *p
 				const int m = dir > 0 ? q : nsr - 1 - q; const imc_stroke *b = &imc_sr[m];
 				if (su[m] || fabs (b->ay - a->ay) > IMC_Y || fabs (b->by - a->by) > IMC_Y) continue;
 				const double s0 = b->ax - a->ax, s1 = b->bx - a->bx, sy = 0.5 * (b->ay - a->ay + b->by - a->by);
+				const double dl = fabs (hypot (b->bx - b->ax, b->by - b->ay) - hypot (a->bx - a->ax, a->by - a->ay));   /* (its length unlike: a cost -
+				                                              3D Narrow Escape's ring side took a shorter one, 2043 less, its ends one up, one down; a near
+				                                              ring grows much between the pictures, so no rule) */
 				if (fabs (s0) > 16000 || fabs (s1) > 16000) continue;
 				{ const double ln = sqrt ((a->bx - a->ax) * (a->bx - a->ax) + (a->by - a->ay) * (a->by - a->ay));
 				  if (fabs (s1 - s0) > 0.5 * ln + 200) continue; }   /* (its ends' shifts as far apart as its length allows) */
 				const double cst = (hp ? fmin (fabs (s0 - p0) + fabs (s1 - p1) + fabs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (q - j) * 20.0 : 300.0)
-				                   + (fabs (s0) + fabs (s1)) / 20 + fabs (sy) / 2;   /* (as step 1) */
+				                   + (fabs (s0) + fabs (s1)) / 20 + fabs (sy) * IMC_W + dl;   /* (as step 1) */
 				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gy = sy; gc = cst; gq = q; }
 			}
 		if (gq >= 0) j = gq + 1;
 		pm[k] = got;
 		if (got < 0) continue;
+		tot += fabs (hypot (imc_sr[got].bx - imc_sr[got].ax, imc_sr[got].by - imc_sr[got].ay) - hypot (a->bx - a->ax, a->by - a->ay));
 		if (hp) tot += fmin (fabs (g0 - p0) + fabs (g1 - p1) + fabs (gy - py), IMC_K);
-		tot += 0.1 * (fabs (g0) + fabs (g1)) + 0.5 * fabs (gy);
+		tot += 0.1 * (fabs (g0) + fabs (g1)) + IMC_W * fabs (gy);
 		su[got] = 1; hp = 1; p0 = g0; p1 = g1; py = gy; p0s[k] = g0; p1s[k] = g1; n++;
 	}
 	*score = n * 1e7 - tot;
@@ -169,7 +174,7 @@ static void imc_step2 (line_t **LP, int nl)
 	double sc[2]; imc_match (nsl, nsr, 1, pm[0], ps0[0], ps1[0], &sc[0]); imc_match (nsl, nsr, -1, pm[1], ps0[1], ps1[1], &sc[1]);
 	const int w = sc[1] > sc[0];
 	/* (two strokes side by side keep their order in the other eye: a pair the other way round - the arch's posts each paired with
-	 *  the other's, 3D Crazy Coaster - swapped back, when that brings their shifts nearer) */
+	 *  the other's, 3D Crazy Coaster - swapped back, when that brings their shifts much nearer) */
 	for (int k1 = 0; k1 < nsl; k1++) for (int k2 = k1 + 1; k2 < nsl; k2++) {
 		const int m1 = pm[w][k1], m2 = pm[w][k2]; if (m1 < 0 || m2 < 0) continue;
 		const imc_stroke *A1 = &imc_sl[k1], *A2 = &imc_sl[k2], *B1 = &imc_sr[m1], *B2 = &imc_sr[m2];
@@ -179,7 +184,9 @@ static void imc_step2 (line_t **LP, int nl)
 		const double n10 = B2->ax - A1->ax, n11 = B2->bx - A1->bx, n20 = B1->ax - A2->ax, n21 = B1->bx - A2->bx;
 		const double l1 = sqrt ((A1->bx - A1->ax) * (A1->bx - A1->ax) + (A1->by - A1->ay) * (A1->by - A1->ay)), l2 = sqrt ((A2->bx - A2->ax) * (A2->bx - A2->ax) + (A2->by - A2->ay) * (A2->by - A2->ay));
 		if (fabs (n11 - n10) > 0.5 * l1 + 200 || fabs (n21 - n20) > 0.5 * l2 + 200) continue;
-		if (fabs (0.5 * (n10 + n11) - 0.5 * (n20 + n21)) >= fabs (0.5 * (ps0[w][k1] + ps1[w][k1]) - 0.5 * (ps0[w][k2] + ps1[w][k2]))) continue;
+		if (fabs (0.5 * (n10 + n11) - 0.5 * (n20 + n21)) >= 0.3 * fabs (0.5 * (ps0[w][k1] + ps1[w][k1]) - 0.5 * (ps0[w][k2] + ps1[w][k2]))) continue;   /* (only when that
+		                                              makes them much nearer: things at two depths side by side may change places - 3D Narrow Escape's
+		                                              bowtie in front of a ring, 45 units apart) */
 		pm[w][k1] = m2; pm[w][k2] = m1; ps0[w][k1] = n10; ps1[w][k1] = n11; ps0[w][k2] = n20; ps1[w][k2] = n21;
 	}
 	for (int k = 0; k < nsl; k++) {
@@ -224,13 +231,13 @@ static double imc_step1 (int c, int i0, int i1, int dir, int *pm, long *sh0, lon
 				/* (the cost: the shifts unlike the last pair's - an object moves whole -, then the order - the next few pieces
 				 *  as drawn cost little, the rest more -, and a little the shifts themselves - a depth's offset is small, a
 				 *  move up or down smaller) */
-				const long cst = (hp ? lmin_ (labs (s0 - ps) + labs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (long) (q - j) * 20 : 300) + labs (s0) / 10 + labs (sy) / 2;
+				const long cst = (hp ? lmin_ (labs (s0 - ps) + labs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (long) (q - j) * 20 : 300) + labs (s0) / 10 + (long) (labs (sy) * IMC_W);
 				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gy = sy; gc = cst; gq = q; }
 			}
 		if (got < 0) continue;
 		j = gq + 1;
 		if (hp) tot += lmin_ (labs (g0 - ps) + labs (gy - py), IMC_K);   /* (an object's pieces all moved alike: right pairs keep the shift) */
-		tot += 0.1 * labs (g0) + 0.5 * labs (gy);          /* (and a little for the shift itself: two objects alike at one height
+		tot += 0.1 * labs (g0) + IMC_W * labs (gy);          /* (and a little for the shift itself: two objects alike at one height
 		                                                       paired the wrong way round are as steady - but moved far; more
 		                                                       for a move up or down - text rows alike: the same row first) */
 		used[got] = 1; hp = 1; ps = g1; py = gy; pm[i - i0] = got; sh0[i - i0] = g0; sh1[i - i0] = g1; n++;
@@ -319,6 +326,19 @@ static void imc_pair (int c, int i0, int i1)
 				for (int a1 = 1; a1 < nv; a1++) for (int b1 = a1; b1 > 0 && sv[b1 - 1] > sv[b1]; b1--) { float t = sv[b1]; sv[b1] = sv[b1 - 1]; sv[b1 - 1] = t; t = sw[b1]; sw[b1] = sw[b1 - 1]; sw[b1 - 1] = t; }
 				double acc = 0; float med = nv ? sv[nv - 1] : 0; for (int q = 0; q < nv; q++) { acc += sw[q]; if (acc >= 0.5 * wt) { med = sv[q]; break; } }
 				for (int k = k0; k <= k1; k++) if (fabsf (0.5f * (imc_s0[k] + imc_s1[k]) - med) > 4000) imc_s0[k] = imc_s1[k] = med;
+			}
+			{                                               /* (a stretch of the chain off the stretches either side of it, which agree: it
+			                                                   takes theirs - 3D Narrow Escape's ring, its side paired with another ring's;
+			                                                   a rail's shift changes smoothly, no stretch stands out) */
+				static int sg0[MAXL], sg1[MAXL]; int ns = 0, a0 = k0;
+				for (int k = k0; k <= k1; k++) if (k == k1 || fabsf (imc_s1[k] - imc_s0[k + 1]) > 800) { sg0[ns] = a0; sg1[ns++] = k; a0 = k + 1; }
+				for (int q = 1; q + 1 < ns; q++) {
+					const float pe = imc_s1[sg1[q - 1]], ns0 = imc_s0[sg0[q + 1]];
+					float mid = 0; int nm = 0; for (int k = sg0[q]; k <= sg1[q]; k++) { mid += 0.5f * (imc_s0[k] + imc_s1[k]); nm++; } mid /= nm;
+					if (fabsf (pe - ns0) <= 800 && fabsf (mid - 0.5f * (pe + ns0)) > 800)
+						for (int k = sg0[q]; k <= sg1[q]; k++) { const float t0 = (float) (k - sg0[q]) / (float) (sg1[q] - sg0[q] + 1), t1 = (float) (k - sg0[q] + 1) / (float) (sg1[q] - sg0[q] + 1);
+							imc_s0[k] = pe + (ns0 - pe) * t0; imc_s1[k] = pe + (ns0 - pe) * t1; }
+				}
 			}
 			for (int k = k0; k < k1; k++) if (fabsf (imc_s1[k] - imc_s0[k + 1]) <= 400) { const float v = 0.5f * (imc_s1[k] + imc_s0[k + 1]); imc_s1[k] = imc_s0[k + 1] = v; }
 		}

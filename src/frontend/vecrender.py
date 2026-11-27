@@ -3390,9 +3390,10 @@ class GLBloomRenderer(GLRenderer):
             x = x + (u - fx) * gx; y = y + (v - fy) * gy
         return float(x[0]), float(y[0])
 
-    # the 3D Imager's filters (imager.c: the colour code of each line, an 8th column): the phosphor's white light through
-    # red, green and blue gels - the blue a little dimmer, as through a real one
-    IMAGER_RGB = {1: (1.0, 0.12, 0.10), 2: (0.15, 1.0, 0.25), 4: (0.25, 0.45, 1.0)}
+    # the 3D Imager's filters (imager.c: the colour code of each line, an 8th column): the phosphor's light through red,
+    # green and blue gels - each its own channel alone, as the phones and RetroArch (libretro_vx.c: the line's r, g or b);
+    # the tinted gels (1, 0.12, 0.10 ...) looked faded next to the iPhone (the owner, 2026-11-27)
+    IMAGER_RGB = {1: (1.0, 0.0, 0.0), 2: (0.0, 1.0, 0.0), 4: (0.0, 0.0, 1.0)}
     imager_eye = -1     # (the 3D Imager: -1 both eyes' pictures, 1 the left eye's only, 0 the right eye's - bit 8 of the
                         #  colour code: the disc's second half turn, the left eye's; Tony on Facebook, 2026-11-24)
 

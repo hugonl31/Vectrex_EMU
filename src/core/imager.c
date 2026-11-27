@@ -176,6 +176,7 @@ static const float ims_turn_env[64] = {
 static unsigned ims_seed = 22222u;
 static float ims_hist[256];                 /* (the noise's last 256 samples, for the filter) */
 static int ims_pos;
+double vt_imager_turn (void) { return ims_turn; }   /* (the motor sound's turn phase, 0..1 - EmuVR's mod plays it on the head) */
 static double im_motor_sample (void)
 {
 	const double dt = 1.0 / 44100.0;

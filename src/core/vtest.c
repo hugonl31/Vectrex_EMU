@@ -104,9 +104,20 @@ static unsigned char imc_lu[3][IMC_N];                        /* (the last pass'
 static line_t *imc_P; static int imc_np, imc_w; static unsigned char *imc_U;   /* (the partner pass in use: 0 the right eye's, 1 the left eye's last) */
 static int imc_key = -1, imc_j[2][3], imc_hp[2][3]; static long imc_ps[2][3], imc_py[2][3];   /* (the pass going on; each colour's place in its partner, the last shifts) */
 static unsigned char imc_pl[MAXL]; static float imc_s0[MAXL], imc_s1[MAXL]; static int imc_jt, imc_hpt; static long imc_pst, imc_pyt;   /* (this frame's left-eye pieces: paired, the shift found at each end) */
-static int imc_col (unsigned char rgb) { const int c = rgb & 7; return c == 1 ? 0 : c == 2 ? 1 : c == 4 ? 2 : -1; }
+/* (each eye's picture paired as one whole, all its colours together - the colour a strong preference, not a wall: the owner,
+ * 2026-11-27, "we need to merge left and right as separate entities with recognizable colors, then only color the merged image" -
+ * an object's pieces fall into the colour passes differently in the two eyes; paired colour by colour, the rest of the one pass
+ * took a wrong partner. VT_IMC_PERCOLOUR=1: colour by colour, as before - a test) */
+static int imc_whole = -1;
+#define IMC_CC 3000                                            /* (a partner of another colour: this much more) */
+static int imc_col (unsigned char rgb)
+{
+	const int c = rgb & 7, k = c == 1 ? 0 : c == 2 ? 1 : c == 4 ? 2 : -1;
+	if (imc_whole < 0) { const char *e = getenv ("VT_IMC_PERCOLOUR"); imc_whole = !(e && atoi (e)); }
+	return k < 0 ? -1 : imc_whole ? 0 : k;
+}
 /* step 2's strokes: pieces in a row that join and go on straight; their ends in order (low y first, a level one low x first) */
-typedef struct { int i0, i1; double ax, ay, bx, by; } imc_stroke;
+typedef struct { int i0, i1, cl; double ax, ay, bx, by; } imc_stroke;
 static int imc_strokes (line_t *const *P, int n, imc_stroke *S, int smax)
 {
 	int ns = 0, s0 = 0;
@@ -117,9 +128,9 @@ static int imc_strokes (line_t *const *P, int n, imc_stroke *S, int smax)
 			const double na = sqrt (ax * ax + ay * ay), nb = sqrt (bx * bx + by * by);
 			const int joined = labs (b->x0 - a->x1) <= 2 && labs (b->y0 - a->y1) <= 2;
 			const int straight = na < 1 || nb < 1 || (fabs (ax * by - ay * bx) <= 0.08 * na * nb && ax * bx + ay * by > 0);   /* (a line's start bends a little: the beam's lag) */
-			if (joined && straight) continue;
+			if (joined && straight && (a->rgb & 7) == (b->rgb & 7)) continue;   /* (a colour change ends a stroke) */
 		}
-		imc_stroke *t = &S[ns++]; t->i0 = s0; t->i1 = i - 1; s0 = i;
+		imc_stroke *t = &S[ns++]; t->i0 = s0; t->i1 = i - 1; s0 = i; t->cl = P[t->i0]->rgb & 7;
 		double x0 = (double) P[t->i0]->x0, y0 = (double) P[t->i0]->y0, x1 = (double) P[t->i1]->x1, y1 = (double) P[t->i1]->y1;
 		const int flip = fabs (y0 - y1) > 2 ? y0 > y1 : x0 > x1;
 		if (flip) { t->ax = x1; t->ay = y1; t->bx = x0; t->by = y0; } else { t->ax = x0; t->ay = y0; t->bx = x1; t->by = y1; }
@@ -150,7 +161,7 @@ static int imc_match (int nsl, int nsr, int dir, int *pm, double *p0s, double *p
 				{ const double ln = sqrt ((a->bx - a->ax) * (a->bx - a->ax) + (a->by - a->ay) * (a->by - a->ay));
 				  if (fabs (s1 - s0) > 0.5 * ln + 200) continue; }   /* (its ends' shifts as far apart as its length allows) */
 				const double cst = (hp ? fmin (fabs (s0 - p0) + fabs (s1 - p1) + fabs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (q - j) * 20.0 : 300.0)
-				                   + (fabs (s0) + fabs (s1)) / 20 + fabs (sy) * IMC_W + dl;   /* (as step 1) */
+				                   + (fabs (s0) + fabs (s1)) / 20 + fabs (sy) * IMC_W + dl + (a->cl != b->cl ? IMC_CC : 0);   /* (as step 1) */
 				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gy = sy; gc = cst; gq = q; }
 			}
 		if (gq >= 0) j = gq + 1;
@@ -158,7 +169,7 @@ static int imc_match (int nsl, int nsr, int dir, int *pm, double *p0s, double *p
 		if (got < 0) continue;
 		tot += fabs (hypot (imc_sr[got].bx - imc_sr[got].ax, imc_sr[got].by - imc_sr[got].ay) - hypot (a->bx - a->ax, a->by - a->ay));
 		if (hp) tot += fmin (fabs (g0 - p0) + fabs (g1 - p1) + fabs (gy - py), IMC_K);
-		tot += 0.1 * (fabs (g0) + fabs (g1)) + IMC_W * fabs (gy);
+		tot += 0.1 * (fabs (g0) + fabs (g1)) + IMC_W * fabs (gy) + (a->cl != imc_sr[got].cl ? IMC_CC : 0);
 		su[got] = 1; hp = 1; p0 = g0; p1 = g1; py = gy; p0s[k] = g0; p1s[k] = g1; n++;
 	}
 	*score = n * 1e7 - tot;
@@ -233,13 +244,13 @@ static double imc_step1 (int c, int i0, int i1, int dir, int *pm, long *sh0, lon
 				/* (the cost: the shifts unlike the last pair's - an object moves whole -, then the order - the next few pieces
 				 *  as drawn cost little, the rest more -, and a little the shifts themselves - a depth's offset is small, a
 				 *  move up or down smaller) */
-				const long cst = (hp ? lmin_ (labs (s0 - ps) + labs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (long) (q - j) * 20 : 300) + labs (s0) / 10 + (long) (labs (sy) * IMC_W);
+				const long cst = (hp ? lmin_ (labs (s0 - ps) + labs (sy - py), IMC_K) : 0) + (q >= j && q < j + 8 ? (long) (q - j) * 20 : 300) + labs (s0) / 10 + (long) (labs (sy) * IMC_W) + ((a->rgb & 7) != (b->rgb & 7) ? IMC_CC : 0);
 				if (got < 0 || cst < gc) { got = m; g0 = s0; g1 = s1; gy = sy; gc = cst; gq = q; }
 			}
 		if (got < 0) continue;
 		j = gq + 1;
 		if (hp) tot += lmin_ (labs (g0 - ps) + labs (gy - py), IMC_K);   /* (an object's pieces all moved alike: right pairs keep the shift) */
-		tot += 0.1 * labs (g0) + IMC_W * labs (gy);          /* (and a little for the shift itself: two objects alike at one height
+		tot += 0.1 * labs (g0) + IMC_W * labs (gy) + ((a->rgb & 7) != (imc_P[got].rgb & 7) ? IMC_CC : 0);          /* (and a little for the shift itself: two objects alike at one height
 		                                                       paired the wrong way round are as steady - but moved far; more
 		                                                       for a move up or down - text rows alike: the same row first) */
 		used[got] = 1; hp = 1; ps = g1; py = gy; pm[i - i0] = got; sh0[i - i0] = g0; sh1[i - i0] = g1; n++;
@@ -425,7 +436,14 @@ static void imc_left (int c, int i0, int i1)
 				{ float lo = 1e30f, hi = -1e30f; int unk = 0;   /* (only an object come apart: its pieces' shifts unalike, or some unknown -
 				                                                   letters alike side by side keep their pieces' own pairs) */
 				  for (int q = 0; q < nl; q++) if (lab[q] == o) { const int i = li[q]; if (!dl[i]) unk = 1; else { const float m = 0.5f * (d0[i] + d1[i]); if (m < lo) lo = m; if (m > hi) hi = m; } }
-				  if (!unk && hi - lo <= 400) continue; }
+				  if (!unk && hi - lo <= 400) {                /* (its pieces agree: moved whole by their shift weighed by length - a letter's
+				                                                   strokes by a few units apart bent it: 3D Narrow Escape's SHIPS, the owner's PC) */
+				    static float sv[MAXL], sw[MAXL]; int nv = 0; double wt = 0;
+				    for (int q = 0; q < nl; q++) if (lab[q] == o) { const int i = li[q]; sv[nv] = 0.5f * (d0[i] + d1[i]); sw[nv] = (float) (labs (last[i].x1 - last[i].x0) + labs (last[i].y1 - last[i].y0) + 1); wt += sw[nv++]; }
+				    for (int a1 = 1; a1 < nv; a1++) for (int b1 = a1; b1 > 0 && sv[b1 - 1] > sv[b1]; b1--) { float t = sv[b1]; sv[b1] = sv[b1 - 1]; sv[b1 - 1] = t; t = sw[b1]; sw[b1] = sw[b1 - 1]; sw[b1 - 1] = t; }
+				    double acc = 0; float med = nv ? sv[nv - 1] : 0; for (int q2 = 0; q2 < nv; q2++) { acc += sw[q2]; if (acc >= 0.5 * wt) { med = sv[q2]; break; } }
+				    for (int q = 0; q < nl; q++) if (lab[q] == o) { d0[li[q]] = d1[li[q]] = med; }
+				    continue; } }
 				double sr = 0, sp = 0; if (imc_obj_match (a, RO, nro, &sr) < 0) continue;
 				const double d = npo && imc_obj_match (a, PO, npo, &sp) >= 0 ? sr - 0.5 * sp : sr;
 				for (int q = 0; q < nl; q++) if (lab[q] == o) { d0[li[q]] = d1[li[q]] = (float) d; dl[li[q]] = 1; }
@@ -436,15 +454,22 @@ static void imc_left (int c, int i0, int i1)
 		                                                   ends, a gap from its line - takes the nearest placed piece's of its pass within 300
 		                                                   units: left where it was drawn it stood off its line in one picture and the next -
 		                                                   single dots flashing, the owner 2026-11-27) */
-		for (int i = i0; i <= i1; i++) {
-			if (imc_col (last[i].rgb) != c || !(last[i].rgb & 8) || dl[i]) continue;
-			const long px = (last[i].x0 + last[i].x1) / 2, py = (last[i].y0 + last[i].y1) / 2; long bd = 301; float bs = 0;
-			for (int k = i0; k <= i1; k++) {
-				if (k == i || dl[k] != 1 || imc_col (last[k].rgb) != c || !(last[k].rgb & 8)) continue;
-				const long a0 = labs (last[k].x0 - px) + labs (last[k].y0 - py), a1 = labs (last[k].x1 - px) + labs (last[k].y1 - py);
-				if (a0 < bd) { bd = a0; bs = d0[k]; } if (a1 < bd) { bd = a1; bs = d1[k]; }
+		/* (passed on piece by piece - a line's tail cut by the frame's end, a dozen pieces with no partner, took it from the joined
+		 *  piece before it, that one from the one before: one step reached only the first; the ends' nearest distance, not the middle's) */
+		for (int changed = 1, it = 0; changed && it < 64; it++) {
+			changed = 0;
+			for (int i = i0; i <= i1; i++) {
+				if (imc_col (last[i].rgb) != c || !(last[i].rgb & 8) || dl[i]) continue;
+				const long ex[2] = { last[i].x0, last[i].x1 }, ey[2] = { last[i].y0, last[i].y1 }; long bd = 301; float bs = 0;
+				for (int k = i0; k <= i1; k++) {
+					if (k == i || !dl[k] || imc_col (last[k].rgb) != c || !(last[k].rgb & 8)) continue;
+					for (int u = 0; u < 2; u++) {
+						const long a0_ = labs (last[k].x0 - ex[u]) + labs (last[k].y0 - ey[u]), a1_ = labs (last[k].x1 - ex[u]) + labs (last[k].y1 - ey[u]);
+						if (a0_ < bd) { bd = a0_; bs = d0[k]; } if (a1_ < bd) { bd = a1_; bs = d1[k]; }
+					}
+				}
+				if (bd <= 300) { d0[i] = d1[i] = bs; dl[i] = 2; changed = 1; }
 			}
-			if (bd <= 300) { d0[i] = d1[i] = bs; dl[i] = 2; }   /* (2: taken - not a source for the others) */
 		}
 		for (int i = i0; i <= i1; i++) if (dl[i] == 2) dl[i] = 1;
 	}

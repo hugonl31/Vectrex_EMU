@@ -138,7 +138,7 @@ static int imc_match (int nsl, int nsr, int dir, int *pm, double *p0s, double *p
 	int j = 0, hp = 0, n = 0; double p0 = 0, p1 = 0, py = 0, tot = 0;
 	for (int k = 0; k < nsl; k++) {
 		const imc_stroke *a = &imc_sl[k]; int got = -1, gq = -1; double g0 = 0, g1 = 0, gy = 0, gc = 0;
-		if (fabs (a->bx - a->ax) + fabs (a->by - a->ay) < 16) { pm[k] = -1; continue; }   /* (a dot: its neighbours' shift) */
+		if (fabs (a->bx - a->ax) + fabs (a->by - a->ay) < 48) { pm[k] = -1; continue; }   /* (a dot or a line's slow tail: its neighbours' shift) */
 			for (int q = 0; q < nsr; q++) {
 				const int m = dir > 0 ? q : nsr - 1 - q; const imc_stroke *b = &imc_sr[m];
 				if (su[m] || fabs (b->ay - a->ay) > IMC_Y || fabs (b->by - a->by) > IMC_Y) continue;
@@ -218,7 +218,9 @@ static double imc_step1 (int c, int i0, int i1, int dir, int *pm, long *sh0, lon
 		const line_t *a = &last[i];
 		if (imc_col (a->rgb) != c || !(a->rgb & 8)) continue;
 		const long adx = a->x1 - a->x0, ady = a->y1 - a->y0;
-		if (labs (adx) + labs (ady) < 16) continue;         /* (a dot has no shape to know its partner by: it takes its neighbours' shift) */
+		if (labs (adx) + labs (ady) < 48) continue;         /* (a dot has no shape to know its partner by: it takes its neighbours' shift - up
+		                                                       to 48 units: a line's slow last pieces, 8 x 8, took any small piece near and stood
+		                                                       off its line - single dots flashing, the owner 2026-11-27) */
 		int got = -1, gq = -1; long g0 = 0, g1 = 0, gy = 0, gc = 0;
 			for (int q = 0; q < nr; q++) {
 				const int m = dir > 0 ? q : nr - 1 - q; const line_t *b = &imc_P[m];
@@ -429,6 +431,22 @@ static void imc_left (int c, int i0, int i1)
 				for (int q = 0; q < nl; q++) if (lab[q] == o) { d0[li[q]] = d1[li[q]] = (float) d; dl[li[q]] = 1; }
 			}
 		}
+	}
+	{                                                   /* (a piece left without a shift - a dot, the beam at rest where a line starts or
+		                                                   ends, a gap from its line - takes the nearest placed piece's of its pass within 300
+		                                                   units: left where it was drawn it stood off its line in one picture and the next -
+		                                                   single dots flashing, the owner 2026-11-27) */
+		for (int i = i0; i <= i1; i++) {
+			if (imc_col (last[i].rgb) != c || !(last[i].rgb & 8) || dl[i]) continue;
+			const long px = (last[i].x0 + last[i].x1) / 2, py = (last[i].y0 + last[i].y1) / 2; long bd = 301; float bs = 0;
+			for (int k = i0; k <= i1; k++) {
+				if (k == i || dl[k] != 1 || imc_col (last[k].rgb) != c || !(last[k].rgb & 8)) continue;
+				const long a0 = labs (last[k].x0 - px) + labs (last[k].y0 - py), a1 = labs (last[k].x1 - px) + labs (last[k].y1 - py);
+				if (a0 < bd) { bd = a0; bs = d0[k]; } if (a1 < bd) { bd = a1; bs = d1[k]; }
+			}
+			if (bd <= 300) { d0[i] = d1[i] = bs; dl[i] = 2; }   /* (2: taken - not a source for the others) */
+		}
+		for (int i = i0; i <= i1; i++) if (dl[i] == 2) dl[i] = 1;
 	}
 	if (imc_ndone) {                                     /* (a small object touching another colour's placed piece: that piece's shift there) */
 		static const line_t *LQ[MAXL]; static int li[MAXL], lab[MAXL]; static imc_obj LO[MAXL]; int nl = 0;

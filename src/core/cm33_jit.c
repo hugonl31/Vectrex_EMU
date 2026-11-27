@@ -296,7 +296,7 @@ static void x_xram_st (int n) { if (n == 2) b1 (0x66); b1 (0x41); b1 (n == 1 ? 0
  * slow path */
 static void x_xram_check (uint32_t ip, uint32_t next, const di_t *d, int n)
 {
-	x_rr (0x89, RDX, RCX); x_shi (5, RDX, 24); x_ri (4, RDX, 0xF1); x_ri (7, RDX, 0x11); sl_add (x_jcc (C_NE), ip, next, d);
+	x_rr (0x89, RDX, RCX); x_shi (5, RDX, 24); x_ri (4, RDX, 0xF9); x_ri (7, RDX, 0x11); sl_add (x_jcc (C_NE), ip, next, d);   /* (0x11 / 13 / 15 / 17 - not 0x19 / 1b, the cache's maintenance: rp2350.c) */
 	x_rr (0x89, RDX, RCX); x_ri (4, RDX, 0xffffff); x_ri (7, RDX, mj_xram_size - (uint32_t) n); sl_add (x_jcc (C_A), ip, next, d);
 }
 static void x_call (void *fn) { b1 (0x48); b1 (0xB8); q8 ((uint64_t) (uintptr_t) fn); b1 (0xFF); b1 (0xD0); }
@@ -978,7 +978,7 @@ static int bcc_cond (hfn f, const di_t *d)
 static uint8_t *a_ram_range (uint32_t n) { a_movw (16, mj_ram_base); a_rrr (A_SUB, 11, 10, 16); a_cmpi (11, mj_ram_size - n); return a_bcc (A_HI); }
 static void a_xram_check (uint32_t ip, uint32_t next, const di_t *d, int n)
 {
-	a_lsr (11, 10, 24); a_ri (A_AND, 11, 11, 0xF1); a_cmpi (11, 0x11); sl_add (a_bcc (A_NE), ip, next, d);
+	a_lsr (11, 10, 24); a_ri (A_AND, 11, 11, 0xF9); a_cmpi (11, 0x11); sl_add (a_bcc (A_NE), ip, next, d);   /* (not 0x19 / 1b: x_xram_check) */
 	a_ri (A_AND, 11, 10, 0xffffff); a_cmpi (11, mj_xram_size - (uint32_t) n); sl_add (a_bcc (A_HI), ip, next, d);
 }
 static void a_hash (int addr_reg)                                            /* w12 = (w12 ^ addr) * K + w9 */

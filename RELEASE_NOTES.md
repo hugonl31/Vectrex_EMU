@@ -3,6 +3,13 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.9.6
+
+* UVMC2: Dragon's Lair and Mach 3 (Nigel Harrison's ports) run. Dragon's Lair drew garbage lines: the cartridge's chip
+  wrote zeros into its extra memory where the game only cleared its cache, so every room it loaded was damaged. Mach 3
+  stood still after its DISC INITIALIZATION page: the emulator skipped ahead through a loop of the game and missed where
+  it ends. The other UVMC2 games give the same pictures as before, at the same speed.
+
 ## v1.9.5
 
 * Tube > Look Medium and Bright lift only the lines now: the afterglow and the glass's glow stay as in the Vectrex look, so

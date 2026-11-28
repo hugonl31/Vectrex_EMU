@@ -29,6 +29,13 @@ static double im_a1 = 0.1631, im_a2 = 0.3305, im_a2b = 0.3305;   /* (the sectors
  * no real disc measured */
 #define IM_NARROW_A2 0.3396
 #define IM_NARROW_A2B 0.3591
+/* 3D Mine Storm's disc the same way (the owner, 2026-11-28: red mines with a green wall, green mines turning red): logged 2.5
+ * minutes (23.18 turns a second, the game's own speed, its motor ~33 % on) - the right eye draws its red objects and then its mines
+ * at MAME's red -> green edge (0.2086: 9.00 ms) to within 0.01 ms: 8.99 ms. The left eye draws its mines straight after its red
+ * objects, from 8.1 ms on, and its red mines (6 % of the turns) run to 10.8 ms - no edge holds both; the owner's choice 8.2 ms:
+ * of 2.5 minutes' lines 1130 of red mines green and 684 of green mines red, against 24 and 62481 at 9.00 ms */
+#define IM_MINE_A2 0.2084
+#define IM_MINE_A2B 0.1901
 static int im_mine;                         /* (3D Mine Storm's colour order: blue, red, green) */
 static double im_freq, im_phase;            /* (turns a second; the angle as a fraction of a turn) */
 static int im_on;                           /* (the motor powered: port A bit 6 low) */
@@ -47,7 +54,7 @@ static void im_init (void)
 	const char *z = getenv ("VT_IMAGER");
 	vt_imager = z && *z && strcmp (z, "0") != 0;
 	im_mine = 0; im_a1 = 0.1631; im_a2 = im_a2b = 0.3305;
-	if (z && !strcmp (z, "mine")) { im_mine = 1; im_a1 = 0.1692; im_a2 = im_a2b = 0.2086; }
+	if (z && !strcmp (z, "mine")) { im_mine = 1; im_a1 = 0.1692; im_a2 = IM_MINE_A2; im_a2b = IM_MINE_A2B; }
 	else if (z && !strcmp (z, "narrow")) { im_a2 = IM_NARROW_A2; im_a2b = IM_NARROW_A2B; }
 	else if (z && !strcmp (z, "1")) { im_a1 = 1.0 / 6.0; im_a2 = im_a2b = 1.0 / 3.0; }
 	im_freq = 0.0; im_phase = 0.0; im_on = 0;

@@ -22,6 +22,10 @@
 int vt_imager;                              /* the goggles on port 2 */
 unsigned char vt_line_rgb;                  /* the line being added: its colour (0: no goggles) */
 static double im_a1 = 0.1631, im_a2 = 0.3305;   /* (the sectors' starts in each half turn) */
+#define IM_NARROW_A2 0.3396                 /* (3D Narrow Escape's disc: its green a little wider than MAME's 0.3305 - the owner, 2026-11-28, a
+                                             * far wall's corner red in the left eye: the game draws that eye's green late, at 26.05 turns a
+                                             * second its last walls ended 0 to 0.02 ms before red came round, now 0.35 ms; the right eye's
+                                             * red ship still begins after it (0.49 ms after MAME's edge). A trial: no real disc measured) */
 static int im_mine;                         /* (3D Mine Storm's colour order: blue, red, green) */
 static double im_freq, im_phase;            /* (turns a second; the angle as a fraction of a turn) */
 static int im_on;                           /* (the motor powered: port A bit 6 low) */
@@ -41,6 +45,7 @@ static void im_init (void)
 	vt_imager = z && *z && strcmp (z, "0") != 0;
 	im_mine = 0; im_a1 = 0.1631; im_a2 = 0.3305;
 	if (z && !strcmp (z, "mine")) { im_mine = 1; im_a1 = 0.1692; im_a2 = 0.2086; }
+	else if (z && !strcmp (z, "narrow")) im_a2 = IM_NARROW_A2;
 	else if (z && !strcmp (z, "1")) { im_a1 = 1.0 / 6.0; im_a2 = 1.0 / 3.0; }
 	im_freq = 0.0; im_phase = 0.0; im_on = 0;
 	im_t = alg_cycles; im_due = ~0ull; im_pin_until = 0;

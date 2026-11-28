@@ -70,12 +70,12 @@ typedef struct { long x0, y0, x1, y1; unsigned char c, rgb; unsigned cyc, t0; } 
 #define MAXL 40000
 static line_t cur[MAXL], last[MAXL];
 /* (the 3D Imager's centre view: the strokes as the game draws them - vecx.c id_step - and each piece's two moments) */
-typedef struct { long x0, y0, x1, y1; unsigned long long t0, t1; unsigned char c, rgb; unsigned run; } iline_t;
+typedef struct { long x0, y0, x1, y1; unsigned long long t0, t1; unsigned char c, rgb; unsigned run, tag; } iline_t;
 static iline_t icur[MAXL]; static int nicur;                 /* (left out of the run-ahead saves - live.c: a picture only, megabytes) */
 unsigned long long vt_line_ta, vt_line_tb; static unsigned long long cta[MAXL], ctb[MAXL];
-void vt_iline (long x0, long y0, long x1, long y1, unsigned char c, unsigned char rgb, unsigned long long t0, unsigned long long t1, unsigned run)
+void vt_iline (long x0, long y0, long x1, long y1, unsigned char c, unsigned char rgb, unsigned long long t0, unsigned long long t1, unsigned run, unsigned tag)
 {
-	if (nicur < MAXL) { iline_t *l = &icur[nicur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->rgb = rgb; l->t0 = t0; l->t1 = t1; l->run = run; }
+	if (nicur < MAXL) { iline_t *l = &icur[nicur++]; l->x0 = x0; l->y0 = y0; l->x1 = x1; l->y1 = y1; l->c = c; l->rgb = rgb; l->t0 = t0; l->t1 = t1; l->run = run; l->tag = tag; }
 }
 static int ncur, nlast;
 
@@ -636,6 +636,234 @@ static float imc_shift_at (const float *s0, const float *s1, int ni, unsigned lo
 	if (db < da && db <= IMC_GAP) return s0[k + 1];
 	imc_nofit++; return 0.0f;
 }
+/* the centre view, take 13 (the owner, 2026-11-28: the shots in 3D Narrow Escape did not fly where the ship aimed): the eyes paired by
+ * the game's own drawing, not by the strokes' shapes. A 3D Imager game draws both eyes with the same code in the same order - each
+ * stroke's tag (the 6809's PC and stack pointer as it began) is the same in both - but each in its own perspective: a near object is
+ * another shape in each eye (3D Narrow Escape's bowtie, its shots), so pairing by shape failed there. Logged (both games, 20 s each):
+ * 98 % of 3D Narrow Escape's strokes line up by their tags alone, 99.3 % of them at the same height; its shots 97 %.
+ * Each pass is cut into its objects (the beam lit without a break); the objects are lined up between the eyes by their tags - the same
+ * tags in the same order - their size and height (an alignment: an object only in one eye is left out, 3D Crazy Coaster's arch coming
+ * into the picture); a matched object's strokes pair one by one, and each goes halfway to its partner, sideways and up or down: the
+ * picture between the two eyes' pictures, each object whole (the right eye's moment half a turn before - the centre a quarter turn
+ * behind; moving the right eye's strokes on to the left eye's moment, as takes 4 to 12, misjudged an object's move now and then and
+ * tore it apart). The partner comes from the right eye's latest pass of that colour that has one: a game may draw its picture over
+ * several turns (3D Crazy Coaster: its score in one turn's blue, its horizon in another's). An object with no partner takes the shift
+ * of the nearest that has one. Each eye's picture is one pass, all its colours together (the owner, 2026-11-28: a wall red, off the green
+ * walls - the game late, the wall's end drawn as the red filter came round: paired colour by colour it found no partner in the right
+ * eye's red; the drawing's order knows no colours - the pictures merged first, the colour after). VT_IMC_TAKE12=1: the strokes paired by their shapes, as in take 12 (a test) */
+#define IMT_N 4096                                             /* (a pass's strokes at most) */
+#define IMT_O 600                                              /* (its objects lined up at most) */
+#define IMT_H 4                                                /* (the right eye's passes of a colour kept) */
+#define IMT_G 6000.0f                                          /* (an object left out of the alignment: its cost) */
+#define IMT_CMAX 9000.0f                                       /* (two objects this unlike are never a pair) */
+typedef struct { long x0, y0, x1, y1; unsigned tag, run; int k; float s0, s1, v0, v1; unsigned char pm; } imt_s;   /* (pm: it had a partner) */   /* (k: the stroke in this frame's list,
+                                                                  else -1; s: its shift sideways, v: up or down) */
+typedef struct { int n; imt_s s[IMT_N]; } imt_pass;
+typedef struct { int a, n; long x0, y0, x1, y1; unsigned h; } imt_obj;
+static float imt_v0[MAXL], imt_v1[MAXL];                       /* (the frame's strokes' up/down shifts) */
+static imt_pass imt_R[3][IMT_H], imt_Lp[3], imt_acc; static int imt_rh[3], imt_rn[3], imt_key = -1;   /* (each colour's last right passes - a
+                                                                  ring; its last left pass, with the shifts it got; the pass going on) */
+static imt_obj imt_oL[IMT_O], imt_oR[IMT_O], imt_oP[IMT_O]; static int imt_mR[IMT_O], imt_mP[IMT_O]; static const imt_s *imt_pb[IMT_O];
+static float imt_best[IMT_O], imt_dprev[IMT_O]; static unsigned char imt_hasprev[IMT_O];
+#define IMT_CMAXP 40000.0f                                     /* (the left eye's last pass: its objects may have moved and grown a lot) */
+#define IMT_KT 0.5f                                            /* (a partner whose shift is unlike the object's last: this much a unit) */
+#define IMT_JUMP 3000.0f                                       /* (a partner that moves the object this much more than a turn ago: none) */
+#define IMT_KH 500.0f                                          /* (a partner from an older pass: this much a pass) */
+#define IMT_KD 0.15f                                           /* (a partner farther sideways: this much a unit of its shift - two the same
+                                                                  but where: 3D Crazy Coaster's score, drawn by one routine) */
+static float imt_dp[(IMT_O + 1) * (IMT_O + 1)]; static unsigned char imt_tb[(IMT_O + 1) * (IMT_O + 1)];
+static int imt_objects (const imt_pass *p, imt_obj *o)
+{
+	int n = 0;
+	for (int a = 0, b; a < p->n && n < IMT_O; a = b) {
+		imt_obj *q = &o[n++]; q->a = a; q->h = 2166136261u; q->x0 = q->x1 = p->s[a].x0; q->y0 = q->y1 = p->s[a].y0;
+		for (b = a; b < p->n && p->s[b].run == p->s[a].run; b++) { const imt_s *s = &p->s[b];
+			q->h = (q->h ^ s->tag) * 16777619u;
+			if (s->x0 < q->x0) q->x0 = s->x0; if (s->x1 < q->x0) q->x0 = s->x1; if (s->x0 > q->x1) q->x1 = s->x0; if (s->x1 > q->x1) q->x1 = s->x1;
+			if (s->y0 < q->y0) q->y0 = s->y0; if (s->y1 < q->y0) q->y0 = s->y1; if (s->y0 > q->y1) q->y1 = s->y0; if (s->y1 > q->y1) q->y1 = s->y1; }
+		q->n = b - a;
+	}
+	return n;
+}
+static int imt_samex;                                          /* (imt_align: the same eye - where sideways counts too) */
+static float imt_cost (const imt_obj *a, const imt_obj *b)    /* (how unlike: their size, their height - between the eyes not where sideways:
+                                                                  that is the depth) */
+{
+	if (a->h != b->h || a->n != b->n) return -1.0f;
+	const float w = (float) labs ((a->x1 - a->x0) - (b->x1 - b->x0)), h = (float) labs ((a->y1 - a->y0) - (b->y1 - b->y0));
+	const float cy = (float) labs ((a->y0 + a->y1) - (b->y0 + b->y1)) / 2, cx = imt_samex ? (float) labs ((a->x0 + a->x1) - (b->x0 + b->x1)) / 2 : 0.0f;
+	const float c = h + 0.5f * w + 0.5f * cy + 0.5f * cx;
+	return c > (imt_samex ? IMT_CMAXP : IMT_CMAX) ? -1.0f : c;
+}
+/* the objects of A lined up with those of B in order (m[i]: B's partner of A's object i, or -1) - the cheapest: a pair costs how unlike
+ * they are, an object left out IMT_G */
+static int imt_prefix;                                         /* (imt_align: A is only begun - B's objects after its last partner left out free) */
+static void imt_align (const imt_obj *A, int na, const imt_obj *B, int nb, int *m)
+{
+	const int W = nb + 1;
+	for (int i = 0; i < na; i++) m[i] = -1;
+	if (!na || !nb) return;
+	for (int i = 0; i <= na; i++) for (int j = 0; j <= nb; j++) {
+		float best; unsigned char t;
+		if (!i && !j) { imt_dp[0] = 0; imt_tb[0] = 0; continue; }
+		if (!i) { best = imt_dp[j - 1] + IMT_G; t = 2; }
+		else if (!j) { best = imt_dp[(i - 1) * W] + IMT_G; t = 1; }
+		else {
+			best = imt_dp[(i - 1) * W + j] + IMT_G; t = 1;
+			const float b2 = imt_dp[i * W + j - 1] + IMT_G; if (b2 < best) { best = b2; t = 2; }
+			const float c = imt_cost (&A[i - 1], &B[j - 1]);
+			if (c >= 0) { const float b3 = imt_dp[(i - 1) * W + j - 1] + c; if (b3 <= best) { best = b3; t = 3; } }
+		}
+		imt_dp[i * W + j] = best; imt_tb[i * W + j] = t;
+	}
+	int jend = nb;
+	if (imt_prefix) for (int j = 0; j < nb; j++) if (imt_dp[na * W + j] < imt_dp[na * W + jend]) jend = j;   /* (the
+	                                                       end of B's left-out tail free: as if A's tail were still to come) */
+	for (int i = na, j = jend; i > 0 || j > 0; ) {
+		const unsigned char t = imt_tb[i * W + j];
+		if (t == 3) { m[i - 1] = j - 1; i--; j--; } else if (t == 1) i--; else j--;
+	}
+}
+/* a left pass (whole, or as far as drawn): each stroke's shift */
+static void imt_unpaired (imt_pass *L, int nl);
+static void imt_left (int c, imt_pass *L, int partial)
+{
+	const int nl = imt_objects (L, imt_oL);
+	{ const imt_pass *P = &imt_Lp[c]; const int np = imt_objects (P, imt_oP);   /* (each object's shift a turn ago: the left eye's last pass) */
+	  imt_samex = 1; imt_align (imt_oL, nl, imt_oP, np, imt_mP); imt_samex = 0;
+	  for (int i = 0; i < nl; i++) { imt_hasprev[i] = 0; imt_pb[i] = NULL; imt_best[i] = 1e30f;
+		if (imt_mP[i] < 0) continue;
+		const imt_obj *g = &imt_oP[imt_mP[i]]; double t = 0; int ok = 0;
+		for (int q = 0; q < g->n; q++) { const imt_s *w = &P->s[g->a + q]; t += w->s0 + w->s1; if (w->pm) ok = 1; }
+		if (ok) { imt_dprev[i] = (float) (t / (2 * g->n)); imt_hasprev[i] = 1; } } }
+	/* (each kept right pass lined up whole; the pass that pairs best is the partner of all it can pair - one moment, each object whole and
+	 *  with its neighbours: partners taken object by object from several passes put a wall's line from another moment; only an object that
+	 *  pass has no partner for takes one from the next best. A partner is: alike, its shift as a turn ago, a recent pass) */
+	static const imt_s *cand[IMT_H][IMT_O]; static float csc[IMT_H][IMT_O]; float tot[IMT_H]; int nh = 0;
+	for (int hh = 0; hh < IMT_H && hh < imt_rn[c]; hh++, nh++) {
+		const imt_pass *R = &imt_R[c][(imt_rh[c] + IMT_H - 1 - hh) % IMT_H];
+		const int nr = imt_objects (R, imt_oR);
+		imt_prefix = partial; imt_align (imt_oL, nl, imt_oR, nr, imt_mR); imt_prefix = 0;
+		if (partial && nl > 0 && imt_mR[nl - 1] < 0) {        /* (the last object only begun: the right eye's next after its neighbour's partner,
+			                                                       if it begins with the same strokes) */
+			int j = 0; for (int i = nl - 2; i >= 0; i--) if (imt_mR[i] >= 0) { j = imt_mR[i] + 1; break; }
+			const imt_obj *o = &imt_oL[nl - 1];
+			if (j < nr && imt_oR[j].n >= o->n) { int same = 1;
+				for (int q = 0; q < o->n && same; q++) if (L->s[o->a + q].tag != R->s[imt_oR[j].a + q].tag) same = 0;
+				if (same) imt_mR[nl - 1] = j; } }
+		tot[hh] = IMT_KH * (float) hh;
+		for (int i = 0; i < nl; i++) { cand[hh][i] = NULL; csc[hh][i] = 0.0f;
+			if (imt_mR[i] >= 0) {
+				const imt_obj *o = &imt_oL[i], *r = &imt_oR[imt_mR[i]];
+				const float d = (float) ((r->x0 + r->x1) - (o->x0 + o->x1)) / 4;   /* (its shift: half the way between their middles) */
+				if (!(imt_hasprev[i] && fabsf (d - imt_dprev[i]) > IMT_JUMP)) {   /* (a jump from its shift a turn ago: not its partner - 3D Crazy
+				                                                       Coaster's score: a row of 260 took one of 2-man's, in no kept pass) */
+					cand[hh][i] = &R->s[r->a];
+					csc[hh][i] = imt_cost (o, r) + IMT_KD * fabsf (d) + (imt_hasprev[i] ? IMT_KT * fabsf (d - imt_dprev[i]) : 0.0f); } }
+			tot[hh] += cand[hh][i] ? csc[hh][i] * (float) imt_oL[i].n : IMT_G * (float) imt_oL[i].n; }
+	}
+	for (int k = 0; k < nh; k++) {                             /* (the passes best first: each object's partner from the first that has one) */
+		int bh = -1; for (int hh = 0; hh < nh; hh++) if (tot[hh] >= 0 && (bh < 0 || tot[hh] < tot[bh])) bh = hh;
+		if (bh < 0) break;
+		for (int i = 0; i < nl; i++) if (!imt_pb[i] && cand[bh][i]) imt_pb[i] = cand[bh][i];
+		tot[bh] = -1.0f;
+	}
+	for (int i = 0; i < nl; i++) {
+		const imt_obj *o = &imt_oL[i]; const imt_s *b = imt_pb[i];
+		if (!b) continue;
+		for (int q = 0; q < o->n; q++) L->s[o->a + q].pm = 1;
+		/* (drawn the other way in the other eye - 3D Crazy Coaster's horizon, left to right in one eye, right to left in the other: its
+		 *  strokes pair back to front, each one's start with the other's end - else the two ends met halfway, a dash) */
+		double fw = 0.0, rv = 0.0;
+		for (int q = 0; q < o->n; q++) { const imt_s *a = &L->s[o->a + q], *f = &b[q], *r = &b[o->n - 1 - q];
+			const double ax = (double) (a->x1 - a->x0), ay = (double) (a->y1 - a->y0);
+			fw += ax * (double) (f->x1 - f->x0) + ay * (double) (f->y1 - f->y0); rv -= ax * (double) (r->x1 - r->x0) + ay * (double) (r->y1 - r->y0); }
+		const int back = rv > fw;
+		for (int q = 0; q < o->n; q++) { imt_s *a = &L->s[o->a + q];
+			if (!back) { const imt_s *f = &b[q]; a->s0 = (float) (f->x0 - a->x0) / 2; a->s1 = (float) (f->x1 - a->x1) / 2; a->v0 = (float) (f->y0 - a->y0) / 2; a->v1 = (float) (f->y1 - a->y1) / 2; }
+			else { const imt_s *r = &b[o->n - 1 - q]; a->s0 = (float) (r->x1 - a->x0) / 2; a->s1 = (float) (r->x0 - a->x1) / 2; a->v0 = (float) (r->y1 - a->y0) / 2; a->v1 = (float) (r->y0 - a->y1) / 2; } }
+	}
+	imt_unpaired (L, nl);
+}
+/* the left eye's objects that touch stay together (the owner's walls: a line clipped at the screen's edge - in the other eye another
+ * number of strokes, no partner - stood off its corner): an object with no partner takes, at each end that meets another object's, that
+ * one's shift there, its other ends the mean of those (along a chain: a wall's lines one from the next); one that meets none, the nearest
+ * object's. Then two that meet and part when merged: the one most of whose neighbours part from it, while one of them agrees with others,
+ * is moved the same way, from the neighbours it meets */
+#define IMT_TOUCH 64                                           /* (ends this near: they meet) */
+#define IMT_PART 300.0f                                        /* (shifts this unlike: they part) */
+typedef struct { int i, j; unsigned char ei, ej; } imt_ct;    /* (strokes i and j of two objects meet: i's end ei, j's end ej) */
+static imt_ct imt_cts[8192]; static int imt_nc, imt_oo[IMT_N], imt_ag[IMT_O], imt_ds[IMT_O]; static unsigned char imt_known[IMT_O], imt_em[IMT_N];
+static void imt_contacts (const imt_pass *L, int nl)
+{
+	for (int i = 0; i < nl; i++) for (int q = 0; q < imt_oL[i].n; q++) imt_oo[imt_oL[i].a + q] = i;
+	imt_nc = 0;
+	for (int i = 0; i < L->n && imt_nc < 8192; i++) for (int j = i + 1; j < L->n && imt_nc < 8192; j++) {
+		const imt_s *a = &L->s[i], *b = &L->s[j]; if (imt_oo[i] == imt_oo[j]) continue;
+		for (int e = 0; e < 4; e++) {
+			const long ax = e & 1 ? a->x1 : a->x0, ay = e & 1 ? a->y1 : a->y0, bx = e & 2 ? b->x1 : b->x0, by = e & 2 ? b->y1 : b->y0;
+			if (labs (ax - bx) + labs (ay - by) > IMT_TOUCH) continue;
+			imt_ct *c = &imt_cts[imt_nc++]; c->i = i; c->j = j; c->ei = (unsigned char) (e & 1); c->ej = (unsigned char) (e >> 1); } }
+}
+static void imt_shget (const imt_pass *L, int i, int e, float *x, float *y) { const imt_s *w = &L->s[i]; *x = e ? w->s1 : w->s0; *y = e ? w->v1 : w->v0; }
+static void imt_shset (imt_pass *L, int i, int e, float x, float y) { imt_s *w = &L->s[i]; if (e) { w->s1 = x; w->v1 = y; } else { w->s0 = x; w->v0 = y; } }
+static int imt_from_touch (imt_pass *L, int o)                 /* (object o's shifts from the known objects it meets - 0: it meets none) */
+{
+	const imt_obj *g = &imt_oL[o]; double sx = 0, sy = 0; int n = 0;
+	for (int q = 0; q < g->n; q++) imt_em[g->a + q] = 0;
+	for (int k = 0; k < imt_nc; k++) { const imt_ct *c = &imt_cts[k]; int mine, me, oth, oe;
+		if (imt_oo[c->i] == o && imt_known[imt_oo[c->j]]) { mine = c->i; me = c->ei; oth = c->j; oe = c->ej; }
+		else if (imt_oo[c->j] == o && imt_known[imt_oo[c->i]]) { mine = c->j; me = c->ej; oth = c->i; oe = c->ei; }
+		else continue;
+		float x, y; imt_shget (L, oth, oe, &x, &y); imt_shset (L, mine, me, x, y); imt_em[mine] |= (unsigned char) (1 << me); sx += x; sy += y; n++; }
+	if (!n) return 0;
+	for (int q = 0; q < g->n; q++) for (int e = 0; e < 2; e++) if (!(imt_em[g->a + q] & (1 << e))) imt_shset (L, g->a + q, e, (float) (sx / n), (float) (sy / n));
+	return 1;
+}
+static void imt_unpaired (imt_pass *L, int nl)
+{
+	imt_contacts (L, nl);
+	int any = 0;
+	for (int o = 0; o < nl; o++) { imt_known[o] = imt_pb[o] != NULL; if (imt_known[o]) any = 1; }
+	for (int it = 0; it < nl; it++) {                          /* (along the chains: each round, those that meet a known one) */
+		int ch = 0;
+		for (int o = 0; o < nl; o++) if (!imt_known[o] && imt_from_touch (L, o)) { imt_known[o] = 2; ch = 1; }
+		for (int o = 0; o < nl; o++) if (imt_known[o] == 2) imt_known[o] = 1;
+		if (!ch) break;
+	}
+	for (int i = 0; i < nl; i++) {                             /* (meets none: the nearest object's shift that has one) */
+		const imt_obj *o = &imt_oL[i];
+		if (imt_known[i]) continue;
+		float sh = 0.0f, sv = 0.0f;
+		if (any) { double bd = 1e30; int bi = -1;
+			for (int k = 0; k < nl; k++) if (imt_pb[k]) { const imt_obj *g = &imt_oL[k];
+				const double dx = (double) ((g->x0 + g->x1) - (o->x0 + o->x1)) / 2, dy = (double) ((g->y0 + g->y1) - (o->y0 + o->y1)) / 2, d = dx * dx + dy * dy;
+				if (d < bd) { bd = d; bi = k; } }
+			const imt_obj *g = &imt_oL[bi]; double t = 0, u = 0;
+			for (int q = 0; q < g->n; q++) { t += L->s[g->a + q].s0 + L->s[g->a + q].s1; u += L->s[g->a + q].v0 + L->s[g->a + q].v1; }
+			sh = (float) (t / (2 * g->n)); sv = (float) (u / (2 * g->n)); }
+		for (int q = 0; q < o->n; q++) { L->s[o->a + q].s0 = L->s[o->a + q].s1 = sh; L->s[o->a + q].v0 = L->s[o->a + q].v1 = sv; }
+	}
+	for (int it = 0; it < 2; it++) {                           /* (two that meet and part: the odd one out moved from its neighbours) */
+		for (int o = 0; o < nl; o++) imt_ag[o] = imt_ds[o] = 0;
+		for (int k = 0; k < imt_nc; k++) { const imt_ct *c = &imt_cts[k]; float ax, ay, bx, by;
+			imt_shget (L, c->i, c->ei, &ax, &ay); imt_shget (L, c->j, c->ej, &bx, &by);
+			if (fabsf (ax - bx) + fabsf (ay - by) > IMT_PART) { imt_ds[imt_oo[c->i]]++; imt_ds[imt_oo[c->j]]++; } else { imt_ag[imt_oo[c->i]]++; imt_ag[imt_oo[c->j]]++; } }
+		int ch = 0;
+		for (int o = 0; o < nl; o++) imt_known[o] = !(imt_ds[o] > imt_ag[o]) && imt_ag[o] > 0;   /* (the trusted: agree with others) */
+		for (int o = 0; o < nl; o++) if (imt_ds[o] > imt_ag[o] && imt_from_touch (L, o)) ch = 1;
+		if (!ch) break;
+	}
+}
+static void imt_end (void)                                     /* (the pass going on has ended) */
+{
+	if (imt_key < 0 || !imt_acc.n) return;
+	const int c = 0;                                           /* (one pass an eye: all its colours - see imt_left's note) */
+	if (imt_key & 8) { imt_left (c, &imt_acc, 0); imt_Lp[c].n = imt_acc.n; memcpy (imt_Lp[c].s, imt_acc.s, sizeof (imt_s) * (size_t) imt_acc.n); return; }
+	imt_pass *dst = &imt_R[c][imt_rh[c]]; imt_rh[c] = (imt_rh[c] + 1) % IMT_H; if (imt_rn[c] < IMT_H) imt_rn[c]++;
+	dst->n = imt_acc.n; memcpy (dst->s, imt_acc.s, sizeof (imt_s) * (size_t) imt_acc.n);
+}
+static int imt_take12 = -1;
 static void imager_centre (void)
 {
 	extern int vt_imager;
@@ -644,7 +872,33 @@ static void imager_centre (void)
 	if (!imc_bystroke || !vt_imager || !vt_imager_centre) { imager_centre_pairs (); return; }
 	if (!nlast || !ni) return;                         /* (no strokes this frame: the pieces as drawn) */
 	line_t *const real = imc_real; int *const pi = imc_pi; float *const s0 = imc_ss0, *const s1 = imc_ss1; unsigned char *const inp = imc_inp;
-	const int nr = nlast; memcpy (real, last, sizeof (line_t) * (size_t) nr);
+	const int nr = nlast;
+	if (imt_take12 < 0) { const char *e = getenv ("VT_IMC_TAKE12"); imt_take12 = e && atoi (e); }
+	if (!imt_take12) {                                         /* (take 13: by the game's drawing - see imt_left) */
+		float *const v0 = imt_v0, *const v1 = imt_v1;
+		for (int k = 0; k < ni; k++) s0[k] = s1[k] = v0[k] = v1[k] = 0.0f;
+		for (int q = 0; q < imt_acc.n; q++) imt_acc.s[q].k = -1;   /* (the pass going on: its strokes of the frames before - shifted then) */
+		for (int k = 0; k < ni; k++) {
+			const iline_t *q = &icur[k];
+			if (imc_col (q->rgb) < 0) continue;
+			if ((q->rgb & 8) != imt_key) { imt_end (); for (int z = 0; z < imt_acc.n; z++) if (imt_acc.s[z].k >= 0) { const imt_s *w = &imt_acc.s[z]; s0[w->k] = w->s0; s1[w->k] = w->s1; v0[w->k] = w->v0; v1[w->k] = w->v1; }
+			                         imt_key = q->rgb & 8; imt_acc.n = 0; }
+			if (imt_acc.n < IMT_N) { imt_s *s = &imt_acc.s[imt_acc.n++];
+				s->x0 = q->x0; s->y0 = q->y0; s->x1 = q->x1; s->y1 = q->y1; s->tag = q->tag; s->run = q->run; s->k = k; s->s0 = s->s1 = s->v0 = s->v1 = 0.0f; s->pm = 0; }
+		}
+		if (imt_key >= 0 && (imt_key & 8)) imt_left (0, &imt_acc, 1);   /* (as far as drawn) */
+		for (int z = 0; z < imt_acc.n; z++) if (imt_acc.s[z].k >= 0) { const imt_s *w = &imt_acc.s[z]; s0[w->k] = w->s0; s1[w->k] = w->s1; v0[w->k] = w->v0; v1[w->k] = w->v1; }
+		imc_nofit = 0;
+		for (int i = 0; i < nr; i++) {
+			const unsigned long long ta = cta[i] > IMC_LAG ? cta[i] - IMC_LAG : 0, tb = ctb[i] > IMC_LAG ? ctb[i] - IMC_LAG : 0;
+			last[i].x0 += (long) floor (imc_shift_at (s0, s1, ni, ta) + 0.5f); last[i].x1 += (long) floor (imc_shift_at (s0, s1, ni, tb) + 0.5f);
+			last[i].y0 += (long) floor (imc_shift_at (v0, v1, ni, ta) + 0.5f); last[i].y1 += (long) floor (imc_shift_at (v0, v1, ni, tb) + 0.5f);
+		}
+		{ static int lg = -1; if (lg < 0) { const char *e = getenv ("VT_IMC_LOG"); lg = e && atoi (e); }
+		  if (lg) fprintf (stderr, "imt: %d pieces, %d strokes, %d with no stroke near\n", nr, ni, imc_nofit); }
+		return;
+	}
+	memcpy (real, last, sizeof (line_t) * (size_t) nr);
 	int np = 0;                                                /* (the strokes to pair: a rest inside a shape left out - a dot of its own kept) */
 	for (int a = 0, b; a < ni; a = b) {
 		int mv = 0; for (b = a; b < ni && icur[b].run == icur[a].run; b++) if (icur[b].x0 != icur[b].x1 || icur[b].y0 != icur[b].y1) mv = 1;

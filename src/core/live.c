@@ -163,6 +163,8 @@ static int ra_ready (void)
 	vxs_exclude (icur, sizeof icur); vxs_exclude (cta, sizeof cta); vxs_exclude (ctb, sizeof ctb);   /* (the 3D Imager's centre view: */
 	vxs_exclude (imc_real, sizeof imc_real); vxs_exclude (imc_pi, sizeof imc_pi);                    /*  a picture's working space, */
 	vxs_exclude (imc_ss0, sizeof imc_ss0); vxs_exclude (imc_ss1, sizeof imc_ss1); vxs_exclude (imc_inp, sizeof imc_inp);   /*  vtest.c) */
+	vxs_exclude (imt_R, sizeof imt_R); vxs_exclude (imt_Lp, sizeof imt_Lp); vxs_exclude (&imt_acc, sizeof imt_acc);
+	vxs_exclude (imt_dp, sizeof imt_dp); vxs_exclude (imt_tb, sizeof imt_tb); vxs_exclude (imt_v0, sizeof imt_v0); vxs_exclude (imt_v1, sizeof imt_v1);
 	ra_raw = vxs_init ();
 	ra_buf = malloc (ra_raw + 2 * sizeof cur + (bcur ? sizeof (beam_t) * MAXB : 0) + vt_cart_len);
 	if (!ra_buf) { fprintf (stderr, "STAT: runahead unsupported (memory)\n"); return 0; }

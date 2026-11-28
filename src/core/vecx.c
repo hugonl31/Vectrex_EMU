@@ -1514,15 +1514,17 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
  * stroke where the game changes the speed, the beam or its level: no deflection lag, no corners rounded in chords, no rests
  * as pieces of their own. The two eyes' pictures are the same strokes moved sideways, so they are paired by these; the beam's
  * pieces then move with the stroke drawn at their moment (the owner, 2026-11-27: "match the eyes first and then render them") */
-extern void vt_iline (long x0, long y0, long x1, long y1, unsigned char c, unsigned char rgb, unsigned long long t0, unsigned long long t1, unsigned run);
+extern void vt_iline (long x0, long y0, long x1, long y1, unsigned char c, unsigned char rgb, unsigned long long t0, unsigned long long t1, unsigned run, unsigned tag);
+static unsigned id_tag;                     /* (the code that drew the stroke: the 6809's PC and stack pointer as it began - the same in both eyes) */
 static int id_open, id_lit, id_kz; static long id_x0, id_y0, id_kx, id_ky; static unsigned char id_c; static unsigned long long id_t0; static unsigned id_run;
 static void id_step (int lit, long kx, long ky, int kz)
 {
 	if (id_open && (!lit || kx != id_kx || ky != id_ky || kz != id_kz || (unsigned char) alg_zsh != id_c)) {
-		vt_iline (id_x0 / ZS, id_y0 / ZS, alg_curr_x / ZS, alg_curr_y / ZS, id_c, im_color ((id_t0 + alg_cycles) / 2), id_t0, alg_cycles, id_run);
+		vt_iline (id_x0 / ZS, id_y0 / ZS, alg_curr_x / ZS, alg_curr_y / ZS, id_c, im_color ((id_t0 + alg_cycles) / 2), id_t0, alg_cycles, id_run, id_tag);
 		id_open = 0;
 	}
-	if (lit && !id_open) { id_open = 1; id_x0 = alg_curr_x; id_y0 = alg_curr_y; id_kx = kx; id_ky = ky; id_kz = kz; id_c = (unsigned char) alg_zsh; id_t0 = alg_cycles; }
+	if (lit && !id_open) { id_open = 1; id_x0 = alg_curr_x; id_y0 = alg_curr_y; id_kx = kx; id_ky = ky; id_kz = kz; id_c = (unsigned char) alg_zsh; id_t0 = alg_cycles;
+	                       { extern unsigned e6809_get_s (void); id_tag = (e6809_get_pc () & 0xffff) << 16 | (e6809_get_s () & 0xffff); } }
 	if (!lit && id_lit) id_run++;                       /* (a run: the beam lit without a break - a shape's strokes and its rests) */
 	id_lit = lit;
 }

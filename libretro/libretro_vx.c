@@ -1081,7 +1081,7 @@ void retro_get_system_info (struct retro_system_info *i)
 	memset (i, 0, sizeof *i);
 	i->library_name = "Vectrex_EMU";
 #ifdef VX_EMUVR
-	i->library_version = "0.38";
+	i->library_version = "0.39";
 #else
 	i->library_version = "1.1";                 /* (the RetroArch flavour's own line: libretro_port_plan.md 5.6) */
 #endif

@@ -3,6 +3,19 @@
 The newest version is at the top. `VERSION` holds the version every push to GitHub publishes: the
 build workflow replaces that release (title = the version, marked Latest) with the new build.
 
+## v1.9.7
+
+* 3D Imager: a new view, Centre eye, now the default on every system (the PC, RetroArch, the apps). It shows one picture
+  as from between the eyes, so you can aim: in 3D Narrow Escape the ship no longer jumps sideways between the left and
+  right eye's pictures, and its shots fly where it aims. The emulator pairs each line of the two eyes by the game code
+  that drew it, so near objects, shots, walls that run off the screen and lines drawn the other way all merge whole,
+  with no stray lines or dots. Colour, left eye and right eye are still there (PC: Controls > 3D Imager view).
+* 3D Imager: while the disc spins up, RetroArch and the apps show "3D IMAGER / DISC SPINNING UP" with its speed, instead
+  of a still picture.
+* 3D Narrow Escape: the far walls no longer flash red in the left eye. The game draws that eye's walls late, just as the
+  red filter comes round; the disc's green now leaves room for them.
+* PC: the 3D Imager's colours as saturated as on the phones.
+
 ## v1.9.6
 
 * UVMC2: Dragon's Lair and Mach 3 (Nigel Harrison's ports) run. Dragon's Lair drew garbage lines: the cartridge's chip

@@ -4,6 +4,11 @@ The short list the emulator shows when a new version is out (the update message)
 newest on top, each line short enough for that small window (at most about 70 characters). Every new version adds
 its lines here before it is pushed. RELEASE_NOTES.md has the whole story.
 
+## v1.9.7
+- 3D Imager: Centre eye, the new default - aim from between the eyes
+- 3D Imager: a spin-up note while the disc comes up to speed
+- 3D Narrow Escape: far walls no longer flash red
+
 ## v1.9.6
 - UVMC2: Dragon's Lair and Mach 3 run
 

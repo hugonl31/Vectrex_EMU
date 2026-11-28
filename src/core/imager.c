@@ -21,11 +21,14 @@
 
 int vt_imager;                              /* the goggles on port 2 */
 unsigned char vt_line_rgb;                  /* the line being added: its colour (0: no goggles) */
-static double im_a1 = 0.1631, im_a2 = 0.3305;   /* (the sectors' starts in each half turn) */
-#define IM_NARROW_A2 0.3396                 /* (3D Narrow Escape's disc: its green a little wider than MAME's 0.3305 - the owner, 2026-11-28, a
-                                             * far wall's corner red in the left eye: the game draws that eye's green late, at 26.05 turns a
-                                             * second its last walls ended 0 to 0.02 ms before red came round, now 0.35 ms; the right eye's
-                                             * red ship still begins after it (0.49 ms after MAME's edge). A trial: no real disc measured) */
+static double im_a1 = 0.1631, im_a2 = 0.3305, im_a2b = 0.3305;   /* (the sectors' starts in each half turn - im_a2b: the second half's red) */
+/* 3D Narrow Escape's disc: its green wider than MAME's 0.3305 - the owner, 2026-11-28: far walls' corners red in the left eye. The
+ * game draws that eye's green late: logged 2.5 minutes into the level (26.05 turns a second), its last walls ran up to 0.46 ms past
+ * even 0.3396 - 12 % of the turns. Each half its own edge: the right eye's red ship begins 0.14 ms after 0.3396 (its edge stays
+ * there), the left eye's 1.04 ms after - its edge 0.75 ms later, 0.3591: 0.29 ms to spare both ways. A fit to the game's timing:
+ * no real disc measured */
+#define IM_NARROW_A2 0.3396
+#define IM_NARROW_A2B 0.3591
 static int im_mine;                         /* (3D Mine Storm's colour order: blue, red, green) */
 static double im_freq, im_phase;            /* (turns a second; the angle as a fraction of a turn) */
 static int im_on;                           /* (the motor powered: port A bit 6 low) */
@@ -43,10 +46,10 @@ static void im_init (void)
 {
 	const char *z = getenv ("VT_IMAGER");
 	vt_imager = z && *z && strcmp (z, "0") != 0;
-	im_mine = 0; im_a1 = 0.1631; im_a2 = 0.3305;
-	if (z && !strcmp (z, "mine")) { im_mine = 1; im_a1 = 0.1692; im_a2 = 0.2086; }
-	else if (z && !strcmp (z, "narrow")) im_a2 = IM_NARROW_A2;
-	else if (z && !strcmp (z, "1")) { im_a1 = 1.0 / 6.0; im_a2 = 1.0 / 3.0; }
+	im_mine = 0; im_a1 = 0.1631; im_a2 = im_a2b = 0.3305;
+	if (z && !strcmp (z, "mine")) { im_mine = 1; im_a1 = 0.1692; im_a2 = im_a2b = 0.2086; }
+	else if (z && !strcmp (z, "narrow")) { im_a2 = IM_NARROW_A2; im_a2b = IM_NARROW_A2B; }
+	else if (z && !strcmp (z, "1")) { im_a1 = 1.0 / 6.0; im_a2 = im_a2b = 1.0 / 3.0; }
 	im_freq = 0.0; im_phase = 0.0; im_on = 0;
 	im_t = alg_cycles; im_due = ~0ull; im_pin_until = 0;
 	ims_turn = 0.0;
@@ -116,7 +119,7 @@ static unsigned char im_color (unsigned long long tc)
 	p -= floor (p);
 	int half = p >= 0.5;
 	double f = p - 0.5 * half;
-	unsigned char c = f < im_a1 ? 4 : f < im_a2 ? (im_mine ? 1 : 2) : (im_mine ? 2 : 1);
+	unsigned char c = f < im_a1 ? 4 : f < (half ? im_a2b : im_a2) ? (im_mine ? 1 : 2) : (im_mine ? 2 : 1);
 	return (unsigned char) (c | (half ? 8 : 0));
 }
 
